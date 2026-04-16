@@ -34,7 +34,7 @@ inclusion: manual
 | Spec                                | 状态         | 简述                                                   |
 | ----------------------------------- | ------------ | ------------------------------------------------------ |
 | ai-enabled-sandbox                  | 已完成       | Docker 容器 AI 能力注入                                |
-| executor-integration                | 已完成       | WorkflowEngine ↔ Docker 执行桥接                       |
+| executor-integration                | 已完成       | WorkflowEngine ↔ Docker 执行桥接                      |
 | holographic-ui                      | 已完成       | 全息 UI 收口                                           |
 | workflow-artifacts-display          | 待最终检查点 | 工作流产物展示与下载（功能开发已完成）                 |
 | mission-cancel-control              | 已完成       | 任务取消端到端闭环                                     |

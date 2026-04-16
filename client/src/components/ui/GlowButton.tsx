@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 
 export type GlowButtonVariant = "primary" | "danger" | "ghost";
 
-export interface GlowButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface GlowButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: GlowButtonVariant;
 }
 

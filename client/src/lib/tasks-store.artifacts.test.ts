@@ -43,8 +43,9 @@ vi.mock("./store", () => ({
   }),
 }));
 
-const { buildMissionArtifacts, patchMissionRecordInStore } =
-  await import("./tasks-store");
+const { buildMissionArtifacts, patchMissionRecordInStore } = await import(
+  "./tasks-store"
+);
 const { useTasksStore } = await import("./tasks-store");
 
 function makeMission(
