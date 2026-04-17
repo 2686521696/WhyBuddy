@@ -122,9 +122,8 @@ afterEach(() => {
 
 describe("initSnapshotLifecycleBridge", () => {
   it("should register __snapshotZustandAccessor on globalThis", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     const accessor = (globalThis as any).__snapshotZustandAccessor;
@@ -140,9 +139,8 @@ describe("initSnapshotLifecycleBridge", () => {
   });
 
   it("should register __snapshotRestoreZustand on globalThis", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     const restoreZustand = (globalThis as any).__snapshotRestoreZustand;
@@ -161,9 +159,8 @@ describe("initSnapshotLifecycleBridge", () => {
   });
 
   it("should register __snapshotRestoreScene on globalThis", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     const restoreScene = (globalThis as any).__snapshotRestoreScene;
@@ -179,9 +176,8 @@ describe("initSnapshotLifecycleBridge", () => {
   });
 
   it("should forward scene restore to __sceneRestoreLayout if registered", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     const mockSceneRestore = vi.fn();
@@ -198,9 +194,8 @@ describe("initSnapshotLifecycleBridge", () => {
   });
 
   it("should only initialise once (idempotent)", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
     initSnapshotLifecycleBridge();
     initSnapshotLifecycleBridge();
@@ -212,9 +207,8 @@ describe("initSnapshotLifecycleBridge", () => {
 
 describe("workflow-store subscription", () => {
   it("should call onMissionStageChange when a stage_change event appears in eventLog", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     setWorkflowStoreState({
@@ -231,9 +225,8 @@ describe("workflow-store subscription", () => {
   });
 
   it("should call onMissionStatusChange when currentWorkflow status changes", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     // First set a workflow
@@ -249,9 +242,8 @@ describe("workflow-store subscription", () => {
   });
 
   it("should call onMissionStatusChange with 'done' when workflow completes", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     // Set initial running state
@@ -277,9 +269,8 @@ describe("workflow-store subscription", () => {
   });
 
   it("should call onMissionStatusChange with 'failed' when workflow fails", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     setWorkflowStoreState({
@@ -303,9 +294,8 @@ describe("workflow-store subscription", () => {
   });
 
   it("should call onMissionStageChange when stage changes without status change", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     setWorkflowStoreState({
@@ -329,9 +319,8 @@ describe("workflow-store subscription", () => {
   });
 
   it("should not fire hooks when nothing changes", async () => {
-    const { initSnapshotLifecycleBridge } = await import(
-      "./snapshot-lifecycle-bridge"
-    );
+    const { initSnapshotLifecycleBridge } =
+      await import("./snapshot-lifecycle-bridge");
     initSnapshotLifecycleBridge();
 
     setWorkflowStoreState({

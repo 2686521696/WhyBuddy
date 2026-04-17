@@ -459,21 +459,18 @@ async function startServer() {
   const { heartbeatScheduler } = await import("./core/heartbeat.js");
   const { sessionStore } = await import("./memory/session-store.js");
   const { missionRuntime } = await import("./tasks/mission-runtime.js");
-  const { createTaskRouter, createDecisionTemplatesRouter } = await import(
-    "./routes/tasks.js"
-  );
+  const { createTaskRouter, createDecisionTemplatesRouter } =
+    await import("./routes/tasks.js");
   const { createPlanetRouter } = await import("./routes/planets.js");
   const { createFeishuRouter } = await import("./routes/feishu.js");
-  const { buildExecutionPlan } = await import(
-    "./core/execution-plan-builder.js"
-  );
+  const { buildExecutionPlan } =
+    await import("./core/execution-plan-builder.js");
   const { ExecutorClient } = await import("./core/executor-client.js");
   const { EXECUTOR_API_ROUTES } = await import("../shared/executor/api.js");
 
   // Wire up workflow → mission enrichment bridge (workflow-decoupling Task 4.2)
-  const { serverRuntime, setOnStageCompleted } = await import(
-    "./runtime/server-runtime.js"
-  );
+  const { serverRuntime, setOnStageCompleted } =
+    await import("./runtime/server-runtime.js");
   const {
     initEnrichmentBridge,
     onWorkflowStageCompleted,
@@ -562,9 +559,8 @@ async function startServer() {
   const { KnowledgeGraphQuery } = await import("./knowledge/query-service.js");
   const { KnowledgeService } = await import("./knowledge/knowledge-service.js");
   const { createKnowledgeRouter } = await import("./routes/knowledge.js");
-  const { createKnowledgeAdminRouter } = await import(
-    "./routes/knowledge-admin.js"
-  );
+  const { createKnowledgeAdminRouter } =
+    await import("./routes/knowledge-admin.js");
 
   const graphStore = new GraphStore();
   const ontologyRegistry = new OntologyRegistry();
@@ -572,9 +568,8 @@ async function startServer() {
   const queryService = new KnowledgeGraphQuery(graphStore, ontologyRegistry);
   const knowledgeService = new KnowledgeService(queryService, graphStore);
 
-  const { getSocketIO, registerSandboxRelay } = await import(
-    "./core/socket.js"
-  );
+  const { getSocketIO, registerSandboxRelay } =
+    await import("./core/socket.js");
   const { SandboxRelay } = await import("./core/sandbox-relay.js");
   const { SANDBOX_SOCKET_EVENTS } = await import("../shared/mission/socket.js");
   const sandboxRelay = new SandboxRelay();
@@ -635,12 +630,10 @@ async function startServer() {
   const { RoleStore } = await import("./permission/role-store.js");
   const { PolicyStore } = await import("./permission/policy-store.js");
   const { TokenService } = await import("./permission/token-service.js");
-  const { DynamicPermissionManager } = await import(
-    "./permission/dynamic-manager.js"
-  );
-  const { ConflictDetector } = await import(
-    "./permission/conflict-detector.js"
-  );
+  const { DynamicPermissionManager } =
+    await import("./permission/dynamic-manager.js");
+  const { ConflictDetector } =
+    await import("./permission/conflict-detector.js");
   const { AuditLogger } = await import("./permission/audit-logger.js");
   const { createPermissionRouter } = await import("./routes/permissions.js");
 
@@ -673,16 +666,13 @@ async function startServer() {
   );
 
   // Wire permission system into workflow engine and agent layer
-  const { workflowEngine: wfEngine } = await import(
-    "./core/workflow-engine.js"
-  );
+  const { workflowEngine: wfEngine } =
+    await import("./core/workflow-engine.js");
   const { setPermissionCheckEngine } = await import("./core/agent.js");
-  const { PermissionCheckEngine } = await import(
-    "./permission/check-engine.js"
-  );
-  const { FilesystemChecker } = await import(
-    "./permission/checkers/filesystem-checker.js"
-  );
+  const { PermissionCheckEngine } =
+    await import("./permission/check-engine.js");
+  const { FilesystemChecker } =
+    await import("./permission/checkers/filesystem-checker.js");
 
   wfEngine.tokenService = permTokenService;
 
@@ -733,9 +723,8 @@ async function startServer() {
   const { JsonLineageStorage } = await import("./lineage/lineage-store.js");
   const { LineageQueryService } = await import("./lineage/lineage-query.js");
   const { LineageAuditService } = await import("./lineage/lineage-audit.js");
-  const { ChangeDetectionService } = await import(
-    "./lineage/change-detection.js"
-  );
+  const { ChangeDetectionService } =
+    await import("./lineage/change-detection.js");
   const { LineageExportService } = await import("./lineage/lineage-export.js");
   const { createLineageRouter } = await import("./routes/lineage.js");
 

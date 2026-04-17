@@ -105,9 +105,8 @@ describe("phase1 message bus hardening", () => {
   });
 
   it("rejects skip-level messaging", async () => {
-    const { messageBus, MessageBusValidationError } = await import(
-      "../core/message-bus.js"
-    );
+    const { messageBus, MessageBusValidationError } =
+      await import("../core/message-bus.js");
 
     await expect(
       messageBus.send("ceo", "blaze", "skip the manager", "wf-1", "direction")

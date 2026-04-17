@@ -11,9 +11,7 @@ export interface FeishuWebhookDedupStore {
   remember(key: string, expiresAt: number, now?: number): void;
 }
 
-export class InMemoryFeishuWebhookDedupStore
-  implements FeishuWebhookDedupStore
-{
+export class InMemoryFeishuWebhookDedupStore implements FeishuWebhookDedupStore {
   protected readonly entries = new Map<string, number>();
 
   has(key: string, now = Date.now()): boolean {

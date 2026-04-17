@@ -130,7 +130,7 @@
 | AI 容器注入       | API Key 安全注入 + 凭证脱敏                       |
 | 安全沙箱          | seccomp/AppArmor + 能力裁剪                       |
 | 实时终端 + 截图   | WebSocket 终端流 + 容器截图                       |
-| 执行器集成        | WorkflowEngine ↔ Docker 桥接                     |
+| 执行器集成        | WorkflowEngine ↔ Docker 桥接                      |
 | Agent 权限矩阵    | RBAC 细粒度权限控制                               |
 | 跨 Pod 自主协作   | Swarm 发现/委派/共识                              |
 | 不可篡改审计链    | 哈希链式日志 + 异常检测                           |

@@ -53,9 +53,8 @@ describe("phase1 workspace access guard", () => {
   });
 
   it("blocks absolute and traversal paths", async () => {
-    const { resolveAgentWorkspacePath } = await import(
-      "../core/access-guard.js"
-    );
+    const { resolveAgentWorkspacePath } =
+      await import("../core/access-guard.js");
 
     expect(() => resolveAgentWorkspacePath("scout", "../outside.txt")).toThrow(
       /escapes/

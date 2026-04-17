@@ -76,9 +76,8 @@ describe("10.1 server/lineage/index.ts exports", () => {
 
 describe("10.2 shared/lineage/socket.ts", () => {
   it("should export LINEAGE_SOCKET_EVENTS with correct event names", async () => {
-    const { LINEAGE_SOCKET_EVENTS } = await import(
-      "../../shared/lineage/socket.js"
-    );
+    const { LINEAGE_SOCKET_EVENTS } =
+      await import("../../shared/lineage/socket.js");
 
     expect(LINEAGE_SOCKET_EVENTS.nodeCreated).toBe("lineage:node_created");
     expect(LINEAGE_SOCKET_EVENTS.alertTriggered).toBe(
@@ -108,9 +107,8 @@ describe("10.3 LineageCollector socket broadcast callbacks", () => {
   });
 
   it("should call onNodeCreated for each buffered node", async () => {
-    const { LineageCollector } = await import(
-      "../lineage/lineage-collector.js"
-    );
+    const { LineageCollector } =
+      await import("../lineage/lineage-collector.js");
     const createdNodes: DataLineageNode[] = [];
 
     const collector = new LineageCollector(store, {
@@ -132,9 +130,8 @@ describe("10.3 LineageCollector socket broadcast callbacks", () => {
   });
 
   it("should call onAlertTriggered via emitAlert()", async () => {
-    const { LineageCollector } = await import(
-      "../lineage/lineage-collector.js"
-    );
+    const { LineageCollector } =
+      await import("../lineage/lineage-collector.js");
     const alerts: ChangeAlert[] = [];
 
     const collector = new LineageCollector(store, {
@@ -162,9 +159,8 @@ describe("10.3 LineageCollector socket broadcast callbacks", () => {
   });
 
   it("should not throw if onNodeCreated callback throws", async () => {
-    const { LineageCollector } = await import(
-      "../lineage/lineage-collector.js"
-    );
+    const { LineageCollector } =
+      await import("../lineage/lineage-collector.js");
 
     const collector = new LineageCollector(store, {
       onNodeCreated: () => {
@@ -180,9 +176,8 @@ describe("10.3 LineageCollector socket broadcast callbacks", () => {
   });
 
   it("should not throw if onAlertTriggered callback throws", async () => {
-    const { LineageCollector } = await import(
-      "../lineage/lineage-collector.js"
-    );
+    const { LineageCollector } =
+      await import("../lineage/lineage-collector.js");
 
     const collector = new LineageCollector(store, {
       onAlertTriggered: () => {
@@ -207,9 +202,8 @@ describe("10.3 LineageCollector socket broadcast callbacks", () => {
   });
 
   it("should still work with legacy logger argument (backward compat)", async () => {
-    const { LineageCollector } = await import(
-      "../lineage/lineage-collector.js"
-    );
+    const { LineageCollector } =
+      await import("../lineage/lineage-collector.js");
     const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const collector = new LineageCollector(store, logger);
