@@ -52,6 +52,16 @@
 
 这套模型不要求替换 store 真相源，但必须在首页表现层稳定映射出来。
 
+## 数据来源映射
+
+实现时应先明确表现层映射，不直接复制旧面板：
+
+- 步骤流 <- 现有任务计划、workflow 状态、task detail 阶段信息
+- `Logs` <- socket 日志流、终端输出、关键事件摘要
+- `Artifacts` <- 现有 artifact 列表、截图、输出物入口
+- `Runtime` <- executor 状态、socket / callback 状态、worker 最近动作
+- decision waiting <- Clarification / Decision 相关状态与当前任务等待点
+
 ## Logs 设计
 
 - 实时追加
@@ -88,3 +98,4 @@
 
 - 不能一边保留旧分散面板、一边又新增 runtime dock 而不去收口
 - 本轮应该优先做“运行证据归口”，不是继续造新视图
+- 如果不先定义数据来源映射，容易在首页与详情页之间重复拷贝逻辑

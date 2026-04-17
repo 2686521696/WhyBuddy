@@ -9,16 +9,18 @@
 
 - [ ] 2. 收敛主路由结构
   - [ ] 2.1 保留 `/`
-  - [ ] 2.2 保留 `/tasks/:taskId`
-  - [ ] 2.3 保留 `/replay/:missionId`
-  - [ ] 2.4 新增或预留 `/debug`
-  - [ ] 2.5 让 `/command-center` redirect 到 `/`
-  - [ ] 2.6 让 `/command-center/legacy` 退场或仅保留跳转
+  - [ ] 2.2 明确 `/tasks` 为全屏工作台与跟进页，而非发起入口
+  - [ ] 2.3 保留 `/tasks/:taskId`
+  - [ ] 2.4 保留 `/replay/:missionId`
+  - [ ] 2.5 新增或预留 `/debug` 壳路由
+  - [ ] 2.6 让 `/command-center` redirect 到 `/`
+  - [ ] 2.7 让 `/command-center/legacy` 退场或仅保留跳转
 
 - [ ] 3. 调整导航心智
   - [ ] 3.1 `Toolbar` 不再突出 `/tasks` 为并列主入口
   - [ ] 3.2 `navigation-config` 不再把 `/lineage` 视为普通入口
-  - [ ] 3.3 把低频能力迁入 debug / hidden surface
+  - [ ] 3.3 锁定 `/debug` 的隐藏入口策略与 ownership 边界
+  - [ ] 3.4 把低频能力迁入 debug / hidden surface
 
 - [ ] 4. 首页承担统一发起入口
   - [ ] 4.1 首页保留输入、澄清、任务主线和运行信息
@@ -29,3 +31,4 @@
   - [ ] 5.1 验证旧链接打开后不会让用户迷路
   - [ ] 5.2 验证任务详情与回放深链无回归
   - [ ] 5.3 验证主导航文案与页面文案已经统一
+  - [ ] 5.4 验证 `/tasks` 在路由、入口和页面文案上不再承担“发起”语义

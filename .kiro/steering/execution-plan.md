@@ -491,8 +491,26 @@ C01-C08 契约冻结 (已完成)
 
 ### 新增 specs 清单
 
-- [ ] `office-shell-convergence-v1`（主线起点，不与后两项主线 spec 并行）
-- [ ] `task-os-home-redesign-v1`（依赖 `office-shell-convergence-v1`，不并行）
-- [ ] `task-runtime-visibility-v1`（依赖 `task-os-home-redesign-v1`，不并行）
-- [ ] `release-stability-guardrails-v2`（可与主线并行）
-- [ ] `replay-and-debug-surface-v1`（可与主线并行）
+- [ ] `office-shell-convergence-v1`
+  - 主线起点，负责首页默认入口、导航心智与路由壳收敛
+  - 锁定 `/tasks` 为“查看 / 跟进 / 深度处理”的全屏工作台，不再承担发起语义
+  - 只定义 `/debug` 的隐藏路由壳与入口策略，不要求同轮完成所有低频能力迁移
+  - 不与后两项主线 spec 并行
+- [ ] `task-os-home-redesign-v1`
+  - 依赖 `office-shell-convergence-v1`
+  - 在现有视觉基底上做首页四区骨架重构，不重做设计系统
+  - 重点收敛首页壳体、信息层级、模块归位与桌面断点稳定性
+  - 不并行
+- [ ] `task-runtime-visibility-v1`
+  - 依赖 `task-os-home-redesign-v1`
+  - 基于现有 mission / workflow / task detail / socket 数据，把步骤流、Logs、Artifacts、Runtime 收敛到首页
+  - 优先做运行证据归口，不再造第二套真相源
+  - 不并行
+- [ ] `release-stability-guardrails-v2`
+  - 可与主线并行
+  - 以补齐统一聚合入口、最小 CI、关键链路测试和恢复能力为主
+  - 优先建立 `lint` / `typecheck` / `test` / `build` 聚合入口，不要求一次性重写全部历史脚本
+- [ ] `replay-and-debug-surface-v1`
+  - 与主线“部分并行”，不再视为完全独立并行项
+  - 可先并行：回放稳定性、低频能力盘点、debug 信息架构设计
+  - 后置接线：`/debug` 最终接线、主导航低频入口移除，等待主壳路由与导航定稿后再落

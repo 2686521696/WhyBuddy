@@ -3,14 +3,16 @@
 ## Tasks
 
 - [ ] 1. 收口仓库脚本
-  - [ ] 1.1 统一 `lint`
-  - [ ] 1.2 统一 `typecheck`
-  - [ ] 1.3 统一 `test`
-  - [ ] 1.4 统一 `build`
+  - [ ] 1.1 盘点现有脚本与 package manager 口径
+  - [ ] 1.2 统一 `lint`
+  - [ ] 1.3 统一 `typecheck`
+  - [ ] 1.4 统一 `test`
+  - [ ] 1.5 统一 `build`
+  - [ ] 1.6 保留历史拆分命令兼容性，并通过聚合入口对外收口
 
 - [ ] 2. 建立最小 CI
   - [ ] 2.1 新增 GitHub Actions
-  - [ ] 2.2 串联 install / lint / typecheck / test / build
+  - [ ] 2.2 按仓库声明的 package manager 串联 install / lint / typecheck / test / build
 
 - [ ] 3. 补齐关键链路测试
   - [ ] 3.1 任务状态机测试
@@ -27,7 +29,8 @@
   - [ ] 5.1 Quick Start
   - [ ] 5.2 环境变量说明
   - [ ] 5.3 可选 executor 启动说明
-  - [ ] 5.4 常见问题
+  - [ ] 5.4 package manager 与命令口径说明
+  - [ ] 5.5 常见问题
 
 - [ ] 6. 发布门禁回归
   - [ ] 6.1 本地跑通 lint

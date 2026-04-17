@@ -26,16 +26,19 @@
 - 全量观测平台升级
 - 多环境复杂发布流水线
 - K8s 或云原生编排
+- 一次性重写所有历史脚本体系
 
 ## 必须满足
 
-- 仓库必须有统一的 `lint`、`typecheck`、`test`、`build`
+- 仓库必须有统一的 `lint`、`typecheck`、`test`、`build` 聚合入口
+- 聚合入口优先建立在现有脚本之上，不要求一次性替换所有历史拆分命令
 - 必须存在 CI 入口
 - 至少覆盖任务状态机、executor 调用、decision 流
 - websocket 断开必须有自动重连
 - executor 超时必须 fail，不允许静默卡死
 - server 重启后至少支持任务 attach 或任务状态恢复
 - README 必须提供 3 步内跑起来的 quick start
+- CI 与文档需要对齐仓库声明的 package manager，并说明与其他包管理器的兼容策略
 
 ## 发布门禁
 
