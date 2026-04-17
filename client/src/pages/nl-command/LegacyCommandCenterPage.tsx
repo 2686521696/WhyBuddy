@@ -2,11 +2,8 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   FolderKanban,
-  History,
 } from "lucide-react";
 import { useLocation } from "wouter";
-
-import { LEGACY_COMMAND_CENTER_LEGACY_PATH } from "@/components/navigation-config";
 import {
   WorkspacePageShell,
   WorkspacePanel,
@@ -24,7 +21,7 @@ export default function LegacyCommandCenterPage() {
       description={copy.legacyRoutes.commandCenter.description}
     >
       <WorkspacePanel strong className="p-5 md:p-6">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <button
             type="button"
             onClick={() => setLocation("/tasks")}
@@ -58,24 +55,6 @@ export default function LegacyCommandCenterPage() {
                 </div>
               </div>
               <BriefcaseBusiness className="mt-0.5 size-5 shrink-0 text-[var(--workspace-text-subtle)]" />
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setLocation(LEGACY_COMMAND_CENTER_LEGACY_PATH)}
-            className="workspace-panel workspace-panel-inset rounded-[28px] px-5 py-5 text-left transition-transform hover:-translate-y-0.5"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-[var(--workspace-text-strong)]">
-                  {copy.legacyRoutes.commandCenter.legacyCta}
-                </div>
-                <div className="mt-2 text-xs leading-5 text-[var(--workspace-text-muted)]">
-                  {copy.legacyRoutes.commandCenter.legacyDescription}
-                </div>
-              </div>
-              <History className="mt-0.5 size-5 shrink-0 text-[var(--workspace-text-subtle)]" />
             </div>
           </button>
         </div>

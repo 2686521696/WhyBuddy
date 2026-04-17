@@ -13,9 +13,9 @@ import { useAppStore } from "./lib/store";
 import Home from "./pages/Home";
 import { TaskDetailPage, TasksPage } from "./pages/tasks";
 import { ReplayPage } from "./components/replay/ReplayPage";
-import CommandCenterPage from "@/pages/nl-command/CommandCenterPage";
 import LegacyCommandCenterPage from "@/pages/nl-command/LegacyCommandCenterPage";
 import LineagePage from "@/pages/lineage/LineagePage";
+import DebugPage from "@/pages/debug/DebugPage";
 
 const routerBase =
   import.meta.env.BASE_URL === "/"
@@ -33,17 +33,28 @@ function Router() {
       <Route path={"/replay/:missionId"}>
         {params => <ReplayPage missionId={params.missionId || ""} />}
       </Route>
+      <Route path={"/debug"} component={DebugPage} />
       <Route path={"/command-center/legacy"}>
-        {() => <CommandCenterPage />}
+        {() => <LegacyCommandCenterPage />}
       </Route>
       <Route path={"/command-center"}>
-        {() => <LegacyCommandCenterPage />}
+        {() => <RedirectRoute to="/" />}
       </Route>
       <Route path={"/lineage"} component={LineagePage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
+}
+
+function RedirectRoute({ to }: { to: string }) {
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    setLocation(to);
+  }, [setLocation, to]);
+
+  return null;
 }
 
 function TaskDetailRoute({ taskId }: { taskId?: string }) {

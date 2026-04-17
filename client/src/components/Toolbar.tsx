@@ -39,7 +39,7 @@ export function Toolbar() {
   const activeId = getPrimaryNavigationId(location);
   const localeLabel =
     locale === "zh-CN" ? copy.common.englishShort : copy.common.chineseShort;
-  const officeDesktopUtilityDock = !isMobile && activeId === "office";
+  const officeDesktopUtilityDock = !isMobile && location === "/";
 
   useEffect(() => {
     const handleOpenMore = () => {
@@ -81,9 +81,6 @@ export function Toolbar() {
         return;
       case "audit":
         setShowAudit(true);
-        return;
-      case "lineage":
-        setLocation("/lineage");
         return;
       case "help":
         setShowHelp(true);
@@ -132,7 +129,7 @@ export function Toolbar() {
               </button>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {PRIMARY_NAV_ITEMS.map(item => {
                 const Icon = item.icon;
                 const labels = copy.toolbar.primaryNav[item.id];

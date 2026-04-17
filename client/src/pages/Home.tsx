@@ -142,8 +142,8 @@ export default function Home() {
     : undefined;
   const fullWorkbenchLabel =
     locale === "zh-CN" ? "全屏工作台" : "Fullscreen workbench";
-  const compatibilityLabel =
-    locale === "zh-CN" ? "兼容入口" : "Compatibility panel";
+  const workflowLabel =
+    locale === "zh-CN" ? "工作流面板" : "Workflow panel";
   const demoLabel = locale === "zh-CN" ? "演示模式" : "Live demo";
 
   const localeLabel =
@@ -311,13 +311,6 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setLocation("/tasks")}
-                      className="rounded-full px-3 py-1 text-[11px] font-semibold text-[#8B7355] transition-all hover:text-[#5A4A3A]"
-                    >
-                      {copy.toolbar.primaryNav.tasks.label}
-                    </button>
-                    <button
-                      type="button"
                       onClick={() =>
                         window.dispatchEvent(
                           new Event(OFFICE_DESKTOP_OPEN_MORE_EVENT)
@@ -346,6 +339,17 @@ export default function Home() {
               <div className="ml-auto flex items-center gap-1.5">
                 <button
                   type="button"
+                  onClick={() => setLocation("/tasks")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold text-[#5A4A3A] transition-colors hover:bg-white",
+                    utilityChipClass
+                  )}
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  {fullWorkbenchLabel}
+                </button>
+                <button
+                  type="button"
                   onClick={() => openWorkflowPanel()}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold text-[#5A4A3A] transition-colors hover:bg-white",
@@ -353,7 +357,7 @@ export default function Home() {
                   )}
                 >
                   <Waves className="h-3.5 w-3.5" />
-                  {compatibilityLabel}
+                  {workflowLabel}
                 </button>
                 <button
                   type="button"

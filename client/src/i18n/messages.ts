@@ -92,7 +92,7 @@ export const messages = {
         more: {
           label: "更多",
           sublabel: "MORE",
-          description: "打开配置、权限、审计、血缘和帮助等低频入口。",
+          description: "打开配置、权限、审计和帮助等低频入口。",
         },
       },
       moreActions: {
@@ -847,7 +847,7 @@ export const messages = {
         more: {
           label: "More",
           sublabel: "MORE",
-          description: "Open configuration, governance, lineage, and help.",
+          description: "Open configuration, governance, audit, and help.",
         },
       },
       moreActions: {

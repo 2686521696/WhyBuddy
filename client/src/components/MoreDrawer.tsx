@@ -12,10 +12,10 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 import {
+  MAIN_PATH_ITEMS,
   MORE_NAV_ITEMS,
-  PRIMARY_NAV_ITEMS,
   type MoreNavigationId,
-  type PrimaryNavigationId,
+  type MainPathId,
 } from "./navigation-config";
 
 interface MoreDrawerProps {
@@ -34,8 +34,8 @@ export function MoreDrawer({
   const { copy } = useI18n();
   const { isMobile } = useViewportTier();
 
-  const handlePrimaryPath = (id: PrimaryNavigationId) => {
-    const target = PRIMARY_NAV_ITEMS.find(item => item.id === id)?.href;
+  const handlePrimaryPath = (id: MainPathId) => {
+    const target = MAIN_PATH_ITEMS.find(item => item.id === id)?.href;
     if (!target) return;
     onNavigate(target);
     onOpenChange(false);
@@ -87,10 +87,9 @@ export function MoreDrawer({
               {copy.toolbar.mainPathsTitle}
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {(["office", "tasks"] as const).map(id => {
-                const item = PRIMARY_NAV_ITEMS.find(nav => nav.id === id);
+              {MAIN_PATH_ITEMS.map(item => {
+                const id = item.id;
                 const labels = copy.toolbar.primaryNav[id];
-                if (!item) return null;
 
                 const Icon = item.icon;
 
