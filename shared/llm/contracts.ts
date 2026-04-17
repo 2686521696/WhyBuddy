@@ -88,16 +88,10 @@ export interface ILLMProvider {
   readonly name: string;
 
   /** 同步生成 */
-  generate(
-    messages: LLMMessage[],
-    options?: LLMGenerateOptions
-  ): Promise<LLMGenerateResult>;
+  generate(messages: LLMMessage[], options?: LLMGenerateOptions): Promise<LLMGenerateResult>;
 
   /** 流式生成 */
-  streamGenerate(
-    messages: LLMMessage[],
-    options?: LLMGenerateOptions
-  ): AsyncGenerator<string>;
+  streamGenerate(messages: LLMMessage[], options?: LLMGenerateOptions): AsyncGenerator<string>;
 
   /** 文本向量化（可选，不是所有提供商都支持） */
   embed?(texts: string[]): Promise<LLMEmbedResult>;
@@ -153,5 +147,4 @@ export const LLM_PROVIDER_TYPES = {
   serverProxy: "server-proxy",
 } as const;
 
-export type LLMProviderType =
-  (typeof LLM_PROVIDER_TYPES)[keyof typeof LLM_PROVIDER_TYPES];
+export type LLMProviderType = (typeof LLM_PROVIDER_TYPES)[keyof typeof LLM_PROVIDER_TYPES];

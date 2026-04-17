@@ -32,7 +32,9 @@ export class AuditLogger implements IAuditLogger {
   /**
    * Record an audit entry. Auto-generates id and timestamp.
    */
-  log(entry: Omit<PermissionAuditEntry, "id" | "timestamp">): void {
+  log(
+    entry: Omit<PermissionAuditEntry, "id" | "timestamp">,
+  ): void {
     const full: PermissionAuditEntry = {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
@@ -46,10 +48,10 @@ export class AuditLogger implements IAuditLogger {
    */
   getAuditTrail(
     agentId: string,
-    timeRange?: { from: string; to: string }
+    timeRange?: { from: string; to: string },
   ): PermissionAuditEntry[] {
     const all = this.db.getPermissionAudit();
-    return all.filter(e => {
+    return all.filter((e) => {
       if (e.agentId !== agentId) return false;
       if (timeRange) {
         if (e.timestamp < timeRange.from) return false;
@@ -65,7 +67,7 @@ export class AuditLogger implements IAuditLogger {
    */
   getUsageReport(
     agentId: string,
-    timeRange: { from: string; to: string }
+    timeRange: { from: string; to: string },
   ): PermissionUsageReport {
     const entries = this.getAuditTrail(agentId, timeRange);
 
@@ -109,12 +111,11 @@ export class AuditLogger implements IAuditLogger {
   /**
    * Get all denied entries (violations), optionally filtered by time range.
    */
-  getViolations(timeRange?: {
-    from: string;
-    to: string;
-  }): PermissionAuditEntry[] {
+  getViolations(
+    timeRange?: { from: string; to: string },
+  ): PermissionAuditEntry[] {
     const all = this.db.getPermissionAudit();
-    return all.filter(e => {
+    return all.filter((e) => {
       if (e.result !== "denied") return false;
       if (timeRange) {
         if (e.timestamp < timeRange.from) return false;
@@ -129,12 +130,12 @@ export class AuditLogger implements IAuditLogger {
    */
   exportReport(
     format: "json",
-    timeRange?: { from: string; to: string }
+    timeRange?: { from: string; to: string },
   ): string {
     const all = this.db.getPermissionAudit();
     const filtered = timeRange
       ? all.filter(
-          e => e.timestamp >= timeRange.from && e.timestamp <= timeRange.to
+          (e) => e.timestamp >= timeRange.from && e.timestamp <= timeRange.to,
         )
       : all;
 
@@ -146,7 +147,7 @@ export class AuditLogger implements IAuditLogger {
         entries: filtered,
       },
       null,
-      2
+      2,
     );
   }
 }

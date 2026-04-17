@@ -68,20 +68,13 @@ function setBaselineEnv(): void {
 /** Arbitrary string that is NOT "high" or "auto" (case-insensitive) */
 const arbNonHighAutoDetail = fc
   .string({ minLength: 0, maxLength: 30 })
-  .filter(s => {
+  .filter((s) => {
     const lower = s.toLowerCase();
     return lower !== "high" && lower !== "auto";
   });
 
 /** Arbitrary "high" or "auto" in various casings */
-const arbHighOrAuto = fc.constantFrom(
-  "high",
-  "auto",
-  "HIGH",
-  "AUTO",
-  "High",
-  "Auto"
-);
+const arbHighOrAuto = fc.constantFrom("high", "auto", "HIGH", "AUTO", "High", "Auto");
 
 /* ─── Tests ─── */
 
@@ -104,7 +97,7 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
 
   it("detail is 'low' when VISION_LLM_DETAIL is not 'high' or 'auto'", () => {
     fc.assert(
-      fc.property(arbNonHighAutoDetail, detailValue => {
+      fc.property(arbNonHighAutoDetail, (detailValue) => {
         clearRelevantEnv();
         setBaselineEnv();
         process.env.VISION_LLM_DETAIL = detailValue;
@@ -115,7 +108,7 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
         // detail must be "low" to reduce token consumption for multi-image analysis
         expect(config.detail).toBe("low");
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -123,16 +116,16 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
     fc.assert(
       fc.property(
         fc.constantFrom("high", "HIGH", "High", "hIgH"),
-        detailValue => {
+        (detailValue) => {
           clearRelevantEnv();
           setBaselineEnv();
           process.env.VISION_LLM_DETAIL = detailValue;
 
           const config = getVisionConfig();
           expect(config.detail).toBe("high");
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -140,16 +133,16 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
     fc.assert(
       fc.property(
         fc.constantFrom("auto", "AUTO", "Auto", "aUtO"),
-        detailValue => {
+        (detailValue) => {
           clearRelevantEnv();
           setBaselineEnv();
           process.env.VISION_LLM_DETAIL = detailValue;
 
           const config = getVisionConfig();
           expect(config.detail).toBe("auto");
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -166,7 +159,7 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
     fc.assert(
       fc.property(
         fc.oneof(arbNonHighAutoDetail, arbHighOrAuto),
-        detailValue => {
+        (detailValue) => {
           clearRelevantEnv();
           setBaselineEnv();
           process.env.VISION_LLM_DETAIL = detailValue;
@@ -182,9 +175,9 @@ describe("Property 11: 多图分析时 detail 参数约束", () => {
             // For multi-image analysis, detail MUST be "low" to reduce token consumption
             expect(config.detail).toBe("low");
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

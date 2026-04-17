@@ -81,9 +81,7 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
     try {
       const { roleId, roleName, description, permissions } = req.body ?? {};
       if (!roleId || !roleName) {
-        return res
-          .status(400)
-          .json({ ok: false, error: "roleId and roleName are required" });
+        return res.status(400).json({ ok: false, error: "roleId and roleName are required" });
       }
       const role = roleStore.createRole({
         roleId,
@@ -137,9 +135,7 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
         organizationId,
       } = req.body ?? {};
       if (!assignedRoles) {
-        return res
-          .status(400)
-          .json({ ok: false, error: "assignedRoles is required" });
+        return res.status(400).json({ ok: false, error: "assignedRoles is required" });
       }
       const policy = policyStore.createPolicy({
         agentId,
@@ -159,10 +155,7 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
 
   router.put(stripPrefix(PERMISSION_API.updatePolicy), (req, res) => {
     try {
-      const policy = policyStore.updatePolicy(
-        req.params.agentId,
-        req.body ?? {}
-      );
+      const policy = policyStore.updatePolicy(req.params.agentId, req.body ?? {});
       res.json({ ok: true, policy });
     } catch (err) {
       const msg = errorMessage(err);
@@ -246,11 +239,7 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
           error: "agentId, reason, and approverList are required",
         });
       }
-      const escalationId = dynamicManager.escalatePermission(
-        agentId,
-        reason,
-        approverList
-      );
+      const escalationId = dynamicManager.escalatePermission(agentId, reason, approverList);
       res.json({ ok: true, escalationId });
     } catch (err) {
       res.status(400).json({ ok: false, error: errorMessage(err) });
@@ -366,8 +355,7 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
 
   router.post(stripPrefix(PERMISSION_API.createTemplate), (req, res) => {
     try {
-      const { templateId, templateName, description, targetRole, permissions } =
-        req.body ?? {};
+      const { templateId, templateName, description, targetRole, permissions } = req.body ?? {};
       if (!templateId || !templateName || !targetRole) {
         return res.status(400).json({
           ok: false,

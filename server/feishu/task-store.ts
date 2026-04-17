@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type FeishuTaskStatus =
-  | "queued"
-  | "running"
-  | "waiting"
-  | "done"
-  | "failed";
+export type FeishuTaskStatus = "queued" | "running" | "waiting" | "done" | "failed";
 export type FeishuTaskStageStatus = "pending" | "running" | "done" | "failed";
 export type FeishuTaskEventType =
   | "created"
@@ -27,7 +22,7 @@ export interface FeishuTaskDecisionOption {
   id: string;
   label: string;
   description?: string;
-  severity?: "info" | "warn" | "danger";
+  severity?: 'info' | 'warn' | 'danger';
 }
 
 export interface FeishuTaskDecisionPrompt {
@@ -145,10 +140,7 @@ export interface FeishuTaskStore {
   createTask(input: CreateFeishuTaskInput): FeishuTaskRecord;
   getTask(taskId: string): FeishuTaskRecord | undefined;
   listTasks(limit?: number): FeishuTaskRecord[];
-  bindWorkflow(
-    taskId: string,
-    workflowId: string
-  ): FeishuTaskRecord | undefined;
+  bindWorkflow(taskId: string, workflowId: string): FeishuTaskRecord | undefined;
   markTaskRunning(
     taskId: string,
     input: MarkTaskRunningInput,
@@ -174,19 +166,16 @@ export interface FeishuTaskStore {
     input: ResolveTaskDecisionInput,
     options?: ResolveTaskDecisionOptions
   ): Promise<ResolveTaskDecisionResult>;
-  subscribe(
-    listener: (task: FeishuTaskRecord) => void | Promise<void>
-  ): () => void;
+  subscribe(listener: (task: FeishuTaskRecord) => void | Promise<void>): () => void;
 }
 
-export const DEFAULT_FEISHU_TASK_STAGES: Array<{ key: string; label: string }> =
-  [
-    { key: "receive", label: "接收请求" },
-    { key: "understand", label: "理解问题" },
-    { key: "planning", label: "规划执行" },
-    { key: "execution", label: "执行处理" },
-    { key: "finalize", label: "整理答复" },
-  ];
+export const DEFAULT_FEISHU_TASK_STAGES: Array<{ key: string; label: string }> = [
+  { key: "receive", label: "接收请求" },
+  { key: "understand", label: "理解问题" },
+  { key: "planning", label: "规划执行" },
+  { key: "execution", label: "执行处理" },
+  { key: "finalize", label: "整理答复" },
+];
 
 function cloneTask(task: FeishuTaskRecord): FeishuTaskRecord {
   if (typeof structuredClone === "function") {
@@ -206,8 +195,7 @@ function createTaskId(): string {
 function buildStageRecords(
   stages: Array<{ key: string; label: string }> | undefined
 ): FeishuTaskStage[] {
-  const source =
-    stages && stages.length > 0 ? stages : DEFAULT_FEISHU_TASK_STAGES;
+  const source = stages && stages.length > 0 ? stages : DEFAULT_FEISHU_TASK_STAGES;
   return source.map(stage => ({
     key: stage.key,
     label: stage.label,
@@ -277,9 +265,7 @@ export function describeTaskDecisionAlreadyProcessed(
 
 export class InMemoryFeishuTaskStore implements FeishuTaskStore {
   private readonly tasks = new Map<string, FeishuTaskRecord>();
-  private readonly listeners = new Set<
-    (task: FeishuTaskRecord) => void | Promise<void>
-  >();
+  private readonly listeners = new Set<(task: FeishuTaskRecord) => void | Promise<void>>();
 
   createTask(input: CreateFeishuTaskInput): FeishuTaskRecord {
     const now = Date.now();
@@ -317,10 +303,7 @@ export class InMemoryFeishuTaskStore implements FeishuTaskStore {
       .map(task => cloneTask(task));
   }
 
-  bindWorkflow(
-    taskId: string,
-    workflowId: string
-  ): FeishuTaskRecord | undefined {
+  bindWorkflow(taskId: string, workflowId: string): FeishuTaskRecord | undefined {
     const task = this.mustGetTask(taskId);
     task.workflowId = workflowId.trim();
     task.updatedAt = Date.now();
@@ -390,11 +373,7 @@ export class InMemoryFeishuTaskStore implements FeishuTaskStore {
   ): Promise<FeishuTaskRecord> {
     const task = this.mustGetTask(taskId);
     const stageKey = input.stageKey || "finalize";
-    const stageIndex = ensureStage(
-      task,
-      stageKey,
-      input.stageLabel || "整理答复"
-    );
+    const stageIndex = ensureStage(task, stageKey, input.stageLabel || "整理答复");
     const detail = input.detail || input.summary;
     syncStageStatuses(task, stageIndex, "done", detail);
 
@@ -424,11 +403,7 @@ export class InMemoryFeishuTaskStore implements FeishuTaskStore {
   ): Promise<FeishuTaskRecord> {
     const task = this.mustGetTask(taskId);
     const stageKey = input.stageKey || task.currentStageKey || "finalize";
-    const stageIndex = ensureStage(
-      task,
-      stageKey,
-      input.stageLabel || "整理答复"
-    );
+    const stageIndex = ensureStage(task, stageKey, input.stageLabel || "整理答复");
     syncStageStatuses(task, stageIndex, "failed", input.detail);
 
     task.status = "failed";
@@ -481,27 +456,21 @@ export class InMemoryFeishuTaskStore implements FeishuTaskStore {
     const decision: FeishuResolvedDecision = {
       optionId: input.optionId?.trim() || undefined,
       optionLabel:
-        input.optionLabel?.trim() || selectedOption?.label || undefined,
+        input.optionLabel?.trim() ||
+        selectedOption?.label ||
+        undefined,
       freeText: input.freeText?.trim() || undefined,
     };
 
     const choice =
-      decision.optionLabel ||
-      decision.freeText ||
-      decision.optionId ||
-      "已确认";
+      decision.optionLabel || decision.freeText || decision.optionId || "已确认";
 
     const stageIndex = ensureStage(
       task,
       task.currentStageKey || "execution",
       task.stages.find(stage => stage.key === task.currentStageKey)?.label
     );
-    syncStageStatuses(
-      task,
-      stageIndex,
-      "running",
-      input.detail || `Decision received: ${choice}`
-    );
+    syncStageStatuses(task, stageIndex, "running", input.detail || `Decision received: ${choice}`);
 
     task.status = "running";
     task.progress = clampProgress(input.progress ?? task.progress);
@@ -525,9 +494,7 @@ export class InMemoryFeishuTaskStore implements FeishuTaskStore {
     };
   }
 
-  subscribe(
-    listener: (task: FeishuTaskRecord) => void | Promise<void>
-  ): () => void {
+  subscribe(listener: (task: FeishuTaskRecord) => void | Promise<void>): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);

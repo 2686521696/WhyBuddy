@@ -10,11 +10,11 @@
  * - otherwise → probation
  */
 
-import { describe, it, expect } from "vitest";
-import * as fc from "fast-check";
-import { TrustTierEvaluator } from "../core/reputation/trust-tier-evaluator.js";
-import { DEFAULT_REPUTATION_CONFIG } from "../../shared/reputation.js";
-import type { ReputationProfile, TrustTier } from "../../shared/reputation.js";
+import { describe, it, expect } from 'vitest';
+import * as fc from 'fast-check';
+import { TrustTierEvaluator } from '../core/reputation/trust-tier-evaluator.js';
+import { DEFAULT_REPUTATION_CONFIG } from '../../shared/reputation.js';
+import type { ReputationProfile, TrustTier } from '../../shared/reputation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,12 +23,9 @@ import type { ReputationProfile, TrustTier } from "../../shared/reputation.js";
 const evaluator = new TrustTierEvaluator(DEFAULT_REPUTATION_CONFIG);
 
 /** Build a minimal external ReputationProfile with given totalTasks and overallScore */
-function makeExternalProfile(
-  totalTasks: number,
-  overallScore: number
-): ReputationProfile {
+function makeExternalProfile(totalTasks: number, overallScore: number): ReputationProfile {
   return {
-    agentId: "ext-agent-test",
+    agentId: 'ext-agent-test',
     overallScore,
     dimensions: {
       qualityScore: 400,
@@ -37,8 +34,8 @@ function makeExternalProfile(
       collaborationScore: 400,
       reliabilityScore: 400,
     },
-    grade: "C",
-    trustTier: "probation",
+    grade: 'C',
+    trustTier: 'probation',
     isExternal: true,
     totalTasks,
     consecutiveHighQuality: 0,
@@ -50,13 +47,10 @@ function makeExternalProfile(
 }
 
 /** Reference implementation of expected tier for external Agent */
-function expectedExternalTier(
-  totalTasks: number,
-  overallScore: number
-): TrustTier {
-  if (totalTasks >= 50 && overallScore >= 700) return "trusted";
-  if (totalTasks >= 20 && overallScore >= 500) return "standard";
-  return "probation";
+function expectedExternalTier(totalTasks: number, overallScore: number): TrustTier {
+  if (totalTasks >= 50 && overallScore >= 700) return 'trusted';
+  if (totalTasks >= 20 && overallScore >= 500) return 'standard';
+  return 'probation';
 }
 
 // ---------------------------------------------------------------------------
@@ -70,23 +64,19 @@ const overallScoreArb = fc.integer({ min: 0, max: 1000 });
 // Property Tests
 // ---------------------------------------------------------------------------
 
-describe("Property 12: 外部 Agent 信任层级升级", () => {
-  it("evaluateExternalUpgrade returns correct tier for any totalTasks and overallScore", () => {
+describe('Property 12: 外部 Agent 信任层级升级', () => {
+  it('evaluateExternalUpgrade returns correct tier for any totalTasks and overallScore', () => {
     fc.assert(
-      fc.property(
-        totalTasksArb,
-        overallScoreArb,
-        (totalTasks, overallScore) => {
-          const profile = makeExternalProfile(totalTasks, overallScore);
-          const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe(expectedExternalTier(totalTasks, overallScore));
-        }
-      ),
-      { numRuns: 200 }
+      fc.property(totalTasksArb, overallScoreArb, (totalTasks, overallScore) => {
+        const profile = makeExternalProfile(totalTasks, overallScore);
+        const tier = evaluator.evaluateExternalUpgrade(profile);
+        expect(tier).toBe(expectedExternalTier(totalTasks, overallScore));
+      }),
+      { numRuns: 200 },
     );
   });
 
-  it("trusted requires both totalTasks >= 50 AND overallScore >= 700", () => {
+  it('trusted requires both totalTasks >= 50 AND overallScore >= 700', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 50, max: 200 }),
@@ -94,14 +84,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("trusted");
-        }
+          expect(tier).toBe('trusted');
+        },
       ),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
-  it("standard requires totalTasks >= 20 AND overallScore >= 500 (when not meeting trusted thresholds)", () => {
+  it('standard requires totalTasks >= 20 AND overallScore >= 500 (when not meeting trusted thresholds)', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 20, max: 49 }),
@@ -109,14 +99,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("standard");
-        }
+          expect(tier).toBe('standard');
+        },
       ),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
-  it("probation when totalTasks < 20 regardless of score", () => {
+  it('probation when totalTasks < 20 regardless of score', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 19 }),
@@ -124,14 +114,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("probation");
-        }
+          expect(tier).toBe('probation');
+        },
       ),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
-  it("probation when overallScore < 500 regardless of totalTasks", () => {
+  it('probation when overallScore < 500 regardless of totalTasks', () => {
     fc.assert(
       fc.property(
         totalTasksArb,
@@ -139,14 +129,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("probation");
-        }
+          expect(tier).toBe('probation');
+        },
       ),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
-  it("boundary: totalTasks=20, overallScore=500 → standard", () => {
+  it('boundary: totalTasks=20, overallScore=500 → standard', () => {
     fc.assert(
       fc.property(
         fc.constant(20),
@@ -154,14 +144,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("standard");
-        }
+          expect(tier).toBe('standard');
+        },
       ),
-      { numRuns: 1 }
+      { numRuns: 1 },
     );
   });
 
-  it("boundary: totalTasks=50, overallScore=700 → trusted", () => {
+  it('boundary: totalTasks=50, overallScore=700 → trusted', () => {
     fc.assert(
       fc.property(
         fc.constant(50),
@@ -169,14 +159,14 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("trusted");
-        }
+          expect(tier).toBe('trusted');
+        },
       ),
-      { numRuns: 1 }
+      { numRuns: 1 },
     );
   });
 
-  it("high tasks but score between 500-699 → standard (not trusted)", () => {
+  it('high tasks but score between 500-699 → standard (not trusted)', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 50, max: 200 }),
@@ -184,10 +174,10 @@ describe("Property 12: 外部 Agent 信任层级升级", () => {
         (totalTasks, overallScore) => {
           const profile = makeExternalProfile(totalTasks, overallScore);
           const tier = evaluator.evaluateExternalUpgrade(profile);
-          expect(tier).toBe("standard");
-        }
+          expect(tier).toBe('standard');
+        },
       ),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 });

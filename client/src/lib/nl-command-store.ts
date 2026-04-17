@@ -250,7 +250,10 @@ function buildTaskHubAnalysis(req: SubmitCommandRequest): {
     : [];
   const questions = needsClarification
     ? questionTopics.map(topic => ({
-        ...buildPreviewClarificationQuestion(topic, locale),
+        ...buildPreviewClarificationQuestion(
+          topic,
+          locale
+        ),
         questionId: `${topic}:${nanoid(8)}`,
       }))
     : [];
@@ -350,8 +353,8 @@ async function resolveTaskHubAnalysis(req: SubmitCommandRequest): Promise<{
           .map((question, index) =>
             normalizeClarificationQuestion(question, index)
           )
-          .filter((question): question is ClarificationQuestion =>
-            Boolean(question)
+          .filter(
+            (question): question is ClarificationQuestion => Boolean(question)
           )
       : [];
 
@@ -365,7 +368,8 @@ async function resolveTaskHubAnalysis(req: SubmitCommandRequest): Promise<{
     }
 
     const needsClarification =
-      generatedQuestions.length > 0 || previewNeedsClarification;
+      generatedQuestions.length > 0 ||
+      previewNeedsClarification;
     const questions = needsClarification
       ? generatedQuestions.length > 0
         ? generatedQuestions
@@ -795,8 +799,7 @@ export const useNLCommandStore = create<NLCommandState>((set, get) => ({
     const { createMission, ...commandRequest } = req;
     const normalizedText = normalizeCommandText(commandRequest.commandText);
     const commandId = `task-hub-${nanoid(10)}`;
-    const { analysis, questions } =
-      await resolveTaskHubAnalysis(commandRequest);
+    const { analysis, questions } = await resolveTaskHubAnalysis(commandRequest);
     const command: StrategicCommand = {
       commandId,
       commandText: normalizedText,

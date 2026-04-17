@@ -77,19 +77,12 @@ function clearRelevantEnv(): void {
 /* ─── Arbitraries ─── */
 
 /** Non-empty string that won't be falsy when used as env var */
-const arbEnvValue = fc
-  .string({ minLength: 1, maxLength: 30 })
-  .filter(s => s.trim().length > 0);
+const arbEnvValue = fc.string({ minLength: 1, maxLength: 30 }).filter((s) => s.trim().length > 0);
 
 /** Optional env value: either a non-empty string or undefined (meaning "not set") */
 const arbOptionalEnv = fc.option(arbEnvValue, { nil: undefined });
 
-const arbWireApi = fc.constantFrom(
-  "responses",
-  "chat_completions",
-  "RESPONSES",
-  "Chat_Completions"
-);
+const arbWireApi = fc.constantFrom("responses", "chat_completions", "RESPONSES", "Chat_Completions");
 
 const arbOptionalWireApi = fc.option(arbWireApi, { nil: undefined });
 
@@ -121,9 +114,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
   it("apiKey follows VISION > FALLBACK > main LLM priority chain", () => {
     fc.assert(
       fc.property(
-        arbEnvValue, // main LLM key (always set as baseline)
-        arbOptionalEnv, // fallback key
-        arbOptionalEnv, // vision key
+        arbEnvValue,       // main LLM key (always set as baseline)
+        arbOptionalEnv,    // fallback key
+        arbOptionalEnv,    // vision key
         (mainKey, fallbackKey, visionKey) => {
           clearRelevantEnv();
           process.env.LLM_API_KEY = mainKey;
@@ -146,9 +139,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
           } else {
             expect(cfg.apiKey).toBe(mainKey);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -180,9 +173,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
           } else {
             expect(cfg.baseUrl).toBe(mainUrl);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -214,9 +207,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
           } else {
             expect(cfg.model).toBe(mainModel);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -258,15 +251,15 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
                 : "chat_completions";
             expect(cfg.wireApi).toBe(expected);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
   it("maxTokens uses VISION_LLM_MAX_TOKENS when valid positive number, else defaults to 1000", () => {
     fc.assert(
-      fc.property(arbPositiveInt, maxTokens => {
+      fc.property(arbPositiveInt, (maxTokens) => {
         clearRelevantEnv();
         process.env.LLM_API_KEY = "test-key";
         process.env.LLM_BASE_URL = "https://main.test/v1";
@@ -276,7 +269,7 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
         const cfg = getVisionConfig();
         expect(cfg.maxTokens).toBe(maxTokens);
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -284,7 +277,7 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
     fc.assert(
       fc.property(
         fc.constantFrom("", "abc", "-1", "0", "NaN", "Infinity", "  ", "1.2.3"),
-        invalidValue => {
+        (invalidValue) => {
           clearRelevantEnv();
           process.env.LLM_API_KEY = "test-key";
           process.env.LLM_BASE_URL = "https://main.test/v1";
@@ -293,9 +286,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
 
           const cfg = getVisionConfig();
           expect(cfg.maxTokens).toBe(1000);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -313,7 +306,7 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
     fc.assert(
       fc.property(
         fc.oneof(arbDetail, fc.string({ minLength: 0, maxLength: 20 })),
-        detailValue => {
+        (detailValue) => {
           clearRelevantEnv();
           process.env.LLM_API_KEY = "test-key";
           process.env.LLM_BASE_URL = "https://main.test/v1";
@@ -330,9 +323,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
           } else {
             expect(cfg.detail).toBe("low");
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -370,36 +363,24 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
           process.env.LLM_WIRE_API = main.wireApi;
 
           // Set fallback tier
-          if (fallback.apiKey !== undefined)
-            process.env.FALLBACK_LLM_API_KEY = fallback.apiKey;
-          if (fallback.baseUrl !== undefined)
-            process.env.FALLBACK_LLM_BASE_URL = fallback.baseUrl;
-          if (fallback.model !== undefined)
-            process.env.FALLBACK_LLM_MODEL = fallback.model;
-          if (fallback.wireApi !== undefined)
-            process.env.FALLBACK_LLM_WIRE_API = fallback.wireApi;
+          if (fallback.apiKey !== undefined) process.env.FALLBACK_LLM_API_KEY = fallback.apiKey;
+          if (fallback.baseUrl !== undefined) process.env.FALLBACK_LLM_BASE_URL = fallback.baseUrl;
+          if (fallback.model !== undefined) process.env.FALLBACK_LLM_MODEL = fallback.model;
+          if (fallback.wireApi !== undefined) process.env.FALLBACK_LLM_WIRE_API = fallback.wireApi;
 
           // Set vision tier
-          if (vision.apiKey !== undefined)
-            process.env.VISION_LLM_API_KEY = vision.apiKey;
-          if (vision.baseUrl !== undefined)
-            process.env.VISION_LLM_BASE_URL = vision.baseUrl;
-          if (vision.model !== undefined)
-            process.env.VISION_LLM_MODEL = vision.model;
-          if (vision.wireApi !== undefined)
-            process.env.VISION_LLM_WIRE_API = vision.wireApi;
+          if (vision.apiKey !== undefined) process.env.VISION_LLM_API_KEY = vision.apiKey;
+          if (vision.baseUrl !== undefined) process.env.VISION_LLM_BASE_URL = vision.baseUrl;
+          if (vision.model !== undefined) process.env.VISION_LLM_MODEL = vision.model;
+          if (vision.wireApi !== undefined) process.env.VISION_LLM_WIRE_API = vision.wireApi;
 
           const cfg = getVisionConfig();
 
           // apiKey: VISION > FALLBACK > main
-          expect(cfg.apiKey).toBe(
-            vision.apiKey ?? fallback.apiKey ?? main.apiKey
-          );
+          expect(cfg.apiKey).toBe(vision.apiKey ?? fallback.apiKey ?? main.apiKey);
 
           // baseUrl: VISION > FALLBACK > main
-          expect(cfg.baseUrl).toBe(
-            vision.baseUrl ?? fallback.baseUrl ?? main.baseUrl
-          );
+          expect(cfg.baseUrl).toBe(vision.baseUrl ?? fallback.baseUrl ?? main.baseUrl);
 
           // model: VISION > FALLBACK > main
           expect(cfg.model).toBe(vision.model ?? fallback.model ?? main.model);
@@ -419,9 +400,9 @@ describe("Property 4: Vision 配置解析与 Fallback 链", () => {
                 : "chat_completions";
             expect(cfg.wireApi).toBe(expected);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

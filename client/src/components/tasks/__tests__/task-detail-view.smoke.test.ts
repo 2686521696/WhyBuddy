@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("streamdown", () => ({
-  Streamdown: () => null,
-}));
+import { describe, expect, it } from "vitest";
 
 import { TaskDetailView } from "@/components/tasks/TaskDetailView";
 

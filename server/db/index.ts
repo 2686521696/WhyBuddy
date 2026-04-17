@@ -822,10 +822,7 @@ class Database {
     return row;
   }
 
-  getReputationEvents(
-    agentId: string,
-    limit?: number
-  ): ReputationChangeEvent[] {
+  getReputationEvents(agentId: string, limit?: number): ReputationChangeEvent[] {
     const events = this.data.reputation_events
       .filter(e => e.agentId === agentId)
       .reverse();

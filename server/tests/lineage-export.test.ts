@@ -79,18 +79,10 @@ describe("LineageExportService", () => {
       const n3 = makeNode({ timestamp: 1700000005000 });
       await store.batchInsertNodes([n1, n2, n3]);
       await store.batchInsertEdges([
-        makeEdge({
-          fromId: n1.lineageId,
-          toId: n2.lineageId,
-          timestamp: 1700000001500,
-        }),
+        makeEdge({ fromId: n1.lineageId, toId: n2.lineageId, timestamp: 1700000001500 }),
       ]);
 
-      const buf = await service.exportLineage(
-        1700000000000,
-        1700000003000,
-        "json"
-      );
+      const buf = await service.exportLineage(1700000000000, 1700000003000, "json");
       const parsed = JSON.parse(buf.toString("utf-8"));
 
       expect(parsed.nodes).toHaveLength(2);
@@ -100,11 +92,7 @@ describe("LineageExportService", () => {
     });
 
     it("should return empty arrays when no data in range", async () => {
-      const buf = await service.exportLineage(
-        1700000000000,
-        1700000001000,
-        "json"
-      );
+      const buf = await service.exportLineage(1700000000000, 1700000001000, "json");
       const parsed = JSON.parse(buf.toString("utf-8"));
       expect(parsed.nodes).toHaveLength(0);
       expect(parsed.edges).toHaveLength(0);
@@ -142,18 +130,10 @@ describe("LineageExportService", () => {
       const n2 = makeNode({ timestamp: 1700000002000 });
       await store.batchInsertNodes([n1, n2]);
       await store.batchInsertEdges([
-        makeEdge({
-          fromId: n1.lineageId,
-          toId: n2.lineageId,
-          timestamp: 1700000001500,
-        }),
+        makeEdge({ fromId: n1.lineageId, toId: n2.lineageId, timestamp: 1700000001500 }),
       ]);
 
-      const buf = await service.exportLineage(
-        1700000000000,
-        1700000003000,
-        "csv"
-      );
+      const buf = await service.exportLineage(1700000000000, 1700000003000, "csv");
       const content = buf.toString("utf-8");
 
       expect(content).toContain("lineageId,type,timestamp");
@@ -170,11 +150,7 @@ describe("LineageExportService", () => {
       });
       await store.batchInsertNodes([node]);
 
-      const buf = await service.exportLineage(
-        1700000000000,
-        1700000003000,
-        "csv"
-      );
+      const buf = await service.exportLineage(1700000000000, 1700000003000, "csv");
       const content = buf.toString("utf-8");
       // The sourceName is not in NODE_CSV_FIELDS but queryText could have commas
       // Verify the CSV is parseable
@@ -187,9 +163,7 @@ describe("LineageExportService", () => {
   describe("importLineage() JSON format", () => {
     it("should import nodes and edges from JSON", async () => {
       const nodes = [makeNode(), makeNode()];
-      const edges = [
-        makeEdge({ fromId: nodes[0].lineageId, toId: nodes[1].lineageId }),
-      ];
+      const edges = [makeEdge({ fromId: nodes[0].lineageId, toId: nodes[1].lineageId })];
       const data = Buffer.from(JSON.stringify({ nodes, edges }), "utf-8");
 
       const result = await service.importLineage(data, "json");
@@ -209,10 +183,7 @@ describe("LineageExportService", () => {
       const node = makeNode();
       await store.batchInsertNodes([node]);
 
-      const data = Buffer.from(
-        JSON.stringify({ nodes: [node], edges: [] }),
-        "utf-8"
-      );
+      const data = Buffer.from(JSON.stringify({ nodes: [node], edges: [] }), "utf-8");
       const result = await service.importLineage(data, "json");
 
       expect(result.importedNodes).toBe(0);
@@ -223,15 +194,8 @@ describe("LineageExportService", () => {
       const oldNode = makeNode({ timestamp: 1700000001000 });
       await store.batchInsertNodes([oldNode]);
 
-      const newerNode = {
-        ...oldNode,
-        timestamp: 1700000002000,
-        sourceName: "Updated",
-      };
-      const data = Buffer.from(
-        JSON.stringify({ nodes: [newerNode], edges: [] }),
-        "utf-8"
-      );
+      const newerNode = { ...oldNode, timestamp: 1700000002000, sourceName: "Updated" };
+      const data = Buffer.from(JSON.stringify({ nodes: [newerNode], edges: [] }), "utf-8");
       const result = await service.importLineage(data, "json");
 
       expect(result.importedNodes).toBe(1);
@@ -247,10 +211,7 @@ describe("LineageExportService", () => {
       await store.batchInsertNodes([newerNode]);
 
       const olderNode = { ...newerNode, timestamp: 1700000001000 };
-      const data = Buffer.from(
-        JSON.stringify({ nodes: [olderNode], edges: [] }),
-        "utf-8"
-      );
+      const data = Buffer.from(JSON.stringify({ nodes: [olderNode], edges: [] }), "utf-8");
       const result = await service.importLineage(data, "json");
 
       expect(result.importedNodes).toBe(0);
@@ -261,10 +222,7 @@ describe("LineageExportService", () => {
       const edge = makeEdge();
       await store.batchInsertEdges([edge]);
 
-      const data = Buffer.from(
-        JSON.stringify({ nodes: [], edges: [edge] }),
-        "utf-8"
-      );
+      const data = Buffer.from(JSON.stringify({ nodes: [], edges: [edge] }), "utf-8");
       const result = await service.importLineage(data, "json");
 
       expect(result.importedEdges).toBe(0);
@@ -272,10 +230,7 @@ describe("LineageExportService", () => {
     });
 
     it("should return errors for invalid node data gracefully", async () => {
-      const data = Buffer.from(
-        JSON.stringify({ nodes: [], edges: [] }),
-        "utf-8"
-      );
+      const data = Buffer.from(JSON.stringify({ nodes: [], edges: [] }), "utf-8");
       const result = await service.importLineage(data, "json");
       expect(result.errors).toHaveLength(0);
       expect(result.importedNodes).toBe(0);
@@ -290,18 +245,10 @@ describe("LineageExportService", () => {
       const n2 = makeNode({ timestamp: 1700000002000 });
       await store.batchInsertNodes([n1, n2]);
       await store.batchInsertEdges([
-        makeEdge({
-          fromId: n1.lineageId,
-          toId: n2.lineageId,
-          timestamp: 1700000001500,
-        }),
+        makeEdge({ fromId: n1.lineageId, toId: n2.lineageId, timestamp: 1700000001500 }),
       ]);
 
-      const exported = await service.exportLineage(
-        1700000000000,
-        1700000003000,
-        "csv"
-      );
+      const exported = await service.exportLineage(1700000000000, 1700000003000, "csv");
 
       // Import into a fresh store
       const tmpDir2 = makeTmpDir();

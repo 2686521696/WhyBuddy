@@ -480,7 +480,6 @@ C01-C08 契约冻结 (已完成)
 5. 新一波体验重构如果不按 ownership 拆 worktree，`Home.tsx`、`TasksPage.tsx`、`TaskDetailView.tsx`、`WorkflowPanel.tsx` 会成为高冲突热点
 6. `api-fallback-empty-states` 可以先并行，但不要一开始就同时改任务页高频请求与 `workflow-store`，否则会与任务中台和面板拆解互相阻塞
 7. 当前 TypeScript 基线未清零，新增 spec 若不控制编译回归，容易把补完型工作拖成全局修复
-
 ## 2026-04-15 增补：当前运行时兼容层
 
 - `dev:all` 默认优先 `real`，Docker 不可用时回退到 `native`
@@ -492,15 +491,8 @@ C01-C08 契约冻结 (已完成)
 
 ### 新增 specs 清单
 
-- [x] `office-shell-convergence-v1`（已完成；主线起点，不与后两项主线 spec 并行）
-- [ ] `task-os-home-redesign-v1`（已启动；依赖 `office-shell-convergence-v1`，不并行，当前已完成中间任务主线区第一批落地）
-- [ ] `task-runtime-visibility-v1`（未正式启动；依赖 `task-os-home-redesign-v1`，不并行）
-- [x] `release-stability-guardrails-v2`（已完成；可与主线并行）
-- [x] `replay-and-debug-surface-v1`（已完成；可与主线并行）
-
-### 当前真实进度说明
-
-- 已完成：`office-shell-convergence-v1`、`release-stability-guardrails-v2`、`replay-and-debug-surface-v1`
-- 进行中：`task-os-home-redesign-v1`（已完成首页中间任务主线区第一批收口：`plan -> execute -> review`、当前步骤高亮、阻塞原因、结果摘要）
-- 未正式启动：`task-runtime-visibility-v1`
-- 补充说明：`task-runtime-visibility-v1` 的部分基础能力已在 `office-task-cockpit` 等近端收敛工作中落地，但对应 spec 的 `tasks.md` 仍未开始勾选，因此当前继续按“未正式启动”记录，避免把“已有前置基础”误记为“spec 已执行”
+- [ ] `office-shell-convergence-v1`（主线起点，不与后两项主线 spec 并行）
+- [ ] `task-os-home-redesign-v1`（依赖 `office-shell-convergence-v1`，不并行）
+- [ ] `task-runtime-visibility-v1`（依赖 `task-os-home-redesign-v1`，不并行）
+- [ ] `release-stability-guardrails-v2`（可与主线并行）
+- [ ] `replay-and-debug-surface-v1`（可与主线并行）

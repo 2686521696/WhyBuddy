@@ -30,10 +30,7 @@ router.post("/invoke", async (req, res) => {
       return res.status(500).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.INTERNAL_ERROR,
-          message: "A2A server not initialized",
-        },
+        error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: "A2A server not initialized" },
       });
     }
 
@@ -42,10 +39,7 @@ router.post("/invoke", async (req, res) => {
       return res.status(401).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.AUTH_FAILED,
-          message: "Missing or invalid Authorization header",
-        },
+        error: { code: A2A_ERROR_CODES.AUTH_FAILED, message: "Missing or invalid Authorization header" },
       });
     }
 
@@ -54,13 +48,10 @@ router.post("/invoke", async (req, res) => {
 
     if (result.error) {
       const statusCode =
-        result.error.code === A2A_ERROR_CODES.AUTH_FAILED
-          ? 401
-          : result.error.code === A2A_ERROR_CODES.AGENT_NOT_FOUND
-            ? 404
-            : result.error.code === A2A_ERROR_CODES.RATE_LIMITED
-              ? 429
-              : 500;
+        result.error.code === A2A_ERROR_CODES.AUTH_FAILED ? 401
+        : result.error.code === A2A_ERROR_CODES.AGENT_NOT_FOUND ? 404
+        : result.error.code === A2A_ERROR_CODES.RATE_LIMITED ? 429
+        : 500;
       return res.status(statusCode).json(result);
     }
 
@@ -69,10 +60,7 @@ router.post("/invoke", async (req, res) => {
     res.status(500).json({
       jsonrpc: "2.0",
       id: null,
-      error: {
-        code: A2A_ERROR_CODES.INTERNAL_ERROR,
-        message: err.message ?? "Internal error",
-      },
+      error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: err.message ?? "Internal error" },
     });
   }
 });
@@ -84,10 +72,7 @@ router.post("/stream", async (req, res) => {
       return res.status(500).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.INTERNAL_ERROR,
-          message: "A2A server not initialized",
-        },
+        error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: "A2A server not initialized" },
       });
     }
 
@@ -96,10 +81,7 @@ router.post("/stream", async (req, res) => {
       return res.status(401).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.AUTH_FAILED,
-          message: "Missing or invalid Authorization header",
-        },
+        error: { code: A2A_ERROR_CODES.AUTH_FAILED, message: "Missing or invalid Authorization header" },
       });
     }
 
@@ -122,10 +104,7 @@ router.post("/stream", async (req, res) => {
       res.status(500).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.INTERNAL_ERROR,
-          message: err.message ?? "Internal error",
-        },
+        error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: err.message ?? "Internal error" },
       });
     }
   }
@@ -138,10 +117,7 @@ router.post("/cancel", async (req, res) => {
       return res.status(500).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.INTERNAL_ERROR,
-          message: "A2A server not initialized",
-        },
+        error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: "A2A server not initialized" },
       });
     }
 
@@ -150,10 +126,7 @@ router.post("/cancel", async (req, res) => {
       return res.status(401).json({
         jsonrpc: "2.0",
         id: null,
-        error: {
-          code: A2A_ERROR_CODES.AUTH_FAILED,
-          message: "Missing or invalid Authorization header",
-        },
+        error: { code: A2A_ERROR_CODES.AUTH_FAILED, message: "Missing or invalid Authorization header" },
       });
     }
 
@@ -161,8 +134,7 @@ router.post("/cancel", async (req, res) => {
     const result = await a2aServer.handleCancel(sessionId, token);
 
     if (result.error) {
-      const statusCode =
-        result.error.code === A2A_ERROR_CODES.AUTH_FAILED ? 401 : 500;
+      const statusCode = result.error.code === A2A_ERROR_CODES.AUTH_FAILED ? 401 : 500;
       return res.status(statusCode).json(result);
     }
 
@@ -171,10 +143,7 @@ router.post("/cancel", async (req, res) => {
     res.status(500).json({
       jsonrpc: "2.0",
       id: null,
-      error: {
-        code: A2A_ERROR_CODES.INTERNAL_ERROR,
-        message: err.message ?? "Internal error",
-      },
+      error: { code: A2A_ERROR_CODES.INTERNAL_ERROR, message: err.message ?? "Internal error" },
     });
   }
 });

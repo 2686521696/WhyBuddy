@@ -1,21 +1,21 @@
-import { ContactShadows, useGLTF } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
-import { Suspense, useEffect, useState } from "react";
-import { ACESFilmicToneMapping } from "three";
+import { ContactShadows, useGLTF } from '@react-three/drei';
+import { Canvas } from '@react-three/fiber';
+import { Suspense, useEffect, useState } from 'react';
+import { ACESFilmicToneMapping } from 'three';
 
-import { useIdleActivation } from "@/hooks/useIdleActivation";
-import { useViewportTier } from "@/hooks/useViewportTier";
-import { FURNITURE_MODELS, PET_MODELS } from "@/lib/assets";
-import { useTasksStore } from "@/lib/tasks-store";
+import { useIdleActivation } from '@/hooks/useIdleActivation';
+import { useViewportTier } from '@/hooks/useViewportTier';
+import { FURNITURE_MODELS, PET_MODELS } from '@/lib/assets';
+import { useTasksStore } from '@/lib/tasks-store';
 
-import { CrossFrameworkParticles } from "./three/CrossFrameworkParticles";
-import { CrossPodParticles } from "./three/CrossPodParticles";
-import { MissionIsland } from "./three/MissionIsland";
-import { OfficeRoom } from "./three/OfficeRoom";
-import { PetWorkers } from "./three/PetWorkers";
-import { SandboxMonitor } from "./three/SandboxMonitor";
-import { SceneStageFlow } from "./three/SceneStageFlow";
-import { WaitingDecisionBubble } from "./three/WaitingDecisionBubble";
+import { CrossFrameworkParticles } from './three/CrossFrameworkParticles';
+import { CrossPodParticles } from './three/CrossPodParticles';
+import { MissionIsland } from './three/MissionIsland';
+import { OfficeRoom } from './three/OfficeRoom';
+import { PetWorkers } from './three/PetWorkers';
+import { SandboxMonitor } from './three/SandboxMonitor';
+import { SceneStageFlow } from './three/SceneStageFlow';
+import { WaitingDecisionBubble } from './three/WaitingDecisionBubble';
 
 const CRITICAL_FURNITURE_MODELS = [
   FURNITURE_MODELS.floorFull,
@@ -41,39 +41,33 @@ const SECONDARY_SCENE_MODELS = [
   ...Object.values(PET_MODELS),
 ];
 
-export type ScenePerformanceProfile = "balanced" | "resizing";
+export type ScenePerformanceProfile = 'balanced' | 'resizing';
 
 export function Scene3D({
-  performanceProfile = "balanced",
+  performanceProfile = 'balanced',
 }: {
   performanceProfile?: ScenePerformanceProfile;
 }) {
   const { isMobile, isTablet } = useViewportTier();
   const deferredDetailsReady = useIdleActivation(
-    performanceProfile === "balanced",
+    performanceProfile === 'balanced',
     600
   );
-  const reducedSceneEffects = performanceProfile === "resizing";
+  const reducedSceneEffects = performanceProfile === 'resizing';
 
   // Sandbox shield: show when the selected mission runs at strict security level.
   const isStrictSandbox = useTasksStore(state => {
-    const detail = state.selectedTaskId
-      ? state.detailsById[state.selectedTaskId]
-      : null;
-    return (
-      detail?.securitySummary?.level === "strict" &&
-      detail?.status === "running"
-    );
+    const detail = state.selectedTaskId ? state.detailsById[state.selectedTaskId] : null;
+    return detail?.securitySummary?.level === 'strict' && detail?.status === 'running';
   });
 
   const [isRecovering, setIsRecovering] = useState(false);
 
   useEffect(() => {
-    (
-      globalThis as { __sceneSetRecovering?: (value: boolean) => void }
-    ).__sceneSetRecovering = (value: boolean) => {
-      setIsRecovering(value);
-    };
+    (globalThis as { __sceneSetRecovering?: (value: boolean) => void }).__sceneSetRecovering =
+      (value: boolean) => {
+        setIsRecovering(value);
+      };
 
     return () => {
       delete (globalThis as { __sceneSetRecovering?: (value: boolean) => void })
@@ -88,7 +82,7 @@ export function Scene3D({
   }, []);
 
   useEffect(() => {
-    if (!deferredDetailsReady || typeof window === "undefined") return;
+    if (!deferredDetailsReady || typeof window === 'undefined') return;
 
     let timeoutId: number | null = null;
     let idleId: number | null = null;
@@ -99,19 +93,16 @@ export function Scene3D({
       });
     };
 
-    if (typeof window.requestIdleCallback === "function") {
-      idleId = window.requestIdleCallback(
-        () => {
-          preloadSecondary();
-        },
-        { timeout: 1200 }
-      );
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(() => {
+        preloadSecondary();
+      }, { timeout: 1200 });
     } else {
       timeoutId = window.setTimeout(preloadSecondary, 900);
     }
 
     return () => {
-      if (idleId !== null && typeof window.cancelIdleCallback === "function") {
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
         window.cancelIdleCallback(idleId);
       }
       if (timeoutId !== null) {
@@ -121,25 +112,10 @@ export function Scene3D({
   }, [deferredDetailsReady]);
 
   const camera = isMobile
-    ? {
-        position: [0, 8.4, 16.2] as [number, number, number],
-        fov: 46,
-        near: 0.1,
-        far: 100,
-      }
+    ? { position: [0, 8.4, 16.2] as [number, number, number], fov: 46, near: 0.1, far: 100 }
     : isTablet
-      ? {
-          position: [0, 7.8, 14.6] as [number, number, number],
-          fov: 43,
-          near: 0.1,
-          far: 100,
-        }
-      : {
-          position: [0, 7.3, 13.8] as [number, number, number],
-          fov: 40,
-          near: 0.1,
-          far: 100,
-        };
+      ? { position: [0, 7.8, 14.6] as [number, number, number], fov: 43, near: 0.1, far: 100 }
+      : { position: [0, 7.3, 13.8] as [number, number, number], fov: 40, near: 0.1, far: 100 };
   const dpr: [number, number] = reducedSceneEffects
     ? [1, 1]
     : isMobile
@@ -155,7 +131,7 @@ export function Scene3D({
         dpr={dpr}
         gl={{ antialias: !reducedSceneEffects, alpha: false }}
         onCreated={({ gl, camera: sceneCamera }) => {
-          gl.setClearColor("#BFDFFF");
+          gl.setClearColor('#BFDFFF');
           gl.toneMapping = ACESFilmicToneMapping;
           gl.toneMappingExposure = isMobile ? 0.92 : 0.88;
           sceneCamera.lookAt(0, isMobile ? 1.6 : 1.35, 0);
@@ -163,11 +139,7 @@ export function Scene3D({
       >
         <Suspense fallback={null}>
           <ambientLight intensity={0.38} color="#F7EDE1" />
-          <hemisphereLight
-            color="#FAEEDD"
-            groundColor="#B28A67"
-            intensity={0.34}
-          />
+          <hemisphereLight color="#FAEEDD" groundColor="#B28A67" intensity={0.34} />
 
           <directionalLight
             position={[-5.2, 7.2, 4.4]}
@@ -184,11 +156,7 @@ export function Scene3D({
             shadow-bias={-0.00025}
           />
 
-          <directionalLight
-            position={[6.4, 4.5, 5.5]}
-            intensity={0.24}
-            color="#F1E4D4"
-          />
+          <directionalLight position={[6.4, 4.5, 5.5]} intensity={0.24} color="#F1E4D4" />
 
           <spotLight
             position={[-7.2, 2.9, 0.3]}
@@ -213,9 +181,7 @@ export function Scene3D({
             reducedEffects={reducedSceneEffects}
           />
           <SceneStageFlow />
-          <PetWorkers
-            reducedOverlays={!deferredDetailsReady || reducedSceneEffects}
-          />
+          <PetWorkers reducedOverlays={!deferredDetailsReady || reducedSceneEffects} />
           <MissionIsland />
           <SandboxMonitor />
           <WaitingDecisionBubble />

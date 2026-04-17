@@ -37,10 +37,7 @@ function uniqueProjectId(prefix: string): string {
 }
 
 async function withServer(
-  handler: (
-    baseUrl: string,
-    deps: ReturnType<typeof createTestDeps>
-  ) => Promise<void>
+  handler: (baseUrl: string, deps: ReturnType<typeof createTestDeps>) => Promise<void>,
 ): Promise<void> {
   const deps = createTestDeps();
   const app = express();
@@ -62,7 +59,7 @@ async function withServer(
     await handler(baseUrl, deps);
   } finally {
     await new Promise<void>((resolve, reject) => {
-      server.close(error => {
+      server.close((error) => {
         if (error) reject(error);
         else resolve();
       });
@@ -70,10 +67,7 @@ async function withServer(
   }
 }
 
-function seedEntity(
-  graphStore: GraphStore,
-  overrides: Partial<Entity> & { name: string } = { name: "test-module" }
-): Entity {
+function seedEntity(graphStore: GraphStore, overrides: Partial<Entity> & { name: string } = { name: "test-module" }): Entity {
   return graphStore.createEntity({
     entityType: "CodeModule",
     description: "A test module",
@@ -93,7 +87,7 @@ function seedEntity(
 
 describe("GET /api/knowledge/graph", () => {
   it("returns 400 when projectId is missing", async () => {
-    await withServer(async baseUrl => {
+    await withServer(async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/knowledge/graph`);
       expect(res.status).toBe(400);
       const body = await res.json();
@@ -117,9 +111,7 @@ describe("GET /api/knowledge/graph", () => {
         needsReview: false,
       });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/graph?projectId=${projectId}`
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/graph?projectId=${projectId}`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.ok).toBe(true);
@@ -131,20 +123,10 @@ describe("GET /api/knowledge/graph", () => {
   it("filters nodes by entityTypes", async () => {
     await withServer(async (baseUrl, deps) => {
       const projectId = uniqueProjectId("proj");
-      seedEntity(deps.graphStore, {
-        name: "mod-a",
-        entityType: "CodeModule",
-        projectId,
-      });
-      seedEntity(deps.graphStore, {
-        name: "api-a",
-        entityType: "API",
-        projectId,
-      });
+      seedEntity(deps.graphStore, { name: "mod-a", entityType: "CodeModule", projectId });
+      seedEntity(deps.graphStore, { name: "api-a", entityType: "API", projectId });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/graph?projectId=${projectId}&entityTypes=API`
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/graph?projectId=${projectId}&entityTypes=API`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.nodes).toHaveLength(1);
@@ -153,10 +135,8 @@ describe("GET /api/knowledge/graph", () => {
   });
 
   it("returns empty for a project with no data", async () => {
-    await withServer(async baseUrl => {
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/graph?projectId=${uniqueProjectId("empty-proj")}`
-      );
+    await withServer(async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/knowledge/graph?projectId=${uniqueProjectId("empty-proj")}`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.nodes).toHaveLength(0);
@@ -172,11 +152,7 @@ describe("GET /api/knowledge/graph", () => {
 describe("GET /api/knowledge/review-queue", () => {
   it("returns empty queue when no entities need review", async () => {
     await withServer(async (baseUrl, deps) => {
-      seedEntity(deps.graphStore, {
-        name: "ok-mod",
-        confidence: 0.9,
-        needsReview: false,
-      });
+      seedEntity(deps.graphStore, { name: "ok-mod", confidence: 0.9, needsReview: false });
 
       const res = await fetch(`${baseUrl}/api/knowledge/review-queue`);
       expect(res.status).toBe(200);
@@ -189,22 +165,10 @@ describe("GET /api/knowledge/review-queue", () => {
   it("returns entities needing review", async () => {
     await withServer(async (baseUrl, deps) => {
       const projectId = uniqueProjectId("proj");
-      seedEntity(deps.graphStore, {
-        name: "low-conf",
-        confidence: 0.3,
-        needsReview: true,
-        projectId,
-      });
-      seedEntity(deps.graphStore, {
-        name: "high-conf",
-        confidence: 0.9,
-        needsReview: false,
-        projectId,
-      });
+      seedEntity(deps.graphStore, { name: "low-conf", confidence: 0.3, needsReview: true, projectId });
+      seedEntity(deps.graphStore, { name: "high-conf", confidence: 0.9, needsReview: false, projectId });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review-queue?projectId=${projectId}`
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/review-queue?projectId=${projectId}`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.items).toHaveLength(1);
@@ -214,22 +178,10 @@ describe("GET /api/knowledge/review-queue", () => {
 
   it("filters by entityType", async () => {
     await withServer(async (baseUrl, deps) => {
-      seedEntity(deps.graphStore, {
-        name: "mod",
-        entityType: "CodeModule",
-        confidence: 0.2,
-        needsReview: true,
-      });
-      seedEntity(deps.graphStore, {
-        name: "api",
-        entityType: "API",
-        confidence: 0.2,
-        needsReview: true,
-      });
+      seedEntity(deps.graphStore, { name: "mod", entityType: "CodeModule", confidence: 0.2, needsReview: true });
+      seedEntity(deps.graphStore, { name: "api", entityType: "API", confidence: 0.2, needsReview: true });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review-queue?entityType=API`
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/review-queue?entityType=API`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.items).toHaveLength(1);
@@ -245,24 +197,13 @@ describe("GET /api/knowledge/review-queue", () => {
 describe("POST /api/knowledge/review/:entityId", () => {
   it("approves an entity and raises confidence", async () => {
     await withServer(async (baseUrl, deps) => {
-      const entity = seedEntity(deps.graphStore, {
-        name: "needs-review",
-        confidence: 0.3,
-        needsReview: true,
-      });
+      const entity = seedEntity(deps.graphStore, { name: "needs-review", confidence: 0.3, needsReview: true });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review/${entity.entityId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "approve",
-            reviewedBy: "user-1",
-            reviewerType: "human",
-          }),
-        }
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/review/${entity.entityId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", reviewedBy: "user-1", reviewerType: "human" }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -274,25 +215,13 @@ describe("POST /api/knowledge/review/:entityId", () => {
 
   it("rejects an entity and archives it", async () => {
     await withServer(async (baseUrl, deps) => {
-      const entity = seedEntity(deps.graphStore, {
-        name: "bad-entity",
-        confidence: 0.3,
-        needsReview: true,
-      });
+      const entity = seedEntity(deps.graphStore, { name: "bad-entity", confidence: 0.3, needsReview: true });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review/${entity.entityId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "reject",
-            reviewedBy: "user-1",
-            reviewerType: "human",
-            rejectionReason: "Inaccurate",
-          }),
-        }
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/review/${entity.entityId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", reviewedBy: "user-1", reviewerType: "human", rejectionReason: "Inaccurate" }),
+      });
 
       expect(res.status).toBe(200);
       const body = await res.json();
@@ -301,19 +230,12 @@ describe("POST /api/knowledge/review/:entityId", () => {
   });
 
   it("returns 404 for non-existent entity", async () => {
-    await withServer(async baseUrl => {
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review/non-existent-id`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "approve",
-            reviewedBy: "user-1",
-            reviewerType: "human",
-          }),
-        }
-      );
+    await withServer(async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/knowledge/review/non-existent-id`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", reviewedBy: "user-1", reviewerType: "human" }),
+      });
 
       expect(res.status).toBe(404);
     });
@@ -321,20 +243,13 @@ describe("POST /api/knowledge/review/:entityId", () => {
 
   it("returns 400 when body is incomplete", async () => {
     await withServer(async (baseUrl, deps) => {
-      const entity = seedEntity(deps.graphStore, {
-        name: "incomplete",
-        confidence: 0.3,
-        needsReview: true,
-      });
+      const entity = seedEntity(deps.graphStore, { name: "incomplete", confidence: 0.3, needsReview: true });
 
-      const res = await fetch(
-        `${baseUrl}/api/knowledge/review/${entity.entityId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "approve" }),
-        }
-      );
+      const res = await fetch(`${baseUrl}/api/knowledge/review/${entity.entityId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
 
       expect(res.status).toBe(400);
     });
@@ -347,7 +262,7 @@ describe("POST /api/knowledge/review/:entityId", () => {
 
 describe("POST /api/knowledge/query", () => {
   it("returns 400 when question is missing", async () => {
-    await withServer(async baseUrl => {
+    await withServer(async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/knowledge/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -361,7 +276,7 @@ describe("POST /api/knowledge/query", () => {
   });
 
   it("returns 400 when projectId is missing", async () => {
-    await withServer(async baseUrl => {
+    await withServer(async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/knowledge/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

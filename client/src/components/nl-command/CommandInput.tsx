@@ -149,15 +149,12 @@ export function CommandInput({
     [setText]
   );
 
-  const selectSuggestion = useCallback(
-    (suggestion: string) => {
-      setText(suggestion);
-      setShowSuggestions(false);
-      setSelectedIndex(-1);
-      inputRef.current?.focus();
-    },
-    [setText]
-  );
+  const selectSuggestion = useCallback((suggestion: string) => {
+    setText(suggestion);
+    setShowSuggestions(false);
+    setSelectedIndex(-1);
+    inputRef.current?.focus();
+  }, [setText]);
 
   return (
     <div className={cn("relative", className)}>

@@ -45,11 +45,7 @@ const mockOrganization: WorkflowOrganizationSnapshot = {
       skills: [],
       mcp: [],
       model: { model: "gpt-4", temperature: 0.7, maxTokens: 4096 },
-      execution: {
-        mode: "orchestrate",
-        strategy: "sequential",
-        maxConcurrency: 1,
-      },
+      execution: { mode: "orchestrate", strategy: "sequential", maxConcurrency: 1 },
     },
   ],
 };
@@ -72,9 +68,9 @@ beforeEach(() => {
 
 describe("exportWorkflow", () => {
   it("throws on invalid framework", async () => {
-    await expect(exportWorkflow("wf-1", "invalid" as any)).rejects.toThrow(
-      "Invalid framework"
-    );
+    await expect(
+      exportWorkflow("wf-1", "invalid" as any)
+    ).rejects.toThrow("Invalid framework");
   });
 
   it("throws when workflow not found", async () => {
@@ -118,9 +114,7 @@ describe("exportWorkflow", () => {
     const { buffer, filename } = await exportWorkflow("wf-test", "crewai");
 
     // Filename format
-    expect(filename).toMatch(
-      /^cube-export-crewai-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.zip$/
-    );
+    expect(filename).toMatch(/^cube-export-crewai-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.zip$/);
 
     // Unzip and check structure
     const zip = await JSZip.loadAsync(buffer);
@@ -134,7 +128,7 @@ describe("exportWorkflow", () => {
     expect(paths).toContain("requirements.txt");
 
     // No subdirectory prefixes
-    expect(paths.every(p => !p.startsWith("crewai/"))).toBe(true);
+    expect(paths.every((p) => !p.startsWith("crewai/"))).toBe(true);
   });
 
   it("exports 'all' with framework subdirectories + root README", async () => {
@@ -162,9 +156,9 @@ describe("exportWorkflow", () => {
     expect(paths).toContain("README.md");
 
     // Each framework in its own subdirectory
-    expect(paths.some(p => p.startsWith("crewai/"))).toBe(true);
-    expect(paths.some(p => p.startsWith("langgraph/"))).toBe(true);
-    expect(paths.some(p => p.startsWith("autogen/"))).toBe(true);
+    expect(paths.some((p) => p.startsWith("crewai/"))).toBe(true);
+    expect(paths.some((p) => p.startsWith("langgraph/"))).toBe(true);
+    expect(paths.some((p) => p.startsWith("autogen/"))).toBe(true);
 
     // CrewAI files in subdirectory
     expect(paths).toContain("crewai/agents.yaml");

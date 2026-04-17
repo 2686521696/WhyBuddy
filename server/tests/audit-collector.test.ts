@@ -40,9 +40,7 @@ function makeInput(overrides?: Partial<AuditEventInput>): AuditEventInput {
   };
 }
 
-function makeCriticalInput(
-  overrides?: Partial<AuditEventInput>
-): AuditEventInput {
+function makeCriticalInput(overrides?: Partial<AuditEventInput>): AuditEventInput {
   return makeInput({
     eventType: AuditEventType.DECISION_MADE, // CRITICAL severity
     action: "make_decision",

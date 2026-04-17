@@ -1,8 +1,5 @@
 import db from "../db/index.js";
-import {
-  WORKFLOW_STAGE_LABELS,
-  type WorkflowRecord,
-} from "../../shared/workflow-runtime.js";
+import { WORKFLOW_STAGE_LABELS, type WorkflowRecord } from "../../shared/workflow-runtime.js";
 import type { FeishuTaskStore } from "./task-store.js";
 
 const WORKFLOW_STAGE_PROGRESS: Record<string, number> = {
@@ -28,11 +25,7 @@ function workflowSummary(workflow: WorkflowRecord): string {
 }
 
 function workflowFailureDetail(workflow: WorkflowRecord): string {
-  return (
-    workflow.results?.last_error ||
-    workflow.results?.report_error ||
-    "Workflow failed"
-  );
+  return workflow.results?.last_error || workflow.results?.report_error || "Workflow failed";
 }
 
 export class FeishuWorkflowTracker {
@@ -72,8 +65,7 @@ export class FeishuWorkflowTracker {
           stageKey: workflow.current_stage || "evolution",
           stageLabel:
             WORKFLOW_STAGE_LABELS[
-              (workflow.current_stage ||
-                "evolution") as keyof typeof WORKFLOW_STAGE_LABELS
+              (workflow.current_stage || "evolution") as keyof typeof WORKFLOW_STAGE_LABELS
             ] || "执行失败",
         });
         this.stop(taskId);
@@ -102,8 +94,7 @@ export class FeishuWorkflowTracker {
 
       const stageKey = workflow.current_stage;
       const stageLabel =
-        WORKFLOW_STAGE_LABELS[stageKey as keyof typeof WORKFLOW_STAGE_LABELS] ||
-        stageKey;
+        WORKFLOW_STAGE_LABELS[stageKey as keyof typeof WORKFLOW_STAGE_LABELS] || stageKey;
       const progress = WORKFLOW_STAGE_PROGRESS[stageKey] ?? 25;
       await this.taskStore.markTaskRunning(taskId, {
         stageKey,

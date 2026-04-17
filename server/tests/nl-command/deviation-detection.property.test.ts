@@ -1,28 +1,25 @@
 // Feature: nl-command-center, Property 24: deviation detection correctness
 // **Validates: Requirements 8.2**
 
-import { describe, expect, it } from "vitest";
-import * as fc from "fast-check";
+import { describe, expect, it } from 'vitest';
+import * as fc from 'fast-check';
 
 import type {
   CostBudget,
   NLExecutionPlan,
   TimelineEntry,
-} from "../../../shared/nl-command/contracts.js";
+} from '../../../shared/nl-command/contracts.js';
 import {
   PlanAdjustmentManager,
   type ActualProgress,
-} from "../../core/nl-command/plan-adjustment.js";
-import { AuditTrail } from "../../core/nl-command/audit-trail.js";
-import { existsSync, rmSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+} from '../../core/nl-command/plan-adjustment.js';
+import { AuditTrail } from '../../core/nl-command/audit-trail.js';
+import { existsSync, rmSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __test_dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_AUDIT_PATH = resolve(
-  __test_dirname,
-  "../../../data/__test_deviation_prop__/nl-audit.json"
-);
+const TEST_AUDIT_PATH = resolve(__test_dirname, '../../../data/__test_deviation_prop__/nl-audit.json');
 
 // --- Helpers ---
 
@@ -31,26 +28,22 @@ function makeBasePlan(overrides: {
   costBudget: CostBudget;
 }): NLExecutionPlan {
   return {
-    planId: "plan-1",
-    commandId: "cmd-1",
-    status: "executing",
+    planId: 'plan-1',
+    commandId: 'cmd-1',
+    status: 'executing',
     missions: [],
     tasks: [],
     timeline: {
-      startDate: "",
-      endDate: "",
+      startDate: '',
+      endDate: '',
       criticalPath: [],
       milestones: [],
       entries: overrides.timelineEntries,
     },
     resourceAllocation: { entries: [], totalAgents: 0, peakConcurrency: 0 },
-    riskAssessment: { risks: [], overallRiskLevel: "low" },
+    riskAssessment: { risks: [], overallRiskLevel: 'low' },
     costBudget: overrides.costBudget,
-    contingencyPlan: {
-      alternatives: [],
-      degradationStrategies: [],
-      rollbackPlan: "",
-    },
+    contingencyPlan: { alternatives: [], degradationStrategies: [], rollbackPlan: '' },
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -70,7 +63,7 @@ const timelineEntryArb = (now: number) =>
     })
     .map(({ entityId, startOffset, duration, isCriticalPath }) => ({
       entityId,
-      entityType: "task" as const,
+      entityType: 'task' as const,
       startTime: now + startOffset,
       endTime: now + startOffset + duration,
       duration,
@@ -79,11 +72,12 @@ const timelineEntryArb = (now: number) =>
 
 /** Generate 1..5 unique timeline entries. */
 const timelineEntriesArb = (now: number) =>
-  fc.uniqueArray(timelineEntryArb(now), {
-    minLength: 1,
-    maxLength: 5,
-    selector: e => e.entityId,
-  });
+  fc
+    .uniqueArray(timelineEntryArb(now), {
+      minLength: 1,
+      maxLength: 5,
+      selector: (e) => e.entityId,
+    });
 
 /** Generate a progress value between 0 and 1. */
 const progressArb = fc.double({ min: 0, max: 1, noNaN: true });
@@ -93,7 +87,7 @@ const costArb = fc.double({ min: 0, max: 100_000, noNaN: true });
 
 // --- Tests ---
 
-describe("Property 24: deviation detection correctness", () => {
+describe('Property 24: deviation detection correctness', () => {
   let manager: PlanAdjustmentManager;
 
   function setup() {
@@ -108,28 +102,25 @@ describe("Property 24: deviation detection correctness", () => {
     if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   }
 
-  it("SHALL flag a task as delayed if actual progress < expected progress based on timeline", () => {
+  it('SHALL flag a task as delayed if actual progress < expected progress based on timeline', () => {
     setup();
     try {
       // Use entries clearly in the past (completed) or clearly in the future (not started)
       // to avoid boundary timing issues between test and implementation Date.now() calls.
       fc.assert(
         fc.property(
-          fc.uniqueArray(fc.stringMatching(/^[a-z]-[0-9]{1,3}$/), {
-            minLength: 1,
-            maxLength: 5,
-          }),
+          fc.uniqueArray(fc.stringMatching(/^[a-z]-[0-9]{1,3}$/), { minLength: 1, maxLength: 5 }),
           fc.infiniteStream(progressArb),
           (entityIds, progressStream) => {
             const now = Date.now();
             const iter = progressStream[Symbol.iterator]();
 
             // Create entries that are clearly past their endTime (expected progress = 1)
-            const entries: TimelineEntry[] = entityIds.map(entityId => ({
+            const entries: TimelineEntry[] = entityIds.map((entityId) => ({
               entityId,
-              entityType: "task" as const,
+              entityType: 'task' as const,
               startTime: now - 7_200_000, // 2 hours ago
-              endTime: now - 3_600_000, // 1 hour ago
+              endTime: now - 3_600_000,   // 1 hour ago
               duration: 3_600_000,
               isCriticalPath: false,
             }));
@@ -142,12 +133,8 @@ describe("Property 24: deviation detection correctness", () => {
             const plan = makeBasePlan({
               timelineEntries: entries,
               costBudget: {
-                totalBudget: 0,
-                missionCosts: {},
-                taskCosts: {},
-                agentCosts: {},
-                modelCosts: {},
-                currency: "CNY",
+                totalBudget: 0, missionCosts: {}, taskCosts: {},
+                agentCosts: {}, modelCosts: {}, currency: 'CNY',
               },
             });
 
@@ -164,16 +151,16 @@ describe("Property 24: deviation detection correctness", () => {
                 expect(result.delayed).not.toContain(entry.entityId);
               }
             }
-          }
+          },
         ),
-        { numRuns: 20 }
+        { numRuns: 20 },
       );
     } finally {
       cleanup();
     }
   });
 
-  it("SHALL flag cost exceeded if actual cost exceeds the budgeted cost", () => {
+  it('SHALL flag cost exceeded if actual cost exceeds the budgeted cost', () => {
     setup();
     try {
       fc.assert(
@@ -199,15 +186,12 @@ describe("Property 24: deviation detection correctness", () => {
             const plan = makeBasePlan({
               timelineEntries: [],
               costBudget: {
-                totalBudget: Object.values(taskCosts).reduce(
-                  (a, b) => a + b,
-                  0
-                ),
+                totalBudget: Object.values(taskCosts).reduce((a, b) => a + b, 0),
                 missionCosts: {},
                 taskCosts,
                 agentCosts: {},
                 modelCosts: {},
-                currency: "CNY",
+                currency: 'CNY',
               },
             });
 
@@ -221,16 +205,16 @@ describe("Property 24: deviation detection correctness", () => {
                 expect(result.costExceeded).not.toContain(id);
               }
             }
-          }
+          },
         ),
-        { numRuns: 20 }
+        { numRuns: 20 },
       );
     } finally {
       cleanup();
     }
   });
 
-  it("SHALL not flag tasks that have not started yet (expected progress = 0)", () => {
+  it('SHALL not flag tasks that have not started yet (expected progress = 0)', () => {
     setup();
     try {
       const now = Date.now();
@@ -243,12 +227,12 @@ describe("Property 24: deviation detection correctness", () => {
               futureOffset: fc.integer({ min: 1_000, max: 7_200_000 }),
               duration: fc.integer({ min: 1_000, max: 7_200_000 }),
             }),
-            { minLength: 1, maxLength: 5, selector: e => e.entityId }
+            { minLength: 1, maxLength: 5, selector: (e) => e.entityId },
           ),
-          futureEntries => {
-            const entries: TimelineEntry[] = futureEntries.map(e => ({
+          (futureEntries) => {
+            const entries: TimelineEntry[] = futureEntries.map((e) => ({
               entityId: e.entityId,
-              entityType: "task" as const,
+              entityType: 'task' as const,
               startTime: now + e.futureOffset,
               endTime: now + e.futureOffset + e.duration,
               duration: e.duration,
@@ -269,18 +253,15 @@ describe("Property 24: deviation detection correctness", () => {
                 taskCosts: {},
                 agentCosts: {},
                 modelCosts: {},
-                currency: "CNY",
+                currency: 'CNY',
               },
             });
 
-            const result = manager.detectDeviation(plan, {
-              progress: progressMap,
-              costs: {},
-            });
+            const result = manager.detectDeviation(plan, { progress: progressMap, costs: {} });
             expect(result.delayed).toHaveLength(0);
-          }
+          },
         ),
-        { numRuns: 20 }
+        { numRuns: 20 },
       );
     } finally {
       cleanup();

@@ -54,7 +54,6 @@ import { submitUnifiedClarification } from "@/lib/unified-launch-coordinator";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { resolveTaskHubLocationUpdate } from "@/pages/tasks/task-hub-location";
 
-import { MissionFlowPane } from "./MissionFlowPane";
 import { OfficeAgentInspectorPanel } from "./OfficeAgentInspectorPanel";
 import {
   OfficeMemoryReportsPanel,
@@ -838,7 +837,7 @@ export function OfficeTaskCockpit({
           <div
             className={cn(
               "pointer-events-none relative w-full min-h-0",
-              clarificationExpanded ? "flex-1 pb-10" : "h-10 shrink-0"
+              clarificationExpanded ? "flex-1 pb-10" : "h-10 shrink-0",
             )}
           >
             {clarificationExpanded ? (
@@ -852,7 +851,7 @@ export function OfficeTaskCockpit({
                       {t(
                         locale,
                         "先补齐上下文，系统再继续创建任务。",
-                        "Fill in the missing context and the system will continue creating the task."
+                        "Fill in the missing context and the system will continue creating the task.",
                       )}
                     </span>
                   </div>
@@ -942,17 +941,8 @@ export function OfficeTaskCockpit({
           min="28%"
           style={{ overflow: "visible" }}
         >
-          <section className="pointer-events-none flex h-full min-h-0 flex-col gap-2 px-2">
-            <MissionFlowPane
-              locale={locale}
-              detail={selectedDetail}
-              summary={selectedTaskSummary}
-              pendingDirective={pendingLaunch?.directive}
-              pendingAttachmentCount={pendingLaunch?.attachmentCount ?? 0}
-              className="min-h-0 flex-1"
-            />
-
-            <div className="shrink-0">{launchStage}</div>
+          <section className="pointer-events-none flex h-full min-h-0 flex-col justify-end px-2">
+            {launchStage}
           </section>
         </Splitter.Panel>
 

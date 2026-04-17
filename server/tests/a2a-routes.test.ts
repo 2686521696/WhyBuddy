@@ -7,7 +7,10 @@
  * Validates: Requirements 3.1, 3.6, 3.7, 5.4
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { A2A_ERROR_CODES, createEnvelope } from "../../shared/a2a-protocol";
+import {
+  A2A_ERROR_CODES,
+  createEnvelope,
+} from "../../shared/a2a-protocol";
 import { A2AServer, type AgentExecutor } from "../core/a2a-server";
 import { A2AClient } from "../core/a2a-client";
 
@@ -33,18 +36,22 @@ const failingExecutor: AgentExecutor = {
 };
 
 function makeEnvelope(targetAgent = "agent-1", streamMode = false) {
-  return createEnvelope(streamMode ? "a2a.stream" : "a2a.invoke", {
-    targetAgent,
-    task: "do something",
-    context: "some context",
-    capabilities: [],
-    streamMode,
-  });
+  return createEnvelope(
+    streamMode ? "a2a.stream" : "a2a.invoke",
+    {
+      targetAgent,
+      task: "do something",
+      context: "some context",
+      capabilities: [],
+      streamMode,
+    },
+  );
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────
 
 describe("A2A API Route Unit Tests", () => {
+
   // ── 401: Invalid / missing token ────────────────────────────────────
 
   describe("401 – AUTH_FAILED", () => {
@@ -53,14 +60,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: ["test"],
-            description: "Test agent",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: ["test"], description: "Test agent" }],
       });
 
       const envelope = makeEnvelope();
@@ -76,14 +76,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const result = await server.handleInvoke(makeEnvelope(), "");
@@ -96,14 +89,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("agent-1", true);
@@ -127,14 +113,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("no-such-agent");
@@ -150,14 +129,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("ghost-agent", true);
@@ -180,14 +152,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 2,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope();
@@ -210,14 +175,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 1,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       // Exhaust the limit
@@ -244,14 +202,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: failingExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const result = await server.handleInvoke(makeEnvelope(), VALID_KEY);
@@ -266,14 +217,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: failingExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("agent-1", true);
@@ -284,7 +228,7 @@ describe("A2A API Route Unit Tests", () => {
 
       // Should get an error chunk
       const errorChunk = chunks.find(
-        c => (c as any).error?.code === A2A_ERROR_CODES.INTERNAL_ERROR
+        (c) => (c as any).error?.code === A2A_ERROR_CODES.INTERNAL_ERROR,
       );
       expect(errorChunk).toBeDefined();
     });
@@ -298,14 +242,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: ["test"],
-            description: "Test agent",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: ["test"], description: "Test agent" }],
       });
 
       const envelope = makeEnvelope();
@@ -329,14 +266,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("agent-1", true);
@@ -349,24 +279,16 @@ describe("A2A API Route Unit Tests", () => {
       expect(chunks.length).toBeGreaterThanOrEqual(2);
 
       // All non-terminal chunks have done=false and non-empty chunk text
-      const dataChunks = chunks.filter(c => !(c as any).done);
+      const dataChunks = chunks.filter((c) => !(c as any).done);
       for (const dc of dataChunks) {
-        const typed = dc as {
-          jsonrpc: string;
-          id: string;
-          chunk: string;
-          done: boolean;
-        };
+        const typed = dc as { jsonrpc: string; id: string; chunk: string; done: boolean };
         expect(typed.jsonrpc).toBe("2.0");
         expect(typed.done).toBe(false);
         expect(typed.chunk.length).toBeGreaterThan(0);
       }
 
       // Last chunk is the done sentinel
-      const last = chunks[chunks.length - 1] as {
-        done: boolean;
-        chunk: string;
-      };
+      const last = chunks[chunks.length - 1] as { done: boolean; chunk: string };
       expect(last.done).toBe(true);
       expect(last.chunk).toBe("");
     });
@@ -376,14 +298,7 @@ describe("A2A API Route Unit Tests", () => {
         apiKeys: [VALID_KEY],
         rateLimitPerMinute: 60,
         agentExecutor: mockExecutor,
-        exposedAgents: [
-          {
-            id: "agent-1",
-            name: "Test",
-            capabilities: [],
-            description: "Test",
-          },
-        ],
+        exposedAgents: [{ id: "agent-1", name: "Test", capabilities: [], description: "Test" }],
       });
 
       const envelope = makeEnvelope("agent-1", true);
@@ -408,18 +323,8 @@ describe("A2A API Route Unit Tests", () => {
   describe("Agents and Sessions endpoints", () => {
     it("listExposedAgents returns all configured agents with required fields", () => {
       const agents = [
-        {
-          id: "a1",
-          name: "Alpha",
-          capabilities: ["code"],
-          description: "Alpha agent",
-        },
-        {
-          id: "a2",
-          name: "Beta",
-          capabilities: ["review", "test"],
-          description: "Beta agent",
-        },
+        { id: "a1", name: "Alpha", capabilities: ["code"], description: "Alpha agent" },
+        { id: "a2", name: "Beta", capabilities: ["review", "test"], description: "Beta agent" },
       ];
       const server = new A2AServer({
         apiKeys: [VALID_KEY],

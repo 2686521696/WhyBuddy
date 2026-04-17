@@ -34,17 +34,11 @@ function createInMemoryDb() {
 
   return {
     getPermissionRoles: () => roles,
-    setPermissionRoles: (r: AgentRole[]) => {
-      roles = r;
-    },
+    setPermissionRoles: (r: AgentRole[]) => { roles = r; },
     getPermissionPolicies: () => policies,
-    setPermissionPolicies: (p: AgentPermissionPolicy[]) => {
-      policies = p;
-    },
+    setPermissionPolicies: (p: AgentPermissionPolicy[]) => { policies = p; },
     getPermissionTemplates: () => templates,
-    setPermissionTemplates: (t: PermissionTemplate[]) => {
-      templates = t;
-    },
+    setPermissionTemplates: (t: PermissionTemplate[]) => { templates = t; },
   };
 }
 
@@ -66,7 +60,7 @@ function seedAgentWithPermissions(
   roleStore: RoleStore,
   policyStore: PolicyStore,
   agentId: string,
-  permissions: Permission[]
+  permissions: Permission[],
 ) {
   roleStore.createRole({
     roleId: `role-${agentId}`,
@@ -115,12 +109,7 @@ describe("TokenService", () => {
   describe("issueToken", () => {
     it("returns a CapabilityToken with correct agentId", () => {
       seedAgentWithPermissions(roleStore, policyStore, "agent-1", [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
       ]);
       const cap = tokenService.issueToken("agent-1");
       expect(cap.agentId).toBe("agent-1");
@@ -158,25 +147,13 @@ describe("TokenService", () => {
 
     it("includes permission matrix in the token payload", () => {
       seedAgentWithPermissions(roleStore, policyStore, "agent-1", [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: { pathPatterns: ["/data/**"] },
-          effect: "allow",
-        },
-        {
-          resourceType: "network",
-          action: "connect",
-          constraints: {},
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: { pathPatterns: ["/data/**"] }, effect: "allow" },
+        { resourceType: "network", action: "connect", constraints: {}, effect: "allow" },
       ]);
       const cap = tokenService.issueToken("agent-1");
       const payload = tokenService.verifyToken(cap.token);
       expect(payload.permissionMatrix.length).toBeGreaterThanOrEqual(1);
-      const fsEntry = payload.permissionMatrix.find(
-        e => e.resourceType === "filesystem"
-      );
+      const fsEntry = payload.permissionMatrix.find((e) => e.resourceType === "filesystem");
       expect(fsEntry).toBeDefined();
       expect(fsEntry!.actions).toContain("read");
     });
@@ -208,22 +185,15 @@ describe("TokenService", () => {
     });
 
     it("throws InvalidTokenError for malformed token (not 3 parts)", () => {
-      expect(() => tokenService.verifyToken("not.a.valid.jwt.token")).toThrow(
-        InvalidTokenError
-      );
-      expect(() => tokenService.verifyToken("onlyonepart")).toThrow(
-        InvalidTokenError
-      );
+      expect(() => tokenService.verifyToken("not.a.valid.jwt.token")).toThrow(InvalidTokenError);
+      expect(() => tokenService.verifyToken("onlyonepart")).toThrow(InvalidTokenError);
     });
 
     it("throws InvalidTokenError for tampered signature", () => {
       seedAgentWithPermissions(roleStore, policyStore, "agent-1", []);
       const cap = tokenService.issueToken("agent-1");
-      const tampered =
-        cap.token.slice(0, -1) + (cap.token.endsWith("A") ? "B" : "A");
-      expect(() => tokenService.verifyToken(tampered)).toThrow(
-        InvalidTokenError
-      );
+      const tampered = cap.token.slice(0, -1) + (cap.token.endsWith("A") ? "B" : "A");
+      expect(() => tokenService.verifyToken(tampered)).toThrow(InvalidTokenError);
     });
 
     it("throws InvalidTokenError for tampered payload", () => {
@@ -231,12 +201,9 @@ describe("TokenService", () => {
       const cap = tokenService.issueToken("agent-1");
       const parts = cap.token.split(".");
       // Modify one character in the payload
-      const modifiedPayload =
-        parts[1].slice(0, -1) + (parts[1].endsWith("A") ? "B" : "A");
+      const modifiedPayload = parts[1].slice(0, -1) + (parts[1].endsWith("A") ? "B" : "A");
       const tampered = `${parts[0]}.${modifiedPayload}.${parts[2]}`;
-      expect(() => tokenService.verifyToken(tampered)).toThrow(
-        InvalidTokenError
-      );
+      expect(() => tokenService.verifyToken(tampered)).toThrow(InvalidTokenError);
     });
 
     it("throws TokenExpiredError for expired token", () => {
@@ -244,9 +211,7 @@ describe("TokenService", () => {
       // Issue with 1ms TTL, then wait
       const cap = tokenService.issueToken("agent-1", 1);
       // The token exp = iat + 0 seconds (1ms rounds to 0s), so it's already expired
-      expect(() => tokenService.verifyToken(cap.token)).toThrow(
-        TokenExpiredError
-      );
+      expect(() => tokenService.verifyToken(cap.token)).toThrow(TokenExpiredError);
     });
 
     it("throws InvalidTokenError when verified with wrong secret", () => {
@@ -254,14 +219,8 @@ describe("TokenService", () => {
       const cap = tokenService.issueToken("agent-1");
 
       // Create a new service with a different secret
-      const otherService = new TokenService(
-        policyStore,
-        roleStore,
-        "different-secret"
-      );
-      expect(() => otherService.verifyToken(cap.token)).toThrow(
-        InvalidTokenError
-      );
+      const otherService = new TokenService(policyStore, roleStore, "different-secret");
+      expect(() => otherService.verifyToken(cap.token)).toThrow(InvalidTokenError);
     });
   });
 
@@ -270,12 +229,7 @@ describe("TokenService", () => {
   describe("refreshToken", () => {
     it("returns a new token for the same agent", () => {
       seedAgentWithPermissions(roleStore, policyStore, "agent-1", [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
       ]);
       const original = tokenService.issueToken("agent-1");
       const refreshed = tokenService.refreshToken("agent-1");
@@ -286,12 +240,7 @@ describe("TokenService", () => {
 
     it("reflects updated permissions after policy change", () => {
       seedAgentWithPermissions(roleStore, policyStore, "agent-1", [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
       ]);
       const original = tokenService.issueToken("agent-1");
       const originalPayload = tokenService.verifyToken(original.token);
@@ -299,12 +248,7 @@ describe("TokenService", () => {
       // Add a custom permission
       policyStore.updatePolicy("agent-1", {
         customPermissions: [
-          {
-            resourceType: "network",
-            action: "connect",
-            constraints: {},
-            effect: "allow",
-          },
+          { resourceType: "network", action: "connect", constraints: {}, effect: "allow" },
         ],
       });
 
@@ -313,7 +257,7 @@ describe("TokenService", () => {
 
       // Refreshed token should have network permission
       const hasNetwork = refreshedPayload.permissionMatrix.some(
-        e => e.resourceType === "network"
+        (e) => e.resourceType === "network",
       );
       expect(hasNetwork).toBe(true);
     });
@@ -324,46 +268,21 @@ describe("TokenService", () => {
   describe("buildPermissionMatrix", () => {
     it("groups permissions by resourceType+effect", () => {
       const perms: Permission[] = [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
-        {
-          resourceType: "filesystem",
-          action: "write",
-          constraints: {},
-          effect: "allow",
-        },
-        {
-          resourceType: "network",
-          action: "connect",
-          constraints: {},
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
+        { resourceType: "filesystem", action: "write", constraints: {}, effect: "allow" },
+        { resourceType: "network", action: "connect", constraints: {}, effect: "allow" },
       ];
       const matrix = tokenService.buildPermissionMatrix(perms);
       expect(matrix).toHaveLength(2); // filesystem:allow, network:allow
-      const fsEntry = matrix.find(e => e.resourceType === "filesystem")!;
+      const fsEntry = matrix.find((e) => e.resourceType === "filesystem")!;
       expect(fsEntry.actions).toContain("read");
       expect(fsEntry.actions).toContain("write");
     });
 
     it("keeps allow and deny entries separate for same resourceType", () => {
       const perms: Permission[] = [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
-        {
-          resourceType: "filesystem",
-          action: "delete",
-          constraints: {},
-          effect: "deny",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
+        { resourceType: "filesystem", action: "delete", constraints: {}, effect: "deny" },
       ];
       const matrix = tokenService.buildPermissionMatrix(perms);
       expect(matrix).toHaveLength(2);
@@ -371,42 +290,22 @@ describe("TokenService", () => {
 
     it("merges array constraints (pathPatterns)", () => {
       const perms: Permission[] = [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: { pathPatterns: ["/a/**"] },
-          effect: "allow",
-        },
-        {
-          resourceType: "filesystem",
-          action: "write",
-          constraints: { pathPatterns: ["/b/**"] },
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: { pathPatterns: ["/a/**"] }, effect: "allow" },
+        { resourceType: "filesystem", action: "write", constraints: { pathPatterns: ["/b/**"] }, effect: "allow" },
       ];
       const matrix = tokenService.buildPermissionMatrix(perms);
-      const fsEntry = matrix.find(e => e.resourceType === "filesystem")!;
+      const fsEntry = matrix.find((e) => e.resourceType === "filesystem")!;
       expect(fsEntry.constraints.pathPatterns).toContain("/a/**");
       expect(fsEntry.constraints.pathPatterns).toContain("/b/**");
     });
 
     it("deduplicates merged array values", () => {
       const perms: Permission[] = [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: { pathPatterns: ["/same/**"] },
-          effect: "allow",
-        },
-        {
-          resourceType: "filesystem",
-          action: "write",
-          constraints: { pathPatterns: ["/same/**"] },
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: { pathPatterns: ["/same/**"] }, effect: "allow" },
+        { resourceType: "filesystem", action: "write", constraints: { pathPatterns: ["/same/**"] }, effect: "allow" },
       ];
       const matrix = tokenService.buildPermissionMatrix(perms);
-      const fsEntry = matrix.find(e => e.resourceType === "filesystem")!;
+      const fsEntry = matrix.find((e) => e.resourceType === "filesystem")!;
       expect(fsEntry.constraints.pathPatterns).toEqual(["/same/**"]);
     });
 
@@ -416,22 +315,12 @@ describe("TokenService", () => {
 
     it("does not duplicate actions", () => {
       const perms: Permission[] = [
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: {},
-          effect: "allow",
-        },
-        {
-          resourceType: "filesystem",
-          action: "read",
-          constraints: { pathPatterns: ["/x/**"] },
-          effect: "allow",
-        },
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
+        { resourceType: "filesystem", action: "read", constraints: { pathPatterns: ["/x/**"] }, effect: "allow" },
       ];
       const matrix = tokenService.buildPermissionMatrix(perms);
-      const fsEntry = matrix.find(e => e.resourceType === "filesystem")!;
-      expect(fsEntry.actions.filter(a => a === "read")).toHaveLength(1);
+      const fsEntry = matrix.find((e) => e.resourceType === "filesystem")!;
+      expect(fsEntry.actions.filter((a) => a === "read")).toHaveLength(1);
     });
   });
 
@@ -463,18 +352,14 @@ describe("TokenService", () => {
           arbAgentId,
           fc.array(arbPermission, { minLength: 0, maxLength: 5 }),
           (agentId, perms) => {
-            const {
-              roleStore: rs,
-              policyStore: ps,
-              tokenService: ts,
-            } = setupStores();
+            const { roleStore: rs, policyStore: ps, tokenService: ts } = setupStores();
             seedAgentWithPermissions(rs, ps, agentId, perms);
             const cap = ts.issueToken(agentId);
             const payload = ts.verifyToken(cap.token);
             return payload.agentId === agentId;
-          }
+          },
         ),
-        { numRuns: 100 }
+        { numRuns: 100 },
       );
     });
 
@@ -485,11 +370,7 @@ describe("TokenService", () => {
           fc.array(arbPermission, { minLength: 0, maxLength: 3 }),
           fc.nat(),
           (agentId, perms, positionSeed) => {
-            const {
-              roleStore: rs,
-              policyStore: ps,
-              tokenService: ts,
-            } = setupStores();
+            const { roleStore: rs, policyStore: ps, tokenService: ts } = setupStores();
             seedAgentWithPermissions(rs, ps, agentId, perms);
             const cap = ts.issueToken(agentId);
             const token = cap.token;
@@ -504,8 +385,7 @@ describe("TokenService", () => {
 
             // Flip one character
             const flippedChar = originalChar === "A" ? "B" : "A";
-            const tampered =
-              token.substring(0, pos) + flippedChar + token.substring(pos + 1);
+            const tampered = token.substring(0, pos) + flippedChar + token.substring(pos + 1);
 
             try {
               ts.verifyToken(tampered);
@@ -515,9 +395,9 @@ describe("TokenService", () => {
                 e instanceof InvalidTokenError || e instanceof TokenExpiredError
               );
             }
-          }
+          },
         ),
-        { numRuns: 100 }
+        { numRuns: 100 },
       );
     });
   });
@@ -536,12 +416,8 @@ describe("TokenService", () => {
 
     it("token exp equals iat + TTL (in seconds)", () => {
       fc.assert(
-        fc.property(arbTtlMs, ttlMs => {
-          const {
-            roleStore: rs,
-            policyStore: ps,
-            tokenService: ts,
-          } = setupStores();
+        fc.property(arbTtlMs, (ttlMs) => {
+          const { roleStore: rs, policyStore: ps, tokenService: ts } = setupStores();
           seedAgentWithPermissions(rs, ps, "agent-ttl", []);
           const cap = ts.issueToken("agent-ttl", ttlMs);
           const payload = ts.verifyToken(cap.token);
@@ -551,7 +427,7 @@ describe("TokenService", () => {
 
           return actualTtlSec === expectedTtlSec;
         }),
-        { numRuns: 100 }
+        { numRuns: 100 },
       );
     });
 
@@ -559,12 +435,8 @@ describe("TokenService", () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 1, max: 500 }), // small TTL in ms that rounds to 0 seconds
-          ttlMs => {
-            const {
-              roleStore: rs,
-              policyStore: ps,
-              tokenService: ts,
-            } = setupStores();
+          (ttlMs) => {
+            const { roleStore: rs, policyStore: ps, tokenService: ts } = setupStores();
             seedAgentWithPermissions(rs, ps, "agent-exp", []);
 
             // Issue with very small TTL (rounds to 0 seconds → already expired)
@@ -579,9 +451,9 @@ describe("TokenService", () => {
             } catch (e) {
               return e instanceof TokenExpiredError;
             }
-          }
+          },
         ),
-        { numRuns: 100 }
+        { numRuns: 100 },
       );
     });
   });

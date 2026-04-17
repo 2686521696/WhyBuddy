@@ -11,29 +11,24 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { WorkflowEngine } from "../core/workflow-engine.js";
 import type { WorkflowRuntime } from "../../shared/workflow-runtime.js";
-import type {
-  ExecutionBridge,
-  BridgeResult,
-} from "../core/execution-bridge.js";
+import type { ExecutionBridge, BridgeResult } from "../core/execution-bridge.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function createMockWorkflowRepo(tasks: any[] = [], workflow: any = undefined) {
   return {
     createWorkflow: vi.fn(),
-    getWorkflow: vi.fn().mockReturnValue(
-      workflow ?? {
-        id: "wf-1",
-        directive: "test",
-        status: "running",
-        current_stage: "execution",
-        departments_involved: [],
-        started_at: null,
-        completed_at: null,
-        results: { input: {} },
-        created_at: new Date().toISOString(),
-      }
-    ),
+    getWorkflow: vi.fn().mockReturnValue(workflow ?? {
+      id: "wf-1",
+      directive: "test",
+      status: "running",
+      current_stage: "execution",
+      departments_involved: [],
+      started_at: null,
+      completed_at: null,
+      results: { input: {} },
+      created_at: new Date().toISOString(),
+    }),
     getWorkflows: vi.fn().mockReturnValue([]),
     findWorkflowByDirective: vi.fn(),
     updateWorkflow: vi.fn(),
@@ -50,27 +45,15 @@ function createMockWorkflowRepo(tasks: any[] = [], workflow: any = undefined) {
   };
 }
 
-function createMockRuntime(
-  repo: ReturnType<typeof createMockWorkflowRepo>,
-  overrides?: Partial<WorkflowRuntime>
-): WorkflowRuntime {
+function createMockRuntime(repo: ReturnType<typeof createMockWorkflowRepo>, overrides?: Partial<WorkflowRuntime>): WorkflowRuntime {
   return {
     workflowRepo: repo as any,
     memoryRepo: { materializeWorkflowMemories: vi.fn() } as any,
-    reportRepo: {
-      buildDepartmentReport: vi.fn(),
-      saveDepartmentReport: vi.fn(),
-      saveFinalWorkflowReport: vi.fn(),
-    } as any,
+    reportRepo: { buildDepartmentReport: vi.fn(), saveDepartmentReport: vi.fn(), saveFinalWorkflowReport: vi.fn() } as any,
     eventEmitter: { emit: vi.fn() } as any,
-    llmProvider: {
-      isTemporarilyUnavailable: vi.fn().mockReturnValue(false),
-    } as any,
+    llmProvider: { isTemporarilyUnavailable: vi.fn().mockReturnValue(false) } as any,
     agentDirectory: new Map() as any,
-    messageBus: {
-      send: vi.fn(),
-      getInbox: vi.fn().mockResolvedValue([]),
-    } as any,
+    messageBus: { send: vi.fn(), getInbox: vi.fn().mockResolvedValue([]) } as any,
     evolutionService: { evolveWorkflow: vi.fn() } as any,
     resolveMissionId: vi.fn().mockReturnValue("mission-1"),
     ...overrides,
@@ -146,7 +129,7 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
     expect(mockBridge.bridge).toHaveBeenCalledWith(
       "mission-1",
       [codeDeliverable],
-      expect.objectContaining({ workflowId: "wf-1" })
+      expect.objectContaining({ workflowId: "wf-1" }),
     );
   });
 
@@ -161,17 +144,13 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
     expect(mockBridge.bridge).toHaveBeenCalledWith(
       "mission-1",
       ["deliverable-A", "deliverable-B"],
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("prefers deliverable_v3 > v2 > v1 (bestDeliverable logic)", async () => {
     repo.getTasksByWorkflow.mockReturnValue([
-      makeTask({
-        deliverable: "v1",
-        deliverable_v2: "v2",
-        deliverable_v3: "v3",
-      }),
+      makeTask({ deliverable: "v1", deliverable_v2: "v2", deliverable_v3: "v3" }),
     ]);
 
     await (engine as any).bridgeToExecutor("wf-1");
@@ -179,14 +158,16 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
     expect(mockBridge.bridge).toHaveBeenCalledWith(
       "mission-1",
       ["v3"],
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   // ── Requirement 1.2: skip bridge when no executable deliverables ──
 
   it("skips bridge when tasks have no deliverables", async () => {
-    repo.getTasksByWorkflow.mockReturnValue([makeTask({ deliverable: null })]);
+    repo.getTasksByWorkflow.mockReturnValue([
+      makeTask({ deliverable: null }),
+    ]);
 
     await (engine as any).bridgeToExecutor("wf-1");
 
@@ -242,9 +223,7 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
 
   it("records workflow issue when bridge() throws and does not rethrow", async () => {
     const errorBridge = createMockBridge();
-    (errorBridge.bridge as any).mockRejectedValue(
-      new Error("Docker connection refused")
-    );
+    (errorBridge.bridge as any).mockRejectedValue(new Error("Docker connection refused"));
     engine.executionBridge = errorBridge;
 
     repo.getTasksByWorkflow.mockReturnValue([
@@ -268,7 +247,7 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
             }),
           ]),
         }),
-      })
+      }),
     );
   });
 
@@ -293,7 +272,7 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
             }),
           ]),
         }),
-      })
+      }),
     );
   });
 
@@ -339,7 +318,7 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
         workflowId: "wf-1",
         requiresExecution: true,
         customField: "value",
-      })
+      }),
     );
   });
 });

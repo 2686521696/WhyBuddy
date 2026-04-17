@@ -50,8 +50,7 @@ export class LineageQueryService {
       // 2) Query edges where toId === current node
       const incomingEdges = await this.store.queryEdges({ toId: id });
       for (const edge of incomingEdges) {
-        if (upstreamIds.indexOf(edge.fromId) === -1)
-          upstreamIds.push(edge.fromId);
+        if (upstreamIds.indexOf(edge.fromId) === -1) upstreamIds.push(edge.fromId);
         if (!this.hasEdge(collectedEdges, edge.fromId, edge.toId)) {
           collectedEdges.push(edge);
         }
@@ -113,8 +112,7 @@ export class LineageQueryService {
       // 2) Query edges where fromId === current node
       const outgoingEdges = await this.store.queryEdges({ fromId: id });
       for (const edge of outgoingEdges) {
-        if (downstreamIds.indexOf(edge.toId) === -1)
-          downstreamIds.push(edge.toId);
+        if (downstreamIds.indexOf(edge.toId) === -1) downstreamIds.push(edge.toId);
         if (!this.hasEdge(collectedEdges, edge.fromId, edge.toId)) {
           collectedEdges.push(edge);
         }
@@ -157,10 +155,7 @@ export class LineageQueryService {
 
   // ─── AC-5.3: 完整链路 (BFS from source to decision) ──────────────────
 
-  async getFullPath(
-    sourceId: string,
-    decisionId: string
-  ): Promise<LineageGraph> {
+  async getFullPath(sourceId: string, decisionId: string): Promise<LineageGraph> {
     const sourceNode = await this.store.getNode(sourceId);
     const decisionNode = await this.store.getNode(decisionId);
     if (!sourceNode || !decisionNode) return { nodes: [], edges: [] };
@@ -191,8 +186,7 @@ export class LineageQueryService {
       // Outgoing edges
       const outgoingEdges = await this.store.queryEdges({ fromId: id });
       for (const edge of outgoingEdges) {
-        if (downstreamIds.indexOf(edge.toId) === -1)
-          downstreamIds.push(edge.toId);
+        if (downstreamIds.indexOf(edge.toId) === -1) downstreamIds.push(edge.toId);
         const key = `${edge.fromId}->${edge.toId}`;
         if (!edgeMap.has(key)) edgeMap.set(key, edge);
       }
@@ -222,9 +216,7 @@ export class LineageQueryService {
             fromId: id,
             toId: did,
             type: "derived-from",
-            timestamp: downNode
-              ? Math.min(node.timestamp, downNode.timestamp)
-              : node.timestamp,
+            timestamp: downNode ? Math.min(node.timestamp, downNode.timestamp) : node.timestamp,
           });
         }
 
@@ -265,11 +257,8 @@ export class LineageQueryService {
       if (node) pathNodes.push(node);
     }
 
-    edgeMap.forEach(edge => {
-      if (
-        pathNodeIds.indexOf(edge.fromId) !== -1 &&
-        pathNodeIds.indexOf(edge.toId) !== -1
-      ) {
+    edgeMap.forEach((edge) => {
+      if (pathNodeIds.indexOf(edge.fromId) !== -1 && pathNodeIds.indexOf(edge.toId) !== -1) {
         pathEdges.push(edge);
       }
     });
@@ -282,9 +271,9 @@ export class LineageQueryService {
   async getImpactAnalysis(dataId: string): Promise<ImpactAnalysisResult> {
     const downstream = await this.getDownstream(dataId);
 
-    const affectedNodes = downstream.nodes.filter(n => n.lineageId !== dataId);
+    const affectedNodes = downstream.nodes.filter((n) => n.lineageId !== dataId);
     const affectedDecisions = downstream.nodes.filter(
-      n => n.type === "decision" && n.lineageId !== dataId
+      (n) => n.type === "decision" && n.lineageId !== dataId,
     );
 
     const riskLevel = this.calculateRiskLevel(affectedDecisions);
@@ -304,8 +293,7 @@ export class LineageQueryService {
 
     // critical: > 10 affected decisions or any decision with confidence > 0.9
     if (count > 10) return "critical";
-    if (decisions.some(d => d.confidence !== undefined && d.confidence > 0.9))
-      return "critical";
+    if (decisions.some((d) => d.confidence !== undefined && d.confidence > 0.9)) return "critical";
 
     // high: > 5 affected decisions
     if (count > 5) return "high";
@@ -318,6 +306,6 @@ export class LineageQueryService {
   }
 
   private hasEdge(edges: LineageEdge[], fromId: string, toId: string): boolean {
-    return edges.some(e => e.fromId === fromId && e.toId === toId);
+    return edges.some((e) => e.fromId === fromId && e.toId === toId);
   }
 }

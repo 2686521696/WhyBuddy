@@ -18,14 +18,10 @@
  * Requirements: 2.1, 2.4
  */
 
-import type {
-  ChunkRecord,
-  ChunkMetadata,
-  SourceType,
-} from "../../../shared/rag/contracts.js";
-import type { Chunker } from "./chunk-router.js";
-import type { ChunkingConfig } from "../config.js";
-import { estimateTokenCount } from "./sliding-window-chunker.js";
+import type { ChunkRecord, ChunkMetadata, SourceType } from '../../../shared/rag/contracts.js';
+import type { Chunker } from './chunk-router.js';
+import type { ChunkingConfig } from '../config.js';
+import { estimateTokenCount } from './sliding-window-chunker.js';
 
 // ---------------------------------------------------------------------------
 // 配置
@@ -90,13 +86,13 @@ export interface ConversationTurn {
  * 无法识别 speaker 的行归入当前轮次。
  */
 export function parseConversationTurns(content: string): ConversationTurn[] {
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   const turns: ConversationTurn[] = [];
   let currentSpeaker: string | null = null;
   let currentLines: string[] = [];
 
   function flushTurn(): void {
-    const text = currentLines.join("\n").trim();
+    const text = currentLines.join('\n').trim();
     if (text && currentSpeaker) {
       turns.push({
         speaker: currentSpeaker,
@@ -106,7 +102,7 @@ export function parseConversationTurns(content: string): ConversationTurn[] {
     } else if (text && !currentSpeaker) {
       // Content before any speaker detected — assign to "unknown"
       turns.push({
-        speaker: "unknown",
+        speaker: 'unknown',
         content: text,
         tokenCount: estimateTokenCount(text),
       });
@@ -172,7 +168,7 @@ export class ConversationChunker implements Chunker {
 
     // 3. 构建 ChunkRecord 数组
     return processed.map((chunk, index) =>
-      this.buildChunkRecord(chunk, index, metadata)
+      this.buildChunkRecord(chunk, index, metadata),
     );
   }
 
@@ -214,7 +210,7 @@ export class ConversationChunker implements Chunker {
       while (pos < words.length) {
         const end = Math.min(pos + this.maxTokens, words.length);
         const slice = words.slice(pos, end);
-        const text = slice.join(" ");
+        const text = slice.join(' ');
         result.push({
           content: text,
           tokenCount: slice.length,
@@ -239,7 +235,7 @@ export class ConversationChunker implements Chunker {
         const prev = result[result.length - 1];
         // Merge if combined doesn't exceed maxTokens
         if (prev.tokenCount + chunk.tokenCount <= this.maxTokens) {
-          prev.content = prev.content + "\n" + chunk.content;
+          prev.content = prev.content + '\n' + chunk.content;
           prev.tokenCount = estimateTokenCount(prev.content);
           // Keep the first speaker for the merged chunk
           continue;
@@ -253,7 +249,7 @@ export class ConversationChunker implements Chunker {
       const first = result[0];
       const second = result[1];
       if (first.tokenCount + second.tokenCount <= this.maxTokens) {
-        second.content = first.content + "\n" + second.content;
+        second.content = first.content + '\n' + second.content;
         second.tokenCount = estimateTokenCount(second.content);
         second.turnIndex = first.turnIndex;
         second.speaker = first.speaker;
@@ -268,7 +264,7 @@ export class ConversationChunker implements Chunker {
   private buildChunkRecord(
     chunk: ProcessedChunk,
     chunkIndex: number,
-    metadata: ChunkMetadata
+    metadata: ChunkMetadata,
   ): ChunkRecord {
     const chunkMeta: ChunkMetadata = {
       ...metadata,
@@ -278,9 +274,9 @@ export class ConversationChunker implements Chunker {
 
     return {
       chunkId: `chunk:${chunkIndex}`,
-      sourceType: "conversation" as SourceType,
-      sourceId: "",
-      projectId: "",
+      sourceType: 'conversation' as SourceType,
+      sourceId: '',
+      projectId: '',
       chunkIndex,
       content: chunk.content,
       tokenCount: chunk.tokenCount,

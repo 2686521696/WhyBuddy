@@ -7,23 +7,20 @@
  * @see Requirements 19.3, 19.4, 19.5
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type {
   NLExecutionPlan,
   PlanTemplate,
   TemplateVersion,
-} from "../../../shared/nl-command/contracts.js";
+} from '../../../shared/nl-command/contracts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DEFAULT_TEMPLATE_PATH = resolve(
-  __dirname,
-  "../../../data/nl-templates.json"
-);
+const DEFAULT_TEMPLATE_PATH = resolve(__dirname, '../../../data/nl-templates.json');
 
 interface TemplateFile {
   version: number;
@@ -48,19 +45,12 @@ export class TemplateManager {
     plan: NLExecutionPlan,
     name: string,
     description: string,
-    createdBy: string
+    createdBy: string,
   ): PlanTemplate {
     const now = Date.now();
     const templateId = `tpl-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const {
-      planId: _,
-      commandId: __,
-      status: ___,
-      createdAt: ____,
-      updatedAt: _____,
-      ...planCore
-    } = plan;
+    const { planId: _, commandId: __, status: ___, createdAt: ____, updatedAt: _____, ...planCore } = plan;
 
     const initialVersion: TemplateVersion = {
       version: 1,
@@ -101,7 +91,7 @@ export class TemplateManager {
   list(createdBy?: string): PlanTemplate[] {
     const all = Array.from(this.templates.values());
     if (createdBy !== undefined) {
-      return all.filter(t => t.createdBy === createdBy);
+      return all.filter((t) => t.createdBy === createdBy);
     }
     return all;
   }
@@ -114,7 +104,7 @@ export class TemplateManager {
     templateId: string,
     plan: NLExecutionPlan,
     description: string,
-    updatedBy: string
+    updatedBy: string,
   ): PlanTemplate {
     const existing = this.templates.get(templateId);
     if (!existing) {
@@ -124,14 +114,7 @@ export class TemplateManager {
     const now = Date.now();
     const newVersion = existing.version + 1;
 
-    const {
-      planId: _,
-      commandId: __,
-      status: ___,
-      createdAt: ____,
-      updatedAt: _____,
-      ...planCore
-    } = plan;
+    const { planId: _, commandId: __, status: ___, createdAt: ____, updatedAt: _____, ...planCore } = plan;
 
     const versionEntry: TemplateVersion = {
       version: newVersion,
@@ -163,15 +146,13 @@ export class TemplateManager {
       return;
     }
     try {
-      const raw = readFileSync(this.filePath, "utf-8");
+      const raw = readFileSync(this.filePath, 'utf-8');
       const parsed = JSON.parse(raw) as TemplateFile;
       if (Array.isArray(parsed.templates)) {
-        this.templates = new Map(parsed.templates.map(t => [t.templateId, t]));
+        this.templates = new Map(parsed.templates.map((t) => [t.templateId, t]));
       }
     } catch {
-      console.warn(
-        `[TemplateManager] 持久化文件损坏，以空模板启动: ${this.filePath}`
-      );
+      console.warn(`[TemplateManager] 持久化文件损坏，以空模板启动: ${this.filePath}`);
     }
   }
 
@@ -182,9 +163,9 @@ export class TemplateManager {
     };
     try {
       mkdirSync(dirname(this.filePath), { recursive: true });
-      writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
+      writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
-      console.error("[TemplateManager] 持久化写入失败:", err);
+      console.error('[TemplateManager] 持久化写入失败:', err);
     }
   }
 }

@@ -42,7 +42,9 @@ function makeMission(
   };
 }
 
-function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
+function makeDetail(
+  overrides?: Partial<MissionTaskDetail>
+): MissionTaskDetail {
   return {
     ...makeMission(),
     workflow: {

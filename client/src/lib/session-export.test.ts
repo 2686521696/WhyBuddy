@@ -94,7 +94,7 @@ describe("exportSession", () => {
   it("throws with mission-specific message when missionId provided but no snapshot", async () => {
     vi.mocked(getLatestSnapshot).mockResolvedValue(null);
     await expect(exportSession("m-42")).rejects.toThrow(
-      'No snapshot found for mission "m-42"'
+      'No snapshot found for mission "m-42"',
     );
   });
 
@@ -124,7 +124,7 @@ describe("buildSessionZip", () => {
 
     const zip = await parseZipBlob(blob);
     const manifest = JSON.parse(
-      await zip.file("manifest.json")!.async("string")
+      await zip.file("manifest.json")!.async("string"),
     );
 
     expect(manifest.version).toBe(1);
@@ -137,7 +137,9 @@ describe("buildSessionZip", () => {
     const snapshot = makeSnapshot();
     const blob = await buildSessionZip(snapshot);
     const zip = await parseZipBlob(blob);
-    const parsed = JSON.parse(await zip.file("snapshot.json")!.async("string"));
+    const parsed = JSON.parse(
+      await zip.file("snapshot.json")!.async("string"),
+    );
 
     expect(parsed.id).toBe(snapshot.id);
     expect(parsed.missionId).toBe(snapshot.missionId);
@@ -193,6 +195,7 @@ describe("buildFilename", () => {
   });
 });
 
+
 // ─── Import Tests ───
 
 /**
@@ -200,7 +203,7 @@ describe("buildFilename", () => {
  */
 async function buildZipBlob(
   manifest: Record<string, unknown> | null,
-  snapshot: Record<string, unknown> | null
+  snapshot: Record<string, unknown> | null,
 ): Promise<File> {
   const zip = new JSZip();
   if (manifest !== null) {
@@ -217,15 +220,19 @@ describe("importSession", () => {
   it("rejects ZIP with missing manifest.json", async () => {
     const snap = makeSnapshot();
     const file = await buildZipBlob(null, snap as any);
-    await expect(importSession(file)).rejects.toThrow("missing manifest.json");
+    await expect(importSession(file)).rejects.toThrow(
+      "missing manifest.json",
+    );
   });
 
   it("rejects ZIP with missing snapshot.json", async () => {
     const file = await buildZipBlob(
       { version: SNAPSHOT_VERSION, checksum: "abc", exportedAt: Date.now() },
-      null
+      null,
     );
-    await expect(importSession(file)).rejects.toThrow("missing snapshot.json");
+    await expect(importSession(file)).rejects.toThrow(
+      "missing snapshot.json",
+    );
   });
 
   it("rejects when manifest checksum does not match snapshot checksum", async () => {
@@ -237,7 +244,7 @@ describe("importSession", () => {
     };
     const file = await buildZipBlob(manifest, snap as any);
     await expect(importSession(file)).rejects.toThrow(
-      "Checksum validation failed"
+      "Checksum validation failed",
     );
   });
 

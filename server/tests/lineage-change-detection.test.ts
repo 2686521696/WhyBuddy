@@ -228,7 +228,9 @@ describe("ChangeDetectionService", () => {
         confidence: 0.95,
       });
       await store.batchInsertNodes([src, dec]);
-      await store.batchInsertEdges([makeEdge({ fromId: "src", toId: "dec" })]);
+      await store.batchInsertEdges([
+        makeEdge({ fromId: "src", toId: "dec" }),
+      ]);
 
       const alert: ChangeAlert = {
         id: "alert-2",
@@ -302,7 +304,7 @@ describe("ChangeDetectionService", () => {
 
       // Query state at time 2500 → should include src and trans, but not dec
       const result = await service.getStateAtTime("dec-1", 2500);
-      const ids = result.nodes.map(n => n.lineageId).sort();
+      const ids = result.nodes.map((n) => n.lineageId).sort();
       expect(ids).toEqual(["src", "trans"]);
       // Edge between src and trans should be present
       expect(result.edges).toHaveLength(1);
@@ -324,7 +326,9 @@ describe("ChangeDetectionService", () => {
         upstream: ["src"],
       });
       await store.batchInsertNodes([src, dec]);
-      await store.batchInsertEdges([makeEdge({ fromId: "src", toId: "dec" })]);
+      await store.batchInsertEdges([
+        makeEdge({ fromId: "src", toId: "dec" }),
+      ]);
 
       const result = await service.getStateAtTime("dec-1", 999999999999);
       expect(result.nodes).toHaveLength(2);
@@ -344,7 +348,9 @@ describe("ChangeDetectionService", () => {
         upstream: ["src"],
       });
       await store.batchInsertNodes([src, dec]);
-      await store.batchInsertEdges([makeEdge({ fromId: "src", toId: "dec" })]);
+      await store.batchInsertEdges([
+        makeEdge({ fromId: "src", toId: "dec" }),
+      ]);
 
       const result = await service.getStateAtTime("dec-1", 1000);
       expect(result.nodes).toHaveLength(0);
@@ -422,9 +428,7 @@ describe("ChangeDetectionService", () => {
       await store.batchInsertNodes([richNode]);
 
       const richResult = await service.measureQuality("rich");
-      expect(richResult.completeness).toBeGreaterThan(
-        sparseResult.completeness
-      );
+      expect(richResult.completeness).toBeGreaterThan(sparseResult.completeness);
     });
 
     it("should return accuracy 0.5 when no resultHash", async () => {

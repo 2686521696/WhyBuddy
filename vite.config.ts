@@ -56,7 +56,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map(entry => {
+  const lines = entries.map((entry) => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -130,7 +130,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", chunk => {
+        req.on("data", (chunk) => {
           body += chunk.toString();
         });
 
@@ -148,38 +148,17 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [
-  react(),
-  tailwindcss(),
-  vitePluginManusRuntime(),
-  vitePluginManusDebugCollector(),
-];
+const plugins = [react(), tailwindcss(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
 
 export default defineConfig(() => {
-  const repository =
-    process.env.GITHUB_REPOSITORY || "opencroc/cube-pets-office";
+  const repository = process.env.GITHUB_REPOSITORY || "opencroc/cube-pets-office";
   const repositoryName = repository.split("/")[1] || "cube-pets-office";
   const repositoryUrl = `https://github.com/${repository}`;
-  const isCI =
-    process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
   const isGitHubPagesBuild =
     process.env.GITHUB_PAGES === "true" ||
     process.env.DEPLOY_TARGET === "github-pages";
 
   return {
-    test: {
-      css: false,
-      pool: "forks",
-      maxWorkers: isCI ? 2 : undefined,
-      minWorkers: 1,
-      poolOptions: {
-        forks: {
-          minForks: 1,
-          maxForks: isCI ? 2 : undefined,
-          execArgv: isCI ? ["--max-old-space-size=4096"] : [],
-        },
-      },
-    },
     base: isGitHubPagesBuild ? `/${repositoryName}/` : "/",
     define: {
       __GITHUB_PAGES__: JSON.stringify(isGitHubPagesBuild),
@@ -227,16 +206,6 @@ export default defineConfig(() => {
           ws: true,
           changeOrigin: true,
         },
-      },
-      watch: {
-        ignored: [
-          "**/node_modules/**",
-          "**/dist/**",
-          "**/data/**",
-          "**/.git/**",
-          "**/client/public/kenney_furniture-kit/**",
-          "**/client/public/kenney_cube-pets_1.0/**",
-        ],
       },
     },
   };

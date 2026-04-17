@@ -9,19 +9,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    pool: "forks",
-    fileParallelism: false,
-    maxWorkers: 1,
-    minWorkers: 1,
-    poolOptions: {
-      forks: {
-        execArgv: ["--max-old-space-size=6144"],
-      },
-    },
     include: [
       "server/tests/**/*.test.ts",
       "server/permission/**/*.test.ts",
       "shared/**/*.test.ts",
+      "client/src/lib/replay/__tests__/**/*.test.ts",
+      "client/src/runtime/demo-data/__tests__/**/*.test.ts",
+      "client/src/components/__tests__/**/*.test.ts",
+      "services/lobster-executor/src/__tests__/**/*.test.ts",
     ],
   },
 });

@@ -44,20 +44,15 @@ export type FeishuComplexTaskStartOutcome =
       detail: string;
     };
 
-function inferIntent(
-  text: string
-): ComplexRequestStartResult["dispatch"]["intent"] {
+function inferIntent(text: string): ComplexRequestStartResult["dispatch"]["intent"] {
   const normalized = text.toLowerCase();
   if (normalized.includes("pipeline")) return "pipeline";
   if (normalized.includes("scan") || normalized.includes("扫描")) return "scan";
-  if (normalized.includes("report") || normalized.includes("报告"))
-    return "report";
+  if (normalized.includes("report") || normalized.includes("报告")) return "report";
   return "analysis";
 }
 
-export function previewDispatch(
-  text: string
-): ComplexRequestStartResult["dispatch"] {
+export function previewDispatch(text: string): ComplexRequestStartResult["dispatch"] {
   const intent = inferIntent(text);
   const reason =
     intent === "pipeline"
@@ -100,9 +95,7 @@ export function isComplexRequest(text: string): boolean {
     "complex",
     "task",
   ];
-  return keywords.some(keyword =>
-    text.toLowerCase().includes(keyword.toLowerCase())
-  );
+  return keywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()));
 }
 
 function buildTitle(text: string): string {
@@ -171,10 +164,7 @@ export async function startComplexFeishuTask(
       eventType: "log",
     })
     .catch(error => {
-      console.error(
-        "[feishu:task-start] failed to move task into understand stage",
-        error
-      );
+      console.error("[feishu:task-start] failed to move task into understand stage", error);
     });
 
   const ack = feishuBridge.createRequestAck(task.id, {

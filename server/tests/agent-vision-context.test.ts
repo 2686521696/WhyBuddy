@@ -26,10 +26,7 @@ const baseConfig: RuntimeAgentConfig = {
 describe("composeAgentMessages – visionContexts injection", () => {
   it("injects vision context messages before the user prompt", () => {
     const visionContexts: VisionContext[] = [
-      {
-        imageName: "screenshot.png",
-        visualDescription: "A dashboard with charts",
-      },
+      { imageName: "screenshot.png", visualDescription: "A dashboard with charts" },
     ];
 
     const messages = composeAgentMessages(
@@ -37,7 +34,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
       "Analyze this screenshot",
       stubMemoryRepo,
       [],
-      { visionContexts }
+      { visionContexts },
     );
 
     // Last message should be the user prompt
@@ -49,7 +46,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
     const visionMsg = messages[messages.length - 2];
     expect(visionMsg.role).toBe("user");
     expect(visionMsg.content).toBe(
-      "[Vision Analysis] screenshot.png\nA dashboard with charts"
+      "[Vision Analysis] screenshot.png\nA dashboard with charts",
     );
   });
 
@@ -64,7 +61,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
       "Compare these images",
       stubMemoryRepo,
       [],
-      { visionContexts }
+      { visionContexts },
     );
 
     const lastMsg = messages[messages.length - 1];
@@ -83,7 +80,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
       "Hello",
       stubMemoryRepo,
       [],
-      {}
+      {},
     );
 
     // system + user prompt = 2 messages
@@ -99,7 +96,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
       "Hello",
       stubMemoryRepo,
       [],
-      { visionContexts: [] }
+      { visionContexts: [] },
     );
 
     expect(messages).toHaveLength(2);
@@ -116,7 +113,7 @@ describe("composeAgentMessages – visionContexts injection", () => {
       "Describe the pet",
       stubMemoryRepo,
       ["Some prior context"],
-      { visionContexts }
+      { visionContexts },
     );
 
     // Order: system, context, vision, prompt

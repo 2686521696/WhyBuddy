@@ -77,9 +77,7 @@ describe("Sandbox Live Preview — 协议类型", () => {
     });
 
     it('missionLogHistory 对应 "mission_log_history"', () => {
-      expect(SANDBOX_SOCKET_EVENTS.missionLogHistory).toBe(
-        "mission_log_history"
-      );
+      expect(SANDBOX_SOCKET_EVENTS.missionLogHistory).toBe("mission_log_history");
     });
   });
 

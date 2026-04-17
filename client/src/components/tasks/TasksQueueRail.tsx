@@ -2,12 +2,7 @@ import { useEffect, useRef } from "react";
 import { FolderKanban, LoaderCircle, Search } from "lucide-react";
 
 import { RetryInlineNotice } from "@/components/tasks/RetryInlineNotice";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { workspaceStatusClass } from "@/components/workspace/workspace-tone";
 import { useI18n } from "@/i18n";
@@ -119,7 +114,9 @@ export function TasksQueueRail({
         style={{ scrollbarGutter: "stable both-edges" }}
       >
         <div
-          className={cn(isCompact ? "space-y-1.5 pt-1.5" : "space-y-2 pt-2.5")}
+          className={cn(
+            isCompact ? "space-y-1.5 pt-1.5" : "space-y-2 pt-2.5"
+          )}
         >
           {error ? (
             <RetryInlineNotice
@@ -133,9 +130,7 @@ export function TasksQueueRail({
           {!error && tasks.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center p-4 text-center text-stone-500">
               <FolderKanban className="size-5 mb-2 opacity-50" />
-              <div className="text-xs font-medium">
-                {copy.tasks.listPage.emptyTitle}
-              </div>
+              <div className="text-xs font-medium">{copy.tasks.listPage.emptyTitle}</div>
             </div>
           ) : null}
 
@@ -203,11 +198,7 @@ export function TasksQueueRail({
                         {task.title}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      align="start"
-                      className="max-w-[260px] text-xs z-[100] ml-2 break-words"
-                    >
+                    <TooltipContent side="right" align="start" className="max-w-[260px] text-xs z-[100] ml-2 break-words">
                       {task.title}
                     </TooltipContent>
                   </Tooltip>
@@ -224,11 +215,7 @@ export function TasksQueueRail({
                           {summary}
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent
-                        side="right"
-                        align="start"
-                        className="max-w-[260px] text-xs z-[100] ml-2 break-words"
-                      >
+                      <TooltipContent side="right" align="start" className="max-w-[260px] text-xs z-[100] ml-2 break-words">
                         {summary}
                       </TooltipContent>
                     </Tooltip>

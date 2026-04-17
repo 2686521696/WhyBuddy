@@ -41,21 +41,13 @@ function createInMemoryDb() {
 
   return {
     getPermissionRoles: () => roles,
-    setPermissionRoles: (r: PermissionRole[]) => {
-      roles = r;
-    },
+    setPermissionRoles: (r: PermissionRole[]) => { roles = r; },
     getPermissionPolicies: () => policies,
-    setPermissionPolicies: (p: AgentPermissionPolicy[]) => {
-      policies = p;
-    },
+    setPermissionPolicies: (p: AgentPermissionPolicy[]) => { policies = p; },
     getPermissionTemplates: () => templates,
-    setPermissionTemplates: (t: PermissionTemplate[]) => {
-      templates = t;
-    },
+    setPermissionTemplates: (t: PermissionTemplate[]) => { templates = t; },
     getPermissionAudit: () => audit,
-    setPermissionAudit: (a: PermissionAuditEntry[]) => {
-      audit = a;
-    },
+    setPermissionAudit: (a: PermissionAuditEntry[]) => { audit = a; },
   };
 }
 
@@ -132,11 +124,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       const token = tokenService.issueToken("agent-1");
       const result = engine.checkPermission(
-        "agent-1",
-        "filesystem",
-        "write",
-        "/sandbox/agent-1/output.txt",
-        token.token
+        "agent-1", "filesystem", "write",
+        "/sandbox/agent-1/output.txt", token.token,
       );
 
       expect(result.allowed).toBe(true);
@@ -161,11 +150,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       const token = tokenService.issueToken("agent-1");
       const result = engine.checkPermission(
-        "agent-1",
-        "filesystem",
-        "read",
-        "/sandbox/agent-1/data.json",
-        token.token
+        "agent-1", "filesystem", "read",
+        "/sandbox/agent-1/data.json", token.token,
       );
 
       expect(result.allowed).toBe(true);
@@ -185,18 +171,12 @@ describe("Agent ↔ Permission Integration", () => {
 
       // Writer role allows filesystem read/write within /sandbox/agent_*/workspace/**
       const readResult = engine.checkPermission(
-        "agent-writer",
-        "filesystem",
-        "read",
-        "/sandbox/agent_writer/workspace/file.txt",
-        token.token
+        "agent-writer", "filesystem", "read",
+        "/sandbox/agent_writer/workspace/file.txt", token.token,
       );
       const writeResult = engine.checkPermission(
-        "agent-writer",
-        "filesystem",
-        "write",
-        "/sandbox/agent_writer/workspace/file.txt",
-        token.token
+        "agent-writer", "filesystem", "write",
+        "/sandbox/agent_writer/workspace/file.txt", token.token,
       );
 
       expect(readResult.allowed).toBe(true);
@@ -224,11 +204,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       const token = tokenService.issueToken("agent-1");
       const result = engine.checkPermission(
-        "agent-1",
-        "filesystem",
-        "write",
-        "/sandbox/agent-2/secret.txt",
-        token.token
+        "agent-1", "filesystem", "write",
+        "/sandbox/agent-2/secret.txt", token.token,
       );
 
       expect(result.allowed).toBe(false);
@@ -247,11 +224,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       const token = tokenService.issueToken("agent-admin");
       const result = engine.checkPermission(
-        "agent-admin",
-        "filesystem",
-        "read",
-        "/etc/passwd",
-        token.token
+        "agent-admin", "filesystem", "read",
+        "/etc/passwd", token.token,
       );
 
       expect(result.allowed).toBe(false);
@@ -283,11 +257,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       const token = tokenService.issueToken("agent-1");
       const result = engine.checkPermission(
-        "agent-1",
-        "filesystem",
-        "write",
-        "/sandbox/agent-1/output.txt",
-        token.token
+        "agent-1", "filesystem", "write",
+        "/sandbox/agent-1/output.txt", token.token,
       );
 
       // deniedPermissions removes the allow rule from effective permissions,
@@ -301,11 +272,8 @@ describe("Agent ↔ Permission Integration", () => {
       // issueToken will resolve empty permissions
       const token = tokenService.issueToken("agent-orphan");
       const result = engine.checkPermission(
-        "agent-orphan",
-        "filesystem",
-        "read",
-        "/sandbox/agent-orphan/file.txt",
-        token.token
+        "agent-orphan", "filesystem", "read",
+        "/sandbox/agent-orphan/file.txt", token.token,
       );
 
       expect(result.allowed).toBe(false);
@@ -366,11 +334,8 @@ describe("Agent ↔ Permission Integration", () => {
 
       // Try to use agent-a's token for agent-b
       const result = engine.checkPermission(
-        "agent-b",
-        "filesystem",
-        "read",
-        "/sandbox/agent-b/file.txt",
-        token.token
+        "agent-b", "filesystem", "read",
+        "/sandbox/agent-b/file.txt", token.token,
       );
 
       expect(result.allowed).toBe(false);

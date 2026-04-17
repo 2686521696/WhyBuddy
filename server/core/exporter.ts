@@ -60,9 +60,7 @@ function generateReadme(framework: ExportFramework, ir: ExportIR): string {
   if (framework === "all") {
     lines.push(`## Project Structure`);
     lines.push(``);
-    lines.push(
-      `This archive contains exports for **all** supported frameworks:`
-    );
+    lines.push(`This archive contains exports for **all** supported frameworks:`);
     lines.push(``);
     lines.push(`| Directory | Framework | Entry Point |`);
     lines.push(`|-----------|-----------|-------------|`);
@@ -70,9 +68,7 @@ function generateReadme(framework: ExportFramework, ir: ExportIR): string {
     lines.push(`| \`langgraph/\` | LangGraph | \`main.py\` |`);
     lines.push(`| \`autogen/\` | AutoGen | \`main.py\` |`);
     lines.push(``);
-    lines.push(
-      `Each subdirectory is a self-contained project. Pick the framework you prefer and follow the instructions below.`
-    );
+    lines.push(`Each subdirectory is a self-contained project. Pick the framework you prefer and follow the instructions below.`);
     lines.push(``);
   }
 
@@ -118,9 +114,7 @@ function generateReadme(framework: ExportFramework, ir: ExportIR): string {
   lines.push(`## Environment`);
   lines.push(``);
   lines.push(`- Python 3.10+`);
-  lines.push(
-    `- Set \`OPENAI_API_KEY\` (or the relevant provider key) in your environment before running.`
-  );
+  lines.push(`- Set \`OPENAI_API_KEY\` (or the relevant provider key) in your environment before running.`);
   lines.push(``);
   lines.push(`## Agents (${ir.agents.length})`);
   lines.push(``);
@@ -181,11 +175,12 @@ export async function exportWorkflow(
   }
 
   // --- Read organization snapshot from workflow results ---
-  const organization = workflow.results?.organization as
-    | WorkflowOrganizationSnapshot
-    | undefined;
+  const organization = workflow.results
+    ?.organization as WorkflowOrganizationSnapshot | undefined;
   if (!organization?.nodes?.length) {
-    throw new Error(`No organization found for workflow: ${workflowId}`);
+    throw new Error(
+      `No organization found for workflow: ${workflowId}`
+    );
   }
 
   // --- Read tasks ---

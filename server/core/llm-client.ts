@@ -3,11 +3,7 @@ import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import { nanoid } from "nanoid";
 
-import {
-  estimateCost,
-  PRICING_TABLE,
-  DEFAULT_PRICING,
-} from "../../shared/cost.js";
+import { estimateCost, PRICING_TABLE, DEFAULT_PRICING } from "../../shared/cost.js";
 import { getAIConfig } from "./ai-config.js";
 import { telemetryStore } from "./telemetry-store.js";
 import { estimateCost as estimateTelemetryCost } from "../../shared/telemetry.js";
@@ -62,10 +58,7 @@ interface ProviderConfig {
   chatThinkingType?: string;
 }
 
-const MAX_CONCURRENT = Math.max(
-  1,
-  Number(process.env.LLM_MAX_CONCURRENT || 9999)
-);
+const MAX_CONCURRENT = Math.max(1, Number(process.env.LLM_MAX_CONCURRENT || 9999));
 let activeRequests = 0;
 const requestQueue: Array<() => void> = [];
 const providerCooldownUntil = new Map<string, number>();
@@ -696,17 +689,12 @@ export async function callLLM(
 ): Promise<LLMResponse> {
   // 1. 检查 Agent 是否被暂停（Req 5.3）
   if (options.agentId && costTracker.isAgentPaused(options.agentId)) {
-    throw new Error(
-      `Agent ${options.agentId} is paused due to budget exceeded.`
-    );
+    throw new Error(`Agent ${options.agentId} is paused due to budget exceeded.`);
   }
 
   // 2. 应用降级模型（Req 5.2）
   const effectiveModel = costTracker.getEffectiveModel(options.model || "");
-  const effectiveOptions: LLMOptions = {
-    ...options,
-    model: effectiveModel || options.model,
-  };
+  const effectiveOptions: LLMOptions = { ...options, model: effectiveModel || options.model };
 
   const startTime = Date.now();
 
@@ -753,11 +741,7 @@ export async function callLLM(
 
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
-          const response = await callProvider(
-            provider,
-            messages,
-            effectiveOptions
-          );
+          const response = await callProvider(provider, messages, effectiveOptions);
           clearProviderCooldown(provider);
           clearGlobalProviderCooldown();
 
@@ -868,6 +852,7 @@ export async function callLLM(
     releaseSlot();
   }
 }
+
 
 export async function callLLMJson<T = any>(
   messages: LLMMessage[],

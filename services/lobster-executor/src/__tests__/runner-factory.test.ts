@@ -29,3 +29,4 @@ describe("createJobRunner", () => {
     expect(runner.constructor.name).toBe("NativeRunner");
   });
 });
+

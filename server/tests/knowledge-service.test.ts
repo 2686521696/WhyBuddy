@@ -8,10 +8,7 @@ import { GraphStore } from "../knowledge/graph-store.js";
 import { OntologyRegistry } from "../knowledge/ontology-registry.js";
 import { KnowledgeGraphQuery } from "../knowledge/query-service.js";
 import { KnowledgeService } from "../knowledge/knowledge-service.js";
-import type {
-  VectorStore,
-  VectorSearchHit,
-} from "../knowledge/knowledge-service.js";
+import type { VectorStore, VectorSearchHit } from "../knowledge/knowledge-service.js";
 import type { Entity } from "../../shared/knowledge/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,9 +31,7 @@ function cleanup(): void {
 }
 
 function makeEntityInput(
-  overrides: Partial<
-    Omit<Entity, "entityId" | "createdAt" | "updatedAt" | "status">
-  > = {}
+  overrides: Partial<Omit<Entity, "entityId" | "createdAt" | "updatedAt" | "status">> = {},
 ) {
   return {
     entityType: "CodeModule",
@@ -82,18 +77,14 @@ describe("KnowledgeService", () => {
 
   describe("query returns structuredResults from graph", () => {
     it("returns graph entities in structuredResults", async () => {
-      store.createEntity(
-        makeEntityInput({ name: "AuthModule", confidence: 0.9 })
-      );
-      store.createEntity(
-        makeEntityInput({ name: "PaymentModule", confidence: 0.85 })
-      );
+      store.createEntity(makeEntityInput({ name: "AuthModule", confidence: 0.9 }));
+      store.createEntity(makeEntityInput({ name: "PaymentModule", confidence: 0.85 }));
 
       const service = new KnowledgeService(queryService, store);
       const result = await service.query("find modules", TEST_PROJECT);
 
       expect(result.structuredResults.entities).toHaveLength(2);
-      const names = result.structuredResults.entities.map(e => e.name).sort();
+      const names = result.structuredResults.entities.map((e) => e.name).sort();
       expect(names).toEqual(["AuthModule", "PaymentModule"]);
     });
 
@@ -119,23 +110,13 @@ describe("KnowledgeService", () => {
       ]);
 
       const service = new KnowledgeService(queryService, store, mockVS);
-      const result = await service.query("test", TEST_PROJECT, {
-        mode: "preferStructured",
-      });
+      const result = await service.query("test", TEST_PROJECT, { mode: "preferStructured" });
 
-      expect(result.mergedSummary).toContain(
-        "Knowledge Graph Results — Primary"
-      );
-      expect(result.mergedSummary).toContain(
-        "Semantic Search Results — Supplementary"
-      );
+      expect(result.mergedSummary).toContain("Knowledge Graph Results — Primary");
+      expect(result.mergedSummary).toContain("Semantic Search Results — Supplementary");
       // Graph section should appear before semantic section
-      const graphIdx = result.mergedSummary.indexOf(
-        "Knowledge Graph Results — Primary"
-      );
-      const semanticIdx = result.mergedSummary.indexOf(
-        "Semantic Search Results — Supplementary"
-      );
+      const graphIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Primary");
+      const semanticIdx = result.mergedSummary.indexOf("Semantic Search Results — Supplementary");
       expect(graphIdx).toBeLessThan(semanticIdx);
     });
 
@@ -143,13 +124,9 @@ describe("KnowledgeService", () => {
       store.createEntity(makeEntityInput({ name: "OnlyGraph" }));
 
       const service = new KnowledgeService(queryService, store);
-      const result = await service.query("test", TEST_PROJECT, {
-        mode: "preferStructured",
-      });
+      const result = await service.query("test", TEST_PROJECT, { mode: "preferStructured" });
 
-      expect(result.mergedSummary).toContain(
-        "Knowledge Graph Results — Primary"
-      );
+      expect(result.mergedSummary).toContain("Knowledge Graph Results — Primary");
       expect(result.mergedSummary).toContain("OnlyGraph");
     });
   });
@@ -167,23 +144,13 @@ describe("KnowledgeService", () => {
       ]);
 
       const service = new KnowledgeService(queryService, store, mockVS);
-      const result = await service.query("test", TEST_PROJECT, {
-        mode: "preferSemantic",
-      });
+      const result = await service.query("test", TEST_PROJECT, { mode: "preferSemantic" });
 
-      expect(result.mergedSummary).toContain(
-        "Semantic Search Results — Primary"
-      );
-      expect(result.mergedSummary).toContain(
-        "Knowledge Graph Results — Supplementary"
-      );
+      expect(result.mergedSummary).toContain("Semantic Search Results — Primary");
+      expect(result.mergedSummary).toContain("Knowledge Graph Results — Supplementary");
       // Semantic section should appear before graph section
-      const semanticIdx = result.mergedSummary.indexOf(
-        "Semantic Search Results — Primary"
-      );
-      const graphIdx = result.mergedSummary.indexOf(
-        "Knowledge Graph Results — Supplementary"
-      );
+      const semanticIdx = result.mergedSummary.indexOf("Semantic Search Results — Primary");
+      const graphIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Supplementary");
       expect(semanticIdx).toBeLessThan(graphIdx);
     });
 
@@ -191,14 +158,10 @@ describe("KnowledgeService", () => {
       store.createEntity(makeEntityInput({ name: "FallbackGraph" }));
 
       const service = new KnowledgeService(queryService, store);
-      const result = await service.query("test", TEST_PROJECT, {
-        mode: "preferSemantic",
-      });
+      const result = await service.query("test", TEST_PROJECT, { mode: "preferSemantic" });
 
       expect(result.mergedSummary).toContain("Knowledge Graph Results");
-      expect(result.mergedSummary).toContain(
-        "No semantic search results available"
-      );
+      expect(result.mergedSummary).toContain("No semantic search results available");
     });
   });
 
@@ -226,9 +189,7 @@ describe("KnowledgeService", () => {
 
     it("returns 'no results' message when both sources are empty", async () => {
       const service = new KnowledgeService(queryService, store);
-      const result = await service.query("nothing here", TEST_PROJECT, {
-        mode: "balanced",
-      });
+      const result = await service.query("nothing here", TEST_PROJECT, { mode: "balanced" });
 
       expect(result.mergedSummary).toContain("No results found");
     });
@@ -278,9 +239,7 @@ describe("KnowledgeService", () => {
 
     it("handles vectorStore search failure gracefully", async () => {
       const failingVS: VectorStore = {
-        search: async () => {
-          throw new Error("Vector DB down");
-        },
+        search: async () => { throw new Error("Vector DB down"); },
       };
 
       store.createEntity(makeEntityInput({ name: "StillWorks" }));
@@ -300,13 +259,7 @@ describe("KnowledgeService", () => {
 
   describe("mergedSummary content", () => {
     it("includes entity names and types in structured section", async () => {
-      store.createEntity(
-        makeEntityInput({
-          name: "MyService",
-          entityType: "CodeModule",
-          confidence: 0.9,
-        })
-      );
+      store.createEntity(makeEntityInput({ name: "MyService", entityType: "CodeModule", confidence: 0.9 }));
 
       const service = new KnowledgeService(queryService, store);
       const result = await service.query("test", TEST_PROJECT);
@@ -327,11 +280,7 @@ describe("KnowledgeService", () => {
 
     it("includes semantic hit scores and content preview", async () => {
       const mockVS = createMockVectorStore([
-        {
-          id: "v1",
-          content: "A relevant document about architecture",
-          score: 0.92,
-        },
+        { id: "v1", content: "A relevant document about architecture", score: 0.92 },
       ]);
 
       const service = new KnowledgeService(queryService, store, mockVS);
@@ -348,19 +297,13 @@ describe("KnowledgeService", () => {
 
   describe("syncEntityToVectorStore", () => {
     it("writes to vector store and updates linkedMemoryIds", async () => {
-      const entity = store.createEntity(
-        makeEntityInput({
-          name: "SyncModule",
-          description: "Module to sync",
-          confidence: 0.9,
-        })
-      );
+      const entity = store.createEntity(makeEntityInput({
+        name: "SyncModule",
+        description: "Module to sync",
+        confidence: 0.9,
+      }));
 
-      const upsertedIds: Array<{
-        id: string;
-        content: string;
-        metadata: Record<string, unknown>;
-      }> = [];
+      const upsertedIds: Array<{ id: string; content: string; metadata: Record<string, unknown> }> = [];
       const mockVS: VectorStore = {
         search: async () => [],
         upsert: async (id, content, metadata) => {
@@ -419,7 +362,7 @@ describe("KnowledgeService", () => {
 
       const mockVS: VectorStore = {
         search: async () => [],
-        upsert: async id => `mem-${id}`,
+        upsert: async (id) => `mem-${id}`,
       };
 
       const service = new KnowledgeService(queryService, store, mockVS);
@@ -429,23 +372,16 @@ describe("KnowledgeService", () => {
       await service.syncEntityToVectorStore(afterFirst);
 
       const updated = store.getEntity(entity.entityId);
-      const memIds = updated!.linkedMemoryIds.filter(
-        id => id === `mem-${entity.entityId}`
-      );
+      const memIds = updated!.linkedMemoryIds.filter((id) => id === `mem-${entity.entityId}`);
       expect(memIds).toHaveLength(1);
     });
 
     it("includes extended attributes in summary", async () => {
-      const entity = store.createEntity(
-        makeEntityInput({
-          name: "AttrModule",
-          description: "Has attrs",
-          extendedAttributes: {
-            filePath: "src/foo.ts",
-            language: "typescript",
-          },
-        })
-      );
+      const entity = store.createEntity(makeEntityInput({
+        name: "AttrModule",
+        description: "Has attrs",
+        extendedAttributes: { filePath: "src/foo.ts", language: "typescript" },
+      }));
 
       let capturedContent = "";
       const mockVS: VectorStore = {
@@ -496,16 +432,8 @@ describe("KnowledgeService", () => {
       const mockVS: VectorStore = {
         search: async () => [],
         listRecent: async () => [
-          {
-            id: "mem-1",
-            content: "Business rule: all orders require approval",
-            score: 0.8,
-          },
-          {
-            id: "mem-2",
-            content: "Architecture: use event sourcing for audit",
-            score: 0.7,
-          },
+          { id: "mem-1", content: "Business rule: all orders require approval", score: 0.8 },
+          { id: "mem-2", content: "Architecture: use event sourcing for audit", score: 0.7 },
         ],
       };
 
@@ -525,10 +453,7 @@ describe("KnowledgeService", () => {
     });
 
     it("updates vector memory with linkedEntityId when upsert is available", async () => {
-      const upsertCalls: Array<{
-        id: string;
-        metadata: Record<string, unknown>;
-      }> = [];
+      const upsertCalls: Array<{ id: string; metadata: Record<string, unknown> }> = [];
       const mockVS: VectorStore = {
         search: async () => [],
         listRecent: async () => [
@@ -571,7 +496,7 @@ describe("KnowledgeService", () => {
       const upsertCalls: string[] = [];
       const mockVS: VectorStore = {
         search: async () => [],
-        upsert: async id => {
+        upsert: async (id) => {
           upsertCalls.push(id);
           return `mem-${id}`;
         },
@@ -584,12 +509,9 @@ describe("KnowledgeService", () => {
       store.createEntity(makeEntityInput({ name: "AutoSync" }));
 
       // Wait for async fire-and-forget to complete
-      await vi.waitFor(
-        () => {
-          expect(upsertCalls.length).toBeGreaterThanOrEqual(1);
-        },
-        { timeout: 1000 }
-      );
+      await vi.waitFor(() => {
+        expect(upsertCalls.length).toBeGreaterThanOrEqual(1);
+      }, { timeout: 1000 });
 
       service.stopEntitySync();
     });
@@ -598,15 +520,13 @@ describe("KnowledgeService", () => {
       const upsertCalls: string[] = [];
       const mockVS: VectorStore = {
         search: async () => [],
-        upsert: async id => {
+        upsert: async (id) => {
           upsertCalls.push(id);
           return `mem-${id}`;
         },
       };
 
-      const entity = store.createEntity(
-        makeEntityInput({ name: "UpdateSync" })
-      );
+      const entity = store.createEntity(makeEntityInput({ name: "UpdateSync" }));
 
       const service = new KnowledgeService(queryService, store, mockVS);
       service.startEntitySync();
@@ -616,12 +536,9 @@ describe("KnowledgeService", () => {
 
       store.updateEntity(entity.entityId, { description: "Updated desc" });
 
-      await vi.waitFor(
-        () => {
-          expect(upsertCalls.length).toBeGreaterThanOrEqual(1);
-        },
-        { timeout: 1000 }
-      );
+      await vi.waitFor(() => {
+        expect(upsertCalls.length).toBeGreaterThanOrEqual(1);
+      }, { timeout: 1000 });
 
       service.stopEntitySync();
     });
@@ -630,7 +547,7 @@ describe("KnowledgeService", () => {
       let upsertCount = 0;
       const mockVS: VectorStore = {
         search: async () => [],
-        upsert: async id => {
+        upsert: async (id) => {
           upsertCount++;
           return `mem-${id}`;
         },
@@ -644,12 +561,9 @@ describe("KnowledgeService", () => {
 
       // Wait for the async chain to settle:
       // create → sync (upsert) → updateEntity (linkedMemoryIds) → sync again (upsert, but memId already present so no updateEntity)
-      await vi.waitFor(
-        () => {
-          expect(upsertCount).toBeGreaterThanOrEqual(2);
-        },
-        { timeout: 1000 }
-      );
+      await vi.waitFor(() => {
+        expect(upsertCount).toBeGreaterThanOrEqual(2);
+      }, { timeout: 1000 });
 
       // With a single listener: create triggers 1 upsert, the linkedMemoryIds update triggers 1 more = 2.
       // If duplicate listeners were registered, we'd see 4.
@@ -662,7 +576,7 @@ describe("KnowledgeService", () => {
       const upsertCalls: string[] = [];
       const mockVS: VectorStore = {
         search: async () => [],
-        upsert: async id => {
+        upsert: async (id) => {
           upsertCalls.push(id);
           return `mem-${id}`;
         },
@@ -675,12 +589,13 @@ describe("KnowledgeService", () => {
       store.createEntity(makeEntityInput({ name: "AfterStop" }));
 
       // Give async a chance to fire (it shouldn't)
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(upsertCalls).toHaveLength(0);
     });
   });
 });
+
 
 // ---------------------------------------------------------------------------
 // Property-Based Tests
@@ -711,7 +626,7 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
   /** Generate 1-5 entity names (non-empty alphanumeric strings) */
   const entityNamesArb = fc.array(
     fc.stringMatching(/^[A-Za-z][A-Za-z0-9]{0,19}$/),
-    { minLength: 1, maxLength: 5 }
+    { minLength: 1, maxLength: 5 },
   );
 
   /** Generate 1-5 vector search hits with scores in [0, 1] */
@@ -721,14 +636,14 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
       content: fc.string({ minLength: 1, maxLength: 80 }),
       score: fc.double({ min: 0, max: 1, noNaN: true }),
     }),
-    { minLength: 1, maxLength: 5 }
+    { minLength: 1, maxLength: 5 },
   );
 
   /** Generate a query mode */
   const modeArb = fc.constantFrom(
     "preferStructured" as const,
     "preferSemantic" as const,
-    "balanced" as const
+    "balanced" as const,
   );
 
   // -------------------------------------------------------------------------
@@ -766,33 +681,25 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
           };
 
           const service = new KnowledgeService(queryService, store, mockVS);
-          const result = await service.query("test", PBT_PROJECT, {
-            mode: "preferStructured",
-          });
+          const result = await service.query("test", PBT_PROJECT, { mode: "preferStructured" });
 
           // Structured results should be present
-          expect(
-            result.structuredResults.entities.length
-          ).toBeGreaterThanOrEqual(1);
+          expect(result.structuredResults.entities.length).toBeGreaterThanOrEqual(1);
           // Semantic results should be present
           expect(result.semanticResults.length).toBeGreaterThanOrEqual(1);
 
           // In mergedSummary, graph section (Primary) must appear before semantic section (Supplementary)
-          const graphIdx = result.mergedSummary.indexOf(
-            "Knowledge Graph Results — Primary"
-          );
-          const semanticIdx = result.mergedSummary.indexOf(
-            "Semantic Search Results — Supplementary"
-          );
+          const graphIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Primary");
+          const semanticIdx = result.mergedSummary.indexOf("Semantic Search Results — Supplementary");
           expect(graphIdx).toBeGreaterThanOrEqual(0);
           expect(semanticIdx).toBeGreaterThanOrEqual(0);
           expect(graphIdx).toBeLessThan(semanticIdx);
 
           store.forceSave();
           pbtCleanup();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -830,31 +737,23 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
           };
 
           const service = new KnowledgeService(queryService, store, mockVS);
-          const result = await service.query("test", PBT_PROJECT, {
-            mode: "preferSemantic",
-          });
+          const result = await service.query("test", PBT_PROJECT, { mode: "preferSemantic" });
 
-          expect(
-            result.structuredResults.entities.length
-          ).toBeGreaterThanOrEqual(1);
+          expect(result.structuredResults.entities.length).toBeGreaterThanOrEqual(1);
           expect(result.semanticResults.length).toBeGreaterThanOrEqual(1);
 
           // In mergedSummary, semantic section (Primary) must appear before graph section (Supplementary)
-          const semanticIdx = result.mergedSummary.indexOf(
-            "Semantic Search Results — Primary"
-          );
-          const graphIdx = result.mergedSummary.indexOf(
-            "Knowledge Graph Results — Supplementary"
-          );
+          const semanticIdx = result.mergedSummary.indexOf("Semantic Search Results — Primary");
+          const graphIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Supplementary");
           expect(semanticIdx).toBeGreaterThanOrEqual(0);
           expect(graphIdx).toBeGreaterThanOrEqual(0);
           expect(semanticIdx).toBeLessThan(graphIdx);
 
           store.forceSave();
           pbtCleanup();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -892,13 +791,9 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
           };
 
           const service = new KnowledgeService(queryService, store, mockVS);
-          const result = await service.query("test", PBT_PROJECT, {
-            mode: "balanced",
-          });
+          const result = await service.query("test", PBT_PROJECT, { mode: "balanced" });
 
-          expect(
-            result.structuredResults.entities.length
-          ).toBeGreaterThanOrEqual(1);
+          expect(result.structuredResults.entities.length).toBeGreaterThanOrEqual(1);
           expect(result.semanticResults.length).toBeGreaterThanOrEqual(1);
 
           // Balanced mode: both sections present without Primary/Supplementary labels
@@ -909,9 +804,9 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
 
           store.forceSave();
           pbtCleanup();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -953,9 +848,7 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
           const result = await service.query("test", PBT_PROJECT, { mode });
 
           // Both result types should always be populated
-          expect(
-            result.structuredResults.entities.length
-          ).toBeGreaterThanOrEqual(1);
+          expect(result.structuredResults.entities.length).toBeGreaterThanOrEqual(1);
           expect(result.semanticResults.length).toBeGreaterThanOrEqual(1);
           expect(result.mergedSummary.length).toBeGreaterThan(0);
 
@@ -963,30 +856,18 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
             case "preferStructured": {
               // Graph ranked higher (Primary), semantic is Supplementary
               expect(result.mergedSummary).toContain("Primary");
-              expect(result.mergedSummary).toContain(
-                "Knowledge Graph Results — Primary"
-              );
-              const gIdx = result.mergedSummary.indexOf(
-                "Knowledge Graph Results — Primary"
-              );
-              const sIdx = result.mergedSummary.indexOf(
-                "Semantic Search Results — Supplementary"
-              );
+              expect(result.mergedSummary).toContain("Knowledge Graph Results — Primary");
+              const gIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Primary");
+              const sIdx = result.mergedSummary.indexOf("Semantic Search Results — Supplementary");
               expect(gIdx).toBeLessThan(sIdx);
               break;
             }
             case "preferSemantic": {
               // Semantic ranked higher (Primary), graph is Supplementary
               expect(result.mergedSummary).toContain("Primary");
-              expect(result.mergedSummary).toContain(
-                "Semantic Search Results — Primary"
-              );
-              const sIdx = result.mergedSummary.indexOf(
-                "Semantic Search Results — Primary"
-              );
-              const gIdx = result.mergedSummary.indexOf(
-                "Knowledge Graph Results — Supplementary"
-              );
+              expect(result.mergedSummary).toContain("Semantic Search Results — Primary");
+              const sIdx = result.mergedSummary.indexOf("Semantic Search Results — Primary");
+              const gIdx = result.mergedSummary.indexOf("Knowledge Graph Results — Supplementary");
               expect(sIdx).toBeLessThan(gIdx);
               break;
             }
@@ -994,24 +875,21 @@ describe("Feature: knowledge-graph, Property 14: 统一检索模式行为", () =
               // Mixed by relevance — no priority labels
               expect(result.mergedSummary).not.toContain("Primary");
               expect(result.mergedSummary).not.toContain("Supplementary");
-              expect(result.mergedSummary).toContain(
-                "[Knowledge Graph Results]"
-              );
-              expect(result.mergedSummary).toContain(
-                "[Semantic Search Results]"
-              );
+              expect(result.mergedSummary).toContain("[Knowledge Graph Results]");
+              expect(result.mergedSummary).toContain("[Semantic Search Results]");
               break;
             }
           }
 
           store.forceSave();
           pbtCleanup();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
+
 
 // ---------------------------------------------------------------------------
 // Property-Based Tests
@@ -1053,7 +931,7 @@ describe("Feature: knowledge-graph, Property 15: 图谱到向量同步双向链�
     "Role",
     "Mission",
     "Bug",
-    "Config"
+    "Config",
   );
 
   /** Generate a valid source */
@@ -1061,7 +939,7 @@ describe("Feature: knowledge-graph, Property 15: 图谱到向量同步双向链�
     "agent_extracted" as const,
     "user_defined" as const,
     "code_analysis" as const,
-    "llm_inferred" as const
+    "llm_inferred" as const,
   );
 
   /** Generate a confidence value in [0.0, 1.0] */
@@ -1086,14 +964,7 @@ describe("Feature: knowledge-graph, Property 15: 图谱到向量同步双向链�
         confidenceArb,
         descriptionArb,
         memoryPrefixArb,
-        async (
-          name,
-          entityType,
-          source,
-          confidence,
-          description,
-          memoryPrefix
-        ) => {
+        async (name, entityType, source, confidence, description, memoryPrefix) => {
           syncPbtCleanup();
           const store = new GraphStore();
 
@@ -1141,9 +1012,9 @@ describe("Feature: knowledge-graph, Property 15: 图谱到向量同步双向链�
 
           store.forceSave();
           syncPbtCleanup();
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

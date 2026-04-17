@@ -44,13 +44,11 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
     socket.emit("telemetry.update", telemetryStore.getSnapshot());
 
     // Send current cost snapshot to newly connected client
-    import("./cost-tracker.js")
-      .then(({ costTracker }) => {
-        socket.emit("cost.update", costTracker.getSnapshot());
-      })
-      .catch(() => {
-        // cost-tracker not available yet — skip
-      });
+    import("./cost-tracker.js").then(({ costTracker }) => {
+      socket.emit("cost.update", costTracker.getSnapshot());
+    }).catch(() => {
+      // cost-tracker not available yet — skip
+    });
 
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
@@ -152,7 +150,7 @@ export function emitReputationChanged(payload: {
   dimensionDeltas: DimensionDeltas;
 }): void {
   if (!io) return;
-  io.emit("reputation.changed", payload);
+  io.emit('reputation.changed', payload);
 }
 
 /**
@@ -165,7 +163,7 @@ export function emitTrustTierChanged(payload: {
   reason: string;
 }): void {
   if (!io) return;
-  io.emit("reputation.trustTierChanged", payload);
+  io.emit('reputation.trustTierChanged', payload);
 }
 
 /**
@@ -175,16 +173,14 @@ export function emitTrustTierChanged(payload: {
 export function registerSandboxRelay(relay: SandboxRelay): void {
   if (!io) return;
 
-  io.on("connection", socket => {
+  io.on("connection", (socket) => {
     socket.on("request_log_history", (payload: { missionId?: string }) => {
       const missionId = payload?.missionId;
       if (!missionId || typeof missionId !== "string") return;
 
       const lines = relay.getLogHistory(missionId);
-      socket.emit(SANDBOX_SOCKET_EVENTS.missionLogHistory, {
-        missionId,
-        lines,
-      });
+      socket.emit(SANDBOX_SOCKET_EVENTS.missionLogHistory, { missionId, lines });
     });
   });
 }
+

@@ -34,20 +34,9 @@ export interface VectorSearchHit {
 }
 
 export interface VectorStore {
-  search(
-    query: string,
-    options?: { projectId?: string; limit?: number }
-  ): Promise<VectorSearchHit[]>;
-  upsert?(
-    id: string,
-    content: string,
-    metadata: Record<string, unknown>
-  ): Promise<string>;
-  listRecent?(options: {
-    projectId: string;
-    limit?: number;
-    excludeLinked?: boolean;
-  }): Promise<VectorSearchHit[]>;
+  search(query: string, options?: { projectId?: string; limit?: number }): Promise<VectorSearchHit[]>;
+  upsert?(id: string, content: string, metadata: Record<string, unknown>): Promise<string>;
+  listRecent?(options: { projectId: string; limit?: number; excludeLinked?: boolean }): Promise<VectorSearchHit[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +51,7 @@ export class KnowledgeService {
   constructor(
     queryService: KnowledgeGraphQuery,
     graphStore: GraphStore,
-    vectorStore?: VectorStore | null
+    vectorStore?: VectorStore | null,
   ) {
     this.queryService = queryService;
     this.graphStore = graphStore;
@@ -87,12 +76,16 @@ export class KnowledgeService {
     const summary = this.buildEntitySummary(entity);
 
     // Write to vector store with linkedEntityId metadata
-    const memoryId = await this.vectorStore.upsert(entity.entityId, summary, {
-      linkedEntityId: entity.entityId,
-      entityType: entity.entityType,
-      projectId: entity.projectId,
-      source: entity.source,
-    });
+    const memoryId = await this.vectorStore.upsert(
+      entity.entityId,
+      summary,
+      {
+        linkedEntityId: entity.entityId,
+        entityType: entity.entityType,
+        projectId: entity.projectId,
+        source: entity.source,
+      },
+    );
 
     // Update entity's linkedMemoryIds (bidirectional link)
     const ids = entity.linkedMemoryIds ?? [];
@@ -122,7 +115,7 @@ export class KnowledgeService {
           });
         }
         // 'deleted' — optionally remove from vector store in the future
-      }
+      },
     );
   }
 
@@ -177,14 +170,12 @@ export class KnowledgeService {
 
       // Update the vector memory entry with linkedEntityId if upsert is available
       if (this.vectorStore.upsert) {
-        await this.vectorStore
-          .upsert(candidate.id, candidate.content, {
-            ...(candidate.metadata ?? {}),
-            linkedEntityId: entity.entityId,
-          })
-          .catch(() => {
-            // Non-fatal — bidirectional link update failure is acceptable
-          });
+        await this.vectorStore.upsert(candidate.id, candidate.content, {
+          ...(candidate.metadata ?? {}),
+          linkedEntityId: entity.entityId,
+        }).catch(() => {
+          // Non-fatal — bidirectional link update failure is acceptable
+        });
       }
     }
   }
@@ -193,7 +184,9 @@ export class KnowledgeService {
    * buildEntitySummary — 从实体生成文本摘要
    */
   private buildEntitySummary(entity: Entity): string {
-    const parts: string[] = [`[${entity.entityType}] ${entity.name}`];
+    const parts: string[] = [
+      `[${entity.entityType}] ${entity.name}`,
+    ];
     if (entity.description) {
       parts.push(entity.description);
     }
@@ -203,11 +196,8 @@ export class KnowledgeService {
       const keys = Object.keys(attrs);
       if (keys.length > 0) {
         const attrLines = keys
-          .filter(k => attrs[k] !== undefined && attrs[k] !== null)
-          .map(
-            k =>
-              `${k}: ${typeof attrs[k] === "string" ? attrs[k] : JSON.stringify(attrs[k])}`
-          )
+          .filter((k) => attrs[k] !== undefined && attrs[k] !== null)
+          .map((k) => `${k}: ${typeof attrs[k] === "string" ? attrs[k] : JSON.stringify(attrs[k])}`)
           .join("; ");
         if (attrLines) parts.push(attrLines);
       }
@@ -224,7 +214,7 @@ export class KnowledgeService {
   async query(
     question: string,
     projectId: string,
-    options?: UnifiedQueryOptions
+    options?: UnifiedQueryOptions,
   ): Promise<UnifiedKnowledgeResult> {
     const mode = options?.mode ?? "balanced";
 
@@ -243,7 +233,7 @@ export class KnowledgeService {
     const mergedSummary = this.buildMergedSummary(
       structuredResults,
       semanticHits,
-      mode
+      mode,
     );
 
     return {
@@ -259,7 +249,7 @@ export class KnowledgeService {
 
   private async executeGraphQuery(
     question: string,
-    projectId: string
+    projectId: string,
   ): Promise<{ entities: Entity[]; relations: Relation[] }> {
     try {
       // 尝试使用 findEntities 进行基础查询
@@ -278,7 +268,7 @@ export class KnowledgeService {
 
   private async executeVectorSearch(
     question: string,
-    projectId: string
+    projectId: string,
   ): Promise<VectorSearchHit[]> {
     if (!this.vectorStore) {
       return [];
@@ -299,13 +289,12 @@ export class KnowledgeService {
   private buildMergedSummary(
     structured: { entities: Entity[]; relations: Relation[] },
     semantic: VectorSearchHit[],
-    mode: UnifiedQueryOptions["mode"]
+    mode: UnifiedQueryOptions["mode"],
   ): string {
     const structuredSection = this.buildStructuredSection(structured);
     const semanticSection = this.buildSemanticSection(semantic);
 
-    const hasStructured =
-      structured.entities.length > 0 || structured.relations.length > 0;
+    const hasStructured = structured.entities.length > 0 || structured.relations.length > 0;
     const hasSemantic = semantic.length > 0;
 
     if (!hasStructured && !hasSemantic) {
@@ -314,27 +303,12 @@ export class KnowledgeService {
 
     switch (mode) {
       case "preferStructured":
-        return this.mergePreferStructured(
-          structuredSection,
-          semanticSection,
-          hasStructured,
-          hasSemantic
-        );
+        return this.mergePreferStructured(structuredSection, semanticSection, hasStructured, hasSemantic);
       case "preferSemantic":
-        return this.mergePreferSemantic(
-          structuredSection,
-          semanticSection,
-          hasStructured,
-          hasSemantic
-        );
+        return this.mergePreferSemantic(structuredSection, semanticSection, hasStructured, hasSemantic);
       case "balanced":
       default:
-        return this.mergeBalanced(
-          structuredSection,
-          semanticSection,
-          hasStructured,
-          hasSemantic
-        );
+        return this.mergeBalanced(structuredSection, semanticSection, hasStructured, hasSemantic);
     }
   }
 
@@ -342,7 +316,7 @@ export class KnowledgeService {
     structuredSection: string,
     semanticSection: string,
     hasStructured: boolean,
-    hasSemantic: boolean
+    hasSemantic: boolean,
   ): string {
     const parts: string[] = [];
 
@@ -350,9 +324,7 @@ export class KnowledgeService {
       parts.push("[Knowledge Graph Results — Primary]\n" + structuredSection);
     }
     if (hasSemantic) {
-      parts.push(
-        "[Semantic Search Results — Supplementary]\n" + semanticSection
-      );
+      parts.push("[Semantic Search Results — Supplementary]\n" + semanticSection);
     }
     if (!hasStructured && hasSemantic) {
       parts.push("[Semantic Search Results]\n" + semanticSection);
@@ -366,7 +338,7 @@ export class KnowledgeService {
     structuredSection: string,
     semanticSection: string,
     hasStructured: boolean,
-    hasSemantic: boolean
+    hasSemantic: boolean,
   ): string {
     const parts: string[] = [];
 
@@ -374,9 +346,7 @@ export class KnowledgeService {
       parts.push("[Semantic Search Results — Primary]\n" + semanticSection);
     }
     if (hasStructured) {
-      parts.push(
-        "[Knowledge Graph Results — Supplementary]\n" + structuredSection
-      );
+      parts.push("[Knowledge Graph Results — Supplementary]\n" + structuredSection);
     }
     if (!hasSemantic && hasStructured) {
       parts.push("[Knowledge Graph Results]\n" + structuredSection);
@@ -390,7 +360,7 @@ export class KnowledgeService {
     structuredSection: string,
     semanticSection: string,
     hasStructured: boolean,
-    hasSemantic: boolean
+    hasSemantic: boolean,
   ): string {
     const parts: string[] = [];
 
@@ -408,28 +378,21 @@ export class KnowledgeService {
   // Section builders
   // -------------------------------------------------------------------------
 
-  private buildStructuredSection(structured: {
-    entities: Entity[];
-    relations: Relation[];
-  }): string {
+  private buildStructuredSection(
+    structured: { entities: Entity[]; relations: Relation[] },
+  ): string {
     const lines: string[] = [];
 
     if (structured.entities.length > 0) {
-      lines.push(
-        `Found ${structured.entities.length} entit${structured.entities.length === 1 ? "y" : "ies"}:`
-      );
+      lines.push(`Found ${structured.entities.length} entit${structured.entities.length === 1 ? "y" : "ies"}:`);
       for (const e of structured.entities) {
         const lowConf = e.confidence < 0.5 ? " [low confidence]" : "";
-        lines.push(
-          `- ${e.name} (${e.entityType}, confidence: ${e.confidence})${lowConf}`
-        );
+        lines.push(`- ${e.name} (${e.entityType}, confidence: ${e.confidence})${lowConf}`);
       }
     }
 
     if (structured.relations.length > 0) {
-      lines.push(
-        `Found ${structured.relations.length} relation${structured.relations.length === 1 ? "" : "s"}.`
-      );
+      lines.push(`Found ${structured.relations.length} relation${structured.relations.length === 1 ? "" : "s"}.`);
     }
 
     return lines.join("\n");
@@ -441,14 +404,11 @@ export class KnowledgeService {
     }
 
     const lines: string[] = [];
-    lines.push(
-      `Found ${semantic.length} semantic match${semantic.length === 1 ? "" : "es"}:`
-    );
+    lines.push(`Found ${semantic.length} semantic match${semantic.length === 1 ? "" : "es"}:`);
     for (const hit of semantic) {
-      const preview =
-        hit.content.length > 100
-          ? hit.content.slice(0, 100) + "..."
-          : hit.content;
+      const preview = hit.content.length > 100
+        ? hit.content.slice(0, 100) + "..."
+        : hit.content;
       lines.push(`- [score: ${hit.score.toFixed(2)}] ${preview}`);
     }
 

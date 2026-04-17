@@ -216,10 +216,7 @@ class LocalRuntimeClient {
     });
   }
 
-  submitDirective(
-    directive: string,
-    attachments: WorkflowInputAttachment[] = []
-  ) {
+  submitDirective(directive: string, attachments: WorkflowInputAttachment[] = []) {
     return this.request<{
       workflowId: string;
       missionId?: string | null;

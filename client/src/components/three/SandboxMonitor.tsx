@@ -205,10 +205,7 @@ export function SandboxMonitor() {
                     {
                       label: t(locale, "执行流", "Execution"),
                       value: terminalStatus,
-                      tone:
-                        isStreaming || logLines.length > 0
-                          ? "active"
-                          : "default",
+                      tone: isStreaming || logLines.length > 0 ? "active" : "default",
                     },
                     {
                       label: t(locale, "浏览器", "Browser"),

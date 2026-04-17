@@ -9,10 +9,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { AuditStore } from "../audit/audit-store.js";
-import type {
-  AuditLogEntry,
-  AuditEvent,
-} from "../../shared/audit/contracts.js";
+import type { AuditLogEntry, AuditEvent } from "../../shared/audit/contracts.js";
 import { AuditEventType } from "../../shared/audit/contracts.js";
 
 // ─── 辅助：创建临时目录 ─────────────────────────────────────────────────────
@@ -29,10 +26,7 @@ function cleanDir(dir: string): void {
 
 // ─── 辅助：创建测试 AuditLogEntry ──────────────────────────────────────────
 
-function makeEntry(
-  seq: number,
-  overrides?: Partial<AuditLogEntry>
-): AuditLogEntry {
+function makeEntry(seq: number, overrides?: Partial<AuditLogEntry>): AuditLogEntry {
   const event: AuditEvent = {
     eventId: `ae_test_${seq}`,
     eventType: AuditEventType.AGENT_EXECUTED,
@@ -159,9 +153,7 @@ describe("AuditStore", () => {
     it("should return entries sorted by sequenceNumber", () => {
       const entries = store.readEntries(0, 4);
       for (let i = 1; i < entries.length; i++) {
-        expect(entries[i].sequenceNumber).toBeGreaterThan(
-          entries[i - 1].sequenceNumber
-        );
+        expect(entries[i].sequenceNumber).toBeGreaterThan(entries[i - 1].sequenceNumber);
       }
     });
 

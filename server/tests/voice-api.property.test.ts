@@ -23,13 +23,7 @@ let mockRecognize: (...args: unknown[]) => Promise<{ transcript: string }>;
 
 vi.mock("../core/voice-provider.js", () => ({
   getVoiceConfig: () => ({
-    tts: {
-      available: true,
-      apiUrl: "http://x",
-      apiKey: "k",
-      model: "m",
-      voice: "v",
-    },
+    tts: { available: true, apiUrl: "http://x", apiKey: "k", model: "m", voice: "v" },
     stt: { available: true, apiUrl: "http://x", apiKey: "k", model: "m" },
   }),
   synthesizeSpeech: (...args: unknown[]) => mockSynthesize(...args),
@@ -53,28 +47,17 @@ function request(
   method: string,
   path: string,
   body?: string | Buffer,
-  contentType = "application/json"
+  contentType = "application/json",
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const addr = server.address() as { port: number };
     const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port: addr.port,
-        path,
-        method,
-        headers: { "content-type": contentType },
-      },
-      res => {
+      { hostname: "127.0.0.1", port: addr.port, path, method, headers: { "content-type": contentType } },
+      (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", c => chunks.push(c));
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode!,
-            body: Buffer.concat(chunks).toString(),
-          })
-        );
-      }
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve({ status: res.statusCode!, body: Buffer.concat(chunks).toString() }));
+      },
     );
     req.on("error", reject);
     if (body) req.write(body);
@@ -91,7 +74,7 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
     mockRecognize = () => Promise.reject(new Error("default"));
 
     const app = await createApp();
-    server = await new Promise<http.Server>(resolve => {
+    server = await new Promise<http.Server>((resolve) => {
       const s = app.listen(0, "127.0.0.1", () => resolve(s));
     });
 
@@ -112,7 +95,7 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
             server,
             "POST",
             "/api/voice/tts",
-            JSON.stringify({ text })
+            JSON.stringify({ text }),
           );
 
           expect(res.status).toBe(503);
@@ -121,9 +104,9 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
           expect(typeof json.error).toBe("string");
           expect(json.error.length).toBeGreaterThan(0);
           expect(json.error).toContain(errorMsg);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -131,7 +114,7 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 200 }),
-        async errorMsg => {
+        async (errorMsg) => {
           mockRecognize = () => Promise.reject(new Error(errorMsg));
 
           // Send a small non-empty audio payload
@@ -141,7 +124,7 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
             "POST",
             "/api/voice/stt",
             audioPayload,
-            "audio/webm"
+            "audio/webm",
           );
 
           expect(res.status).toBe(503);
@@ -150,9 +133,9 @@ describe("Feature: multi-modal-agent, Property 10: Voice API 服务失败返回 
           expect(typeof json.error).toBe("string");
           expect(json.error.length).toBeGreaterThan(0);
           expect(json.error).toContain(errorMsg);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

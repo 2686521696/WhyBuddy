@@ -10,8 +10,13 @@ import {
   Shield,
 } from "lucide-react";
 
-export type PrimaryNavigationId = "office" | "more";
-export type MoreNavigationId = "debug" | "help";
+export type PrimaryNavigationId = "office" | "tasks" | "more";
+export type MoreNavigationId =
+  | "config"
+  | "permissions"
+  | "audit"
+  | "lineage"
+  | "help";
 
 export interface NavigationItem<TId extends string> {
   id: TId;
@@ -29,6 +34,11 @@ export const PRIMARY_NAV_ITEMS: Array<NavigationItem<PrimaryNavigationId>> = [
     href: "/",
   },
   {
+    id: "tasks",
+    icon: FolderKanban,
+    href: "/tasks",
+  },
+  {
     id: "more",
     icon: LayoutGrid,
   },
@@ -36,9 +46,21 @@ export const PRIMARY_NAV_ITEMS: Array<NavigationItem<PrimaryNavigationId>> = [
 
 export const MORE_NAV_ITEMS: Array<NavigationItem<MoreNavigationId>> = [
   {
-    id: "debug",
+    id: "config",
+    icon: Settings2,
+  },
+  {
+    id: "permissions",
+    icon: Shield,
+  },
+  {
+    id: "audit",
+    icon: FileSearch,
+  },
+  {
+    id: "lineage",
     icon: GitBranch,
-    href: "/debug",
+    href: "/lineage",
   },
   {
     id: "help",
@@ -48,11 +70,12 @@ export const MORE_NAV_ITEMS: Array<NavigationItem<MoreNavigationId>> = [
 
 export function isLowFrequencyPath(path: string) {
   return (
-    path.startsWith("/debug") || path.startsWith(LEGACY_COMMAND_CENTER_PATH)
+    path.startsWith("/lineage") || path.startsWith(LEGACY_COMMAND_CENTER_PATH)
   );
 }
 
 export function getPrimaryNavigationId(path: string): PrimaryNavigationId {
+  if (path.startsWith("/tasks")) return "tasks";
   if (isLowFrequencyPath(path)) return "more";
   return "office";
 }

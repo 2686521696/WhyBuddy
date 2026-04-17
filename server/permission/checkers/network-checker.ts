@@ -8,11 +8,7 @@
  * - 速率限制占位（完整实现在 Task 13）
  */
 
-import type {
-  Action,
-  PermissionConstraints,
-  PortRange,
-} from "../../../shared/permission/contracts.js";
+import type { Action, PermissionConstraints, PortRange } from "../../../shared/permission/contracts.js";
 import type { ResourceChecker } from "./filesystem-checker.js";
 import { SlidingWindowRateLimiter } from "../rate-limiter.js";
 
@@ -50,7 +46,7 @@ const PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 export function isPrivateIP(ip: string): boolean {
   const parsed = parseIPv4(ip);
   if (parsed === null) return false;
-  return PRIVATE_CIDRS.some(cidr => ipInCidr(parsed, cidr));
+  return PRIVATE_CIDRS.some((cidr) => ipInCidr(parsed, cidr));
 }
 
 // ─── Domain matching ────────────────────────────────────────────────────────
@@ -72,7 +68,7 @@ export function matchDomain(pattern: string, domain: string): boolean {
 
 /** Check if a port falls within any of the given port ranges */
 export function portInRanges(port: number, ranges: PortRange[]): boolean {
-  return ranges.some(r => port >= r.from && port <= r.to);
+  return ranges.some((r) => port >= r.from && port <= r.to);
 }
 
 // ─── NetworkChecker ─────────────────────────────────────────────────────────
@@ -99,11 +95,7 @@ export class NetworkChecker implements ResourceChecker {
     return this.rateLimiter;
   }
 
-  checkConstraints(
-    action: Action,
-    resource: string,
-    constraints: PermissionConstraints
-  ): boolean {
+  checkConstraints(action: Action, resource: string, constraints: PermissionConstraints): boolean {
     const { host, port } = parseNetworkResource(resource);
 
     // 1. Private IP — always denied by default
@@ -113,26 +105,14 @@ export class NetworkChecker implements ResourceChecker {
 
     // 2. CIDR range check (if IP address)
     const parsedIp = parseIPv4(host);
-    if (
-      parsedIp !== null &&
-      constraints.cidrRanges &&
-      constraints.cidrRanges.length > 0
-    ) {
-      const inRange = constraints.cidrRanges.some(cidr =>
-        ipInCidr(parsedIp, cidr)
-      );
+    if (parsedIp !== null && constraints.cidrRanges && constraints.cidrRanges.length > 0) {
+      const inRange = constraints.cidrRanges.some((cidr) => ipInCidr(parsedIp, cidr));
       if (!inRange) return false;
     }
 
     // 3. Domain whitelist check (if domain name)
-    if (
-      parsedIp === null &&
-      constraints.domainPatterns &&
-      constraints.domainPatterns.length > 0
-    ) {
-      const domainAllowed = constraints.domainPatterns.some(pattern =>
-        matchDomain(pattern, host)
-      );
+    if (parsedIp === null && constraints.domainPatterns && constraints.domainPatterns.length > 0) {
+      const domainAllowed = constraints.domainPatterns.some((pattern) => matchDomain(pattern, host));
       if (!domainAllowed) return false;
     }
 
@@ -154,10 +134,7 @@ export class NetworkChecker implements ResourceChecker {
   }
 }
 
-function parseNetworkResource(resource: string): {
-  host: string;
-  port: number | null;
-} {
+function parseNetworkResource(resource: string): { host: string; port: number | null } {
   const lastColon = resource.lastIndexOf(":");
   if (lastColon === -1) return { host: resource, port: null };
   const portStr = resource.slice(lastColon + 1);

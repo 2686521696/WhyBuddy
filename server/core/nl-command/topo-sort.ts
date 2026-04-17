@@ -22,8 +22,8 @@ export interface Edge {
  */
 export class CyclicDependencyError extends Error {
   constructor(public readonly cycle: string[]) {
-    super(`Cyclic dependency detected: ${cycle.join(" → ")}`);
-    this.name = "CyclicDependencyError";
+    super(`Cyclic dependency detected: ${cycle.join(' → ')}`);
+    this.name = 'CyclicDependencyError';
   }
 }
 
@@ -38,10 +38,7 @@ export class CyclicDependencyError extends Error {
  * @returns 二维数组，每层为可并行执行的节点组
  * @throws {CyclicDependencyError} 当存在循环依赖时
  */
-export function topoSortWithGroups(
-  nodeIds: string[],
-  edges: Edge[]
-): string[][] {
+export function topoSortWithGroups(nodeIds: string[], edges: Edge[]): string[][] {
   const nodeSet = new Set(nodeIds);
 
   // Build adjacency list (to → from[]) and in-degree map
@@ -124,7 +121,7 @@ function detectCycle(nodeSet: Set<string>, edges: Edge[]): string[] {
   }
 
   const WHITE = 0; // unvisited
-  const GRAY = 1; // in current DFS path
+  const GRAY = 1;  // in current DFS path
   const BLACK = 2; // fully processed
 
   const color = new Map<string, number>();
@@ -179,5 +176,5 @@ function detectCycle(nodeSet: Set<string>, edges: Edge[]): string[] {
   }
 
   // Fallback: should not reach here if Kahn's confirmed a cycle
-  return ["unknown cycle"];
+  return ['unknown cycle'];
 }

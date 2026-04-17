@@ -58,7 +58,10 @@ function makeWorkflow(
   };
 }
 
-function makeAgent(id: string, overrides: Partial<AgentInfo> = {}): AgentInfo {
+function makeAgent(
+  id: string,
+  overrides: Partial<AgentInfo> = {}
+): AgentInfo {
   return {
     id,
     name: id.toUpperCase(),
@@ -242,9 +245,7 @@ describe("scene-agent-detail helpers", () => {
     });
 
     expect(snapshot.workFocus.missionId).toBe("mission-1");
-    expect(snapshot.workFocus.summary).toContain(
-      "Refining the next gameplay proposal"
-    );
+    expect(snapshot.workFocus.summary).toContain("Refining the next gameplay proposal");
     expect(snapshot.memoryEmpty?.title).toBe("近期记忆为空");
     expect(snapshot.reportEmpty?.title).toBe("还没有报告摘要");
   });

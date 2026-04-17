@@ -2,8 +2,8 @@ import type {
   AutonomyConfig,
   CapabilityProfile,
   TaskHistoryEntry,
-} from "../../shared/autonomy-types.js";
-import { RingBuffer } from "../../shared/ring-buffer.js";
+} from '../../shared/autonomy-types.js';
+import { RingBuffer } from '../../shared/ring-buffer.js';
 
 /**
  * Manages in-memory CapabilityProfile instances for all registered agents.
@@ -28,10 +28,7 @@ export class CapabilityProfileManager {
   }
 
   /** Create and register a new agent profile */
-  initProfile(
-    agentId: string,
-    specializationTags: string[]
-  ): CapabilityProfile {
+  initProfile(agentId: string, specializationTags: string[]): CapabilityProfile {
     const profile: CapabilityProfile = {
       agentId,
       skillVector: new Map(),
@@ -60,11 +57,7 @@ export class CapabilityProfileManager {
    * Also records task history, increments completedTaskCount,
    * and recalculates confidence.
    */
-  updateSkillAfterTask(
-    agentId: string,
-    skillCategory: string,
-    taskQuality: number
-  ): void {
+  updateSkillAfterTask(agentId: string, skillCategory: string, taskQuality: number): void {
     const profile = this.profiles.get(agentId);
     if (!profile) return;
 
@@ -128,7 +121,7 @@ export class CapabilityProfileManager {
     const history = profile.taskHistory.toArray();
     if (history.length === 0) return;
 
-    const successCount = history.filter(e => e.success).length;
+    const successCount = history.filter((e) => e.success).length;
     const successRate = successCount / history.length;
     const avgQuality =
       history.reduce((sum, e) => sum + e.qualityScore, 0) / history.length;
@@ -153,10 +146,7 @@ export class CapabilityProfileManager {
         // Find the most recent task in this skill category
         const lastTask = history
           .filter((e: TaskHistoryEntry) => e.skillCategory === skill)
-          .sort(
-            (a: TaskHistoryEntry, b: TaskHistoryEntry) =>
-              b.completedAt - a.completedAt
-          )[0];
+          .sort((a: TaskHistoryEntry, b: TaskHistoryEntry) => b.completedAt - a.completedAt)[0];
 
         if (!lastTask) {
           // No history for this skill — treat as fully inactive from profile creation
@@ -164,8 +154,7 @@ export class CapabilityProfileManager {
           continue;
         }
 
-        const daysSinceLastTask =
-          (now - lastTask.completedAt) / (1000 * 60 * 60 * 24);
+        const daysSinceLastTask = (now - lastTask.completedAt) / (1000 * 60 * 60 * 24);
         if (daysSinceLastTask <= inactiveDaysThreshold) continue;
 
         const weeksInactive = daysSinceLastTask / 7;
@@ -225,10 +214,7 @@ export class CapabilityProfileManager {
    * Restore a CapabilityProfileManager from a JSON string.
    * Reconstructs Maps and RingBuffers.
    */
-  static deserialize(
-    json: string,
-    config: AutonomyConfig
-  ): CapabilityProfileManager {
+  static deserialize(json: string, config: AutonomyConfig): CapabilityProfileManager {
     const manager = new CapabilityProfileManager(config);
     const entries: Array<[string, SerializedProfile]> = JSON.parse(json);
 
@@ -266,11 +252,7 @@ interface SerializedProfile {
   skillVector: [string, number][];
   loadFactor: number;
   confidenceScore: number;
-  resourceQuota: {
-    remainingTokenBudget: number;
-    memoryMb: number;
-    cpuPercent: number;
-  };
+  resourceQuota: { remainingTokenBudget: number; memoryMb: number; cpuPercent: number };
   specializationTags: string[];
   avgLatencyMs: [string, number][];
   taskHistory: { capacity: number; items: TaskHistoryEntry[] };

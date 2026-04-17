@@ -38,13 +38,9 @@ describe("Property 8: 日志批量约束", () => {
 
   it("each batch size does not exceed maxSizeBytes unless it contains a single oversized line", () => {
     fc.assert(
-      fc.property(arbLogLines, lines => {
+      fc.property(arbLogLines, (lines) => {
         const batches: string[][] = [];
-        const batcher = new LogBatcher(
-          b => batches.push([...b]),
-          MAX_INTERVAL_MS,
-          MAX_SIZE_BYTES
-        );
+        const batcher = new LogBatcher((b) => batches.push([...b]), MAX_INTERVAL_MS, MAX_SIZE_BYTES);
 
         for (const line of lines) {
           batcher.push(line);
@@ -52,10 +48,7 @@ describe("Property 8: 日志批量约束", () => {
         batcher.destroy();
 
         for (const batch of batches) {
-          const totalBytes = batch.reduce(
-            (sum, l) => sum + Buffer.byteLength(l, "utf8"),
-            0
-          );
+          const totalBytes = batch.reduce((sum, l) => sum + Buffer.byteLength(l, "utf8"), 0);
           if (batch.length === 1) {
             // A single-line batch is always allowed (even if oversized)
             expect(totalBytes).toBeGreaterThan(0);
@@ -64,19 +57,15 @@ describe("Property 8: 日志批量约束", () => {
           }
         }
       }),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
   it("all pushed lines appear in flushed batches (no data loss)", () => {
     fc.assert(
-      fc.property(arbLogLines, lines => {
+      fc.property(arbLogLines, (lines) => {
         const batches: string[][] = [];
-        const batcher = new LogBatcher(
-          b => batches.push([...b]),
-          MAX_INTERVAL_MS,
-          MAX_SIZE_BYTES
-        );
+        const batcher = new LogBatcher((b) => batches.push([...b]), MAX_INTERVAL_MS, MAX_SIZE_BYTES);
 
         for (const line of lines) {
           batcher.push(line);
@@ -86,19 +75,15 @@ describe("Property 8: 日志批量约束", () => {
         const allFlushed = batches.flat();
         expect(allFlushed).toEqual(lines);
       }),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
   it("line order across batches matches push order", () => {
     fc.assert(
-      fc.property(arbLogLines, lines => {
+      fc.property(arbLogLines, (lines) => {
         const batches: string[][] = [];
-        const batcher = new LogBatcher(
-          b => batches.push([...b]),
-          MAX_INTERVAL_MS,
-          MAX_SIZE_BYTES
-        );
+        const batcher = new LogBatcher((b) => batches.push([...b]), MAX_INTERVAL_MS, MAX_SIZE_BYTES);
 
         for (const line of lines) {
           batcher.push(line);
@@ -111,19 +96,15 @@ describe("Property 8: 日志批量约束", () => {
           expect(allFlushed[i]).toBe(lines[i]);
         }
       }),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 
   it("timer-based flush fires within maxIntervalMs", () => {
     fc.assert(
-      fc.property(arbLogLines, lines => {
+      fc.property(arbLogLines, (lines) => {
         const batches: string[][] = [];
-        const batcher = new LogBatcher(
-          b => batches.push([...b]),
-          MAX_INTERVAL_MS,
-          MAX_SIZE_BYTES
-        );
+        const batcher = new LogBatcher((b) => batches.push([...b]), MAX_INTERVAL_MS, MAX_SIZE_BYTES);
 
         // Push all lines
         for (const line of lines) {
@@ -139,7 +120,7 @@ describe("Property 8: 日志批量约束", () => {
 
         batcher.destroy();
       }),
-      { numRuns: 200 }
+      { numRuns: 200 },
     );
   });
 });

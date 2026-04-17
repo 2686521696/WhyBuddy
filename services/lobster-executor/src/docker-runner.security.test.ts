@@ -10,9 +10,7 @@ import type {
 } from "../../../shared/executor/contracts.js";
 import { EXECUTOR_CONTRACT_VERSION } from "../../../shared/executor/contracts.js";
 
-function makeRunner(
-  securityLevel: LobsterExecutorConfig["securityLevel"] = "strict"
-) {
+function makeRunner(securityLevel: LobsterExecutorConfig["securityLevel"] = "strict") {
   const config: LobsterExecutorConfig = {
     host: "localhost",
     port: 7200,
@@ -112,7 +110,7 @@ describe("DockerRunner AI security policy", () => {
           model: "gpt-test",
         },
       }),
-      "/tmp/ws"
+      "/tmp/ws",
     );
 
     expect(opts.HostConfig?.NetworkMode).toBe(SANDBOX_NETWORK_NAME);

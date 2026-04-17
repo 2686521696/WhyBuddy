@@ -12,7 +12,7 @@ import type {
   DimensionDeltas,
   ReputationConfig,
   ReputationSignal,
-} from "../../../shared/reputation.js";
+} from '../../../shared/reputation.js';
 
 export class ReputationCalculator {
   constructor(private config: ReputationConfig) {}
@@ -44,7 +44,7 @@ export class ReputationCalculator {
   computeDimensionDeltas(
     current: DimensionScores,
     signal: ReputationSignal,
-    streakCount: number
+    streakCount: number,
   ): DimensionDeltas {
     const { ema: emaConfig, reliability, streak } = this.config;
 
@@ -55,11 +55,7 @@ export class ReputationCalculator {
     }
 
     // qualityScore: EMA(current, taskQualityScore * 10, qualityAlpha)
-    const newQuality = this.ema(
-      current.qualityScore,
-      signal.taskQualityScore * 10,
-      qualityAlpha
-    );
+    const newQuality = this.ema(current.qualityScore, signal.taskQualityScore * 10, qualityAlpha);
     const qualityDelta = newQuality - current.qualityScore;
 
     // speedScore: EMA(current, ratioToScore(actual/estimated), qualityAlpha)
@@ -71,11 +67,7 @@ export class ReputationCalculator {
     // efficiencyScore: EMA(current, ratioToScore(tokenConsumed/tokenBudget), qualityAlpha)
     const efficiencyRatio = signal.tokenConsumed / signal.tokenBudget;
     const efficiencyTarget = this.ratioToScore(efficiencyRatio);
-    const newEfficiency = this.ema(
-      current.efficiencyScore,
-      efficiencyTarget,
-      qualityAlpha
-    );
+    const newEfficiency = this.ema(current.efficiencyScore, efficiencyTarget, qualityAlpha);
     const efficiencyDelta = newEfficiency - current.efficiencyScore;
 
     // collaborationScore: if collaborationRating exists, EMA with collaborationAlpha; else 0
@@ -84,7 +76,7 @@ export class ReputationCalculator {
       const newCollab = this.ema(
         current.collaborationScore,
         signal.collaborationRating * 10,
-        emaConfig.collaborationAlpha
+        emaConfig.collaborationAlpha,
       );
       collaborationDelta = newCollab - current.collaborationScore;
     }
@@ -94,8 +86,7 @@ export class ReputationCalculator {
     if (signal.wasRolledBack) {
       reliabilityDelta -= reliability.rollbackPenalty;
     }
-    reliabilityDelta -=
-      signal.downstreamFailures * reliability.downstreamFailurePenalty;
+    reliabilityDelta -= signal.downstreamFailures * reliability.downstreamFailurePenalty;
     if (!signal.wasRolledBack) {
       reliabilityDelta += reliability.successRecovery;
     }
@@ -131,7 +122,7 @@ export class ReputationCalculator {
    */
   computeOverallScore(
     dimensions: DimensionScores,
-    weights?: ReputationConfig["weights"]
+    weights?: ReputationConfig['weights'],
   ): number {
     const w = weights ?? this.config.weights;
     const raw =

@@ -60,7 +60,9 @@ describe("AuditChain", () => {
 
     it("should throw if not initialized and no keys provided", () => {
       const uninitChain = new AuditChain();
-      expect(() => uninitChain.getPublicKeyPem()).toThrow(/not initialized/i);
+      expect(() => uninitChain.getPublicKeyPem()).toThrow(
+        /not initialized/i,
+      );
     });
 
     it("should auto-generate keys via init() when no env/file keys exist", () => {
@@ -181,12 +183,12 @@ describe("AuditChain", () => {
         entry.event,
         entry.timestamp.system,
         entry.previousHash,
-        entry.nonce
+        entry.nonce,
       );
       expect(recomputed).toBe(entry.currentHash);
       // Verify signature
       expect(chain.verifySignature(entry.currentHash, entry.signature)).toBe(
-        true
+        true,
       );
     });
   });

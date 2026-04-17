@@ -13,7 +13,6 @@
 ## File Map
 
 **Modify**
-
 - `services/lobster-executor/src/types.ts`：扩展 executionMode 类型
 - `services/lobster-executor/src/config.ts`：解析 `LOBSTER_EXECUTION_MODE=native`
 - `services/lobster-executor/src/runner.ts`：新增 NativeRunner 并调整 factory 选择逻辑
@@ -23,7 +22,6 @@
 - `vitest.config.server.ts`：纳入 executor 测试（或在计划中使用路径运行）
 
 **Create**
-
 - `services/lobster-executor/src/native-runner.ts`：本机进程执行 runner
 - `services/lobster-executor/src/__tests__/native-runner.test.ts`：NativeRunner 单测
 - `services/lobster-executor/src/__tests__/runner-factory.test.ts`：createJobRunner 选择逻辑单测
@@ -34,7 +32,6 @@
 ### Task 1: Expand Execution Mode Types + Config Parsing
 
 **Files:**
-
 - Modify: `services/lobster-executor/src/types.ts`
 - Modify: `services/lobster-executor/src/config.ts`
 - Create: `services/lobster-executor/src/__tests__/config-native-mode.test.ts`
@@ -55,7 +52,7 @@ describe("readLobsterExecutorConfig executionMode", () => {
         LOBSTER_EXECUTOR_PORT: "3031",
         LOBSTER_EXECUTOR_HOST: "0.0.0.0",
       },
-      "linux"
+      "linux",
     );
     expect(config.executionMode).toBe("native");
   });
@@ -121,8 +118,7 @@ return {
     1,
     Number.parseInt(env.LOBSTER_MAX_CONCURRENT_JOBS || "2", 10) || 2
   ),
-  dockerHost:
-    env.LOBSTER_DOCKER_HOST || env.DOCKER_HOST || defaultDockerHost(platform),
+  dockerHost: env.LOBSTER_DOCKER_HOST || env.DOCKER_HOST || defaultDockerHost(platform),
   dockerTlsVerify: env.DOCKER_TLS_VERIFY === "1" ? true : undefined,
   dockerCertPath: env.DOCKER_CERT_PATH || undefined,
   callbackSecret: env.EXECUTOR_CALLBACK_SECRET || "",
@@ -160,7 +156,6 @@ git commit -m "feat(lobster): support native execution mode in config"
 ### Task 2: Add NativeRunner (Local Process Execution)
 
 **Files:**
-
 - Create: `services/lobster-executor/src/native-runner.ts`
 - Create: `services/lobster-executor/src/__tests__/native-runner.test.ts`
 - Modify: `services/lobster-executor/src/runner.ts`
@@ -249,17 +244,17 @@ describe("NativeRunner", () => {
       writeFileSync(
         join(root, "script.js"),
         "console.log('hello-native');\n",
-        "utf-8"
+        "utf-8",
       );
       const record = makeRecord(root);
       const runner = new NativeRunner({
         callbackSender: { send: async () => {} },
       });
       const events: any[] = [];
-      await runner.run(record, e => events.push(e));
+      await runner.run(record, (e) => events.push(e));
 
-      expect(events.some(e => e.type === "job.started")).toBe(true);
-      expect(events.some(e => e.type === "job.completed")).toBe(true);
+      expect(events.some((e) => e.type === "job.started")).toBe(true);
+      expect(events.some((e) => e.type === "job.completed")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -282,15 +277,7 @@ Expected: FAIL（NativeRunner 不存在）。
 Create `services/lobster-executor/src/native-runner.ts` with:
 
 ```ts
-import {
-  appendFileSync,
-  mkdirSync,
-  existsSync,
-  writeFileSync,
-  readdirSync,
-  statSync,
-  copyFileSync,
-} from "node:fs";
+import { appendFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, statSync, copyFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { join, relative, resolve } from "node:path";
 
@@ -299,11 +286,7 @@ import type { StoredJobRecord } from "./types.js";
 import type { JobRunner } from "./runner.js";
 import type { CallbackSender } from "./callback-sender.js";
 import { LogBatcher } from "./log-batcher.js";
-import {
-  resolveAICredentials,
-  validateCredentials,
-  buildAIEnvVars,
-} from "./credential-injector.js";
+import { resolveAICredentials, validateCredentials, buildAIEnvVars } from "./credential-injector.js";
 
 function toRelativePath(pathname: string): string {
   return relative(process.cwd(), pathname).replace(/\\/g, "/");
@@ -325,7 +308,7 @@ export class NativeRunner implements JobRunner {
       callbackSender: CallbackSender;
       now?: () => Date;
       sleep?: (ms: number) => Promise<void>;
-    }
+    },
   ) {}
 
   async cancel(record: StoredJobRecord): Promise<void> {
@@ -334,10 +317,7 @@ export class NativeRunner implements JobRunner {
     }
   }
 
-  async run(
-    record: StoredJobRecord,
-    emitEvent: (event: ExecutorEvent) => void
-  ): Promise<void> {
+  async run(record: StoredJobRecord, emitEvent: (event: ExecutorEvent) => void): Promise<void> {
     const now = this.options.now ?? (() => new Date());
     const payload = (record.planJob.payload ?? {}) as Record<string, unknown>;
     const command = (payload.command ?? []) as string[];
@@ -363,17 +343,12 @@ export class NativeRunner implements JobRunner {
     }
 
     const workspaceRootRaw = payload.workspaceRoot as string | undefined;
-    const workspaceRoot = workspaceRootRaw
-      ? resolve(workspaceRootRaw)
-      : process.cwd();
+    const workspaceRoot = workspaceRootRaw ? resolve(workspaceRootRaw) : process.cwd();
     ensureDir(record.dataDirectory);
     ensureDir(join(record.dataDirectory, "artifacts"));
 
     const envMap = (payload.env ?? {}) as Record<string, string>;
-    const env: Record<string, string> = { ...process.env } as Record<
-      string,
-      string
-    >;
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
     for (const [k, v] of Object.entries(envMap)) {
       if (typeof v === "string") env[k] = v;
     }
@@ -389,7 +364,7 @@ export class NativeRunner implements JobRunner {
     }
 
     const logBatcher = new LogBatcher(
-      lines => {
+      (lines) => {
         const logEvent: ExecutorEvent = {
           version: record.request.version,
           eventId: `${record.request.requestId}-${Date.now()}-log`,
@@ -402,13 +377,10 @@ export class NativeRunner implements JobRunner {
           message: lines.join("\n"),
         };
         emitEvent(logEvent);
-        void this.options.callbackSender.send(
-          record.request.callback,
-          logEvent
-        );
+        void this.options.callbackSender.send(record.request.callback, logEvent);
       },
       500,
-      4096
+      4096,
     );
 
     const startedAt = nowIso(now);
@@ -430,39 +402,32 @@ export class NativeRunner implements JobRunner {
       message: record.message,
     };
     emitEvent(startedEvent);
-    await this.options.callbackSender.send(
-      record.request.callback,
-      startedEvent
-    );
+    await this.options.callbackSender.send(record.request.callback, startedEvent);
 
     const timeoutMs = record.planJob.timeoutMs ?? 300_000;
     const start = Date.now();
-    const proc = spawn(command[0], command.slice(1), {
-      cwd: workspaceRoot,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const proc = spawn(command[0], command.slice(1), { cwd: workspaceRoot, env, stdio: ["ignore", "pipe", "pipe"] });
     this.child = proc;
 
-    proc.stdout?.on("data", chunk => {
+    proc.stdout?.on("data", (chunk) => {
       const text = chunk.toString();
       appendFileSync(record.logFile, text);
       logBatcher.push(text.trimEnd());
     });
-    proc.stderr?.on("data", chunk => {
+    proc.stderr?.on("data", (chunk) => {
       const text = chunk.toString();
       appendFileSync(record.logFile, text);
       logBatcher.push(text.trimEnd());
     });
 
-    const exitCode: number = await new Promise(resolveExit => {
+    const exitCode: number = await new Promise((resolveExit) => {
       let done = false;
       const timer = setTimeout(() => {
         if (done) return;
         proc.kill("SIGTERM");
         setTimeout(() => proc.kill("SIGKILL"), 1500);
       }, timeoutMs);
-      proc.on("exit", code => {
+      proc.on("exit", (code) => {
         done = true;
         clearTimeout(timer);
         resolveExit(typeof code === "number" ? code : 1);
@@ -476,20 +441,13 @@ export class NativeRunner implements JobRunner {
       missionId: record.request.missionId,
       jobId: record.request.jobId,
       requestId: record.request.requestId,
-      summary:
-        exitCode === 0
-          ? "Native execution completed successfully"
-          : `Native execution failed (exit ${exitCode})`,
+      summary: exitCode === 0 ? "Native execution completed successfully" : `Native execution failed (exit ${exitCode})`,
       outcome: exitCode === 0 ? "success" : "failed",
       durationMs,
       exitCode,
     };
     const resultFile = join(record.dataDirectory, "result.json");
-    writeFileSync(
-      resultFile,
-      `${JSON.stringify(resultPayload, null, 2)}\n`,
-      "utf-8"
-    );
+    writeFileSync(resultFile, `${JSON.stringify(resultPayload, null, 2)}\n`, "utf-8");
 
     record.finishedAt = finishedAt;
     record.progress = 100;
@@ -567,17 +525,14 @@ import { NativeRunner } from "./native-runner.js";
 export function createJobRunner(
   config: LobsterExecutorConfig,
   callbackSender?: CallbackSender,
-  mockRunnerOptions?: MockRunnerOptions
+  mockRunnerOptions?: MockRunnerOptions,
 ): JobRunner {
   if (config.executionMode === "mock") {
     return new MockRunner(mockRunnerOptions);
   }
 
   if (config.executionMode === "native") {
-    if (!callbackSender)
-      throw new Error(
-        'CallbackSender is required when executionMode is "native"'
-      );
+    if (!callbackSender) throw new Error('CallbackSender is required when executionMode is "native"');
     return new NativeRunner({ callbackSender, ...mockRunnerOptions });
   }
 
@@ -610,7 +565,6 @@ git commit -m "feat(lobster): add native runner for sandbox execution"
 ### Task 3: Runner Selection Tests (Factory)
 
 **Files:**
-
 - Create: `services/lobster-executor/src/__tests__/runner-factory.test.ts`
 
 - [ ] **Step 1: Write failing test for createJobRunner selection**
@@ -664,7 +618,6 @@ git commit -m "test(lobster): cover runner factory selection"
 ### Task 4: Auto-Downgrade real → native When Docker Unavailable
 
 **Files:**
-
 - Modify: `services/lobster-executor/src/index.ts`
 
 - [ ] **Step 1: Add helper to probe Docker availability**
@@ -672,9 +625,7 @@ git commit -m "test(lobster): cover runner factory selection"
 Refactor `services/lobster-executor/src/index.ts` to:
 
 ```ts
-async function isDockerAvailable(
-  dockerHost: string | undefined
-): Promise<boolean> {
+async function isDockerAvailable(dockerHost: string | undefined): Promise<boolean> {
   const docker = new Dockerode(parseDockerHost(dockerHost));
   try {
     await docker.ping();
@@ -697,7 +648,7 @@ if (config.executionMode === "real") {
     console.log("[lobster-executor] Docker daemon connected");
   } else {
     console.warn(
-      `[lobster-executor] Docker daemon is not available at "${config.dockerHost}". Falling back to native execution.`
+      `[lobster-executor] Docker daemon is not available at "${config.dockerHost}". Falling back to native execution.`,
     );
     effectiveConfig = { ...config, executionMode: "native" };
   }
@@ -718,7 +669,6 @@ LOBSTER_EXECUTION_MODE=real npx tsx services/lobster-executor/src/index.ts
 ```
 
 Expected:
-
 - 不退出
 - /health 显示 ok
 
@@ -734,7 +684,6 @@ git commit -m "feat(lobster): fallback to native when docker is unavailable"
 ### Task 5: Health Feature Flags Reflect Runner Capability
 
 **Files:**
-
 - Modify: `services/lobster-executor/src/app.ts`
 - Modify: `services/lobster-executor/src/service.ts`
 
@@ -773,7 +722,6 @@ curl -sS http://localhost:3031/health | head -c 800 && echo
 ```
 
 Expected:
-
 - `features.dockerLifecycle=false` in sandbox when fallback/native
 - `docker.status=disconnected` but overall `status=ok`
 
@@ -789,7 +737,6 @@ git commit -m "feat(lobster): health reflects effective execution mode"
 ### Task 6: Make Executor Tests Run in Standard Test Command
 
 **Files:**
-
 - Modify: `vitest.config.server.ts`
 
 - [ ] **Step 1: Add include pattern for lobster-executor tests**
@@ -822,7 +769,6 @@ git commit -m "test: include lobster-executor tests in vitest config"
 ### Task 7: End-to-End Sandbox Verification
 
 **Files:**
-
 - None
 
 - [ ] **Step 1: Start server + executor + frontend**
@@ -858,7 +804,6 @@ Expected: docker disconnected + dockerLifecycle=false.
 In UI: 发起一个能生成执行计划的任务（例如“在 /workspace 下创建一个文件并写入 hello”）。
 
 Expected:
-
 - UI 看到 job.started → job.log → job.completed
 - artifacts 至少包含 executor.log 与 result.json
 
@@ -869,3 +814,4 @@ Expected:
 - 覆盖 spec 中的“自动检测降级”“不改变协议”“最小可用 artifacts”“取消/超时”均有对应 Task
 - 全文无 TODO/TBD，占位语句为 0
 - 类型（executionMode union）在 types/config/service/runner/app 五处一致
+
