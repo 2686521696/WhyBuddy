@@ -1357,17 +1357,21 @@ function resolveSelectedTaskId(
   currentSelectedTaskId: string | null,
   preferredTaskId?: string | null
 ): string | null {
-  const nextSelectedTaskId =
-    preferredTaskId ??
-    currentSelectedTaskId ??
-    readPersistedSelectedTaskId() ??
-    null;
-  if (
-    nextSelectedTaskId &&
-    summaries.some(summary => summary.id === nextSelectedTaskId)
-  ) {
-    return nextSelectedTaskId;
+  const candidateTaskIds = [
+    preferredTaskId,
+    currentSelectedTaskId,
+    readPersistedSelectedTaskId(),
+  ].filter(
+    (taskId, index, allTaskIds): taskId is string =>
+      Boolean(taskId) && allTaskIds.indexOf(taskId) === index
+  );
+
+  for (const taskId of candidateTaskIds) {
+    if (summaries.some(summary => summary.id === taskId)) {
+      return taskId;
+    }
   }
+
   return pickFallbackTaskId(summaries);
 }
 

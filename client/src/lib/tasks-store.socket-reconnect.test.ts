@@ -209,4 +209,52 @@ describe("tasks-store socket reconnect recovery", () => {
       vi.useRealTimers();
     }
   });
+
+  it("falls back to the persisted task focus when the in-memory focus is stale", async () => {
+    const getItemMock = vi.fn((key: string) =>
+      key === "cube-office:selected-task-id" ? "mission-2" : null
+    );
+
+    (globalThis as typeof globalThis & {
+      window?: typeof globalThis & {
+        location: { origin: string };
+        sessionStorage: {
+          getItem: typeof getItemMock;
+          setItem: ReturnType<typeof vi.fn>;
+          removeItem: ReturnType<typeof vi.fn>;
+        };
+      };
+    }).window = {
+      ...(globalThis as typeof globalThis & { window?: typeof globalThis })
+        .window,
+      location: { origin: "http://localhost:3000" },
+      sessionStorage: {
+        getItem: getItemMock,
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+      setTimeout: ((...args: Parameters<typeof globalThis.setTimeout>) =>
+        globalThis.setTimeout(...args)) as typeof globalThis.setTimeout,
+      clearTimeout: ((...args: Parameters<typeof globalThis.clearTimeout>) =>
+        globalThis.clearTimeout(...args)) as typeof globalThis.clearTimeout,
+    } as typeof globalThis & { location: { origin: string } };
+
+    mockListMissions.mockResolvedValue({
+      ok: true,
+      tasks: [makeMission("mission-1"), makeMission("mission-2")],
+    });
+    mockListMissionEvents.mockImplementation(async missionId => ({
+      ok: true,
+      missionId: String(missionId),
+      events: [],
+    }));
+    useTasksStore.setState({ selectedTaskId: "stale-mission" });
+
+    await useTasksStore.getState().refresh();
+
+    const state = useTasksStore.getState();
+    expect(getItemMock).toHaveBeenCalledWith("cube-office:selected-task-id");
+    expect(state.selectedTaskId).toBe("mission-2");
+    expect(state.detailsById).toHaveProperty("mission-2");
+  });
 });
