@@ -509,7 +509,7 @@ C01-C08 契约冻结 (已完成)
   - 不并行
 - [ ] `task-runtime-visibility-v1`
   - 当前状态：进行中，约 98%；主线收口已基本完成，剩余主要是边界声明与人工验收
-  - 已落地：`MissionStepFlow`、`Logs / Artifacts / Runtime` 归口、详情页与 cockpit 的运行证据 defer、workflow / review handoff 直连首页 `Artifacts`、`socket / callback` 可读摘要与连接态即时同步
+  - 已落地：`MissionStepFlow`、`Logs / Artifacts / Runtime` 归口、详情页与 cockpit 的运行证据 defer、workflow / review handoff 直连首页 `Artifacts`、`socket / callback` 可读摘要与连接态即时同步，以及共享 `office-runtime-evidence` 事件 helper / 回归测试
   - 剩余：`socket / callback` 仍保持前端轻量派生而不扩成第二套真相源；若继续整理墙面浏览器回传与截图放大路径一致性，应转入 `office-wall-display-redesign-v2`
   - 依赖 `task-os-home-redesign-v1`
   - 基于现有 mission / workflow / task detail / socket 数据，把步骤流、Logs、Artifacts、Runtime 收敛到首页
@@ -546,7 +546,7 @@ C01-C08 契约冻结 (已完成)
 ### 剩余动作清单（建议顺序）
 
 1. 收尾 `task-runtime-visibility-v1`
-   - 保持 `socket / callback` 为派生摘要，不再扩成第二套 runtime 真相源
+   - 保持 `socket / callback` 与 shared runtime evidence 事件都为派生摘要 / 导航语义层，不再扩成第二套 runtime 真相源
    - 将墙面浏览器回传 / 截图放大链路的后续收尾明确转交 `office-wall-display-redesign-v2`
 2. 收尾 `office-shell-convergence-v1`
    - 补一轮 `/debug/*` 子路径与旧深链跳转的人工回归
@@ -569,7 +569,7 @@ C01-C08 契约冻结 (已完成)
    - [x] 清掉首页主视图里残留的重复日志主入口
    - [x] 清掉首页主视图里残留的重复 artifact 主入口
    - [x] 清掉独立任务详情页里仍与首页运行证据容器平级竞争的日志 / artifact 主入口
-   - [ ] 补一轮定向回归，确保 `Logs / Artifacts / Runtime` 继续维持唯一主出口语义
+   - [x] 补一轮定向回归，确保 `Logs / Artifacts / Runtime` 继续维持唯一主出口语义
    - [x] 细化 `socket / callback` 的 relay / callback 可读摘要与连接态同步
    - 完成判断：首页与详情页不再出现两套平级运行证据主入口；相关回归测试通过；墙面浏览器回传后续问题不再混入本 spec
 
