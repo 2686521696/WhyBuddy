@@ -493,8 +493,8 @@ C01-C08 契约冻结 (已完成)
 
 - [ ] `office-shell-convergence-v1`
   - 当前状态：进行中，约 97%；主路由、主导航和 `/tasks` 语义已基本收敛
-  - 已落地：`/debug` 壳路由、`/command-center` -> `/`、`Toolbar` 主导航收敛为 `office / more`、`MoreDrawer` 低频治理入口统一导向 `/debug/*`、`/lineage` -> `/debug/lineage`、`/command-center/legacy` 纯兼容跳转
-  - 剩余：`/debug/*` 子路径人工回归；定向自动校验已覆盖 `/debug/help`、`/debug/lineage`、兼容跳转与 replay 深链，剩余主要是人工确认真实页面加载与点击流
+  - 已落地：`/debug` 壳路由、`/command-center` -> `/`、`Toolbar` 主导航收敛为 `office / more`、`MoreDrawer` 低频治理入口统一导向 `/debug/*`、`/lineage` -> `/debug/lineage`、`/command-center/legacy` 纯兼容跳转，以及低频路由的 path segment 级匹配保护
+  - 剩余：`/debug/*` 子路径人工回归；定向自动校验已覆盖 `/debug/help`、`/debug/lineage`、兼容跳转、query 场景与低频路由误判边界，剩余主要是人工确认真实页面加载与点击流
   - 主线起点，负责首页默认入口、导航心智与路由壳收敛
   - 锁定 `/tasks` 为“查看 / 跟进 / 深度处理”的全屏工作台，不再承担发起语义
   - 只定义 `/debug` 的隐藏路由壳与入口策略，不要求同轮完成所有低频能力迁移
@@ -524,8 +524,8 @@ C01-C08 契约冻结 (已完成)
   - 优先建立 `lint` / `typecheck` / `test` / `build` 聚合入口，不要求一次性重写全部历史脚本
 - [ ] `replay-and-debug-surface-v1`
   - 当前状态：进行中，约 88%；回放主链稳定，debug 壳已存在，主壳治理入口已基本接线
-  - 已落地：`/replay/:missionId`、任务详情页“查看回放”入口、`/debug` 页面与低频路径识别、`config / permissions / audit / lineage / help` 导向 `/debug`
-  - 剩余：`/debug/*` 子路径和旧深链跳转的人工回归；定向自动校验已覆盖 `/debug/help`、`/debug/lineage`、旧深链跳转与 replay 深链，剩余主要是人工确认真实 replay 数据承接
+  - 已落地：`/replay/:missionId`、任务详情页“查看回放”入口、`/debug` 页面与低频路径识别、`config / permissions / audit / lineage / help` 导向 `/debug`，以及低频路径 path segment 级误判保护
+  - 剩余：`/debug/*` 子路径和旧深链跳转的人工回归；定向自动校验已覆盖 `/debug/help`、`/debug/lineage`、旧深链跳转、query 场景与低频路径误判边界，剩余主要是人工确认真实 replay 数据承接
   - 与主线“部分并行”，不再视为完全独立并行项
   - 可先并行：回放稳定性、低频能力盘点、debug 信息架构设计
   - 后置接线：`/debug` 最终接线、主导航低频入口移除，等待主壳路由与导航定稿后再落
@@ -580,7 +580,7 @@ C01-C08 契约冻结 (已完成)
    - [x] 继续把 `permissions / audit / config` 从 `MoreDrawer` 向 `/debug` 收口
    - [x] 定稿 `/lineage` 是否继续保留独立深链页
    - [x] 将 `help` 从主壳 modal 收口到 `/debug/help`
-   - [ ] 补一轮路由与导航回归，确保 `/`、`/tasks`、`/debug`、`/replay/:missionId` 的角色边界稳定
+   - [ ] 补一轮人工路由与导航回归，确保 `/`、`/tasks`、`/debug`、`/replay/:missionId` 的角色边界稳定
    - 完成判断：`/command-center` 与 `/command-center/legacy` 的退场策略稳定，主导航不再给低频入口过高权重
 
 3. 再收 `task-os-home-redesign-v1`

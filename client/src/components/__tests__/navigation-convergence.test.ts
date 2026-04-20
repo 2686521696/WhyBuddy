@@ -88,6 +88,8 @@ describe("navigation convergence config", () => {
     expect(resolveDebugTab(DEBUG_LINEAGE_PATH)).toBe("lineage");
     expect(resolveDebugTab(DEBUG_HELP_PATH)).toBe("help");
     expect(resolveDebugTab(`${DEBUG_PATH}/unknown-panel`)).toBe("overview");
+    expect(resolveDebugTab(`${DEBUG_HELP_PATH}?from=drawer`)).toBe("help");
+    expect(resolveDebugTab("/debugg/help")).toBe("overview");
   });
 
   it("keeps legacy low-frequency deep links on the compatibility redirect map", () => {
@@ -100,6 +102,11 @@ describe("navigation convergence config", () => {
     expect(getCompatibilityRedirect(LEGACY_LINEAGE_PATH)).toBe(
       DEBUG_LINEAGE_PATH
     );
+    expect(getCompatibilityRedirect(`${LEGACY_LINEAGE_PATH}?view=full`)).toBe(
+      DEBUG_LINEAGE_PATH
+    );
+    expect(getCompatibilityRedirect("/lineage-old")).toBeNull();
+    expect(getCompatibilityRedirect("/command-center-old")).toBeNull();
     expect(getCompatibilityRedirect(DEBUG_HELP_PATH)).toBeNull();
   });
 
@@ -117,10 +124,14 @@ describe("navigation convergence config", () => {
     expect(isLowFrequencyPath(DEBUG_PERMISSIONS_PATH)).toBe(true);
     expect(isLowFrequencyPath(DEBUG_AUDIT_PATH)).toBe(true);
     expect(isLowFrequencyPath(DEBUG_HELP_PATH)).toBe(true);
+    expect(isLowFrequencyPath(`${DEBUG_HELP_PATH}?from=drawer`)).toBe(true);
     expect(isLowFrequencyPath("/lineage")).toBe(true);
     expect(isLowFrequencyPath("/debug/lineage")).toBe(true);
     expect(isLowFrequencyPath(LEGACY_COMMAND_CENTER_PATH)).toBe(true);
     expect(isLowFrequencyPath(LEGACY_COMMAND_CENTER_LEGACY_PATH)).toBe(true);
+    expect(isLowFrequencyPath("/debugg")).toBe(false);
+    expect(isLowFrequencyPath("/lineage-old")).toBe(false);
+    expect(isLowFrequencyPath("/command-center-old")).toBe(false);
     expect(isLowFrequencyPath("/tasks")).toBe(false);
   });
 });

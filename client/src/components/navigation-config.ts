@@ -46,6 +46,17 @@ export function getReplayPath(missionId: string): string {
   return `${REPLAY_PATH_PREFIX}/${missionId}`;
 }
 
+function normalizeNavigationPath(path: string): string {
+  const trimmed = path.trim();
+  const [pathname] = trimmed.split(/[?#]/, 1);
+  return pathname || "/";
+}
+
+function matchesPathPrefix(path: string, prefix: string): boolean {
+  const pathname = normalizeNavigationPath(path);
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
 export function getDebugPath(tab: DebugTab): string {
   switch (tab) {
     case "config":
@@ -64,24 +75,24 @@ export function getDebugPath(tab: DebugTab): string {
 }
 
 export function resolveDebugTab(path: string): DebugTab {
-  if (path.startsWith(DEBUG_CONFIG_PATH)) return "config";
-  if (path.startsWith(DEBUG_PERMISSIONS_PATH)) return "permissions";
-  if (path.startsWith(DEBUG_AUDIT_PATH)) return "audit";
-  if (path.startsWith(DEBUG_LINEAGE_PATH)) return "lineage";
-  if (path.startsWith(DEBUG_HELP_PATH)) return "help";
+  if (matchesPathPrefix(path, DEBUG_CONFIG_PATH)) return "config";
+  if (matchesPathPrefix(path, DEBUG_PERMISSIONS_PATH)) return "permissions";
+  if (matchesPathPrefix(path, DEBUG_AUDIT_PATH)) return "audit";
+  if (matchesPathPrefix(path, DEBUG_LINEAGE_PATH)) return "lineage";
+  if (matchesPathPrefix(path, DEBUG_HELP_PATH)) return "help";
   return "overview";
 }
 
 export function getCompatibilityRedirect(path: string): string | null {
-  if (path.startsWith(LEGACY_COMMAND_CENTER_LEGACY_PATH)) {
+  if (matchesPathPrefix(path, LEGACY_COMMAND_CENTER_LEGACY_PATH)) {
     return OFFICE_PATH;
   }
 
-  if (path.startsWith(LEGACY_COMMAND_CENTER_PATH)) {
+  if (matchesPathPrefix(path, LEGACY_COMMAND_CENTER_PATH)) {
     return OFFICE_PATH;
   }
 
-  if (path.startsWith(LEGACY_LINEAGE_PATH)) {
+  if (matchesPathPrefix(path, LEGACY_LINEAGE_PATH)) {
     return DEBUG_LINEAGE_PATH;
   }
 
@@ -138,9 +149,9 @@ export const MORE_NAV_ITEMS: Array<NavigationItem<MoreNavigationId>> = [
 
 export function isLowFrequencyPath(path: string) {
   return (
-    path.startsWith(DEBUG_PATH) ||
-    path.startsWith(LEGACY_LINEAGE_PATH) ||
-    path.startsWith(LEGACY_COMMAND_CENTER_PATH)
+    matchesPathPrefix(path, DEBUG_PATH) ||
+    matchesPathPrefix(path, LEGACY_LINEAGE_PATH) ||
+    matchesPathPrefix(path, LEGACY_COMMAND_CENTER_PATH)
   );
 }
 
