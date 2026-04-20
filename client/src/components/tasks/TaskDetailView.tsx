@@ -792,17 +792,19 @@ export function TaskDetailView({
     detail.sourceText.trim(),
     locale
   );
-  const runtimePreviewRows = [
-    ...detail.instanceInfo.slice(0, 4),
-    ...detail.logSummary.slice(0, 4),
-  ];
-  const runtimeDetailText = [
-    t(locale, "实例信息", "Instance Info"),
-    ...detail.instanceInfo.map(row => `${row.label}: ${row.value}`),
-    "",
-    t(locale, "日志摘要", "Log Summary"),
-    ...detail.logSummary.map(row => `${row.label}: ${row.value}`),
-  ].join("\n");
+  const shouldShowEmbeddedRuntimeEvidence = !isCockpit && !deferRuntimeEvidence;
+  const runtimePreviewRows = shouldShowEmbeddedRuntimeEvidence
+    ? [...detail.instanceInfo.slice(0, 4), ...detail.logSummary.slice(0, 4)]
+    : [];
+  const runtimeDetailText = shouldShowEmbeddedRuntimeEvidence
+    ? [
+        t(locale, "实例信息", "Instance Info"),
+        ...detail.instanceInfo.map(row => `${row.label}: ${row.value}`),
+        "",
+        t(locale, "日志摘要", "Log Summary"),
+        ...detail.logSummary.map(row => `${row.label}: ${row.value}`),
+      ].join("\n")
+    : "";
 
   const sourceDirectivePanel = (
     <Card className={DETAIL_CARD_CLASS}>
@@ -1417,22 +1419,23 @@ export function TaskDetailView({
           {showCockpitDecisionSection ? decisionsWorkspace : null}
           <TaskPlanetInterior detail={detail} compact />
           {sourceDirectivePanel}
-          {!deferRuntimeEvidence && runtimePreviewRows.length > 0
+          {shouldShowEmbeddedRuntimeEvidence && runtimePreviewRows.length > 0
             ? runtimeSnapshotPanel
             : null}
           {securitySummaryPanel}
-          {!deferRuntimeEvidence ? executorStatusPanel : null}
-          {!deferRuntimeEvidence && detail.status === "failed"
+          {shouldShowEmbeddedRuntimeEvidence ? executorStatusPanel : null}
+          {shouldShowEmbeddedRuntimeEvidence && detail.status === "failed"
             ? executorTerminalPanel
             : null}
           {detail.tasks.length > 0 ? workPackagesPanel : null}
-          {!deferRuntimeEvidence && detail.timeline.length > 0
+          {shouldShowEmbeddedRuntimeEvidence && detail.timeline.length > 0
             ? timelinePanel
             : null}
-          {!deferRuntimeEvidence && (detail.artifacts.length > 0 || artifactError)
+          {shouldShowEmbeddedRuntimeEvidence &&
+          (detail.artifacts.length > 0 || artifactError)
             ? artifactsPanel
             : null}
-          {!deferRuntimeEvidence ? failurePanel : null}
+          {shouldShowEmbeddedRuntimeEvidence ? failurePanel : null}
         </DetailTabViewport>
         <ArtifactPreviewDialog
           missionId={detail.id}

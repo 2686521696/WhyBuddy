@@ -655,10 +655,6 @@ export function OfficeTaskCockpit({
     selectedDetail?.operatorState === "blocked" ||
     selectedDetail?.operatorState === "paused";
   const showLauncherContextDock = !hasActiveClarification;
-  const launcherDockFrameHeight = hasActiveClarification
-    ? "clamp(200px, 24vh, 250px)"
-    : "clamp(210px, 26vh, 270px)";
-  const launcherStageFrameHeight = launcherDockFrameHeight;
   const launcherContextDockMaxHeight = "clamp(240px, 32vh, 420px)";
   useEffect(() => {
     if (hasActiveClarification) {
@@ -791,7 +787,7 @@ export function OfficeTaskCockpit({
   const launcherDock = (
     <div
       className={cn(
-        "pointer-events-auto mx-auto flex h-full w-full max-w-[700px] min-h-0 flex-col overflow-hidden rounded-[14px] border",
+        "pointer-events-auto mx-auto flex w-full max-w-[700px] flex-col overflow-hidden rounded-[14px] border",
         floatingGlassClass
       )}
     >
@@ -977,69 +973,9 @@ export function OfficeTaskCockpit({
           </span>
         </div>
 
-        <div className="mt-1 grid gap-1 [grid-template-columns:repeat(auto-fit,minmax(74px,1fr))]">
-          {stepFlow.items.map(item => {
-            const isCurrent = item.key === stepFlow.currentKey;
-            const toneClass =
-              item.status === "done"
-                ? "workspace-tone-success"
-                : item.status === "failed"
-                  ? "workspace-tone-danger"
-                  : item.status === "waiting"
-                    ? "workspace-tone-info"
-                    : item.status === "active"
-                      ? `workspace-tone-${stepFocus.tone}`
-                      : "workspace-tone-neutral";
-
-            return (
-              <div
-                key={item.key}
-                className={cn(
-                  "rounded-[10px] border px-1.5 py-1",
-                  isCurrent
-                    ? "border-stone-300/80 bg-white/80 shadow-[0_6px_16px_rgba(120,88,54,0.08)]"
-                    : "border-white/45 bg-white/48"
-                )}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-[8px] font-semibold text-stone-700">
-                    {item.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "workspace-status !gap-0.5 !px-1 !py-0 !text-[7px] font-semibold",
-                      toneClass
-                    )}
-                  >
-                    {item.progress}%
-                  </span>
-                </div>
-                <div className="mt-1 h-1 overflow-hidden rounded-full bg-stone-200/80">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-[width]",
-                      item.status === "done"
-                        ? "bg-emerald-400"
-                        : item.status === "failed"
-                          ? "bg-rose-400"
-                          : item.status === "waiting"
-                            ? "bg-sky-400"
-                            : item.status === "active"
-                              ? "bg-amber-400"
-                              : "bg-stone-300"
-                    )}
-                    style={{
-                      width: `${item.progress <= 0 ? 0 : Math.max(8, Math.min(100, item.progress))}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden px-1 pb-1 pt-1">
+      <div className="overflow-hidden px-1 pb-1 pt-1">
         <UnifiedLaunchComposer
           createMission={createMission}
           activeTaskTitle={selectedTaskSummary?.title}
@@ -1057,7 +993,7 @@ export function OfficeTaskCockpit({
           hideHeader
           hideInputLabel
           hideClarificationPanel
-          className="h-full"
+          className="w-full"
           onWorkflowResolved={resolution => {
             setPendingLaunch({
               workflowId: resolution.workflowId,
@@ -1435,11 +1371,9 @@ export function OfficeTaskCockpit({
   const launcherFloatingStack = (
     <div
       className="pointer-events-none mx-auto flex w-full max-w-[720px] flex-col justify-end overflow-visible"
-      style={{ height: launcherStageFrameHeight }}
     >
       <div
         className="pointer-events-none relative z-10 w-full pt-2"
-        style={{ height: launcherDockFrameHeight }}
       >
         {showLauncherContextDock && launcherContextExpanded ? (
           <div
