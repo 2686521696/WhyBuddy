@@ -28,7 +28,7 @@
 3. 触发 decision
 4. 完成任务并查看结果
 5. 如需轻量回归 decision + socket 重连恢复，可运行 `pnpm run test:guardrails`
-6. 如需显式回归 approve / reject / request-changes，可运行 `pnpm run test:decision`
+6. 如需显式回归 approve / reject / modify，可运行 `pnpm run test:decision`
 7. 如需脚本化验证整条 mission 链路，可运行 `pnpm run smoke:mission`
 
 ## 4. 错误恢复验证

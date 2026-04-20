@@ -10,7 +10,6 @@
   - 恢复能力已有基础：浏览器侧恢复流程、`MissionRuntime.recoverInterruptedMissions(...)`、socket 重连后主动任务刷新，以及 `mission-restart-smoke.mjs`
   - 关键链路测试已有一定覆盖：mission routes / operator actions / executor smoke / mission integration smoke / restart recovery / explicit decision regression / socket reconnect refresh recovery
 - 当前剩余：
-  - 决策 approve / reject / modify 已有显式回归脚本，但 `modify` 语义当前以 `request-changes` 命名承接，若产品文案最终统一为 `modify` 仍需同步命名
   - websocket 自动重连已具备最小实现，但“断线后完整 re-attach 到断线前任务工作上下文”的 spec 级验收闭环仍未完成
   - 本轮最小验证建议以 `pnpm run lint`、`pnpm run typecheck`、`pnpm run test:guardrails` 为主；完整 `pnpm run test` / `pnpm run build` 仍按发布前口径复跑
 

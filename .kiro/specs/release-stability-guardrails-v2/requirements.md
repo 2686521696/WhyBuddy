@@ -17,7 +17,7 @@
 - README 已补齐 Quick Start、环境变量样例、执行器启动方式、package manager 口径、常用命令与 FAQ
 - `.github/workflows/release-guardrails.yml` 已串联最小质量门禁，并显式加入轻量 `test:guardrails`；`.github/workflows/deploy-pages.yml` 已对齐仓库声明的 `pnpm`
 - 仓库已新增显式 `decision` 回归入口、`test:guardrails` 轻量关键链路入口，并为 mission socket 重连补上“重连后主动刷新任务数据”的最小恢复逻辑
-- 当前最主要缺口收敛为：`modify` 语义与 `request-changes` 命名的最终统一，以及任务完整 re-attach 的 spec 级验收闭环
+- 当前最主要缺口收敛为：任务完整 re-attach 的 spec 级验收闭环；`modify` 命名已对齐到当前决策模板与回归口径
 
 ## 范围
 

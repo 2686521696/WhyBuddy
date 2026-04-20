@@ -519,7 +519,7 @@ C01-C08 契约冻结 (已完成)
 - [ ] `release-stability-guardrails-v2`
   - 当前状态：进行中，约 85%；统一 `lint / typecheck / test / build` 入口、最小 CI、README 回填与轻量关键链路入口已落地，完整 re-attach 仍未收尾
   - 已落地：`lint`、`typecheck`、`test`、`build`、`test:decision`、`test:guardrails`、`test:release`、Pages workflow、release guardrails workflow、mission socket 重连后主动刷新任务数据、restart smoke
-  - 剩余：`modify` 与 `request-changes` 命名最终统一，以及任务完整 re-attach 的实现与 spec 级验收闭环
+  - 剩余：任务完整 re-attach 的实现与 spec 级验收闭环
   - 可与主线并行
   - 以补齐统一聚合入口、最小 CI、关键链路测试和恢复能力为主
   - 优先建立 `lint` / `typecheck` / `test` / `build` 聚合入口，不要求一次性重写全部历史脚本
@@ -556,7 +556,6 @@ C01-C08 契约冻结 (已完成)
    - 完成 `1280 / 1440 / 1728+` 桌面宽度与移动端最小回归手测
 4. 并行推进 `release-stability-guardrails-v2`
    - 维持 `lint / typecheck / test / build` 与 `test:guardrails` 口径同步
-   - 推进 `modify` / `request-changes` 命名统一
    - 补任务完整 re-attach 的实现与 spec 级验收闭环
 5. 后置接线 `replay-and-debug-surface-v1`
    - 同步移除主界面残留的低频高可见入口

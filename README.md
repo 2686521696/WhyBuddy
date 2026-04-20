@@ -265,7 +265,7 @@ pnpm run build           # 构建前端 + 服务端
 pnpm run build:pages     # 构建 GitHub Pages 产物
 pnpm run preview         # 本地预览前端构建结果
 pnpm run test:guardrails # 轻量关键链路回归（decision + socket 重连恢复）
-pnpm run test:decision   # approve / reject / request-changes 决策回归
+pnpm run test:decision   # approve / reject / modify 决策回归
 pnpm run test:client     # 前端测试
 pnpm run test:server     # 服务端测试
 pnpm run test:executor   # 执行器测试
