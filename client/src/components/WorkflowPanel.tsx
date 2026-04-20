@@ -83,6 +83,10 @@ import { EvolutionScoreCard } from "@/components/demo/EvolutionScoreCard";
 import { SessionHistoryTab } from "@/components/SessionHistoryTab";
 import { WorkflowPanelCompatibility } from "@/components/WorkflowPanelCompatibility";
 import { useAutonomyStore } from "@/lib/autonomy-store";
+import {
+  OFFICE_RUNTIME_EVIDENCE_EVENT,
+  type OfficeRuntimeEvidenceTab,
+} from "@/lib/navigation-events";
 import { useTasksStore } from "@/lib/tasks-store";
 import type { AssessmentResult, JudgingScore } from "@shared/autonomy-types";
 
@@ -477,46 +481,67 @@ function getTaskPrimaryText(task: TaskInfo) {
   return task.deliverable_v3 || task.deliverable_v2 || task.deliverable || "";
 }
 
+function dispatchOfficeRuntimeEvidence(
+  tab: OfficeRuntimeEvidenceTab,
+  missionId?: string | null
+) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(OFFICE_RUNTIME_EVIDENCE_EVENT, {
+      detail: {
+        tab,
+        missionId: missionId ?? null,
+      },
+    })
+  );
+}
+
 function renderDeliverableDockHint(
   locale: string,
   deliverableText: string,
   options?: {
     className?: string;
     fallback?: { zh: string; en: string };
+    missionId?: string | null;
+    onOpenRuntimeEvidence?: (
+      tab: OfficeRuntimeEvidenceTab,
+      missionId?: string | null
+    ) => void;
   }
 ) {
   if (!deliverableText.trim()) return null;
   return (
-    <div
+    <button
+      type="button"
+      onClick={() =>
+        options?.onOpenRuntimeEvidence?.("artifacts", options?.missionId ?? null)
+      }
       className={
         options?.className ||
-        "mt-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] leading-5 text-white/55"
+        "mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-[10px] leading-5 text-white/55 transition-colors hover:bg-white/10"
       }
     >
-      {summarizeText(
-        deliverableText,
-        t(locale, "交付物已归口到 Artifacts。", "Deliverables now live in Artifacts."),
-        56
+      {t(
+        locale,
+        "交付内容已归口到首页共享运行证据容器。",
+        "Deliverables now live in the shared Office home runtime evidence container."
       )}
       <span className="ml-1 text-white/40">
         {t(
           locale,
-          options?.fallback?.zh || "完整内容统一收敛到 Artifacts。",
-          options?.fallback?.en || "Open Artifacts for the full handoff."
+          options?.fallback?.zh ||
+            "完整内容统一在首页共享运行证据容器的 Artifacts 查看。",
+          options?.fallback?.en ||
+            "Open the shared Office home runtime evidence Artifacts tab for the full handoff."
         )}
       </span>
-    </div>
+    </button>
   );
 }
 
 function getTaskDetailBlocks(task: TaskInfo) {
   const blocks: Array<{ key: string; label: string; content: string | null }> =
     [
-      {
-        key: "deliverable",
-        label: "Deliverable",
-        content: getTaskPrimaryText(task),
-      },
       {
         key: "manager_feedback",
         label: "Manager feedback",
@@ -1049,9 +1074,12 @@ function OrgView() {
               {organization.reasoning}
             </p>
             {currentWorkflow?.results?.organization_debug?.logPath ? (
-              <p className="mt-2 break-all text-[10px] text-indigo-400">
-                {t(locale, "回放日志", "Replay log")}:{" "}
-                {currentWorkflow.results.organization_debug.logPath}
+              <p className="mt-2 text-[10px] text-indigo-400">
+                {t(
+                  locale,
+                  "回放日志与执行证据已统一归口到首页共享运行证据容器，不再在这里直接暴露日志路径。",
+                  "Replay logs and execution evidence now live in the shared Office home runtime evidence container, so the raw log path is no longer exposed here."
+                )}
               </p>
             ) : null}
           </div>
@@ -1513,7 +1541,12 @@ function ProgressViewLegacy() {
                         </div>
                         {renderDeliverableDockHint(
                           locale,
-                          getTaskPrimaryText(task)
+                          getTaskPrimaryText(task),
+                          {
+                            missionId: currentWorkflow?.missionId ?? null,
+                            onOpenRuntimeEvidence:
+                              dispatchOfficeRuntimeEvidence,
+                          }
                         )}
                         {task.total_score !== null ? (
                           <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-white/50">
@@ -2171,9 +2204,14 @@ function ProgressView() {
           );
           const focusTask = sortedTasks[0];
           const summarySource =
-            getTaskPrimaryText(focusTask) ||
-            focusTask.manager_feedback ||
-            focusTask.meta_audit_feedback;
+            focusTask.manager_feedback || focusTask.meta_audit_feedback;
+          const summaryFallback = getTaskPrimaryText(focusTask)
+            ? t(
+                locale,
+                "交付内容已归口到首页共享运行证据容器。",
+                "Deliverables now live in the shared Office home runtime evidence container."
+              )
+            : t(locale, "暂无结果摘要", "No summary yet");
 
           return {
             key: `${roleKind}:${roleId}`,
@@ -2188,7 +2226,7 @@ function ProgressView() {
             ),
             summary: summarizeText(
               summarySource,
-              t(locale, "暂无结果摘要", "No summary yet"),
+              summaryFallback,
               78
             ),
             updatedAt:
@@ -2506,8 +2544,8 @@ function ProgressView() {
             <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[11px] leading-5 text-white/55">
               {t(
                 locale,
-                `当前任务已有 ${workflowMissionDetail.artifacts.length} 个交付物，首页主入口已统一收敛到底部 dock 的 Artifacts。`,
-                `${workflowMissionDetail.artifacts.length} deliverables are already attached to this mission. Their primary home on home is now the bottom Artifacts dock.`
+                `当前任务已有 ${workflowMissionDetail.artifacts.length} 个交付物，首页主入口已统一收敛到共享运行证据容器的 Artifacts。`,
+                `${workflowMissionDetail.artifacts.length} deliverables are already attached to this mission. Their primary home on Office home is now the shared runtime evidence Artifacts tab.`
               )}
             </div>
           ) : null}
@@ -2521,8 +2559,8 @@ function ProgressView() {
             <p className="text-[10px] leading-5 text-white/50">
               {t(
                 locale,
-                "每个角色默认只显示一行摘要，点开后再看完整交付、反馈和相关事件。",
-                "Each role stays compact by default. Open one to inspect the full deliverable, feedback, and related events."
+                "每个角色默认只显示一行摘要；展开后继续查看反馈和相关事件，完整交付统一回到首页共享运行证据容器。",
+                "Each role stays compact by default. Expand one for feedback and related events while full deliverables stay in the shared Office home runtime evidence container."
               )}
             </p>
           </div>
@@ -2624,6 +2662,9 @@ function ProgressView() {
                               <div className="space-y-3">
                                 {role.tasks.map(task => {
                                   const blocks = getTaskDetailBlocks(task);
+                                  const deliverableText = getTaskPrimaryText(task);
+                                  const hasDeliverableHandoff =
+                                    deliverableText.trim().length > 0;
                                   return (
                                     <div
                                       key={task.id}
@@ -2666,32 +2707,46 @@ function ProgressView() {
                                         </span>
                                       </div>
 
+                                      {hasDeliverableHandoff ? (
+                                        renderDeliverableDockHint(
+                                          locale,
+                                          deliverableText,
+                                          {
+                                            className:
+                                              "mt-3 rounded-lg bg-white/5 px-3 py-2 text-[10px] leading-5 text-white/55",
+                                            missionId:
+                                              currentWorkflow?.missionId ?? null,
+                                            onOpenRuntimeEvidence:
+                                              dispatchOfficeRuntimeEvidence,
+                                          }
+                                        )
+                                      ) : null}
+
                                       {blocks.length > 0 ? (
-                                        <div className="mt-3 space-y-2">
+                                        <div
+                                          className={`space-y-2 ${
+                                            hasDeliverableHandoff
+                                              ? "mt-2"
+                                              : "mt-3"
+                                          }`}
+                                        >
                                           {blocks.map(block => (
                                             <div
                                               key={block.key}
                                               className="rounded-lg bg-white/5 px-3 py-2"
                                             >
                                               <p className="flex items-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/40">
-                                                {block.key === "deliverable"
+                                                {block.key === "manager_feedback"
                                                   ? t(
                                                       locale,
-                                                      "交付内容",
-                                                      "Deliverable"
+                                                      "经理反馈",
+                                                      "Manager feedback"
                                                     )
-                                                  : block.key ===
-                                                      "manager_feedback"
-                                                    ? t(
-                                                        locale,
-                                                        "经理反馈",
-                                                        "Manager feedback"
-                                                      )
-                                                    : t(
-                                                        locale,
-                                                        "审计反馈",
-                                                        "Audit feedback"
-                                                      )}
+                                                  : t(
+                                                      locale,
+                                                      "审计反馈",
+                                                      "Audit feedback"
+                                                    )}
                                                 <TtsPlayButton
                                                   id={`task-${task.id}-${block.key}`}
                                                   content={block.content || ""}
@@ -2703,7 +2758,7 @@ function ProgressView() {
                                             </div>
                                           ))}
                                         </div>
-                                      ) : (
+                                      ) : !hasDeliverableHandoff ? (
                                         <p className="mt-3 text-[10px] text-white/50">
                                           {t(
                                             locale,
@@ -2711,7 +2766,7 @@ function ProgressView() {
                                             "There is no detailed content to expand yet."
                                           )}
                                         </p>
-                                      )}
+                                      ) : null}
                                     </div>
                                   );
                                 })}
@@ -2986,7 +3041,7 @@ function ProgressView() {
 function ReviewView() {
   const { copy } = useI18n();
   const locale = useAppStore(state => state.locale);
-  const { tasks } = useWorkflowStore();
+  const { currentWorkflow, tasks } = useWorkflowStore();
   return (
     <div className="flex h-full flex-col">
       <Section
@@ -3018,9 +3073,11 @@ function ReviewView() {
                   className:
                     "mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[10px] leading-5 text-white/55",
                   fallback: {
-                    zh: "评审卡片不再直接铺开交付正文，完整内容统一查看 Artifacts。",
-                    en: "Review cards no longer inline the full deliverable. Open Artifacts for the full handoff.",
+                    zh: "评审卡片不再直接铺开交付正文，完整内容统一查看首页共享运行证据容器的 Artifacts。",
+                    en: "Review cards no longer inline the full deliverable. Open the shared Office home runtime evidence Artifacts tab for the full handoff.",
                   },
+                  missionId: currentWorkflow?.missionId ?? null,
+                  onOpenRuntimeEvidence: dispatchOfficeRuntimeEvidence,
                 })}
                 {task.manager_feedback ? (
                   <div className="mt-3 rounded-xl bg-emerald-500/10 p-3">

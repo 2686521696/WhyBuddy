@@ -185,7 +185,7 @@ describe("TaskDetailView runtime evidence consolidation", () => {
     expect(markup).not.toContain(">Artifacts<");
   });
 
-  it("keeps the standalone artifacts tab for the default detail view when runtime evidence is not deferred", () => {
+  it("removes the standalone artifacts tab for the default detail view as well", () => {
     const markup = renderToStaticMarkup(
       <TaskDetailView
         detail={makeDetail()}
@@ -195,7 +195,8 @@ describe("TaskDetailView runtime evidence consolidation", () => {
       />
     );
 
-    expect(markup).toContain(">交付物<");
+    expect(markup).not.toContain(">交付物<");
+    expect(markup).not.toContain("Run report");
     expect(markup).not.toContain("Full deliverable payload for task #");
   });
 });

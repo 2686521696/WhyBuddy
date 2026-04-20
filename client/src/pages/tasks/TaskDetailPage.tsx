@@ -136,6 +136,10 @@ export default function TaskDetailPage({
           </div>
         </div>
 
+        <div className="mb-4 rounded-[22px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,251,245,0.96),rgba(249,239,227,0.92))] px-5 py-4 text-sm leading-6 text-stone-700 shadow-[0_18px_40px_rgba(112,84,51,0.06)]">
+          {copy.tasks.detailPage.runtimeEvidenceHandoff}
+        </div>
+
         {error ? (
           <div className="mb-4">
             <RetryInlineNotice
@@ -167,6 +171,7 @@ export default function TaskDetailPage({
           onDecisionSubmitted={() =>
             void refresh({ preferredTaskId: activeTaskId })
           }
+          deferRuntimeEvidence
         />
       </div>
     </div>

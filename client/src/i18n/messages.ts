@@ -532,7 +532,9 @@ export const messages = {
       detailPage: {
         eyebrow: "执行详情",
         description:
-          "查看当前负责人、阻塞项、下一步动作、时间线、决策与交付物。",
+          "查看当前负责人、阻塞项、下一步动作、决策与深层工作区；运行证据统一回到办公室首页。",
+        runtimeEvidenceHandoff:
+          "日志、交付物和运行证据已经统一归口到办公室首页的共享运行证据容器。此页保留任务判断、决策和工作包细节，不再并列提供第二套交付物主入口。",
         replay: "查看回放",
         back: "返回",
       },
@@ -1335,7 +1337,9 @@ export const messages = {
       detailPage: {
         eyebrow: "Execution Detail",
         description:
-          "Review the current owner, blocker, next action, timeline, decisions, and deliverables.",
+          "Review the current owner, blocker, next action, decisions, and deep workspace detail while runtime evidence stays on Office home.",
+        runtimeEvidenceHandoff:
+          "Logs, deliverables, and runtime evidence now live in the shared Office home runtime evidence container. This page keeps decision and work-package detail without offering a second primary deliverables entry.",
         replay: "View Replay",
         back: "Back",
       },

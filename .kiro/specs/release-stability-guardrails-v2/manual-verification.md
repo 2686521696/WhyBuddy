@@ -1,5 +1,11 @@
 # 发布稳定性护栏方案 v2 手工验证
 
+## 当前验证口径（2026-04-20）
+
+- 本文先按仓库当前真实脚本口径回填，避免手册里要求运行并不存在的命令
+- 统一 `lint / typecheck / test / build` 聚合入口仍是目标态，本轮手工验证以现有可执行脚本为准
+- 当前可用的最接近发布前检查入口是 `npm run test:release`
+
 ## 1. 新人启动验证
 
 1. 按 README 执行
@@ -8,10 +14,12 @@
 
 ## 2. 构建验证
 
-1. 运行 `npm run lint`
-2. 运行 `npm run typecheck`
-3. 运行 `npm run test`
-4. 运行 `npm run build`
+1. 运行 `npm run check`
+2. 运行 `npm run test:client`
+3. 运行 `npm run test:server`
+4. 运行 `npm run test:executor`
+5. 运行 `npm run build`
+6. 如需发布前串联检查，再运行 `npm run test:release`
 
 ## 3. 关键链路验证
 
@@ -23,11 +31,11 @@
 ## 4. 错误恢复验证
 
 1. 人为断开 websocket
-2. 验证自动重连
+2. 验证页面至少能给出恢复提示或重新建立连接；若当前链路只能部分恢复，应明确记录缺口
 3. 人为制造 executor 超时
 4. 验证任务进入失败或可恢复状态，而不是无声卡死
 
 ## 5. 任务恢复验证
 
 1. 执行中刷新页面或重启服务
-2. 验证页面能重新 attach 当前任务或恢复足够上下文
+2. 验证页面能重新 attach 当前任务或恢复足够上下文；若只能恢复到最小任务状态，也应记录当前恢复边界

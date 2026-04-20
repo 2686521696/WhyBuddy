@@ -26,6 +26,10 @@ export interface NavigationItem<TId extends string> {
 export const LEGACY_COMMAND_CENTER_PATH = "/command-center";
 export const LEGACY_COMMAND_CENTER_LEGACY_PATH = "/command-center/legacy";
 export const DEBUG_PATH = "/debug";
+export const DEBUG_CONFIG_PATH = "/debug/config";
+export const DEBUG_PERMISSIONS_PATH = "/debug/permissions";
+export const DEBUG_AUDIT_PATH = "/debug/audit";
+export const DEBUG_HELP_PATH = "/debug/help";
 
 export const PRIMARY_NAV_ITEMS: Array<NavigationItem<PrimaryNavigationId>> = [
   {
@@ -56,18 +60,22 @@ export const MORE_NAV_ITEMS: Array<NavigationItem<MoreNavigationId>> = [
   {
     id: "config",
     icon: Settings2,
+    href: DEBUG_CONFIG_PATH,
   },
   {
     id: "permissions",
     icon: Shield,
+    href: DEBUG_PERMISSIONS_PATH,
   },
   {
     id: "audit",
     icon: FileSearch,
+    href: DEBUG_AUDIT_PATH,
   },
   {
     id: "help",
     icon: HelpCircle,
+    href: DEBUG_HELP_PATH,
   },
 ];
 

@@ -34,6 +34,7 @@ function Router() {
         {params => <ReplayPage missionId={params.missionId || ""} />}
       </Route>
       <Route path={"/debug"} component={DebugPage} />
+      <Route path={"/debug/:section"} component={DebugPage} />
       <Route path={"/command-center/legacy"}>
         {() => <LegacyCommandCenterPage />}
       </Route>

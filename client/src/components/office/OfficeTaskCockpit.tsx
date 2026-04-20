@@ -63,6 +63,10 @@ import { useTasksStore, type TaskArtifact } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
 import { submitUnifiedClarification } from "@/lib/unified-launch-coordinator";
 import { useWorkflowStore } from "@/lib/workflow-store";
+import {
+  OFFICE_RUNTIME_EVIDENCE_EVENT,
+  type OfficeRuntimeEvidenceTab,
+} from "@/lib/navigation-events";
 import { resolveTaskHubLocationUpdate } from "@/pages/tasks/task-hub-location";
 
 import { OfficeAgentInspectorPanel } from "./OfficeAgentInspectorPanel";
@@ -688,6 +692,36 @@ export function OfficeTaskCockpit({
     supportTabHasContext,
     selectedDetail?.id,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOpenRuntimeEvidence = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        tab?: OfficeRuntimeEvidenceTab;
+        missionId?: string | null;
+      }>;
+      const requestedTab = customEvent.detail?.tab ?? "runtime";
+      const missionId = customEvent.detail?.missionId ?? null;
+
+      if (missionId) {
+        selectTask(missionId);
+      }
+      setLauncherContextExpanded(true);
+      setRuntimeDockTab(requestedTab);
+    };
+
+    window.addEventListener(
+      OFFICE_RUNTIME_EVIDENCE_EVENT,
+      handleOpenRuntimeEvidence as EventListener
+    );
+
+    return () =>
+      window.removeEventListener(
+        OFFICE_RUNTIME_EVIDENCE_EVENT,
+        handleOpenRuntimeEvidence as EventListener
+      );
+  }, [selectTask]);
 
   async function handleCopyFocusSummary() {
     const summary = [

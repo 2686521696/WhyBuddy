@@ -55,7 +55,6 @@ import {
 import type {
   MissionOperatorActionLoadingMap,
   MissionTaskDetail,
-  TaskArtifact,
 } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
 import { useCostStore } from "@/lib/cost-store";
@@ -64,17 +63,13 @@ import { localizeTaskHubBriefText } from "@/lib/task-hub-copy";
 import { RAGInfoPanel } from "@/components/rag/RAGInfoPanel";
 import { RAGDebugPanel } from "@/components/rag/RAGDebugPanel";
 
-import { ArtifactListBlock } from "./ArtifactListBlock";
 import { EmptyHintBlock } from "./EmptyHintBlock";
-import { ArtifactPreviewDialog } from "./ArtifactPreviewDialog";
 import { DecisionHistory } from "./DecisionHistory";
 import { DecisionPanel } from "./DecisionPanel";
-import { RetryInlineNotice } from "./RetryInlineNotice";
 import { TaskOperationsHero } from "./TaskOperationsHero";
 import { TaskPlanetInterior } from "./TaskPlanetInterior";
 import {
   compactText,
-  downloadAttachmentArtifact,
   isMissionTerminal,
 } from "./task-helpers";
 
@@ -629,7 +624,6 @@ type TaskDetailTabKey =
   | "overview"
   | "execution"
   | "decisions"
-  | "artifacts"
   | "cost";
 
 export function TaskDetailView({
@@ -665,28 +659,7 @@ export function TaskDetailView({
   const { locale, copy } = useI18n();
   const { isDesktop } = useViewportTier();
   const isCockpit = variant === "cockpit";
-  const [downloadingArtifactId, setDownloadingArtifactId] = useState<
-    string | null
-  >(null);
-  const [previewArtifactIndex, setPreviewArtifactIndex] = useState<
-    number | null
-  >(null);
-  const [previewArtifactName, setPreviewArtifactName] = useState("");
-  const [previewArtifactFormat, setPreviewArtifactFormat] = useState<
-    string | undefined
-  >(undefined);
-  const [artifactError, setArtifactError] = useState<{
-    artifact: TaskArtifact;
-    message: string;
-  } | null>(null);
   const [activeTab, setActiveTab] = useState<TaskDetailTabKey>("overview");
-
-  useEffect(() => {
-    setPreviewArtifactIndex(null);
-    setPreviewArtifactName("");
-    setPreviewArtifactFormat(undefined);
-    setArtifactError(null);
-  }, [detail?.id]);
 
   if (!detail) {
     return (
@@ -705,78 +678,6 @@ export function TaskDetailView({
         />
       </Empty>
     );
-  }
-
-  async function handleArtifactDownload(artifact: TaskArtifact) {
-    setArtifactError(null);
-
-    if (artifact.downloadKind === "external") {
-      if (artifact.href && typeof window !== "undefined") {
-        window.open(artifact.href, "_blank", "noopener,noreferrer");
-      }
-      return;
-    }
-
-    if (artifact.downloadKind === "attachment") {
-      if (!downloadAttachmentArtifact(artifact)) {
-        setArtifactError({
-          artifact,
-          message: copy.tasks.artifacts.downloadFailedDescription,
-        });
-      }
-      return;
-    }
-
-    const downloadUrl = artifact.downloadUrl || artifact.href;
-    if (!downloadUrl) {
-      setArtifactError({
-        artifact,
-        message: copy.tasks.artifacts.downloadFailedDescription,
-      });
-      return;
-    }
-
-    setDownloadingArtifactId(artifact.id);
-    try {
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const blob = await response.blob();
-      const disposition = response.headers.get("content-disposition");
-      const filenameMatch = disposition?.match(/filename="?([^"]+)"?/i);
-      const filename =
-        filenameMatch?.[1] ||
-        artifact.filename ||
-        (artifact.format
-          ? `${artifact.title}.${artifact.format}`
-          : artifact.title);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : copy.tasks.artifacts.downloadFailedDescription;
-      setArtifactError({
-        artifact,
-        message,
-      });
-    } finally {
-      setDownloadingArtifactId(null);
-    }
-  }
-
-  function handleArtifactPreview(artifact: TaskArtifact, index: number) {
-    setPreviewArtifactIndex(index);
-    setPreviewArtifactName(artifact.title);
-    setPreviewArtifactFormat(artifact.format);
   }
 
   const terminalMission = isMissionTerminal(detail.status);
@@ -805,7 +706,17 @@ export function TaskDetailView({
     detail.sourceText.trim(),
     locale
   );
-  const shouldShowStandaloneArtifactsTab = !deferRuntimeEvidence;
+  const runtimeEvidenceHandoffText = isCockpit
+    ? t(
+        locale,
+        "完整交付内容与下载入口统一归口到首页共享运行证据容器的 Artifacts。",
+        "The full deliverable payload and download entry now live in the shared home runtime evidence Artifacts tab."
+      )
+    : t(
+        locale,
+        "完整交付内容与下载入口统一归口到办公室首页的 Artifacts 运行证据入口。",
+        "The full deliverable payload and download entry now live in the Office home Artifacts runtime entry."
+      );
 
   const sourceDirectivePanel = (
     <Card className={DETAIL_CARD_CLASS}>
@@ -967,11 +878,7 @@ export function TaskDetailView({
                   <RuntimeEvidenceHandoffCard
                     title={copy.tasks.detailView.deliverablePreviewTitle}
                     summary={deliverableSummary}
-                    handoff={t(
-                      locale,
-                      "完整交付内容与下载入口统一归口到交付物 tab。",
-                      "The full deliverable payload and download entry now live in the Deliverables tab."
-                    )}
+                    handoff={runtimeEvidenceHandoffText}
                   />
                   <div className="grid gap-2.5">
                     <div className={cn(DETAIL_INSET_SOFT_CLASS, "p-3")}>
@@ -1074,44 +981,6 @@ export function TaskDetailView({
               : copy.tasks.detailView.decisionIdle}
           </div>
         )}
-      </CardContent>
-    </Card>
-  );
-
-  const artifactsPanel = (
-    <Card className={DETAIL_CARD_CLASS}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-stone-900">
-          <FileText className="size-4 text-teal-600" />
-          {copy.tasks.detailView.artifactsTitle}
-        </CardTitle>
-        <CardDescription>
-          {copy.tasks.detailView.artifactsDescription}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {artifactError ? (
-          <RetryInlineNotice
-            title={copy.tasks.artifacts.downloadFailedTitle}
-            description={
-              artifactError.message ===
-              copy.tasks.artifacts.downloadFailedDescription
-                ? artifactError.message
-                : `${artifactError.message}. ${copy.tasks.artifacts.downloadFailedDescription}`
-            }
-            actionLabel={copy.tasks.artifacts.retryDownload}
-            onRetry={() => void handleArtifactDownload(artifactError.artifact)}
-          />
-        ) : null}
-        <ArtifactListBlock
-          missionId={detail.id}
-          artifacts={detail.artifacts}
-          missionStatus={detail.status}
-          variant="full"
-          downloadingArtifactId={downloadingArtifactId}
-          onDownload={handleArtifactDownload}
-          onPreview={handleArtifactPreview}
-        />
       </CardContent>
     </Card>
   );
@@ -1239,18 +1108,6 @@ export function TaskDetailView({
           {securitySummaryPanel}
           {detail.tasks.length > 0 ? workPackagesPanel : null}
         </DetailTabViewport>
-        <ArtifactPreviewDialog
-          missionId={detail.id}
-          artifactIndex={previewArtifactIndex}
-          artifactName={previewArtifactName}
-          format={previewArtifactFormat}
-          open={previewArtifactIndex !== null}
-          onOpenChange={open => {
-            if (!open) {
-              setPreviewArtifactIndex(null);
-            }
-          }}
-        />
       </div>
     );
   }
@@ -1288,7 +1145,7 @@ export function TaskDetailView({
           <TabsList
             className={cn(
               "grid h-auto w-full bg-[rgba(255,255,255,0.58)] p-1",
-              shouldShowStandaloneArtifactsTab ? "grid-cols-5" : "grid-cols-4",
+              "grid-cols-4",
               isCockpit ? "rounded-[16px]" : "rounded-[18px]"
             )}
           >
@@ -1302,11 +1159,6 @@ export function TaskDetailView({
               <History className="mr-1.5 size-3.5" />
               {copy.tasks.detailView.decisionsTab}
             </TabsTrigger>
-            {shouldShowStandaloneArtifactsTab ? (
-              <TabsTrigger className="rounded-[14px]" value="artifacts">
-                {copy.tasks.detailView.artifactsTab}
-              </TabsTrigger>
-            ) : null}
             <TabsTrigger className="rounded-[14px]" value="cost">
               <Coins className="mr-1.5 size-3.5" />
               {copy.tasks.detailView.costTab}
@@ -1438,17 +1290,6 @@ export function TaskDetailView({
           </DetailTabViewport>
         </TabsContent>
 
-        {shouldShowStandaloneArtifactsTab ? (
-          <TabsContent
-            value="artifacts"
-            className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-          >
-            <DetailTabViewport isDesktop={isDesktop} autoHeight={autoHeight}>
-              {artifactsPanel}
-            </DetailTabViewport>
-          </TabsContent>
-        ) : null}
-
         <TabsContent
           value="cost"
           className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
@@ -1458,18 +1299,6 @@ export function TaskDetailView({
           </DetailTabViewport>
         </TabsContent>
       </Tabs>
-      <ArtifactPreviewDialog
-        missionId={detail.id}
-        artifactIndex={previewArtifactIndex}
-        artifactName={previewArtifactName}
-        format={previewArtifactFormat}
-        open={previewArtifactIndex !== null}
-        onOpenChange={open => {
-          if (!open) {
-            setPreviewArtifactIndex(null);
-          }
-        }}
-      />
     </div>
   );
 }

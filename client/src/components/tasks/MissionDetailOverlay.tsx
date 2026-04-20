@@ -63,8 +63,8 @@ export function MissionDetailOverlay({
     compactText(detail.summary || detail.sourceText, 220) ||
     t(
       locale,
-      "当前任务还没有补充摘要，打开完整详情后可继续查看工作包。首页运行证据统一留在底部 dock。",
-      "This mission does not have a summary yet. Open the full detail view to inspect work packages. Runtime evidence on home stays in the bottom dock."
+      "当前任务还没有补充摘要，打开完整详情后可继续查看工作包。首页运行证据统一留在共享运行证据容器。",
+      "This mission does not have a summary yet. Open the full detail view to inspect work packages. Runtime evidence on Office home stays in the shared runtime evidence container."
     );
   const workPackageSummary =
     totalWorkPackages > 0
@@ -93,8 +93,8 @@ export function MissionDetailOverlay({
     ) ||
     t(
       locale,
-      "当前没有额外的协作说明。首页的日志与运行证据统一保留在底部 dock。",
-      "There is no extra coordination note right now. Logs and runtime evidence on home stay in the bottom dock."
+      "当前没有额外的协作说明。首页的日志、产物和运行证据统一保留在共享运行证据容器。",
+      "There is no extra coordination note right now. Logs, artifacts, and runtime evidence on Office home stay in the shared runtime evidence container."
     );
   const stageLabel =
     detail.currentStageLabel || t(locale, "等待聚焦阶段", "Awaiting stage focus");
@@ -204,8 +204,8 @@ export function MissionDetailOverlay({
               <div className="mt-2 text-[10px] leading-5 text-stone-500">
                 {t(
                   locale,
-                  "日志、产物和运行证据在首页上统一归口到底部 dock。",
-                  "On home, logs, artifacts, and runtime evidence stay in the bottom dock."
+                  "日志、产物和运行证据在首页上统一归口到共享运行证据容器。",
+                  "On Office home, logs, artifacts, and runtime evidence stay in the shared runtime evidence container."
                 )}
               </div>
             </div>

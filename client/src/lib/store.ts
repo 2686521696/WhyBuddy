@@ -57,6 +57,7 @@ interface AppState {
   setAIConfigMode: (mode: AIConfigMode) => void;
   resetBrowserAIConfig: () => void;
   isConfigOpen: boolean;
+  setConfigOpen: (open: boolean) => void;
   toggleConfig: () => void;
 
   chatMessages: ChatMessage[];
@@ -361,6 +362,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ aiConfig: nextConfig });
   },
   isConfigOpen: false,
+  setConfigOpen: open => set({ isConfigOpen: open }),
   toggleConfig: () => set(state => ({ isConfigOpen: !state.isConfigOpen })),
 
   chatMessages: [],

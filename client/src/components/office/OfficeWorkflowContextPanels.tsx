@@ -520,8 +520,8 @@ export function OfficeWorkflowFlowPanel({
                 <div className="mt-1 text-xs leading-6 text-stone-500">
                   {t(
                     locale,
-                    "产物、日志和 executor 状态已经统一回到底部 runtime dock，这里只保留任务工作项摘要。",
-                    "Artifacts, logs, and executor state now live in the bottom runtime dock, so this panel keeps only work-item summaries."
+                    "产物、日志和 executor 状态已经统一回到首页共享运行证据容器，这里只保留任务工作项摘要。",
+                    "Artifacts, logs, and executor state now live in the shared Office home runtime evidence container, so this panel keeps only work-item summaries."
                   )}
                 </div>
               </div>

@@ -487,30 +487,142 @@ C01-C08 契约冻结 (已完成)
 - GitHub Pages 只走前端浏览器运行时
 - 详细补充说明见 `.kiro/steering/2026-04-15-runtime-current-state.md`
 
-## 2026-04-16 新增主线收敛 specs
+## 2026-04-16 新增主线收敛 specs（2026-04-20 已回填状态）
 
 ### 新增 specs 清单
 
 - [ ] `office-shell-convergence-v1`
+  - 当前状态：进行中，约 97%；主路由、主导航和 `/tasks` 语义已基本收敛
+  - 已落地：`/debug` 壳路由、`/command-center` -> `/`、`Toolbar` 主导航收敛为 `office / more`、`MoreDrawer` 低频治理入口统一导向 `/debug/*`、`/lineage` -> `/debug/lineage`、`/command-center/legacy` 纯兼容跳转
+  - 剩余：`/debug/*` 子路径人工回归；定向自动校验待更新到包含 `/debug/help` 的最新一轮
   - 主线起点，负责首页默认入口、导航心智与路由壳收敛
   - 锁定 `/tasks` 为“查看 / 跟进 / 深度处理”的全屏工作台，不再承担发起语义
   - 只定义 `/debug` 的隐藏路由壳与入口策略，不要求同轮完成所有低频能力迁移
   - 不与后两项主线 spec 并行
 - [ ] `task-os-home-redesign-v1`
+  - 当前状态：进行中，约 75%；首页四区骨架已落地，主要剩断点与人工验收收尾
+  - 已落地：顶部状态条、左侧任务队列、中间场景与任务主线、右侧任务上下文、底部运行区
+  - 剩余：输入 / 澄清仍停留在中央浮层，`1280 / 1440 / 1728+` 与移动端最终手测未完成
   - 依赖 `office-shell-convergence-v1`
   - 在现有视觉基底上做首页四区骨架重构，不重做设计系统
   - 重点收敛首页壳体、信息层级、模块归位与桌面断点稳定性
   - 不并行
 - [ ] `task-runtime-visibility-v1`
+  - 当前状态：进行中，约 96%；是这批主线里最接近收尾的一条
+  - 已落地：`MissionStepFlow`、`Logs / Artifacts / Runtime` 归口、详情页与 cockpit 的运行证据 defer、workflow / review handoff 直连首页 `Artifacts`
+  - 剩余：`socket / callback` 仍是轻量派生摘要；若继续整理墙面浏览器回传与截图放大路径一致性，应转入 `office-wall-display-redesign-v2`
   - 依赖 `task-os-home-redesign-v1`
   - 基于现有 mission / workflow / task detail / socket 数据，把步骤流、Logs、Artifacts、Runtime 收敛到首页
   - 优先做运行证据归口，不再造第二套真相源
   - 不并行
 - [ ] `release-stability-guardrails-v2`
+  - 当前状态：进行中，约 40%；README、恢复能力和部分聚合脚本已补上，但 CI / lint / test 聚合入口未完成
+  - 已落地：`build`、`check`、分拆测试脚本、`test:release`、Pages workflow、恢复与 restart smoke 基础能力
+  - 剩余：统一 `lint / typecheck / test / build` 入口、最小 CI 质量门禁、decision 关键链路回归与 websocket / attach 验收
   - 可与主线并行
   - 以补齐统一聚合入口、最小 CI、关键链路测试和恢复能力为主
   - 优先建立 `lint` / `typecheck` / `test` / `build` 聚合入口，不要求一次性重写全部历史脚本
 - [ ] `replay-and-debug-surface-v1`
+  - 当前状态：进行中，约 88%；回放主链稳定，debug 壳已存在，主壳治理入口已基本接线
+  - 已落地：`/replay/:missionId`、任务详情页“查看回放”入口、`/debug` 页面与低频路径识别、`config / permissions / audit / lineage / help` 导向 `/debug`
+  - 剩余：`/debug/*` 子路径和旧深链跳转的人工回归；定向自动校验待更新到包含 `/debug/help` 的最新一轮
   - 与主线“部分并行”，不再视为完全独立并行项
   - 可先并行：回放稳定性、低频能力盘点、debug 信息架构设计
   - 后置接线：`/debug` 最终接线、主导航低频入口移除，等待主壳路由与导航定稿后再落
+
+### 当前完成度摘要（管理视角）
+
+- 主线收敛三件套已经形成明确梯度：
+  - `office-shell-convergence-v1` 负责入口、导航与壳体语义，当前约 `97%`
+  - `task-os-home-redesign-v1` 负责首页四区骨架与桌面主次，当前约 `75%`
+  - `task-runtime-visibility-v1` 负责步骤流与运行证据归口，当前约 `96%`
+- 就“离收尾最近”而言，优先级应是：
+  - 先收 `task-runtime-visibility-v1` 的 `socket / callback` 事件粒度和剩余边界说明
+  - 再收 `office-shell-convergence-v1` 的 `/debug/*` 回归边界
+  - 再做 `task-os-home-redesign-v1` 的右侧控制区归位和桌面断点 / 手测闭环
+- `release-stability-guardrails-v2` 当前约 `40%`，是这批里最适合并行推进的工程护栏项，但仍不应误判为“已具备完整发布门禁”
+- `replay-and-debug-surface-v1` 当前约 `88%`，建议继续保持“信息架构先行、最终接线后置”的节奏，不要早于主壳定稿强行完成全部 debug 迁移
+
+### 剩余动作清单（建议顺序）
+
+1. 收尾 `task-runtime-visibility-v1`
+   - 视需要继续细化 `socket / callback` 的 relay / callback 事件粒度
+   - 将墙面浏览器回传 / 截图放大链路的后续收尾明确转交 `office-wall-display-redesign-v2`
+2. 收尾 `office-shell-convergence-v1`
+   - 补一轮 `/debug/*` 子路径与旧深链跳转的人工回归
+3. 收尾 `task-os-home-redesign-v1`
+   - 把任务输入 / 澄清从中央浮层继续并入右侧控制语义
+   - 完成 `1280 / 1440 / 1728+` 桌面宽度与移动端最小回归手测
+4. 并行推进 `release-stability-guardrails-v2`
+   - 建立统一 `lint / typecheck / test / build` 入口
+   - 用仓库声明的 package manager 串起最小 CI
+   - 补 decision、websocket 恢复与任务 re-attach 的 spec 级验收闭环
+5. 后置接线 `replay-and-debug-surface-v1`
+   - 同步移除主界面残留的低频高可见入口
+
+### 本周可执行 Checklist（2026-04-20 起）
+
+本周目标不是再开新主线，而是把这 5 个 spec 中最接近收尾、最影响主线体验的缺口真正收口，并把并行项压到“可验收、可交接”的状态。
+
+#### 串行主线
+
+1. 先收 `task-runtime-visibility-v1`
+   - [x] 清掉首页主视图里残留的重复日志主入口
+   - [x] 清掉首页主视图里残留的重复 artifact 主入口
+   - [x] 清掉独立任务详情页里仍与首页运行证据容器平级竞争的日志 / artifact 主入口
+   - [ ] 补一轮定向回归，确保 `Logs / Artifacts / Runtime` 继续维持唯一主出口语义
+   - [ ] 视需要继续细化 `socket / callback` 的 relay / callback 事件粒度
+   - 完成判断：首页与详情页不再出现两套平级运行证据主入口；相关回归测试通过；墙面浏览器回传后续问题不再混入本 spec
+
+2. 再收 `office-shell-convergence-v1`
+   - [x] 定稿 `/command-center/legacy` 的最终策略
+   - [x] 若保留兼容页，明确它只承担说明 / 引导，不再承载旧版主工作台能力
+   - [x] 继续把 `permissions / audit / config` 从 `MoreDrawer` 向 `/debug` 收口
+   - [x] 定稿 `/lineage` 是否继续保留独立深链页
+   - [x] 将 `help` 从主壳 modal 收口到 `/debug/help`
+   - [ ] 补一轮路由与导航回归，确保 `/`、`/tasks`、`/debug`、`/replay/:missionId` 的角色边界稳定
+   - 完成判断：`/command-center` 与 `/command-center/legacy` 的退场策略稳定，主导航不再给低频入口过高权重
+
+3. 再收 `task-os-home-redesign-v1`
+   - [ ] 把任务输入入口继续向右侧控制语义归位
+   - [ ] 把澄清链路继续向右侧控制语义归位
+   - [ ] 做 `1280 / 1440 / 1728+` 桌面宽度手测
+   - [ ] 做一轮移动端最小回归，确认本轮改造未直接破坏主路径
+   - [ ] 按 `manual-verification.md` 补一轮首页主次与模块归位验收
+   - 完成判断：首页四区主次稳定，用户不用跳页即可走完主流程，断点未出现明显结构崩坏
+
+#### 并行护栏
+
+4. 并行推进 `release-stability-guardrails-v2`
+   - [ ] 新增统一 `lint` 聚合入口
+   - [ ] 新增统一 `typecheck` 聚合入口
+   - [ ] 新增统一 `test` 聚合入口
+   - [ ] 对齐 `build`、`check`、分拆测试脚本与外部统一口径
+   - [ ] 建立最小 CI：install -> lint -> typecheck -> test -> build
+   - [ ] 补 decision approve / reject / modify 的关键链路回归
+   - [ ] 明确 websocket 恢复与任务 re-attach 的 spec 级验收口径
+   - 完成判断：仓库具备统一门禁命令，CI 与 README 口径一致，关键恢复链路有明确验收闭环
+
+#### 后置接线
+
+5. 后置推进 `replay-and-debug-surface-v1`
+   - [ ] 先完成低频能力盘点，确认 lineage / audit / permission / config 的最终归口
+   - [ ] 先只做 `/debug` 的信息架构与内容编排，不提前强改主壳导航
+   - [x] `help` 已并入 `/debug/help`
+   - [ ] 接线后同步移除主界面残留的低频高可见入口
+   - 完成判断：普通用户默认只感知首页与回放，低频能力进入 `/debug` 后不再反向污染主导航
+
+#### 每轮结束前都要检查
+
+- [ ] `tasks.md`、`requirements.md`、`manual-verification.md` 与总表状态同步更新
+- [ ] 不把未手测的断点稳定性写成已完成
+- [ ] 不把仍在 `MoreDrawer` 或兼容页中的低频能力写成“已完全迁入 `/debug`”
+- [ ] 不把当前不存在的 `lint / typecheck / test` 聚合脚本写成已经存在
+- [ ] 不新增第二套 mission / workflow / runtime 真相源
+
+#### 本周不要做
+
+- 不要在 `office-shell-convergence-v1` 未定稿前，提前做 `replay-and-debug-surface-v1` 的最终导航接线
+- 不要为了首页重构重做设计系统或主题体系
+- 不要为了运行证据收口重新造一套独立 runtime 数据模型
+- 不要把 `release-stability-guardrails-v2` 的目标态门禁命令直接写进 README 或手工验证，而不先补齐脚本

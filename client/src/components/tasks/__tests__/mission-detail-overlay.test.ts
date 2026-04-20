@@ -206,7 +206,7 @@ describe("MissionDetailOverlay summary", () => {
     expect(result).toMatch(/min ago/);
   });
 
-  it("keeps the home runtime evidence note anchored to the bottom dock", () => {
+  it("keeps the home runtime evidence note anchored to the shared runtime evidence container", () => {
     useAppStore.setState({ locale: "zh-CN" });
 
     const markup = renderToStaticMarkup(
@@ -221,7 +221,7 @@ describe("MissionDetailOverlay summary", () => {
     );
 
     expect(markup).toContain(
-      "日志、产物和运行证据在首页上统一归口到底部 dock。"
+      "日志、产物和运行证据在首页上统一归口到共享运行证据容器。"
     );
     expect(markup).not.toContain("日志、产物和运行证据统一保留在任务详情页与首页底部运行区。");
   });
