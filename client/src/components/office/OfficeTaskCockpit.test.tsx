@@ -109,6 +109,7 @@ vi.mock("./OfficeWorkflowContextPanels", () => ({
 }));
 
 const noopAsync = async () => {};
+const noopAsyncNullable = async () => null;
 const noopToggle = () => {};
 
 beforeEach(() => {
@@ -152,9 +153,9 @@ beforeEach(() => {
     refresh: noopAsync,
     selectTask: () => {},
     createMission: async () => null,
-    submitOperatorAction: noopAsync,
+    submitOperatorAction: noopAsyncNullable,
     setDecisionNote: () => {},
-    launchDecision: noopAsync,
+    launchDecision: noopAsyncNullable,
   });
 });
 
