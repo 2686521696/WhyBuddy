@@ -470,6 +470,8 @@ async function startServer() {
   const chatRoutes = (await import("./routes/chat.js")).default;
   const reportRoutes = (await import("./routes/reports.js")).default;
   const workflowRoutes = (await import("./routes/workflows.js")).default;
+  const aigcMonitoringRoutes =
+    (await import("./routes/aigc-monitoring.js")).default;
   const configRoutes = (await import("./routes/config.js")).default;
   const exportRoutes = (await import("./routes/export.js")).default;
   const telemetryRoutes = (await import("./routes/telemetry.js")).default;
@@ -540,6 +542,7 @@ async function startServer() {
   app.use("/api/chat", chatRoutes);
   app.use("/api/reports", reportRoutes);
   app.use("/api/workflows", workflowRoutes);
+  app.use("/api/v1/:tenantId/aigc-monitoring", aigcMonitoringRoutes);
   app.use("/api/config", configRoutes);
   app.use("/api/export", exportRoutes);
   app.use("/api/telemetry", telemetryRoutes);
