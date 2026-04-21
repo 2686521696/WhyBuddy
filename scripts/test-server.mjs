@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 const ROOT = process.cwd();
 const VITEST_ENTRY = path.join(ROOT, "node_modules", "vitest", "vitest.mjs");
@@ -60,9 +60,12 @@ function chunk(list, size) {
 }
 
 function runBatch(batch, batchIndex, totalBatches) {
+  const firstFile = batch[0];
+  const lastFile = batch[batch.length - 1];
   console.log(
     `[test:server] Running batch ${batchIndex + 1}/${totalBatches} (${batch.length} files)`,
   );
+  console.log(`[test:server] Files ${firstFile} -> ${lastFile}`);
 
   const args = [
     VITEST_ENTRY,
@@ -76,24 +79,39 @@ function runBatch(batch, batchIndex, totalBatches) {
     ...batch,
   ];
 
-  const result = spawnSync(process.execPath, args, {
+  const child = spawn(process.execPath, args, {
     cwd: ROOT,
     stdio: "inherit",
     env: process.env,
   });
 
-  if (result.error) {
-    throw result.error;
-  }
+  const heartbeat = setInterval(() => {
+    console.log(
+      `[test:server] Batch ${batchIndex + 1}/${totalBatches} still running...`,
+    );
+  }, 30000);
 
-  if (typeof result.status === "number" && result.status !== 0) {
-    process.exit(result.status);
-  }
+  return new Promise((resolve, reject) => {
+    child.on("error", (error) => {
+      clearInterval(heartbeat);
+      reject(error);
+    });
 
-  if (result.signal) {
-    console.error(`[test:server] Batch terminated by signal ${result.signal}`);
-    process.exit(1);
-  }
+    child.on("exit", (code, signal) => {
+      clearInterval(heartbeat);
+
+      if (signal) {
+        console.error(`[test:server] Batch terminated by signal ${signal}`);
+        process.exit(1);
+      }
+
+      if (typeof code === "number" && code !== 0) {
+        process.exit(code);
+      }
+
+      resolve();
+    });
+  });
 }
 
 const batchSize = Number.parseInt(process.env.TEST_SERVER_BATCH_SIZE ?? "", 10) || DEFAULT_BATCH_SIZE;
@@ -107,7 +125,7 @@ if (testFiles.length === 0) {
 const batches = chunk(testFiles, batchSize);
 
 for (const [index, batch] of batches.entries()) {
-  runBatch(batch, index, batches.length);
+  await runBatch(batch, index, batches.length);
 }
 
 console.log(`[test:server] Completed ${testFiles.length} files across ${batches.length} batches.`);
