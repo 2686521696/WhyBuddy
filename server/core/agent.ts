@@ -78,6 +78,11 @@ export interface AgentConfig {
   managerId: string | null;
   model: string;
   soulMd: string;
+  /**
+   * Optional root used for persisting role-state.json.
+   * Pass null in tests to keep role state fully in-memory.
+   */
+  roleStateRootPath?: string | null;
 }
 
 export interface AgentRoleState {
@@ -126,13 +131,20 @@ function defaultRoleState(soulMd: string, model: string): AgentRoleState {
   };
 }
 
-function getRoleStatePath(agentId: string): string {
-  return resolve(DATA_ROOT, agentId, 'role-state.json');
+function getRoleStatePath(agentId: string, roleStateRootPath: string | null = DATA_ROOT): string | null {
+  if (!roleStateRootPath) {
+    return null;
+  }
+  return resolve(roleStateRootPath, agentId, 'role-state.json');
 }
 
-function loadRoleStateFromDisk(agentId: string, soulMd: string, model: string): AgentRoleState {
-  const filePath = getRoleStatePath(agentId);
-  if (!existsSync(filePath)) {
+function loadRoleStateFromDisk(
+  agentId: string,
+  filePath: string | null,
+  soulMd: string,
+  model: string,
+): AgentRoleState {
+  if (!filePath || !existsSync(filePath)) {
     return defaultRoleState(soulMd, model);
   }
   try {
@@ -158,8 +170,11 @@ function loadRoleStateFromDisk(agentId: string, soulMd: string, model: string): 
   }
 }
 
-function persistRoleState(agentId: string, state: AgentRoleState): void {
-  const filePath = getRoleStatePath(agentId);
+function persistRoleState(agentId: string, filePath: string | null, state: AgentRoleState): void {
+  if (!filePath) {
+    return;
+  }
+
   const data: AgentRoleStateStore = {
     currentRoleId: state.currentRoleId,
     currentRoleLoadedAt: state.currentRoleLoadedAt,
@@ -203,6 +218,7 @@ const sharedAgentDependencies: RuntimeAgentDependencies = {
 export class Agent extends RuntimeAgent {
   private roleState: AgentRoleState;
   private permissionToken?: string;
+  private readonly roleStatePath: string | null;
 
   /**
    * Set the permission token for this agent.
@@ -257,8 +273,18 @@ export class Agent extends RuntimeAgent {
     };
     super(config, agentDeps);
 
+    this.roleStatePath = getRoleStatePath(
+      config.id,
+      config.roleStateRootPath === undefined ? DATA_ROOT : config.roleStateRootPath,
+    );
+
     // Initialize role state from disk or defaults
-    this.roleState = loadRoleStateFromDisk(config.id, config.soulMd, config.model);
+    this.roleState = loadRoleStateFromDisk(
+      config.id,
+      this.roleStatePath,
+      config.soulMd,
+      config.model,
+    );
   }
 
   static fromDB(agentId: string): Agent | null {
@@ -342,7 +368,7 @@ export class Agent extends RuntimeAgent {
     });
 
     // 10. Persist and emit event
-    persistRoleState(this.config.id, this.roleState);
+    persistRoleState(this.config.id, this.roleStatePath, this.roleState);
     emitEvent({
       type: "agent.roleChanged",
       agentId: this.config.id,
@@ -391,7 +417,7 @@ export class Agent extends RuntimeAgent {
     });
 
     // 6. Persist and emit event
-    persistRoleState(this.config.id, this.roleState);
+    persistRoleState(this.config.id, this.roleStatePath, this.roleState);
     emitEvent({
       type: "agent.roleChanged",
       agentId: this.config.id,
@@ -431,7 +457,7 @@ export class Agent extends RuntimeAgent {
       this.config.soulMd = snapshot.soulMd;
       this.config.model = snapshot.model;
       this.roleState = snapshot.roleState;
-      persistRoleState(this.config.id, this.roleState);
+      persistRoleState(this.config.id, this.roleStatePath, this.roleState);
       throw err;
     }
   }

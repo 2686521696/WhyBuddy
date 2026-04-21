@@ -10,18 +10,13 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { existsSync, rmSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import type { RoleTemplate, AuthorityLevel, RoleSource } from '../../shared/role-schema.js';
 import { RoleRegistry } from '../core/role-registry.js';
 import { RoleAnalyticsService } from '../core/role-analytics.ts';
 
-const __test_dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_DIR = resolve(__test_dirname, '../../data/__test_role_analytics_prop__');
-const TEST_REGISTRY_PATH = resolve(TEST_DIR, 'role-templates.json');
-const TEST_ANALYTICS_PATH = resolve(TEST_DIR, 'role-analytics.json');
+const TEST_REGISTRY_PATH: string | null = null;
+const TEST_ANALYTICS_PATH: string | null = null;
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -54,9 +49,8 @@ function makeTemplate(overrides: Partial<RoleTemplate> & { roleId: string }): Ro
 
 /** Helper to clean up test persistence */
 function cleanup(): void {
-  if (existsSync(TEST_DIR)) {
-    rmSync(TEST_DIR, { recursive: true, force: true });
-  }
+  // Property tests use in-memory stores to avoid Windows file-lock flakiness
+  // and to keep the suite fast under CI.
 }
 
 // ── Property Tests ───────────────────────────────────────────────

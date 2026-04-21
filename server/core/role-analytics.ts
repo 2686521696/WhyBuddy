@@ -69,12 +69,12 @@ class RoleAnalyticsService {
   /** agentId -> roleId -> load count */
   private agentRoleLoads: Record<string, Record<string, number>> = {};
 
-  private storePath: string;
+  private storePath: string | null;
   private _getNow: () => Date;
   private _registry: RoleRegistry;
 
-  constructor(storePath?: string, getNow?: () => Date, registry?: RoleRegistry) {
-    this.storePath = storePath ?? DEFAULT_STORE_PATH;
+  constructor(storePath?: string | null, getNow?: () => Date, registry?: RoleRegistry) {
+    this.storePath = storePath === undefined ? DEFAULT_STORE_PATH : storePath;
     this._getNow = getNow ?? (() => new Date());
     this._registry = registry ?? roleRegistry;
     this.load();
@@ -325,6 +325,10 @@ class RoleAnalyticsService {
   // ── Persistence ───────────────────────────────────────────────
 
   private load(): void {
+    if (!this.storePath) {
+      return;
+    }
+
     if (!existsSync(this.storePath)) {
       return;
     }
@@ -348,6 +352,10 @@ class RoleAnalyticsService {
   }
 
   private persist(): void {
+    if (!this.storePath) {
+      return;
+    }
+
     const data: RoleAnalyticsStore = {
       roleLoadCounts: this.roleLoadCounts,
       roleActiveDurations: this.roleActiveDurations,

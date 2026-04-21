@@ -11,8 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
-import { existsSync, rmSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type {
@@ -128,9 +127,7 @@ const { Agent } = await import('../core/agent.js');
 type AgentInstance = InstanceType<typeof Agent>;
 
 const __test_dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_STORE_DIR = resolve(__test_dirname, '../../data/__test_phase_role_switch__');
-const TEST_STORE_PATH = resolve(TEST_STORE_DIR, 'role-templates.json');
-const AGENT_DATA_ROOT = resolve(__test_dirname, '../../data/agents');
+const TEST_STORE_PATH: string | null = null;
 
 // ── Arbitraries ──────────────────────────────────────────────────
 
@@ -185,14 +182,8 @@ const arbStepKey: fc.Arbitrary<string> = fc
 // ── Helpers ──────────────────────────────────────────────────────
 
 function cleanup(): void {
-  if (existsSync(TEST_STORE_DIR)) {
-    rmSync(TEST_STORE_DIR, { recursive: true, force: true });
-  }
-}
-
-function cleanupAgentData(agentId: string): void {
-  const dir = resolve(AGENT_DATA_ROOT, agentId);
-  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  // Property tests use in-memory stores to avoid Windows file-lock flakiness
+  // and to keep the suite fast under CI.
 }
 
 function freshState(): void {
@@ -209,6 +200,7 @@ function createAgentNoCooldown(id: string, soulMd: string, model: string): Agent
     managerId: null,
     model,
     soulMd,
+    roleStateRootPath: null,
   });
   // Disable cooldown so consecutive role switches don't get blocked
   (agent as any).roleState.roleSwitchCooldownMs = 0;
@@ -312,7 +304,6 @@ describe('Property 13: 阶段切换自动角色切换', () => {
           // After switch, agent's currentRoleId should equal the next phase's roleId
           expect(agent.getCurrentRoleId()).toBe(roleB.roleId);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -365,7 +356,6 @@ describe('Property 13: 阶段切换自动角色切换', () => {
           // No additional operation log entries (no unload/load happened)
           expect(agent.getRoleOperationLog().length).toBe(logBefore);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -452,9 +442,6 @@ describe('Property 13: 阶段切换自动角色切换', () => {
           }
 
           // Cleanup
-          for (const agentId of agentIds) {
-            cleanupAgentData(agentId);
-          }
           cleanup();
         },
       ),
@@ -501,7 +488,6 @@ describe('Property 13: 阶段切换自动角色切换', () => {
           // Agent role should remain unchanged
           expect(agent.getCurrentRoleId()).toBe(role.roleId);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),

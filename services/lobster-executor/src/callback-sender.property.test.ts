@@ -49,6 +49,8 @@ function createCountingFetch(failCount: number) {
   return { fn, getCallCount: () => callCount };
 }
 
+const immediateSleep = async (): Promise<void> => {};
+
 /* ─── Arbitraries ─── */
 
 /** maxRetries: 1–5 (design default is 3, but test the general contract) */
@@ -90,6 +92,7 @@ describe("Property 7: 回调重试与容错", () => {
           const sender = new CallbackSender(
             { secret: "s", executorId: "e", maxRetries, baseDelayMs: 1 },
             mockFetch,
+            immediateSleep,
           );
 
           await sender.send("https://test.local/events", makeEvent({ type: eventType }));
@@ -112,6 +115,7 @@ describe("Property 7: 回调重试与容错", () => {
         const sender = new CallbackSender(
           { secret: "s", executorId: "e", maxRetries, baseDelayMs: 1 },
           mockFetch,
+          immediateSleep,
         );
 
         // Must resolve, not reject — callback failure never blocks Job
@@ -153,6 +157,7 @@ describe("Property 7: 回调重试与容错", () => {
           const sender = new CallbackSender(
             { secret: "s", executorId: "e", maxRetries, baseDelayMs: 1 },
             mockFetch,
+            immediateSleep,
           );
 
           // Must always resolve — this is the core fault-tolerance guarantee

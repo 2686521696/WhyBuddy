@@ -12,8 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
-import { existsSync, rmSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { RoleTemplate, AuthorityLevel, RoleSource } from '../../shared/role-schema.js';
@@ -124,9 +123,7 @@ const { Agent } = await import('../core/agent.js');
 type AgentInstance = InstanceType<typeof Agent>;
 
 const __test_dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_STORE_DIR = resolve(__test_dirname, '../../data/__test_agent_role_prop__');
-const TEST_STORE_PATH = resolve(TEST_STORE_DIR, 'role-templates.json');
-const AGENT_DATA_ROOT = resolve(__test_dirname, '../../data/agents');
+const TEST_STORE_PATH: string | null = null;
 
 // ── Arbitraries ──────────────────────────────────────────────────
 
@@ -175,14 +172,8 @@ const arbModel: fc.Arbitrary<string> = fc.string({ minLength: 1, maxLength: 20 }
 // ── Helpers ──────────────────────────────────────────────────────
 
 function cleanup(): void {
-  if (existsSync(TEST_STORE_DIR)) {
-    rmSync(TEST_STORE_DIR, { recursive: true, force: true });
-  }
-}
-
-function cleanupAgentData(agentId: string): void {
-  const dir = resolve(AGENT_DATA_ROOT, agentId);
-  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  // Property tests use in-memory stores to avoid Windows file-lock flakiness
+  // and to keep the suite fast under CI.
 }
 
 function freshState(): void {
@@ -199,6 +190,7 @@ function createAgent(id: string, soulMd: string, model: string): AgentInstance {
     managerId: null,
     model,
     soulMd,
+    roleStateRootPath: null,
   });
 }
 
@@ -222,7 +214,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
         expect(agent.config.soulMd).toContain(soulMd);
         expect(agent.config.soulMd).toContain(tpl.responsibilityPrompt);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -241,7 +232,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
 
         expect(agent.getCurrentRoleId()).toBe(tpl.roleId);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -260,7 +250,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
 
         expect(agent.getRoleState().loadedSkillIds).toEqual(tpl.requiredSkillIds);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -279,7 +268,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
 
         expect(agent.getRoleState().loadedMcpIds).toEqual(tpl.mcpIds);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -316,7 +304,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
         expect(entry!.agentId).toBe(agentId);
         expect(entry!.triggerSource).toBe('test-mission');
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -355,7 +342,6 @@ describe('Agent Property 4: loadRole 后 Agent 状态正确性', () => {
         expect(new Set(rs.loadedSkillIds)).toEqual(new Set(resolved.requiredSkillIds));
         expect(new Set(rs.loadedMcpIds)).toEqual(new Set(resolved.mcpIds));
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -399,7 +385,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         // System prompt should be exactly the original base prompt
         expect(agent.config.soulMd).toBe(soulMd);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -420,7 +405,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         agent.unloadRole('test-mission');
         expect(agent.getCurrentRoleId()).toBeNull();
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -441,7 +425,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         agent.unloadRole('test-mission');
         expect(agent.getRoleState().loadedSkillIds).toEqual([]);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -462,7 +445,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         agent.unloadRole('test-mission');
         expect(agent.getRoleState().loadedMcpIds).toEqual([]);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -485,7 +467,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         // Model should be restored to the original base config
         expect(agent.config.model).toBe(originalModel);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -526,7 +507,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         expect(entry!.agentId).toBe(agentId);
         expect(entry!.triggerSource).toBe('test-mission-unload');
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -569,7 +549,6 @@ describe('Agent Property 5: unloadRole 后 Agent 状态恢复', () => {
         expect(agent.getRoleState().loadedMcpIds).toEqual([]);
         expect(agent.config.model).toBe(originalModel);
 
-        cleanupAgentData(agentId);
         cleanup();
       }),
       { numRuns: 100 },
@@ -648,7 +627,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
 
           expect(agent.config.soulMd).toBe(promptAfterA);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -679,7 +657,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
 
           expect(agent.getCurrentRoleId()).toBe(roleA.roleId);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -714,7 +691,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
           expect(agent.getRoleState().loadedSkillIds).toEqual(skillsBefore);
           expect(agent.getRoleState().loadedMcpIds).toEqual(mcpBefore);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -747,7 +723,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
 
           expect(agent.config.model).toBe(modelBefore);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -794,7 +769,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
           expect(agent.getRoleState().loadedMcpIds).toEqual(preSwitch.loadedMcpIds);
           expect(agent.getRoleState().currentRoleLoadedAt).toBe(preSwitch.currentRoleLoadedAt);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -834,7 +808,6 @@ describe('Agent Property 6: 角色切换失败回滚', () => {
           expect(agent.getRoleState().loadedSkillIds).toEqual([]);
           expect(agent.getRoleState().loadedMcpIds).toEqual([]);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -903,7 +876,6 @@ describe('Agent Property 7: roleLoadPolicy 模型配置合并', () => {
           expect(effective!.temperature).toBe(tpl.defaultModelConfig.temperature);
           expect(effective!.maxTokens).toBe(tpl.defaultModelConfig.maxTokens);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -939,7 +911,6 @@ describe('Agent Property 7: roleLoadPolicy 模型配置合并', () => {
           expect(effective!.temperature).toBe(agentBaseConfig.temperature);
           expect(effective!.maxTokens).toBe(agentBaseConfig.maxTokens);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -978,7 +949,6 @@ describe('Agent Property 7: roleLoadPolicy 模型配置合并', () => {
           const expectedMaxTokens = Math.max(agentBaseConfig.maxTokens, tpl.defaultModelConfig.maxTokens);
           expect(effective!.maxTokens).toBe(expectedMaxTokens);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -1037,7 +1007,6 @@ describe('Agent Property 7: roleLoadPolicy 模型配置合并', () => {
               break;
           }
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -1075,7 +1044,6 @@ describe('Agent Property 7: roleLoadPolicy 模型配置合并', () => {
           // config.model should be restored to original
           expect(agent.config.model).toBe(model);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),

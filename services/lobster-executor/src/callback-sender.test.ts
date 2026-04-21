@@ -25,6 +25,8 @@ const BASE_CONFIG = {
   baseDelayMs: 1, // 1ms for fast tests
 };
 
+const immediateSleep = async (): Promise<void> => {};
+
 describe("CallbackSender", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
@@ -37,7 +39,7 @@ describe("CallbackSender", () => {
       new Response(null, { status: 200 }),
     );
 
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
     await sender.send("https://brain.test/events", makeEvent());
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -57,7 +59,7 @@ describe("CallbackSender", () => {
       .mockRejectedValueOnce(new Error("connection refused"))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
 
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
     await sender.send("https://brain.test/events", makeEvent());
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -71,7 +73,7 @@ describe("CallbackSender", () => {
       .mockResolvedValueOnce(new Response(null, { status: 503, statusText: "Service Unavailable" }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
 
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
     await sender.send("https://brain.test/events", makeEvent());
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -82,7 +84,7 @@ describe("CallbackSender", () => {
       .fn<typeof fetch>()
       .mockRejectedValue(new Error("network error"));
 
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
 
     // Should NOT throw
     await expect(
@@ -100,7 +102,7 @@ describe("CallbackSender", () => {
       new Response(null, { status: 200 }),
     );
 
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
     await sender.send("https://brain.test/events", makeEvent());
 
     const headers = mockFetch.mock.calls[0][1]!.headers as Record<string, string>;
@@ -115,7 +117,7 @@ describe("CallbackSender", () => {
     );
 
     const event = makeEvent({ type: "job.completed", status: "completed" });
-    const sender = new CallbackSender(BASE_CONFIG, mockFetch);
+    const sender = new CallbackSender(BASE_CONFIG, mockFetch, immediateSleep);
     await sender.send("https://brain.test/events", event);
 
     const body = mockFetch.mock.calls[0][1]!.body as string;

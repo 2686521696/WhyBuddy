@@ -10,8 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
-import { existsSync, rmSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { RoleTemplate, AuthorityLevel, RoleSource, RoleOperationLog } from '../../shared/role-schema.js';
@@ -121,9 +120,7 @@ const { Agent } = await import('../core/agent.js');
 type AgentInstance = InstanceType<typeof Agent>;
 
 const __test_dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_STORE_DIR = resolve(__test_dirname, '../../data/__test_op_log_prop__');
-const TEST_STORE_PATH = resolve(TEST_STORE_DIR, 'role-templates.json');
-const AGENT_DATA_ROOT = resolve(__test_dirname, '../../data/agents');
+const TEST_STORE_PATH: string | null = null;
 
 // ── Arbitraries ──────────────────────────────────────────────────
 
@@ -173,14 +170,8 @@ const arbTriggerSource: fc.Arbitrary<string> = fc.string({ minLength: 1, maxLeng
 // ── Helpers ──────────────────────────────────────────────────────
 
 function cleanup(): void {
-  if (existsSync(TEST_STORE_DIR)) {
-    rmSync(TEST_STORE_DIR, { recursive: true, force: true });
-  }
-}
-
-function cleanupAgentData(agentId: string): void {
-  const dir = resolve(AGENT_DATA_ROOT, agentId);
-  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  // Property tests use in-memory stores to avoid Windows file-lock flakiness
+  // and to keep the suite fast under CI.
 }
 
 function freshState(): void {
@@ -197,6 +188,7 @@ function createAgent(id: string, soulMd: string, model: string): AgentInstance {
     managerId: null,
     model,
     soulMd,
+    roleStateRootPath: null,
   });
 }
 
@@ -244,7 +236,6 @@ describe('Property 8: 角色操作日志完整性', () => {
           expect(loadEntry!.triggerSource).toBe(trigger);
           expect(isValidISO(loadEntry!.timestamp)).toBe(true);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -282,7 +273,6 @@ describe('Property 8: 角色操作日志完整性', () => {
           expect(unloadEntry!.triggerSource).toBe(unloadTrigger);
           expect(isValidISO(unloadEntry!.timestamp)).toBe(true);
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -347,7 +337,6 @@ describe('Property 8: 角色操作日志完整性', () => {
             expect(log[i].agentId).toBe(agentId);
           }
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),
@@ -380,7 +369,6 @@ describe('Property 8: 角色操作日志完整性', () => {
             expect(parsed.toISOString()).toBe(entry.timestamp);
           }
 
-          cleanupAgentData(agentId);
           cleanup();
         },
       ),

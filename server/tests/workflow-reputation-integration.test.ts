@@ -9,6 +9,7 @@
  * @see Requirements 4.1, 4.5, 2.3
  */
 
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AssignmentScorer } from '../core/reputation/assignment-scorer.js';
 import { ReputationService } from '../core/reputation/reputation-service.js';
@@ -44,6 +45,10 @@ function makeProfile(overrides: Partial<ReputationProfile> = {}): ReputationProf
     updatedAt: new Date().toISOString(),
     ...overrides,
   };
+}
+
+function uniqueAgentId(prefix = 'worker'): string {
+  return `${prefix}-${randomUUID()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,12 +164,13 @@ describe('WorkflowEngine reputation integration — task completed signal', () =
     const evaluator = new TrustTierEvaluator(config);
     const detector = new AnomalyDetector(config);
     const service = new ReputationService(calculator, evaluator, detector, config);
+    const agentId = uniqueAgentId();
 
     // Initialize a profile first
-    service.initializeProfile('worker-1', false);
+    service.initializeProfile(agentId, false);
 
     const signal: ReputationSignal = {
-      agentId: 'worker-1',
+      agentId,
       taskId: 1,
       taskQualityScore: 80,
       actualDurationMs: 5000,
@@ -180,7 +186,7 @@ describe('WorkflowEngine reputation integration — task completed signal', () =
     expect(() => service.handleTaskCompleted(signal)).not.toThrow();
 
     // Verify the profile was updated
-    const profile = service.getReputation('worker-1');
+    const profile = service.getReputation(agentId);
     expect(profile).toBeDefined();
     expect(profile!.totalTasks).toBe(1);
     expect(profile!.lastActiveAt).not.toBeNull();
@@ -191,9 +197,10 @@ describe('WorkflowEngine reputation integration — task completed signal', () =
     const evaluator = new TrustTierEvaluator(config);
     const detector = new AnomalyDetector(config);
     const service = new ReputationService(calculator, evaluator, detector, config);
+    const agentId = uniqueAgentId('nonexistent-agent');
 
     const signal: ReputationSignal = {
-      agentId: 'nonexistent-agent',
+      agentId,
       taskId: 99,
       taskQualityScore: 50,
       actualDurationMs: 1000,

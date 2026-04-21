@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { ReputationService } from '../core/reputation/reputation-service.js';
 import { ReputationCalculator } from '../core/reputation/reputation-calculator.js';
@@ -36,6 +37,8 @@ function makeSignal(overrides: Partial<ReputationSignal> = {}): ReputationSignal
   };
 }
 
+const ALL_LEADERBOARD_ROWS = Number.MAX_SAFE_INTEGER;
+
 /**
  * Reset reputation-related tables in the DB between tests.
  * We upsert empty state by removing profiles/events directly.
@@ -58,6 +61,10 @@ describe('ReputationService', () => {
 
   function uniqueAgentId(): string {
     return `agent-test-${++testId}-${Date.now()}`;
+  }
+
+  function absentAgentId(): string {
+    return `missing-agent-${randomUUID()}`;
   }
 
   beforeEach(() => {
@@ -297,7 +304,7 @@ describe('ReputationService', () => {
   // -----------------------------------------------------------------------
   describe('getReputation', () => {
     it('returns undefined for unknown agent', () => {
-      expect(service.getReputation('nonexistent-agent')).toBeUndefined();
+      expect(service.getReputation(absentAgentId())).toBeUndefined();
     });
 
     it('returns profile after initialization', () => {
@@ -311,7 +318,7 @@ describe('ReputationService', () => {
 
   describe('getReputationByRole', () => {
     it('returns undefined for unknown agent', () => {
-      expect(service.getReputationByRole('nonexistent', 'coder')).toBeUndefined();
+      expect(service.getReputationByRole(absentAgentId(), 'coder')).toBeUndefined();
     });
 
     it('returns undefined for unknown role', () => {
@@ -364,7 +371,7 @@ describe('ReputationService', () => {
 
     it('does nothing for unknown agent', () => {
       // Should not throw
-      service.adjustReputation('nonexistent', 'qualityScore', 10, 'test');
+      service.adjustReputation(absentAgentId(), 'qualityScore', 10, 'test');
     });
   });
 
@@ -417,7 +424,7 @@ describe('ReputationService', () => {
     });
 
     it('does nothing for unknown agent', () => {
-      service.resetReputation('nonexistent');
+      service.resetReputation(absentAgentId());
     });
   });
 
@@ -434,7 +441,7 @@ describe('ReputationService', () => {
       service.initializeProfile(ids[2], false); // 500, then boost
       service.adjustReputation(ids[2], 'qualityScore', 200, 'boost');
 
-      const board = service.getLeaderboard({ limit: 10_000 });
+      const board = service.getLeaderboard({ limit: ALL_LEADERBOARD_ROWS });
 
       // Find our test agents in the board
       const ourEntries = board.filter(e => ids.includes(e.agentId));
@@ -453,7 +460,10 @@ describe('ReputationService', () => {
       service.initializeProfile(internalId, false); // standard
       service.initializeProfile(externalId, true);  // probation
 
-      const probationBoard = service.getLeaderboard({ trustTier: 'probation', limit: 10_000 });
+      const probationBoard = service.getLeaderboard({
+        trustTier: 'probation',
+        limit: ALL_LEADERBOARD_ROWS,
+      });
       const probationIds = probationBoard.map(e => e.agentId);
       expect(probationIds).toContain(externalId);
       // Internal agent should not be in probation board

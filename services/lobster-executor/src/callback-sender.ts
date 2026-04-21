@@ -14,17 +14,21 @@ const DEFAULT_CONFIG: Pick<CallbackConfig, "maxRetries" | "baseDelayMs"> = {
 };
 
 type FetchFn = typeof globalThis.fetch;
+type SleepFn = (ms: number) => Promise<void>;
 
 export class CallbackSender {
   private readonly config: CallbackConfig;
   private readonly fetchFn: FetchFn;
+  private readonly sleepFn: SleepFn;
 
   constructor(
     config: Partial<CallbackConfig> & Pick<CallbackConfig, "secret" | "executorId">,
     fetchFn?: FetchFn,
+    sleepFn?: SleepFn,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.fetchFn = fetchFn ?? globalThis.fetch;
+    this.sleepFn = sleepFn ?? this.defaultSleep;
   }
 
   /**
@@ -76,7 +80,7 @@ export class CallbackSender {
             `[CallbackSender] Attempt ${attempt + 1}/${this.config.maxRetries + 1} failed, retrying in ${delayMs}ms:`,
             (err as Error).message,
           );
-          await this.sleep(delayMs);
+          await this.sleepFn(delayMs);
         } else {
           console.warn(
             `[CallbackSender] All ${this.config.maxRetries + 1} attempts exhausted for ${url}:`,
@@ -87,7 +91,7 @@ export class CallbackSender {
     }
   }
 
-  private sleep(ms: number): Promise<void> {
+  private defaultSleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

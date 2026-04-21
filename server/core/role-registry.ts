@@ -25,10 +25,10 @@ interface RoleTemplateStore {
 class RoleRegistry {
   private templates: Map<string, RoleTemplate> = new Map();
   private changeLog: RoleChangeLogEntry[] = [];
-  private storePath: string;
+  private storePath: string | null;
 
-  constructor(storePath?: string) {
-    this.storePath = storePath ?? DEFAULT_STORE_PATH;
+  constructor(storePath?: string | null) {
+    this.storePath = storePath === undefined ? DEFAULT_STORE_PATH : storePath;
     this.load();
   }
 
@@ -190,6 +190,10 @@ class RoleRegistry {
   // ── Persistence ──────────────────────────────────────────────────
 
   private load(): void {
+    if (!this.storePath) {
+      return;
+    }
+
     if (!existsSync(this.storePath)) {
       console.log(`[RoleRegistry] No persistence file found, starting empty: ${this.storePath}`);
       return;
@@ -218,6 +222,10 @@ class RoleRegistry {
   }
 
   private persist(): void {
+    if (!this.storePath) {
+      return;
+    }
+
     const data: RoleTemplateStore = {
       templates: Array.from(this.templates.values()),
       changeLog: this.changeLog,
