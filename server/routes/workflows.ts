@@ -7,6 +7,7 @@ import db from "../db/index.js";
 import { getAIConfig } from "../core/ai-config.js";
 import { generateWorkflowOrganization } from "../core/dynamic-organization.js";
 import { workflowEngine } from "../core/workflow-engine.js";
+import { buildWorkflowGraphInstanceSnapshot } from "../core/workflow-graph-projection.js";
 import { reportStore } from "../memory/report-store.js";
 import { serverRuntime } from "../runtime/server-runtime.js";
 import { missionRuntime } from "../tasks/mission-runtime.js";
@@ -249,6 +250,28 @@ router.get("/:id/tasks", (req, res) => {
 router.get("/:id/messages", (req, res) => {
   const messages = db.getMessagesByWorkflow(req.params.id);
   res.json({ messages });
+});
+
+// GET /api/workflows/:id/graph-instance — Get graph instance snapshot
+router.get("/:id/graph-instance", (req, res) => {
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) {
+    return res.status(404).json({ error: "Workflow not found" });
+  }
+
+  const tasks = db.getTasksByWorkflow(req.params.id);
+  const messages = db.getMessagesByWorkflow(req.params.id);
+  const missionId = resolveWorkflowMission(req.params.id);
+  const mission = missionId ? missionRuntime.getTask(missionId) : undefined;
+
+  const instance = buildWorkflowGraphInstanceSnapshot({
+    workflow,
+    tasks,
+    messages,
+    mission,
+  });
+
+  res.json({ instance });
 });
 
 // GET /api/workflows/:id/nodes/:nodeId/skills — 查询节点的 Skill 列表
