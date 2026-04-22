@@ -152,6 +152,23 @@ export const WEB_AIGC_OBSERVABILITY_EVENT_CATALOG: WebAigcObservabilityEventDefi
     ],
   },
   {
+    eventKey: "human.param_collection_submitted",
+    stage: "human",
+    description: "A structured param_collection submission was recorded with field summaries.",
+    sinks: ["audit"],
+    requiredFields: [
+      "missionId",
+      "decisionId",
+      "nodeId",
+      "submittedBy",
+      "metadata.formFieldKeys",
+    ],
+    specRefs: [
+      "web-aigc-node-param_collection#requirement-3",
+      "web-aigc-platform-observability-audit#requirement-3",
+    ],
+  },
+  {
     eventKey: "human.approved",
     stage: "human",
     description: "A manual approval unblocked a high-risk node or workflow action.",
@@ -256,6 +273,23 @@ export const WEB_AIGC_OBSERVABILITY_EVENT_CATALOG: WebAigcObservabilityEventDefi
     specRefs: [
       "web-aigc-platform-observability-audit#requirement-3",
       "web-aigc-platform-security-governance#requirement-3",
+    ],
+  },
+  {
+    eventKey: "external.knowledge_retrieval",
+    stage: "external",
+    description: "A knowledge query recorded retrieval quality metrics for audit and observability.",
+    sinks: ["audit"],
+    requiredFields: [
+      "projectId",
+      "queryMode",
+      "latencyMs",
+      "structuredEntityCount",
+      "semanticHitCount",
+    ],
+    specRefs: [
+      "web-aigc-node-knowledge_qa#requirement-3",
+      "web-aigc-platform-observability-audit#requirement-3",
     ],
   },
 ];

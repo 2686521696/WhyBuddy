@@ -263,6 +263,7 @@ function installMissionDecisionHooks(collector: AuditCollector): void {
               interactionId?: string;
               branchKey?: string;
               nodeType?: string;
+              formData?: Record<string, string | number | boolean | null>;
             };
           },
         ) => void)
@@ -299,6 +300,7 @@ function installMissionDecisionHooks(collector: AuditCollector): void {
           interactionId?: string;
           branchKey?: string;
           nodeType?: string;
+          formData?: Record<string, string | number | boolean | null>;
         };
       },
     ): void {
@@ -320,6 +322,14 @@ function installMissionDecisionHooks(collector: AuditCollector): void {
           task.id;
         const nodeType = historyEntry.nodeType || resolved.metadata?.nodeType;
         const nodeId = resolved.metadata?.nodeId;
+        const formData =
+          resolved.metadata &&
+          typeof resolved.metadata === "object" &&
+          "formData" in resolved.metadata &&
+          resolved.metadata.formData &&
+          typeof resolved.metadata.formData === "object"
+            ? (resolved.metadata.formData as Record<string, unknown>)
+            : undefined;
 
         collector.record({
           eventType: AuditEventType.DECISION_MADE,
@@ -350,6 +360,44 @@ function installMissionDecisionHooks(collector: AuditCollector): void {
               historyEntry.branchKey || resolved.metadata?.branchKey,
           },
         });
+
+        if (nodeType === "param_collection" && formData) {
+          const formFieldKeys = Object.keys(formData)
+            .map(key => key.trim())
+            .filter(Boolean)
+            .sort();
+
+          collector.record({
+            eventType: AuditEventType.DECISION_MADE,
+            actor: { type: "user", id: submittedBy },
+            action: `Param collection submitted: ${historyEntry.decisionId}`,
+            resource: {
+              type: "mission",
+              id: task.id,
+              name: nodeId || "param_collection",
+            },
+            result: "success",
+            context: { sessionId },
+            metadata: {
+              eventKey: "human.param_collection_submitted",
+              workflowId,
+              instanceId,
+              missionId: task.id,
+              decisionId: historyEntry.decisionId,
+              nodeId,
+              nodeType,
+              submittedBy,
+              fieldCount: formFieldKeys.length,
+              formFieldKeys,
+              hasBranchKey: Boolean(
+                historyEntry.branchKey || resolved.metadata?.branchKey,
+              ),
+              hasInteractionId: Boolean(
+                historyEntry.interactionId || resolved.metadata?.interactionId,
+              ),
+            },
+          });
+        }
       } catch {
         // Audit hook must never break decision submission
       }

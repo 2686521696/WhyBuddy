@@ -592,6 +592,89 @@ describe('API endpoints', () => {
     });
   });
 
+  it('POST /api/tasks/:id/decision records param_collection audit summary when formData is submitted', async () => {
+    const audit = createAuditTestCollector();
+    auditChain = audit.chain;
+    auditCollector = audit.collector;
+    installAuditHooks({ collector: auditCollector });
+
+    const task = runtime.createTask({
+      kind: 'chat',
+      title: 'Param collection audit test',
+      projection: {
+        workflowId: 'wf-audit-param',
+        instanceId: 'instance-audit-param',
+        replayId: 'replay-audit-param',
+      },
+      stageLabels: [{ key: 'execute', label: 'Execute' }],
+    });
+    runtime.markMissionRunning(task.id, 'execute', 'Running', 50);
+    runtime.waitOnMission(task.id, 'collect params', 'Collect structured params', 50, {
+      prompt: 'Collect parameters',
+      options: [{ id: 'submit', label: 'Submit' }],
+      decisionId: 'dec_param_collection_1',
+      type: 'custom-action',
+    });
+
+    const response = await fetch(`${baseUrl}/api/tasks/${task.id}/decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        optionId: 'submit',
+        submittedBy: 'operator-param',
+        metadata: {
+          nodeType: 'param_collection',
+          nodeId: 'node-param-1',
+          sessionId: 'session-param-1',
+          interactionId: 'interaction-param-1',
+          formData: {
+            region: 'cn',
+            priority: 3,
+            approved: true,
+          },
+        },
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(auditChain).not.toBeNull();
+
+    const count = auditChain!.getEntryCount();
+    expect(count).toBeGreaterThan(0);
+    const entries = auditChain!.getEntries(0, count - 1);
+    const paramEntry = entries.find(
+      entry =>
+        entry.event.eventType === AuditEventType.DECISION_MADE &&
+        entry.event.metadata?.eventKey === 'human.param_collection_submitted',
+    );
+
+    expect(paramEntry).toBeDefined();
+    expect(paramEntry?.event.actor).toMatchObject({
+      type: 'user',
+      id: 'operator-param',
+    });
+    expect(paramEntry?.event.resource).toMatchObject({
+      type: 'mission',
+      id: task.id,
+      name: 'node-param-1',
+    });
+    expect(paramEntry?.event.metadata).toMatchObject({
+      eventKey: 'human.param_collection_submitted',
+      workflowId: 'wf-audit-param',
+      instanceId: 'instance-audit-param',
+      missionId: task.id,
+      decisionId: 'dec_param_collection_1',
+      nodeId: 'node-param-1',
+      nodeType: 'param_collection',
+      submittedBy: 'operator-param',
+      fieldCount: 3,
+      formFieldKeys: ['approved', 'priority', 'region'],
+      hasInteractionId: true,
+    });
+  });
+
   it('POST /api/tasks/:id/decision rejects timed out waiting input', async () => {
     const task = runtime.createChatTask('Timed waiting decision test');
     runtime.markMissionRunning(task.id, 'execute', 'Running', 50);

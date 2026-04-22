@@ -630,6 +630,188 @@ describe("WorkflowRuntimeEngine", () => {
     ).toBe("executed");
   });
 
+  it("executes condition nodes through the runtime built-in condition adapter", async () => {
+    const workflow = makeWorkflow({ id: "wf-runtime-condition-node" });
+    const runtime = createRuntime(workflow);
+    const engine = new WorkflowRuntimeEngine(runtime);
+
+    const successAdapter: WorkflowNodeAdapter = {
+      type: "success-node",
+      async execute() {
+        return {
+          kind: "complete",
+          output: {
+            path: "true-branch",
+          },
+        };
+      },
+    };
+    const failureAdapter: WorkflowNodeAdapter = {
+      type: "failure-node",
+      async execute() {
+        return {
+          kind: "complete",
+          output: {
+            path: "false-branch",
+          },
+        };
+      },
+    };
+
+    engine.registerAdapter(successAdapter);
+    engine.registerAdapter(failureAdapter);
+    engine.initialize({
+      workflowId: workflow.id,
+      variables: {
+        approved: true,
+      },
+      definition: {
+        kind: "graph_definition",
+        version: 1,
+        definitionId: workflow.id,
+        code: workflow.id,
+        name: "condition-node-slice",
+        source: "inline",
+        entryNodeId: "condition-node",
+        graphVersion: {
+          kind: "graph_version",
+          version: 1,
+          definitionId: workflow.id,
+          graphVersion: "v1",
+          createdAt: "2026-04-22T00:00:00.000Z",
+        },
+        links: {
+          workflowId: workflow.id,
+        },
+        nodeSchemas: [
+          {
+            id: "condition-node",
+            type: "condition",
+            title: "Condition Node",
+            inputs: [],
+            outputs: [],
+            config: [
+              {
+                key: "expression",
+                label: "Expression",
+                valueType: "string",
+                defaultValue: "approved == true",
+              },
+            ],
+          },
+          {
+            id: "success-node",
+            type: "success-node",
+            title: "Success Path",
+            inputs: [],
+            outputs: [],
+            config: [],
+          },
+          {
+            id: "failure-node",
+            type: "failure-node",
+            title: "Failure Path",
+            inputs: [],
+            outputs: [],
+            config: [],
+          },
+        ],
+        edgeSchemas: [
+          {
+            id: "condition->success",
+            fromNodeId: "condition-node",
+            toNodeId: "success-node",
+            kind: "conditional",
+            label: "true",
+          },
+          {
+            id: "condition->failure",
+            fromNodeId: "condition-node",
+            toNodeId: "failure-node",
+            kind: "conditional",
+            label: "false",
+          },
+        ],
+      },
+    });
+
+    const state = await engine.runToCheckpoint({ workflowId: workflow.id });
+
+    expect(state.instance.status).toBe("EXECUTED");
+    expect(state.instance.output).toMatchObject({
+      path: "true-branch",
+    });
+    expect(state.instance.variables).toMatchObject({
+      approved: true,
+      conditionMatched: true,
+      branchKey: "true",
+      conditionExpression: "approved == true",
+    });
+    expect(
+      state.instance.edgeTransitions.find(edge => edge.edgeId === "condition->success")?.status,
+    ).toBe("executed");
+  });
+
+  it("marks invalid condition expressions as runtime exceptions", async () => {
+    const workflow = makeWorkflow({ id: "wf-runtime-condition-error" });
+    const runtime = createRuntime(workflow);
+    const engine = new WorkflowRuntimeEngine(runtime);
+
+    engine.initialize({
+      workflowId: workflow.id,
+      variables: {
+        approved: true,
+      },
+      definition: {
+        kind: "graph_definition",
+        version: 1,
+        definitionId: workflow.id,
+        code: workflow.id,
+        name: "condition-error-slice",
+        source: "inline",
+        entryNodeId: "condition-node",
+        graphVersion: {
+          kind: "graph_version",
+          version: 1,
+          definitionId: workflow.id,
+          graphVersion: "v1",
+          createdAt: "2026-04-22T00:00:00.000Z",
+        },
+        links: {
+          workflowId: workflow.id,
+        },
+        nodeSchemas: [
+          {
+            id: "condition-node",
+            type: "condition",
+            title: "Condition Node",
+            inputs: [],
+            outputs: [],
+            config: [
+              {
+                key: "expression",
+                label: "Expression",
+                valueType: "string",
+                defaultValue: "approved => true",
+              },
+            ],
+          },
+        ],
+        edgeSchemas: [],
+      },
+    });
+
+    const state = await engine.runToCheckpoint({ workflowId: workflow.id });
+
+    expect(state.instance.status).toBe("EXCEPTION");
+    expect(state.instance.error).toContain("Invalid condition expression");
+    expect(state.instance.nodeRuns[0]).toMatchObject({
+      nodeId: "condition-node",
+      status: "EXCEPTION",
+      error: expect.stringContaining("Invalid condition expression"),
+    });
+  });
+
   it("completes end nodes with structured output after branch selection", async () => {
     const workflow = makeWorkflow({ id: "wf-runtime-end" });
     const runtime = createRuntime(workflow);
@@ -1596,6 +1778,84 @@ describe("WorkflowRuntimeEngine", () => {
         sessionId: "session-runtime-1",
         missionId: "mission-runtime-1",
       }),
+    });
+  });
+
+  it("executes knowledge_qa through a runtime-registered adapter with citations and evidence", async () => {
+    const workflow = makeWorkflow({ id: "wf-runtime-knowledge-node" });
+    const runtime = createRuntime(workflow);
+    const engine = new WorkflowRuntimeEngine(runtime);
+
+    const knowledgeAdapter: WorkflowNodeAdapter = {
+      type: "knowledge_qa",
+      async execute() {
+        return {
+          kind: "complete",
+          output: {
+            nodeType: "knowledge_qa",
+            answer: "Knowledge answer",
+            citations: ["CodeModule:auth-module"],
+            evidenceList: [
+              {
+                kind: "entity",
+                title: "auth-module",
+                detail: "A test module",
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    engine.registerAdapter(knowledgeAdapter);
+    engine.initialize({
+      workflowId: workflow.id,
+      definition: {
+        kind: "graph_definition",
+        version: 1,
+        definitionId: workflow.id,
+        code: workflow.id,
+        name: "knowledge-node-slice",
+        source: "inline",
+        entryNodeId: "knowledge-node",
+        graphVersion: {
+          kind: "graph_version",
+          version: 1,
+          definitionId: workflow.id,
+          graphVersion: "v1",
+          createdAt: "2026-04-22T00:00:00.000Z",
+        },
+        links: {
+          workflowId: workflow.id,
+        },
+        nodeSchemas: [
+          {
+            id: "knowledge-node",
+            type: "knowledge_qa",
+            title: "Knowledge Node",
+            inputs: [],
+            outputs: [],
+            config: [],
+          },
+        ],
+        edgeSchemas: [],
+      },
+    });
+
+    const state = await engine.runToCheckpoint({ workflowId: workflow.id });
+
+    expect(state.instance.status).toBe("EXECUTED");
+    expect(state.instance.output).toMatchObject({
+      nodeType: "knowledge_qa",
+      answer: "Knowledge answer",
+      citations: ["CodeModule:auth-module"],
+      evidenceList: [
+        {
+          kind: "entity",
+          title: "auth-module",
+          detail: "A test module",
+        },
+      ],
     });
   });
 });

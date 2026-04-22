@@ -31,8 +31,72 @@ export interface KnowledgeNodeExecutionResult {
       relationCount: number;
       semanticHitCount: number;
     };
+    citations: string[];
+    evidenceList: Array<{
+      kind: "entity" | "relation" | "semantic";
+      title: string;
+      detail: string;
+    }>;
     result: UnifiedKnowledgeResult;
   };
+}
+
+function buildKnowledgeCitations(
+  result: UnifiedKnowledgeResult,
+): string[] {
+  const entityCitations = result.structuredResults.entities.map(
+    entity => `${entity.entityType}:${entity.name}`,
+  );
+  const relationCitations = result.structuredResults.relations.map(
+    relation =>
+      `${relation.relationType}:${relation.sourceEntityId}->${relation.targetEntityId}`,
+  );
+  const semanticCitations = result.semanticResults.map((hit, index) => {
+    const candidate =
+      typeof hit === "object" && hit !== null && "id" in hit
+        ? (hit as { id?: unknown }).id
+        : undefined;
+    return `semantic:${typeof candidate === "string" ? candidate : index + 1}`;
+  });
+
+  return [...entityCitations, ...relationCitations, ...semanticCitations];
+}
+
+function buildKnowledgeEvidenceList(
+  result: UnifiedKnowledgeResult,
+): Array<{
+  kind: "entity" | "relation" | "semantic";
+  title: string;
+  detail: string;
+}> {
+  const entityEvidence = result.structuredResults.entities.map(entity => ({
+    kind: "entity" as const,
+    title: entity.name,
+    detail: entity.description || entity.entityType,
+  }));
+  const relationEvidence = result.structuredResults.relations.map(relation => ({
+    kind: "relation" as const,
+    title: relation.relationType,
+    detail: relation.evidence,
+  }));
+  const semanticEvidence = result.semanticResults.map((hit, index) => {
+    const candidate =
+      typeof hit === "object" && hit !== null
+        ? (hit as { content?: unknown; score?: unknown })
+        : {};
+    return {
+      kind: "semantic" as const,
+      title: `semantic-${index + 1}`,
+      detail:
+        typeof candidate.content === "string"
+          ? candidate.content
+          : typeof candidate.score === "number"
+            ? `score=${candidate.score}`
+            : "semantic hit",
+    };
+  });
+
+  return [...entityEvidence, ...relationEvidence, ...semanticEvidence];
 }
 
 function normalizeMode(value: unknown): UnifiedQueryOptions["mode"] {
@@ -79,6 +143,8 @@ export async function executeKnowledgeNode(
   });
 
   const answer = result.mergedSummary;
+  const citations = buildKnowledgeCitations(result);
+  const evidenceList = buildKnowledgeEvidenceList(result);
 
   return {
     ok: true,
@@ -94,6 +160,8 @@ export async function executeKnowledgeNode(
         relationCount: result.structuredResults.relations.length,
         semanticHitCount: result.semanticResults.length,
       },
+      citations,
+      evidenceList,
       result,
     },
   };

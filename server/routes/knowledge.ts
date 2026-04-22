@@ -10,7 +10,9 @@
  */
 
 import { Router } from "express";
+import { performance } from "node:perf_hooks";
 
+import { AuditEventType } from "../../shared/audit/contracts.js";
 import { KNOWLEDGE_API } from "../../shared/knowledge/api.js";
 import type {
   GetKnowledgeGraphResponse,
@@ -46,8 +48,34 @@ export function createKnowledgeRouter(deps: {
   graphStore: GraphStore;
   reviewQueue: KnowledgeReviewQueue;
   knowledgeService: KnowledgeService;
+  auditCollector?: {
+    record(input: {
+      eventType: AuditEventType;
+      actor: {
+        type: "user" | "agent" | "system";
+        id: string;
+        name?: string;
+      };
+      action: string;
+      resource: {
+        type: string;
+        id: string;
+        name?: string;
+      };
+      result: "success" | "failure" | "denied" | "error";
+      context?: {
+        sessionId?: string;
+        requestId?: string;
+        sourceIp?: string;
+        userAgent?: string;
+        organizationId?: string;
+      };
+      metadata?: Record<string, unknown>;
+      lineageId?: string;
+    }): void;
+  };
 }): Router {
-  const { graphStore, reviewQueue, knowledgeService } = deps;
+  const { graphStore, reviewQueue, knowledgeService, auditCollector } = deps;
   const router = Router();
 
   // -----------------------------------------------------------------------
@@ -207,6 +235,7 @@ export function createKnowledgeRouter(deps: {
       return res.status(400).json({ error: "nodeType must be knowledge_qa" });
     }
 
+    const startedAt = performance.now();
     try {
       const result = await executeKnowledgeNode(
         {
@@ -215,6 +244,57 @@ export function createKnowledgeRouter(deps: {
         },
         { knowledgeService },
       );
+
+      const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+      const projectId =
+        typeof req.body?.input?.projectId === "string"
+          ? req.body.input.projectId.trim()
+          : "";
+      const queryMode =
+        typeof req.body?.input?.options?.mode === "string"
+          ? req.body.input.options.mode
+          : "balanced";
+      const semanticScores = result.output.result.semanticResults
+        .map(hit =>
+          typeof hit === "object" && hit !== null && "score" in hit
+            ? (hit as { score?: unknown }).score
+            : undefined,
+        )
+        .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+
+      auditCollector?.record({
+        eventType: AuditEventType.DATA_ACCESSED,
+        actor: { type: "system", id: "knowledge-node-router" },
+        action: `Knowledge retrieval executed for ${nodeType}`,
+        resource: {
+          type: "knowledge-node",
+          id: nodeType,
+          name: projectId || "knowledge_qa",
+        },
+        result: "success",
+        context: {
+          requestId:
+            typeof req.headers["x-request-id"] === "string"
+              ? req.headers["x-request-id"]
+              : undefined,
+        },
+        metadata: {
+          eventKey: "external.knowledge_retrieval",
+          nodeType,
+          projectId: projectId || undefined,
+          queryMode,
+          latencyMs,
+          structuredEntityCount: result.output.evidence.structuredEntityCount,
+          relationCount: result.output.evidence.relationCount,
+          semanticHitCount: result.output.evidence.semanticHitCount,
+          citationCount: result.output.citations.length,
+          evidenceCount: result.output.evidenceList.length,
+          semanticScoreMax:
+            semanticScores.length > 0 ? Math.max(...semanticScores) : undefined,
+          semanticScoreMin:
+            semanticScores.length > 0 ? Math.min(...semanticScores) : undefined,
+        },
+      });
 
       res.json(result);
     } catch (err) {

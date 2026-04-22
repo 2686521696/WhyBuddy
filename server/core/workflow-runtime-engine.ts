@@ -35,6 +35,9 @@ import {
   type ChatNodeInput,
   type ChatNodeType,
 } from "../routes/node-adapters/chat-node-adapter.js";
+import {
+  evaluateRuntimeConditionExpression,
+} from "./web-aigc-controlflow.js";
 import { serverRuntime } from "../runtime/server-runtime.js";
 
 function nowIso(): string {
@@ -1053,6 +1056,60 @@ class EndWorkflowNodeAdapter implements WorkflowNodeAdapter {
   }
 }
 
+class ConditionWorkflowNodeAdapter implements WorkflowNodeAdapter {
+  readonly type = "condition";
+
+  async execute(
+    context: WorkflowNodeExecutionContext,
+  ): Promise<WorkflowNodeAdapterResult> {
+    const expression =
+      normalizeOptionalString(
+        resolveNodeTemplateValue(
+          getNodeConfigDefaultValue(context.node, "expression"),
+          context.variables,
+        ),
+      ) || "";
+
+    const evaluation = evaluateRuntimeConditionExpression(
+      expression,
+      context.variables,
+    );
+
+    if (evaluation.error) {
+      return {
+        kind: "error",
+        message: evaluation.error,
+        output: {
+          conditionExpression: expression,
+          conditionMatched: false,
+          branchKey: "error",
+          conditionError: evaluation.error,
+        },
+      };
+    }
+
+    const branchKey = evaluation.matched ? "true" : "false";
+    const branchEdge = context.definition.edgeSchemas.find(
+      edge =>
+        edge.fromNodeId === context.node.id &&
+        edge.kind === "conditional" &&
+        typeof edge.label === "string" &&
+        edge.label.trim() === branchKey,
+    );
+
+    return {
+      kind: "advance",
+      output: {
+        conditionExpression: expression,
+        conditionMatched: evaluation.matched,
+        branchKey,
+        rationale: evaluation.rationale,
+      },
+      nextNodeId: branchEdge?.toNodeId,
+    };
+  }
+}
+
 class HitlChoiceAdapter implements WorkflowNodeAdapter {
   constructor(
     readonly type: string,
@@ -1177,6 +1234,7 @@ export class WorkflowRuntimeEngine {
     this.registerAdapter(new EchoWorkflowNodeAdapter());
     this.registerAdapter(new ChatWorkflowNodeAdapter("llm", this.runtime));
     this.registerAdapter(new ChatWorkflowNodeAdapter("dialogue", this.runtime));
+    this.registerAdapter(new ConditionWorkflowNodeAdapter());
     this.registerAdapter(new EndWorkflowNodeAdapter());
     for (const type of ["root", "agent_task", "plan", "review", "audit", "summary"]) {
       this.registerAdapter(new ProjectionPassThroughAdapter(type));

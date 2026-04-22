@@ -9,8 +9,9 @@
 import express from "express";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
+import { AuditEventType } from "../../shared/audit/contracts.js";
 import { GraphStore } from "../knowledge/graph-store.js";
 import { KnowledgeReviewQueue } from "../knowledge/review-queue.js";
 import { KnowledgeService } from "../knowledge/knowledge-service.js";
@@ -29,7 +30,10 @@ function createTestDeps() {
   const reviewQueue = new KnowledgeReviewQueue(graphStore);
   const queryService = new KnowledgeGraphQuery(graphStore, ontologyRegistry);
   const knowledgeService = new KnowledgeService(queryService, graphStore);
-  return { graphStore, reviewQueue, knowledgeService };
+  const auditCollector = {
+    record: vi.fn(),
+  };
+  return { graphStore, reviewQueue, knowledgeService, auditCollector };
 }
 
 function uniqueProjectId(prefix: string): string {
@@ -358,6 +362,32 @@ describe("POST /api/knowledge/nodes/execute", () => {
       expect(body.output.reply.content).toBe(body.output.answer);
       expect(body.output.result).toBeDefined();
       expect(body.output.evidence.structuredEntityCount).toBeGreaterThan(0);
+      expect(body.output.citations).toEqual(
+        expect.arrayContaining(["CodeModule:auth-module"]),
+      );
+      expect(body.output.evidenceList).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "entity",
+            title: "auth-module",
+          }),
+        ]),
+      );
+      expect(deps.auditCollector.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: AuditEventType.DATA_ACCESSED,
+          metadata: expect.objectContaining({
+            eventKey: "external.knowledge_retrieval",
+            nodeType: "knowledge_qa",
+            projectId,
+            queryMode: "preferStructured",
+            structuredEntityCount: body.output.evidence.structuredEntityCount,
+            semanticHitCount: body.output.evidence.semanticHitCount,
+            citationCount: body.output.citations.length,
+            evidenceCount: body.output.evidenceList.length,
+          }),
+        }),
+      );
     });
   });
 

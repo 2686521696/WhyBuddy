@@ -31,7 +31,7 @@
   - `server/tests/hitl-decision.test.ts`、`server/tests/mission-routes.test.ts`、`server/tests/workflow-runtime-engine.test.ts` 已覆盖等待、恢复、再等待、再恢复和图运行时 checkpoint/resume 场景。
   - 结论：现有 HITL / mission / route / client / runtime 已形成等待输入与恢复执行闭环，可勾选。
 
-- [ ] 写入参数采集事件
+- [x] 写入参数采集事件
   - 已具备的范围：
     - `server/tasks/mission-store.ts` 在等待时写入 `waiting` 事件，在恢复时写入 `progress` 事件。
     - `server/tasks/mission-runtime.ts` 可广播 `decisionSubmitted` socket 事件。
@@ -39,11 +39,18 @@
     - `shared/web-aigc-observability.ts` 已定义 `node.waiting_input` 与 `human.decision_submitted` 事件目录。
     - `server/audit/audit-hooks.ts` 已把人类决策提交映射为 `human.decision_submitted` 审计事件。
     - `server/tasks/mission-decision.ts` 成功提交后会把 `metadata.formData` 连同 `nodeType / sessionId / interactionId / branchKey` 写入 decision lineage metadata。
-  - 仍缺的范围：
-    - 没有看到 `param_collection` 专用事件模型，无法明确区分“普通决策”与“结构化参数采集”。
-    - 审计事件里没有看到对 `formData`、字段列表、字段摘要的明确记录；现有 `formData` 只进入 decision lineage metadata，不等于参数采集事件闭环。
-    - 没有看到 `nodeType = "param_collection"` 的专项事件测试。
-  - 结论：当前已有通用 waiting / decision / runtime / lineage 链路，但缺少参数采集专用事件闭环，暂不勾选。
+    - `shared/web-aigc-observability.ts` 已新增 `human.param_collection_submitted` 事件目录。
+    - `server/audit/audit-hooks.ts` 现已在 `nodeType = "param_collection"` 且携带 `formData` 时追加记录专用审计事件。
+    - 专用事件已覆盖最小字段摘要：
+      - `fieldCount`
+      - `formFieldKeys`
+      - `hasInteractionId`
+      - `hasBranchKey`
+    - `server/tests/hitl-decision.test.ts` 已补充 `param_collection` 专项事件测试。
+  - 仍需注意的范围：
+    - 当前记录的是“参数采集提交摘要事件”，而不是完整字段级验证引擎。
+    - 事件中记录的是字段 key 摘要，而不是原始 `formData` 全量值，以避免把结构化输入原样扩散到审计流。
+  - 结论：当前主仓已经形成 `param_collection` 的最小专用审计闭环，因此本项可以勾选。
 
 - [ ] 验证多字段与附件场景
   - 已具备的范围：

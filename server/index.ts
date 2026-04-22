@@ -593,7 +593,15 @@ async function startServer() {
   app.use("/api/decision-templates", createDecisionTemplatesRouter());
   app.use("/api/planets", createPlanetRouter(missionRuntime));
   app.use("/api/feishu", createFeishuRouter());
-  app.use("/api/knowledge", createKnowledgeRouter({ graphStore, reviewQueue, knowledgeService }));
+  app.use(
+    "/api/knowledge",
+    createKnowledgeRouter({
+      graphStore,
+      reviewQueue,
+      knowledgeService,
+      auditCollector,
+    }),
+  );
   app.use("/api/admin/knowledge", createKnowledgeAdminRouter({ graphStore, ontologyRegistry, reviewQueue }));
   app.use("/api/audit", createAuditRouter({
     chain: auditChain,

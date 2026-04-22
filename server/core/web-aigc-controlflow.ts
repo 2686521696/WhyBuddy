@@ -403,6 +403,96 @@ function evaluateSimpleExpression(
   return resolveTokenValue(trimmed, context);
 }
 
+export interface RuntimeConditionEvaluation {
+  matched: boolean;
+  rationale?: string;
+  error?: string;
+}
+
+const RUNTIME_CONDITION_OPERATORS = [
+  "===",
+  "!==",
+  ">=",
+  "<=",
+  "==",
+  "!=",
+  ">",
+  "<",
+] as const;
+
+function findRuntimeConditionOperator(
+  expression: string
+): { operator?: (typeof RUNTIME_CONDITION_OPERATORS)[number]; index?: number } {
+  for (const operator of RUNTIME_CONDITION_OPERATORS) {
+    const index = expression.indexOf(operator);
+    if (index > 0) {
+      return { operator, index };
+    }
+  }
+
+  return {};
+}
+
+export function evaluateRuntimeConditionExpression(
+  expression: string,
+  variables: Record<string, unknown>
+): RuntimeConditionEvaluation {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return {
+      matched: false,
+      error: "Condition node requires a non-empty expression.",
+    };
+  }
+
+  const context: VariableContextByScope = {
+    global: normalizeRecord(variables),
+    local: {},
+    temp: {},
+  };
+  const operatorMatch = findRuntimeConditionOperator(trimmed);
+
+  if (operatorMatch.operator && typeof operatorMatch.index === "number") {
+    const leftToken = trimmed.slice(0, operatorMatch.index).trim();
+    const rightToken = trimmed
+      .slice(operatorMatch.index + operatorMatch.operator.length)
+      .trim();
+
+    if (
+      !leftToken ||
+      !rightToken ||
+      /[><=!&|]$/.test(leftToken) ||
+      /^[><=!&|]/.test(leftToken) ||
+      /[><=!&|]$/.test(rightToken) ||
+      /^[><=!&|]/.test(rightToken)
+    ) {
+      return {
+        matched: false,
+        rationale: trimmed,
+        error: `Invalid condition expression: ${trimmed}`,
+      };
+    }
+
+    return {
+      matched: Boolean(evaluateSimpleExpression(trimmed, context)),
+      rationale: trimmed,
+    };
+  }
+
+  if (/[><=!&|]/.test(trimmed)) {
+    return {
+      matched: false,
+      rationale: trimmed,
+      error: `Unsupported condition expression: ${trimmed}`,
+    };
+  }
+
+  return {
+    matched: Boolean(resolveTokenValue(trimmed, context)),
+    rationale: trimmed,
+  };
+}
+
 function evaluateAssignmentValue(
   node: ControlFlowVariableAssignmentNode,
   context: VariableContextByScope
