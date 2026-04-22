@@ -11,6 +11,21 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { EventCollector } from './event-collector.js';
 
+function resolveReplayTimelineId(
+  mission: { id?: string; projection?: { replayId?: string; workflowId?: string } } | undefined,
+): string {
+  if (typeof mission?.projection?.replayId === 'string' && mission.projection.replayId.trim()) {
+    return mission.projection.replayId.trim();
+  }
+  if (typeof mission?.projection?.workflowId === 'string' && mission.projection.workflowId.trim()) {
+    return mission.projection.workflowId.trim();
+  }
+  if (typeof mission?.id === 'string' && mission.id.trim()) {
+    return mission.id.trim();
+  }
+  return 'unknown';
+}
+
 /* ─── installMissionInterceptor ─── */
 
 /**
@@ -38,14 +53,16 @@ export function installMissionInterceptor(
 
     orchestrator.hooks.onMissionUpdated = async (mission: any): Promise<void> => {
       // Always call the previous hook first
-      try {
-        await previousHook?.(mission);
-      } catch {
-        // Never let hook chain failures propagate
+      if (previousHook) {
+        try {
+          await previousHook(mission);
+        } catch {
+          // Never let hook chain failures propagate
+        }
       }
 
       try {
-        const missionId: string = mission?.id ?? 'unknown';
+        const missionId = resolveReplayTimelineId(mission);
         const status: string = mission?.status ?? '';
         const stageKey: string = mission?.currentStageKey ?? '';
         const events: any[] = mission?.events ?? [];
@@ -246,6 +263,7 @@ export function installMessageBusInterceptor(
  */
 export function installExecutorInterceptor(
   collector: EventCollector,
+  resolveReplayId?: (missionId: string) => string | undefined,
 ): (req: Request, res: Response, next: NextFunction) => void {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
@@ -255,6 +273,8 @@ export function installExecutorInterceptor(
       }
 
       const missionId: string = event.missionId.trim();
+      const replayMissionId =
+        resolveReplayId?.(missionId)?.trim() || missionId;
       const executorName: string = event.executor?.trim() ?? 'executor';
       const stageKey: string = event.stageKey?.trim() ?? 'execute';
       const eventType: string = event.type?.trim() ?? '';
@@ -268,7 +288,7 @@ export function installExecutorInterceptor(
         stageKey === 'codegen'
       ) {
         collector.emit({
-          missionId,
+          missionId: replayMissionId,
           eventType: 'CODE_EXECUTED',
           sourceAgent: executorName,
           eventData: {
@@ -300,7 +320,7 @@ export function installExecutorInterceptor(
         for (const artifact of artifacts) {
           if (!artifact?.name) continue;
           collector.emit({
-            missionId,
+            missionId: replayMissionId,
             eventType: 'RESOURCE_ACCESSED',
             sourceAgent: executorName,
             eventData: {
@@ -326,7 +346,7 @@ export function installExecutorInterceptor(
       const instance = event.payload?.instance;
       if (instance?.id) {
         collector.emit({
-          missionId,
+          missionId: replayMissionId,
           eventType: 'RESOURCE_ACCESSED',
           sourceAgent: executorName,
           eventData: {

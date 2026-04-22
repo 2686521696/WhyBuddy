@@ -124,6 +124,13 @@ const workflowStoreState = {
     startTime: "2026-04-15T00:00:01.000Z",
     endTime: null,
     lastUpdateTime: "2026-04-15T00:03:00.000Z",
+    links: {
+      workflowId: "wf-graph",
+      missionId: "mission-graph",
+      sessionId: "session-monitor-links",
+      replayId: "replay-monitor-graph",
+      auditId: "audit-monitor-graph",
+    },
     inputVariables: {},
     outputVariables: {},
     nodes: [
@@ -326,6 +333,10 @@ describe("OfficeWorkflowHistoryPanel", () => {
     expect(markup).toContain("web-aigc compatibility monitor");
     expect(markup).toContain("growth-agent-pipeline");
     expect(markup).toContain("office-runtime");
+    expect(markup).toContain("Projection links");
+    expect(markup).toContain("replay-monitor-graph");
+    expect(markup).toContain("audit-monitor-graph");
+    expect(markup).toContain("session-monitor-links");
     expect(markup).toContain("Node execution snapshot");
     expect(markup).toContain("Marketing planner");
     expect(markup).toContain("Budget approval is still pending");

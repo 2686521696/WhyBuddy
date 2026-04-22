@@ -33,6 +33,7 @@ import {
   MAX_WORKFLOW_ATTACHMENTS,
   type WorkflowInputAttachment,
 } from "@shared/workflow-input";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import type {
   MissionOperatorActionLoadingMap,
   MissionTaskDetail,
@@ -126,7 +127,7 @@ export function UnifiedLaunchComposer({
   activeTaskDetail?: MissionTaskDetail | null;
   operatorActionLoading?: MissionOperatorActionLoadingMap;
   onSubmitOperatorAction?: (payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) => void | Promise<void>;
   onTaskResolved?: (result: TaskHubCommandSubmissionResult) => void;

@@ -170,9 +170,33 @@ describe("auto-agent routes", () => {
     );
   });
 
-  it("POST /api/a2a/auto-agent rejects an unknown kind", async () => {
+  it("POST /api/a2a/auto-agent accepts a passthrough_api target", async () => {
     const response = await request(server, "POST", "/api/a2a/auto-agent", {
       kind: "passthrough_api",
+      targetId: "proxy.weather",
+      input: "读取天气代理",
+      workflowId: "wf-pass-1",
+      metadata: {
+        url: "https://api.example.test/weather",
+        whitelist: ["https://api.example.test/*"],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.output).toBe("ok:passthrough_api:proxy.weather");
+    expect(fakeExecutor.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "passthrough_api",
+        targetId: "proxy.weather",
+        input: "读取天气代理",
+        workflowId: "wf-pass-1",
+      }),
+    );
+  });
+
+  it("POST /api/a2a/auto-agent rejects an unknown kind", async () => {
+    const response = await request(server, "POST", "/api/a2a/auto-agent", {
+      kind: "unknown_kind",
       targetId: "svc-1",
       input: "ping",
     });

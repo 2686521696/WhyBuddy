@@ -18,12 +18,14 @@ import type {
   WebAigcSearchRequest,
   WebAigcSearchMode,
 } from '../../shared/rag/web-aigc-search.js';
+import type { PermissionCheckResult } from '../../shared/permission/contracts.js';
 import {
   normalizeWebAigcSearchRequest,
   projectDocumentSearchResponse,
   projectFragmentSearchResponse,
   validateWebAigcSearchRequest,
 } from '../rag/web-aigc-search-adapter.js';
+import { getPermissionCheckEngine } from '../core/agent.js';
 
 export interface RAGRouteDeps {
   ingestionPipeline: IngestionPipeline;
@@ -36,8 +38,59 @@ export interface RAGRouteDeps {
   augmentationLogger: AugmentationLogger;
 }
 
+interface WebAigcSearchIdentity {
+  agentId: string;
+  token: string;
+}
+
+function resolveWebAigcSearchIdentity(
+  body: Partial<WebAigcSearchRequest> | undefined,
+): WebAigcSearchIdentity | null {
+  const candidate = body as
+    | (Partial<WebAigcSearchRequest> & {
+        agentId?: unknown;
+        token?: unknown;
+      })
+    | undefined;
+
+  const agentId =
+    typeof candidate?.agentId === 'string' && candidate.agentId.trim()
+      ? candidate.agentId.trim()
+      : typeof body?.scope?.agentId === 'string' && body.scope.agentId.trim()
+        ? body.scope.agentId.trim()
+        : '';
+  const token =
+    typeof candidate?.token === 'string' && candidate.token.trim()
+      ? candidate.token.trim()
+      : '';
+
+  if (!agentId || !token) {
+    return null;
+  }
+
+  return { agentId, token };
+}
+
+function buildWebAigcSearchResource(projectId: string): string {
+  return `rag_${projectId}`;
+}
+
+function toPermissionDeniedResponse(result: PermissionCheckResult) {
+  return {
+    status: 403,
+    body: {
+      error: result.reason || 'Permission denied for document search',
+      suggestion: result.suggestion,
+    },
+  };
+}
+
 export function createRAGRouter(deps: RAGRouteDeps): Router {
   const router = Router();
+
+  function recordRetrievalMetric(latencyMs: number, resultCount: number): void {
+    deps.metrics.recordRetrieval(latencyMs, resultCount > 0);
+  }
 
   async function runWebAigcSearch(
     reqBody: Partial<WebAigcSearchRequest> | undefined,
@@ -53,19 +106,48 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
 
     const request = reqBody as WebAigcSearchRequest;
     const normalizedOptions = normalizeWebAigcSearchRequest(request);
+    const permissionEngine = getPermissionCheckEngine();
+    if (permissionEngine) {
+      const identity = resolveWebAigcSearchIdentity(reqBody);
+      if (!identity) {
+        return {
+          status: 400,
+          body: {
+            error:
+              'agentId and token are required when document_search permission enforcement is enabled',
+          },
+        };
+      }
+
+      const permission = permissionEngine.checkPermission(
+        identity.agentId,
+        'database',
+        'select',
+        buildWebAigcSearchResource(request.scope.projectId),
+        identity.token,
+      );
+
+      if (!permission.allowed) {
+        return toPermissionDeniedResponse(permission);
+      }
+    }
+
     const mode = (normalizedOptions.mode ?? 'hybrid') as WebAigcSearchMode;
     const start = Date.now();
     const results = await deps.retriever.search(request.query, normalizedOptions);
+    const latencyMs = Date.now() - start;
+    const body = projector({
+      query: request.query,
+      results,
+      documentIds: request.scope.documentIds,
+      latencyMs,
+      mode,
+    });
+    recordRetrievalMetric(latencyMs, body.totalCandidates);
 
     return {
       status: 200,
-      body: projector({
-        query: request.query,
-        results,
-        documentIds: request.scope.documentIds,
-        latencyMs: Date.now() - start,
-        mode,
-      }),
+      body,
     };
   }
 
@@ -106,10 +188,12 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
       }
       const start = Date.now();
       const results = await deps.retriever.search(query, options);
+      const latencyMs = Date.now() - start;
+      recordRetrievalMetric(latencyMs, results.length);
       return res.json({
         results,
         totalCandidates: results.length,
-        latencyMs: Date.now() - start,
+        latencyMs,
         mode: options.mode ?? 'hybrid',
       });
     } catch (err) {

@@ -4,6 +4,12 @@ import type {
   MissionProjectionView,
 } from "../../../shared/mission/api.js";
 import type { MissionRecord } from "../../../shared/mission/contracts.js";
+import type {
+  Action,
+  GovernanceDecision,
+  PermissionCheckResult,
+  ResourceType,
+} from "../../../shared/permission/contracts.js";
 import { WEB_AIGC_RISK_ACTION_API } from "../../../shared/web-aigc-risk-actions.js";
 import type {
   MessageRecord,
@@ -18,6 +24,14 @@ import {
 import { resolveWorkflowMission } from "../../core/mission-enrichment-bridge.js";
 import { buildWorkflowGraphInstanceSnapshot } from "../../core/workflow-graph-projection.js";
 import db from "../../db/index.js";
+import type {
+  AuditLogger as PermissionAuditLogger,
+  PermissionCheckEngine,
+} from "../../permission/check-engine.js";
+import {
+  evaluateGovernanceDecision,
+  isGovernanceBlockingDecision,
+} from "../../permission/governance-policy.js";
 import {
   buildMissionProjectionView,
   buildMissionSessionView,
@@ -70,11 +84,23 @@ export interface MissionRuntimeReader {
   getTask(id: string): MissionRecord | undefined;
 }
 
+export interface InternalApiPermissionEngine {
+  checkPermission(
+    agentId: string,
+    resourceType: ResourceType,
+    action: Action,
+    resource: string,
+    token: string,
+  ): PermissionCheckResult;
+}
+
 export interface InternalApiExecutorDependencies {
   workflowRepo?: InternalApiWorkflowRepository;
   resolveMissionId?: (workflowId: string) => string | undefined;
   getMission?: (missionId: string) => MissionRecord | undefined;
   missionRuntime?: MissionRuntimeReader;
+  permissionEngine?: InternalApiPermissionEngine;
+  auditLogger?: PermissionAuditLogger;
   buildMissionProjection?: (
     runtime: MissionRuntimeReader,
     missionId: string,
@@ -106,6 +132,34 @@ interface WorkflowProjectionContext {
   messages: MessageRecord[];
 }
 
+interface InternalApiAccessContext {
+  agentId: string;
+  resourceType: ResourceType;
+  action: Action;
+  resource: string;
+  permission?: PermissionCheckResult;
+  governance?: GovernanceDecision;
+}
+
+type InternalApiFallbackMode = "empty_result" | "static_response";
+
+interface InternalApiFallbackConfig {
+  mode: InternalApiFallbackMode;
+  targetLabel?: string;
+  operation?: string;
+  output?: string;
+  response?: unknown;
+  recoverableErrors?: string[];
+}
+
+interface InternalApiFallbackOutcome {
+  result: InternalApiExecutionResult;
+  metadata: Record<string, unknown>;
+}
+
+const INTERNAL_API_RESOURCE_TYPE: ResourceType = "api";
+const INTERNAL_API_ACTION: Action = "call";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -132,6 +186,20 @@ function readNumber(
 
 function serializeInternalApiResponse(payload: unknown): string {
   return JSON.stringify(payload, null, 2);
+}
+
+function buildInternalApiResource(targetId: string): string {
+  return `internal_api:${targetId}`;
+}
+
+function summarizeInput(input: string): string {
+  const normalized = input.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > 160
+    ? `${normalized.slice(0, 160).trimEnd()}...`
+    : normalized;
 }
 
 function normalizeMonitoringListQuery(
@@ -190,11 +258,118 @@ function resolveRequestedMissionId(
   );
 }
 
+function resolveRequestedAgentId(
+  request: InternalApiExecutionRequest,
+): string | undefined {
+  if (!isRecord(request.metadata)) {
+    return undefined;
+  }
+
+  return (
+    readString(request.metadata, "agentId") ||
+    readString(request.metadata, "requestedBy") ||
+    readString(request.metadata, "operator")
+  );
+}
+
+function resolveRequestedToken(
+  request: InternalApiExecutionRequest,
+): string | undefined {
+  if (!isRecord(request.metadata)) {
+    return undefined;
+  }
+
+  return (
+    readString(request.metadata, "token") ||
+    readString(request.metadata, "capabilityToken")
+  );
+}
+
+function readFallbackConfig(
+  request: InternalApiExecutionRequest,
+): InternalApiFallbackConfig | null {
+  if (!isRecord(request.metadata)) {
+    return null;
+  }
+
+  const rawFallback =
+    (isRecord(request.metadata.fallback) && request.metadata.fallback) ||
+    (isRecord(request.metadata.errorFallback) && request.metadata.errorFallback);
+
+  if (!rawFallback) {
+    return null;
+  }
+
+  const mode = readString(rawFallback, "mode");
+  const recoverableErrors = Array.isArray(rawFallback.recoverableErrors)
+    ? rawFallback.recoverableErrors.filter(
+        (item): item is string => typeof item === "string" && item.trim().length > 0,
+      )
+    : undefined;
+
+  return {
+    mode: mode === "static_response" ? "static_response" : "empty_result",
+    targetLabel: readString(rawFallback, "targetLabel"),
+    operation: readString(rawFallback, "operation"),
+    output: readString(rawFallback, "output"),
+    response: rawFallback.response,
+    recoverableErrors: recoverableErrors?.length ? recoverableErrors : undefined,
+  };
+}
+
+function matchesRecoverableError(
+  reason: string,
+  fallback: InternalApiFallbackConfig,
+): boolean {
+  if (!fallback.recoverableErrors || fallback.recoverableErrors.length === 0) {
+    return true;
+  }
+
+  return fallback.recoverableErrors.some((keyword) => reason.includes(keyword));
+}
+
+function buildFallbackResponse(
+  request: InternalApiExecutionRequest,
+  fallback: InternalApiFallbackConfig,
+  reason: string,
+): unknown {
+  const common = {
+    ok: false,
+    fallbackUsed: true,
+    fallbackStrategy: fallback.mode,
+    targetId: request.targetId,
+    workflowId: resolveRequestedWorkflowId(request) ?? null,
+    missionId: resolveRequestedMissionId(request) ?? null,
+    error: reason,
+  };
+
+  if (fallback.mode === "static_response") {
+    if (isRecord(fallback.response)) {
+      return {
+        ...fallback.response,
+        ...common,
+      };
+    }
+
+    return {
+      ...common,
+      data: fallback.response ?? null,
+    };
+  }
+
+  return {
+    ...common,
+    data: [],
+  };
+}
+
 export class InternalApiExecutor implements InternalApiExecutorLike {
   private readonly workflowRepo: InternalApiWorkflowRepository;
   private readonly resolveMissionId: (workflowId: string) => string | undefined;
   private readonly getMission: (missionId: string) => MissionRecord | undefined;
   private readonly runtime: MissionRuntimeReader;
+  private readonly permissionEngine?: InternalApiPermissionEngine;
+  private readonly auditLogger?: PermissionAuditLogger;
   private readonly buildMissionProjection: (
     runtime: MissionRuntimeReader,
     missionId: string,
@@ -210,6 +385,8 @@ export class InternalApiExecutor implements InternalApiExecutorLike {
     this.getMission =
       deps.getMission ?? ((missionId: string) => missionRuntime.getTask(missionId));
     this.runtime = deps.missionRuntime ?? missionRuntime;
+    this.permissionEngine = deps.permissionEngine;
+    this.auditLogger = deps.auditLogger;
     this.buildMissionProjection =
       deps.buildMissionProjection ?? defaultBuildMissionProjection;
     this.buildMissionSession =
@@ -219,24 +396,189 @@ export class InternalApiExecutor implements InternalApiExecutorLike {
   async execute(
     request: InternalApiExecutionRequest,
   ): Promise<InternalApiExecutionResult> {
-    switch (request.targetId) {
-      case "mission.projection.get":
-        return this.executeMissionProjection(request);
-      case "mission.session.get":
-        return this.executeMissionSession(request);
-      case "workflow.graph_instance_snapshot":
-        return this.executeWorkflowGraphSnapshot(request);
-      case "aigc_monitoring.instances":
-        return this.executeMonitoringInstanceList(request);
-      case "aigc_monitoring.instance_detail":
-        return this.executeMonitoringInstanceDetail(request);
-      case "aigc_monitoring.session_detail":
-        return this.executeMonitoringSessionDetail(request);
-      case "web_aigc.risk_action_catalog":
-        return this.executeRiskActionCatalog();
-      default:
-        throw new Error(`Internal API target not found: ${request.targetId}`);
+    const access = this.enforceAccessControl(request);
+
+    try {
+      let result: InternalApiExecutionResult;
+      switch (request.targetId) {
+        case "mission.projection.get":
+          result = await this.executeMissionProjection(request);
+          break;
+        case "mission.session.get":
+          result = await this.executeMissionSession(request);
+          break;
+        case "workflow.graph_instance_snapshot":
+          result = await this.executeWorkflowGraphSnapshot(request);
+          break;
+        case "aigc_monitoring.instances":
+          result = await this.executeMonitoringInstanceList(request);
+          break;
+        case "aigc_monitoring.instance_detail":
+          result = await this.executeMonitoringInstanceDetail(request);
+          break;
+        case "aigc_monitoring.session_detail":
+          result = await this.executeMonitoringSessionDetail(request);
+          break;
+        case "web_aigc.risk_action_catalog":
+          result = await this.executeRiskActionCatalog();
+          break;
+        default:
+          throw new Error(`Internal API target not found: ${request.targetId}`);
+      }
+
+      this.auditExecution(access, request, "allowed", undefined, {
+        targetLabel: result.targetLabel,
+        operation: result.operation,
+      });
+      return result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const fallback = this.buildFallbackOutcome(request, reason);
+      if (fallback) {
+        this.auditExecution(access, request, "allowed", undefined, fallback.metadata);
+        return fallback.result;
+      }
+      this.auditExecution(access, request, "error", reason);
+      throw error;
     }
+  }
+
+  private enforceAccessControl(
+    request: InternalApiExecutionRequest,
+  ): InternalApiAccessContext {
+    const access: InternalApiAccessContext = {
+      agentId: resolveRequestedAgentId(request) ?? "internal_api_executor",
+      resourceType: INTERNAL_API_RESOURCE_TYPE,
+      action: INTERNAL_API_ACTION,
+      resource: buildInternalApiResource(request.targetId),
+    };
+
+    if (!this.permissionEngine) {
+      return access;
+    }
+
+    const agentId = resolveRequestedAgentId(request);
+    if (!agentId) {
+      const reason = "Missing required field: agentId";
+      this.auditExecution(access, request, "denied", reason, {
+        governanceHook: "internal-api-entry",
+      });
+      throw new Error(reason);
+    }
+
+    const token = resolveRequestedToken(request);
+    if (!token) {
+      const reason = "Missing required field: token";
+      this.auditExecution(
+        { ...access, agentId },
+        request,
+        "denied",
+        reason,
+        {
+          governanceHook: "internal-api-entry",
+        },
+      );
+      throw new Error(reason);
+    }
+
+    const permission = this.permissionEngine.checkPermission(
+      agentId,
+      access.resourceType,
+      access.action,
+      access.resource,
+      token,
+    );
+    access.agentId = agentId;
+    access.permission = permission;
+
+    if (!permission.allowed) {
+      const reason =
+        permission.reason ||
+        `Permission denied for internal API target: ${request.targetId}`;
+      this.auditExecution(access, request, "denied", reason, {
+        governanceHook: "permission-engine",
+      });
+      throw new Error(reason);
+    }
+
+    const governance = evaluateGovernanceDecision(
+      access.resourceType,
+      access.action,
+      access.resource,
+    );
+    access.governance = governance;
+
+    if (isGovernanceBlockingDecision(governance)) {
+      const reason =
+        governance?.rationale ||
+        `Governance blocked internal API target: ${request.targetId}`;
+      this.auditExecution(access, request, "denied", reason, {
+        governanceHook: "governance-policy",
+      });
+      throw new Error(reason);
+    }
+
+    return access;
+  }
+
+  private auditExecution(
+    access: InternalApiAccessContext,
+    request: InternalApiExecutionRequest,
+    result: "allowed" | "denied" | "error",
+    reason?: string,
+    metadata: Record<string, unknown> = {},
+  ): void {
+    if (!this.auditLogger) {
+      return;
+    }
+
+    this.auditLogger.log({
+      agentId: access.agentId,
+      operation: "internal_api",
+      resourceType: access.resourceType,
+      action: access.action,
+      resource: access.resource,
+      result,
+      reason,
+      governance: access.governance,
+      metadata: {
+        targetId: request.targetId,
+        workflowId: resolveRequestedWorkflowId(request),
+        missionId: resolveRequestedMissionId(request),
+        stage: request.stage,
+        inputPreview: summarizeInput(request.input),
+        ...metadata,
+      },
+    });
+  }
+
+  private buildFallbackOutcome(
+    request: InternalApiExecutionRequest,
+    reason: string,
+  ): InternalApiFallbackOutcome | null {
+    const fallback = readFallbackConfig(request);
+    if (!fallback || !matchesRecoverableError(reason, fallback)) {
+      return null;
+    }
+
+    const response = buildFallbackResponse(request, fallback, reason);
+    const result: InternalApiExecutionResult = {
+      output: fallback.output ?? serializeInternalApiResponse(response),
+      targetLabel: fallback.targetLabel ?? "Internal API 回退结果",
+      operation: fallback.operation ?? request.targetId,
+      response,
+    };
+
+    return {
+      result,
+      metadata: {
+        targetLabel: result.targetLabel,
+        operation: result.operation,
+        fallbackUsed: true,
+        fallbackStrategy: fallback.mode,
+        fallbackReason: reason,
+      },
+    };
   }
 
   private resolveMission(request: InternalApiExecutionRequest): MissionRecord {

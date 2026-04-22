@@ -40,6 +40,7 @@ type TaskHelperCopy = {
     pause: string;
     resume: string;
     retry: (attempt: number) => string;
+    escalate: string;
     markBlocked: string;
     terminate: string;
   };
@@ -168,6 +169,7 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
         pause: "暂停",
         resume: "恢复",
         retry: "重试",
+        escalate: "升级人工处理",
         "mark-blocked": "标记阻塞",
         terminate: "终止",
       },
@@ -185,6 +187,8 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
       resume: "让任务回到活跃执行路径。",
       retry: attempt =>
         `保留交付物、时间线和操作历史，排队开始新一轮尝试。当前为第 ${attempt} 次。`,
+      escalate:
+        "将失败收口为人工跟进，先审阅原因再决定是否重试。",
       markBlocked:
         "将任务标记为阻塞，但不结束它，让团队知道需要先处理什么依赖。",
       terminate: "复用取消链路停止任务。这是一个终态操作。",
@@ -313,6 +317,7 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
         pause: "Pause",
         resume: "Resume",
         retry: "Retry",
+        escalate: "Escalate",
         "mark-blocked": "Mark Blocked",
         terminate: "Terminate",
       },
@@ -330,6 +335,8 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
       resume: "Return this mission to the active execution path.",
       retry: attempt =>
         `Queue a fresh attempt while keeping deliverables, timeline, and action history. Current attempt: ${attempt}.`,
+      escalate:
+        "Escalate the failure into human follow-up before deciding whether to retry.",
       markBlocked:
         "Flag the mission as blocked without ending it, so the team can see what follow-up is needed.",
       terminate:
@@ -649,6 +656,8 @@ export function missionOperatorActionDescription(
       return copy.actionDescriptions.resume;
     case "retry":
       return copy.actionDescriptions.retry(detail.attempt);
+    case "escalate":
+      return copy.actionDescriptions.escalate;
     case "mark-blocked":
       return copy.actionDescriptions.markBlocked;
     case "terminate":
@@ -911,7 +920,7 @@ export function availableMissionOperatorActions(
   operatorState: MissionOperatorState
 ): MissionOperatorActionType[] {
   if (status === "failed" || status === "cancelled") {
-    return ["retry"];
+    return status === "failed" ? ["retry", "escalate"] : ["retry"];
   }
 
   if (operatorState === "terminating") {

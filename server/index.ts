@@ -489,14 +489,21 @@ async function startServer() {
     installMessageBusInterceptor,
     installExecutorInterceptor,
   } = await import("./replay/interceptors.js");
+  const {
+    setWebAigcRuntimeObservabilityDeps,
+  } = await import("./core/web-aigc-runtime-observability.js");
   const { messageBus } = await import("./core/message-bus.js");
 
   const replayStore = new ServerReplayStore();
   const eventCollector = new EventCollector(replayStore);
+  const resolveMissionReplayId = (missionId: string): string | undefined =>
+    missionRuntime.getTask(missionId)?.projection?.replayId ||
+    missionRuntime.getTask(missionId)?.projection?.workflowId ||
+    undefined;
 
   installMissionInterceptor(missionRuntime, eventCollector);
   installMessageBusInterceptor(messageBus, eventCollector);
-  app.use("/api/executor/events", installExecutorInterceptor(eventCollector));
+  app.use("/api/executor/events", installExecutorInterceptor(eventCollector, resolveMissionReplayId));
 
   // ── Knowledge Graph ──
   const { GraphStore } = await import("./knowledge/graph-store.js");
@@ -555,6 +562,10 @@ async function startServer() {
   auditChain.setStore(auditStore);
   auditChain.init();
   installAuditHooks({ collector: auditCollector });
+  setWebAigcRuntimeObservabilityDeps({
+    replayCollector: eventCollector,
+    auditCollector,
+  });
 
   app.use("/api/agents", agentRoutes);
   app.use("/api/chat", chatRoutes);

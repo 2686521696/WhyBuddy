@@ -177,11 +177,12 @@ router.post("/auto-agent", async (req, res) => {
       kind !== "agent" &&
       kind !== "guest_agent" &&
       kind !== "skill" &&
-      kind !== "internal_api"
+      kind !== "internal_api" &&
+      kind !== "passthrough_api"
     ) {
       return res.status(400).json({
         error:
-          'Missing or invalid field: kind. Expected "agent", "guest_agent", "skill", or "internal_api".',
+          'Missing or invalid field: kind. Expected "agent", "guest_agent", "skill", "internal_api", or "passthrough_api".',
       });
     }
 

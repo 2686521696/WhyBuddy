@@ -1,6 +1,67 @@
 # 任务清单：内部接口节点
 
-- [ ] 定义内部接口调用结构
-- [ ] 增加权限与审计钩子
-- [ ] 规范输出结构
-- [ ] 验证错误回退策略
+- [x] 定义内部接口调用结构
+  - 已由 `server/tool/api/internal-api-adapter.ts` 落地统一请求/响应结构：
+    - 请求：`targetId`、`input`、`context`、`workflowId?`、`stage?`、`metadata?`
+    - 返回：`output`、`targetLabel`、`operation`、`response`
+  - 按当前第一阶段落地方式，调用结构以 `targetId` 目录式分发为主，而不是完整实现“服务标识 + 接口路径 + 参数模板”的通用协议；若按“已形成可执行的内部调用 contract”判断，该项可以保持已勾。
+  - 已沉淀首批可调用目标：
+    - `mission.projection.get`
+    - `mission.session.get`
+    - `workflow.graph_instance_snapshot`
+    - `aigc_monitoring.instances`
+    - `aigc_monitoring.instance_detail`
+    - `aigc_monitoring.session_detail`
+    - `web_aigc.risk_action_catalog`
+  - 已通过 `server/tool/api/auto-agent-adapter.ts` 和 `server/routes/a2a.ts` 接入统一 `internal_api` 执行入口，可作为节点薄适配层复用。
+
+- [x] 增加权限与审计钩子
+  - 已具备的范围：
+    - `server/tool/api/internal-api-adapter.ts` 已新增统一入口级 `permissionEngine` / `auditLogger` 钩子，并在执行前进行权限检查。
+    - 当启用治理能力时，已强制要求 `metadata.agentId` 与 `metadata.token`，并统一资源标识为 `internal_api:<targetId>`。
+    - 已在入口记录 `allowed / denied / error` 审计结果，并补齐 `targetId / workflowId / missionId / stage / inputPreview` 等元数据。
+  - 仍缺的范围：
+    - 目前钩子仍以 agent 级权限与审计为主，尚未看到租户、多环境、调用配额等更高阶治理维度。
+    - 统一审计模型已经形成基础字段，但针对不同内部目标的细粒度策略模板还未独立配置化。
+  - 结论：节点级权限与审计钩子已在统一入口落地，可勾选。
+
+- [x] 规范输出结构
+  - `internal-api-adapter` 已把内部接口结果统一序列化为 JSON 字符串 `output`，同时保留结构化 `response`。
+  - `auto-agent-adapter` 已把 `internal_api` 结果收敛到统一 `AutoAgentExecutionResult`，补齐：
+    - `kind`
+    - `targetId`
+    - `delegatedTo`
+    - `metadata.source`
+    - `metadata.invokedAt`
+    - `metadata.workflowId`
+    - `metadata.stage`
+    - `metadata.targetLabel`
+  - 路由层 `/api/a2a/auto-agent` 已接受 `kind = "internal_api"`，说明输出契约已经能够穿透到对外调用面。
+
+- [x] 验证错误回退策略
+  - 已具备的范围：
+    - `internal-api-adapter.ts` 代码路径中已经定义基础错误分支，例如：
+      - `Missing required field: missionId`
+      - `Missing required field: workflowId`
+      - `Mission not found`
+      - `Workflow not found`
+      - `Internal API target not found`
+      - `Missing required field: agentId`
+      - `Missing required field: token`
+    - `auto-agent-adapter` 已有 `mapAutoAgentErrorToStatusCode()`，可把部分错误映射为 `400 / 404 / 409 / 500`。
+    - 路由 `/api/a2a/auto-agent` 已具备统一错误响应出口。
+    - `internal-api-adapter.ts` 现已支持最小回退配置：
+      - `metadata.fallback.mode = "empty_result"`
+      - `metadata.fallback.mode = "static_response"`
+      - 可通过 `recoverableErrors` 约束仅在指定错误下触发
+    - 权限/治理拒绝不会被回退逻辑吞掉，只有执行阶段的可恢复错误才允许降级。
+    - `server/tests/internal-api-adapter.test.ts` 已覆盖：
+      - `Mission not found` -> `empty_result` 回退
+      - `Workflow not found` -> `static_response` 回退
+      - 错误不在 `recoverableErrors` 中时不回退
+      - 权限拒绝时即使提供 fallback 也不回退
+      - 成功回退后写入 fallback 审计元数据
+  - 仍缺的范围：
+    - 目前回退策略仍是节点级最小实现，尚未形成按 `targetId` 维度统一配置的策略目录。
+    - 还没有把 fallback 结果进一步接入工作流 runtime 的分支控制语义。
+  - 结论：最小错误回退策略已经实现并有测试闭环，可勾选。

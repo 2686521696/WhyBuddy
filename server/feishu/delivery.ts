@@ -1,9 +1,12 @@
 import type {
   FeishuBridgeConfig,
   FeishuBridgeDelivery,
+  FeishuDeliveryAttempt,
   FeishuDeliveryReceipt,
+  FeishuDeliveryTelemetry,
   FeishuOutboundMessage,
 } from "./bridge.js";
+import { FeishuDeliveryError as DeliveryError } from "./bridge.js";
 
 interface TokenCache {
   value: string;
@@ -96,6 +99,14 @@ function parseRetryAfter(value: string | null): number | null {
   return null;
 }
 
+function summarizeAttempts(attempts: FeishuDeliveryAttempt[]): FeishuDeliveryTelemetry {
+  return {
+    attemptCount: attempts.length,
+    retryCount: Math.max(0, attempts.length - 1),
+    attempts: attempts.map(attempt => ({ ...attempt })),
+  };
+}
+
 export class FeishuApiDelivery implements FeishuBridgeDelivery {
   private readonly config: FeishuBridgeConfig;
   private tokenCache: TokenCache | null = null;
@@ -132,19 +143,57 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
     return Math.min(delay, this.retryMaxMs());
   }
 
-  private async fetchWithRetry(input: string, init: RequestInit): Promise<Response> {
+  private async fetchWithRetry(
+    input: string,
+    init: RequestInit
+  ): Promise<{ response: Response; telemetry: FeishuDeliveryTelemetry }> {
     const maxRetries = this.retryLimit();
+    const attempts: FeishuDeliveryAttempt[] = [];
 
     for (let attempt = 0; ; attempt += 1) {
       try {
         const response = await fetch(input, init);
-        if (response.ok || !isRetryableStatus(response.status) || attempt >= maxRetries) {
-          return response;
+        const retryable = isRetryableStatus(response.status);
+        const shouldRetry = !response.ok && retryable && attempt < maxRetries;
+        const delayMs = shouldRetry
+          ? this.computeRetryDelay(attempt, response.headers.get("retry-after"))
+          : undefined;
+
+        attempts.push({
+          attempt: attempt + 1,
+          outcome: "response",
+          statusCode: response.status,
+          retryable,
+          delayMs,
+        });
+
+        if (!shouldRetry) {
+          return {
+            response,
+            telemetry: summarizeAttempts(attempts),
+          };
         }
-        await this.sleep(this.computeRetryDelay(attempt, response.headers.get("retry-after")));
+        await this.sleep(delayMs ?? 0);
       } catch (error) {
-        if (attempt >= maxRetries) throw error;
-        await this.sleep(this.computeRetryDelay(attempt, null));
+        const shouldRetry = attempt < maxRetries;
+        const delayMs = shouldRetry ? this.computeRetryDelay(attempt, null) : undefined;
+        attempts.push({
+          attempt: attempt + 1,
+          outcome: "network-error",
+          retryable: shouldRetry,
+          delayMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!shouldRetry) {
+          throw new DeliveryError(
+            error instanceof Error ? error.message : String(error),
+            {
+              telemetry: summarizeAttempts(attempts),
+              cause: error,
+            }
+          );
+        }
+        await this.sleep(delayMs ?? 0);
       }
     }
   }
@@ -160,7 +209,7 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
       );
     }
 
-    const response = await this.fetchWithRetry(
+    const { response, telemetry } = await this.fetchWithRetry(
       `${resolveApiBaseUrl(this.config)}/auth/v3/tenant_access_token/internal`,
       {
         method: "POST",
@@ -175,14 +224,21 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
     );
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch Feishu tenant access token: ${response.status} ${response.statusText}`
+      throw new DeliveryError(
+        `Failed to fetch Feishu tenant access token: ${response.status} ${response.statusText}`,
+        {
+          telemetry,
+          statusCode: response.status,
+        }
       );
     }
 
     const json = (await response.json()) as FeishuTenantAccessTokenResponse;
     if (json.code !== 0 || !json.tenant_access_token) {
-      throw new Error(`Feishu token API error: ${json.msg || json.code}`);
+      throw new DeliveryError(`Feishu token API error: ${json.msg || json.code}`, {
+        telemetry,
+        statusCode: response.status,
+      });
     }
 
     this.tokenCache = {
@@ -202,7 +258,7 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
     const token = await this.getTenantAccessToken();
     const payload = resolveMessagePayload(message);
     const target = resolveReceiveTarget(message.target.chatId);
-    const response = await this.fetchWithRetry(
+    const { response, telemetry } = await this.fetchWithRetry(
       `${resolveApiBaseUrl(this.config)}/im/v1/messages?receive_id_type=${target.receiveIdType}`,
       {
         method: "POST",
@@ -223,22 +279,30 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      throw new Error(
+      throw new DeliveryError(
         `Failed to send Feishu message: ${response.status} ${response.statusText}${
           detail ? ` - ${detail}` : ""
-        }`
+        }`,
+        {
+          telemetry,
+          statusCode: response.status,
+        }
       );
     }
 
     const json = (await response.json()) as FeishuSendMessageResponse;
     if (json.code !== 0) {
-      throw new Error(`Feishu send message error: ${json.msg || json.code}`);
+      throw new DeliveryError(`Feishu send message error: ${json.msg || json.code}`, {
+        telemetry,
+        statusCode: response.status,
+      });
     }
 
     return {
       messageId: json.data?.message_id,
       rootId: json.data?.root_id,
       threadId: json.data?.thread_id,
+      telemetry,
     };
   }
 
@@ -253,7 +317,7 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
 
     const token = await this.getTenantAccessToken();
     const payload = resolveMessagePayload(message);
-    const response = await this.fetchWithRetry(
+    const { response, telemetry } = await this.fetchWithRetry(
       `${resolveApiBaseUrl(this.config)}/im/v1/messages/${encodeURIComponent(messageId)}`,
       {
         method: "PATCH",
@@ -269,22 +333,30 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      throw new Error(
+      throw new DeliveryError(
         `Failed to update Feishu message: ${response.status} ${response.statusText}${
           detail ? ` - ${detail}` : ""
-        }`
+        }`,
+        {
+          telemetry,
+          statusCode: response.status,
+        }
       );
     }
 
     const json = (await response.json()) as FeishuSendMessageResponse;
     if (json.code !== 0) {
-      throw new Error(`Feishu update message error: ${json.msg || json.code}`);
+      throw new DeliveryError(`Feishu update message error: ${json.msg || json.code}`, {
+        telemetry,
+        statusCode: response.status,
+      });
     }
 
     return {
       messageId: json.data?.message_id ?? messageId,
       rootId: json.data?.root_id,
       threadId: json.data?.thread_id,
+      telemetry,
     };
   }
 }

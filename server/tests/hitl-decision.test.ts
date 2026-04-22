@@ -1,8 +1,10 @@
 import type { AddressInfo } from 'node:net';
+import { generateKeyPairSync } from 'node:crypto';
 
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { AuditEventType } from '../../shared/audit/contracts.js';
 import type {
   MissionDecision,
   MissionDecisionOption,
@@ -13,6 +15,10 @@ import {
   submitMissionDecision,
   type MissionDecisionRuntime,
 } from '../tasks/mission-decision.js';
+import { AuditChain } from '../audit/audit-chain.js';
+import { AuditCollector } from '../audit/audit-collector.js';
+import { installAuditHooks } from '../audit/audit-hooks.js';
+import { TimestampProvider } from '../audit/timestamp-provider.js';
 import { createTaskRouter, createDecisionTemplatesRouter } from '../routes/tasks.js';
 import { MissionRuntime } from '../tasks/mission-runtime.js';
 import { MissionStore } from '../tasks/mission-store.js';
@@ -36,6 +42,11 @@ function createMockRuntime(initialTasks: MissionRecord[] = []): MissionDecisionR
     resumeMissionFromDecision(id, submission) {
       const t = tasks.get(id);
       if (!t) return undefined;
+      if (submission.historyEntry) {
+        const history = t.decisionHistory ? [...t.decisionHistory] : [];
+        history.push(structuredClone(submission.historyEntry));
+        t.decisionHistory = history;
+      }
       t.status = 'running';
       t.waitingFor = undefined;
       t.decision = undefined;
@@ -230,6 +241,31 @@ describe('submitMissionDecision — decision history append', () => {
       expect(history[0].resolved.metadata?.sessionId).toBe('sess-1');
     }
   });
+
+  it('persists submittedBy into decision history', () => {
+    const decision: MissionDecision = {
+      prompt: 'Choose a path',
+      options: [
+        { id: 'left', label: 'Go Left' },
+        { id: 'right', label: 'Go Right' },
+      ],
+      decisionId: 'dec_submitter_1',
+    };
+    const task = makeWaitingTask('task_submitter_1', decision);
+    const runtime = createMockRuntime([task]);
+
+    const result = submitMissionDecision(runtime, 'task_submitter_1', {
+      optionId: 'left',
+      submittedBy: 'operator-alice',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const history = result.task.decisionHistory ?? [];
+      expect(history).toHaveLength(1);
+      expect(history[0].submittedBy).toBe('operator-alice');
+    }
+  });
 });
 
 describe('submitMissionDecision — multi-step decision chain', () => {
@@ -301,10 +337,24 @@ async function startServer(runtime: MissionRuntime) {
   return { server, baseUrl: `http://127.0.0.1:${port}` };
 }
 
+function createAuditTestCollector() {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
+  });
+  const chain = new AuditChain({
+    privateKey: privateKey.export({ type: 'sec1', format: 'pem' }) as string,
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }) as string,
+  });
+  const collector = new AuditCollector(chain, new TimestampProvider());
+  return { chain, collector };
+}
+
 describe('API endpoints', () => {
   let runtime: MissionRuntime;
   let server: ReturnType<express.Express['listen']> | null = null;
   let baseUrl = '';
+  let auditCollector: AuditCollector | null = null;
+  let auditChain: AuditChain | null = null;
 
   beforeEach(async () => {
     runtime = new MissionRuntime({
@@ -321,6 +371,9 @@ describe('API endpoints', () => {
       if (!server) { resolve(); return; }
       server.close(err => err ? reject(err) : resolve());
     });
+    auditCollector?.destroy();
+    auditCollector = null;
+    auditChain = null;
     server = null;
   });
 
@@ -427,5 +480,138 @@ describe('API endpoints', () => {
     expect(body.task.decisionHistory.at(-1).sessionId).toBe('session-api-1');
     expect(body.task.decisionHistory.at(-1).interactionId).toBe('interaction-api-1');
     expect(body.task.decisionHistory.at(-1).branchKey).toBe('branch-a');
+  });
+
+  it('POST /api/tasks/:id/decision persists submittedBy to decision history', async () => {
+    const task = runtime.createChatTask('Submitted by propagation test');
+    runtime.markMissionRunning(task.id, 'execute', 'Running', 50);
+    runtime.waitOnMission(task.id, 'approval', 'Approve?', 50, {
+      prompt: 'Approve?',
+      options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }],
+      decisionId: 'dec_api_submitter_1',
+    });
+
+    const response = await fetch(`${baseUrl}/api/tasks/${task.id}/decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        optionId: 'yes',
+        submittedBy: 'operator-bob',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.task.decisionHistory).toBeInstanceOf(Array);
+    expect(body.task.decisionHistory.at(-1).submittedBy).toBe('operator-bob');
+  });
+
+  it('POST /api/tasks/:id/decision records audit decision_submitted entry', async () => {
+    const audit = createAuditTestCollector();
+    auditChain = audit.chain;
+    auditCollector = audit.collector;
+    installAuditHooks({ collector: auditCollector });
+
+    const task = runtime.createTask({
+      kind: 'chat',
+      title: 'Audit decision submission test',
+      projection: {
+        workflowId: 'wf-audit-hitl',
+        instanceId: 'instance-audit-hitl',
+        replayId: 'replay-audit-hitl',
+      },
+      stageLabels: [{ key: 'execute', label: 'Execute' }],
+    });
+    runtime.markMissionRunning(task.id, 'execute', 'Running', 50);
+    runtime.waitOnMission(task.id, 'selection', 'Choose a branch', 50, {
+      prompt: 'Choose a branch',
+      options: [
+        { id: 'branch-a', label: 'Branch A' },
+        { id: 'branch-b', label: 'Branch B' },
+      ],
+      decisionId: 'dec_audit_hitl_1',
+    });
+
+    const response = await fetch(`${baseUrl}/api/tasks/${task.id}/decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        optionId: 'branch-a',
+        submittedBy: 'operator-audit',
+        metadata: {
+          nodeType: 'selection',
+          nodeId: 'node-selection-1',
+          sessionId: 'session-audit-1',
+          interactionId: 'interaction-audit-1',
+          branchKey: 'branch-a',
+        },
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(auditChain).not.toBeNull();
+
+    const count = auditChain!.getEntryCount();
+    expect(count).toBeGreaterThan(0);
+    const entries = auditChain!.getEntries(0, count - 1);
+    const decisionEntry = entries.find(
+      entry =>
+        entry.event.eventType === AuditEventType.DECISION_MADE &&
+        entry.event.metadata?.eventKey === 'human.decision_submitted',
+    );
+
+    expect(decisionEntry).toBeDefined();
+    expect(decisionEntry?.event.actor).toMatchObject({
+      type: 'user',
+      id: 'operator-audit',
+    });
+    expect(decisionEntry?.event.resource).toMatchObject({
+      type: 'mission',
+      id: task.id,
+      name: 'node-selection-1',
+    });
+    expect(decisionEntry?.event.context).toMatchObject({
+      sessionId: 'session-audit-1',
+    });
+    expect(decisionEntry?.event.metadata).toMatchObject({
+      eventKey: 'human.decision_submitted',
+      workflowId: 'wf-audit-hitl',
+      instanceId: 'instance-audit-hitl',
+      missionId: task.id,
+      decisionId: 'dec_audit_hitl_1',
+      nodeId: 'node-selection-1',
+      nodeType: 'selection',
+      submittedBy: 'operator-audit',
+      optionId: 'branch-a',
+      optionLabel: 'Branch A',
+      interactionId: 'interaction-audit-1',
+      branchKey: 'branch-a',
+    });
+  });
+
+  it('POST /api/tasks/:id/decision rejects timed out waiting input', async () => {
+    const task = runtime.createChatTask('Timed waiting decision test');
+    runtime.markMissionRunning(task.id, 'execute', 'Running', 50);
+    runtime.waitOnMission(task.id, 'user input', 'Need details', 50, {
+      prompt: 'Provide missing details',
+      options: [{ id: 'submit', label: 'Submit' }],
+      timeoutAt: Date.now() - 1_000,
+    });
+
+    const response = await fetch(`${baseUrl}/api/tasks/${task.id}/decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        optionId: 'submit',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toContain('timed out');
+    expect(runtime.getTask(task.id)?.status).toBe('waiting');
   });
 });

@@ -465,6 +465,89 @@ describe("AuditQuery", () => {
     });
   });
 
+  describe("getWebAigcRelatedEntries()", () => {
+    it("matches workflowId from metadata", () => {
+      chain.append(makeEvent({ metadata: { workflowId: "wf-1" } }));
+      chain.append(makeEvent({ metadata: { workflowId: "wf-2" } }));
+
+      const result = query.getWebAigcRelatedEntries({ workflowId: "wf-1" });
+      expect(result).toHaveLength(1);
+      expect(result[0].event.metadata?.workflowId).toBe("wf-1");
+    });
+
+    it("matches missionId from metadata.links and sessionId from context", () => {
+      chain.append(
+        makeEvent({
+          context: { sessionId: "session-1" },
+          metadata: { links: { missionId: "mission-1" } },
+        }),
+      );
+      chain.append(
+        makeEvent({
+          context: { sessionId: "session-2" },
+          metadata: { links: { missionId: "mission-2" } },
+        }),
+      );
+
+      const result = query.getWebAigcRelatedEntries({
+        missionId: "mission-1",
+        sessionId: "session-1",
+      });
+      expect(result).toHaveLength(1);
+    });
+
+    it("matches lineageId and decisionId across metadata", () => {
+      chain.append(
+        makeEvent({
+          lineageId: "ln-1",
+          metadata: { decisionId: "dec-1" },
+        }),
+      );
+      chain.append(
+        makeEvent({
+          lineageId: "ln-2",
+          metadata: { decisionId: "dec-2" },
+        }),
+      );
+
+      const result = query.getWebAigcRelatedEntries({
+        lineageId: "ln-1",
+        decisionId: "dec-1",
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].event.lineageId).toBe("ln-1");
+    });
+
+    it("requires all provided relation indexes to match the same entry", () => {
+      chain.append(
+        makeEvent({
+          lineageId: "ln-1",
+          metadata: { decisionId: "dec-other" },
+        }),
+      );
+      chain.append(
+        makeEvent({
+          lineageId: "ln-other",
+          metadata: { decisionId: "dec-1" },
+        }),
+      );
+
+      const result = query.getWebAigcRelatedEntries({
+        lineageId: "ln-1",
+        decisionId: "dec-1",
+      });
+
+      expect(result).toHaveLength(0);
+    });
+
+    it("returns empty when no relation index is provided", () => {
+      chain.append(makeEvent({ metadata: { workflowId: "wf-1" } }));
+
+      const result = query.getWebAigcRelatedEntries({});
+      expect(result).toHaveLength(0);
+    });
+  });
+
   // ─── 7.6 查询操作自身的审计记录 ──────────────────────────────────────────
 
   describe("7.6 Query audit recording (AUDIT_QUERY events)", () => {

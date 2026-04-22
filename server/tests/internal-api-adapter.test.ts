@@ -340,4 +340,375 @@ describe("InternalApiExecutor", () => {
     expect(result.targetLabel).toBe("Web-AIGC 风险动作目录");
     expect(result.output).toContain("/api/rag/risk-actions/vector-insert");
   });
+
+  it("falls back to an empty result when a recoverable mission lookup error occurs", async () => {
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      buildMissionProjection: () => null,
+      buildMissionSession: () => null,
+    });
+
+    const result = await executor.execute({
+      targetId: "mission.projection.get",
+      input: "读取任务聚合视图",
+      context: [],
+      metadata: {
+        missionId: "mission-missing",
+        fallback: {
+          mode: "empty_result",
+          targetLabel: "Mission 聚合投影视图回退",
+          operation: "mission.projection.get.fallback",
+          recoverableErrors: ["Mission not found"],
+        },
+      },
+    });
+
+    expect(result.targetLabel).toBe("Mission 聚合投影视图回退");
+    expect(result.operation).toBe("mission.projection.get.fallback");
+    expect(result.output).toContain('"fallbackUsed": true');
+    expect(result.output).toContain('"fallbackStrategy": "empty_result"');
+    expect(result.output).toContain('"data": []');
+  });
+
+  it("falls back to a static response when workflow lookup fails", async () => {
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      buildMissionProjection: () => null,
+      buildMissionSession: () => null,
+    });
+
+    const result = await executor.execute({
+      targetId: "workflow.graph_instance_snapshot",
+      input: "读取工作流图",
+      context: [],
+      workflowId: "wf-missing",
+      metadata: {
+        workflowId: "wf-missing",
+        fallback: {
+          mode: "static_response",
+          targetLabel: "工作流图静态回退",
+          operation: "workflow.graph_instance_snapshot.fallback",
+          recoverableErrors: ["Workflow not found"],
+          response: {
+            kind: "graph_instance_snapshot_fallback",
+            nodes: [],
+            edges: [],
+          },
+        },
+      },
+    });
+
+    expect(result.targetLabel).toBe("工作流图静态回退");
+    expect(result.operation).toBe("workflow.graph_instance_snapshot.fallback");
+    expect(result.output).toContain('"kind": "graph_instance_snapshot_fallback"');
+    expect(result.output).toContain('"fallbackUsed": true');
+    expect(result.output).toContain('"nodes": []');
+  });
+
+  it("does not apply fallback when the error is not listed as recoverable", async () => {
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      buildMissionProjection: () => null,
+      buildMissionSession: () => null,
+    });
+
+    await expect(
+      executor.execute({
+        targetId: "mission.projection.get",
+        input: "读取任务聚合视图",
+        context: [],
+        metadata: {
+          missionId: "mission-missing",
+          fallback: {
+            mode: "empty_result",
+            recoverableErrors: ["Workflow not found"],
+          },
+        },
+      }),
+    ).rejects.toThrow("Mission not found: mission-missing");
+  });
+});
+
+function makePermissionEngine(
+  overrides?: Partial<{
+    allowed: boolean;
+    reason: string;
+  }>,
+) {
+  return {
+    checkPermission: () => ({
+      allowed: overrides?.allowed ?? true,
+      reason: overrides?.reason,
+    }),
+  };
+}
+
+function makeAuditLogger() {
+  return {
+    entries: [] as Array<Record<string, unknown>>,
+    log(entry: Record<string, unknown>) {
+      this.entries.push(entry);
+    },
+  };
+}
+
+describe("InternalApiExecutor governance hooks", () => {
+  it("requires agentId when permission engine is enabled", async () => {
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine(),
+    });
+
+    await expect(
+      executor.execute({
+        targetId: "web_aigc.risk_action_catalog",
+        input: "list risk actions",
+        context: [],
+      }),
+    ).rejects.toThrow("Missing required field: agentId");
+  });
+
+  it("requires token when permission engine is enabled", async () => {
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine(),
+    });
+
+    await expect(
+      executor.execute({
+        targetId: "web_aigc.risk_action_catalog",
+        input: "list risk actions",
+        context: [],
+        metadata: {
+          agentId: "agent-internal-api",
+        },
+      }),
+    ).rejects.toThrow("Missing required field: token");
+  });
+
+  it("blocks execution when permission check denies the internal_api call", async () => {
+    const auditLogger = makeAuditLogger();
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine({
+        allowed: false,
+        reason: "No allow rule found for api:call",
+      }),
+      auditLogger,
+    });
+
+    await expect(
+      executor.execute({
+        targetId: "web_aigc.risk_action_catalog",
+        input: "list risk actions",
+        context: [],
+        metadata: {
+          agentId: "agent-internal-api",
+          token: "token-1",
+        },
+      }),
+    ).rejects.toThrow("No allow rule found for api:call");
+
+    expect(auditLogger.entries).toHaveLength(1);
+    expect(auditLogger.entries[0]).toMatchObject({
+      agentId: "agent-internal-api",
+      operation: "internal_api",
+      resourceType: "api",
+      action: "call",
+      resource: "internal_api:web_aigc.risk_action_catalog",
+      result: "denied",
+    });
+  });
+
+  it("records an allowed audit entry when internal_api execution succeeds with governance hooks enabled", async () => {
+    const auditLogger = makeAuditLogger();
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine(),
+      auditLogger,
+    });
+
+    const result = await executor.execute({
+      targetId: "web_aigc.risk_action_catalog",
+      input: "list risk actions",
+      context: [],
+      metadata: {
+        agentId: "agent-internal-api",
+        token: "token-1",
+        workflowId: "wf-internal-api",
+      },
+    });
+
+    expect(result.operation).toBe("web_aigc.risk_action_catalog");
+    expect(auditLogger.entries).toHaveLength(1);
+    expect(auditLogger.entries[0]).toMatchObject({
+      agentId: "agent-internal-api",
+      operation: "internal_api",
+      resourceType: "api",
+      action: "call",
+      resource: "internal_api:web_aigc.risk_action_catalog",
+      result: "allowed",
+    });
+  });
+
+  it("does not bypass permission denial with fallback metadata", async () => {
+    const auditLogger = makeAuditLogger();
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine({
+        allowed: false,
+        reason: "No allow rule found for api:call",
+      }),
+      auditLogger,
+    });
+
+    await expect(
+      executor.execute({
+        targetId: "web_aigc.risk_action_catalog",
+        input: "list risk actions",
+        context: [],
+        metadata: {
+          agentId: "agent-internal-api",
+          token: "token-1",
+          fallback: {
+            mode: "static_response",
+            response: {
+              ok: true,
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow("No allow rule found for api:call");
+
+    expect(auditLogger.entries).toHaveLength(1);
+    expect(auditLogger.entries[0]).toMatchObject({
+      result: "denied",
+    });
+  });
+
+  it("records fallback metadata when a recoverable execution error is downgraded", async () => {
+    const auditLogger = makeAuditLogger();
+    const executor = new InternalApiExecutor({
+      workflowRepo: {
+        getWorkflow: () => undefined,
+        getWorkflows: () => [],
+        getTasksByWorkflow: () => [],
+        getMessagesByWorkflow: () => [],
+      },
+      resolveMissionId: () => undefined,
+      getMission: () => undefined,
+      missionRuntime: {
+        getTask: () => undefined,
+      },
+      permissionEngine: makePermissionEngine(),
+      auditLogger,
+    });
+
+    const result = await executor.execute({
+      targetId: "mission.projection.get",
+      input: "list risk actions",
+      context: [],
+      metadata: {
+        agentId: "agent-internal-api",
+        token: "token-1",
+        missionId: "mission-missing",
+        fallback: {
+          mode: "empty_result",
+          recoverableErrors: ["Mission not found"],
+        },
+      },
+    });
+
+    expect(result.output).toContain('"fallbackUsed": true');
+    expect(auditLogger.entries).toHaveLength(1);
+    expect(auditLogger.entries[0]).toMatchObject({
+      agentId: "agent-internal-api",
+      operation: "internal_api",
+      result: "allowed",
+      metadata: expect.objectContaining({
+        fallbackUsed: true,
+        fallbackStrategy: "empty_result",
+      }),
+    });
+  });
 });

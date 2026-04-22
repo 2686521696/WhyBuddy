@@ -240,6 +240,14 @@ function summarizeMonitoringInstance(
   );
 }
 
+function presentMonitoringLink(
+  value: string | null | undefined,
+  fallback: string
+) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : fallback;
+}
+
 function summarizeSessionMessage(
   message: AigcMonitoringSessionDetail["messages"][number],
   locale: string
@@ -1273,6 +1281,50 @@ export function OfficeWorkflowHistoryPanel({
     () => monitoringSession?.messages.slice(-3).reverse() || [],
     [monitoringSession]
   );
+  const monitoringProjectionLinks = useMemo(() => {
+    if (!monitoringInstance) {
+      return [];
+    }
+
+    const fallback = t(locale, "未记录", "Not recorded");
+    return [
+      {
+        label: t(locale, "Workflow", "Workflow"),
+        value: presentMonitoringLink(
+          monitoringInstance.links.workflowId,
+          workflow?.id || fallback
+        ),
+      },
+      {
+        label: t(locale, "Mission", "Mission"),
+        value: presentMonitoringLink(
+          monitoringInstance.links.missionId,
+          workflow?.missionId || fallback
+        ),
+      },
+      {
+        label: t(locale, "Session", "Session"),
+        value: presentMonitoringLink(
+          monitoringInstance.links.sessionId,
+          monitoringSession?.sessionId || fallback
+        ),
+      },
+      {
+        label: t(locale, "Replay", "Replay"),
+        value: presentMonitoringLink(monitoringInstance.links.replayId, fallback),
+      },
+      {
+        label: t(locale, "Audit", "Audit"),
+        value: presentMonitoringLink(monitoringInstance.links.auditId, fallback),
+      },
+    ];
+  }, [
+    locale,
+    monitoringInstance,
+    monitoringSession?.sessionId,
+    workflow?.id,
+    workflow?.missionId,
+  ]);
 
   async function handleTerminateMonitoringInstance() {
     if (!workflow?.id || isTerminating) {
@@ -1445,6 +1497,27 @@ export function OfficeWorkflowHistoryPanel({
                         t(locale, "未分类", "Uncategorized")}
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-stone-200/80 bg-stone-50/80 px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {t(locale, "投影链路", "Projection links")}
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {monitoringProjectionLinks.map(link => (
+                    <div
+                      key={link.label}
+                      className="rounded-[16px] border border-stone-200/80 bg-white/85 px-3 py-3"
+                    >
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                        {link.label}
+                      </div>
+                      <div className="mt-1 break-all text-sm font-semibold text-stone-900">
+                        {link.value}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

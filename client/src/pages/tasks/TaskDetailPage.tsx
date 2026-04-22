@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { useTasksStore } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 
 export default function TaskDetailPage({
   taskId = null,
@@ -65,7 +66,7 @@ export default function TaskDetailPage({
   }
 
   async function handleSubmitOperatorAction(payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) {
     if (!activeTaskId) return;

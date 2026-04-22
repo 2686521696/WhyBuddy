@@ -335,6 +335,28 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
     }
   });
 
+  router.get(stripPrefix(AUDIT_API.webAigcRelatedEntries), (req, res) => {
+    try {
+      const entries = query.getWebAigcRelatedEntries({
+        workflowId: typeof req.query.workflowId === "string" ? req.query.workflowId : undefined,
+        missionId: typeof req.query.missionId === "string" ? req.query.missionId : undefined,
+        instanceId: typeof req.query.instanceId === "string" ? req.query.instanceId : undefined,
+        sessionId: typeof req.query.sessionId === "string" ? req.query.sessionId : undefined,
+        replayId: typeof req.query.replayId === "string" ? req.query.replayId : undefined,
+        auditEntryId: typeof req.query.auditEntryId === "string" ? req.query.auditEntryId : undefined,
+        lineageId: typeof req.query.lineageId === "string" ? req.query.lineageId : undefined,
+        artifactId: typeof req.query.artifactId === "string" ? req.query.artifactId : undefined,
+        nodeId: typeof req.query.nodeId === "string" ? req.query.nodeId : undefined,
+        edgeId: typeof req.query.edgeId === "string" ? req.query.edgeId : undefined,
+        decisionId: typeof req.query.decisionId === "string" ? req.query.decisionId : undefined,
+      });
+
+      res.json({ ok: true, entries });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: errorMessage(err) });
+    }
+  });
+
   // =====================================================================
   // 12.14 GET /retention/policies — Get retention policies
   // =====================================================================

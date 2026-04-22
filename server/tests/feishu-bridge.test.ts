@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { FeishuProgressBridge, type FeishuOutboundMessage } from "../feishu/bridge.js";
+import {
+  FeishuDeliveryError,
+  FeishuProgressBridge,
+  type FeishuNotificationAuditEvent,
+  type FeishuOutboundMessage,
+} from "../feishu/bridge.js";
 import type { FeishuTaskRecord } from "../feishu/task-store.js";
 
 function makeTask(partial: Partial<FeishuTaskRecord>): FeishuTaskRecord {
@@ -477,5 +482,149 @@ describe("FeishuProgressBridge", () => {
       { kind: "task-progress", progress: 30 },
     ]);
     vi.useRealTimers();
+  });
+
+  it("emits unified audit events for successful notification delivery", async () => {
+    const audits: FeishuNotificationAuditEvent[] = [];
+    const bridge = new FeishuProgressBridge(
+      {
+        send: async () => ({
+          messageId: "om_audit_1",
+          telemetry: {
+            attemptCount: 2,
+            retryCount: 1,
+            attempts: [
+              {
+                attempt: 1,
+                outcome: "response",
+                statusCode: 429,
+                retryable: true,
+                delayMs: 300,
+              },
+              {
+                attempt: 2,
+                outcome: "response",
+                statusCode: 200,
+                retryable: false,
+              },
+            ],
+          },
+        }),
+        observe: async event => {
+          audits.push(event);
+        },
+      },
+      { messageFormat: "card" }
+    );
+
+    bridge.bindTask("task_123", { chatId: "user:ou_123", source: "feishu" });
+    await bridge.handleTaskUpdate(
+      makeTask({
+        status: "waiting",
+        progress: 42,
+        waitingFor: "Need approval",
+        decision: {
+          prompt: "请审批执行计划",
+          options: [
+            { id: "approve", label: "批准" },
+            { id: "reject", label: "拒绝" },
+          ],
+        },
+        events: [
+          { type: "created", message: "Task created", time: Date.now() },
+          { type: "waiting", message: "Need approval", time: Date.now() },
+        ],
+      })
+    );
+
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      channelType: "feishu",
+      taskId: "task_123",
+      messageKind: "task-ack",
+      deliveryAction: "send",
+      resultStatus: "sent",
+      templateId: "feishu.card.task-ack",
+      recipientScope: "user",
+      targetId: "ou_123",
+      approvalStatus: "not_applicable",
+      retryCount: 1,
+      attemptCount: 2,
+      observability: {
+        presentation: "card",
+        taskStatus: "waiting",
+        hasDecision: false,
+      },
+    });
+    expect(audits[0]?.messageDigest).toMatch(/^[a-f0-9]{16}$/);
+    expect(audits[0]?.traceId).toContain("task_123");
+    expect(audits[0]?.attempts).toHaveLength(2);
+  });
+
+  it("emits failed audit events with retry telemetry when delivery fails", async () => {
+    const audits: FeishuNotificationAuditEvent[] = [];
+    const bridge = new FeishuProgressBridge({
+      send: async () => {
+        throw new FeishuDeliveryError("rate limited by Feishu", {
+          statusCode: 429,
+          telemetry: {
+            attemptCount: 3,
+            retryCount: 2,
+            attempts: [
+              {
+                attempt: 1,
+                outcome: "response",
+                statusCode: 429,
+                retryable: true,
+                delayMs: 300,
+              },
+              {
+                attempt: 2,
+                outcome: "response",
+                statusCode: 500,
+                retryable: true,
+                delayMs: 600,
+              },
+              {
+                attempt: 3,
+                outcome: "response",
+                statusCode: 429,
+                retryable: false,
+              },
+            ],
+          },
+        });
+      },
+      observe: async event => {
+        audits.push(event);
+      },
+    });
+
+    bridge.bindTask("task_123", { chatId: "chat:oc_999", source: "feishu" });
+
+    await expect(
+      bridge.handleTaskUpdate(
+        makeTask({
+          progress: 12,
+          events: [{ type: "progress", message: "Accepted", time: Date.now() }],
+        })
+      )
+    ).rejects.toThrow("rate limited by Feishu");
+
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      channelType: "feishu",
+      taskId: "task_123",
+      messageKind: "task-ack",
+      deliveryAction: "send",
+      resultStatus: "failed",
+      recipientScope: "chat",
+      targetId: "oc_999",
+      retryCount: 2,
+      attemptCount: 3,
+      statusCode: 429,
+      error: "rate limited by Feishu",
+    });
+    expect(audits[0]?.attempts.map(item => item.statusCode)).toEqual([429, 500, 429]);
   });
 });

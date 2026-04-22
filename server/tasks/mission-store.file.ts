@@ -84,6 +84,23 @@ function normalizeDecision(value: unknown): MissionDecision | undefined {
       typeof candidate.placeholder === 'string'
         ? candidate.placeholder
         : undefined,
+    type: typeof candidate.type === 'string' ? candidate.type : undefined,
+    templateId:
+      typeof candidate.templateId === 'string' ? candidate.templateId : undefined,
+    payload:
+      candidate.payload && typeof candidate.payload === 'object'
+        ? (candidate.payload as Record<string, unknown>)
+        : undefined,
+    decisionId:
+      typeof candidate.decisionId === 'string' ? candidate.decisionId : undefined,
+    timeoutMs:
+      typeof candidate.timeoutMs === 'number' && Number.isFinite(candidate.timeoutMs)
+        ? candidate.timeoutMs
+        : undefined,
+    timeoutAt:
+      typeof candidate.timeoutAt === 'number' && Number.isFinite(candidate.timeoutAt)
+        ? candidate.timeoutAt
+        : undefined,
   };
 }
 
@@ -353,6 +370,10 @@ function normalizeTask(value: unknown): MissionRecord | null {
     waitingFor:
       typeof candidate.waitingFor === 'string' ? candidate.waitingFor : undefined,
     decision: normalizeDecision(candidate.decision),
+    waitingTimedOutAt:
+      typeof candidate.waitingTimedOutAt === 'number'
+        ? candidate.waitingTimedOutAt
+        : undefined,
     operatorState: normalizeOperatorState(candidate.operatorState) ?? 'active',
     operatorActions: Array.isArray(candidate.operatorActions)
       ? candidate.operatorActions

@@ -113,6 +113,23 @@ async function withServer(
 
   const token = tokenService.issueToken("agent-risk");
   engine.checkPermission("agent-risk", "mcp_tool", "call", "mcp://tool/unsafe", token.token);
+  auditCollector.recordSync({
+    eventType: "AGENT_EXECUTED" as any,
+    actor: { type: "agent", id: "agent-risk" },
+    action: "workflow.execute",
+    resource: { type: "workflow", id: "wf-governance" },
+    result: "success",
+    metadata: {
+      workflowId: "wf-governance",
+      missionId: "mission-governance",
+      decisionId: "dec-governance",
+      links: {
+        workflowId: "wf-governance",
+        missionId: "mission-governance",
+        replayId: "wf-governance",
+      },
+    },
+  });
   auditCollector.flush();
 
   const app = express();
@@ -206,6 +223,27 @@ describe("Permission governance audit routes", () => {
       expect(Array.isArray(body.indexes)).toBe(true);
       expect(
         body.indexes.some((entry: any) => entry.key === "decisionId"),
+      ).toBe(true);
+    });
+  });
+
+  it("returns related web-aigc audit entries from /api/audit/web-aigc/related", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/audit/web-aigc/related?workflowId=wf-governance`,
+      );
+      expect(response.status).toBe(200);
+
+      const body = await response.json();
+      expect(body.ok).toBe(true);
+      expect(Array.isArray(body.entries)).toBe(true);
+      expect(body.entries.length).toBeGreaterThanOrEqual(1);
+      expect(
+        body.entries.some(
+          (entry: any) =>
+            entry.event.metadata?.workflowId === "wf-governance" ||
+            entry.event.metadata?.links?.workflowId === "wf-governance",
+        ),
       ).toBe(true);
     });
   });

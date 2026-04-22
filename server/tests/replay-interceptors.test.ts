@@ -153,6 +153,28 @@ describe('installMissionInterceptor', () => {
     });
   });
 
+  it('prefers mission projection replayId when emitting mission replay events', async () => {
+    const orchestrator = { hooks: {} };
+    installMissionInterceptor(orchestrator, collector);
+
+    await orchestrator.hooks.onMissionUpdated({
+      id: 'mission-4',
+      projection: {
+        replayId: 'wf-replay-4',
+        workflowId: 'wf-replay-4',
+      },
+      status: 'running',
+      currentStageKey: 'execute',
+      progress: 55,
+      events: [{ kind: 'progress', source: 'brain', detail: 'Project replay timeline' }],
+    });
+
+    const events = await flushAndGetEvents(store, collector);
+    expect(events).toHaveLength(1);
+    expect(events[0].missionId).toBe('wf-replay-4');
+    expect(events[0].eventType).toBe('MILESTONE_REACHED');
+  });
+
   it('preserves existing onMissionUpdated hook', async () => {
     const existingHookCalled = vi.fn();
     const orchestrator = {

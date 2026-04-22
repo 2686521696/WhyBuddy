@@ -61,6 +61,20 @@ function clampProgress(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function resolveDecisionTimeoutAt(
+  decision: MissionDecision | undefined,
+  referenceTime: number,
+): number | undefined {
+  if (!decision) return undefined;
+  if (typeof decision.timeoutAt === "number" && Number.isFinite(decision.timeoutAt)) {
+    return decision.timeoutAt;
+  }
+  if (typeof decision.timeoutMs === "number" && Number.isFinite(decision.timeoutMs)) {
+    return referenceTime + Math.max(0, decision.timeoutMs);
+  }
+  return undefined;
+}
+
 function createMissionId(createdAt: number): string {
   return `mission_${createdAt.toString(36)}_${Math.random()
     .toString(36)
@@ -345,6 +359,17 @@ export class MissionStore {
       task.status = 'waiting';
       task.waitingFor = waitingFor;
       task.decision = decision;
+      task.waitingTimedOutAt = undefined;
+
+      if (decision) {
+        const timeoutAt = resolveDecisionTimeoutAt(decision, now());
+        if (timeoutAt !== undefined) {
+          task.decision = {
+            ...structuredClone(decision),
+            timeoutAt,
+          };
+        }
+      }
 
       if (typeof progress === 'number') {
         task.progress = clampProgress(progress);
@@ -495,13 +520,19 @@ export class MissionStore {
 
   resolveWaiting(
     id: string,
-    submission: { detail: string; progress?: number },
+    submission: {
+      detail: string;
+      progress?: number;
+      historyEntry?: DecisionHistoryEntry;
+    },
     source: MissionEvent['source'] = 'user'
   ): MissionRecord | undefined {
     return this.update(id, task => {
       // Archive current decision to decisionHistory before clearing
       if (task.decision) {
-        const entry: DecisionHistoryEntry = {
+        const entry: DecisionHistoryEntry = submission.historyEntry
+          ? structuredClone(submission.historyEntry)
+          : {
           decisionId: task.decision.decisionId || generateDecisionId(),
           type: (task.decision.type ?? 'custom-action') as DecisionType,
           prompt: task.decision.prompt,
@@ -521,6 +552,7 @@ export class MissionStore {
       task.status = 'running';
       task.waitingFor = undefined;
       task.decision = undefined;
+      task.waitingTimedOutAt = undefined;
 
       if (typeof submission.progress === 'number') {
         task.progress = clampProgress(submission.progress);
@@ -560,6 +592,53 @@ export class MissionStore {
     }
 
     return recovered;
+  }
+
+  expireWaiting(
+    nowAt = now(),
+    message = 'Waiting for input timed out.',
+    source: MissionEvent['source'] = 'mission-core',
+  ): MissionRecord[] {
+    const expired: MissionRecord[] = [];
+
+    for (const task of Array.from(this.missions.values())) {
+      if (task.status !== 'waiting') continue;
+      const timeoutAt = task.decision?.timeoutAt;
+      if (typeof timeoutAt !== 'number' || timeoutAt > nowAt) continue;
+
+      const updated = this.update(task.id, record => {
+        record.status = 'failed';
+        record.waitingFor = undefined;
+        record.decision = undefined;
+        record.waitingTimedOutAt = nowAt;
+        record.completedAt = nowAt;
+
+        const current =
+          record.stages.find(stage => stage.key === record.currentStageKey) ??
+          record.stages.find(stage => stage.status === 'running');
+        if (current) {
+          current.status = 'failed';
+          current.detail = message;
+          current.completedAt ??= nowAt;
+        }
+
+        record.events.push({
+          type: 'failed',
+          message,
+          level: 'error',
+          progress: record.progress,
+          stageKey: current?.key ?? record.currentStageKey,
+          time: nowAt,
+          source,
+        });
+      });
+
+      if (updated) {
+        expired.push(updated);
+      }
+    }
+
+    return expired;
   }
 
   private persist(): void {

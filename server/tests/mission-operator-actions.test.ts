@@ -441,6 +441,47 @@ describe('mission operator actions route', () => {
     });
   });
 
+  it('escalates a failed mission into blocked human follow-up', async () => {
+    const mission = runtime.createChatTask('Escalate failed mission');
+    runtime.markMissionRunning(mission.id, 'execute', 'Running', 72);
+    runtime.failMission(mission.id, 'Artifact packaging failed');
+
+    const started = await startServer(runtime);
+    server = started.server;
+    baseUrl = started.baseUrl;
+
+    const response = await fetch(`${baseUrl}/api/tasks/${mission.id}/operator-actions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'escalate',
+        requestedBy: 'operator',
+        reason: 'Need human review before retrying packaging',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      task: {
+        id: mission.id,
+        status: 'failed',
+        operatorState: 'blocked',
+        blocker: {
+          reason: 'Need human review before retrying packaging',
+          createdBy: 'operator',
+        },
+      },
+      action: {
+        action: 'escalate',
+        requestedBy: 'operator',
+        reason: 'Need human review before retrying packaging',
+      },
+    });
+  });
+
   it('terminates a running mission by reusing the cancel flow', async () => {
     const mission = runtime.createChatTask('Terminate mission');
     runtime.patchMissionExecution(mission.id, {

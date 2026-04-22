@@ -56,6 +56,7 @@ import type {
   MissionOperatorActionLoadingMap,
   MissionTaskDetail,
 } from "@/lib/tasks-store";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import { cn } from "@/lib/utils";
 import { useCostStore } from "@/lib/cost-store";
 import { useRAGStore } from "@/lib/rag-store";
@@ -646,7 +647,7 @@ export function TaskDetailView({
   onLaunchDecision: (presetId: string) => void | Promise<void>;
   launchingPresetId?: string | null;
   onSubmitOperatorAction?: (payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) => void | Promise<void>;
   operatorActionLoading?: MissionOperatorActionLoadingMap;

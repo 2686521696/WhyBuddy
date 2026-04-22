@@ -58,6 +58,7 @@ describe("task status helpers", () => {
     ]);
     expect(availableMissionOperatorActions("failed", "active")).toEqual([
       "retry",
+      "escalate",
     ]);
   });
 });

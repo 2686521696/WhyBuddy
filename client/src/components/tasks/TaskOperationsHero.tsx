@@ -12,6 +12,7 @@ import type {
   MissionOperatorActionLoadingMap,
   MissionTaskDetail,
 } from "@/lib/tasks-store";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import {
   workspaceCalloutClass,
   workspaceStatusClass,
@@ -41,7 +42,7 @@ interface TaskOperationsHeroProps {
   detail: MissionTaskDetail;
   loadingByAction?: MissionOperatorActionLoadingMap;
   onSubmitOperatorAction?: (payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) => void | Promise<void>;
 }

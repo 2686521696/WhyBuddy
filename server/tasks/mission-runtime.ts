@@ -48,6 +48,10 @@ export interface MissionRuntimeOptions {
   recoveryMessage?: string;
 }
 
+export interface MissionRuntimeHooks {
+  onMissionUpdated?: (mission: MissionRecord) => void | Promise<void>;
+}
+
 function resolveSocketEventType(
   task: MissionRecord
 ): MissionSocketRecordEvent['type'] {
@@ -60,11 +64,13 @@ function resolveSocketEventType(
 
 export class MissionRuntime {
   private readonly store: MissionStore;
+  readonly hooks: MissionRuntimeHooks;
 
   constructor(options: MissionRuntimeOptions = {}) {
     this.store =
       options.store ??
       new MissionStore(new DatabaseMissionSnapshotStore());
+    this.hooks = {};
 
     if (options.autoRecover) {
       this.recoverInterruptedMissions(options.recoveryMessage);
@@ -262,7 +268,11 @@ export class MissionRuntime {
 
   resumeMissionFromDecision(
     id: string,
-    submission: { detail: string; progress?: number },
+    submission: {
+      detail: string;
+      progress?: number;
+      historyEntry?: DecisionHistoryEntry;
+    },
     source: MissionEvent['source'] = 'user'
   ): MissionRecord | undefined {
     const task = this.store.resolveWaiting(id, submission, source);
@@ -278,6 +288,18 @@ export class MissionRuntime {
       this.emitMissionUpdate(task);
     }
     return recovered;
+  }
+
+  expireWaitingMissions(
+    nowAt = Date.now(),
+    message = 'Waiting for input timed out.',
+    source: MissionEvent['source'] = 'mission-core',
+  ): MissionRecord[] {
+    const expired = this.store.expireWaiting(nowAt, message, source);
+    for (const task of expired) {
+      this.emitMissionUpdate(task);
+    }
+    return expired;
   }
 
   emitDecisionSubmitted(
@@ -302,6 +324,8 @@ export class MissionRuntime {
 
   private emitMissionUpdate(task: MissionRecord | undefined): void {
     if (!task) return;
+
+    void Promise.resolve(this.hooks.onMissionUpdated?.(task)).catch(() => {});
 
     const io = getSocketIO();
     if (!io) return;

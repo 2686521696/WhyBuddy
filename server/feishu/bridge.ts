@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import type {
   FeishuResolvedDecision,
   FeishuTaskDecisionPrompt,
@@ -86,6 +87,78 @@ export interface FeishuDeliveryReceipt {
   messageId?: string;
   rootId?: string;
   threadId?: string;
+  telemetry?: FeishuDeliveryTelemetry;
+}
+
+export interface FeishuDeliveryAttempt {
+  attempt: number;
+  outcome: "response" | "network-error";
+  statusCode?: number;
+  retryable: boolean;
+  delayMs?: number;
+  error?: string;
+}
+
+export interface FeishuDeliveryTelemetry {
+  attemptCount: number;
+  retryCount: number;
+  attempts: FeishuDeliveryAttempt[];
+}
+
+export class FeishuDeliveryError extends Error {
+  readonly telemetry?: FeishuDeliveryTelemetry;
+  readonly statusCode?: number;
+
+  constructor(
+    message: string,
+    options: {
+      telemetry?: FeishuDeliveryTelemetry;
+      statusCode?: number;
+      cause?: unknown;
+    } = {}
+  ) {
+    super(message);
+    this.name = "FeishuDeliveryError";
+    this.telemetry = options.telemetry;
+    this.statusCode = options.statusCode;
+    if (options.cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = options.cause;
+    }
+  }
+}
+
+export interface FeishuNotificationAuditEvent {
+  auditId: string;
+  traceId: string;
+  recordedAt: string;
+  channelType: "feishu";
+  taskId: string;
+  messageKind: FeishuOutboundMessage["kind"];
+  deliveryAction: "send" | "update";
+  templateId: string;
+  recipientScope: "chat" | "user" | "union" | "unknown";
+  targetId: string;
+  messageDigest: string;
+  approvalStatus: "not_applicable" | "pending" | "resolved";
+  resultStatus: "sent" | "updated" | "failed";
+  retryCount: number;
+  attemptCount: number;
+  attempts: FeishuDeliveryAttempt[];
+  messageId?: string;
+  rootId?: string;
+  threadId?: string;
+  statusCode?: number;
+  error?: string;
+  observability: {
+    progress: number;
+    taskStatus: FeishuTaskStatus;
+    stage?: string;
+    presentation: "text" | "card";
+    hasDecision: boolean;
+    hasResolvedDecision: boolean;
+    hasSummary: boolean;
+    suppressFinalSummary: boolean;
+  };
 }
 
 export interface FeishuBridgeDelivery {
@@ -94,6 +167,7 @@ export interface FeishuBridgeDelivery {
     messageId: string,
     message: FeishuOutboundMessage
   ): Promise<FeishuDeliveryReceipt | void>;
+  observe?(event: FeishuNotificationAuditEvent): Promise<void> | void;
 }
 
 export interface FeishuTaskRequest {
@@ -126,6 +200,138 @@ interface TaskSubscription {
 }
 
 type DeliveryQueue = Promise<void>;
+
+function cloneValue<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function resolveRecipientTarget(chatId: string | undefined): {
+  targetId: string;
+  recipientScope: FeishuNotificationAuditEvent["recipientScope"];
+} {
+  const raw = chatId?.trim() || "";
+  const value = raw.replace(/^(feishu|lark):/i, "").trim();
+
+  if (/^(chat|group):/i.test(value)) {
+    return {
+      targetId: value.replace(/^(chat|group):/i, "").trim(),
+      recipientScope: "chat",
+    };
+  }
+  if (/^(user|dm):/i.test(value)) {
+    return {
+      targetId: value.replace(/^(user|dm):/i, "").trim(),
+      recipientScope: "user",
+    };
+  }
+  if (/^oc_/i.test(value)) {
+    return { targetId: value, recipientScope: "chat" };
+  }
+  if (/^ou_/i.test(value)) {
+    return { targetId: value, recipientScope: "user" };
+  }
+  if (/^on_/i.test(value)) {
+    return { targetId: value, recipientScope: "union" };
+  }
+  return {
+    targetId: value || "unknown",
+    recipientScope: value ? "unknown" : "unknown",
+  };
+}
+
+function resolveTemplateId(message: FeishuOutboundMessage): string {
+  const presentation = message.card ? "card" : "text";
+  return `feishu.${presentation}.${message.kind}`;
+}
+
+function resolveApprovalStatus(
+  message: FeishuOutboundMessage
+): FeishuNotificationAuditEvent["approvalStatus"] {
+  if (message.kind === "task-waiting") return "pending";
+  if (message.resolvedDecision) return "resolved";
+  return "not_applicable";
+}
+
+function createMessageDigest(message: FeishuOutboundMessage): string {
+  const payload = message.card ? JSON.stringify(message.card) : message.text;
+  return createHash("sha256").update(payload || "").digest("hex").slice(0, 16);
+}
+
+function createTraceId(
+  taskId: string,
+  message: FeishuOutboundMessage,
+  deliveryAction: "send" | "update"
+): string {
+  const anchor =
+    message.target.rootMessageId ||
+    message.target.replyToMessageId ||
+    message.target.requestId ||
+    message.target.chatId ||
+    taskId;
+  return `feishu:${taskId}:${deliveryAction}:${message.kind}:${anchor}`;
+}
+
+function defaultSuccessfulTelemetry(): FeishuDeliveryTelemetry {
+  return {
+    attemptCount: 1,
+    retryCount: 0,
+    attempts: [
+      {
+        attempt: 1,
+        outcome: "response",
+        retryable: false,
+      },
+    ],
+  };
+}
+
+function defaultFailedTelemetry(error: unknown): FeishuDeliveryTelemetry {
+  return {
+    attemptCount: 1,
+    retryCount: 0,
+    attempts: [
+      {
+        attempt: 1,
+        outcome: "network-error",
+        retryable: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    ],
+  };
+}
+
+function normalizeSuccessfulTelemetry(
+  telemetry: FeishuDeliveryTelemetry | undefined
+): FeishuDeliveryTelemetry {
+  return cloneValue(telemetry ?? defaultSuccessfulTelemetry());
+}
+
+function resolveDeliveryFailure(error: unknown): {
+  message: string;
+  statusCode?: number;
+  telemetry: FeishuDeliveryTelemetry;
+} {
+  if (error instanceof FeishuDeliveryError) {
+    return {
+      message: error.message,
+      statusCode: error.statusCode,
+      telemetry: cloneValue(error.telemetry ?? defaultFailedTelemetry(error)),
+    };
+  }
+
+  const candidate = error as
+    | (Error & { telemetry?: FeishuDeliveryTelemetry; statusCode?: number })
+    | undefined;
+
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    statusCode: candidate?.statusCode,
+    telemetry: cloneValue(candidate?.telemetry ?? defaultFailedTelemetry(error)),
+  };
+}
 
 function formatTaskLink(baseTaskUrl: string | undefined, taskId: string): string | undefined {
   if (!baseTaskUrl) return undefined;
@@ -761,6 +967,68 @@ export class FeishuProgressBridge {
     };
   }
 
+  private async observeDelivery(
+    taskId: string,
+    message: FeishuOutboundMessage,
+    deliveryAction: "send" | "update",
+    resultStatus: FeishuNotificationAuditEvent["resultStatus"],
+    options: {
+      receipt?: FeishuDeliveryReceipt | void;
+      telemetry?: FeishuDeliveryTelemetry;
+      error?: string;
+      statusCode?: number;
+    } = {}
+  ): Promise<void> {
+    if (!this.delivery.observe) return;
+
+    const formatted = this.withMessageFormat(message);
+    const target = resolveRecipientTarget(formatted.target.chatId);
+    const telemetry =
+      options.telemetry &&
+      typeof options.telemetry.attemptCount === "number" &&
+      Array.isArray(options.telemetry.attempts)
+        ? cloneValue(options.telemetry)
+        : resultStatus === "failed"
+          ? defaultFailedTelemetry(options.error || "unknown delivery failure")
+          : defaultSuccessfulTelemetry();
+
+    const event: FeishuNotificationAuditEvent = {
+      auditId: randomUUID(),
+      traceId: createTraceId(taskId, formatted, deliveryAction),
+      recordedAt: new Date().toISOString(),
+      channelType: "feishu",
+      taskId,
+      messageKind: formatted.kind,
+      deliveryAction,
+      templateId: resolveTemplateId(formatted),
+      recipientScope: target.recipientScope,
+      targetId: target.targetId,
+      messageDigest: createMessageDigest(formatted),
+      approvalStatus: resolveApprovalStatus(formatted),
+      resultStatus,
+      retryCount: Math.max(0, telemetry.retryCount),
+      attemptCount: Math.max(1, telemetry.attemptCount),
+      attempts: cloneValue(telemetry.attempts),
+      messageId: options.receipt?.messageId,
+      rootId: options.receipt?.rootId,
+      threadId: options.receipt?.threadId,
+      statusCode: options.statusCode,
+      error: options.error,
+      observability: {
+        progress: formatted.progress,
+        taskStatus: formatted.status,
+        stage: formatted.stage,
+        presentation: formatted.card ? "card" : "text",
+        hasDecision: Boolean(formatted.decision),
+        hasResolvedDecision: Boolean(formatted.resolvedDecision),
+        hasSummary: Boolean(formatted.summary),
+        suppressFinalSummary: Boolean(formatted.target.suppressFinalSummary),
+      },
+    };
+
+    await this.delivery.observe(event);
+  }
+
   private async sendAndTrack(taskId: string, message: FeishuOutboundMessage): Promise<void> {
     const formatted = this.withMessageFormat(message);
     const subscription = this.subscriptions.get(taskId);
@@ -772,12 +1040,42 @@ export class FeishuProgressBridge {
       subscription.firstMessageId &&
       this.delivery.update
     ) {
-      await this.delivery.update(subscription.firstMessageId, formatted);
-      subscription.lastMessageId = subscription.firstMessageId;
-      return;
+      try {
+        const receipt = await this.delivery.update(subscription.firstMessageId, formatted);
+        subscription.lastMessageId = subscription.firstMessageId;
+        await this.observeDelivery(taskId, formatted, "update", "updated", {
+          receipt,
+          telemetry: receipt?.telemetry,
+        });
+        return;
+      } catch (error) {
+        const failure = resolveDeliveryFailure(error);
+        await this.observeDelivery(taskId, formatted, "update", "failed", {
+          telemetry: failure.telemetry,
+          error: failure.message,
+          statusCode: failure.statusCode,
+        });
+        throw error;
+      }
     }
 
-    const receipt = await this.delivery.send(this.withReplyContext(taskId, formatted));
+    let receipt: FeishuDeliveryReceipt | void;
+    try {
+      receipt = await this.delivery.send(this.withReplyContext(taskId, formatted));
+    } catch (error) {
+      const failure = resolveDeliveryFailure(error);
+      await this.observeDelivery(taskId, formatted, "send", "failed", {
+        telemetry: failure.telemetry,
+        error: failure.message,
+        statusCode: failure.statusCode,
+      });
+      throw error;
+    }
+
+    await this.observeDelivery(taskId, formatted, "send", "sent", {
+      receipt,
+      telemetry: normalizeSuccessfulTelemetry(receipt?.telemetry),
+    });
     if (!subscription || !receipt) return;
     subscription.firstMessageId ??= receipt.messageId;
     subscription.lastMessageId = receipt.messageId ?? subscription.lastMessageId;
@@ -802,13 +1100,28 @@ export class FeishuProgressBridge {
     if (subscription.finalSummarySentFor === finalKind) return;
 
     subscription.finalSummarySentFor = finalKind;
-    const receipt = await this.delivery.send(
-      this.withReplyContext(taskId, {
-        ...message,
-        card: undefined,
-        presentation: "text",
-      })
-    );
+    const finalMessage = {
+      ...message,
+      card: undefined,
+      presentation: "text" as const,
+    };
+    let receipt: FeishuDeliveryReceipt | void;
+    try {
+      receipt = await this.delivery.send(this.withReplyContext(taskId, finalMessage));
+    } catch (error) {
+      const failure = resolveDeliveryFailure(error);
+      await this.observeDelivery(taskId, finalMessage, "send", "failed", {
+        telemetry: failure.telemetry,
+        error: failure.message,
+        statusCode: failure.statusCode,
+      });
+      subscription.finalSummarySentFor = undefined;
+      throw error;
+    }
+    await this.observeDelivery(taskId, finalMessage, "send", "sent", {
+      receipt,
+      telemetry: normalizeSuccessfulTelemetry(receipt?.telemetry),
+    });
     if (!receipt) return;
     subscription.lastMessageId = receipt.messageId ?? subscription.lastMessageId;
     subscription.rootId = receipt.rootId ?? subscription.rootId;

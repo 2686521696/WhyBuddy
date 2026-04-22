@@ -45,6 +45,7 @@ export type OperatorActionKind =
   | "pause"
   | "resume"
   | "retry"
+  | "escalate"
   | "mark-blocked"
   | "terminate";
 
@@ -93,6 +94,8 @@ function ActionIcon({
       return <Play className={className} />;
     case "retry":
       return <RotateCcw className={className} />;
+    case "escalate":
+      return <AlertTriangle className={className} />;
     case "mark-blocked":
       return <AlertTriangle className={className} />;
     case "terminate":

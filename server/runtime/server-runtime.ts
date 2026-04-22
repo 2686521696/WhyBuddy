@@ -16,6 +16,7 @@ import {
   callLLMJson,
   isLLMTemporarilyUnavailableError,
 } from "../core/llm-client.js";
+import { mirrorWebAigcRuntimeEvent } from "../core/web-aigc-runtime-observability.js";
 import { registry } from "../core/registry.js";
 import { messageBus } from "../core/message-bus.js";
 import { emitEvent } from "../core/socket.js";
@@ -41,7 +42,10 @@ const memoryRepo: MemoryRepository = {
 const reportRepo: ReportRepository = reportStore;
 
 const eventEmitter: RuntimeEventEmitter = {
-  emit: event => emitEvent(event),
+  emit: event => {
+    emitEvent(event);
+    mirrorWebAigcRuntimeEvent(event);
+  },
 };
 
 const llmProvider: LLMProvider = {

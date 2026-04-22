@@ -29,7 +29,11 @@ export interface MissionDecisionRuntime {
   getTask(id: string): MissionRecord | undefined;
   resumeMissionFromDecision(
     id: string,
-    submission: { detail: string; progress?: number }
+    submission: {
+      detail: string;
+      progress?: number;
+      historyEntry?: DecisionHistoryEntry;
+    }
   ): MissionRecord | undefined;
 }
 
@@ -83,6 +87,14 @@ export function describeMissionDecisionAlreadyProcessed(
     : 'Decision already processed; mission has resumed';
 }
 
+export function describeMissionDecisionTimedOut(task: MissionRecord): string {
+  const timeoutAt = task.waitingTimedOutAt ?? task.decision?.timeoutAt;
+  if (typeof timeoutAt === 'number' && Number.isFinite(timeoutAt)) {
+    return `Decision window timed out at ${new Date(timeoutAt).toISOString()}`;
+  }
+  return 'Decision window timed out';
+}
+
 export function submitMissionDecision(
   runtime: MissionDecisionRuntime,
   taskId: string,
@@ -100,6 +112,7 @@ export function submitMissionDecision(
 
   const optionId = request.optionId?.trim() || undefined;
   const freeText = request.freeText?.trim() || undefined;
+  const submittedBy = request.submittedBy?.trim() || undefined;
   const metadata = request.metadata;
   const decision: MissionDecisionResolved = {
     optionId,
@@ -108,6 +121,14 @@ export function submitMissionDecision(
   };
 
   if (task.status !== 'waiting') {
+    if (task.waitingTimedOutAt) {
+      return {
+        ok: false,
+        statusCode: 409,
+        error: describeMissionDecisionTimedOut(task),
+      };
+    }
+
     if (!options.idempotentIfNotWaiting) {
       return {
         ok: false,
@@ -126,6 +147,13 @@ export function submitMissionDecision(
   }
 
   const prompt = task.decision;
+  if (typeof prompt?.timeoutAt === 'number' && prompt.timeoutAt <= Date.now()) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: describeMissionDecisionTimedOut(task),
+    };
+  }
   const selectedOption = optionId
     ? prompt?.options.find(option => option.id === optionId)
     : undefined;
@@ -170,22 +198,6 @@ export function submitMissionDecision(
     };
   }
 
-  const detail =
-    request.detail?.trim() ||
-    formatMissionDecisionDetail(selectedOption?.label, freeText);
-  const updated = runtime.resumeMissionFromDecision(task.id, {
-    detail,
-    progress: request.progress ?? task.progress,
-  });
-
-  if (!updated) {
-    return {
-      ok: false,
-      statusCode: 409,
-      error: 'Task decision could not be applied',
-    };
-  }
-
   const resolvedDecision: MissionDecisionResolved = {
     optionId: selectedOption?.id,
     optionLabel: selectedOption?.label,
@@ -193,7 +205,11 @@ export function submitMissionDecision(
     metadata,
   };
 
-  // Build DecisionHistoryEntry and append to decisionHistory
+  const detail =
+    request.detail?.trim() ||
+    formatMissionDecisionDetail(selectedOption?.label, freeText);
+
+  // Build DecisionHistoryEntry and persist it through the runtime/store update.
   const historyEntry: DecisionHistoryEntry = {
     decisionId: prompt?.decisionId || generateDecisionId(),
     type: (prompt?.type ?? 'custom-action') as DecisionType,
@@ -202,6 +218,7 @@ export function submitMissionDecision(
     templateId: prompt?.templateId,
     payload: prompt?.payload,
     resolved: resolvedDecision,
+    submittedBy,
     submittedAt: Date.now(),
     reason: freeText,
     stageKey: task.currentStageKey,
@@ -211,10 +228,19 @@ export function submitMissionDecision(
     branchKey: metadata?.branchKey,
   };
 
-  if (!updated.decisionHistory) {
-    updated.decisionHistory = [];
+  const updated = runtime.resumeMissionFromDecision(task.id, {
+    detail,
+    progress: request.progress ?? task.progress,
+    historyEntry,
+  });
+
+  if (!updated) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: 'Task decision could not be applied',
+    };
   }
-  updated.decisionHistory.push(historyEntry);
 
   // Lineage hook: record decision lineage after successful submission
   try {

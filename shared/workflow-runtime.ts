@@ -354,6 +354,28 @@ export type AgentEvent =
   | { type: "stage_change"; workflowId: string; stage: string }
   | { type: "stage_complete"; workflowId: string; stage: string }
   | {
+      type: "web_aigc_runtime_event";
+      workflowId: string;
+      instanceId: string;
+      eventKey: string;
+      timestamp: string;
+      missionId?: string;
+      sessionId?: string;
+      replayId?: string;
+      nodeId?: string;
+      edgeId?: string;
+      fromNodeId?: string;
+      toNodeId?: string;
+      status?: string;
+      waitingFor?: string;
+      error?: string;
+      checkpointId?: string;
+      startedAt?: string | null;
+      completedAt?: string | null;
+      durationMs?: number;
+      metadata?: Record<string, unknown>;
+    }
+  | {
       type: "agent_active";
       agentId: string;
       action: string;

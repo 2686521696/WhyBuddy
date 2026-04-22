@@ -28,6 +28,7 @@ export const AUDIT_API = {
   permissionViolations:    "GET    /api/audit/permissions/violations",
   webAigcCatalog:          "GET    /api/audit/web-aigc/catalog",
   webAigcRelationIndexes:  "GET    /api/audit/web-aigc/relation-indexes",
+  webAigcRelatedEntries:   "GET    /api/audit/web-aigc/related",
 
   // 数据血缘
   dataLineage:             "GET    /api/audit/lineage/:dataId",

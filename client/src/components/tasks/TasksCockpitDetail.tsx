@@ -23,6 +23,7 @@ import type {
   MissionOperatorActionLoadingMap,
   MissionTaskDetail,
 } from "@/lib/tasks-store";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import { cn } from "@/lib/utils";
 
 import { StatusPillStack } from "./StatusPillStack";
@@ -161,7 +162,7 @@ export function TasksCockpitDetail({
   onLaunchDecision: (presetId: string) => void | Promise<void>;
   launchingPresetId?: string | null;
   onSubmitOperatorAction?: (payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) => void | Promise<void>;
   operatorActionLoading?: MissionOperatorActionLoadingMap;

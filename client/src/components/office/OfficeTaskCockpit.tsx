@@ -61,6 +61,7 @@ import { useAppStore } from "@/lib/store";
 import { useTelemetryStore } from "@/lib/telemetry-store";
 import { useTasksStore, type TaskArtifact } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import { submitUnifiedClarification } from "@/lib/unified-launch-coordinator";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import {
@@ -438,7 +439,7 @@ export function OfficeTaskCockpit({
   }
 
   async function handleSubmitOperatorAction(payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) {
     if (!activeTaskId) return;

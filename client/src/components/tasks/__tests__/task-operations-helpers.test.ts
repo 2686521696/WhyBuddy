@@ -245,7 +245,7 @@ describe("task operation helper derivations", () => {
     const blocker = deriveTaskBlocker(detail);
     const nextStep = deriveNextStep(detail);
 
-    expect(primary.normalActions).toEqual(["retry"]);
+    expect(primary.normalActions).toEqual(["retry", "escalate"]);
     expect(owner.title).toBe("Human follow-up");
     expect(blocker.title).toBe("Execution failed");
     expect(blocker.detail).toContain("Artifact packaging step failed");
@@ -253,6 +253,19 @@ describe("task operation helper derivations", () => {
       "Review failure details and retry if appropriate"
     );
     expect(nextStep.detail).toContain("Artifact packaging step failed");
+  });
+
+  it("offers escalate alongside retry for failed missions", () => {
+    const detail = makeDetail({
+      status: "failed",
+      workflowStatus: "failed",
+      failureReasons: ["Executor packaging failed after upload timeout."],
+    });
+
+    const primary = derivePrimaryActions(detail);
+
+    expect(primary.normalActions).toEqual(["retry", "escalate"]);
+    expect(primary.recommended.map(action => action.key)).toContain("retry");
   });
 
   it("derives completed-state summaries with no active blocker", () => {

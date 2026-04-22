@@ -121,6 +121,7 @@ export interface WebAigcNodeRunRecord {
   waitingFor?: string;
   transitionEdgeId?: string;
   error?: string;
+  retryable?: boolean;
 }
 
 export interface WebAigcEdgeTransitionRecord {

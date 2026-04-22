@@ -7,21 +7,28 @@ import type {
   SkillRecord,
 } from "../../../shared/skill-contracts.js";
 import type { WorkflowMcpBinding } from "../../../shared/organization-schema.js";
+import type { Action, ResourceType } from "../../../shared/permission/contracts.js";
 import db from "../../db/index.js";
 import { registry } from "../../core/registry.js";
 import { skillRegistry } from "../../core/dynamic-organization.js";
 import { SkillActivator } from "../../core/skill-activator.js";
 import { SkillMonitor } from "../../core/skill-monitor.js";
+import type { AuditLogger as PermissionAuditLogger } from "../../permission/check-engine.js";
 import {
   InternalApiExecutor,
   type InternalApiExecutorLike,
 } from "./internal-api-adapter.js";
+import {
+  PassthroughApiExecutor,
+  type PassthroughApiExecutorLike,
+} from "./passthrough-api-adapter.js";
 
 export type AutoAgentTargetKind =
   | "agent"
   | "guest_agent"
   | "skill"
-  | "internal_api";
+  | "internal_api"
+  | "passthrough_api";
 
 export interface AutoAgentExecutionRequest {
   kind: AutoAgentTargetKind;
@@ -34,6 +41,30 @@ export interface AutoAgentExecutionRequest {
   delegateAgentId?: string;
   maxSkills?: number;
   metadata?: Record<string, unknown>;
+}
+
+export interface AutoAgentFallbackTarget {
+  kind: AutoAgentTargetKind;
+  targetId: string;
+  version?: string;
+  delegateAgentId?: string;
+  maxSkills?: number;
+}
+
+export interface AutoAgentRecoveryMetadata {
+  attemptCount: number;
+  retryCount: number;
+  timeoutMs?: number;
+  fallbackUsed: boolean;
+  fallbackTarget?: {
+    kind: AutoAgentTargetKind;
+    targetId: string;
+  };
+  requestedTarget: {
+    kind: AutoAgentTargetKind;
+    targetId: string;
+  };
+  errorChain?: string[];
 }
 
 export interface AutoAgentExecutionResult {
@@ -56,6 +87,7 @@ export interface AutoAgentExecutionResult {
     skillVersions?: Record<string, string>;
     mcpBindings?: WorkflowMcpBinding[];
     targetLabel?: string;
+    recovery?: AutoAgentRecoveryMetadata;
   };
 }
 
@@ -84,11 +116,33 @@ export interface AutoAgentExecutorDependencies {
   skillMonitor?: AutoAgentSkillMonitor;
   skillActivator?: SkillActivator;
   internalApis?: InternalApiExecutorLike;
+  passthroughApis?: PassthroughApiExecutorLike;
+  auditLogger?: PermissionAuditLogger;
 }
 
 export interface AutoAgentExecutorLike {
   execute(request: AutoAgentExecutionRequest): Promise<AutoAgentExecutionResult>;
 }
+
+type NormalizedAutoAgentExecutionRequest = AutoAgentExecutionRequest & {
+  targetId: string;
+  input: string;
+  context: string[];
+};
+
+interface AutoAgentExecutionControls {
+  timeoutMs?: number;
+  retryCount: number;
+  fallback?: AutoAgentFallbackTarget;
+}
+
+interface AutoAgentExecutionEnvelope {
+  result: AutoAgentExecutionResult;
+  recovery: AutoAgentRecoveryMetadata;
+}
+
+const AUTO_AGENT_RESOURCE_TYPE: ResourceType = "api";
+const AUTO_AGENT_ACTION: Action = "call";
 
 function ensureText(value: string, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
@@ -117,6 +171,224 @@ function estimateTokenCount(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.trim()
+    ? candidate.trim()
+    : undefined;
+}
+
+function readNumber(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const candidate = value[key];
+  return typeof candidate === "number" && Number.isFinite(candidate)
+    ? candidate
+    : undefined;
+}
+
+function summarizeInput(input: string): string {
+  const normalized = input.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized.length > 160
+    ? `${normalized.slice(0, 160).trimEnd()}...`
+    : normalized;
+}
+
+function normalizeAutoAgentRequest(
+  request: AutoAgentExecutionRequest,
+): NormalizedAutoAgentExecutionRequest {
+  return {
+    ...request,
+    kind: request.kind,
+    targetId: ensureText(request.targetId, "targetId"),
+    input: ensureText(request.input, "input"),
+    context: normalizeContext(request.context),
+  };
+}
+
+function coerceAutoAgentRequestForAudit(
+  request: AutoAgentExecutionRequest,
+): NormalizedAutoAgentExecutionRequest {
+  return {
+    ...request,
+    kind: request.kind,
+    targetId:
+      typeof request.targetId === "string" ? request.targetId.trim() : "",
+    input: typeof request.input === "string" ? request.input.trim() : "",
+    context: normalizeContext(request.context),
+  };
+}
+
+function buildAutoAgentResource(
+  kind: AutoAgentTargetKind,
+  targetId: string,
+): string {
+  return `auto_agent:${kind}:${targetId}`;
+}
+
+function resolveAuditMetadataRecord(
+  request: AutoAgentExecutionRequest,
+): Record<string, unknown> | undefined {
+  return isRecord(request.metadata) ? request.metadata : undefined;
+}
+
+function resolveAuditAgentId(
+  request: AutoAgentExecutionRequest,
+  fallbackAgentId?: string,
+): string {
+  const metadata = resolveAuditMetadataRecord(request);
+  return (
+    readString(metadata, "agentId") ||
+    readString(metadata, "requestedBy") ||
+    readString(metadata, "operator") ||
+    fallbackAgentId ||
+    "auto_agent_executor"
+  );
+}
+
+function resolveAuditOperator(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  const metadata = resolveAuditMetadataRecord(request);
+  return readString(metadata, "operator") || readString(metadata, "requestedBy");
+}
+
+function resolveAuditWorkflowId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return request.workflowId?.trim() || readString(resolveAuditMetadataRecord(request), "workflowId");
+}
+
+function resolveAuditMissionId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  const metadata = resolveAuditMetadataRecord(request);
+  return readString(metadata, "missionId") || readString(metadata, "taskId");
+}
+
+function resolveAuditSessionId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readString(resolveAuditMetadataRecord(request), "sessionId");
+}
+
+function isAutoAgentTargetKind(value: string): value is AutoAgentTargetKind {
+  return (
+    value === "agent" ||
+    value === "guest_agent" ||
+    value === "skill" ||
+    value === "internal_api" ||
+    value === "passthrough_api"
+  );
+}
+
+function normalizeTimeoutMs(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.floor(value));
+}
+
+function normalizeRetryCount(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return Math.min(3, Math.floor(value));
+}
+
+function normalizeMaxSkills(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(value);
+}
+
+function normalizeFallbackTarget(
+  value: unknown,
+): AutoAgentFallbackTarget | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const kind = readString(value, "kind");
+  const targetId = readString(value, "targetId");
+  if (!kind || !targetId || !isAutoAgentTargetKind(kind)) {
+    return undefined;
+  }
+
+  return {
+    kind,
+    targetId,
+    version: readString(value, "version"),
+    delegateAgentId: readString(value, "delegateAgentId"),
+    maxSkills: normalizeMaxSkills(readNumber(value, "maxSkills")),
+  };
+}
+
+function resolveExecutionControls(
+  request: AutoAgentExecutionRequest,
+): AutoAgentExecutionControls {
+  const metadata = resolveAuditMetadataRecord(request);
+  const timeoutMs = normalizeTimeoutMs(readNumber(metadata, "timeoutMs"));
+  const retryCount = normalizeRetryCount(readNumber(metadata, "retryCount"));
+  const fallback =
+    normalizeFallbackTarget(metadata?.fallback) ??
+    normalizeFallbackTarget(metadata?.fallbackTarget);
+
+  return {
+    timeoutMs,
+    retryCount,
+    fallback,
+  };
+}
+
+function withRecoveryMetadata(
+  result: AutoAgentExecutionResult,
+  recovery: AutoAgentRecoveryMetadata,
+): AutoAgentExecutionResult {
+  return {
+    ...result,
+    metadata: {
+      ...result.metadata,
+      recovery,
+    },
+  };
+}
+
+class AutoAgentTimeoutError extends Error {
+  constructor(
+    kind: AutoAgentTargetKind,
+    targetId: string,
+    timeoutMs: number,
+  ) {
+    super(`Auto-agent execution timed out after ${timeoutMs}ms for ${kind}:${targetId}`);
+    this.name = "AutoAgentTimeoutError";
+  }
+}
+
 export function normalizeAutoAgentContextInput(value: unknown): string[] | undefined {
   if (typeof value === "string" && value.trim()) {
     return [value.trim()];
@@ -130,6 +402,7 @@ export function normalizeAutoAgentContextInput(value: unknown): string[] | undef
 export function mapAutoAgentErrorToStatusCode(error: unknown): number {
   const message = error instanceof Error ? error.message : String(error);
   if (message.startsWith("Missing required field:")) return 400;
+  if (message.includes("timed out")) return 504;
   if (
     message.includes("not found") ||
     message.includes("not a guest agent") ||
@@ -149,6 +422,8 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
   private readonly skillMonitor: AutoAgentSkillMonitor;
   private readonly skillActivator: SkillActivator;
   private readonly internalApis: InternalApiExecutorLike;
+  private readonly passthroughApis: PassthroughApiExecutorLike;
+  private readonly auditLogger?: PermissionAuditLogger;
 
   constructor(deps: AutoAgentExecutorDependencies = {}) {
     this.directory = deps.directory ?? registry;
@@ -156,43 +431,150 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
     this.skillMonitor = deps.skillMonitor ?? new SkillMonitor(db);
     this.skillActivator = deps.skillActivator ?? new SkillActivator();
     this.internalApis = deps.internalApis ?? new InternalApiExecutor();
+    this.passthroughApis =
+      deps.passthroughApis ??
+      new PassthroughApiExecutor({
+        auditLogger: deps.auditLogger,
+      });
+    this.auditLogger = deps.auditLogger;
   }
 
   async execute(request: AutoAgentExecutionRequest): Promise<AutoAgentExecutionResult> {
+    const auditRequest = coerceAutoAgentRequestForAudit(request);
+    const controls = resolveExecutionControls(request);
+    try {
+      const normalizedRequest = normalizeAutoAgentRequest(request);
+      const execution = await this.executeWithRecovery(normalizedRequest, controls);
+      this.auditExecution(
+        normalizedRequest,
+        "allowed",
+        undefined,
+        execution.result,
+        execution.recovery,
+      );
+      return execution.result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const recovery = this.buildFailureRecoveryMetadata(auditRequest, controls, reason);
+      this.auditExecution(auditRequest, "error", reason, undefined, recovery);
+      throw error;
+    }
+  }
+
+  private async executeWithRecovery(
+    request: NormalizedAutoAgentExecutionRequest,
+    controls: AutoAgentExecutionControls,
+  ): Promise<AutoAgentExecutionEnvelope> {
+    const errorChain: string[] = [];
+    const requestedTarget = {
+      kind: request.kind,
+      targetId: request.targetId,
+    };
+
+    for (let attempt = 0; attempt <= controls.retryCount; attempt++) {
+      try {
+        const result = await this.executeSingleAttempt(request, controls.timeoutMs);
+        const recovery: AutoAgentRecoveryMetadata = {
+          attemptCount: attempt + 1,
+          retryCount: controls.retryCount,
+          timeoutMs: controls.timeoutMs,
+          fallbackUsed: false,
+          requestedTarget,
+          errorChain: errorChain.length > 0 ? [...errorChain] : undefined,
+        };
+        return {
+          result: withRecoveryMetadata(result, recovery),
+          recovery,
+        };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        errorChain.push(reason);
+        if (attempt < controls.retryCount) {
+          continue;
+        }
+      }
+    }
+
+    if (controls.fallback) {
+      const fallbackRequest: NormalizedAutoAgentExecutionRequest = {
+        ...request,
+        kind: controls.fallback.kind,
+        targetId: controls.fallback.targetId,
+        version: controls.fallback.version,
+        delegateAgentId: controls.fallback.delegateAgentId,
+        maxSkills: controls.fallback.maxSkills,
+      };
+
+      try {
+        const fallbackResult = await this.executeSingleAttempt(
+          fallbackRequest,
+          controls.timeoutMs,
+        );
+        const recovery: AutoAgentRecoveryMetadata = {
+          attemptCount: controls.retryCount + 2,
+          retryCount: controls.retryCount,
+          timeoutMs: controls.timeoutMs,
+          fallbackUsed: true,
+          fallbackTarget: {
+            kind: controls.fallback.kind,
+            targetId: controls.fallback.targetId,
+          },
+          requestedTarget,
+          errorChain: [...errorChain],
+        };
+        return {
+          result: withRecoveryMetadata(fallbackResult, recovery),
+          recovery,
+        };
+      } catch (error) {
+        const fallbackReason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Primary auto-agent execution failed after ${controls.retryCount + 1} attempt(s): ${errorChain.at(-1) ?? "unknown error"}. Fallback ${controls.fallback.kind}:${controls.fallback.targetId} failed: ${fallbackReason}`,
+        );
+      }
+    }
+
+    const finalReason = errorChain.at(-1) ?? "Auto-agent execution failed";
+    if (controls.retryCount > 0) {
+      throw new Error(
+        `Auto-agent execution failed after ${controls.retryCount + 1} attempt(s): ${finalReason}`,
+      );
+    }
+    throw new Error(finalReason);
+  }
+
+  private async executeSingleAttempt(
+    request: NormalizedAutoAgentExecutionRequest,
+    timeoutMs?: number,
+  ): Promise<AutoAgentExecutionResult> {
     const kind = request.kind;
-    const targetId = ensureText(request.targetId, "targetId");
-    const input = ensureText(request.input, "input");
-    const context = normalizeContext(request.context);
 
     if (kind === "skill") {
-      return this.executeSkill({
-        ...request,
-        kind,
-        targetId,
-        input,
-        context,
-      });
+      return this.executeSkill(request, timeoutMs);
     }
 
     if (kind === "internal_api") {
-      return this.executeInternalApi({
-        ...request,
-        kind,
-        targetId,
-        input,
-        context,
-      });
+      return this.executeInternalApi(request, timeoutMs);
     }
 
-    const agent = this.resolveAgentTarget(targetId, kind);
-    const output = await agent.invoke(input, context, {
-      workflowId: request.workflowId,
-      stage: request.stage ?? "auto_agent",
-    });
+    if (kind === "passthrough_api") {
+      return this.executePassthroughApi(request, timeoutMs);
+    }
+
+    const agent = this.resolveAgentTarget(request.targetId, kind);
+    const output = await this.invokeWithTimeout(
+      request,
+      () =>
+        agent.invoke(request.input, request.context, {
+          workflowId: request.workflowId,
+          stage: request.stage ?? "auto_agent",
+        }),
+      timeoutMs,
+    );
 
     return {
       kind,
-      targetId,
+      targetId: request.targetId,
       output,
       delegatedTo: {
         agentId: agent.config.id,
@@ -273,7 +655,8 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
   }
 
   private async executeSkill(
-    request: AutoAgentExecutionRequest & { kind: "skill"; targetId: string; input: string; context: string[] }
+    request: AutoAgentExecutionRequest & { kind: "skill"; targetId: string; input: string; context: string[] },
+    timeoutMs?: number,
   ): Promise<AutoAgentExecutionResult> {
     const delegateAgent = this.resolveDelegateAgent(request);
     const resolveOptions: ResolveOptions | undefined = request.version
@@ -324,10 +707,15 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
     let output = "";
     let success = false;
     try {
-      output = await delegateAgent.invoke(prompt, request.context, {
-        workflowId: request.workflowId,
-        stage: request.stage ?? "auto_agent_skill",
-      });
+      output = await this.invokeWithTimeout(
+        request,
+        () =>
+          delegateAgent.invoke(prompt, request.context, {
+            workflowId: request.workflowId,
+            stage: request.stage ?? "auto_agent_skill",
+          }),
+        timeoutMs,
+      );
       success = true;
     } finally {
       const executionTimeMs = Date.now() - executionStartedAt;
@@ -386,15 +774,21 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
       input: string;
       context: string[];
     },
+    timeoutMs?: number,
   ): Promise<AutoAgentExecutionResult> {
-    const result = await this.internalApis.execute({
-      targetId: request.targetId,
-      input: request.input,
-      context: request.context,
-      workflowId: request.workflowId,
-      stage: request.stage,
-      metadata: request.metadata,
-    });
+    const result = await this.invokeWithTimeout(
+      request,
+      () =>
+        this.internalApis.execute({
+          targetId: request.targetId,
+          input: request.input,
+          context: request.context,
+          workflowId: request.workflowId,
+          stage: request.stage,
+          metadata: request.metadata,
+        }),
+      timeoutMs,
+    );
 
     return {
       kind: "internal_api",
@@ -415,6 +809,166 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
         targetLabel: result.targetLabel,
       },
     };
+  }
+
+  private async executePassthroughApi(
+    request: AutoAgentExecutionRequest & {
+      kind: "passthrough_api";
+      targetId: string;
+      input: string;
+      context: string[];
+    },
+    timeoutMs?: number,
+  ): Promise<AutoAgentExecutionResult> {
+    const requestMetadata =
+      request.metadata && typeof request.metadata === "object"
+        ? { ...request.metadata }
+        : {};
+    if (timeoutMs && typeof requestMetadata.timeoutMs !== "number") {
+      requestMetadata.timeoutMs = timeoutMs;
+    }
+
+    const result = await this.invokeWithTimeout(
+      request,
+      () =>
+        this.passthroughApis.execute({
+          targetId: request.targetId,
+          input: request.input,
+          context: request.context,
+          workflowId: request.workflowId,
+          stage: request.stage,
+          metadata: requestMetadata,
+        }),
+      timeoutMs,
+    );
+
+    return {
+      kind: "passthrough_api",
+      targetId: request.targetId,
+      output: result.output,
+      delegatedTo: {
+        agentId: "passthrough_api_executor",
+        agentName: "Passthrough API Executor",
+        role: "worker",
+        kind: "agent",
+      },
+      metadata: {
+        source: "auto_agent",
+        invokedAt: new Date().toISOString(),
+        workflowId: request.workflowId,
+        stage: request.stage ?? "auto_agent_passthrough_api",
+        requestMetadata,
+        targetLabel: result.targetLabel,
+      },
+    };
+  }
+
+  private auditExecution(
+    request: NormalizedAutoAgentExecutionRequest,
+    result: "allowed" | "error",
+    reason?: string,
+    execution?: AutoAgentExecutionResult,
+    recovery?: AutoAgentRecoveryMetadata,
+  ): void {
+    if (!this.auditLogger) {
+      return;
+    }
+
+    const requestMetadata = resolveAuditMetadataRecord(request);
+    const resolvedRecovery = recovery ?? execution?.metadata.recovery;
+    this.auditLogger.log({
+      agentId: resolveAuditAgentId(request, execution?.delegatedTo.agentId),
+      operator: resolveAuditOperator(request),
+      operation: "auto_agent",
+      resourceType: AUTO_AGENT_RESOURCE_TYPE,
+      action: AUTO_AGENT_ACTION,
+      resource: buildAutoAgentResource(request.kind, request.targetId),
+      result,
+      reason,
+      metadata: {
+        targetKind: request.kind,
+        targetId: request.targetId,
+        workflowId: resolveAuditWorkflowId(request),
+        missionId: resolveAuditMissionId(request),
+        sessionId: resolveAuditSessionId(request),
+        stage: execution?.metadata.stage ?? request.stage,
+        inputPreview: summarizeInput(request.input),
+        contextCount: request.context.length,
+        delegateAgentId: request.delegateAgentId,
+        delegatedAgentId: execution?.delegatedTo.agentId,
+        delegatedAgentKind: execution?.delegatedTo.kind,
+        delegatedAgentRole: execution?.delegatedTo.role,
+        targetLabel: execution?.metadata.targetLabel,
+        skillIds: execution?.metadata.skillIds,
+        mcpBindingCount: execution?.metadata.mcpBindings?.length,
+        attemptCount: resolvedRecovery?.attemptCount,
+        retryCount: resolvedRecovery?.retryCount,
+        timeoutMs: resolvedRecovery?.timeoutMs,
+        fallbackUsed: resolvedRecovery?.fallbackUsed,
+        fallbackTargetKind: resolvedRecovery?.fallbackTarget?.kind,
+        fallbackTargetId: resolvedRecovery?.fallbackTarget?.targetId,
+        requestedTargetKind: resolvedRecovery?.requestedTarget.kind,
+        requestedTargetId: resolvedRecovery?.requestedTarget.targetId,
+        errorChain: resolvedRecovery?.errorChain,
+        metadataKeys: requestMetadata ? Object.keys(requestMetadata).sort() : [],
+      },
+    });
+  }
+
+  private buildFailureRecoveryMetadata(
+    request: NormalizedAutoAgentExecutionRequest,
+    controls: AutoAgentExecutionControls,
+    reason: string,
+  ): AutoAgentRecoveryMetadata {
+    return {
+      attemptCount: controls.retryCount + 1 + (controls.fallback ? 1 : 0),
+      retryCount: controls.retryCount,
+      timeoutMs: controls.timeoutMs,
+      fallbackUsed: false,
+      fallbackTarget: controls.fallback
+        ? {
+            kind: controls.fallback.kind,
+            targetId: controls.fallback.targetId,
+          }
+        : undefined,
+      requestedTarget: {
+        kind: request.kind,
+        targetId: request.targetId,
+      },
+      errorChain: [reason],
+    };
+  }
+
+  private async invokeWithTimeout<T>(
+    request: Pick<NormalizedAutoAgentExecutionRequest, "kind" | "targetId">,
+    operation: () => Promise<T>,
+    timeoutMs?: number,
+  ): Promise<T> {
+    if (!timeoutMs) {
+      return operation();
+    }
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(
+              new AutoAgentTimeoutError(
+                request.kind,
+                request.targetId,
+                timeoutMs,
+              ),
+            );
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   }
 }
 

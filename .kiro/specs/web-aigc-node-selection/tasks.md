@@ -1,6 +1,57 @@
 # 任务清单：选择节点
 
 - [x] 定义选项结构与校验规则
+  - `shared/mission/contracts.ts` 已定义：
+    - `MissionDecisionOption`
+    - `MissionDecision`
+    - `MissionDecisionSubmission`
+    - `MissionDecisionResolved`
+    - `WEB_AIGC_HITL_NODE_TYPES` 中包含 `selection`
+    - `WebAigcHitlFieldDefinition.type` 支持 `"selection"`
+  - `server/tasks/mission-decision.ts` 已对以下规则做服务端校验：
+    - `optionId` 必须存在于候选项中
+    - `requiresComment=true` 时必须提交 `freeText`
+    - 不允许空选择
+    - `allowFreeText !== true` 时不允许非法自由文本
+  - `server/core/workflow-runtime-engine.ts` 已内置 `HitlChoiceAdapter("selection")`：
+    - wait 时输出 `inputSchema`
+    - resume 时校验 `optionId / optionIds / selectedOptionIds / branchKey`
+    - 未提交选择时返回 `Missing required selection payload`
+    - 选项不在候选集中时返回错误
+  - `server/tests/hitl-decision.test.ts`、`server/tests/workflow-runtime-engine.test.ts` 已覆盖上述校验路径。
+
 - [x] 复用任务输入接口
+  - `server/routes/tasks.ts` 已提供 `POST /api/tasks/:id/decision` 统一人工输入入口。
+  - `server/tasks/mission-runtime.ts` 已提供 `waitOnMission(...)` 与 `resumeMissionFromDecision(...)`。
+  - `server/tasks/mission-decision.ts` 提交后会写回 decision history，并驱动任务恢复执行。
+  - `server/core/workflow-runtime-engine.ts` 已支持 selection 节点进入 checkpoint 等待，再通过 `resume(...)` 恢复。
+  - `client/src/components/tasks/DecisionPanel.tsx`、`client/src/lib/mission-client.ts`、`client/src/lib/tasks-store.ts` 已接入前端决策提交链路。
+  - `server/tests/mission-routes.test.ts`、`server/tests/workflow-runtime-engine.test.ts` 已覆盖路由 waiting/resume 与 runtime waiting/resume。
+
 - [x] 写入选择结果事件
-- [ ] 验证单选与多选场景
+  - `shared/web-aigc-observability.ts` 已定义：
+    - `node.waiting_input`
+    - `human.decision_submitted`
+  - `server/core/workflow-runtime-engine.ts` 在 selection 节点等待时会发出 `node.waiting_input`。
+  - `server/tasks/mission-runtime.ts` 与 `server/routes/tasks.ts` 会在任务决策提交后发出 `decisionSubmitted`。
+  - `server/audit/audit-hooks.ts` 已把决策提交映射为审计链中的 `human.decision_submitted`。
+  - `server/tests/hitl-decision.test.ts` 已验证：
+    - `nodeType: "selection"`
+    - `nodeId`
+    - `optionId`
+    - `optionLabel`
+    - `branchKey`
+    - 审计项写入
+  - `server/tests/workflow-runtime-engine.test.ts` 已验证 selection 节点等待时存在 `node.waiting_input` runtime 事件。
+
+- [x] 验证单选与多选场景
+  - `server/core/workflow-runtime-engine.ts`
+    - 单选场景支持 `optionId`
+    - 多选场景支持 `optionIds / selectedOptionIds`
+    - `multiple / selectionMode=multiple|multi|multi-select|multi-choice` 会切换为数组型输入 schema
+  - `server/tests/workflow-runtime-engine.test.ts` 已验证：
+    - selection 节点按单选结果走不同分支
+    - 选择结果回写 `selectedOptionId / branchKey`
+    - 选择后可继续进入 end 节点完成结构化输出
+  - `server/tests/hitl-decision.test.ts` 已验证 `type: "multi-choice"` 的任务决策路径及 metadata/history 持久化。
+  - `client/src/components/tasks/DecisionPanel.tsx` 已有 `multi-choice` 展示分支。

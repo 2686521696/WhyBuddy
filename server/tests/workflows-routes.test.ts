@@ -30,6 +30,9 @@ const {
   getRuntimeState,
   runToCheckpoint,
   resumeRuntime,
+  terminateRuntime,
+  retryRuntime,
+  escalateRuntime,
 } = vi.hoisted(() => {
   const state: {
     workflow?: WorkflowRecord;
@@ -119,6 +122,24 @@ const {
       }
       return state.runtimeState;
     }),
+    terminateRuntime: vi.fn(() => {
+      if (!state.runtimeState) {
+        throw new Error("runtime state not seeded for test");
+      }
+      return state.runtimeState;
+    }),
+    retryRuntime: vi.fn(async () => {
+      if (!state.runtimeState) {
+        throw new Error("runtime state not seeded for test");
+      }
+      return state.runtimeState;
+    }),
+    escalateRuntime: vi.fn(() => {
+      if (!state.runtimeState) {
+        throw new Error("runtime state not seeded for test");
+      }
+      return state.runtimeState;
+    }),
   };
 });
 
@@ -157,6 +178,9 @@ vi.mock("../core/workflow-runtime-engine.js", () => ({
     getState: getRuntimeState,
     runToCheckpoint,
     resume: resumeRuntime,
+    terminate: terminateRuntime,
+    retry: retryRuntime,
+    escalate: escalateRuntime,
   },
 }));
 
@@ -450,6 +474,9 @@ describe("workflow graph-instance route", () => {
     getRuntimeState.mockClear();
     runToCheckpoint.mockClear();
     resumeRuntime.mockClear();
+    terminateRuntime.mockClear();
+    retryRuntime.mockClear();
+    escalateRuntime.mockClear();
   });
 
   it("returns 404 when the workflow does not exist", async () => {
@@ -648,6 +675,128 @@ describe("workflow graph-instance route", () => {
       expect(body).toEqual({ state: state.runtimeState });
       expect(resumeRuntime).toHaveBeenCalledWith("wf-graph-route", {
         token: "approved",
+      });
+    });
+  });
+
+  it("terminates a runtime instance through explicit runtime control", async () => {
+    state.workflow = makeWorkflow();
+    state.runtimeState = {
+      domainModelVersion: 1,
+      definition: makeRuntimeDefinition(),
+      instance: makeRuntimeInstance({
+        status: "FORCE_TERMINATED",
+        completedAt: "2026-04-22T00:00:04.000Z",
+        checkpoint: undefined,
+      }),
+      updatedAt: "2026-04-22T00:00:04.000Z",
+    };
+
+    await withServer(async baseUrl => {
+      const response = await fetch(
+        `${baseUrl}/api/workflows/${state.workflow?.id}/runtime/terminate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestedBy: "operator-1",
+            reason: "Stop the broken run",
+          }),
+        }
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ state: state.runtimeState });
+      expect(terminateRuntime).toHaveBeenCalledWith("wf-graph-route", {
+        requestedBy: "operator-1",
+        reason: "Stop the broken run",
+      });
+    });
+  });
+
+  it("retries a failed runtime instance through explicit runtime control", async () => {
+    state.workflow = makeWorkflow();
+    state.runtimeState = {
+      domainModelVersion: 1,
+      definition: makeRuntimeDefinition(),
+      instance: makeRuntimeInstance({
+        status: "EXECUTED",
+        checkpoint: undefined,
+        output: {
+          retried: true,
+        },
+      }),
+      updatedAt: "2026-04-22T00:00:05.000Z",
+    };
+
+    await withServer(async baseUrl => {
+      const response = await fetch(
+        `${baseUrl}/api/workflows/${state.workflow?.id}/runtime/retry`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestedBy: "operator-2",
+            reason: "Retry after transient provider failure",
+            maxSteps: 4,
+          }),
+        }
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ state: state.runtimeState });
+      expect(retryRuntime).toHaveBeenCalledWith("wf-graph-route", {
+        requestedBy: "operator-2",
+        reason: "Retry after transient provider failure",
+        maxSteps: 4,
+      });
+    });
+  });
+
+  it("escalates a runtime instance into waiting human review", async () => {
+    state.workflow = makeWorkflow();
+    state.runtimeState = {
+      domainModelVersion: 1,
+      definition: makeRuntimeDefinition(),
+      instance: makeRuntimeInstance({
+        status: "WAITING_INPUT",
+        checkpoint: {
+          nodeId: "task-1",
+          waitingFor: "human escalation review",
+          createdAt: "2026-04-22T00:00:06.000Z",
+          resumeCount: 0,
+        },
+      }),
+      updatedAt: "2026-04-22T00:00:06.000Z",
+    };
+
+    await withServer(async baseUrl => {
+      const response = await fetch(
+        `${baseUrl}/api/workflows/${state.workflow?.id}/runtime/escalate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestedBy: "operator-3",
+            reason: "Need manual review before proceeding",
+          }),
+        }
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ state: state.runtimeState });
+      expect(escalateRuntime).toHaveBeenCalledWith("wf-graph-route", {
+        requestedBy: "operator-3",
+        reason: "Need manual review before proceeding",
       });
     });
   });

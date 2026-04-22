@@ -84,8 +84,10 @@ function createMockRuntime(initialTasks: MissionRecord[] = []): MissionDecisionR
     resumeMissionFromDecision(id, submission) {
       const t = tasks.get(id);
       if (!t) return undefined;
-      // Preserve decisionHistory across calls
       const history = t.decisionHistory ? [...t.decisionHistory] : [];
+      if (submission.historyEntry) {
+        history.push(structuredClone(submission.historyEntry));
+      }
       t.status = 'running';
       t.waitingFor = undefined;
       t.decision = undefined;

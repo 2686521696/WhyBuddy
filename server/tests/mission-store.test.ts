@@ -200,4 +200,38 @@ describe('MissionStore', () => {
       sourceApp: 'cube-pets-office',
     });
   });
+
+  it('expires waiting missions whose decision timeout has passed', () => {
+    const filePath = path.join(tempDir, 'mission-snapshots.json');
+    const store = new MissionStore(new MissionFileSnapshotStore(filePath));
+
+    const mission = store.create({
+      kind: 'chat',
+      title: 'Timed waiting mission',
+      stageLabels: [{ key: 'execute', label: 'Run execution' }],
+    });
+
+    store.markRunning(mission.id, 'execute', 'Running', 40);
+    store.markWaiting(mission.id, 'user input', 'Need details', 45, {
+      prompt: 'Provide missing input',
+      options: [{ id: 'submit', label: 'Submit' }],
+      timeoutAt: 1_000,
+    });
+
+    const expired = store.expireWaiting(1_500, 'User input timed out.');
+
+    expect(expired).toHaveLength(1);
+    expect(expired[0]).toMatchObject({
+      id: mission.id,
+      status: 'failed',
+      waitingFor: undefined,
+      decision: undefined,
+      waitingTimedOutAt: 1_500,
+    });
+    expect(expired[0].events.at(-1)).toMatchObject({
+      type: 'failed',
+      message: 'User input timed out.',
+      source: 'mission-core',
+    });
+  });
 });

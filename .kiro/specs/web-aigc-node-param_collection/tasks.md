@@ -1,6 +1,56 @@
 # 任务清单：参数采集节点
 
 - [ ] 定义字段结构与校验规则
-- [ ] 打通等待输入与恢复执行
+  - 已具备的范围：
+    - `shared/mission/contracts.ts` 已定义 `WebAigcHitlFieldDefinition`，包含 `key / label / type / required / placeholder / defaultValue / options`。
+    - `shared/mission/contracts.ts` 已定义 `WebAigcHitlSubmissionMetadata.formData`，说明参数采集结果已有统一挂载位置。
+    - `shared/workflow-runtime-engine.ts` 与 `shared/workflow-domain.ts` 已定义 `WorkflowNodeWaitResult.inputSchema`、`WebAigcGraphCheckpoint.inputSchema`、`WebAigcFieldSchema`，图运行时可携带等待输入字段描述。
+  - 仍缺的范围：
+    - 没有看到 `param_collection` 节点专用的字段校验实现，现有 `server/tasks/mission-decision.ts` 只校验 `optionId / freeText / requiresComment`。
+    - 没有看到把 `WebAigcHitlFieldDefinition` 真正渲染成多字段表单并提交校验的服务端/前端闭环。
+    - 没有看到默认值填充、字段级错误、数值/布尔/枚举校验的专项测试。
+  - 结论：字段结构契约已存在，但“字段校验规则落地”证据不足，暂不勾选。
+
+- [x] 打通等待输入与恢复执行
+  - `server/tasks/mission-store.ts` 已具备：
+    - `markWaiting()`：任务进入 `waiting`
+    - `resolveWaiting()`：提交后恢复为 `running`
+    - `decisionHistory` 持久化
+  - `server/tasks/mission-runtime.ts` 已提供：
+    - `waitOnMission()`
+    - `resumeMissionFromDecision()`
+  - `server/core/workflow-runtime-engine.ts` 已提供：
+    - `WorkflowNodeWaitResult.inputSchema` 会进入实例 `checkpoint.inputSchema`
+    - wait 节点会发出 `node.waiting_input`
+  - `server/tasks/mission-decision.ts` 与 `server/routes/tasks.ts` 已打通：
+    - `POST /api/tasks/:id/decision`
+    - 等待态校验
+    - 超时校验
+    - 恢复执行
+  - `client/src/components/tasks/DecisionPanel.tsx`、`client/src/lib/mission-client.ts`、`client/src/lib/tasks-store.ts` 已接入前端决策提交链路。
+  - `server/tests/hitl-decision.test.ts`、`server/tests/mission-routes.test.ts`、`server/tests/workflow-runtime-engine.test.ts` 已覆盖等待、恢复、再等待、再恢复和图运行时 checkpoint/resume 场景。
+  - 结论：现有 HITL / mission / route / client / runtime 已形成等待输入与恢复执行闭环，可勾选。
+
 - [ ] 写入参数采集事件
+  - 已具备的范围：
+    - `server/tasks/mission-store.ts` 在等待时写入 `waiting` 事件，在恢复时写入 `progress` 事件。
+    - `server/tasks/mission-runtime.ts` 可广播 `decisionSubmitted` socket 事件。
+    - `server/core/workflow-runtime-engine.ts` 会把等待态 `inputSchema` 写入 checkpoint，并发出 `node.waiting_input` runtime 事件。
+    - `shared/web-aigc-observability.ts` 已定义 `node.waiting_input` 与 `human.decision_submitted` 事件目录。
+    - `server/audit/audit-hooks.ts` 已把人类决策提交映射为 `human.decision_submitted` 审计事件。
+    - `server/tasks/mission-decision.ts` 成功提交后会把 `metadata.formData` 连同 `nodeType / sessionId / interactionId / branchKey` 写入 decision lineage metadata。
+  - 仍缺的范围：
+    - 没有看到 `param_collection` 专用事件模型，无法明确区分“普通决策”与“结构化参数采集”。
+    - 审计事件里没有看到对 `formData`、字段列表、字段摘要的明确记录；现有 `formData` 只进入 decision lineage metadata，不等于参数采集事件闭环。
+    - 没有看到 `nodeType = "param_collection"` 的专项事件测试。
+  - 结论：当前已有通用 waiting / decision / runtime / lineage 链路，但缺少参数采集专用事件闭环，暂不勾选。
+
 - [ ] 验证多字段与附件场景
+  - 已具备的范围：
+    - `shared/mission/contracts.ts` 中 `formData` 已允许回传结构化键值。
+    - 仓库其他模块存在附件能力，例如 `shared/workflow-input.ts` 和 `client/src/components/WorkflowPanel.tsx`，说明平台有附件处理基础。
+  - 仍缺的范围：
+    - `client/src/components/tasks/DecisionPanel.tsx` 当前只支持选项按钮和文本输入，没有多字段动态表单与附件上传控件。
+    - `WebAigcHitlSubmissionMetadata.formData` 仅支持 `string | number | boolean | null`，未覆盖附件对象。
+    - 没有看到 `param_collection` 的多字段提交测试，也没有看到附件型参数采集测试。
+  - 结论：多字段与附件场景仍停留在契约/平台能力层，未形成节点级验证闭环，暂不勾选。

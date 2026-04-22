@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFeishuRouter } from "../routes/feishu.js";
 import { createFeishuBridgeRuntime } from "../feishu/runtime.js";
-import type { FeishuOutboundMessage } from "../feishu/bridge.js";
+import type { FeishuNotificationAuditEvent, FeishuOutboundMessage } from "../feishu/bridge.js";
 import {
   buildFeishuRelayAuthHeaders,
 } from "../feishu/relay-auth.js";
@@ -27,14 +27,17 @@ async function withServer(
 ): Promise<{
   runtime: ReturnType<typeof createFeishuBridgeRuntime>;
   send: ReturnType<typeof vi.fn>;
+  observe: ReturnType<typeof vi.fn>;
 }> {
   const send = vi.fn(async (_message: FeishuOutboundMessage) => ({
     messageId: `om_${send.mock.calls.length + 1}`,
   }));
+  const observe = vi.fn(async (_event: FeishuNotificationAuditEvent) => undefined);
   const runtime = createFeishuBridgeRuntime({
     ...runtimeOptions,
     delivery: {
       send,
+      observe,
     },
   });
   const app = express();
@@ -64,7 +67,7 @@ async function withServer(
     });
   }
 
-  return { runtime, send };
+  return { runtime, send, observe };
 }
 
 afterEach(() => {
@@ -93,7 +96,7 @@ describe("Feishu routes", () => {
       }),
     };
 
-    const { runtime, send } = await withServer(
+    const { runtime, send, observe } = await withServer(
       async baseUrl => {
         const startedAt = Date.now();
         const response = await fetch(`${baseUrl}/api/feishu/webhook`, {
@@ -130,6 +133,15 @@ describe("Feishu routes", () => {
     expect(runtime.taskStore.listTasks(10)).toHaveLength(1);
     expect(send).toHaveBeenCalled();
     expect(send.mock.calls[0]?.[0].kind).toBe("task-ack");
+    expect(observe).toHaveBeenCalled();
+    expect(observe.mock.calls[0]?.[0]).toMatchObject({
+      channelType: "feishu",
+      messageKind: "task-ack",
+      deliveryAction: "send",
+      resultStatus: "sent",
+      recipientScope: "chat",
+      targetId: "oc_456",
+    });
   });
 
   it("ignores duplicate webhook deliveries by event id", async () => {

@@ -420,6 +420,17 @@ function handleRuntimeEvent(
       }));
       break;
     }
+    case "web_aigc_runtime_event": {
+      if (state.currentWorkflowId === event.workflowId) {
+        void get().fetchWorkflowDetail(event.workflowId);
+        if (isAdvancedMode()) {
+          void get().fetchWorkflowGraphInstance(event.workflowId);
+          void get().fetchWorkflowMonitoringInstance(event.workflowId);
+          void get().fetchWorkflowMonitoringSession(event.workflowId);
+        }
+      }
+      break;
+    }
     case "heartbeat_status": {
       set(store => ({
         heartbeatStatuses: mergeHeartbeatStatus(

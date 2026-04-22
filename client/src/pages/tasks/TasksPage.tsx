@@ -20,6 +20,7 @@ import { useViewportTier, useViewportWidth } from "@/hooks/useViewportTier";
 import { useI18n } from "@/i18n";
 import { useTasksStore } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
+import type { MissionOperatorActionType } from "@shared/mission/contracts";
 
 function t(locale: string, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
@@ -134,7 +135,7 @@ export default function TasksPage({
   }
 
   async function handleSubmitOperatorAction(payload: {
-    action: "pause" | "resume" | "retry" | "mark-blocked" | "terminate";
+    action: MissionOperatorActionType;
     reason?: string;
   }) {
     if (!activeTaskId) return;

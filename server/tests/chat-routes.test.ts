@@ -3,9 +3,18 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 
+import { buildMonitoringSessionDetail } from "../core/aigc-monitoring-projection.js";
 import { createChatRouter } from "../routes/chat.js";
+import type {
+  ChatNodeMessageStore,
+  ChatNodeSessionStore,
+} from "../routes/node-adapters/chat-node-adapter.js";
 
 async function withServer(
+  deps: {
+    messageStore?: ChatNodeMessageStore;
+    sessionStore?: ChatNodeSessionStore;
+  } = {},
   handler: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const app = express();
@@ -39,6 +48,7 @@ async function withServer(
           return current;
         };
       })(),
+      ...deps,
     }),
   );
 
@@ -68,7 +78,7 @@ async function withServer(
 
 describe("POST /api/chat", () => {
   it("keeps legacy chat route working", async () => {
-    await withServer(async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -87,7 +97,7 @@ describe("POST /api/chat", () => {
 
 describe("POST /api/chat/nodes/execute", () => {
   it("executes llm nodes with normalized output", async () => {
-    await withServer(async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/chat/nodes/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -122,7 +132,7 @@ describe("POST /api/chat/nodes/execute", () => {
   });
 
   it("rejects node execution when prompt and messages are missing", async () => {
-    await withServer(async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/chat/nodes/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,6 +145,245 @@ describe("POST /api/chat/nodes/execute", () => {
       expect(response.status).toBe(400);
       const body = await response.json();
       expect(body.error).toContain("prompt or messages");
+    });
+  });
+
+  it("persists dialogue messages and session exchanges for workflow-linked execution", async () => {
+    const storedMessages: Array<{
+      workflow_id: string;
+      from_agent: string;
+      to_agent: string;
+      stage: string;
+      content: string;
+      metadata: Record<string, unknown> | null;
+    }> = [];
+    const sessionExchanges: Array<{
+      agentId: string;
+      workflowId?: string;
+      stage?: string;
+      prompt: string;
+      response: string;
+      metadata?: Record<string, unknown> | null;
+    }> = [];
+
+    await withServer(
+      {
+        messageStore: {
+          createMessage(message) {
+            storedMessages.push(message);
+            return { id: storedMessages.length, created_at: "2026-04-22T00:00:00.000Z" };
+          },
+        },
+        sessionStore: {
+          appendLLMExchange(agentId, options) {
+            sessionExchanges.push({ agentId, ...options });
+          },
+        },
+      },
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/chat/nodes/execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeType: "dialogue",
+            input: {
+              workflowId: "wf-dialogue-1",
+              sessionId: "session-1",
+              missionId: "mission-1",
+              agentId: "dialogue-agent-1",
+              stage: "dialogue_runtime",
+              prompt: "请总结今天的会话重点",
+              context: {
+                source: "operator",
+                summary: "用户刚上传了一段工单摘要",
+              },
+            },
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.nodeType).toBe("dialogue");
+        expect(body.output.content).toBe("mock:请总结今天的会话重点");
+        expect(body.output.observability).toEqual({
+          workflowId: "wf-dialogue-1",
+          sessionId: "session-1",
+          missionId: "mission-1",
+          agentId: "dialogue-agent-1",
+          stage: "dialogue_runtime",
+          persistedToWorkflow: true,
+          persistedToSession: true,
+        });
+      },
+    );
+
+    expect(storedMessages).toHaveLength(2);
+    expect(storedMessages[0]).toMatchObject({
+      workflow_id: "wf-dialogue-1",
+      from_agent: "workflow-user",
+      to_agent: "dialogue-agent-1",
+      stage: "dialogue_runtime",
+      content: "请总结今天的会话重点",
+    });
+    expect(storedMessages[1]).toMatchObject({
+      workflow_id: "wf-dialogue-1",
+      from_agent: "dialogue-agent-1",
+      to_agent: "workflow-user",
+      stage: "dialogue_runtime",
+      content: "mock:请总结今天的会话重点",
+    });
+
+    expect(sessionExchanges).toHaveLength(1);
+    expect(sessionExchanges[0]).toMatchObject({
+      agentId: "dialogue-agent-1",
+      workflowId: "wf-dialogue-1",
+      stage: "dialogue_runtime",
+      prompt: "请总结今天的会话重点",
+      response: "mock:请总结今天的会话重点",
+    });
+  });
+
+  it("surfaces dialogue citations, tool calls, and thinking in monitoring-ready metadata", async () => {
+    const storedMessages: Array<{
+      workflow_id: string;
+      from_agent: string;
+      to_agent: string;
+      stage: string;
+      content: string;
+      metadata: Record<string, unknown> | null;
+    }> = [];
+    const sessionExchanges: Array<{
+      agentId: string;
+      workflowId?: string;
+      stage?: string;
+      prompt: string;
+      response: string;
+      metadata?: Record<string, unknown> | null;
+    }> = [];
+
+    await withServer(
+      {
+        messageStore: {
+          createMessage(message) {
+            storedMessages.push(message);
+            return { id: storedMessages.length, created_at: "2026-04-22T00:00:00.000Z" };
+          },
+        },
+        sessionStore: {
+          appendLLMExchange(agentId, options) {
+            sessionExchanges.push({ agentId, ...options });
+          },
+        },
+      },
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/chat/nodes/execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeType: "dialogue",
+            input: {
+              workflowId: "wf-dialogue-2",
+              sessionId: "session-2",
+              missionId: "mission-2",
+              agentId: "dialogue-agent-2",
+              stage: "dialogue_enhanced",
+              messages: [
+                { role: "user", content: "请基于检索结果回答" },
+              ],
+              citations: ["知识库#A", "知识库#B"],
+              toolCalls: [
+                {
+                  name: "document_search",
+                  arguments: { query: "会话总结" },
+                  result: "命中 2 条文档片段",
+                },
+              ],
+              thinking: "优先引用最近一次检索结果，再补充执行建议。",
+            },
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.output.messages[0].content).toContain("Retrieved citations");
+        expect(body.output.messages[0].content).toContain("Tool results");
+        expect(body.output.observability).toMatchObject({
+          persistedToWorkflow: true,
+          persistedToSession: true,
+          citations: ["知识库#A", "知识库#B"],
+          toolCalls: [
+            {
+              name: "document_search",
+              arguments: '{\n  "query": "会话总结"\n}',
+              result: "命中 2 条文档片段",
+            },
+          ],
+          thinking: "优先引用最近一次检索结果，再补充执行建议。",
+        });
+      },
+    );
+
+    expect(storedMessages).toHaveLength(2);
+    expect(storedMessages[1]?.metadata).toMatchObject({
+      nodeType: "dialogue",
+      sessionId: "session-2",
+      missionId: "mission-2",
+      agentId: "dialogue-agent-2",
+      stage: "dialogue_enhanced",
+      thinking: "优先引用最近一次检索结果，再补充执行建议。",
+      citations: ["知识库#A", "知识库#B"],
+      toolCalls: [
+        {
+          name: "document_search",
+          arguments: '{\n  "query": "会话总结"\n}',
+          result: "命中 2 条文档片段",
+        },
+      ],
+    });
+    expect(sessionExchanges[0]?.metadata).toMatchObject(storedMessages[1]?.metadata ?? {});
+
+    const monitoringDetail = buildMonitoringSessionDetail({
+      workflow: {
+        id: "wf-dialogue-2",
+        directive: "测试对话节点监控投影",
+        status: "running",
+        current_stage: "dialogue_enhanced",
+        departments_involved: [],
+        started_at: "2026-04-22T00:00:00.000Z",
+        completed_at: null,
+        results: {
+          input: {
+            sessionId: "session-2",
+            sourceApp: "cube-pets-office",
+          },
+        },
+        created_at: "2026-04-22T00:00:00.000Z",
+      },
+      messages: storedMessages.map((message, index) => ({
+        id: index + 1,
+        workflow_id: message.workflow_id,
+        from_agent: message.from_agent,
+        to_agent: message.to_agent,
+        stage: message.stage,
+        content: message.content,
+        metadata: message.metadata,
+        created_at: `2026-04-22T00:00:0${index}.000Z`,
+      })),
+    });
+
+    expect(monitoringDetail.messages).toHaveLength(2);
+    expect(monitoringDetail.messages[1]).toMatchObject({
+      role: "assistant",
+      content: "mock:请基于检索结果回答",
+      thinking: "优先引用最近一次检索结果，再补充执行建议。",
+      citations: ["知识库#A", "知识库#B"],
+      toolCalls: [
+        {
+          name: "document_search",
+          arguments: '{\n  "query": "会话总结"\n}',
+          result: "命中 2 条文档片段",
+        },
+      ],
     });
   });
 });

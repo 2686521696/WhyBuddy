@@ -9,9 +9,16 @@
  * are silently caught and never break the main application.
  */
 
+import { createRequire } from "node:module";
+
 import { AuditEventType } from "../../shared/audit/contracts.js";
 import type { AuditCollector } from "./audit-collector.js";
 import { auditCollector } from "./audit-collector.js";
+import { MissionRuntime } from "../tasks/mission-runtime.js";
+
+const require = createRequire(import.meta.url);
+const MISSION_DECISION_HOOKED = Symbol.for("cube-pets.audit.missionDecisionHooked");
+let missionDecisionAuditCollector: AuditCollector | null = null;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -26,6 +33,7 @@ export function installAuditHooks(deps: {
 
   installWorkflowHooks(collector);
   installMissionHooks(collector);
+  installMissionDecisionHooks(collector);
   installOrganizationHooks(collector);
   installMessageBusHooks(collector);
   installMemoryHooks(collector);
@@ -214,7 +222,145 @@ function installMissionHooks(collector: AuditCollector): void {
   }
 }
 
-// ─── 14.3 Dynamic Organization Integration ─────────────────────────────────
+// ─── 14.3 Mission Decision Integration ─────────────────────────────────────
+
+/**
+ * Hook into MissionRuntime decision submission broadcasts.
+ * - emitDecisionSubmitted → DECISION_MADE
+ */
+function installMissionDecisionHooks(collector: AuditCollector): void {
+  missionDecisionAuditCollector = collector;
+
+  try {
+    const runtimeProto = MissionRuntime.prototype as unknown as Record<string, unknown> & {
+      [MISSION_DECISION_HOOKED]?: boolean;
+    };
+    const originalEmitDecisionSubmitted = runtimeProto["emitDecisionSubmitted"] as
+      | ((
+          task: {
+            id: string;
+            projection?: {
+              workflowId?: string;
+              instanceId?: string;
+              replayId?: string;
+            };
+          },
+          historyEntry: {
+            decisionId: string;
+            submittedBy?: string;
+            sessionId?: string;
+            nodeType?: string;
+            interactionId?: string;
+            branchKey?: string;
+          },
+          resolved: {
+            optionId?: string;
+            optionLabel?: string;
+            freeText?: string;
+            metadata?: {
+              nodeId?: string;
+              sessionId?: string;
+              interactionId?: string;
+              branchKey?: string;
+              nodeType?: string;
+            };
+          },
+        ) => void)
+      | undefined;
+
+    if (typeof originalEmitDecisionSubmitted !== "function") return;
+    if (runtimeProto[MISSION_DECISION_HOOKED]) return;
+
+    runtimeProto["emitDecisionSubmitted"] = function (
+      this: unknown,
+      task: {
+        id: string;
+        projection?: {
+          workflowId?: string;
+          instanceId?: string;
+          replayId?: string;
+        };
+      },
+      historyEntry: {
+        decisionId: string;
+        submittedBy?: string;
+        sessionId?: string;
+        nodeType?: string;
+        interactionId?: string;
+        branchKey?: string;
+      },
+      resolved: {
+        optionId?: string;
+        optionLabel?: string;
+        freeText?: string;
+        metadata?: {
+          nodeId?: string;
+          sessionId?: string;
+          interactionId?: string;
+          branchKey?: string;
+          nodeType?: string;
+        };
+      },
+    ): void {
+      originalEmitDecisionSubmitted.call(this, task, historyEntry, resolved);
+
+      try {
+        const collector = missionDecisionAuditCollector;
+        if (!collector) return;
+
+        const workflowId = task.projection?.workflowId;
+        const instanceId =
+          task.projection?.instanceId ||
+          task.projection?.replayId ||
+          workflowId;
+        const submittedBy = historyEntry.submittedBy?.trim() || "unknown";
+        const sessionId =
+          historyEntry.sessionId ||
+          resolved.metadata?.sessionId ||
+          task.id;
+        const nodeType = historyEntry.nodeType || resolved.metadata?.nodeType;
+        const nodeId = resolved.metadata?.nodeId;
+
+        collector.record({
+          eventType: AuditEventType.DECISION_MADE,
+          actor: { type: "user", id: submittedBy },
+          action: `Mission decision submitted: ${historyEntry.decisionId}`,
+          resource: {
+            type: "mission",
+            id: task.id,
+            name: nodeId || nodeType || "decision",
+          },
+          result: "success",
+          context: { sessionId },
+          metadata: {
+            eventKey: "human.decision_submitted",
+            workflowId,
+            instanceId,
+            missionId: task.id,
+            decisionId: historyEntry.decisionId,
+            nodeId,
+            nodeType,
+            submittedBy,
+            optionId: resolved.optionId,
+            optionLabel: resolved.optionLabel,
+            freeText: resolved.freeText,
+            interactionId:
+              historyEntry.interactionId || resolved.metadata?.interactionId,
+            branchKey:
+              historyEntry.branchKey || resolved.metadata?.branchKey,
+          },
+        });
+      } catch {
+        // Audit hook must never break decision submission
+      }
+    };
+    runtimeProto[MISSION_DECISION_HOOKED] = true;
+  } catch {
+    // Module not available — skip
+  }
+}
+
+// ─── 14.4 Dynamic Organization Integration ─────────────────────────────────
 
 /**
  * Hook into dynamic organization generation and permission assignment.

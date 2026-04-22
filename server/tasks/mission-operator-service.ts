@@ -86,7 +86,7 @@ function getAvailableOperatorActions(
   const operatorState = getOperatorState(task);
 
   if (task.status === 'failed' || task.status === 'cancelled') {
-    return ['retry'];
+    return task.status === 'failed' ? ['retry', 'escalate'] : ['retry'];
   }
 
   if (operatorState === 'terminating') {
@@ -256,6 +256,10 @@ export class MissionOperatorService {
       return this.retryMission(task, requestedBy);
     }
 
+    if (input.action === 'escalate') {
+      return this.escalateMission(task, requestedBy, reason);
+    }
+
     return this.terminateMission(task, requestedBy, reason);
   }
 
@@ -379,6 +383,42 @@ export class MissionOperatorService {
     const updated = this.runtime.updateMission(task.id, current => {
       resetMissionForRetry(current, requestedBy);
       actionRecord = current.operatorActions?.at(-1) ?? null;
+    });
+
+    return {
+      task: updated!,
+      action: actionRecord!,
+    };
+  }
+
+  private async escalateMission(
+    task: MissionRecord,
+    requestedBy?: string,
+    reason?: string,
+  ): Promise<MissionOperatorActionResult> {
+    let actionRecord: MissionOperatorActionRecord | null = null;
+    const updated = this.runtime.updateMission(task.id, current => {
+      current.operatorState = 'blocked';
+      current.blocker = {
+        reason:
+          reason ||
+          'Mission failure escalated for human follow-up before any retry.',
+        createdAt: Date.now(),
+        createdBy: requestedBy,
+      };
+      appendMissionLog(current, {
+        message:
+          reason ||
+          'Mission failure escalated to human follow-up before retry.',
+        level: 'warn',
+        source: 'user',
+      });
+      actionRecord = appendOperatorAction(current, {
+        action: 'escalate',
+        requestedBy,
+        reason,
+        detail: 'Mission failure escalated into blocked human follow-up.',
+      });
     });
 
     return {

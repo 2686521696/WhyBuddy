@@ -188,4 +188,21 @@ describe("OperatorActionBar", () => {
     expect(operatorActionRequiresConfirmation("terminate")).toBe(true);
     expect(operatorActionRequiresConfirmation("retry")).toBe(false);
   });
+
+  it("shows escalate for failed missions", () => {
+    const markup = renderBar(
+      makeDetail({
+        status: "failed",
+        workflowStatus: "failed",
+        latestOperatorAction: makeOperatorAction({
+          action: "retry",
+          reason: "Previous retry finished with the same upload error.",
+        }),
+      })
+    );
+
+    expect(markup).toContain("升级人工处理");
+    expect(markup).toContain("重试");
+    expect(markup).not.toContain("暂停");
+  });
 });

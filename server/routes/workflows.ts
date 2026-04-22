@@ -427,6 +427,73 @@ router.post("/:id/runtime/resume", async (req, res) => {
   }
 });
 
+router.post("/:id/runtime/terminate", (req, res) => {
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) {
+    return res.status(404).json({ error: "Workflow not found" });
+  }
+
+  try {
+    const state = webAigcRuntimeEngine.terminate(req.params.id, {
+      requestedBy:
+        typeof req.body?.requestedBy === "string" ? req.body.requestedBy : undefined,
+      reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+    });
+    res.json({ state });
+  } catch (err: any) {
+    if (typeof err.message === "string" && err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(409).json({ error: err.message });
+  }
+});
+
+router.post("/:id/runtime/retry", async (req, res) => {
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) {
+    return res.status(404).json({ error: "Workflow not found" });
+  }
+
+  try {
+    const state = await webAigcRuntimeEngine.retry(req.params.id, {
+      requestedBy:
+        typeof req.body?.requestedBy === "string" ? req.body.requestedBy : undefined,
+      reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+      maxSteps:
+        typeof req.body?.maxSteps === "number" && Number.isFinite(req.body.maxSteps)
+          ? req.body.maxSteps
+          : undefined,
+    });
+    res.json({ state });
+  } catch (err: any) {
+    if (typeof err.message === "string" && err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(409).json({ error: err.message });
+  }
+});
+
+router.post("/:id/runtime/escalate", (req, res) => {
+  const workflow = db.getWorkflow(req.params.id);
+  if (!workflow) {
+    return res.status(404).json({ error: "Workflow not found" });
+  }
+
+  try {
+    const state = webAigcRuntimeEngine.escalate(req.params.id, {
+      requestedBy:
+        typeof req.body?.requestedBy === "string" ? req.body.requestedBy : undefined,
+      reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+    });
+    res.json({ state });
+  } catch (err: any) {
+    if (typeof err.message === "string" && err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(409).json({ error: err.message });
+  }
+});
+
 // GET /api/workflows/:id/nodes/:nodeId/skills — 查询节点的 Skill 列表
 router.get("/:id/nodes/:nodeId/skills", (req, res) => {
   const wf = db.getWorkflow(req.params.id);

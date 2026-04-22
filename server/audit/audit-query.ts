@@ -12,6 +12,7 @@ import type {
   AuditQueryResult,
   PageOptions,
 } from "../../shared/audit/contracts.js";
+import type { WebAigcRelationIndexQuery } from "../../shared/web-aigc-observability.js";
 import {
   AuditEventType,
   DEFAULT_EVENT_TYPE_REGISTRY,
@@ -167,6 +168,30 @@ export class AuditQuery {
     return filtered.sort((a, b) => a.event.timestamp - b.event.timestamp);
   }
 
+  getWebAigcRelatedEntries(query: WebAigcRelationIndexQuery): AuditLogEntry[] {
+    const normalized = normalizeRelationIndexQuery(query);
+    const queryKeys = Object.keys(normalized);
+
+    if (queryKeys.length === 0) {
+      this.recordQueryAudit("getWebAigcRelatedEntries", { query, matched: 0 });
+      return [];
+    }
+
+    const allEntries = this.getAllEntries();
+    const filtered = allEntries.filter(entry =>
+      Object.entries(normalized).every(([key, value]) =>
+        matchesRelationIndex(entry, key, value),
+      ),
+    );
+
+    this.recordQueryAudit("getWebAigcRelatedEntries", {
+      query: normalized,
+      matched: filtered.length,
+    });
+
+    return filtered.sort((a, b) => a.event.timestamp - b.event.timestamp);
+  }
+
   // ─── 内部工具 ────────────────────────────────────────────────────────────
 
   /** 获取链中所有条目 */
@@ -283,3 +308,79 @@ export class AuditQuery {
 // ─── 导出单例 ──────────────────────────────────────────────────────────────
 
 export const auditQuery = new AuditQuery(auditChain, auditCollector);
+
+function normalizeRelationIndexQuery(
+  query: WebAigcRelationIndexQuery,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(query).flatMap(([key, value]) => {
+      if (typeof value !== "string") {
+        return [];
+      }
+      const normalized = value.trim();
+      return normalized ? [[key, normalized]] : [];
+    }),
+  );
+}
+
+function matchesRelationIndex(
+  entry: AuditLogEntry,
+  key: string,
+  expected: string,
+): boolean {
+  const event = entry.event;
+  const metadata = event.metadata;
+  const context = event.context;
+  const resource = event.resource;
+
+  switch (key) {
+    case "auditEntryId":
+      return entry.entryId === expected;
+    case "lineageId":
+      return event.lineageId === expected || resource.id === expected;
+    case "workflowId":
+    case "missionId":
+    case "instanceId":
+    case "sessionId":
+    case "replayId":
+    case "artifactId":
+    case "nodeId":
+    case "edgeId":
+    case "decisionId":
+      return readRelationCandidates(metadata, context, resource, key).includes(expected);
+    default:
+      return false;
+  }
+}
+
+function readRelationCandidates(
+  metadata: Record<string, unknown> | undefined,
+  context: AuditLogEntry["event"]["context"],
+  resource: AuditLogEntry["event"]["resource"],
+  key: string,
+): string[] {
+  const values: string[] = [];
+
+  const directMetadata = metadata?.[key];
+  if (typeof directMetadata === "string" && directMetadata.trim()) {
+    values.push(directMetadata.trim());
+  }
+
+  const links = metadata?.links;
+  if (typeof links === "object" && links !== null) {
+    const linkedValue = (links as Record<string, unknown>)[key];
+    if (typeof linkedValue === "string" && linkedValue.trim()) {
+      values.push(linkedValue.trim());
+    }
+  }
+
+  if (key === "sessionId" && typeof context.sessionId === "string" && context.sessionId.trim()) {
+    values.push(context.sessionId.trim());
+  }
+
+  if ((key === "artifactId" || key === "nodeId" || key === "edgeId") && resource.id.trim()) {
+    values.push(resource.id.trim());
+  }
+
+  return values;
+}

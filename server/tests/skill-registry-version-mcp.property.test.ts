@@ -13,6 +13,11 @@ import fc from 'fast-check';
 
 import type { SkillDefinition, SkillRecord, SkillAuditLog } from '../../shared/skill-contracts.js';
 import type { WorkflowMcpBinding } from '../../shared/organization-schema.js';
+import {
+  buildMcpResource,
+  McpChecker,
+  parseMcpResource,
+} from '../permission/checkers/mcp-checker.js';
 
 // ---------------------------------------------------------------------------
 // Mock dynamic-organization — we control which MCP IDs are "valid"
@@ -225,6 +230,85 @@ describe('Feature: plugin-skill-system, Property 13: MCP graceful degradation', 
         const bindings = registry.resolveMcpForSkill(skill, 'agent-1', 'wf-1');
         expect(bindings).toHaveLength(0);
       }),
+      { numRuns: 100 },
+    );
+  });
+});
+
+describe('Feature: plugin-skill-system, Property 13B: MCP resource contract', () => {
+  it('buildMcpResource and parseMcpResource preserve server, tool, and parameters', () => {
+    fc.assert(
+      fc.property(
+        arbMcpId,
+        arbMcpId,
+        fc.dictionary(
+          fc.string({ minLength: 1, maxLength: 8 }).map((s) => s.replace(/[^a-z0-9_]/gi, 'k').toLowerCase() || 'k'),
+          fc.string({ minLength: 0, maxLength: 12 }),
+          { maxKeys: 4 },
+        ),
+        (serverId, toolName, parameters) => {
+          const resource = buildMcpResource({ serverId, toolName, parameters });
+          const parsed = parseMcpResource(resource);
+
+          expect(parsed.format).toBe('canonical');
+          expect(parsed.serverId).toBe(serverId);
+          expect(parsed.toolName).toBe(toolName);
+          expect(parsed.operation).toBe(toolName);
+          expect(parsed.parameters).toEqual(
+            Object.fromEntries(
+              Object.entries(parameters)
+                .filter(([, value]) => value !== undefined && value !== null)
+                .map(([key, value]) => [key, String(value)]),
+            ),
+          );
+          expect(parsed.endpointCandidates).toContain(`${serverId}/${toolName}`);
+          expect(parsed.endpointCandidates).toContain(`mcp://${serverId}/${toolName}`);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('McpChecker enforces endpoint, method, and parameter constraints on canonical MCP resources', () => {
+    fc.assert(
+      fc.property(
+        arbMcpId,
+        arbMcpId,
+        fc.string({ minLength: 1, maxLength: 6 }).map((s) => s.replace(/[^0-9]/g, '7') || '7'),
+        (serverId, toolName, userId) => {
+          const checker = new McpChecker();
+          const resource = buildMcpResource({
+            serverId,
+            toolName,
+            parameters: {
+              userId,
+              mode: 'strict',
+            },
+          });
+
+          expect(checker.checkConstraints('call', resource, {
+            endpoints: [`${serverId}/${toolName}`],
+            methods: [toolName],
+            parameterConstraints: {
+              userId: '^[0-9]+$',
+            },
+          })).toBe(true);
+
+          expect(checker.checkConstraints('call', resource, {
+            endpoints: ['other/tool'],
+          })).toBe(false);
+
+          expect(checker.checkConstraints('call', resource, {
+            methods: ['otherTool'],
+          })).toBe(false);
+
+          expect(checker.checkConstraints('call', resource, {
+            parameterConstraints: {
+              userId: '^[a-z]+$',
+            },
+          })).toBe(false);
+        },
+      ),
       { numRuns: 100 },
     );
   });

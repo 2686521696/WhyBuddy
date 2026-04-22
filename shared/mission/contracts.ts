@@ -35,6 +35,7 @@ export const MISSION_OPERATOR_ACTION_TYPES = [
   "pause",
   "resume",
   "retry",
+  "escalate",
   "mark-blocked",
   "terminate",
 ] as const;
@@ -154,6 +155,8 @@ export interface MissionDecision {
   templateId?: string;
   payload?: Record<string, unknown>;
   decisionId?: string;
+  timeoutMs?: number;
+  timeoutAt?: number;
 }
 
 export interface MissionDecisionSubmission {
@@ -161,6 +164,7 @@ export interface MissionDecisionSubmission {
   freeText?: string;
   detail?: string;
   progress?: number;
+  submittedBy?: string;
   metadata?: WebAigcHitlSubmissionMetadata;
 }
 
@@ -319,6 +323,7 @@ export interface MissionRecord {
   autonomy?: import("../autonomy-types.js").AutonomyData;
   waitingFor?: string;
   decision?: MissionDecision;
+  waitingTimedOutAt?: number;
   decisionHistory?: DecisionHistoryEntry[];
   operatorState?: MissionOperatorState;
   operatorActions?: MissionOperatorActionRecord[];

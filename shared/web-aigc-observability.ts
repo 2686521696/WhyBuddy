@@ -24,6 +24,20 @@ export interface WebAigcRelationIndexDefinition {
   objectTypes: string[];
 }
 
+export interface WebAigcRelationIndexQuery {
+  workflowId?: string;
+  missionId?: string;
+  instanceId?: string;
+  sessionId?: string;
+  replayId?: string;
+  auditEntryId?: string;
+  lineageId?: string;
+  artifactId?: string;
+  nodeId?: string;
+  edgeId?: string;
+  decisionId?: string;
+}
+
 export const WEB_AIGC_OBSERVABILITY_EVENT_CATALOG: WebAigcObservabilityEventDefinition[] = [
   {
     eventKey: "node.started",
@@ -189,6 +203,40 @@ export const WEB_AIGC_OBSERVABILITY_EVENT_CATALOG: WebAigcObservabilityEventDefi
     specRefs: [
       "web-aigc-platform-observability-audit#requirement-3",
       "web-aigc-platform-security-governance#requirement-4",
+    ],
+  },
+  {
+    eventKey: "instance.retry_requested",
+    stage: "instance",
+    description: "A failed workflow instance requested an explicit runtime retry.",
+    sinks: ["audit", "replay"],
+    requiredFields: [
+      "workflowId",
+      "instanceId",
+      "nodeId",
+      "timestamp",
+      "metadata.requestedBy",
+    ],
+    specRefs: [
+      "web-aigc-platform-runtime-engine#requirement-2",
+      "web-aigc-platform-observability-audit#requirement-3",
+    ],
+  },
+  {
+    eventKey: "instance.escalated",
+    stage: "instance",
+    description: "A workflow instance escalated into explicit human review.",
+    sinks: ["audit", "replay"],
+    requiredFields: [
+      "workflowId",
+      "instanceId",
+      "nodeId",
+      "waitingFor",
+      "metadata.requestedBy",
+    ],
+    specRefs: [
+      "web-aigc-platform-runtime-engine#requirement-4",
+      "web-aigc-platform-observability-audit#requirement-3",
     ],
   },
   {
