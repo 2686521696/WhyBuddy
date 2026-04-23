@@ -244,6 +244,13 @@
 
 - `1 - 2` 条工作流
 
+2026-04-22 主仓校准：
+
+- `start` 已经具备入口输入归一、初始快照、mission/projection 传递闭环，后续以事件语义细化为主。
+- `end` 已经具备 runtime 终点适配器、`final_report` 收敛与 `workflow_complete` 事件，不再属于首轮“从 0 到 1”节点。
+- `condition` 已具备 runtime 内置适配器与异常表达式测试，后续以 replay / observability 细化为主。
+- `loop` 仍只有边类型与 observability 目录预留，没有节点级执行闭环，应保留为流程控制组里最优先实现的空白项。
+
 ### 能力簇 B：人工输入组
 
 - `user_input`
@@ -262,6 +269,12 @@
 代码并发建议：
 
 - `1 - 2` 条工作流
+
+2026-04-22 主仓校准：
+
+- `selection / confirm_judge` 已经属于 runtime-native HITL 节点，后续重点是前端投影与治理补强，不是底座补洞。
+- `user_input` 已落在通用 HITL 的 waiting / resume / cancel / timeout 链路上，但还不是 `WorkflowRuntimeEngine` 内置原生节点适配器。
+- `param_collection` 已具备 waiting / resume 与专用审计摘要事件，仍缺多字段表单校验、动态表单渲染与附件型采集闭环。
 
 ### 能力簇 C：对话问答组
 
@@ -399,6 +412,11 @@
 - 代码：`4 - 6`
 
 ## 第二波：控制流与结构化中台节点
+
+2026-04-22 校准说明：
+
+- 这一波里 `start / end / condition` 在主仓已具备最小闭环，更适合作为“口径收紧、测试补强、事件细化”项推进。
+- `loop` 仍是控制流节点里最明显的实现空白，应继续保留在第二波的优先实现位。
 
 建议包含：
 

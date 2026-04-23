@@ -1,146 +1,165 @@
 # Web-AIGC 第二阶段集成计划
 
-更新时间：2026-04-22
+更新时间：2026-04-23
 
 ## 文档目标
 
-本文件用于把 `web-aigc` 迁移工作从“10 条功能线首刀完成”推进到“主仓库主线集成、冲突收口、批量验证”的第二阶段。
+本文件用于明确 `web-aigc` 的第二阶段推进口径：
 
-这不是新的规划文档，而是基于当前真实代码落盘、主仓库已有兼容接线、以及后台智能体只读盘点结果形成的执行文档。
+- 第一阶段已经完成 `58 / 58` 份 specs 的定义、实现与任务收口
+- 第二阶段不再以“继续完成 specs”为目标
+- 第二阶段的目标改为“基于既有 specs 基线，继续推进主仓主线增强、治理补线、运行时归并和前端闭环”
 
-## 当前真实状态
+换句话说，这份文档管理的是主线增强计划，不再是 spec 完成度计划。
 
-- `10 / 10` 功能线已经完成第一段薄切片。
-- `4 / 10` 能力线已经并入主仓并明确跑通自动化验证。
-- `2 / 3` 平台底座薄切片已经并入主仓并明确跑通自动化验证。
-- 主仓库已经提前吸收了一部分兼容能力，不再是“完全空白等待合并”状态。
-- 当前主仓库已落盘的先行集成主要包括：
-  - Office / History 面板里的 `web-aigc` 兼容监控视图
-  - `workflow-store` 对监控实例、监控会话、终止动作的兼容接线
-  - `auto-agent`、`risk-actions` 相关的一部分服务端兼容改动
-  - `platform-a` 的统一 workflow domain / runtime engine / graph status 映射
-  - `platform-b` 的 mission projection links 与 task projection/session 只读接口
-  - `multimodal-output` 的 OCR provider 与 vision output 下载能力
-  - `content-processing` 的 Web-AIGC RAG 兼容搜索 adapter
-  - `controlflow` 的图投影 adapter 与 `control_flow` 边类型兼容
-- 当前主瓶颈已经从“有没有人做”转成“如何把 10 条分线安全并回主线，并在依赖环境不一致的情况下保持可验证”。
+## 当前基线
+
+截至本版，`web-aigc` 已经具备下面这条明确的基线：
+
+- `58 / 58` 份 specs 已全部完成
+- `238 / 238` 个顶层任务已全部勾选完成
+- 一批关键节点、路由和 runtime extra adapters 已完成主线接线
+- 主仓库已经吸收了一部分平台底座、监控兼容、RAG 兼容、多模态输出、controlflow 和任务投影能力
+
+当前主仓库已落盘并可作为第二阶段前置基线的能力主要包括：
+
+- Office / History 面板中的 `web-aigc` 兼容监控视图
+- `workflow-store` 对监控实例、监控会话、终止动作的兼容接线
+- `auto-agent`、`risk-actions` 的部分服务端兼容改动
+- `platform-a` 的统一 `workflow-domain / runtime-engine / graph-status` 语义
+- `platform-b` 的 mission projection、task projection、session 只读接口
+- `dialogue` 运行时已支持注入式 `documentSearch` 执行器，内建 dialogue adapter 可直接在 workflow runtime 中触发检索增强
+- `mcp` 已完成 runtime 全局注册，`mcp` 节点可以通过共享 `web-aigc` adapter registry 进入主线运行时执行
+- `multimodal-output` 的 OCR provider 与 vision output 下载能力
+- `content-processing` 的 Web-AIGC RAG 兼容搜索 adapter
+- `controlflow` 的图投影 adapter 与 `control_flow` 边类型兼容
+
+因此，第二阶段的真实问题已经不是“spec 是否写完”，而是“如何把这些既有能力持续收口到 `main` 主线，并增强成稳定的可验证闭环”。
+
+## 第二阶段定义
+
+第二阶段统一按“主线增强”来理解，重点关注下面四类工作：
+
+1. 治理与门禁补线
+2. 工具与外部调用主干收口
+3. 运行时与控制流归并
+4. HITL、监控面板与 Office 的前后端闭环
+
+明确排除项：
+
+- 不再以“新增多少份 spec”作为阶段目标
+- 不再以“spec 勾选数继续增长”作为进度判断标准
+- 不再把“开多少 worktree”当作推进结果本身
 
 ## 第二阶段原则
 
-### 1. 不按分支创建时间合并，按冲突半径和依赖顺序合并
+### 1. 以 `main` 主线为中心推进
 
-优先把低冲突、边界清晰、能给后续主干减压的切片并回主仓库，再处理 mission / workflow / governance 这三条真正的平台主干。
+优先把可验证能力直接收口到 `main`，减少长期分支和多 worktree 残差继续累积。
 
-### 2. 先收共享语义，再收热路由
+### 2. 先收共享语义，再收热文件
 
 像 `shared/*` 契约、状态映射、轻量 adapter 接口，优先于 `server/index.ts`、`server/routes/workflows.ts`、`server/routes/tasks.ts` 这种高热点文件。
 
-### 3. 已在主仓库出现的能力，采用“对账式收口”
+### 3. 已进主仓的能力按“对账式补差”处理
 
-对 `tools-and-agents`、`risk-actions`、监控兼容这类已经部分进入主仓库的能力，不再机械地整分支搬运，而是按主仓库现状对账补差。
+对 `tools-and-agents`、`risk-actions`、监控兼容这类已经部分进入主仓库的能力，不再机械整段搬运，而是按主仓现状对账补差。
 
-### 4. 高风险能力后置
+### 4. 高风险能力后置并加强验证
 
-涉及 `server/index.ts`、RAG 初始化、权限治理、审计链、共享 mission contract 的线，统一放到后半程，并要求更严格的验证。
+涉及 `server/index.ts`、RAG 初始化、权限治理、审计链、共享 mission contract 的改动，统一后置，并要求更严格的定向验证。
 
-## 后台只读结论摘要
+### 5. 第二阶段只看主线增强，不再看 spec 完成度
 
-### 第一组：平台底座
+第二阶段的核心问题是：
 
-- `platform-b` 比 `platform-a` 更接近底座，应优先于 `platform-a` 做 mission / session / projection 收口。
-- `platform-a` 当前更适合先吸收“共享运行时语义与轻量 runtime 骨架”，再晚一点处理 `workflows` 路由热区。
-- `platform-c` 已经成形，但因为触达 `server/index.ts`、`shared/audit/contracts.ts`、`shared/permission/contracts.ts`，不适合早期直接硬并。
+- 哪些能力真正并入 `main`
+- 哪些热区已经统一到同一套 runtime 契约
+- 哪些治理、权限、审计、回放链路已经补齐
 
-### 第二组：低冲突能力线
+而不是：
 
-- `multimodal-output` 是当前唯一明确跑通过 `22` 个测试和 `node --run check` 的分线，优先级最高。
-- `content-processing` 改动集中在 RAG 兼容搜索层，适合作为早期并回主线的能力线。
-- `controlflow` 变更面相对集中，适合作为中早期并线对象。
+- 还要不要再新增 specs
+- 还有没有新的 checklist 可以继续勾选
 
-补充说明：
+## 当前已完成的前置收口
 
-- 上面三条低冲突能力线已经在主仓完成首轮集成与定向验证，下一步重点从“是否并入”切换为“如何与平台主干继续收口”。
+下面这些能力已经不再属于“待完成 spec”，而是第二阶段的已知基线：
 
-### 第三组：中高冲突能力线
+- `dialogue`
+  - 已补上 runtime injected `documentSearch`，`dialogue` 节点可在内建 runtime adapter 中直接消费 runtime 注入的检索执行器，并把 `citations / toolCalls` 投影回输出
+- `mcp`
+  - 已补上 runtime global registration，`registerWebAigcRuntimeExtraAdapters(...)` 可把 `mcp` 节点接入共享全局适配器注册表，不再只停留在独立路由入口
+- `multimodal-output`
+  - 已并入主仓，`vision-routes / ocr-provider / vision-output` 定向验证已通过
+- `content-processing`
+  - 已并入主仓，`rag-web-aigc-routes` 定向验证已通过
+- `controlflow`
+  - 已并入主仓，`workflow-graph-projection` 定向验证已通过
+- `platform-b`
+  - 已完成 mission / session / projection 链路底座收口与验证
+- `platform-a`
+  - 已完成统一 runtime / domain 语义薄切片，更高冲突热区留待第二阶段继续归并
 
-- `tools-and-agents` 方向明确，但命中 `server/index.ts`、`server/routes/a2a.ts`、`server/routes/skills.ts`、`server/routes/guest-agents.ts`，适合做主仓库对账式收口。
-- `hitl-session` 横跨 `shared + client + server`，功能闭环强，但冲突半径较大，应放到平台主干之后。
-- `dialogue-qa` 直接命中 `server/routes/chat.ts` 和 `server/routes/knowledge.ts`，适合放在较后阶段。
-- `risk-actions` 触达 RAG 初始化、权限检查、审计挂接和 `server/index.ts`，属于最后一批高风险并线对象。
+这几块内容从现在开始不再归类为“spec 是否完成”，而归类为“主线基线已经具备，后续继续增强”。
 
-## 推荐集成顺序
+## 第二阶段批次
 
-### Batch 0：主仓库对账与共享层预收口
+### 批次 A：治理与门禁补齐
 
-目标：先把能独立成立、又能降低后续冲突的共享层吸收入主仓库。
+目标是先把高风险能力依赖的治理底座补完整，再放开后续热区接入。
 
-- `shared workflow-domain` 状态映射与统一语义
-- `workflow graph projection` 对共享状态映射的复用
-- 主仓库已存在的监控兼容、`auto-agent`、`risk-actions` 改动对账
+- 收口 `platform-c` 中 `audit / permissions / lineage / replay` 的主仓实现与测试
+- 对齐 `server/routes/*` 中与治理能力相关的挂载入口
+- 统一高风险动作的事件命名、审计字段和拒绝原因结构
 
-说明：
-- 这一批不追求“功能面最大”，追求“后面所有热文件少打一遍架”。
+完成标准：
 
-### Batch 1：低冲突、已证明成形的能力线
+- 高风险节点接入前，已有统一 permission check 与 audit trail
+- 治理链路不再依赖分散的临时兼容逻辑
 
-建议顺序：
+### 批次 B：工具与外部调用主干
 
-1. `multimodal-output`
-2. `content-processing`
-3. `controlflow`
+目标是把 `tools-and-agents` 收拢成可控主干，而不是继续分散在多个适配层中。
 
-原因：
-- 这三条线对主仓库的侵入面相对可控。
-- 其中 `multimodal-output` 验证最完整，可以作为第二阶段的第一条正式合流线。
+- 对账 `a2a / auto_agent / internal_api / guest-agents / skills`
+- 明确工具调用的输入输出契约、错误结构和宿主能力边界
+- 统一消息通知、内部 API、外部代理调用的治理钩子
 
-当前状态：
+完成标准：
 
-- `multimodal-output`：已并入主仓，`vision-routes / ocr-provider / vision-output` 测试已通过，`node --run check` 已通过。
-- `content-processing`：已并入主仓，`rag-web-aigc-routes` 测试已通过，`node --run check` 已通过。
-- `controlflow`：已并入主仓，`workflow-graph-projection` 定向测试已通过，`node --run check` 已通过。
+- 工具调用链路能挂到统一 runtime 和治理链路下
+- 不再存在多套平行但口径不一致的工具执行入口
 
-### Batch 2：平台主干收口
+### 批次 C：运行时与控制流归并
 
-建议顺序：
+目标是把 `platform-a` 与 `controlflow` 热区收回统一 runtime 语义中，减少后续节点接入时反复改内核。
 
-1. `platform-b`
-2. `platform-a`
-3. `platform-c`
+- 统一 `workflow-runtime-engine / workflow-graph-projection / workflow-domain`
+- 补齐 `checkpoint / resume / transition / branch / loop` 的主仓回归
+- 对齐控制流节点在 graph execution record 中的状态表达
 
-原因：
-- `platform-b` 先把 mission / session / projection links 稳住。
-- `platform-a` 再把 runtime definition / runtime state / runtime run/resume 接到稳定的投影结构上。
-- `platform-c` 最后把 governance / audit 作为横切能力并进来。
+完成标准：
 
-当前状态：
+- 至少一条带条件分支和恢复能力的图链路可稳定回放
+- 运行时与图投影不再出现双轨语义
 
-- `platform-b`：已并入主仓底座薄切片，`mission-store / mission-routes / workflows-routes / workflow-runtime-engine / workflow-graph-projection` 相关回归已通过，`node --run check` 已通过。
-- `platform-a`：已并入主仓底座薄切片，统一 runtime/domain 语义已生效，更高冲突热区留待后续收口。
-- `platform-c`：仍待正式主仓收口，建议继续维持后置。
+### 批次 D：HITL 与 Office 面板闭环
 
-### Batch 3：交互与节点入口能力
+目标是把前端交互层和主仓 runtime 投影打通，形成可演示闭环。
 
-建议顺序：
+- 回收 `DecisionPanel / DecisionHistory / tasks-store / mission-client` 差异
+- 统一 Office 面板、监控面板、任务面板的 session / projection 来源
+- 校验人工确认、恢复执行、状态刷新在前端链路中的一致性
 
-1. `hitl-session`
-2. `dialogue-qa`
-3. `tools-and-agents`
+完成标准：
 
-说明：
-- `tools-and-agents` 虽然功能价值高，但当前主仓库已经有部分先行接线，应以“对账补差”方式处理，不建议简单整分支搬运。
-
-### Batch 4：高风险动作收尾
-
-建议顺序：
-
-1. `risk-actions`
-
-说明：
-- 该线必须建立在 `platform-c` 的治理审计能力和主仓库当前 RAG 启动路径已经稳定的前提下。
+- HITL 决策链路可从界面发起、回写、恢复
+- 监控面板与 Office 面板看到的是同一套主线状态
 
 ## 冲突热点
 
-以下文件是第二阶段最容易出现人工冲突的热点，需要提前标记 ownership：
+以下文件仍然是第二阶段最容易出现人工冲突的热点，需要明确 ownership 与改动顺序：
 
 - `server/index.ts`
 - `server/routes/workflows.ts`
@@ -192,7 +211,14 @@
 
 当前结论：
 
-- 已通过。当前主仓已经覆盖 mission projection links、task projection/session 路由、workflow runtime 与相关图投影回归。
+- 已通过。当前主仓已经覆盖 mission projection、task projection、session 路由、workflow runtime 与图投影回归。
+- 本轮新增的两条主线增强也已经有明确证据：
+  - `dialogue runtime injected documentSearch`
+    - `server/tests/workflow-runtime-engine.test.ts`
+    - 用例：`lets the runtime built-in dialogue adapter use an injected documentSearch executor`
+  - `mcp runtime global registration`
+    - `server/tests/workflow-runtime-engine.test.ts`
+    - 用例：`can register mcp runtime execution through the shared global adapter registry`
 
 ### 验证批次 D：治理与高风险动作
 
@@ -202,51 +228,22 @@
 - `server/tests/web-aigc-risk-actions-routes.test.ts`
 - `server/tests/vector-insert-adapter.test.ts`
 
-## Ready / Blocked 判定
+## 当前执行决策
 
-### 可优先集成
+当前执行决策统一调整为：
 
-- `multimodal-output`
-- `content-processing`
-- `controlflow`
-
-当前状态：
-
-- 这三条已经完成主仓集成，后续不再作为“待接入项”，而是作为后续平台主干收口时的已落地依赖。
-
-### 需要主仓库对账后集成
-
-- `tools-and-agents`
-- `platform-a`
-
-### 需要主干先稳定后集成
-
-- `platform-c`
-- `hitl-session`
-- `dialogue-qa`
-- `risk-actions`
-
-## 本轮执行决策
-
-本轮不再继续增加新的 worktree 或新的 spec 文档，而是进入以下动作：
-
-1. 更新第二阶段中文集成文档与实时看板。
-2. 先把主仓库能独立成立的共享层与低冲突能力并入。
-3. 再按 `Batch 1 -> Batch 2 -> Batch 3 -> Batch 4` 的顺序继续推进。
-
-当前推进到：
-
-1. 已完成共享层、`multimodal-output`、`content-processing`、`controlflow` 的主仓并入与验证。
-2. 已完成 `platform-b` 的 mission / session / projection 链路底座收口与验证。
-3. 当前执行重心转向 `platform-a` 更高冲突热区、`platform-c` 治理线，以及 `tools-and-agents` / `risk-actions` 的对账式收口。
+1. spec 完成度维持 `58 / 58` 封板，不再作为第二阶段推进目标
+2. 中文 steering 文档与进度材料统一转为“主线增强口径”
+3. 本轮新增的 `dialogue runtime injected documentSearch` 与 `mcp runtime global registration` 视为已经并入第二阶段主线基线
+4. 后续按 `批次 A -> 批次 B -> 批次 C -> 批次 D` 推进
+5. 每个批次结束必须留下主仓可复核的通过项：实现、测试、中文文档
 
 ## 结论
 
-第二阶段不再是“继续把 58 个 spec 分得更细”，而是“把已经做出来的 10 条线安全并回主仓库”。
+第二阶段不再是“继续把 58 份 specs 做完”，因为这件事已经完成。
 
-真正决定成败的，不是再多写多少份说明，而是：
+第二阶段真正要推进的是：
 
-- 合并顺序是否正确
-- 热点文件 ownership 是否清晰
-- 主仓库已有先行改动是否被对账吸收
-- 每一批并线后是否能做最小验证
+- 把既有能力继续收口到 `main`
+- 把治理、工具、运行时和前端链路统一起来
+- 把已完成的 specs 落成更稳定、更可验证、更可演示的主线能力
