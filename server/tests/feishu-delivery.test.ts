@@ -79,7 +79,19 @@ describe("FeishuApiDelivery retry behavior", () => {
       deliveryRetryMaxMs: 5_000,
     });
 
-    const receiptPromise = delivery.send(makeMessage());
+    const receiptPromise = delivery.send(
+      makeMessage({
+        target: {
+          chatId: "oc_test_chat",
+          source: "feishu",
+          requestId: "req_delivery_1",
+          traceId: "trace_delivery_1",
+          workflowId: "wf_delivery_1",
+          sessionId: "session_delivery_1",
+          decisionId: "decision_delivery_1",
+        },
+      })
+    );
     await vi.runAllTimersAsync();
     const receipt = await receiptPromise;
 
@@ -88,10 +100,21 @@ describe("FeishuApiDelivery retry behavior", () => {
       messageId: "om_retry_success",
       rootId: "om_root",
       threadId: "om_thread",
+      requestId: "req_delivery_1",
+      traceId: "trace_delivery_1",
       telemetry: {
         attemptCount: 2,
         retryCount: 1,
       },
+    });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: expect.objectContaining({
+        "X-Request-Id": "req_delivery_1",
+        "X-Trace-Id": "trace_delivery_1",
+        "X-Workflow-Id": "wf_delivery_1",
+        "X-Session-Id": "session_delivery_1",
+        "X-Decision-Id": "decision_delivery_1",
+      }),
     });
     expect(receipt?.telemetry?.attempts).toEqual([
       {
@@ -265,5 +288,75 @@ describe("FeishuApiDelivery retry behavior", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(receipt?.messageId).toBe("om_after_token_retry");
+  });
+
+  it("propagates correlation headers on update requests", async () => {
+    const fetchMock = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 0, msg: "ok", tenant_access_token: "tenant-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            msg: "ok",
+            data: {
+              message_id: "om_updated",
+              root_id: "om_root_updated",
+              thread_id: "om_thread_updated",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }
+        )
+      );
+
+    globalThis.fetch = fetchMock;
+    const delivery = new FeishuApiDelivery({
+      enabled: true,
+      mode: "live",
+      appId: "app-id",
+      appSecret: "app-secret",
+    });
+
+    const receipt = await delivery.update(
+      "om_existing",
+      makeMessage({
+        kind: "task-waiting",
+        target: {
+          chatId: "oc_test_chat",
+          source: "feishu",
+          requestId: "req_update_1",
+          traceId: "trace_update_1",
+          workflowId: "wf_update_1",
+          sessionId: "session_update_1",
+          decisionId: "decision_update_1",
+        },
+      })
+    );
+
+    expect(receipt).toMatchObject({
+      messageId: "om_updated",
+      rootId: "om_root_updated",
+      threadId: "om_thread_updated",
+      requestId: "req_update_1",
+      traceId: "trace_update_1",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: "PATCH",
+      headers: expect.objectContaining({
+        "X-Request-Id": "req_update_1",
+        "X-Trace-Id": "trace_update_1",
+        "X-Workflow-Id": "wf_update_1",
+        "X-Session-Id": "session_update_1",
+        "X-Decision-Id": "decision_update_1",
+      }),
+    });
   });
 });

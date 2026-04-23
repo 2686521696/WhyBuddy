@@ -210,6 +210,41 @@
 
 这条测试链已经把“任务投影链接”和“回放读取入口”真正串起来。
 
+### 3. replay route 已补齐 relation index 摘要与过滤核验
+
+截至 2026-04-23，`server/routes/replay.ts` 在不改 replay store 契约的前提下，已经能够稳定承接 mission projection 与 web-aigc relation index 的最小闭环：
+
+- `GET /api/replay/:missionId/events`
+  - 保留原有 `agentId / eventType / startTime / endTime / limit / offset`
+  - 额外支持 `traceId / decisionId / nodeId / stage / eventKey`
+  - relation 维度过滤在 route 层完成，随后再执行 `limit / offset`，避免先分页后过滤导致漏数
+- `GET /api/replay/:missionId`
+  - 继续返回 timeline metadata，而不是原始 `events`
+  - 额外补出 `replayId`
+  - 额外补出 `relationIndex` 摘要，当前至少包含：
+    - `traceIds`
+    - `decisionIds`
+    - `nodeIds`
+    - `stages`
+    - `eventKeys`
+
+当前与此对应的测试依据已经在 `server/tests/replay-routes.test.ts` 中补齐：
+
+- `GET /api/replay/:missionId/events supports relation index filters without breaking pagination`
+  - 验证 `traceId / decisionId / nodeId / stage / eventKey` 过滤
+  - 验证 relation 过滤后分页仍稳定
+- `GET /api/replay/:missionId returns relation index summary metadata`
+  - 验证 metadata 中存在 `replayId`
+  - 验证 `relationIndex` 五组摘要字段
+- `reuses mission projection replayId to resolve replay timeline metadata`
+  - 除验证 `projection.replayId -> replay route` 的主链闭环外，也额外锁定了 `relationIndex` 摘要结构不会在后续回归中丢失
+
+因此当前更准确的主线结论是：
+
+1. `projection.replayId` 已经不只是“能打开 replay 页面”的链接字段，而是 mission / executor 事件归档与 replay metadata 查询的共同主键。
+2. replay route 已经具备 relation index 级别的最小查询面，足以支撑 web-aigc 的对账与排障视角。
+3. 这套能力当前以 route 层聚合与过滤为主，后续若出现大规模数据量场景，再评估是否下沉到 replay store 原生索引。
+
 ## monitoring 对账结论
 
 ### 已验证的部分

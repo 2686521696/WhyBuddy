@@ -31,6 +31,8 @@ export interface WebAigcRelationIndexQuery {
   sessionId?: string;
   replayId?: string;
   auditEntryId?: string;
+  traceId?: string;
+  requestId?: string;
   lineageId?: string;
   artifactId?: string;
   nodeId?: string;
@@ -64,6 +66,25 @@ export const WEB_AIGC_OBSERVABILITY_EVENT_CATALOG: WebAigcObservabilityEventDefi
     ],
     specRefs: [
       "web-aigc-platform-observability-audit#requirement-1",
+    ],
+  },
+  {
+    eventKey: "variable.assigned",
+    stage: "node",
+    description:
+      "A workflow node assigned a runtime variable and emitted the normalized assignment delta.",
+    sinks: ["replay", "audit"],
+    requiredFields: [
+      "workflowId",
+      "instanceId",
+      "nodeId",
+      "metadata.scope",
+      "metadata.target",
+      "metadata.nextValue",
+    ],
+    specRefs: [
+      "web-aigc-node-variable_assignment#requirement-3",
+      "web-aigc-platform-observability-audit#requirement-3",
     ],
   },
   {
@@ -324,6 +345,16 @@ export const WEB_AIGC_RELATION_INDEXES: WebAigcRelationIndexDefinition[] = [
     key: "auditEntryId",
     description: "Audit chain entry identifier for governance and operator actions.",
     objectTypes: ["audit", "instance", "mission"],
+  },
+  {
+    key: "traceId",
+    description: "Cross-surface trace key for runtime, tools, notifications, and debugging.",
+    objectTypes: ["audit", "replay", "lineage", "mission"],
+  },
+  {
+    key: "requestId",
+    description: "Request correlation key linking operator actions, APIs, and runtime nodes.",
+    objectTypes: ["audit", "replay", "lineage", "session"],
   },
   {
     key: "lineageId",

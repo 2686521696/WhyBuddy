@@ -540,6 +540,94 @@ describe("AuditQuery", () => {
       expect(result).toHaveLength(0);
     });
 
+    it("matches traceId and requestId across metadata, metadata.links, and context", () => {
+      chain.append(
+        makeEvent({
+          context: {
+            sessionId: "session-1",
+            requestId: "req-context-1",
+          },
+          metadata: {
+            workflowId: "wf-1",
+            traceId: "trace-meta-1",
+            links: {
+              missionId: "mission-1",
+              replayId: "replay-1",
+              traceId: "trace-link-1",
+              requestId: "req-link-1",
+            },
+          },
+        }),
+      );
+      chain.append(
+        makeEvent({
+          context: {
+            sessionId: "session-2",
+            requestId: "req-context-2",
+          },
+          metadata: {
+            workflowId: "wf-2",
+            traceId: "trace-meta-2",
+            links: {
+              missionId: "mission-2",
+              replayId: "replay-2",
+              traceId: "trace-link-2",
+            },
+          },
+        }),
+      );
+
+      expect(
+        query.getWebAigcRelatedEntries({
+          traceId: "trace-link-1",
+          requestId: "req-context-1",
+          workflowId: "wf-1",
+          missionId: "mission-1",
+          replayId: "replay-1",
+          sessionId: "session-1",
+        } as any),
+      ).toHaveLength(1);
+
+      expect(
+        query.getWebAigcRelatedEntries({
+          traceId: "trace-meta-1",
+          requestId: "req-link-1",
+        } as any),
+      ).toHaveLength(1);
+    });
+
+    it("matches nodeId and edgeId via resource.id while preserving lineageId top-level matches", () => {
+      chain.append(
+        makeEvent({
+          lineageId: "lineage-top-1",
+          resource: { type: "node", id: "node-1" },
+          metadata: {
+            edgeId: "edge-meta-1",
+            decisionId: "decision-1",
+          },
+        }),
+      );
+      chain.append(
+        makeEvent({
+          lineageId: "lineage-top-2",
+          resource: { type: "edge", id: "edge-2" },
+          metadata: {
+            nodeId: "node-meta-2",
+            decisionId: "decision-2",
+          },
+        }),
+      );
+
+      expect(
+        query.getWebAigcRelatedEntries({
+          lineageId: "lineage-top-1",
+          nodeId: "node-1",
+          edgeId: "edge-meta-1",
+          decisionId: "decision-1",
+        }),
+      ).toHaveLength(1);
+    });
+
     it("returns empty when no relation index is provided", () => {
       chain.append(makeEvent({ metadata: { workflowId: "wf-1" } }));
 

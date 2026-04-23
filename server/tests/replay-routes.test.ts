@@ -183,6 +183,145 @@ describe("replay routes", () => {
     });
   });
 
+  it("GET /api/replay/:missionId/events supports relation index filters without breaking pagination", async () => {
+    const missionId = uniqueMissionId("relation-events");
+    await seedMissionEvents(missionId, [
+      makeEvent(missionId, {
+        timestamp: 1_710_000_100_000,
+        eventType: "MESSAGE_SENT",
+        sourceAgent: "agent-alpha",
+        eventData: {
+          traceId: "trace-1",
+          decisionId: "decision-1",
+          nodeId: "node-1",
+          eventKey: "node.completed",
+        },
+        metadata: {
+          stageKey: "dialogue_runtime",
+        },
+      }),
+      makeEvent(missionId, {
+        timestamp: 1_710_000_101_000,
+        eventType: "MESSAGE_RECEIVED",
+        sourceAgent: "agent-beta",
+        eventData: {
+          traceId: "trace-1",
+          decisionId: "decision-2",
+          nodeId: "node-2",
+          eventKey: "node.started",
+        },
+        metadata: {
+          stageKey: "dialogue_document_search",
+        },
+      }),
+      makeEvent(missionId, {
+        timestamp: 1_710_000_102_000,
+        eventType: "DECISION_MADE",
+        sourceAgent: "agent-gamma",
+        eventData: {
+          traceId: "trace-2",
+          decisionId: "decision-3",
+          nodeId: "node-1",
+          eventKey: "human.decision_submitted",
+        },
+        metadata: {
+          stageKey: "hitl_review",
+        },
+      }),
+    ]);
+
+    await withServer(missionId, async (baseUrl) => {
+      const traceResponse = await fetch(
+        `${baseUrl}/api/replay/${missionId}/events?traceId=trace-1`,
+        { headers: authHeaders() },
+      );
+      expect(traceResponse.status).toBe(200);
+      const traceBody = (await traceResponse.json()) as ExecutionEvent[];
+      expect(traceBody).toHaveLength(2);
+      expect(traceBody.map(event => event.eventData.traceId)).toEqual(["trace-1", "trace-1"]);
+
+      const narrowedResponse = await fetch(
+        `${baseUrl}/api/replay/${missionId}/events?traceId=trace-1&stage=dialogue_document_search&eventKey=node.started`,
+        { headers: authHeaders() },
+      );
+      expect(narrowedResponse.status).toBe(200);
+      const narrowedBody = (await narrowedResponse.json()) as ExecutionEvent[];
+      expect(narrowedBody).toHaveLength(1);
+      expect(narrowedBody[0]?.eventData.nodeId).toBe("node-2");
+
+      const pagedResponse = await fetch(
+        `${baseUrl}/api/replay/${missionId}/events?nodeId=node-1&limit=1&offset=1`,
+        { headers: authHeaders() },
+      );
+      expect(pagedResponse.status).toBe(200);
+      const pagedBody = (await pagedResponse.json()) as ExecutionEvent[];
+      expect(pagedBody).toHaveLength(1);
+      expect(pagedBody[0]?.eventData.decisionId).toBe("decision-3");
+
+      const decisionResponse = await fetch(
+        `${baseUrl}/api/replay/${missionId}/events?decisionId=decision-1`,
+        { headers: authHeaders() },
+      );
+      expect(decisionResponse.status).toBe(200);
+      const decisionBody = (await decisionResponse.json()) as ExecutionEvent[];
+      expect(decisionBody).toHaveLength(1);
+      expect(decisionBody[0]?.eventData.eventKey).toBe("node.completed");
+    });
+  });
+
+  it("GET /api/replay/:missionId returns relation index summary metadata", async () => {
+    const missionId = uniqueMissionId("relation-index");
+    await seedMissionEvents(missionId, [
+      makeEvent(missionId, {
+        timestamp: 1_710_000_110_000,
+        eventType: "MESSAGE_SENT",
+        sourceAgent: "agent-alpha",
+        eventData: {
+          traceId: "trace-1",
+          decisionId: "decision-1",
+          nodeId: "node-1",
+          eventKey: "node.completed",
+        },
+        metadata: {
+          stageKey: "dialogue_runtime",
+        },
+      }),
+      makeEvent(missionId, {
+        timestamp: 1_710_000_111_000,
+        eventType: "RESOURCE_ACCESSED",
+        sourceAgent: "agent-beta",
+        eventData: {
+          traceId: "trace-2",
+          decisionId: "decision-2",
+          nodeId: "node-2",
+          eventKey: "external.knowledge_retrieval",
+        },
+        metadata: {
+          stageKey: "dialogue_document_search",
+        },
+      }),
+    ]);
+
+    await withServer(missionId, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/replay/${missionId}`, {
+        headers: authHeaders(),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.replayId).toBe(missionId);
+      expect(body.relationIndex).toEqual({
+        traceIds: ["trace-1", "trace-2"],
+        decisionIds: ["decision-1", "decision-2"],
+        nodeIds: ["node-1", "node-2"],
+        stages: ["dialogue_document_search", "dialogue_runtime"],
+        eventKeys: ["external.knowledge_retrieval", "node.completed"],
+      });
+      expect(body.events).toBeUndefined();
+      expect(body.indices).toBeUndefined();
+    });
+  });
+
   it("GET /api/replay/:missionId/export supports json and csv exports", async () => {
     const missionId = uniqueMissionId("export");
     await seedMissionEvents(missionId, [
@@ -404,7 +543,17 @@ describe("replay routes", () => {
       expect(replayResponse.status).toBe(200);
       const replayBody = await replayResponse.json();
       expect(replayBody.missionId).toBe(replayId);
+      expect(replayBody.replayId).toBe(replayId);
       expect(replayBody.eventCount).toBeGreaterThanOrEqual(1);
+      expect(replayBody.relationIndex).toEqual(
+        expect.objectContaining({
+          traceIds: expect.any(Array),
+          decisionIds: expect.any(Array),
+          nodeIds: expect.any(Array),
+          stages: expect.any(Array),
+          eventKeys: expect.any(Array),
+        }),
+      );
     } finally {
       collector.destroy();
       await new Promise<void>((resolvePromise, reject) => {

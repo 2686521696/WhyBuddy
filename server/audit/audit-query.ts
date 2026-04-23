@@ -329,58 +329,70 @@ function matchesRelationIndex(
   expected: string,
 ): boolean {
   const event = entry.event;
-  const metadata = event.metadata;
-  const context = event.context;
-  const resource = event.resource;
 
   switch (key) {
     case "auditEntryId":
       return entry.entryId === expected;
     case "lineageId":
-      return event.lineageId === expected || resource.id === expected;
+      return readRelationCandidates(entry, key).includes(expected);
     case "workflowId":
     case "missionId":
     case "instanceId":
     case "sessionId":
     case "replayId":
+    case "traceId":
+    case "requestId":
     case "artifactId":
     case "nodeId":
     case "edgeId":
     case "decisionId":
-      return readRelationCandidates(metadata, context, resource, key).includes(expected);
+      return readRelationCandidates(entry, key).includes(expected);
     default:
       return false;
   }
 }
 
 function readRelationCandidates(
-  metadata: Record<string, unknown> | undefined,
-  context: AuditLogEntry["event"]["context"],
-  resource: AuditLogEntry["event"]["resource"],
+  entry: AuditLogEntry,
   key: string,
 ): string[] {
-  const values: string[] = [];
+  const values = new Set<string>();
+  const metadata = entry.event.metadata;
+  const context = entry.event.context;
+  const resource = entry.event.resource;
 
-  const directMetadata = metadata?.[key];
-  if (typeof directMetadata === "string" && directMetadata.trim()) {
-    values.push(directMetadata.trim());
-  }
+  const addValue = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim();
+    if (normalized) {
+      values.add(normalized);
+    }
+  };
+
+  addValue(metadata?.[key]);
 
   const links = metadata?.links;
   if (typeof links === "object" && links !== null) {
-    const linkedValue = (links as Record<string, unknown>)[key];
-    if (typeof linkedValue === "string" && linkedValue.trim()) {
-      values.push(linkedValue.trim());
-    }
+    addValue((links as Record<string, unknown>)[key]);
   }
 
-  if (key === "sessionId" && typeof context.sessionId === "string" && context.sessionId.trim()) {
-    values.push(context.sessionId.trim());
+  if (key === "lineageId") {
+    addValue(entry.event.lineageId);
   }
 
-  if ((key === "artifactId" || key === "nodeId" || key === "edgeId") && resource.id.trim()) {
-    values.push(resource.id.trim());
+  if (key === "sessionId") {
+    addValue(context.sessionId);
   }
 
-  return values;
+  if (key === "requestId") {
+    addValue(context.requestId);
+  }
+
+  if (key === "artifactId" || key === "nodeId" || key === "edgeId" || key === "lineageId") {
+    addValue(resource.id);
+  }
+
+  return [...values];
 }

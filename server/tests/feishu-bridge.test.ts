@@ -490,6 +490,8 @@ describe("FeishuProgressBridge", () => {
       {
         send: async () => ({
           messageId: "om_audit_1",
+          requestId: "req_audit_1",
+          traceId: "trace_audit_1",
           telemetry: {
             attemptCount: 2,
             retryCount: 1,
@@ -517,7 +519,14 @@ describe("FeishuProgressBridge", () => {
       { messageFormat: "card" }
     );
 
-    bridge.bindTask("task_123", { chatId: "user:ou_123", source: "feishu" });
+    bridge.bindTask("task_123", {
+      chatId: "user:ou_123",
+      source: "feishu",
+      requestId: "req_audit_1",
+      traceId: "trace_audit_1",
+      workflowId: "wf_audit_1",
+      sessionId: "session_audit_1",
+    });
     await bridge.handleTaskUpdate(
       makeTask({
         status: "waiting",
@@ -541,6 +550,8 @@ describe("FeishuProgressBridge", () => {
     expect(audits[0]).toMatchObject({
       channelType: "feishu",
       taskId: "task_123",
+      traceId: "trace_audit_1",
+      requestId: "req_audit_1",
       messageKind: "task-ack",
       deliveryAction: "send",
       resultStatus: "sent",
@@ -555,9 +566,14 @@ describe("FeishuProgressBridge", () => {
         taskStatus: "waiting",
         hasDecision: false,
       },
+      correlation: {
+        workflowId: "wf_audit_1",
+        sessionId: "session_audit_1",
+        source: "feishu",
+        chatId: "user:ou_123",
+      },
     });
     expect(audits[0]?.messageDigest).toMatch(/^[a-f0-9]{16}$/);
-    expect(audits[0]?.traceId).toContain("task_123");
     expect(audits[0]?.attempts).toHaveLength(2);
   });
 
@@ -600,7 +616,14 @@ describe("FeishuProgressBridge", () => {
       },
     });
 
-    bridge.bindTask("task_123", { chatId: "chat:oc_999", source: "feishu" });
+    bridge.bindTask("task_123", {
+      chatId: "chat:oc_999",
+      source: "feishu",
+      requestId: "req_fail_1",
+      traceId: "trace_fail_1",
+      workflowId: "wf_fail_1",
+      sessionId: "session_fail_1",
+    });
 
     await expect(
       bridge.handleTaskUpdate(
@@ -615,6 +638,8 @@ describe("FeishuProgressBridge", () => {
     expect(audits[0]).toMatchObject({
       channelType: "feishu",
       taskId: "task_123",
+      traceId: "trace_fail_1",
+      requestId: "req_fail_1",
       messageKind: "task-ack",
       deliveryAction: "send",
       resultStatus: "failed",
@@ -624,7 +649,76 @@ describe("FeishuProgressBridge", () => {
       attemptCount: 3,
       statusCode: 429,
       error: "rate limited by Feishu",
+      correlation: {
+        workflowId: "wf_fail_1",
+        sessionId: "session_fail_1",
+        source: "feishu",
+      },
     });
     expect(audits[0]?.attempts.map(item => item.statusCode)).toEqual([429, 500, 429]);
+  });
+
+  it("emits waiting audit events with workflow/session/decision correlation", async () => {
+    const audits: FeishuNotificationAuditEvent[] = [];
+    const bridge = new FeishuProgressBridge(
+      {
+        send: async message => ({
+          messageId: `om_${message.kind}`,
+          requestId: message.target.requestId,
+          traceId: message.target.traceId,
+        }),
+        observe: async event => {
+          audits.push(event);
+        },
+      },
+      { messageFormat: "card" }
+    );
+
+    bridge.bindTask("task_123", {
+      chatId: "chat:oc_corr_1",
+      source: "feishu",
+      requestId: "req_corr_1",
+      traceId: "trace_corr_1",
+      workflowId: "wf_corr_1",
+      sessionId: "session_corr_1",
+      decisionId: "decision_corr_1",
+    });
+
+    await bridge.handleTaskUpdate(makeTask({ progress: 10 }));
+    await bridge.handleTaskUpdate(
+      makeTask({
+        status: "waiting",
+        progress: 70,
+        waitingFor: "Need approval",
+        decision: {
+          prompt: "请选择审批动作",
+          options: [
+            { id: "approve", label: "批准" },
+            { id: "reject", label: "拒绝" },
+          ],
+        },
+        events: [
+          { type: "created", message: "Task created", time: Date.now() },
+          { type: "waiting", message: "Need approval", time: Date.now() },
+        ],
+      })
+    );
+
+    expect(audits).toHaveLength(2);
+    expect(audits[1]).toMatchObject({
+      messageKind: "task-waiting",
+      traceId: "trace_corr_1",
+      requestId: "req_corr_1",
+      approvalStatus: "pending",
+      correlation: {
+        workflowId: "wf_corr_1",
+        sessionId: "session_corr_1",
+        decisionId: "decision_corr_1",
+        source: "feishu",
+      },
+      observability: {
+        hasDecision: true,
+      },
+    });
   });
 });

@@ -349,7 +349,9 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
         nodeId: typeof req.query.nodeId === "string" ? req.query.nodeId : undefined,
         edgeId: typeof req.query.edgeId === "string" ? req.query.edgeId : undefined,
         decisionId: typeof req.query.decisionId === "string" ? req.query.decisionId : undefined,
-      });
+        traceId: typeof req.query.traceId === "string" ? req.query.traceId : undefined,
+        requestId: typeof req.query.requestId === "string" ? req.query.requestId : undefined,
+      } as Parameters<typeof query.getWebAigcRelatedEntries>[0]);
 
       res.json({ ok: true, entries });
     } catch (err) {

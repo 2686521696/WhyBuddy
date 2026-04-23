@@ -51,14 +51,175 @@ export function setWebAigcRuntimeObservabilityDeps(
 
 type WebAigcRuntimeEvent = Extract<AgentEvent, { type: "web_aigc_runtime_event" }>;
 
+type WebAigcRelationLinkKey =
+  | "workflowId"
+  | "missionId"
+  | "instanceId"
+  | "sessionId"
+  | "replayId"
+  | "traceId"
+  | "requestId"
+  | "lineageId"
+  | "artifactId"
+  | "nodeId"
+  | "edgeId"
+  | "decisionId";
+
+const WEB_AIGC_RELATION_LINK_KEYS: WebAigcRelationLinkKey[] = [
+  "workflowId",
+  "missionId",
+  "instanceId",
+  "sessionId",
+  "replayId",
+  "traceId",
+  "requestId",
+  "lineageId",
+  "artifactId",
+  "nodeId",
+  "edgeId",
+  "decisionId",
+];
+
+function readLinkValue(
+  source: unknown,
+  key: WebAigcRelationLinkKey,
+): string | undefined {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  const record = source as Record<string, unknown>;
+  const direct = record[key];
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  const links = record.links;
+  if (links && typeof links === "object") {
+    const linked = (links as Record<string, unknown>)[key];
+    if (typeof linked === "string" && linked.trim()) {
+      return linked.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function buildRelationLinks(
+  event: WebAigcRuntimeEvent,
+): Record<string, string> {
+  const links: Record<string, string> = {};
+
+  const setLink = (key: WebAigcRelationLinkKey, value: unknown): void => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+    links[key] = normalized;
+  };
+
+  setLink("workflowId", event.workflowId);
+  setLink("missionId", event.missionId);
+  setLink("instanceId", event.instanceId);
+  setLink("sessionId", event.sessionId);
+  setLink("replayId", event.replayId || event.workflowId || event.instanceId);
+  setLink("nodeId", event.nodeId);
+  setLink("edgeId", event.edgeId);
+
+  for (const key of WEB_AIGC_RELATION_LINK_KEYS) {
+    const candidate = readLinkValue(event.metadata, key);
+    if (candidate) {
+      setLink(key, candidate);
+    }
+  }
+
+  return links;
+}
+
+function mergeMetadataWithLinks(
+  metadata: Record<string, unknown> | undefined,
+  links: Record<string, string>,
+): Record<string, unknown> | undefined {
+  if (!metadata && Object.keys(links).length === 0) {
+    return undefined;
+  }
+
+  const baseMetadata = metadata ? { ...metadata } : {};
+  const baseLinks =
+    baseMetadata.links && typeof baseMetadata.links === "object"
+      ? { ...(baseMetadata.links as Record<string, unknown>) }
+      : {};
+
+  return {
+    ...baseMetadata,
+    ...(Object.keys(links).length > 0
+      ? {
+          links: {
+            ...links,
+            ...baseLinks,
+          },
+        }
+      : {}),
+  };
+}
+
+function buildVariableAssignmentMirrorMetadata(
+  event: WebAigcRuntimeEvent,
+): Record<string, unknown> | undefined {
+  if (event.eventKey !== "variable.assigned") {
+    return undefined;
+  }
+
+  const target = String(event.metadata?.target || event.nodeId || event.instanceId);
+  const scope =
+    typeof event.metadata?.scope === "string" && event.metadata.scope.length > 0
+      ? event.metadata.scope
+      : "unknown";
+
+  return {
+    actionId: "variable.assign",
+    resourceType: "workflow-variable",
+    resourceId: target,
+    assignmentTarget: target,
+    assignmentScope: scope,
+    assignmentChanged: !Object.is(
+      event.metadata?.previousValue,
+      event.metadata?.nextValue,
+    ),
+  };
+}
+
+function buildReplayEventMetadata(
+  event: WebAigcRuntimeEvent,
+): Record<string, unknown> | undefined {
+  const variableMirrorMetadata = buildVariableAssignmentMirrorMetadata(event);
+  const relationLinks = buildRelationLinks(event);
+  if (!event.metadata && !variableMirrorMetadata && Object.keys(relationLinks).length === 0) {
+    return undefined;
+  }
+
+  return mergeMetadataWithLinks(
+    {
+      ...(event.metadata ?? {}),
+      ...(variableMirrorMetadata ?? {}),
+    },
+    relationLinks,
+  );
+}
+
 function mapReplayEventType(eventKey: string): ReplayEventType | undefined {
   switch (eventKey) {
     case "node.started":
       return "AGENT_STARTED";
     case "node.completed":
       return "AGENT_STOPPED";
+    case "variable.assigned":
     case "node.waiting_input":
     case "edge.transitioned":
+    case "edge.loop_iterated":
     case "instance.retry_requested":
     case "instance.escalated":
       return "MILESTONE_REACHED";
@@ -98,7 +259,7 @@ export function toReplayExecutionEvent(
       startedAt: event.startedAt,
       completedAt: event.completedAt,
       durationMs: event.durationMs,
-      metadata: event.metadata,
+      metadata: buildReplayEventMetadata(event),
     },
     metadata: {
       phase: "web_aigc_runtime",
@@ -111,6 +272,8 @@ export function mirrorWebAigcRuntimeEvent(event: AgentEvent): void {
   if (event.type !== "web_aigc_runtime_event") {
     return;
   }
+
+  const relationLinks = buildRelationLinks(event);
 
   const replayEvent = toReplayExecutionEvent(event);
   if (replayEvent && currentDeps.replayCollector) {
@@ -126,6 +289,8 @@ export function mirrorWebAigcRuntimeEvent(event: AgentEvent): void {
   }
 
   try {
+    const variableMirrorMetadata = buildVariableAssignmentMirrorMetadata(event);
+
     if (event.eventKey === "node.failed" || event.eventKey === "instance.terminated") {
       currentDeps.auditCollector.record({
         eventType: AuditEventType.AGENT_FAILED,
@@ -143,18 +308,115 @@ export function mirrorWebAigcRuntimeEvent(event: AgentEvent): void {
         context: {
           sessionId: event.sessionId || event.workflowId,
         },
-        metadata: {
-          eventKey: event.eventKey,
-          workflowId: event.workflowId,
-          instanceId: event.instanceId,
-          replayId: event.replayId,
-          missionId: event.missionId,
-          nodeId: event.nodeId,
-          error: event.error,
-          checkpointId: event.checkpointId,
-          durationMs: event.durationMs,
-          ...event.metadata,
+        metadata: mergeMetadataWithLinks(
+          {
+            eventKey: event.eventKey,
+            workflowId: event.workflowId,
+            instanceId: event.instanceId,
+            replayId: event.replayId,
+            missionId: event.missionId,
+            nodeId: event.nodeId,
+            error: event.error,
+            checkpointId: event.checkpointId,
+            durationMs: event.durationMs,
+            ...event.metadata,
+          },
+          relationLinks,
+        ),
+      });
+    } else if (event.eventKey === "node.completed") {
+      currentDeps.auditCollector.record({
+        eventType: AuditEventType.AGENT_EXECUTED,
+        actor: { type: "system", id: "web-aigc-runtime" },
+        action: `Runtime node completed: ${event.nodeId || "unknown"}`,
+        resource: {
+          type: "workflow-node",
+          id: event.nodeId || event.instanceId,
+          name: event.eventKey,
         },
+        result: "success",
+        context: {
+          sessionId: event.sessionId || event.workflowId,
+        },
+        metadata: mergeMetadataWithLinks(
+          {
+            eventKey: event.eventKey,
+            workflowId: event.workflowId,
+            instanceId: event.instanceId,
+            replayId: event.replayId,
+            missionId: event.missionId,
+            nodeId: event.nodeId,
+            status: event.status,
+            checkpointId: event.checkpointId,
+            startedAt: event.startedAt,
+            completedAt: event.completedAt,
+            durationMs: event.durationMs,
+            ...event.metadata,
+          },
+          relationLinks,
+        ),
+      });
+    } else if (event.eventKey === "variable.assigned") {
+      currentDeps.auditCollector.record({
+        eventType: AuditEventType.DECISION_MADE,
+        actor: { type: "system", id: "web-aigc-runtime" },
+        action: `Runtime variable assigned: ${String(event.metadata?.target || event.nodeId || "unknown")}`,
+        resource: {
+          type: "workflow-variable",
+          id: String(event.metadata?.target || event.nodeId || event.instanceId),
+          name: event.eventKey,
+        },
+        result: "success",
+        context: {
+          sessionId: event.sessionId || event.workflowId,
+        },
+        metadata: mergeMetadataWithLinks(
+          {
+            eventKey: event.eventKey,
+            workflowId: event.workflowId,
+            instanceId: event.instanceId,
+            replayId: event.replayId,
+            missionId: event.missionId,
+            nodeId: event.nodeId,
+            checkpointId: event.checkpointId,
+            ...(variableMirrorMetadata ?? {}),
+            ...event.metadata,
+          },
+          relationLinks,
+        ),
+      });
+    } else if (
+      event.eventKey === "edge.transitioned" &&
+      event.metadata?.kind === "jump"
+    ) {
+      currentDeps.auditCollector.record({
+        eventType: AuditEventType.DECISION_MADE,
+        actor: { type: "system", id: "web-aigc-runtime" },
+        action: `Runtime flow jump executed: ${event.fromNodeId || "unknown"} -> ${event.toNodeId || "unknown"}`,
+        resource: {
+          type: "workflow-edge",
+          id: event.edgeId || `${event.fromNodeId || "unknown"}->${event.toNodeId || "unknown"}`,
+          name: event.eventKey,
+        },
+        result: "success",
+        context: {
+          sessionId: event.sessionId || event.workflowId,
+        },
+        metadata: mergeMetadataWithLinks(
+          {
+            eventKey: event.eventKey,
+            workflowId: event.workflowId,
+            instanceId: event.instanceId,
+            replayId: event.replayId,
+            missionId: event.missionId,
+            nodeId: event.nodeId,
+            edgeId: event.edgeId,
+            fromNodeId: event.fromNodeId,
+            toNodeId: event.toNodeId,
+            ...event.metadata,
+          },
+          relationLinks,
+        ),
       });
     } else if (
       event.eventKey === "node.waiting_input" ||
@@ -182,17 +444,20 @@ export function mirrorWebAigcRuntimeEvent(event: AgentEvent): void {
         context: {
           sessionId: event.sessionId || event.workflowId,
         },
-        metadata: {
-          eventKey: event.eventKey,
-          workflowId: event.workflowId,
-          instanceId: event.instanceId,
-          replayId: event.replayId,
-          missionId: event.missionId,
-          nodeId: event.nodeId,
-          waitingFor: event.waitingFor,
-          checkpointId: event.checkpointId,
-          ...event.metadata,
-        },
+        metadata: mergeMetadataWithLinks(
+          {
+            eventKey: event.eventKey,
+            workflowId: event.workflowId,
+            instanceId: event.instanceId,
+            replayId: event.replayId,
+            missionId: event.missionId,
+            nodeId: event.nodeId,
+            waitingFor: event.waitingFor,
+            checkpointId: event.checkpointId,
+            ...event.metadata,
+          },
+          relationLinks,
+        ),
       });
     }
   } catch {

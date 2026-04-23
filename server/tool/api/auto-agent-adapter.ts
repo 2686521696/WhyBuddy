@@ -189,6 +189,20 @@ function readString(
     : undefined;
 }
 
+function readNestedString(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return (
+    readString(value, key) ||
+    (isRecord(value.links) ? readString(value.links, key) : undefined)
+  );
+}
+
 function readNumber(
   value: Record<string, unknown> | undefined,
   key: string,
@@ -276,20 +290,57 @@ function resolveAuditOperator(
 function resolveAuditWorkflowId(
   request: AutoAgentExecutionRequest,
 ): string | undefined {
-  return request.workflowId?.trim() || readString(resolveAuditMetadataRecord(request), "workflowId");
+  return request.workflowId?.trim() || readNestedString(resolveAuditMetadataRecord(request), "workflowId");
 }
 
 function resolveAuditMissionId(
   request: AutoAgentExecutionRequest,
 ): string | undefined {
   const metadata = resolveAuditMetadataRecord(request);
-  return readString(metadata, "missionId") || readString(metadata, "taskId");
+  return readNestedString(metadata, "missionId") || readString(metadata, "taskId");
 }
 
 function resolveAuditSessionId(
   request: AutoAgentExecutionRequest,
 ): string | undefined {
-  return readString(resolveAuditMetadataRecord(request), "sessionId");
+  return readNestedString(resolveAuditMetadataRecord(request), "sessionId");
+}
+
+function resolveAuditTraceId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readNestedString(resolveAuditMetadataRecord(request), "traceId");
+}
+
+function resolveAuditRequestId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readNestedString(resolveAuditMetadataRecord(request), "requestId");
+}
+
+function resolveAuditReplayId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  const metadata = resolveAuditMetadataRecord(request);
+  return readNestedString(metadata, "replayId") || resolveAuditWorkflowId(request);
+}
+
+function resolveAuditLineageId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readNestedString(resolveAuditMetadataRecord(request), "lineageId");
+}
+
+function resolveAuditDecisionId(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readNestedString(resolveAuditMetadataRecord(request), "decisionId");
+}
+
+function resolveAuditSourceApp(
+  request: AutoAgentExecutionRequest,
+): string | undefined {
+  return readNestedString(resolveAuditMetadataRecord(request), "sourceApp");
 }
 
 function isAutoAgentTargetKind(value: string): value is AutoAgentTargetKind {
@@ -547,21 +598,28 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
     request: NormalizedAutoAgentExecutionRequest,
     timeoutMs?: number,
   ): Promise<AutoAgentExecutionResult> {
-    const kind = request.kind;
-
-    if (kind === "skill") {
-      return this.executeSkill(request, timeoutMs);
+    if (request.kind === "skill") {
+      const skillRequest = request as NormalizedAutoAgentExecutionRequest & {
+        kind: "skill";
+      };
+      return this.executeSkill(skillRequest, timeoutMs);
     }
 
-    if (kind === "internal_api") {
-      return this.executeInternalApi(request, timeoutMs);
+    if (request.kind === "internal_api") {
+      const internalApiRequest = request as NormalizedAutoAgentExecutionRequest & {
+        kind: "internal_api";
+      };
+      return this.executeInternalApi(internalApiRequest, timeoutMs);
     }
 
-    if (kind === "passthrough_api") {
-      return this.executePassthroughApi(request, timeoutMs);
+    if (request.kind === "passthrough_api") {
+      const passthroughApiRequest = request as NormalizedAutoAgentExecutionRequest & {
+        kind: "passthrough_api";
+      };
+      return this.executePassthroughApi(passthroughApiRequest, timeoutMs);
     }
 
-    const agent = this.resolveAgentTarget(request.targetId, kind);
+    const agent = this.resolveAgentTarget(request.targetId, request.kind);
     const output = await this.invokeWithTimeout(
       request,
       () =>
@@ -573,7 +631,7 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
     );
 
     return {
-      kind,
+      kind: request.kind,
       targetId: request.targetId,
       output,
       delegatedTo: {
@@ -876,21 +934,37 @@ export class AutoAgentExecutor implements AutoAgentExecutorLike {
 
     const requestMetadata = resolveAuditMetadataRecord(request);
     const resolvedRecovery = recovery ?? execution?.metadata.recovery;
+    const workflowId = resolveAuditWorkflowId(request);
+    const missionId = resolveAuditMissionId(request);
+    const sessionId = resolveAuditSessionId(request);
+    const requestId = resolveAuditRequestId(request);
+    const replayId = resolveAuditReplayId(request);
+    const traceId = resolveAuditTraceId(request);
+    const lineageId = resolveAuditLineageId(request);
+    const decisionId = resolveAuditDecisionId(request);
+    const sourceApp = resolveAuditSourceApp(request);
     this.auditLogger.log({
       agentId: resolveAuditAgentId(request, execution?.delegatedTo.agentId),
-      operator: resolveAuditOperator(request),
       operation: "auto_agent",
       resourceType: AUTO_AGENT_RESOURCE_TYPE,
       action: AUTO_AGENT_ACTION,
       resource: buildAutoAgentResource(request.kind, request.targetId),
       result,
       reason,
+      ...(lineageId ? { lineageId } : {}),
       metadata: {
         targetKind: request.kind,
         targetId: request.targetId,
-        workflowId: resolveAuditWorkflowId(request),
-        missionId: resolveAuditMissionId(request),
-        sessionId: resolveAuditSessionId(request),
+        workflowId,
+        missionId,
+        sessionId,
+        requestId,
+        replayId,
+        traceId,
+        lineageId,
+        decisionId,
+        sourceApp,
+        operator: resolveAuditOperator(request),
         stage: execution?.metadata.stage ?? request.stage,
         inputPreview: summarizeInput(request.input),
         contextCount: request.context.length,

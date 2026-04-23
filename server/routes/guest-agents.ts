@@ -22,6 +22,176 @@ import {
 
 const router = Router();
 
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readStringFromRecord(record: JsonRecord | undefined, key: string): string | undefined {
+  return record ? readString(record[key]) : undefined;
+}
+
+function compactRecord(record: JsonRecord): JsonRecord | undefined {
+  const entries = Object.entries(record).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries);
+}
+
+interface GuestAgentExecutionGovernance {
+  requestId?: string;
+  traceId?: string;
+  sessionId?: string;
+  workflowId?: string;
+  stage: string;
+  links?: JsonRecord;
+}
+
+function normalizeGuestAgentExecutionEnvelope(body: unknown): {
+  body: JsonRecord;
+  workflowId?: string;
+  stage: string;
+  metadata?: JsonRecord;
+  governance: GuestAgentExecutionGovernance;
+} {
+  const candidate = isRecord(body) ? body : {};
+  const providedMetadata = isRecord(candidate.metadata) ? { ...candidate.metadata } : undefined;
+  const providedLinks = isRecord(providedMetadata?.links) ? { ...providedMetadata.links } : undefined;
+
+  const workflowId =
+    readString(candidate.workflowId) ??
+    readStringFromRecord(providedMetadata, "workflowId") ??
+    readStringFromRecord(providedLinks, "workflowId");
+  const sessionId =
+    readString(candidate.sessionId) ??
+    readStringFromRecord(providedMetadata, "sessionId") ??
+    readStringFromRecord(providedLinks, "sessionId");
+  const requestId =
+    readString(candidate.requestId) ??
+    readStringFromRecord(providedMetadata, "requestId");
+  const traceId =
+    readString(candidate.traceId) ??
+    readStringFromRecord(providedMetadata, "traceId");
+  const stage =
+    readString(candidate.stage) ??
+    readStringFromRecord(providedMetadata, "stage") ??
+    "guest_agent_execute";
+
+  const links = compactRecord({
+    ...(providedLinks ?? {}),
+    workflowId:
+      workflowId ?? readStringFromRecord(providedLinks, "workflowId"),
+    sessionId:
+      sessionId ?? readStringFromRecord(providedLinks, "sessionId"),
+    sourceApp:
+      readStringFromRecord(providedLinks, "sourceApp") ??
+      readStringFromRecord(providedMetadata, "sourceApp"),
+  });
+
+  const metadata = compactRecord({
+    ...(providedMetadata ?? {}),
+    ...(requestId ? { requestId } : {}),
+    ...(traceId ? { traceId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(workflowId ? { workflowId } : {}),
+    stage,
+    ...(links ? { links } : {}),
+  });
+
+  return {
+    body: candidate,
+    workflowId,
+    stage,
+    metadata,
+    governance: {
+      ...(requestId ? { requestId } : {}),
+      ...(traceId ? { traceId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(workflowId ? { workflowId } : {}),
+      stage,
+      ...(links ? { links } : {}),
+    },
+  };
+}
+
+function enrichGuestAgentExecutionResult(
+  result: Record<string, unknown>,
+  governance: GuestAgentExecutionGovernance,
+): Record<string, unknown> {
+  const metadata = isRecord(result.metadata) ? { ...result.metadata } : {};
+  const requestMetadata = isRecord(metadata.requestMetadata)
+    ? { ...metadata.requestMetadata }
+    : {};
+  const responseLinks = isRecord(metadata.links) ? { ...metadata.links } : undefined;
+  const requestLinks = isRecord(requestMetadata.links) ? { ...requestMetadata.links } : undefined;
+  const links = compactRecord({
+    ...(governance.links ?? {}),
+    ...(requestLinks ?? {}),
+    ...(responseLinks ?? {}),
+    workflowId:
+      readStringFromRecord(responseLinks, "workflowId") ??
+      readStringFromRecord(requestLinks, "workflowId") ??
+      governance.workflowId,
+    sessionId:
+      readStringFromRecord(responseLinks, "sessionId") ??
+      readStringFromRecord(requestLinks, "sessionId") ??
+      governance.sessionId,
+    sourceApp:
+      readStringFromRecord(responseLinks, "sourceApp") ??
+      readStringFromRecord(requestLinks, "sourceApp"),
+  });
+
+  const workflowId =
+    readStringFromRecord(metadata, "workflowId") ??
+    readStringFromRecord(requestMetadata, "workflowId") ??
+    governance.workflowId;
+  const stage =
+    readStringFromRecord(metadata, "stage") ??
+    readStringFromRecord(requestMetadata, "stage") ??
+    governance.stage;
+  const requestId =
+    readStringFromRecord(metadata, "requestId") ??
+    readStringFromRecord(requestMetadata, "requestId") ??
+    governance.requestId;
+  const traceId =
+    readStringFromRecord(metadata, "traceId") ??
+    readStringFromRecord(requestMetadata, "traceId") ??
+    governance.traceId;
+  const sessionId =
+    readStringFromRecord(metadata, "sessionId") ??
+    readStringFromRecord(requestMetadata, "sessionId") ??
+    governance.sessionId;
+
+  return {
+    ...result,
+    metadata: {
+      ...metadata,
+      ...(workflowId ? { workflowId } : {}),
+      stage,
+      ...(requestId ? { requestId } : {}),
+      ...(traceId ? { traceId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(links ? { links } : {}),
+      requestMetadata: {
+        ...requestMetadata,
+        ...(workflowId ? { workflowId } : {}),
+        stage,
+        ...(requestId ? { requestId } : {}),
+        ...(traceId ? { traceId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(links ? { links } : {}),
+      },
+    },
+  };
+}
+
 /**
  * POST /api/agents/guest — Create a guest agent.
  * @see Requirements 2.1, 2.7
@@ -124,21 +294,27 @@ router.get("/", (_req: Request, res: Response) => {
  */
 router.post("/:id/execute", async (req: Request, res: Response) => {
   try {
+    const normalized = normalizeGuestAgentExecutionEnvelope(req.body);
     const executor = getAutoAgentExecutor();
     const result = await executor.execute({
       kind: "guest_agent",
       targetId: req.params.id,
-      input: req.body?.input,
-      context: normalizeAutoAgentContextInput(req.body?.context),
-      workflowId: typeof req.body?.workflowId === "string" ? req.body.workflowId : undefined,
-      stage: typeof req.body?.stage === "string" ? req.body.stage : "guest_agent_execute",
-      metadata:
-        req.body?.metadata && typeof req.body.metadata === "object"
-          ? req.body.metadata
+      input: normalized.body.input,
+      context: normalizeAutoAgentContextInput(normalized.body.context),
+      workflowId: normalized.workflowId,
+      stage: normalized.stage,
+      version:
+        typeof normalized.body.version === "string" ? normalized.body.version : undefined,
+      delegateAgentId:
+        typeof normalized.body.delegateAgentId === "string"
+          ? normalized.body.delegateAgentId
           : undefined,
+      maxSkills:
+        typeof normalized.body.maxSkills === "number" ? normalized.body.maxSkills : undefined,
+      metadata: normalized.metadata,
     });
 
-    return res.json(result);
+    return res.json(enrichGuestAgentExecutionResult(result, normalized.governance));
   } catch (error) {
     return res.status(mapAutoAgentErrorToStatusCode(error)).json({
       error: error instanceof Error ? error.message : "Guest agent execution failed",

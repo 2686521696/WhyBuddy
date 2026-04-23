@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180" role="img" aria-labelledby="title desc">
+  <title id="title">Web-AIGC 58 计划进度总览 2026-04-23</title>
+  <desc id="desc">截至 2026-04-23，58 个 Web-AIGC specs 均已完成，252 个任务项全部勾选完成。本轮 6 并发推进已完成并通过关键定向测试，主线补齐了 runtime relation links、audit/replay/lineage 查询、Feishu 关联透传与 guest-agent 治理收口。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f9ff"/>
+      <stop offset="100%" stop-color="#eef3f8"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="ok" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#16a34a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+  <style>
+    .title { font: 700 36px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #ffffff; }
+    .subtitle { font: 500 16px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: rgba(255,255,255,0.84); }
+    .heroLabel { font: 600 14px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: rgba(255,255,255,0.72); letter-spacing: 0.8px; }
+    .heroValue { font: 700 34px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #ffffff; }
+    .section { font: 700 22px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+    .value { font: 700 28px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+    .label { font: 600 14px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475569; }
+    .meta { font: 500 13px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #64748b; }
+    .bullet { font: 600 14px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+    .muted { font: 500 12px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #94a3b8; }
+    .tiny { font: 500 12px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #6b7280; }
+  </style>
+
+  <rect x="0" y="0" width="1600" height="1180" fill="url(#bg)"/>
+
+  <rect x="36" y="28" width="1528" height="230" rx="28" fill="url(#hero)" filter="url(#shadow)"/>
+  <text x="68" y="84" class="title">Web-AIGC 58 计划进度总览</text>
+  <text x="68" y="118" class="subtitle">统计日期：2026-04-23 | 当前口径基于 `.kiro/specs/web-aigc-*` 的真实勾选状态与本轮已复验的主线测试</text>
+  <text x="68" y="150" class="subtitle">这版不再是草案占位图，而是本轮 6 并发推进后的中文最终进度版</text>
+
+  <rect x="900" y="58" width="180" height="82" rx="18" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.16)"/>
+  <text x="924" y="90" class="heroLabel">SPEC 完成</text>
+  <text x="924" y="124" class="heroValue">58 / 58</text>
+
+  <rect x="1100" y="58" width="180" height="82" rx="18" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.16)"/>
+  <text x="1124" y="90" class="heroLabel">任务勾选</text>
+  <text x="1124" y="124" class="heroValue">252 / 252</text>
+
+  <rect x="1300" y="58" width="220" height="82" rx="18" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.16)"/>
+  <text x="1324" y="90" class="heroLabel">本轮定向测试</text>
+  <text x="1324" y="124" class="heroValue">167 通过</text>
+
+  <rect x="900" y="172" width="620" height="14" rx="7" fill="rgba(255,255,255,0.18)"/>
+  <rect x="900" y="172" width="620" height="14" rx="7" fill="url(#ok)"/>
+  <text x="900" y="210" class="subtitle">整体完成率 100% | 本轮 6 并发 lane 已全部推进完成并收口</text>
+
+  <rect x="36" y="290" width="486" height="174" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="64" y="332" class="section">整体进度</text>
+  <text x="64" y="372" class="value">58 个 specs 全部完成</text>
+  <text x="64" y="404" class="meta">按当前仓库 `tasks.md` 统计：完成 58，进行中 0，未开始 0，无空任务 spec。</text>
+
+  <rect x="544" y="290" width="486" height="174" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="572" y="332" class="section">任务勾选</text>
+  <text x="572" y="372" class="value">252 个任务项全部勾选</text>
+  <text x="572" y="404" class="meta">包含平台 spec 5 组与节点 spec 53 组，当前所有任务项均为完成态。</text>
+
+  <rect x="1052" y="290" width="512" height="174" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="1080" y="332" class="section">本轮并发</text>
+  <text x="1080" y="372" class="value">6 / 6 lane 已收口</text>
+  <text x="1080" y="404" class="meta">覆盖 audit、replay、lineage、Feishu message notification、guest-agents 治理、中文 docs/SVG 收口。</text>
+
+  <rect x="36" y="498" width="748" height="306" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="64" y="540" class="section">本轮落地主线</text>
+
+  <circle cx="76" cy="590" r="6" fill="#16a34a"/>
+  <text x="94" y="595" class="bullet">runtime relation links 已统一沉入 `metadata.links`</text>
+  <text x="94" y="619" class="meta">补齐 `workflowId / missionId / instanceId / sessionId / replayId / traceId / requestId / lineageId / nodeId / edgeId / decisionId`，并修复 `replayId` 回落兼容。</text>
+
+  <circle cx="76" cy="658" r="6" fill="#16a34a"/>
+  <text x="94" y="663" class="bullet">observability 已贯通 replay 与 audit 镜像</text>
+  <text x="94" y="687" class="meta">`variable.assigned`、`edge.loop_iterated`、`node.completed`、`instance.retry_requested` 等关键 runtime 事件均可进入 replay / audit。</text>
+
+  <circle cx="76" cy="726" r="6" fill="#16a34a"/>
+  <text x="94" y="731" class="bullet">audit / replay / lineage 查询面继续补齐</text>
+  <text x="94" y="755" class="meta">新增或确认支持 `traceId`、`requestId`、`decisionId`、`nodeId`、`stage`、`eventKey` 等 relation index 级别查询。</text>
+
+  <rect x="812" y="498" width="752" height="306" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="840" y="540" class="section">治理与接口收口</text>
+
+  <circle cx="852" cy="590" r="6" fill="#2563eb"/>
+  <text x="870" y="595" class="bullet">Feishu message_notification 已形成最小真实闭环</text>
+  <text x="870" y="619" class="meta">已透传 `traceId / requestId / workflowId / sessionId / decisionId`，并写入飞书出站请求头和通知审计事件。</text>
+
+  <circle cx="852" cy="658" r="6" fill="#2563eb"/>
+  <text x="870" y="663" class="bullet">guest-agents 路由与 auto-agent 审计字段已对齐</text>
+  <text x="870" y="687" class="meta">`metadata.links` 中的 `workflowId / sessionId / replayId / sourceApp / requestId` 已能被执行器审计逻辑兜底读取。</text>
+
+  <circle cx="852" cy="726" r="6" fill="#2563eb"/>
+  <text x="870" y="731" class="bullet">中文 specs 与 steering 文档已同步收口</text>
+  <text x="870" y="755" class="meta">更新了 observability、security governance、message notification 及 mission projection / replay 对账口径。</text>
+
+  <rect x="36" y="838" width="748" height="282" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="64" y="880" class="section">本轮测试结果</text>
+
+  <rect x="64" y="910" width="692" height="48" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="88" y="940" class="bullet">审计链路：`audit-query + audit-routes` = 96 通过</text>
+
+  <rect x="64" y="972" width="692" height="48" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="88" y="1002" class="bullet">回放与 lineage：`replay-routes` 8 通过，`lineage-routes` 25 通过</text>
+
+  <rect x="64" y="1034" width="692" height="48" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="88" y="1064" class="bullet">通知与 agent 治理：`feishu` 18 通过，`auto-agent-routes` 7 通过，合计 167 通过</text>
+
+  <rect x="812" y="838" width="752" height="282" rx="24" fill="#ffffff" stroke="#dbe6f3" filter="url(#shadow)"/>
+  <text x="840" y="880" class="section">附加验证与备注</text>
+
+  <circle cx="852" cy="930" r="6" fill="#0f172a"/>
+  <text x="870" y="935" class="bullet">`web-aigc-runtime-observability.test.ts` 11 条通过</text>
+  <text x="870" y="957" class="tiny">用于确认 relation links 与 replay / audit 镜像语义。</text>
+
+  <circle cx="852" cy="996" r="6" fill="#0f172a"/>
+  <text x="870" y="1001" class="bullet">`workflow-runtime-engine.test.ts` 目标 2 条用例已复验通过</text>
+  <text x="870" y="1023" class="tiny">修复点是 `replayId` fallback；全文件混跑曾受 Node 堆内存影响，但不是断言失败。</text>
+
+  <circle cx="852" cy="1062" r="6" fill="#0f172a"/>
+  <text x="870" y="1067" class="bullet">当前进度图数字来源于仓库实扫，不是手工估数</text>
+  <text x="870" y="1089" class="tiny">统计自 `.kiro/specs/web-aigc-*` 的 `tasks.md`：58 spec、252 任务全部完成。</text>
+
+  <text x="36" y="1150" class="muted">生成时间：2026-04-23 | 说明：本图已更新为最终中文进度版，反映本轮 6 并发推进后的真实完成态与测试核验结果。</text>
+</svg>

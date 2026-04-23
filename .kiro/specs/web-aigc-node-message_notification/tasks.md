@@ -1,68 +1,27 @@
 # 任务清单：消息通知节点
 
 - [x] 定义通知输入输出结构
-  - 已有一条可复用的飞书通知薄切片，核心结构集中在 `server/feishu/bridge.ts`：
-    - 输入侧：`FeishuTaskRequest`、`FeishuTaskTarget`
-    - 输出侧：`FeishuOutboundMessage`、`FeishuDeliveryReceipt`、`FeishuTaskRequestAck`
-    - 通道配置：`FeishuBridgeConfig`
-  - `server/feishu/task-store.ts` 已补齐通知过程中的状态/事件/决策结构：
-    - `FeishuTaskStatus`
-    - `FeishuTaskEvent`
-    - `FeishuTaskDecisionPrompt`
-    - `FeishuResolvedDecision`
-  - `server/feishu/runtime.ts`、`server/routes/feishu.ts`、`server/feishu/relay.ts`、`server/feishu/ingress.ts` 已把路由输入、任务状态与通知输出串起来。
-  - 结论：当前已具备“以飞书为首条通道”的通知输入输出契约，可作为 `message_notification` 节点第一阶段承接面。
-
 - [x] 设计消息模板能力
-  - `server/feishu/bridge.ts` 已具备代码内模板能力，而非裸文本直发：
-    - 文本模板：`formatAckText`、`formatProgressText`、`formatWaitingText`、`formatCompleteText`、`formatFailedText`
-    - 卡片模板：`createTaskCard`
-    - 样式模板：`cardTemplateForStatus`、`resolveCardTemplateForDecision`
-    - 交互模板：决策按钮、风险按钮、详情跳转、最终摘要
-  - 已支持 `messageFormat = "text" | "card" | "card-live"`，可按消息类型切换文本、卡片、卡片更新模式。
-  - `server/tests/feishu-bridge.test.ts` 已覆盖模板渲染行为，包括：
-    - 等待确认消息
-    - 审批/升级按钮样式
-    - 风险按钮样式
-    - 决策结果消息
-    - 卡片颜色与最终摘要行为
-  - 结论：当前已存在“飞书场景下的模板化通知能力”，可以勾选；但它仍是代码内置模板，尚未抽象成跨渠道 `templateId + variables` 的统一模板中心。
-
 - [x] 增加发送审计记录
-  - 已具备的范围：
-    - 仓库已有平台级审计能力与契约，如 `shared/audit/*`、`server/audit/*`、`server/permission/audit-logger.ts`。
-    - 高风险节点治理文档已明确 `message_notification` 需要保留 `channelType`、`recipientScope`、`templateId`、`messageDigest`、发送结果、重试记录、责任主体等字段。
-  - 本轮新增的落地证据：
-    - `server/feishu/bridge.ts` 已新增 `FeishuNotificationAuditEvent`，并在 `sendAndTrack()` / `sendFinalSummaryIfNeeded()` 中统一产出通知发送审计事件。
-    - 审计字段已覆盖：
-      - `auditId / traceId`
-      - `channelType / recipientScope / targetId`
-      - `templateId / messageDigest`
-      - `approvalStatus / resultStatus`
-      - `attemptCount / retryCount / attempts`
-      - `statusCode / error`
-      - `observability.progress / taskStatus / stage / presentation`
-    - `server/feishu/delivery.ts` 已把 HTTP 响应、限流、网络异常的重试过程折叠成 telemetry，传回 bridge 做统一审计记录。
-    - `server/tests/feishu-bridge.test.ts` 已新增发送成功与发送失败两条审计链测试。
-    - `server/tests/feishu-routes.test.ts` 已验证 webhook 入口触发 ACK 通知时会落发送审计事件。
-  - 结论：当前“通知发送动作自身写审计”已经在飞书通知链内落地，可以勾选。
-
 - [x] 验证失败重试策略
-  - 已具备的范围：
-    - `server/feishu/delivery.ts` 已实现发送重试逻辑：
-      - `deliveryMaxRetries`
-      - `deliveryRetryBaseMs`
-      - `deliveryRetryMaxMs`
-      - `parseRetryAfter()`
-      - 对 `429` 与 `5xx` 的重试处理
-    - `server/feishu/config.ts` 与 `.env.example` 已暴露对应配置项，可调节重试次数与退避时间。
-  - 本轮新增的独立验证：
-    - `server/tests/feishu-delivery.test.ts` 已新增针对 `FeishuApiDelivery` 的重试专项测试矩阵，覆盖：
-      - `429 + Retry-After` 后重试成功
-      - `network-error` 连续失败后重试耗尽
-      - `400` 非重试型错误立即失败
-      - token 获取阶段 `503` 后重试成功
-    - `server/tests/feishu-bridge.test.ts` 继续验证失败重试 telemetry 会进入通知发送审计事件。
-  - 当前边界：
-    - 尚未覆盖“外围更高层任务编排在重试耗尽后如何降级/补偿”的端到端策略，但这已超出 `message_notification` 通知发送节点本身的最小验证边界。
-  - 结论：当前已经可以确认“失败重试策略已完成节点级实现与专项验证”，可以勾选。
+
+## 2026-04-23 中文收口说明
+
+当前主仓已经具备 `message_notification` 节点的最小真实闭环，但应按事实表述为“飞书通知链路闭环成立”，而不是扩写成“跨渠道统一通知中心已完成”。
+
+当前可按事实确认的内容如下：
+
+- 已形成通知输入输出与渠道侧最小契约，可承接通知请求、目标信息与发送结果。
+- 已形成可复用的消息模板能力，覆盖文本与卡片等主要呈现方式。
+- 已具备发送审计记录，可沉淀通知对象、模板、尝试次数、结果状态与失败信息。
+- 已具备最小失败重试与投递 telemetry 闭环，能够覆盖限流、网络异常与可重试失败场景。
+- 已补齐飞书通知链路的 `traceId`、`requestId`、`workflowId`、`sessionId`、`decisionId` 透传；桥接审计事件与出站请求头共用同一组关联元数据。
+- 已通过 `server/tests/feishu-bridge.test.ts` 与 `server/tests/feishu-delivery.test.ts` 验证审计事件映射、关联字段继承、请求头透传与回执回写。
+
+当前需要保留的真实边界如下：
+
+- 可以确认“飞书通知链路最小闭环成立”。
+- 不宜扩写为“跨渠道统一通知平台已完成”。
+- 不宜扩写为“所有通知编排能力都已统一抽象并完成主仓级治理”。
+
+因此，本 spec 可按完成处理，但结论应严格限定在当前已确认的飞书通知主线闭环范围内。

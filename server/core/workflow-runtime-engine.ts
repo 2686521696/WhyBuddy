@@ -1,4 +1,9 @@
-import type { MissionRecord } from "../../shared/mission/contracts.js";
+import {
+  normalizeWebAigcHitlFormData,
+  readWebAigcHitlFieldDefinitions,
+  type MissionRecord,
+} from "../../shared/mission/contracts.js";
+import type { SourceType } from "../../shared/rag/contracts.js";
 import type {
   StoredWebAigcRuntimeState,
   WebAigcEdgeSchema,
@@ -31,7 +36,10 @@ import type {
   WorkflowOrganizationSnapshot,
 } from "../../shared/organization-schema.js";
 import {
+  type ChatNodeAdapterDeps,
+  type ChatNodeDocumentSearchInput,
   executeChatNode,
+  type ChatNodeMessage,
   type ChatNodeInput,
   type ChatNodeType,
 } from "../routes/node-adapters/chat-node-adapter.js";
@@ -86,6 +94,648 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 function normalizeOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+const WEB_AIGC_RUNTIME_RELATION_LINK_PATHS = [
+  "workflowId",
+  "missionId",
+  "instanceId",
+  "sessionId",
+  "replayId",
+  "auditId",
+  "traceId",
+  "requestId",
+  "lineageId",
+  "artifactId",
+  "nodeId",
+  "edgeId",
+  "decisionId",
+  "links.workflowId",
+  "links.missionId",
+  "links.instanceId",
+  "links.sessionId",
+  "links.replayId",
+  "links.auditId",
+  "links.traceId",
+  "links.requestId",
+  "links.lineageId",
+  "links.artifactId",
+  "links.nodeId",
+  "links.edgeId",
+  "links.decisionId",
+  "metadata.workflowId",
+  "metadata.missionId",
+  "metadata.instanceId",
+  "metadata.sessionId",
+  "metadata.replayId",
+  "metadata.auditId",
+  "metadata.traceId",
+  "metadata.requestId",
+  "metadata.lineageId",
+  "metadata.artifactId",
+  "metadata.nodeId",
+  "metadata.edgeId",
+  "metadata.decisionId",
+  "metadata.links.workflowId",
+  "metadata.links.missionId",
+  "metadata.links.instanceId",
+  "metadata.links.sessionId",
+  "metadata.links.replayId",
+  "metadata.links.auditId",
+  "metadata.links.traceId",
+  "metadata.links.requestId",
+  "metadata.links.lineageId",
+  "metadata.links.artifactId",
+  "metadata.links.nodeId",
+  "metadata.links.edgeId",
+  "metadata.links.decisionId",
+  "context.workflowId",
+  "context.missionId",
+  "context.instanceId",
+  "context.sessionId",
+  "context.replayId",
+  "context.auditId",
+  "context.traceId",
+  "context.requestId",
+  "context.lineageId",
+  "context.artifactId",
+  "context.nodeId",
+  "context.edgeId",
+  "context.decisionId",
+  "context.links.workflowId",
+  "context.links.missionId",
+  "context.links.instanceId",
+  "context.links.sessionId",
+  "context.links.replayId",
+  "context.links.auditId",
+  "context.links.traceId",
+  "context.links.requestId",
+  "context.links.lineageId",
+  "context.links.artifactId",
+  "context.links.nodeId",
+  "context.links.edgeId",
+  "context.links.decisionId",
+  "context.inheritedContext.workflowId",
+  "context.inheritedContext.missionId",
+  "context.inheritedContext.instanceId",
+  "context.inheritedContext.sessionId",
+  "context.inheritedContext.replayId",
+  "context.inheritedContext.auditId",
+  "context.inheritedContext.traceId",
+  "context.inheritedContext.requestId",
+  "context.inheritedContext.lineageId",
+  "context.inheritedContext.artifactId",
+  "context.inheritedContext.nodeId",
+  "context.inheritedContext.edgeId",
+  "context.inheritedContext.decisionId",
+  "runtime.workflowId",
+  "runtime.missionId",
+  "runtime.instanceId",
+  "runtime.sessionId",
+  "runtime.replayId",
+  "runtime.auditId",
+  "runtime.traceId",
+  "runtime.requestId",
+  "runtime.lineageId",
+  "runtime.artifactId",
+  "runtime.nodeId",
+  "runtime.edgeId",
+  "runtime.decisionId",
+  "runtime.links.workflowId",
+  "runtime.links.missionId",
+  "runtime.links.instanceId",
+  "runtime.links.sessionId",
+  "runtime.links.replayId",
+  "runtime.links.auditId",
+  "runtime.links.traceId",
+  "runtime.links.requestId",
+  "runtime.links.lineageId",
+  "runtime.links.artifactId",
+  "runtime.links.nodeId",
+  "runtime.links.edgeId",
+  "runtime.links.decisionId",
+  "observability.workflowId",
+  "observability.missionId",
+  "observability.instanceId",
+  "observability.sessionId",
+  "observability.replayId",
+  "observability.auditId",
+  "observability.traceId",
+  "observability.requestId",
+  "observability.lineageId",
+  "observability.artifactId",
+  "observability.nodeId",
+  "observability.edgeId",
+  "observability.decisionId",
+  "observability.links.workflowId",
+  "observability.links.missionId",
+  "observability.links.instanceId",
+  "observability.links.sessionId",
+  "observability.links.replayId",
+  "observability.links.auditId",
+  "observability.links.traceId",
+  "observability.links.requestId",
+  "observability.links.lineageId",
+  "observability.links.artifactId",
+  "observability.links.nodeId",
+  "observability.links.edgeId",
+  "observability.links.decisionId",
+  "approval.workflowId",
+  "approval.missionId",
+  "approval.instanceId",
+  "approval.sessionId",
+  "approval.replayId",
+  "approval.auditId",
+  "approval.traceId",
+  "approval.requestId",
+  "approval.lineageId",
+  "approval.artifactId",
+  "approval.nodeId",
+  "approval.edgeId",
+  "approval.decisionId",
+  "audit.workflowId",
+  "audit.missionId",
+  "audit.instanceId",
+  "audit.sessionId",
+  "audit.replayId",
+  "audit.auditId",
+  "audit.traceId",
+  "audit.requestId",
+  "audit.lineageId",
+  "audit.artifactId",
+  "audit.nodeId",
+  "audit.edgeId",
+  "audit.decisionId",
+] as const;
+
+type WebAigcRuntimeRelationLinkKey =
+  | "workflowId"
+  | "missionId"
+  | "instanceId"
+  | "sessionId"
+  | "replayId"
+  | "auditId"
+  | "traceId"
+  | "requestId"
+  | "lineageId"
+  | "artifactId"
+  | "nodeId"
+  | "edgeId"
+  | "decisionId";
+
+function readRuntimeRelationLinkValue(
+  source: unknown,
+  key: WebAigcRuntimeRelationLinkKey,
+): string | undefined {
+  for (const path of WEB_AIGC_RUNTIME_RELATION_LINK_PATHS) {
+    if (!path.endsWith(key)) {
+      continue;
+    }
+    const candidate = getPathValue(source, path);
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function buildRuntimeRelationLinks(input: {
+  state: StoredWebAigcRuntimeState;
+  node?: WebAigcNodeSchema;
+  edge?: {
+    edgeId?: string;
+    fromNodeId?: string;
+    toNodeId?: string;
+    kind?: string;
+  };
+  run?: WebAigcNodeRunRecord;
+  metadata?: Record<string, unknown>;
+}): Record<string, string> {
+  const links: Record<string, string> = {};
+  const { state } = input;
+
+  const setLink = (
+    key: WebAigcRuntimeRelationLinkKey,
+    value: unknown,
+  ): void => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+    links[key] = normalized;
+  };
+
+  setLink(
+    "workflowId",
+    state.instance.links.workflowId ||
+      state.definition.links.workflowId ||
+      state.instance.instanceId,
+  );
+  setLink("missionId", state.instance.links.missionId);
+  setLink("instanceId", state.instance.instanceId);
+  setLink("sessionId", state.instance.links.sessionId);
+  setLink(
+    "replayId",
+    state.instance.links.replayId ||
+      state.definition.links.replayId ||
+      state.instance.links.workflowId ||
+      state.definition.links.workflowId ||
+      state.instance.instanceId,
+  );
+  setLink("auditId", state.instance.links.auditId);
+  setLink("nodeId", input.node?.id || state.instance.currentNodeId || undefined);
+  setLink("edgeId", input.edge?.edgeId);
+
+  const relationSources = [
+    input.metadata,
+    input.run?.output,
+    state.instance.output,
+    state.instance.variables,
+    input.node?.metadata,
+  ];
+
+  const relationKeys: WebAigcRuntimeRelationLinkKey[] = [
+    "workflowId",
+    "missionId",
+    "instanceId",
+    "sessionId",
+    "replayId",
+    "auditId",
+    "traceId",
+    "requestId",
+    "lineageId",
+    "artifactId",
+    "nodeId",
+    "edgeId",
+    "decisionId",
+  ];
+
+  for (const key of relationKeys) {
+    for (const source of relationSources) {
+      const candidate = readRuntimeRelationLinkValue(source, key);
+      if (!candidate) {
+        continue;
+      }
+      setLink(key, candidate);
+      break;
+    }
+  }
+
+  return links;
+}
+
+function mergeRuntimeEventMetadata(
+  metadata: Record<string, unknown> | undefined,
+  relationLinks: Record<string, string>,
+): Record<string, unknown> | undefined {
+  const baseMetadata = isRecord(metadata) ? clone(metadata) : undefined;
+  const baseLinks = isRecord(baseMetadata?.links) ? clone(baseMetadata.links) : undefined;
+  const mergedLinks = {
+    ...(relationLinks || {}),
+    ...(baseLinks || {}),
+  };
+
+  if (!baseMetadata && Object.keys(mergedLinks).length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...(baseMetadata || {}),
+    ...(Object.keys(mergedLinks).length > 0 ? { links: mergedLinks } : {}),
+  };
+}
+
+type RuntimeGovernanceRetryMode = "automatic" | "manual";
+
+type RuntimeGovernanceRetryBlockedReason =
+  | "automatic_retry_budget_exhausted"
+  | "manual_retry_budget_exhausted"
+  | "total_retry_budget_exhausted";
+
+interface RuntimeGovernancePolicy {
+  maxAutomaticRetries?: number;
+  maxManualRetries?: number;
+  maxTotalRetries?: number;
+  retryDelayMs?: number;
+  escalateOnRetryBlocked?: boolean;
+}
+
+interface RuntimeGovernanceState {
+  automaticRetryCount: number;
+  manualRetryCount: number;
+  totalRetryCount: number;
+  lastRetryMode?: RuntimeGovernanceRetryMode;
+  lastNodeId?: string;
+  lastRequestedBy?: string;
+  lastReason?: string;
+  lastRetriedAt?: string;
+  lastRetryDelayMs?: number;
+  lastBlockedReason?: RuntimeGovernanceRetryBlockedReason;
+  lastBlockedAt?: string;
+}
+
+interface RuntimeGovernanceSnapshot {
+  policy: RuntimeGovernancePolicy;
+  state: RuntimeGovernanceState;
+  remaining: {
+    automaticRetries?: number;
+    manualRetries?: number;
+    totalRetries?: number;
+  };
+}
+
+interface RuntimeGovernanceRetryAllowance {
+  allowed: boolean;
+  blockedReason?: RuntimeGovernanceRetryBlockedReason;
+  snapshot: RuntimeGovernanceSnapshot;
+}
+
+function normalizeRuntimeGovernanceLimit(value: unknown): number | undefined {
+  const normalized = normalizeOptionalNumber(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.floor(normalized));
+}
+
+function normalizeRuntimeGovernancePolicy(
+  value: unknown,
+): RuntimeGovernancePolicy {
+  const record = isRecord(value) ? value : {};
+  const maxAutomaticRetries = normalizeRuntimeGovernanceLimit(
+    record.maxAutomaticRetries,
+  );
+  const maxManualRetries = normalizeRuntimeGovernanceLimit(
+    record.maxManualRetries,
+  );
+  const maxTotalRetries = normalizeRuntimeGovernanceLimit(record.maxTotalRetries);
+  const retryDelayMs = normalizeRuntimeGovernanceLimit(record.retryDelayMs);
+  const escalateOnRetryBlocked =
+    typeof record.escalateOnRetryBlocked === "boolean"
+      ? record.escalateOnRetryBlocked
+      : undefined;
+
+  return {
+    ...(maxAutomaticRetries !== undefined ? { maxAutomaticRetries } : {}),
+    ...(maxManualRetries !== undefined ? { maxManualRetries } : {}),
+    ...(maxTotalRetries !== undefined ? { maxTotalRetries } : {}),
+    ...(retryDelayMs !== undefined ? { retryDelayMs } : {}),
+    ...(escalateOnRetryBlocked !== undefined
+      ? { escalateOnRetryBlocked }
+      : {}),
+  };
+}
+
+function mergeRuntimeGovernancePolicy(
+  base: RuntimeGovernancePolicy,
+  override?: RuntimeGovernancePolicy,
+): RuntimeGovernancePolicy {
+  return {
+    ...base,
+    ...(override || {}),
+  };
+}
+
+function readRuntimeGovernancePolicy(
+  variables: Record<string, unknown>,
+): RuntimeGovernancePolicy {
+  return normalizeRuntimeGovernancePolicy(variables.runtimeGovernancePolicy);
+}
+
+function readRuntimeGovernanceState(
+  variables: Record<string, unknown>,
+): RuntimeGovernanceState {
+  const record = isRecord(variables.runtimeGovernanceState)
+    ? variables.runtimeGovernanceState
+    : {};
+
+  const automaticRetryCount = normalizeRuntimeGovernanceLimit(
+    record.automaticRetryCount,
+  );
+  const manualRetryCount = normalizeRuntimeGovernanceLimit(
+    record.manualRetryCount,
+  );
+  const totalRetryCount = normalizeRuntimeGovernanceLimit(record.totalRetryCount);
+  const lastRetryDelayMs = normalizeRuntimeGovernanceLimit(record.lastRetryDelayMs);
+
+  return {
+    automaticRetryCount: automaticRetryCount ?? 0,
+    manualRetryCount: manualRetryCount ?? 0,
+    totalRetryCount: totalRetryCount ?? 0,
+    ...(record.lastRetryMode === "automatic" || record.lastRetryMode === "manual"
+      ? { lastRetryMode: record.lastRetryMode }
+      : {}),
+    ...(typeof record.lastNodeId === "string"
+      ? { lastNodeId: record.lastNodeId }
+      : {}),
+    ...(typeof record.lastRequestedBy === "string"
+      ? { lastRequestedBy: record.lastRequestedBy }
+      : {}),
+    ...(typeof record.lastReason === "string" ? { lastReason: record.lastReason } : {}),
+    ...(typeof record.lastRetriedAt === "string"
+      ? { lastRetriedAt: record.lastRetriedAt }
+      : {}),
+    ...(lastRetryDelayMs !== undefined ? { lastRetryDelayMs } : {}),
+    ...(record.lastBlockedReason === "automatic_retry_budget_exhausted" ||
+    record.lastBlockedReason === "manual_retry_budget_exhausted" ||
+    record.lastBlockedReason === "total_retry_budget_exhausted"
+      ? { lastBlockedReason: record.lastBlockedReason }
+      : {}),
+    ...(typeof record.lastBlockedAt === "string"
+      ? { lastBlockedAt: record.lastBlockedAt }
+      : {}),
+  };
+}
+
+function buildRuntimeGovernanceSnapshot(
+  policy: RuntimeGovernancePolicy,
+  state: RuntimeGovernanceState,
+): RuntimeGovernanceSnapshot {
+  return {
+    policy,
+    state,
+    remaining: {
+      ...(typeof policy.maxAutomaticRetries === "number"
+        ? {
+            automaticRetries: Math.max(
+              0,
+              policy.maxAutomaticRetries - state.automaticRetryCount,
+            ),
+          }
+        : {}),
+      ...(typeof policy.maxManualRetries === "number"
+        ? {
+            manualRetries: Math.max(
+              0,
+              policy.maxManualRetries - state.manualRetryCount,
+            ),
+          }
+        : {}),
+      ...(typeof policy.maxTotalRetries === "number"
+        ? {
+            totalRetries: Math.max(
+              0,
+              policy.maxTotalRetries - state.totalRetryCount,
+            ),
+          }
+        : {}),
+    },
+  };
+}
+
+function applyRuntimeGovernancePolicyOverride(
+  variables: Record<string, unknown>,
+  override: unknown,
+): {
+  variables: Record<string, unknown>;
+  snapshot: RuntimeGovernanceSnapshot;
+} {
+  const basePolicy = readRuntimeGovernancePolicy(variables);
+  const normalizedOverride = normalizeRuntimeGovernancePolicy(override);
+  const policy = mergeRuntimeGovernancePolicy(basePolicy, normalizedOverride);
+  const state = readRuntimeGovernanceState(variables);
+  const snapshot = buildRuntimeGovernanceSnapshot(policy, state);
+
+  if (Object.keys(policy).length === 0) {
+    return {
+      variables,
+      snapshot,
+    };
+  }
+
+  return {
+    variables: {
+      ...variables,
+      runtimeGovernancePolicy: policy,
+    },
+    snapshot,
+  };
+}
+
+function evaluateRuntimeGovernanceRetryAllowance(
+  variables: Record<string, unknown>,
+  mode: RuntimeGovernanceRetryMode,
+): RuntimeGovernanceRetryAllowance {
+  const policy = readRuntimeGovernancePolicy(variables);
+  const state = readRuntimeGovernanceState(variables);
+  const snapshot = buildRuntimeGovernanceSnapshot(policy, state);
+
+  if (
+    mode === "automatic" &&
+    typeof snapshot.remaining.automaticRetries === "number" &&
+    snapshot.remaining.automaticRetries <= 0
+  ) {
+    return {
+      allowed: false,
+      blockedReason: "automatic_retry_budget_exhausted",
+      snapshot,
+    };
+  }
+
+  if (
+    mode === "manual" &&
+    typeof snapshot.remaining.manualRetries === "number" &&
+    snapshot.remaining.manualRetries <= 0
+  ) {
+    return {
+      allowed: false,
+      blockedReason: "manual_retry_budget_exhausted",
+      snapshot,
+    };
+  }
+
+  if (
+    typeof snapshot.remaining.totalRetries === "number" &&
+    snapshot.remaining.totalRetries <= 0
+  ) {
+    return {
+      allowed: false,
+      blockedReason: "total_retry_budget_exhausted",
+      snapshot,
+    };
+  }
+
+  return {
+    allowed: true,
+    snapshot,
+  };
+}
+
+function recordRuntimeGovernanceRetry(
+  variables: Record<string, unknown>,
+  input: {
+    mode: RuntimeGovernanceRetryMode;
+    nodeId: string;
+    requestedBy: string;
+    reason: string;
+    retriedAt: string;
+    retryDelayMs?: number;
+  },
+): {
+  variables: Record<string, unknown>;
+  snapshot: RuntimeGovernanceSnapshot;
+} {
+  const policy = readRuntimeGovernancePolicy(variables);
+  const currentState = readRuntimeGovernanceState(variables);
+  const nextState: RuntimeGovernanceState = {
+    automaticRetryCount:
+      currentState.automaticRetryCount + (input.mode === "automatic" ? 1 : 0),
+    manualRetryCount:
+      currentState.manualRetryCount + (input.mode === "manual" ? 1 : 0),
+    totalRetryCount: currentState.totalRetryCount + 1,
+    lastRetryMode: input.mode,
+    lastNodeId: input.nodeId,
+    lastRequestedBy: input.requestedBy,
+    lastReason: input.reason,
+    lastRetriedAt: input.retriedAt,
+    ...(input.retryDelayMs !== undefined
+      ? { lastRetryDelayMs: input.retryDelayMs }
+      : {}),
+  };
+  const snapshot = buildRuntimeGovernanceSnapshot(policy, nextState);
+
+  return {
+    variables: {
+      ...variables,
+      ...(Object.keys(policy).length > 0 ? { runtimeGovernancePolicy: policy } : {}),
+      runtimeGovernanceState: nextState,
+    },
+    snapshot,
+  };
+}
+
+function recordRuntimeGovernanceRetryBlocked(
+  variables: Record<string, unknown>,
+  input: {
+    blockedReason: RuntimeGovernanceRetryBlockedReason;
+    blockedAt: string;
+  },
+): {
+  variables: Record<string, unknown>;
+  snapshot: RuntimeGovernanceSnapshot;
+} {
+  const policy = readRuntimeGovernancePolicy(variables);
+  const currentState = readRuntimeGovernanceState(variables);
+  const nextState: RuntimeGovernanceState = {
+    ...currentState,
+    lastBlockedReason: input.blockedReason,
+    lastBlockedAt: input.blockedAt,
+  };
+  const snapshot = buildRuntimeGovernanceSnapshot(policy, nextState);
+
+  return {
+    variables: {
+      ...variables,
+      ...(Object.keys(policy).length > 0 ? { runtimeGovernancePolicy: policy } : {}),
+      runtimeGovernanceState: nextState,
+    },
+    snapshot,
+  };
 }
 
 function getPathValue(source: unknown, path: string): unknown {
@@ -232,6 +882,218 @@ function resolveNodeTemplateValue(
   }
 
   return value;
+}
+
+type RuntimeVariableAssignmentScope = "global" | "local" | "temp";
+
+interface RuntimeVariableAssignmentChange {
+  nodeId: string;
+  scope: RuntimeVariableAssignmentScope;
+  target: string;
+  previousValue: unknown;
+  nextValue: unknown;
+  assignedAt: string;
+}
+
+interface RuntimeVariableAssignmentContext {
+  global: Record<string, unknown>;
+  local: Record<string, unknown>;
+  temp: Record<string, unknown>;
+}
+
+function normalizeRuntimeVariableAssignmentScope(
+  value: unknown,
+): RuntimeVariableAssignmentScope {
+  return value === "local" || value === "temp" ? value : "global";
+}
+
+function cloneRuntimeRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? clone(value) : {};
+}
+
+function buildRuntimeVariableAssignmentContext(
+  variables: Record<string, unknown>,
+): RuntimeVariableAssignmentContext {
+  const global = clone(variables);
+  delete global.runtimeVariableScopes;
+
+  const scopeSnapshot = isRecord(variables.runtimeVariableScopes)
+    ? variables.runtimeVariableScopes
+    : {};
+
+  return {
+    global: {
+      ...global,
+      ...cloneRuntimeRecord(scopeSnapshot.global),
+    },
+    local: cloneRuntimeRecord(scopeSnapshot.local),
+    temp: cloneRuntimeRecord(scopeSnapshot.temp),
+  };
+}
+
+function lookupRuntimeVariableAssignmentValue(
+  path: string,
+  context: RuntimeVariableAssignmentContext,
+): unknown {
+  const normalizedPath = path.trim();
+  if (!normalizedPath) {
+    return undefined;
+  }
+
+  for (const scope of [context.temp, context.local, context.global]) {
+    const value = getPathValue(scope, normalizedPath);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveRuntimeVariableAssignmentTokenValue(
+  token: string,
+  context: RuntimeVariableAssignmentContext,
+): unknown {
+  const trimmed = token.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (
+    (trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  if (trimmed === "undefined") return undefined;
+
+  const numberValue = Number(trimmed);
+  if (Number.isFinite(numberValue) && trimmed !== "") {
+    return numberValue;
+  }
+
+  if (trimmed.startsWith("$.")) {
+    return lookupRuntimeVariableAssignmentValue(trimmed.slice(2), context);
+  }
+
+  return lookupRuntimeVariableAssignmentValue(trimmed, context);
+}
+
+const RUNTIME_VARIABLE_ASSIGNMENT_OPERATORS = [
+  "===",
+  "!==",
+  ">=",
+  "<=",
+  "==",
+  "!=",
+  ">",
+  "<",
+] as const;
+
+function evaluateRuntimeVariableAssignmentExpression(
+  expression: string,
+  context: RuntimeVariableAssignmentContext,
+): unknown {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  for (const operator of RUNTIME_VARIABLE_ASSIGNMENT_OPERATORS) {
+    const operatorIndex = trimmed.indexOf(operator);
+    if (operatorIndex <= 0) {
+      continue;
+    }
+
+    const leftToken = trimmed.slice(0, operatorIndex);
+    const rightToken = trimmed.slice(operatorIndex + operator.length);
+    const leftValue = resolveRuntimeVariableAssignmentTokenValue(
+      leftToken,
+      context,
+    );
+    const rightValue = resolveRuntimeVariableAssignmentTokenValue(
+      rightToken,
+      context,
+    );
+
+    switch (operator) {
+      case "===":
+      case "==":
+        return leftValue === rightValue;
+      case "!==":
+      case "!=":
+        return leftValue !== rightValue;
+      case ">":
+        return Number(leftValue) > Number(rightValue);
+      case "<":
+        return Number(leftValue) < Number(rightValue);
+      case ">=":
+        return Number(leftValue) >= Number(rightValue);
+      case "<=":
+        return Number(leftValue) <= Number(rightValue);
+      default:
+        break;
+    }
+  }
+
+  return resolveRuntimeVariableAssignmentTokenValue(trimmed, context);
+}
+
+function readRuntimeVariableAssignmentChanges(
+  variables: Record<string, unknown>,
+): RuntimeVariableAssignmentChange[] {
+  const changes = variables.runtimeVariableChanges;
+  if (!Array.isArray(changes)) {
+    return [];
+  }
+
+  return changes.flatMap(change => {
+    if (
+      !isRecord(change) ||
+      typeof change.nodeId !== "string" ||
+      typeof change.target !== "string"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        nodeId: change.nodeId,
+        scope: normalizeRuntimeVariableAssignmentScope(change.scope),
+        target: change.target,
+        previousValue: clone(change.previousValue),
+        nextValue: clone(change.nextValue),
+        assignedAt:
+          typeof change.assignedAt === "string" ? change.assignedAt : nowIso(),
+      } satisfies RuntimeVariableAssignmentChange,
+    ];
+  });
+}
+
+function readRuntimeVariableAssignmentChange(
+  output?: Record<string, unknown>,
+): RuntimeVariableAssignmentChange | undefined {
+  if (!output || !isRecord(output.runtimeVariableLastChange)) {
+    return undefined;
+  }
+
+  const change = output.runtimeVariableLastChange;
+  if (typeof change.nodeId !== "string" || typeof change.target !== "string") {
+    return undefined;
+  }
+
+  return {
+    nodeId: change.nodeId,
+    scope: normalizeRuntimeVariableAssignmentScope(change.scope),
+    target: change.target,
+    previousValue: clone(change.previousValue),
+    nextValue: clone(change.nextValue),
+    assignedAt: typeof change.assignedAt === "string" ? change.assignedAt : nowIso(),
+  };
 }
 
 function getHitlChoiceOptions(
@@ -702,6 +1564,155 @@ function markEdgeExecuted(
   }
 }
 
+function markEdgeBlocked(
+  instance: WebAigcGraphInstance,
+  edgeId?: string,
+): void {
+  if (!edgeId) return;
+  const edge = instance.edgeTransitions.find(item => item.edgeId === edgeId);
+  if (edge) {
+    edge.status = "blocked";
+    edge.timestamp = nowIso();
+  }
+}
+
+function recordLoopIteration(
+  variables: Record<string, unknown>,
+  loopKey: string,
+): {
+  variables: Record<string, unknown>;
+  iterationIndex: number;
+} {
+  const tracker = isRecord(variables.runtimeLoopIterations)
+    ? variables.runtimeLoopIterations
+    : {};
+  const previous = tracker[loopKey];
+  const iterationIndex =
+    typeof previous === "number" && Number.isFinite(previous) && previous >= 0
+      ? Math.floor(previous) + 1
+      : 1;
+
+  return {
+    variables: {
+      ...variables,
+      runtimeLoopIterations: {
+        ...tracker,
+        [loopKey]: iterationIndex,
+      },
+    },
+    iterationIndex,
+  };
+}
+
+function readLoopIterationCount(
+  variables: Record<string, unknown>,
+  loopKey: string,
+): number {
+  const tracker = isRecord(variables.runtimeLoopIterations)
+    ? variables.runtimeLoopIterations
+    : {};
+  const current = tracker[loopKey];
+  return typeof current === "number" && Number.isFinite(current) && current >= 0
+    ? Math.floor(current)
+    : 0;
+}
+
+function readLoopEdgeLimitNumber(
+  edge: Pick<WebAigcEdgeSchema, "metadata"> | undefined,
+  key: string,
+): number | undefined {
+  const value = edge?.metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readLoopRuntimeTracker(
+  variables: Record<string, unknown>,
+): Record<string, unknown> {
+  return isRecord(variables.runtimeLoopTracking)
+    ? variables.runtimeLoopTracking
+    : {};
+}
+
+function ensureLoopRuntimeTrackerEntry(
+  variables: Record<string, unknown>,
+  loopKey: string,
+): {
+  entry: Record<string, unknown>;
+  variables: Record<string, unknown>;
+} {
+  const tracker = readLoopRuntimeTracker(variables);
+  const existingEntry = isRecord(tracker[loopKey]) ? tracker[loopKey] : {};
+  const startedAt =
+    normalizeOptionalString(existingEntry.startedAt) || nowIso();
+  const entry = {
+    ...existingEntry,
+    startedAt,
+  };
+
+  return {
+    entry,
+    variables: {
+      ...variables,
+      runtimeLoopTracking: {
+        ...tracker,
+        [loopKey]: entry,
+      },
+    },
+  };
+}
+
+function updateLoopRuntimeTracker(
+  variables: Record<string, unknown>,
+  loopKey: string,
+  updates: Record<string, unknown>,
+): Record<string, unknown> {
+  const tracker = readLoopRuntimeTracker(variables);
+  const entry = isRecord(tracker[loopKey]) ? tracker[loopKey] : {};
+  return {
+    ...variables,
+    runtimeLoopTracking: {
+      ...tracker,
+      [loopKey]: {
+        ...entry,
+        ...updates,
+      },
+    },
+  };
+}
+
+function readLatestLoopTrackerContext(
+  variables: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const tracker = readLoopRuntimeTracker(variables);
+  let best:
+    | {
+        sortValue: number;
+        value: Record<string, unknown>;
+      }
+    | undefined;
+
+  for (const [loopKey, rawEntry] of Object.entries(tracker)) {
+    if (!isRecord(rawEntry)) continue;
+    const timestampCandidate =
+      normalizeOptionalString(rawEntry.lastBlockedAt) ||
+      normalizeOptionalString(rawEntry.lastIteratedAt) ||
+      normalizeOptionalString(rawEntry.startedAt);
+    const parsedTimestamp = timestampCandidate ? Date.parse(timestampCandidate) : Number.NaN;
+    const sortValue = Number.isFinite(parsedTimestamp) ? parsedTimestamp : -1;
+    if (!best || sortValue >= best.sortValue) {
+      best = {
+        sortValue,
+        value: {
+          loopKey,
+          ...rawEntry,
+        },
+      };
+    }
+  }
+
+  return best?.value;
+}
+
 function resolveNextNodeId(
   definition: WebAigcGraphDefinition,
   currentNodeId: string,
@@ -804,6 +1815,103 @@ function resolveChatNodeConfigValue(
   );
 }
 
+function isRuntimeChatNodeMessage(value: unknown): value is ChatNodeMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.role === "system" ||
+      value.role === "user" ||
+      value.role === "assistant") &&
+    typeof value.content === "string"
+  );
+}
+
+function normalizeRuntimeChatMessages(value: unknown): ChatNodeMessage[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized = value.filter(isRuntimeChatNodeMessage).map(message => ({
+    role: message.role,
+    content: message.content,
+  }));
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function isRuntimeSourceType(value: string): value is SourceType {
+  return [
+    "task_result",
+    "code_snippet",
+    "conversation",
+    "mission_log",
+    "document",
+    "architecture_decision",
+    "bug_report",
+  ].includes(value);
+}
+
+function normalizeRuntimeChatDocumentSearchInput(
+  value: unknown,
+): ChatNodeDocumentSearchInput | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const scope = isRecord(value.scope) ? value.scope : undefined;
+  const projectId = normalizeOptionalString(scope?.projectId);
+  if (!projectId) {
+    return undefined;
+  }
+
+  const sourceTypes = isStringArray(scope?.sourceTypes)
+    ? scope.sourceTypes.filter(isRuntimeSourceType)
+    : undefined;
+  const documentIds = isStringArray(scope?.documentIds) ? [...scope.documentIds] : undefined;
+  const options = isRecord(value.options) ? value.options : undefined;
+  const mode =
+    value.options && isRecord(value.options) &&
+    (value.options.mode === "semantic" ||
+      value.options.mode === "keyword" ||
+      value.options.mode === "hybrid")
+      ? value.options.mode
+      : undefined;
+
+  return {
+    ...(normalizeOptionalString(value.query) ? { query: normalizeOptionalString(value.query) } : {}),
+    scope: {
+      projectId,
+      ...(sourceTypes ? { sourceTypes } : {}),
+      ...(documentIds ? { documentIds } : {}),
+      ...(normalizeOptionalString(scope?.agentId)
+        ? { agentId: normalizeOptionalString(scope?.agentId) }
+        : {}),
+      ...(normalizeOptionalString(scope?.codeLanguage)
+        ? { codeLanguage: normalizeOptionalString(scope?.codeLanguage) }
+        : {}),
+    },
+    ...(options
+      ? {
+          options: {
+            ...(typeof options.topK === "number" ? { topK: options.topK } : {}),
+            ...(typeof options.minScore === "number"
+              ? { minScore: options.minScore }
+              : {}),
+            ...(mode ? { mode } : {}),
+            ...(typeof options.expandContext === "boolean"
+              ? { expandContext: options.expandContext }
+              : {}),
+            ...(typeof options.contextWindowChunks === "number"
+              ? { contextWindowChunks: options.contextWindowChunks }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function buildRuntimeChatNodeInput(
   context: WorkflowNodeExecutionContext,
 ): ChatNodeInput {
@@ -818,9 +1926,10 @@ function buildRuntimeChatNodeInput(
     normalizeOptionalString(
       resolveChatNodeConfigValue(context.node, context.variables, "systemPrompt"),
     ) || normalizeOptionalString(context.variables.systemPrompt);
-  const messages =
-    resolveChatNodeConfigValue(context.node, context.variables, "messages") ||
-    context.variables.messages;
+  const messages = normalizeRuntimeChatMessages(
+    resolveChatNodeConfigValue(context.node, context.variables, "messages") ??
+      context.variables.messages,
+  );
   const inputContext =
     resolveChatNodeConfigValue(context.node, context.variables, "context") ??
     context.variables.context;
@@ -835,6 +1944,11 @@ function buildRuntimeChatNodeInput(
   const toolCalls =
     resolveChatNodeConfigValue(context.node, context.variables, "toolCalls") ??
     context.variables.toolCalls;
+  const documentSearch =
+    normalizeRuntimeChatDocumentSearchInput(
+      resolveChatNodeConfigValue(context.node, context.variables, "documentSearch") ??
+        context.variables.documentSearch,
+    );
   const thinking =
     normalizeOptionalString(
       resolveChatNodeConfigValue(context.node, context.variables, "thinking"),
@@ -885,6 +1999,7 @@ function buildRuntimeChatNodeInput(
     ...(stage ? { stage } : {}),
     ...(isStringArray(citations) ? { citations } : {}),
     ...(Array.isArray(toolCalls) ? { toolCalls: clone(toolCalls) } : {}),
+    ...(documentSearch !== undefined ? { documentSearch: clone(documentSearch) } : {}),
     ...(thinking ? { thinking } : {}),
     ...(typeof temperature === "number" ? { temperature } : {}),
     ...(typeof maxTokens === "number" ? { maxTokens } : {}),
@@ -920,6 +2035,16 @@ function getRuntimeChatMessageStore(runtime: WorkflowRuntime) {
       return workflowRepo.createMessage?.(message);
     },
   };
+}
+
+function getRuntimeChatDocumentSearch(
+  runtime: WorkflowRuntime,
+): ChatNodeAdapterDeps["documentSearch"] | undefined {
+  const candidate = runtime as WorkflowRuntime & {
+    documentSearch?: ChatNodeAdapterDeps["documentSearch"];
+  };
+
+  return candidate.documentSearch;
 }
 
 function buildRuntimeChatNodeOutput(input: {
@@ -968,6 +2093,7 @@ class ChatWorkflowNodeAdapter implements WorkflowNodeAdapter {
           appendLLMExchange: (agentId, options) =>
             this.runtime.memoryRepo.appendLLMExchange(agentId, options),
         },
+        documentSearch: getRuntimeChatDocumentSearch(this.runtime),
       },
     );
 
@@ -978,6 +2104,155 @@ class ChatWorkflowNodeAdapter implements WorkflowNodeAdapter {
         nodeType: this.type,
         result,
       }),
+    };
+  }
+}
+
+class VariableAssignmentWorkflowNodeAdapter implements WorkflowNodeAdapter {
+  readonly type = "variable_assignment";
+
+  async execute(
+    context: WorkflowNodeExecutionContext,
+  ): Promise<WorkflowNodeAdapterResult> {
+    const target =
+      normalizeOptionalString(
+        resolveNodeTemplateValue(
+          getNodeConfigDefaultValue(context.node, "target"),
+          context.variables,
+        ),
+      ) || "";
+    if (!target) {
+      return {
+        kind: "error",
+        message: `Variable assignment node ${context.node.id} requires a target.`,
+      };
+    }
+
+    const scope = normalizeRuntimeVariableAssignmentScope(
+      resolveNodeTemplateValue(
+        getNodeConfigDefaultValue(context.node, "scope"),
+        context.variables,
+      ),
+    );
+    const assignmentContext = buildRuntimeVariableAssignmentContext(
+      context.variables,
+    );
+    const previousValue = lookupRuntimeVariableAssignmentValue(
+      target,
+      assignmentContext,
+    );
+
+    const expression = normalizeOptionalString(
+      resolveNodeTemplateValue(
+        getNodeConfigDefaultValue(context.node, "expression"),
+        context.variables,
+      ),
+    );
+    const source = getNodeConfigString(context.node, "source");
+    const value = resolveNodeTemplateValue(
+      getNodeConfigDefaultValue(context.node, "value"),
+      context.variables,
+    );
+    const nextValue =
+      expression !== undefined
+        ? evaluateRuntimeVariableAssignmentExpression(expression, assignmentContext)
+        : source
+          ? resolveRuntimeVariableAssignmentTokenValue(source, assignmentContext)
+          : value;
+
+    const scopedVariables = buildRuntimeVariableAssignmentContext(context.variables);
+    scopedVariables[scope][target] = clone(nextValue);
+
+    const change: RuntimeVariableAssignmentChange = {
+      nodeId: context.node.id,
+      scope,
+      target,
+      previousValue: clone(previousValue),
+      nextValue: clone(nextValue),
+      assignedAt: nowIso(),
+    };
+
+    return {
+      kind: "advance",
+      output: {
+        [target]: clone(nextValue),
+        lastAssignedVariable: target,
+        lastAssignedScope: scope,
+        lastAssignedValue: clone(nextValue),
+        runtimeVariableScopes: scopedVariables,
+        runtimeVariableChanges: [
+          ...readRuntimeVariableAssignmentChanges(context.variables),
+          change,
+        ],
+        runtimeVariableLastChange: change,
+      },
+    };
+  }
+}
+
+class FlowJumpWorkflowNodeAdapter implements WorkflowNodeAdapter {
+  readonly type = "flow_jump";
+
+  async execute(
+    context: WorkflowNodeExecutionContext,
+  ): Promise<WorkflowNodeAdapterResult> {
+    const configuredTarget = normalizeOptionalString(
+      resolveNodeTemplateValue(
+        getNodeConfigDefaultValue(context.node, "targetNodeId"),
+        context.variables,
+      ),
+    );
+    const fallbackTarget =
+      getNodeConfigString(context.node, "nextNodeId") ||
+      getNodeConfigString(context.node, "target");
+    const targetNodeId = configuredTarget || fallbackTarget;
+
+    if (!targetNodeId) {
+      return {
+        kind: "error",
+        message: `Flow jump node ${context.node.id} requires a targetNodeId.`,
+      };
+    }
+
+    const jumpEdge = context.definition.edgeSchemas.find(
+      edge =>
+        edge.fromNodeId === context.node.id &&
+        edge.toNodeId === targetNodeId &&
+        edge.kind === "jump",
+    );
+    if (!jumpEdge) {
+      return {
+        kind: "error",
+        message:
+          `Flow jump node ${context.node.id} cannot jump to ${targetNodeId} ` +
+          "without an explicit jump edge.",
+        output: {
+          requestedTargetNodeId: targetNodeId,
+          jumpValidated: false,
+        },
+      };
+    }
+
+    const reason =
+      normalizeOptionalString(
+        resolveNodeTemplateValue(
+          getNodeConfigDefaultValue(context.node, "reason"),
+          context.variables,
+        ),
+      ) ||
+      normalizeOptionalString(getNodeConfigDefaultValue(context.node, "label")) ||
+      normalizeOptionalString(jumpEdge.label) ||
+      "flow_jump";
+
+    return {
+      kind: "advance",
+      nextNodeId: targetNodeId,
+      output: {
+        jumpTargetNodeId: targetNodeId,
+        jumpEdgeId: jumpEdge.id,
+        jumpValidated: true,
+        jumpReason: reason,
+      },
     };
   }
 }
@@ -1218,6 +2493,98 @@ class HitlChoiceAdapter implements WorkflowNodeAdapter {
   }
 }
 
+class ParamCollectionWorkflowNodeAdapter implements WorkflowNodeAdapter {
+  readonly type = "param_collection";
+
+  async execute(
+    context: WorkflowNodeExecutionContext,
+  ): Promise<WorkflowNodeAdapterResult> {
+    const fieldDefinitions = readWebAigcHitlFieldDefinitions({
+      fields:
+        getNodeConfigDefaultValue(context.node, "fields") ??
+        getNodeConfigDefaultValue(context.node, "fieldDefinitions"),
+    });
+    const prompt =
+      getNodeConfigString(context.node, "prompt") ||
+      getNodeConfigString(context.node, "title") ||
+      context.node.description ||
+      "Collect structured parameters";
+    const waitingFor =
+      getNodeConfigString(context.node, "waitingFor") ||
+      prompt ||
+      "param_collection";
+
+    return {
+      kind: "wait",
+      waitingFor,
+      inputSchema: fieldDefinitions.map(field => ({
+        key: field.key,
+        label: field.label,
+        valueType:
+          field.type === "number"
+            ? "number"
+            : field.type === "boolean"
+              ? "boolean"
+              : "string",
+        required: field.required,
+        description: field.placeholder,
+        defaultValue: field.defaultValue,
+      })),
+      checkpointData: {
+        nodeType: this.type,
+        prompt,
+        fieldDefinitions,
+      },
+    };
+  }
+
+  async resume(
+    context: WorkflowNodeExecutionContext,
+  ): Promise<WorkflowNodeAdapterResult> {
+    const fieldDefinitions = readWebAigcHitlFieldDefinitions({
+      fields:
+        getNodeConfigDefaultValue(context.node, "fields") ??
+        getNodeConfigDefaultValue(context.node, "fieldDefinitions"),
+    });
+    const normalized = normalizeWebAigcHitlFormData(
+      fieldDefinitions,
+      context.resumePayload?.formData ?? context.resumePayload,
+    );
+
+    if (normalized.errors.length > 0) {
+      return {
+        kind: "error",
+        message:
+          normalized.errors[0] ||
+          `Invalid param_collection payload for node ${context.node.id}`,
+      };
+    }
+
+    const output: Record<string, unknown> = {
+      formData: normalized.value,
+      collectedParams: normalized.value,
+      fieldCount: Object.keys(normalized.value).length,
+    };
+
+    const requestedNextNodeId = getPayloadString(
+      context.resumePayload,
+      "nextNodeId",
+    );
+    if (requestedNextNodeId) {
+      return {
+        kind: "advance",
+        output,
+        nextNodeId: requestedNextNodeId,
+      };
+    }
+
+    return {
+      kind: "advance",
+      output,
+    };
+  }
+}
+
 export class WorkflowRuntimeEngine {
   constructor(
     private readonly runtime: WorkflowRuntime,
@@ -1234,6 +2601,9 @@ export class WorkflowRuntimeEngine {
     this.registerAdapter(new EchoWorkflowNodeAdapter());
     this.registerAdapter(new ChatWorkflowNodeAdapter("llm", this.runtime));
     this.registerAdapter(new ChatWorkflowNodeAdapter("dialogue", this.runtime));
+    this.registerAdapter(new VariableAssignmentWorkflowNodeAdapter());
+    this.registerAdapter(new ParamCollectionWorkflowNodeAdapter());
+    this.registerAdapter(new FlowJumpWorkflowNodeAdapter());
     this.registerAdapter(new ConditionWorkflowNodeAdapter());
     this.registerAdapter(new EndWorkflowNodeAdapter());
     for (const type of ["root", "agent_task", "plan", "review", "audit", "summary"]) {
@@ -1299,6 +2669,12 @@ export class WorkflowRuntimeEngine {
     }
 
     const createdAt = nowIso();
+    const governanceApplied = applyRuntimeGovernancePolicyOverride(
+      clone(input.variables || {}),
+      input.definition.metadata && isRecord(input.definition.metadata)
+        ? input.definition.metadata.runtimeGovernance
+        : undefined,
+    );
     const instance: WebAigcGraphInstance = {
       kind: "graph_instance",
       version: 1,
@@ -1316,7 +2692,7 @@ export class WorkflowRuntimeEngine {
         replayId: input.definition.links.replayId,
         auditId: input.definition.links.auditId,
       },
-      variables: clone(input.variables || {}),
+      variables: governanceApplied.variables,
       nodeRuns: input.definition.nodeSchemas.map(node => ({
         nodeId: node.id,
         status: "PENDING",
@@ -1363,6 +2739,20 @@ export class WorkflowRuntimeEngine {
           }),
         variables: input.variables,
       });
+    } else if (input.definition?.metadata && isRecord(input.definition.metadata)) {
+      const applied = applyRuntimeGovernancePolicyOverride(
+        state.instance.variables,
+        input.definition.metadata.runtimeGovernance,
+      );
+      state = {
+        ...state,
+        instance: {
+          ...state.instance,
+          variables: applied.variables,
+        },
+        updatedAt: nowIso(),
+      };
+      this.persistState(input.workflowId, state);
     }
 
     const limit = Math.max(1, input.maxSteps || 50);
@@ -1409,7 +2799,10 @@ export class WorkflowRuntimeEngine {
     nextState.instance.checkpoint = {
       ...checkpoint,
       resumeCount: checkpoint.resumeCount + 1,
-      payload,
+      payload: {
+        ...(checkpoint.payload || {}),
+        ...payload,
+      },
     };
     this.persistState(workflowId, nextState);
     const resumed = await this.executeCurrentNode(nextState, payload);
@@ -1422,20 +2815,16 @@ export class WorkflowRuntimeEngine {
     return resumed;
   }
 
-  terminate(
-    workflowId: string,
+  private terminateState(
+    state: StoredWebAigcRuntimeState,
     input: {
       requestedBy?: string;
       reason?: string;
+      metadata?: Record<string, unknown>;
     } = {},
   ): StoredWebAigcRuntimeState {
-    const workflow = this.requireWorkflow(workflowId);
-    const state = readStoredWebAigcRuntimeState(workflow);
-    if (!state) {
-      throw new Error(`Workflow runtime state not found: ${workflowId}`);
-    }
-
     const nextState = clone(state);
+    const latestLoopContext = readLatestLoopTrackerContext(nextState.instance.variables);
     nextState.instance.status = "FORCE_TERMINATED";
     nextState.instance.error = input.reason?.trim() || "Workflow runtime terminated by operator.";
     nextState.instance.completedAt = nowIso();
@@ -1446,6 +2835,11 @@ export class WorkflowRuntimeEngine {
         requestedBy: input.requestedBy || "operator",
         reason: input.reason?.trim() || "",
         terminatedAt: nextState.instance.completedAt,
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(nextState.instance.variables),
+          readRuntimeGovernanceState(nextState.instance.variables),
+        ),
+        ...(latestLoopContext ? { loop: clone(latestLoopContext) } : {}),
       },
     };
 
@@ -1468,7 +2862,7 @@ export class WorkflowRuntimeEngine {
       currentRun.waitingFor = undefined;
     }
 
-    this.persistState(workflowId, nextState);
+    this.persistState(nextState.instance.instanceId, nextState);
     this.emitRuntimeNodeEvent({
       state: nextState,
       eventKey: "instance.terminated",
@@ -1479,10 +2873,31 @@ export class WorkflowRuntimeEngine {
       metadata: {
         requestedBy: input.requestedBy || "operator",
         reason: input.reason?.trim() || "",
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(nextState.instance.variables),
+          readRuntimeGovernanceState(nextState.instance.variables),
+        ),
+        ...(latestLoopContext ? { loop: clone(latestLoopContext) } : {}),
+        ...input.metadata,
       },
     });
 
     return nextState;
+  }
+
+  terminate(
+    workflowId: string,
+    input: {
+      requestedBy?: string;
+      reason?: string;
+    } = {},
+  ): StoredWebAigcRuntimeState {
+    const workflow = this.requireWorkflow(workflowId);
+    const state = readStoredWebAigcRuntimeState(workflow);
+    if (!state) {
+      throw new Error(`Workflow runtime state not found: ${workflowId}`);
+    }
+    return this.terminateState(state, input);
   }
 
   async retry(
@@ -1513,6 +2928,56 @@ export class WorkflowRuntimeEngine {
       throw new Error(`Current runtime node is not retryable: ${workflowId}`);
     }
 
+    const retryAllowance = evaluateRuntimeGovernanceRetryAllowance(
+      nextState.instance.variables,
+      "manual",
+    );
+    if (!retryAllowance.allowed) {
+      const blockedAt = nowIso();
+      const governanceBlocked = recordRuntimeGovernanceRetryBlocked(
+        nextState.instance.variables,
+        {
+          blockedReason: retryAllowance.blockedReason || "manual_retry_budget_exhausted",
+          blockedAt,
+        },
+      );
+      nextState.instance.variables = {
+        ...governanceBlocked.variables,
+        runtimeRetryBlocked: {
+          requestedBy: input.requestedBy || "operator",
+          reason: input.reason?.trim() || "",
+          blockedReason:
+            retryAllowance.blockedReason || "manual_retry_budget_exhausted",
+          blockedAt,
+          nodeId: currentNodeId,
+          governance: governanceBlocked.snapshot,
+        },
+      };
+      nextState.instance.error = `Runtime retry blocked by governance policy: ${
+        retryAllowance.blockedReason || "manual_retry_budget_exhausted"
+      }`;
+      this.persistState(workflowId, nextState);
+      this.emitRuntimeNodeEvent({
+        state: nextState,
+        eventKey: "instance.retry_requested",
+        node: nextState.definition.nodeSchemas.find(node => node.id === currentNodeId),
+        run: currentRun,
+        error: nextState.instance.error,
+        timestamp: blockedAt,
+        metadata: {
+          requestedBy: input.requestedBy || "operator",
+          reason: input.reason?.trim() || "",
+          nodeId: currentNodeId,
+          retryMode: "manual",
+          allowed: false,
+          blockedReason:
+            retryAllowance.blockedReason || "manual_retry_budget_exhausted",
+          governance: governanceBlocked.snapshot,
+        },
+      });
+      throw new Error(nextState.instance.error);
+    }
+
     nextState.instance.status = "EXECUTING";
     nextState.instance.error = undefined;
     nextState.instance.completedAt = null;
@@ -1526,13 +2991,25 @@ export class WorkflowRuntimeEngine {
     currentRun.transitionEdgeId = undefined;
     currentRun.retryable = undefined;
 
+    const retriedAt = nowIso();
+    const governanceRecorded = recordRuntimeGovernanceRetry(
+      nextState.instance.variables,
+      {
+        mode: "manual",
+        nodeId: currentNodeId,
+        requestedBy: input.requestedBy || "operator",
+        reason: input.reason?.trim() || "",
+        retriedAt,
+      },
+    );
     nextState.instance.variables = {
-      ...nextState.instance.variables,
+      ...governanceRecorded.variables,
       runtimeRetry: {
         requestedBy: input.requestedBy || "operator",
         reason: input.reason?.trim() || "",
-        retriedAt: nowIso(),
+        retriedAt,
         nodeId: currentNodeId,
+        governance: governanceRecorded.snapshot,
       },
     };
 
@@ -1547,6 +3024,8 @@ export class WorkflowRuntimeEngine {
         requestedBy: input.requestedBy || "operator",
         reason: input.reason?.trim() || "",
         nodeId: currentNodeId,
+        retryMode: "manual",
+        governance: governanceRecorded.snapshot,
       },
     });
 
@@ -1578,6 +3057,10 @@ export class WorkflowRuntimeEngine {
         reason: input.reason?.trim() || "",
         escalatedAt: nowIso(),
         nodeId: currentNodeId,
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(nextState.instance.variables),
+          readRuntimeGovernanceState(nextState.instance.variables),
+        ),
       },
     };
 
@@ -1616,6 +3099,10 @@ export class WorkflowRuntimeEngine {
       metadata: {
         requestedBy: input.requestedBy || "operator",
         reason: input.reason?.trim() || "",
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(nextState.instance.variables),
+          readRuntimeGovernanceState(nextState.instance.variables),
+        ),
       },
     });
 
@@ -1784,6 +3271,7 @@ export class WorkflowRuntimeEngine {
     const checkpointId = state.instance.checkpoint
       ? `${state.instance.checkpoint.nodeId}:${state.instance.checkpoint.createdAt}`
       : undefined;
+    const relationLinks = buildRuntimeRelationLinks(input);
 
     this.runtime.eventEmitter.emit({
       type: "web_aigc_runtime_event",
@@ -1805,7 +3293,7 @@ export class WorkflowRuntimeEngine {
       startedAt: input.run?.startedAt,
       completedAt: input.run?.completedAt,
       durationMs: computeDurationMs(input.run?.startedAt, input.run?.completedAt),
-      metadata: input.metadata,
+      metadata: mergeRuntimeEventMetadata(input.metadata, relationLinks),
     });
   }
 
@@ -1910,6 +3398,26 @@ export class WorkflowRuntimeEngine {
       };
     }
 
+    const variableAssignmentChange =
+      node.type === "variable_assignment"
+        ? readRuntimeVariableAssignmentChange(result.output)
+        : undefined;
+    if (variableAssignmentChange) {
+      this.emitRuntimeNodeEvent({
+        state,
+        eventKey: "variable.assigned",
+        node,
+        run,
+        timestamp: variableAssignmentChange.assignedAt,
+        metadata: {
+          scope: variableAssignmentChange.scope,
+          target: variableAssignmentChange.target,
+          previousValue: variableAssignmentChange.previousValue,
+          nextValue: variableAssignmentChange.nextValue,
+        },
+      });
+    }
+
     if (result.kind === "wait") {
       run.status = "WAITING_INPUT";
       run.waitingFor = result.waitingFor;
@@ -1998,8 +3506,11 @@ export class WorkflowRuntimeEngine {
       return;
     }
 
+    const transitionEdge = definition.edgeSchemas.find(edge => edge.id === transition.edgeId);
+    const transitionKind = transitionEdge?.kind || "success";
+    const transitionTimestamp = nowIso();
+
     run.transitionEdgeId = transition.edgeId;
-    markEdgeExecuted(instance, transition.edgeId);
     this.emitRuntimeNodeEvent({
       state,
       eventKey: "node.completed",
@@ -2007,6 +3518,131 @@ export class WorkflowRuntimeEngine {
       run,
       timestamp: run.completedAt,
     });
+
+    if (transitionKind === "loop") {
+      const loopKey = transition.edgeId || `${node.id}->${transition.nextNodeId}`;
+      const loopTracker = ensureLoopRuntimeTrackerEntry(instance.variables, loopKey);
+      instance.variables = loopTracker.variables;
+      const nextIterationIndex = readLoopIterationCount(instance.variables, loopKey) + 1;
+      const maxIterations = readLoopEdgeLimitNumber(transitionEdge, "maxIterations");
+      if (typeof maxIterations === "number" && maxIterations >= 0 && nextIterationIndex > Math.floor(maxIterations)) {
+        markEdgeBlocked(instance, transition.edgeId);
+        instance.variables = updateLoopRuntimeTracker(instance.variables, loopKey, {
+          startedAt: loopTracker.entry.startedAt,
+          lastBlockedAt: transitionTimestamp,
+          lastBlockedReason: "max_iterations_exceeded",
+          lastAttemptedIterationIndex: nextIterationIndex,
+          maxIterations: Math.floor(maxIterations),
+        });
+        instance.variables = {
+          ...instance.variables,
+          runtimeLoopTermination: {
+            loopKey,
+            iterationIndex: nextIterationIndex,
+            reason: "max_iterations_exceeded",
+            maxIterations: Math.floor(maxIterations),
+            terminatedAt: transitionTimestamp,
+            edgeId: transition.edgeId,
+            fromNodeId: node.id,
+            toNodeId: transition.nextNodeId,
+          },
+        };
+        const terminated = this.terminateState(state, {
+          requestedBy: "runtime.loop_guard",
+          reason: `Loop edge ${loopKey} exceeded maxIterations (${Math.floor(maxIterations)}).`,
+          metadata: {
+            trigger: "loop_guard.max_iterations",
+            kind: transitionKind,
+            loopKey,
+            iterationIndex: nextIterationIndex,
+            maxIterations: Math.floor(maxIterations),
+            edgeId: transition.edgeId,
+            fromNodeId: node.id,
+            toNodeId: transition.nextNodeId,
+          },
+        });
+        state.instance = terminated.instance;
+        state.updatedAt = terminated.updatedAt;
+        return;
+      }
+
+      const startedAtValue = loopTracker.entry.startedAt;
+      const startedAtMs = startedAtValue ? Date.parse(startedAtValue) : Number.NaN;
+      const maxDurationMs = readLoopEdgeLimitNumber(transitionEdge, "maxDurationMs");
+      const elapsedMs =
+        Number.isFinite(startedAtMs)
+          ? Math.max(0, Date.parse(transitionTimestamp) - startedAtMs)
+          : undefined;
+      if (
+        typeof maxDurationMs === "number" &&
+        maxDurationMs >= 0 &&
+        typeof elapsedMs === "number" &&
+        elapsedMs > Math.floor(maxDurationMs)
+      ) {
+        markEdgeBlocked(instance, transition.edgeId);
+        instance.variables = updateLoopRuntimeTracker(instance.variables, loopKey, {
+          startedAt: startedAtValue,
+          lastBlockedAt: transitionTimestamp,
+          lastBlockedReason: "max_duration_exceeded",
+          lastAttemptedIterationIndex: nextIterationIndex,
+          maxDurationMs: Math.floor(maxDurationMs),
+          elapsedMs,
+        });
+        instance.variables = {
+          ...instance.variables,
+          runtimeLoopTermination: {
+            loopKey,
+            iterationIndex: nextIterationIndex,
+            reason: "max_duration_exceeded",
+            maxDurationMs: Math.floor(maxDurationMs),
+            elapsedMs,
+            terminatedAt: transitionTimestamp,
+            edgeId: transition.edgeId,
+            fromNodeId: node.id,
+            toNodeId: transition.nextNodeId,
+          },
+        };
+        const terminated = this.terminateState(state, {
+          requestedBy: "runtime.loop_guard",
+          reason: `Loop edge ${loopKey} exceeded maxDurationMs (${Math.floor(maxDurationMs)}ms).`,
+          metadata: {
+            trigger: "loop_guard.max_duration",
+            kind: transitionKind,
+            loopKey,
+            iterationIndex: nextIterationIndex,
+            maxDurationMs: Math.floor(maxDurationMs),
+            elapsedMs,
+            edgeId: transition.edgeId,
+            fromNodeId: node.id,
+            toNodeId: transition.nextNodeId,
+          },
+        });
+        state.instance = terminated.instance;
+        state.updatedAt = terminated.updatedAt;
+        return;
+      }
+
+      const loopIteration = recordLoopIteration(instance.variables, loopKey);
+      instance.variables = updateLoopRuntimeTracker(loopIteration.variables, loopKey, {
+        startedAt: startedAtValue,
+        lastIteratedAt: transitionTimestamp,
+        iterationIndex: loopIteration.iterationIndex,
+        edgeId: transition.edgeId,
+        fromNodeId: node.id,
+        toNodeId: transition.nextNodeId,
+        ...(typeof maxIterations === "number"
+          ? { maxIterations: Math.floor(maxIterations) }
+          : {}),
+        ...(typeof maxDurationMs === "number"
+          ? {
+              maxDurationMs: Math.floor(maxDurationMs),
+              elapsedMs: elapsedMs ?? 0,
+            }
+          : {}),
+      });
+    }
+
+    markEdgeExecuted(instance, transition.edgeId);
     this.emitRuntimeNodeEvent({
       state,
       eventKey: "edge.transitioned",
@@ -2017,12 +3653,34 @@ export class WorkflowRuntimeEngine {
         fromNodeId: node.id,
         toNodeId: transition.nextNodeId,
       },
-      timestamp: nowIso(),
+      timestamp: transitionTimestamp,
       metadata: {
-        kind:
-          definition.edgeSchemas.find(edge => edge.id === transition.edgeId)?.kind || "success",
+        kind: transitionKind,
       },
     });
+
+    if (transitionKind === "loop") {
+      const loopKey = transition.edgeId || `${node.id}->${transition.nextNodeId}`;
+      this.emitRuntimeNodeEvent({
+        state,
+        eventKey: "edge.loop_iterated",
+        node,
+        run,
+        edge: {
+          edgeId: transition.edgeId,
+          fromNodeId: node.id,
+          toNodeId: transition.nextNodeId,
+          kind: transitionKind,
+        },
+        timestamp: transitionTimestamp,
+        metadata: {
+          kind: transitionKind,
+          loopKey,
+          iterationIndex: readLoopIterationCount(instance.variables, loopKey),
+        },
+      });
+    }
+
     instance.currentNodeId = transition.nextNodeId;
     instance.status = "EXECUTING";
   }
@@ -2038,16 +3696,66 @@ export class WorkflowRuntimeEngine {
     }
 
     const retryBudget = Math.max(0, Math.floor(getNodeConfigNumber(node, "retryBudget") || 0));
-    const retryDelayMs = Math.max(0, Math.floor(getNodeConfigNumber(node, "retryDelayMs") || 0));
+    const governancePolicy = readRuntimeGovernancePolicy(state.instance.variables);
+    const retryDelayMs = Math.max(
+      0,
+      Math.floor(
+        getNodeConfigNumber(node, "retryDelayMs") ||
+          governancePolicy.retryDelayMs ||
+          0,
+      ),
+    );
     const escalateOnRetryExhausted = getNodeConfigBoolean(node, "escalateOnRetryExhausted") === true;
     const automaticRetryCount = this.getAutomaticRetryCount(state, node.id);
+    const retryAllowance = evaluateRuntimeGovernanceRetryAllowance(
+      state.instance.variables,
+      "automatic",
+    );
 
-    if (retryBudget > 0 && automaticRetryCount < retryBudget) {
+    if (
+      retryBudget > 0 &&
+      automaticRetryCount < retryBudget &&
+      retryAllowance.allowed
+    ) {
       if (retryDelayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, retryDelayMs));
       }
       await this.applyAutomaticRetry(state, node, run, automaticRetryCount + 1, retryBudget, retryDelayMs);
       return true;
+    }
+
+    if (!retryAllowance.allowed) {
+      const blockedAt = nowIso();
+      const governanceBlocked = recordRuntimeGovernanceRetryBlocked(
+        state.instance.variables,
+        {
+          blockedReason:
+            retryAllowance.blockedReason || "automatic_retry_budget_exhausted",
+          blockedAt,
+        },
+      );
+      state.instance.variables = {
+        ...governanceBlocked.variables,
+        runtimeRetryBlocked: {
+          requestedBy: "runtime.auto_retry",
+          reason: result.message,
+          blockedReason:
+            retryAllowance.blockedReason || "automatic_retry_budget_exhausted",
+          blockedAt,
+          nodeId: node.id,
+          governance: governanceBlocked.snapshot,
+        },
+      };
+      if (governancePolicy.escalateOnRetryBlocked) {
+        return this.applyAutomaticEscalationIfConfigured(
+          state,
+          node,
+          run,
+          result,
+          "retry_exhausted",
+        );
+      }
+      return false;
     }
 
     if (escalateOnRetryExhausted) {
@@ -2086,23 +3794,30 @@ export class WorkflowRuntimeEngine {
     retryBudget: number,
     retryDelayMs: number,
   ): Promise<void> {
+    const retriedAt = nowIso();
+    const governanceRecorded = recordRuntimeGovernanceRetry(
+      state.instance.variables,
+      {
+        mode: "automatic",
+        nodeId: node.id,
+        requestedBy: "runtime.auto_retry",
+        reason: `Automatic retry ${nextAttempt}/${retryBudget} for ${node.id}`,
+        retriedAt,
+        retryDelayMs,
+      },
+    );
     state.instance.status = "EXECUTING";
     state.instance.error = undefined;
     state.instance.completedAt = null;
     state.instance.checkpoint = undefined;
     state.instance.variables = {
-      ...state.instance.variables,
+      ...governanceRecorded.variables,
       runtimeRetry: {
         requestedBy: "runtime.auto_retry",
         reason: `Automatic retry ${nextAttempt}/${retryBudget} for ${node.id}`,
-        retriedAt: nowIso(),
+        retriedAt,
         nodeId: node.id,
-      },
-      runtimeAutoRetry: {
-        ...(isRecord(state.instance.variables.runtimeAutoRetry)
-          ? state.instance.variables.runtimeAutoRetry
-          : {}),
-        [node.id]: nextAttempt,
+        governance: governanceRecorded.snapshot,
       },
     };
 
@@ -2129,6 +3844,8 @@ export class WorkflowRuntimeEngine {
         retryBudget,
         retryDelayMs,
         automatic: true,
+        retryMode: "automatic",
+        governance: governanceRecorded.snapshot,
       },
     });
 
@@ -2173,6 +3890,10 @@ export class WorkflowRuntimeEngine {
         escalatedAt: checkpointCreatedAt,
         nodeId: node.id,
         trigger,
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(state.instance.variables),
+          readRuntimeGovernanceState(state.instance.variables),
+        ),
       },
     };
 
@@ -2192,6 +3913,10 @@ export class WorkflowRuntimeEngine {
         reason: result.message,
         trigger,
         automatic: true,
+        governance: buildRuntimeGovernanceSnapshot(
+          readRuntimeGovernancePolicy(state.instance.variables),
+          readRuntimeGovernanceState(state.instance.variables),
+        ),
       },
     });
 

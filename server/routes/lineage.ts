@@ -15,6 +15,7 @@ import type { LineageAuditService } from "../lineage/lineage-audit.js";
 import type { LineageExportService } from "../lineage/lineage-export.js";
 import type { ChangeDetectionService } from "../lineage/change-detection.js";
 import type { LineageStorageAdapter } from "../lineage/lineage-store.js";
+import type { DataLineageNode } from "../../shared/lineage/contracts.js";
 
 // ---------------------------------------------------------------------------
 // Route prefix — strip so we can mount at /api/lineage
@@ -25,6 +26,102 @@ const PREFIX = "/api/lineage";
 function stripPrefix(routeDef: string): string {
   const path = routeDef.replace(/^[A-Z]+\s+/, "");
   return path.startsWith(PREFIX) ? path.slice(PREFIX.length) || "/" : path;
+}
+
+function readStringQuery(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function buildLineageQueryFilter(query: Record<string, unknown>): Record<string, unknown> {
+  const filter: Record<string, unknown> = {};
+  const type = readStringQuery(query.type);
+  const agentId = readStringQuery(query.agentId);
+  const sessionId = readStringQuery(query.sessionId);
+  const missionId = readStringQuery(query.missionId);
+  const workflowId = readStringQuery(query.workflowId);
+  const decisionId = readStringQuery(query.decisionId);
+  const nodeId = readStringQuery(query.nodeId);
+
+  if (type) filter.type = type;
+  if (agentId) filter.agentId = agentId;
+  if (sessionId) filter.sessionId = sessionId;
+  if (missionId) filter.missionId = missionId;
+  if (workflowId) filter.workflowId = workflowId;
+  if (decisionId) filter.decisionId = decisionId;
+  if (nodeId) filter.nodeId = nodeId;
+  if (query.fromTimestamp) filter.fromTimestamp = Number(query.fromTimestamp);
+  if (query.toTimestamp) filter.toTimestamp = Number(query.toTimestamp);
+  if (query.limit) filter.limit = Number(query.limit);
+
+  return filter;
+}
+
+function matchesWebAigcIndexes(
+  node: DataLineageNode,
+  filter: Record<string, unknown>,
+): boolean {
+  const sessionId = readStringQuery(filter.sessionId);
+  if (
+    sessionId &&
+    node.context.sessionId !== sessionId &&
+    readStringQuery(node.metadata?.sessionId) !== sessionId
+  ) {
+    return false;
+  }
+
+  const missionId = readStringQuery(filter.missionId);
+  if (
+    missionId &&
+    node.context.missionId !== missionId &&
+    readStringQuery(node.metadata?.missionId) !== missionId
+  ) {
+    return false;
+  }
+
+  const workflowId = readStringQuery(filter.workflowId);
+  if (
+    workflowId &&
+    node.context.workflowId !== workflowId &&
+    readStringQuery(node.metadata?.workflowId) !== workflowId
+  ) {
+    return false;
+  }
+
+  const decisionId = readStringQuery(filter.decisionId);
+  if (
+    decisionId &&
+    node.decisionId !== decisionId &&
+    readStringQuery(node.metadata?.decisionId) !== decisionId
+  ) {
+    return false;
+  }
+
+  const nodeId = readStringQuery(filter.nodeId);
+  if (
+    nodeId &&
+    readStringQuery(node.metadata?.nodeId) !== nodeId &&
+    node.lineageId !== nodeId
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function queryNodesWithWebAigcIndexes(
+  store: LineageStorageAdapter,
+  query: Record<string, unknown>,
+): Promise<DataLineageNode[]> {
+  const filter = buildLineageQueryFilter(query);
+  const { limit: rawLimit, ...storeFilter } = filter;
+  let nodes = await store.queryNodes(storeFilter);
+  nodes = nodes.filter((node) => matchesWebAigcIndexes(node, filter));
+
+  const limit =
+    typeof rawLimit === "number" && Number.isFinite(rawLimit)
+      ? Math.max(0, Math.floor(rawLimit))
+      : undefined;
+  return typeof limit === "number" ? nodes.slice(0, limit) : nodes;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +248,19 @@ export function createLineageRouter(deps: LineageRouterDeps): Router {
     }
   });
 
+  // GET /web-aigc
+  router.get("/web-aigc", async (req, res) => {
+    try {
+      const nodes = await queryNodesWithWebAigcIndexes(
+        store,
+        req.query as Record<string, unknown>,
+      );
+      res.json({ ok: true, nodes });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: errorMessage(err) });
+    }
+  });
+
   // =====================================================================
   // POST routes
   // =====================================================================
@@ -240,16 +350,10 @@ export function createLineageRouter(deps: LineageRouterDeps): Router {
 
   router.get(stripPrefix(LINEAGE_API.queryNodes), async (req, res) => {
     try {
-      const filter: Record<string, unknown> = {};
-      if (req.query.type) filter.type = req.query.type;
-      if (req.query.agentId) filter.agentId = req.query.agentId;
-      if (req.query.sessionId) filter.sessionId = req.query.sessionId;
-      if (req.query.missionId) filter.missionId = req.query.missionId;
-      if (req.query.decisionId) filter.decisionId = req.query.decisionId;
-      if (req.query.fromTimestamp) filter.fromTimestamp = Number(req.query.fromTimestamp);
-      if (req.query.toTimestamp) filter.toTimestamp = Number(req.query.toTimestamp);
-      if (req.query.limit) filter.limit = Number(req.query.limit);
-      const nodes = await store.queryNodes(filter);
+      const nodes = await queryNodesWithWebAigcIndexes(
+        store,
+        req.query as Record<string, unknown>,
+      );
       res.json({ ok: true, nodes });
     } catch (err) {
       res.status(500).json({ ok: false, error: errorMessage(err) });

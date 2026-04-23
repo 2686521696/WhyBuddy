@@ -35,6 +35,10 @@ export interface FeishuTaskTarget {
   chatId: string;
   threadId?: string;
   requestId?: string;
+  traceId?: string;
+  workflowId?: string;
+  sessionId?: string;
+  decisionId?: string;
   replyToMessageId?: string;
   rootMessageId?: string;
   source?: "feishu";
@@ -87,6 +91,8 @@ export interface FeishuDeliveryReceipt {
   messageId?: string;
   rootId?: string;
   threadId?: string;
+  requestId?: string;
+  traceId?: string;
   telemetry?: FeishuDeliveryTelemetry;
 }
 
@@ -130,6 +136,7 @@ export class FeishuDeliveryError extends Error {
 export interface FeishuNotificationAuditEvent {
   auditId: string;
   traceId: string;
+  requestId: string;
   recordedAt: string;
   channelType: "feishu";
   taskId: string;
@@ -149,6 +156,16 @@ export interface FeishuNotificationAuditEvent {
   threadId?: string;
   statusCode?: number;
   error?: string;
+  correlation: {
+    workflowId?: string;
+    sessionId?: string;
+    decisionId?: string;
+    source?: FeishuTaskTarget["source"];
+    chatId?: string;
+    threadId?: string;
+    rootMessageId?: string;
+    replyToMessageId?: string;
+  };
   observability: {
     progress: number;
     taskStatus: FeishuTaskStatus;
@@ -265,6 +282,9 @@ function createTraceId(
   message: FeishuOutboundMessage,
   deliveryAction: "send" | "update"
 ): string {
+  if (message.target.traceId?.trim()) {
+    return message.target.traceId.trim();
+  }
   const anchor =
     message.target.rootMessageId ||
     message.target.replyToMessageId ||
@@ -272,6 +292,61 @@ function createTraceId(
     message.target.chatId ||
     taskId;
   return `feishu:${taskId}:${deliveryAction}:${message.kind}:${anchor}`;
+}
+
+function createRequestId(
+  taskId: string,
+  message: FeishuOutboundMessage,
+  deliveryAction: "send" | "update"
+): string {
+  if (message.target.requestId?.trim()) {
+    return message.target.requestId.trim();
+  }
+  const anchor =
+    message.target.replyToMessageId ||
+    message.target.rootMessageId ||
+    message.target.chatId ||
+    taskId;
+  return `feishu_req:${taskId}:${deliveryAction}:${message.kind}:${anchor}`;
+}
+
+function extractDecisionId(message: FeishuOutboundMessage): string | undefined {
+  const explicitDecisionId = message.target.decisionId?.trim();
+  if (explicitDecisionId) return explicitDecisionId;
+
+  if (message.resolvedDecision?.optionId?.trim()) {
+    return message.resolvedDecision.optionId.trim();
+  }
+
+  if (!message.decision?.options?.length) {
+    return undefined;
+  }
+
+  const promptHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        prompt: message.decision.prompt,
+        options: message.decision.options.map(option => option.id),
+      })
+    )
+    .digest("hex")
+    .slice(0, 12);
+  return `decision:${message.taskId}:${promptHash}`;
+}
+
+function extractCorrelation(
+  message: FeishuOutboundMessage
+): FeishuNotificationAuditEvent["correlation"] {
+  return {
+    workflowId: message.target.workflowId?.trim() || undefined,
+    sessionId: message.target.sessionId?.trim() || undefined,
+    decisionId: extractDecisionId(message),
+    source: message.target.source,
+    chatId: message.target.chatId?.trim() || undefined,
+    threadId: message.target.threadId?.trim() || undefined,
+    rootMessageId: message.target.rootMessageId?.trim() || undefined,
+    replyToMessageId: message.target.replyToMessageId?.trim() || undefined,
+  };
 }
 
 function defaultSuccessfulTelemetry(): FeishuDeliveryTelemetry {
@@ -944,6 +1019,11 @@ export class FeishuProgressBridge {
         threadId: subscription.threadId ?? message.target.threadId,
         replyToMessageId,
         rootMessageId,
+        requestId: message.target.requestId ?? subscription.target.requestId,
+        traceId: message.target.traceId ?? subscription.target.traceId,
+        workflowId: message.target.workflowId ?? subscription.target.workflowId,
+        sessionId: message.target.sessionId ?? subscription.target.sessionId,
+        decisionId: message.target.decisionId ?? subscription.target.decisionId,
       },
     };
   }
@@ -995,6 +1075,7 @@ export class FeishuProgressBridge {
     const event: FeishuNotificationAuditEvent = {
       auditId: randomUUID(),
       traceId: createTraceId(taskId, formatted, deliveryAction),
+      requestId: createRequestId(taskId, formatted, deliveryAction),
       recordedAt: new Date().toISOString(),
       channelType: "feishu",
       taskId,
@@ -1014,6 +1095,7 @@ export class FeishuProgressBridge {
       threadId: options.receipt?.threadId,
       statusCode: options.statusCode,
       error: options.error,
+      correlation: extractCorrelation(formatted),
       observability: {
         progress: formatted.progress,
         taskStatus: formatted.status,

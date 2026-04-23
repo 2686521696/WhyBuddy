@@ -107,6 +107,26 @@ function summarizeAttempts(attempts: FeishuDeliveryAttempt[]): FeishuDeliveryTel
   };
 }
 
+function resolveCorrelationHeaders(message: FeishuOutboundMessage): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (message.target.traceId?.trim()) {
+    headers["X-Trace-Id"] = message.target.traceId.trim();
+  }
+  if (message.target.requestId?.trim()) {
+    headers["X-Request-Id"] = message.target.requestId.trim();
+  }
+  if (message.target.workflowId?.trim()) {
+    headers["X-Workflow-Id"] = message.target.workflowId.trim();
+  }
+  if (message.target.sessionId?.trim()) {
+    headers["X-Session-Id"] = message.target.sessionId.trim();
+  }
+  if (message.target.decisionId?.trim()) {
+    headers["X-Decision-Id"] = message.target.decisionId.trim();
+  }
+  return headers;
+}
+
 export class FeishuApiDelivery implements FeishuBridgeDelivery {
   private readonly config: FeishuBridgeConfig;
   private tokenCache: TokenCache | null = null;
@@ -265,6 +285,7 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           Authorization: `Bearer ${token}`,
+          ...resolveCorrelationHeaders(message),
         },
         body: JSON.stringify({
           receive_id: target.receiveId,
@@ -302,6 +323,8 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
       messageId: json.data?.message_id,
       rootId: json.data?.root_id,
       threadId: json.data?.thread_id,
+      requestId: message.target.requestId?.trim() || undefined,
+      traceId: message.target.traceId?.trim() || undefined,
       telemetry,
     };
   }
@@ -324,6 +347,7 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           Authorization: `Bearer ${token}`,
+          ...resolveCorrelationHeaders(message),
         },
         body: JSON.stringify({
           content: payload.content,
@@ -356,6 +380,8 @@ export class FeishuApiDelivery implements FeishuBridgeDelivery {
       messageId: json.data?.message_id ?? messageId,
       rootId: json.data?.root_id,
       threadId: json.data?.thread_id,
+      requestId: message.target.requestId?.trim() || undefined,
+      traceId: message.target.traceId?.trim() || undefined,
       telemetry,
     };
   }

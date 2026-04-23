@@ -6,6 +6,9 @@
  * 直接调用路由委托的底层服务方法来测试核心业务逻辑。
  */
 
+import express from "express";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
 import { AuditChain } from "../audit/audit-chain.js";
@@ -17,6 +20,7 @@ import { ComplianceMapper } from "../audit/compliance-mapper.js";
 import { AuditExport } from "../audit/audit-export.js";
 import { AuditRetention } from "../audit/audit-retention.js";
 import { TimestampProvider } from "../audit/timestamp-provider.js";
+import { createAuditRouter } from "../routes/audit.js";
 import type { AuditEvent } from "../../shared/audit/contracts.js";
 import {
   AuditEventType,
@@ -48,6 +52,64 @@ function makeEvent(overrides?: Partial<AuditEvent>): AuditEvent {
     context: { sessionId: "sess-1" },
     ...overrides,
   };
+}
+
+async function withServer(
+  seed: (deps: { collector: AuditCollector; chain: AuditChain }) => void,
+  handler: (baseUrl: string) => Promise<void>,
+): Promise<void> {
+  const keys = generateTestKeys();
+  const chain = new AuditChain({ privateKey: keys.privateKey, publicKey: keys.publicKey });
+  const tsProvider = new TimestampProvider();
+  const collector = new AuditCollector(chain, tsProvider);
+  const query = new AuditQuery(chain, collector);
+  const verifier = new AuditVerifier(chain);
+  const anomalyDetector = new AnomalyDetector(chain, collector);
+  const complianceMapper = new ComplianceMapper(chain);
+  const auditExport = new AuditExport(chain, collector);
+  const auditRetention = new AuditRetention(chain, collector);
+
+  seed({ collector, chain });
+  collector.flush();
+
+  const app = express();
+  app.use(express.json());
+  app.use(
+    "/api/audit",
+    createAuditRouter({
+      chain,
+      query,
+      verifier,
+      anomalyDetector,
+      complianceMapper,
+      auditExport,
+      auditRetention,
+      collector,
+    }),
+  );
+
+  const server = createServer(app);
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", (error?: Error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
+
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    await handler(baseUrl);
+  } finally {
+    collector.destroy();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 }
 
 // ─── Test Suite ────────────────────────────────────────────────────────────
@@ -717,6 +779,50 @@ describe("Audit Routes — business logic", () => {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("Web-AIGC related route", () => {
+    it("should resolve traceId and requestId query parameters through /api/audit/web-aigc/related", async () => {
+      await withServer(
+        ({ collector }) => {
+          collector.recordSync({
+            eventType: AuditEventType.AGENT_EXECUTED,
+            actor: { type: "agent", id: "agent-route-1" },
+            action: "workflow.execute",
+            resource: { type: "workflow", id: "wf-route-1" },
+            result: "success",
+            context: {
+              sessionId: "session-route-1",
+              requestId: "request-context-1",
+            },
+            metadata: {
+              workflowId: "wf-route-1",
+              missionId: "mission-route-1",
+              traceId: "trace-meta-1",
+              decisionId: "decision-route-1",
+              links: {
+                traceId: "trace-link-1",
+                replayId: "replay-route-1",
+              },
+            },
+          });
+        },
+        async (baseUrl) => {
+          const response = await fetch(
+            `${baseUrl}/api/audit/web-aigc/related?traceId=trace-link-1&requestId=request-context-1&workflowId=wf-route-1`,
+          );
+
+          expect(response.status).toBe(200);
+
+          const body = await response.json();
+          expect(body.ok).toBe(true);
+          expect(Array.isArray(body.entries)).toBe(true);
+          expect(body.entries).toHaveLength(1);
+          expect(body.entries[0].event.context.requestId).toBe("request-context-1");
+          expect(body.entries[0].event.metadata.traceId).toBe("trace-meta-1");
+        },
+      );
     });
   });
 });

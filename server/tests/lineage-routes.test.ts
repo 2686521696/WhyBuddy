@@ -26,18 +26,68 @@ function makeNode(overrides?: Partial<DataLineageNode>): DataLineageNode {
     lineageId: "node-1",
     type: "source",
     timestamp: 1000,
-    context: { sessionId: "s1", userId: "user-1" },
+    context: {
+      sessionId: "session-web-aigc-1",
+      userId: "user-1",
+      missionId: "mission-web-aigc-1",
+      workflowId: "wf-web-aigc-1",
+    },
     sourceId: "src-1",
     sourceName: "TestSource",
     resultHash: "abc123",
+    metadata: {
+      nodeId: "start-node",
+      sessionId: "session-web-aigc-1",
+      missionId: "mission-web-aigc-1",
+      workflowId: "wf-web-aigc-1",
+    },
     ...overrides,
   };
 }
 
 const sampleNodes: DataLineageNode[] = [
-  makeNode({ lineageId: "node-1", type: "source", timestamp: 1000, sourceId: "src-1", resultHash: "hash-a" }),
-  makeNode({ lineageId: "node-2", type: "transformation", timestamp: 2000, agentId: "agent-1", upstream: ["node-1"] }),
-  makeNode({ lineageId: "node-3", type: "decision", timestamp: 3000, decisionId: "dec-1", upstream: ["node-2"], result: "approve", confidence: 0.95 }),
+  makeNode({
+    lineageId: "node-1",
+    type: "source",
+    timestamp: 1000,
+    sourceId: "src-1",
+    resultHash: "hash-a",
+    metadata: {
+      nodeId: "start-node",
+      sessionId: "session-web-aigc-1",
+      missionId: "mission-web-aigc-1",
+      workflowId: "wf-web-aigc-1",
+    },
+  }),
+  makeNode({
+    lineageId: "node-2",
+    type: "transformation",
+    timestamp: 2000,
+    agentId: "agent-1",
+    upstream: ["node-1"],
+    metadata: {
+      nodeId: "intent-node",
+      sessionId: "session-web-aigc-1",
+      missionId: "mission-web-aigc-1",
+      workflowId: "wf-web-aigc-1",
+    },
+  }),
+  makeNode({
+    lineageId: "node-3",
+    type: "decision",
+    timestamp: 3000,
+    decisionId: "dec-1",
+    upstream: ["node-2"],
+    result: "approve",
+    confidence: 0.95,
+    metadata: {
+      nodeId: "confirm-node",
+      decisionId: "dec-1",
+      sessionId: "session-web-aigc-1",
+      missionId: "mission-web-aigc-1",
+      workflowId: "wf-web-aigc-1",
+    },
+  }),
 ];
 
 function createMockStore(): LineageStorageAdapter {
@@ -49,9 +99,40 @@ function createMockStore(): LineageStorageAdapter {
     },
     async queryNodes(filter: Record<string, unknown>) {
       let results = [...sampleNodes];
+      if (typeof filter.limit === "number") {
+        results = results.slice(0, filter.limit);
+      }
       if (filter.type) results = results.filter((n) => n.type === filter.type);
       if (filter.decisionId) results = results.filter((n) => n.decisionId === filter.decisionId);
       if (filter.agentId) results = results.filter((n) => n.agentId === filter.agentId);
+      if (filter.sessionId) {
+        results = results.filter(
+          (n) =>
+            n.context.sessionId === filter.sessionId ||
+            (n.metadata as Record<string, unknown> | undefined)?.sessionId === filter.sessionId,
+        );
+      }
+      if (filter.missionId) {
+        results = results.filter(
+          (n) =>
+            n.context.missionId === filter.missionId ||
+            (n.metadata as Record<string, unknown> | undefined)?.missionId === filter.missionId,
+        );
+      }
+      if (filter.workflowId) {
+        results = results.filter(
+          (n) =>
+            n.context.workflowId === filter.workflowId ||
+            (n.metadata as Record<string, unknown> | undefined)?.workflowId === filter.workflowId,
+        );
+      }
+      if (filter.nodeId) {
+        results = results.filter(
+          (n) =>
+            (n.metadata as Record<string, unknown> | undefined)?.nodeId === filter.nodeId ||
+            n.lineageId === filter.nodeId,
+        );
+      }
       return results;
     },
     async queryEdges() {
@@ -184,6 +265,54 @@ describe("Lineage Routes", () => {
       const nodes = res.body.nodes as Array<Record<string, unknown>>;
       expect(nodes.length).toBe(1);
       expect(nodes[0].type).toBe("decision");
+    });
+
+    it("supports web-aigc index filters on the root query route", async () => {
+      const res = await fetch(
+        server,
+        "GET",
+        "/api/lineage?workflowId=wf-web-aigc-1&missionId=mission-web-aigc-1&sessionId=session-web-aigc-1&decisionId=dec-1&nodeId=confirm-node",
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const nodes = res.body.nodes as Array<Record<string, unknown>>;
+      expect(nodes.length).toBe(1);
+      expect(nodes[0].decisionId).toBe("dec-1");
+      expect((nodes[0].metadata as Record<string, unknown>).nodeId).toBe("confirm-node");
+      expect((nodes[0].context as Record<string, unknown>).workflowId).toBe("wf-web-aigc-1");
+      expect((nodes[0].context as Record<string, unknown>).missionId).toBe("mission-web-aigc-1");
+      expect((nodes[0].context as Record<string, unknown>).sessionId).toBe("session-web-aigc-1");
+    });
+  });
+
+  describe("GET /api/lineage/web-aigc", () => {
+    it("queries lineage nodes through explicit web-aigc index entry", async () => {
+      const res = await fetch(
+        server,
+        "GET",
+        "/api/lineage/web-aigc?workflowId=wf-web-aigc-1&nodeId=intent-node&limit=5",
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const nodes = res.body.nodes as Array<Record<string, unknown>>;
+      expect(nodes.length).toBe(1);
+      expect(nodes[0].lineageId).toBe("node-2");
+      expect((nodes[0].metadata as Record<string, unknown>).nodeId).toBe("intent-node");
+      expect((nodes[0].context as Record<string, unknown>).workflowId).toBe("wf-web-aigc-1");
+    });
+
+    it("applies limit after web-aigc index filtering", async () => {
+      const res = await fetch(
+        server,
+        "GET",
+        "/api/lineage/web-aigc?nodeId=intent-node&limit=1",
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const nodes = res.body.nodes as Array<Record<string, unknown>>;
+      expect(nodes.length).toBe(1);
+      expect(nodes[0].lineageId).toBe("node-2");
+      expect((nodes[0].metadata as Record<string, unknown>).nodeId).toBe("intent-node");
     });
   });
 
