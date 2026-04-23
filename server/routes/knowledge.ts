@@ -232,7 +232,7 @@ export function createKnowledgeRouter(deps: {
     const nodeType = req.body?.nodeType;
 
     if (!isKnowledgeNodeType(nodeType)) {
-      return res.status(400).json({ error: "nodeType must be knowledge_qa" });
+      return res.status(400).json({ error: "nodeType must be knowledge_qa or qa_search" });
     }
 
     const startedAt = performance.now();
@@ -293,6 +293,12 @@ export function createKnowledgeRouter(deps: {
             semanticScores.length > 0 ? Math.max(...semanticScores) : undefined,
           semanticScoreMin:
             semanticScores.length > 0 ? Math.min(...semanticScores) : undefined,
+          ...(nodeType === "qa_search" && "matches" in result.output
+            ? {
+                matchCount: result.output.matches.length,
+                topScore: result.output.score,
+              }
+            : {}),
         },
       });
 

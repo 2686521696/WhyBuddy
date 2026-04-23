@@ -2,6 +2,10 @@ import { getAIConfig } from "../../core/ai-config.js";
 import { callLLM } from "../../core/llm-client.js";
 import db from "../../db/index.js";
 import { sessionStore as runtimeSessionStore } from "../../memory/session-store.js";
+import type {
+  WebAigcDocumentSearchResponse,
+  WebAigcSearchRequest,
+} from "../../../shared/rag/web-aigc-search.js";
 
 export type ChatNodeType = "llm" | "dialogue";
 
@@ -15,6 +19,17 @@ export interface ChatNodeToolCall {
   arguments: string;
   result?: string;
 }
+
+export interface ChatNodeDocumentSearchInput
+  extends Omit<WebAigcSearchRequest, "query"> {
+  query?: string;
+}
+
+export type ChatNodeDocumentSearchResult = WebAigcDocumentSearchResponse;
+
+export type ChatNodeDocumentSearchExecutor = (
+  request: WebAigcSearchRequest,
+) => Promise<ChatNodeDocumentSearchResult>;
 
 export interface ChatNodeInput {
   messages?: ChatNodeMessage[];
@@ -37,6 +52,7 @@ export interface ChatNodeInput {
   temperature?: number;
   maxTokens?: number;
   model?: string;
+  documentSearch?: ChatNodeDocumentSearchInput;
 }
 
 export interface ChatNodeExecutionRequest {
@@ -106,6 +122,7 @@ export interface ChatNodeAdapterDeps {
   now?: () => number;
   messageStore?: ChatNodeMessageStore;
   sessionStore?: ChatNodeSessionStore;
+  documentSearch?: ChatNodeDocumentSearchExecutor;
 }
 
 const defaultMessageStore: ChatNodeMessageStore | undefined =
@@ -117,6 +134,10 @@ const defaultSessionStore: ChatNodeSessionStore | undefined =
   typeof (runtimeSessionStore as Partial<ChatNodeSessionStore>).appendLLMExchange === "function"
     ? runtimeSessionStore
     : undefined;
+
+let defaultDocumentSearchPromise:
+  | Promise<ChatNodeDocumentSearchExecutor | undefined>
+  | undefined;
 
 function isChatNodeMessage(value: unknown): value is ChatNodeMessage {
   if (!value || typeof value !== "object") return false;
@@ -178,6 +199,24 @@ function stringifyJson(value: unknown): string {
   }
 }
 
+function stringifyToolCallResult(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized ? normalized : undefined;
+  }
+
+  try {
+    const serialized = JSON.stringify(value, null, 2);
+    return typeof serialized === "string" ? serialized : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function normalizeString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -200,6 +239,32 @@ function normalizeStringArray(value: unknown): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeNumber(value: unknown): number | undefined {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : undefined;
+}
+
+function mergeStringArrays(...collections: Array<string[] | undefined>): string[] | undefined {
+  const merged = collections
+    .flatMap((collection) => collection ?? [])
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (merged.length === 0) {
+    return undefined;
+  }
+
+  return Array.from(new Set(merged));
+}
+
 function normalizeToolCalls(value: unknown): ChatNodeToolCall[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -218,11 +283,11 @@ function normalizeToolCalls(value: unknown): ChatNodeToolCall[] | undefined {
     .map((entry) => {
       const name = normalizeString(entry.name) ?? "tool";
       const argumentsText = stringifyJson(entry.arguments);
-      const result = normalizeString(entry.result);
+      const result = stringifyToolCallResult(entry.result);
       return {
         name,
         arguments: argumentsText,
-        ...(result ? { result } : {}),
+        ...(result !== undefined ? { result } : {}),
       };
     });
 
@@ -235,6 +300,257 @@ function clampTemperature(value: unknown): number {
 
 function clampMaxTokens(value: unknown): number {
   return Math.max(64, Math.min(4000, Number(value) || 400));
+}
+
+function normalizeDocumentSearchMode(
+  value: unknown,
+): "semantic" | "keyword" | "hybrid" | undefined {
+  if (value !== "semantic" && value !== "keyword" && value !== "hybrid") {
+    return undefined;
+  }
+
+  return value;
+}
+
+function normalizeDocumentSearchInput(
+  value: unknown,
+): ChatNodeDocumentSearchInput | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const scopeValue = candidate.scope;
+  if (!scopeValue || typeof scopeValue !== "object" || Array.isArray(scopeValue)) {
+    throw new Error("documentSearch.scope.projectId is required.");
+  }
+
+  const scopeCandidate = scopeValue as Record<string, unknown>;
+  const projectId = normalizeString(scopeCandidate.projectId);
+  if (!projectId) {
+    throw new Error("documentSearch.scope.projectId is required.");
+  }
+
+  const optionsValue =
+    candidate.options && typeof candidate.options === "object" && !Array.isArray(candidate.options)
+      ? (candidate.options as Record<string, unknown>)
+      : undefined;
+  const topK = normalizeNumber(optionsValue?.topK);
+  const minScore = normalizeNumber(optionsValue?.minScore);
+  const mode = normalizeDocumentSearchMode(optionsValue?.mode);
+  const expandContext = normalizeBoolean(optionsValue?.expandContext);
+  const contextWindowChunks = normalizeNumber(optionsValue?.contextWindowChunks);
+
+  return {
+    ...(normalizeString(candidate.query) ? { query: normalizeString(candidate.query) } : {}),
+    scope: {
+      projectId,
+      ...(normalizeStringArray(scopeCandidate.sourceTypes)
+        ? {
+            sourceTypes: normalizeStringArray(scopeCandidate.sourceTypes) as NonNullable<
+              ChatNodeDocumentSearchInput["scope"]["sourceTypes"]
+            >,
+          }
+        : {}),
+      ...(normalizeStringArray(scopeCandidate.documentIds)
+        ? {
+            documentIds: normalizeStringArray(scopeCandidate.documentIds),
+          }
+        : {}),
+      ...(normalizeString(scopeCandidate.agentId)
+        ? { agentId: normalizeString(scopeCandidate.agentId) }
+        : {}),
+      ...(normalizeString(scopeCandidate.codeLanguage)
+        ? { codeLanguage: normalizeString(scopeCandidate.codeLanguage) }
+        : {}),
+    },
+    ...(optionsValue
+      ? {
+          options: {
+            ...(typeof topK === "number" ? { topK } : {}),
+            ...(typeof minScore === "number" ? { minScore } : {}),
+            ...(mode ? { mode } : {}),
+            ...(typeof expandContext === "boolean" ? { expandContext } : {}),
+            ...(typeof contextWindowChunks === "number"
+              ? { contextWindowChunks }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function mergeContext(base: unknown, addition: unknown): unknown {
+  if (addition === undefined || addition === null) {
+    return base;
+  }
+
+  if (base === undefined || base === null || base === "") {
+    return addition;
+  }
+
+  if (Array.isArray(base)) {
+    return [...base, addition];
+  }
+
+  return [base, addition];
+}
+
+function buildDocumentSearchCitations(
+  response: ChatNodeDocumentSearchResult,
+): string[] | undefined {
+  const citations = response.results
+    .map((result) => {
+      const highlights = result.highlights.filter(Boolean).slice(0, 2).join(" | ");
+      return highlights
+        ? `${result.documentId}: ${result.summary} [${highlights}]`
+        : `${result.documentId}: ${result.summary}`;
+    })
+    .filter(Boolean);
+
+  return citations.length > 0 ? citations : undefined;
+}
+
+function buildDocumentSearchToolResult(
+  response: ChatNodeDocumentSearchResult,
+): string {
+  const preview = response.results
+    .slice(0, 3)
+    .map((result) => `${result.documentId}(${result.score.toFixed(2)})`)
+    .join(", ");
+
+  return [
+    `Matched ${response.results.length} documents in ${response.latencyMs}ms.`,
+    `Mode: ${response.mode}.`,
+    preview ? `Top hits: ${preview}.` : "Top hits: none.",
+  ].join(" ");
+}
+
+function buildDocumentSearchContext(
+  response: ChatNodeDocumentSearchResult,
+): Record<string, unknown> {
+  return {
+    documentSearch: {
+      query: response.query,
+      mode: response.mode,
+      latencyMs: response.latencyMs,
+      totalCandidates: response.totalCandidates,
+      documents: response.results.map((result) => ({
+        documentId: result.documentId,
+        sourceType: result.sourceType,
+        score: result.score,
+        summary: result.summary,
+        highlights: result.highlights,
+      })),
+    },
+  };
+}
+
+async function getDefaultDocumentSearchExecutor(): Promise<
+  ChatNodeDocumentSearchExecutor | undefined
+> {
+  if (!defaultDocumentSearchPromise) {
+    defaultDocumentSearchPromise = (async () => {
+      try {
+        const { getRAGConfig } = await import("../../rag/config.js");
+        if (!getRAGConfig().enabled) {
+          return undefined;
+        }
+
+        const { initRAG } = await import("../../rag/index.js");
+        const {
+          normalizeWebAigcSearchRequest,
+          projectDocumentSearchResponse,
+        } = await import("../../rag/web-aigc-search-adapter.js");
+        const ragDeps = initRAG();
+
+        return async (
+          request: WebAigcSearchRequest,
+        ): Promise<ChatNodeDocumentSearchResult> => {
+          const options = normalizeWebAigcSearchRequest(request);
+          const startedAt = Date.now();
+          const results = await ragDeps.retriever.search(request.query, options);
+          const latencyMs = Math.max(0, Date.now() - startedAt);
+
+          return projectDocumentSearchResponse({
+            query: request.query,
+            results,
+            documentIds: request.scope.documentIds,
+            latencyMs,
+            mode: request.options?.mode ?? "hybrid",
+          });
+        };
+      } catch {
+        return undefined;
+      }
+    })();
+  }
+
+  return defaultDocumentSearchPromise;
+}
+
+async function applyDialogueDocumentSearch(
+  input: ChatNodeInput,
+  deps: ChatNodeAdapterDeps,
+): Promise<ChatNodeInput> {
+  const documentSearch = normalizeDocumentSearchInput(input.documentSearch);
+  if (!documentSearch) {
+    return input;
+  }
+
+  const baseMessages = normalizeMessages(input.messages);
+  const query =
+    normalizeString(documentSearch.query) ||
+    normalizeString(input.prompt) ||
+    getLatestUserContent(baseMessages);
+
+  if (!query) {
+    throw new Error(
+      "Dialogue documentSearch requires query, prompt, or user message.",
+    );
+  }
+
+  const executor =
+    deps.documentSearch || (await getDefaultDocumentSearchExecutor());
+  if (!executor) {
+    throw new Error(
+      "Dialogue documentSearch is configured but no search executor is available.",
+    );
+  }
+
+  const response = await executor({
+    query,
+    scope: documentSearch.scope,
+    ...(documentSearch.options ? { options: documentSearch.options } : {}),
+  });
+
+  const citations = mergeStringArrays(
+    normalizeStringArray(input.citations),
+    buildDocumentSearchCitations(response),
+  );
+  const toolCalls = [
+    ...(Array.isArray(input.toolCalls) ? input.toolCalls : []),
+    {
+      name: "document_search",
+      arguments: {
+        query,
+        scope: documentSearch.scope,
+        ...(documentSearch.options ? { options: documentSearch.options } : {}),
+      },
+      result: buildDocumentSearchToolResult(response),
+    },
+  ];
+
+  return {
+    ...input,
+    context: mergeContext(input.context, buildDocumentSearchContext(response)),
+    ...(citations ? { citations } : {}),
+    toolCalls,
+    documentSearch: {
+      ...documentSearch,
+      query,
+    },
+  };
 }
 
 function buildMessages(input?: ChatNodeInput): ChatNodeMessage[] {
@@ -338,6 +654,7 @@ function buildDialogueMetadata(input: ChatNodeInput, extras: {
     latencyMs: extras.latencyMs,
   };
 
+  const workflowId = normalizeString(input.workflowId);
   const sessionId = normalizeString(input.sessionId);
   const missionId = normalizeString(input.missionId);
   const agentId = normalizeString(input.agentId);
@@ -346,6 +663,9 @@ function buildDialogueMetadata(input: ChatNodeInput, extras: {
   const toolCalls = normalizeToolCalls(input.toolCalls);
   const thinking = normalizeString(input.thinking);
 
+  if (workflowId) {
+    metadata.workflowId = workflowId;
+  }
   if (sessionId) {
     metadata.sessionId = sessionId;
   }
@@ -386,7 +706,11 @@ export async function executeChatNode(
     throw new Error("Unsupported chat node type.");
   }
 
-  const input = request.input ?? {};
+  const rawInput = request.input ?? {};
+  const input =
+    request.nodeType === "dialogue"
+      ? await applyDialogueDocumentSearch(rawInput, deps)
+      : rawInput;
   const messages = buildMessages(input);
   const getConfigValue = deps.getConfig ?? getAIConfig;
   const executeLLM = deps.executeLLM ?? callLLM;
@@ -433,6 +757,7 @@ export async function executeChatNode(
     const userMetadata: Record<string, unknown> = {
       nodeType: "dialogue",
       role: "user",
+      ...(workflowId ? { workflowId } : {}),
       ...(sessionId ? { sessionId } : {}),
       ...(missionId ? { missionId } : {}),
       ...(agentId ? { agentId } : {}),

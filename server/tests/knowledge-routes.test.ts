@@ -409,4 +409,149 @@ describe("POST /api/knowledge/nodes/execute", () => {
       expect(body.error).toContain("question");
     });
   });
+
+  it("executes qa_search node with scored matches and dialogue-ready context", async () => {
+    await withServer(async (baseUrl, deps) => {
+      const projectId = uniqueProjectId("proj");
+      seedEntity(deps.graphStore, {
+        name: "支付异常 FAQ",
+        description: "支付失败后先核对支付状态，再检查回调与履约日志。",
+        confidence: 0.91,
+        projectId,
+      });
+
+      const res = await fetch(`${baseUrl}/api/knowledge/nodes/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodeType: "qa_search",
+          input: {
+            question: "支付异常怎么排查？",
+            projectId,
+            maxResults: 3,
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+      expect(body.nodeType).toBe("qa_search");
+      expect(body.output.answer).toBeDefined();
+      expect(body.output.reply.content).toBe(body.output.answer);
+      expect(body.output.score).toBeGreaterThan(0);
+      expect(body.output.matches).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: "entity",
+            question: "支付异常 FAQ",
+            score: expect.any(Number),
+          }),
+        ]),
+      );
+      expect(body.output.context).toContain("支付异常 FAQ");
+      expect(body.output.citations).toEqual(
+        expect.arrayContaining(["CodeModule:支付异常 FAQ"]),
+      );
+      expect(deps.auditCollector.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: AuditEventType.DATA_ACCESSED,
+          metadata: expect.objectContaining({
+            eventKey: "external.knowledge_retrieval",
+            nodeType: "qa_search",
+            projectId,
+            matchCount: body.output.matches.length,
+            topScore: body.output.score,
+          }),
+        }),
+      );
+    });
+  });
+
+  it("keeps qa_search output compatible with dialogue-side retrieval enhancement inputs", async () => {
+    await withServer(async (baseUrl, deps) => {
+      const projectId = uniqueProjectId("proj");
+      seedEntity(deps.graphStore, {
+        name: "订单回调排查",
+        description: "先核对支付网关状态，再检查回调重试与履约消费日志。",
+        confidence: 0.95,
+        projectId,
+      });
+      seedEntity(deps.graphStore, {
+        name: "履约补偿 SOP",
+        description: "若回调缺失，应补查任务队列、补偿任务与下游状态对账。",
+        confidence: 0.87,
+        projectId,
+      });
+
+      const res = await fetch(`${baseUrl}/api/knowledge/nodes/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodeType: "qa_search",
+          input: {
+            question: "订单回调缺失时如何排查？",
+            projectId,
+            maxResults: 2,
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+      expect(body.nodeType).toBe("qa_search");
+      expect(body.output.matches).toHaveLength(2);
+      expect(body.output.context).toContain("[entity]");
+      expect(body.output.context).toContain("score=");
+      expect(body.output.evidence).toEqual({
+        structuredEntityCount: 2,
+        relationCount: 0,
+        semanticHitCount: 0,
+      });
+      expect(body.output.citations).toEqual(
+        expect.arrayContaining([
+          "CodeModule:订单回调排查",
+          "CodeModule:履约补偿 SOP",
+        ]),
+      );
+      expect(body.output.evidenceList).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "entity",
+            title: "订单回调排查",
+          }),
+          expect.objectContaining({
+            kind: "entity",
+            title: "履约补偿 SOP",
+          }),
+        ]),
+      );
+      expect(body.output.matches).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: "entity",
+            question: "订单回调排查",
+          }),
+          expect.objectContaining({
+            source: "entity",
+            question: "履约补偿 SOP",
+          }),
+        ]),
+      );
+      expect(deps.auditCollector.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: AuditEventType.DATA_ACCESSED,
+          metadata: expect.objectContaining({
+            eventKey: "external.knowledge_retrieval",
+            nodeType: "qa_search",
+            projectId,
+            matchCount: 2,
+            citationCount: body.output.citations.length,
+            evidenceCount: body.output.evidenceList.length,
+          }),
+        }),
+      );
+    });
+  });
 });

@@ -54,6 +54,11 @@ export interface AgentRecord {
   capabilities?: string[];
 }
 
+import type {
+  WebAigcDocumentSearchResponse,
+  WebAigcSearchRequest,
+} from "./rag/web-aigc-search.js";
+
 export interface WorkflowRecord {
   id: string;
   directive: string;
@@ -341,6 +346,9 @@ export interface WorkflowRuntime {
   reportRepo: ReportRepository;
   eventEmitter: RuntimeEventEmitter;
   llmProvider: LLMProvider;
+  documentSearch?: (
+    request: WebAigcSearchRequest,
+  ) => Promise<WebAigcDocumentSearchResponse>;
   agentDirectory: AgentDirectory;
   messageBus: RuntimeMessageBus;
   evolutionService: EvolutionService;

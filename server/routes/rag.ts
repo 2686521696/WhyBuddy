@@ -5,6 +5,7 @@
  */
 
 import { Router } from 'express';
+import { AuditEventType } from '../../shared/audit/contracts.js';
 import type { IngestionPayload } from '../../shared/rag/contracts.js';
 import type { IngestionPipeline } from '../rag/ingestion/ingestion-pipeline.js';
 import type { RAGRetriever } from '../rag/retrieval/rag-retriever.js';
@@ -25,6 +26,7 @@ import {
   projectFragmentSearchResponse,
   validateWebAigcSearchRequest,
 } from '../rag/web-aigc-search-adapter.js';
+import { auditCollector } from '../audit/audit-collector.js';
 import { getPermissionCheckEngine } from '../core/agent.js';
 
 export interface RAGRouteDeps {
@@ -85,6 +87,15 @@ function toPermissionDeniedResponse(result: PermissionCheckResult) {
   };
 }
 
+function tryRecordAudit(input: Parameters<typeof auditCollector.record>[0]): void {
+  try {
+    auditCollector.record(input);
+  } catch {
+    // Audit is best-effort here; retrieval should not fail just because the
+    // audit chain is not initialized in lightweight test/runtime setups.
+  }
+}
+
 export function createRAGRouter(deps: RAGRouteDeps): Router {
   const router = Router();
 
@@ -95,6 +106,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   async function runWebAigcSearch(
     reqBody: Partial<WebAigcSearchRequest> | undefined,
     projector: typeof projectDocumentSearchResponse | typeof projectFragmentSearchResponse,
+    nodeType: 'document_search' | 'fragment_search' = 'document_search',
   ) {
     const validationError = validateWebAigcSearchRequest(reqBody);
     if (validationError) {
@@ -144,6 +156,32 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
       mode,
     });
     recordRetrievalMetric(latencyMs, body.totalCandidates);
+
+    tryRecordAudit({
+      eventType: AuditEventType.DATA_ACCESSED,
+      actor: { type: 'system', id: 'rag-router' },
+      action:
+        nodeType === 'fragment_search'
+          ? 'Fragment search executed for web-aigc node'
+          : 'Document search executed for web-aigc node',
+      resource: {
+        type: nodeType === 'fragment_search' ? 'fragment-search-node' : 'document-search-node',
+        id: request.scope.projectId,
+        name: nodeType,
+      },
+      result: 'success',
+      metadata: {
+        eventKey: 'external.knowledge_retrieval',
+        nodeType,
+        projectId: request.scope.projectId,
+        queryMode: mode,
+        latencyMs,
+        structuredEntityCount: 0,
+        semanticHitCount: body.totalCandidates,
+        totalCandidates: body.totalCandidates,
+        documentFilterCount: request.scope.documentIds?.length ?? 0,
+      },
+    });
 
     return {
       status: 200,
@@ -207,6 +245,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
       const response = await runWebAigcSearch(
         req.body as Partial<WebAigcSearchRequest>,
         projectDocumentSearchResponse,
+        'document_search',
       );
       return res.status(response.status).json(response.body);
     } catch (err) {
@@ -220,6 +259,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
       const response = await runWebAigcSearch(
         req.body as Partial<WebAigcSearchRequest>,
         projectFragmentSearchResponse,
+        'fragment_search',
       );
       return res.status(response.status).json(response.body);
     } catch (err) {

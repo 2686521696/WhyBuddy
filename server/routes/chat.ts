@@ -89,7 +89,12 @@ export function createChatRouter(deps: ChatRouterDeps = {}): Router {
       res.json(result);
     } catch (error: any) {
       const message = error?.message || "Chat node execution failed.";
-      const status = /requires prompt or messages/i.test(message) ? 400 : 500;
+      const status =
+        /requires prompt or messages/i.test(message) ||
+        /documentsearch.*requires query/i.test(message) ||
+        /documentsearch\.scope\.projectid is required/i.test(message)
+          ? 400
+          : 500;
       res.status(status).json({ error: message });
     }
   });

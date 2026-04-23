@@ -3,8 +3,10 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AuditEventType } from "../../shared/audit/contracts.js";
 import type { RetrievalResult } from "../../shared/rag/contracts.js";
 import { createRAGRouter, type RAGRouteDeps } from "../routes/rag.js";
+import { auditCollector } from "../audit/audit-collector.js";
 import { setPermissionCheckEngine } from "../core/agent.js";
 
 function createDeps(results: RetrievalResult[] = []): RAGRouteDeps {
@@ -152,6 +154,52 @@ describe("web-aigc RAG compatibility routes", () => {
     );
   });
 
+  it("records audit entries for document_search", async () => {
+    const deps = createDeps([makeResult()]);
+    const auditSpy = vi.spyOn(auditCollector, "record").mockImplementation(() => {});
+
+    await withServer(deps, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/rag/web-aigc/document-search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "graph runtime",
+          scope: {
+            projectId: "proj-web-aigc",
+            documentIds: ["doc-1"],
+          },
+          options: {
+            mode: "hybrid",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AuditEventType.DATA_ACCESSED,
+        action: "Document search executed for web-aigc node",
+        resource: expect.objectContaining({
+          type: "document-search-node",
+          id: "proj-web-aigc",
+          name: "document_search",
+        }),
+        metadata: expect.objectContaining({
+          eventKey: "external.knowledge_retrieval",
+          nodeType: "document_search",
+          projectId: "proj-web-aigc",
+          queryMode: "hybrid",
+          structuredEntityCount: 0,
+          semanticHitCount: 1,
+          totalCandidates: 1,
+          documentFilterCount: 1,
+        }),
+      }),
+    );
+  });
+
   it("filters fragment_search results by documentIds", async () => {
     const deps = createDeps([
       makeResult(),
@@ -161,6 +209,7 @@ describe("web-aigc RAG compatibility routes", () => {
         content: "Fragment that should be filtered out.",
       }),
     ]);
+    const auditSpy = vi.spyOn(auditCollector, "record").mockImplementation(() => {});
 
     await withServer(deps, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/rag/web-aigc/fragment-search`, {
@@ -189,6 +238,21 @@ describe("web-aigc RAG compatibility routes", () => {
     expect(deps.metrics.recordRetrieval).toHaveBeenCalledWith(
       expect.any(Number),
       true,
+    );
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: AuditEventType.DATA_ACCESSED,
+        metadata: expect.objectContaining({
+          eventKey: "external.knowledge_retrieval",
+          nodeType: "fragment_search",
+          projectId: "proj-web-aigc",
+          queryMode: "keyword",
+          structuredEntityCount: 0,
+          semanticHitCount: 1,
+          totalCandidates: 1,
+          documentFilterCount: 1,
+        }),
+      }),
     );
   });
 
