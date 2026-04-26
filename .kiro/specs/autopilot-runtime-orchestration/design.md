@@ -286,6 +286,359 @@ type OrchestrationControlState = {
 - 允许未来逐步下沉为更正式的服务端实体；
 - 当前阶段不要求直接重构底层 Mission / workflow schema。
 
+## 编排层关联接口路径
+
+本节用于收口“编排层与 `Mission Runtime`、`workflow runtime`、`decision / approval`、`executor` 的关联接口路径”。这里的“接口路径”不是要求当前主仓已经存在一条全新的 orchestration API，而是要把现有可复用入口按编排层责任重新整理成一张稳定的接口矩阵，明确：
+
+- 入口路径是什么；
+- 输入输出最小契约是什么；
+- 编排层在这里承担什么责任；
+- 哪些字段由服务端投影承担，哪些字段仍停留在底层事实层；
+- 当前阶段哪些能力是“直接复用既有接口”，哪些是“需要后续补独立接口面”。
+
+### 1. 任务级聚合读取路径
+
+当前任务侧已经稳定存在两条编排读取主路径：
+
+| 编排入口 | 当前路径 | 输入 | 输出 | 字段来源 | 编排层责任边界 |
+| --- | --- | --- | --- | --- | --- |
+| 任务投影读取 | `GET /api/tasks/:id/projection` | `missionId` | `MissionProjectionView` | `Mission Runtime` + `workflow runtime` + projection link resolver + `buildMissionAutopilotSummary()` | 负责把 Mission / workflow / decision / executor 的既有事实聚合成 `autopilotSummary + orchestration`，不直接暴露 workflow runtime 原生控制面 |
+| 任务会话读取 | `GET /api/tasks/:id/session` | `missionId` | `GetMissionSessionResponse` | `Mission Runtime` + session store + projection links | 负责把 replay/session 消费所需的 `sessionId / workflowId / replayId` 锚点稳定回传，不负责表达完整 orchestration control state |
+
+建议把这两条路径视为编排层当前的一等只读接口面：
+
+- `GET /api/tasks/:id/projection`
+  - 输入：任务主键。
+  - 输出：
+    - `links`
+    - `autopilotSummary`
+    - `orchestration`
+    - `workflow`
+    - `graph`
+    - `monitoring`
+    - `session`
+  - 责任：
+    - `autopilotSummary` 负责产品语义层的 `destination / route / takeover / recovery / evidence / explanation / bindings`
+    - `orchestration` 负责控制语义层的 `status / currentStage / bindings / controlActions / wait / replan`
+  - 边界：
+    - 不在这里直接暴露 workflow runtime 的节点级原生 state machine
+    - 不在这里直接暴露 executor 原生 pause/resume/job detail 契约
+
+- `GET /api/tasks/:id/session`
+  - 输入：任务主键。
+  - 输出：
+    - `links`
+    - `session`
+    - `memoryEntries`
+  - 责任：
+    - 为 replay/session consumer 提供编排层已解析过的 link 锚点
+  - 边界：
+    - 不承担 route / takeover / control action 的高层聚合
+
+### 2. 任务级控制写入路径
+
+当前任务侧可以稳定复用两条控制写入路径：
+
+| 编排入口 | 当前路径 | 输入 | 输出 | 字段来源 | 编排层责任边界 |
+| --- | --- | --- | --- | --- | --- |
+| operator action 提交 | `POST /api/tasks/:id/operator-actions` | `action / reason / requestedBy` | `SubmitMissionOperatorActionResponse` | `Mission Runtime` operator action record | 负责写入任务级 `pause / mark-blocked / retry / escalate / terminate` 等操作事实，并让后续 projection 消费它们 |
+| decision / HITL 提交 | `POST /api/tasks/:id/decision` | `optionId / freeText / detail / progress / submittedBy / metadata` | `SubmitMissionDecisionResponse` | `MissionDecision` + `decisionHistory` | 负责把 takeover / clarification / route confirmation / param collection 结果写回任务事实层 |
+
+建议编排层把这两条路径解释为：
+
+- `POST /api/tasks/:id/operator-actions`
+  - 面向编排层的语义：
+    - `retry`
+    - `escalate`
+    - `terminate`
+    - `pause`
+    - `mark-blocked`
+  - 输入字段来源：
+    - 来自任务详情、运营控制面、恢复治理面板
+  - 输出字段落点：
+    - `MissionRecord.operatorActions[]`
+    - 后续投影到 `orchestration.controlActions`、`route.replan`、`recovery.attemptedActions`、`evidence.correlation.operatorActionIds`
+  - 边界：
+    - 这是任务级控制入口，不等于 workflow runtime 原生控制入口
+    - 当前没有把 executor 的 pause/resume/job-control 收敛进同一入口
+
+- `POST /api/tasks/:id/decision`
+  - 面向编排层的语义：
+    - clarification
+    - route confirmation
+    - approval / permission confirmation
+    - risk acceptance
+    - param collection
+  - 输入字段来源：
+    - 来自 `DecisionPanel` / HITL 表单 / route choice submit
+  - 输出字段落点：
+    - `MissionRecord.decision`
+    - `MissionRecord.decisionHistory[]`
+    - `resolved.metadata.formData`
+  - 编排层责任：
+    - 把提交结果解释成 `takeover resolved / route selected / clarification completed`
+    - 供 `autopilotSummary` 回写 `selectedRouteId / decisionIds / takeover status / explanation.recommendationDetails`
+  - 边界：
+    - 当前仍是 `decision` 入口承载 approval 语义，而非独立 approval API
+    - approval 只在编排语义层可解释，不代表 task 侧已有单独 `approval` 资源接口
+
+### 3. workflow runtime 控制路径
+
+当前 workflow runtime 已有一组独立控制入口，编排层应明确把它们视为“底层执行控制面”，而不是任务侧 API 的别名：
+
+| 编排入口 | 当前路径 | 输入 | 输出 | 字段来源 | 编排层责任边界 |
+| --- | --- | --- | --- | --- | --- |
+| 启动 runtime | `POST /api/workflows/:id/runtime/run` | workflow id + request body | workflow runtime state | workflow runtime engine | 负责实例启动，不直接生成任务级 summary |
+| 恢复 runtime | `POST /api/workflows/:id/runtime/resume` | workflow id + `payload` | workflow runtime state | `WAITING_INPUT -> resume()` | 负责底层等待恢复；编排层只解释其高层结果 |
+| 终止 runtime | `POST /api/workflows/:id/runtime/terminate` | workflow id + reason/comment | workflow runtime state | runtime engine terminate | 负责底层执行终止 |
+| 重试 runtime | `POST /api/workflows/:id/runtime/retry` | workflow id + retry params | workflow runtime state | runtime engine retry | 负责底层重试事实 |
+| 升级 runtime | `POST /api/workflows/:id/runtime/escalate` | workflow id + escalation params | workflow runtime state | runtime engine escalate | 负责底层升级事实 |
+
+编排层对这组路径的责任边界应明确为：
+
+- 编排层不直接替代这些入口。
+- 编排层需要把任务级 `route / takeover / recovery / orchestration` 语义映射到它们。
+- 当前任务侧通过 `projection` 间接消费这些结果，而不是把 `/api/workflows/:id/runtime/*` 直接透传给 task detail UI。
+
+建议形成一张“编排动作 -> workflow runtime 控制面”的映射：
+
+| 编排动作 | 首选底层落点 | 输入摘要 | 结果回流到 |
+| --- | --- | --- | --- |
+| `resume` | `POST /api/workflows/:id/runtime/resume` | HITL payload / clarified params / approval payload | `wait` 关闭、`driveState` 前移、`execution.currentStepStatus` 变化 |
+| `retry` | `POST /api/workflows/:id/runtime/retry` | retry reason / scope / operator comment | `orchestration.replan`、`route.replan`、`recovery.attemptedActions` |
+| `escalate` | `POST /api/workflows/:id/runtime/escalate` | escalation reason / ticket / operator comment | `recovery.state`、`takeover.status`、审计链路 |
+| `terminate` | `POST /api/workflows/:id/runtime/terminate` | terminate reason / requestedBy | `orchestration.status=terminated`、`driveState=blocked or delivered` |
+
+### 4. approval / takeover 关联路径
+
+当前 approval 语义并没有一条任务级独立 REST 资源接口，而是通过两层路径拼接：
+
+- 任务侧：
+  - `POST /api/tasks/:id/decision`
+  - `GET /api/tasks/:id/projection`
+- workflow runtime 侧：
+  - `POST /api/workflows/:id/runtime/resume`
+  - 节点级 `approval_required` / `WAITING_INPUT` 事实
+
+因此编排层对 approval 的当前接口定义应写成“桥接路径”，而不是“独立 approval API”：
+
+```text
+approval / permission / budget
+  -> MissionDecision or waiting input
+  -> POST /api/tasks/:id/decision
+  -> if workflow runtime is suspended:
+       POST /api/workflows/:id/runtime/resume
+  -> GET /api/tasks/:id/projection 回收高层 summary
+```
+
+责任边界：
+
+- approval 的“提交动作”当前由 `decision` 入口承载。
+- approval 的“执行恢复动作”当前由 workflow runtime `resume` 入口承载。
+- approval 的“高层结果解释”当前由 `autopilotSummary.takeover / recovery / explanation / evidence` 承载。
+- 当前阶段不要求新增 `POST /api/tasks/:id/approvals/:approvalId` 这类独立路径，但文档必须明确这是一个后续可拆分的责任面。
+
+### 5. executor 关联路径
+
+executor 当前的接口面同样是“任务派发 + 任务投影回读”的桥接模式：
+
+| 编排入口 | 当前路径 | 输入 | 输出 | 字段来源 | 编排层责任边界 |
+| --- | --- | --- | --- | --- | --- |
+| executor job 派发 | `POST /api/executor/jobs` | executor job request | `accepted / jobId / status` | executor service | 只负责接单与返回 `jobId` |
+| executor job 引用回读 | `GET /api/tasks/:id/projection` | missionId | `bindings.executorJobId` + `workflow/monitoring/execution` 切片 | Mission Runtime + projection | 负责把 executor 结果折叠进任务视图 |
+
+当前编排层对 executor 的最小责任边界应写为：
+
+- 任务级编排只稳定承诺 `executorJobId` 级绑定与其在 summary/orchestration 中的索引回流。
+- executor 原生 pause/resume/detail/status 并未并入任务级 orchestration API。
+- 若后续要做完整 orchestration control surface，应新增一层 `ExecutorRuntimeBinding`，把 `jobId / executor type / latest executor status / artifact root / callback state` 纳入任务投影，而不是继续只停留在 `executorJobId`。
+
+### 6. 首轮统一接口面建议
+
+结合当前主仓事实，首轮编排层建议采用“任务级聚合读 + 任务级控制写 + workflow runtime 原生控制面 + executor 原生派发面”的四段式接口结构：
+
+```text
+任务级聚合读取
+  GET /api/tasks/:id/projection
+  GET /api/tasks/:id/session
+
+任务级控制写入
+  POST /api/tasks/:id/operator-actions
+  POST /api/tasks/:id/decision
+
+workflow runtime 原生控制
+  POST /api/workflows/:id/runtime/run
+  POST /api/workflows/:id/runtime/resume
+  POST /api/workflows/:id/runtime/retry
+  POST /api/workflows/:id/runtime/escalate
+  POST /api/workflows/:id/runtime/terminate
+
+executor 原生派发
+  POST /api/executor/jobs
+```
+
+这个定义足以支持本 spec 里“关联接口路径”这一设计任务收口，因为它已经具体到：
+
+- 路径；
+- 输入输出；
+- 字段来源；
+- 高层与底层责任边界；
+- 当前已存在接口与后续可拆接口面的区别。
+
+## Mission Runtime 事件字段缺口清单
+
+本节用于收口“评估现有 Mission Runtime 事件流中需要新增或补齐的编排字段”。这里不要求当前代码已经补完这些字段，而是要形成一份可执行的差异清单，明确：
+
+- 现有字段来自哪里；
+- 哪些字段已经足够用于当前 `autopilotSummary + orchestration`；
+- 哪些字段仍然缺失；
+- 缺失字段应该落在 `MissionRecord`、`MissionEvent`、`operator action`、`decision payload/history` 还是服务端 projection；
+- 补齐优先级与推荐落点是什么。
+
+### 1. 当前已稳定可用的编排字段
+
+基于当前主仓实现，Mission Runtime 事件流已经能稳定提供或派生出以下字段族：
+
+| 字段族 | 当前来源 | 已支撑的编排语义 | 当前落点 |
+| --- | --- | --- | --- |
+| 生命周期状态 | `MissionRecord.status / currentStageKey / stages / progress` | `driveState`、`route.currentStage*`、`execution.currentStep*`、`orchestration.status` | `autopilotSummary`、`orchestration` |
+| 等待与阻塞 | `waitingFor / blocker / operatorState / decision / timeoutAt` | `takeover`、`wait`、`recovery`、`riskPoints` | `autopilotSummary`、`orchestration.wait` |
+| 控制动作 | `operatorActions[] / attempt` | `controlActions`、`replan.required`、`recovery.attemptedActions` | `orchestration.controlActions`、`route.replan` |
+| 执行引用 | `projection.workflowId / instanceId / replayId / sessionId`、`executor.jobId` | `bindings`、`evidence.correlation`、session/replay link | `autopilotSummary.bindings`、`orchestration.bindings` |
+| 事件与时间线 | `events[] / decisionHistory[] / operatorActions[]` | `evidence.timeline`、`runtimeEventIds`、`decisionIds`、`operatorActionIds` | `autopilotSummary.evidence` |
+
+当前这些字段已经足够支撑：
+
+- queued / waiting / retry-replan 三类核心任务投影；
+- task detail 的 `autopilotSummary` 消费；
+- replay/session 的最小 link 锚点；
+- takeover / recovery / evidence correlation 的第一轮解释。
+
+### 2. 缺口类型总表
+
+仍需要补齐的不是“更多概念”，而是更细的编排字段分层。建议把缺口分成四类：
+
+| 缺口类型 | 主要问题 | 推荐落点 | 优先级 |
+| --- | --- | --- | --- |
+| 接口关联缺口 | approval / executor / workflow control 仍缺任务级回指字段 | projection + binding objects | P0 |
+| 事件语义缺口 | Mission Runtime 事件本身没有显式 `orchestrationAction / route mutation / takeover lifecycle` | `MissionEvent` 扩展或等效事件镜像 | P0 |
+| 路线与恢复缺口 | retry / replan / resume 结果缺少“影响了哪条 route / step”的结构化字段 | `MissionEvent` + `operatorActions` + projection | P1 |
+| 治理证据缺口 | approval / permission / risk acceptance / executor side effect 缺编排级证据引用 | `decision payload/history` + projection correlation | P1 |
+
+### 3. 字段缺口清单
+
+#### 3.1 接口关联缺口
+
+这些字段的目标是把“任务级编排接口”与“底层 runtime / approval / executor”串起来：
+
+| 缺口字段 | 当前是否存在 | 推荐来源 | 推荐落点 | 用途 |
+| --- | --- | --- | --- | --- |
+| `workflowRuntimeControlRef` | 否 | workflow runtime 控制提交结果 | `orchestration.controlActions[*]` 或 `OrchestrationEvent` | 让任务侧知道这次 `resume / retry / escalate / terminate` 具体落到了哪个 workflow runtime control action |
+| `approvalRef` | 否 | decision payload / approval node metadata | `TakeoverRuntimeBinding` + `evidence.correlation` | 区分普通 decision 与真正审批语义 |
+| `executorRef` | 部分存在，仅 `executorJobId` | Mission executor context / executor callback | `bindings` 扩展 + `FleetRuntimeBinding.executorRefs` | 将 executor 从单一 jobId 提升为可解释执行绑定 |
+| `workflowDefinitionId` | 部分存在 | workflow record | `RouteRuntimeBinding` | 区分 route 绑定的是 definition 还是 instance |
+
+建议：
+
+- P0.1 先补 `approvalRef`
+- P0.2 再补 `workflowRuntimeControlRef`
+- P0.3 最后把 `executorRef` 从单 `jobId` 扩成结构化绑定
+
+#### 3.2 事件语义缺口
+
+当前 `MissionEvent` 足以表达“发生过什么”，但还不够表达“在编排层意味着什么”：
+
+| 缺口字段 | 当前是否存在 | 推荐来源 | 推荐落点 | 用途 |
+| --- | --- | --- | --- | --- |
+| `orchestrationAction` | 否 | Mission Runtime / operator action mirror | `MissionEvent` 或等效 `OrchestrationEvent` | 明确这是 `wait / resume / retry / escalate / terminate / replan` 中哪一种 |
+| `routeId` | 否 | route binding / decision payload | `MissionEvent` / `OrchestrationEvent` | 明确该事件作用于哪条 route |
+| `routeStepId` | 否 | workflow node -> route step mapping | `MissionEvent` / projection | 支撑 route step 级 replay 与定位 |
+| `takeoverPointId` | 部分存在，仅 `decisionId` 可侧推 | decision / waiting state | `MissionEvent` / `TakeoverRuntimeBinding` | 明确接管生命周期 |
+| `stateBefore / stateAfter` | 否 | runtime transition result | `OrchestrationEvent` | 支撑 replay 与审计解释 |
+
+建议：
+
+- P0 先补 `orchestrationAction + stateBefore/stateAfter`
+- P1 再补 `routeId + routeStepId + takeoverPointId`
+
+#### 3.3 路线与恢复缺口
+
+当前 `route.replan` 可以表达“路线在变”，但还不够表达“为什么变、变了什么、恢复到哪里”：
+
+| 缺口字段 | 当前是否存在 | 推荐来源 | 推荐落点 | 用途 |
+| --- | --- | --- | --- | --- |
+| `replanSource` | 部分存在，仅 `triggerAction/changedBy` | operator action / runtime result | `route.replan` | 区分 planner / runtime / user / operator |
+| `resumeTarget` | 否 | resume payload + workflow state | `orchestration.wait` / `execution` | 说明恢复后回到哪一个 step / node / route |
+| `retryScope` | 部分存在，文档模型有，事实层未落地 | operator action reason/detail | `controlState` + projection | 区分 node / step / route 重试 |
+| `routeMutationType` | 否 | route selection / replan result | `OrchestrationEvent` | 区分 recommendation、user switch、runtime replan |
+| `routeChangeImpact` | 否 | route diff builder | `route.replan` / replay projection | 说明 preserved / invalidated / newly-added steps |
+
+建议：
+
+- P1 先补 `resumeTarget + retryScope`
+- P1.5 再补 `routeMutationType + routeChangeImpact`
+
+#### 3.4 治理与证据缺口
+
+当前 evidence correlation 已有 `decisionIds / operatorActionIds / auditEventIds / lineageIds`，但编排治理侧仍然偏弱：
+
+| 缺口字段 | 当前是否存在 | 推荐来源 | 推荐落点 | 用途 |
+| --- | --- | --- | --- | --- |
+| `approvalDecisionType` | 否 | decision payload / approval node metadata | `takeover` + `decisionHistory` | 区分 budget / permission / risk / delivery approval |
+| `governancePolicyRef` | 否 | runtime governance rules | `recovery / takeover / evidence.correlation` | 让 replay/audit 能回到治理规则来源 |
+| `executorArtifactRefs` | 否 | executor callback / artifact sink | `evidence.correlation` | 关联 executor 副作用与产物 |
+| `escalationTicketRef` | 部分存在，散落在 reason/detail | operator action metadata | `recovery` + `OrchestrationEvent` | 标记人工升级的外部工单或值班记录 |
+
+建议：
+
+- P1 先补 `approvalDecisionType + escalationTicketRef`
+- P2 再补 `governancePolicyRef + executorArtifactRefs`
+
+### 4. 推荐补齐落点
+
+为了避免把所有字段都塞进同一个对象，建议按责任边界分层：
+
+| 落点层 | 应承担的字段 | 不应承担的字段 |
+| --- | --- | --- |
+| `MissionRecord` 主事实层 | 稳定生命周期字段、decision/operator action 引用、executor 基础引用 | 纯展示型 explanation 文案 |
+| `MissionEvent` / `OrchestrationEvent` | 状态切换、route mutation、takeover lifecycle、resume/retry/escalate 控制事实 | 任务详情视图拼接文案 |
+| `decision payload/history` | approval 语义、governance refs、route choice context | drive state 计算结果 |
+| 服务端 `projection` | bindings、correlation、route/recovery/takeover 聚合切片 | workflow runtime 原生内部细节 |
+| 前端 view model | 展示顺序、alias/fallback、轻量 UI 衍生字段 | 新的事实字段定义 |
+
+### 5. 增量补齐优先级
+
+建议把字段补齐拆成三个优先级批次：
+
+1. `P0：先把任务级控制面补成可解释接口`
+   - `approvalRef`
+   - `workflowRuntimeControlRef`
+   - `orchestrationAction`
+   - `stateBefore / stateAfter`
+
+2. `P1：补 route / recovery / takeover 的结构化差异`
+   - `resumeTarget`
+   - `retryScope`
+   - `routeId / routeStepId / takeoverPointId`
+   - `approvalDecisionType`
+   - `escalationTicketRef`
+
+3. `P2：补治理与 executor 深层证据`
+   - `executorRef` 结构化扩展
+   - `executorArtifactRefs`
+   - `governancePolicyRef`
+   - `routeChangeImpact`
+
+### 6. 收口结论
+
+基于本节，可以把“Mission Runtime 事件流字段评估”这项设计任务视为已完成，原因不是代码已经补齐，而是：
+
+- 已形成结构化字段缺口清单；
+- 每项都明确了当前是否存在；
+- 明确了推荐来源、推荐落点、用途；
+- 明确了增量补齐优先级；
+- 明确了哪些字段应该留在事实层，哪些只适合留在 projection 层。
+
 ## 核心映射设计
 
 ### 1. `Destination -> Mission Runtime`
@@ -314,6 +667,13 @@ type OrchestrationControlState = {
 - `Destination` 是用户可理解的目标层对象，Mission 是执行主干承载对象。
 - `Destination` 的变化必须影响运行时，而不是只改前端文案。
 
+缺失信息与变更处理规则：
+
+- `destination.missingInfo` 一旦命中阻塞字段，编排层优先生成 `clarification` 类 `Takeover`，并把 Mission 推入真实 waiting / decision 链路，而不是仅在界面提示。
+- 用户补齐信息后，优先走 `resume()` 恢复原路径；若补齐内容改变了目标、约束或成功标准，则改为触发重绑定与 `replan`。
+- 若用户修改后的 `Destination` 只影响交付物或验收标准，可重新进入 `plan` 或 `finalize` 链路，而不必强制整趟任务重建。
+- `destination.successCriteria` 与 `destination.deliverables` 必须在 `finalize` 阶段继续生效，用于决定 review / verify / delivery acceptance 的实际收口。
+
 ### 2. `Route -> workflow runtime`
 
 `Route` 的职责是说明“准备怎么走”，workflow runtime 的职责是“具体怎么执行”。编排层的关键工作，就是把前者稳定映射到后者。
@@ -334,6 +694,25 @@ type OrchestrationControlState = {
 - 多个 `Route Step` 也可以共同落在同一 workflow phase。
 - `Route` 是计划对象，workflow 是执行图对象。
 - `Route` 的变更必须进入 `replanHistory`，而不是静默覆盖旧值。
+
+建议为主路线、候选路线与切换记录保留最小结构：
+
+```ts
+type RouteSelectionRuntimeBinding = {
+  selectedRouteId?: string;
+  candidateRouteIds: string[];
+  selectionReason?: string;
+  changedAt?: string;
+  changedBy?: "planner" | "user" | "runtime" | "operator";
+};
+```
+
+路线状态更新规则：
+
+- `pause / wait`：当前 `Route` 不变，但当前活动 stage / step 进入阻塞态。
+- `resume`：恢复当前 `Route` 的当前 stage / step，除非接管结果明确要求切换路线。
+- `failed`：先记录在当前 `Route` 的执行历史中；只有当失败说明当前路线前提失效时，才升级为 `replan`。
+- `replan`：写入 `replanHistory`，切换 `selectedRouteId`，并允许重新生成 `Fleet` 绑定。
 
 ### 3. `Fleet -> agent / skill / node / executor`
 
@@ -358,6 +737,13 @@ type OrchestrationControlState = {
 - 角色绑定可以随 `Route` 或 `Replan` 动态变化。
 - `Fleet` 必须与 Mission 的 `provision` 和 `execute` 阶段直接相关，而不是单纯视图包装。
 
+车队更新与健康反馈规则：
+
+- 在 `provision` 阶段，优先完成角色绑定、资源准备、权限校验与执行器可用性检查。
+- 当 `Route` 切换、`Replan` 生效或关键依赖失效时，允许 `Fleet` 发生换绑、扩编或缩编，但必须保留旧绑定到新绑定的可追踪关系。
+- `Fleet` 的阻塞、失败、空闲与运行中状态，应反馈到高层 `Drive State`、当前阻塞原因与执行摘要，而不是仅保留在底层 executor / node 日志中。
+- 角色健康变化若影响当前路线推进，应优先触发 `retry`、`escalate` 或 `replan` 决策，而不是静默吞掉资源异常。
+
 ### 4. `Takeover -> wait-resume / decision / approval / escalate`
 
 `Takeover` 的职责是说明“什么时候该把方向盘交还给人”，而现有 runtime 已经具备等待、决策、审批、恢复与升级能力。编排层的职责是统一这些入口。
@@ -379,6 +765,7 @@ type OrchestrationControlState = {
 - 阻塞型 `Takeover` 必须驱动真实 waiting 状态。
 - 非阻塞建议接管可以以队列方式展示，但仍需可审计。
 - 用户提交后，不是简单关闭弹窗，而是驱动真实 `resume`、`replan`、`retry` 或 `escalate` 动作。
+- 高风险接管必须同时留下 `decision / approval / audit` 引用，确保预算、权限、风险接受与交付验收可回溯。
 
 ## 与 Mission 六阶段的关系
 
@@ -515,6 +902,20 @@ runtime 编排层建议直接挂接 Mission 六阶段主线：
 - `replan` 必须保留旧路线与差异记录。
 - `replan` 可以触发新的 `Fleet` 绑定。
 
+### 控制动作作用范围
+
+建议的最小作用范围如下：
+
+| 控制动作 | 默认作用范围 | 说明 |
+| --- | --- | --- |
+| `run` | `step / route` | 沿当前路线继续推进当前步骤，必要时拉起后续阶段 |
+| `wait` | `step / mission` | 当前步骤或整趟任务进入等待输入 / 决策 / 审批 |
+| `resume` | `step / route / mission` | 依据接管结果恢复原路径、切换路线或恢复整趟任务 |
+| `retry` | `node / step / route` | 从局部执行单元向外扩展，但不直接改变高层路线承诺 |
+| `escalate` | `mission` | 将控制权升级到人工或更高权限链路 |
+| `terminate` | `route / mission` | 终止当前路线或整趟任务 |
+| `replan` | `route / mission` | 改写当前路线，并允许重绑 `Fleet` 与后续执行主线 |
+
 ## `wait-resume`、`retry-escalate` 与 `replan` 的边界
 
 这是 runtime 编排层最关键的边界定义。
@@ -557,6 +958,17 @@ runtime 编排层建议直接挂接 Mission 六阶段主线：
 | 工具连续失败且替代方案存在 | 改路 | `replan` |
 | 风险超阈值且无法自动降级 | 人工兜底 | `escalate` |
 | 用户切换快速路线到深度路线 | 改路并重编队 | `replan` |
+
+### Mission 六阶段允许动作矩阵
+
+| Mission 阶段 | 允许的主要动作 | 说明 |
+| --- | --- | --- |
+| `receive` | `run`、`wait`、`terminate` | 接收请求、校验入口、必要时直接等待补充输入 |
+| `understand` | `run`、`wait`、`resume`、`terminate` | 目标理解与澄清阶段，优先进入 clarification takeover |
+| `plan` | `run`、`wait`、`resume`、`replan`、`terminate` | 允许路线确认、路线切换与计划阶段重规划 |
+| `provision` | `run`、`wait`、`resume`、`retry`、`escalate`、`terminate` | 资源准备、权限检查、能力校验可局部恢复或升级 |
+| `execute` | `run`、`wait`、`resume`、`retry`、`escalate`、`replan`、`terminate` | 主执行阶段是控制动作最完整的阶段 |
+| `finalize` | `run`、`wait`、`resume`、`retry`、`escalate`、`replan`、`terminate` | 复核、验收、修正与交付收口阶段允许再次等待、升级或改路 |
 
 ## 高层状态投影
 
@@ -621,6 +1033,13 @@ type OrchestrationEvent = {
 - audit 解释关键人工与自动决策；
 - telemetry 统计等待、重试、升级与重规划分布。
 
+replay / audit 重建规则：
+
+- replay 应优先按 `OrchestrationEvent` 的顺序重建“绑定 -> 选路 -> 编队 -> 接管 / 重试 / 升级 / 重规划 -> 交付”的主线，而不是只展示孤立 runtime 日志。
+- `takeover_requested / takeover_resolved / retry_requested / escalated / replanned` 必须能回连 `relatedRuntimeEventId` 或 `relatedDecisionId`，否则只能作为弱解释证据。
+- audit 侧至少应能记录预算确认、权限确认、风险接受、交付验收四类高风险治理动作，并与对应的 `TakeoverRuntimeBinding` 或 `OrchestrationEvent` 关联。
+- 若 replay 能看到路线切换或接管，但 audit / decision 没有对应治理引用，则该段应被标记为“解释不完整”，而不是冒充完整闭环。
+
 ## 与现有系统的兼容策略
 
 ### 策略 1：投影优先，不立即改名
@@ -668,6 +1087,99 @@ workflow runtime 继续负责：
 
 - 内部继续节点编排；
 - 外部通过 Route Step、Fleet Role、Takeover Point 来解释。
+
+## 2026-04-24 审计说明
+
+基于当前主仓实现与直接测试，Runtime Orchestration 已经稳定落地并被验证的能力，集中在服务端 `projection` 的最小编排视图，而不是完整的编排控制语义。
+
+当前已直接落地并有测试支撑的字段范围包括：
+
+- `MissionProjectionOrchestrationView` 的最小结构：`status`、`currentStageKey`、`currentStageLabel`、`blockingReason`、`updatedAt`
+- `bindings` 关联键：`missionId`、`workflowId`、`instanceId`、`decisionId`、`executorJobId`
+- `controlActions` 的当前可用 operator actions、最近操作记录与最后操作记录
+- `wait` 的 `active / reason / decisionId / timeoutAt`
+- `replan` 的 `required / active / attempt / reason / triggerAction / updatedAt`
+
+当前直接测试覆盖了三类代表性场景：
+
+- queued mission 的基础 orchestration projection
+- waiting mission 的 decision / wait 投影
+- retry 驱动的 replan-aware orchestration 投影
+
+这些测试能够证明：当前编排层已经把 Mission、workflow、decision、executor 的部分事实，稳定映射到 `/api/tasks/:id/projection` 的 `orchestration` 字段中。
+
+补查当前 shared/server/client 消费链后，还可以进一步确认：
+
+- `client/src/lib/tasks-store.ts` 当前已经把服务端投影、共享 summary 与 fallback summary 统一归一到 `detail.autopilotSummary`，并由 `client/src/lib/tasks-store.autopilot.test.ts` 覆盖 summary/detail/fallback 三条链路
+- `client/src/components/tasks/TaskDetailView.tsx` 通过 `TaskAutopilotPanel.tsx` 消费 `detail.autopilotSummary`，`client/src/components/tasks/__tests__/TaskAutopilotPanel.test.tsx` 已验证 task detail 级驾驶舱切片与 evidence correlation 计数展示
+- `server/tests/mission-routes.test.ts` 当前不仅覆盖 `/api/tasks/:id/projection` 的 `autopilotSummary` / `orchestration` 投影，也覆盖 `/api/tasks/:id/session` 与 projection links 的对齐，因此 replay / session 消费侧至少有稳定的 link 锚点
+- 因此“评估 cockpit、task detail、replay、audit 对编排层投影的消费方式”这一项，可以保守视为已完成评估：当前真实消费链成立的是 `autopilotSummary -> detail/task detail panel` 与 `projection/session links -> replay/session consumer`，而不是 UI 已直接消费 `projection.orchestration`
+- `shared/workflow-domain.ts` 与 `shared/__tests__/workflow-domain.test.ts` 已把 `WAITING_INPUT`、`FORCE_TERMINATED` 等 runtime 状态映射收敛到共享域模型；`server/routes/workflows.ts` 明确暴露 `resume`、`terminate`、`retry`、`escalate` 的 runtime 控制入口；`server/tests/workflow-runtime-engine.test.ts` 与 `server/tests/workflows-routes.test.ts` 则直接覆盖了 `WAITING_INPUT -> resume()`、显式 `terminate()`、手动 `retry()`、显式 `escalate()` 的引擎与路由接入点。因此“评估现有 workflow runtime 中 WAITING_INPUT、resume()、retry / escalate / terminate 的接入点”这一项，本轮可以保守视为已完成评估，但边界仍是 workflow runtime 自身的控制入口与状态映射已被审计，不代表 autopilot orchestration UI 已直接消费这些 runtime API。
+
+但基于当前文档收口与仓库已有 runtime/orchestration 能力，本轮可以保守视为“设计闭环”的内容包括：
+
+- `Destination / Route / Fleet / Takeover` 四类对象进入 runtime 的最小编排字段集合
+- `Destination -> Mission`、`Route -> workflow runtime`、`Fleet -> runtime resources`、`Takeover -> wait-resume / decision / escalate` 的最小映射口径
+- `run / wait / resume / retry / escalate / terminate / replan` 七类动作的统一语义
+- 控制动作的默认作用范围，以及 Mission 六阶段允许动作矩阵
+- `wait-resume`、`retry-escalate`、`replan` 的边界与决策矩阵
+- `OrchestrationEvent` 事件结构、replay 重建规则与 audit 治理证据要求
+
+结合上文新增的“编排层关联接口路径”与“Mission Runtime 事件字段缺口清单”两节，本轮可以继续收口以下两项设计任务：
+
+- `定义编排层与 Mission Runtime`、`workflow runtime`、`decision / approval`、`executor` 的关联接口路径`
+  - 已在“编排层关联接口路径”中按任务级聚合读取、任务级控制写入、`workflow runtime` 原生控制、`approval / takeover` 桥接、`executor` 派发五个接口面完成定义，并补充了输入输出、字段来源、责任边界与首轮统一接口结构。
+- `评估现有 Mission Runtime 事件流中需要新增或补齐的编排字段`
+  - 已在“Mission Runtime 事件字段缺口清单”中形成当前字段族、缺口分类、字段级补齐建议、推荐落点与 `P0 / P1 / P2` 优先级，可作为后续实现与测试补齐的设计基线。
+
+本轮审计结论：
+
+- 从代码直证角度，`approval` 独立接口与 `executor` 完整 control surface 仍未落地。
+- 从本 spec 设计收口角度，上述两项已经具备直接设计覆盖，可以在 `tasks.md` 勾选。
+- 这些勾选仍代表设计闭环，不代表 shared / server / client 已经形成完整编排实现。
+
+补充边界说明：
+
+- 本轮新增勾选的“消费方式评估”只表示当前 consumer map 已经被代码与测试明确审计
+- 本轮新增勾选的“workflow runtime 接入点评估”只表示 `WAITING_INPUT / resume / retry / escalate / terminate` 已有共享状态映射、服务路由入口与测试覆盖，不表示 runtime orchestration 已形成统一的 approval / executor 契约面
+- 它不表示 cockpit / task detail 已开始直接读取 `projection.orchestration`
+- 它也不表示 replay / audit 已经具备完整的独立运行时界面，只表示 replay/session/audit 相关 link 与 evidence 索引的最小消费锚点已经可验证
+
+## 2026-04-25 审计补记（lane 3）
+
+围绕本轮指定的 orchestration bindings / control actions / Mission Runtime / workflow runtime / decision / executor 相关实现，再做一次保守核对后，可以把当前已落地证据进一步收紧为下面几层：
+
+- shared 契约层：
+  `shared/mission/api.ts` 已把任务侧最小编排视图固定为 `MissionProjectionOrchestrationView`，明确了 `bindings`、`controlActions`、`wait`、`replan` 的外部契约；`MISSION_API_ROUTES` 也只直接暴露了任务侧 `projection / session / operator-actions / decision` 路径，并没有单独的 orchestration approval/executor 契约面。
+- shared 自动驾驶摘要层：
+  `shared/mission/autopilot.ts` 已稳定定义 `MissionAutopilotControlActionType`、`MissionAutopilotBindingsSummary`、`MissionAutopilotEvidenceCorrelationIndex`、`MissionAutopilotRouteReplanSummary`、`MissionAutopilotTakeoverSummary` 等结构，并由 `buildMissionAutopilotSummary()` 从 Mission/workflow 事实派生 route、takeover、execution、recovery、evidence、bindings。
+- 服务端 projection 层：
+  `server/tasks/mission-projection.ts` 当前明确只做两类投影：一类是 `buildMissionAutopilotSummary()` 生成的 `autopilotSummary`，另一类是 `buildOrchestrationView()` 生成的最小 `orchestration`。其中 `orchestration` 只稳定覆盖 `status / currentStage / blockingReason / bindings / controlActions / wait / replan`，并通过 link alignment 把 workflow/session/replay 锚点回填到 projection。
+- workflow runtime 接入层：
+  `server/routes/workflows.ts` 已明确提供 `/runtime/resume`、`/runtime/terminate`、`/runtime/retry`、`/runtime/escalate` 四个入口；`shared/workflow-domain.ts` 则把 `WAITING_INPUT`、`FORCE_TERMINATED` 等状态收敛为共享模型。`server/tests/workflows-routes.test.ts` 与 `server/tests/workflow-runtime-engine.test.ts` 直接证明这些 runtime control 入口与 `WAITING_INPUT -> resume()`、`retry()`、`terminate()`、`escalate()` 语义是可执行且已被测试的。
+- 前端消费层：
+  `client/src/lib/tasks-store.ts` 会优先读取 `mission.autopilotSummary`、`mission.autopilotProjection`、`mission.autopilot.summary`、`mission.projection.autopilotSummary` 等候选来源，并统一归一到 `detail.autopilotSummary`；`client/src/lib/tasks-store.autopilot.test.ts` 直接覆盖了这些 alias 与 fallback 补齐链路。
+  `client/src/components/tasks/TaskAutopilotPanel.tsx` 当前只消费 `detail.autopilotSummary`，并把 route / driveState / fleet / recovery / evidence / explanation / takeover 渲染成 task detail 面板；`client/src/components/tasks/__tests__/TaskAutopilotPanel.test.tsx` 已直接验证 evidence correlation identifiers 与 indexed counts 的展示。
+
+因此，本轮可以继续保守确认的事实是：
+
+- 代码与测试已经直接支撑“workflow runtime 接入点评估已完成”。
+- 代码与测试已经直接支撑“task detail / replay-session 锚点等消费方式已完成评估”。
+- 代码与测试已经直接支撑“服务端优先聚合、前端消费 `autopilotSummary` 并做 fallback normalization”的首轮实现路径。
+
+但本轮需要区分“代码已完全落地”和“设计任务已收口”：
+
+- 从实现现状看，`approval` 仍主要通过 `decision + resume` 桥接，`executor` 仍以 `executorJobId` 级绑定为主，尚未形成独立 orchestration control surface。
+- 从设计文档看，上述缺口已经在“编排层关联接口路径”与“Mission Runtime 事件字段缺口清单”中被明确记录为桥接方式、字段缺口、补齐建议与优先级，因此这两项设计任务可视为完成。
+
+## 2026-04-25 复核补记（runtime orchestration lane）
+
+本轮仅以 `shared/mission/autopilot.ts`、`shared/__tests__/mission-autopilot.test.ts`、`shared/mission/api.ts`、`shared/mission/index.ts`、`server/tasks/mission-projection.ts`、`server/tests/mission-routes.test.ts`、`client/src/lib/tasks-store.ts` 为直接证据重新收口。
+
+- 这些证据已经足够证明当前落地形态是“服务端构建 `autopilotSummary + orchestration`，前端优先消费 `autopilotSummary` 并做 alias/fallback 归一”，而不是前端直接消费一套独立的 orchestration runtime API。
+- 这些证据也足够证明当前任务侧已稳定暴露 `bindings / controlActions / wait / replan / evidence correlation / takeover / recovery` 等投影字段，并且已有任务级测试覆盖 queued / waiting / retry-replan 等代表场景。
+- 设计文档现已进一步把 `Mission Runtime`、`workflow runtime`、`approval / takeover`、`executor` 的接口桥接路径整理成显式矩阵，可作为后续实现对账基线。
+- 设计文档现已进一步给出 Mission Runtime 事件字段缺口、推荐落点与补齐优先级，可作为后续事件层与 projection 层增量补齐清单。
 
 ## 落地建议
 

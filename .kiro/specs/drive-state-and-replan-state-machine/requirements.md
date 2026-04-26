@@ -232,10 +232,80 @@ Drive State 与 Replan 状态机必须支持分阶段实现：
 
 系统不应要求一次性改造完所有 runtime 才能使用高层状态机。
 
+## 实现边界复核（2026-04-25）
+
+基于当前主仓中可直接核对的实现与测试，本 spec 在进入进一步实现前，应先明确以下边界：
+
+- 当前已直接锚定的底层状态来源，主要集中在 mission / projection / explanation 这一层：
+  - `mission.status`
+  - `mission.currentStageKey`
+  - `mission.waitingFor`
+  - `mission.decision`
+  - `mission.operatorState`
+  - `mission.blocker`
+  - `mission.attempt`
+  - `mission.operatorActions`
+  - `workflowRuntime.status`
+  - `workflowRuntime.currentStage`
+  - `execution.currentStepStatus`
+  - `recovery.state`
+  - `recovery.deviationCategory`
+  - `evidence.timeline`
+  - `evidence.correlation`
+  - `explanation.currentState`
+  - `explanation.remainingSteps`
+- 当前“Drive State 主链路”已有明确设计目标，但代码层更接近“基于 mission facts 的时点投影”，而不是一套端到端、显式可回放的高层状态迁移契约。
+- 当前 `replanning` 的真实信号来源，已有直接实现锚点的主要是：
+  - `attempt > 1`
+  - `retry / escalate` 等 operator action 带来的恢复与重规划语义
+  - blocker / waiting / route replan 摘要在 projection 层的联动
+- 以下 `replanning` 信号目前仍主要停留在设计语义层，不应在 tasks 中保守勾选为已闭环：
+  - review 质量缺口驱动改线
+  - dependency unavailable 驱动改线
+  - constraint changed / user reroute 驱动改线
+  - risk exceeded 驱动改线
+- 当前已有最小事件字段骨架，可供 replay / audit / cockpit 消费：
+  - `evidence.timeline.{id,type,label,detail,status,source,time}`
+  - `evidence.correlation.{workflowId,replayId,sessionId,routeIds,runtimeEventIds,decisionIds,operatorActionIds,auditEventIds,lineageIds}`
+  - `explanation.currentState.{driveState,missionStatus,currentStageKey,currentStageLabel,workflowStatus,workflowStage,routeSelectionStatus,selectedRouteId,correlationTimelineId,sources,updatedAt}`
+  - `explanation.remainingSteps.{currentStepKey,currentStepLabel,mainlineSteps,pendingSteps,parallelBranchCount,replanChangeSummary}`
+- 但当前尚不存在统一的高层状态切换事件契约，例如：
+  - `previousDriveState`
+  - `nextDriveState`
+  - `triggerType`
+  - `triggerReason`
+  - 单条事件内完整携带的 transition-level ids
+- 当前命名策略必须保持“兼容优先、投影优先”：
+  - `Drive State` 是高层解释层
+  - 不替换 `MissionStatus`
+  - 不替换 workflow / orchestration status
+  - 不替换 execution / recovery / timeline 的既有命名
+  - 不代表旧命名依赖盘点已经完成
+
+## 文档收口补充（2026-04-26）
+
+为保证本 spec 可以在保守标准下继续收口，同时不把“文档定义完成”误写成“代码实现完成”，本轮补充以下文档交付口径：
+
+- 底层状态清单
+  - 文档中应给出一份“最小直接证据清单”，明确哪些状态来源已经能从 mission runtime / workflow runtime / execution / recovery / evidence / HITL 中直接锚定，哪些领域目前仍只到部分覆盖或间接投影。
+- 主链路迁移图
+  - 文档中应明确给出 `understanding -> planning -> fleet-forming -> executing -> reviewing -> delivered` 的标准推进路径，并逐段说明进入条件、退出条件与当前代码锚点。
+  - 该图可以先作为设计/术语统一成果存在，不等同于当前仓库已经具备完整 transition event contract。
+- `replanning` 真实触发信号
+  - 文档中应把“当前已有直接锚点的真实信号”和“仍停留在目标态设计的触发器”拆开列出，避免把 review fail、dependency unavailable、constraint changed、human reroute 等设计语义误写成现状。
+- 状态时间线最小事件字段
+  - 文档中应给出一份最小 transition-level 事件字段建议，用于 replay / audit / cockpit 重建高层状态切换。
+  - 同时应明确当前已有的 `evidence.timeline` / `evidence.correlation` / `explanation.currentState` / `explanation.remainingSteps` 只是最小骨架，不等于统一高层事件契约。
+- 旧命名兼容风险说明
+  - 文档中应明确列出当前仍需保留的旧命名族群，例如 `MissionStatus`、workflow runtime status、execution step status、recovery state、timeline event type、route selection status，并说明为什么当前不宜直接重命名。
+
+本节的目标是约束文档必须把“目标态设计”和“当前最小实现事实”分层写清，而不是要求本轮额外修改代码。
+
 ## 验收标准
 
 - 存在一份明确的中文设计文档，说明十个高层状态与其迁移关系
 - 文档中明确解释 `replanning` 与 `retry`、`clarifying` 的区别
 - 文档中明确说明与 Mission Runtime、workflow state、replay、audit 的兼容方式
+- 文档中包含最小底层状态清单、标准主链路迁移图、`replanning` 真实信号分层、最小状态时间线事件字段、旧命名兼容风险说明
 - 文档中未要求当前主仓立即大规模改名
-- 存在一份全部未完成的任务清单，用于后续渐进实现
+- 存在一份与当前实现闭环一致、允许部分条目已完成的任务清单，用于后续渐进实现

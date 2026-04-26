@@ -173,6 +173,60 @@
 - 高风险动作需要关联 `Takeover Point`
 - 风险变化应可触发 `Replan`
 
+## 当前主线最小触发与联动原则
+
+本节不定义未来态的统一策略引擎，而是收口当前主仓已经稳定存在于 shared / server / client 契约里的最小规则。
+
+### 1. Risk 的当前触发口径
+
+当前主线中的 `Risk` 先按 mission/runtime 状态做启发式推断，再投影到 autopilot summary：
+
+- 运行失败、`operatorState = blocked` 或存在 blocker 时，`riskLevel = high`
+- `mission.status = waiting` 时，`riskLevel = medium`
+- 高进度运行态可以下降到 `low`
+- `queued` 阶段允许保留为 `unknown`
+
+这意味着当前 `Risk` 主要承担“路线建议、解释说明、接管/恢复提示”的读模型职责，而不是独立的策略引擎输入。
+
+### 2. Confidence 的当前触发口径
+
+当前主线中的 `Confidence` 同样由 mission 状态启发式推断：
+
+- `done` 对应 `high`
+- `failed`、blocked 对应 `low`
+- `waiting` 与中高进度运行态默认保持 `medium`
+- `queued` 阶段允许保留为 `unknown`
+
+当前 `Confidence` 会进入 `destination.confidence` 与 `driveState.confidence`，优先服务解释、呈现与人工判断；它还没有被收敛成独立的全局自动降级/自动重规划策略。
+
+### 3. Replan 的当前触发口径
+
+当前主线中的 `Replan` 已经是正式读模型能力，但触发边界仍保持最小实现：
+
+- 重试驱动的路线改写会投影为 `selectionStatus = replanned`
+- 对应的选择模式会投影为 `selection.mode = runtime_replanned`
+- `route.replan` 会保留 `active / reason / fromRouteId / toRouteId / triggeredBy`
+- waiting、blocked、retry 等状态下，执行控制会显式暴露 `replan` action，并附带原因文本
+
+因此，当前 `Replan` 已经不是抽象概念，而是 route summary、execution actions、recovery/explanation 三者共享的一条稳定语义。
+
+### 4. Risk / Confidence / Replan 的当前联动规则
+
+按当前主线直接代码与测试，可保守收口以下联动：
+
+- `Risk -> Route`：高风险、`budget` 接管、`risk-acceptance` 接管会把路线模式推向 `deep`
+- `Waiting / Takeover -> Drive State`：waiting 且存在 decision 时，驾驶状态收敛为 `takeover-required`；waiting 但没有显式 decision 时，收敛为 `clarifying`
+- `Blocked / Retry -> Replan`：阻塞恢复或多次尝试场景会把路线选择状态收敛到 `replanned`，并把计划变更原因写入 `route.replan.reason` 与 `explanation.remainingSteps.replanChangeSummary`
+- `Risk / Confidence -> Explanation`：风险点、置信度、重规划原因都会进入 explanation、recommendation details、remaining steps、evidence correlation 等摘要，供 projection、store 与 panel 统一消费
+
+### 5. 当前明确不外推的边界
+
+本 spec 只定义当前主线已经稳定落地的最小原则，不外推以下能力已经完成：
+
+- 不把 `Confidence` 单独定义为可直接驱动自动接管或自动重规划的统一策略引擎
+- 不把 `Risk + Confidence` 写成覆盖所有任务类型的全局治理矩阵
+- 不把 `Replan` 外推为所有路线切换都已经具备同一条 runtime mutation 闭环
+
 ## 对象关系
 
 ### 主链路
@@ -227,3 +281,71 @@
 - 不在本 spec 中定义具体 runtime API
 - 不在本 spec 中引入过多新术语，避免与现有模型断裂
 - 后续 specs 必须复用本文件中的对象定义与映射口径
+
+## 2026-04-24 审计说明
+
+本轮审计以当前主仓已经落地的 `shared/mission/autopilot.ts`、`shared/mission/api.ts` 读模型与 projection 契约为主，以 steering 文档作为兼容层和产品层口径依据，结论如下。
+
+### 已有直接代码支撑的核心概念
+
+`shared/mission/autopilot.ts` 已经把本 spec 中的大部分核心对象做成了稳定的 autopilot 读模型：
+
+- `MissionAutopilotSummary` 直接暴露了 `destination`、`route`、`driveState`、`fleet`、`takeover`、`execution`、`recovery`、`evidence`、`explanation`、`bindings`
+- `MissionAutopilotDriveState` 已定义 `understanding / clarifying / planning / fleet-forming / executing / reviewing / blocked / takeover-required / replanning / delivered`
+- `MissionAutopilotTakeoverType` 已定义 `clarification / approval / permission / budget / risk-acceptance / route-selection / delivery-review / exception / operator`
+- `MissionAutopilotRiskLevel` 与 `MissionAutopilotConfidenceLevel` 已定义 `low / medium / high / unknown`
+- `MissionAutopilotFleetRoleType` 已定义 `planner / clarifier / researcher / generator / reviewer / auditor / operator / executor / custom`
+- `MissionAutopilotSummary["route"]` 已包含候选路线、选中路线、路线切换、证据与 `replan` 摘要
+
+`buildMissionAutopilotSummary()` 进一步给出了从现有 mission-first 基座向产品层对象的真实投影：
+
+- `destination` 由 `mission.title / sourceText / summary / events` 等字段聚合得到
+- `route` 由 `workflowId`、mission stages、候选路线、路线切换和 `replan` 摘要聚合得到
+- `driveState` 通过 `inferMissionAutopilotDriveState()` 从 `mission.status`、`currentStageKey`、`operatorState`、`blocker` 推导
+- `fleet` 通过角色类型、`boundAgents`、`boundExecutors` 和当前焦点组织成角色编队
+- `takeover` 通过 `mission.waitingFor`、`mission.decision`、`decisionId`、选项与紧急度聚合得到
+- `driveState.riskLevel` 与 `driveState.confidence` 分别由 `inferRiskLevel()`、`inferConfidenceLevel()` 输出
+
+`shared/mission/api.ts` 又把这套对象固定到了公共 projection 契约里：
+
+- `MissionProjectionView` 已暴露 `autopilotSummary?: MissionAutopilotSummary`
+- `MissionProjectionView` 已暴露 `orchestration?: MissionProjectionOrchestrationView`
+- `MissionProjectionOrchestrationView` 已补充 `bindings`、`controlActions`、`wait`、`replan`
+
+这说明 `Destination / Route / Drive State / Fleet / Takeover / Replan / Confidence / Risk` 不再只是概念描述，而已经进入当前仓库的共享类型与 projection 结构。
+
+### 已有 steering 文档支撑的分层与映射口径
+
+当前 steering 文档已经明确给出产品层对象与工程层对象并存的兼容策略：
+
+- `.kiro/steering/task-autopilot-platform-narrative-2026-04-23.md` 已给出 `Destination / Route / Fleet / Drive State / Takeover Point / Evidence Pack / Replay` 的产品层对象表，并说明它们在当前主仓中的承接位置
+- `.kiro/steering/task-autopilot-repo-alignment-2026-04-23.md` 已明确 `task-autopilot` 是上位产品抽象，不是第二套事实源；产品层保留 `Destination / Route / Drive State / Fleet / Takeover`，工程层继续保留 `mission / workflow / runtime / decision`
+- `.kiro/steering/project-overview.md` 已明确产品语言可以升级为 `Destination / Route / Drive State / Fleet / Takeover / Evidence`，但工程代码仍优先保留 `Mission / Workflow / Runtime / Decision / Audit / Replay` 主干
+- `.kiro/steering/task-autopilot-spec-roadmap-2026-04-23.md` 已把 `task-autopilot-core-concepts` 放在第一批依赖主线的前置位置，并要求后续目的地解析、路线规划、驾驶状态机与驾驶舱方向复用这套对象语言
+
+基于这些现有文档，可以保守确认本 spec 已经具备：
+
+- 统一中文语义
+- 核心对象边界
+- 主链路与决策关系
+- `Destination -> mission`、`Route -> workflow`、`Drive State -> runtime state` 的映射口径
+- `Fleet -> agents / skills / nodes / executors` 的映射口径
+- `Takeover Point -> HITL / decision / approval` 的承接关系
+- 作为后续 autopilot specs 前置约束的依赖地位
+
+## 2026-04-25 收口补注
+
+本轮按 `shared/mission/autopilot.ts`、`shared/mission/api.ts`、`shared/__tests__/mission-autopilot.test.ts`、`server/tasks/mission-projection.ts`、`server/tests/mission-routes.test.ts`、`client/src/lib/tasks-store.ts` 与 `client/src/components/tasks/TaskAutopilotPanel.tsx` 复核后，确认本 spec 已经可以把 `Replan / Confidence / Risk` 收口到“当前主线最小触发与联动原则”。
+
+可保守成立的直接事实如下：
+
+- shared 读模型已经稳定暴露 `route.replan`、`driveState.riskLevel`、`driveState.confidence`、`destination.confidence`、`explanation.recommendationDetails`、`explanation.remainingSteps`
+- projection 会继续对齐 `selectedRouteId / recommendedRouteId / selectionStatus / replan / correlation / explanation` 等字段
+- client store 会把这些字段统一归一化并兼容多来源投影
+- `TaskAutopilotPanel` 已能直接消费并展示 route、takeover、recovery、explanation、risk summary、plan change 与 route evidence
+
+因此，本 spec 现在可以保守声明：
+
+- `Risk` 与 `Confidence` 已具备最小的 shared/server/client 一致读模型口径
+- `Replan` 已具备最小的 route / execution / recovery / explanation 联动口径
+- 这些规则仍然是当前主线的“最小已实现契约”，不是未来态的统一自动治理引擎

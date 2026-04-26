@@ -259,6 +259,33 @@
 - 为每个 node 单独设计用户可见角色
 - 直接把底层 50+ 节点、工具、执行器平铺到产品主界面
 
+## 当前主仓对齐备注（2026-04-25）
+
+- 当前主仓已经稳定落地的是 `autopilotSummary.fleet` 这条摘要分支，而不是完整 `FleetComposition` 领域对象；本 spec 继续负责把这条摘要分支向上收口为清晰的产品语义、设计结构和后续落地边界。
+- 当前 shared / server / client 的直接闭环，已经能够稳定承载 `role summary / role status / projection / store normalize / panel consume` 这一最小读链；因此 requirements 需要兼容“现有主仓已是最小摘要闭环”这一事实，而不是假设所有角色封装对象都已落地。
+- 当前 shared builder 直接稳定合成的角色仍主要是 `planner`、waiting 场景下的 `clarifier` / 常规场景下的 `operator`，以及带 executor 上下文时追加的 `executor`；`researcher / generator / reviewer / auditor / coordinator / generalist / composite / custom` 仍应视为本 spec 的目标角色词汇与设计口径，而不是当前主仓已全面稳定产出的运行时事实。
+- 当前 `tasks-store` 已实现两条保守兼容链：未知 `roleType` 归一为 `custom`，以及 projection 缺失时退化为单个 `Mission Core` `operator` 角色；这足以支撑 requirements 对“保守回退”的最小要求，但不应被误解为完整 fallback taxonomy 已全部实现。
+- 当前 `TaskAutopilotPanel` 已经证明角色摘要视图可以稳定消费 `title / status / responsibility / currentFocus / boundAgents / boundExecutors / activeRoleCount / blockedRoleCount` 等字段；但驾驶舱、接管面板、回放视图和更完整的 fleet status 视图仍由相邻 spec 继续细化，因此本 spec 的验收重点仍是统一角色语义与字段边界，而不是声明所有视图都已完成接线。
+- 当前主仓仍把 `executor` 暴露为一级 fleet summary 角色，因此 requirements 中关于 `executor -> role actuator` 的目标口径应被理解为“下一阶段要收口的角色封装方向”，而不是“现状已经完成的投影方式”。
+
+## 补充收口说明（2026-04-25，lane 6）
+
+本轮继续按“requirements/design 文档收口”和“当前主仓最小事实链”分层处理：
+
+- 当前已经可以保守收口到 spec 层的部分
+  - `executor -> role actuator` 的目标口径
+  - 角色摘要对象在驾驶舱、车队状态视图、接管面板和回放视图中的统一复用口径
+  - 与 runtime 兼容的集成测试计划
+- 当前仍不能外推为实现已完成的部分
+  - shared builder 已经不再把 `executor` 暴露成一级角色
+  - 多视图 consumer 已全部接入同一份角色摘要对象
+  - runtime 级 agent / node / executor 跨层投影集成测试已经在仓库中补齐
+
+因此，本 spec 当前可以被理解为：
+
+- 在文档层，车队角色封装的目标语义、对象分层、映射口径、复用边界与测试计划已经接近完整
+- 在实现层，当前主仓依旧主要稳定在 `autopilotSummary.fleet` 的最小摘要闭环，需要后续按相邻 spec 与代码演进逐步兑现
+
 ## 依赖关系
 
 本 spec 与以下方向存在强依赖或强协同：

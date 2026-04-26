@@ -27,6 +27,42 @@
 
 但这些能力目前更偏底层状态与审批动作，还没有统一成任务自动驾驶产品语义下的“接管点”。本 spec 要补齐的就是这一层。
 
+## 当前实现边界（2026-04-25）
+
+本 spec 本轮收口到“当前主仓已经稳定落地的最小接管闭环”，不再把未来形态和现状混写：
+
+- 当前主仓的接管体验是任务详情里的复合式 surface，而不是单一独立组件：
+  - `DecisionPanel` 负责当前待处理决策输入；
+  - `TaskAutopilotPanel` 负责 takeover / route / recovery / evidence 摘要；
+  - `DecisionHistory` 负责历史 decision slice；
+  - `TaskDetailView` 负责把这些 surface 组合进同一任务详情语境。
+- 当前 `TakeoverPoint` 采用最小读模型，而不是独立持久化实体：
+  - `MissionAutopilotSummary.takeover` 提供 `status / required / blocking / type / reason / prompt / decisionId / options / urgency`；
+  - `route.takeoverPointIds` 提供 Route 侧锚点；
+  - `DecisionHistoryEntry.prompt / options / resolved` 提供历史回看 slice。
+- 当前路线确认闭环收口到“authoritative route summary / projection 更新”：
+  - `submitMissionDecision()` 会保留 `selectedRouteOptionId / selectedRouteLabel / selectedRouteId / changedReason`；
+  - shared / server 会把这些事实提升为 `selectedRouteId / selection.status / route.evidence[eventType=route.selected]`；
+  - 真正的 route mutation / replan action 仍属后续阶段。
+- 2026-04-26 补充边界：若 `tasks.md` 勾选“支持路线选择后更新 Route”，仅表示上述 authoritative summary / projection 更新闭环已被直接代码与直接测试锚定，不表示 planner 内部 Route 图、runtime 执行链或重规划动作已被同一条交互真实改写。
+- 当前 history / audit / replay 闭环收口到“decision history + evidence timeline + 最小 audit slice”：
+  - `DecisionHistoryEntry` 负责保留 `prompt / options / resolved / submittedBy / submittedAt / reason`；
+  - `MissionAutopilotSummary.evidence.timeline / evidence.correlation` 负责最小回放与锚点透出；
+  - `human.decision_submitted / human.param_collection_submitted` 与 runtime control event 负责最小审计事实；
+  - 专门的 takeover timeline / takeover audit UI 仍属后续阶段。
+- `TakeoverQueue`、推荐默认动作、timeout policy、专用 takeover timeline、权限/风险/交付的专门面板体验仍属于后续范围，本轮不外推为已落地。
+
+## 本轮文档收口口径（2026-04-25）
+
+本轮对 `tasks.md` 的勾选口径进一步区分为“规格定义完成”和“代码实现完成”两类：
+
+- 对 `定义 / 设计 / 补充测试计划` 类任务，只要 requirements 与 design 已形成明确的数据合同、信息架构、治理规则或测试矩阵，即可按 spec 收口勾选。
+- 对涉及真实运行时行为的任务，仍必须按直接代码 + 直接测试判断，不能因为 design 已写出目标形态就外推为主仓已完成。
+- 本轮仍明确不按实现完成外推的事项包括：真实 `Route mutation / replan action`、预算治理真实写回、任务详情中的权限/风险/交付专门闭环，以及面向 takeover 语义的完整 audit UI。
+- 本轮对路线确认剩余项、历史/审计表达采用更严格边界：只有 `decision -> history -> authoritative summary / projection` 的闭环可以视为当前稳定事实；真实 Route 变更、runtime replan action 与专用 takeover 审计面板不计入已完成。
+
+因此，本 spec 中被勾选的设计类任务可以表示“规格已经定义清楚”，但不等价于“主仓代码已经具备同名能力”；实现态仍以下方审计备注和仓库中的直接代码/直接测试为准。
+
 ## 核心术语
 
 ### 接管点
@@ -69,10 +105,10 @@ Route、Drive State 或 Runtime 在自动推进过程中需要用户介入的位
 
 验收标准：
 
-- Takeover Point 必须包含唯一标识、类型、标题、说明、触发原因、可选动作、默认动作、是否必需、关联 Route / Mission / Runtime 信息。
-- Takeover Point 必须能表达必须接管与建议接管。
-- Takeover Point 必须支持超时策略。
-- Takeover Point 必须能持久化并进入审计。
+- 当前阶段的 Takeover Point 最小合同必须至少包含 `status / required / blocking / type / reason / prompt / decisionId / options / urgency`。
+- 当前阶段的 Takeover Point 必须能通过 `route.takeoverPointIds`、`decisionId` 与 `DecisionHistoryEntry` 锚定到 Route / Mission / Runtime 相关事实。
+- 当前阶段的 Takeover Point 必须能表达必须接管、待处理接管与 advisory/只读提示的最小差异。
+- 独立 `title / defaultAction / timeoutPolicy / 单独持久化实体` 为后续增强，不作为当前主仓收口前提。
 
 ### 需求 2：接管面板必须统一展示待处理决策
 
@@ -80,11 +116,14 @@ Route、Drive State 或 Runtime 在自动推进过程中需要用户介入的位
 
 验收标准：
 
-- 面板必须展示当前接管类型、触发原因、影响范围、推荐动作、可选动作与风险提示。
-- 面板必须区分“当前必须处理”和“可稍后处理”的接管点。
-- 面板必须支持多个接管点排队展示。
-- 面板必须支持查看历史接管记录。
-- 面板必须能在驾驶舱和任务详情页复用。
+- 当前阶段必须能在任务详情语境中同时展示：
+  - 当前待处理决策输入；
+  - takeover / route / recovery / evidence 摘要；
+  - 最小 decision history slice。
+- 当前阶段必须区分“当前需要处理的接管输入”和“只读型接管摘要 / 证据摘要”。
+- 当前阶段必须能在任务详情页与 cockpit 详情 workspace 中复用同一组 surface。
+- 多个接管点排队展示与独立 `TakeoverQueue` 仍属后续增强，不作为当前主仓验收前提。
+- takeover 专用历史时间线仍属后续增强；当前只要求 `DecisionHistory + evidence timeline` 提供最小历史切片。
 
 ### 需求 3：澄清类接管必须支持轻量补充上下文
 
@@ -105,8 +144,10 @@ Route、Drive State 或 Runtime 在自动推进过程中需要用户介入的位
 
 - 路线确认必须展示快速 / 标准 / 深度路线的差异。
 - 差异至少包括时间、成本、质量、风险、接管次数和自动化程度。
-- 用户选择路线后，系统必须记录选择原因或默认理由。
-- 路线切换必须触发 Route 状态更新，必要时触发重规划。
+- 用户选择路线后，系统必须记录 `selectedRouteOptionId / selectedRouteLabel / selectedRouteId / changedReason` 或等价 fallback 事实。
+- 当前阶段的路线切换至少必须更新 authoritative `selectedRouteId / selection.status / route.evidence[eventType=route.selected]`，并经 shared summary / `/projection` 对外透出。
+- 真正的 route mutation 与自动 replan action 为后续增强，不作为当前主仓收口前提。
+- 上述“更新”在当前阶段仅指 authoritative summary / projection 层更新，不等同于 planner 内部 Route 图或 runtime 执行链已完成真实 mutation。
 
 ### 需求 5：预算确认必须防止成本黑盒
 
@@ -181,10 +222,10 @@ Route、Drive State 或 Runtime 在自动推进过程中需要用户介入的位
 
 验收标准：
 
-- 每次接管必须记录触发时间、触发原因、展示内容、用户选择、提交人、提交时间和附加说明。
-- 接管记录必须能关联 Route、Mission、Workflow、Runtime Event。
-- replay 中应能看到任务在哪些位置交还给用户。
-- audit 中应能看到用户为什么接受风险、批准权限或确认预算。
+- 当前阶段的最小接管记录必须保留 `prompt / options / resolved option / freeText / submittedBy / submittedAt / decisionId`。
+- 当前阶段的接管记录必须能关联 Route、Mission、Workflow、Runtime Event，至少通过 `decisionId / route.takeoverPointIds / evidence.correlation` 透出。
+- replay / projection 中应能看到任务在哪些位置交还给用户；当前阶段以 `DecisionHistory + evidence.timeline / evidence.correlation` 的最小表达为准，不要求专门 takeover 时间线 UI。
+- 预算 / 权限 / 风险接受的 takeover 专用 audit 展示仍属后续增强；当前只要求 decision submit 与 runtime control event 的最小 audit slice 存在。
 
 ### 需求 12：接管体验必须避免过度打断
 

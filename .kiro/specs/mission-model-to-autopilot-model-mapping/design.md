@@ -106,6 +106,66 @@
 
 这意味着系统可以先以投影形式提供 `Destination`，而不是要求 `Mission` 一步重构成全新的领域对象。
 
+#### 当前主仓最小字段映射表（2026-04-25）
+
+当前主仓里，`Destination` 的最小字段并不是从一份独立 `DestinationRecord` 读取，而是由 `buildMissionAutopilotSummary(...)` 基于 `MissionRecord` 现有字段和运行时事实即时投影出来。
+
+可直接锚定到当前实现的最小字段映射如下：
+
+| 当前事实来源 | 当前投影字段 | 当前实现口径 |
+| ---- | ---- | ---- |
+| `mission.id` | `destination.id` | 直接沿用 Mission 主键 |
+| `mission.title` | `destination.goal` | 为空时回退为 `Untitled mission` |
+| `mission.sourceText` | `destination.request` | 优先作为原始任务请求；缺失时回退到 `summary / title` |
+| `mission.kind` | `destination.constraints[]` | 当前以 `Mission kind: ...` 字符串形式进入约束 |
+| `mission.projection?.sourceApp` | `destination.constraints[]` | 当前以 `Source app: ...` 字符串形式进入约束 |
+| `mission.securitySummary?.level` | `destination.constraints[]` | 当前以 `Security level: ...` 字符串形式进入约束 |
+| `mission.artifacts[].name`、`mission.workPackages[].deliverable` | `destination.deliverables[]` | 聚合后形成预期/中间交付物口径 |
+| `mission.status === "waiting" && mission.waitingFor` | `destination.missingInfo[]` | 当前等待用户输入时直接进入缺失信息 |
+| `mission.operatorState === "blocked" && mission.blocker?.reason` | `destination.missingInfo[]` | 当前阻塞原因也进入缺失信息 |
+| `mission.waitingFor / mission.blocker / mission.decision?.type` | `destination.missingInfoDetails[]` | 当前可补充 impact 与 blocking 标记 |
+| `mission.summary / sourceText / events / artifacts / waitingFor / blocker / decision?.prompt` | `destination.confidence` | 当前 confidence 是基于多信号推断，而不是单字段透传 |
+| `mission.status / mission.artifacts` | `destination.successCriteria[]` | 当前按“Mission completes its current route / Artifacts are produced / Mission reaches delivered state”三类口径生成 |
+
+这里需要明确两层边界：
+
+- 上表描述的是“当前最小事实链”，已经有 shared builder、server projection 和相关测试支撑
+- 上表还不是完整的 `Mission -> Destination` 总表；例如 `organization / messageLog / autonomy / instance / topicId` 等字段当前并未稳定进入 `Destination`
+
+#### Mission 核心字段、状态与上下文来源映射总表（首版，2026-04-26）
+
+为了让这份 spec 能真正承担“Mission -> Destination 映射说明书”的角色，本轮把当前主仓里能够直接追溯到 `buildMissionAutopilotSummary(...)` 的核心字段、状态与上下文来源，整理成首版总表。
+
+| Mission 事实来源 | 当前是否直接进入 Destination | 当前投影位置 | 当前说明 |
+| ---- | ---- | ---- | ---- |
+| `mission.id` | 是 | `destination.id` | 作为 Destination 主标识 |
+| `mission.title` | 是 | `destination.goal` | 主要目标摘要；缺失时回退默认标题 |
+| `mission.sourceText` | 是 | `destination.request` | 优先作为原始任务请求 |
+| `mission.summary` | 是 | `destination.request`、`destination.successCriteria[]`、`destination.confidence.reason` | 在 sourceText 缺失或 success signal 生成时参与投影 |
+| `mission.kind` | 是 | `destination.constraints[]` | 当前以 `Mission kind: ...` 形式进入约束 |
+| `mission.projection?.sourceApp` | 是 | `destination.constraints[]` | 当前以 `Source app: ...` 形式进入约束 |
+| `mission.securitySummary?.level` | 是 | `destination.constraints[]` | 当前以 `Security level: ...` 形式进入约束 |
+| `mission.artifacts[]` | 是 | `destination.deliverables[]`、`destination.successCriteria[]`、`destination.confidence.signals[]` | 工件名称进入 deliverables，存在工件时提升 success / confidence |
+| `mission.workPackages[]` | 部分 | `destination.deliverables[]` | 当前仅 `deliverable` 被吸收；其他字段未稳定进入 |
+| `mission.status` | 是 | `destination.successCriteria[]`、`destination.missingInfo[]` | `done / waiting` 等状态会影响 success / missing info 语义 |
+| `mission.waitingFor` | 是 | `destination.missingInfo[]`、`destination.missingInfoDetails[]`、`destination.confidence.reason` | 当前最直接的缺失信息来源 |
+| `mission.operatorState` | 是 | `destination.missingInfo[]`、`destination.missingInfoDetails[]` | `blocked` 会将 blocker 原因包装进缺失信息 |
+| `mission.blocker?.reason` | 是 | `destination.missingInfo[]`、`destination.missingInfoDetails[]`、`destination.confidence.reason` | 当前阻塞上下文会被包装成缺口与低置信原因 |
+| `mission.decision?.prompt / type` | 是 | `destination.missingInfoDetails[]`、`destination.confidence.signals[]` | 影响当前缺失信息 impact 与 confidence 信号 |
+| `mission.events[]` | 是 | `destination.confidence.signals[]` | 当前只参与 confidence 推断，不直接展开到 destination 文本 |
+| `mission.currentStageKey` | 否 | 不直接进入 Destination | 当前更多进入 `route / driveState / explanation` |
+| `mission.stages[]` | 否 | 不直接进入 Destination | 当前属于 Route 骨架，而非 Destination |
+| `mission.projection?.workflowId / replayId / sessionId` | 否 | 不直接进入 Destination | 当前更多进入 bindings / route / evidence correlation |
+| `mission.executor / instance` | 否 | 不直接进入 Destination | 当前属于 execution / bindings / monitoring 侧事实 |
+| `mission.organization / agentCrew` | 否 | 不直接进入 Destination | 当前未稳定吸收到 Destination |
+| `mission.messageLog / autonomy / topicId` | 否 | 不直接进入 Destination | 当前尚未进入正式 Destination 映射表 |
+
+这张首版总表的收口意义是：
+
+- 已经覆盖“核心字段、状态与上下文来源”这一任务原文要求里的主体部分
+- 也明确写出哪些字段当前没有进入 `Destination`
+- 但它仍是“当前 builder 可追溯总表”，不是“MissionRecord 全字段映射完结版”
+
 ### 2. Workflow -> Route
 
 #### 设计意图
@@ -139,6 +199,73 @@
 - `Workflow` 保持底层编排职责
 - `Route` 提供产品层解释、推荐和展示
 - 不建议为追求名词统一，直接废弃 `Workflow`
+
+#### 当前主仓最小映射表（2026-04-25）
+
+当前主仓里，`Route` 也不是对 `Workflow` 结构体的逐字段镜像，而是由 `MissionRecord`、`projection links`、`decision / decisionHistory`、`operatorActions` 与运行时上下文共同归纳出的高层执行路径摘要。
+
+可直接锚定到当前实现的最小映射如下：
+
+| 当前事实来源 | 当前投影字段 | 当前实现口径 |
+| ---- | ---- | ---- |
+| `input.workflowId || mission.projection?.workflowId || mission.id` | `route.id` | 当前 route 主键优先复用 workflowId，没有时回退 missionId |
+| `mission.currentStageKey / mission.stages[*].label` | `route.currentStageKey / route.currentStageLabel` | 当前阶段直接来自 Mission stage 蓝图 |
+| `mission.stages[]` | `route.stages[]` | 当前阶段数组是最稳定的路线骨架来源 |
+| `mission.status` | `route.status / route.locked` | 当前 route status 由 synthetic workflow status 推断，waiting/done/failed/cancelled 会锁定路线 |
+| `mission.summary / waitingFor / risk / takeoverType` | `route.mode / route.candidateRoutes[]` | 当前 `fast / standard / deep` 候选路线由 Mission 风险与阶段推断出来 |
+| `mission.decision?.decisionId`、等待状态 | `route.takeoverPointIds[]` | 决策点或等待点直接成为路线接管点 |
+| `mission.decisionHistory`、`decision.payload`、`resolved.metadata.formData` | `route.selection / selectedRouteId / recommendedRouteId / selectionStatus` | 当前用户选路、payload fallback 与历史选择对齐均已在 builder 中收口 |
+| `mission.blocker / mission.waitingFor / operatorState / events.warn` | `route.riskPoints[]` | 当前风险点更多来自运行态与治理信号，而不是 workflow 静态定义 |
+| `mission.operatorActions / attempt / blocker / waitingFor` | `route.replan` | 当前重规划对象更多是 recovery-driven route 解释 |
+| `route selected/recommended state + event history` | `route.evidence` | 当前 evidence 负责解释推荐、选择、锁定、重规划等路线事实 |
+
+因此，当前主仓里的 `Workflow -> Route` 更准确地说是：
+
+- `Workflow / projection links` 提供 route identity 与一部分骨架锚点
+- `Mission.stages / decision / decisionHistory / operatorActions / blocker` 提供 route 的动态解释层
+- `Route` 当前已经是可稳定消费的展示对象，但仍不是完整 workflow definition 的全量镜像
+
+#### Workflow / Runtime / Decision 联合映射表（收口版）
+
+为了避免把 `Route` 错写成“只从 workflow 来”，当前更合理的统一表述是：
+
+| 工程对象 | 在 Route 中承担的职责 | 当前可直接落地的字段 |
+| ---- | ---- | ---- |
+| `Workflow / MissionProjectionLinks` | 提供路线身份与外部关联锚点 | `route.id`、`bindings.workflowId`、evidence correlation 里的 `workflowId` |
+| `Mission.stages / currentStageKey` | 提供阶段骨架与当前所在阶段 | `route.currentStageKey`、`route.currentStageLabel`、`route.stages[]` |
+| `Decision / decisionHistory` | 提供接管点与路线选择解释 | `route.takeoverPointIds`、`candidateRoutes`、`selection`、`selectionStatus` |
+| `Runtime / operator state / blocker / retries` | 提供锁定、风险、重规划与证据变化 | `route.locked`、`riskPoints`、`replan`、`route.evidence` |
+
+这张表的收口含义是：
+
+- 当前我们已经能解释“为什么 Route 不等于单个 workflow 文件”
+- 但仍不能把它外推成 `Workflow definition / branching / parallel groups` 的完整结构审计已经完成
+
+#### Workflow 定义结构、阶段语义、分支与并行能力映射表（首版，2026-04-26）
+
+为了避免把 `Workflow -> Route` 永远停留在抽象口号层，这里把当前主仓已经存在的 workflow 结构术语，与当前 `Route`/`projection` 中实际可消费的字段整理成首版结构映射表。
+
+| Workflow / Graph 事实 | 当前锚点 | 当前对应的 Route / Autopilot 语义 | 当前边界 |
+| ---- | ---- | ---- | ---- |
+| workflow identity | `workflow.id`、`MissionProjectionLinks.workflowId` | `route.id`、`bindings.workflowId`、`evidence.correlation.workflowId` | 已稳定进入 route identity |
+| workflow status | `workflow.status` | `route.status`、`explanation.currentState.workflowStatus` | 当前通过 synthetic status 归并，不是原值直出 |
+| workflow current stage | `workflow.current_stage` | `explanation.currentState.workflowStage`、projection graph `currentStage` | 当前更多作为 explanation / graph 事实，不直接替代 `mission.stages` |
+| workflow directive | `workflow.directive` | graph / monitoring 侧的路线背景说明 | 当前未直接进入 `route.label` 或 `candidateRoutes` |
+| mission stage blueprint | `mission.stages[]` | `route.stages[]`、`route.currentStageKey`、`route.currentStageLabel` | 当前是 Route 阶段骨架最稳定来源 |
+| graph node runs | `GraphInstanceSnapshot.nodeRuns[]` | workflow graph 视角的执行节点与组织结构锚点 | 当前未直接折叠进 `route.stages[]` |
+| graph edge transitions | `GraphInstanceSnapshot.edgeTransitions[]` | 分支、父子、控制流路径的底层证据 | 当前未直接展开成 route transition 列表 |
+| conditional branch edges | runtime graph `edgeSchemas.kind = conditional`、resume 后 `edgeTransitions.status = executed` | `Route.selection`、`candidateRoutes`、`Takeover route-selection` 的底层结构证据 | 当前说明“分支能力存在”，但尚未形成正式 route transition 总表 |
+| WAITING_INPUT checkpoints | runtime checkpoint `waitingFor`、decision metadata | `route.takeoverPointIds`、`takeover`、`destination.missingInfo*` | 当前是 route takeover point 的主要来源 |
+| multi-choice route payload | `decision.payload.candidateRoutes / routeMap / selectedRouteId` | `route.candidateRoutes[]`、`selection`、`selectedRouteId`、`recommendedRouteId` | 已稳定成为 Route 候选路线来源 |
+| branchKey after resume | `resolved.metadata.branchKey`、runtime variables | route selection / confirm_judge 之后的动态路线切换语义 | 当前有 runtime test 证据，但未统一沉淀为 route transition schema |
+| parallel execution hints | `execution.parallelBranchCount`、graph organization/task counts | `execution.parallelBranchCount`、`remainingSteps.parallelBranchCount` | 当前只形成执行摘要，不是 Route 级并行总表 |
+| operator retry / escalate / blocker | `mission.operatorActions`、`mission.attempt`、`mission.blocker` | `route.replan`、`route.evidence`、`route.selectionStatus = replanned` | 当前重规划是 recovery-driven route 解释 |
+
+这张首版结构映射表的收口结论是：
+
+- 当前仓库已经足以解释“Workflow 的定义结构、阶段语义、分支与并行能力如何进入 Route 叙事”
+- 但当前 Route 仍是“workflow / mission / decision / runtime / graph facts 的联合投影”
+- 因此，它支持完成“首版映射表”，但还不能宣称“完整 workflow 结构审计已经结束”
 
 ### 3. Runtime State -> Drive State
 
@@ -284,6 +411,122 @@
 - 外部逐步抽象为路线阶段与车队角色
 - 后续再扩展“节点角色分类”和“车队编组”层
 
+## Web-AIGC 节点兼容附录（首版）
+
+本附录的目标不是把全部 Web-AIGC 节点逐个映射成 autopilot 对象，而是说明当前主仓里这些节点事实如何被保守吸收到 `Mission / Decision / Route / Takeover` 这条映射链里。
+
+### 1. 当前已存在的直接锚点
+
+- `shared/mission/contracts.ts` 已定义 `WEB_AIGC_HITL_NODE_TYPES`
+  - `user_input`
+  - `selection`
+  - `param_collection`
+  - `confirm_judge`
+  - `intent_recognition`
+  - `command_list`
+  - `recommended_commands`
+- 同一文件还定义了 `WebAigcHitlFieldDefinition`、`WebAigcHitlFormData`、`WebAigcHitlSubmissionMetadata`
+- `MissionDecisionSubmission.metadata` 与 `DecisionHistoryEntry` 已允许保留 `nodeType / nodeId / interactionId / branchKey / sessionId / formData`
+- 这意味着当前 Web-AIGC 节点并不是被 autopilot summary 直接读取，而是先被收进 `MissionDecision` 与 `DecisionHistory` 这条事实链，再由 `buildMissionAutopilotSummary(...)` 统一解释成 `Takeover / Route / Destination` 相关字段
+
+### 2. 当前最小包装路径
+
+当前可保守确认的最小包装路径如下：
+
+| Web-AIGC 事实 | 当前进入的工程对象 | 当前被重新包装成的 autopilot 语义 |
+| ---- | ---- | ---- |
+| `user_input / param_collection / intent_recognition` | `MissionDecision`、`waitingFor`、`DecisionHistoryEntry.metadata` | `Takeover` 中的 `clarification` / `operator`，以及 `Destination.missingInfo*` |
+| `selection / recommended_commands / command_list` | `MissionDecision.type === "multi-choice"`、`decision.payload.candidateRoutes`、`resolved.metadata.formData` | `Route.selection`、`candidateRoutes`、`route-selection takeover` |
+| `confirm_judge` | `MissionDecision` / `approval` / `decisionHistory` | `Takeover` 中的 `approval / delivery-review / permission / budget` |
+| 节点执行来源 `sourceApp: web-aigc` | `MissionProjectionLinks.sourceApp` | `Destination.constraints[]` 中的 `Source app: web-aigc`，以及跨链路来源说明 |
+
+### 2.1 节点家族 -> 路线阶段 / 车队角色的首版包装矩阵
+
+在保守口径下，本 spec 不做“50+ 节点逐节点目录”，但可以收口一版“节点家族级”包装矩阵，说明当前哪些节点事实应优先被翻译成 `Route stage` 与 `Fleet role`。
+
+| 节点家族 | 当前主仓锚点 | 优先包装到的 Route 阶段 | 优先包装到的 Fleet 角色 | 当前包装路径 |
+| ---- | ---- | ---- | ---- | ---- |
+| 目标理解 / 路线建议 | `intent_recognition`、route recommendation、`recommendationDetails(kind=route)` | `understanding / planning` | `Planner` | 先进入 Mission/Route recommendation，再由 autopilot summary 表达为路线草案与推荐理由 |
+| 用户输入 / 参数收集 | `user_input`、`param_collection`、`waitingFor`、`formData` | `clarifying / takeover-required` | `Clarifier` | 先进入 `MissionDecision`、`waitingFor`、`missingInfoDetails`，再表达为澄清型接管与缺失信息 |
+| 选择 / 确认 | `selection`、`recommended_commands`、`command_list`、`confirm_judge` | `planning / takeover-required / reviewing` | `Clarifier`、`Reviewer` | 先进入 `decision.payload / decisionHistory / resolved.metadata`，再表达为 `route.selection`、`takeover`、结果确认 |
+| 搜索 / 检索 / 问答 | search、document_search、RAG、QA 路由与节点族 | `executing: research-heavy` | `Researcher` | 先作为检索/问答事实进入 route execution 与 evidence，再在产品层表达为研究型执行阶段 |
+| 生成 / 文件输出 | 内容生成、文档/图表/文件输出节点 | `executing: generation-heavy` | `Generator` | 先作为产出与 artifact 进入 Mission/summary，再包装为生成型阶段与交付产物 |
+| 外部动作 / 页面控制 | open page、dashboard action、browser/native command | `executing: operator-heavy` | `Operator` | 先通过 executor / runtime action / permission chain 落地，再包装为外部动作阶段 |
+| 审核 / 判断 / 比对 | judge、compare、verification、confirm_judge | `reviewing / delivery` | `Reviewer` | 先进入 decision / review / acceptance 事实，再包装为验收与纠偏阶段 |
+| 审计 / 治理 / 证据 | audit、lineage、policy、evidence、risk governance | `reviewing / governance gate` | `Auditor` | 先进入 audit / replay / evidence correlation，再包装为治理护栏与证据收口 |
+| 编排 / 分支同步 | orchestration、branchKey、conditional edge、stage sync | `planning / replanning / branch convergence` | `Coordinator` | 先进入 workflow graph / branch / route replan 事实，再包装为分支切换与编排收敛语义 |
+
+这张矩阵的使用方式必须继续收紧：
+
+- 它是“节点家族级首版附录”，不是逐节点产品目录。
+- `Route stage` 这里表达的是产品层的阶段语义，不等于 runtime graph 的原生 stage key。
+- `Fleet role` 这里表达的是对用户可见的职责包装，不等于 shared builder 当前已经稳定产出这些角色。
+- 其中真正已有最小直接 shared/server 产出支撑的，仍主要是：
+  - `Takeover` 对澄清、审批、路线选择的统一包装
+  - `Route.selection / candidateRoutes / replan` 对选择与分支切换的统一包装
+  - `Destination.missingInfo*` 对信息缺口的统一包装
+  - README / fleet spec 对 `Planner / Clarifier / Researcher / Generator / Operator / Reviewer / Auditor / Coordinator` 词汇的统一包装
+
+### 2.2 为什么这版附录现在可以收口
+
+当前仓内已经存在三层可以直接拼起来的设计与术语锚点：
+
+1. mapping 主链锚点
+   - `MissionDecisionSubmission.metadata`
+   - `MissionDecisionResolved.metadata`
+   - `DecisionHistoryEntry.nodeType / nodeId / interactionId / branchKey`
+   - `sourceApp: web-aigc`
+   - runtime tests 中的 `selection / confirm_judge / param_collection`
+2. fleet 角色锚点
+   - `.kiro/specs/fleet-organization-and-role-packaging/design.md` 已给出节点家族到角色家族的初步分类表
+   - 同文件已给出 `understanding / planning / executing / reviewing / takeover-required / replanning` 对应的角色启停矩阵
+3. README / 产品术语锚点
+   - README 已明确 `Fleet` 是由 Agent、技能、Web-AIGC 节点、工具、执行器和治理模块共同承接的角色编队
+
+因此，本 spec 现在可以把“兼容吸收附录”进一步收口为：
+
+- 节点家族事实先被吸收到 `Mission / Decision / Route / Takeover`
+- 再按产品语义包装到 `Route stage` 与 `Fleet role`
+- 但仍不宣称 shared / server 已经形成逐节点、逐运行态的稳定投影合同
+
+### 3. 当前可以说到哪一步
+
+当前可以保守确认的是：
+
+- Web-AIGC 节点体系已经具备进入 autopilot mapping 的入口
+- 当前最直接的入口是 HITL / Decision / sourceApp / formData / decisionHistory，而不是节点执行图本身
+- 这足以支撑“节点不直接暴露给用户，而是被重新包装成接管点、路线选择点、缺失信息与来源约束”的产品叙事
+
+当前不能外推的是：
+
+- 50+ 节点都已有逐节点 `Route stage` 分类
+- 节点已经稳定映射到 `Fleet role` 家族
+- 节点级 runtime 状态已经完整投影到 autopilot product objects
+
+### 4. 面向 Web-AIGC 节点体系的当前附录边界（2026-04-26）
+
+为了避免误把“兼容吸收附录”写成“节点产品化映射已完成”，这里再明确一层边界：
+
+| 当前证据 | 可以安全声明的结论 | 仍不能外推的结论 |
+| ---- | ---- | ---- |
+| `WEB_AIGC_HITL_NODE_TYPES`、`WebAigcHitlFieldDefinition`、`WebAigcHitlFormData` | Web-AIGC 已有成体系的人机交互节点类型与表单语义 | 节点已经完成产品层分类目录 |
+| `MissionDecisionSubmission.metadata`、`MissionDecisionResolved.metadata`、`DecisionHistoryEntry` | 节点的 `nodeType / nodeId / interactionId / branchKey / formData` 能进入 Mission/Decision 事实链 | 节点执行图已经直接变成 autopilot object |
+| runtime tests 中的 `selection / confirm_judge / param_collection` | Web-AIGC 节点已可通过等待、恢复、branchKey、formData 影响 route selection / takeover / missing info | 所有节点都已经映射到 route stage / fleet role |
+| `sourceApp: web-aigc` 与 projection links | 可以把 Web-AIGC 作为 route/destination 的来源约束与跨链路解释 | 来源约束已经等于节点级路线建模 |
+
+因此，这份附录当前的完成语义应当是：
+
+- 已经形成“节点体系如何被 Mission / Decision / Route / Takeover 吸收”的首版附录
+- 已经形成“节点家族 -> 路线阶段 / 车队角色”的首版包装矩阵
+- 仍未形成“50+ 节点逐节点 -> 路线阶段 / 车队角色”的正式目录
+- 后续若要继续推进，应拆到更专门的 fleet / route-stage / runtime-node-family specs 中处理
+
+因此，本附录的完成含义是：
+
+- 已经说明 Web-AIGC 如何被当前 mapping 层兼容吸收
+- 已经完成逐“节点家族”级别的首版包装附录
+- 还没有完成逐节点、逐运行态的完整 mapping 目录
+
 ## 推荐的落地结构
 
 ### 服务端
@@ -347,3 +590,76 @@
    - `Decision / HITL -> Takeover`
 4. 兼容优先，不建议立即大规模底层改名
 5. 后续应通过 projection、view model、驾驶舱 IA 与治理视图逐步落地
+
+## 当前主仓审计备注（2026-04-25）
+
+以下内容用于说明当前主仓中哪些 mapping 已经有 shared / server 投影与测试支撑，哪些仍停留在设计层。
+
+### 已有最小闭环
+
+1. `Mission -> Destination` 已形成最小展示级投影闭环，但仍停留在展示字段层。
+
+- `shared/mission/autopilot.ts` 已直接产出 `destination.goal / request / constraints / successCriteria / deliverables / missingInfo / confidence / missingInfoDetails`。
+- `shared/__tests__/mission-autopilot.test.ts` 已验证运行中、等待接管、阻塞重试、低证据任务等场景下的 `Destination` 字段。
+- `server/tasks/mission-projection.ts` 会将 shared builder 产出的 `destination` 随 `autopilotSummary` 透传到任务 projection 接口，`server/tests/mission-routes.test.ts` 已验证 request / constraints / successCriteria / deliverables / missingInfo 等字段。
+- `client/src/lib/tasks-store.ts` 与 `client/src/components/tasks/TaskAutopilotPanel.tsx` 会继续消费该对象，`client/src/components/tasks/__tests__/TaskAutopilotPanel.test.tsx` 已验证 destination confidence、missing-info impact、structured missingInfoDetails 等展示。
+- 但当前证据仍不足以证明 Mission 核心字段、状态、上下文来源已经被完整梳理成“总映射表”，因此只能保守确认“最小展示结构已落地”，不能确认“完整字段审计已完成”。
+
+2. `Workflow -> Route` 已形成最小展示级投影闭环，但仍未完成 workflow 结构总表。
+
+- `shared/mission/autopilot.ts` 已直接产出 `route.label / mode / status / stages / riskPoints / takeoverPointIds / candidateRoutes / selection / evidence / replan`。
+- `shared/__tests__/mission-autopilot.test.ts` 已覆盖推荐路线、候选路线、等待决策导致的路线锁定、阻塞后的 replanned 状态、route evidence 与 replan 摘要。
+- `server/tasks/mission-projection.ts` 负责把该对象透传到 projection 接口，`server/tests/mission-routes.test.ts` 已验证 `route.candidateRoutes / selection / evidence / replan / takeoverPointIds` 与 workflow link 对齐。
+- `client/src/lib/tasks-store.ts` 与 `client/src/components/tasks/TaskAutopilotPanel.tsx` 会继续兼容消费 `route`，`client/src/components/tasks/__tests__/TaskAutopilotPanel.test.tsx` 已验证 route diff、route selection、route evidence、剩余步骤、ETA / cost 汇总等展示。
+- 但当前仍缺少对 workflow definition、branching、parallel groups 的系统化梳理，因此不能保守外推为“Workflow -> Route 映射表已经完整完成”。
+
+3. `Runtime State -> Drive State` 已形成共享归并规则。
+
+- `shared/mission/autopilot.ts` 已稳定输出十态 `Drive State` 集合，包括 `understanding / planning / executing / reviewing / blocked / takeover-required / replanning / delivered`。
+- 相关规则已覆盖等待、失败、重试重规划等场景，且 shared builder 与 server `mission-routes` 投影测试均已验证。
+
+4. `Decision / HITL -> Takeover` 已形成共享投影对象。
+
+- `shared/mission/autopilot.ts` 已输出统一 `takeover` 摘要：`status / required / blocking / type / reason / prompt / decisionId / options / urgency`。
+- 当前类型集合已覆盖 `clarification / approval / permission / budget / risk-acceptance / route-selection / delivery-review / exception / operator`。
+- `server/tasks/mission-projection.ts` 会把这组字段稳定透传到任务投影接口，等待决策场景已有服务端测试覆盖。
+
+5. 兼容优先、投影优先与最小落地顺序已具备文档与实现锚点。
+
+- 本文“兼容策略”和“推荐的落地结构”已经明确：先做 `destination / route / drive-state / takeover` projection，而不是大规模重命名底层 `mission / workflow / runtime / decision`。
+- 当前主仓实现也符合这一顺序：shared builder 先产出 `autopilotSummary`，server projection 再透传，前端作为消费层兼容。
+
+6. 与后续 specs 的边界已经可以落到当前依赖关系上。
+
+- `Destination / Route` 的最小展示结构已由本 spec 承接。
+- `Drive State` 细化由 `drive-state-and-replan-state-machine` 继续展开。
+- `Takeover` 的交互与优先级由 `takeover-panel-and-decision-points` 继续展开。
+- 更细的 runtime 编排与治理解释由 `autopilot-runtime-orchestration`、`autopilot-recovery-and-human-takeover-governance` 继续展开。
+
+7. 旧命名强依赖已经可以保守落成一份风险清单。
+
+- `shared/mission/api.ts` 中 API 路由、响应类型和 projection 类型仍以 `Mission` 命名为主，例如 `MISSION_API_ROUTES`、`MissionProjectionView`、`GetMissionProjectionResponse`。
+- `shared/mission/index.ts` 继续从 `./autopilot.js`、`./api.js` 向外暴露基于 `Mission` 命名空间的 contracts，说明对外 barrel 仍以旧命名承载新投影。
+- `server/tasks/mission-projection.ts` 的入口、构造函数与返回对象仍围绕 `buildMissionProjectionView`、`buildMissionSessionView`、`MissionProjectionView` 组织，只是在内部附带 `autopilotSummary`。
+- `server/tests/mission-routes.test.ts` 断言的接口路径仍是 `/api/tasks/:id/projection` 与 `/api/tasks/:id/session`，并以 `projection.autopilotSummary` 的方式消费新模型。
+- `client/src/lib/tasks-store.ts` 仍以 `MissionTaskSummary / MissionTaskDetail / buildMissionAutopilotSummary` 为核心聚合前端 view model，只把新投影兼容进 `autopilotSummary` 字段。
+- `client/src/components/tasks/TaskAutopilotPanel.tsx` 与其测试证明 UI 已能消费 `destination / route / driveState / takeover / evidence / explanation`，但面板仍是挂载在 `TaskDetailView` 中的 `autopilotSummary` 分区，而非整体重命名后的页面对象。
+- 因此，可以保守确认：主仓已经存在对旧命名的 API、shared contract、server projection、client store、UI 容器级强依赖；这支持“不要立即大规模改名”的迁移判断。
+
+### 仍未完成的部分
+
+- 仍未产出完整的 Mission 字段总表、Workflow 结构总表，以及覆盖全部调用点的旧命名强依赖完整清单；当前只能保守确认已形成首版风险清单。
+- 仍未形成面向 README / 架构图的正式统一术语附录文件，只是在本 spec、README 与相关 steering 中已经出现一致口径。
+- 因此，本轮可保守确认的是“最小 mapping 投影与边界说明已经落地”，而不是“完整映射附录与迁移包已经完成”。
+
+### Lane 收口补充（2026-04-25）
+
+- 本轮补上的重点，是把此前仍停留在口头描述中的三类内容写成成体系的 spec 文档：
+  - 当前主仓可直接锚定的 `Mission -> Destination` 最小字段映射表
+  - 当前主仓可直接锚定的 `Workflow / Runtime / Decision -> Route` 最小映射表
+  - 面向 Web-AIGC 节点体系的首版兼容附录
+  - 节点家族到 `Route stage / Fleet role` 的首版包装矩阵
+- 这几块新增内容的共同原则是：
+  - 只写当前实现和测试已经能直接指到的最小事实链
+  - 不把尚未完成的完整总表、完整 workflow 结构审计、完整节点分类目录误写成已实现
+- 因此，这轮 design 的推进含义是“mapping spec 的文档收口更完整了”，而不是“底层领域迁移已经完成”。

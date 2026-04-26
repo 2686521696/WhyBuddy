@@ -271,6 +271,8 @@
 - 文档不得声称“所有 runtime 事件已统一直写 lineage”。
 - 可解释层新增信号必须能说明来自真实 runtime、projection、audit 或 replay。
 - 高风险解释必须能进入 audit 或至少关联 audit entry。
+- 高风险解释进入 audit 的规则必须至少覆盖 `权限 / 预算 / 合规 / 外部副作用 / 风险接受 / 路线切换 / 重规划` 七类触发器，并区分“直接写入 audit”与“关联现有 audit entry”两种落点。
+- 每类高风险解释的 audit 规则必须定义最小字段，至少包括 `explanationId / explanationType / sourceType / mission-workflow refs / route refs / decision refs / risk or threshold action / evidence refs / trigger reason / recordedAt`。
 
 ### 需求 10：系统必须支持回放与审计中的解释复原
 
@@ -292,6 +294,8 @@
 - 对用户决策有影响的解释必须保留可审计记录或可重建事件。
 - 回放中的解释应与原执行时间线对齐。
 - 审计查询必须能关联解释对象与 mission / workflow / runtime event / decision。
+- replay 解释复原规则必须定义时间线槽位，至少覆盖 `current_state / recommendation / remaining_steps / risk / confidence / takeover / evidence_update / replan_change`。
+- replay 解释复原规则必须定义排序、版本失效与缺失回退口径，明确 `active / superseded / resolved` 的展示规则，以及当缺少原生事件时如何使用 projection snapshot 或组合事件重建并标注来源。
 
 ### 需求 11：系统必须支持分阶段落地
 

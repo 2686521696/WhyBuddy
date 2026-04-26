@@ -349,4 +349,109 @@
 - 文档中明确解释自动恢复、降级执行、人工接手、异常升级之间的区别
 - 文档中明确说明与 `review / audit / revise / verify / HITL / runtime governance` 的兼容方式
 - 文档中明确说明恢复后继续如何回到执行、重规划或复核链路
-- 存在一份全部未完成的任务清单，用于后续渐进实现
+- 存在一份可渐进推进的任务清单，用于后续分阶段实现与审计收口
+
+## 补充收口说明（2026-04-25，lane 6）
+
+本轮继续按“设计直接收口 + 现有实现/测试有最小锚点”推进，本 spec 的要求层维持保守边界：
+
+- 当前已经可以保守声称的部分
+  - 偏航信号来源、触发强弱、恢复层级、人工确认/人工接手边界、治理结果分类、异常升级触发、与 `review / audit / revise / verify / HITL / runtime governance` 的兼容关系，已经能够在设计文档中被直接写清
+  - 当前主仓也已经存在 recovery summary、takeover-required、waiting / replan 投影、mission decision 复用、runtime escalate / terminate、replay / audit mirroring 的最小事实链
+- 当前仍不能外推为“已完成要求”的部分
+  - recovery-specific option payload
+  - 升级前证据保留统一合同
+  - 恢复完成后回到 `executing / reviewing / delivered` 的独立 return-condition contract
+  - recovery-specific audit record model
+  - 恢复记录与 `decisionHistory / 任务历史 / audit` 的正式关联合同
+
+因此，本 requirements 文档当前采取“可渐进推进”的收口口径：允许 design 与 tasks 在现有锚点上继续保守补勾，但不把尚未成型的 recovery 专用合同外推为已落地能力。
+
+## 补充收口说明（2026-04-25，lane 6，二次推进）
+
+本轮进一步把 requirements 的“当前主线最小闭环”边界写得更明确，避免后续把设计语义误读成必须先落地独立 recovery 子系统。
+
+- 当前 requirements 对 `DeviationDetector`、`RecoveryCoordinator` 的要求
+  - 应优先理解为“必须能被当前 shared summary + mission projection + wait-resume / escalate 主线重建的语义层”
+  - 不强制要求先独立实现 detector 服务、coordinator 类、统一事件总线或统一恢复账本
+- 当前 requirements 对展示与接入的要求
+  - 优先要求服务端 projection、任务详情与 cockpit 详情变体能稳定读到 recovery / takeover / consequence / correlation
+  - 不把独立 recovery cockpit、接手控制台、降级执行专门交互面板外推为本轮已完成范围
+- 当前 requirements 对测试与灰度的要求
+  - 允许先以 shared / runtime / decision / projection 的最小直接测试为锚点，收口单元测试设计与灰度原则
+  - 不把动态阈值配置中心、统一 feature flag、恢复返回条件合同、recovery-specific audit model 外推为既有能力
+
+因此，本 spec 当前最适合的验收口径是：
+
+- 先确认恢复分类、治理兼容、状态映射、服务端投影、任务详情接入、测试策略与灰度边界已经写清楚；
+- 再基于直接代码与直接测试，保守推进能被现实锚定的 tasks；
+- 对 recovery-specific payload、证据保留合同、审计关联合同、持久化查询模型继续保持未完成状态。
+
+## 补充收口说明（2026-04-25，lane 6，四次推进）
+
+本轮继续收紧 requirements 与 design/tasks 的对应关系，重点把以下几类内容从“概念存在”推进到“已形成明确设计/测试计划合同”：
+
+- 自动恢复
+  - 节点级重试、替代执行器、快照/检查点恢复、跳过非关键步骤的准入条件与层级推进规则
+- 降级执行
+  - 降级影响表达、禁止静默降级场景、与 cost / permission / runtime governance 的对接方式
+- 恢复返回条件
+  - 何时回到 `executing / reviewing / delivered`，何时继续停留在 `blocked / takeover-required / replanning`
+- 恢复记录
+  - `RecoveryAttemptLedger` 的最小字段组与保留策略
+- 测试与灰度计划
+  - 集成验证矩阵、回归矩阵、连续性验证计划、阈值灰度分层与回滚触发条件
+
+本轮要求层的保守口径如下：
+
+- 可以视为“已收口”的部分
+  - 文档已经把恢复治理规则写成可执行的设计定义或测试计划，不再只是抽象口号
+  - 对应 tasks 若勾选，仅代表设计层、信息架构层、治理契约层或测试计划层已经成型
+- 仍不能外推为“实现已完成”的部分
+  - recovery-specific option payload
+  - recovery-specific audit record model
+  - 恢复记录持久化、查询接口、跨重启 attach
+  - 独立 recovery cockpit、降级执行专用 UI、统一灰度平台
+
+因此，本轮允许继续保守补勾以下类型的任务：
+
+- 被 design 正文直接覆盖的设计任务
+- 被测试矩阵、连续性验证计划、灰度/回滚规则直接覆盖的计划类任务
+
+但仍不允许把以下类型任务提前勾选：
+
+- 需要 recovery 专用写路径、专用 payload、专用 audit model 才能成立的实现任务
+- 需要持久化层、查询接口、跨重启恢复语义直接证据才能成立的服务端任务
+
+## 补充收口说明（2026-04-26，lane 1）
+
+本轮进一步把剩余 recovery governance 条目里“仍属于设计合同缺口”的部分补成了可执行定义，因此 requirements 层允许以下一批任务按“设计已收口”口径补勾：
+
+- `7.3`
+  - 恢复场景下的接手选项合同
+- `8.2`
+  - 恢复选项到现有 `MissionDecision` carrier 的映射合同
+- `12.5`
+  - 与既有 `Drive State` spec 的术语与迁移条件对齐
+- `14.2 / 14.4`
+  - 驾驶舱全局状态提示与 `degrade_execution` 差异展示合同
+- `15.1 / 15.2 / 15.3 / 15.4 / 15.5`
+  - 恢复快照、重启 re-attach、历史关联、连续性保证与查询语义合同
+
+这批勾选的保守边界必须明确：
+
+- 当前成立的是“design 正文已把语义、字段、迁移条件、连续性要求、查询维度写清”，不是说：
+  - recovery-specific payload builder 已实现
+  - 独立 recovery cockpit / degrade diff UI 已实现
+  - recovery snapshot writer / persistence layer 已实现
+  - restart attach service / history query API 已实现
+- 因此，这批条目可以视为：
+  - 设计层收口完成
+  - 但实现层、接口层、持久化层与专用 UI 层仍需后续代码证据支撑
+
+本轮之后仍保持未完成的 only-open 项为 `3.2 / 3.3 / 3.4`，原因不变：
+
+- `goal_deviation / quality_deviation / dependency_failure / recovery_exhausted`
+  - 虽然在 design 中已有识别语义与分类目标态
+  - 但在当前指定证据链里，仍缺同等级直接测试闭环
+  - 因而 requirements 层继续要求这些条目保持未勾选

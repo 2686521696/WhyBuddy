@@ -232,6 +232,46 @@
 - 引入全新的任务图编辑器
 - 把所有 node 名称直接暴露为前台产品概念
 
+## 需求审计备注（2026-04-25，Lane 4 收口）
+
+本轮基于当前 `shared -> server -> client -> panel -> tests` 的直接证据，对这份 spec 的现实边界补一层保守收口：
+
+- 当前已经存在一条稳定的“首版实时执行主视图”链路：
+  - `shared/mission/autopilot.ts` 统一产出 `destination / driveState / route / execution / fleet / takeover / recovery / evidence / explanation / bindings`
+  - `server/tasks/mission-projection.ts` 透传并对齐 projection links
+  - `client/src/lib/tasks-store.ts` 做 fallback + normalize，并同步到 summary / detail
+  - `client/src/components/tasks/TaskAutopilotPanel.tsx` 以 `Live Execution / Fleet / Blockers / Outputs / Evidence / Explanation / Takeover` 摘要块消费
+- 因此，本 spec 中“统一主视图”“执行证据归位”“与现有 runtime 兼容”“实时更新”“驾驶舱中间主视图”这些需求，已经有最小实现锚点，但当前落点仍是任务详情页中的 summary blocks，而不是独立 execution cockpit。
+- 当前可以被直接代码与测试稳定证明的字段口径主要包括：
+  - `execution.currentStepKey / currentStepLabel / currentStepStatus`
+  - `execution.parallelBranchCount / blockedReasons / intermediateDeliverables / availableActions`
+  - `fleet.roles / activeRoleCount / blockedRoleCount`
+  - `takeover.status / required / blocking / type / reason / prompt / options / urgency`
+  - `recovery.state / deviationCategory / attemptedActions / suggestedActions / needsHuman / canAutoRecover`
+  - `evidence.eventCount / artifactCount / lastSignal / latestEventType / trustLevel / gaps / timeline / correlation`
+  - `explanation.currentState / recommendationDetails / remainingSteps`
+  - `bindings.missionId / workflowId / executorJobId / instanceId`
+
+本轮同时明确，以下需求边界仍未被直接代码 + 直接测试完全闭环：
+
+- 结构化 `parallel lanes` 与分支收敛规则仍未形成独立对象模型。
+- 中间产物仍主要以 `intermediateDeliverables` 与 `outputs.items` 摘要承载，尚未统一为强类型 output 模型。
+- 阻塞点与等待点仍由 `takeover + recovery + blockedReasons` 组合表达，尚未形成统一 blocker type / owner / recoverability 模型。
+- 角色编队的完整产品语义仍未覆盖 `Researcher / Generator / Reviewer / Auditor` 的稳定映射。
+- 角色卡、步骤卡、证据入口的展开跳转与接管交互仍未形成完整 execution cockpit 行为。
+
+## 需求对齐补充（2026-04-25，Lane 5 设计收口）
+
+- 本轮继续推进的是“需求口径与设计 contract 收口”，不是把 `fleet status / live execution view` 直接外推为已经完整上线的独立前后端功能。
+- 对于需求 2 到需求 6，以及与之相连的交互行为、联调样例，本轮统一采用以下解释边界：
+  - 当前主仓的真实事实源仍是 `MissionAutopilotSummary` 及其 `route / execution / fleet / takeover / recovery / evidence / explanation` 子块。
+  - `TaskAutopilotPanel` 当前承担的是任务详情页中的首版只读摘要视图，而不是完整的 execution cockpit。
+  - 本轮允许把“角色编队映射、当前步骤投影、并行执行投影、中间产物模型、阻塞与等待点模型、交互行为、联调样例”按设计定义完成来收口，但不把它们误记为“已形成完整实现证据”。
+- 因此，本 spec 的验收要求在本轮应分成两层理解：
+  - 第一层是当前主仓已具备的最小摘要闭环，用于约束设计必须锚定真实 `MissionAutopilotSummary` 字段。
+  - 第二层是后续工程实现仍需继续兑现的 richer contract，例如结构化 `parallel lanes`、typed `blocker / output`、可展开跳转的卡片交互与独立联调资产。
+- 若后续工程推进要声明“实现闭环完成”，仍需补齐对应 shared / server / client / tests 的直接证据，而不能仅凭本轮文档收口。
+
 ## 依赖关系
 
 本 spec 与以下方向存在强依赖或强协同：

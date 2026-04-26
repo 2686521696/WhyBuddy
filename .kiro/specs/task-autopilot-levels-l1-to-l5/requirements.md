@@ -185,6 +185,64 @@
 - `L4` 应作为限定场景目标。
 - `L5` 应明确为研究 / 远期概念目标。
 
+### 需求 9：等级必须有统一的元数据与降级轨迹设计
+
+系统必须为自动驾驶等级定义最小元数据合同，使 L1-L5 不只是产品文案标签，而是能映射到任务声明、运行时生效等级、降级原因与交付确认状态的结构化信息。
+
+最小字段至少包括：
+
+- `declaredAutopilotLevel`
+- `recommendedAutopilotLevel`
+- `effectiveAutopilotLevel`
+- `levelDecisionSource`
+- `levelChangedAt`
+- `levelChangeReason`
+- `levelChangeDecisionId`
+- `levelChangeStageKey`
+- `levelTakeoverType`
+- `deliveryConfirmedByHuman`
+
+验收口径：
+
+- 必须明确这些字段在 `Mission`、`Workflow / runtime context`、`MissionAutopilotSummary / projection` 中的建议挂载位置。
+- 必须说明哪些字段当前可先由 `route / driveState / takeover / recovery / explanation / evidence` 近似表达，哪些字段仍属于后续真实落码目标。
+- 必须区分“任务声明等级”“系统推荐等级”和“运行时实际等级”。
+
+### 需求 10：等级必须提供阶段映射、节点族映射与强制接管清单
+
+系统必须提供 L1-L5 与当前 mission-first 主线之间的结构化映射，不允许只停留在概念描述。
+
+至少需要覆盖：
+
+- 十阶段工作流阶段到 L1-L4 自动化动作范围的映射表
+- 当前 `Route` 模式到等级语义的映射表
+- Web-AIGC 节点族 / route family 到等级边界的映射表
+- 首批“必须接管”高风险动作清单
+
+验收口径：
+
+- 必须完整覆盖 `direction / planning / execution / review / meta_audit / revision / verify / summary / feedback / evolution` 十阶段。
+- 必须至少覆盖导航节点、执行节点、治理节点三类节点族。
+- 必须说明当前仓库在没有独立 `routeFamily` 字段时，如何使用现有 `route.mode` 与治理信号作为过渡锚点。
+- 必须明确哪些动作在任何等级下都不能绕过人工确认。
+
+### 需求 11：等级必须提供首批试点清单与统一验收矩阵
+
+系统必须给出分级落地的首批试点清单和统一验收矩阵，避免等级定义无法转化为真实推进顺序。
+
+至少需要包括：
+
+- 哪些任务当前必须停留在 `L1`
+- 哪些任务适合优先按 `L2` 推进
+- 哪些任务可作为受限 `L3` 首批试点
+- 按“任务类型 × 风险等级 × 自动驾驶等级 × 接管要求”的验收矩阵
+
+验收口径：
+
+- 试点清单必须与当前 README / steering / runtime coverage 中已经存在的任务族谱保持一致。
+- 试点清单必须明确“可试点”和“仍不可默认开放”的边界。
+- 验收矩阵必须能直接服务于后续驾驶舱展示、runtime metadata 与治理策略接线。
+
 ## 分级要求明细
 
 ### L1：路线建议级

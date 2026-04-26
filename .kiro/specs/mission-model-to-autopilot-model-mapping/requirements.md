@@ -170,6 +170,26 @@
 - 不要求把 50+ 节点直接暴露给用户
 - 可以在后续 spec 中继续扩展为“节点角色分类”或“车队编组策略”
 
+保守验收口径：
+
+- 首版附录至少应提供一张“节点家族 -> 路线阶段 / 车队角色”的粗粒度包装矩阵，覆盖当前仓库里已经反复出现的几类节点族：
+  - 目标理解 / 路线建议
+  - 用户输入 / 参数收集
+  - 选择 / 确认
+  - 搜索 / 检索 / 问答
+  - 生成 / 文件输出
+  - 外部动作 / 页面控制
+  - 审核 / 判断
+  - 审计 / 治理 / 证据
+  - 编排 / 分支同步
+- 这张矩阵可以按“节点家族级”完成，不要求把 50+ 节点逐个列全，但必须说明：
+  - 优先包装到哪个 `Route stage`
+  - 优先包装到哪个 `Fleet role`
+  - 当前事实是如何进入 `Mission / Decision / Route / Takeover` 链路的
+- 文档必须同时区分：
+  - 当前已能被 shared / server / test / README 直接支撑的家族级包装口径
+  - 仍需在 `fleet-organization-and-role-packaging` 或更细的 route-stage / runtime-node-family specs 中继续展开的逐节点目录
+
 ### 需求 9：映射层必须可被分阶段落地
 
 系统必须支持以下分阶段推进方式：
@@ -188,3 +208,85 @@
 - 文档中明确区分“产品态对象”和“工程态对象”
 - 文档中能解释为什么当前系统可以在不推翻主干的前提下升级为任务自动驾驶叙事
 - 存在一份未完成 checklist，用于后续逐步实现和接入
+
+## 当前主仓对齐备注（2026-04-25）
+
+- 当前主仓已经形成一条稳定的最小投影闭环：`shared/mission/autopilot.ts` 负责从 `MissionRecord` 生成 `autopilotSummary`，`server/tasks/mission-projection.ts` 负责将该 summary 挂载到 `MissionProjectionView`，前端 `tasks-store` 与 `TaskAutopilotPanel` 再以消费层身份兼容读取 `destination / route / driveState / takeover`。
+- 当前可以直接保守认定已落地的是“最小展示级 mapping”，而不是完整的领域迁移包；也就是说，本 spec 需要兼容“投影已存在、工程命名仍旧保留”的双层事实，而不能把文档写成底层对象已经全面改名。
+- 当前 `Destination` 已能稳定承载 `goal / request / constraints / successCriteria / deliverables / missingInfo / confidence / missingInfoDetails`；但 `MissionRecord` 的更多上下文，如 `organization / workPackages / messageLog / autonomy / instance` 等仍未被统一审计进正式总映射表。
+- 当前 `Route` 已能稳定承载 `id / label / mode / status / currentStageKey / currentStageLabel / stages / riskPoints / takeoverPointIds / candidateRoutes / selection / evidence / replan`；但它仍更多是基于 `mission.stages / decision / decisionHistory / blocker / operatorActions / projection.workflowId` 的高层归纳，而不是对 `Workflow` 结构体字段的完整逐项展开。
+- 当前 `Drive State` 与 `Takeover` 已属于共享 builder 直接产出并有直接测试支撑的对象，因此这两支分支可以比 `Mission -> Destination`、`Workflow -> Route` 更保守地视为“规则层已经落地”。
+- 当前 `Web-AIGC` 兼容链条已有直接事实，但更多体现为“节点/HITL 元数据被 Mission/Decision 吸收后，再进入 autopilot 投影”，而不是“节点层已经存在单独的 autopilot product object”。因此，本 spec 对 Web-AIGC 的要求应写成“兼容吸收与重新包装原则”，而不是“节点映射实现已全部完成”。
+
+## 补充收口说明（2026-04-25，lane）
+
+本轮对齐的核心，不是扩大“已经实现”的声明范围，而是把当前真实落地部分和仍待补齐部分分层写清：
+
+- 当前可以保守收口到 spec / design 层的部分
+  - `Mission -> Destination` 的最小字段映射表
+  - `Workflow / Runtime / Decision -> Route` 的最小映射表
+  - 面向 Web-AIGC 节点体系的兼容吸收附录
+  - 一版节点家族到路线阶段 / 车队角色的首版包装矩阵
+- 当前仍不能外推为实现已完成的部分
+  - `MissionRecord` 全字段到 `Destination` 的完整总表
+  - `Workflow definition / branching / parallel groups` 到 `Route` 的完整结构总表
+  - Web-AIGC 50+ 节点逐节点到路线阶段或车队角色的正式落地映射
+
+因此，本 spec 当前可以被理解为：
+
+- 文档层已经能够说明“当前主仓如何把 Mission-first 工程对象重新解释为任务自动驾驶产品对象”
+- 实现层已经具备一条最小可消费投影链
+- 但完整映射附录、完整字段审计与大规模命名迁移仍属于后续阶段
+
+## 补充复核边界（2026-04-26）
+
+基于当前主仓里可直接核对的 shared / server / test / README 证据，这份 mapping spec 继续收口时需要保持以下边界：
+
+- `Mission -> Destination` 当前已经不仅有“最小展示结构”，还具备一份可直接追溯到 builder 的字段映射总表基础：
+  - `mission.id`
+  - `mission.title`
+  - `mission.sourceText`
+  - `mission.kind`
+  - `mission.projection?.sourceApp`
+  - `mission.securitySummary?.level`
+  - `mission.artifacts`
+  - `mission.workPackages`
+  - `mission.waitingFor`
+  - `mission.blocker`
+  - `mission.decision`
+  - `mission.summary`
+  - `mission.events`
+- 但它仍不是“MissionRecord 全字段全面落表”，因此文档可以收口为“核心字段、状态与上下文来源的首版映射总表”，不能外推为所有 Mission 扩展字段都已经进入 `Destination`。
+
+- `Workflow -> Route` 当前已经不仅是“一个展示对象”，还能够明确拆成几类结构来源：
+  - `workflowId / projection links` 提供路线身份锚点
+  - `mission.stages / currentStageKey` 提供阶段骨架
+  - `decision / decisionHistory / candidateRoutes / formData` 提供路线选择与替代路线语义
+  - `operatorActions / blocker / attempt / evidence` 提供 route replan、risk、lock 与 route evidence
+  - `GraphInstanceSnapshot.nodeRuns / edgeTransitions / telemetry.currentStage` 提供 workflow graph 侧的结构术语锚点
+- 但这仍不等于“完整 workflow definition / branching / parallel groups 总表”已经完成；因此若勾选，也只能勾到“当前主仓中的定义结构、阶段语义、分支与并行能力已形成首版映射表”，不能扩大为“完整工作流建模审计已结束”。
+
+- Web-AIGC 相关证据当前已足以支撑“兼容吸收附录”，包括：
+  - `WEB_AIGC_HITL_NODE_TYPES`
+  - `WebAigcHitlFieldDefinition`
+  - `WebAigcHitlFormData`
+  - `WebAigcHitlSubmissionMetadata`
+  - `MissionDecisionSubmission.metadata`
+  - `MissionDecisionResolved.metadata`
+  - `DecisionHistoryEntry.nodeType / nodeId / interactionId / branchKey`
+  - runtime tests 中的 `selection / confirm_judge / param_collection`
+- 结合 `.kiro/specs/fleet-organization-and-role-packaging/` 已收口的“节点家族 -> 角色家族初步分类表”与“路线阶段驱动角色启停”设计，以及 README 当前对 `Fleet` 的术语定义，这些证据现在已经足以支撑“节点家族级”的首版附录：
+  - 说明节点为什么不直接暴露给用户
+  - 说明它们优先被包装到哪些 `Route stage`
+  - 说明它们优先被包装到哪些 `Fleet role`
+- 但这些证据仍不足以直接证明以下更强结论：
+  - 50+ 节点已经完成逐节点正式目录
+  - shared / server 已稳定产出逐节点 `Route stage / Fleet role` 投影
+  - 节点级 runtime 状态已经完整进入 autopilot product objects
+
+- README 的当前术语锚点已经与本 spec 口径一致：
+  - `Destination` 是用户目标的结构化对象
+  - `Route` 是带 stages / candidate routes / risks / takeover points / replans 的执行路径
+  - `Drive State` 是高层状态机
+  - `Takeover Point` 是统一的人机接管语义
+- 因此，这份 spec 现在可以被视为 README / 架构图 / 驾驶舱 IA 的稳定术语源之一，但仍应保留“产品态对象 vs 工程态对象”的双层说明。

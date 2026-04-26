@@ -176,6 +176,26 @@
 - 路线选择与路线变化必须支持解释与追踪。
 - 当前 spec 不要求一次性补齐所有后端字段，但必须定义清楚最小证据口径。
 
+### 需求 4-8 的当前闭环边界（2026-04-25）
+
+围绕“默认推荐 -> 规划期选择 -> 执行期改线 -> runtime 对接 -> `/tasks` / replay 消费”，当前仓库里已经被直接代码与直接测试证明的现实边界如下：
+
+- 规划期当前已闭环的是“候选路线可见 + route-selection 决策可提交 + 结果可回投到 summary / projection / panel”；但“恢复系统推荐”与“确认后直接启动执行”的完整交互仍未落地。
+- 执行期当前已闭环的是 `runtime_replanned` 这一条最小摘要链；“用户主动改线”与“系统降级改线”仍停留在设计语义或枚举口径，不能当成已实现能力。
+- runtime 侧当前已闭环的是“路线事实可写入任务摘要、投影链路与证据关联索引”；但还没有直接证据证明 `Mission Runtime` 已正式消费 `selectedRouteId / selectionLocked / changedReason` 作为执行输入。
+- `/tasks` 当前已有任务详情里的 route block 与 `TaskAutopilotPanel` 作为最小驾驶舱落点，但仍不是路线对比与确认的工作台级交互。
+- replay / audit 当前已有 `route.evidence`、`decisionHistory` 与 `evidence.correlation` 的最小消费口径，但仍没有独立的路线时间线页面与交互回放。
+
+为避免需求口径与现有实现错位，本组需求在当前阶段还应补充以下收口约束：
+
+- “默认推荐规则”当前只能按两层理解：
+  - 已实现层：`shared/mission/autopilot.ts` 输出 `candidateRoutes / recommendedRouteId / recommendationReasons` 的最小启发式闭环。
+  - 设计待实现层：预算、治理、历史成功模式与自动驾驶等级共同参与的正式 planner policy。
+- “规划期改线”当前只能按 `route-selection decision -> decisionHistory -> route summary -> mission projection -> panel` 这一条摘要链理解，不得外推为 `/tasks` 工作台已经具备“恢复推荐 / 确认执行”的 mutation 流。
+- “执行期改线”当前只能按 `route.replan / route.evidence / explanation / orchestration.replan` 的最小摘要链理解，不得外推为 `Mission Runtime` 已支持用户主动改线、系统降级改线与系统重规划三类执行分支。
+- “runtime 对接”当前应理解为路线事实已经进入 summary / projection / correlation 的共享数据面，而不是已经进入 `Mission Runtime` 的正式执行策略面。
+- “工作台与回放交互”当前应理解为任务详情中的最小路线驾驶舱切片与 evidence/correlation 消费口径，而不是已经存在独立的多路线工作台与路线时间线页面。
+
 ### 需求 9：路线推荐必须兼容自动驾驶等级
 
 路线推荐与选择必须能与 `task-autopilot-levels-l1-to-l5` 一致工作。
@@ -192,6 +212,51 @@
 - `L2` 下允许低风险路线自动推进，但关键点接管
 - `L3` 下允许标准任务在默认路线下自动闭环
 - `L4-L5` 不得被当前系统过度承诺
+
+### 需求 10：路线模式必须有统一产品语义与过渡兼容层
+
+系统必须为当前 route recommendation 中已经存在的路线模式建立统一产品语义，避免 `fast / standard / deep` 仅作为内部字符串存在。
+
+最小要求包括：
+
+- `fast` 对应“最快路线”的产品语义
+- `standard` 对应“最稳路线”的当前过渡语义
+- `deep` 对应“最深路线”的当前过渡语义
+- 必须说明这些模式与未来 `fastest / safest / deepest` 等更明确命名之间的兼容关系
+
+验收口径：
+
+- 必须明确每种模式的目标、适用任务、风险边界和默认接管倾向。
+- 必须明确当前为什么使用 `fast / standard / deep` 作为兼容层，而不是直接重命名 shared contract。
+- 不得把“最稳”写成“最低成本”或把“最深”写成“默认无限制执行”。
+
+### 需求 11：路线事件必须定义最小证据字段与选择历史口径
+
+系统必须为路线推荐、路线选择、路线锁定与路线重规划定义最小证据字段，使 route lane 能被 projection、panel、audit 与 replay 共同消费。
+
+最小事件必须覆盖：
+
+- `route.recommended`
+- `route.selected`
+- `route.locked`
+- `route.replanned`
+
+最小证据字段至少包括：
+
+- `eventType`
+- `at`
+- `actor`
+- `reason`
+- `fromRouteId`
+- `toRouteId`
+- `decisionId` 或可回溯的 route-selection 决策锚点
+- `selectedRouteId / recommendedRouteId` 的关联口径
+
+验收口径：
+
+- 必须说明哪些字段已经由当前 `route.evidence`、`selection.*`、`decisionHistory` 与 `evidence.correlation` 近似承接。
+- 必须明确当前还没有直接落地的字段，例如自动驾驶等级上下文与最终结果映射，不得冒充已实现。
+- 必须区分“路线选择历史”与“Mission Runtime 已正式消费该路线”的语义边界。
 
 ## 路线类型要求
 
@@ -275,6 +340,53 @@
 - 所选路线应映射到当前任务或 workflow 的上下文，而不是仅停留在前端内存。
 - 运行中发生的改线、降级、重规划，应进入 runtime evidence，并在 replay / audit 中可见。
 - 当前版本不要求已经具备精确成本预测或完整动态路线市场，但必须定义清楚可演进接口。
+
+## 需求审计备注（2026-04-25）
+
+本轮基于当前主仓中的直接代码与直接测试，对本 spec 的现实边界补一层保守校准：
+
+- 当前已经存在一条稳定的最小路线摘要 contract：`shared/mission/autopilot.ts` 中的 `MissionAutopilotSummary.route` 已承载 `candidateRoutes`、`recommendedRouteId`、`selectedRouteId`、`selectionStatus`、`selectionLocked`、`selection.*`、`evidence.*` 与 `replan.*`。
+- 当前已经存在一条稳定的 route-selection 投影链：`shared/__tests__/mission-autopilot.test.ts` 与 `server/tests/mission-routes.test.ts` 直接证明，resolved route-selection decision history 可以被提升为权威 `selectedRouteId` / `changedReason`，并在 `selectedRouteId` 缺失时从 decision payload 的 `candidateRoutes` 回填。
+- 当前 task detail 层已经形成最小产品承载：`client/src/lib/tasks-store.ts`、`client/src/components/tasks/TaskAutopilotPanel.tsx` 及其测试已稳定消费 `Selected / Recommended / Alternatives / Route Diff / Selection / Replan / Route Evidence`，因此“候选路线 + 已选路线 + 重规划摘要 + 证据关联”已经能在任务详情中被用户看见。
+- 当前 route-selection 决策提交还会保留 `selectedRouteOptionId`、`selectedRouteLabel`、`selectedRouteId` 与 `changedReason`，但这些字段目前应被视为 route summary / evidence 的输入线索，而不是新的独立产品 contract。
+- 当前默认推荐逻辑仍以 `shared/mission/autopilot.ts` 里的最小启发式为主，只能稳定说明 `mission.kind / waiting / risk / retry` 对 `fast / standard / deep` 的影响，尚未形成覆盖预算、治理约束与历史成功模式的正式推荐规则。
+- 当前 `/tasks` 工作台的路线能力仍以任务详情中的 route summary 展示为主，还没有形成“多路线对比 -> 恢复推荐 -> 确认执行”的工作台级 mutation 流。
+- 当前 replay / audit 侧已经能承接路线事件与关联索引，但还没有“初始推荐路线 -> 最终采用路线 -> 中途改线事件”的独立路线时间线 UI。
+- 当前“首批试点任务计划”仍应视为设计范围，而不是已落地实现；按现有实现边界，更适合先从 `analysis / research / chat` 这类低副作用任务开始，`nl-command` 与更高风险外部副作用任务仍应后置。
+
+本轮同时明确，以下需求边界仍未被直接代码 + 直接测试闭环支撑：
+
+- `最快 / 最稳 / 最深` 的统一产品语义仍未跨页面、跨任务域固化。
+- 与 `task-autopilot-levels-l1-to-l5` 的默认策略 / 切换边界映射尚未落地。
+- 规划期“切换路线 -> 恢复推荐 -> 确认执行”的完整交互流尚未闭环。
+- `Mission Runtime` 本体尚未被直接证明正式消费 `selectedRouteId`、锁定状态与改线原因作为执行输入。
+- `/tasks` 工作台的路线对比确认交互与 replay 页面的路线时间线尚未落地。
+
+## 需求审计备注（2026-04-26，按 design 闭环补记）
+
+本轮在不新增代码事实的前提下，把 route lane 里若干长期未完成的大项补到了“需求与设计已闭环”的程度。这里的“闭环”仅指本 spec 已经把目标、边界、输入输出合同与非目标写清，不代表对应 shared / server / client 功能已经实现。
+
+本轮新增明确的需求闭环包括：
+
+- `最快 / 最稳 / 最深` 的统一产品语义
+  - 要求现在不仅说明三条路线分别代表什么，还要求解释当前 `fast / standard / deep` 兼容层为何存在，以及与未来更明确命名的兼容边界。
+- 与 `task-autopilot-levels-l1-to-l5` 的映射
+  - 要求 route lane 自身就能说明不同等级下默认推荐倾向、切换自由度与自动改线边界，而不是完全依赖外部 spec 补语义。
+- 默认推荐规则
+  - 要求把治理前置条件、自动驾驶等级、任务类型、风险与治理强度、预算与时长约束、历史成功模式的优先级说明清楚。
+- 规划期切换与执行期改线
+  - 要求分别定义规划期的四步流程与执行期三类改线路径，并明确哪些动作必须走 mutation、哪些必须走 takeover。
+- 高风险接管、runtime 对接、事件证据字段
+  - 要求 route lane 自身定义高风险门控矩阵、Mission Runtime handoff 顺序，以及路线事件的最小字段和扩展字段。
+- `/tasks` 交互、replay 时间线与试点清单
+  - 要求给出工作台和回放的设计态输入约束、动作合同、展示节点，以及首批试点任务的准入/退出条件。
+
+本轮同时继续保守保留以下现实边界：
+
+- 当前真正已被代码证明的仍是 `route summary / projection / panel / evidence` 最小闭环；
+- `Mission Runtime` 仍未被直接证明正式消费 route selection 作为执行输入；
+- `/tasks` 工作台与 replay 路线时间线仍是设计态，不是现有页面；
+- 默认推荐完整 policy、系统降级改线与工作台 mutation 流仍不得表述为已实现。
 
 ## 依赖关系
 
