@@ -1,4 +1,5 @@
 export * from "./contracts.js";
+export * from "./autopilot.js";
 export * from "./api.js";
 export * from "./decision-templates.js";
 export * from "./socket.js";

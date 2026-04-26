@@ -18,6 +18,75 @@ import type {
   AigcMonitoringSessionDetail,
 } from "../aigc-monitoring.js";
 import type { GraphInstanceSnapshot } from "../workflow-graph.js";
+import type { MissionAutopilotSummary } from "./autopilot.js";
+
+export type {
+  MissionAutopilotBindingsSummary,
+  MissionAutopilotCandidateRoute,
+  MissionAutopilotConfidenceLevel,
+  MissionAutopilotControlAction,
+  MissionAutopilotControlActionType,
+  MissionAutopilotControlScope,
+  MissionAutopilotCurrentStateExplanation,
+  MissionAutopilotDeviationCategory,
+  MissionAutopilotDriveState,
+  MissionAutopilotDriveStateSummary,
+  MissionAutopilotDestinationAssumption,
+  MissionAutopilotDestinationClarificationPrompt,
+  MissionAutopilotDestinationConstraint,
+  MissionAutopilotDestinationConstraintDimension,
+  MissionAutopilotDestinationEvidence,
+  MissionAutopilotDestinationFieldSource,
+  MissionAutopilotDestinationFieldStatus,
+  MissionAutopilotDestinationGoalSummary,
+  MissionAutopilotDestinationInputSource,
+  MissionAutopilotDestinationSourceInput,
+  MissionAutopilotDestinationSuccessCriterion,
+  MissionAutopilotMissingInfoDetail,
+  MissionAutopilotDestinationMissingInformationItem,
+  MissionAutopilotEvidenceCorrelationIndex,
+  MissionAutopilotEvidenceSummary,
+  MissionAutopilotEvidenceTimelineItem,
+  MissionAutopilotEvidenceTrustLevel,
+  MissionAutopilotExecutionStatus,
+  MissionAutopilotExecutionView,
+  MissionAutopilotFleetSummary,
+  MissionAutopilotFleetRole,
+  MissionAutopilotFleetRoleStatus,
+  MissionAutopilotFleetRoleType,
+  MissionAutopilotExplanationSource,
+  MissionAutopilotRouteStatus,
+  MissionAutopilotRecommendationKind,
+  MissionAutopilotRecommendationReason,
+  MissionAutopilotRecoveryState,
+  MissionAutopilotRecoverySummary,
+  MissionAutopilotRemainingStepItem,
+  MissionAutopilotParsedDestination,
+  MissionAutopilotParsedDestinationSubGoal,
+  ParseMissionDestinationInput,
+  MissionAutopilotRiskLevel,
+  MissionAutopilotRouteChangeActor,
+  MissionAutopilotRouteEvidenceEvent,
+  MissionAutopilotRouteEvidenceEventType,
+  MissionAutopilotRouteEvidenceSummary,
+  MissionAutopilotRouteMode,
+  MissionAutopilotRouteReplanSummary,
+  MissionAutopilotRouteSummary,
+  MissionAutopilotRouteSelectionMode,
+  MissionAutopilotRouteSelectionStatus,
+  MissionAutopilotRouteSelectionSummary,
+  MissionAutopilotRouteStage,
+  MissionAutopilotRemainingStepsExplanation,
+  MissionAutopilotSummary,
+  MissionAutopilotExplanationSummary,
+  MissionAutopilotTakeoverSummary,
+  MissionAutopilotTakeoverOption,
+  MissionAutopilotTakeoverStatus,
+  MissionAutopilotTakeoverType,
+  MissionAutopilotTakeoverUrgency,
+  MissionAutopilotTimelineEventStatus,
+  MissionAutopilotTimelineEventType,
+} from "./autopilot.js";
 
 export const MISSION_API_ROUTES = {
   createTask: "/api/tasks",
@@ -194,9 +263,70 @@ export interface MissionProjectionSessionSummary {
   latestActivityAt: string | null;
 }
 
+export type MissionProjectionOrchestrationStatus =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "paused"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "terminated";
+
+export interface MissionProjectionControlActionSummary {
+  action: MissionOperatorActionType;
+  result: MissionOperatorActionRecord["result"];
+  requestedBy?: string;
+  reason?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export interface MissionProjectionWaitSummary {
+  active: boolean;
+  reason: string | null;
+  decisionId: string | null;
+  timeoutAt: string | null;
+}
+
+export interface MissionProjectionReplanSummary {
+  required: boolean;
+  active: boolean;
+  attempt: number;
+  reason: string | null;
+  triggerAction: MissionOperatorActionType | "system" | null;
+  updatedAt: string | null;
+}
+
+export interface MissionProjectionOrchestrationBindings {
+  missionId: string;
+  workflowId: string | null;
+  instanceId: string | null;
+  decisionId: string | null;
+  executorJobId: string | null;
+}
+
+export interface MissionProjectionOrchestrationView {
+  status: MissionProjectionOrchestrationStatus;
+  currentStageKey: string | null;
+  currentStageLabel: string | null;
+  blockingReason: string | null;
+  updatedAt: string;
+  bindings: MissionProjectionOrchestrationBindings;
+  controlActions: {
+    available: MissionOperatorActionType[];
+    recent: MissionProjectionControlActionSummary[];
+    lastAction: MissionProjectionControlActionSummary | null;
+  };
+  wait: MissionProjectionWaitSummary;
+  replan: MissionProjectionReplanSummary;
+}
+
 export interface MissionProjectionView {
   missionId: string;
   links: MissionProjectionLinks;
+  autopilotSummary?: MissionAutopilotSummary;
+  orchestration?: MissionProjectionOrchestrationView;
   workflow?: MissionProjectionWorkflowSummary;
   graph?: GraphInstanceSnapshot;
   monitoring?: {
