@@ -1439,6 +1439,192 @@ describe("mission autopilot builder", () => {
     );
   });
 
+  it("parses destination deliverables, success criteria, and constraints from stable labels and mapped mission fields", () => {
+    const mission = makeMission({
+      id: "destination-parser-rich-fields",
+      title: "生成发布复盘资料包",
+      sourceText: [
+        "请整理发布复盘资料包。",
+        "Deliverables: release-review.md; risk-register.csv.",
+        "交付物：执行摘要.md；路线图更新.xlsx",
+        "Success criteria: reviewers can approve the plan; metrics are traceable.",
+        "验收标准：复盘结论可直接进入评审；风险项都有负责人",
+        "Constraints: use internal telemetry only; no customer names.",
+        "限制：48 小时内完成；预算不超过 0 元",
+      ].join("\n"),
+      artifacts: [],
+      workPackages: [
+        {
+          id: "pkg-digest",
+          title: "Compile release digest",
+          deliverable: "release-digest.json",
+          status: "pending",
+        },
+      ],
+      decision: {
+        prompt: "Requirements: keep raw logs offline.",
+        options: [{ id: "continue", label: "Continue" }],
+        payload: {
+          missionDestination: {
+            deliverables: [
+              "committee-pack.pdf",
+              {
+                name: "owner-action-list.md",
+                description: "Action owner checklist",
+              },
+            ],
+            successCriteria: [
+              { description: "all open blockers have owners" },
+              { value: "approval note is ready for committee" },
+            ],
+            constraints: [
+              { value: "offline evidence only" },
+              { dimension: "format", description: "bilingual Markdown" },
+            ],
+          },
+          mappedWorkflowInput: {
+            runtimeGovernance: {
+              permissions: ["manager approval before publishing"],
+              budgets: ["no external spend"],
+              toolLimits: [{ value: "repository tools only" }],
+            },
+          },
+        },
+      },
+      decisionHistory: [
+        {
+          decisionId: "decision-rich-fields-history",
+          type: "approve",
+          prompt: "Confirm destination mapping.",
+          options: [{ id: "approve", label: "Approve" }],
+          payload: {
+            destination: {
+              expectedDeliverables: [
+                { fileName: "launch-readout.pptx" },
+                "qa-summary.md",
+              ],
+              acceptanceCriteria: [
+                "stakeholders can sign off without follow-up",
+              ],
+              requirements: [
+                { requirement: "source links stay internal" },
+              ],
+            },
+          },
+          resolved: {
+            optionId: "approve",
+            optionLabel: "Approve",
+          },
+          submittedAt: Date.now() - 1_000,
+        },
+      ],
+    });
+
+    const parsed = parseMissionDestination(mission);
+
+    expect(parsed.normalizedGoal.expectedDeliverables).toEqual(
+      expect.arrayContaining([
+        "release-digest.json",
+        "release-review.md",
+        "risk-register.csv.",
+        "执行摘要.md",
+        "路线图更新.xlsx",
+        "committee-pack.pdf",
+      ])
+    );
+    expect(parsed.successCriteria).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          description: "reviewers can approve the plan",
+          source: "explicit",
+          status: "confirmed",
+        }),
+        expect.objectContaining({
+          description: "metrics are traceable.",
+        }),
+        expect.objectContaining({
+          description: "复盘结论可直接进入评审",
+        }),
+        expect.objectContaining({
+          description: "风险项都有负责人",
+        }),
+        expect.objectContaining({
+          description: "all open blockers have owners",
+        }),
+        expect.objectContaining({
+          description: "approval note is ready for committee",
+          metricType: "review",
+        }),
+      ])
+    );
+    expect(parsed.constraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          value: "use internal telemetry only",
+          source: "explicit",
+          status: "confirmed",
+        }),
+        expect.objectContaining({
+          value: "no customer names.",
+        }),
+        expect.objectContaining({
+          value: "48 小时内完成",
+          dimension: "time",
+        }),
+        expect.objectContaining({
+          value: "预算不超过 0 元",
+          dimension: "budget",
+        }),
+        expect.objectContaining({
+          value: "offline evidence only",
+          dimension: "data-scope",
+        }),
+        expect.objectContaining({
+          value: "bilingual Markdown",
+          dimension: "format",
+        }),
+        expect.objectContaining({
+          value: "manager approval before publishing",
+          dimension: "permission",
+        }),
+        expect.objectContaining({
+          value: "no external spend",
+          dimension: "budget",
+        }),
+        expect.objectContaining({
+          value: "repository tools only",
+          dimension: "tool",
+        }),
+      ])
+    );
+    expect(parsed.mappedMissionContext.reviewInput).toMatchObject({
+      constraints: expect.arrayContaining([
+        "use internal telemetry only",
+        "offline evidence only",
+        "manager approval before publishing",
+      ]),
+      successCriteria: expect.arrayContaining([
+        "reviewers can approve the plan",
+        "all open blockers have owners",
+      ]),
+    });
+    expect(parsed.mappedWorkflowInput.plannerInput).toMatchObject({
+      constraints: expect.arrayContaining([
+        "预算不超过 0 元",
+        "repository tools only",
+      ]),
+      successCriteria: expect.arrayContaining([
+        "复盘结论可直接进入评审",
+        "approval note is ready for committee",
+      ]),
+    });
+    expect(parsed.mappedWorkflowInput.runtimeGovernance).toMatchObject({
+      permissions: expect.arrayContaining(["manager approval before publishing"]),
+      budgets: expect.arrayContaining(["预算不超过 0 元", "no external spend"]),
+      toolLimits: expect.arrayContaining(["repository tools only"]),
+    });
+  });
+
   it("exports route/takeover/evidence/explanation contracts through api and index barrels", () => {
     const mission = makeMission({
       status: "waiting",
@@ -1708,5 +1894,29 @@ describe("mission autopilot builder", () => {
         "lineage-node-3",
       ],
     });
+  });
+
+  it("keeps an explicit mission title as the destination goal when request context is broader", () => {
+    const mission = makeMission({
+      id: "destination-goal-fallback-boundary",
+      title: "Migrate billing dashboard",
+      sourceText:
+        "Prepare the broader finance workspace migration brief, including stakeholder notes and rollout context.",
+      summary:
+        "The broader workspace migration also includes support runbooks and reporting cleanup.",
+    });
+
+    const summary = buildMissionAutopilotSummary({ mission });
+    const parsed = parseMissionDestination(mission);
+
+    expect(summary.destination.goal).toBe("Migrate billing dashboard");
+    expect(summary.destination.request).toBe(
+      "Prepare the broader finance workspace migration brief, including stakeholder notes and rollout context."
+    );
+    expect(summary.destination.goal).not.toBe(summary.destination.request);
+    expect(parsed.normalizedGoal.title).toBe("Migrate billing dashboard");
+    expect(parsed.sourceInput.text).toBe(summary.destination.request);
+    expect(parsed.mappedMissionContext.title).toBe("Migrate billing dashboard");
+    expect(parsed.mappedWorkflowInput.goal).toBe("Migrate billing dashboard");
   });
 });

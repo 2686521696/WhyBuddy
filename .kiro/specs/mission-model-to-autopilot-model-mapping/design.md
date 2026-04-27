@@ -90,9 +90,9 @@
 
 | 工程事实字段 | 目标投影字段 | 说明 |
 | ---- | ---- | ---- |
-| mission.title / summary | destination.goal | 用户想达成的结果概述 |
+| mission.title | destination.goal | 用户想达成的结果概述；当前实现不让 summary/sourceText 反向覆盖明确标题 |
 | mission.input | destination.request | 原始任务请求 |
-| mission.context | destination.context | 当前已知背景 |
+| mission.summary / context | destination.context / confidence | 当前已知背景；summary 只能辅助 request、success、confidence 等语义，不作为 goal 覆盖来源 |
 | mission.constraints | destination.constraints | 时间、预算、权限、风格等限制 |
 | mission.successCriteria | destination.successCriteria | 成功定义 |
 | mission.metadata.deliverables | destination.deliverables | 预期交付物 |
@@ -126,6 +126,18 @@
 | `mission.waitingFor / mission.blocker / mission.decision?.type` | `destination.missingInfoDetails[]` | 当前可补充 impact 与 blocking 标记 |
 | `mission.summary / sourceText / events / artifacts / waitingFor / blocker / decision?.prompt` | `destination.confidence` | 当前 confidence 是基于多信号推断，而不是单字段透传 |
 | `mission.status / mission.artifacts` | `destination.successCriteria[]` | 当前按“Mission completes its current route / Artifacts are produced / Mission reaches delivered state”三类口径生成 |
+
+#### Destination fallback 边界审计（2026-04-27）
+
+本轮对 `Mission -> Destination` fallback 做了收口审计：当前 shared builder 的 `destination.goal` 只读取 `mission.title`，缺失时才使用 `Untitled mission` 默认值；`mission.sourceText` 与 `mission.summary` 只进入 `destination.request`、`normalizedGoal.summary`、success / confidence 等辅助语义，不应反向覆盖一个已经明确存在的 goal。
+
+因此，后续实现如果新增显式 `destination` / `goal` 字段，优先级应保持为：
+
+1. 显式 destination goal / locked goal（未来字段）
+2. `mission.title`
+3. 默认占位文案
+
+`sourceText`、`summary`、decision prompt、option description 与 event message 可以作为 request/context/evidence/confidence 的输入，但不能作为覆盖明确 goal 的宽 fallback。`shared/__tests__/mission-autopilot.test.ts` 已补充回归用例，覆盖 sourceText / summary 比 title 更宽时，`destination.goal`、parsed destination title 与 workflow planner goal 仍保持 title。
 
 这里需要明确两层边界：
 
@@ -401,6 +413,24 @@
 - workflow 可视化中的路线解释
 - session / task 中的等待输入和确认状态
 - replay / audit 中的驾驶状态与接管证据
+
+### 策略 3.1：前端状态映射边界（2026-04-26）
+
+前端不应把 `Mission / Workflow / Runtime / Decision` 再复制成一套长期平行模型。本轮前端落地的安全边界是三层状态：
+
+| 前端状态层 | 生命周期 | 主要事实来源 | 允许写入 | 不应承担 |
+| ---- | ---- | ---- | ---- | ---- |
+| `destination draft` | 用户输入到提交前 | launch composer、附件摘要、目的地 preview | 本地草稿、缺失字段提示、附件影响摘要 | 不持久化为 locked destination，不替代 parser 审计字段 |
+| `route planning` | 规划浮层打开到确认路线前 | `candidateRoutes`、`recommendedRouteId`、临时 `selectedRouteId` | 规划期选择、恢复推荐、确认执行意图 | 不直接改写 runtime route，不伪造 planner 输出 |
+| `mission projection` | 任务创建后到完成/回放 | `autopilotSummary`、mission projection、decision history、runtime evidence | 只通过正式 decision / route mutation / task action 写回 | 不从组件局部状态反推权威 route / takeover / evidence |
+
+`selectedRouteId` 的生命周期必须按阶段解释：
+
+1. 在 `route planning` 中，它是“待确认选择”，可以被 overlay 切换或恢复为推荐路线。
+2. 在确认执行后，它必须进入 route selection / mission projection 的权威摘要链，随后由 `autopilotSummary.route.selectedRouteId` 消费。
+3. 执行期如果发生改线，组件只能消费 `selection.mode = runtime_replanned`、`route.replan.*` 和 evidence 事件；不能只靠本地 `selectedRouteId` 覆盖运行时事实。
+
+这意味着 `useAutopilotRoutePlan`、`useAutopilotCockpitModel` 或等价 selector 的职责，是把 shared/server projection 投影成稳定 view model，而不是重新实现 planner、runtime 或 replay 逻辑。
 
 ### 策略 4：Web-AIGC 侧继续保留节点内部视角
 

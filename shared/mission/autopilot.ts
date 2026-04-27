@@ -841,9 +841,24 @@ const DESTINATION_SUCCESS_CRITERIA_LABELS = [
   "done when",
   "done criteria",
   "completion criteria",
+  "\u6210\u529f\u6761\u4ef6",
+  "\u9a8c\u6536\u6761\u4ef6",
   "成功标准",
   "验收标准",
   "完成标准",
+] as const;
+
+const DESTINATION_DELIVERABLE_LABELS = [
+  "deliverables",
+  "expected deliverables",
+  "expected outputs",
+  "outputs",
+  "artifacts",
+  "delivery package",
+  "\u4ea4\u4ed8\u7269",
+  "\u9884\u671f\u4ea4\u4ed8\u7269",
+  "\u4ea7\u51fa",
+  "\u8f93\u51fa",
 ] as const;
 
 const DESTINATION_CONSTRAINT_LABELS = [
@@ -862,6 +877,17 @@ const DESTINATION_CONSTRAINT_LABELS = [
   "scope",
   "tools",
   "tooling",
+  "\u65f6\u95f4",
+  "\u622a\u6b62\u65f6\u95f4",
+  "\u622a\u6b62\u65e5\u671f",
+  "\u9884\u7b97",
+  "\u6743\u9650",
+  "\u8f93\u51fa\u683c\u5f0f",
+  "\u683c\u5f0f",
+  "\u98ce\u683c",
+  "\u6570\u636e\u8303\u56f4",
+  "\u8303\u56f4",
+  "\u5de5\u5177",
   "限制",
   "约束",
   "要求",
@@ -875,6 +901,11 @@ const DESTINATION_SUB_GOAL_LABELS = [
   "milestones",
   "tasks",
   "plan",
+  "\u5b50\u76ee\u6807",
+  "\u6b65\u9aa4",
+  "\u91cc\u7a0b\u7891",
+  "\u4efb\u52a1",
+  "\u8ba1\u5212",
 ] as const;
 
 const DESTINATION_MISSING_INFO_LABELS = [
@@ -885,14 +916,172 @@ const DESTINATION_MISSING_INFO_LABELS = [
   "clarification needed",
   "needs clarification",
   "need to know",
+  "\u7f3a\u5931\u4fe1\u606f",
+  "\u5f85\u6f84\u6e05",
+  "\u9700\u8981\u6f84\u6e05",
+  "\u5f00\u653e\u95ee\u9898",
 ] as const;
 
 const DESTINATION_SECTION_LABELS = [
+  ...DESTINATION_DELIVERABLE_LABELS,
   ...DESTINATION_SUCCESS_CRITERIA_LABELS,
   ...DESTINATION_CONSTRAINT_LABELS,
   ...DESTINATION_SUB_GOAL_LABELS,
   ...DESTINATION_MISSING_INFO_LABELS,
 ] as const;
+
+const DESTINATION_STRUCTURED_VALUE_KEYS = {
+  deliverables: [
+    "deliverable",
+    "deliverables",
+    "expectedDeliverables",
+    "expected_deliverables",
+    "expectedOutputs",
+    "expected_outputs",
+    "output",
+    "outputs",
+    "artifact",
+    "artifacts",
+    "name",
+    "fileName",
+    "filename",
+    "title",
+    "value",
+    "description",
+  ],
+  successCriteria: [
+    "successCriteria",
+    "success_criteria",
+    "acceptanceCriteria",
+    "acceptance_criteria",
+    "definitionOfDone",
+    "definition_of_done",
+    "doneCriteria",
+    "done_criteria",
+    "criterion",
+    "criteria",
+    "description",
+    "value",
+    "text",
+    "summary",
+    "label",
+    "title",
+  ],
+  constraints: [
+    "constraints",
+    "constraint",
+    "requirements",
+    "requirement",
+    "guardrails",
+    "guardrail",
+    "deadline",
+    "dueDate",
+    "due_date",
+    "time",
+    "budget",
+    "budgets",
+    "permission",
+    "permissions",
+    "format",
+    "outputFormat",
+    "output_format",
+    "style",
+    "scope",
+    "dataScope",
+    "data_scope",
+    "tools",
+    "tooling",
+    "toolLimits",
+    "tool_limits",
+    "tool",
+    "governance",
+    "value",
+    "description",
+    "text",
+    "summary",
+    "label",
+  ],
+} as const;
+
+const DESTINATION_STRUCTURED_PATHS = {
+  deliverables: [
+    ["destination", "deliverables"],
+    ["destination", "expectedDeliverables"],
+    ["destination", "expectedOutputs"],
+    ["destination", "outputs"],
+    ["destination", "artifacts"],
+    ["autopilotDestination", "deliverables"],
+    ["autopilotDestination", "expectedDeliverables"],
+    ["missionDestination", "deliverables"],
+    ["missionDestination", "expectedDeliverables"],
+    ["normalizedGoal", "expectedDeliverables"],
+    ["goal", "expectedDeliverables"],
+    ["mappedMissionContext", "reviewInput", "deliverables"],
+    ["mappedWorkflowInput", "plannerInput", "deliverables"],
+    ["reviewInput", "deliverables"],
+    ["plannerInput", "deliverables"],
+    ["deliverables"],
+    ["expectedDeliverables"],
+    ["expectedOutputs"],
+    ["outputs"],
+  ],
+  successCriteria: [
+    ["destination", "successCriteria"],
+    ["destination", "acceptanceCriteria"],
+    ["destination", "definitionOfDone"],
+    ["autopilotDestination", "successCriteria"],
+    ["autopilotDestination", "acceptanceCriteria"],
+    ["missionDestination", "successCriteria"],
+    ["missionDestination", "acceptanceCriteria"],
+    ["mappedMissionContext", "reviewInput", "successCriteria"],
+    ["mappedWorkflowInput", "plannerInput", "successCriteria"],
+    ["reviewInput", "successCriteria"],
+    ["plannerInput", "successCriteria"],
+    ["successCriteria"],
+    ["acceptanceCriteria"],
+    ["definitionOfDone"],
+  ],
+  constraints: [
+    ["destination", "constraints"],
+    ["destination", "requirements"],
+    ["destination", "guardrails"],
+    ["autopilotDestination", "constraints"],
+    ["autopilotDestination", "requirements"],
+    ["missionDestination", "constraints"],
+    ["missionDestination", "requirements"],
+    ["mappedMissionContext", "reviewInput", "constraints"],
+    ["mappedWorkflowInput", "plannerInput", "constraints"],
+    ["mappedWorkflowInput", "runtimeGovernance"],
+    ["reviewInput", "constraints"],
+    ["plannerInput", "constraints"],
+    ["runtimeGovernance"],
+    ["constraints"],
+    ["requirements"],
+    ["guardrails"],
+  ],
+} as const;
+
+const DESTINATION_STRUCTURED_SKIP_KEYS = new Set([
+  "id",
+  "key",
+  "kind",
+  "type",
+  "source",
+  "status",
+  "required",
+  "blocking",
+  "confidence",
+  "metricType",
+  "dimension",
+  "appliesTo",
+  "evidenceRefs",
+  "metadata",
+  "version",
+  "createdAt",
+  "updatedAt",
+]);
+
+type DestinationStructuredField = keyof typeof DESTINATION_STRUCTURED_VALUE_KEYS;
 
 function buildDestinationEvidenceTexts(mission: MissionRecord): string[] {
   return uniqueNonEmpty(
@@ -944,8 +1133,12 @@ function splitTaggedDestinationItems(value: string): string[] {
 
   return uniqueNonEmpty(
     normalized
-      .split(/\s*(?:[;；|•]|\r?\n)\s*/g)
-      .map(item => item.replace(/^[\-\u2022•\d.)\s]+/, ""))
+      .split(/\s*(?:[;,\uff0c\uff1b\u3001\u2022|]|\r?\n)\s*/g)
+      .map(item =>
+        item
+          .replace(/^[\-\u2022*\s]+/, "")
+          .replace(/^\d+[.)]\s+/, "")
+      )
       .map(item => item.replace(/\s+/g, " ").trim())
       .map(trimText)
       .filter((item): item is string => Boolean(item)),
@@ -985,6 +1178,92 @@ function extractTaggedDestinationItems(
           if (items.length >= limit) {
             return items;
           }
+        }
+      }
+    }
+  }
+
+  return items;
+}
+
+function addUniqueDestinationItem(
+  items: string[],
+  seen: Set<string>,
+  value: string | null | undefined,
+  limit: number
+): boolean {
+  const normalized = trimText(value);
+  if (!normalized || seen.has(normalized)) {
+    return items.length >= limit;
+  }
+
+  seen.add(normalized);
+  items.push(normalized);
+  return items.length >= limit;
+}
+
+function collectDestinationStructuredValues(
+  value: unknown,
+  field: DestinationStructuredField
+): string[] {
+  if (typeof value === "string") {
+    return splitTaggedDestinationItems(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectDestinationStructuredValues(item, field));
+  }
+
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const keys = DESTINATION_STRUCTURED_VALUE_KEYS[field];
+  const values: string[] = [];
+
+  for (const key of keys) {
+    const candidate = value[key];
+    if (candidate === undefined) continue;
+    values.push(...collectDestinationStructuredValues(candidate, field));
+  }
+
+  if (values.length > 0) {
+    return values;
+  }
+
+  for (const [key, candidate] of Object.entries(value)) {
+    if (DESTINATION_STRUCTURED_SKIP_KEYS.has(key)) continue;
+    values.push(...collectDestinationStructuredValues(candidate, field));
+  }
+
+  return values;
+}
+
+function collectDestinationStructuredRoots(mission: MissionRecord): unknown[] {
+  return [
+    mission,
+    mission.projection,
+    mission.decision?.payload,
+    ...(mission.decisionHistory || []).map(entry => entry.payload),
+  ].filter((value): value is unknown => value !== undefined && value !== null);
+}
+
+function extractStructuredDestinationItems(
+  mission: MissionRecord,
+  field: DestinationStructuredField,
+  limit = 5
+): string[] {
+  const items: string[] = [];
+  const seen = new Set<string>();
+
+  for (const root of collectDestinationStructuredRoots(mission)) {
+    for (const path of DESTINATION_STRUCTURED_PATHS[field]) {
+      const value = readNestedValue(root, path);
+      if (value === undefined) continue;
+
+      for (const item of collectDestinationStructuredValues(value, field)) {
+        if (addUniqueDestinationItem(items, seen, item, limit)) {
+          return items;
         }
       }
     }
@@ -1674,12 +1953,38 @@ function buildRiskPoints(mission: MissionRecord): string[] {
 }
 
 function buildDeliverables(mission: MissionRecord): string[] {
-  const names = (mission.artifacts || [])
-    .map(artifact => trimText(artifact.name))
-    .filter((value): value is string => Boolean(value));
-  if (names.length > 0) {
-    return names.slice(0, 4);
+  const deliverables = new Set<string>();
+
+  for (const artifact of mission.artifacts || []) {
+    const name = trimText(artifact.name);
+    if (name) deliverables.add(name);
   }
+
+  for (const pkg of mission.workPackages || []) {
+    const deliverable = trimText(pkg.deliverable);
+    if (deliverable) deliverables.add(deliverable);
+  }
+
+  for (const item of extractTaggedDestinationItems(
+    buildDestinationEvidenceTexts(mission),
+    DESTINATION_DELIVERABLE_LABELS,
+    6
+  )) {
+    deliverables.add(item);
+  }
+
+  for (const item of extractStructuredDestinationItems(
+    mission,
+    "deliverables",
+    6
+  )) {
+    deliverables.add(item);
+  }
+
+  if (deliverables.size > 0) {
+    return Array.from(deliverables).slice(0, 6);
+  }
+
   return ["Mission result package"];
 }
 
@@ -1771,6 +2076,10 @@ function buildSuccessCriteria(mission: MissionRecord): string[] {
     buildDestinationEvidenceTexts(mission),
     DESTINATION_SUCCESS_CRITERIA_LABELS
   );
+  const structuredCriteria = extractStructuredDestinationItems(
+    mission,
+    "successCriteria"
+  );
   const destinationTaskTypes = buildDestinationTaskTypes(mission);
   if (mission.summary) {
     criteria.add("Mission summary is available");
@@ -1784,7 +2093,10 @@ function buildSuccessCriteria(mission: MissionRecord): string[] {
   for (const criterion of derivedCriteria) {
     criteria.add(criterion);
   }
-  if (derivedCriteria.length > 0) {
+  for (const criterion of structuredCriteria) {
+    criteria.add(criterion);
+  }
+  if (derivedCriteria.length > 0 || structuredCriteria.length > 0) {
     for (const criterion of buildTaskTypeDefaultSuccessCriteria(
       destinationTaskTypes.taskType
     )) {
@@ -1802,6 +2114,11 @@ function buildConstraints(mission: MissionRecord): string[] {
   const derivedConstraints = extractTaggedDestinationItems(
     buildDestinationEvidenceTexts(mission),
     DESTINATION_CONSTRAINT_LABELS,
+    12
+  );
+  const structuredConstraints = extractStructuredDestinationItems(
+    mission,
+    "constraints",
     12
   );
   if (mission.kind) {
@@ -1830,6 +2147,9 @@ function buildConstraints(mission: MissionRecord): string[] {
     constraints.add(`CPU limit: ${mission.securitySummary.cpuLimit}`);
   }
   for (const constraint of derivedConstraints) {
+    constraints.add(constraint);
+  }
+  for (const constraint of structuredConstraints) {
     constraints.add(constraint);
   }
   return Array.from(constraints);
@@ -2157,33 +2477,46 @@ function inferDestinationConstraintDimension(
 ): MissionAutopilotDestinationConstraintDimension {
   const normalized = value.toLowerCase();
   if (
+    normalized.includes("permission") ||
+    normalized.includes("approval") ||
+    normalized.includes("approve") ||
+    normalized.includes("redact") ||
+    normalized.includes("security") ||
+    normalized.includes("\u6743\u9650") ||
+    normalized.includes("\u5ba1\u6279") ||
+    normalized.includes("\u6279\u51c6")
+  ) {
+    return "permission";
+  }
+  if (
     normalized.includes("deadline") ||
     normalized.includes("before ") ||
     normalized.includes("time") ||
-    normalized.includes("date")
+    normalized.includes("date") ||
+    normalized.includes("\u5c0f\u65f6") ||
+    normalized.includes("\u65f6\u95f4") ||
+    normalized.includes("\u622a\u6b62") ||
+    normalized.includes("\u5b8c\u6210")
   ) {
     return "time";
   }
   if (
     normalized.includes("budget") ||
     normalized.includes("paid") ||
-    normalized.includes("cost")
+    normalized.includes("cost") ||
+    normalized.includes("spend") ||
+    normalized.includes("\u9884\u7b97") ||
+    normalized.includes("\u82b1\u8d39") ||
+    normalized.includes("\u652f\u51fa")
   ) {
     return "budget";
-  }
-  if (
-    normalized.includes("permission") ||
-    normalized.includes("approval") ||
-    normalized.includes("redact") ||
-    normalized.includes("security")
-  ) {
-    return "permission";
   }
   if (
     normalized.includes("format") ||
     normalized.includes("markdown") ||
     normalized.includes("deck") ||
-    normalized.includes("outline")
+    normalized.includes("outline") ||
+    normalized.includes("\u683c\u5f0f")
   ) {
     return "format";
   }
@@ -2191,14 +2524,20 @@ function inferDestinationConstraintDimension(
     normalized.includes("style") ||
     normalized.includes("tone") ||
     normalized.includes("concise") ||
-    normalized.includes("bilingual")
+    normalized.includes("bilingual") ||
+    normalized.includes("\u98ce\u683c")
   ) {
     return "style";
   }
   if (
     normalized.includes("scope") ||
     normalized.includes("train") ||
-    normalized.includes("internal evidence")
+    normalized.includes("internal evidence") ||
+    normalized.includes("telemetry") ||
+    normalized.includes("offline evidence") ||
+    normalized.includes("raw logs") ||
+    normalized.includes("source links") ||
+    normalized.includes("\u8303\u56f4")
   ) {
     return "data-scope";
   }

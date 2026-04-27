@@ -1682,6 +1682,104 @@ describe("tasks-store autopilot summary projection", () => {
     ]);
   });
 
+  it("preserves destination lock state across projected task summary and detail", async () => {
+    const mission = makeMission("destination-lock-state-projection") as MissionRecord & {
+      autopilotSummary?: unknown;
+    };
+
+    mission.autopilotSummary = {
+      version: "shared-autopilot/v1",
+      source: "shared-mission-projection",
+      destination: {
+        id: "destination-lock-state-projection",
+        goal: "Locked destination state",
+        request: "Keep destination lock state visible in cockpit detail.",
+        lock_state: "confirmed",
+        locked_at: "2026-04-27T09:00:00.000Z",
+        modified_at: "2026-04-27T10:00:00.000Z",
+        constraints: ["Use approved evidence only."],
+        successCriteria: ["Goal card renders the lock state."],
+        deliverables: ["locked-goal.md"],
+        missingInfo: [],
+      },
+      route: {
+        id: "route-destination-lock-state-projection",
+        label: "Projected route",
+        mode: "standard",
+      },
+      driveState: {
+        state: "executing",
+        riskLevel: "low",
+        confidence: "high",
+      },
+      takeover: {
+        required: false,
+        blocking: false,
+      },
+      execution: {
+        currentStepStatus: "running",
+      },
+      recovery: {
+        state: "healthy",
+        deviationCategory: "none",
+      },
+      evidence: {
+        eventCount: 1,
+        artifactCount: 1,
+        trustLevel: "verified",
+        gaps: [],
+        timeline: [],
+        correlation: {
+          missionId: mission.id,
+          workflowId: `workflow-${mission.id}`,
+          replayId: null,
+          sessionId: null,
+          timelineId: `${mission.id}:timeline`,
+          routeIds: [],
+          routeStageKeys: [],
+          runtimeEventIds: [],
+          decisionIds: [],
+          operatorActionIds: [],
+          auditEventIds: [`audit-${mission.id}:destination.locked`],
+          lineageIds: [],
+        },
+      },
+      explanation: {
+        current: "Locked destination state is preserved.",
+      },
+      bindings: {
+        missionId: mission.id,
+        workflowId: `workflow-${mission.id}`,
+        executorJobId: null,
+        instanceId: `instance-${mission.id}`,
+      },
+    };
+
+    mockListPlanets.mockResolvedValue({
+      ok: true,
+      planets: [makePlanet(mission.id)],
+      edges: [],
+    });
+    mockListMissions.mockResolvedValue({ ok: true, tasks: [mission] });
+
+    const useTasksStore = await importFreshStore();
+    await useTasksStore.getState().refresh();
+
+    const summary = useTasksStore.getState().tasks[0]?.autopilotSummary;
+    const detail = useTasksStore.getState().detailsById[mission.id].autopilotSummary;
+
+    expect(summary?.destination).toMatchObject({
+      lockState: "locked",
+      confirmedAt: "2026-04-27T09:00:00.000Z",
+      modifiedAt: "2026-04-27T10:00:00.000Z",
+    });
+    expect(detail?.destination).toMatchObject({
+      lockState: "locked",
+      confirmedAt: "2026-04-27T09:00:00.000Z",
+      modifiedAt: "2026-04-27T10:00:00.000Z",
+    });
+  });
+
   it("keeps planet-hydrated detail autopilot aligned with the planet summary chain", async () => {
     const mission = makeMission("planet-detail-alignment", {
       status: "running",

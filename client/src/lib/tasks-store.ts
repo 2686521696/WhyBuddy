@@ -128,6 +128,11 @@ type TaskAutopilotRemainingSteps = NonNullable<
 type TaskAutopilotDestinationSubGoal = NonNullable<
   MissionAutopilotSummary["destination"]["subGoals"]
 >[number];
+type TaskAutopilotDestinationLockState =
+  | "unconfirmed"
+  | "locked"
+  | "modified"
+  | "needs-reconfirm";
 
 export interface TaskAutopilotSummary
   extends Omit<MissionAutopilotSummary, "version" | "source"> {
@@ -135,6 +140,9 @@ export interface TaskAutopilotSummary
   source: string;
   destination: Omit<MissionAutopilotSummary["destination"], "subGoals"> & {
     subGoals?: TaskAutopilotDestinationSubGoal[];
+    lockState?: TaskAutopilotDestinationLockState | null;
+    confirmedAt?: string | null;
+    modifiedAt?: string | null;
     impact?: string | null;
     blockingReason?: string | null;
   };
@@ -1153,6 +1161,56 @@ function readAutopilotDestinationTaskType(
     value === "unknown"
     ? value
     : fallback;
+}
+
+function readAutopilotDestinationLockState(
+  value: unknown,
+  fallback: TaskAutopilotDestinationLockState | null
+): TaskAutopilotDestinationLockState | null {
+  const normalized =
+    typeof value === "string"
+      ? value.toLowerCase().replace(/[\s_]+/g, "-").trim()
+      : "";
+
+  if (
+    normalized === "locked" ||
+    normalized === "confirmed" ||
+    normalized === "goal-locked"
+  ) {
+    return "locked";
+  }
+  if (
+    normalized === "modified" ||
+    normalized === "changed" ||
+    normalized === "updated" ||
+    normalized === "edited"
+  ) {
+    return "modified";
+  }
+  if (
+    normalized === "needs-reconfirm" ||
+    normalized === "needs-reconfirmation" ||
+    normalized === "requires-reconfirm" ||
+    normalized === "requires-confirmation" ||
+    normalized === "needs-clarification" ||
+    normalized === "clarification-needed" ||
+    normalized === "missing-info" ||
+    normalized === "missing-information" ||
+    normalized === "blocked"
+  ) {
+    return "needs-reconfirm";
+  }
+  if (
+    normalized === "unconfirmed" ||
+    normalized === "unlocked" ||
+    normalized === "draft" ||
+    normalized === "open" ||
+    normalized === "pending"
+  ) {
+    return "unconfirmed";
+  }
+
+  return fallback;
 }
 
 function readSyntheticWorkflowStatus(
@@ -2802,6 +2860,59 @@ function normalizeAutopilotSummary(
         .filter((item): item is string => item !== null),
     ])
   );
+  const destinationLock = isRecord(destination.lock) ? destination.lock : {};
+  const normalizedDestinationConfirmedAt = readNullableTextFromCandidates(
+    [
+      destination.confirmedAt,
+      destination.confirmed_at,
+      destination.lockedAt,
+      destination.locked_at,
+      destinationLock.confirmedAt,
+      destinationLock.confirmed_at,
+      destinationLock.lockedAt,
+      destinationLock.locked_at,
+    ],
+    fallback.destination.confirmedAt ?? null
+  );
+  const normalizedDestinationModifiedAt = readNullableTextFromCandidates(
+    [
+      destination.modifiedAt,
+      destination.modified_at,
+      destination.updatedAt,
+      destination.updated_at,
+      destination.changedAt,
+      destination.changed_at,
+      destinationLock.modifiedAt,
+      destinationLock.modified_at,
+      destinationLock.updatedAt,
+      destinationLock.updated_at,
+    ],
+    fallback.destination.modifiedAt ?? null
+  );
+  const normalizedDestinationLockState =
+    readAutopilotDestinationLockState(
+      readNullableTextFromCandidates(
+        [
+          destination.lockState,
+          destination.lock_state,
+          destination.goalLockState,
+          destination.goal_lock_state,
+          destination.status,
+          destinationLock.state,
+          destinationLock.lockState,
+          destinationLock.lock_state,
+        ],
+        null
+      ),
+      fallback.destination.lockState ?? null
+    ) ??
+    (normalizedMissingInfo.length > 0
+      ? "needs-reconfirm"
+      : normalizedDestinationModifiedAt
+        ? "modified"
+        : normalizedDestinationConfirmedAt
+          ? "locked"
+          : null);
 
   return {
     version: readText(value.version, fallback.version),
@@ -2914,6 +3025,9 @@ function normalizeAutopilotSummary(
         ],
         fallback.destination.suggestedClarifications ?? []
       ),
+      lockState: normalizedDestinationLockState,
+      confirmedAt: normalizedDestinationConfirmedAt,
+      modifiedAt: normalizedDestinationModifiedAt,
       impact: normalizedDestinationImpact,
       blockingReason: normalizedDestinationBlockingReason,
     },
