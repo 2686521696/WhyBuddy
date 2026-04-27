@@ -6,6 +6,7 @@ import {
   SIDEBAR_NAV_ITEMS,
   type SidebarNavigationItem,
 } from "@/components/navigation-config";
+import { SidebarStatusBlock } from "@/components/SidebarStatusBlock";
 import {
   Tooltip,
   TooltipContent,
@@ -205,6 +206,9 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
           />
         </button>
       </div>
+
+      {/* Status Indicators */}
+      <SidebarStatusBlock collapsed={collapsed} />
 
       {/* User Info */}
       <SidebarUserBlock collapsed={collapsed} />
