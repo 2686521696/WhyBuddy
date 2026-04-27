@@ -400,6 +400,12 @@ cube-pets-office/
 
 ---
 
+## 友链
+
+- [LINUX DO](https://linux.do/) - 认可社区。
+
+---
+
 ## 常见问题
 
 ### 我没有安装 `pnpm`

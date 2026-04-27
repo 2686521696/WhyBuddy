@@ -453,6 +453,12 @@ If you want to start from key entrypoints, read these first:
 
 ---
 
+## Friendly Links
+
+- [LINUX DO](https://linux.do/) - Recognized community / 认可社区.
+
+---
+
 ## FAQ
 
 ### I do not have `pnpm` installed
