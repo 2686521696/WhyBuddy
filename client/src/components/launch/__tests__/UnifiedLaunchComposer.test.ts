@@ -7,6 +7,7 @@ import {
   getLaunchRuntimeLabel,
 } from "../LaunchRuntimeMeta";
 import {
+  UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS,
   getUnifiedLaunchRouteHint,
   getUnifiedLaunchSubmitLabel,
 } from "../UnifiedLaunchComposer";
@@ -79,6 +80,15 @@ describe("UnifiedLaunchComposer helper logic", () => {
     expect(getLaunchRuntimeLabel("zh-CN", "frontend")).toBe("当前：前端预览");
     expect(getLaunchRuntimeLabel("zh-CN", "advanced")).toBe("当前：高级执行");
     expect(getLaunchAttachmentCountLabel("zh-CN", 2)).toBe("已附 2 个文件");
+  });
+  it("declares destination preview explanation layer markers", () => {
+    expect([...UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS]).toEqual([
+      "destination-preview",
+      "confidence",
+      "attachment-influence",
+      "missing-waypoints",
+      "waypoints-complete",
+    ]);
   });
 });
 

@@ -5,17 +5,24 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
 import { LaunchAttachmentSection } from "@/components/launch/LaunchAttachmentSection";
+import { AutopilotLaunchEmptyState } from "@/components/launch/AutopilotLaunchEmptyState";
 import { LaunchOperatorActionRail } from "@/components/launch/LaunchOperatorActionRail";
+import { RoutePlanningOverlay } from "@/components/launch/RoutePlanningOverlay";
 import { LaunchRuntimeMeta } from "@/components/launch/LaunchRuntimeMeta";
 import { ClarificationPanel } from "@/components/nl-command/ClarificationPanel";
 import { CommandInput } from "@/components/nl-command/CommandInput";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { Button } from "@/components/ui/button";
+import {
+  AUTOPILOT_LAUNCH_EXAMPLES,
+  buildLaunchDestinationPreview,
+  type AutopilotLaunchExample,
+  type LaunchDestinationPreview,
+} from "@/lib/autopilot-launch-examples";
 import { useI18n } from "@/i18n";
 import { CAN_USE_ADVANCED_RUNTIME } from "@/lib/deploy-target";
 import {
   buildLaunchRoutePlan,
-  type LaunchRouteCandidate,
   type LaunchRouteCandidateId,
 } from "@/lib/launch-router";
 import {
@@ -107,169 +114,215 @@ export interface UnifiedWorkflowResolution extends WorkflowLaunchResult {
   requestedAt: number;
 }
 
-function getCandidateCopy(locale: string, candidate: LaunchRouteCandidate) {
-  switch (candidate.id) {
-    case "clarify-first":
-      return {
-        title: t(locale, "先补路标", "Clarify waypoints"),
-        eta: t(locale, "最稳", "Safest"),
-        detail: t(
-          locale,
-          "目的地不够清晰时，先问关键问题，再规划路线。",
-          "When the destination is unclear, ask key questions before planning."
-        ),
-      };
-    case "fast-route":
-      return {
-        title: t(locale, "最快路线", "Fastest route"),
-        eta: t(locale, "少接管", "Low takeover"),
-        detail: t(
-          locale,
-          "直接创建 mission，优先快速产出和短反馈环。",
-          "Create a mission directly for fast output and a short feedback loop."
-        ),
-      };
-    case "standard-route":
-      return {
-        title: t(locale, "标准路线", "Standard route"),
-        eta: t(locale, "推荐", "Recommended"),
-        detail: t(
-          locale,
-          "先解析目的地，再规划路线、编队执行、审阅证据。",
-          "Parse destination, plan route, form fleet, execute, and review evidence."
-        ),
-      };
-    case "deep-route":
-      return {
-        title: t(locale, "深度路线", "Deep route"),
-        eta: t(locale, "更完整", "More complete"),
-        detail: t(
-          locale,
-          "进入高级编排，适合附件、团队分工和多阶段交付。",
-          "Use advanced orchestration for attachments, team split, and multi-stage delivery."
-        ),
-      };
-    case "upgrade-runtime":
-      return {
-        title: t(locale, "切换高级执行", "Switch runtime"),
-        eta: t(locale, "需确认", "Needs confirm"),
-        detail: t(
-          locale,
-          "当前目的地需要浏览器、命令、沙盒或容器能力。",
-          "This destination needs browser, command, sandbox, or container capabilities."
-        ),
-      };
+function getPreviewConfidenceClass(confidence: LaunchDestinationPreview["confidence"]) {
+  if (confidence === "high") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
+  if (confidence === "medium") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-rose-200 bg-rose-50 text-rose-700";
 }
 
-function localizeCandidateStage(locale: string, value: string): string {
-  const zh: Record<string, string> = {
-    destination: "目的地",
-    clarification: "澄清",
-    route: "路线",
-    fleet: "编队",
-    execution: "执行",
-    review: "审阅",
-    evidence: "证据",
-  };
-  const en: Record<string, string> = {
-    destination: "Destination",
-    clarification: "Clarify",
-    route: "Route",
-    fleet: "Fleet",
-    execution: "Execute",
-    review: "Review",
-    evidence: "Evidence",
-  };
-  return locale === "zh-CN" ? (zh[value] ?? value) : (en[value] ?? value);
-}
-
-function localizeCandidateDisabledReason(
+function getPreviewConfidenceLabel(
   locale: string,
-  value: LaunchRouteCandidate["disabledReason"]
-): string | null {
-  switch (value) {
-    case "needs_destination_detail":
-      return t(locale, "需先补全目的地", "Needs destination details");
-    case "requires_runtime_upgrade":
-      return t(locale, "需先切高级执行", "Needs advanced runtime");
-    case "not_needed":
-      return t(locale, "当前不推荐", "Not recommended now");
-    default:
-      return null;
+  confidence: LaunchDestinationPreview["confidence"]
+) {
+  if (confidence === "high") {
+    return t(locale, "高置信", "High confidence");
+  }
+  if (confidence === "medium") {
+    return t(locale, "中置信", "Medium confidence");
+  }
+  return t(locale, "需补路标", "Needs waypoints");
+}
+
+export const UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS = [
+  "destination-preview",
+  "confidence",
+  "attachment-influence",
+  "missing-waypoints",
+  "waypoints-complete",
+] as const;
+
+function getMissingFieldLabel(
+  locale: string,
+  field: LaunchDestinationPreview["missingFields"][number]
+) {
+  switch (field) {
+    case "goal":
+      return t(locale, "目标", "Goal");
+    case "deliverable":
+      return t(locale, "交付物", "Deliverable");
+    case "constraints":
+      return t(locale, "约束", "Constraints");
+    case "timeline":
+      return t(locale, "时间线", "Timeline");
+    case "successCriteria":
+      return t(locale, "成功标准", "Success criteria");
   }
 }
 
-function RouteCandidateCard({
-  candidate,
-  locale,
-  selected,
-  onSelect,
+function PreviewValue({
+  label,
+  value,
 }: {
-  candidate: LaunchRouteCandidate;
-  locale: string;
-  selected: boolean;
-  onSelect: (candidate: LaunchRouteCandidate) => void;
+  label: string;
+  value: string;
 }) {
-  const copy = getCandidateCopy(locale, candidate);
-  const disabledReason = localizeCandidateDisabledReason(
-    locale,
-    candidate.disabledReason
+  return (
+    <div className="rounded-[12px] border border-white/80 bg-white/64 px-2 py-1.5">
+      <div className="text-[8px] font-bold uppercase tracking-[0.16em] text-stone-400">
+        {label}
+      </div>
+      <div className="mt-0.5 line-clamp-2 text-[10px] font-semibold leading-4 text-stone-700">
+        {value}
+      </div>
+    </div>
   );
+}
+
+function DestinationPreviewCard({
+  preview,
+  locale,
+}: {
+  preview: LaunchDestinationPreview;
+  locale: string;
+}) {
+  const missingLabels = preview.missingFields.map(field =>
+    getMissingFieldLabel(locale, field)
+  );
+  const constraintText =
+    preview.constraints.length > 0
+      ? preview.constraints.join(" / ")
+      : t(locale, "暂未识别", "Not detected");
+  const successText =
+    preview.successCriteria.length > 0
+      ? preview.successCriteria.join(" / ")
+      : t(locale, "暂未识别", "Not detected");
 
   return (
-    <button
-      type="button"
-      disabled={!candidate.available}
-      aria-pressed={selected}
-      onClick={() => onSelect(candidate)}
-      className={cn(
-        "min-w-0 rounded-[14px] border px-2 py-2 text-left transition-all",
-        selected
-          ? "border-[#d07a4f] bg-[#fff7ed] shadow-[0_12px_28px_rgba(184,111,69,0.14)]"
-          : "border-[#ead8c3]/80 bg-white/78 hover:border-[#d9a47c] hover:bg-[#fffaf4]",
-        !candidate.available && "cursor-not-allowed opacity-55"
-      )}
+    <div
+      className="mt-2 rounded-[18px] border border-[#d8e6dd]/80 bg-[linear-gradient(135deg,rgba(247,253,249,0.94),rgba(255,248,239,0.82))] p-2 shadow-[0_12px_30px_rgba(75,105,85,0.08)] motion-reduce:transition-none"
+      data-testid="autopilot-destination-preview-card"
+      data-explanation-layer={UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS[0]}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-[11px] font-bold text-stone-800">
-            {copy.title}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#267064]">
+            {t(locale, "目的地预览", "Destination preview")}
           </div>
-          <div className="mt-0.5 text-[9px] leading-3 text-stone-500">
-            {copy.detail}
+          <div className="mt-0.5 text-[10px] leading-4 text-stone-600">
+            {t(
+              locale,
+              "先看系统理解到的目标、交付物和缺口，再选择路线发车。",
+              "Review the interpreted goal, deliverable, and gaps before choosing a route."
+            )}
           </div>
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-semibold",
-            candidate.recommended
-              ? "bg-[#d07a4f] text-white"
-              : "bg-stone-100 text-stone-500"
+            "rounded-full border px-2 py-1 text-[9px] font-semibold",
+            getPreviewConfidenceClass(preview.confidence)
           )}
+          data-explanation-layer={UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS[1]}
         >
-          {candidate.recommended ? t(locale, "推荐", "Best") : copy.eta}
+          {getPreviewConfidenceLabel(locale, preview.confidence)}
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {candidate.stages.slice(0, 5).map(stage => (
+
+      <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
+        <PreviewValue label={t(locale, "目标", "Goal")} value={preview.goal} />
+        <PreviewValue
+          label={t(locale, "交付物", "Deliverable")}
+          value={preview.deliverable}
+        />
+        <PreviewValue
+          label={t(locale, "时间线", "Timeline")}
+          value={preview.timeline ?? t(locale, "暂未识别", "Not detected")}
+        />
+        <PreviewValue
+          label={t(locale, "推荐模式", "Route mode")}
+          value={preview.route.mode}
+        />
+      </div>
+
+      <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        <PreviewValue
+          label={t(locale, "约束", "Constraints")}
+          value={constraintText}
+        />
+        <PreviewValue
+          label={t(locale, "成功标准", "Success criteria")}
+          value={successText}
+        />
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-semibold">
+        <span
+          className="rounded-full border border-[#d8e6dd] bg-white/70 px-2 py-0.5 text-[#267064]"
+          data-explanation-layer={UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS[2]}
+        >
+          {preview.attachmentInfluence.summary}
+        </span>
+        {missingLabels.length > 0 ? (
           <span
-            key={stage}
-            className="rounded-full border border-[#ead8c3]/70 bg-white/72 px-1.5 py-0.5 text-[8px] font-semibold text-[#9a5d32]"
+            className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700"
+            data-explanation-layer={UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS[3]}
           >
-            {localizeCandidateStage(locale, stage)}
+            {t(locale, "缺少：", "Missing: ")}
+            {missingLabels.join(" / ")}
           </span>
+        ) : (
+          <span
+            className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700"
+            data-explanation-layer={UNIFIED_LAUNCH_EXPLANATION_LAYER_MARKERS[4]}
+          >
+            {t(locale, "目的地路标完整", "Destination waypoints complete")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LaunchDestinationExamples({
+  locale,
+  onSelect,
+}: {
+  locale: string;
+  onSelect: (example: AutopilotLaunchExample) => void;
+}) {
+  return (
+    <div className="mt-2 rounded-[18px] border border-[#ead8c3]/70 bg-[#fffaf4]/72 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9a5d32]">
+            {t(locale, "目的地示例", "Destination examples")}
+          </div>
+          <div className="mt-0.5 text-[10px] leading-4 text-stone-600">
+            {t(
+              locale,
+              "不确定怎么输入时，先点一个示例；系统会填入目的地并立即生成路线预览。",
+              "Pick an example to fill a destination and immediately preview routes."
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {AUTOPILOT_LAUNCH_EXAMPLES.map(example => (
+          <button
+            key={example.kind}
+            type="button"
+            className="group rounded-full border border-[#ead8c3]/80 bg-white/78 px-2.5 py-1 text-left text-[10px] font-semibold text-[#9a5d32] transition hover:border-[#d9a47c] hover:bg-[#fff7ed]"
+            onClick={() => onSelect(example)}
+            title={example.description}
+          >
+            {locale === "zh-CN" ? example.label : example.englishLabel}
+          </button>
         ))}
       </div>
-      <div className="mt-1.5 text-[8px] font-semibold text-stone-500">
-        {disabledReason ||
-          t(
-            locale,
-            `接管点 ${candidate.takeoverPoints.length}`,
-            `${candidate.takeoverPoints.length} takeover point(s)`
-          )}
-      </div>
-    </button>
+    </div>
   );
 }
 
@@ -358,12 +411,19 @@ export function UnifiedLaunchComposer({
       candidate => candidate.id === routePlan.recommendedRouteId
     ) ??
     routePlan.candidates[0];
-  const recommendedCandidate =
-    routePlan.candidates.find(
-      candidate => candidate.id === routePlan.recommendedRouteId
-    ) ?? selectedCandidate;
   const hasDraftDestination =
     draftText.trim().length > 0 || attachments.length > 0;
+  const destinationPreview = useMemo(
+    () =>
+      hasDraftDestination
+        ? buildLaunchDestinationPreview({
+            text: draftText,
+            attachments,
+            runtimeMode,
+          })
+        : null,
+    [attachments, draftText, hasDraftDestination, runtimeMode]
+  );
   const commandHistory = useMemo(
     () => commands.map(command => command.commandText),
     [commands]
@@ -377,15 +437,23 @@ export function UnifiedLaunchComposer({
   }, [decision.kind, locale, selectedCandidate?.launchKind, submitting]);
   const hasActiveClarification = currentDialog?.status === "active";
 
-  async function handleSubmit(commandText: string) {
+  async function handleSubmit(
+    commandText: string,
+    routeIdOverride?: LaunchRouteCandidateId
+  ) {
     clearError();
     if (!commandText.trim() || submitting) {
       return;
     }
 
+    const submissionCandidate =
+      routePlan.candidates.find(
+        candidate => candidate.id === routeIdOverride && candidate.available
+      ) ?? selectedCandidate;
+
     if (
       decision.kind === "upgrade-required" ||
-      selectedCandidate?.launchKind === "upgrade-required"
+      submissionCandidate?.launchKind === "upgrade-required"
     ) {
       if (!CAN_USE_ADVANCED_RUNTIME) {
         toast(
@@ -414,7 +482,7 @@ export function UnifiedLaunchComposer({
         text: commandText,
         attachments,
         runtimeMode,
-        selectedRouteId: selectedCandidate?.id,
+        selectedRouteId: submissionCandidate?.id,
         userId: "current-user",
         priority: "medium",
       });
@@ -589,6 +657,17 @@ export function UnifiedLaunchComposer({
     }
   }
 
+  async function handleExampleSelected(example: AutopilotLaunchExample) {
+    clearError();
+    setDraftText(example.input.text);
+    setAttachments(example.input.attachments ?? []);
+    setSelectedRouteId(example.routeId);
+    setAttachmentError(null);
+    if (example.input.runtimeMode !== runtimeMode) {
+      await setRuntimeMode(example.input.runtimeMode);
+    }
+  }
+
   const composerInputShell = (
     <div className="rounded-[16px] bg-white/82 p-2.5">
       <CommandInput
@@ -610,61 +689,38 @@ export function UnifiedLaunchComposer({
         hideSubmitButton
       />
 
+      {!hasDraftDestination ? (
+        <AutopilotLaunchEmptyState
+          locale={locale}
+          onSelectExample={example => {
+            void handleExampleSelected(example);
+          }}
+        />
+      ) : null}
+
+      {destinationPreview ? (
+        <DestinationPreviewCard preview={destinationPreview} locale={locale} />
+      ) : null}
+
       {hasDraftDestination ? (
-        <div className="mt-2 rounded-[18px] border border-[#ead8c3]/80 bg-[linear-gradient(135deg,rgba(255,248,239,0.96),rgba(250,238,224,0.78))] p-2 shadow-[0_14px_34px_rgba(128,82,45,0.08)]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9a5d32]">
-                {t(locale, "自动驾驶路线规划", "Autopilot route plan")}
-              </div>
-              <div className="mt-0.5 text-[10px] leading-4 text-stone-600">
-                {t(
-                  locale,
-                  "输入目的地后先弹出候选路线，确认路线再启动执行。",
-                  "After a destination is entered, route candidates appear before execution starts."
-                )}
-              </div>
-            </div>
-            <div className="shrink-0 rounded-full border border-[#e6c5a7] bg-white/80 px-2 py-1 text-[9px] font-semibold text-[#9a5d32]">
-              {t(locale, "推荐：", "Best: ")}
-              {recommendedCandidate
-                ? getCandidateCopy(locale, recommendedCandidate).title
-                : "-"}
-            </div>
-          </div>
-
-          <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-5">
-            {routePlan.candidates.map(candidate => (
-              <RouteCandidateCard
-                key={candidate.id}
-                candidate={candidate}
-                locale={locale}
-                selected={candidate.id === selectedCandidate?.id}
-                onSelect={item => {
-                  if (item.available) {
-                    setSelectedRouteId(item.id);
-                  }
-                }}
-              />
-            ))}
-          </div>
-
-          {selectedCandidate ? (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-white/80 bg-white/60 px-2 py-1.5 text-[9px] text-stone-600">
-              <span className="font-semibold text-stone-700">
-                {t(locale, "当前路线：", "Selected route: ")}
-                {getCandidateCopy(locale, selectedCandidate).title}
-              </span>
-              <span>
-                {t(locale, "接管点 ", "Takeover points ")}
-                {selectedCandidate.takeoverPoints.length}
-                {" · "}
-                {t(locale, "阶段 ", "Stages ")}
-                {selectedCandidate.stages.length}
-              </span>
-            </div>
-          ) : null}
-        </div>
+        <RoutePlanningOverlay
+          routePlan={routePlan}
+          selectedRouteId={selectedCandidate?.id ?? selectedRouteId}
+          locale={locale}
+          onSelect={item => {
+            if (item.available) {
+              setSelectedRouteId(item.id);
+            }
+          }}
+          onConfirmRoute={item => {
+            if (item.available) {
+              setSelectedRouteId(item.id);
+              void handleSubmit(draftText, item.id);
+            }
+          }}
+          confirming={submitting}
+          confirmDisabled={!draftText.trim() || submitting}
+        />
       ) : null}
 
       <LaunchRuntimeMeta
