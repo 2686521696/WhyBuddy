@@ -84,7 +84,7 @@ function makeDetail(
 }
 
 describe("TasksCockpitDetail runtime evidence handoff", () => {
-  it("keeps the cockpit detail copy aligned with deferred runtime evidence", () => {
+  it("renders RightInfoPanel three-section layout with deferred runtime evidence in dialog", () => {
     const markup = renderToStaticMarkup(
       <TasksCockpitDetail
         detail={makeDetail()}
@@ -95,8 +95,12 @@ describe("TasksCockpitDetail runtime evidence handoff", () => {
       />
     );
 
-    expect(markup).toContain("深层工作区");
-    expect(markup).toContain("运行证据统一回到底部折叠区");
-    expect(markup).toContain("完整详情工作区");
+    // After redesign, TasksCockpitDetail delegates to RightInfoPanel
+    // which renders three sections instead of the old Accordion layout.
+    // Runtime evidence is now accessible via the "View full details" dialog.
+    expect(markup).toContain("任务概览");
+    expect(markup).toContain("实时进展");
+    expect(markup).toContain("近期动态");
+    expect(markup).toContain("查看完整详情");
   });
 });
