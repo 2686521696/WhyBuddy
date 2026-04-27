@@ -26,7 +26,8 @@ import { toast } from "sonner";
 
 import { ExecutorStatusPanel } from "@/components/ExecutorStatusPanel";
 import { ExecutorTerminalPanel } from "@/components/ExecutorTerminalPanel";
-import { UnifiedLaunchComposer } from "@/components/launch/UnifiedLaunchComposer";
+import { LaunchPanelShell } from "@/components/launch/LaunchPanelShell";
+import type { UnifiedWorkflowResolution } from "@/components/launch/UnifiedLaunchComposer";
 import { ClarificationPanel } from "@/components/nl-command/ClarificationPanel";
 import { ArtifactListBlock } from "@/components/tasks/ArtifactListBlock";
 import { ArtifactPreviewDialog } from "@/components/tasks/ArtifactPreviewDialog";
@@ -206,6 +207,7 @@ export function OfficeTaskCockpit({
   const [pendingLaunch, setPendingLaunch] =
     useState<OfficeLaunchResolution | null>(null);
   const [launcherContextExpanded, setLauncherContextExpanded] = useState(false);
+  const [launchPanelOpen, setLaunchPanelOpen] = useState(false);
   const [runtimeDockTab, setRuntimeDockTab] = useState<
     "support" | "logs" | "artifacts" | "runtime"
   >("support");
@@ -1027,35 +1029,19 @@ export function OfficeTaskCockpit({
         </div>
 
         <div className="overflow-hidden px-0.5 pb-0.5 pt-0.5">
-          <UnifiedLaunchComposer
-            createMission={createMission}
-            activeTaskTitle={selectedTaskSummary?.title}
-            activeTaskDetail={selectedDetail}
-            operatorActionLoading={
-              activeTaskId
-                ? (operatorActionLoadingByMissionId[activeTaskId] ?? {})
-                : {}
-            }
-            onSubmitOperatorAction={handleSubmitOperatorAction}
-            onTaskResolved={handleTaskHubResolved}
-            compact
-            bare
-            dense
-            hideHeader
-            hideInputLabel
-            hideClarificationPanel
-            className="w-full"
-            onWorkflowResolved={resolution => {
-              setPendingLaunch({
-                workflowId: resolution.workflowId,
-                directive: resolution.directive,
-                attachmentCount: resolution.attachmentCount,
-                requestedAt: resolution.requestedAt,
-                missionId: resolution.missionId,
-              });
-              setActiveTab("flow");
+          <button
+            type="button"
+            onClick={() => setLaunchPanelOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: "var(--primary, #0f172a)",
+              color: "var(--primary-foreground, #ffffff)",
             }}
-          />
+            data-testid="launch-panel-trigger"
+          >
+            <Plus className="size-4" />
+            {t(locale, "新建任务", "New Task")}
+          </button>
         </div>
       </div>
 
@@ -1861,6 +1847,27 @@ export function OfficeTaskCockpit({
           }}
         />
       ) : null}
+
+      <LaunchPanelShell
+        open={launchPanelOpen}
+        onClose={() => setLaunchPanelOpen(false)}
+        createMission={createMission}
+        onTaskResolved={result => {
+          handleTaskHubResolved(result);
+          setLaunchPanelOpen(false);
+        }}
+        onWorkflowResolved={resolution => {
+          setPendingLaunch({
+            workflowId: resolution.workflowId,
+            directive: resolution.directive,
+            attachmentCount: resolution.attachmentCount,
+            requestedAt: resolution.requestedAt,
+            missionId: resolution.missionId,
+          });
+          setActiveTab("flow");
+          setLaunchPanelOpen(false);
+        }}
+      />
     </div>
   );
 }
