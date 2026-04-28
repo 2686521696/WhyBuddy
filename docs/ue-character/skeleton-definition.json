@@ -1,0 +1,271 @@
+{
+  "title": "CubePet Unified Skeleton Definition",
+  "description": "Programmatic definition of the CubePet unified skeleton hierarchy (SK_CubePet_Skeleton) for UE5 tooling and validation.",
+  "version": "1.0.0",
+  "skeleton": {
+    "name": "SK_CubePet_Skeleton",
+    "engine": "UnrealEngine5",
+    "totalBones": 29,
+    "maxTriangles": 5000,
+    "exportFormat": {
+      "format": "FBX",
+      "version": "2020",
+      "scaleFactor": 1.0,
+      "scaleUnit": "centimeter",
+      "coordinateSystem": {
+        "forward": "+X",
+        "up": "+Z",
+        "handedness": "left"
+      }
+    },
+    "boneHierarchy": {
+      "name": "Root",
+      "index": 0,
+      "children": [
+        {
+          "name": "Pelvis",
+          "index": 1,
+          "children": [
+            {
+              "name": "Spine_01",
+              "index": 2,
+              "children": [
+                {
+                  "name": "Spine_02",
+                  "index": 3,
+                  "children": [
+                    {
+                      "name": "Neck",
+                      "index": 4,
+                      "children": [
+                        {
+                          "name": "Head",
+                          "index": 5,
+                          "children": [
+                            { "name": "Eye_L", "index": 6, "children": [] },
+                            { "name": "Eye_R", "index": 7, "children": [] },
+                            { "name": "Jaw", "index": 8, "children": [] }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Clavicle_L",
+                      "index": 9,
+                      "children": [
+                        {
+                          "name": "UpperArm_L",
+                          "index": 10,
+                          "children": [
+                            {
+                              "name": "LowerArm_L",
+                              "index": 11,
+                              "children": [
+                                {
+                                  "name": "Hand_L",
+                                  "index": 12,
+                                  "children": [
+                                    {
+                                      "name": "Index_01_L",
+                                      "index": 13,
+                                      "children": []
+                                    },
+                                    {
+                                      "name": "Thumb_01_L",
+                                      "index": 14,
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Clavicle_R",
+                      "index": 15,
+                      "children": [
+                        {
+                          "name": "UpperArm_R",
+                          "index": 16,
+                          "children": [
+                            {
+                              "name": "LowerArm_R",
+                              "index": 17,
+                              "children": [
+                                {
+                                  "name": "Hand_R",
+                                  "index": 18,
+                                  "children": [
+                                    {
+                                      "name": "Index_01_R",
+                                      "index": 19,
+                                      "children": []
+                                    },
+                                    {
+                                      "name": "Thumb_01_R",
+                                      "index": 20,
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Thigh_L",
+              "index": 21,
+              "children": [
+                {
+                  "name": "Calf_L",
+                  "index": 22,
+                  "children": [
+                    {
+                      "name": "Foot_L",
+                      "index": 23,
+                      "children": [
+                        { "name": "Toe_L", "index": 24, "children": [] }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Thigh_R",
+              "index": 25,
+              "children": [
+                {
+                  "name": "Calf_R",
+                  "index": 26,
+                  "children": [
+                    {
+                      "name": "Foot_R",
+                      "index": 27,
+                      "children": [
+                        { "name": "Toe_R", "index": 28, "children": [] }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "ikChains": [
+      {
+        "name": "IK_Arm_L",
+        "rootBone": "Clavicle_L",
+        "endEffector": "Hand_L",
+        "purpose": "Left arm interaction with scene objects (grab, touch, type)"
+      },
+      {
+        "name": "IK_Arm_R",
+        "rootBone": "Clavicle_R",
+        "endEffector": "Hand_R",
+        "purpose": "Right arm interaction with scene objects (grab, touch, type)"
+      },
+      {
+        "name": "IK_Leg_L",
+        "rootBone": "Thigh_L",
+        "endEffector": "Foot_L",
+        "purpose": "Left leg ground adaptation and sitting adjustment"
+      },
+      {
+        "name": "IK_Leg_R",
+        "rootBone": "Thigh_R",
+        "endEffector": "Foot_R",
+        "purpose": "Right leg ground adaptation and sitting adjustment"
+      },
+      {
+        "name": "IK_Spine",
+        "rootBone": "Pelvis",
+        "endEffector": "Spine_02",
+        "purpose": "Torso bending and leaning posture"
+      }
+    ],
+    "morphTargets": [
+      { "name": "Expr_Neutral", "expression": "neutral" },
+      { "name": "Expr_Happy", "expression": "happy" },
+      { "name": "Expr_Sad", "expression": "sad" },
+      { "name": "Expr_Thinking", "expression": "thinking" },
+      { "name": "Expr_Surprised", "expression": "surprised" },
+      { "name": "Expr_Angry", "expression": "angry" }
+    ],
+    "namingConventions": {
+      "skeleton": "SK_{CharacterType}_Skeleton",
+      "skeletalMesh": "SM_{CharacterName}",
+      "animationSequence": "AS_{CharacterType}_{ActionName}",
+      "animationBlueprint": "ABP_{CharacterType}",
+      "physicsAsset": "PA_{CharacterType}",
+      "ikRig": "IKRig_{CharacterType}"
+    },
+    "boneGroups": {
+      "spine": ["Root", "Pelvis", "Spine_01", "Spine_02"],
+      "head": ["Neck", "Head", "Eye_L", "Eye_R", "Jaw"],
+      "armLeft": [
+        "Clavicle_L",
+        "UpperArm_L",
+        "LowerArm_L",
+        "Hand_L",
+        "Index_01_L",
+        "Thumb_01_L"
+      ],
+      "armRight": [
+        "Clavicle_R",
+        "UpperArm_R",
+        "LowerArm_R",
+        "Hand_R",
+        "Index_01_R",
+        "Thumb_01_R"
+      ],
+      "legLeft": ["Thigh_L", "Calf_L", "Foot_L", "Toe_L"],
+      "legRight": ["Thigh_R", "Calf_R", "Foot_R", "Toe_R"]
+    },
+    "validation": {
+      "rules": [
+        {
+          "id": "SKEL_001",
+          "description": "Root bone must be at world origin (0, 0, 0)",
+          "severity": "error"
+        },
+        {
+          "id": "SKEL_002",
+          "description": "All symmetric bones must have matching _L and _R counterparts",
+          "severity": "error"
+        },
+        {
+          "id": "SKEL_003",
+          "description": "Total triangle count must not exceed maxTriangles (5000)",
+          "severity": "error"
+        },
+        {
+          "id": "SKEL_004",
+          "description": "Bone names must follow PascalCase_Number convention",
+          "severity": "warning"
+        },
+        {
+          "id": "SKEL_005",
+          "description": "Each IK chain root and end effector must exist in boneHierarchy",
+          "severity": "error"
+        },
+        {
+          "id": "SKEL_006",
+          "description": "Pelvis must be positioned at character center of mass",
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}
