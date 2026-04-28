@@ -1,0 +1,5 @@
+specId: 3ad1e2f3-a4b5-4c6d-7e8f-9001a2b3c4d5
+workflowType: requirements-first
+specType: feature
+name: ue-director-prompt-system
+description: LLM 导演 prompt 模板系统

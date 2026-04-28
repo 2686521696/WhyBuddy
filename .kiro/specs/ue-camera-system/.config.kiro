@@ -1,0 +1,5 @@
+specId: 07a8b9c0-d1e2-4f3a-4b5c-6d7e8f9001a2
+workflowType: requirements-first
+specType: feature
+name: ue-camera-system
+description: UE5 镜头机位系统

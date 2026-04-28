@@ -1,0 +1,5 @@
+specId: e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091
+workflowType: requirements-first
+specType: feature
+name: ue-pet-character-system
+description: UE5 中的宠物角色系统

@@ -1,0 +1,5 @@
+specId: c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
+workflowType: requirements-first
+specType: feature
+name: ue-scene-command-protocol
+description: 定义 LLM → Unreal 的双向结构化指令协议

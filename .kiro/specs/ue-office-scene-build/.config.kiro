@@ -1,0 +1,5 @@
+specId: d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80
+workflowType: requirements-first
+specType: feature
+name: ue-office-scene-build
+description: 在 UE5 中重建 Cube Pets 办公室场景

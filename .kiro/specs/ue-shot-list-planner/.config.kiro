@@ -1,0 +1,5 @@
+specId: 4be2f3a4-b5c6-4d7e-8f90-01a2b3c4d5e6
+workflowType: requirements-first
+specType: feature
+name: ue-shot-list-planner
+description: 分镜规划器
