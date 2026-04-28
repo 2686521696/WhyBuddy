@@ -9,6 +9,14 @@
 - Three.js 场景作为常驻后备，始终预加载
 - 预渲染视频按任务类型预制
 
+## 边界声明（与 ue-video-stream-player 的分工）
+
+**本 spec 负责**：降级切换策略和决策逻辑。什么条件触发降级（连接断开 > 3s、帧率 < 10fps、显存 > 90%）、降级到哪一级、什么条件恢复、降级时的 UI 提示。
+
+**不负责**：播放器能力本身。WebRTC 连接管理、视频渲染、画质自适应由 `ue-video-stream-player` 处理。
+
+**接口约定**：本 spec 订阅 `ue-video-stream-player` 暴露的 `connectionState` 和 `streamQuality`，加上本地 GPU 监控数据（来自 `ue-local-resource-and-session-governance`），综合决策当前应该使用哪个渲染后端。决策结果通过 `renderMode: 'ue-full' | 'ue-low' | 'threejs' | 'prerender'` 通知播放器和 UI 层。
+
 ## 架构
 
 ```

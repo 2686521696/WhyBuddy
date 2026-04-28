@@ -9,6 +9,14 @@
 - 时间线使用绝对时间戳，支持并行与串行指令
 - 指令序列可序列化为 JSON，支持保存与回放
 
+## 边界声明（与 ue-director-prompt-system 的分工）
+
+**本 spec 负责**：将高层分镜脚本转换为可执行的指令序列。输入是 `DirectorScript[]`（来自 director-prompt-system），输出是 `SceneCommand[]`（精确的镜头、角色、时间指令）。
+
+**不负责**：生成分镜脚本本身。不调用 LLM，不做任务理解，不做自然语言处理。
+
+**接口约定**：消费 `DirectorScript[]`，每个 script 的 `cameraHint` 映射到具体的 `CameraPreset`，`characters` 映射到具体的 `CharacterId`，`durationHint` 转换为精确的毫秒时间戳。输出的 `SceneCommand[]` 直接通过 `ue-scene-command-protocol` 发送到 UE。
+
 ## 架构
 
 ```

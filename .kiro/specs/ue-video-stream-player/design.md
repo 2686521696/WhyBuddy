@@ -9,6 +9,14 @@
 - 降级策略由播放器内部状态机驱动，对外暴露统一的渲染模式枚举
 - 视频流与 UI 浮层分层渲染，视频在底层、UI 在上层
 
+## 边界声明（与 ue-fallback-and-degradation 的分工）
+
+**本 spec 负责**：播放器能力本身。WebRTC 连接建立/断开/重连、视频元素渲染、画质自适应、连接状态上报。
+
+**不负责**：降级切换决策。"什么时候从 UE 切到 Three.js"、"什么条件触发降级"、"降级后怎么恢复"——这些策略由 `ue-fallback-and-degradation` 管理。
+
+**接口约定**：播放器对外暴露 `connectionState: 'connecting' | 'connected' | 'disconnected' | 'failed'` 和 `streamQuality: 'high' | 'medium' | 'low'`。`ue-fallback-and-degradation` 订阅这些状态，决定是否触发降级。播放器本身不做降级决策，只负责"播"和"报状态"。
+
 ## 架构
 
 ```
