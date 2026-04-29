@@ -11,13 +11,36 @@ import { localizeTaskHubBriefText } from "@/lib/task-hub-copy";
 import { cn } from "@/lib/utils";
 
 import {
-  compactText,
   formatTaskRelative,
-  missionOperatorStateLabel,
-  missionOperatorStateTone,
-  missionStatusLabel,
   missionStatusTone,
 } from "./task-helpers";
+
+function t(locale: string, zh: string, en: string) {
+  return locale === "zh-CN" ? zh : en;
+}
+
+function taskStatusLabel(
+  status: MissionTaskSummary["status"],
+  locale: string
+) {
+  const zh: Record<MissionTaskSummary["status"], string> = {
+    queued: "排队中",
+    running: "执行中",
+    waiting: "等待中",
+    done: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+  const en: Record<MissionTaskSummary["status"], string> = {
+    queued: "Queued",
+    running: "Running",
+    waiting: "Waiting",
+    done: "Done",
+    failed: "Failed",
+    cancelled: "Cancelled",
+  };
+  return locale === "zh-CN" ? zh[status] : en[status];
+}
 
 export function TasksQueueRail({
   tasks,
@@ -48,9 +71,11 @@ export function TasksQueueRail({
   density?: "regular" | "compact";
   className?: string;
 }) {
-  const { locale, copy } = useI18n();
+  const { locale } = useI18n();
   const taskButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const isCompact = density === "compact";
+  const runningCount = tasks.filter(task => task.status === "running").length;
+  const waitingCount = tasks.filter(task => task.status === "waiting").length;
 
   useEffect(() => {
     if (!highlightedTaskId) {
@@ -66,10 +91,10 @@ export function TasksQueueRail({
   return (
     <aside
       className={cn(
-        "workspace-panel flex min-h-0 flex-col overflow-hidden rounded-[14px] border backdrop-blur-md transition-all",
+        "flex min-h-0 flex-col overflow-hidden border transition-all",
         isCompact
-          ? "border-white/45 bg-white/42 shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:bg-white/58"
-          : "border-white/30 bg-[linear-gradient(180deg,rgba(255,252,248,0.35),rgba(246,238,229,0.25))] hover:bg-[linear-gradient(180deg,rgba(255,252,248,0.58),rgba(246,238,229,0.48))]",
+          ? "workspace-panel rounded-[14px] border-white/45 bg-white/42 shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:bg-white/58"
+          : "rounded-[24px] border-slate-200/80 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.06)]",
         className
       )}
       data-density={density}
@@ -77,45 +102,87 @@ export function TasksQueueRail({
     >
       <div
         className={cn(
-          "shrink-0 border-b border-stone-200/80",
-          isCompact ? "px-2.5 py-2.5" : "px-3 py-3"
+          "shrink-0 border-b",
+          isCompact
+            ? "border-stone-200/80 px-2.5 py-2.5"
+            : "border-slate-200/80 px-4 py-4"
         )}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-stone-500">
-              {copy.tasks.listPage.queueTitle}
+            <div
+              className={cn(
+                "font-semibold text-slate-950",
+                isCompact ? "text-[11px]" : "text-base"
+              )}
+            >
+              {t(locale, "任务列表", "Task List")}
             </div>
             <div
               className={cn(
-                "mt-0.5 font-semibold text-[var(--workspace-text-strong)]",
-                isCompact ? "text-[11px]" : "text-[12px]"
+                "mt-1 font-medium text-slate-500",
+                isCompact ? "text-[10px]" : "text-xs"
               )}
             >
-              {copy.tasks.listPage.visibleCount(tasks.length, totalCount)}
+              {t(
+                locale,
+                `${tasks.length} 条可见 / 共 ${totalCount} 条`,
+                `${tasks.length} visible / ${totalCount} total`
+              )}
             </div>
           </div>
           {loading && !ready ? (
-            <LoaderCircle className="size-3.5 shrink-0 animate-spin text-stone-500" />
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin text-slate-500" />
           ) : null}
         </div>
 
-        <div className="relative mt-2">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-stone-400" />
+        <div className={cn("relative", isCompact ? "mt-2" : "mt-3")}>
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
           <Input
             value={search}
             onChange={event => onSearchChange(event.target.value)}
-            placeholder={copy.tasks.listPage.searchPlaceholder}
+            placeholder={t(
+              locale,
+              "搜索标题、阶段、信号或部门...",
+              "Search titles, stages, signals, departments..."
+            )}
             className={cn(
-              "workspace-control rounded-full border-none pl-8",
-              isCompact ? "h-8 text-[11px]" : "h-9 text-xs"
+              "border-slate-200 bg-slate-50/90 pl-9 text-slate-700 shadow-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-sky-100",
+              isCompact
+                ? "h-8 rounded-full text-[11px]"
+                : "h-10 rounded-[14px] text-xs"
             )}
           />
         </div>
+
+        {!isCompact ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+              {t(locale, `全部 ${tasks.length}`, `All ${tasks.length}`)}
+            </span>
+            <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+              {t(
+                locale,
+                `执行中 ${runningCount}`,
+                `Running ${runningCount}`
+              )}
+            </span>
+            <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+              {t(
+                locale,
+                `等待 ${waitingCount}`,
+                `Waiting ${waitingCount}`
+              )}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5 pb-2"
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
+          isCompact ? "px-2.5 pb-2" : "px-3 pb-3"
+        )}
         style={{ scrollbarGutter: "stable both-edges" }}
       >
         <div
@@ -125,17 +192,19 @@ export function TasksQueueRail({
         >
           {error ? (
             <RetryInlineNotice
-              title={copy.chat.errorTitle}
+              title={t(locale, "加载失败", "Failed to load")}
               description={error}
-              actionLabel={copy.tasks.listPage.refresh}
+              actionLabel={t(locale, "刷新", "Refresh")}
               onRetry={onRefresh}
             />
           ) : null}
 
           {!error && tasks.length === 0 && !loading ? (
-            <div className="flex flex-col items-center justify-center p-4 text-center text-stone-500">
+            <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 p-6 text-center text-slate-500">
               <FolderKanban className="size-5 mb-2 opacity-50" />
-              <div className="text-xs font-medium">{copy.tasks.listPage.emptyTitle}</div>
+              <div className="text-xs font-medium">
+                {t(locale, "当前没有任务", "No tasks yet")}
+              </div>
             </div>
           ) : null}
 
@@ -159,33 +228,39 @@ export function TasksQueueRail({
                     taskButtonRefs.current.delete(task.id);
                   }}
                   className={cn(
-                    "w-full overflow-hidden border text-left transition-all flex flex-col gap-1.5",
+                    "relative w-full overflow-hidden border text-left transition-all flex flex-col gap-2",
                     isCompact
                       ? "rounded-[10px] px-2.5 py-1.5"
-                      : "rounded-[12px] px-2.5 py-1.75",
+                      : "rounded-[16px] px-3 py-3",
                     active
                       ? isCompact
                         ? "border-primary/25 bg-white/62 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                        : "border-primary/30 bg-accent shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
-                      : "border-[var(--workspace-panel-border)] bg-[rgba(255,255,255,0.58)] hover:border-border hover:bg-[rgba(255,255,255,0.76)]",
+                        : "border-sky-200 bg-sky-50/70 shadow-[0_12px_26px_rgba(14,165,233,0.12)]"
+                      : "border-slate-200 bg-white hover:border-sky-200 hover:bg-slate-50/80",
                     task.id === highlightedTaskId &&
                       "ring-2 ring-amber-300 ring-offset-2 ring-offset-background"
                   )}
                   onClick={() => onSelectTask(task.id)}
                 >
+                  {active && !isCompact ? (
+                    <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-sky-500" />
+                  ) : null}
                   <div className="flex w-full min-w-0 items-center justify-between gap-2">
                     <span
                       className={cn(
-                        "shrink-0 workspace-status !gap-0.5 !px-1 !py-0.5 !text-[8px] font-semibold",
+                        "shrink-0 workspace-status !gap-0.5 font-semibold",
+                        isCompact
+                          ? "!px-1 !py-0.5 !text-[8px]"
+                          : "!px-2 !py-1 !text-[10px]",
                         missionStatusTone(task.status)
                       )}
                     >
-                      {missionStatusLabel(task.status, locale)}
+                      {taskStatusLabel(task.status, locale)}
                     </span>
                     <span
                       className={cn(
-                        "max-w-[56px] shrink-0 truncate text-right font-data font-medium text-[var(--workspace-text-subtle)]",
-                        isCompact ? "text-[8px]" : "text-[9px]"
+                        "max-w-[74px] shrink-0 truncate text-right font-data font-medium text-slate-400",
+                        isCompact ? "text-[8px]" : "text-[10px]"
                       )}
                     >
                       {formatTaskRelative(task.updatedAt, locale)}
@@ -196,8 +271,8 @@ export function TasksQueueRail({
                     <TooltipTrigger asChild>
                       <div
                         className={cn(
-                          "w-full overflow-hidden text-ellipsis whitespace-nowrap block text-left font-semibold text-[var(--workspace-text-strong)]",
-                          isCompact ? "text-[10px]" : "text-[11px]"
+                          "w-full overflow-hidden text-ellipsis whitespace-nowrap block text-left font-semibold text-slate-900",
+                          isCompact ? "text-[10px]" : "text-[13px]"
                         )}
                       >
                         {task.title}
@@ -213,8 +288,8 @@ export function TasksQueueRail({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            "w-full overflow-hidden text-ellipsis whitespace-nowrap block text-left font-medium text-[var(--workspace-text-muted)]",
-                            "text-[10px]"
+                            "w-full overflow-hidden text-ellipsis whitespace-nowrap block text-left font-medium text-slate-500",
+                            "text-[11px]"
                           )}
                         >
                           {summary}
@@ -248,14 +323,30 @@ export function TasksQueueRail({
                   ) : null}
 
                   {!isCompact ? (
-                    <div className="flex w-full flex-wrap gap-1">
+                    <div className="flex w-full min-w-0 items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-[width]",
+                            task.hasWarnings ? "bg-amber-500" : "bg-sky-500"
+                          )}
+                          style={{ width: `${Math.max(4, task.progress)}%` }}
+                        />
+                      </div>
+                      <span className="shrink-0 font-data text-[10px] font-semibold text-slate-500">
+                        {task.progress}%
+                      </span>
                       <span
                         className={workspaceStatusClass(
                           "neutral",
-                          "!gap-0.5 !px-1 !py-0.5 !text-[8px] font-medium"
+                          "!gap-0.5 !px-1.5 !py-0.5 !text-[9px] font-medium"
                         )}
                       >
-                        {copy.tasks.listPage.tasksCount(task.taskCount)}
+                        {t(
+                          locale,
+                          `${task.taskCount} 个子任务`,
+                          `${task.taskCount} tasks`
+                        )}
                       </span>
                     </div>
                   ) : null}

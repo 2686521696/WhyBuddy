@@ -196,10 +196,14 @@ export function OverlayContainer({
   videoFrame,
   pointerPassthrough = true,
   overlayTone = "dimmed",
+  backgroundClassName,
 }: OverlayContainerProps) {
   return (
     <div
-      className="relative h-full w-full overflow-hidden bg-black"
+      className={cn(
+        "relative h-full w-full overflow-hidden",
+        backgroundClassName ?? "bg-black"
+      )}
       data-testid="ue-overlay-container"
     >
       {/* z-10 — Video stream */}

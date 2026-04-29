@@ -185,8 +185,9 @@ describe("TasksCockpitDetail integration with RightInfoPanel", () => {
     );
 
     expect(markup).toContain('data-visual-role="cockpit-side-detail"');
-    expect(markup).toContain("bg-white/45");
-    expect(markup).toContain("shadow-[0_10px_24px_rgba(15,23,42,0.06)]");
+    expect(markup).toContain("border-slate-200/80");
+    expect(markup).toContain("bg-white");
+    expect(markup).toContain("shadow-[0_12px_30px_rgba(15,23,42,0.05)]");
     expect(markup).not.toContain("bg-[var(--background)]");
   });
 
@@ -266,10 +267,12 @@ describe("TasksCockpitDetail integration with RightInfoPanel", () => {
         destination: { goal: "Test goal", taskType: "research" },
         route: {
           mode: "standard",
+          selected: {
+            estimatedDuration: "3h",
+          },
           stages: [
             { key: "s1", label: "Research", status: "running", progress: 40, arcStart: 0, arcEnd: 180, midAngle: 90 },
           ],
-          estimatedDuration: "3h",
           candidateRoutes: [],
         },
         driveState: "executing",

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Collapse, Splitter } from "antd";
-import { ArrowUp, RefreshCw, Send, Sparkles } from "lucide-react";
+import { ArrowUp, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
@@ -483,22 +483,22 @@ export function UnifiedLaunchComposer({
   }
 
   const inputRowClassName = cn(
-    "w-full rounded-[22px] border border-[#d8e6dd]/85 bg-white/82 shadow-[0_14px_36px_rgba(75,105,85,0.10)] backdrop-blur-xl",
-    isDense ? "p-2" : "p-2.5"
+    "w-full rounded-[24px] border border-slate-200/75 bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-xl",
+    isDense ? "p-2.5" : "p-3"
   );
 
   const composerInputShell = (
     <div
       className={cn(
-        "w-full rounded-[28px] border border-white/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.78),rgba(247,253,249,0.64))] shadow-[0_18px_42px_rgba(75,105,85,0.10)] backdrop-blur-xl",
-        isDense ? "p-2" : "p-3"
+        "w-full rounded-[30px] border border-white/82 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(246,251,253,0.76))] shadow-[0_24px_58px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-2xl",
+        isDense ? "p-3" : "p-4"
       )}
       data-testid="unified-launch-compact-composer"
     >
       <div className={inputRowClassName}>
         <div className="flex items-start gap-2">
-          <div className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-[#d8e6dd]/85 bg-[#f7fdf9] text-[#267064]">
-            <Sparkles className="size-4" />
+          <div className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-[#0f766e] shadow-[0_12px_28px_rgba(15,118,110,0.12),inset_0_1px_0_rgba(255,255,255,0.9)]">
+            <Sparkles className="size-5" />
           </div>
           <CommandInput
             onSubmit={handleSubmit}
@@ -525,8 +525,8 @@ export function UnifiedLaunchComposer({
             disabled={!draftText.trim() || submitting}
             aria-label={submitLabel}
             className={cn(
-              "mt-0.5 size-9 shrink-0 rounded-full p-0 shadow-[0_12px_28px_rgba(94,139,114,0.22)]",
-              isDense ? "size-8" : "size-9"
+              "mt-0.5 shrink-0 rounded-full bg-[#0f766e] p-0 shadow-[0_14px_30px_rgba(15,118,110,0.24)] hover:shadow-[0_16px_34px_rgba(15,118,110,0.34)]",
+              isDense ? "size-11" : "size-12"
             )}
             onClick={() => void handleSubmit(draftText)}
             data-testid="launch-compact-send"
@@ -557,23 +557,9 @@ export function UnifiedLaunchComposer({
               detail={activeTaskDetail}
               loadingByAction={operatorActionLoading}
               onSubmitAction={onSubmitOperatorAction}
-              trailingAction={
-                <GlowButton
-                  type="button"
-                  disabled={!draftText.trim() || submitting}
-                  className="h-7.5 shrink-0 rounded-full px-2.5 text-[11px] font-semibold shadow-[0_10px_24px_rgba(94,139,114,0.18)]"
-                  onClick={() => void handleSubmit(draftText)}
-                >
-                  <Send className="size-3.5" />
-                  {submitLabel}
-                </GlowButton>
-              }
             />
           ) : undefined
         }
-        onSubmit={() => void handleSubmit(draftText)}
-        submitLabel={submitLabel}
-        submitDisabled={!draftText.trim() || submitting}
       />
     </div>
   );

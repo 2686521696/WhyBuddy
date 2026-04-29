@@ -119,11 +119,13 @@ function makeAutopilot(
     },
     route: {
       mode: "standard",
+      selected: {
+        estimatedDuration: "2h 30m",
+      },
       stages: [
         { key: "s1", label: "Planning", status: "done", progress: 100, arcStart: 0, arcEnd: 90, midAngle: 45 },
         { key: "s2", label: "Execution", status: "running", progress: 50, arcStart: 90, arcEnd: 180, midAngle: 135 },
       ],
-      estimatedDuration: "2h 30m",
       candidateRoutes: [],
     },
     driveState: "executing",
@@ -205,6 +207,7 @@ describe("RightInfoPanel", () => {
       expect(markup).toContain("width:100%");
       expect(markup).toContain("min-width:0");
       expect(markup).toContain("max-width:none");
+      expect(markup).toContain("background-color:transparent");
     });
 
     it("applies overflow-y auto", () => {

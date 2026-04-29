@@ -312,10 +312,10 @@ beforeEach(() => {
 /* ─── tests ─── */
 
 describe("OfficeTaskCockpit home center hierarchy", () => {
-  it("renders the scene HUD and keeps detail cards out of the empty home center", () => {
+  it("keeps duplicate scene HUD and detail cards out of the empty home center", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-scene-hud"');
+    expect(markup).not.toContain('data-testid="office-scene-hud"');
     expect(markup).not.toContain('data-testid="task-detail-cards-view"');
     expect(capturedProps).toHaveLength(0);
   });
@@ -355,7 +355,7 @@ describe("OfficeTaskCockpit home center hierarchy", () => {
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-scene-hud"');
+    expect(markup).not.toContain('data-testid="office-scene-hud"');
     expect(markup).not.toContain('data-testid="right-task-detail"');
     expect(markup).not.toContain('data-testid="task-detail-cards-view"');
     expect(capturedProps).toHaveLength(0);
@@ -384,7 +384,7 @@ describe("OfficeTaskCockpit home center hierarchy", () => {
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-scene-hud"');
+    expect(markup).not.toContain('data-testid="office-scene-hud"');
     expect(markup).not.toContain('data-testid="task-detail-cards-view"');
   });
 });

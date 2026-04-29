@@ -45,6 +45,8 @@ describe("UEOverlayChrome", () => {
     expect(markup).toContain('data-testid="app-sidebar"');
     expect(markup).toContain('data-testid="task-panel"');
     expect(markup).toContain('data-testid="launch-panel"');
+    expect(markup).toContain("w-[248px]");
+    expect(markup).toContain("pl-[248px]");
     expect(markup).toContain("pointer-events-auto");
   });
 
@@ -77,6 +79,22 @@ describe("UEOverlayChrome", () => {
 
     expect(markup).toContain('data-overlay-tone="clear"');
     expect(markup).toContain("backdrop-filter:none");
+  });
+
+  it("forwards a custom media surface background", () => {
+    const markup = renderToStaticMarkup(
+      <UEOverlayChrome
+        videoElement={makeVideoRef()}
+        backgroundClassName="bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
+      >
+        <div />
+      </UEOverlayChrome>,
+    );
+
+    expect(markup).toContain(
+      "bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]",
+    );
+    expect(markup).not.toContain("bg-black");
   });
 
   it("uses synced HUD definitions when explicit HUD elements are not supplied", () => {

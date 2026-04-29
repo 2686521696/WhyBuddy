@@ -107,6 +107,11 @@ function RecoveryGuard() {
   );
 }
 
+function isHomeLocation(location: string) {
+  const [pathname] = location.trim().split(/[?#]/, 1);
+  return pathname === "" || pathname === "/";
+}
+
 export function AppShell() {
   const { isMobile, isTablet } = useViewportTier();
   const [location] = useLocation();
@@ -117,12 +122,13 @@ export function AppShell() {
   }, [isTablet]);
 
   const sidebarWidth = isMobile ? 0 : sidebarCollapsed ? 64 : 248;
+  const isHome = isHomeLocation(location);
 
   return (
     <>
       <RecoveryGuard />
 
-      {!isMobile && location !== "/" && (
+      {!isMobile && !isHome && (
         <AppSidebar
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(current => !current)}
@@ -130,11 +136,15 @@ export function AppShell() {
       )}
 
       <div
-        className="min-h-screen transition-[padding-left] duration-[250ms] ease-in-out"
+        className={
+          isHome
+            ? "min-h-screen"
+            : "min-h-screen transition-[padding-left] duration-[250ms] ease-in-out"
+        }
         style={
           {
-            "--sidebar-width": `${location === "/" ? 0 : sidebarWidth}px`,
-            paddingLeft: location === "/" ? 0 : sidebarWidth,
+            "--sidebar-width": `${isHome ? 0 : sidebarWidth}px`,
+            paddingLeft: isHome ? 0 : sidebarWidth,
           } as React.CSSProperties
         }
       >

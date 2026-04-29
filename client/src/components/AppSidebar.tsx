@@ -20,11 +20,17 @@ type SidebarTone = "light" | "glass";
 function SidebarHeader({
   collapsed,
   tone,
+  locale,
 }: {
   collapsed: boolean;
   tone: SidebarTone;
+  locale: string;
 }) {
   const glass = tone === "glass";
+  const subtitle =
+    locale === "zh-CN"
+      ? "办公空间协同决策智能体平台"
+      : "Collaborative agent office platform";
 
   return (
     <div
@@ -44,7 +50,7 @@ function SidebarHeader({
         <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(125,211,252,0.42),transparent_42%),linear-gradient(135deg,rgba(255,255,255,0.96),rgba(224,242,254,0.46))]" />
         <span className="relative">CP</span>
       </span>
-      {!collapsed && (
+      {!collapsed ? (
         <span className="min-w-0">
           <span
             className={cn(
@@ -55,10 +61,10 @@ function SidebarHeader({
             Cube Pets Office
           </span>
           <span className="mt-1.5 block truncate text-[11px] font-semibold leading-none text-slate-500">
-            办公室已成为桌面运转的伙伴
+            {subtitle}
           </span>
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -122,13 +128,13 @@ function SidebarNavItem({
       >
         <Icon className="size-[17px] shrink-0" />
       </span>
-      {!collapsed && <span className="truncate">{label}</span>}
-      {active && (
+      {!collapsed ? <span className="truncate">{label}</span> : null}
+      {active ? (
         <>
           <span className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.68)]" />
           <span className="pointer-events-none absolute inset-y-2 right-2 w-12 rounded-full bg-[radial-gradient(circle,rgba(125,211,252,0.22),transparent_68%)]" />
         </>
-      )}
+      ) : null}
     </button>
   );
 
@@ -139,11 +145,11 @@ function SidebarNavItem({
           <TooltipTrigger asChild>{content}</TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
             {label}
-            {isDisabled && (
+            {isDisabled ? (
               <span className="ml-1 text-xs opacity-60">
                 ({comingSoonLabel})
               </span>
-            )}
+            ) : null}
           </TooltipContent>
         </Tooltip>
       </li>
@@ -156,11 +162,14 @@ function SidebarNavItem({
 function SidebarUserBlock({
   collapsed,
   tone,
+  locale,
 }: {
   collapsed: boolean;
   tone: SidebarTone;
+  locale: string;
 }) {
   const glass = tone === "glass";
+  const modeLabel = locale === "zh-CN" ? "高级模式" : "Advanced mode";
 
   return (
     <div
@@ -185,16 +194,16 @@ function SidebarUserBlock({
       >
         MC
       </div>
-      {!collapsed && (
+      {!collapsed ? (
         <span className="min-w-0">
           <span className="block truncate text-sm font-bold text-slate-800">
             Mission Control
           </span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">
-            高级模式
+            {modeLabel}
           </span>
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -233,21 +242,22 @@ export function AppSidebar({
   embedded = false,
 }: AppSidebarProps) {
   const [location, setLocation] = useLocation();
-  const { copy } = useI18n();
+  const { locale, copy } = useI18n();
   const activeId = getActiveSidebarId(location);
-  const sidebarCopy = copy.sidebar;
   const sidebarTone: SidebarTone = embedded ? "glass" : "light";
+  const isZh = locale === "zh-CN";
+  const sidebarCopy = copy.sidebar;
 
   const labelMap: Record<string, string> = {
-    autopilot: sidebarCopy.autopilot,
-    tasks: sidebarCopy.tasks,
-    projects: sidebarCopy.projects,
-    knowledge: sidebarCopy.knowledge,
-    datasource: sidebarCopy.datasource,
-    dashboard: sidebarCopy.dashboard,
-    marketplace: sidebarCopy.marketplace,
-    notifications: sidebarCopy.notifications,
-    settings: sidebarCopy.settings,
+    autopilot: isZh ? "自动驾驶" : sidebarCopy.autopilot,
+    tasks: isZh ? "任务中心" : sidebarCopy.tasks,
+    projects: isZh ? "项目空间" : sidebarCopy.projects,
+    knowledge: isZh ? "知识库" : sidebarCopy.knowledge,
+    datasource: isZh ? "数据源" : sidebarCopy.datasource,
+    dashboard: isZh ? "数据看板" : sidebarCopy.dashboard,
+    marketplace: isZh ? "智能体市场" : sidebarCopy.marketplace,
+    notifications: isZh ? "通知中心" : sidebarCopy.notifications,
+    settings: isZh ? "设置与集成" : sidebarCopy.settings,
   };
 
   return (
@@ -272,7 +282,11 @@ export function AppSidebar({
         color: "#1e293b",
       }}
     >
-      <SidebarHeader collapsed={collapsed} tone={sidebarTone} />
+      <SidebarHeader
+        collapsed={collapsed}
+        tone={sidebarTone}
+        locale={locale}
+      />
 
       <nav
         className={cn(
@@ -281,9 +295,9 @@ export function AppSidebar({
         )}
         aria-label="Main navigation"
       >
-        {!collapsed && (
+        {!collapsed ? (
           <span className="pointer-events-none absolute bottom-8 left-[31px] top-5 w-px bg-gradient-to-b from-transparent via-sky-100/80 to-transparent" />
-        )}
+        ) : null}
         <ul role="list" className="relative flex flex-col gap-2.5">
           {SIDEBAR_NAV_ITEMS.map(item => (
             <SidebarNavItem
@@ -319,9 +333,13 @@ export function AppSidebar({
 
       <SidebarStatusBlock collapsed={collapsed} tone={sidebarTone} />
 
-      <SidebarUserBlock collapsed={collapsed} tone={sidebarTone} />
+      <SidebarUserBlock
+        collapsed={collapsed}
+        tone={sidebarTone}
+        locale={locale}
+      />
 
-      {!collapsed && <SidebarTaskStats tone={sidebarTone} />}
+      {!collapsed ? <SidebarTaskStats tone={sidebarTone} /> : null}
     </aside>
   );
 }

@@ -361,7 +361,7 @@ beforeEach(() => {
 });
 
 describe("OfficeTaskCockpit", () => {
-  it("renders a single center-bottom composer and keeps launch guidance in the merged console", () => {
+  it("renders a single center-bottom composer and keeps guidance collapsed by default", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
     expect(markup).toContain('data-testid="unified-launch-composer"');
@@ -371,7 +371,8 @@ describe("OfficeTaskCockpit", () => {
     expect(markup).toContain('data-bare="true"');
     expect(markup).toContain('data-hide-header="true"');
     expect(markup).toContain('data-hide-clarification="true"');
-    expect(markup).toContain('data-testid="office-launch-guidance"');
+    expect(markup).toContain('data-center-controls-state="collapsed"');
+    expect(markup).not.toContain('data-testid="office-launch-guidance"');
     expect(markup).not.toContain('data-testid="office-clarification-panel"');
     expect(markup).not.toContain("office-cockpit-right-drawer");
   });
@@ -384,7 +385,7 @@ describe("OfficeTaskCockpit", () => {
         questions: [
           {
             questionId: "outcome:1",
-            text: "补充目标",
+            text: "Clarify goal",
             type: "free_text",
           },
         ],
@@ -426,9 +427,10 @@ describe("OfficeTaskCockpit", () => {
     expect(
       markup.indexOf('data-testid="office-clarification-stage"')
     ).toBeLessThan(markup.indexOf('data-testid="office-launch-stage"'));
-    expect(markup).toContain("补问进行中");
-    expect(markup).toContain("先完成澄清，再继续主执行流");
-    expect(markup).toContain("待补充 1 项");
+    expect(markup).toContain(
+      'data-center-controls-state="clarification-hidden"'
+    );
+    expect(markup).toContain('data-testid="office-clarification-panel"');
   });
 });
 
@@ -445,11 +447,11 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     expect(markup).not.toContain('data-testid="tasks-queue-rail"');
   });
 
-  it("keeps runtime evidence tabs in the merged center console", () => {
+  it("keeps runtime evidence tabs out of the default collapsed center console", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
     for (const tab of ["support", "logs", "artifacts", "runtime"]) {
-      expect(markup).toContain(`data-value="${tab}"`);
+      expect(markup).not.toContain(`data-value="${tab}"`);
     }
     expect(markup).not.toContain('data-value="launch"');
     expect(markup).not.toContain('data-value="task"');
@@ -462,16 +464,11 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     expect(markup).toContain(
       'data-collapse-control-placement="outside-composer"'
     );
-    expect(markup).toContain('data-center-controls-state="expanded"');
-    expect(markup).toContain('data-testid="office-center-control-panel"');
+    expect(markup).toContain('data-center-controls-state="collapsed"');
+    expect(markup).not.toContain('data-testid="office-center-control-panel"');
     expect(markup).toContain('data-testid="office-center-collapse-toggle"');
     expect(markup).toContain('data-testid="office-center-composer-panel"');
 
-    expect(
-      markup.indexOf('data-testid="office-center-control-panel"')
-    ).toBeLessThan(
-      markup.indexOf('data-testid="office-center-composer-panel"')
-    );
     expect(
       markup.indexOf('data-testid="office-center-collapse-toggle"')
     ).toBeLessThan(markup.indexOf('data-testid="unified-launch-composer"'));
@@ -485,7 +482,7 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     expect(toggleMarkup).toContain("pointer-events-auto");
   });
 
-  it("lets the expanded support workbench fill the center control stack", () => {
+  it("keeps the support workbench collapsed by default to preserve the scene", () => {
     useNLCommandStore.setState({
       draftText:
         "Ship office cockpit by Friday with rollback tests and acceptance criteria.",
@@ -494,19 +491,16 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
     expect(markup).toContain('data-testid="office-center-control-stack"');
-    expect(markup).toContain('data-testid="office-center-workbench-shell"');
-    expect(markup).toContain('data-testid="office-center-context-dock"');
+    expect(markup).toContain('data-center-controls-state="collapsed"');
+    expect(markup).not.toContain('data-testid="office-center-workbench-shell"');
+    expect(markup).not.toContain('data-testid="office-center-context-dock"');
     expect(markup).toContain("max-w-[1320px]");
-    expect(markup).toContain(
-      'class="pointer-events-auto h-[86vh] max-h-[calc(100vh-420px)] min-h-0 overflow-y-auto rounded-[18px] border'
-    );
+    expect(markup).not.toContain("h-[86vh]");
+    expect(markup).not.toContain("max-h-[calc(100vh-420px)]");
     expect(markup).not.toContain("h-[72vh]");
     expect(markup).not.toContain("h-[min(33vh,420px)]");
     expect(markup).not.toContain("h-[min(50vh,640px)]");
     expect(markup).not.toContain("max-h-[min(58vh,620px)]");
-    expect(markup).toContain(
-      'class="pointer-events-auto w-full overflow-hidden rounded-[16px]'
-    );
     expect(markup).not.toContain(
       'class="pointer-events-auto mx-auto w-full max-w-[700px] overflow-hidden rounded-[16px]'
     );
@@ -521,7 +515,7 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     );
     expect(markup).toContain('data-testid="office-center-composer-shell"');
     expect(markup).toContain(
-      'class="pointer-events-auto mx-auto w-full max-w-[860px] overflow-visible"'
+      'class="pointer-events-auto mx-auto w-full max-w-[980px] overflow-visible"'
     );
     expect(
       markup.indexOf('data-testid="office-center-control-stack"')
@@ -538,11 +532,11 @@ describe("OfficeTaskCockpit home hierarchy", () => {
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-launch-support-preview"');
-    expect(markup).toContain(
+    expect(markup).not.toContain('data-testid="office-launch-support-preview"');
+    expect(markup).not.toContain(
       'data-testid="autopilot-destination-preview-card"'
     );
-    expect(markup).toContain('data-testid="route-planning-overlay"');
+    expect(markup).not.toContain('data-testid="route-planning-overlay"');
     expect(markup).toContain('data-testid="unified-launch-composer"');
   });
 
@@ -567,8 +561,8 @@ describe("OfficeTaskCockpit home hierarchy", () => {
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-launch-support-preview"');
-    expect(markup).toContain(
+    expect(markup).not.toContain('data-testid="office-launch-support-preview"');
+    expect(markup).not.toContain(
       'data-launch-planning-priority="destination-draft"'
     );
     expect(markup).not.toContain('data-testid="office-support-waiting-card"');
@@ -578,35 +572,32 @@ describe("OfficeTaskCockpit home hierarchy", () => {
     expect(markup).toContain('data-hide-operator-actions="true"');
   });
 
-  it("keeps the scene HUD mounted on the home cockpit", () => {
+  it("does not render the duplicate scene HUD overlay on the home cockpit", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-scene-hud"');
+    expect(markup).not.toContain('data-testid="office-scene-hud"');
+    expect(markup).toContain('data-testid="office-launch-stage"');
   });
 
-  it("keeps launch guidance dropdowns non-modal and above the fixed cockpit cards", () => {
+  it("keeps launch guidance dropdowns out of the default collapsed cockpit", () => {
     useAppStore.setState({ locale: "en-US" });
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup.match(/data-testid="dropdown-menu"/g)?.length).toBe(2);
-    expect(markup.match(/data-modal="false"/g)?.length).toBe(2);
-    expect(markup.match(/data-side="top"/g)?.length).toBe(2);
-    expect(markup.match(/z-\[120\]/g)?.length).toBe(2);
-    expect(markup).toContain("前端预览");
-    expect(markup).toContain("复制当前焦点");
-    expect(markup).toContain("运行时配置");
-    expect(markup).toContain('data-testid="office-launch-guidance"');
+    expect(markup.match(/data-testid="dropdown-menu"/g)?.length ?? 0).toBe(0);
+    expect(markup.match(/data-modal="false"/g)?.length ?? 0).toBe(0);
+    expect(markup.match(/data-side="top"/g)?.length ?? 0).toBe(0);
+    expect(markup.match(/z-\[120\]/g)?.length ?? 0).toBe(0);
+    expect(markup).not.toContain('data-testid="office-launch-guidance"');
     expect(markup).toContain('data-testid="unified-launch-composer"');
   });
 
-  it("centers the launch composer and scene HUD on the viewport centerline", () => {
+  it("centers the launch composer on the viewport centerline", () => {
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
     expect(markup).toContain("fixed bottom-[24px] left-1/2");
     expect(markup).toContain("w-[min(1320px,calc(100vw-96px))]");
     expect(markup).toContain("-translate-x-1/2");
-    expect(markup).toContain("fixed left-1/2 top-[clamp(112px,9vh,150px)]");
     expect(markup).not.toContain("right:360px");
     expect(markup).not.toContain("office-cockpit-right-drawer");
   });
@@ -620,7 +611,7 @@ describe("OfficeTaskCockpit home hierarchy", () => {
 
     const markup = renderToStaticMarkup(<OfficeTaskCockpit />);
 
-    expect(markup).toContain('data-testid="office-scene-hud"');
+    expect(markup).not.toContain('data-testid="office-scene-hud"');
     expect(markup).not.toContain('data-testid="right-task-detail"');
     expect(markup).not.toContain('data-testid="task-detail-cards-view"');
   });

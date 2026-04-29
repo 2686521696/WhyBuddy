@@ -62,12 +62,13 @@ export function TasksCockpitDetail({
     <>
       <div
         className={cn(
-          "h-full min-h-0 overflow-hidden rounded-[16px] border border-white/45 bg-white/45",
-          "shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-md",
+          "h-full min-h-0 overflow-hidden rounded-[18px] border border-slate-200/80 bg-white",
+          "shadow-[0_12px_30px_rgba(15,23,42,0.05)]",
           "[&_[data-testid='right-info-panel']]:bg-transparent",
-          "[&_[data-testid='task-overview-section']]:border-white/45 [&_[data-testid='task-overview-section']]:bg-white/54 [&_[data-testid='task-overview-section']]:shadow-none",
-          "[&_[data-testid='live-progress-section']]:border-white/45 [&_[data-testid='live-progress-section']]:bg-white/54 [&_[data-testid='live-progress-section']]:shadow-none",
-          "[&_[data-testid='recent-activity-section']]:border-white/45 [&_[data-testid='recent-activity-section']]:bg-white/54 [&_[data-testid='recent-activity-section']]:shadow-none",
+          "[&_[data-testid='task-overview-section']]:rounded-[16px] [&_[data-testid='task-overview-section']]:border-slate-200 [&_[data-testid='task-overview-section']]:bg-slate-50/80 [&_[data-testid='task-overview-section']]:shadow-none",
+          "[&_[data-testid='live-progress-section']]:rounded-[16px] [&_[data-testid='live-progress-section']]:border-slate-200 [&_[data-testid='live-progress-section']]:bg-slate-50/80 [&_[data-testid='live-progress-section']]:shadow-none",
+          "[&_[data-testid='recent-activity-section']]:rounded-[16px] [&_[data-testid='recent-activity-section']]:border-slate-200 [&_[data-testid='recent-activity-section']]:bg-slate-50/80 [&_[data-testid='recent-activity-section']]:shadow-none",
+          "[&_[data-testid='expand-detail-button']]:rounded-[14px] [&_[data-testid='expand-detail-button']]:border-slate-200 [&_[data-testid='expand-detail-button']]:bg-white [&_[data-testid='expand-detail-button']]:text-slate-700 [&_[data-testid='expand-detail-button']]:shadow-sm",
           className
         )}
         data-visual-role="cockpit-side-detail"

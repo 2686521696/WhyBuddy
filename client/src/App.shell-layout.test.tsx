@@ -147,4 +147,18 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("--sidebar-width:0px");
     expect(shell).toContain("padding-left:0");
   });
+
+  it("does not keep the task sidebar offset when the home URL has query or hash state", () => {
+    locationState.current = "/?from=tasks#autopilot";
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    const markup = renderToStaticMarkup(<AppShell />);
+    const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
+
+    expect(markup).not.toContain('data-testid="app-sidebar"');
+    expect(shell).toContain("--sidebar-width:0px");
+    expect(shell).toContain("padding-left:0");
+    expect(shell).not.toContain("transition-[padding-left]");
+  });
 });

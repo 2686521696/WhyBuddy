@@ -238,19 +238,16 @@ describe("TasksPage workbench tabs", () => {
     const markup = renderToStaticMarkup(<TasksPage />);
 
     expect(markup).toContain('data-testid="tasks-queue-rail"');
+    expect(markup).toContain('data-testid="tasks-page-dashboard"');
+    expect(markup).toContain('data-testid="tasks-page-focus-card"');
     expect(markup).toContain('data-testid="tasks-workbench-tab-task"');
     expect(markup).toContain('data-testid="tasks-workbench-tab-flow"');
     expect(markup).toContain('data-testid="tasks-workbench-tab-agent"');
     expect(markup).toContain('data-testid="tasks-workbench-tab-memory"');
     expect(markup).toContain('data-testid="tasks-workbench-tab-history"');
-    expect(markup).toContain(">任务</button>");
-    expect(markup).toContain(">团队流</button>");
     expect(markup).toContain(">Agent</button>");
-    expect(markup).toContain(">记忆</button>");
-    expect(markup).toContain(">历史</button>");
     expect(markup).not.toContain('data-testid="tasks-workbench-tab-launch"');
     expect(markup).not.toContain('data-value="launch"');
-    expect(markup).not.toContain(">发起</button>");
     expect(markup).toContain('data-testid="tasks-cockpit-detail"');
   });
 });

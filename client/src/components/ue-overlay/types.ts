@@ -117,4 +117,9 @@ export interface OverlayContainerProps {
    * so the 3D scene is not blurred or dimmed.
    */
   overlayTone?: "dimmed" | "clear";
+  /**
+   * Root media-surface background. Defaults to black for video streams; the
+   * office scene can provide a light fallback so route switches do not flash.
+   */
+  backgroundClassName?: string;
 }

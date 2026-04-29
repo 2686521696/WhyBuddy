@@ -163,7 +163,7 @@ export function Scene3D({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 z-0 h-full w-full touch-pan-y"
+      className="absolute inset-0 z-0 h-full w-full touch-pan-y bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
       style={{ visibility: hidden ? "hidden" : "visible" }}
     >
       <Canvas

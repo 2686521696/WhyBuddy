@@ -190,9 +190,25 @@ export default function Home() {
         setLocation(`/tasks/${selectedTaskId}`);
       }
     : undefined;
-  const fullWorkbenchLabel = copy.home.enterTasks;
-  const workflowLabel = copy.home.openWorkflow;
-  const demoLabel = copy.home.liveDemo;
+  const isZh = locale === "zh-CN";
+  const fullWorkbenchLabel = isZh ? "任务工作台" : copy.home.enterTasks;
+  const workflowLabel = isZh ? "打开工作流" : copy.home.openWorkflow;
+  const demoLabel = isZh ? "载入演示" : copy.home.liveDemo;
+  const configLabel = isZh ? "运行时配置" : copy.home.openConfig;
+  const frontendModeLabel = isZh ? "前端模式" : "Frontend";
+  const advancedModeLabel = isZh ? "高级模式" : "Advanced";
+  const officeNavLabel = isZh ? "办公室" : copy.toolbar.primaryNav.office.label;
+  const moreNavLabel = isZh ? "更多" : copy.toolbar.primaryNav.more.label;
+  const heroSubtitle = isZh
+    ? "智能协同 · 自动执行 · 结果闭环"
+    : "Intelligent collaboration · autonomous execution · closed-loop delivery";
+  const runtimeChipLabel = isZh
+    ? `当前模式：${runtimeMode === "advanced" ? "高级模式" : "前端模式"}`
+    : copy.home.runtimeChip(
+        copy.toolbar.runtimeLabels[
+          runtimeMode === "advanced" ? "advanced" : "frontend"
+        ]
+      );
 
   const localeLabel =
     locale === "zh-CN" ? copy.common.englishShort : copy.common.chineseShort;
@@ -245,6 +261,7 @@ export default function Home() {
           hudDefinitions={hudDefinitions}
           viewportWidth={viewportWidth}
           overlayTone="clear"
+          backgroundClassName="bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
           sidebar={
             <div className="home-desktop-sidebar-shell h-full">
               <AppSidebar
@@ -282,7 +299,7 @@ export default function Home() {
                               : "text-slate-500 hover:text-slate-950"
                           }`}
                         >
-                          Frontend
+                          {frontendModeLabel}
                         </button>
                         {CAN_USE_ADVANCED_RUNTIME && (
                           <button
@@ -293,7 +310,7 @@ export default function Home() {
                                 : "text-slate-500 hover:text-slate-950"
                             }`}
                           >
-                            Advanced
+                            {advancedModeLabel}
                           </button>
                         )}
                       </div>
@@ -308,14 +325,14 @@ export default function Home() {
                           type="button"
                           className="rounded-full bg-[#0f766e] px-3 py-1 text-[11px] font-semibold text-white shadow-sm"
                         >
-                          {copy.toolbar.primaryNav.office.label}
+                          {officeNavLabel}
                         </button>
                         <button
                           type="button"
                           onClick={() => setLocation("/debug")}
                           className="rounded-full px-3 py-1 text-[11px] font-semibold text-slate-500 transition-all hover:text-slate-950"
                         >
-                          {copy.toolbar.primaryNav.more.label}
+                          {moreNavLabel}
                         </button>
                       </div>
 
@@ -375,7 +392,7 @@ export default function Home() {
                       )}
                     >
                       <Settings2 className="h-3.5 w-3.5" />
-                      {copy.home.openConfig}
+                      {configLabel}
                     </button>
                     {IS_GITHUB_PAGES && <GitHubRepoBadge />}
                     <div
@@ -384,14 +401,22 @@ export default function Home() {
                         utilityChipClass
                       )}
                     >
-                      {copy.home.runtimeChip(
-                        copy.toolbar.runtimeLabels[
-                          runtimeMode === "advanced" ? "advanced" : "frontend"
-                        ]
-                      )}
+                      {runtimeChipLabel}
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div
+                className="pointer-events-none fixed left-1/2 top-[clamp(68px,8vh,96px)] z-[58] w-[min(720px,calc(100vw-560px))] -translate-x-1/2 text-center"
+                data-testid="home-desktop-scene-title"
+              >
+                <h1 className="text-3xl font-black leading-none text-slate-950 drop-shadow-[0_10px_28px_rgba(255,255,255,0.72)] 2xl:text-4xl">
+                  Cube Pets Office
+                </h1>
+                <p className="mt-2 text-sm font-semibold text-slate-600 2xl:text-base">
+                  {heroSubtitle}
+                </p>
               </div>
 
               <OfficeTaskCockpit

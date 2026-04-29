@@ -22,27 +22,67 @@ import { TasksCockpitDetail } from "@/components/tasks/TasksCockpitDetail";
 import { TasksQueueRail } from "@/components/tasks/TasksQueueRail";
 import {
   compactText,
-  missionOperatorStateLabel,
   missionOperatorStateTone,
-  missionStatusLabel,
   missionStatusTone,
 } from "@/components/tasks/task-helpers";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useViewportTier, useViewportWidth } from "@/hooks/useViewportTier";
 import { useI18n } from "@/i18n";
-import { useTasksStore } from "@/lib/tasks-store";
+import {
+  useTasksStore,
+  type MissionTaskStatus,
+} from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
 import { useWorkflowStore } from "@/lib/workflow-store";
-import type { MissionOperatorActionType } from "@shared/mission/contracts";
+import type {
+  MissionOperatorActionType,
+  MissionOperatorState,
+} from "@shared/mission/contracts";
 
 function t(locale: string, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
 }
 
+function taskStatusLabel(status: MissionTaskStatus, locale: string) {
+  const zh: Record<MissionTaskStatus, string> = {
+    queued: "排队中",
+    running: "执行中",
+    waiting: "等待中",
+    done: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+  const en: Record<MissionTaskStatus, string> = {
+    queued: "Queued",
+    running: "Running",
+    waiting: "Waiting",
+    done: "Done",
+    failed: "Failed",
+    cancelled: "Cancelled",
+  };
+  return locale === "zh-CN" ? zh[status] : en[status];
+}
+
+function operatorStateLabel(state: MissionOperatorState, locale: string) {
+  const zh: Record<MissionOperatorState, string> = {
+    active: "进行中",
+    paused: "已暂停",
+    blocked: "已阻塞",
+    terminating: "终止中",
+  };
+  const en: Record<MissionOperatorState, string> = {
+    active: "Active",
+    paused: "Paused",
+    blocked: "Blocked",
+    terminating: "Terminating",
+  };
+  return locale === "zh-CN" ? zh[state] : en[state];
+}
+
 type TasksWorkbenchTab = "task" | "flow" | "agent" | "memory" | "history";
 
 const taskWorkbenchTriggerClassName =
-  "min-h-[36px] rounded-[14px] border border-transparent px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-stone-600 transition data-[state=active]:border-sky-100 data-[state=active]:bg-sky-50 data-[state=active]:text-stone-950 data-[state=active]:shadow-[0_12px_24px_rgba(2,132,199,0.12)]";
+  "min-h-[38px] rounded-[12px] border border-transparent px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-slate-500 transition data-[state=active]:border-sky-100 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-[0_10px_22px_rgba(14,165,233,0.1)]";
 
 function isTasksWorkbenchTab(value: string): value is TasksWorkbenchTab {
   return (
@@ -308,37 +348,52 @@ export default function TasksPage({
       "任务页现在只负责展示队列、任务详情和执行轨迹；发起与补充信息入口统一保留在办公室首页。",
       "Tasks is now display-only for queue, details, and execution history. Launch and clarification live on the office home page."
     );
-  const queueSummary = t(
-    locale,
-    `可见 ${filteredTasks.length} / 共 ${tasks.length} 条`,
-    `${filteredTasks.length} visible / ${tasks.length} total`
-  );
-  const displayOnlyHint = t(
-    locale,
-    "此页只做查看与跟进，不再承担发起或补问入口。",
-    "This page is now read-only for viewing and follow-up, without launch or clarification entry."
-  );
+  const lastUpdatedLabel = selectedDetail?.updatedAt
+    ? new Intl.DateTimeFormat(locale, {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(selectedDetail.updatedAt))
+    : t(locale, "暂无", "n/a");
+  const progressValue =
+    selectedDetail?.progress ?? selectedTaskSummary?.progress ?? 0;
   const taskOverviewPanel = (
-    <section className="workspace-panel workspace-panel-strong rounded-[28px] border border-stone-200/70 px-4 py-4 md:px-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section
+      className="rounded-[24px] border border-slate-200/80 bg-white px-5 py-4 shadow-[0_18px_42px_rgba(15,23,42,0.06)]"
+      data-testid="tasks-page-focus-card"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="workspace-eyebrow">
-            {t(locale, "任务焦点总览", "Task Focus Overview")}
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+            <span>{t(locale, "任务中心", "Tasks")}</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-slate-900">
+              {t(locale, "任务详情", "Task Detail")}
+            </span>
           </div>
-          <div className="mt-2 text-xl font-semibold tracking-tight text-stone-900">
+          <div className="mt-3 text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">
             {focusTitle}
           </div>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-stone-600">
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
             {focusSummary}
           </p>
         </div>
 
-        <div className="shrink-0 rounded-full border border-stone-200/80 bg-white/80 px-3 py-1 text-xs font-medium text-stone-600">
-          {queueSummary}
+        <div className="grid min-w-[172px] shrink-0 gap-1 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="text-[11px] font-semibold text-slate-500">
+            {t(locale, "可见任务数", "Visible Tasks")}
+          </span>
+          <span className="font-data text-2xl font-semibold text-slate-950">
+            {filteredTasks.length}
+            <span className="ml-1 text-sm font-medium text-slate-400">
+              / {tasks.length}
+            </span>
+          </span>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <span
           className={cn(
             "workspace-status px-3 py-1 text-xs font-semibold",
@@ -348,7 +403,7 @@ export default function TasksPage({
           )}
         >
           {selectedDetail
-            ? missionStatusLabel(selectedDetail.status, locale)
+            ? taskStatusLabel(selectedDetail.status, locale)
             : t(locale, "待选择", "No selection")}
         </span>
         <span
@@ -360,11 +415,18 @@ export default function TasksPage({
           )}
         >
           {selectedDetail
-            ? missionOperatorStateLabel(selectedDetail.operatorState, locale)
+            ? operatorStateLabel(selectedDetail.operatorState, locale)
             : t(locale, "只读展示", "Display only")}
         </span>
-        <span className="workspace-status workspace-tone-warning px-3 py-1 text-xs font-semibold">
-          {displayOnlyHint}
+        <span className="workspace-status workspace-tone-info px-3 py-1 text-xs font-semibold">
+          {t(locale, `进度 ${progressValue}%`, `Progress ${progressValue}%`)}
+        </span>
+        <span className="workspace-status workspace-tone-neutral px-3 py-1 text-xs font-semibold">
+          {t(
+            locale,
+            `最近更新 ${lastUpdatedLabel}`,
+            `Updated ${lastUpdatedLabel}`
+          )}
         </span>
       </div>
     </section>
@@ -397,9 +459,10 @@ export default function TasksPage({
           setActiveTab(value);
         }
       }}
-      className="min-h-0 flex-1 overflow-hidden rounded-[28px] border border-stone-200/70 bg-white/38 p-2 shadow-[0_18px_42px_rgba(99,73,45,0.08)] backdrop-blur-md"
+      className="min-h-0 flex-1 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-3 shadow-[0_18px_42px_rgba(15,23,42,0.06)]"
+      data-testid="tasks-page-detail-column"
     >
-      <TabsList className="grid h-auto w-full grid-cols-5 gap-1 rounded-[18px] bg-white/82 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+      <TabsList className="grid h-auto w-full grid-cols-5 gap-1 rounded-[16px] border border-slate-200 bg-slate-50 p-1">
         <TabsTrigger className={taskWorkbenchTriggerClassName} value="task">
           {t(locale, "任务", "Task")}
         </TabsTrigger>
@@ -419,14 +482,14 @@ export default function TasksPage({
 
       <TabsContent
         value="task"
-        className="mt-2 h-full min-h-0 flex-1 overflow-hidden"
+        className="mt-3 h-full min-h-0 flex-1 overflow-hidden"
       >
         {taskDetailPanel}
       </TabsContent>
 
       <TabsContent
         value="flow"
-        className="mt-2 h-full min-h-0 flex-1 overflow-hidden"
+        className="mt-3 h-full min-h-0 flex-1 overflow-hidden"
       >
         <TasksWorkbenchContextShell
           title={t(locale, "团队流", "Flow")}
@@ -451,7 +514,7 @@ export default function TasksPage({
 
       <TabsContent
         value="agent"
-        className="mt-2 h-full min-h-0 flex-1 overflow-hidden"
+        className="mt-3 h-full min-h-0 flex-1 overflow-hidden"
       >
         <TasksWorkbenchContextShell
           title="Agent"
@@ -482,7 +545,7 @@ export default function TasksPage({
 
       <TabsContent
         value="memory"
-        className="mt-2 h-full min-h-0 flex-1 overflow-hidden"
+        className="mt-3 h-full min-h-0 flex-1 overflow-hidden"
       >
         <TasksWorkbenchContextShell
           title={t(locale, "记忆与报告", "Memory and reports")}
@@ -498,7 +561,7 @@ export default function TasksPage({
 
       <TabsContent
         value="history"
-        className="mt-2 h-full min-h-0 flex-1 overflow-hidden"
+        className="mt-3 h-full min-h-0 flex-1 overflow-hidden"
       >
         <TasksWorkbenchContextShell
           title={t(locale, "历史", "History")}
@@ -532,7 +595,7 @@ export default function TasksPage({
   return (
     <div
       className={cn(
-        "workspace-page text-stone-900",
+        "bg-slate-50 text-slate-900",
         isMobile
           ? "min-h-screen pb-28 pt-[calc(env(safe-area-inset-top)+96px)]"
           : isLockedCockpit
@@ -543,14 +606,15 @@ export default function TasksPage({
     >
       <div
         className={cn(
-          "mx-auto flex w-full max-w-[1720px] flex-col px-3 md:px-4",
-          isLockedCockpit ? "h-full py-4" : "min-h-screen py-3"
+          "mx-auto flex w-full max-w-[1680px] flex-col px-4 md:px-5",
+          isLockedCockpit ? "h-full py-5" : "min-h-screen py-5"
         )}
+        data-testid="tasks-page-dashboard"
       >
         {isWideDesktop ? (
           <div
             className={cn(
-              "grid min-h-0 flex-1 gap-3 xl:grid-cols-[296px_minmax(0,1fr)]",
+              "grid min-h-0 flex-1 gap-5 xl:grid-cols-[328px_minmax(0,1fr)]",
               isLockedCockpit && "overflow-hidden"
             )}
           >
@@ -575,7 +639,7 @@ export default function TasksPage({
               )}
             />
 
-            <div className="min-w-0 flex min-h-0 flex-col gap-3">
+            <div className="min-w-0 flex min-h-0 flex-col gap-5">
               <div className={cn(isLockedCockpit && "shrink-0")}>
                 {taskOverviewPanel}
               </div>
@@ -584,7 +648,7 @@ export default function TasksPage({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {taskOverviewPanel}
 
             <TasksQueueRail

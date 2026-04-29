@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { Loader2, Monitor, Paperclip, Send, Server } from "lucide-react";
+import { Loader2, Monitor, Paperclip, Server } from "lucide-react";
 
-import { GlowButton } from "@/components/ui/GlowButton";
 import { Button } from "@/components/ui/button";
 import type { RuntimeMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -35,9 +34,6 @@ export function LaunchRuntimeMeta({
   maxAttachments,
   onPickFiles,
   operatorActionRail,
-  onSubmit,
-  submitLabel,
-  submitDisabled = false,
 }: {
   locale: string;
   runtimeMode: RuntimeMode;
@@ -46,16 +42,13 @@ export function LaunchRuntimeMeta({
   maxAttachments?: number;
   onPickFiles?: () => void;
   operatorActionRail?: ReactNode;
-  onSubmit?: () => void;
-  submitLabel?: string;
-  submitDisabled?: boolean;
 }) {
   const hasSharedActionRail = Boolean(operatorActionRail);
 
   return (
     <div
       className={cn(
-        "mt-1.5 flex gap-1.5 text-xs text-stone-500",
+        "mt-3 flex gap-2 text-xs text-slate-500",
         hasSharedActionRail
           ? "flex-wrap items-end"
           : "overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -71,7 +64,7 @@ export function LaunchRuntimeMeta({
           <Button
             type="button"
             variant="outline"
-            className="h-7 rounded-full px-2.5 text-[11px] whitespace-nowrap"
+            className="h-8 rounded-full border-slate-200/80 bg-white/74 px-3 text-[11px] font-semibold text-slate-600 shadow-none whitespace-nowrap hover:bg-white hover:text-slate-900"
             disabled={
               isPreparingFiles ||
               (typeof maxAttachments === "number" &&
@@ -88,7 +81,7 @@ export function LaunchRuntimeMeta({
           </Button>
         ) : null}
 
-        <span className="inline-flex items-center gap-1 rounded-full border border-stone-200/80 bg-stone-50 px-2 py-0.75 whitespace-nowrap">
+        <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/62 px-3 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
           {runtimeMode === "advanced" ? (
             <Server className="size-3.5" />
           ) : (
@@ -98,7 +91,7 @@ export function LaunchRuntimeMeta({
         </span>
 
         {attachmentCount > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-stone-200/80 bg-stone-50 px-2 py-0.75 whitespace-nowrap">
+          <span className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200/80 bg-white/62 px-3 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
             {getLaunchAttachmentCountLabel(locale, attachmentCount)}
           </span>
         ) : null}
@@ -113,18 +106,6 @@ export function LaunchRuntimeMeta({
         )}
       >
         {operatorActionRail}
-
-        {!hasSharedActionRail && onSubmit && submitLabel ? (
-          <GlowButton
-            type="button"
-            disabled={submitDisabled}
-            className="h-7 shrink-0 rounded-full px-2.5 text-[11px] font-semibold shadow-[0_10px_24px_rgba(94,139,114,0.18)]"
-            onClick={onSubmit}
-          >
-            <Send className="size-3.5" />
-            {submitLabel}
-          </GlowButton>
-        ) : null}
       </div>
     </div>
   );

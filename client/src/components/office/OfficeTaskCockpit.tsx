@@ -74,10 +74,7 @@ import {
 } from "@/lib/navigation-events";
 import { resolveTaskHubLocationUpdate } from "@/pages/tasks/task-hub-location";
 import type { OfficeLaunchResolution } from "./office-task-cockpit-types";
-import {
-  resolveOfficeCenterStageMode,
-  resolveWorkflowForSelectedTask,
-} from "./office-task-cockpit-utils";
+import { resolveWorkflowForSelectedTask } from "./office-task-cockpit-utils";
 
 function t(locale: string, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
@@ -164,7 +161,7 @@ export function OfficeTaskCockpit({
     useState<OfficeLaunchResolution | null>(null);
   const [selectedLaunchRouteId, setSelectedLaunchRouteId] =
     useState<LaunchRouteCandidateId | null>(null);
-  const [centerControlsCollapsed, setCenterControlsCollapsed] = useState(false);
+  const [centerControlsCollapsed, setCenterControlsCollapsed] = useState(true);
   const [runtimeDockTab, setRuntimeDockTab] = useState<
     "support" | "logs" | "artifacts" | "runtime"
   >("support");
@@ -589,12 +586,6 @@ export function OfficeTaskCockpit({
   const showClarificationDock = Boolean(
     hasActiveClarification && currentDialog
   );
-  const centerStageMode = resolveOfficeCenterStageMode({
-    surface: "home",
-    selectedTaskId: activeTaskId,
-    hasSelectedDetail: Boolean(selectedDetail),
-  });
-
   useEffect(() => {
     if (supportTabHasContext) {
       setRuntimeDockTab("support");
@@ -1483,7 +1474,7 @@ export function OfficeTaskCockpit({
       {!centerControlsCollapsed && !showClarificationDock ? (
         <div
           className={cn(
-            "pointer-events-auto h-[86vh] max-h-[calc(100vh-420px)] min-h-0 overflow-y-auto rounded-[18px] border",
+            "pointer-events-auto h-[min(52vh,520px)] min-h-0 overflow-y-auto rounded-[20px] border",
             floatingGlassClass
           )}
           data-testid="office-center-workbench-shell"
@@ -1516,7 +1507,7 @@ export function OfficeTaskCockpit({
           )}
         </Button>
         <div
-          className="pointer-events-auto mx-auto w-full max-w-[860px] overflow-visible"
+          className="pointer-events-auto mx-auto w-full max-w-[980px] overflow-visible"
           data-testid="office-center-composer-shell"
         >
           {launcherDock}
@@ -1552,61 +1543,6 @@ export function OfficeTaskCockpit({
     </div>
   );
 
-  const sceneHud = (
-    <div
-      className="pointer-events-none flex h-full min-h-0 flex-col justify-between py-4"
-      data-center-stage-mode={centerStageMode}
-      data-testid="office-scene-hud"
-    >
-      <div className="pointer-events-none fixed left-1/2 top-[clamp(112px,9vh,150px)] z-[64] -translate-x-1/2">
-        <div className="pointer-events-auto max-w-[560px] rounded-[16px] border border-white/50 bg-white/48 px-3 py-2 text-slate-700 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                selectedDetail?.status === "failed"
-                  ? "bg-rose-500"
-                  : selectedDetail?.status === "waiting" || hasPendingDecision
-                    ? "bg-sky-500"
-                    : selectedDetail
-                      ? "bg-emerald-500"
-                      : "bg-slate-400"
-              )}
-            />
-            <div className="min-w-0">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                {t(locale, "Scene HUD", "Scene HUD")}
-              </div>
-              <div className="truncate text-[12px] font-semibold text-slate-900">
-                {stepFocus.title}
-              </div>
-            </div>
-            <span className="ml-2 shrink-0 rounded-full border border-slate-200/80 bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-              {stepFocus.progress}%
-            </span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-semibold text-slate-600">
-            <span className="rounded-full bg-sky-50/90 px-2 py-0.5 text-sky-700">
-              {stepFocus.stageLabel}
-            </span>
-            <span className="rounded-full bg-emerald-50/90 px-2 py-0.5 text-emerald-700">
-              {selectedDetail
-                ? missionStatusLabel(selectedDetail.status, locale)
-                : t(locale, "场景待命", "Scene ready")}
-            </span>
-            <span className="rounded-full bg-white/72 px-2 py-0.5">
-              {t(locale, `队列 ${queuedCount}`, `Queue ${queuedCount}`)}
-            </span>
-            <span className="rounded-full bg-white/72 px-2 py-0.5">
-              {t(locale, `运行 ${runningCount}`, `Running ${runningCount}`)}
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="h-[32vh] min-h-[180px]" aria-hidden="true" />
-    </div>
-  );
-
   return (
     <div
       className={cn(
@@ -1614,10 +1550,6 @@ export function OfficeTaskCockpit({
         className
       )}
     >
-      <div className="pointer-events-auto relative z-10 h-full min-h-0">
-        <div className="relative h-full min-h-0">{sceneHud}</div>
-      </div>
-
       {clarificationStage}
       {launchStage}
 

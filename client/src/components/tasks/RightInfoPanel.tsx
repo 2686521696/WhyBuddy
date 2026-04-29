@@ -114,8 +114,8 @@ function TaskOverviewSection({
     ? formatRelativeTime(detail.createdAt, locale)
     : "—";
 
-  const estimatedCompletion = autopilot?.route?.estimatedDuration
-    ? autopilot.route.estimatedDuration
+  const estimatedCompletion = autopilot?.route?.selected?.estimatedDuration
+    ? autopilot.route.selected.estimatedDuration
     : "—";
 
   const elapsed =
@@ -429,7 +429,7 @@ export function RightInfoPanel({
         minWidth: 0,
         maxWidth: "none",
         scrollbarGutter: "stable",
-        backgroundColor: "var(--background)",
+        backgroundColor: "transparent",
       }}
       data-testid="right-info-panel"
     >

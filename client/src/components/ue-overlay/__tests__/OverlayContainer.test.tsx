@@ -110,6 +110,30 @@ describe("OverlayContainer — layer structure (Task 1.1)", () => {
     expect(markup).toContain('data-testid="child-content"');
     expect(markup).toContain("Hello");
   });
+
+  it("keeps a black media surface by default for video streams", () => {
+    const markup = renderToStaticMarkup(
+      <OverlayContainer videoElement={makeVideoRef()}>
+        <span />
+      </OverlayContainer>,
+    );
+
+    expect(markup).toContain("bg-black");
+  });
+
+  it("can override the media surface background for the office scene", () => {
+    const markup = renderToStaticMarkup(
+      <OverlayContainer
+        videoElement={makeVideoRef()}
+        backgroundClassName="bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]"
+      >
+        <span />
+      </OverlayContainer>,
+    );
+
+    expect(markup).toContain("bg-[linear-gradient(180deg,#eef6fb_0%,#f7fbfd_48%,#e5f1f4_100%)]");
+    expect(markup).not.toContain("bg-black");
+  });
 });
 
 // ---------------------------------------------------------------------------
