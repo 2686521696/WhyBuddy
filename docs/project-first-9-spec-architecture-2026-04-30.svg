@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1800" height="1280" viewBox="0 0 1800 1280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hero" x1="60" y1="36" x2="1740" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14213D"/>
+      <stop offset="0.52" stop-color="#1B5C73"/>
+      <stop offset="1" stop-color="#2E7D5F"/>
+    </linearGradient>
+    <linearGradient id="center" x1="610" y1="426" x2="1190" y2="756" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#245466"/>
+      <stop offset="1" stop-color="#2EB67D"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-12%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#172235" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 14 14" refX="11" refY="7" markerWidth="13" markerHeight="13" orient="auto-start-reverse">
+      <path d="M2 2 L12 7 L2 12 Z" fill="#44546A"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 14 14" refX="11" refY="7" markerWidth="13" markerHeight="13" orient="auto-start-reverse">
+      <path d="M2 2 L12 7 L2 12 Z" fill="#2E7D5F"/>
+    </marker>
+    <style>
+      .bg { fill: #F5F7FA; }
+      .hero-title { font: 800 44px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #FFFFFF; letter-spacing: 0; }
+      .hero-subtitle { font: 500 19px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: rgba(255,255,255,0.84); letter-spacing: 0; }
+      .hero-meta { font: 700 14px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: rgba(255,255,255,0.7); letter-spacing: 0; }
+      .card { fill: #FFFFFF; stroke: #E1E7EF; stroke-width: 1; filter: url(#shadow); }
+      .mini-card { fill: #FFFFFF; stroke: #E3E9F2; stroke-width: 1; }
+      .center-title { font: 900 35px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #FFFFFF; letter-spacing: 0; }
+      .center-text { font: 600 17px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: rgba(255,255,255,0.88); letter-spacing: 0; }
+      .section-title { font: 900 24px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .section-note { font: 600 15px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #617085; letter-spacing: 0; }
+      .spec-title { font: 850 19px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .spec-path { font: 700 12px "JetBrains Mono", "Consolas", monospace; fill: #778396; letter-spacing: 0; }
+      .spec-desc { font: 560 14px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #526074; letter-spacing: 0; }
+      .pill { font: 850 12px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #FFFFFF; letter-spacing: 0; }
+      .flow-label { font: 800 15px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #44546A; letter-spacing: 0; }
+      .flow-small { font: 650 12px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #69778A; letter-spacing: 0; }
+      .domain-title { font: 850 18px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .domain-item { font: 650 14px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #526074; letter-spacing: 0; }
+      .boundary-title { font: 900 19px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .boundary-text { font: 600 14px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #5B6878; letter-spacing: 0; }
+      .footer-title { font: 900 20px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .footer-text { font: 600 15px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #526074; letter-spacing: 0; }
+      .footer-strong { font: 900 15px "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172235; letter-spacing: 0; }
+      .line { stroke: #44546A; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .green-line { stroke: #2E7D5F; stroke-width: 3; fill: none; marker-end: url(#arrowGreen); }
+      .soft-line { stroke: #B7C1CF; stroke-width: 2; stroke-dasharray: 7 8; fill: none; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1280"/>
+
+  <rect x="60" y="36" width="1680" height="216" rx="28" fill="url(#hero)"/>
+  <text x="100" y="96" class="hero-meta">PROJECT-FIRST ARCHITECTURE · 2026-04-30 · 9 SPECS COMPLETE</text>
+  <text x="100" y="150" class="hero-title">Cube Pets Office · Project-First 9 Spec 架构图</text>
+  <text x="100" y="193" class="hero-subtitle">用户看项目与路线；系统把澄清、Spec、FSD 规划、执行、证据和产物全部沉淀回 Project。</text>
+  <text x="100" y="224" class="hero-meta">主链路：Project → Clarification → Spec → Route → Execution → Artifact / Evidence → Replay / Next Spec</text>
+  <rect x="1398" y="80" width="278" height="116" rx="20" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.24)"/>
+  <text x="1426" y="120" class="hero-meta">EXECUTION STATUS</text>
+  <text x="1426" y="164" class="hero-title">93 / 93</text>
+  <text x="1584" y="164" class="hero-subtitle">Done</text>
+
+  <g transform="translate(80 292)">
+    <text x="0" y="0" class="section-title">一、产品主对象：Project</text>
+    <text x="282" y="0" class="section-note">Project 是首屏、上下文、执行、产物、证据和下一轮演化的聚合根。</text>
+  </g>
+
+  <g transform="translate(610 426)">
+    <rect width="580" height="330" rx="34" fill="url(#center)" filter="url(#shadow)"/>
+    <text x="42" y="66" class="center-title">Project</text>
+    <text x="42" y="108" class="center-text">项目级 AI 自动驾驶操作系统的第一层对象</text>
+    <text x="42" y="148" class="center-text">统一承载：目标、上下文、规格、路线、任务、证据、产物</text>
+    <rect x="42" y="182" width="496" height="1" fill="rgba(255,255,255,0.3)"/>
+    <text x="42" y="222" class="center-text">用户入口：创建 / 选择项目 → 当前项目驾驶舱</text>
+    <text x="42" y="258" class="center-text">系统入口：projectId 贯穿输入、任务、执行和回放</text>
+    <text x="42" y="294" class="center-text">演化入口：执行结果反哺 Spec 与下一轮路线</text>
+  </g>
+
+  <g transform="translate(80 330)">
+    <rect class="card" width="430" height="140" rx="22"/>
+    <rect x="24" y="24" width="86" height="28" rx="14" fill="#14213D"/>
+    <text x="44" y="43" class="pill">P0 总纲</text>
+    <text x="24" y="76" class="spec-title">1. Product Architecture</text>
+    <text x="24" y="101" class="spec-path">project-first-product-architecture</text>
+    <text x="24" y="126" class="spec-desc">入口收敛、产品边界、Project-first 主线。</text>
+  </g>
+
+  <g transform="translate(80 512)">
+    <rect class="card" width="430" height="176" rx="22"/>
+    <rect x="24" y="24" width="92" height="28" rx="14" fill="#1B5C73"/>
+    <text x="45" y="43" class="pill">P0 底座</text>
+    <text x="24" y="76" class="spec-title">2. Project Domain Model</text>
+    <text x="24" y="101" class="spec-path">project-domain-model</text>
+    <text x="24" y="129" class="spec-desc">定义 Project、Message、Spec、Route、Mission、</text>
+    <text x="24" y="151" class="spec-desc">Artifact、Evidence 的领域关系和持久化口径。</text>
+  </g>
+
+  <g transform="translate(80 730)">
+    <rect class="card" width="430" height="170" rx="22"/>
+    <rect x="24" y="24" width="86" height="28" rx="14" fill="#2E7D5F"/>
+    <text x="44" y="43" class="pill">P0 首页</text>
+    <text x="24" y="76" class="spec-title">3. Project Cockpit Home</text>
+    <text x="24" y="101" class="spec-path">project-cockpit-home</text>
+    <text x="24" y="129" class="spec-desc">首页只服务当前项目：无项目创建、</text>
+    <text x="24" y="151" class="spec-desc">有项目进入驾驶舱，不再堆入口。</text>
+  </g>
+
+  <g transform="translate(1290 330)">
+    <rect class="card" width="430" height="156" rx="22"/>
+    <rect x="24" y="24" width="100" height="28" rx="14" fill="#2F80ED"/>
+    <text x="45" y="43" class="pill">P0 输入</text>
+    <text x="24" y="76" class="spec-title">4. Project-Scoped Composer</text>
+    <text x="24" y="101" class="spec-path">project-scoped-composer</text>
+    <text x="24" y="129" class="spec-desc">统一输入框变成当前项目继续推进入口。</text>
+  </g>
+
+  <g transform="translate(1290 528)">
+    <rect class="card" width="430" height="166" rx="22"/>
+    <rect x="24" y="24" width="100" height="28" rx="14" fill="#7C5CC4"/>
+    <text x="45" y="43" class="pill">P0 澄清</text>
+    <text x="24" y="76" class="spec-title">5. Clarification Conversation</text>
+    <text x="24" y="101" class="spec-path">project-clarification-conversation</text>
+    <text x="24" y="129" class="spec-desc">补问、选择、确认都进入项目上下文，</text>
+    <text x="24" y="151" class="spec-desc">不再丢失为一次性会话。</text>
+  </g>
+
+  <g transform="translate(1290 736)">
+    <rect class="card" width="430" height="164" rx="22"/>
+    <rect x="24" y="24" width="100" height="28" rx="14" fill="#C77D2D"/>
+    <text x="45" y="43" class="pill">P0 执行</text>
+    <text x="24" y="76" class="spec-title">6. Project Execution Center</text>
+    <text x="24" y="101" class="spec-path">project-execution-center</text>
+    <text x="24" y="129" class="spec-desc">任务中心按项目聚合执行状态、日志、</text>
+    <text x="24" y="151" class="spec-desc">产物与人工接管动作。</text>
+  </g>
+
+  <g transform="translate(280 974)">
+    <rect class="card" width="370" height="154" rx="22"/>
+    <rect x="24" y="24" width="96" height="28" rx="14" fill="#245466"/>
+    <text x="45" y="43" class="pill">P1 Spec</text>
+    <text x="24" y="76" class="spec-title">7. Project Spec Center</text>
+    <text x="24" y="101" class="spec-path">project-spec-center</text>
+    <text x="24" y="129" class="spec-desc">版本、来源、diff、完整度、演化记录。</text>
+  </g>
+
+  <g transform="translate(715 974)">
+    <rect class="card" width="370" height="154" rx="22"/>
+    <rect x="24" y="24" width="96" height="28" rx="14" fill="#2F80ED"/>
+    <text x="45" y="43" class="pill">P1 Route</text>
+    <text x="24" y="76" class="spec-title">8. FSD Route Planner</text>
+    <text x="24" y="101" class="spec-path">project-fsd-route-planner</text>
+    <text x="24" y="129" class="spec-desc">推荐、快速、深度、保守路线与选择。</text>
+  </g>
+
+  <g transform="translate(1150 974)">
+    <rect class="card" width="370" height="154" rx="22"/>
+    <rect x="24" y="24" width="118" height="28" rx="14" fill="#2E7D5F"/>
+    <text x="45" y="43" class="pill">P2 Evidence</text>
+    <text x="24" y="76" class="spec-title">9. Evidence Artifact Replay</text>
+    <text x="24" y="101" class="spec-path">project-evidence-artifact-replay</text>
+    <text x="24" y="129" class="spec-desc">结果、证据、SVG、日志、回放沉淀。</text>
+  </g>
+
+  <path class="line" d="M510 400 C560 400 570 470 610 500"/>
+  <path class="line" d="M510 600 C552 598 570 592 610 590"/>
+  <path class="line" d="M510 815 C560 792 578 728 610 688"/>
+  <path class="line" d="M1190 488 C1234 468 1248 420 1290 408"/>
+  <path class="line" d="M1190 590 C1234 590 1248 606 1290 610"/>
+  <path class="line" d="M1190 698 C1234 720 1248 795 1290 820"/>
+
+  <path class="green-line" d="M480 970 C558 910 700 820 800 756"/>
+  <path class="green-line" d="M900 756 C900 830 900 902 900 974"/>
+  <path class="green-line" d="M1010 756 C1120 820 1256 904 1335 974"/>
+  <path class="soft-line" d="M1335 1128 C1170 1198 622 1198 465 1128"/>
+
+  <g transform="translate(610 792)">
+    <rect class="mini-card" width="580" height="82" rx="18" fill="#FFFFFF"/>
+    <text x="28" y="34" class="flow-label">闭环流转</text>
+    <text x="116" y="34" class="flow-small">需求澄清 → Spec 版本 → FSD 路线 → Mission 执行 → 证据/产物回流 → Spec 更新建议</text>
+    <rect x="28" y="52" width="522" height="8" rx="4" fill="#E8EEF5"/>
+    <rect x="28" y="52" width="522" height="8" rx="4" fill="#2EB67D"/>
+  </g>
+
+  <g transform="translate(80 930)">
+    <text x="0" y="0" class="section-title">二、演化层与运行层</text>
+    <text x="0" y="28" class="section-note">Spec Center 负责可解释规格；FSD Route Planner 负责路线选择；Evidence Replay 让执行结果反哺下一轮项目演化。</text>
+  </g>
+
+  <g transform="translate(80 1166)">
+    <rect class="card" width="1640" height="74" rx="22"/>
+    <text x="28" y="31" class="footer-title">边界结论</text>
+    <text x="152" y="31" class="footer-text">50+ AIGC 节点沉入 FSD 角色内部；Workflow / Docker / Browser / Native Runtime 是执行承载层，不作为首屏产品对象。</text>
+    <text x="28" y="56" class="footer-strong">下一验证点：</text>
+    <text x="128" y="56" class="footer-text">用一个真实项目样例跑通创建、澄清、Spec、路线、执行、产物和证据回放。</text>
+    <text x="1254" y="56" class="footer-text">生成文件：docs/project-first-9-spec-architecture-2026-04-30.svg</text>
+  </g>
+</svg>
