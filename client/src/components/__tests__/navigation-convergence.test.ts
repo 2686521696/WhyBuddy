@@ -165,6 +165,28 @@ describe("navigation convergence config", () => {
     expect(items.some(item => item.id === "projects")).toBe(false);
   });
 
+  it("marks project-scoped task routes as task center inside project navigation", () => {
+    const projectTasksPath = `${PROJECTS_PATH}/project-1/tasks`;
+    const projectTaskDetailPath = `${projectTasksPath}/mission-1`;
+    const items = getSidebarNavItems(projectTasksPath);
+
+    expect(items.map(item => item.id)).toEqual([
+      "autopilot",
+      "tasks",
+      "knowledge",
+      "datasource",
+      "dashboard",
+      "marketplace",
+      "notifications",
+      "settings",
+    ]);
+    expect(getActiveSidebarId(projectTasksPath)).toBe("tasks");
+    expect(getActiveSidebarId(projectTaskDetailPath)).toBe("tasks");
+    expect(resolveSidebarHref(items[1], projectTasksPath, "project-1")).toBe(
+      projectTasksPath
+    );
+  });
+
   it("treats debug, lineage, and legacy command center routes as low-frequency paths", () => {
     expect(isLowFrequencyPath(DEBUG_PATH)).toBe(true);
     expect(isLowFrequencyPath(DEBUG_CONFIG_PATH)).toBe(true);

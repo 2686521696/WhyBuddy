@@ -1,6 +1,6 @@
 import type { TaskArtifact } from "@/lib/tasks-store";
 
-export type ArtifactPreviewMode = "markdown" | "json" | "text";
+export type ArtifactPreviewMode = "html" | "image" | "json" | "markdown" | "pdf" | "text";
 
 export interface ArtifactPreviewPayload {
   content: string;
@@ -29,6 +29,7 @@ const TEXT_FORMATS = new Set([
   "yaml",
   "yml",
 ]);
+const IMAGE_FORMATS = new Set(["gif", "jpeg", "jpg", "png", "svg", "webp"]);
 
 function normalizeFormat(format?: string | null): string | null {
   const normalized = format?.trim().toLowerCase();
@@ -54,10 +55,32 @@ function extractErrorMessage(raw: string): string {
 
 export function resolveArtifactPreviewMode(
   format?: string | null,
-  contentType?: string | null
+  contentType?: string | null,
+  previewType?: TaskArtifact["previewType"] | null
 ): ArtifactPreviewMode {
   const normalizedFormat = normalizeFormat(format);
   const normalizedType = contentType?.toLowerCase() || "";
+
+  if (
+    previewType === "image" ||
+    normalizedType.startsWith("image/") ||
+    (normalizedFormat && IMAGE_FORMATS.has(normalizedFormat))
+  ) {
+    return "image";
+  }
+
+  if (previewType === "pdf" || normalizedType.includes("application/pdf")) {
+    return "pdf";
+  }
+
+  if (
+    previewType === "html" ||
+    normalizedType.includes("text/html") ||
+    normalizedFormat === "html" ||
+    normalizedFormat === "htm"
+  ) {
+    return "html";
+  }
 
   if (
     (normalizedFormat && MARKDOWN_FORMATS.has(normalizedFormat)) ||
@@ -67,6 +90,7 @@ export function resolveArtifactPreviewMode(
   }
 
   if (
+    previewType === "json" ||
     (normalizedFormat && JSON_FORMATS.has(normalizedFormat)) ||
     normalizedType.includes("application/json")
   ) {
@@ -79,9 +103,10 @@ export function resolveArtifactPreviewMode(
 export function formatArtifactPreviewContent(
   content: string,
   format?: string | null,
-  contentType?: string | null
+  contentType?: string | null,
+  previewType?: TaskArtifact["previewType"] | null
 ): string {
-  if (resolveArtifactPreviewMode(format, contentType) !== "json") {
+  if (resolveArtifactPreviewMode(format, contentType, previewType) !== "json") {
     return content;
   }
 
@@ -93,18 +118,40 @@ export function formatArtifactPreviewContent(
 }
 
 export function isArtifactPreviewable(
-  artifact: Pick<TaskArtifact, "kind" | "format" | "previewUrl">
+  artifact: Pick<TaskArtifact, "kind" | "format" | "mimeType" | "previewType" | "previewUrl">
 ): boolean {
   if (!artifact.previewUrl) {
     return false;
   }
 
-  if (artifact.kind === "log" || artifact.kind === "report") {
+  if (
+    artifact.kind === "log" ||
+    artifact.kind === "report" ||
+    artifact.previewType === "html" ||
+    artifact.previewType === "image" ||
+    artifact.previewType === "json" ||
+    artifact.previewType === "log" ||
+    artifact.previewType === "pdf" ||
+    artifact.previewType === "text"
+  ) {
+    return true;
+  }
+
+  const normalizedMime = artifact.mimeType?.toLowerCase() || "";
+  if (
+    normalizedMime.startsWith("image/") ||
+    normalizedMime.includes("text/html") ||
+    normalizedMime.includes("application/pdf") ||
+    normalizedMime.startsWith("text/") ||
+    normalizedMime.includes("application/json")
+  ) {
     return true;
   }
 
   const normalizedFormat = normalizeFormat(artifact.format);
-  return normalizedFormat ? TEXT_FORMATS.has(normalizedFormat) : false;
+  return normalizedFormat
+    ? TEXT_FORMATS.has(normalizedFormat) || IMAGE_FORMATS.has(normalizedFormat)
+    : false;
 }
 
 export async function fetchArtifactPreview(

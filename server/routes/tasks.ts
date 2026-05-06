@@ -14,10 +14,22 @@ import type {
 import { EXECUTOR_API_ROUTES, type CancelExecutorJobRequest } from '../../shared/executor/api.js';
 import type { SubmitMissionOperatorActionRequest } from '../../shared/mission/api.js';
 import { BUILTIN_DECISION_TEMPLATES } from '../../shared/mission/decision-templates.js';
-import { normalizeWorkflowInputProjection } from '../../shared/workflow-input.js';
+import {
+  buildWorkflowDirectiveContext,
+  buildWorkflowInputSignature,
+  normalizeWorkflowAttachments,
+  normalizeWorkflowInputProjection,
+  type WorkflowInputAttachment,
+} from '../../shared/workflow-input.js';
 import type { AuthenticatedRequest } from '../auth/types.js';
+import db from '../db/index.js';
 import { buildExecutionPlan } from '../core/execution-plan-builder.js';
-import { ExecutorClient } from '../core/executor-client.js';
+import {
+  ExecutorClient,
+  getExecutorCapabilityMismatchReason,
+} from '../core/executor-client.js';
+import { workflowEngine } from '../core/workflow-engine.js';
+import { linkWorkflowToMission } from '../core/mission-enrichment-bridge.js';
 import type { ProjectRecord } from '../persistence/repositories.js';
 import { submitMissionDecision } from '../tasks/mission-decision.js';
 import {
@@ -34,6 +46,7 @@ import {
 } from '../tasks/mission-runtime.js';
 import {
   getMimeType,
+  isInlinePreviewMime,
   isTextMime,
   validateArtifactPath,
   resolveArtifactAbsolutePath,
@@ -49,6 +62,7 @@ const FINAL_MISSION_STATUSES = new Set(['done', 'failed', 'cancelled']);
 export interface TaskRouterOptions {
   fetchImpl?: typeof fetch;
   executorBaseUrl?: string;
+  workflowRetry?: WorkflowRetryDependencies;
   requireAuth?: RequestHandler;
   projects?: {
     findByIdForOwner(
@@ -63,6 +77,32 @@ export interface TaskRouterOptions {
       payload: TPayload;
     }): Promise<unknown>;
   };
+}
+
+interface WorkflowRetryStartOptions {
+  attachments?: WorkflowInputAttachment[];
+  directiveContext?: string;
+  inputSignature?: string;
+}
+
+interface WorkflowRetryRecord {
+  id: string;
+  results?: {
+    input?: Record<string, unknown>;
+  } | null;
+}
+
+interface WorkflowRetryDependencies {
+  startWorkflow(
+    directive: string,
+    options?: WorkflowRetryStartOptions,
+  ): Promise<string>;
+  getWorkflow(workflowId: string): WorkflowRetryRecord | undefined;
+  updateWorkflow(
+    workflowId: string,
+    updates: { results?: Record<string, unknown> },
+  ): void;
+  linkWorkflowToMission(workflowId: string, missionId: string): void;
 }
 
 function parseLimit(rawValue: unknown, defaultLimit = DEFAULT_LIMIT): number {
@@ -192,6 +232,162 @@ function shouldAutoDispatchMission(
   if (requested === true) return true;
   if (requested === false) return false;
   return task.kind === 'nl-command';
+}
+
+function shouldRestartWorkflowMission(
+  task: Pick<MissionRecord, 'kind' | 'projection'>,
+): boolean {
+  return (
+    task.kind !== 'nl-command' &&
+    typeof task.projection?.workflowId === 'string' &&
+    task.projection.workflowId.trim().length > 0
+  );
+}
+
+function getWorkflowRetryDependencies(
+  options: TaskRouterOptions,
+): WorkflowRetryDependencies {
+  return (
+    options.workflowRetry ?? {
+      startWorkflow: (directive, retryOptions) =>
+        workflowEngine.startWorkflow(directive, retryOptions),
+      getWorkflow: workflowId => db.getWorkflow(workflowId),
+      updateWorkflow: (workflowId, updates) => db.updateWorkflow(workflowId, updates),
+      linkWorkflowToMission,
+    }
+  );
+}
+
+function getWorkflowInput(
+  workflow: WorkflowRetryRecord | undefined,
+): Record<string, unknown> {
+  return workflow?.results?.input &&
+    typeof workflow.results.input === 'object' &&
+    !Array.isArray(workflow.results.input)
+    ? workflow.results.input
+    : {};
+}
+
+interface WorkflowMissionRetryResult {
+  task: MissionRecord | undefined;
+  dispatchAccepted: boolean;
+  dispatchError?: string;
+  workflowId?: string;
+  previousWorkflowId?: string;
+}
+
+async function restartMissionWorkflow(
+  runtime: MissionRuntime,
+  missionId: string,
+  dependencies: WorkflowRetryDependencies,
+  source: MissionEvent['source'] = 'brain',
+): Promise<WorkflowMissionRetryResult> {
+  const mission = runtime.getTask(missionId);
+  if (!mission) {
+    return {
+      task: undefined,
+      dispatchAccepted: false,
+      dispatchError: 'Mission not found',
+    };
+  }
+
+  const previousWorkflowId = mission.projection?.workflowId?.trim();
+  if (!previousWorkflowId) {
+    return {
+      task: mission,
+      dispatchAccepted: false,
+      dispatchError: 'Mission is not linked to a workflow.',
+    };
+  }
+
+  const sourceText = mission.sourceText?.trim() || mission.title;
+  const previousWorkflow = dependencies.getWorkflow(previousWorkflowId);
+  const previousInput = getWorkflowInput(previousWorkflow);
+  const attachments = normalizeWorkflowAttachments(previousInput.attachments);
+  const projection = normalizeWorkflowInputProjection({
+    ...(previousInput.projection &&
+    typeof previousInput.projection === 'object' &&
+    !Array.isArray(previousInput.projection)
+      ? previousInput.projection
+      : {}),
+    sessionId:
+      previousInput.sessionId ??
+      mission.projection?.sessionId ??
+      mission.topicId,
+    sourceApp: previousInput.sourceApp ?? mission.projection?.sourceApp,
+    projectId: mission.projection?.projectId,
+  });
+  const directiveContext = buildWorkflowDirectiveContext(sourceText, attachments);
+  const inputSignature = buildWorkflowInputSignature(sourceText, attachments);
+
+  try {
+    const workflowId = await dependencies.startWorkflow(sourceText, {
+      attachments,
+      directiveContext,
+      inputSignature,
+    });
+    const workflow = dependencies.getWorkflow(workflowId);
+    const workflowInput = getWorkflowInput(workflow);
+
+    dependencies.updateWorkflow(workflowId, {
+      results: {
+        ...(workflow?.results || {}),
+        input: {
+          ...workflowInput,
+          attachments,
+          directiveContext,
+          signature: inputSignature,
+          ...(projection?.sessionId ? { sessionId: projection.sessionId } : {}),
+          ...(projection?.sourceApp ? { sourceApp: projection.sourceApp } : {}),
+          ...(projection ? { projection } : {}),
+        },
+      },
+    });
+
+    dependencies.linkWorkflowToMission(workflowId, missionId);
+    runtime.patchMissionExecution(missionId, {
+      projection: {
+        workflowId,
+        instanceId: workflowId,
+        replayId: workflowId,
+        ...(projection || {}),
+      },
+    });
+    runtime.logMission(
+      missionId,
+      `Retry started workflow ${workflowId} from previous workflow ${previousWorkflowId}.`,
+      'info',
+      2,
+      source,
+    );
+    const runningTask = runtime.markMissionRunning(
+      missionId,
+      'execute',
+      `Workflow ${workflowId} restarted for retry attempt ${mission.attempt ?? 1}.`,
+      4,
+      source,
+    );
+
+    return {
+      task: runningTask,
+      dispatchAccepted: true,
+      workflowId,
+      previousWorkflowId,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const failedTask = runtime.failMission(
+      missionId,
+      `Workflow retry dispatch failed: ${detail}`,
+      source,
+    );
+    return {
+      task: failedTask,
+      dispatchAccepted: false,
+      dispatchError: detail,
+      previousWorkflowId,
+    };
+  }
 }
 
 function applyMissionDispatchPayload(
@@ -418,7 +614,9 @@ async function dispatchMissionToExecutor(
       dispatchAccepted: true,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail =
+      getExecutorCapabilityMismatchReason(error) ||
+      (error instanceof Error ? error.message : String(error));
     const failedTask = runtime.failMission(
       missionId,
       `Executor dispatch failed: ${detail}`,
@@ -451,6 +649,7 @@ export function createTaskRouter(
     fetchImpl,
     executorBaseUrl: defaultExecutorBaseUrl,
   });
+  const workflowRetry = getWorkflowRetryDependencies(options);
 
   async function buildExecutorLogFallback(
     missionId: string,
@@ -823,7 +1022,16 @@ export function createTaskRouter(
       let dispatchAccepted: boolean | undefined;
       let dispatchError: string | undefined;
 
-      if (input.action === 'retry' && shouldAutoDispatchMission(task, undefined)) {
+      if (input.action === 'retry' && shouldRestartWorkflowMission(task)) {
+        const restarted = await restartMissionWorkflow(
+          runtime,
+          task.id,
+          workflowRetry,
+        );
+        task = restarted.task ?? task;
+        dispatchAccepted = restarted.dispatchAccepted;
+        dispatchError = restarted.dispatchError;
+      } else if (input.action === 'retry' && shouldAutoDispatchMission(task, undefined)) {
         const dispatched = await dispatchMissionToExecutor(runtime, task.id, {
           fetchImpl,
           executorBaseUrl: defaultExecutorBaseUrl,
@@ -938,7 +1146,7 @@ export function createTaskRouter(
       return res.status(404).json({ error: 'Artifact file not found' });
     }
 
-    res.setHeader('Content-Type', getMimeType(artifact.name));
+    res.setHeader('Content-Type', artifact.mimeType || getMimeType(artifact.name));
     res.setHeader('Content-Disposition', `attachment; filename="${artifact.name}"`);
     const stream = fs.createReadStream(absPath);
     stream.on('error', () => {
@@ -972,9 +1180,9 @@ export function createTaskRouter(
       return res.status(403).json({ error: 'Path traversal not allowed' });
     }
 
-    const mime = getMimeType(artifact.name);
-    if (!isTextMime(mime)) {
-      return res.status(415).json({ error: 'Binary files cannot be previewed' });
+    const mime = artifact.mimeType || getMimeType(artifact.name);
+    if (!isInlinePreviewMime(mime)) {
+      return res.status(415).json({ error: 'Artifact type cannot be previewed' });
     }
 
     const jobId = mission.executor?.jobId ?? '';
@@ -996,17 +1204,21 @@ export function createTaskRouter(
         return res.status(404).json({ error: 'Artifact file not found' });
       }
 
-      const truncated = fileStat.size > MAX_PREVIEW_BYTES;
+      const textPreview = isTextMime(mime);
+      const truncated = textPreview && fileStat.size > MAX_PREVIEW_BYTES;
 
       res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `inline; filename="${artifact.name}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; sandbox");
       if (truncated) {
         res.setHeader('X-Truncated', 'true');
       }
 
-      const stream = fs.createReadStream(absPath, {
+      const stream = fs.createReadStream(absPath, textPreview ? {
         start: 0,
         end: truncated ? MAX_PREVIEW_BYTES - 1 : undefined,
-      });
+      } : undefined);
       stream.on('error', () => {
         if (!res.headersSent) {
           res.status(500).json({ error: 'Failed to read artifact file' });

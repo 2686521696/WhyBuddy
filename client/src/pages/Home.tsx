@@ -46,7 +46,11 @@ import { Scene3D } from "@/components/Scene3D";
 import { TelemetryDashboard } from "@/components/TelemetryDashboard";
 import { UEOverlayChrome, type HUDDefinition } from "@/components/ue-overlay";
 import { WorkflowPanel } from "@/components/WorkflowPanel";
-import { AUTOPILOT_PATH } from "@/components/navigation-config";
+import {
+  AUTOPILOT_PATH,
+  getProjectTaskPath,
+  getProjectTasksPath,
+} from "@/components/navigation-config";
 import {
   useViewportResizeState,
   useViewportTier,
@@ -553,8 +557,8 @@ export default function Home({
   ]);
 
   const openProjectTaskCenter = useCallback(() => {
-    setLocation("/tasks");
-  }, [setLocation]);
+    setLocation(getProjectTasksPath(currentProject?.id ?? null));
+  }, [currentProject?.id, setLocation]);
   const isZh = locale === "zh-CN";
   const fullWorkbenchLabel = isZh ? "接管任务" : "Take over";
   const workflowLabel = isZh ? "查看日志" : "View logs";
@@ -797,7 +801,9 @@ export default function Home({
   const handleOpenCurrentMission = currentAutopilotTask
     ? () => {
         selectTask(currentAutopilotTask.id);
-        setLocation(`/tasks/${currentAutopilotTask.id}`);
+        setLocation(
+          getProjectTaskPath(currentProject?.id ?? null, currentAutopilotTask.id)
+        );
       }
     : undefined;
   const currentAutopilotDetail = currentAutopilotTask
@@ -1278,6 +1284,7 @@ export default function Home({
     <Scene3D
       performanceProfile={scenePerformanceProfile}
       sidebarWidth={desktopSidebarWidth}
+      projectId={currentProject?.id ?? null}
     />
   );
   const hudDefinitions: HUDDefinition[] = useMemo(
@@ -3325,6 +3332,7 @@ export default function Home({
 
       <AgentDetailDrawer
         agentId={selectedPet}
+        projectId={currentProject?.id ?? null}
         open={isMobile && Boolean(selectedPet)}
         onOpenChange={nextOpen => {
           if (!nextOpen) {

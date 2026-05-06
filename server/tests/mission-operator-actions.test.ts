@@ -10,10 +10,11 @@ import { MissionStore } from '../tasks/mission-store.js';
 async function startServer(
   runtime: MissionRuntime,
   fetchImpl?: typeof fetch,
+  routerOptions: Parameters<typeof createTaskRouter>[1] = {},
 ) {
   const app = express();
   app.use(express.json());
-  app.use('/api/tasks', createTaskRouter(runtime, { fetchImpl }));
+  app.use('/api/tasks', createTaskRouter(runtime, { fetchImpl, ...routerOptions }));
 
   const server = await new Promise<ReturnType<typeof app.listen>>(resolve => {
     const instance = app.listen(0, () => resolve(instance));
@@ -394,6 +395,122 @@ describe('mission operator actions route', () => {
         executor: {
           jobId: 'job_retry_dispatch',
           status: 'queued',
+        },
+      },
+      action: {
+        action: 'retry',
+      },
+    });
+  });
+
+  it('retries a workflow mission by starting a new workflow and relinking the mission', async () => {
+    const mission = runtime.createChatTask(
+      'Retry workflow mission',
+      'Continue the existing project workflow safely.',
+      'project-session',
+      {
+        workflowId: 'workflow-old',
+        instanceId: 'workflow-old',
+        replayId: 'workflow-old',
+        sessionId: 'project-session',
+        sourceApp: 'autopilot',
+        projectId: 'project-1',
+      },
+    );
+    runtime.markMissionRunning(mission.id, 'execute', 'Workflow old started', 20);
+    runtime.failMission(mission.id, 'Previous workflow failed during planning.');
+
+    const startWorkflow = vi.fn(async () => 'workflow-new');
+    const getWorkflow = vi.fn((workflowId: string) => {
+      if (workflowId === 'workflow-old') {
+        return {
+          id: workflowId,
+          results: {
+            input: {
+              attachments: [],
+              sessionId: 'project-session',
+              sourceApp: 'autopilot',
+              projection: {
+                projectId: 'project-1',
+                sessionId: 'project-session',
+                sourceApp: 'autopilot',
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        id: workflowId,
+        results: {
+          input: {},
+        },
+      };
+    });
+    const updateWorkflow = vi.fn();
+    const linkWorkflowToMission = vi.fn();
+
+    const started = await startServer(runtime, undefined, {
+      workflowRetry: {
+        startWorkflow,
+        getWorkflow,
+        updateWorkflow,
+        linkWorkflowToMission,
+      },
+    });
+    server = started.server;
+    baseUrl = started.baseUrl;
+
+    const response = await fetch(`${baseUrl}/api/tasks/${mission.id}/operator-actions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'retry',
+        requestedBy: 'operator',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(startWorkflow).toHaveBeenCalledWith(
+      'Continue the existing project workflow safely.',
+      expect.objectContaining({
+        attachments: [],
+        directiveContext: 'Continue the existing project workflow safely.',
+        inputSignature: expect.any(String),
+      }),
+    );
+    expect(updateWorkflow).toHaveBeenCalledWith(
+      'workflow-new',
+      expect.objectContaining({
+        results: expect.objectContaining({
+          input: expect.objectContaining({
+            projection: expect.objectContaining({
+              projectId: 'project-1',
+              sessionId: 'project-session',
+              sourceApp: 'autopilot',
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(linkWorkflowToMission).toHaveBeenCalledWith('workflow-new', mission.id);
+    expect(body).toMatchObject({
+      ok: true,
+      dispatchAccepted: true,
+      task: {
+        id: mission.id,
+        status: 'running',
+        operatorState: 'active',
+        attempt: 2,
+        currentStageKey: 'execute',
+        projection: {
+          workflowId: 'workflow-new',
+          instanceId: 'workflow-new',
+          replayId: 'workflow-new',
+          projectId: 'project-1',
         },
       },
       action: {

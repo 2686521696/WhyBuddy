@@ -10,8 +10,10 @@ import type { ExecutorJobRequest } from "../../../shared/executor/contracts.js";
 import { createLobsterExecutorApp } from "./app.js";
 import { createLobsterExecutorService } from "./service.js";
 import type {
+  LobsterExecutorCapabilitiesResponse,
   LobsterExecutorHealthResponse,
   LobsterExecutorJobDetailResponse,
+  LobsterExecutorSandboxSkillsResponse,
   StoredJobRecord,
 } from "./types.js";
 
@@ -129,6 +131,33 @@ async function createHarness(): Promise<TestHarness> {
   };
 }
 
+async function createHarnessWithConfig(
+  config: Parameters<typeof createLobsterExecutorService>[0]["config"],
+): Promise<TestHarness> {
+  const dataRoot = join(tmpdir(), `lobster-executor-config-${randomUUID()}`);
+  const service = createLobsterExecutorService({ dataRoot, config });
+  const app = createLobsterExecutorApp(service);
+  const server = createServer(app);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Test server did not expose a TCP address");
+  }
+
+  const close = async () => {
+    await closeServer(server);
+    rmSync(dataRoot, { recursive: true, force: true });
+  };
+  cleanupTasks.push(close);
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close,
+  };
+}
+
 async function createSeededHarness(
   status: StoredJobRecord["status"] = "queued"
 ): Promise<TestHarness & { jobId: string }> {
@@ -221,6 +250,39 @@ describe("lobster executor app", () => {
     expect(body.status).toBe("ok");
     expect(body.queue.total).toBe(0);
     expect(body.features.createJob).toBe(true);
+    expect(body.capabilitiesSummary.total).toBeGreaterThan(0);
+  });
+
+  it("returns executor capabilities", async () => {
+    const harness = await createHarness();
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/capabilities`);
+    const body = (await response.json()) as LobsterExecutorCapabilitiesResponse;
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.capabilities.executor).toBe("lobster");
+    expect(body.capabilities.mode).toBe("mock");
+    expect(body.capabilities.capabilities).toContain("runtime.mock");
+    expect(body.capabilities.skills?.count).toBeGreaterThanOrEqual(2);
+    expect(body.capabilities.skills?.capabilityIndex["browser.playwright"]).toContain(
+      "browser-research@0.1.0",
+    );
+  });
+
+  it("returns sandbox skills", async () => {
+    const harness = await createHarness();
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/skills`);
+    const body = (await response.json()) as LobsterExecutorSandboxSkillsResponse;
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.skills.map(skill => skill.name)).toContain("browser-research");
+    expect(body.skills.map(skill => skill.name)).toContain("document-render");
+    expect(body.capabilityIndex["document.pandoc"]).toContain(
+      "document-render@0.1.0",
+    );
   });
 
   it("accepts and completes a mock success job", async () => {
@@ -243,6 +305,169 @@ describe("lobster executor app", () => {
     expect(job.status).toBe("completed");
     expect(job.summary).toContain("success");
     expect(job.artifacts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("accepts jobs when required capabilities are supported", async () => {
+    const harness = await createHarness();
+    const request = createTestRequest("capability-supported-job", "success");
+    request.plan.jobs[0].payload = {
+      ...(request.plan.jobs[0].payload || {}),
+      requiredCapabilities: ["runtime.mock", "artifact.log"],
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    expect(response.status).toBe(202);
+    const job = await waitForJob(harness.baseUrl, request.jobId);
+    expect(job.status).toBe("completed");
+  });
+
+  it("rejects jobs when required capabilities are unsupported", async () => {
+    const harness = await createHarness();
+    const request = createTestRequest("capability-unsupported-job", "success");
+    request.plan.jobs[0].payload = {
+      ...(request.plan.jobs[0].payload || {}),
+      requiredCapabilities: ["browser.playwright"],
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+    const body = (await response.json()) as {
+      code?: string;
+      unsupportedCapabilities?: string[];
+      supportedCapabilities?: string[];
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("EXECUTOR_CAPABILITY_UNSUPPORTED");
+    expect(body.unsupportedCapabilities).toEqual(["browser.playwright"]);
+    expect(body.supportedCapabilities).toContain("runtime.mock");
+  });
+
+  it("rejects skill jobs that require network while strict mode is active", async () => {
+    const dataRoot = join(tmpdir(), `lobster-executor-strict-${randomUUID()}`);
+    const harness = await createHarnessWithConfig({
+      host: "127.0.0.1",
+      port: 0,
+      dataRoot,
+      serviceName: "lobster-executor",
+      executionMode: "real",
+      defaultImage: "cube-ai-agent-sandbox:latest",
+      maxConcurrentJobs: 1,
+      callbackSecret: "",
+      aiImage: "cube-ai-agent-sandbox:latest",
+      skillRoot: "services/lobster-executor/skills",
+      securityLevel: "strict",
+      containerUser: "65534",
+      maxMemory: "512m",
+      maxCpus: "1.0",
+      maxPids: 256,
+      tmpfsSize: "64m",
+      networkWhitelist: [],
+    });
+    const request = createTestRequest("strict-skill-job", "success");
+    request.plan.jobs[0].payload = {
+      image: "cube-ai-agent-sandbox:latest",
+      requiredCapabilities: ["browser.playwright", "artifact.image"],
+      skillRef: { name: "browser-research", version: "0.1.0" },
+      skillInput: { url: "https://example.com" },
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("requires network access");
+  });
+
+  it("accepts safe skill jobs when skill capabilities match", async () => {
+    const harness = await createHarness();
+    const request = createTestRequest("safe-skill-job", "success");
+    request.plan.jobs[0].payload = {
+      requiredCapabilities: ["artifact.json", "preview.json"],
+      skillRef: { name: "document-render", version: "0.1.0" },
+      skillInput: {
+        title: "Spec preview",
+        markdown: "# Spec preview\n\nA document-render skill input.",
+      },
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    expect(response.status).toBe(202);
+    const job = await waitForJob(harness.baseUrl, request.jobId);
+    expect(job.status).toBe("completed");
+  });
+
+  it("auto-selects a sandbox skill by required capabilities", async () => {
+    const harness = await createHarness();
+    const request = createTestRequest("auto-select-skill-job", "success");
+    request.plan.jobs[0].payload = {
+      requiredCapabilities: ["artifact.json", "preview.json"],
+      skillPolicy: { autoSelect: true },
+      skillInput: {
+        title: "Auto-selected document",
+        markdown: "# Auto-selected document",
+      },
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    expect(response.status).toBe(202);
+    const job = await waitForJob(harness.baseUrl, request.jobId);
+    expect(job.status).toBe("completed");
+  });
+
+  it("surfaces a clear missing-skill reason for auto selection", async () => {
+    const harness = await createHarness();
+    const request = createTestRequest("missing-auto-skill-job", "success");
+    request.plan.jobs[0].payload = {
+      requiredCapabilities: ["artifact.log", "preview.text"],
+      skillPolicy: { autoSelect: true },
+      skillInput: {},
+    };
+
+    const response = await fetch(`${harness.baseUrl}/api/executor/jobs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("No sandbox skill matches required capabilities");
+    expect(body.error).toContain("artifact.log");
   });
 
   it("delivers mock job callbacks to the configured events URL", async () => {

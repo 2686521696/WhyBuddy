@@ -11,6 +11,7 @@ import {
   type ExecutionBridgeOptions,
   type BridgeResult,
 } from "../core/execution-bridge.js";
+import { ExecutorClientError } from "../core/executor-client.js";
 
 // ─── Mock MissionRuntime ────────────────────────────────────────────────────
 
@@ -241,6 +242,44 @@ describe("ExecutionBridge.bridge", () => {
     expect(mockRuntime.failMission).toHaveBeenCalledWith(
       "mission-1",
       expect.stringContaining("Unexpected runtime error"),
+      "brain",
+    );
+  });
+
+  it("surfaces executor capability mismatch in mission failure detail", async () => {
+    const mockRuntime = createMockMissionRuntime();
+    const options = createBridgeOptions({
+      missionRuntime: mockRuntime as any,
+      retryCount: 0,
+    });
+    const bridge = new ExecutionBridge(options);
+    (bridge as any).executorClient.dispatchPlan = vi.fn().mockRejectedValue(
+      new ExecutorClientError(
+        "ExecutionPlan requires unsupported executor capabilities: browser.playwright",
+        "rejected",
+        undefined,
+        {
+          details: {
+            code: "EXECUTOR_CAPABILITY_UNSUPPORTED",
+            unsupportedCapabilities: ["browser.playwright"],
+            supportedCapabilities: ["runtime.mock"],
+            hint: "Switch executor mode/image or remove unsupported requiredCapabilities before dispatch.",
+          },
+        },
+      ),
+    );
+
+    const result = await bridge.bridge(
+      "mission-1",
+      ["```python\nprint('hello')\n```\npython script.py"],
+      { requiresExecution: true },
+    );
+
+    expect(result.triggered).toBe(true);
+    expect(result.reason).toContain("Executor capability mismatch");
+    expect(mockRuntime.failMission).toHaveBeenCalledWith(
+      "mission-1",
+      expect.stringContaining("browser.playwright"),
       "brain",
     );
   });

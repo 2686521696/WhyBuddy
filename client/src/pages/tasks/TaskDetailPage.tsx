@@ -4,20 +4,27 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 import { TaskDetailView } from "@/components/tasks/TaskDetailView";
-import { getReplayPath } from "@/components/navigation-config";
+import { getProjectTasksPath, getReplayPath } from "@/components/navigation-config";
 import { RetryInlineNotice } from "@/components/tasks/RetryInlineNotice";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
+import {
+  resolveProjectTaskScope,
+  resolveScopedSelectedTaskId,
+} from "@/lib/project-task-scope";
+import { selectCurrentProject, useProjectStore } from "@/lib/project-store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
 import type { MissionOperatorActionType } from "@shared/mission/contracts";
 
 export default function TaskDetailPage({
   taskId = null,
+  projectId = null,
   onBack,
   className,
 }: {
   taskId?: string | null;
+  projectId?: string | null;
   onBack?: () => void;
   className?: string;
 }) {
@@ -36,6 +43,18 @@ export default function TaskDetailPage({
   );
   const loading = useTasksStore(state => state.loading);
   const error = useTasksStore(state => state.error);
+  const tasks = useTasksStore(state => state.tasks);
+  const routeProject = useProjectStore(state =>
+    projectId
+      ? (state.projects.find(project => project.id === projectId) ?? null)
+      : null
+  );
+  const storeCurrentProject = useProjectStore(selectCurrentProject);
+  const projectMissions = useProjectStore(state => state.missions);
+  const isProjectScopedRoute = Boolean(projectId);
+  const currentProject =
+    routeProject ?? (isProjectScopedRoute ? null : storeCurrentProject);
+  const effectiveProjectId = projectId ?? currentProject?.id ?? null;
   const [launchingPresetId, setLaunchingPresetId] = useState<string | null>(
     null
   );
@@ -51,9 +70,23 @@ export default function TaskDetailPage({
     }
   }, [selectTask, taskId]);
 
-  const activeTaskId = taskId || selectedTaskId;
+  const taskScope = resolveProjectTaskScope({
+    projectId: effectiveProjectId,
+    projectMissions,
+    tasks,
+  });
+  const scopedSelectedTaskId = resolveScopedSelectedTaskId({
+    selectedTaskId,
+    scope: taskScope,
+    hasDetail: id => Boolean(detailsById[id]),
+  });
+  const explicitTaskInScope =
+    taskId && taskScope.tasks.some(task => task.id === taskId) ? taskId : null;
+  const activeTaskId = explicitTaskInScope || scopedSelectedTaskId;
   const detail = activeTaskId ? detailsById[activeTaskId] || null : null;
   const decisionNote = activeTaskId ? decisionNotes[activeTaskId] || "" : "";
+  const taskOutsideProject =
+    Boolean(taskId) && Boolean(effectiveProjectId) && !explicitTaskInScope;
 
   async function handleLaunchDecision(presetId: string) {
     if (!activeTaskId) return;
@@ -114,15 +147,17 @@ export default function TaskDetailPage({
               <LoaderCircle className="size-4 animate-spin text-stone-500" />
             ) : null}
             {activeTaskId ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-full border-stone-200 bg-white/80"
-                onClick={() => setLocation(getReplayPath(activeTaskId))}
-              >
-                <Play className="size-4" />
-                {copy.tasks.detailPage.replay}
-              </Button>
+              !taskOutsideProject ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full border-stone-200 bg-white/80"
+                  onClick={() => setLocation(getReplayPath(activeTaskId))}
+                >
+                  <Play className="size-4" />
+                  {copy.tasks.detailPage.replay}
+                </Button>
+              ) : null
             ) : null}
             {onBack ? (
               <Button
@@ -134,9 +169,27 @@ export default function TaskDetailPage({
                 <ArrowLeft className="size-4" />
                 {copy.tasks.detailPage.back}
               </Button>
+            ) : effectiveProjectId ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full border-stone-200 bg-white/80"
+                onClick={() => setLocation(getProjectTasksPath(effectiveProjectId))}
+              >
+                <ArrowLeft className="size-4" />
+                {copy.tasks.detailPage.back}
+              </Button>
             ) : null}
           </div>
         </div>
+
+        {taskOutsideProject ? (
+          <div className="mb-4 rounded-[22px] border border-amber-200/80 bg-amber-50/90 px-5 py-4 text-sm leading-6 text-amber-900 shadow-[0_18px_40px_rgba(112,84,51,0.06)]">
+            This task is not linked to the current project. The detail view is
+            staying inside {currentProject?.name ?? effectiveProjectId ?? "the selected project"} and
+            will not show another project's mission.
+          </div>
+        ) : null}
 
         <div className="mb-4 rounded-[22px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,251,245,0.96),rgba(249,239,227,0.92))] px-5 py-4 text-sm leading-6 text-stone-700 shadow-[0_18px_40px_rgba(112,84,51,0.06)]">
           {copy.tasks.detailPage.runtimeEvidenceHandoff}

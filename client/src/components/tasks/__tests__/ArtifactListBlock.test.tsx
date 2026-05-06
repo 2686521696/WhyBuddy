@@ -7,6 +7,7 @@ import type { TaskArtifact } from "@/lib/tasks-store";
 import {
   ArtifactListBlock,
   isArtifactListCompletedStatus,
+  orderArtifactsForDisplay,
   shouldHighlightArtifact,
 } from "../ArtifactListBlock";
 
@@ -82,6 +83,52 @@ describe("ArtifactListBlock", () => {
     expect(markup).toContain("预览");
     expect(markup).toContain("下载");
     expect(markup).toContain("bg-amber-500/10");
+  });
+
+  it("promotes browser screenshot artifacts as primary evidence", () => {
+    const markup = renderBlock(
+      [
+        makeArtifact({
+          id: "console-log",
+          title: "console.json",
+          kind: "file",
+          format: "json",
+          previewType: "json",
+        }),
+        makeArtifact({
+          id: "page-screenshot",
+          title: "page-screenshot.png",
+          description: "Full page browser screenshot",
+          kind: "file",
+          format: "png",
+          mimeType: "image/png",
+          previewType: "image",
+        }),
+      ],
+      "completed"
+    );
+
+    expect(markup).toContain('data-testid="artifact-primary-browser-evidence"');
+    expect(markup).toContain("浏览器主证据");
+    expect(markup.indexOf("page-screenshot.png")).toBeLessThan(
+      markup.indexOf("console.json")
+    );
+  });
+
+  it("keeps original artifact indexes when promoted evidence is ordered first", () => {
+    const ordered = orderArtifactsForDisplay([
+      makeArtifact({ id: "console-log", title: "console.json" }),
+      makeArtifact({
+        id: "page-screenshot",
+        title: "page-screenshot.png",
+        previewType: "image",
+      }),
+    ]);
+
+    expect(ordered.map(item => [item.artifact.title, item.index])).toEqual([
+      ["page-screenshot.png", 1],
+      ["console.json", 0],
+    ]);
   });
 
   it("shows the running indicator when the mission is still active", () => {

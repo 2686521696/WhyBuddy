@@ -7,6 +7,8 @@ import {
   resolveBrowserContextLabel,
   resolveBrowserPreviewFrames,
   resolvePaneStatusLabel,
+  resolveReplayScreenshotArtifact,
+  resolveReplayTerminalArtifact,
   resolveSandboxMonitorMission,
 } from "../sandbox-monitor-helpers";
 
@@ -85,6 +87,18 @@ function makeDetail(id: string, title: string): MissionTaskDetail {
     logSummary: [],
     decisionHistory: [],
     operatorActions: [],
+    runtimeChannels: {
+      socket: {
+        status: "connected",
+        label: "Socket connected",
+        detail: "Mission socket is connected.",
+      },
+      callback: {
+        status: "idle",
+        label: "Callback idle",
+        detail: "No executor callback has been recorded.",
+      },
+    },
   };
 }
 
@@ -122,6 +136,19 @@ describe("resolveSandboxMonitorMission", () => {
 
     expect(result.displayMission?.id).toBe("running");
     expect(result.missionDetail).toBeNull();
+  });
+
+  it("does not display an out-of-scope selected task when callers pass scoped missions", () => {
+    const inScope = makeMission({ id: "project-mission", status: "waiting" });
+
+    const result = resolveSandboxMonitorMission(
+      [inScope],
+      {},
+      "other-project-mission"
+    );
+
+    expect(result.selectedMission).toBeNull();
+    expect(result.displayMission?.id).toBe("project-mission");
   });
 
   it("falls back to the most recently created mission when no running or waiting mission exists", () => {
@@ -175,6 +202,96 @@ describe("resolveBrowserPreviewFrames", () => {
 
     expect(result.current).toBeNull();
     expect(result.previous).toBeNull();
+  });
+
+  it("uses a replay screenshot when no live frame exists", () => {
+    const replay = makeFrame("replay");
+
+    const result = resolveBrowserPreviewFrames(null, null, replay);
+
+    expect(result.current?.imageData).toBe("replay");
+    expect(result.previous).toBeNull();
+  });
+
+  it("keeps live screenshots ahead of replay screenshots", () => {
+    const replay = makeFrame("replay");
+    const latest = makeFrame("latest");
+
+    const result = resolveBrowserPreviewFrames(latest, null, replay);
+
+    expect(result.current?.imageData).toBe("latest");
+  });
+});
+
+describe("resolve replay artifacts", () => {
+  it("prefers live preview replay frame for browser fallback", () => {
+    const detail = makeDetail("mission-1", "Replay Mission");
+    detail.artifacts = [
+      {
+        id: "page-screenshot",
+        title: "page-screenshot.png",
+        description: "",
+        kind: "file",
+        filename: "page-screenshot.png",
+        previewType: "image",
+        previewUrl: "/page",
+      },
+      {
+        id: "live-preview-frame",
+        title: "live-preview-frame-0001.png",
+        description: "",
+        kind: "file",
+        filename: "live-preview-frame-0001.png",
+        previewType: "image",
+        previewUrl: "/frame",
+      },
+    ];
+
+    expect(resolveReplayScreenshotArtifact(detail)?.previewUrl).toBe("/frame");
+  });
+
+  it("prefers terminal live replay before executor log", () => {
+    const detail = makeDetail("mission-1", "Replay Mission");
+    detail.artifacts = [
+      {
+        id: "executor-log",
+        title: "executor.log",
+        description: "",
+        kind: "log",
+        filename: "executor.log",
+        previewType: "log",
+        previewUrl: "/executor-log",
+      },
+      {
+        id: "terminal-live",
+        title: "terminal-live.log",
+        description: "",
+        kind: "log",
+        filename: "terminal-live.log",
+        previewType: "log",
+        previewUrl: "/terminal-live",
+      },
+    ];
+
+    expect(resolveReplayTerminalArtifact(detail)?.previewUrl).toBe(
+      "/terminal-live"
+    );
+  });
+
+  it("ignores replay artifacts without preview URLs", () => {
+    const detail = makeDetail("mission-1", "Replay Mission");
+    detail.artifacts = [
+      {
+        id: "live-preview-frame",
+        title: "live-preview-frame-0001.png",
+        description: "",
+        kind: "file",
+        filename: "live-preview-frame-0001.png",
+        previewType: "image",
+      },
+    ];
+
+    expect(resolveReplayScreenshotArtifact(detail)).toBeNull();
   });
 });
 

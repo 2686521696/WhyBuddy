@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Download,
@@ -69,6 +69,36 @@ function kindLabel(kind: string, locale: string): string {
   );
 }
 
+export function isBrowserScreenshotArtifact(artifact: TaskArtifact): boolean {
+  const searchable = [
+    artifact.id,
+    artifact.title,
+    artifact.filename,
+    artifact.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    artifact.previewType === "image" &&
+    (searchable.includes("screenshot") ||
+      searchable.includes("browser") ||
+      searchable.includes("page"))
+  );
+}
+
+export function orderArtifactsForDisplay(artifacts: TaskArtifact[]) {
+  return artifacts
+    .map((artifact, index) => ({ artifact, index }))
+    .sort((left, right) => {
+      const leftPrimary = isBrowserScreenshotArtifact(left.artifact);
+      const rightPrimary = isBrowserScreenshotArtifact(right.artifact);
+      if (leftPrimary === rightPrimary) return left.index - right.index;
+      return leftPrimary ? -1 : 1;
+    });
+}
+
 export function isArtifactListCompletedStatus(status: string): boolean {
   return (
     status === "completed" ||
@@ -113,6 +143,10 @@ export function ArtifactListBlock({
   const isRunning = isArtifactListRunningStatus(missionStatus);
   const isCompleted = isArtifactListCompletedStatus(missionStatus);
   const rootClass = isCompact ? "p-0" : "rounded-2xl glass-panel p-3";
+  const orderedArtifacts = useMemo(
+    () => orderArtifactsForDisplay(artifacts),
+    [artifacts]
+  );
 
   const handleDownload = useCallback(
     (artifact: TaskArtifact, index: number) => {
@@ -202,10 +236,11 @@ export function ArtifactListBlock({
 
       <div className="space-y-2">
         <AnimatePresence initial={false}>
-          {artifacts.map((artifact, index) => {
+          {orderedArtifacts.map(({ artifact, index }) => {
             const Icon = KIND_ICON[artifact.kind] ?? FileText;
             const colorCls = KIND_COLORS[artifact.kind] ?? KIND_COLORS.file;
             const isUrl = artifact.kind === "url";
+            const isPrimaryEvidence = isBrowserScreenshotArtifact(artifact);
             const isDownloadable =
               artifact.kind === "attachment" ||
               artifact.kind === "department_report" ||
@@ -228,11 +263,18 @@ export function ArtifactListBlock({
                 initial="initial"
                 animate="animate"
                 exit="exit"
+                data-testid={
+                  isPrimaryEvidence ? "artifact-primary-browser-evidence" : undefined
+                }
                 className={`flex items-start gap-3 rounded-xl p-2 ${
                   highlight
                     ? isCompact
                       ? "bg-amber-50"
                       : "glass-panel border-amber-400/20 bg-amber-500/10"
+                    : isPrimaryEvidence
+                      ? isCompact
+                        ? "border border-sky-100 bg-sky-50"
+                        : "glass-panel border-sky-300/25 bg-sky-500/10"
                     : isCompact
                       ? "bg-[#f7f3ee]"
                       : "bg-white/5"
@@ -275,6 +317,17 @@ export function ArtifactListBlock({
                   >
                     {artifact.title}
                   </p>
+                  {isPrimaryEvidence ? (
+                    <span
+                      className={
+                        isCompact
+                          ? "mt-1 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-semibold text-sky-700"
+                          : "mt-1 inline-flex rounded-full bg-sky-400/15 px-2 py-0.5 text-[9px] font-semibold text-sky-200"
+                      }
+                    >
+                      {t(locale, "浏览器主证据", "Browser evidence")}
+                    </span>
+                  ) : null}
                   {artifact.description ? (
                     <p
                       className={

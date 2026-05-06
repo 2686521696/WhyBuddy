@@ -14,6 +14,7 @@ export interface ExecutorTerminalPanelProps {
   missionId: string;
   missionStatus?: string;
   executorStatus?: string;
+  fallbackLogUrl?: string;
 }
 
 const MAX_VISIBLE_LINES = 200;
@@ -44,6 +45,7 @@ export function ExecutorTerminalPanel({
   missionId,
   missionStatus,
   executorStatus,
+  fallbackLogUrl,
 }: ExecutorTerminalPanelProps) {
   const { copy } = useI18n();
   const logLines = useSandboxStore(s => s.logLines);
@@ -53,6 +55,13 @@ export function ExecutorTerminalPanel({
   const requestLogHistory = useSandboxStore(s => s.requestLogHistory);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [fallbackLines, setFallbackLines] = useState<LogLine[]>([]);
+  const [fallbackLoading, setFallbackLoading] = useState(false);
+
+  useEffect(() => {
+    setFallbackLines([]);
+    setFallbackLoading(false);
+  }, [missionId, fallbackLogUrl]);
 
   useEffect(() => {
     if (!missionId) {
@@ -79,7 +88,9 @@ export function ExecutorTerminalPanel({
   }, [missionId]);
 
   const visibleLines = logLines.slice(-MAX_VISIBLE_LINES);
-  const hasLines = visibleLines.length > 0;
+  const displayLines =
+    visibleLines.length > 0 ? visibleLines : fallbackLines.slice(-MAX_VISIBLE_LINES);
+  const hasLines = displayLines.length > 0;
   const unavailable = isExecutorUnavailable(executorStatus);
   const emptyDescription =
     unavailable || missionStatus === "failed"
@@ -109,6 +120,11 @@ export function ExecutorTerminalPanel({
             <span className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-600">
               <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
               {copy.tasks.executor.terminalLive}
+            </span>
+          ) : null}
+          {!isStreaming && fallbackLines.length > 0 ? (
+            <span className="text-[10px] font-medium text-stone-500">
+              log replay
             </span>
           ) : null}
           <button
@@ -144,7 +160,7 @@ export function ExecutorTerminalPanel({
         {hasLines ? (
           <div className="overflow-hidden rounded-[14px] bg-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
             <div className="divide-y divide-stone-200/70">
-              {visibleLines.map((line, idx) => {
+              {displayLines.map((line, idx) => {
                 const { text, isError, timestamp } = formatLine(line);
                 return (
                   <div
@@ -188,7 +204,40 @@ export function ExecutorTerminalPanel({
             title={copy.tasks.executor.emptyLogsTitle}
             description={emptyDescription}
             actionLabel={copy.tasks.executor.retryLogs}
-            onAction={() => requestLogHistory(missionId)}
+            hint={fallbackLoading ? "Loading stored executor.log..." : undefined}
+            onAction={() => {
+              requestLogHistory(missionId);
+              if (!fallbackLogUrl) return;
+              setFallbackLoading(true);
+              fetch(fallbackLogUrl)
+                .then(response => {
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                  }
+                  return response.text();
+                })
+                .then(text => {
+                  const loadedAt = new Date().toISOString();
+                  setFallbackLines(
+                    text
+                      .split(/\r?\n/)
+                      .filter(line => line.trim().length > 0)
+                      .slice(-MAX_VISIBLE_LINES)
+                      .map((line, index) => ({
+                        stepIndex: index,
+                        stream: line.includes("[stderr]") ? "stderr" : "stdout",
+                        data: line,
+                        timestamp: loadedAt,
+                      }))
+                  );
+                })
+                .catch(() => {
+                  setFallbackLines([]);
+                })
+                .finally(() => {
+                  setFallbackLoading(false);
+                });
+            }}
             tone={emptyTone}
             className="w-full border-stone-200/70 bg-white/82 text-left shadow-none"
           />

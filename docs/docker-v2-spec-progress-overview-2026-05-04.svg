@@ -1,0 +1,186 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Docker V2 五份 Spec 执行进度 2026-05-04</title>
+  <desc id="desc">展示 Docker Executor V2 升级规划中五份 spec 的创建状态、任务进度、依赖顺序和剩余 noVNC 评估入口。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="58%" stop-color="#f4f7fb"/>
+      <stop offset="100%" stop-color="#fff7ed"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eef2ff"/>
+      <stop offset="48%" stop-color="#e0f2fe"/>
+      <stop offset="100%" stop-color="#ecfdf5"/>
+    </linearGradient>
+    <linearGradient id="done" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#dcfce7"/>
+    </linearGradient>
+    <linearGradient id="next" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fdf2f8"/>
+      <stop offset="100%" stop-color="#fae8ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-8%" y="-12%" width="116%" height="128%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0 L0 0 0 40" fill="none" stroke="#dbe5ef" stroke-width="1" opacity="0.6"/>
+    </pattern>
+    <style>
+      .title { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 34px; font-weight: 800; fill: #0f172a; }
+      .subtitle { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 17px; font-weight: 500; fill: #475569; }
+      .section { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 21px; font-weight: 800; fill: #0f172a; }
+      .cardTitle { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 18px; font-weight: 800; fill: #0f172a; }
+      .body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 15px; font-weight: 500; fill: #334155; }
+      .small { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 13px; font-weight: 500; fill: #475569; }
+      .tiny { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 12px; font-weight: 500; fill: #64748b; }
+      .mono { font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace; font-size: 12px; font-weight: 650; fill: #475569; }
+      .pill { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 13px; font-weight: 800; }
+      .ok { fill: #166534; }
+      .todo { fill: #7e22ce; }
+      .muted { fill: #64748b; }
+      .linkStrong { fill: none; stroke: #16a34a; stroke-width: 3; marker-end: url(#arrow); }
+      .linkNext { fill: none; stroke: #a855f7; stroke-width: 3; stroke-dasharray: 8 7; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect width="1600" height="1000" fill="url(#grid)" opacity="0.42"/>
+
+  <g filter="url(#shadow)">
+    <rect x="42" y="30" width="1516" height="132" rx="26" fill="url(#hero)" stroke="#cbd5e1"/>
+  </g>
+  <text class="title" x="70" y="78">Docker V2 五份 Spec 执行进度</text>
+  <text class="subtitle" x="70" y="112">当前状态：五份 spec 的 MVP 已推进完成，Docker 已升级到 Skill-aware Agent Sandbox + Live Preview；剩余 noVNC 原型评估。</text>
+
+  <rect x="1112" y="56" width="118" height="34" rx="17" fill="#dcfce7" stroke="#86efac"/>
+  <text class="pill ok" x="1134" y="78">MVP完成</text>
+  <rect x="1246" y="56" width="118" height="34" rx="17" fill="#fae8ff" stroke="#e879f9"/>
+  <text class="pill todo" x="1276" y="78">剩余项</text>
+  <rect x="1380" y="56" width="118" height="34" rx="17" fill="#e2e8f0" stroke="#cbd5e1"/>
+  <text class="pill muted" x="1406" y="78">未执行</text>
+
+  <g>
+    <text class="section" x="70" y="208">总览</text>
+    <g filter="url(#shadow)">
+      <rect x="70" y="228" width="350" height="150" rx="20" fill="#ffffff" stroke="#cbd5e1"/>
+      <rect x="446" y="228" width="350" height="150" rx="20" fill="#ffffff" stroke="#cbd5e1"/>
+      <rect x="822" y="228" width="350" height="150" rx="20" fill="#ffffff" stroke="#cbd5e1"/>
+      <rect x="1198" y="228" width="330" height="150" rx="20" fill="#ffffff" stroke="#cbd5e1"/>
+    </g>
+    <text class="cardTitle" x="96" y="266">Spec 数量</text>
+    <text class="title" x="96" y="322">5</text>
+    <text class="small" x="158" y="318">份总规划</text>
+    <text class="tiny" x="96" y="350">全部已创建 requirements / design / tasks</text>
+
+    <text class="cardTitle" x="472" y="266">任务总进度</text>
+    <text class="title" x="472" y="322">34 / 35</text>
+    <text class="small" x="596" y="318">tasks</text>
+    <rect x="472" y="342" width="270" height="12" rx="6" fill="#e2e8f0"/>
+    <rect x="472" y="342" width="262" height="12" rx="6" fill="#16a34a"/>
+    <text class="tiny" x="472" y="368">完成率 97%，五份 spec 的 MVP 已通过 targeted tests 与 Docker real-mode smoke</text>
+
+    <text class="cardTitle" x="848" y="266">当前执行入口</text>
+    <text class="body" x="848" y="302">剩余：noVNC Xvfb/VNC 原型评估</text>
+    <text class="mono" x="848" y="330">docker-live-preview-workstation</text>
+    <text class="tiny" x="848" y="360">Live Preview MVP 已接通；noVNC 暂不进入生产实现</text>
+
+    <text class="cardTitle" x="1224" y="266">最新验证</text>
+    <text class="body" x="1224" y="302">Live Preview smoke 已通过</text>
+    <text class="mono" x="1224" y="330">npm run smoke:agent-executor-browser</text>
+    <text class="tiny" x="1224" y="360">截图帧、终端日志、HTML/JSON/PNG 产物与 replay artifacts 已回流</text>
+  </g>
+
+  <text class="section" x="70" y="430">执行路线</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="458" width="456" height="190" rx="22" fill="url(#done)" stroke="#86efac"/>
+    <rect x="572" y="458" width="456" height="190" rx="22" fill="url(#done)" stroke="#86efac"/>
+    <rect x="1074" y="458" width="456" height="190" rx="22" fill="url(#done)" stroke="#86efac"/>
+  </g>
+
+  <rect x="96" y="482" width="54" height="28" rx="14" fill="#bbf7d0" stroke="#86efac"/>
+  <text class="pill ok" x="114" y="501">P0</text>
+  <text class="cardTitle" x="166" y="502">1. Executor 能力声明与调度契约</text>
+  <text class="mono" x="96" y="532">docker-executor-capabilities-contract</text>
+  <text class="body" x="96" y="564">
+    <tspan x="96" dy="0">目标：/capabilities、requiredCapabilities、能力不足拒绝</tspan>
+    <tspan x="96" dy="24">作用：把命令执行器升级成能力调度器</tspan>
+  </text>
+  <rect x="96" y="608" width="300" height="12" rx="6" fill="#d1fae5"/>
+  <rect x="96" y="608" width="300" height="12" rx="6" fill="#16a34a"/>
+  <text class="small" x="410" y="620">8 / 8</text>
+  <text class="tiny" x="96" y="638">状态：已实现并通过 targeted tests</text>
+
+  <rect x="598" y="482" width="54" height="28" rx="14" fill="#bbf7d0" stroke="#86efac"/>
+  <text class="pill ok" x="616" y="501">P0</text>
+  <text class="cardTitle" x="668" y="502">2. AI Agent 强沙箱镜像</text>
+  <text class="mono" x="598" y="532">cube-ai-agent-sandbox-image</text>
+  <text class="body" x="598" y="564">
+    <tspan x="598" dy="0">目标：cube-ai-agent-sandbox 强镜像与自检脚本</tspan>
+    <tspan x="598" dy="24">作用：补齐浏览器、文档、媒体、中文字体能力</tspan>
+  </text>
+  <rect x="598" y="608" width="300" height="12" rx="6" fill="#d1fae5"/>
+  <rect x="598" y="608" width="300" height="12" rx="6" fill="#16a34a"/>
+  <text class="small" x="912" y="620">7 / 7</text>
+  <text class="tiny" x="598" y="638">状态：已通过 build、镜像自检、executor real-mode 浏览器 smoke</text>
+
+  <rect x="1100" y="482" width="54" height="28" rx="14" fill="#bbf7d0" stroke="#86efac"/>
+  <text class="pill ok" x="1118" y="501">P1</text>
+  <text class="cardTitle" x="1170" y="502">3. 浏览器执行与产物预览闭环</text>
+  <text class="mono" x="1100" y="532">browser-artifact-preview-runtime</text>
+  <text class="body" x="1100" y="564">
+    <tspan x="1100" dy="0">目标：Playwright 截图、HTML 快照、artifact manifest</tspan>
+    <tspan x="1100" dy="24">作用：让 Docker 执行结果能直接看见</tspan>
+  </text>
+  <rect x="1100" y="608" width="300" height="12" rx="6" fill="#d1fae5"/>
+  <rect x="1100" y="608" width="300" height="12" rx="6" fill="#16a34a"/>
+  <text class="small" x="1414" y="620">6 / 6</text>
+  <text class="tiny" x="1100" y="638">状态：截图 / HTML / JSON / PDF / image preview 与 scoped tests 已通过</text>
+
+  <path class="linkStrong" d="M526 553 C548 553 550 553 572 553"/>
+  <path class="linkStrong" d="M1028 553 C1050 553 1052 553 1074 553"/>
+
+  <g filter="url(#shadow)">
+    <rect x="320" y="720" width="456" height="184" rx="22" fill="url(#done)" stroke="#86efac"/>
+    <rect x="824" y="720" width="456" height="184" rx="22" fill="url(#done)" stroke="#facc15"/>
+  </g>
+
+  <rect x="346" y="744" width="54" height="28" rx="14" fill="#bbf7d0" stroke="#86efac"/>
+  <text class="pill ok" x="364" y="763">P2</text>
+  <text class="cardTitle" x="416" y="764">4. Skill-aware Agent Sandbox</text>
+  <text class="mono" x="346" y="794">skill-aware-agent-sandbox</text>
+  <text class="body" x="346" y="826">
+    <tspan x="346" dy="0">目标：skill manifest、registry、skill 注入与治理</tspan>
+    <tspan x="346" dy="24">作用：让强沙箱从固定工具升级成可扩展工作站</tspan>
+  </text>
+  <rect x="346" y="866" width="300" height="12" rx="6" fill="#d1fae5"/>
+  <rect x="346" y="866" width="300" height="12" rx="6" fill="#16a34a"/>
+  <text class="small" x="660" y="878">7 / 7</text>
+  <text class="tiny" x="346" y="896">状态：已完成；两个 seed skills 的 Docker real-mode smoke 已通过</text>
+
+  <rect x="850" y="744" width="54" height="28" rx="14" fill="#fef9c3" stroke="#facc15"/>
+  <text class="pill muted" x="868" y="763">P3</text>
+  <text class="cardTitle" x="920" y="764">5. Docker Live Preview Workstation</text>
+  <text class="mono" x="850" y="794">docker-live-preview-workstation</text>
+  <text class="body" x="850" y="826">
+    <tspan x="850" dy="0">已实现：previewSession、screenshot stream、terminal stream</tspan>
+    <tspan x="850" dy="24">剩余：Xvfb + VNC + noVNC 原型评估</tspan>
+  </text>
+  <rect x="850" y="866" width="300" height="12" rx="6" fill="#fef3c7"/>
+  <rect x="850" y="866" width="257" height="12" rx="6" fill="#16a34a"/>
+  <text class="small" x="1164" y="878">6 / 7</text>
+  <text class="tiny" x="850" y="896">状态：Live Preview MVP 已完成；noVNC 暂缓为独立评估切片</text>
+
+  <path class="linkStrong" d="M1304 648 C1304 694 548 694 548 720"/>
+  <path class="linkStrong" d="M776 812 C802 812 798 812 824 812"/>
+
+  <g>
+    <rect x="70" y="938" width="1460" height="1" fill="#cbd5e1"/>
+    <text class="tiny" x="70" y="966">推荐执行顺序：能力契约 -> 强镜像 -> 浏览器产物闭环 -> Skill-aware -> Live Preview。当前剩余项：评估 Xvfb + VNC + noVNC 是否进入下一阶段生产实现。</text>
+  </g>
+</svg>

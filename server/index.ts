@@ -15,6 +15,12 @@ import {
   type MissionInstanceContext,
   type MissionRecord,
 } from "../shared/mission/contracts.js";
+import type { ExecutorEvent } from "../shared/executor/contracts.js";
+import type {
+  ExecutorPreviewSession,
+  ExecutorPreviewSessionStatus,
+  ExecutorPreviewSessionType,
+} from "../shared/executor/contracts.js";
 
 dotenv.config();
 
@@ -74,13 +80,7 @@ interface ExecutorCallbackRequestBody {
       level?: "info" | "warn" | "error";
       message?: string;
     };
-    artifacts?: Array<{
-      kind?: "file" | "report" | "url" | "log";
-      name?: string;
-      path?: string;
-      url?: string;
-      description?: string;
-    }>;
+    artifacts?: ExecutorEvent["artifacts"];
     payload?: {
       instance?: {
         id?: string;
@@ -101,6 +101,7 @@ interface ExecutorCallbackRequestBody {
         cpuLimit?: string;
         pidsLimit?: number;
       };
+      previewSession?: Partial<ExecutorPreviewSession>;
     };
     /** 日志/截图关联的步骤索引 */
     stepIndex?: number;
@@ -283,9 +284,18 @@ function normalizeExecutorArtifacts(
     return [
       {
         kind: artifact.kind,
+        id: artifact.id?.trim() || undefined,
         name: artifact.name.trim(),
         path: artifact.path?.trim() || undefined,
         url: artifact.url?.trim() || undefined,
+        mimeType: artifact.mimeType?.trim() || undefined,
+        previewType: artifact.previewType,
+        size:
+          typeof artifact.size === "number" &&
+          Number.isFinite(artifact.size) &&
+          artifact.size >= 0
+            ? artifact.size
+            : undefined,
         description: artifact.description?.trim() || undefined,
       },
     ];
@@ -333,6 +343,69 @@ function normalizeSecuritySummary(
     memoryLimit: ss.memoryLimit?.trim() || "512MB",
     cpuLimit: ss.cpuLimit?.trim() || "1.0",
     pidsLimit: typeof ss.pidsLimit === "number" ? ss.pidsLimit : 256,
+  };
+}
+
+function normalizePreviewSessionType(
+  value: unknown
+): ExecutorPreviewSessionType | undefined {
+  return value === "browser-screenshot-stream" ||
+    value === "terminal-stream" ||
+    value === "browser-vnc"
+    ? value
+    : undefined;
+}
+
+function normalizePreviewSessionStatus(
+  value: unknown
+): ExecutorPreviewSessionStatus | undefined {
+  return value === "starting" ||
+    value === "running" ||
+    value === "stopped" ||
+    value === "failed"
+    ? value
+    : undefined;
+}
+
+function normalizePreviewSession(
+  value: NonNullable<ExecutorCallbackRequestBody["event"]>["payload"]
+): ExecutorPreviewSession | undefined {
+  const session = value?.previewSession;
+  if (!session || typeof session !== "object") return undefined;
+
+  const id = session.id?.trim();
+  const missionId = session.missionId?.trim();
+  const jobId = session.jobId?.trim();
+  const type = normalizePreviewSessionType(session.type);
+  const status = normalizePreviewSessionStatus(session.status);
+  const startedAt = session.startedAt?.trim();
+  if (!id || !missionId || !jobId || !type || !status || !startedAt) {
+    return undefined;
+  }
+
+  return {
+    id,
+    projectId: session.projectId?.trim() || undefined,
+    missionId,
+    jobId,
+    type,
+    status,
+    startedAt,
+    stoppedAt: session.stoppedAt?.trim() || undefined,
+    frameCount:
+      typeof session.frameCount === "number" && Number.isFinite(session.frameCount)
+        ? Math.max(0, Math.trunc(session.frameCount))
+        : undefined,
+    logLineCount:
+      typeof session.logLineCount === "number" && Number.isFinite(session.logLineCount)
+        ? Math.max(0, Math.trunc(session.logLineCount))
+        : undefined,
+    latestFramePath: session.latestFramePath?.trim() || undefined,
+    artifactNames: Array.isArray(session.artifactNames)
+      ? session.artifactNames.filter(
+          (entry): entry is string => typeof entry === "string" && entry.trim().length > 0
+        )
+      : undefined,
   };
 }
 
@@ -1081,6 +1154,7 @@ async function startServer() {
     const artifacts = normalizeExecutorArtifacts(event.artifacts);
     const instance = normalizeExecutorInstance(event.payload);
     const securitySummary = normalizeSecuritySummary(event.payload);
+    const previewSession = normalizePreviewSession(event.payload);
 
     // ── Determine effective executor status ──
     // For job.started events, force status to "running" regardless of payload
@@ -1102,6 +1176,7 @@ async function startServer() {
       instance: instance || current.instance,
       artifacts: artifacts || current.artifacts,
       securitySummary: securitySummary || current.securitySummary,
+      previewSession: previewSession || current.previewSession,
     });
 
     // ── HeartbeatMonitor: reset on every event ──

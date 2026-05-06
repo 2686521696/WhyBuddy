@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 
 import {
   AUTOPILOT_PATH,
+  getProjectTasksPath,
+  isProjectTasksPath,
   PROJECTS_PATH,
   REPLAY_PATH_PREFIX,
 } from "@/components/navigation-config";
@@ -53,14 +55,14 @@ function Router() {
       <Route path={AUTOPILOT_PATH}>{() => <Home mode="autopilot" />}</Route>
       <Route path={`${PROJECTS_PATH}/:projectId/tasks/:taskId`}>
         {params => (
-          <ProjectTaskRedirect
+          <ProjectTaskRoute
             projectId={params.projectId}
             taskId={params.taskId || null}
           />
         )}
       </Route>
       <Route path={`${PROJECTS_PATH}/:projectId/tasks`}>
-        {params => <ProjectTaskRedirect projectId={params.projectId} />}
+        {params => <ProjectTasksRoute projectId={params.projectId} />}
       </Route>
       <Route path={`${PROJECTS_PATH}/:projectId`}>
         {params => <ProjectAutopilotRedirect projectId={params.projectId} />}
@@ -161,7 +163,21 @@ function ProjectAutopilotRedirect({ projectId }: { projectId?: string }) {
   return null;
 }
 
-function ProjectTaskRedirect({
+function ProjectTasksRoute({ projectId }: { projectId?: string }) {
+  const ensureReady = useProjectStore(state => state.ensureReady);
+  const selectProject = useProjectStore(state => state.selectProject);
+
+  useEffect(() => {
+    ensureReady();
+    if (projectId) {
+      selectProject(projectId);
+    }
+  }, [ensureReady, projectId, selectProject]);
+
+  return <TasksPage projectId={projectId ?? null} />;
+}
+
+function ProjectTaskRoute({
   projectId,
   taskId,
 }: {
@@ -177,10 +193,15 @@ function ProjectTaskRedirect({
     if (projectId) {
       selectProject(projectId);
     }
-    setLocation(taskId ? `/tasks/${taskId}` : "/tasks");
-  }, [ensureReady, projectId, selectProject, setLocation, taskId]);
+  }, [ensureReady, projectId, selectProject]);
 
-  return null;
+  return (
+    <TaskDetailPage
+      taskId={taskId || null}
+      projectId={projectId ?? null}
+      onBack={() => setLocation(getProjectTasksPath(projectId))}
+    />
+  );
 }
 
 function TaskDetailRoute({ taskId }: { taskId?: string }) {
@@ -257,7 +278,7 @@ function isHomeLocation(location: string) {
   return (
     pathname === "" ||
     pathname === "/" ||
-    pathname.startsWith(PROJECTS_PATH) ||
+    (pathname.startsWith(PROJECTS_PATH) && !isProjectTasksPath(pathname)) ||
     pathname === AUTOPILOT_PATH
   );
 }

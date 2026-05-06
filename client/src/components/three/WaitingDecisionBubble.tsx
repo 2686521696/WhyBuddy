@@ -3,6 +3,9 @@ import { useFrame } from "@react-three/fiber";
 import { useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 
+import { getProjectTaskPath } from "@/components/navigation-config";
+import { resolveProjectTaskScope } from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { useTasksStore, type MissionTaskSummary } from "@/lib/tasks-store";
 
 /**
@@ -22,9 +25,26 @@ function selectWaitingMission(
   return tasks.find(t => t.status === "waiting") ?? null;
 }
 
-export function WaitingDecisionBubble() {
+export function WaitingDecisionBubble({
+  projectId = null,
+}: {
+  projectId?: string | null;
+}) {
   const tasks = useTasksStore(s => s.tasks);
-  const waitingMission = useMemo(() => selectWaitingMission(tasks), [tasks]);
+  const projectMissions = useProjectStore(state => state.missions);
+  const scopedTasks = useMemo(
+    () =>
+      resolveProjectTaskScope({
+        projectId,
+        projectMissions,
+        tasks,
+      }).tasks,
+    [projectId, projectMissions, tasks]
+  );
+  const waitingMission = useMemo(
+    () => selectWaitingMission(scopedTasks),
+    [scopedTasks]
+  );
   const [, setLocation] = useLocation();
   const scaleRef = useRef<HTMLDivElement>(null);
 
@@ -37,8 +57,8 @@ export function WaitingDecisionBubble() {
 
   const handleClick = useCallback(() => {
     if (!waitingMission) return;
-    setLocation(`/tasks/${waitingMission.id}`);
-  }, [waitingMission, setLocation]);
+    setLocation(getProjectTaskPath(projectId, waitingMission.id));
+  }, [projectId, waitingMission, setLocation]);
 
   if (!waitingMission) return null;
 

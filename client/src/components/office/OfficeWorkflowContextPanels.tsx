@@ -18,6 +18,11 @@ import { normalizeWorkflowAttachments } from "@shared/workflow-input";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { useAppStore } from "@/lib/store";
+import {
+  filterProjectScopedWorkflows,
+  resolveProjectMissionIds,
+} from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import type { MissionTaskDetail } from "@/lib/tasks-store";
 import {
   selectHeartbeatReportsForAgent,
@@ -1198,15 +1203,18 @@ export function OfficeMemoryReportsPanel({
 export function OfficeWorkflowHistoryPanel({
   workflow,
   activeWorkflowId,
+  projectId = null,
   onSelectWorkflow,
 }: {
   workflow: WorkflowInfo | null;
   activeWorkflowId: string | null;
+  projectId?: string | null;
   onSelectWorkflow: (workflowId: string) => void;
 }) {
   const { locale } = useI18n();
   const workflows = useWorkflowStore(state => state.workflows);
   const workflowsError = useWorkflowStore(state => state.workflowsError);
+  const projectMissions = useProjectStore(state => state.missions);
   const graphInstance = useWorkflowStore(
     state => state.currentWorkflowGraphInstance
   );
@@ -1231,6 +1239,14 @@ export function OfficeWorkflowHistoryPanel({
     state => state.terminateWorkflowMonitoringInstance
   );
   const [isTerminating, setIsTerminating] = useState(false);
+  const projectMissionIds = useMemo(
+    () => resolveProjectMissionIds(projectId, projectMissions),
+    [projectId, projectMissions]
+  );
+  const scopedWorkflows = useMemo(
+    () => filterProjectScopedWorkflows(workflows, projectMissionIds),
+    [projectMissionIds, workflows]
+  );
 
   useEffect(() => {
     void fetchWorkflows();
@@ -1344,7 +1360,7 @@ export function OfficeWorkflowHistoryPanel({
     }
   }
 
-  if (workflows.length === 0 && !workflowsError) {
+  if (scopedWorkflows.length === 0 && !workflowsError) {
     return (
       <OfficeTabEmptyState
         title={t(locale, "还没有历史记录", "No workflow history yet")}
@@ -1827,7 +1843,7 @@ export function OfficeWorkflowHistoryPanel({
           }
         >
           <div className="space-y-2">
-            {workflows.map(workflow => (
+            {scopedWorkflows.map(workflow => (
               <button
                 key={workflow.id}
                 type="button"

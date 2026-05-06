@@ -238,6 +238,16 @@ vi.mock("@/lib/store", () => ({
   useAppStore: () => null,
 }));
 
+vi.mock("@/lib/project-store", () => ({
+  useProjectStore: (
+    selector: (state: { missions: []; projects: [] }) => unknown
+  ) =>
+    selector({
+      missions: [],
+      projects: [],
+    }),
+}));
+
 vi.mock("@/lib/workflow-store", () => ({
   useWorkflowStore: (selector: (state: typeof workflowStoreState) => unknown) =>
     selector(workflowStoreState),

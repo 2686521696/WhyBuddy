@@ -1,6 +1,7 @@
 import Dockerode from "dockerode";
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,13 +10,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import {
   EXECUTOR_CONTRACT_VERSION,
   type ExecutionPlanArtifact,
   type ExecutorEvent,
   type ExecutorJobStatus,
+  type ExecutorLivePreviewOptions,
+  type ExecutorPreviewSession,
   type SecurityPolicy,
 } from "../../../shared/executor/contracts.js";
 import type { AIResultArtifact, LobsterExecutorConfig, StoredJobRecord } from "./types.js";
@@ -36,9 +39,181 @@ import {
   toDockerHostConfig,
 } from "./security-policy.js";
 import { SecurityAuditLogger } from "./security-audit.js";
+import { sandboxSkillKey } from "./skill-registry.js";
 
 function toRelativePath(pathname: string): string {
   return relative(process.cwd(), pathname).replace(/\\/g, "/");
+}
+
+function normalizeManifestPath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function inferMimeType(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".log") || lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".md")) return "text/markdown";
+  return undefined;
+}
+
+function inferPreviewType(
+  name: string,
+  mimeType?: string,
+): ExecutionPlanArtifact["previewType"] | undefined {
+  const normalizedMime = mimeType?.toLowerCase() || "";
+  const lower = name.toLowerCase();
+  if (normalizedMime.startsWith("image/")) return "image";
+  if (
+    normalizedMime === "text/html" ||
+    lower.endsWith(".html") ||
+    lower.endsWith(".htm")
+  ) return "html";
+  if (normalizedMime === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
+  if (normalizedMime.includes("json") || lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".log")) return "log";
+  if (normalizedMime.startsWith("text/")) return "text";
+  return undefined;
+}
+
+function normalizeArtifactKind(value: unknown): ExecutionPlanArtifact["kind"] {
+  return value === "report" || value === "url" || value === "log" ? value : "file";
+}
+
+function normalizePreviewType(
+  value: unknown,
+): ExecutionPlanArtifact["previewType"] | undefined {
+  return value === "text" ||
+    value === "json" ||
+    value === "html" ||
+    value === "pdf" ||
+    value === "image" ||
+    value === "log"
+    ? value
+    : undefined;
+}
+
+function skillEventPayload(
+  record: StoredJobRecord,
+): Record<string, unknown> | undefined {
+  if (!record.skill) return undefined;
+  return {
+    skill: {
+      name: record.skill.manifest.name,
+      version: record.skill.manifest.version,
+      autoSelected: record.skill.autoSelected,
+      capabilities: record.skill.manifest.capabilities,
+    },
+  };
+}
+
+function readBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readPositiveInteger(value: unknown, fallback: number): number {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function normalizeLivePreviewOptions(
+  value: unknown,
+): ExecutorLivePreviewOptions | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const enabled = readBoolean(candidate.enabled, true);
+  if (!enabled) return { enabled: false };
+
+  return {
+    enabled,
+    screenshotIntervalMs: readPositiveInteger(candidate.screenshotIntervalMs, 1_000),
+    terminal: readBoolean(candidate.terminal, true),
+    browser: readBoolean(candidate.browser, true),
+    replayArtifacts: readBoolean(candidate.replayArtifacts, true),
+    timeoutMs: readPositiveInteger(candidate.timeoutMs, 300_000),
+  };
+}
+
+function isLivePreviewEnabled(options: ExecutorLivePreviewOptions | undefined): boolean {
+  return options?.enabled === true;
+}
+
+function createPreviewSession(
+  record: StoredJobRecord,
+  options: ExecutorLivePreviewOptions | undefined,
+  status: ExecutorPreviewSession["status"],
+): ExecutorPreviewSession | undefined {
+  if (!isLivePreviewEnabled(options)) return undefined;
+  const payload = (record.planJob.payload ?? {}) as Record<string, unknown>;
+  const projectId =
+    typeof payload.projectId === "string" && payload.projectId.trim()
+      ? payload.projectId.trim()
+      : undefined;
+  const type =
+    options?.browser === false
+      ? "terminal-stream"
+      : "browser-screenshot-stream";
+
+  return {
+    ...(record.previewSession ?? {}),
+    id: record.previewSession?.id || `preview-${record.request.jobId}`,
+    projectId,
+    missionId: record.request.missionId,
+    jobId: record.request.jobId,
+    type,
+    status,
+    startedAt: record.previewSession?.startedAt || new Date().toISOString(),
+  };
+}
+
+function previewEventPayload(
+  record: StoredJobRecord,
+): Record<string, unknown> | undefined {
+  return record.previewSession
+    ? {
+        previewSession: record.previewSession,
+      }
+    : undefined;
+}
+
+function readPngSize(buffer: Buffer): { width: number; height: number } {
+  const pngSignature = "89504e470d0a1a0a";
+  if (buffer.length >= 24 && buffer.subarray(0, 8).toString("hex") === pngSignature) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20),
+    };
+  }
+  return { width: 0, height: 0 };
+}
+
+function copyDirectoryRecursive(source: string, target: string): void {
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source)) {
+    const sourcePath = join(source, entry);
+    const targetPath = join(target, entry);
+    const stat = statSync(sourcePath);
+    if (stat.isDirectory()) {
+      copyDirectoryRecursive(sourcePath, targetPath);
+    } else if (stat.isFile()) {
+      mkdirSync(dirname(targetPath), { recursive: true });
+      copyFileSync(sourcePath, targetPath);
+    }
+  }
 }
 
 export interface DockerRunnerConfig {
@@ -165,11 +340,13 @@ export class DockerRunner implements JobRunner {
       // 0. Extract payload flags
       const payload = (record.planJob.payload ?? {}) as Record<string, unknown>;
       const aiEnabled = payload.aiEnabled === true;
+      const livePreviewOptions = normalizeLivePreviewOptions(payload.livePreview);
 
       // 1. Prepare workspace
       const workspaceDir = join(record.dataDirectory, "workspace");
       const artifactsDir = join(workspaceDir, "artifacts");
       mkdirSync(artifactsDir, { recursive: true });
+      this.prepareSkillWorkspace(record, workspaceDir);
 
       // 2. Create container
       container = await this.createContainer(record, workspaceDir);
@@ -192,6 +369,13 @@ export class DockerRunner implements JobRunner {
           networkMode: securityPolicy.network.mode,
           memoryBytes: securityPolicy.resources.memoryBytes,
           pidsLimit: securityPolicy.resources.pidsLimit,
+          skill: record.skill
+            ? {
+                name: record.skill.manifest.name,
+                version: record.skill.manifest.version,
+                autoSelected: record.skill.autoSelected,
+              }
+            : undefined,
         },
       });
 
@@ -213,6 +397,26 @@ export class DockerRunner implements JobRunner {
       record.startedAt = startedAt;
       record.message = `Container ${containerId.slice(0, 12)} started`;
       record.progress = 5;
+      record.previewSession = createPreviewSession(
+        record,
+        livePreviewOptions,
+        "running",
+      );
+      if (record.previewSession) {
+        this.auditLogger.log({
+          jobId: record.request.jobId,
+          missionId: record.request.missionId,
+          eventType: "preview.session.created",
+          securityLevel: securityPolicy.level,
+          detail: {
+            previewSessionId: record.previewSession.id,
+            type: record.previewSession.type,
+            terminal: livePreviewOptions?.terminal !== false,
+            browser: livePreviewOptions?.browser !== false,
+            directContainerPortExposed: false,
+          },
+        });
+      }
 
       const startedEvent = this.createEvent(record, {
         type: "job.started",
@@ -230,6 +434,8 @@ export class DockerRunner implements JobRunner {
 
       startedEvent.payload = {
         ...startedEvent.payload,
+        ...skillEventPayload(record),
+        ...previewEventPayload(record),
         networkPolicy: {
           mode: securityPolicy.network.mode,
           whitelist: securityPolicy.network.whitelist ?? [],
@@ -254,6 +460,8 @@ export class DockerRunner implements JobRunner {
         record,
         emitEvent,
         stderrLines,
+        workspaceDir,
+        livePreviewOptions,
       );
 
       // 6. Inspect exit code
@@ -271,8 +479,49 @@ export class DockerRunner implements JobRunner {
         summary: record.cancelRequested ? cancelReason : undefined,
       });
 
+      const previewArtifacts = await this.persistLivePreviewArtifacts(
+        record,
+        workspaceDir,
+        livePreviewOptions,
+      );
+
       // 8. Collect artifacts
       const artifacts = this.collectArtifacts(record, workspaceDir, resultFile);
+      await this.emitFinalPreviewFrame(
+        record,
+        workspaceDir,
+        emitEvent,
+        livePreviewOptions,
+      );
+      if (record.previewSession) {
+        record.previewSession = {
+          ...record.previewSession,
+          status:
+            record.cancelRequested || timedOut || oomKilled || exitCode !== 0
+              ? "failed"
+              : "stopped",
+          stoppedAt: finishedAt,
+          artifactNames: Array.from(
+            new Set([
+              ...(record.previewSession.artifactNames ?? []),
+              ...previewArtifacts,
+            ]),
+          ),
+        };
+        this.auditLogger.log({
+          jobId: record.request.jobId,
+          missionId: record.request.missionId,
+          eventType: "preview.session.stopped",
+          securityLevel: securityPolicy.level,
+          detail: {
+            previewSessionId: record.previewSession.id,
+            status: record.previewSession.status,
+            frameCount: record.previewSession.frameCount ?? 0,
+            logLineCount: record.previewSession.logLineCount ?? 0,
+            artifactNames: record.previewSession.artifactNames ?? [],
+          },
+        });
+      }
 
       // 8.5 Scrub credentials from artifacts and logs for AI jobs
       if (aiEnabled) {
@@ -454,6 +703,46 @@ export class DockerRunner implements JobRunner {
     }
 
     const command = (payload.command ?? []) as string[];
+    const browserTask = payload.browserTask as Record<string, unknown> | undefined;
+    const skill = record.skill;
+    const shouldUseBrowserRunner =
+      !skill &&
+      command.length === 0 &&
+      Boolean(browserTask) &&
+      typeof browserTask === "object";
+    const shouldUseSkillRunner = command.length === 0 && Boolean(skill);
+    if (shouldUseBrowserRunner && typeof envMap.BROWSER_TASK !== "string") {
+      envArray.push(`BROWSER_TASK=${JSON.stringify(browserTask)}`);
+    }
+    if (shouldUseSkillRunner) {
+      envArray.push(
+        "CUBE_SKILL_INPUT=/workspace/skill-input.json",
+        "CUBE_SKILL_ARTIFACTS_DIR=/workspace/artifacts",
+        `CUBE_SKILL_NAME=${skill!.manifest.name}`,
+        `CUBE_SKILL_VERSION=${skill!.manifest.version}`,
+      );
+    }
+    const livePreview = normalizeLivePreviewOptions(payload.livePreview);
+    if (isLivePreviewEnabled(livePreview)) {
+      envArray.push(
+        "CUBE_LIVE_PREVIEW=true",
+        `CUBE_LIVE_PREVIEW_TERMINAL=${livePreview?.terminal === false ? "false" : "true"}`,
+        `CUBE_LIVE_PREVIEW_BROWSER=${livePreview?.browser === false ? "false" : "true"}`,
+        `CUBE_LIVE_PREVIEW_SCREENSHOT_INTERVAL_MS=${livePreview?.screenshotIntervalMs ?? 1000}`,
+        "CUBE_LIVE_PREVIEW_DIRECT_PORTS=false",
+      );
+    }
+    const effectiveCommand =
+      command.length > 0
+        ? command
+        : shouldUseSkillRunner
+          ? [
+              `/workspace/skills/current/${skill!.manifest.entrypoint.replace(/\\/g, "/")}`,
+              "/workspace/skill-input.json",
+            ]
+        : shouldUseBrowserRunner
+          ? []
+          : [];
 
     // Use payload.workspaceRoot if provided, otherwise use the job-local workspace
     // When Docker is remote (TCP), skip bind mount since local paths don't exist on the remote host
@@ -467,7 +756,12 @@ export class DockerRunner implements JobRunner {
 
     return {
       Image: image,
-      Cmd: command.length > 0 ? command : undefined,
+      Entrypoint: shouldUseSkillRunner
+        ? [skill!.manifest.runtime]
+        : shouldUseBrowserRunner
+          ? ["node", "/opt/cube-agent/browser-runner.js"]
+          : undefined,
+      Cmd: effectiveCommand.length > 0 ? effectiveCommand : undefined,
       Env: envArray.length > 0 ? envArray : undefined,
       WorkingDir: "/workspace",
       User: securityCreateOpts.User,
@@ -502,9 +796,13 @@ export class DockerRunner implements JobRunner {
     record: StoredJobRecord,
     emitEvent: (event: ExecutorEvent) => void,
     stderrLines: string[],
+    workspaceDir: string,
+    livePreviewOptions: ExecutorLivePreviewOptions | undefined,
   ): Promise<{ timedOut: boolean }> {
-    const timeoutMs =
-      record.planJob.timeoutMs ?? 300_000; // default 5 min
+    const jobTimeoutMs = record.planJob.timeoutMs ?? 300_000; // default 5 min
+    const timeoutMs = isLivePreviewEnabled(livePreviewOptions)
+      ? Math.min(jobTimeoutMs, livePreviewOptions?.timeoutMs ?? jobTimeoutMs)
+      : jobTimeoutMs;
 
     let timedOut = false;
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -540,6 +838,31 @@ export class DockerRunner implements JobRunner {
         void this.sendCallback(record, progressEvent);
       }
     }, 5000);
+    let screenshotInterval: ReturnType<typeof setInterval> | undefined;
+    let screenshotPollActive = false;
+    let lastPreviewFrameSignature: string | undefined;
+
+    if (isLivePreviewEnabled(livePreviewOptions) && livePreviewOptions?.browser !== false) {
+      const intervalMs = Math.max(
+        250,
+        livePreviewOptions?.screenshotIntervalMs ?? 1_000,
+      );
+      screenshotInterval = setInterval(() => {
+        if (screenshotPollActive) return;
+        const signature = this.getPreviewFrameSignature(workspaceDir);
+        if (!signature || signature === lastPreviewFrameSignature) return;
+        lastPreviewFrameSignature = signature;
+        screenshotPollActive = true;
+        void this.emitPreviewFrame(
+          record,
+          workspaceDir,
+          emitEvent,
+          livePreviewOptions,
+        ).finally(() => {
+          screenshotPollActive = false;
+        });
+      }, intervalMs);
+    }
 
     try {
       // Attach to container logs (follow mode)
@@ -567,6 +890,13 @@ export class DockerRunner implements JobRunner {
           if (line.length > 0) {
             this.appendLog(record, line);
             logBatcher.push(line);
+            this.emitLiveLogStream(
+              record,
+              emitEvent,
+              "stdout",
+              line,
+              livePreviewOptions,
+            );
           }
         }
       });
@@ -583,6 +913,13 @@ export class DockerRunner implements JobRunner {
             this.appendLog(record, `[stderr] ${line}`);
             appendFileSync(stderrFile, `${line}\n`, "utf-8");
             logBatcher.push(`[stderr] ${line}`);
+            this.emitLiveLogStream(
+              record,
+              emitEvent,
+              "stderr",
+              line,
+              livePreviewOptions,
+            );
             // Ring buffer: keep last 50 stderr lines
             stderrLines.push(line);
             if (stderrLines.length > 50) stderrLines.shift();
@@ -614,11 +951,25 @@ export class DockerRunner implements JobRunner {
       if (stdoutBuffer.length > 0) {
         this.appendLog(record, stdoutBuffer);
         logBatcher.push(stdoutBuffer);
+        this.emitLiveLogStream(
+          record,
+          emitEvent,
+          "stdout",
+          stdoutBuffer,
+          livePreviewOptions,
+        );
       }
       if (stderrBuffer.length > 0) {
         this.appendLog(record, `[stderr] ${stderrBuffer}`);
         appendFileSync(stderrFile, `${stderrBuffer}\n`, "utf-8");
         logBatcher.push(`[stderr] ${stderrBuffer}`);
+        this.emitLiveLogStream(
+          record,
+          emitEvent,
+          "stderr",
+          stderrBuffer,
+          livePreviewOptions,
+        );
         stderrLines.push(stderrBuffer);
         if (stderrLines.length > 50) stderrLines.shift();
       }
@@ -628,6 +979,7 @@ export class DockerRunner implements JobRunner {
       return { timedOut };
     } finally {
       clearInterval(progressInterval);
+      if (screenshotInterval) clearInterval(screenshotInterval);
       if (timeoutTimer) clearTimeout(timeoutTimer);
     }
   }
@@ -660,16 +1012,27 @@ export class DockerRunner implements JobRunner {
     const artifactsDir = join(workspaceDir, "artifacts");
     try {
       if (existsSync(artifactsDir)) {
+        const manifestByPath = this.readArtifactManifest(artifactsDir);
         const files = readdirSync(artifactsDir);
         for (const file of files) {
           const filePath = join(artifactsDir, file);
           const stat = statSync(filePath);
           if (stat.isFile()) {
+            const manifestArtifact =
+              manifestByPath.get(`artifacts/${file}`) ||
+              manifestByPath.get(file);
+            const mimeType = manifestArtifact?.mimeType || inferMimeType(file);
             artifacts.push({
-              kind: "file",
+              kind: manifestArtifact?.kind || "file",
+              id: manifestArtifact?.id,
               name: file,
               path: toRelativePath(filePath),
-              description: `Artifact produced by container`,
+              mimeType,
+              previewType:
+                manifestArtifact?.previewType || inferPreviewType(file, mimeType),
+              size: manifestArtifact?.size ?? stat.size,
+              description:
+                manifestArtifact?.description || `Artifact produced by container`,
             });
           }
         }
@@ -682,6 +1045,242 @@ export class DockerRunner implements JobRunner {
     }
 
     return artifacts;
+  }
+
+  private emitLiveLogStream(
+    record: StoredJobRecord,
+    emitEvent: (event: ExecutorEvent) => void,
+    stream: "stdout" | "stderr",
+    data: string,
+    livePreviewOptions: ExecutorLivePreviewOptions | undefined,
+  ): void {
+    const payload = (record.planJob.payload ?? {}) as Record<string, unknown>;
+    const aiEnabled = payload.aiEnabled === true;
+    const creds = aiEnabled ? resolveAICredentials(payload, process.env) : { apiKey: "" };
+    const scrubber = new CredentialScrubber([creds.apiKey]);
+    const scrubbedData = scrubber.scrubLine(data).slice(0, 4096);
+
+    const event = this.createEvent(record, {
+      type: "job.log_stream",
+      status: "running",
+      message: stream === "stderr" ? "stderr stream" : "stdout stream",
+      payload: previewEventPayload(record),
+    });
+    event.stepIndex = 0;
+    event.stream = stream;
+    event.data = scrubbedData;
+    emitEvent(event);
+    void this.sendCallback(record, event);
+
+    if (isLivePreviewEnabled(livePreviewOptions) && record.previewSession) {
+      record.previewSession = {
+        ...record.previewSession,
+        logLineCount: (record.previewSession.logLineCount ?? 0) + 1,
+      };
+    }
+  }
+
+  private async emitFinalPreviewFrame(
+    record: StoredJobRecord,
+    workspaceDir: string,
+    emitEvent: (event: ExecutorEvent) => void,
+    livePreviewOptions: ExecutorLivePreviewOptions | undefined,
+  ): Promise<void> {
+    await this.emitPreviewFrame(record, workspaceDir, emitEvent, livePreviewOptions);
+  }
+
+  private getPreviewFrameSignature(workspaceDir: string): string | undefined {
+    const framePath = join(workspaceDir, "artifacts", "page-screenshot.png");
+    if (!existsSync(framePath)) return undefined;
+    try {
+      const stat = statSync(framePath);
+      return `${stat.size}:${stat.mtimeMs}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async emitPreviewFrame(
+    record: StoredJobRecord,
+    workspaceDir: string,
+    emitEvent: (event: ExecutorEvent) => void,
+    livePreviewOptions: ExecutorLivePreviewOptions | undefined,
+  ): Promise<void> {
+    if (!isLivePreviewEnabled(livePreviewOptions) || livePreviewOptions?.browser === false) {
+      return;
+    }
+
+    const artifactsDir = join(workspaceDir, "artifacts");
+    const framePath = join(artifactsDir, "page-screenshot.png");
+    if (!existsSync(framePath)) return;
+
+    try {
+      const frame = readFileSync(framePath);
+      const imageData = frame.toString("base64");
+      if (!imageData || imageData.length > 350_000) return;
+      const { width, height } = readPngSize(frame);
+      const event = this.createEvent(record, {
+        type: "job.screenshot",
+        status: "running",
+        message: "browser screenshot frame",
+        payload: previewEventPayload(record),
+      });
+      event.stepIndex = record.previewSession?.frameCount ?? 0;
+      event.imageData = imageData;
+      event.imageWidth = width;
+      event.imageHeight = height;
+      emitEvent(event);
+      await this.sendCallback(record, event);
+
+      if (record.previewSession) {
+        record.previewSession = {
+          ...record.previewSession,
+          frameCount: (record.previewSession.frameCount ?? 0) + 1,
+          latestFramePath: toRelativePath(framePath),
+          artifactNames: Array.from(
+            new Set([
+              ...(record.previewSession.artifactNames ?? []),
+              "page-screenshot.png",
+            ]),
+          ),
+        };
+      }
+    } catch (err) {
+      console.warn(
+        "[DockerRunner] Failed to emit final preview frame:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  private async persistLivePreviewArtifacts(
+    record: StoredJobRecord,
+    workspaceDir: string,
+    livePreviewOptions: ExecutorLivePreviewOptions | undefined,
+  ): Promise<string[]> {
+    if (!isLivePreviewEnabled(livePreviewOptions) || livePreviewOptions?.replayArtifacts === false) {
+      return [];
+    }
+
+    const artifactsDir = join(workspaceDir, "artifacts");
+    const artifactNames: string[] = [];
+    try {
+      mkdirSync(artifactsDir, { recursive: true });
+
+      if (existsSync(record.logFile)) {
+        const terminalLogName = "terminal-live.log";
+        copyFileSync(record.logFile, join(artifactsDir, terminalLogName));
+        artifactNames.push(terminalLogName);
+      }
+
+      const framePath = join(artifactsDir, "page-screenshot.png");
+      if (existsSync(framePath)) {
+        const replayFrameName = "live-preview-frame-0001.png";
+        copyFileSync(framePath, join(artifactsDir, replayFrameName));
+        artifactNames.push(replayFrameName);
+      }
+    } catch (err) {
+      console.warn(
+        "[DockerRunner] Failed to persist live preview artifacts:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    return artifactNames;
+  }
+
+  private prepareSkillWorkspace(
+    record: StoredJobRecord,
+    workspaceDir: string,
+  ): void {
+    if (!record.skill) return;
+
+    const skillDir = join(workspaceDir, "skills", "current");
+    copyDirectoryRecursive(record.skill.directory, skillDir);
+    writeFileSync(
+      join(workspaceDir, "skill-input.json"),
+      `${JSON.stringify(record.skill.input, null, 2)}\n`,
+      "utf-8",
+    );
+    writeFileSync(
+      join(workspaceDir, "skill-manifest.json"),
+      `${JSON.stringify(record.skill.manifest, null, 2)}\n`,
+      "utf-8",
+    );
+    this.appendLog(
+      record,
+      `[skill] prepared ${sandboxSkillKey(record.skill.manifest)} from ${basename(record.skill.directory)}`,
+    );
+  }
+
+  private readArtifactManifest(artifactsDir: string): Map<string, ExecutionPlanArtifact> {
+    const manifestPath = join(artifactsDir, "artifact-manifest.json");
+    const byPath = new Map<string, ExecutionPlanArtifact>();
+    if (!existsSync(manifestPath)) {
+      return byPath;
+    }
+
+    try {
+      const raw = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+        artifacts?: unknown;
+      };
+      if (!Array.isArray(raw.artifacts)) {
+        return byPath;
+      }
+
+      for (const item of raw.artifacts) {
+        if (!item || typeof item !== "object") continue;
+        const candidate = item as Record<string, unknown>;
+        const pathValue =
+          typeof candidate.path === "string" ? candidate.path.trim() : "";
+        const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+        if (!pathValue || !name) continue;
+
+        const normalizedPath = normalizeManifestPath(pathValue);
+        const basename = normalizedPath.split("/").pop() || name;
+        const mimeType =
+          typeof candidate.mimeType === "string" && candidate.mimeType.trim()
+            ? candidate.mimeType.trim()
+            : inferMimeType(name);
+        const previewType =
+          normalizePreviewType(candidate.previewType) ||
+          inferPreviewType(name, mimeType);
+        const size =
+          typeof candidate.size === "number" &&
+          Number.isFinite(candidate.size) &&
+          candidate.size >= 0
+            ? candidate.size
+            : undefined;
+
+        const artifact: ExecutionPlanArtifact = {
+          kind: normalizeArtifactKind(candidate.kind),
+          id:
+            typeof candidate.id === "string" && candidate.id.trim()
+              ? candidate.id.trim()
+              : undefined,
+          name,
+          path: normalizedPath,
+          mimeType,
+          previewType,
+          size,
+          description:
+            typeof candidate.description === "string" && candidate.description.trim()
+              ? candidate.description.trim()
+              : undefined,
+        };
+
+        byPath.set(normalizedPath, artifact);
+        byPath.set(`artifacts/${basename}`, artifact);
+        byPath.set(basename, artifact);
+      }
+    } catch (err) {
+      console.warn(
+        `[DockerRunner] Failed to read artifact manifest from ${manifestPath}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    return byPath;
   }
 
   /* ── result.json ── */
@@ -710,6 +1309,14 @@ export class DockerRunner implements JobRunner {
       missionId: record.request.missionId,
       jobId: record.request.jobId,
       requestId: record.request.requestId,
+      skill: record.skill
+        ? {
+            name: record.skill.manifest.name,
+            version: record.skill.manifest.version,
+            autoSelected: record.skill.autoSelected,
+          }
+        : undefined,
+      previewSession: record.previewSession,
       summary,
       outcome,
       exitCode,
@@ -828,6 +1435,7 @@ export class DockerRunner implements JobRunner {
       const aiTaskType = (jobPayload.aiTaskType as string) || "text-generation";
       const aiResult = this.readAIResult(record);
       eventPayload = {
+        ...skillEventPayload(record),
         aiTaskType,
         aiModel: aiResult?.model ?? (jobPayload.llmConfig as Record<string, unknown> | undefined)?.model ?? "",
       };
@@ -841,7 +1449,14 @@ export class DockerRunner implements JobRunner {
         const scrubber = new CredentialScrubber([creds.apiKey]);
         eventPayload = JSON.parse(scrubber.scrubLine(JSON.stringify(eventPayload)));
       }
+    } else {
+      eventPayload = skillEventPayload(record);
     }
+
+    eventPayload = {
+      ...eventPayload,
+      ...previewEventPayload(record),
+    };
 
     const event = this.createEvent(record, {
       type: "job.completed",
@@ -879,6 +1494,8 @@ export class DockerRunner implements JobRunner {
       artifacts,
       metrics: { durationMs },
       payload: {
+        ...previewEventPayload(record),
+        ...skillEventPayload(record),
         cancelRequested: record.cancelRequested,
       },
     });
@@ -917,6 +1534,7 @@ export class DockerRunner implements JobRunner {
       const aiTaskType = (jobPayload.aiTaskType as string) || "text-generation";
       const aiResult = this.readAIResult(record);
       eventPayload = {
+        ...skillEventPayload(record),
         aiTaskType,
         aiModel: aiResult?.model ?? (jobPayload.llmConfig as Record<string, unknown> | undefined)?.model ?? "",
       };
@@ -934,7 +1552,14 @@ export class DockerRunner implements JobRunner {
         }
         eventPayload = JSON.parse(scrubber.scrubLine(JSON.stringify(eventPayload)));
       }
+    } else {
+      eventPayload = skillEventPayload(record);
     }
+
+    eventPayload = {
+      ...eventPayload,
+      ...previewEventPayload(record),
+    };
 
     const event = this.createEvent(record, {
       type: "job.failed",

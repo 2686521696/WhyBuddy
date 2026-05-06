@@ -19,8 +19,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 import { SessionHistoryTab } from "@/components/SessionHistoryTab";
+import {
+  getProjectTaskPath,
+  getProjectTasksPath,
+} from "@/components/navigation-config";
 import { useViewportTier } from "@/hooks/useViewportTier";
 import { useI18n } from "@/i18n";
+import {
+  filterProjectScopedWorkflows,
+  resolveProjectMissionIds,
+  resolveScopedSelectedTaskId,
+  resolveScopedWorkflow,
+  resolveProjectTaskScope,
+} from "@/lib/project-task-scope";
+import { selectCurrentProject, useProjectStore } from "@/lib/project-store";
 import { useAppStore } from "@/lib/store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
@@ -202,7 +214,6 @@ export function WorkflowPanelCompatibility({
   const activeView = useWorkflowStore(state => state.activeView);
   const setActiveView = useWorkflowStore(state => state.setActiveView);
   const currentWorkflow = useWorkflowStore(state => state.currentWorkflow);
-  const currentWorkflowId = useWorkflowStore(state => state.currentWorkflowId);
   const workflows = useWorkflowStore(state => state.workflows);
   const workflowsError = useWorkflowStore(state => state.workflowsError);
   const agents = useWorkflowStore(state => state.agents);
@@ -227,8 +238,11 @@ export function WorkflowPanelCompatibility({
   );
   const fetchWorkflows = useWorkflowStore(state => state.fetchWorkflows);
   const setCurrentWorkflow = useWorkflowStore(state => state.setCurrentWorkflow);
+  const taskSummaries = useTasksStore(state => state.tasks || []);
   const detailsById = useTasksStore(state => state.detailsById);
   const selectedTaskId = useTasksStore(state => state.selectedTaskId);
+  const currentProject = useProjectStore(selectCurrentProject);
+  const projectMissions = useProjectStore(state => state.missions);
   const [, setLocation] = useLocation();
   const [isTerminating, setIsTerminating] = useState(false);
 
@@ -248,31 +262,76 @@ export function WorkflowPanelCompatibility({
     { id: "sessions", icon: Database, label: copy.workflow.tabs.sessions },
   ];
 
-  const destination = useMemo(
+  const projectMissionIds = useMemo(
+    () => resolveProjectMissionIds(currentProject?.id ?? null, projectMissions),
+    [currentProject?.id, projectMissions]
+  );
+  const scopedWorkflows = useMemo(
+    () => filterProjectScopedWorkflows(workflows, projectMissionIds),
+    [projectMissionIds, workflows]
+  );
+  const scopedCurrentWorkflow = useMemo(
+    () => resolveScopedWorkflow(currentWorkflow, projectMissionIds),
+    [currentWorkflow, projectMissionIds]
+  );
+  const taskScope = useMemo(
     () =>
-      selectWorkflowLegacyDestination(activeView, {
-        workflow: currentWorkflow,
-        detailsById,
-        agents,
-        selectedTaskId,
-        selectedAgentId: selectedPet,
+      resolveProjectTaskScope({
+        projectId: currentProject?.id ?? null,
+        projectMissions,
+        tasks: taskSummaries,
       }),
+    [currentProject?.id, projectMissions, taskSummaries]
+  );
+  const scopedSelectedTaskId = resolveScopedSelectedTaskId({
+    selectedTaskId,
+    scope: taskScope,
+    hasDetail: taskId => Boolean(detailsById[taskId]),
+  });
+  const activeWorkflowId = scopedCurrentWorkflow?.id ?? null;
+
+  const destination = useMemo(() => {
+    const rawDestination = selectWorkflowLegacyDestination(activeView, {
+      workflow: scopedCurrentWorkflow,
+      detailsById,
+      agents,
+      selectedTaskId: scopedSelectedTaskId,
+      selectedAgentId: selectedPet,
+    });
+    if (rawDestination.kind === "tasks") {
+      return {
+        ...rawDestination,
+        href: getProjectTasksPath(currentProject?.id ?? null),
+      };
+    }
+    if (rawDestination.kind === "task-detail" && rawDestination.taskId) {
+      return {
+        ...rawDestination,
+        href: getProjectTaskPath(
+          currentProject?.id ?? null,
+          rawDestination.taskId
+        ),
+      };
+    }
+    return rawDestination;
+  },
     [
       activeView,
       agents,
-      currentWorkflow,
+      currentProject?.id,
       detailsById,
       selectedPet,
-      selectedTaskId,
+      scopedCurrentWorkflow,
+      scopedSelectedTaskId,
     ]
   );
   const missionDetail = useMemo(
-    () => selectWorkflowMissionDetail(currentWorkflow, detailsById),
-    [currentWorkflow, detailsById]
+    () => selectWorkflowMissionDetail(scopedCurrentWorkflow, detailsById),
+    [scopedCurrentWorkflow, detailsById]
   );
   const organization = useMemo(
-    () => selectWorkflowOrganization(currentWorkflow),
-    [currentWorkflow]
+    () => selectWorkflowOrganization(scopedCurrentWorkflow),
+    [scopedCurrentWorkflow]
   );
   const summary = targetSummary(locale, activeView);
   const monitoringNodePreview = useMemo(
@@ -289,16 +348,16 @@ export function WorkflowPanelCompatibility({
   );
 
   useEffect(() => {
-    if (activeView !== "history" || !currentWorkflowId) {
+    if (activeView !== "history" || !activeWorkflowId) {
       return;
     }
 
-    void fetchWorkflowGraphInstance(currentWorkflowId);
-    void fetchWorkflowMonitoringInstance(currentWorkflowId);
-    void fetchWorkflowMonitoringSession(currentWorkflowId);
+    void fetchWorkflowGraphInstance(activeWorkflowId);
+    void fetchWorkflowMonitoringInstance(activeWorkflowId);
+    void fetchWorkflowMonitoringSession(activeWorkflowId);
   }, [
     activeView,
-    currentWorkflowId,
+    activeWorkflowId,
     fetchWorkflowGraphInstance,
     fetchWorkflowMonitoringInstance,
     fetchWorkflowMonitoringSession,
@@ -339,18 +398,18 @@ export function WorkflowPanelCompatibility({
   }
 
   async function handleTerminateMonitoringInstance() {
-    if (!currentWorkflowId || isTerminating) {
+    if (!activeWorkflowId || isTerminating) {
       return;
     }
 
     setIsTerminating(true);
     try {
       await terminateWorkflowMonitoringInstance(
-        currentWorkflowId,
+        activeWorkflowId,
         "workflow-panel-compatibility-history"
       );
-      await fetchWorkflowMonitoringInstance(currentWorkflowId);
-      await fetchWorkflowMonitoringSession(currentWorkflowId);
+      await fetchWorkflowMonitoringInstance(activeWorkflowId);
+      await fetchWorkflowMonitoringSession(activeWorkflowId);
     } finally {
       setIsTerminating(false);
     }
@@ -503,7 +562,7 @@ export function WorkflowPanelCompatibility({
                       </div>
                     </div>
 
-                    {currentWorkflowId ? (
+                    {activeWorkflowId ? (
                       <button
                         type="button"
                         onClick={() => void handleTerminateMonitoringInstance()}
@@ -538,16 +597,16 @@ export function WorkflowPanelCompatibility({
                       <div className="rounded-[18px] border border-rose-200/70 bg-rose-50/80 px-3 py-3 text-sm leading-6 text-rose-700">
                         {workflowsError.detail || workflowsError.message}
                       </div>
-                    ) : workflows.length > 0 ? (
+                    ) : scopedWorkflows.length > 0 ? (
                       <div className="grid gap-2 sm:grid-cols-2">
-                        {workflows.slice(0, 4).map(workflow => (
+                        {scopedWorkflows.slice(0, 4).map(workflow => (
                           <button
                             key={workflow.id}
                             type="button"
                             onClick={() => setCurrentWorkflow(workflow.id)}
                             className={cn(
                               "rounded-[18px] border px-3 py-3 text-left transition-colors",
-                              workflow.id === currentWorkflowId
+                              workflow.id === activeWorkflowId
                                 ? "border-[#d07a4f]/40 bg-[linear-gradient(180deg,rgba(255,248,234,0.98),rgba(255,241,220,0.94))]"
                                 : "border-stone-200/70 bg-white/80 hover:bg-stone-50"
                             )}
@@ -591,7 +650,7 @@ export function WorkflowPanelCompatibility({
                     )}
                   </div>
 
-                  {!currentWorkflowId ? (
+                  {!activeWorkflowId ? (
                     <div className="mt-3 rounded-[22px] border border-dashed border-stone-300 bg-stone-50/80 px-3.5 py-3 text-sm leading-6 text-stone-500">
                       {t(
                         locale,

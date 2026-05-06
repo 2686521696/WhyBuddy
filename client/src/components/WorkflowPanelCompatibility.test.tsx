@@ -193,6 +193,18 @@ const workflowStoreState = {
 };
 
 const taskStoreState = {
+  tasks: [
+    {
+      id: "mission-graph",
+      title: "Advance the growth experiment",
+      status: "running",
+    },
+    {
+      id: "mission-review",
+      title: "Review the quarterly planning pack",
+      status: "done",
+    },
+  ],
   detailsById: {
     "mission-graph": {
       id: "mission-graph",
@@ -257,6 +269,17 @@ vi.mock("@/lib/store", () => ({
 vi.mock("@/lib/tasks-store", () => ({
   useTasksStore: (selector: (state: typeof taskStoreState) => unknown) =>
     selector(taskStoreState),
+}));
+
+vi.mock("@/lib/project-store", () => ({
+  selectCurrentProject: () => null,
+  useProjectStore: (
+    selector: (state: { missions: []; projects: [] }) => unknown
+  ) =>
+    selector({
+      missions: [],
+      projects: [],
+    }),
 }));
 
 vi.mock("@/lib/workflow-store", () => ({

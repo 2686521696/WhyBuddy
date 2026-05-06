@@ -18,6 +18,11 @@ import type {
 } from "../../../shared/executor/api.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import {
+  createExecutorCapabilities,
+  validateRequiredCapabilities,
+} from "./capabilities.js";
+import { resolveSandboxSkillBinding } from "./skill-job.js";
+import {
   getPlanJobById,
   parseExecutorJobRequest,
 } from "./request-schema.js";
@@ -76,6 +81,7 @@ export class LobsterExecutorService {
   private readonly limiter: ConcurrencyLimiter;
   private readonly executionMode: "real" | "mock" | "native";
   private readonly callbackSender?: CallbackSender;
+  private readonly config: LobsterExecutorConfig;
 
   constructor(private readonly options: LobsterExecutorServiceOptions) {
     this.now = options.now ?? (() => new Date());
@@ -92,6 +98,7 @@ export class LobsterExecutorService {
       maxConcurrentJobs: 2,
       callbackSecret: "",
       aiImage: "cube-ai-sandbox:latest",
+      skillRoot: "services/lobster-executor/skills",
       // Security defaults for mock mode
       securityLevel: "strict",
       containerUser: "65534",
@@ -102,6 +109,7 @@ export class LobsterExecutorService {
       networkWhitelist: [],
     };
 
+    this.config = config;
     this.executionMode = config.executionMode;
 
     // Create CallbackSender for all modes so mock execution can still replay
@@ -132,6 +140,10 @@ export class LobsterExecutorService {
 
   getQueueStats(): JobQueueStats {
     return createQueueStats(this.jobs.values());
+  }
+
+  getConfig(): LobsterExecutorConfig {
+    return this.config;
   }
 
   listJobs(): LobsterExecutorJobSummary[] {
@@ -428,6 +440,11 @@ export class LobsterExecutorService {
   submit(rawRequest: unknown): CreateExecutorJobResponse {
     const request = parseExecutorJobRequest(rawRequest);
     const planJob = getPlanJobById(request);
+    const capabilities = createExecutorCapabilities(this.config, {
+      dockerStatus: this.executionMode === "real" ? "connected" : "disconnected",
+    });
+    validateRequiredCapabilities(planJob, capabilities.capabilities);
+    const skill = resolveSandboxSkillBinding(planJob, this.config);
     const existing = this.jobs.get(request.jobId);
 
     if (existing) {
@@ -477,6 +494,7 @@ export class LobsterExecutorService {
       dataDirectory,
       logFile,
       executionMode: this.executionMode,
+      skill,
     };
 
     this.jobs.set(request.jobId, record);

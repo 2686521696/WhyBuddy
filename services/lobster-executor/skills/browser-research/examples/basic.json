@@ -1,0 +1,9 @@
+{
+  "url": "https://example.com",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "waitUntil": "load",
+  "timeoutMs": 30000
+}

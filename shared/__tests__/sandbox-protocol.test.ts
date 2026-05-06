@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   EXECUTOR_EVENT_TYPES,
+  EXECUTOR_PREVIEW_SESSION_STATUSES,
+  EXECUTOR_PREVIEW_SESSION_TYPES,
+  type ExecutorPreviewSession,
   type ExecutorEvent,
+  type ExecutorLivePreviewOptions,
 } from "../executor/contracts.js";
 import {
   SANDBOX_SOCKET_EVENTS,
@@ -22,6 +26,48 @@ describe("Sandbox Live Preview — 协议类型", () => {
   });
 
   describe("ExecutorEvent 扩展字段完整性", () => {
+    it("preview session contract covers screenshot, terminal, and VNC lifecycle", () => {
+      expect(EXECUTOR_PREVIEW_SESSION_TYPES).toEqual([
+        "browser-screenshot-stream",
+        "terminal-stream",
+        "browser-vnc",
+      ]);
+      expect(EXECUTOR_PREVIEW_SESSION_STATUSES).toEqual([
+        "starting",
+        "running",
+        "stopped",
+        "failed",
+      ]);
+
+      const options: ExecutorLivePreviewOptions = {
+        enabled: true,
+        terminal: true,
+        browser: true,
+        screenshotIntervalMs: 1000,
+        replayArtifacts: true,
+        timeoutMs: 300000,
+      };
+      const session: ExecutorPreviewSession = {
+        id: "preview-j-1",
+        projectId: "project-1",
+        missionId: "m-1",
+        jobId: "j-1",
+        type: "browser-screenshot-stream",
+        status: "running",
+        startedAt: new Date().toISOString(),
+        frameCount: 1,
+        logLineCount: 2,
+        latestFramePath: "tmp/frame.png",
+        artifactNames: ["terminal-live.log", "live-preview-frame-0001.png"],
+      };
+
+      expect(options.enabled).toBe(true);
+      expect(session.projectId).toBe("project-1");
+      expect(session.type).toBe("browser-screenshot-stream");
+      expect(session.status).toBe("running");
+      expect(session.artifactNames).toContain("terminal-live.log");
+    });
+
     it("job.log_stream 事件包含 stepIndex、stream、data 字段", () => {
       const event: ExecutorEvent = {
         version: "2026-03-28",

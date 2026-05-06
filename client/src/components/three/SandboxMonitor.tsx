@@ -3,10 +3,17 @@
  */
 
 import { Html } from "@react-three/drei";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useI18n } from "@/i18n";
-import { type SandboxFocusedPane, useSandboxStore } from "@/lib/sandbox-store";
+import { resolveProjectTaskScope } from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
+import {
+  type LogLine,
+  type SandboxFocusedPane,
+  type ScreenshotFrame,
+  useSandboxStore,
+} from "@/lib/sandbox-store";
 import { FUTURE_OFFICE_COLORS } from "@/lib/scene-theme";
 import { useTasksStore } from "@/lib/tasks-store";
 
@@ -17,6 +24,8 @@ import {
   resolveBrowserContextLabel,
   resolveBrowserPreviewFrames,
   resolvePaneStatusLabel,
+  resolveReplayScreenshotArtifact,
+  resolveReplayTerminalArtifact,
   resolveSandboxMonitorMission,
 } from "./sandbox-monitor-helpers";
 
@@ -69,12 +78,20 @@ function buildCenterPaneShellStyle(active: boolean): React.CSSProperties {
   };
 }
 
-export function SandboxMonitor() {
+function replayTimestamp(
+  detail: { completedAt?: number | null; updatedAt?: number | null } | null
+): string {
+  const value = detail?.completedAt ?? detail?.updatedAt ?? null;
+  return value ? new Date(value).toISOString() : new Date().toISOString();
+}
+
+export function SandboxMonitor({ projectId = null }: { projectId?: string | null }) {
   const { locale } = useI18n();
 
   const tasks = useTasksStore(s => s.tasks);
   const detailsById = useTasksStore(s => s.detailsById);
   const selectedTaskId = useTasksStore(s => s.selectedTaskId);
+  const projectMissions = useProjectStore(state => state.missions);
 
   const logLines = useSandboxStore(s => s.logLines);
   const isStreaming = useSandboxStore(s => s.isStreaming);
@@ -84,17 +101,55 @@ export function SandboxMonitor() {
   const previousScreenshot = useSandboxStore(s => s.previousScreenshot);
   const setActiveMission = useSandboxStore(s => s.setActiveMission);
   const setFocusedPane = useSandboxStore(s => s.setFocusedPane);
+  const [replayScreenshot, setReplayScreenshot] =
+    useState<ScreenshotFrame | null>(null);
+  const [replayLogLines, setReplayLogLines] = useState<LogLine[]>([]);
+  const scopedTasks = useMemo(
+    () =>
+      resolveProjectTaskScope({
+        projectId,
+        projectMissions,
+        tasks,
+      }).tasks,
+    [projectId, projectMissions, tasks]
+  );
 
   const { displayMission, missionDetail } = useMemo(
-    () => resolveSandboxMonitorMission(tasks, detailsById, selectedTaskId),
-    [detailsById, selectedTaskId, tasks]
+    () => resolveSandboxMonitorMission(scopedTasks, detailsById, selectedTaskId),
+    [detailsById, selectedTaskId, scopedTasks]
   );
+  const replayScreenshotArtifact = useMemo(
+    () => resolveReplayScreenshotArtifact(missionDetail),
+    [missionDetail]
+  );
+  const replayTerminalArtifact = useMemo(
+    () => resolveReplayTerminalArtifact(missionDetail),
+    [missionDetail]
+  );
+  const liveDataMatchesMission =
+    Boolean(displayMission?.id) && activeMissionId === displayMission?.id;
+  const scopedLatestScreenshot = liveDataMatchesMission
+    ? latestScreenshot
+    : null;
+  const scopedPreviousScreenshot = liveDataMatchesMission
+    ? previousScreenshot
+    : null;
+  const scopedLogLines = liveDataMatchesMission ? logLines : [];
+  const scopedStreaming = liveDataMatchesMission ? isStreaming : false;
 
   const { current: browserCurrentFrame, previous: browserPreviousFrame } =
     useMemo(
-      () => resolveBrowserPreviewFrames(latestScreenshot, previousScreenshot),
-      [latestScreenshot, previousScreenshot]
+      () =>
+        resolveBrowserPreviewFrames(
+          scopedLatestScreenshot,
+          scopedPreviousScreenshot,
+          replayScreenshot
+        ),
+      [scopedLatestScreenshot, scopedPreviousScreenshot, replayScreenshot]
     );
+  const terminalLogLines =
+    scopedLogLines.length > 0 ? scopedLogLines : replayLogLines;
+  const terminalStreaming = scopedStreaming || terminalLogLines.length > 0;
 
   useEffect(() => {
     const nextMissionId = displayMission?.id ?? null;
@@ -102,6 +157,97 @@ export function SandboxMonitor() {
       setActiveMission(nextMissionId);
     }
   }, [activeMissionId, displayMission?.id, setActiveMission]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReplayScreenshot(null);
+    const previewUrl = replayScreenshotArtifact?.previewUrl;
+    if (scopedLatestScreenshot || scopedPreviousScreenshot || !previewUrl) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void fetch(previewUrl)
+      .then(async response => {
+        if (!response.ok) throw new Error("Screenshot replay unavailable");
+        const blob = await response.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        if (cancelled) return;
+        const imageData = dataUrl.includes(",")
+          ? dataUrl.slice(dataUrl.indexOf(",") + 1)
+          : dataUrl;
+        setReplayScreenshot({
+          stepIndex: 0,
+          imageData,
+          width: 0,
+          height: 0,
+          timestamp: replayTimestamp(missionDetail),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setReplayScreenshot(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    missionDetail?.completedAt,
+    missionDetail?.updatedAt,
+    replayScreenshotArtifact?.previewUrl,
+    scopedLatestScreenshot,
+    scopedPreviousScreenshot,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReplayLogLines([]);
+    const previewUrl = replayTerminalArtifact?.previewUrl;
+    if (scopedLogLines.length > 0 || !previewUrl) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void fetch(previewUrl)
+      .then(async response => {
+        if (!response.ok) throw new Error("Terminal replay unavailable");
+        return response.text();
+      })
+      .then(text => {
+        if (cancelled) return;
+        const lines = text
+          .split(/\r?\n/)
+          .map(line => line.trimEnd())
+          .filter(Boolean)
+          .slice(-80)
+          .map((line, index) => ({
+            stepIndex: index,
+            stream: line.includes("[stderr]") ? "stderr" : "stdout",
+            data: line,
+            timestamp: replayTimestamp(missionDetail),
+          }) satisfies LogLine);
+        setReplayLogLines(lines);
+      })
+      .catch(() => {
+        if (!cancelled) setReplayLogLines([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    missionDetail?.completedAt,
+    missionDetail?.updatedAt,
+    replayTerminalArtifact?.previewUrl,
+    scopedLogLines.length,
+  ]);
 
   const taskStageLabel =
     missionDetail?.currentStageLabel ||
@@ -112,7 +258,7 @@ export function SandboxMonitor() {
     locale,
     displayMission?.status,
     "terminal",
-    isStreaming || logLines.length > 0
+    terminalStreaming
   );
   const browserStatus = resolvePaneStatusLabel(
     locale,
@@ -182,8 +328,8 @@ export function SandboxMonitor() {
             >
               <div style={buildFlushPaneShellStyle(focusedPane === "terminal")}>
                 <TerminalPreview
-                  logLines={logLines}
-                  isStreaming={isStreaming}
+                  logLines={terminalLogLines}
+                  isStreaming={terminalStreaming}
                   fullscreen={false}
                   onToggleFullscreen={closePaneFocus}
                   embedded
@@ -228,8 +374,8 @@ export function SandboxMonitor() {
       {focusedPane === "terminal" ? (
         <Html fullscreen style={{ pointerEvents: "auto" }}>
           <TerminalPreview
-            logLines={logLines}
-            isStreaming={isStreaming}
+            logLines={terminalLogLines}
+            isStreaming={terminalStreaming}
             fullscreen
             onToggleFullscreen={closePaneFocus}
             title={t(locale, "执行流", "Execution Feed")}

@@ -263,6 +263,9 @@ class CostTracker {
 
   setBudget(budget: Budget): void {
     this.budget = { ...budget };
+    this.alerts = [];
+    this.downgradeLevel = 'none';
+    this.pausedAgentIds.clear();
     this.checkAlerts();
     this.persistHistory();
   }
@@ -441,6 +444,8 @@ class CostTracker {
    */
   private applyDowngrade(): void {
     if (!this.downgradePolicy.enabled) {
+      this.downgradeLevel = 'none';
+      this.pausedAgentIds.clear();
       return;
     }
 
@@ -458,6 +463,10 @@ class CostTracker {
       if (this.downgradeLevel !== 'hard') {
         this.downgradeLevel = 'soft';
       }
+      this.pausedAgentIds.clear();
+    } else {
+      this.downgradeLevel = 'none';
+      this.pausedAgentIds.clear();
     }
   }
 

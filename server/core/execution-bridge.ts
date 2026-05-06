@@ -14,11 +14,13 @@ import { ExecutionPlanBuilder } from "./execution-plan-builder.js";
 import {
   ExecutorClient,
   ExecutorClientError,
+  getExecutorCapabilityMismatchReason,
   type ExecutorClientOptions,
   type DispatchExecutionPlanResult,
 } from "./executor-client.js";
 import { EXECUTOR_API_ROUTES } from "../../shared/executor/api.js";
 import type { ExecutionPlan } from "../../shared/executor/contracts.js";
+import type { ExecutionPlanJob } from "../../shared/executor/contracts.js";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -126,6 +128,28 @@ function extractCommandFromDeliverable(deliverable: string): string[] {
 
   // Fallback: run the whole deliverable as a shell script
   return ["sh", "-c", "echo 'No executable command extracted'"];
+}
+
+function buildDeterministicScanCommand(): string[] {
+  const script = [
+    "set -eu",
+    "mkdir -p artifacts",
+    "echo '# Workspace scan' > artifacts/workspace-scan.md",
+    "echo '' >> artifacts/workspace-scan.md",
+    "echo '## Root files' >> artifacts/workspace-scan.md",
+    "find . -maxdepth 2 -type f | sed 's#^./##' | sort | head -200 >> artifacts/workspace-scan.md",
+    "echo '' >> artifacts/workspace-scan.md",
+    "echo '## Root directories' >> artifacts/workspace-scan.md",
+    "find . -maxdepth 2 -type d | sed 's#^./##' | sort | head -200 >> artifacts/workspace-scan.md",
+    "printf '{\"ok\":true,\"summary\":\"Deterministic workspace scan completed\",\"artifact\":\"artifacts/workspace-scan.md\"}\\n' > artifacts/execution-result.json",
+  ].join("\n");
+
+  return ["sh", "-lc", script];
+}
+
+function shouldRunAIContainer(job: Pick<ExecutionPlanJob, "kind" | "payload">): boolean {
+  const payload = job.payload ?? {};
+  return payload.aiEnabled === true && job.kind !== "scan";
 }
 
 // ─── Helper: delay ──────────────────────────────────────────────────────────
@@ -343,7 +367,10 @@ export class ExecutionBridge {
       try {
         dispatched = await this.dispatchWithRetry(planResult.plan);
       } catch (dispatchError) {
-        const message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+        const capabilityMismatch = getExecutorCapabilityMismatchReason(dispatchError);
+        const message =
+          capabilityMismatch ||
+          (dispatchError instanceof Error ? dispatchError.message : String(dispatchError));
         missionRuntime.failMission(
           missionId,
           `Executor dispatch failed: ${message}`,
@@ -423,7 +450,7 @@ export class ExecutionBridge {
    * 注入 mock/real 模式特定的 payload 到 Job。
    */
   private injectModePayload(
-    job: { payload?: Record<string, unknown> },
+    job: Pick<ExecutionPlanJob, "kind" | "payload">,
     missionId: string,
     deliverables: string[],
   ): void {
@@ -456,7 +483,7 @@ export class ExecutionBridge {
           summary: "Mock execution completed",
         },
       };
-    } else {
+    } else if (shouldRunAIContainer(job)) {
       // AI autonomous mode: pass task content to the AI executor inside the container.
       // The container's entrypoint (ai-bridge/executor.js) reads TASK_CONTENT,
       // calls LLM to plan, installs deps, writes code, and executes it.
@@ -474,6 +501,27 @@ export class ExecutionBridge {
           ...existingEnv,
           MISSION_ID: missionId,
           TASK_CONTENT: taskContent,
+        },
+      };
+    } else {
+      const { runner: _runner, aiEnabled: _aiEnabled, aiTaskType: _aiTaskType, ...rest } = existing;
+      const command =
+        Array.isArray(existing.command) && existing.command.every((item) => typeof item === "string")
+          ? (existing.command as string[])
+          : job.kind === "scan"
+            ? buildDeterministicScanCommand()
+            : extractCommandFromDeliverable(deliverables.join("\n\n---\n\n"));
+
+      job.payload = {
+        ...rest,
+        command,
+        env: {
+          ...existingEnv,
+          MISSION_ID: missionId,
+          EXECUTION_BRIDGE_MODE: "deterministic",
+          EXECUTION_TASK_CONTENT: deliverables
+            .join("\n\n---\n\n")
+            .slice(0, 20_000),
         },
       };
     }

@@ -1,0 +1,209 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">当前 Docker 执行架构图 2026-05-04</title>
+  <desc id="desc">展示 cube-pets-office 当前 lobster-executor 的任务下发、Runner 选择、Docker 容器执行、Native 降级、事件回传、产物沉淀和现阶段能力短板。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="55%" stop-color="#f3f7fb"/>
+      <stop offset="100%" stop-color="#fff7ed"/>
+    </linearGradient>
+    <linearGradient id="server" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+    <linearGradient id="executor" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#f0fdf4"/>
+    </linearGradient>
+    <linearGradient id="docker" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="weak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#fef2f2"/>
+    </linearGradient>
+    <filter id="shadow" x="-8%" y="-12%" width="116%" height="128%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0 L0 0 0 40" fill="none" stroke="#dbe5ef" stroke-width="1" opacity="0.65"/>
+    </pattern>
+    <style>
+      .title { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 34px; font-weight: 800; fill: #0f172a; }
+      .subtitle { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 17px; font-weight: 500; fill: #475569; }
+      .section { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 20px; font-weight: 800; fill: #0f172a; }
+      .cardTitle { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 18px; font-weight: 800; fill: #0f172a; }
+      .body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 15px; font-weight: 500; fill: #334155; }
+      .small { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 13px; font-weight: 500; fill: #475569; }
+      .tiny { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 12px; font-weight: 500; fill: #64748b; }
+      .mono { font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace; font-size: 12px; font-weight: 650; fill: #475569; }
+      .pillText { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif; font-size: 13px; font-weight: 800; }
+      .ok { fill: #166534; }
+      .warn { fill: #92400e; }
+      .bad { fill: #991b1b; }
+      .link { fill: none; stroke: #64748b; stroke-width: 2.4; marker-end: url(#arrow); }
+      .linkGreen { fill: none; stroke: #16a34a; stroke-width: 2.8; marker-end: url(#arrow); }
+      .linkWarn { fill: none; stroke: #f59e0b; stroke-width: 2.8; marker-end: url(#arrow); }
+      .linkBlue { fill: none; stroke: #2563eb; stroke-width: 2.8; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 7 7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect width="1600" height="1000" fill="url(#grid)" opacity="0.45"/>
+
+  <g filter="url(#shadow)">
+    <rect x="42" y="30" width="1516" height="118" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <text class="title" x="70" y="78">当前 Docker 执行架构图</text>
+  <text class="subtitle" x="70" y="111">状态基线：lobster-executor 已具备容器生命周期、安全沙箱、事件回传、产物沉淀和能力契约；AI Agent 工作站能力仍偏基础。</text>
+  <rect x="1176" y="54" width="112" height="32" rx="16" fill="#dcfce7" stroke="#86efac"/>
+  <text class="pillText ok" x="1206" y="75">已实现</text>
+  <rect x="1302" y="54" width="112" height="32" rx="16" fill="#fef3c7" stroke="#fbbf24"/>
+  <text class="pillText warn" x="1332" y="75">部分实现</text>
+  <rect x="1428" y="54" width="112" height="32" rx="16" fill="#fee2e2" stroke="#fca5a5"/>
+  <text class="pillText bad" x="1458" y="75">薄弱点</text>
+
+  <!-- Top flow -->
+  <g filter="url(#shadow)">
+    <rect x="58" y="184" width="250" height="176" rx="22" fill="#ffffff" stroke="#cbd5e1"/>
+    <rect x="360" y="184" width="330" height="176" rx="22" fill="url(#server)" stroke="#a5b4fc"/>
+    <rect x="744" y="184" width="356" height="176" rx="22" fill="url(#executor)" stroke="#86efac"/>
+    <rect x="1154" y="184" width="388" height="176" rx="22" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+
+  <text class="section" x="82" y="222">前端入口</text>
+  <text class="body" x="82" y="254">
+    <tspan x="82" dy="0">项目空间 / 自动驾驶 / 任务中心</tspan>
+    <tspan x="82" dy="24">用户输入任务，绑定当前项目上下文</tspan>
+    <tspan x="82" dy="24">页面展示 mission 状态、日志、产物</tspan>
+  </text>
+  <rect x="82" y="318" width="118" height="26" rx="13" fill="#dcfce7" stroke="#86efac"/>
+  <text class="pillText ok" x="112" y="336">UI 已接入</text>
+
+  <text class="section" x="386" y="222">Server 编排层</text>
+  <text class="body" x="386" y="254">
+    <tspan x="386" dy="0">MissionRuntime / WorkflowEngine</tspan>
+    <tspan x="386" dy="24">ExecutionBridge 构建 ExecutionPlan</tspan>
+    <tspan x="386" dy="24">ExecutorClient 调用 lobster-executor</tspan>
+  </text>
+  <text class="mono" x="386" y="326">POST /api/executor/jobs</text>
+
+  <text class="section" x="770" y="222">lobster-executor 服务</text>
+  <text class="body" x="770" y="254">
+    <tspan x="770" dy="0">Express API：/health、jobs、cancel、pause、resume</tspan>
+    <tspan x="770" dy="24">队列与并发：maxConcurrentJobs 默认 2</tspan>
+    <tspan x="770" dy="24">CallbackSender 负责 HMAC 事件回传</tspan>
+  </text>
+  <rect x="770" y="318" width="124" height="26" rx="13" fill="#dcfce7" stroke="#86efac"/>
+  <text class="pillText ok" x="798" y="336">底座已具备</text>
+
+  <text class="section" x="1182" y="222">Server 回流</text>
+  <text class="body" x="1182" y="254">
+    <tspan x="1182" dy="0">POST /api/executor/events</tspan>
+    <tspan x="1182" dy="24">更新 mission.executor 状态</tspan>
+    <tspan x="1182" dy="24">回写 artifacts / logs / evidence</tspan>
+  </text>
+  <text class="mono" x="1182" y="326">job.started / log / completed / failed</text>
+
+  <path class="link" d="M308 272 C328 272 338 272 360 272"/>
+  <path class="linkGreen" d="M690 272 C714 272 720 272 744 272"/>
+  <path class="linkGreen" d="M1100 272 C1124 272 1130 272 1154 272"/>
+  <path class="link dash" d="M1320 360 C1320 406 1030 406 1030 360"/>
+
+  <!-- Runner selection -->
+  <g filter="url(#shadow)">
+    <rect x="58" y="410" width="1484" height="214" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <text class="section" x="82" y="448">Runner 选择逻辑</text>
+  <text class="body" x="82" y="478">由 LOBSTER_EXECUTION_MODE 与 Docker daemon 是否可用决定，real 模式下 Docker 不可用会自动降级 native。</text>
+
+  <g>
+    <rect x="92" y="514" width="260" height="74" rx="18" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text class="cardTitle" x="118" y="545">配置输入</text>
+    <text class="mono" x="118" y="570">real / native / mock</text>
+
+    <rect x="420" y="496" width="286" height="110" rx="18" fill="#eff6ff" stroke="#93c5fd"/>
+    <text class="cardTitle" x="446" y="527">Docker 可用性探测</text>
+    <text class="body" x="446" y="554">
+      <tspan x="446" dy="0">Windows 默认 npipe</tspan>
+      <tspan x="446" dy="22">Linux 默认 /var/run/docker.sock</tspan>
+    </text>
+
+    <rect x="772" y="486" width="210" height="126" rx="18" fill="#dcfce7" stroke="#86efac"/>
+    <text class="cardTitle" x="798" y="518">DockerRunner</text>
+    <text class="small" x="798" y="546">
+      <tspan x="798" dy="0">real + Docker connected</tspan>
+      <tspan x="798" dy="20">真实容器执行</tspan>
+      <tspan x="798" dy="20">安全策略生效</tspan>
+    </text>
+
+    <rect x="1028" y="486" width="210" height="126" rx="18" fill="#fef3c7" stroke="#fbbf24"/>
+    <text class="cardTitle" x="1054" y="518">NativeRunner</text>
+    <text class="small" x="1054" y="546">
+      <tspan x="1054" dy="0">native 或 Docker 不可用</tspan>
+      <tspan x="1054" dy="20">本机 spawn 执行</tspan>
+      <tspan x="1054" dy="20">非容器隔离</tspan>
+    </text>
+
+    <rect x="1284" y="486" width="210" height="126" rx="18" fill="#eef2ff" stroke="#a5b4fc"/>
+    <text class="cardTitle" x="1310" y="518">MockRunner</text>
+    <text class="small" x="1310" y="546">
+      <tspan x="1310" dy="0">mock 模式</tspan>
+      <tspan x="1310" dy="20">模拟生命周期事件</tspan>
+      <tspan x="1310" dy="20">用于测试与演示</tspan>
+    </text>
+  </g>
+
+  <path class="link" d="M352 550 C382 550 390 550 420 550"/>
+  <path class="linkGreen" d="M706 530 C734 520 744 515 772 514"/>
+  <path class="linkWarn" d="M706 552 C858 586 880 585 1028 552"/>
+  <path class="linkBlue" d="M706 574 C966 624 1014 626 1284 574"/>
+
+  <!-- Docker execution details -->
+  <g filter="url(#shadow)">
+    <rect x="58" y="670" width="940" height="248" rx="24" fill="url(#docker)" stroke="#93c5fd"/>
+    <rect x="1030" y="670" width="512" height="248" rx="24" fill="url(#weak)" stroke="#fdba74"/>
+  </g>
+
+  <text class="section" x="84" y="710">DockerRunner 当前执行链路</text>
+  <text class="body" x="84" y="742">
+    <tspan x="84" dy="0">1. 创建 job 数据目录：tmp/lobster-executor/jobs/&lt;missionId&gt;/&lt;jobId&gt;</tspan>
+    <tspan x="84" dy="24">2. 准备 workspace 与 /workspace/artifacts</tspan>
+    <tspan x="84" dy="24">3. 选择镜像：payload.image 优先；aiEnabled 时默认 cube-ai-sandbox:latest；否则 node:20-slim</tspan>
+    <tspan x="84" dy="24">4. 创建容器：bind mount 到 /workspace，应用只读 rootfs、CPU、内存、PIDs、网络、capDrop 策略</tspan>
+    <tspan x="84" dy="24">5. 启动容器并流式采集 stdout / stderr，回传 job.log</tspan>
+    <tspan x="84" dy="24">6. 结束后写 result.json，收集 artifacts，发送 completed / failed</tspan>
+  </text>
+  <rect x="84" y="880" width="128" height="26" rx="13" fill="#dcfce7" stroke="#86efac"/>
+  <text class="pillText ok" x="112" y="898">主链已实现</text>
+  <rect x="228" y="880" width="152" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24"/>
+  <text class="pillText warn" x="250" y="898">预览能力不足</text>
+
+  <text class="section" x="1058" y="710">容器内 AI 能力现状</text>
+  <text class="body" x="1058" y="742">
+    <tspan x="1058" dy="0">AI 镜像：默认仍是 cube-ai-sandbox；已新增 cube-ai-agent-sandbox 强镜像资产</tspan>
+    <tspan x="1058" dy="24">AI bridge：读取 task.json 或 TASK_CONTENT，调用 LLM 生成代码与运行命令</tspan>
+    <tspan x="1058" dy="24">可做：Node/Python 脚本、简单依赖安装、基础文件产出</tspan>
+  </text>
+  <text class="body" x="1058" y="836">
+    <tspan x="1058" dy="0">待验证：Docker daemon 启动后 build/smoke 强镜像与浏览器截图</tspan>
+    <tspan x="1058" dy="24">已补：/api/executor/capabilities、requiredCapabilities 校验、能力不足错误回流</tspan>
+  </text>
+  <rect x="1058" y="880" width="128" height="26" rx="13" fill="#fee2e2" stroke="#fca5a5"/>
+  <text class="pillText bad" x="1086" y="898">能力偏薄</text>
+  <rect x="1202" y="880" width="176" height="26" rx="13" fill="#fef3c7" stroke="#fbbf24"/>
+  <text class="pillText warn" x="1228" y="898">建议升级镜像</text>
+
+  <!-- Security callouts -->
+  <g>
+    <rect x="84" y="636" width="1458" height="1" fill="#cbd5e1"/>
+    <text class="tiny" x="84" y="953">当前关键风险：Docker 不可用时会降级为 NativeRunner，能保证本机继续执行，但不具备容器隔离；AI 容器能跑基础代码，但还不是完整的 Agent 工作站。</text>
+    <text class="tiny" x="84" y="976">建议下一阶段：启动 Docker daemon 后运行 build:agent-image / smoke:agent-image，再推进浏览器截图与产物预览闭环。</text>
+  </g>
+</svg>

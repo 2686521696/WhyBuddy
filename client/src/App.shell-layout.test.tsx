@@ -196,6 +196,21 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:248px");
   });
 
+  it("keeps the app sidebar visible for project-scoped task center routes", () => {
+    signInForShell();
+    locationState.current = "/projects/project-1/tasks";
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    const markup = renderToStaticMarkup(<AppShell />);
+    const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
+
+    expect(markup).toContain('data-testid="app-sidebar"');
+    expect(markup).toContain('data-testid="tasks-page"');
+    expect(shell).toContain("--sidebar-width:248px");
+    expect(shell).toContain("padding-left:248px");
+  });
+
   it("does not offset the home page because it uses embedded scene chrome", () => {
     signInForShell();
     locationState.current = "/";

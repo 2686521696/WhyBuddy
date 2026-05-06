@@ -21,10 +21,27 @@ vi.mock("@/lib/store", () => ({
     selector({ runtimeMode: "frontend" }),
 }));
 
+vi.mock("@/lib/project-store", () => ({
+  selectCurrentProject: () => null,
+  useProjectStore: (
+    selector: (state: {
+      currentProjectId: null;
+      missions: [];
+      projects: [];
+    }) => unknown
+  ) =>
+    selector({
+      currentProjectId: null,
+      missions: [],
+      projects: [],
+    }),
+}));
+
 vi.mock("@/lib/tasks-store", () => ({
   useTasksStore: (
     selector: (state: {
       selectedTaskId: string;
+      tasks: Array<{ id: string }>;
       detailsById: Record<
         string,
         { autopilotSummary: { driveState: { state: string } } }
@@ -33,6 +50,7 @@ vi.mock("@/lib/tasks-store", () => ({
   ) =>
     selector({
       selectedTaskId: "task-1",
+      tasks: [{ id: "task-1" }],
       detailsById: {
         "task-1": {
           autopilotSummary: { driveState: { state: "running" } },

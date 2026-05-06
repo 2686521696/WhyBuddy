@@ -1,0 +1,60 @@
+{
+  "name": "browser-research",
+  "version": "0.1.0",
+  "description": "Open a page with Playwright, capture browser evidence, and write a compact report.",
+  "enabled": true,
+  "capabilities": [
+    "browser.playwright",
+    "browser.chromium",
+    "artifact.image",
+    "artifact.html",
+    "artifact.json",
+    "preview.image",
+    "preview.html",
+    "preview.json"
+  ],
+  "runtime": "node",
+  "entrypoint": "run.js",
+  "dependencies": [],
+  "inputs": {
+    "schema": "input.schema.json",
+    "examples": [
+      "examples/basic.json"
+    ]
+  },
+  "outputs": {
+    "artifacts": [
+      "page-screenshot.png",
+      "page.html",
+      "browser-report.json"
+    ],
+    "previewTypes": [
+      "image",
+      "html",
+      "json"
+    ]
+  },
+  "artifactRules": [
+    {
+      "pattern": "page-screenshot.png",
+      "mimeType": "image/png",
+      "previewType": "image"
+    },
+    {
+      "pattern": "page.html",
+      "mimeType": "text/html",
+      "previewType": "html"
+    },
+    {
+      "pattern": "browser-report.json",
+      "mimeType": "application/json",
+      "previewType": "json"
+    }
+  ],
+  "security": {
+    "network": "required",
+    "filesystem": "workspace",
+    "browser": true,
+    "credentials": []
+  }
+}

@@ -14,6 +14,11 @@ import {
 } from "@/lib/agent-config";
 import { PET_MODELS } from "@/lib/assets";
 import type { AppLocale } from "@/lib/locale";
+import {
+  resolveProjectMissionIds,
+  resolveScopedWorkflow,
+} from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { getSceneStageColor } from "@/lib/scene-stage-flow";
 import {
   FUTURE_DEPARTMENT_COLORS,
@@ -902,8 +907,10 @@ function DepartmentMarker({
 }
 
 export function PetWorkers({
+  projectId = null,
   reducedOverlays = false,
 }: {
+  projectId?: string | null;
   reducedOverlays?: boolean;
 }) {
   const locale = useAppStore(state => state.locale);
@@ -911,9 +918,18 @@ export function PetWorkers({
   const currentWorkflow = useWorkflowStore(state => state.currentWorkflow);
   const messages = useWorkflowStore(state => state.messages);
   const socket = useWorkflowStore(state => state.socket);
+  const projectMissions = useProjectStore(state => state.missions);
+  const projectMissionIds = useMemo(
+    () => resolveProjectMissionIds(projectId, projectMissions),
+    [projectId, projectMissions]
+  );
+  const scopedCurrentWorkflow = useMemo(
+    () => resolveScopedWorkflow(currentWorkflow, projectMissionIds),
+    [currentWorkflow, projectMissionIds]
+  );
   const organization = useMemo(
-    () => selectWorkflowOrganization(currentWorkflow),
-    [currentWorkflow]
+    () => selectWorkflowOrganization(scopedCurrentWorkflow),
+    [scopedCurrentWorkflow]
   );
 
   // Track guest agents that are in the process of leaving (exit animation)
@@ -1026,11 +1042,11 @@ export function PetWorkers({
       }));
     }
 
-    if (!currentWorkflow?.current_stage) return [];
+    if (!scopedCurrentWorkflow?.current_stage) return [];
 
     const involvedDepartments =
-      currentWorkflow.departments_involved?.length > 0
-        ? currentWorkflow.departments_involved
+      scopedCurrentWorkflow.departments_involved?.length > 0
+        ? scopedCurrentWorkflow.departments_involved
         : departmentMarkers.map(marker => marker.id).filter(id => id !== "ceo");
 
     const managers = configs.filter(
@@ -1045,11 +1061,11 @@ export function PetWorkers({
     );
 
     const makeRoute = (fromId: string, toId: string, index: number) => ({
-      key: `${currentWorkflow.current_stage}-${fromId}-${toId}-${index}`,
+      key: `${scopedCurrentWorkflow.current_stage}-${fromId}-${toId}-${index}`,
       from: configMap[fromId]?.position,
       to: configMap[toId]?.position,
       color:
-        getSceneStageColor(currentWorkflow.current_stage || "") ||
+        getSceneStageColor(scopedCurrentWorkflow.current_stage || "") ||
         configMap[toId]?.color ||
         FUTURE_OFFICE_COLORS.violet,
       opacity: 0.26,
@@ -1057,14 +1073,14 @@ export function PetWorkers({
     });
 
     const routes =
-      currentWorkflow.current_stage === "direction" ||
-      currentWorkflow.current_stage === "feedback"
+      scopedCurrentWorkflow.current_stage === "direction" ||
+      scopedCurrentWorkflow.current_stage === "feedback"
         ? managers.map((manager, index) => makeRoute("ceo", manager.id, index))
-        : currentWorkflow.current_stage === "summary"
+        : scopedCurrentWorkflow.current_stage === "summary"
           ? managers.map((manager, index) =>
               makeRoute(manager.id, "ceo", index)
             )
-          : currentWorkflow.current_stage === "meta_audit"
+          : scopedCurrentWorkflow.current_stage === "meta_audit"
             ? managers.flatMap((manager, index) => [
                 makeRoute("warden", manager.id, index * 2),
                 makeRoute("prism", manager.id, index * 2 + 1),
@@ -1089,7 +1105,7 @@ export function PetWorkers({
         phase: number;
       } => Boolean(route.from && route.to)
     );
-  }, [configMap, configs, currentWorkflow, messages]);
+  }, [configMap, configs, messages, scopedCurrentWorkflow]);
 
   return (
     <group>

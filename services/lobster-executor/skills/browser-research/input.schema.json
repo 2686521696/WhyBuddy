@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "required": ["url"],
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "viewport": {
+      "type": "object",
+      "properties": {
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "waitUntil": {
+      "enum": ["load", "domcontentloaded", "networkidle"]
+    },
+    "timeoutMs": {
+      "type": "number"
+    }
+  }
+}

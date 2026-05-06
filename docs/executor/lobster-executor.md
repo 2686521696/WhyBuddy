@@ -15,6 +15,12 @@ This Worktree B phase implements the first executable slice of the standalone lo
 
 Returns executor liveness, contract version, queue counts, data root, and a small feature matrix.
 
+### `GET /api/executor/capabilities`
+
+Returns the effective executor capability document. The document includes runner mode, Docker lifecycle status, active image, supported capability names, artifact/preview types, limits, and warnings.
+
+Jobs may declare `payload.requiredCapabilities`. The executor rejects unknown names with `EXECUTOR_CAPABILITY_UNKNOWN` and unsupported known names with `EXECUTOR_CAPABILITY_UNSUPPORTED`.
+
 ### `POST /api/executor/jobs`
 
 Accepts a `shared/executor` `ExecutorJobRequest`, validates that:
@@ -157,6 +163,29 @@ LOBSTER_EXECUTION_MODE=real LOBSTER_SECURITY_LEVEL=strict \
 # In another terminal:
 LOBSTER_SMOKE_NO_SPAWN=1 node scripts/secure-sandbox-smoke.mjs
 ```
+
+## Strong AI Agent Sandbox Image
+
+The legacy `services/lobster-executor/Dockerfile.ai` remains as the baseline image for `cube-ai-sandbox:latest`.
+
+The stronger image lives beside it:
+
+```powershell
+npm run build:agent-image
+npm run smoke:agent-image
+```
+
+This builds `cube-ai-agent-sandbox:latest` from `services/lobster-executor/Dockerfile.agent` and runs `/opt/cube-agent/self-check.js` inside the container. The self-check writes artifacts under `tmp/agent-sandbox-smoke`, including `agent-self-check.json` and a Playwright screenshot when Chromium launches successfully.
+
+To make AI-enabled Docker jobs use the strong image:
+
+```powershell
+$env:LOBSTER_AGENT_IMAGE='cube-ai-agent-sandbox:latest'
+$env:LOBSTER_EXECUTION_MODE='real'
+npx tsx services/lobster-executor/src/index.ts
+```
+
+`LOBSTER_AGENT_IMAGE` takes precedence over the legacy `LOBSTER_AI_IMAGE`. When the strong image is selected and Docker is connected, the capability endpoint can claim manifest-backed capabilities such as `browser.playwright`, `browser.chromium`, `document.pandoc`, `document.libreoffice`, `media.ffmpeg`, and `image.imagemagick`.
 
 ## Next Phase
 

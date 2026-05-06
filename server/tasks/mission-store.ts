@@ -11,6 +11,7 @@ import type {
   DecisionType,
   MissionProjectionLinks,
 } from '../../shared/mission/contracts.js';
+import type { ExecutorPreviewSession } from '../../shared/executor/contracts.js';
 import { MISSION_CORE_STAGE_BLUEPRINT } from '../../shared/mission/contracts.js';
 import {
   mergeMissionProjectionLinks,
@@ -44,6 +45,7 @@ export interface PatchMissionExecutionInput {
   artifacts?: MissionArtifact[];
   projection?: Partial<MissionProjectionLinks>;
   securitySummary?: MissionRecord["securitySummary"];
+  previewSession?: ExecutorPreviewSession;
 }
 
 export interface CancelMissionInput {
@@ -215,6 +217,9 @@ export class MissionStore {
       }
       if (patch.securitySummary !== undefined) {
         task.securitySummary = structuredClone(patch.securitySummary);
+      }
+      if (patch.previewSession !== undefined) {
+        task.previewSession = structuredClone(patch.previewSession);
       }
     });
   }

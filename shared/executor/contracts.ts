@@ -50,6 +50,77 @@ export const EXECUTOR_EVENT_TYPES = [
 
 export type ExecutorEventType = (typeof EXECUTOR_EVENT_TYPES)[number];
 
+export const EXECUTOR_CAPABILITIES = [
+  "runtime.docker",
+  "runtime.native",
+  "runtime.mock",
+  "executor.cancel",
+  "executor.pause",
+  "executor.resume",
+  "executor.callback.hmac",
+  "security.readonly-rootfs",
+  "security.no-new-privileges",
+  "security.resource-limits",
+  "node",
+  "python",
+  "ai.llm",
+  "artifact.file",
+  "artifact.log",
+  "artifact.json",
+  "artifact.html",
+  "artifact.pdf",
+  "artifact.image",
+  "preview.text",
+  "preview.json",
+  "preview.html",
+  "preview.pdf",
+  "preview.image",
+  "browser.playwright",
+  "browser.chromium",
+  "document.libreoffice",
+  "document.pandoc",
+  "media.ffmpeg",
+  "image.imagemagick",
+] as const;
+
+export type ExecutorCapability = (typeof EXECUTOR_CAPABILITIES)[number];
+
+export const EXECUTOR_CAPABILITY_SET = new Set<string>(EXECUTOR_CAPABILITIES);
+
+export interface ExecutorCapabilities {
+  executor: "lobster";
+  service: string;
+  version: typeof EXECUTOR_CONTRACT_VERSION;
+  timestamp: string;
+  mode: "mock" | "native" | "real";
+  docker: {
+    status: "connected" | "disconnected";
+    lifecycle: boolean;
+    host?: string;
+  };
+  image: {
+    defaultImage: string;
+    aiImage: string;
+    activeImage?: string;
+  };
+  capabilities: ExecutorCapability[];
+  artifactTypes: string[];
+  previewTypes: string[];
+  limits: {
+    memory: string;
+    cpus: string;
+    pids: number;
+    timeoutMs: number;
+    maxConcurrentJobs: number;
+  };
+  warnings: string[];
+  skills?: {
+    root: string;
+    count: number;
+    capabilityIndex: Record<string, string[]>;
+  };
+}
+
 export interface ExecutionPlanStep {
   key: string;
   label: string;
@@ -71,11 +142,58 @@ export interface ExecutionPlanJob {
   payload?: Record<string, unknown>;
 }
 
+export const EXECUTOR_PREVIEW_SESSION_TYPES = [
+  "browser-screenshot-stream",
+  "terminal-stream",
+  "browser-vnc",
+] as const;
+
+export type ExecutorPreviewSessionType =
+  (typeof EXECUTOR_PREVIEW_SESSION_TYPES)[number];
+
+export const EXECUTOR_PREVIEW_SESSION_STATUSES = [
+  "starting",
+  "running",
+  "stopped",
+  "failed",
+] as const;
+
+export type ExecutorPreviewSessionStatus =
+  (typeof EXECUTOR_PREVIEW_SESSION_STATUSES)[number];
+
+export interface ExecutorPreviewSession {
+  id: string;
+  projectId?: string;
+  missionId: string;
+  jobId: string;
+  type: ExecutorPreviewSessionType;
+  status: ExecutorPreviewSessionStatus;
+  startedAt: string;
+  stoppedAt?: string;
+  frameCount?: number;
+  logLineCount?: number;
+  latestFramePath?: string;
+  artifactNames?: string[];
+}
+
+export interface ExecutorLivePreviewOptions {
+  enabled?: boolean;
+  screenshotIntervalMs?: number;
+  terminal?: boolean;
+  browser?: boolean;
+  replayArtifacts?: boolean;
+  timeoutMs?: number;
+}
+
 export interface ExecutionPlanArtifact {
   kind: "file" | "report" | "url" | "log";
+  id?: string;
   name: string;
   path?: string;
   url?: string;
+  mimeType?: string;
+  previewType?: "text" | "json" | "html" | "pdf" | "image" | "log";
+  size?: number;
   description?: string;
 }
 
@@ -203,7 +321,16 @@ export interface SecurityAuditEntry {
   timestamp: string;
   jobId: string;
   missionId: string;
-  eventType: "container.created" | "container.started" | "container.oom" | "container.seccomp_violation" | "container.security_failure" | "container.destroyed" | "resource.exceeded";
+  eventType:
+    | "container.created"
+    | "container.started"
+    | "container.oom"
+    | "container.seccomp_violation"
+    | "container.security_failure"
+    | "container.destroyed"
+    | "resource.exceeded"
+    | "preview.session.created"
+    | "preview.session.stopped";
   securityLevel: SecurityLevel;
   detail: Record<string, unknown>;
 }

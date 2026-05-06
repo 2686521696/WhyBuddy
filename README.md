@@ -390,6 +390,14 @@ Start the executor with an explicit mode:
 LOBSTER_EXECUTION_MODE=real pnpm exec tsx services/lobster-executor/src/index.ts
 ```
 
+Build and smoke the stronger Docker agent image when browser/document/media tooling is needed:
+
+```bash
+pnpm run build:agent-image
+pnpm run smoke:agent-image
+LOBSTER_AGENT_IMAGE=cube-ai-agent-sandbox:latest LOBSTER_EXECUTION_MODE=real pnpm exec tsx services/lobster-executor/src/index.ts
+```
+
 PowerShell example:
 
 ```powershell

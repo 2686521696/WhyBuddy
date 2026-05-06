@@ -1,3 +1,5 @@
+import type { ExecutorPreviewSession } from "../executor/contracts.js";
+
 export const MISSION_CONTRACT_VERSION = "2026-03-28" as const;
 export const MISSION_TOPIC_STRATEGY = "strict-by-thread" as const;
 
@@ -595,9 +597,13 @@ export const MISSION_CORE_STAGE_BLUEPRINT = [
 
 export interface MissionArtifact {
   kind: "file" | "report" | "url" | "log";
+  id?: string;
   name: string;
   path?: string;
   url?: string;
+  mimeType?: string;
+  previewType?: "text" | "json" | "html" | "pdf" | "image" | "log";
+  size?: number;
   description?: string;
 }
 
@@ -728,6 +734,7 @@ export interface MissionRecord {
     cpuLimit: string;
     pidsLimit: number;
   };
+  previewSession?: ExecutorPreviewSession;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;

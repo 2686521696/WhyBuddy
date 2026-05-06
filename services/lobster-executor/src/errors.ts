@@ -25,3 +25,15 @@ export class NotFoundError extends LobsterExecutorError {
     super(message, 404);
   }
 }
+
+export class ExecutorCapabilityError extends LobsterExecutorError {
+  constructor(
+    message: string,
+    readonly code: "EXECUTOR_CAPABILITY_UNKNOWN" | "EXECUTOR_CAPABILITY_UNSUPPORTED",
+    readonly unsupportedCapabilities: string[],
+    readonly supportedCapabilities: string[],
+    readonly hint: string,
+  ) {
+    super(message, 400);
+  }
+}

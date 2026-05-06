@@ -52,6 +52,17 @@ export function getReplayPath(missionId: string): string {
   return `${REPLAY_PATH_PREFIX}/${missionId}`;
 }
 
+export function getProjectTasksPath(projectId?: string | null): string {
+  return projectId ? `${PROJECTS_PATH}/${projectId}/tasks` : "/tasks";
+}
+
+export function getProjectTaskPath(
+  projectId: string | null | undefined,
+  taskId: string
+): string {
+  return projectId ? `${getProjectTasksPath(projectId)}/${taskId}` : `/tasks/${taskId}`;
+}
+
 function normalizeNavigationPath(path: string): string {
   const trimmed = path.trim();
   const [pathname] = trimmed.split(/[?#]/, 1);
@@ -61,6 +72,12 @@ function normalizeNavigationPath(path: string): string {
 function matchesPathPrefix(path: string, prefix: string): boolean {
   const pathname = normalizeNavigationPath(path);
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+export function isProjectTasksPath(path: string): boolean {
+  const pathname = normalizeNavigationPath(path);
+  const parts = pathname.split("/").filter(Boolean);
+  return parts[0] === "projects" && parts.length >= 3 && parts[2] === "tasks";
 }
 
 export function getDebugPath(tab: DebugTab): string {
@@ -292,6 +309,10 @@ export function resolveSidebarHref(
     return PROJECTS_PATH;
   }
 
+  if (item.id === "tasks") {
+    return getProjectTasksPath(currentProjectId);
+  }
+
   return item.href;
 }
 
@@ -299,8 +320,9 @@ export function getActiveSidebarId(path: string): SidebarNavigationId {
   const pathname = normalizeNavigationPath(path);
   if (pathname === "/" || pathname === PROJECTS_PATH) return "projects";
   if (pathname === AUTOPILOT_PATH) return "autopilot";
-  if (matchesPathPrefix(pathname, PROJECTS_PATH)) return "autopilot";
+  if (isProjectTasksPath(pathname)) return "tasks";
   if (matchesPathPrefix(pathname, "/tasks")) return "tasks";
+  if (matchesPathPrefix(pathname, PROJECTS_PATH)) return "autopilot";
   if (matchesPathPrefix(pathname, DEBUG_PATH)) return "settings";
   return "autopilot";
 }

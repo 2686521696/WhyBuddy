@@ -9,10 +9,10 @@
  *
  * Feature: lobster-executor-real, Property 1: 容器创建配置正确性
  */
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import fc from "fast-check";
 import Dockerode from "dockerode";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -47,7 +47,7 @@ afterEach(() => {
   tempDirs.length = 0;
 });
 
-function makeRunner(defaultImage = DEFAULT_IMAGE): DockerRunner {
+function makeRunner(defaultImage = DEFAULT_IMAGE, docker?: Dockerode): DockerRunner {
   const config: LobsterExecutorConfig = {
     host: "localhost",
     port: 7200,
@@ -65,9 +65,10 @@ function makeRunner(defaultImage = DEFAULT_IMAGE): DockerRunner {
     maxPids: 256,
     tmpfsSize: "64m",
     networkWhitelist: [],
+    skillRoot: "services/lobster-executor/skills",
   };
   const mockCallbackSender = { send: async () => {} } as unknown as CallbackSender;
-  const mockDocker = {} as Dockerode;
+  const mockDocker = docker ?? {} as Dockerode;
   return new DockerRunner(config, mockCallbackSender, mockDocker);
 }
 
@@ -236,6 +237,149 @@ describe("Property 1: 容器创建配置正确性", () => {
     );
   });
 
+  it("routes browserTask payloads through the deterministic browser runner", () => {
+    const runner = makeRunner();
+    const browserTask = {
+      url: "https://example.com",
+      viewport: { width: 960, height: 540 },
+      capture: { screenshot: true, html: true },
+    };
+
+    const opts = runner.buildContainerOptions(
+      makeRecord({ browserTask }),
+      "/tmp/ws",
+    );
+
+    expect(opts.Entrypoint).toEqual(["node", "/opt/cube-agent/browser-runner.js"]);
+    expect(opts.Cmd).toBeUndefined();
+    expect(opts.Env).toContain(`BROWSER_TASK=${JSON.stringify(browserTask)}`);
+  });
+
+  it("injects live preview env without exposing container ports", () => {
+    const runner = makeRunner();
+    const opts = runner.buildContainerOptions(
+      makeRecord({
+        command: ["node", "-e", "console.log('live')"],
+        livePreview: {
+          enabled: true,
+          terminal: true,
+          browser: true,
+          screenshotIntervalMs: 750,
+          replayArtifacts: true,
+        },
+      }),
+      "/tmp/ws",
+    );
+
+    expect(opts.Env).toContain("CUBE_LIVE_PREVIEW=true");
+    expect(opts.Env).toContain("CUBE_LIVE_PREVIEW_TERMINAL=true");
+    expect(opts.Env).toContain("CUBE_LIVE_PREVIEW_BROWSER=true");
+    expect(opts.Env).toContain("CUBE_LIVE_PREVIEW_SCREENSHOT_INTERVAL_MS=750");
+    expect(opts.Env).toContain("CUBE_LIVE_PREVIEW_DIRECT_PORTS=false");
+    expect(opts.ExposedPorts).toBeUndefined();
+    expect(opts.HostConfig?.PortBindings).toBeUndefined();
+  });
+
+  it("stops or kills a running container when cancellation is requested", async () => {
+    const stop = vi.fn().mockRejectedValue(new Error("stop timeout"));
+    const kill = vi.fn().mockResolvedValue(undefined);
+    const getContainer = vi.fn(() => ({
+      id: "container-1",
+      stop,
+      kill,
+    }));
+    const runner = makeRunner(
+      DEFAULT_IMAGE,
+      { getContainer } as unknown as Dockerode,
+    );
+    const dataDir = makeTempDir();
+    const logFile = join(dataDir, "executor.log");
+    writeFileSync(logFile, "", "utf-8");
+    const record = makeRecord({
+      livePreview: {
+        enabled: true,
+        terminal: true,
+        browser: true,
+      },
+    });
+    record.dataDirectory = dataDir;
+    record.logFile = logFile;
+    record.containerId = "container-1";
+    record.cancelRequested = {
+      requestedAt: new Date().toISOString(),
+      reason: "User requested stop",
+      source: "test",
+    };
+
+    await runner.cancel(record);
+
+    expect(getContainer).toHaveBeenCalledWith("container-1");
+    expect(stop).toHaveBeenCalledWith({ t: 10 });
+    expect(kill).toHaveBeenCalledWith({ signal: "SIGKILL" });
+    expect(readFileSync(logFile, "utf-8")).toContain(
+      "[cancel] User requested stop",
+    );
+  });
+
+  it("keeps explicit command payloads ahead of browserTask payloads", () => {
+    const runner = makeRunner();
+    const opts = runner.buildContainerOptions(
+      makeRecord({
+        command: ["node", "custom.js"],
+        browserTask: { url: "https://example.com" },
+      }),
+      "/tmp/ws",
+    );
+
+    expect(opts.Entrypoint).toBeUndefined();
+    expect(opts.Cmd).toEqual(["node", "custom.js"]);
+    expect(opts.Env).toBeUndefined();
+  });
+
+  it("routes skillRef payloads through the selected skill entrypoint", () => {
+    const runner = makeRunner();
+    const record = makeRecord({
+      skillRef: { name: "document-render", version: "0.1.0" },
+      skillInput: { title: "Skill Test" },
+    });
+    record.skill = {
+      manifest: {
+        name: "document-render",
+        version: "0.1.0",
+        description: "Render a document",
+        enabled: true,
+        capabilities: ["artifact.json", "preview.json"],
+        runtime: "node",
+        entrypoint: "run.js",
+        dependencies: [],
+        inputs: { examples: [] },
+        outputs: { artifacts: ["document-report.json"], previewTypes: ["json"] },
+        artifactRules: [],
+        security: {
+          network: "none",
+          filesystem: "workspace",
+          browser: false,
+          credentials: [],
+        },
+      },
+      directory: "services/lobster-executor/skills/document-render",
+      input: { title: "Skill Test" },
+      requiredCapabilities: ["artifact.json", "preview.json"],
+      autoSelected: false,
+    };
+
+    const opts = runner.buildContainerOptions(record, "/tmp/ws");
+
+    expect(opts.Entrypoint).toEqual(["node"]);
+    expect(opts.Cmd).toEqual([
+      "/workspace/skills/current/run.js",
+      "/workspace/skill-input.json",
+    ]);
+    expect(opts.Env).toContain("CUBE_SKILL_INPUT=/workspace/skill-input.json");
+    expect(opts.Env).toContain("CUBE_SKILL_NAME=document-render");
+    expect(opts.Env).toContain("CUBE_SKILL_VERSION=0.1.0");
+  });
+
   it("HostConfig.Binds uses payload.workspaceRoot when provided, otherwise workspaceDir", () => {
     fc.assert(
       fc.property(arbWorkspaceRoot, arbWorkspaceDir, (workspaceRoot, workspaceDir) => {
@@ -345,6 +489,58 @@ describe("Property 1: 容器创建配置正确性", () => {
 
     const resultArtifact = collected.find((artifact: { name: string }) => artifact.name === "result.json");
     expect(resultArtifact?.kind).toBe("report");
+  });
+
+  it("uses artifact-manifest metadata when collecting workspace artifacts", () => {
+    const runner = makeRunner();
+    const dataDir = makeTempDir();
+    const workspaceDir = join(dataDir, "workspace");
+    const artifactsDir = join(workspaceDir, "artifacts");
+    const resultFile = join(dataDir, "result.json");
+    const logFile = join(dataDir, "executor.log");
+
+    mkdirSync(artifactsDir, { recursive: true });
+    writeFileSync(logFile, "executor output\n", "utf-8");
+    writeFileSync(resultFile, '{"outcome":"success"}\n', "utf-8");
+    writeFileSync(join(artifactsDir, "page-screenshot.png"), "fakepng", "utf-8");
+    writeFileSync(
+      join(artifactsDir, "artifact-manifest.json"),
+      JSON.stringify({
+        version: "2026-05-04",
+        artifacts: [
+          {
+            id: "page-screenshot",
+            kind: "file",
+            name: "page-screenshot.png",
+            path: "artifacts/page-screenshot.png",
+            mimeType: "image/png",
+            previewType: "image",
+            size: 7,
+            description: "Full page browser screenshot",
+          },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const record = makeRecord({});
+    record.dataDirectory = dataDir;
+    record.logFile = logFile;
+
+    const collected = (runner as any).collectArtifacts(record, workspaceDir, resultFile);
+    const screenshot = collected.find(
+      (artifact: { name: string }) => artifact.name === "page-screenshot.png",
+    );
+
+    expect(screenshot).toMatchObject({
+      id: "page-screenshot",
+      kind: "file",
+      name: "page-screenshot.png",
+      mimeType: "image/png",
+      previewType: "image",
+      size: 7,
+      description: "Full page browser screenshot",
+    });
   });
 });
 

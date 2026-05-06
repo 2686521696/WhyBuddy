@@ -11,6 +11,7 @@ import { ClarificationPanel } from "@/components/nl-command/ClarificationPanel";
 import { CommandInput } from "@/components/nl-command/CommandInput";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { Button } from "@/components/ui/button";
+import { optimizeAutopilotPrompt } from "@/lib/autopilot-prompt-optimizer";
 import {
   AUTOPILOT_LAUNCH_EXAMPLES,
   type AutopilotLaunchExample,
@@ -297,6 +298,7 @@ export function UnifiedLaunchComposer({
   const loadingWorkflow = useWorkflowStore(state => state.isSubmitting);
   const [attachments, setAttachments] = useState<WorkflowInputAttachment[]>([]);
   const [isPreparingFiles, setIsPreparingFiles] = useState(false);
+  const [isOptimizingPrompt, setIsOptimizingPrompt] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [selectedRouteId, setSelectedRouteId] =
     useState<LaunchRouteCandidateId | null>(null);
@@ -640,6 +642,46 @@ export function UnifiedLaunchComposer({
     }
   }
 
+  async function handleOptimizePrompt() {
+    const text = draftText.trim();
+    if (isOptimizingPrompt || submitting) {
+      return;
+    }
+    if (!text) {
+      toast(t(locale, "先输入一点任务想法再优化。", "Add a task idea first."));
+      return;
+    }
+
+    setIsOptimizingPrompt(true);
+    try {
+      const optimized = await optimizeAutopilotPrompt({
+        text,
+        locale,
+        projectName,
+        projectStatus,
+        currentSpecTitle,
+        currentRouteTitle,
+        activeTaskTitle,
+        runtimeMode,
+        attachmentCount: attachments.length,
+        activeMissionCount: activeProjectMissionCount,
+        recentMessages: recentProjectMessages,
+      });
+      setDraftText(optimized);
+      toast.success(
+        t(locale, "提示词已优化，可继续调整或直接提交。", "Prompt optimized.")
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t(locale, "提示词优化失败。", "Failed to optimize prompt.")
+      );
+    } finally {
+      setIsOptimizingPrompt(false);
+    }
+  }
+
   const inputRowClassName = cn(
     "w-full rounded-[24px] border border-slate-200/75 bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-xl",
     isDense ? "p-2.5" : "p-3"
@@ -671,12 +713,33 @@ export function UnifiedLaunchComposer({
       ) : null}
       <div className={inputRowClassName}>
         <div className="flex items-start gap-2">
-          <div className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-[#0f766e] shadow-[0_12px_28px_rgba(15,118,110,0.12),inset_0_1px_0_rgba(255,255,255,0.9)]">
-            <Sparkles className="size-5" />
-          </div>
+          <button
+            type="button"
+            className={cn(
+              "mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-[#0f766e] shadow-[0_12px_28px_rgba(15,118,110,0.12),inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#99f6e4] hover:bg-[#ecfeff] hover:text-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14b8a6]/45 disabled:cursor-not-allowed disabled:opacity-45",
+              isOptimizingPrompt && "cursor-wait"
+            )}
+            disabled={!draftText.trim() || submitting || isOptimizingPrompt}
+            onClick={() => void handleOptimizePrompt()}
+            aria-label={t(
+              locale,
+              "调用 LLM 优化提示词",
+              "Optimize prompt with LLM"
+            )}
+            title={t(
+              locale,
+              "调用 LLM 优化提示词",
+              "Optimize prompt with LLM"
+            )}
+            data-testid="unified-launch-optimize-prompt"
+          >
+            <Sparkles
+              className={cn("size-5", isOptimizingPrompt && "animate-spin")}
+            />
+          </button>
           <CommandInput
             onSubmit={handleSubmit}
-            loading={submitting}
+            loading={submitting || isOptimizingPrompt}
             commandHistory={commandHistory}
             value={draftText}
             onTextChange={setDraftText}

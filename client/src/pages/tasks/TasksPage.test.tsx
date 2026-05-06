@@ -248,8 +248,15 @@ vi.mock("@/components/ui/tabs", () => ({
 }));
 
 vi.mock("@/components/tasks/TasksCockpitDetail", () => ({
-  TasksCockpitDetail: () => (
-    <section data-testid="tasks-cockpit-detail">Task detail tab</section>
+  TasksCockpitDetail: ({ detail }: { detail?: { artifacts?: Array<{ title: string }> } | null }) => (
+    <section
+      data-testid="tasks-cockpit-detail"
+      data-artifact-titles={(detail?.artifacts ?? [])
+        .map(artifact => artifact.title)
+        .join(",")}
+    >
+      Task detail tab
+    </section>
   ),
 }));
 
@@ -469,6 +476,65 @@ describe("TasksPage workbench tabs", () => {
     expect(markup).toContain('data-task-ids="mission-1"');
     expect(markup).not.toContain('data-task-ids="mission-1,mission-2"');
     expect(markup).not.toContain('data-testid="tasks-assign-current-project"');
+  });
+
+  it("only renders artifacts from the selected project mission", () => {
+    tasksState.selectedTaskId = "mission-2";
+    tasksState.detailsById["mission-1"] = {
+      ...tasksState.detailsById["mission-1"],
+      artifacts: [
+        {
+          id: "page-screenshot",
+          title: "page-screenshot.png",
+          description: "Browser screenshot",
+          kind: "file",
+          format: "png",
+          previewType: "image",
+        },
+      ],
+    };
+    tasksState.detailsById["mission-2"] = {
+      ...tasksState.detailsById["mission-2"],
+      artifacts: [
+        {
+          id: "other-project-log",
+          title: "other-project.log",
+          description: "Outside project log",
+          kind: "log",
+          format: "log",
+        },
+      ],
+    };
+    projectState.currentProject = {
+      id: "project-2",
+      name: "Other Project",
+    };
+    projectState.projects = [
+      {
+        id: "project-1",
+        name: "Permission System",
+      },
+      {
+        id: "project-2",
+        name: "Other Project",
+      },
+    ];
+    projectState.missions = [
+      {
+        projectId: "project-1",
+        missionId: "mission-1",
+      },
+      {
+        projectId: "project-2",
+        missionId: "mission-2",
+      },
+    ];
+
+    const markup = renderToStaticMarkup(<TasksPage projectId="project-1" />);
+
+    expect(markup).toContain('data-task-ids="mission-1"');
+    expect(markup).toContain('data-artifact-titles="page-screenshot.png"');
+    expect(markup).not.toContain("other-project.log");
   });
 
   it("passes project, route, spec and source metadata to task cards", () => {

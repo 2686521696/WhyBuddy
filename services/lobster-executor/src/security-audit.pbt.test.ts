@@ -20,6 +20,8 @@ const eventTypeArb = fc.constantFrom<SecurityAuditEntry["eventType"]>(
   "container.security_failure",
   "container.destroyed",
   "resource.exceeded",
+  "preview.session.created",
+  "preview.session.stopped",
 );
 
 const nonEmptyStringArb = fc.string({ minLength: 1, maxLength: 30, unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789-_") });

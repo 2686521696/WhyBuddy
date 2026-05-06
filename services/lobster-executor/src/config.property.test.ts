@@ -111,6 +111,18 @@ describe("Property 11: Docker 配置映射", () => {
     );
   });
 
+  it("LOBSTER_AGENT_IMAGE overrides the legacy LOBSTER_AI_IMAGE", () => {
+    const cfg = readLobsterExecutorConfig(
+      {
+        LOBSTER_AGENT_IMAGE: "cube-ai-agent-sandbox:latest",
+        LOBSTER_AI_IMAGE: "cube-ai-sandbox:latest",
+      },
+      "linux",
+    );
+
+    expect(cfg.aiImage).toBe("cube-ai-agent-sandbox:latest");
+  });
+
   it("all three Docker env vars are independently resolved in any combination", () => {
     fc.assert(
       fc.property(

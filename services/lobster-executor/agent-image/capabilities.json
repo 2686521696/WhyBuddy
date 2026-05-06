@@ -1,0 +1,50 @@
+{
+  "image": "cube-ai-agent-sandbox:latest",
+  "schemaVersion": "2026-05-04",
+  "capabilities": [
+    "runtime.docker",
+    "node",
+    "python",
+    "ai.llm",
+    "browser.playwright",
+    "browser.chromium",
+    "document.libreoffice",
+    "document.pandoc",
+    "media.ffmpeg",
+    "image.imagemagick",
+    "artifact.file",
+    "artifact.log",
+    "artifact.json",
+    "artifact.html",
+    "artifact.pdf",
+    "artifact.image",
+    "preview.text",
+    "preview.json",
+    "preview.html",
+    "preview.pdf",
+    "preview.image"
+  ],
+  "artifactTypes": [
+    "file",
+    "log",
+    "json",
+    "html",
+    "pdf",
+    "image"
+  ],
+  "previewTypes": [
+    "text",
+    "json",
+    "html",
+    "pdf",
+    "image"
+  ],
+  "entrypoints": {
+    "default": "node /opt/ai-bridge/executor.js",
+    "selfCheck": "node /opt/cube-agent/self-check.js"
+  },
+  "notes": [
+    "This manifest describes the intended strong agent image. The executor should only claim these capabilities after the image is selected and verified.",
+    "AI calls still require AI_API_KEY or LLM credentials injected by lobster-executor."
+  ]
+}

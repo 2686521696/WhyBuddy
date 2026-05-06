@@ -1,10 +1,12 @@
 import type {
+  ExecutorCapabilities,
   ExecutorEvent,
   ExecutorJobRequest,
   ExecutorJobStatus,
 } from "./contracts.js";
 
 export const EXECUTOR_API_ROUTES = {
+  capabilities: "/api/executor/capabilities",
   createJob: "/api/executor/jobs",
   cancelJob: "/api/executor/jobs/:id/cancel",
   pauseJob: "/api/executor/jobs/:id/pause",
@@ -94,7 +96,16 @@ export interface SubmitExecutorEventResponse {
   eventId: string;
 }
 
+export interface ExecutorCapabilitiesResponse {
+  ok: true;
+  capabilities: ExecutorCapabilities;
+}
+
 export interface ExecutorApiErrorResponse {
   ok?: false;
   error: string;
+  code?: string;
+  unsupportedCapabilities?: string[];
+  supportedCapabilities?: string[];
+  hint?: string;
 }

@@ -96,6 +96,25 @@ function bestDeliverable(task: TaskRecord): string {
   return task.deliverable_v3 || task.deliverable_v2 || task.deliverable || "(no deliverable)";
 }
 
+function isExecutorCandidateTask(task: TaskRecord): boolean {
+  const department = task.department?.toLowerCase() || "";
+  const workerId = task.worker_id?.toLowerCase() || "";
+  const managerId = task.manager_id?.toLowerCase() || "";
+  const description = task.description?.toLowerCase() || "";
+
+  const routingText = `${department} ${workerId} ${managerId} ${description}`;
+  if (/\b(quality|qa|audit|review|risk|verifier|governance)\b/.test(routingText)) {
+    return false;
+  }
+
+  const score = task.total_score;
+  if (typeof score === "number" && score < 12) {
+    return false;
+  }
+
+  return true;
+}
+
 async function runWithConcurrencyLimit<T>(
   items: T[],
   limit: number,
@@ -490,9 +509,13 @@ export class WorkflowEngine {
       return;
     }
 
-    // Collect all task deliverables for this workflow
+    // Collect execution-facing task deliverables for this workflow.
+    // Quality/review/audit outputs are valuable workflow evidence, but they are
+    // not actionable Docker inputs and previously caused scan jobs to execute
+    // audit reports instead of repository work.
     const tasks = this.repo.getTasksByWorkflow(workflowId);
     const deliverables = tasks
+      .filter((t) => isExecutorCandidateTask(t))
       .map((t) => bestDeliverable(t))
       .filter((d) => d !== "(no deliverable)");
 

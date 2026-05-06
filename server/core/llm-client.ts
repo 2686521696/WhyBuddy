@@ -64,6 +64,27 @@ const requestQueue: Array<() => void> = [];
 const providerCooldownUntil = new Map<string, number>();
 let globalProviderCooldownUntil = 0;
 
+function normalizeModelName(model: string | undefined): string {
+  return (model || "").trim().toLowerCase();
+}
+
+function getUnlimitedModelSet(): Set<string> {
+  const raw = process.env.LLM_UNLIMITED_MODELS || "gpt-5.5";
+  return new Set(
+    raw
+      .split(",")
+      .map(model => normalizeModelName(model))
+      .filter(Boolean)
+  );
+}
+
+function isUnlimitedModel(model: string | undefined): boolean {
+  const normalized = normalizeModelName(model);
+  if (!normalized) return false;
+  const unlimitedModels = getUnlimitedModelSet();
+  return unlimitedModels.has("*") || unlimitedModels.has(normalized);
+}
+
 function buildProviders(): ProviderConfig[] {
   const aiConfig = getAIConfig();
   const primary: ProviderConfig = {
@@ -698,14 +719,19 @@ export async function callLLM(
   messages: LLMMessage[],
   options: LLMOptions = {}
 ): Promise<LLMResponse> {
+  const configuredModel = options.model || getAIConfig().model;
+  const unlimitedModel = isUnlimitedModel(configuredModel);
+
   // 1. 检查 Agent 是否被暂停（Req 5.3）
-  if (options.agentId && costTracker.isAgentPaused(options.agentId)) {
+  if (!unlimitedModel && options.agentId && costTracker.isAgentPaused(options.agentId)) {
     throw new Error(`Agent ${options.agentId} is paused due to budget exceeded.`);
   }
 
   // 2. 应用降级模型（Req 5.2）
-  const effectiveModel = costTracker.getEffectiveModel(options.model || "");
-  const effectiveOptions: LLMOptions = { ...options, model: effectiveModel || options.model };
+  const effectiveModel = unlimitedModel
+    ? configuredModel
+    : costTracker.getEffectiveModel(configuredModel);
+  const effectiveOptions: LLMOptions = { ...options, model: effectiveModel };
 
   const startTime = Date.now();
 
@@ -762,20 +788,22 @@ export async function callLLM(
           const tokensOut = response.usage?.completion_tokens ?? 0;
           const pricing = PRICING_TABLE[actualModel] ?? DEFAULT_PRICING;
 
-          costTracker.recordCall({
-            id: randomUUID(),
-            timestamp: startTime,
-            model: actualModel,
-            tokensIn,
-            tokensOut,
-            unitPriceIn: pricing.input,
-            unitPriceOut: pricing.output,
-            actualCost: estimateCost(actualModel, tokensIn, tokensOut),
-            durationMs: Date.now() - startTime,
-            agentId: options.agentId,
-            missionId: options.missionId,
-            sessionId: options.sessionId,
-          });
+          if (!unlimitedModel) {
+            costTracker.recordCall({
+              id: randomUUID(),
+              timestamp: startTime,
+              model: actualModel,
+              tokensIn,
+              tokensOut,
+              unitPriceIn: pricing.input,
+              unitPriceOut: pricing.output,
+              actualCost: estimateCost(actualModel, tokensIn, tokensOut),
+              durationMs: Date.now() - startTime,
+              agentId: options.agentId,
+              missionId: options.missionId,
+              sessionId: options.sessionId,
+            });
+          }
 
           return response;
         } catch (error) {
@@ -808,21 +836,23 @@ export async function callLLM(
         const failModel = effectiveOptions.model || provider.defaultModel;
         const failPricing = PRICING_TABLE[failModel] ?? DEFAULT_PRICING;
 
-        costTracker.recordCall({
-          id: randomUUID(),
-          timestamp: startTime,
-          model: failModel,
-          tokensIn: 0,
-          tokensOut: 0,
-          unitPriceIn: failPricing.input,
-          unitPriceOut: failPricing.output,
-          actualCost: 0,
-          durationMs: Date.now() - startTime,
-          agentId: options.agentId,
-          missionId: options.missionId,
-          sessionId: options.sessionId,
-          error: lastError.message,
-        });
+        if (!unlimitedModel) {
+          costTracker.recordCall({
+            id: randomUUID(),
+            timestamp: startTime,
+            model: failModel,
+            tokensIn: 0,
+            tokensOut: 0,
+            unitPriceIn: failPricing.input,
+            unitPriceOut: failPricing.output,
+            actualCost: 0,
+            durationMs: Date.now() - startTime,
+            agentId: options.agentId,
+            missionId: options.missionId,
+            sessionId: options.sessionId,
+            error: lastError.message,
+          });
+        }
 
         throw lastError;
       }
@@ -842,21 +872,23 @@ export async function callLLM(
     const fallbackModel = effectiveOptions.model || "";
     const fallbackPricing = PRICING_TABLE[fallbackModel] ?? DEFAULT_PRICING;
 
-    costTracker.recordCall({
-      id: randomUUID(),
-      timestamp: startTime,
-      model: fallbackModel,
-      tokensIn: 0,
-      tokensOut: 0,
-      unitPriceIn: fallbackPricing.input,
-      unitPriceOut: fallbackPricing.output,
-      actualCost: 0,
-      durationMs: Date.now() - startTime,
-      agentId: options.agentId,
-      missionId: options.missionId,
-      sessionId: options.sessionId,
-      error: finalError.message,
-    });
+    if (!unlimitedModel) {
+      costTracker.recordCall({
+        id: randomUUID(),
+        timestamp: startTime,
+        model: fallbackModel,
+        tokensIn: 0,
+        tokensOut: 0,
+        unitPriceIn: fallbackPricing.input,
+        unitPriceOut: fallbackPricing.output,
+        actualCost: 0,
+        durationMs: Date.now() - startTime,
+        agentId: options.agentId,
+        missionId: options.missionId,
+        sessionId: options.sessionId,
+        error: finalError.message,
+      });
+    }
 
     throw finalError;
   } finally {

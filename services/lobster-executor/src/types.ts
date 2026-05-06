@@ -1,11 +1,14 @@
 import type { CreateExecutorJobResponse } from "../../../shared/executor/api.js";
 import type {
+  ExecutorCapabilities,
+  ExecutorPreviewSession,
   ExecutionPlanArtifact,
   ExecutionPlanJob,
   ExecutorEvent,
   ExecutorJobRequest,
   ExecutorJobStatus,
 } from "../../../shared/executor/contracts.js";
+import type { SandboxSkillBinding } from "./skill-job.js";
 
 export interface LobsterExecutorConfig {
   host: string;
@@ -20,6 +23,7 @@ export interface LobsterExecutorConfig {
   dockerCertPath?: string;
   callbackSecret: string;
   aiImage: string;
+  skillRoot?: string;
 
   // ── Security sandbox (Task 2.2) ──
   securityLevel: string;
@@ -107,11 +111,46 @@ export interface LobsterExecutorHealthResponse {
     dockerLifecycle: boolean;
     callbackSigning: boolean;
   };
+  capabilitiesSummary: {
+    total: number;
+    capabilities: ExecutorCapabilities["capabilities"];
+    warnings: string[];
+  };
   aiCapability: {
     enabled: boolean;
     image: string;
     llmProvider: string;
   };
+}
+
+export interface LobsterExecutorCapabilitiesResponse {
+  ok: true;
+  capabilities: ExecutorCapabilities;
+}
+
+export interface LobsterExecutorSandboxSkillSummary {
+  name: string;
+  version: string;
+  description: string;
+  enabled: boolean;
+  compatible: boolean;
+  capabilities: string[];
+  runtime: string;
+  entrypoint: string;
+  security: {
+    network: string;
+    filesystem: string;
+    browser: boolean;
+    credentials: string[];
+  };
+  errors: string[];
+}
+
+export interface LobsterExecutorSandboxSkillsResponse {
+  ok: true;
+  root: string;
+  skills: LobsterExecutorSandboxSkillSummary[];
+  capabilityIndex: Record<string, string[]>;
 }
 
 export interface StoredJobRecord {
@@ -132,6 +171,8 @@ export interface StoredJobRecord {
   dataDirectory: string;
   logFile: string;
   containerId?: string;
+  skill?: SandboxSkillBinding;
+  previewSession?: ExecutorPreviewSession;
   cancelRequested?: {
     requestedAt: string;
     requestedBy?: string;
@@ -149,7 +190,7 @@ export interface StoredJobRecord {
     promise: Promise<void>;
     resolve: () => void;
   };
-  executionMode: "real" | "mock";
+  executionMode: "real" | "mock" | "native";
 }
 
 export interface AIJobPayload {

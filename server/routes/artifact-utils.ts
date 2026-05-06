@@ -12,11 +12,19 @@ export const EXTENSION_MIME_MAP: Record<string, string> = {
   '.ts': 'text/plain',
   '.js': 'text/plain',
   '.html': 'text/html',
+  '.htm': 'text/html',
   '.css': 'text/css',
   '.csv': 'text/csv',
   '.xml': 'application/xml',
   '.yaml': 'text/yaml',
   '.yml': 'text/yaml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
 };
 
 /**
@@ -38,6 +46,14 @@ export function getMimeType(filename: string): string {
  */
 export function isTextMime(mime: string): boolean {
   return TEXT_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
+}
+
+export function isInlinePreviewMime(mime: string): boolean {
+  return (
+    isTextMime(mime) ||
+    mime.startsWith('image/') ||
+    mime === 'application/pdf'
+  );
 }
 
 /**

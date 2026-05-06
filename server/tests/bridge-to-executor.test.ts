@@ -148,6 +148,66 @@ describe("WorkflowEngine.bridgeToExecutor", () => {
     );
   });
 
+  it("excludes quality and audit deliverables from executor bridge input", async () => {
+    const deliveryOutput = "```bash\nnpm test\n```\nRun implementation verification.";
+    const qualityAudit = "## 质量审计结果：暂不通过，需补交交付物后再审";
+
+    repo.getTasksByWorkflow.mockReturnValue([
+      makeTask({
+        id: 1,
+        department: "delivery",
+        worker_id: "implementation-engineer",
+        deliverable: deliveryOutput,
+        total_score: 17,
+      }),
+      makeTask({
+        id: 2,
+        department: "quality",
+        worker_id: "quality-reviewer",
+        description: "Audit the delivery output",
+        deliverable: qualityAudit,
+        total_score: 20,
+      }),
+      makeTask({
+        id: 3,
+        department: "delivery",
+        worker_id: "risk-analyst",
+        description: "Assess execution and adoption risks",
+        deliverable: "risk audit report",
+        total_score: 20,
+      }),
+    ]);
+
+    await (engine as any).bridgeToExecutor("wf-1");
+
+    expect(mockBridge.bridge).toHaveBeenCalledWith(
+      "mission-1",
+      [deliveryOutput],
+      expect.objectContaining({ workflowId: "wf-1" }),
+    );
+  });
+
+  it("skips bridge when only quality or audit deliverables exist", async () => {
+    repo.getTasksByWorkflow.mockReturnValue([
+      makeTask({
+        department: "quality",
+        worker_id: "quality-reviewer",
+        description: "Audit the delivery output",
+        deliverable: "## 质量审计结果：暂不通过，需补交交付物后再审",
+      }),
+      makeTask({
+        department: "delivery",
+        worker_id: "risk-analyst",
+        description: "Assess execution and adoption risks",
+        deliverable: "risk audit report",
+      }),
+    ]);
+
+    await (engine as any).bridgeToExecutor("wf-1");
+
+    expect(mockBridge.bridge).not.toHaveBeenCalled();
+  });
+
   it("prefers deliverable_v3 > v2 > v1 (bestDeliverable logic)", async () => {
     repo.getTasksByWorkflow.mockReturnValue([
       makeTask({ deliverable: "v1", deliverable_v2: "v2", deliverable_v3: "v3" }),

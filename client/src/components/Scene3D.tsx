@@ -7,6 +7,11 @@ import { useContainerWidth } from "@/hooks/useContainerWidth";
 import { useIdleActivation } from "@/hooks/useIdleActivation";
 import { useViewportTier } from "@/hooks/useViewportTier";
 import { FURNITURE_MODELS, PET_MODELS } from "@/lib/assets";
+import {
+  resolveProjectTaskScope,
+  resolveScopedSelectedTaskId,
+} from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { FUTURE_OFFICE_COLORS } from "@/lib/scene-theme";
 import { useTasksStore } from "@/lib/tasks-store";
 
@@ -52,12 +57,15 @@ export interface Scene3DProps {
   sidebarWidth?: number;
   /** Hide the scene via CSS visibility (preserves WebGL context). Default false. */
   hidden?: boolean;
+  /** Optional project scope for task overlays rendered inside the scene. */
+  projectId?: string | null;
 }
 
 export function Scene3D({
   performanceProfile = "balanced",
   sidebarWidth = 0,
   hidden = false,
+  projectId = null,
 }: Scene3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isMobile, isTablet, tier } = useViewportTier();
@@ -67,11 +75,22 @@ export function Scene3D({
     600
   );
   const reducedSceneEffects = performanceProfile === "resizing";
+  const projectMissions = useProjectStore(state => state.missions);
 
   // Sandbox shield: show when the selected mission runs at strict security level.
   const isStrictSandbox = useTasksStore(state => {
-    const detail = state.selectedTaskId
-      ? state.detailsById[state.selectedTaskId]
+    const scope = resolveProjectTaskScope({
+      projectId,
+      projectMissions,
+      tasks: state.tasks,
+    });
+    const scopedSelectedTaskId = resolveScopedSelectedTaskId({
+      selectedTaskId: state.selectedTaskId,
+      scope,
+      hasDetail: taskId => Boolean(state.detailsById[taskId]),
+    });
+    const detail = scopedSelectedTaskId
+      ? state.detailsById[scopedSelectedTaskId]
       : null;
     return (
       detail?.securitySummary?.level === "strict" &&
@@ -232,13 +251,14 @@ export function Scene3D({
             showSecondaryDecor={deferredDetailsReady && !reducedSceneEffects}
             reducedEffects={reducedSceneEffects}
           />
-          <SceneStageFlow />
+          <SceneStageFlow projectId={projectId} />
           <PetWorkers
+            projectId={projectId}
             reducedOverlays={!deferredDetailsReady || reducedSceneEffects}
           />
-          <MissionIsland />
-          <SandboxMonitor />
-          <WaitingDecisionBubble />
+          <MissionIsland projectId={projectId} />
+          <SandboxMonitor projectId={projectId} />
+          <WaitingDecisionBubble projectId={projectId} />
           {!reducedSceneEffects && deferredDetailsReady ? (
             <>
               <CrossPodParticles active />

@@ -5,7 +5,13 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useLocation } from "wouter";
 
+import {
+  getProjectTaskPath,
+  getProjectTasksPath,
+} from "@/components/navigation-config";
 import { useViewportTier } from "@/hooks/useViewportTier";
+import { resolveProjectTaskScope } from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { FUTURE_OFFICE_COLORS } from "@/lib/scene-theme";
 import { useTasksStore } from "@/lib/tasks-store";
 
@@ -24,11 +30,24 @@ const GLOW_COLOR_ACTIVE = new THREE.Color(FUTURE_OFFICE_COLORS.cyan);
 const GLOW_COLOR_IDLE = new THREE.Color(FUTURE_OFFICE_COLORS.hemisphereGround);
 
 /* ── Data Hook ── */
-function useMissionIslandData() {
+function useMissionIslandData(projectId: string | null) {
   const tasks = useTasksStore(s => s.tasks);
   const detailsById = useTasksStore(s => s.detailsById);
+  const projectMissions = useProjectStore(state => state.missions);
+  const scopedTasks = useMemo(
+    () =>
+      resolveProjectTaskScope({
+        projectId,
+        projectMissions,
+        tasks,
+      }).tasks,
+    [projectId, projectMissions, tasks]
+  );
 
-  const selectedMission = useMemo(() => selectDisplayMission(tasks), [tasks]);
+  const selectedMission = useMemo(
+    () => selectDisplayMission(scopedTasks),
+    [scopedTasks]
+  );
 
   const missionDetail = selectedMission
     ? (detailsById[selectedMission.id] ?? null)
@@ -40,8 +59,9 @@ function useMissionIslandData() {
 }
 
 /* ── Main Component ── */
-export function MissionIsland() {
-  const { selectedMission, missionDetail, isRunning } = useMissionIslandData();
+export function MissionIsland({ projectId = null }: { projectId?: string | null }) {
+  const { selectedMission, missionDetail, isRunning } =
+    useMissionIslandData(projectId);
   const [expanded, setExpanded] = useState(false);
   const [, setLocation] = useLocation();
   const { tier } = useViewportTier();
@@ -93,14 +113,14 @@ export function MissionIsland() {
   const handleNavigateToDetail = useCallback(
     (taskId: string) => {
       setExpanded(false);
-      setLocation(`/tasks/${taskId}`);
+      setLocation(getProjectTaskPath(projectId, taskId));
     },
-    [setLocation]
+    [projectId, setLocation]
   );
 
   const handleCreateMission = useCallback(() => {
-    setLocation("/tasks?new=1");
-  }, [setLocation]);
+    setLocation(`${getProjectTasksPath(projectId)}?new=1`);
+  }, [projectId, setLocation]);
 
   return (
     <group

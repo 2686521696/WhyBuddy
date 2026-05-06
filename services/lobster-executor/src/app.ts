@@ -6,12 +6,13 @@ import { EXECUTOR_CONTRACT_VERSION } from "../../../shared/executor/contracts.js
 import {
   EXECUTOR_API_ROUTES,
   type CancelExecutorJobResponse,
+  type ExecutorCapabilitiesResponse,
   type PauseExecutorJobResponse,
   type ResumeExecutorJobResponse,
   type ExecutorApiErrorResponse,
 } from "../../../shared/executor/api.js";
 import { parseDockerHost, readLobsterExecutorConfig } from "./config.js";
-import { LobsterExecutorError, NotFoundError } from "./errors.js";
+import { ExecutorCapabilityError, LobsterExecutorError, NotFoundError } from "./errors.js";
 import {
   createLobsterExecutorService,
   type LobsterExecutorService,
@@ -20,18 +21,34 @@ import type {
   LobsterExecutorHealthResponse,
   LobsterExecutorJobDetailResponse,
   LobsterExecutorJobsResponse,
+  LobsterExecutorSandboxSkillSummary,
+  LobsterExecutorSandboxSkillsResponse,
 } from "./types.js";
 import { SecurityAuditLogger } from "./security-audit.js";
 import type { SecurityAuditEntry } from "../../../shared/executor/contracts.js";
+import { createExecutorCapabilities } from "./capabilities.js";
+import {
+  SandboxSkillRegistry,
+  type SandboxSkillRecord,
+} from "./skill-registry.js";
 
 function sendError(
   res: Response<ExecutorApiErrorResponse>,
   error: unknown
 ): Response<ExecutorApiErrorResponse> {
   if (error instanceof LobsterExecutorError) {
-    return res
-      .status(error.statusCode)
-      .json({ ok: false, error: error.message });
+    if (error instanceof ExecutorCapabilityError) {
+      return res.status(error.statusCode).json({
+        ok: false,
+        error: error.message,
+        code: error.code,
+        unsupportedCapabilities: error.unsupportedCapabilities,
+        supportedCapabilities: error.supportedCapabilities,
+        hint: error.hint,
+      });
+    }
+
+    return res.status(error.statusCode).json({ ok: false, error: error.message });
   }
 
   if (error instanceof ZodError) {
@@ -48,6 +65,23 @@ function sendError(
   return res.status(500).json({ ok: false, error: message });
 }
 
+function summarizeSandboxSkill(
+  record: SandboxSkillRecord,
+): LobsterExecutorSandboxSkillSummary {
+  return {
+    name: record.manifest.name,
+    version: record.manifest.version,
+    description: record.manifest.description,
+    enabled: record.manifest.enabled,
+    compatible: record.compatible,
+    capabilities: record.manifest.capabilities,
+    runtime: record.manifest.runtime,
+    entrypoint: record.manifest.entrypoint,
+    security: record.manifest.security,
+    errors: record.errors,
+  };
+}
+
 export function createLobsterExecutorApp(
   service: LobsterExecutorService = createLobsterExecutorService({
     dataRoot: readLobsterExecutorConfig().dataRoot,
@@ -56,20 +90,28 @@ export function createLobsterExecutorApp(
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/health", async (_req, res: Response<LobsterExecutorHealthResponse>) => {
-    const config = readLobsterExecutorConfig();
-    const effectiveMode = service.getExecutionMode();
-
-    let dockerStatus: "connected" | "disconnected" = "disconnected";
-    if (effectiveMode === "real") {
-      try {
-        const docker = new Dockerode(parseDockerHost(config.dockerHost));
-        await docker.ping();
-        dockerStatus = "connected";
-      } catch {
-        dockerStatus = "disconnected";
-      }
+  async function resolveDockerStatus(
+    config = service.getConfig(),
+    effectiveMode = service.getExecutionMode(),
+  ): Promise<"connected" | "disconnected"> {
+    if (effectiveMode !== "real") return "disconnected";
+    try {
+      const docker = new Dockerode(parseDockerHost(config.dockerHost));
+      await docker.ping();
+      return "connected";
+    } catch {
+      return "disconnected";
     }
+  }
+
+  app.get("/health", async (_req, res: Response<LobsterExecutorHealthResponse>) => {
+    const config = service.getConfig();
+    const effectiveMode = service.getExecutionMode();
+    const dockerStatus = await resolveDockerStatus(config, effectiveMode);
+    const capabilities = createExecutorCapabilities(
+      { ...config, executionMode: effectiveMode },
+      { dockerStatus },
+    );
 
     res.json({
       ok: true,
@@ -83,14 +125,19 @@ export function createLobsterExecutorApp(
         status: dockerStatus,
         host: config.dockerHost,
       },
-        features: {
-          health: true,
-          createJob: true,
-          jobQuery: true,
-          cancelJob: true,
-          dockerLifecycle: effectiveMode === "real",
-          callbackSigning: config.callbackSecret !== "",
-        },
+      features: {
+        health: true,
+        createJob: true,
+        jobQuery: true,
+        cancelJob: true,
+        dockerLifecycle: effectiveMode === "real" && dockerStatus === "connected",
+        callbackSigning: config.callbackSecret !== "",
+      },
+      capabilitiesSummary: {
+        total: capabilities.capabilities.length,
+        capabilities: capabilities.capabilities.slice(0, 12),
+        warnings: capabilities.warnings,
+      },
       aiCapability: {
         enabled: !!process.env.LLM_API_KEY,
         image: config.aiImage,
@@ -98,6 +145,48 @@ export function createLobsterExecutorApp(
       },
     });
   });
+
+  app.get(
+    EXECUTOR_API_ROUTES.capabilities,
+    async (_req, res: Response<ExecutorCapabilitiesResponse>) => {
+      const config = service.getConfig();
+      const effectiveMode = service.getExecutionMode();
+      const dockerStatus = await resolveDockerStatus(config, effectiveMode);
+      const skillRegistry = new SandboxSkillRegistry(config.skillRoot);
+      const skillSnapshot = skillRegistry.snapshot();
+      const capabilities = createExecutorCapabilities(
+        { ...config, executionMode: effectiveMode },
+        { dockerStatus },
+      );
+      res.json({
+        ok: true,
+        capabilities: {
+          ...capabilities,
+          skills: {
+            root: skillSnapshot.root,
+            count: skillSnapshot.skills.filter(
+              skill => skill.compatible && !skill.disabled,
+            ).length,
+            capabilityIndex: skillSnapshot.capabilityIndex,
+          },
+        },
+      });
+    },
+  );
+
+  app.get(
+    "/api/executor/skills",
+    (_req, res: Response<LobsterExecutorSandboxSkillsResponse>) => {
+      const registry = new SandboxSkillRegistry(service.getConfig().skillRoot);
+      const snapshot = registry.snapshot();
+      res.json({
+        ok: true,
+        root: snapshot.root,
+        skills: snapshot.skills.map(summarizeSandboxSkill),
+        capabilityIndex: snapshot.capabilityIndex,
+      });
+    },
+  );
 
   app.get(
     EXECUTOR_API_ROUTES.createJob,

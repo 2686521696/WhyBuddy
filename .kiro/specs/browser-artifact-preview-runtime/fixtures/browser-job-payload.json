@@ -1,0 +1,32 @@
+{
+  "image": "cube-ai-agent-sandbox:latest",
+  "requiredCapabilities": [
+    "runtime.docker",
+    "browser.playwright",
+    "browser.chromium",
+    "artifact.image",
+    "artifact.html",
+    "artifact.json",
+    "preview.image",
+    "preview.html",
+    "preview.json"
+  ],
+  "browserTask": {
+    "url": "http://host.docker.internal:3000/projects",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "waitUntil": "networkidle",
+    "timeoutMs": 30000,
+    "capture": {
+      "screenshot": true,
+      "html": true,
+      "console": true,
+      "metrics": true
+    },
+    "screenshot": {
+      "fullPage": true
+    }
+  }
+}

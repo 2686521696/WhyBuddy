@@ -7,6 +7,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import {
+  resolveProjectTaskScope,
+  resolveScopedSelectedTaskId,
+} from "@/lib/project-task-scope";
+import { selectCurrentProject, useProjectStore } from "@/lib/project-store";
 import { useAppStore } from "@/lib/store";
 import { useTasksStore } from "@/lib/tasks-store";
 
@@ -43,9 +48,20 @@ export function SidebarStatusBlock({
 }: SidebarStatusBlockProps) {
   const { locale, copy } = useI18n();
   const glass = tone === "glass";
+  const currentProject = useProjectStore(selectCurrentProject);
+  const projectMissions = useProjectStore(state => state.missions);
 
   const driveState = useTasksStore(state => {
-    const id = state.selectedTaskId;
+    const scope = resolveProjectTaskScope({
+      projectId: currentProject?.id ?? null,
+      projectMissions,
+      tasks: state.tasks,
+    });
+    const id = resolveScopedSelectedTaskId({
+      selectedTaskId: state.selectedTaskId,
+      scope,
+      hasDetail: taskId => Boolean(state.detailsById[taskId]),
+    });
     if (!id) return "idle";
     const detail = state.detailsById[id];
     return (

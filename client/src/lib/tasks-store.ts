@@ -24,6 +24,7 @@ import {
 } from "@shared/mission/socket";
 import { io, type Socket } from "socket.io-client";
 import type { ExecutorEvent } from "@shared/executor/contracts";
+import type { ExecutorPreviewSession } from "@shared/executor/contracts";
 import {
   buildMissionAutopilotSummary as buildSharedMissionAutopilotSummary,
   type MissionAutopilotConfidenceLevel,
@@ -256,6 +257,8 @@ export interface TaskArtifact {
   href?: string;
   content?: string;
   mimeType?: string;
+  previewType?: "text" | "json" | "html" | "pdf" | "image" | "log";
+  size?: number;
   downloadUrl?: string;
   previewUrl?: string;
 }
@@ -330,6 +333,7 @@ export interface MissionTaskDetail extends MissionTaskSummary {
   };
   executor?: MissionExecutorContext;
   instance?: MissionInstanceContext;
+  previewSession?: ExecutorPreviewSession;
   missionArtifacts?: MissionArtifact[];
 }
 
@@ -4334,7 +4338,7 @@ export function buildMissionArtifacts(mission: MissionRecord): TaskArtifact[] {
         : undefined;
 
     return {
-      id: `${mission.id}:mission-artifact:${index}`,
+      id: artifact.id || `${mission.id}:mission-artifact:${index}`,
       title: artifact.name,
       description:
         artifact.description ||
@@ -4346,6 +4350,9 @@ export function buildMissionArtifacts(mission: MissionRecord): TaskArtifact[] {
       filename: artifact.name,
       downloadKind,
       href,
+      mimeType: artifact.mimeType,
+      previewType: artifact.previewType,
+      size: artifact.size,
       downloadUrl,
       previewUrl,
     };
@@ -4756,6 +4763,7 @@ function buildDetailRecord(
     securitySummary: mission.securitySummary,
     executor: mission.executor,
     instance: mission.instance,
+    previewSession: mission.previewSession,
     missionArtifacts: mission.artifacts,
   };
 }
@@ -5340,6 +5348,7 @@ export function buildPlanetDetailRecord(
     securitySummary: mission.securitySummary,
     executor: mission.executor,
     instance: mission.instance,
+    previewSession: mission.previewSession,
     missionArtifacts: mission.artifacts,
   };
 }
@@ -5378,6 +5387,7 @@ function buildMissionDetailRecord(
     securitySummary: mission.securitySummary,
     executor: mission.executor,
     instance: mission.instance,
+    previewSession: mission.previewSession,
     missionArtifacts: mission.artifacts,
   };
 }

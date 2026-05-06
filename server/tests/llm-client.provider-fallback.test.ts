@@ -148,4 +148,52 @@ describe("callLLMJson provider fallback", () => {
       stream: false,
     });
   });
+
+  it("does not downgrade unlimited gpt-5.5 calls", async () => {
+    process.env.LLM_MODEL = "gpt-5.5";
+    process.env.LLM_UNLIMITED_MODELS = "gpt-5.5";
+    const getEffectiveModelSpy = vi
+      .spyOn(costTracker, "getEffectiveModel")
+      .mockReturnValue("glm-4.6");
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({ ok: true }),
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 2000,
+            total_tokens: 3000,
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await callLLMJson<{ ok: boolean }>(
+      [{ role: "user", content: "Use the configured unlimited model." }],
+      { maxTokens: 256 },
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(getEffectiveModelSpy).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [primaryUrl, primaryInit] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(primaryUrl).toBe("https://primary.example.com/codex/v1/responses");
+    expect(JSON.parse(primaryInit.body as string)).toMatchObject({
+      model: "gpt-5.5",
+      stream: true,
+    });
+    expect(costTracker.getRecords()).toHaveLength(0);
+    expect(costTracker.getDowngradeLevel()).toBe("none");
+  });
 });

@@ -32,6 +32,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useViewportTier, useViewportWidth } from "@/hooks/useViewportTier";
 import { useI18n } from "@/i18n";
 import {
+  filterProjectScopedWorkflows,
+  resolveProjectMissionIds,
+  resolveScopedWorkflow,
+} from "@/lib/project-task-scope";
+import {
   selectCurrentProject,
   useProjectStore,
   type AddProjectArtifactInput,
@@ -694,6 +699,18 @@ export default function TasksPage({
         .map(mission => mission.missionId)
     );
   }, [currentProject, projectMissions]);
+  const projectWorkflowMissionIds = useMemo(
+    () => resolveProjectMissionIds(currentProject?.id ?? null, projectMissions),
+    [currentProject?.id, projectMissions]
+  );
+  const scopedWorkflows = useMemo(
+    () => filterProjectScopedWorkflows(workflows, projectWorkflowMissionIds),
+    [projectWorkflowMissionIds, workflows]
+  );
+  const scopedCurrentWorkflow = useMemo(
+    () => resolveScopedWorkflow(currentWorkflow, projectWorkflowMissionIds),
+    [currentWorkflow, projectWorkflowMissionIds]
+  );
   const linkedMissionIds = useMemo(
     () => new Set(projectMissions.map(mission => mission.missionId)),
     [projectMissions]
@@ -801,10 +818,10 @@ export default function TasksPage({
     () =>
       resolveWorkflowForSelectedTask({
         taskId: activeTaskId,
-        workflows,
-        currentWorkflow,
+        workflows: scopedWorkflows,
+        currentWorkflow: scopedCurrentWorkflow,
       }),
-    [activeTaskId, currentWorkflow, workflows]
+    [activeTaskId, scopedCurrentWorkflow, scopedWorkflows]
   );
   const availability = useMemo(
     () =>
@@ -812,9 +829,9 @@ export default function TasksPage({
         detail: selectedDetail,
         workflow: activeWorkflow,
         agents,
-        workflows,
+        workflows: scopedWorkflows,
       }),
-    [activeWorkflow, agents, selectedDetail, workflows]
+    [activeWorkflow, agents, scopedWorkflows, selectedDetail]
   );
   const relationshipSummary = useMemo(
     () =>
@@ -865,8 +882,8 @@ export default function TasksPage({
   useEffect(() => {
     const workflowForTask = resolveWorkflowForSelectedTask({
       taskId: activeTaskId,
-      workflows,
-      currentWorkflow,
+      workflows: scopedWorkflows,
+      currentWorkflow: scopedCurrentWorkflow,
     });
 
     if (workflowForTask && workflowForTask.id !== currentWorkflowId) {
@@ -874,15 +891,15 @@ export default function TasksPage({
       return;
     }
 
-    if (!workflowForTask && activeTaskId && currentWorkflowId) {
+    if (!workflowForTask && currentWorkflowId) {
       setCurrentWorkflow(null);
     }
   }, [
     activeTaskId,
-    currentWorkflow,
     currentWorkflowId,
     setCurrentWorkflow,
-    workflows,
+    scopedCurrentWorkflow,
+    scopedWorkflows,
   ]);
 
   useEffect(() => {
@@ -1235,7 +1252,11 @@ export default function TasksPage({
           )}
         >
           {availability.agent ? (
-            <OfficeAgentInspectorPanel className="h-full" embedded />
+            <OfficeAgentInspectorPanel
+              className="h-full"
+              embedded
+              projectId={currentProject?.id ?? null}
+            />
           ) : (
             <TasksWorkbenchEmptyState
               title={t(
@@ -1284,9 +1305,10 @@ export default function TasksPage({
           <OfficeWorkflowHistoryPanel
             workflow={activeWorkflow}
             activeWorkflowId={activeWorkflow?.id || null}
+            projectId={currentProject?.id ?? null}
             onSelectWorkflow={workflowId => {
               setCurrentWorkflow(workflowId);
-              const matched = workflows.find(
+              const matched = scopedWorkflows.find(
                 workflow => workflow.id === workflowId
               );
               if (matched?.missionId) {

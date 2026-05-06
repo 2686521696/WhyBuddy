@@ -428,7 +428,7 @@ describe("Feature: executor-integration, Property 8: 模式特定 payload 注入
     );
   });
 
-  it("real mode → job.payload enables AI container execution with TASK_CONTENT env", () => {
+  it("real mode scan → job.payload uses deterministic command without AI planning", () => {
     fc.assert(
       fc.property(
         arbMissionIdPayload,
@@ -439,15 +439,51 @@ describe("Feature: executor-integration, Property 8: 模式特定 payload 注入
             executionMode: "real",
           });
 
-          const job: { payload?: Record<string, unknown> } = {};
+          const job: { kind: "scan"; payload?: Record<string, unknown> } = {
+            kind: "scan",
+          };
           (bridge as any).injectModePayload(job, missionId, deliverables);
 
           // payload must exist
           expect(job.payload).toBeDefined();
+          expect((job.payload as any).aiEnabled).toBeUndefined();
+          expect((job.payload as any).aiTaskType).toBeUndefined();
+          expect((job.payload as any).image).toBeUndefined();
+          expect(Array.isArray((job.payload as any).command)).toBe(true);
+          expect((job.payload as any).command).toEqual(
+            expect.arrayContaining(["sh", "-lc"]),
+          );
+          expect((job.payload as any).env.MISSION_ID).toBe(missionId);
+          expect((job.payload as any).env.EXECUTION_BRIDGE_MODE).toBe("deterministic");
+          expect((job.payload as any).env.EXECUTION_TASK_CONTENT).toBe(
+            deliverables.join("\n\n---\n\n").slice(0, 20_000),
+          );
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it("real mode non-scan with explicit aiEnabled → preserves AI container execution", () => {
+    fc.assert(
+      fc.property(
+        arbMissionIdPayload,
+        fc.array(arbDeliverable, { minLength: 1, maxLength: 5 }),
+        (missionId, deliverables) => {
+          const bridge = new ExecutionBridge({
+            ...createBridgeOptions(),
+            executionMode: "real",
+          });
+
+          const job: { kind: "execute"; payload?: Record<string, unknown> } = {
+            kind: "execute",
+            payload: { aiEnabled: true },
+          };
+          (bridge as any).injectModePayload(job, missionId, deliverables);
+
+          expect(job.payload).toBeDefined();
           expect((job.payload as any).aiEnabled).toBe(true);
           expect((job.payload as any).aiTaskType).toBe("text-generation");
-          expect((job.payload as any).image).toBeUndefined();
-          // command must be an array
           expect(Array.isArray((job.payload as any).command)).toBe(true);
           expect((job.payload as any).command.length).toBe(0);
           expect((job.payload as any).env.MISSION_ID).toBe(missionId);
@@ -495,15 +531,16 @@ describe("Feature: executor-integration, Property 8: 模式特定 payload 注入
             executionMode: "real",
           });
 
-          const job: { payload?: Record<string, unknown> } = {
+          const job: { kind: "execute"; payload?: Record<string, unknown> } = {
+            kind: "execute",
             payload: { customField: extraValue },
           };
           (bridge as any).injectModePayload(job, missionId, deliverables);
 
           expect((job.payload as any).customField).toBe(extraValue);
-          expect((job.payload as any).aiEnabled).toBe(true);
+          expect((job.payload as any).aiEnabled).toBeUndefined();
           expect(Array.isArray((job.payload as any).command)).toBe(true);
-          expect((job.payload as any).command.length).toBe(0);
+          expect((job.payload as any).env.EXECUTION_BRIDGE_MODE).toBe("deterministic");
           expect((job.payload as any).env.MISSION_ID).toBe(missionId);
         },
       ),
@@ -523,16 +560,18 @@ describe("Feature: executor-integration, Property 8: 模式特定 payload 注入
             executionMode: mode,
           });
 
-          const job: { payload?: Record<string, unknown> } = {};
+          const job: { kind: "scan"; payload?: Record<string, unknown> } = {
+            kind: "scan",
+          };
           (bridge as any).injectModePayload(job, missionId, deliverables);
 
           if (mode === "mock") {
             expect((job.payload as any).runner.kind).toBe("mock");
           } else {
             expect((job.payload as any).runner).toBeUndefined();
-            expect((job.payload as any).aiEnabled).toBe(true);
+            expect((job.payload as any).aiEnabled).toBeUndefined();
             expect(Array.isArray((job.payload as any).command)).toBe(true);
-            expect((job.payload as any).command.length).toBe(0);
+            expect((job.payload as any).env.EXECUTION_BRIDGE_MODE).toBe("deterministic");
           }
         },
       ),

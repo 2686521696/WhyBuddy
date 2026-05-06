@@ -479,9 +479,17 @@ describe("task artifact routes", () => {
     expect(body.length).toBe(1_048_576);
   });
 
-  it("rejects binary previews", async () => {
+  it("previews image artifacts inline", async () => {
     const { missionId } = await createMissionWithArtifacts(
-      [{ kind: "file", name: "image.png", path: "artifacts/image.png" }],
+      [
+        {
+          kind: "file",
+          name: "image.png",
+          path: "artifacts/image.png",
+          mimeType: "image/png",
+          previewType: "image",
+        },
+      ],
       {
         files: [
           {
@@ -495,9 +503,97 @@ describe("task artifact routes", () => {
     const response = await fetch(
       `${baseUrl}/api/tasks/${missionId}/artifacts/0/preview`
     );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("image/png");
+    expect(response.headers.get("content-disposition")).toContain("inline");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      new Uint8Array([137, 80, 78, 71])
+    );
+  });
+
+  it("previews html artifacts with safe inline headers", async () => {
+    const { missionId } = await createMissionWithArtifacts(
+      [
+        {
+          kind: "file",
+          name: "page.html",
+          path: "artifacts/page.html",
+          mimeType: "text/html",
+          previewType: "html",
+        },
+      ],
+      {
+        files: [
+          {
+            path: "artifacts/page.html",
+            content: "<!doctype html><title>Preview</title>",
+          },
+        ],
+      }
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/tasks/${missionId}/artifacts/0/preview`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("content-disposition")).toContain("inline");
+    expect(response.headers.get("content-security-policy")).toContain("sandbox");
+    expect(await response.text()).toContain("<title>Preview</title>");
+  });
+
+  it("previews pdf artifacts inline", async () => {
+    const { missionId } = await createMissionWithArtifacts(
+      [
+        {
+          kind: "file",
+          name: "report.pdf",
+          path: "artifacts/report.pdf",
+          mimeType: "application/pdf",
+          previewType: "pdf",
+        },
+      ],
+      {
+        files: [
+          {
+            path: "artifacts/report.pdf",
+            content: "%PDF-1.4\n",
+          },
+        ],
+      }
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/tasks/${missionId}/artifacts/0/preview`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/pdf");
+    expect(response.headers.get("content-disposition")).toContain("inline");
+  });
+
+  it("rejects unsupported binary previews", async () => {
+    const { missionId } = await createMissionWithArtifacts(
+      [{ kind: "file", name: "archive.bin", path: "artifacts/archive.bin" }],
+      {
+        files: [
+          {
+            path: "artifacts/archive.bin",
+            content: new Uint8Array([1, 2, 3, 4]),
+          },
+        ],
+      }
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/tasks/${missionId}/artifacts/0/preview`
+    );
     const body = await response.json();
 
     expect(response.status).toBe(415);
-    expect(body).toEqual({ error: "Binary files cannot be previewed" });
+    expect(body.error).toContain("cannot be previewed");
   });
 });

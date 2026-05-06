@@ -28,6 +28,17 @@ function log(msg) {
   try { fs.appendFileSync(LOG_FILE, line + "\n"); } catch {}
 }
 
+function logAIConfig() {
+  const baseUrl = process.env.AI_BASE_URL || "(unset)";
+  const model = process.env.AI_MODEL || "(unset)";
+  const wireApi = process.env.AI_WIRE_API || "(unset)";
+  const apiKey = process.env.AI_API_KEY || "";
+  log(
+    `AI config: baseUrl=${baseUrl} model=${model} wireApi=${wireApi} ` +
+      `apiKey=${apiKey ? `set:${apiKey.length}` : "unset"}`
+  );
+}
+
 function run(cmd, opts = {}) {
   log(`$ ${cmd}`);
   try {
@@ -48,6 +59,7 @@ function run(cmd, opts = {}) {
 
 async function main() {
   log("AI Autonomous Executor starting...");
+  logAIConfig();
 
   // 1. Read task
   let task;

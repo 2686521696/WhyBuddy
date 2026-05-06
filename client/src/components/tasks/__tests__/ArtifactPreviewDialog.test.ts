@@ -16,6 +16,11 @@ describe("ArtifactPreviewDialog logic", () => {
     expect(resolveArtifactPreviewMode("md")).toBe("markdown");
     expect(resolveArtifactPreviewMode("json")).toBe("json");
     expect(resolveArtifactPreviewMode(undefined, "text/plain")).toBe("text");
+    expect(resolveArtifactPreviewMode("png")).toBe("image");
+    expect(resolveArtifactPreviewMode(undefined, "image/png")).toBe("image");
+    expect(resolveArtifactPreviewMode(undefined, null, "image")).toBe("image");
+    expect(resolveArtifactPreviewMode(undefined, "application/pdf")).toBe("pdf");
+    expect(resolveArtifactPreviewMode("html")).toBe("html");
   });
 
   it("formats json previews with indentation", () => {
@@ -37,9 +42,11 @@ describe("ArtifactPreviewDialog logic", () => {
       isArtifactPreviewable({
         kind: "file",
         format: "png",
+        mimeType: "image/png",
+        previewType: "image",
         previewUrl: "/api/tasks/m1/artifacts/1/preview",
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("fetches preview content and reads the truncation header", async () => {

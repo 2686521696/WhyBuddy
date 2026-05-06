@@ -1,0 +1,60 @@
+{
+  "name": "document-render",
+  "version": "0.1.0",
+  "description": "Render Markdown or HTML documents into previewable document artifacts.",
+  "enabled": true,
+  "capabilities": [
+    "document.pandoc",
+    "document.libreoffice",
+    "artifact.html",
+    "artifact.pdf",
+    "artifact.json",
+    "preview.html",
+    "preview.pdf",
+    "preview.json"
+  ],
+  "runtime": "node",
+  "entrypoint": "run.js",
+  "dependencies": [],
+  "inputs": {
+    "schema": "input.schema.json",
+    "examples": [
+      "examples/basic.json"
+    ]
+  },
+  "outputs": {
+    "artifacts": [
+      "document.html",
+      "document.pdf",
+      "document-report.json"
+    ],
+    "previewTypes": [
+      "html",
+      "pdf",
+      "json"
+    ]
+  },
+  "artifactRules": [
+    {
+      "pattern": "document.html",
+      "mimeType": "text/html",
+      "previewType": "html"
+    },
+    {
+      "pattern": "document.pdf",
+      "mimeType": "application/pdf",
+      "previewType": "pdf"
+    },
+    {
+      "pattern": "document-report.json",
+      "mimeType": "application/json",
+      "previewType": "json"
+    }
+  ],
+  "security": {
+    "network": "none",
+    "filesystem": "workspace",
+    "browser": false,
+    "credentials": []
+  }
+}

@@ -14,8 +14,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 import { AgentRolePanel } from "@/components/AgentRolePanel";
+import {
+  getProjectTaskPath,
+  getProjectTasksPath,
+} from "@/components/navigation-config";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
+import {
+  resolveProjectMissionIds,
+  resolveScopedWorkflow,
+} from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { useAppStore } from "@/lib/store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { cn } from "@/lib/utils";
@@ -108,9 +117,11 @@ function toneForState(value: string | null | undefined) {
 
 export function OfficeAgentInspectorPanel({
   embedded = false,
+  projectId = null,
   className,
 }: {
   embedded?: boolean;
+  projectId?: string | null;
   className?: string;
 }) {
   const { copy } = useI18n();
@@ -118,7 +129,6 @@ export function OfficeAgentInspectorPanel({
   const selectedPet = useAppStore(state => state.selectedPet);
   const setSelectedPet = useAppStore(state => state.setSelectedPet);
   const currentWorkflow = useWorkflowStore(state => state.currentWorkflow);
-  const currentWorkflowId = useWorkflowStore(state => state.currentWorkflowId);
   const agents = useWorkflowStore(state => state.agents);
   const agentMemoryRecent = useWorkflowStore(state => state.agentMemoryRecent);
   const agentMemorySearchResults = useWorkflowStore(
@@ -151,33 +161,43 @@ export function OfficeAgentInspectorPanel({
   );
   const setMemoryQuery = useWorkflowStore(state => state.setMemoryQuery);
   const detailsById = useTasksStore(state => state.detailsById);
+  const projectMissions = useProjectStore(state => state.missions);
   const [draft, setDraft] = useState("");
   const [, setLocation] = useLocation();
+  const projectMissionIds = useMemo(
+    () => resolveProjectMissionIds(projectId, projectMissions),
+    [projectId, projectMissions]
+  );
+  const scopedCurrentWorkflow = useMemo(
+    () => resolveScopedWorkflow(currentWorkflow, projectMissionIds),
+    [currentWorkflow, projectMissionIds]
+  );
+  const scopedCurrentWorkflowId = scopedCurrentWorkflow?.id ?? null;
 
   const organization = useMemo(
-    () => selectWorkflowOrganization(currentWorkflow),
-    [currentWorkflow]
+    () => selectWorkflowOrganization(scopedCurrentWorkflow),
+    [scopedCurrentWorkflow]
   );
   const officeAgentOptions = useMemo(
     () =>
-      selectOfficeAgentOptions({ workflow: currentWorkflow, agents, locale }),
-    [agents, currentWorkflow, locale]
+      selectOfficeAgentOptions({ workflow: scopedCurrentWorkflow, agents, locale }),
+    [agents, scopedCurrentWorkflow, locale]
   );
   const activeAgentId = useMemo(
     () =>
       selectPrimaryOfficeAgentId({
-        workflow: currentWorkflow,
+        workflow: scopedCurrentWorkflow,
         agents,
         selectedAgentId: selectedPet,
       }),
-    [agents, currentWorkflow, selectedPet]
+    [agents, scopedCurrentWorkflow, selectedPet]
   );
   const activeAgent =
     officeAgentOptions.find(option => option.agent.id === activeAgentId)
       ?.agent ?? null;
   const activeNode = useMemo(
-    () => selectWorkflowAgentNode(currentWorkflow, activeAgentId),
-    [activeAgentId, currentWorkflow]
+    () => selectWorkflowAgentNode(scopedCurrentWorkflow, activeAgentId),
+    [activeAgentId, scopedCurrentWorkflow]
   );
   const heartbeatStatus = useMemo(
     () => selectHeartbeatStatusForAgent(heartbeatStatuses, activeAgentId),
@@ -188,8 +208,8 @@ export function OfficeAgentInspectorPanel({
     [activeAgentId, heartbeatReports]
   );
   const missionId = useMemo(
-    () => selectWorkflowMissionId(currentWorkflow),
-    [currentWorkflow]
+    () => selectWorkflowMissionId(scopedCurrentWorkflow),
+    [scopedCurrentWorkflow]
   );
   const activeTaskTitle = missionId
     ? (detailsById[missionId]?.title ?? null)
@@ -203,12 +223,12 @@ export function OfficeAgentInspectorPanel({
     setSelectedMemoryAgent(activeAgentId);
     setMemoryQuery("");
     setDraft("");
-    void fetchAgentRecentMemory(activeAgentId, currentWorkflowId, 6);
+    void fetchAgentRecentMemory(activeAgentId, scopedCurrentWorkflowId, 6);
     void fetchHeartbeatStatuses();
     void fetchHeartbeatReports(activeAgentId, 6);
   }, [
     activeAgentId,
-    currentWorkflowId,
+    scopedCurrentWorkflowId,
     fetchAgentRecentMemory,
     fetchHeartbeatReports,
     fetchHeartbeatStatuses,
@@ -297,11 +317,11 @@ export function OfficeAgentInspectorPanel({
             {t(locale, "当前阶段", "Current stage")}
           </div>
           <div className="mt-1 text-sm font-semibold text-stone-900">
-            {currentWorkflow?.current_stage || copy.common.unavailable}
+            {scopedCurrentWorkflow?.current_stage || copy.common.unavailable}
           </div>
           <div className="mt-1 text-xs leading-5 text-stone-500">
             {summarizeText(
-              currentWorkflow?.directive,
+              scopedCurrentWorkflow?.directive,
               t(locale, "还没有活跃任务。", "No active mission yet."),
               72
             )}
@@ -620,7 +640,7 @@ export function OfficeAgentInspectorPanel({
       {missionId ? (
         <button
           type="button"
-          onClick={() => setLocation(`/tasks/${missionId}`)}
+          onClick={() => setLocation(getProjectTaskPath(projectId, missionId))}
           className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-[#d07a4f] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#bf6c43]"
         >
           {activeTaskTitle
@@ -631,7 +651,7 @@ export function OfficeAgentInspectorPanel({
       ) : (
         <button
           type="button"
-          onClick={() => setLocation("/tasks")}
+          onClick={() => setLocation(getProjectTasksPath(projectId))}
           className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50"
         >
           {t(locale, "打开任务工作台", "Open task workbench")}

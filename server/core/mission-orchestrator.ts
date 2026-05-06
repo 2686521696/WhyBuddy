@@ -29,6 +29,7 @@ import {
 } from "./execution-plan-builder.js";
 import {
   ExecutorClient,
+  getExecutorCapabilityMismatchReason,
   type DispatchExecutionPlanOptions,
   type DispatchExecutionPlanResult,
 } from "./executor-client.js";
@@ -265,9 +266,18 @@ function normalizeExecutorArtifacts(
     return [
       {
         kind: artifact.kind,
+        id: artifact.id?.trim() || undefined,
         name: artifact.name.trim(),
         path: artifact.path?.trim() || undefined,
         url: artifact.url?.trim() || undefined,
+        mimeType: artifact.mimeType?.trim() || undefined,
+        previewType: artifact.previewType,
+        size:
+          typeof artifact.size === "number" &&
+          Number.isFinite(artifact.size) &&
+          artifact.size >= 0
+            ? artifact.size
+            : undefined,
         description: artifact.description?.trim() || undefined,
       },
     ];
@@ -685,7 +695,9 @@ export class MissionOrchestrator {
     try {
       dispatched = await this.executorClient.dispatchPlan(planResult.plan, input.dispatch);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        getExecutorCapabilityMismatchReason(error) ||
+        (error instanceof Error ? error.message : String(error));
       mission = await this.persist(
         appendEvent(
           replaceMission(mission, {

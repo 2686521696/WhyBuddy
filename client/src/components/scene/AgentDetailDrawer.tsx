@@ -12,6 +12,7 @@ import {
 import { useLocation } from "wouter";
 
 import { EmptyHintBlock } from "@/components/tasks/EmptyHintBlock";
+import { getProjectTaskPath, getProjectTasksPath } from "@/components/navigation-config";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -29,6 +30,12 @@ import {
   buildAgentDetailSnapshot,
   selectWorkflowForAgent,
 } from "@/lib/scene-agent-detail";
+import {
+  filterProjectScopedWorkflows,
+  resolveProjectMissionIds,
+  resolveScopedWorkflow,
+} from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { useWorkflowStore } from "@/lib/workflow-store";
 
@@ -132,10 +139,12 @@ function MemoryList({
 
 export function AgentDetailDrawer({
   agentId,
+  projectId = null,
   open,
   onOpenChange,
 }: {
   agentId: string | null;
+  projectId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -164,6 +173,7 @@ export function AgentDetailDrawer({
   const missionTasks = useTasksStore(state => state.tasks);
   const missionDetailsById = useTasksStore(state => state.detailsById);
   const selectTask = useTasksStore(state => state.selectTask);
+  const projectMissions = useProjectStore(state => state.missions);
   const [memoryEntries, setMemoryEntries] = useState<AgentMemoryEntry[]>([]);
   const [memoryOwnerId, setMemoryOwnerId] = useState<string | null>(null);
   const roleInfo = useRoleStore(state =>
@@ -177,15 +187,31 @@ export function AgentDetailDrawer({
     state => state.setSelectedMemoryAgent
   );
   const [, setLocation] = useLocation();
+  const projectMissionIds = useMemo(
+    () => resolveProjectMissionIds(projectId, projectMissions),
+    [projectId, projectMissions]
+  );
+  const scopedWorkflows = useMemo(
+    () => filterProjectScopedWorkflows(workflows, projectMissionIds),
+    [projectMissionIds, workflows]
+  );
+  const scopedCurrentWorkflow = useMemo(
+    () => resolveScopedWorkflow(currentWorkflow, projectMissionIds),
+    [currentWorkflow, projectMissionIds]
+  );
+  const scopedMissionTasks = useMemo(() => {
+    if (!projectMissionIds) return missionTasks;
+    return missionTasks.filter(task => projectMissionIds.has(task.id));
+  }, [missionTasks, projectMissionIds]);
 
   const candidateWorkflow = useMemo(() => {
     if (!agentId) return null;
     return selectWorkflowForAgent({
       agentId,
-      currentWorkflow,
-      workflows,
+      currentWorkflow: scopedCurrentWorkflow,
+      workflows: scopedWorkflows,
     });
-  }, [agentId, currentWorkflow, workflows]);
+  }, [agentId, scopedCurrentWorkflow, scopedWorkflows]);
 
   const snapshot = useMemo(() => {
     if (!agentId) return null;
@@ -195,10 +221,10 @@ export function AgentDetailDrawer({
       runtimeMode,
       agents: workflowAgents,
       agentStatuses,
-      currentWorkflow,
-      workflows,
+      currentWorkflow: scopedCurrentWorkflow,
+      workflows: scopedWorkflows,
       workflowTasks,
-      missionTasks,
+      missionTasks: scopedMissionTasks,
       missionDetailsById,
       heartbeatStatuses,
       heartbeatReports,
@@ -212,10 +238,10 @@ export function AgentDetailDrawer({
     runtimeMode,
     workflowAgents,
     agentStatuses,
-    currentWorkflow,
-    workflows,
+    scopedCurrentWorkflow,
+    scopedWorkflows,
     workflowTasks,
-    missionTasks,
+    scopedMissionTasks,
     missionDetailsById,
     heartbeatStatuses,
     heartbeatReports,
@@ -233,7 +259,7 @@ export function AgentDetailDrawer({
     setMemoryOwnerId(null);
     setMemoryEntries([]);
 
-    if (candidateWorkflow && currentWorkflow?.id !== candidateWorkflow.id) {
+    if (candidateWorkflow && scopedCurrentWorkflow?.id !== candidateWorkflow.id) {
       void fetchWorkflowDetail(candidateWorkflow.id);
     }
 
@@ -257,7 +283,7 @@ export function AgentDetailDrawer({
     open,
     agentId,
     candidateWorkflow,
-    currentWorkflow,
+    scopedCurrentWorkflow,
     fetchAgentRecentMemory,
     fetchHeartbeatReports,
     fetchHeartbeatStatuses,
@@ -271,12 +297,12 @@ export function AgentDetailDrawer({
   const handleTaskOpen = () => {
     if (snapshot.workFocus.missionId) {
       selectTask(snapshot.workFocus.missionId);
-      setLocation(`/tasks/${snapshot.workFocus.missionId}`);
+      setLocation(getProjectTaskPath(projectId, snapshot.workFocus.missionId));
       onOpenChange(false);
       return;
     }
 
-    setLocation("/tasks");
+    setLocation(getProjectTasksPath(projectId));
     onOpenChange(false);
   };
 

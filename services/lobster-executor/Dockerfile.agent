@@ -1,0 +1,76 @@
+# Cube AI Agent Sandbox Image
+#
+# Build from the repository root:
+#   docker build --pull=false -f services/lobster-executor/Dockerfile.agent -t cube-ai-agent-sandbox:latest services/lobster-executor
+#
+# Smoke:
+#   docker run --rm -v "%cd%/tmp/agent-self-check:/workspace/artifacts" cube-ai-agent-sandbox:latest node /opt/cube-agent/self-check.js
+
+ARG BASE_IMAGE=node:20-slim
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    NODE_PATH=/usr/local/lib/node_modules \
+    PYTHONUNBUFFERED=1
+
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; \
+    true
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    wget \
+    git \
+    jq \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    fontconfig \
+    fonts-noto \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    chromium \
+    libreoffice \
+    pandoc \
+    ffmpeg \
+    imagemagick \
+  && ln -sf /usr/bin/python3 /usr/bin/python \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm config set registry https://registry.npmmirror.com \
+  && npm install -g \
+    pnpm@10.4.1 \
+    tsx@4.19.1 \
+    openai@4.73.0 \
+    @langchain/core@0.3.26 \
+    langchain@0.3.9 \
+    playwright@1.48.2 \
+  && npm cache clean --force
+
+RUN python -m pip install --break-system-packages --no-cache-dir \
+    uv \
+    requests \
+    pandas \
+    beautifulsoup4
+
+ENV HOME=/tmp \
+    XDG_CONFIG_HOME=/tmp/.config \
+    XDG_CACHE_HOME=/tmp/.cache
+
+COPY ai-bridge/ /opt/ai-bridge/
+COPY agent-image/ /opt/cube-agent/
+
+RUN mkdir -p /workspace/artifacts /ms-playwright \
+  && chmod +x /opt/cube-agent/self-check.js /opt/cube-agent/self-check.py /opt/cube-agent/browser-runner.js \
+  && chmod -R a+rX /opt/ai-bridge /opt/cube-agent /ms-playwright /workspace
+
+WORKDIR /workspace
+
+ENTRYPOINT ["node", "/opt/ai-bridge/executor.js"]

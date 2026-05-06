@@ -31,6 +31,7 @@ import { UnifiedLaunchComposer } from "@/components/launch/UnifiedLaunchComposer
 import { ClarificationPanel } from "@/components/nl-command/ClarificationPanel";
 import { ArtifactListBlock } from "@/components/tasks/ArtifactListBlock";
 import { ArtifactPreviewDialog } from "@/components/tasks/ArtifactPreviewDialog";
+import { ScreenshotPreview } from "@/components/sandbox/ScreenshotPreview";
 import { CreateMissionDialog } from "@/components/tasks/CreateMissionDialog";
 import {
   compactText,
@@ -60,11 +61,17 @@ import {
   type LaunchRouteCandidateId,
 } from "@/lib/launch-router";
 import { useNLCommandStore } from "@/lib/nl-command-store";
+import {
+  countProjectScopedTasksByStatus,
+  resolveProjectTaskScope,
+  resolveScopedSelectedTaskId,
+} from "@/lib/project-task-scope";
 import type { TaskHubCommandSubmissionResult } from "@/lib/nl-command-store";
 import { selectCurrentProject, useProjectStore } from "@/lib/project-store";
 import { useAppStore } from "@/lib/store";
 import { useTelemetryStore } from "@/lib/telemetry-store";
 import { useTasksStore, type TaskArtifact } from "@/lib/tasks-store";
+import { useSandboxStore } from "@/lib/sandbox-store";
 import { cn } from "@/lib/utils";
 import type { MissionOperatorActionType } from "@shared/mission/contracts";
 import { submitUnifiedClarification } from "@/lib/unified-launch-coordinator";
@@ -156,6 +163,18 @@ export function OfficeTaskCockpit({
   const currentCommand = useNLCommandStore(state => state.currentCommand);
   const launchDraftText = useNLCommandStore(state => state.draftText || "");
   const currentProject = useProjectStore(selectCurrentProject);
+  const projectMissions = useProjectStore(state => state.missions);
+  const latestScreenshot = useSandboxStore(state => state.latestScreenshot);
+  const previousScreenshot = useSandboxStore(state => state.previousScreenshot);
+  const previewLogLines = useSandboxStore(state => state.logLines);
+  const previewStreaming = useSandboxStore(state => state.isStreaming);
+  const previewActiveMissionId = useSandboxStore(
+    state => state.activeMissionId
+  );
+  const setSandboxActiveMission = useSandboxStore(
+    state => state.setActiveMission
+  );
+  const setSandboxFocusedPane = useSandboxStore(state => state.setFocusedPane);
   const linkMissionToProject = useProjectStore(
     state => state.linkMissionToProject
   );
@@ -181,16 +200,32 @@ export function OfficeTaskCockpit({
   const [previewArtifactFormat, setPreviewArtifactFormat] = useState<
     string | undefined
   >(undefined);
+  const [previewArtifactType, setPreviewArtifactType] = useState<
+    TaskArtifact["previewType"] | undefined
+  >(undefined);
+  const [previewArtifactUrl, setPreviewArtifactUrl] = useState<
+    string | undefined
+  >(undefined);
   const [artifactError, setArtifactError] = useState<{
     artifact: TaskArtifact;
     message: string;
   } | null>(null);
   const previousSelectedPetRef = useRef<string | null>(selectedPet);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  const taskScope = useMemo(
+    () =>
+      resolveProjectTaskScope({
+        projectId: currentProject?.id ?? null,
+        projectMissions,
+        tasks,
+      }),
+    [currentProject?.id, projectMissions, tasks]
+  );
+  const scopedTasks = taskScope.tasks;
 
   const filteredTasks = useMemo(() => {
-    if (!deferredSearch) return tasks;
-    return tasks.filter(task => {
+    if (!deferredSearch) return scopedTasks;
+    return scopedTasks.filter(task => {
       const searchable = [
         task.title,
         task.sourceText,
@@ -204,10 +239,15 @@ export function OfficeTaskCockpit({
         .toLowerCase();
       return searchable.includes(deferredSearch);
     });
-  }, [deferredSearch, tasks]);
+  }, [deferredSearch, scopedTasks]);
 
+  const selectedTaskInScope = resolveScopedSelectedTaskId({
+    selectedTaskId,
+    scope: taskScope,
+    hasDetail: taskId => Boolean(detailsById[taskId]),
+  });
   const activeTaskId =
-    (selectedTaskId && detailsById[selectedTaskId] ? selectedTaskId : null) ||
+    selectedTaskInScope ||
     filteredTasks[0]?.id ||
     null;
   const selectedDetail = activeTaskId
@@ -221,8 +261,21 @@ export function OfficeTaskCockpit({
     setPreviewArtifactIndex(null);
     setPreviewArtifactName("");
     setPreviewArtifactFormat(undefined);
+    setPreviewArtifactType(undefined);
+    setPreviewArtifactUrl(undefined);
     setArtifactError(null);
   }, [selectedDetail?.id]);
+
+  useEffect(() => {
+    if (!selectedDetail?.id) return;
+    if (previewActiveMissionId !== selectedDetail.id) {
+      setSandboxActiveMission(selectedDetail.id);
+    }
+  }, [
+    previewActiveMissionId,
+    selectedDetail?.id,
+    setSandboxActiveMission,
+  ]);
 
   const pendingWorkflow =
     (pendingLaunch
@@ -440,7 +493,7 @@ export function OfficeTaskCockpit({
       missionId: result.autoSelectedMissionId || result.missionId,
       currentSearch: search,
       filteredTaskIds: filteredTasks.map(task => task.id),
-      allTaskIds: tasks.map(task => task.id),
+      allTaskIds: scopedTasks.map(task => task.id),
     });
     if (locationUpdate.nextSearch !== search) {
       setSearch(locationUpdate.nextSearch);
@@ -454,10 +507,10 @@ export function OfficeTaskCockpit({
 
   const refreshCurrent = () =>
     void refresh({ preferredTaskId: activeTaskId || null });
-  const queuedCount = tasks.filter(task => task.status === "queued").length;
-  const runningCount = tasks.filter(task => task.status === "running").length;
-  const waitingCount = tasks.filter(task => task.status === "waiting").length;
-  const warningCount = tasks.filter(task => task.hasWarnings).length;
+  const queuedCount = countProjectScopedTasksByStatus(scopedTasks, "queued");
+  const runningCount = countProjectScopedTasksByStatus(scopedTasks, "running");
+  const waitingCount = countProjectScopedTasksByStatus(scopedTasks, "waiting");
+  const warningCount = scopedTasks.filter(task => task.hasWarnings).length;
   const stepFocus = deriveMissionStepFocus(
     selectedDetail ?? selectedTaskSummary,
     locale,
@@ -555,6 +608,54 @@ export function OfficeTaskCockpit({
         : null,
     [hasLaunchDraftDestination, launchDraftText, runtimeMode]
   );
+  const previewMatchesSelectedMission =
+    Boolean(selectedDetail?.id) && previewActiveMissionId === selectedDetail?.id;
+  const scopedLatestScreenshot = previewMatchesSelectedMission
+    ? latestScreenshot
+    : null;
+  const scopedPreviousScreenshot = previewMatchesSelectedMission
+    ? previousScreenshot
+    : null;
+  const scopedPreviewLogLineCount = previewMatchesSelectedMission
+    ? previewLogLines.length
+    : 0;
+  const scopedPreviewStreaming = previewMatchesSelectedMission
+    ? previewStreaming
+    : false;
+  const livePreviewStateLabel = selectedDetail?.previewSession
+    ? `${selectedDetail.previewSession.type} / ${selectedDetail.previewSession.status}`
+    : scopedPreviewStreaming
+      ? t(locale, "实时流已连接", "Live stream connected")
+      : t(locale, "等待预览会话", "Waiting for preview session");
+  const livePreviewMeta = [
+    selectedDetail?.previewSession?.frameCount !== undefined
+      ? t(
+          locale,
+          `帧 ${selectedDetail.previewSession.frameCount}`,
+            `${selectedDetail.previewSession.frameCount} frames`
+        )
+      : scopedLatestScreenshot
+        ? t(locale, "已有画面", "Frame available")
+        : null,
+    selectedDetail?.previewSession?.logLineCount !== undefined
+      ? t(
+          locale,
+          `日志 ${selectedDetail.previewSession.logLineCount}`,
+            `${selectedDetail.previewSession.logLineCount} log lines`
+        )
+      : scopedPreviewLogLineCount > 0
+        ? t(
+            locale,
+            `日志 ${scopedPreviewLogLineCount}`,
+            `${scopedPreviewLogLineCount} log lines`
+          )
+        : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const executorLogArtifact = selectedDetail?.artifacts.find(
+    artifact => artifact.title === "executor.log" && artifact.previewUrl
+  );
   const selectedLaunchCandidate =
     launchRoutePlan.candidates.find(
       candidate => candidate.id === selectedLaunchRouteId && candidate.available
@@ -568,6 +669,9 @@ export function OfficeTaskCockpit({
   );
   const showPendingLaunchSupportCard =
     showTaskSupportCards && Boolean(pendingLaunch);
+  const pendingLaunchSupport = showPendingLaunchSupportCard
+    ? pendingLaunch
+    : null;
   const supportTabHasContext =
     showWaitingSupportCard ||
     showSupportBlockerCard ||
@@ -744,6 +848,8 @@ export function OfficeTaskCockpit({
     setPreviewArtifactIndex(index);
     setPreviewArtifactName(artifact.title);
     setPreviewArtifactFormat(artifact.format);
+    setPreviewArtifactType(artifact.previewType);
+    setPreviewArtifactUrl(artifact.previewUrl);
   }
 
   const launchAutopilotGuidance = (
@@ -1286,14 +1392,14 @@ export function OfficeTaskCockpit({
                 </div>
               ) : null}
 
-              {showPendingLaunchSupportCard ? (
+              {pendingLaunchSupport ? (
                 <div className="rounded-[12px] border border-amber-200/70 bg-amber-50/78 px-3 py-2 text-[9px] leading-4 text-stone-700 lg:col-span-2">
                   <div className="text-[8px] font-semibold uppercase tracking-[0.14em] text-amber-700">
                     {t(locale, "待启动团队", "Pending launch")}
                   </div>
                   <div className="mt-1 text-[10px] font-semibold text-stone-900">
                     {compactText(
-                      pendingLaunch.directive ||
+                      pendingLaunchSupport.directive ||
                         t(
                           locale,
                           "团队正在准备，稍后会自动切回任务视图。",
@@ -1305,8 +1411,8 @@ export function OfficeTaskCockpit({
                   <div className="mt-1 text-[9px] leading-4 text-stone-600">
                     {t(
                       locale,
-                      `已挂载 ${pendingLaunch.attachmentCount} 个附件，等待 workflow 接线完成。`,
-                      `${pendingLaunch.attachmentCount} attachments are already queued while the workflow connection is completing.`
+                      `已挂载 ${pendingLaunchSupport.attachmentCount} 个附件，等待 workflow 接线完成。`,
+                      `${pendingLaunchSupport.attachmentCount} attachments are already queued while the workflow connection is completing.`
                     )}
                   </div>
                 </div>
@@ -1352,6 +1458,7 @@ export function OfficeTaskCockpit({
                 missionId={selectedDetail.id}
                 missionStatus={selectedDetail.status}
                 executorStatus={selectedDetail.executor?.status}
+                fallbackLogUrl={executorLogArtifact?.previewUrl}
               />
             </div>
           ) : null}
@@ -1394,6 +1501,67 @@ export function OfficeTaskCockpit({
                   "这里统一承接 executor、socket / callback、最近动作与失败原因；完整日志流统一进入 Logs。",
                   "This tab is the single home for executor, socket / callback, recent action, and failure. Full logs live in Logs."
                 )}
+              </div>
+              <div
+                className="mb-2 rounded-[16px] border border-white/55 bg-[rgba(255,255,255,0.46)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)] backdrop-blur-md"
+                data-testid="office-runtime-live-preview"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "size-1.5 rounded-full",
+                          scopedPreviewStreaming || scopedLatestScreenshot
+                            ? "animate-pulse bg-emerald-500"
+                            : "bg-stone-300"
+                        )}
+                      />
+                      <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-stone-500">
+                        {t(locale, "实时工作站", "Live workstation")}
+                      </span>
+                    </div>
+                    <div className="mt-1 truncate text-[10px] leading-4 text-stone-700">
+                      {livePreviewStateLabel}
+                      {livePreviewMeta ? ` · ${livePreviewMeta}` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7 shrink-0 rounded-full border border-white/60 bg-white/72 text-stone-600 hover:bg-white"
+                    aria-label={t(locale, "聚焦浏览器画面", "Focus browser preview")}
+                    onClick={() => setSandboxFocusedPane("browser")}
+                  >
+                    <Monitor className="size-3.5" />
+                  </Button>
+                </div>
+                <div className="grid min-h-[240px] gap-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                  <div className="min-h-[220px] overflow-hidden rounded-[14px] border border-slate-900/10 bg-slate-950/90">
+                    <ScreenshotPreview
+                      current={scopedLatestScreenshot}
+                      previous={scopedPreviousScreenshot}
+                      embedded
+                      title={t(locale, "浏览器画面", "Browser frame")}
+                      statusLabel={
+                        scopedLatestScreenshot
+                          ? t(locale, "Live", "Live")
+                          : t(locale, "Standby", "Standby")
+                      }
+                      contextLabel={selectedDetail.title}
+                      onClickZoom={() => setSandboxFocusedPane("browser")}
+                    />
+                  </div>
+                  <div className="flex min-h-[220px] overflow-hidden rounded-[14px] border border-white/50 bg-white/40 p-1">
+                    <ExecutorTerminalPanel
+                      missionId={selectedDetail.id}
+                      missionStatus={selectedDetail.status}
+                      executorStatus={selectedDetail.executor?.status}
+                      fallbackLogUrl={executorLogArtifact?.previewUrl}
+                    />
+                  </div>
+                </div>
               </div>
               <div className="grid gap-2 lg:grid-cols-2">
                 <RuntimeSignalCard
@@ -1599,10 +1767,14 @@ export function OfficeTaskCockpit({
           artifactIndex={previewArtifactIndex}
           artifactName={previewArtifactName}
           format={previewArtifactFormat}
+          previewType={previewArtifactType}
+          previewUrl={previewArtifactUrl}
           open={previewArtifactIndex !== null}
           onOpenChange={open => {
             if (!open) {
               setPreviewArtifactIndex(null);
+              setPreviewArtifactType(undefined);
+              setPreviewArtifactUrl(undefined);
             }
           }}
         />

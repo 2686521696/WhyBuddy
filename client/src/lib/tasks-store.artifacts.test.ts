@@ -107,8 +107,12 @@ describe("tasks-store artifact helpers", () => {
         },
         {
           kind: "file",
+          id: "result-json",
           name: "result.json",
           path: "artifacts/result.json",
+          mimeType: "application/json",
+          previewType: "json",
+          size: 42,
         },
       ],
     });
@@ -123,12 +127,16 @@ describe("tasks-store artifact helpers", () => {
       previewUrl: "/api/tasks/mission-1/artifacts/0/preview",
     });
     expect(artifacts[1]).toMatchObject({
+      id: "result-json",
       title: "result.json",
       downloadKind: "server",
       href: "/api/tasks/mission-1/artifacts/1/download",
       downloadUrl: "/api/tasks/mission-1/artifacts/1/download",
       previewUrl: "/api/tasks/mission-1/artifacts/1/preview",
       format: "json",
+      mimeType: "application/json",
+      previewType: "json",
+      size: 42,
     });
   });
 

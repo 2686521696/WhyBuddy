@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   FileJson,
   FileText,
+  Image,
   LoaderCircle,
   ScrollText,
 } from "lucide-react";
@@ -29,6 +30,8 @@ export interface ArtifactPreviewDialogProps {
   artifactIndex: number | null;
   artifactName: string;
   format?: string;
+  previewType?: "text" | "json" | "html" | "pdf" | "image" | "log";
+  previewUrl?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -64,7 +67,11 @@ function t(locale: string, zh: string, en: string): string {
   return locale === "zh-CN" ? zh : en;
 }
 
-function getPreviewIcon(mode: "markdown" | "json" | "text") {
+function getPreviewIcon(mode: "html" | "image" | "json" | "markdown" | "pdf" | "text") {
+  if (mode === "image") {
+    return Image;
+  }
+
   if (mode === "json") {
     return FileJson;
   }
@@ -81,6 +88,8 @@ export function ArtifactPreviewDialog({
   artifactIndex,
   artifactName,
   format,
+  previewType,
+  previewUrl,
   open,
   onOpenChange,
 }: ArtifactPreviewDialogProps) {
@@ -93,9 +102,10 @@ export function ArtifactPreviewDialog({
   });
 
   useEffect(() => {
-    if (!open || artifactIndex === null) {
+    const mode = resolveArtifactPreviewMode(format, null, previewType);
+    if (!open || artifactIndex === null || mode === "html" || mode === "image" || mode === "pdf") {
       setState({
-        status: "idle",
+        status: open && artifactIndex !== null ? "ready" : "idle",
         content: "",
         contentType: null,
         truncated: false,
@@ -139,17 +149,17 @@ export function ArtifactPreviewDialog({
       });
 
     return () => controller.abort();
-  }, [artifactIndex, locale, missionId, open]);
+  }, [artifactIndex, format, locale, missionId, open, previewType]);
 
   const previewMode = useMemo(
-    () => resolveArtifactPreviewMode(format, state.contentType),
-    [format, state.contentType]
+    () => resolveArtifactPreviewMode(format, state.contentType, previewType),
+    [format, previewType, state.contentType]
   );
   const PreviewIcon = getPreviewIcon(previewMode);
   const renderedContent = useMemo(
     () =>
-      formatArtifactPreviewContent(state.content, format, state.contentType),
-    [format, state.content, state.contentType]
+      formatArtifactPreviewContent(state.content, format, state.contentType, previewType),
+    [format, previewType, state.content, state.contentType]
   );
 
   return (
@@ -193,7 +203,22 @@ export function ArtifactPreviewDialog({
         {state.status === "ready" ? (
           <ScrollArea className="max-h-[70vh] w-full">
             <div className="px-6 py-5">
-              {previewMode === "markdown" ? (
+              {previewMode === "image" && previewUrl ? (
+                <div className="rounded-[20px] border border-stone-200 bg-stone-950/5 p-3">
+                  <img
+                    src={previewUrl}
+                    alt={artifactName}
+                    className="max-h-[66vh] w-full rounded-[16px] object-contain"
+                  />
+                </div>
+              ) : previewMode === "html" || previewMode === "pdf" ? (
+                <iframe
+                  title={artifactName}
+                  src={previewUrl}
+                  sandbox=""
+                  className="h-[66vh] w-full rounded-[20px] border border-stone-200 bg-white"
+                />
+              ) : previewMode === "markdown" ? (
                 <div className="prose prose-stone max-w-none">
                   <Streamdown>{renderedContent}</Streamdown>
                 </div>

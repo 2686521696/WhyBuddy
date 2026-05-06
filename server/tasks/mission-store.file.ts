@@ -23,6 +23,7 @@ import {
   type MissionStage,
 } from '../../shared/mission/contracts.js';
 import { normalizeMissionProjectionLinks } from '../../shared/mission/projection.js';
+import type { ExecutorPreviewSession } from '../../shared/executor/contracts.js';
 import type { MissionSnapshotStore } from './mission-store.js';
 
 interface SerializedMissionSnapshotFile {
@@ -189,9 +190,27 @@ function normalizeArtifact(value: unknown): MissionArtifact | null {
 
   return {
     kind: candidate.kind,
+    id: typeof candidate.id === 'string' ? candidate.id : undefined,
     name: candidate.name,
     path: typeof candidate.path === 'string' ? candidate.path : undefined,
     url: typeof candidate.url === 'string' ? candidate.url : undefined,
+    mimeType:
+      typeof candidate.mimeType === 'string' ? candidate.mimeType : undefined,
+    previewType:
+      candidate.previewType === 'text' ||
+      candidate.previewType === 'json' ||
+      candidate.previewType === 'html' ||
+      candidate.previewType === 'pdf' ||
+      candidate.previewType === 'image' ||
+      candidate.previewType === 'log'
+        ? candidate.previewType
+        : undefined,
+    size:
+      typeof candidate.size === 'number' &&
+      Number.isFinite(candidate.size) &&
+      candidate.size >= 0
+        ? candidate.size
+        : undefined,
     description:
       typeof candidate.description === 'string'
         ? candidate.description
@@ -251,6 +270,76 @@ function normalizeInstanceContext(value: unknown): MissionInstanceContext | unde
     exitCode:
       typeof candidate.exitCode === 'number' ? candidate.exitCode : undefined,
     host: typeof candidate.host === 'string' ? candidate.host : undefined,
+  };
+}
+
+function normalizePreviewSession(value: unknown): ExecutorPreviewSession | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+
+  const candidate = value as Partial<ExecutorPreviewSession>;
+  if (
+    typeof candidate.id !== 'string' ||
+    !candidate.id.trim() ||
+    typeof candidate.missionId !== 'string' ||
+    !candidate.missionId.trim() ||
+    typeof candidate.jobId !== 'string' ||
+    !candidate.jobId.trim() ||
+    typeof candidate.type !== 'string' ||
+    typeof candidate.status !== 'string' ||
+    typeof candidate.startedAt !== 'string'
+  ) {
+    return undefined;
+  }
+
+  if (
+    candidate.type !== "browser-screenshot-stream" &&
+    candidate.type !== "terminal-stream" &&
+    candidate.type !== "browser-vnc"
+  ) {
+    return undefined;
+  }
+
+  if (
+    candidate.status !== "starting" &&
+    candidate.status !== "running" &&
+    candidate.status !== "stopped" &&
+    candidate.status !== "failed"
+  ) {
+    return undefined;
+  }
+
+  return {
+    id: candidate.id.trim(),
+    projectId:
+      typeof candidate.projectId === 'string' && candidate.projectId.trim()
+        ? candidate.projectId.trim()
+        : undefined,
+    missionId: candidate.missionId.trim(),
+    jobId: candidate.jobId.trim(),
+    type: candidate.type,
+    status: candidate.status,
+    startedAt: candidate.startedAt,
+    stoppedAt:
+      typeof candidate.stoppedAt === 'string' && candidate.stoppedAt.trim()
+        ? candidate.stoppedAt
+        : undefined,
+    frameCount:
+      typeof candidate.frameCount === 'number' && Number.isFinite(candidate.frameCount)
+        ? Math.max(0, Math.trunc(candidate.frameCount))
+        : undefined,
+    logLineCount:
+      typeof candidate.logLineCount === 'number' && Number.isFinite(candidate.logLineCount)
+        ? Math.max(0, Math.trunc(candidate.logLineCount))
+        : undefined,
+    latestFramePath:
+      typeof candidate.latestFramePath === 'string' && candidate.latestFramePath.trim()
+        ? candidate.latestFramePath.trim()
+        : undefined,
+    artifactNames: Array.isArray(candidate.artifactNames)
+      ? candidate.artifactNames.filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+      : undefined,
   };
 }
 
@@ -367,6 +456,7 @@ function normalizeTask(value: unknown): MissionRecord | null {
           .map(artifact => normalizeArtifact(artifact))
           .filter((artifact): artifact is MissionArtifact => Boolean(artifact))
       : undefined,
+    previewSession: normalizePreviewSession(candidate.previewSession),
     waitingFor:
       typeof candidate.waitingFor === 'string' ? candidate.waitingFor : undefined,
     decision: normalizeDecision(candidate.decision),

@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CostRecord } from '../../shared/cost.js';
@@ -25,9 +29,17 @@ function makeRecord(overrides: Partial<CostRecord> = {}): CostRecord {
 
 describe('CostTracker', () => {
   let tracker: CostTracker;
+  let tmpDir: string;
+  let historyPath: string;
 
   beforeEach(() => {
-    tracker = new CostTracker();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cost-tracker-test-'));
+    historyPath = path.join(tmpDir, 'cost-history.json');
+    tracker = new CostTracker(historyPath);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   // ---------------------------------------------------------------------------
@@ -644,15 +656,17 @@ describe('CostTracker', () => {
       expect(types).toContain('cost_warning');
     });
 
-    it('does not clear existing alerts when budget is raised', () => {
+    it('clears stale alerts and releases downgrade when budget is raised', () => {
       tracker.setBudget({ maxCost: 0.5, maxTokens: 100000, warningThreshold: 0.8 });
       tracker.recordCall(makeRecord({ actualCost: 0.5 }));
       const alertsBefore = tracker.getAlerts().length;
       expect(alertsBefore).toBeGreaterThan(0);
+      expect(tracker.getDowngradeLevel()).not.toBe('none');
 
       // Raise budget — existing alerts remain (they are not cleared)
       tracker.setBudget({ maxCost: 10, maxTokens: 100000, warningThreshold: 0.8 });
-      expect(tracker.getAlerts().length).toBe(alertsBefore);
+      expect(tracker.getAlerts()).toHaveLength(0);
+      expect(tracker.getDowngradeLevel()).toBe('none');
     });
   });
 
@@ -681,10 +695,6 @@ describe('CostTracker', () => {
 // ---------------------------------------------------------------------------
 // Task 6.1: JSON 文件持久化
 // ---------------------------------------------------------------------------
-
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
 describe('CostTracker persistence (Task 6.1)', () => {
   let tmpDir: string;

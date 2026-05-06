@@ -4,6 +4,8 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
 import { useAppStore } from "@/lib/store";
+import { resolveProjectTaskScope } from "@/lib/project-task-scope";
+import { useProjectStore } from "@/lib/project-store";
 import { useTasksStore } from "@/lib/tasks-store";
 import { useWorkflowStore } from "@/lib/workflow-store";
 import { FUTURE_OFFICE_COLORS } from "@/lib/scene-theme";
@@ -133,21 +135,42 @@ function StageZonePulse({
   );
 }
 
-export function SceneStageFlow() {
+export function SceneStageFlow({ projectId = null }: { projectId?: string | null }) {
   const locale = useAppStore(state => state.locale);
   const tasks = useTasksStore(state => state.tasks);
   const selectedTaskId = useTasksStore(state => state.selectedTaskId);
+  const projectMissions = useProjectStore(state => state.missions);
   const currentWorkflow = useWorkflowStore(state => state.currentWorkflow);
+  const scopedTasks = useMemo(
+    () =>
+      resolveProjectTaskScope({
+        projectId,
+        projectMissions,
+        tasks,
+      }).tasks,
+    [projectId, projectMissions, tasks]
+  );
+  const scopedCurrentWorkflow = useMemo(() => {
+    if (!projectId) return currentWorkflow;
+    if (!currentWorkflow?.missionId) return null;
+    return projectMissions.some(
+      mission =>
+        mission.projectId === projectId &&
+        mission.missionId === currentWorkflow.missionId
+    )
+      ? currentWorkflow
+      : null;
+  }, [currentWorkflow, projectId, projectMissions]);
 
   const signal = useMemo(
     () =>
       getSceneStageSignal({
         locale,
-        tasks,
+        tasks: scopedTasks,
         selectedTaskId,
-        currentWorkflow,
+        currentWorkflow: scopedCurrentWorkflow,
       }),
-    [locale, tasks, selectedTaskId, currentWorkflow]
+    [locale, scopedTasks, selectedTaskId, scopedCurrentWorkflow]
   );
 
   const zoneTrail = useMemo(
