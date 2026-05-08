@@ -80,15 +80,15 @@ export type BlueprintCapabilityEvidenceStatus =
   | "recorded"
   | "blocked"
   | "failed";
-export type BlueprintGenerationEventFamily =
-  | "job"
-  | "crew"
-  | "role"
-  | "capability"
-  | "preview"
-  | "prompt"
-  | "mission"
-  | "sandbox";
+import type {
+  BlueprintGenerationEventFamily as _BlueprintGenerationEventFamily,
+  BlueprintGenerationEventType as _BlueprintGenerationEventType,
+} from "./events.js";
+
+export type BlueprintGenerationEventFamily = _BlueprintGenerationEventFamily;
+export type BlueprintGenerationEventType = _BlueprintGenerationEventType;
+export type { BlueprintEventNameKey } from "./events.js";
+export { BlueprintEventName, resolveBlueprintEventFamily } from "./events.js";
 export type BlueprintGenerationNextActionType =
   | "answer_clarification"
   | "select_route"
@@ -1428,35 +1428,70 @@ export interface BlueprintGenerationNextAction {
   handoff?: BlueprintReviewHandoffState;
 }
 
+/**
+ * 蓝图栈作业级的显式交接态标识。
+ *
+ * - `idle`：未进入任何交接等待；常态下的 autopilot / planning / execution。
+ * - `reviewing`：已生成可评审的资产（RouteSet、SPEC Tree、SPEC Document 等）并等待用户确认或编辑；
+ *   在本 spec 中作为"已完成但未拍板"的显式状态，与隐式的"一段时间无下一步事件"区分开。
+ * - `confirmed`：用户确认了 reviewing 交接（例如 SPEC Document 全部 `accepted`），推进到下一阶段。
+ * - `reset`：用户撤回交接（例如 `DELETE /route-selection`），回到上一阶段重新生成。
+ * - `failed`：交接期间发生失败，需要人工或运行时介入后才能继续。
+ *
+ * 该字段属于"新增可选字段"范畴：既有响应结构不变，默认值 `undefined`。
+ *
+ * 对应 `.kiro/specs/autopilot-blueprint-refactor-split` 需求 4.1 / 4.3 / 6.2。
+ */
+export type BlueprintHandoffState =
+  | "idle"
+  | "reviewing"
+  | "confirmed"
+  | "reset"
+  | "failed";
+
+/**
+ * 当 `BlueprintGenerationStageState.status === "reviewing"` 时的显式描述。
+ *
+ * 设计要点：
+ * 1. `state` 固定为 `"reviewing"`，避免与 `BlueprintHandoffState` 的其它值混用。
+ * 2. `stage` 明确指向发起 reviewing 的阶段；主生产者是 `route_generation` 与 `spec_tree`。
+ * 3. `selectedPathId` / `routeId` / `selectionId` / `specTreeId` / `nodeId` 对应现有 provenance 字段，便于下游 Artifact Replay 直接反查。
+ * 4. `enteredAt` 必须来自 `ctx.now().toISOString()`，不使用前端时钟。
+ * 5. `confirmable` 镜像现有 `BlueprintReviewHandoffState.confirmable`，前端面板据此决定是否渲染"确认并继续"按钮。
+ *
+ * 与 `BlueprintReviewHandoffState` 的分工：
+ * - `BlueprintReviewHandoffState` 描述"下一步可用的处理动作"，长期保留；
+ * - `BlueprintReviewingHandoff` 描述"当前处于 reviewing 状态"的稳定显式标识。
+ *
+ * 对应 `.kiro/specs/autopilot-blueprint-refactor-split` 需求 4.1 / 4.3 / 4.4。
+ */
+export interface BlueprintReviewingHandoff {
+  state: "reviewing";
+  stage: BlueprintGenerationStage;
+  selectedPathId: string;
+  routeId: string;
+  selectionId?: string;
+  specTreeId?: string;
+  nodeId?: string;
+  enteredAt: string;
+  confirmable: boolean;
+}
+
 export interface BlueprintGenerationStageState {
   stage: BlueprintGenerationStage;
   status: BlueprintGenerationStatus;
   payloadKind: BlueprintGenerationStagePayloadKind;
   artifactIds: string[];
   nextAction?: BlueprintGenerationNextAction;
+  /**
+   * 显式 `reviewing` 交接态描述。仅在 `status === "reviewing"` 时出现；其它状态下为 `undefined`。
+   * 新增可选字段，保持对既有 51 条 `blueprint-routes.test.ts` 用例的向后兼容。
+   */
+  reviewingHandoff?: BlueprintReviewingHandoff;
 }
 
-export type BlueprintGenerationEventType =
-  | "job.created"
-  | "job.stage"
-  | "job.completed"
-  | "job.failed"
-  | "crew.context.updated"
-  | "capability.invoked"
-  | "capability.completed"
-  | "capability.failed"
-  | "role.activated"
-  | "role.watching"
-  | "role.capability_invoked"
-  | "role.review_started"
-  | "role.review_completed"
-  | "role.completed"
-  | "preview.generated"
-  | "prompt.packaged"
-  | "mission.handoff"
-  | "sandbox.job.started"
-  | "sandbox.job.completed"
-  | "sandbox.job.failed";
+// `BlueprintGenerationEventType` 的真相源见 `./events.ts`；此处仅保留顶部 re-export
+// 供历史 import 路径使用：`import { BlueprintGenerationEventType } from "@shared/blueprint/contracts"`。
 
 export interface BlueprintGenerationEvent {
   id: string;
@@ -1495,6 +1530,12 @@ export interface BlueprintGenerationJob {
   events: BlueprintGenerationEvent[];
   stageState?: BlueprintGenerationStageState;
   nextAction?: BlueprintGenerationNextAction;
+  /**
+   * 显式作业级交接态。默认值 `undefined`（即 `idle`），在 reviewing / confirmed / reset / failed
+   * 路径上由服务端显式写入，避免前端需要根据"一段时间无下一步事件"去推断。
+   * 新增可选字段，保持向后兼容。
+   */
+  handoffState?: BlueprintHandoffState;
   error?: {
     code: string;
     message: string;
