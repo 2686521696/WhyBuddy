@@ -4343,4 +4343,92 @@ describe("blueprint specs route", () => {
     expect(latest?.stage).toBe("spec_tree");
     expect(latest?.status).toBe("reviewing");
   });
+
+  // --- 新增：reviewing 显式化用例（任务 16，需求 4.1 / 4.3 / 4.4） ---
+
+  it("exposes explicit handoffState='reviewing' with reviewingHandoff provenance after route selection", async () => {
+    await withServer(tempRoot, async baseUrl => {
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetText: "Reviewing-state exposure smoke test.",
+        }),
+      });
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      const selectResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/route-selection`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            routeId: created.routeSet.routes[0].id,
+          }),
+        }
+      );
+      expect(selectResponse.status).toBe(201);
+
+      const latestResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/latest`
+      );
+      const latest = (await latestResponse.json()) as Record<string, any>;
+      expect(latest.job.handoffState).toBe("reviewing");
+      expect(latest.job.status).toBe("reviewing");
+      expect(latest.job.stageState?.reviewingHandoff).toMatchObject({
+        state: "reviewing",
+        stage: "spec_tree",
+        confirmable: true,
+      });
+      expect(
+        typeof latest.job.stageState?.reviewingHandoff?.routeId
+      ).toBe("string");
+      expect(
+        typeof latest.job.stageState?.reviewingHandoff?.selectedPathId
+      ).toBe("string");
+      expect(
+        typeof latest.job.stageState?.reviewingHandoff?.enteredAt
+      ).toBe("string");
+    });
+  });
+
+  it("switches handoffState to 'reset' after DELETE /route-selection", async () => {
+    await withServer(tempRoot, async baseUrl => {
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetText: "Reset handoffState smoke test.",
+        }),
+      });
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      const selectResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/route-selection`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            routeId: created.routeSet.routes[0].id,
+          }),
+        }
+      );
+      expect(selectResponse.status).toBe(201);
+
+      const resetResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/route-selection`,
+        {
+          method: "DELETE",
+        }
+      );
+      expect(resetResponse.status).toBe(200);
+
+      const latestResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/latest`
+      );
+      const latest = (await latestResponse.json()) as Record<string, any>;
+      expect(latest.job.handoffState).toBe("reset");
+      expect(latest.job.stageState?.reviewingHandoff).toBeUndefined();
+    });
+  });
 });

@@ -7,6 +7,8 @@ import path from "node:path";
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJson } from "../core/llm-client.js";
 import { defaultPreviewClarificationQuestions } from "./nl-command.js";
+import { projectHandoffOntoJob } from "./blueprint/routeset/handoff-projection.js";
+import { BlueprintEventName } from "../../shared/blueprint/events.js";
 import type {
   BlueprintArtifactDiff,
   BlueprintArtifactDiffRequest,
@@ -2250,7 +2252,7 @@ export function createGenerationJob(
       jobId,
       stage: "input",
       status: "pending",
-      type: "job.created",
+      type: BlueprintEventName.JobCreated,
       message: "Blueprint generation job accepted.",
       occurredAt: createdAt,
     }),
@@ -2258,7 +2260,7 @@ export function createGenerationJob(
       jobId,
       stage: "route_generation",
       status: "running",
-      type: "job.stage",
+      type: BlueprintEventName.JobStage,
       message: "Generating primary and alternative autopilot routes.",
       occurredAt: createdAt,
     }),
@@ -2321,7 +2323,7 @@ export function createGenerationJob(
       projectId: request.projectId,
       stage: "route_generation",
       status: "completed",
-      type: "job.completed",
+      type: BlueprintEventName.JobCompleted,
       message:
         "RouteSet generated from sandbox derivation evidence and ready for SPEC tree derivation.",
       occurredAt: createdAt,
@@ -2343,7 +2345,7 @@ export function createGenerationJob(
       projectId: request.projectId,
       stage: "route_generation",
       status: "completed",
-      type: "crew.context.updated",
+      type: BlueprintEventName.CrewContextUpdated,
       message: "Agent Crew context initialized for route generation.",
       occurredAt: createdAt,
       artifactId: agentCrewArtifact.id,
@@ -3111,7 +3113,7 @@ function createRouteGenerationSandboxDerivation(input: {
       createGenerationEvent({
         jobId: input.jobId,
         projectId: input.request.projectId,
-        type: "capability.invoked",
+        type: BlueprintEventName.CapabilityInvoked,
         family: "capability",
         stage: "route_generation",
         status: "running",
@@ -3132,7 +3134,7 @@ function createRouteGenerationSandboxDerivation(input: {
       createGenerationEvent({
         jobId: input.jobId,
         projectId: input.request.projectId,
-        type: "capability.completed",
+        type: BlueprintEventName.CapabilityCompleted,
         family: "capability",
         stage: "route_generation",
         status: "completed",
@@ -3157,7 +3159,7 @@ function createRouteGenerationSandboxDerivation(input: {
       jobId: input.jobId,
       projectId: input.request.projectId,
       crewId,
-      type: "role.capability_invoked",
+      type: BlueprintEventName.RoleCapabilityInvoked,
       stage: "route_generation",
       status: "running",
       roleId,
@@ -3176,7 +3178,7 @@ function createRouteGenerationSandboxDerivation(input: {
       jobId: input.jobId,
       projectId: input.request.projectId,
       crewId,
-      type: "role.review_completed",
+      type: BlueprintEventName.RoleReviewCompleted,
       stage: "route_generation",
       status: "completed",
       roleId: "role-quality-auditor",
@@ -3197,7 +3199,7 @@ function createRouteGenerationSandboxDerivation(input: {
     createGenerationEvent({
       jobId: input.jobId,
       projectId: input.request.projectId,
-      type: "sandbox.job.started",
+      type: BlueprintEventName.SandboxJobStarted,
       family: "sandbox",
       stage: "route_generation",
       status: "running",
@@ -3224,7 +3226,7 @@ function createRouteGenerationSandboxDerivation(input: {
     createGenerationEvent({
       jobId: input.jobId,
       projectId: input.request.projectId,
-      type: "sandbox.job.completed",
+      type: BlueprintEventName.SandboxJobCompleted,
       family: "sandbox",
       stage: "route_generation",
       status: "completed",
@@ -4647,7 +4649,7 @@ function createArtifactReplaySnapshot(
     events: job.events.concat(
       createGenerationEvent({
         jobId: job.id,
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         stage: "engineering_landing",
         status: "reviewing",
         message: "Artifact replay snapshot created.",
@@ -5104,7 +5106,7 @@ function recordArtifactFeedback(
     events: job.events.concat(
       createGenerationEvent({
         jobId: job.id,
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         stage: "engineering_landing",
         status: "reviewing",
         message: `Artifact ${feedback.kind} recorded.`,
@@ -5796,7 +5798,7 @@ function createJobDetailsPayload(
   }
 
   return {
-    job,
+    job: projectHandoffOntoJob(job),
     routeSet: extractRouteSet(job),
     selection: extractRouteSelection(job),
     specTree: extractSpecTree(job),
@@ -7524,7 +7526,7 @@ function selectRouteForSpecTree(
       jobId: job.id,
       stage: "spec_tree",
       status: "running",
-      type: "job.stage",
+      type: BlueprintEventName.JobStage,
       message: `Selected route ${selectedRoute.title} and started SPEC tree derivation.`,
       occurredAt: selectedAt,
       routeId: selectedRoute.id,
@@ -7543,7 +7545,7 @@ function selectRouteForSpecTree(
       jobId: job.id,
       stage: "spec_tree",
       status: "reviewing",
-      type: "job.completed",
+      type: BlueprintEventName.JobCompleted,
       message:
         "SPEC tree draft generated and ready for the Deduction workbench.",
       occurredAt: selectedAt,
@@ -7644,7 +7646,7 @@ function resetRouteSelection(
         jobId: job.id,
         stage: "route_generation",
         status: "completed",
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         message: "Route selection reset and RouteSet returned to draft.",
         occurredAt: updatedAt,
         payload: {
@@ -7856,7 +7858,7 @@ function updateSpecTreeNode(
         jobId: job.id,
         stage: "spec_tree",
         status: "reviewing",
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         message: `Updated SPEC tree node ${updatedNode.title}.`,
         occurredAt: updatedAt,
         payload: {
@@ -7914,7 +7916,7 @@ function runSpecTreeAction(
         jobId: job.id,
         stage: "spec_tree",
         status: "reviewing",
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         message: describeSpecTreeAction(request, actionResult.node),
         occurredAt: updatedAt,
         payload: {
@@ -8361,7 +8363,7 @@ function saveSpecTreeVersion(
         jobId: job.id,
         stage: "spec_tree",
         status: "reviewing",
-        type: "job.completed",
+        type: BlueprintEventName.JobCompleted,
         message: `Saved SPEC tree version ${specTree.version}.`,
         occurredAt: savedAt,
         payload: {
@@ -8474,7 +8476,7 @@ function saveSpecDocumentVersion(
         jobId: job.id,
         stage: "spec_docs",
         status: "reviewing",
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         message: `Saved SPEC document ${document.title} version ${versionNumber}.`,
         occurredAt: savedAt,
         payload: {
@@ -8541,7 +8543,7 @@ function reviewSpecDocument(
         jobId: job.id,
         stage: "spec_docs",
         status: "reviewing",
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         message: `Marked SPEC document ${document.title} as ${request.status}.`,
         occurredAt: reviewedAt,
         payload: {
@@ -8645,7 +8647,7 @@ function generateSpecDocuments(
         jobId: job.id,
         stage: "spec_docs",
         status: "completed",
-        type: "job.completed",
+        type: BlueprintEventName.JobCompleted,
         message: "SPEC documents generated from the selected SPEC tree.",
         occurredAt: createdAt,
         payload: {
@@ -8773,7 +8775,7 @@ function generateEffectPreviews(
         jobId: job.id,
         stage: "effect_preview",
         status: "completed",
-        type: "job.completed",
+        type: BlueprintEventName.JobCompleted,
         message: includeDrafts
           ? "Effect previews generated from draft-capable SPEC documents."
           : "Effect previews generated from accepted SPEC documents.",
@@ -8794,7 +8796,7 @@ function generateEffectPreviews(
         projectId: job.projectId,
         stage: "effect_preview",
         status: "completed",
-        type: "preview.generated",
+        type: BlueprintEventName.PreviewGenerated,
         message: "Effect preview assets generated for replay visibility.",
         occurredAt: createdAt,
         specTreeId: specTree.id,
@@ -8963,7 +8965,7 @@ function generateImplementationPromptPackages(
         jobId: job.id,
         stage: "prompt_packaging",
         status: "completed",
-        type: "job.completed",
+        type: BlueprintEventName.JobCompleted,
         message:
           sourcePreviews.length > 0
             ? "Implementation prompt packages generated from SPEC documents and effect previews."
@@ -8984,7 +8986,7 @@ function generateImplementationPromptPackages(
         projectId: job.projectId,
         stage: "prompt_packaging",
         status: "completed",
-        type: "prompt.packaged",
+        type: BlueprintEventName.PromptPackaged,
         message: "Implementation prompt packages packaged for handoff.",
         occurredAt: createdAt,
         specTreeId: specTree.id,
@@ -9096,7 +9098,7 @@ function generateEngineeringLandingPlans(
         jobId: job.id,
         stage: "engineering_landing",
         status: "completed",
-        type: "job.completed",
+        type: BlueprintEventName.JobCompleted,
         message:
           "Engineering landing plans generated from implementation prompt packages.",
         occurredAt: createdAt,
@@ -9114,7 +9116,7 @@ function generateEngineeringLandingPlans(
         projectId: job.projectId,
         stage: "engineering_landing",
         status: "completed",
-        type: "mission.handoff",
+        type: BlueprintEventName.MissionHandoff,
         message:
           "Engineering landing handoff prepared from implementation prompt packages.",
         occurredAt: createdAt,
@@ -9292,7 +9294,7 @@ function createSandboxDerivationJob(
         createGenerationEvent({
           jobId: job.id,
           projectId: failedJob.projectId,
-          type: "sandbox.job.failed",
+          type: BlueprintEventName.SandboxJobFailed,
           family: "sandbox",
           stage,
           status: "failed",
@@ -9475,7 +9477,7 @@ function createSandboxDerivationJob(
       jobId: job.id,
       projectId: latestJob.projectId,
       crewId,
-      type: "role.capability_invoked",
+      type: BlueprintEventName.RoleCapabilityInvoked,
       stage,
       status: "running",
       roleId: roleId ?? "role-runtime-executor",
@@ -9495,7 +9497,7 @@ function createSandboxDerivationJob(
       jobId: job.id,
       projectId: latestJob.projectId,
       crewId,
-      type: "role.completed",
+      type: BlueprintEventName.RoleCompleted,
       stage,
       status: "completed",
       roleId: roleId ?? "role-runtime-executor",
@@ -9545,7 +9547,7 @@ function createSandboxDerivationJob(
       createGenerationEvent({
         jobId: job.id,
         projectId: latestJob.projectId,
-        type: "sandbox.job.started",
+        type: BlueprintEventName.SandboxJobStarted,
         family: "sandbox",
         stage,
         status: "running",
@@ -9563,7 +9565,7 @@ function createSandboxDerivationJob(
       createGenerationEvent({
         jobId: job.id,
         projectId: latestJob.projectId,
-        type: "sandbox.job.completed",
+        type: BlueprintEventName.SandboxJobCompleted,
         family: "sandbox",
         stage,
         status: "completed",
@@ -9682,7 +9684,7 @@ function getOrCreateCapabilityRegistry(
   const crewContextEvent = createGenerationEvent({
     jobId: job.id,
     projectId: job.projectId,
-    type: "crew.context.updated",
+    type: BlueprintEventName.CrewContextUpdated,
     stage: "runtime_capability",
     status: "reviewing",
     message: "Agent Crew context updated for runtime capability registry.",
@@ -9734,7 +9736,7 @@ function getOrCreateCapabilityRegistry(
       createGenerationEvent({
         jobId: job.id,
         projectId: job.projectId,
-        type: "job.stage",
+        type: BlueprintEventName.JobStage,
         stage: "runtime_capability",
         status: "reviewing",
         message: "Runtime capability registry registered.",
@@ -9797,7 +9799,7 @@ function invokeCapability(
         createGenerationEvent({
           jobId: registry.job.id,
           projectId: registry.job.projectId,
-          type: "capability.failed",
+          type: BlueprintEventName.CapabilityFailed,
           family: "capability",
           stage: "runtime_capability",
           status: "failed",
@@ -9984,7 +9986,7 @@ function invokeCapability(
     jobId: registry.job.id,
     projectId: registry.job.projectId,
     crewId: updatedAgentCrew.id,
-    type: "role.capability_invoked",
+    type: BlueprintEventName.RoleCapabilityInvoked,
     stage: "runtime_capability",
     status: "reviewing",
     roleId,
@@ -10004,7 +10006,7 @@ function invokeCapability(
     jobId: registry.job.id,
     projectId: registry.job.projectId,
     crewId: updatedAgentCrew.id,
-    type: "role.review_completed",
+    type: BlueprintEventName.RoleReviewCompleted,
     stage: "runtime_capability",
     status: "reviewing",
     roleId: "role-quality-auditor",
@@ -10024,7 +10026,7 @@ function invokeCapability(
   const crewContextEvent = createGenerationEvent({
     jobId: registry.job.id,
     projectId: registry.job.projectId,
-    type: "crew.context.updated",
+    type: BlueprintEventName.CrewContextUpdated,
     stage: "runtime_capability",
     status: "reviewing",
     message: `Agent Crew context updated after ${capability.label} invocation.`,
@@ -10096,7 +10098,7 @@ function invokeCapability(
       createGenerationEvent({
         jobId: registry.job.id,
         projectId: registry.job.projectId,
-        type: "capability.invoked",
+        type: BlueprintEventName.CapabilityInvoked,
         family: "capability",
         stage: "runtime_capability",
         status: "running",
@@ -10129,7 +10131,7 @@ function invokeCapability(
       createGenerationEvent({
         jobId: registry.job.id,
         projectId: registry.job.projectId,
-        type: "capability.completed",
+        type: BlueprintEventName.CapabilityCompleted,
         family: "capability",
         stage: "runtime_capability",
         status: "reviewing",
