@@ -625,6 +625,7 @@ export interface BlueprintCapabilityInvocation {
     roleId?: string;
     targetText?: string;
     githubUrls: string[];
+    // —— Docker 桥 spec 预留字段 ——
     executionMode?: "real" | "simulated_fallback";
     containerId?: string;
     artifactUrl?: string;
@@ -650,6 +651,13 @@ export interface BlueprintCapabilityInvocation {
     mcpToolName?: string;
     /** Scrubbed summary of the reason the bridge fell back, if any. */
     error?: string;
+    // —— AIGC Spec Node 桥 spec 新增字段 ——
+    promptId?: string;
+    model?: string;
+    responseDigest?: string;
+    tokenCount?: number;
+    structuredPayloadDigest?: string;
+    promptFingerprint?: string;
   };
 }
 
@@ -682,6 +690,7 @@ export interface BlueprintCapabilityEvidence {
     nodeId?: string;
     targetText?: string;
     githubUrls: string[];
+    // —— Docker 桥 spec 预留字段 ——
     executionMode?: "real" | "simulated_fallback";
     containerId?: string;
     artifactUrl?: string;
@@ -702,6 +711,18 @@ export interface BlueprintCapabilityEvidence {
     mcpToolName?: string;
     /** Mirror of {@link BlueprintCapabilityInvocation.provenance.error}. */
     error?: string;
+    // —— AIGC Spec Node 桥 spec 新增字段 ——
+    promptId?: string;
+    model?: string;
+    responseDigest?: string;
+    tokenCount?: number;
+    structuredPayloadDigest?: string;
+    promptFingerprint?: string;
+    structuredPayload?: {
+      digest: string;
+      byteSize: number;
+      summary: string;
+    };
   };
 }
 

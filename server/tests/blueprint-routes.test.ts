@@ -5374,5 +5374,198 @@ describe("blueprint mcp-github capability bridge — e2e", () => {
       createMemoryBlueprintJobStore(),
       { httpFetcher: throwingFetcher }
     );
+=======
+        expect(createResponse.status).toBe(201);
+
+        const jobResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/latest`
+        );
+        expect(jobResponse.status).toBe(200);
+        const latest = (await jobResponse.json()) as Record<string, any>;
+
+        const aigcInvocation = latest.capabilityInvocations.find(
+          (inv: any) => inv.capabilityId === "aigc-spec-node"
+        );
+        expect(aigcInvocation).toBeTruthy();
+        expect(aigcInvocation.provenance.executionMode).toBe("real");
+        expect(aigcInvocation.provenance.promptId).toBe(
+          "blueprint.aigc-spec-node.v1"
+        );
+        expect(typeof aigcInvocation.provenance.model).toBe("string");
+        expect(aigcInvocation.provenance.model.length).toBeGreaterThan(0);
+        expect(aigcInvocation.provenance.responseDigest).toMatch(
+          /^sha256:[a-f0-9]{64}$/
+        );
+        expect(aigcInvocation.provenance.structuredPayloadDigest).toMatch(
+          /^sha256:[a-f0-9]{64}$/
+        );
+        expect(aigcInvocation.provenance.promptFingerprint).toMatch(
+          /^sha256:[a-f0-9]{64}$/
+        );
+        expect(aigcInvocation.provenance.error).toBeUndefined();
+        expect(aigcInvocation.outputSummary).toMatch(/4\s+subsystems/);
+        expect(aigcInvocation.outputSummary).toMatch(/2\s+risks?/);
+        expect(aigcInvocation.requestedBy).toBe(
+          "aigc-spec-node-capability-bridge"
+        );
+
+        // Confirm logs never leak raw prompt / response contents.
+        const logsJoined = (aigcInvocation.logs ?? []).join("\n");
+        expect(logsJoined).not.toContain("You are the AIGC Spec Node");
+        expect(logsJoined).not.toContain(
+          "CI providers push deploy events"
+        );
+
+        // Verify adapter in sandbox + capability events.
+        const eventsResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/${latest.job.id}/events`
+        );
+        const eventsBody = (await eventsResponse.json()) as Record<string, any>;
+        const aigcSandboxCompleted = eventsBody.events.find(
+          (event: any) =>
+            event.type === "sandbox.job.completed" &&
+            event.stage === "route_generation"
+        );
+        expect(aigcSandboxCompleted).toBeTruthy();
+        expect(aigcSandboxCompleted.payload?.aigcAdapter).toBe(
+          "blueprint.runtime.aigc.spec-node.llm"
+        );
+
+        const aigcCapabilityEvents = eventsBody.events.filter(
+          (event: any) =>
+            event.family === "capability" &&
+            event.capabilityId === "aigc-spec-node"
+        );
+        const invokedEvent = aigcCapabilityEvents.find(
+          (event: any) => event.type === "capability.invoked"
+        );
+        const completedEvent = aigcCapabilityEvents.find(
+          (event: any) => event.type === "capability.completed"
+        );
+        const adapterFromEvents =
+          invokedEvent?.payload?.adapter ?? completedEvent?.payload?.adapter;
+        expect(adapterFromEvents).toBe(
+          "blueprint.runtime.aigc.spec-node.llm"
+        );
+        expect(adapterFromEvents).not.toMatch(/\.simulated$/);
+        const executionModeFromEvents =
+          invokedEvent?.payload?.executionMode ??
+          completedEvent?.payload?.executionMode;
+        expect(executionModeFromEvents).toBe("real");
+
+        // Evidence side: structuredPayload digest should echo the invocation.
+        const aigcEvidence = latest.capabilityEvidence.find(
+          (item: any) => item.invocationId === aigcInvocation.id
+        );
+        expect(aigcEvidence).toBeTruthy();
+        expect(aigcEvidence.provenance.executionMode).toBe("real");
+        expect(aigcEvidence.provenance.structuredPayloadDigest).toBe(
+          aigcInvocation.provenance.structuredPayloadDigest
+        );
+        expect(aigcEvidence.provenance.structuredPayload).toBeTruthy();
+        expect(aigcEvidence.provenance.structuredPayload.digest).toBe(
+          aigcInvocation.provenance.structuredPayloadDigest
+        );
+        expect(
+          typeof aigcEvidence.provenance.structuredPayload.byteSize
+        ).toBe("number");
+        expect(aigcEvidence.provenance.structuredPayload.byteSize).toBeGreaterThan(
+          0
+        );
+        expect(
+          typeof aigcEvidence.provenance.structuredPayload.summary
+        ).toBe("string");
+      });
+    });
+
+    it("falls back to simulated output when the LLM call throws", async () => {
+      process.env.BLUEPRINT_AIGC_NODE_CAPABILITY_BRIDGE_ENABLED = "true";
+      process.env.LLM_API_KEY = "sk-test-valid-key-for-bridge-integration";
+      process.env.LLM_MODEL = "gpt-4-turbo";
+      llmMocks.callLLMJson.mockImplementation(async (messages: any) => {
+        if (isAigcCall(messages)) {
+          throw new Error("upstream 503");
+        }
+        return {};
+      });
+
+      await withServer(tempRoot, async baseUrl => {
+        const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetText: "Build a release dashboard.",
+            githubUrls: ["https://github.com/example/dashboard"],
+          }),
+        });
+        expect(createResponse.status).toBe(201);
+
+        const jobResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/latest`
+        );
+        expect(jobResponse.status).toBe(200);
+        const latest = (await jobResponse.json()) as Record<string, any>;
+
+        const aigcInvocation = latest.capabilityInvocations.find(
+          (inv: any) => inv.capabilityId === "aigc-spec-node"
+        );
+        expect(aigcInvocation).toBeTruthy();
+        expect(aigcInvocation.provenance.executionMode).toBe("simulated_fallback");
+        expect(aigcInvocation.provenance.error).toMatch(
+          /upstream 503|llm callJson threw/
+        );
+        expect(aigcInvocation.requestedBy).toBe(
+          "route-generation-sandbox-derivation"
+        );
+        expect(typeof aigcInvocation.durationMs).toBe("number");
+        expect(aigcInvocation.outputSummary).toBeTruthy();
+
+        // Adapter stays on the simulated string.
+        const eventsResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/${latest.job.id}/events`
+        );
+        const eventsBody = (await eventsResponse.json()) as Record<string, any>;
+        const aigcSandboxCompleted = eventsBody.events.find(
+          (event: any) =>
+            event.type === "sandbox.job.completed" &&
+            event.stage === "route_generation"
+        );
+        expect(aigcSandboxCompleted).toBeTruthy();
+        expect(aigcSandboxCompleted.payload?.aigcAdapter).toBe(
+          "blueprint.runtime.aigc.spec-node.simulated"
+        );
+
+        const aigcCapabilityEvents = eventsBody.events.filter(
+          (event: any) =>
+            event.family === "capability" &&
+            event.capabilityId === "aigc-spec-node"
+        );
+        const invokedEvent = aigcCapabilityEvents.find(
+          (event: any) => event.type === "capability.invoked"
+        );
+        const completedEvent = aigcCapabilityEvents.find(
+          (event: any) => event.type === "capability.completed"
+        );
+        const adapterFromEvents =
+          invokedEvent?.payload?.adapter ?? completedEvent?.payload?.adapter;
+        expect(adapterFromEvents).toBe(
+          "blueprint.runtime.aigc.spec-node.simulated"
+        );
+        const executionModeFromEvents =
+          invokedEvent?.payload?.executionMode ??
+          completedEvent?.payload?.executionMode;
+        expect(executionModeFromEvents).toBe("simulated_fallback");
+
+        // Evidence must not carry structuredPayload object on fallback.
+        const aigcEvidence = latest.capabilityEvidence.find(
+          (item: any) => item.invocationId === aigcInvocation.id
+        );
+        expect(aigcEvidence).toBeTruthy();
+        expect(aigcEvidence.provenance.executionMode).toBe(
+          "simulated_fallback"
+        );
+        expect(aigcEvidence.provenance.structuredPayload).toBeUndefined();
+      });
+    });
   });
 });

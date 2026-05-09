@@ -1895,8 +1895,9 @@ interface CreateGenerationJobOptions {
    * task 19 起，同一 ctx 也承载 MCP GitHub 桥的 `mcpToolAdapter` /
    * `httpFetcher` / `mcpGithubCapabilityPolicy` / `mcpGithubCapabilityBridge`，
    * 从而 `mcp-github-source` 能力可以从模板 fallback 升级为真实
-   * MCP / HTTP 调用。ctx 未提供时所有 capability 分支继续走模板化 simulated 路径
-   * （design §D10 兼容基线）。
+   * MCP / HTTP 调用。autopilot-capability-bridge-aigc-node 再通过同一 ctx 暴露
+   * `aigcSpecNodeCapabilityBridge`，使 `aigc-spec-node` 能力可以升级为真实 LLM 调用。
+   * ctx 未提供时所有 capability 分支继续走模板化 simulated 路径（design §D10 兼容基线）。
    */
   ctx?: BlueprintServiceContext;
 }
@@ -2324,12 +2325,41 @@ function parseGenerationRequest(body: unknown): ParseGenerationRequestResult {
   };
 }
 
+/**
+ * Lazy default {@link BlueprintServiceContext} resolver for `createGenerationJob`.
+ *
+ * The import is dynamic to avoid a circular import between
+ * `server/routes/blueprint.ts` and `server/routes/blueprint/context.ts`
+ * (context.ts already imports `createFileBlueprintJobStore` from blueprint.ts).
+ */
+async function resolveDefaultBlueprintServiceContext(deps: {
+  now?: () => Date;
+  jobStore: BlueprintJobStore;
+}): Promise<BlueprintServiceContext> {
+  const contextModule = await import("./blueprint/context.js");
+  return contextModule.buildBlueprintServiceContext({
+    now: deps.now,
+    jobStore: deps.jobStore,
+  });
+}
+
 export async function createGenerationJob(
   request: BlueprintGenerationRequest,
   options: CreateGenerationJobOptions
 ): Promise<BlueprintCreateGenerationJobResponse> {
   const createdAt = (options.now?.() ?? new Date()).toISOString();
   const jobId = createId("blueprint-job");
+  // Resolve ctx lazily: if the caller (router handler) passed one, reuse it;
+  // otherwise build a default context so downstream bridges (e.g. aigc-spec-node)
+  // still have `ctx.llm.callJson` / `ctx.aigcSpecNodeCapabilityBridge` available.
+  // The default bridge auto-early-exits into fallback when the env flag is off,
+  // so this does not introduce LLM traffic for existing callers.
+  const ctx: BlueprintServiceContext =
+    options.ctx ??
+    (await resolveDefaultBlueprintServiceContext({
+      now: options.now,
+      jobStore: options.store,
+    }));
   const events: BlueprintGenerationEvent[] = [
     createGenerationEvent({
       jobId,
@@ -2408,15 +2438,18 @@ export async function createGenerationJob(
     createdAt,
     payload: agentCrew,
   };
-  const routeSandboxDerivation = await createRouteGenerationSandboxDerivation({
-    jobId,
-    request,
-    routeSet,
-    agentCrew,
-    capabilities: getDefaultRuntimeCapabilities(),
-    createdAt,
-    ctx: options.ctx,
-  });
+  const routeSandboxDerivation = await createRouteGenerationSandboxDerivation(
+    ctx,
+    {
+      jobId,
+      request,
+      routeSet,
+      agentCrew,
+      capabilities: getDefaultRuntimeCapabilities(),
+      createdAt,
+      clarificationSession: options.clarificationSession,
+    }
+  );
   const contextArtifacts = buildGenerationContextArtifacts({
     createdAt,
     intake: options.intake,
@@ -2975,27 +3008,33 @@ interface RouteGenerationSandboxDerivationResult {
   artifacts: BlueprintGenerationArtifact[];
 }
 
-async function createRouteGenerationSandboxDerivation(input: {
-  jobId: string;
-  request: BlueprintGenerationRequest;
-  routeSet: BlueprintRouteSet;
-  agentCrew: BlueprintAgentCrew;
-  capabilities: BlueprintRuntimeCapability[];
-  createdAt: string;
-  /**
-   * 可选：`BlueprintServiceContext`。
-   *
-   * - 缺省（`undefined`）时，所有 capability 分支继续走模板化 simulated 路径
-   *   （design §D10 兼容基线：测试装配与今天的生产行为等价）。
-   * - 注入时，`capability.id === "docker-analysis-sandbox"` 分支会委派给
-   *   `ctx.dockerCapabilityBridge(...)`；`capability.id === "mcp-github-source"`
-   *   分支会委派给 `ctx.mcpGithubCapabilityBridge(...)`（autopilot-capability-bridge-mcp
-   *   task 19 / 20）；其它 capability 分支一行不改。
-   *
-   * 详见 design §4.6 / Task 15.1 / Task 15.5。
-   */
-  ctx?: BlueprintServiceContext;
-}): Promise<RouteGenerationSandboxDerivationResult> {
+/**
+ * Sandbox derivation that runs the sequence of capability invocations used to
+ * build the route-generation artifact.
+ *
+ * `ctx` carries:
+ * - `dockerCapabilityBridge`: delegates `capability.id === "docker-analysis-sandbox"`
+ *   to the Docker bridge (autopilot-capability-bridge-docker)；
+ * - `mcpGithubCapabilityBridge`: delegates `capability.id === "mcp-github-source"`
+ *   to the MCP GitHub bridge (autopilot-capability-bridge-mcp)；
+ * - `aigcSpecNodeCapabilityBridge`: delegates `capability.id === "aigc-spec-node"`
+ *   to the AIGC Spec Node bridge (autopilot-capability-bridge-aigc-node)；
+ * - 其它 capability 分支继续走模板化 simulated 路径（design §D10 兼容基线）。
+ *
+ * 详见 design §4.6 / Task 15.1 / Task 15.5。
+ */
+async function createRouteGenerationSandboxDerivation(
+  ctx: BlueprintServiceContext,
+  input: {
+    jobId: string;
+    request: BlueprintGenerationRequest;
+    routeSet: BlueprintRouteSet;
+    agentCrew: BlueprintAgentCrew;
+    capabilities: BlueprintRuntimeCapability[];
+    createdAt: string;
+    clarificationSession?: BlueprintClarificationSession;
+  }
+): Promise<RouteGenerationSandboxDerivationResult> {
   const capabilityIds = uniqueStrings(
     input.routeSet.routes.flatMap(route =>
       route.capabilities.map(capability => capability.id)
@@ -3051,9 +3090,9 @@ async function createRouteGenerationSandboxDerivation(input: {
       // 模板化 simulated 路径，保持 design §D10 兼容基线。
       if (
         capability.id === "docker-analysis-sandbox" &&
-        input.ctx?.dockerCapabilityBridge
+        ctx.dockerCapabilityBridge
       ) {
-        const bridgeResult = await input.ctx.dockerCapabilityBridge({
+        const bridgeResult = await ctx.dockerCapabilityBridge({
           capability,
           route,
           jobId: input.jobId,
@@ -3072,9 +3111,9 @@ async function createRouteGenerationSandboxDerivation(input: {
       // 下方模板化 simulated 路径，保持 design §D10 兼容基线。
       if (
         capability.id === "mcp-github-source" &&
-        input.ctx?.mcpGithubCapabilityBridge
+        ctx.mcpGithubCapabilityBridge
       ) {
-        const bridgeResult = await input.ctx.mcpGithubCapabilityBridge({
+        const bridgeResult = await ctx.mcpGithubCapabilityBridge({
           capability,
           route,
           jobId: input.jobId,
@@ -3087,10 +3126,32 @@ async function createRouteGenerationSandboxDerivation(input: {
         return bridgeResult.invocation;
       }
 
-      // Task 15.4：其它 capability（aigc-spec-node / role-system-architecture /
-      // skill-svg-architecture）以及 docker / mcp-github-source 分支在对应
-      // bridge 未注入时，继续走原模板化 simulated 路径。相比原实现，这里只把
-      // `id: createId(...)` 改为 `id: invocationId`，其余字段一行不改。
+      // autopilot-capability-bridge-aigc-node task 17：aigc-spec-node 分支。
+      // The bridge returns both the invocation (real or simulated_fallback)
+      // and a free-standing `executionMode` marker the outer code uses to
+      // resolve event-payload `adapter` strings.
+      if (
+        capability.id === "aigc-spec-node" &&
+        ctx.aigcSpecNodeCapabilityBridge
+      ) {
+        const bridgeResult = await ctx.aigcSpecNodeCapabilityBridge({
+          capability,
+          route,
+          jobId: input.jobId,
+          request: input.request,
+          routeSet: input.routeSet,
+          clarificationSession: input.clarificationSession,
+          createdAt: input.createdAt,
+          invocationId,
+          roleId: invocationRoleId,
+        });
+        return bridgeResult.invocation;
+      }
+
+      // Task 15.4：其它 capability（role-system-architecture /
+      // skill-svg-architecture）以及 docker / mcp-github-source / aigc-spec-node
+      // 分支在对应 bridge 未注入时，继续走原模板化 simulated 路径。相比原实现，
+      // 这里只把 `id: createId(...)` 改为 `id: invocationId`，其余字段一行不改。
       const invocation: BlueprintCapabilityInvocation = {
         id: invocationId,
         jobId: input.jobId,
@@ -3185,6 +3246,31 @@ async function createRouteGenerationSandboxDerivation(input: {
     dockerInvocation?.provenance?.executionMode === "real"
       ? "blueprint.runtime.docker.lobster-executor"
       : (dockerCapability?.adapter ?? "blueprint.runtime.docker.simulated");
+  // autopilot-capability-bridge-aigc-node task 18.1：aigc-spec-node adapter
+  // resolution — real LLM path vs simulated fallback.
+  const aigcInvocation = invocations.find(
+    invocation => invocation.capabilityId === "aigc-spec-node"
+  );
+  const aigcExecutionMode = aigcInvocation?.provenance.executionMode;
+  const aigcAdapter: string =
+    aigcExecutionMode === "real"
+      ? "blueprint.runtime.aigc.spec-node.llm"
+      : routeGenerationCapabilities.find(
+          capability => capability.id === "aigc-spec-node"
+        )?.adapter ?? "blueprint.runtime.aigc.spec-node.simulated";
+  const adapterForCapability = (capabilityId: string): string => {
+    if (capabilityId === "docker-analysis-sandbox") {
+      return dockerAdapter;
+    }
+    if (capabilityId === "aigc-spec-node") {
+      return aigcAdapter;
+    }
+    return (
+      routeGenerationCapabilities.find(
+        capability => capability.id === capabilityId
+      )?.adapter ?? ""
+    );
+  };
   const totalDurationMs = invocationsWithEvidence.reduce(
     (total, invocation) => total + invocation.durationMs,
     0
@@ -3303,6 +3389,7 @@ async function createRouteGenerationSandboxDerivation(input: {
   };
   const capabilityEvents = invocationsWithEvidence.flatMap(invocation => {
     const evidence = evidenceItems.find(item => item.invocationId === invocation.id);
+    const capabilityAdapter = adapterForCapability(invocation.capabilityId);
     return [
       createGenerationEvent({
         jobId: input.jobId,
@@ -3323,6 +3410,7 @@ async function createRouteGenerationSandboxDerivation(input: {
           evidence,
           roleId,
           crewId,
+          adapter: capabilityAdapter,
         }),
       }),
       createGenerationEvent({
@@ -3344,6 +3432,7 @@ async function createRouteGenerationSandboxDerivation(input: {
           evidence,
           roleId,
           crewId,
+          adapter: capabilityAdapter,
         }),
       }),
     ];
@@ -3415,6 +3504,10 @@ async function createRouteGenerationSandboxDerivation(input: {
         // "blueprint.runtime.docker.lobster-executor"；fallback 路径回退到
         // getDefaultRuntimeCapabilities() 的 ".simulated" 基线。
         dockerAdapter,
+        // Task 18.2: surface the resolved aigc adapter so downstream
+        // consumers can distinguish real LLM execution vs simulated fallback
+        // without inspecting every invocation.
+        aigcAdapter,
         sourceIds: {
           projectId: input.request.projectId,
           routeSetId: input.routeSet.id,
@@ -3450,6 +3543,9 @@ async function createRouteGenerationSandboxDerivation(input: {
         // Task 16.2：同 sandbox.job.started，docker capability adapter 在
         // real 路径下切换为 lobster-executor。
         dockerAdapter,
+        // Task 18.2: mirror aigc adapter on completion so real-vs-fallback
+        // readers do not need to correlate with the `started` event.
+        aigcAdapter,
         sourceIds: {
           projectId: input.request.projectId,
           routeSetId: input.routeSet.id,
@@ -3581,6 +3677,14 @@ function buildRouteSandboxCapabilityEventPayload(input: {
   evidence?: BlueprintCapabilityEvidence;
   roleId: string;
   crewId: string;
+  /**
+   * Optional per-capability adapter string. When the aigc-spec-node bridge
+   * reports a real LLM path, the outer caller passes the `.llm` adapter here
+   * so downstream consumers can distinguish real vs simulated execution.
+   * Non-aigc capabilities pass the statically declared adapter; field is
+   * additive so existing subscribers do not break.
+   */
+  adapter?: string;
 }): Record<string, unknown> {
   // Task 16.3：capability.invoked / capability.completed 事件 payload 追加
   // 可选字段 executionMode / containerId / artifactUrl / logDigest，从
@@ -3613,7 +3717,7 @@ function buildRouteSandboxCapabilityEventPayload(input: {
   if (provenance.mcpToolName !== undefined) {
     bridgeProvenance.mcpToolName = provenance.mcpToolName;
   }
-  return {
+  const payload: Record<string, unknown> = {
     capabilityId: input.invocation.capabilityId,
     roleId: input.invocation.roleId ?? input.roleId,
     crewId: input.crewId,
@@ -3646,6 +3750,30 @@ function buildRouteSandboxCapabilityEventPayload(input: {
       ? { logDigest: provenance.logDigest }
       : {}),
   };
+  // Task 18.3: additive optional fields surfaced from invocation.provenance.
+  // When the bridge executes in real mode these fields carry the prompt /
+  // model / digest breadcrumbs; in fallback mode the `error` field surfaces
+  // the redacted reason string. Consumers that do not know these keys are
+  // unaffected thanks to JSON's additive shape.
+  if (input.adapter !== undefined && input.adapter !== "") {
+    payload.adapter = input.adapter;
+  }
+  if (provenance.executionMode !== undefined) {
+    payload.executionMode = provenance.executionMode;
+  }
+  if (typeof provenance.promptId === "string") {
+    payload.promptId = provenance.promptId;
+  }
+  if (typeof provenance.model === "string") {
+    payload.model = provenance.model;
+  }
+  if (typeof provenance.error === "string") {
+    payload.error = provenance.error;
+  }
+  if (typeof provenance.structuredPayloadDigest === "string") {
+    payload.structuredPayloadDigest = provenance.structuredPayloadDigest;
+  }
+  return payload;
 }
 
 function resolveRouteSandboxCapabilityRoleId(
@@ -10543,6 +10671,29 @@ function buildCapabilityEvidence(input: {
   const title = `Capability evidence: ${input.capability.label}`;
   const summary = `${input.capability.label} recorded ${kind} evidence for invocation ${input.invocation.id}.`;
 
+  // Task 18.4 / 18.5: inherit the AIGC-spec-node / Docker / MCP bridge
+  // provenance fields that land on the invocation side, and for the aigc
+  // real path materialise the `structuredPayload` summary object using the
+  // internal `__aigcStructuredPayloadRef` breadcrumb the bridge attached.
+  //
+  // The side-field is read once here and then stripped so it does not leak
+  // via downstream `JSON.stringify(invocation)` into artifact payloads or
+  // event bus subscribers. Stripping keeps the public invocation shape
+  // free of `__`-prefixed keys.
+  const invocationProvenance = input.invocation.provenance;
+  type StructuredPayloadRef = {
+    digest: string;
+    byteSize: number;
+    summary: string;
+  };
+  const invocationWithSideField = input.invocation as unknown as {
+    __aigcStructuredPayloadRef?: StructuredPayloadRef;
+  };
+  const structuredPayloadRef = invocationWithSideField.__aigcStructuredPayloadRef;
+  if (structuredPayloadRef) {
+    delete invocationWithSideField.__aigcStructuredPayloadRef;
+  }
+
   return {
     id: createId("blueprint-capability-evidence"),
     jobId: input.job.id,
@@ -10588,47 +10739,74 @@ function buildCapabilityEvidence(input: {
       // 既有字段一行不改。仅在字段存在时 spread，避免为非 docker capability 注入无意
       // 义的 undefined 字段；evidence 的 JSON 序列化形态对既有消费方保持等价
       // （design §4.10 / 需求 3.7 / 4.2 / 4.4）。
-      ...(input.invocation.provenance.executionMode !== undefined
-        ? { executionMode: input.invocation.provenance.executionMode }
+      ...(invocationProvenance.executionMode !== undefined
+        ? { executionMode: invocationProvenance.executionMode }
         : {}),
-      ...(input.invocation.provenance.containerId !== undefined
-        ? { containerId: input.invocation.provenance.containerId }
+      ...(invocationProvenance.containerId !== undefined
+        ? { containerId: invocationProvenance.containerId }
         : {}),
-      ...(input.invocation.provenance.artifactUrl !== undefined
-        ? { artifactUrl: input.invocation.provenance.artifactUrl }
+      ...(invocationProvenance.artifactUrl !== undefined
+        ? { artifactUrl: invocationProvenance.artifactUrl }
         : {}),
-      ...(input.invocation.provenance.logDigest !== undefined
-        ? { logDigest: input.invocation.provenance.logDigest }
+      ...(invocationProvenance.logDigest !== undefined
+        ? { logDigest: invocationProvenance.logDigest }
         : {}),
       // —— autopilot-capability-bridge-mcp task 21 ——
       // Inherit the MCP bridge-specific provenance fields from the originating
       // invocation so evidence consumers (Artifact Replay, Agent Crew) can
       // display the real-vs-simulated badge / audit link without reaching
-      // back to the invocation. Fields stay optional; existing evidence
-      // consumers that do not read them are unaffected (requirement 3.7 / 4.4).
-      ...(input.invocation.provenance.executionPath !== undefined
-        ? { executionPath: input.invocation.provenance.executionPath }
+      // back to the invocation.
+      ...(invocationProvenance.executionPath !== undefined
+        ? { executionPath: invocationProvenance.executionPath }
         : {}),
-      ...(input.invocation.provenance.repoUrl !== undefined
-        ? { repoUrl: input.invocation.provenance.repoUrl }
+      ...(invocationProvenance.repoUrl !== undefined
+        ? { repoUrl: invocationProvenance.repoUrl }
         : {}),
-      ...(input.invocation.provenance.commitSha !== undefined
-        ? { commitSha: input.invocation.provenance.commitSha }
+      ...(invocationProvenance.commitSha !== undefined
+        ? { commitSha: invocationProvenance.commitSha }
         : {}),
-      ...(input.invocation.provenance.fetchedAt !== undefined
-        ? { fetchedAt: input.invocation.provenance.fetchedAt }
+      ...(invocationProvenance.fetchedAt !== undefined
+        ? { fetchedAt: invocationProvenance.fetchedAt }
         : {}),
-      ...(input.invocation.provenance.defaultBranch !== undefined
-        ? { defaultBranch: input.invocation.provenance.defaultBranch }
+      ...(invocationProvenance.defaultBranch !== undefined
+        ? { defaultBranch: invocationProvenance.defaultBranch }
         : {}),
-      ...(input.invocation.provenance.apiResponseDigest !== undefined
-        ? { apiResponseDigest: input.invocation.provenance.apiResponseDigest }
+      ...(invocationProvenance.apiResponseDigest !== undefined
+        ? { apiResponseDigest: invocationProvenance.apiResponseDigest }
         : {}),
-      ...(input.invocation.provenance.mcpToolName !== undefined
-        ? { mcpToolName: input.invocation.provenance.mcpToolName }
+      ...(invocationProvenance.mcpToolName !== undefined
+        ? { mcpToolName: invocationProvenance.mcpToolName }
         : {}),
-      ...(input.invocation.provenance.error !== undefined
-        ? { error: input.invocation.provenance.error }
+      // —— autopilot-capability-bridge-aigc-node task 18.4 / 18.5 ——
+      // Inherit optional bridge-provided aigc-spec-node provenance fields.
+      ...(invocationProvenance.promptId !== undefined
+        ? { promptId: invocationProvenance.promptId }
+        : {}),
+      ...(invocationProvenance.model !== undefined
+        ? { model: invocationProvenance.model }
+        : {}),
+      ...(invocationProvenance.responseDigest !== undefined
+        ? { responseDigest: invocationProvenance.responseDigest }
+        : {}),
+      ...(invocationProvenance.tokenCount !== undefined
+        ? { tokenCount: invocationProvenance.tokenCount }
+        : {}),
+      ...(invocationProvenance.structuredPayloadDigest !== undefined
+        ? { structuredPayloadDigest: invocationProvenance.structuredPayloadDigest }
+        : {}),
+      ...(invocationProvenance.promptFingerprint !== undefined
+        ? { promptFingerprint: invocationProvenance.promptFingerprint }
+        : {}),
+      // Task 18.5: materialise structuredPayload for aigc-spec-node real
+      // path. Only when the bridge attached a ref AND the invocation is in
+      // real execution mode — fallback path stays undefined.
+      ...(structuredPayloadRef &&
+      input.capability.id === "aigc-spec-node" &&
+      invocationProvenance.executionMode === "real"
+        ? { structuredPayload: structuredPayloadRef }
+        : {}),
+      ...(invocationProvenance.error !== undefined
+        ? { error: invocationProvenance.error }
         : {}),
     },
   };

@@ -2263,6 +2263,7 @@ export function normalizeBlueprintCapabilityInvocation(
     provenance: ((): BlueprintCapabilityInvocation["provenance"] => {
       // Merge: docker bridge (HEAD) wrote provenance fields flat on the
       // record; mcp bridge nests them under `record.provenance`. Accept both.
+      // aigc-spec-node bridge also nests (promptId / model / tokenCount etc).
       const provenanceRecord = asRecord(record.provenance) ?? {};
       const executionMode = asString(
         provenanceRecord.executionMode ??
@@ -2270,6 +2271,11 @@ export function normalizeBlueprintCapabilityInvocation(
           record.execution_mode
       );
       const executionPath = asString(provenanceRecord.executionPath);
+      const tokenCountRaw =
+        provenanceRecord.tokenCount ??
+        (provenanceRecord as Record<string, unknown>).token_count;
+      const tokenCount =
+        typeof tokenCountRaw === "number" ? tokenCountRaw : undefined;
       return {
         jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
         projectId: asString(record.projectId ?? record.project_id) || undefined,
@@ -2319,6 +2325,30 @@ export function normalizeBlueprintCapabilityInvocation(
         apiResponseDigest:
           asString(provenanceRecord.apiResponseDigest) || undefined,
         mcpToolName: asString(provenanceRecord.mcpToolName) || undefined,
+        // AIGC-spec-node bridge provenance (nested on record.provenance).
+        promptId:
+          asString(
+            provenanceRecord.promptId ??
+              (provenanceRecord as Record<string, unknown>).prompt_id
+          ) || undefined,
+        model: asString(provenanceRecord.model) || undefined,
+        responseDigest:
+          asString(
+            provenanceRecord.responseDigest ??
+              (provenanceRecord as Record<string, unknown>).response_digest
+          ) || undefined,
+        tokenCount,
+        structuredPayloadDigest:
+          asString(
+            provenanceRecord.structuredPayloadDigest ??
+              (provenanceRecord as Record<string, unknown>)
+                .structured_payload_digest
+          ) || undefined,
+        promptFingerprint:
+          asString(
+            provenanceRecord.promptFingerprint ??
+              (provenanceRecord as Record<string, unknown>).prompt_fingerprint
+          ) || undefined,
         error: asString(provenanceRecord.error ?? record.error) || undefined,
       };
     })(),
@@ -2409,7 +2439,8 @@ export function normalizeBlueprintCapabilityEvidence(
     ) ?? {}) as BlueprintCapabilityEvidence["payloadSummary"],
     provenance: ((): BlueprintCapabilityEvidence["provenance"] => {
       // Merge: docker bridge (HEAD) wrote provenance fields flat on the
-      // record; mcp bridge nests them under `record.provenance`. Accept both.
+      // record; mcp bridge nests them under `record.provenance`. aigc-spec-node
+      // bridge also nests and adds structuredPayload + promptId/model/etc.
       const provenanceRecord = asRecord(record.provenance) ?? {};
       const executionMode = asString(
         provenanceRecord.executionMode ??
@@ -2417,6 +2448,26 @@ export function normalizeBlueprintCapabilityEvidence(
           record.execution_mode
       );
       const executionPath = asString(provenanceRecord.executionPath);
+      const tokenCountRaw =
+        provenanceRecord.tokenCount ??
+        (provenanceRecord as Record<string, unknown>).token_count;
+      const tokenCount =
+        typeof tokenCountRaw === "number" ? tokenCountRaw : undefined;
+      const structuredPayloadRecord = asRecord(
+        provenanceRecord.structuredPayload ??
+          (provenanceRecord as Record<string, unknown>).structured_payload
+      );
+      const structuredPayload = structuredPayloadRecord
+        ? {
+            digest: asString(structuredPayloadRecord.digest),
+            byteSize: asNumber(
+              structuredPayloadRecord.byteSize ??
+                (structuredPayloadRecord as Record<string, unknown>).byte_size,
+              0
+            ),
+            summary: asString(structuredPayloadRecord.summary),
+          }
+        : undefined;
       return {
         jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
         projectId: asString(record.projectId ?? record.project_id) || undefined,
@@ -2465,6 +2516,31 @@ export function normalizeBlueprintCapabilityEvidence(
         apiResponseDigest:
           asString(provenanceRecord.apiResponseDigest) || undefined,
         mcpToolName: asString(provenanceRecord.mcpToolName) || undefined,
+        // AIGC-spec-node bridge provenance.
+        promptId:
+          asString(
+            provenanceRecord.promptId ??
+              (provenanceRecord as Record<string, unknown>).prompt_id
+          ) || undefined,
+        model: asString(provenanceRecord.model) || undefined,
+        responseDigest:
+          asString(
+            provenanceRecord.responseDigest ??
+              (provenanceRecord as Record<string, unknown>).response_digest
+          ) || undefined,
+        tokenCount,
+        structuredPayloadDigest:
+          asString(
+            provenanceRecord.structuredPayloadDigest ??
+              (provenanceRecord as Record<string, unknown>)
+                .structured_payload_digest
+          ) || undefined,
+        promptFingerprint:
+          asString(
+            provenanceRecord.promptFingerprint ??
+              (provenanceRecord as Record<string, unknown>).prompt_fingerprint
+          ) || undefined,
+        ...(structuredPayload ? { structuredPayload } : {}),
         error: asString(provenanceRecord.error ?? record.error) || undefined,
       };
     })(),

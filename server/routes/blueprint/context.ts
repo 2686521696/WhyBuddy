@@ -64,6 +64,14 @@ import {
   createDefaultMcpGithubCapabilityPolicy,
   type McpGithubCapabilityPolicy,
 } from "./mcp-github-source/policy.js";
+import {
+  createAigcSpecNodeCapabilityBridge,
+  type AigcSpecNodeCapabilityBridge,
+} from "./aigc-spec-node/bridge.js";
+import {
+  createDefaultAigcSpecNodeCapabilityPolicy,
+  type AigcSpecNodeCapabilityPolicy,
+} from "./aigc-spec-node/policy.js";
 
 export type {
   BlueprintHttpFetcher,
@@ -72,6 +80,8 @@ export type {
   McpGithubCapabilityBridgeInput,
   McpGithubCapabilityBridgeOutput,
   McpGithubCapabilityPolicy,
+  AigcSpecNodeCapabilityBridge,
+  AigcSpecNodeCapabilityPolicy,
 };
 
 /**
@@ -315,6 +325,26 @@ export interface BlueprintServiceContext {
    * 测试可以通过 `buildBlueprintServiceContext({ mcpGithubCapabilityBridge: fake })` 注入。
    */
   mcpGithubCapabilityBridge?: McpGithubCapabilityBridge;
+  /**
+   * AIGC Spec Node capability policy. Defaults are wired by
+   * {@link buildBlueprintServiceContext}; callers may override for tests.
+   *
+   * Task 15 now default-wires this via
+   * `createDefaultAigcSpecNodeCapabilityPolicy()`. The field stays optional so
+   * custom {@link BlueprintServiceContext} shapes assembled directly (without
+   * {@link buildBlueprintServiceContext}) remain backwards compatible.
+   */
+  aigcSpecNodeCapabilityPolicy?: AigcSpecNodeCapabilityPolicy;
+  /**
+   * AIGC Spec Node capability bridge. Defaults to
+   * `createAigcSpecNodeCapabilityBridge(ctx)` when not provided.
+   *
+   * The bridge performs its own tier-1 early-exit when
+   * `BLUEPRINT_AIGC_NODE_CAPABILITY_BRIDGE_ENABLED !== "true"` or when the
+   * resolved apiKey is empty, so always wiring a bridge instance does not
+   * incur LLM traffic in default deployments.
+   */
+  aigcSpecNodeCapabilityBridge?: AigcSpecNodeCapabilityBridge;
 }
 
 /**
@@ -372,6 +402,20 @@ export interface BlueprintServiceContextDeps {
   mcpGithubCapabilityPolicy?: McpGithubCapabilityPolicy;
   /** See {@link BlueprintServiceContext.mcpGithubCapabilityBridge}. */
   mcpGithubCapabilityBridge?: McpGithubCapabilityBridge;
+  /**
+   * Optional override for the AIGC Spec Node policy. When omitted,
+   * {@link buildBlueprintServiceContext} wires
+   * {@link createDefaultAigcSpecNodeCapabilityPolicy}.
+   */
+  aigcSpecNodeCapabilityPolicy?: AigcSpecNodeCapabilityPolicy;
+  /**
+   * Optional override for the AIGC Spec Node bridge. When omitted,
+   * {@link buildBlueprintServiceContext} wires
+   * {@link createAigcSpecNodeCapabilityBridge} using the fully-constructed
+   * context (so the bridge sees the same `llm` / `logger` / `now` /
+   * `aigcSpecNodeCapabilityPolicy` that the rest of the app uses).
+   */
+  aigcSpecNodeCapabilityBridge?: AigcSpecNodeCapabilityBridge;
 }
 
 /**
@@ -438,7 +482,6 @@ export function buildBlueprintServiceContext(
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? createSilentBlueprintLogger();
   const jobStore = deps.jobStore ?? getDefaultJobStore(deps.jobStoreFile);
-
   // Task 13.1：executorCallbackDispatcher / dockerCapabilityPolicy 默认装配。
   // Task 13.2：executorClient 继续透传，不强行装配默认实例 —— bridge 在 ctx 上
   // `executorClient` 为 `undefined` 时会走 simulated fallback 早退路径（design
@@ -449,6 +492,11 @@ export function buildBlueprintServiceContext(
     createBlueprintExecutorCallbackDispatcher({ now, logger });
   const dockerCapabilityPolicy =
     deps.dockerCapabilityPolicy ?? createDefaultDockerCapabilityPolicy();
+
+  // AIGC Spec Node policy default (pure data, dependency-free).
+  const aigcSpecNodePolicy =
+    deps.aigcSpecNodeCapabilityPolicy ??
+    createDefaultAigcSpecNodeCapabilityPolicy();
 
   const baseCtx: BlueprintServiceContext = {
     now,
@@ -490,6 +538,9 @@ export function buildBlueprintServiceContext(
     // Bridge 本体 — 懒绑定，下方填充。需要先构造 ctx 才能把 ctx 作为闭包入参
     // 传给 `createMcpGithubCapabilityBridge`。
     mcpGithubCapabilityBridge: deps.mcpGithubCapabilityBridge,
+    // AIGC Spec Node capability: policy eagerly resolved, bridge late-bound.
+    aigcSpecNodeCapabilityPolicy: aigcSpecNodePolicy,
+    aigcSpecNodeCapabilityBridge: deps.aigcSpecNodeCapabilityBridge,
   };
 
   // Task 13.1 / 13.3 最后一步：用 baseCtx 构造默认 docker bridge（或透传注入的 bridge）。
@@ -506,6 +557,12 @@ export function buildBlueprintServiceContext(
   // 读取 `mcpToolAdapter` / `httpFetcher` / `mcpGithubCapabilityPolicy`。
   if (!ctx.mcpGithubCapabilityBridge) {
     ctx.mcpGithubCapabilityBridge = createMcpGithubCapabilityBridge(ctx);
+  }
+
+  // AIGC Spec Node bridge late-bind：bridge 闭包需要 ctx.aigcSpecNodeCapabilityPolicy /
+  // ctx.llm / ctx.logger / ctx.now 都已就位。
+  if (!ctx.aigcSpecNodeCapabilityBridge) {
+    ctx.aigcSpecNodeCapabilityBridge = createAigcSpecNodeCapabilityBridge(ctx);
   }
 
   // RouteSet LLM generator late-bind: the default generator needs the fully
