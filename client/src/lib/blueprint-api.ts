@@ -2274,6 +2274,19 @@ export function normalizeBlueprintCapabilityInvocation(
       targetText:
         asString(record.targetText ?? record.target_text) || undefined,
       githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
+      executionMode: (asString(
+        record.executionMode ?? record.execution_mode
+      ) || undefined) as
+        | "real"
+        | "simulated_fallback"
+        | undefined,
+      containerId:
+        asString(record.containerId ?? record.container_id) || undefined,
+      artifactUrl:
+        asString(record.artifactUrl ?? record.artifact_url) || undefined,
+      logDigest:
+        asString(record.logDigest ?? record.log_digest) || undefined,
+      error: asString(record.error) || undefined,
     },
   };
 }
@@ -2373,6 +2386,19 @@ export function normalizeBlueprintCapabilityEvidence(
       targetText:
         asString(record.targetText ?? record.target_text) || undefined,
       githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
+      executionMode: (asString(
+        record.executionMode ?? record.execution_mode
+      ) || undefined) as
+        | "real"
+        | "simulated_fallback"
+        | undefined,
+      containerId:
+        asString(record.containerId ?? record.container_id) || undefined,
+      artifactUrl:
+        asString(record.artifactUrl ?? record.artifact_url) || undefined,
+      logDigest:
+        asString(record.logDigest ?? record.log_digest) || undefined,
+      error: asString(record.error) || undefined,
     },
   };
 }

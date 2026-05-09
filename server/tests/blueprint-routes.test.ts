@@ -4570,3 +4570,537 @@ describe("blueprint specs route", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 20：Docker capability bridge E2E 用例（追加，不修改上方 45 条）
+// ---------------------------------------------------------------------------
+//
+// 这一段测试覆盖 `server/routes/blueprint/docker-analysis-sandbox/bridge.ts`
+// 的 2 条核心外层路径：
+//
+// - 20.1 real-Docker mock path：注入 fake `executorClient` + fake
+//   `executorCallbackDispatcher`，并通过
+//   `BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED = "true"` 打开 opt-in，
+//   模拟一次完整的容器成功执行。断言 docker capability invocation 带上
+//   `executionMode: "real"` / `containerId` / `artifactUrl` / `logDigest`
+//   等 Task 1 引入的可选字段，并且 sandbox.job.* 事件 payload 中
+//   `dockerAdapter === "blueprint.runtime.docker.lobster-executor"`。
+//
+// - 20.2 fallback path：只注入 `executorClient`，其 `assertReachable`
+//   抛 `ExecutorClientError("executor down", "unavailable")`。断言
+//   docker capability 退回到模板化 simulated 产出，`executionMode ===
+//   "simulated_fallback"`、`error` 带 "executor unreachable" 前缀、
+//   `durationMs / outputSummary / logs` 与 `deterministicCapabilityDuration`
+//   / `buildCapabilityOutputSummary` / `buildCapabilityInvocationLogs`
+//   完全一致，capability adapter 字段回到 baseline
+//   `"blueprint.runtime.docker.simulated"`。
+//
+// 硬约束：
+//   1. helper 不依赖真实 HTTP / Docker / dockerode；
+//   2. 不修改本文件上方 45 条 E2E 的任一断言（Requirement 1.9 / 9.4）；
+//   3. 用例内部自行 stub / 还原 `BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED`，
+//      避免污染其它用例。
+//
+// 相关 spec：`.kiro/specs/autopilot-capability-bridge-docker/`
+//   - Requirements 3.1 / 3.2 / 3.3 / 3.4 / 3.5 / 3.6 / 4.2 / 4.3 / 4.4 / 9.1 / 9.4
+//   - Design §4.2 / §4.6 / §4.7 / §4.8 / §4.9
+
+import { ExecutorClientError, type ExecutorClient } from "../core/executor-client.js";
+import {
+  buildCapabilityInvocationLogs,
+  buildCapabilityOutputSummary,
+  deterministicCapabilityDuration,
+} from "../routes/blueprint.js";
+import {
+  buildBlueprintServiceContext,
+  type BlueprintServiceContext,
+} from "../routes/blueprint/context.js";
+import type {
+  BlueprintExecutorCallbackDispatcher,
+} from "../routes/blueprint/docker-analysis-sandbox/types.js";
+import type {
+  ExecutionPlan,
+  ExecutorEvent,
+} from "../../shared/executor/contracts.js";
+import { EXECUTOR_CONTRACT_VERSION } from "../../shared/executor/contracts.js";
+
+/**
+ * Fake ExecutorClient 构造参数。
+ *
+ * 只覆盖 bridge 真实消费的 3 个方法：
+ *   - `assertReachable`  —— bridge step 2 health check；
+ *   - `dispatchPlan`     —— bridge step 5 派发；
+ *   - `cancelJob?`       —— bridge step 6 best-effort 取消（duck-typed 可选）。
+ *
+ * 其它 `ExecutorClient` 上的方法（`getCapabilities` / `buildJobRequest` 等）
+ * bridge 从不触达，此处以 `as unknown as ExecutorClient` 强制收束，
+ * 不为无关方法写 stub。
+ */
+interface CreateFakeExecutorClientOptions {
+  assertReachable?: () => Promise<void>;
+  dispatchPlan?: (
+    plan: ExecutionPlan,
+    options?: {
+      jobId?: string;
+      requestId?: string;
+      idempotencyKey?: string;
+    }
+  ) => Promise<{
+    request: unknown;
+    response: { ok: true; accepted: true; jobId: string };
+  }>;
+  cancelJob?: (jobId: string) => Promise<void>;
+}
+
+function createFakeExecutorClient(
+  options: CreateFakeExecutorClientOptions = {}
+): ExecutorClient {
+  const fake = {
+    assertReachable:
+      options.assertReachable ??
+      (async () => {
+        // 默认：可达
+      }),
+    dispatchPlan:
+      options.dispatchPlan ??
+      (async (_plan: ExecutionPlan, opts?: { jobId?: string }) => ({
+        request: {},
+        response: {
+          ok: true as const,
+          accepted: true as const,
+          jobId: opts?.jobId ?? "fake-job-id",
+        },
+      })),
+    ...(options.cancelJob !== undefined
+      ? { cancelJob: options.cancelJob }
+      : {}),
+  };
+  return fake as unknown as ExecutorClient;
+}
+
+/**
+ * Fake BlueprintExecutorCallbackDispatcher 构造参数。
+ *
+ * bridge 运行期消费 3 个方法：`awaitTerminal` / `handleEvent` / `collectLogs`。
+ */
+interface CreateFakeCallbackDispatcherOptions {
+  awaitTerminal?: (
+    jobId: string,
+    timeoutMs: number
+  ) => Promise<ExecutorEvent>;
+  handleEvent?: (event: ExecutorEvent) => void;
+  collectLogs?: (
+    jobId: string,
+    maxLines: number,
+    maxBytes: number
+  ) => {
+    getLogs: () => string[];
+    getDigest: () => string | undefined;
+    dispose: () => void;
+  };
+}
+
+function createFakeCallbackDispatcher(
+  options: CreateFakeCallbackDispatcherOptions = {}
+): BlueprintExecutorCallbackDispatcher {
+  return {
+    awaitTerminal:
+      options.awaitTerminal ??
+      (async () => {
+        throw new Error(
+          "awaitTerminal stub not provided on fake dispatcher"
+        );
+      }),
+    handleEvent: options.handleEvent ?? (() => {}),
+    collectLogs:
+      options.collectLogs ??
+      (() => ({
+        getLogs: () => [],
+        getDigest: () => "0".repeat(64),
+        dispose: () => {},
+      })),
+  };
+}
+
+/**
+ * 一个 `withServer` 的扩展：允许通过 `blueprintServiceContext` 把预构建的
+ * ctx 注入到 router。用法与原 `withServer` 相同，但额外多一个 ctx 参数。
+ *
+ * 这里**不修改**原 `withServer`（避免影响上方 45 条既有 E2E 的默认装配），
+ * 而是新写一个 helper 供 Task 20 专用。
+ */
+async function withServerAndCtx(
+  specsRoot: string,
+  ctx: BlueprintServiceContext,
+  handler: (baseUrl: string) => Promise<void>
+): Promise<void> {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    "/api/blueprint",
+    createBlueprintRouter({
+      specsRoot,
+      now: () => new Date("2026-05-06T00:00:00.000Z"),
+      jobStore: ctx.jobStore,
+      generateClarificationQuestions: async input => ({
+        questions: input.templateQuestions,
+        source: "template",
+      }),
+      blueprintServiceContext: ctx,
+    })
+  );
+
+  const server = createServer(app);
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", (error?: Error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
+
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    await handler(baseUrl);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close(error => (error ? reject(error) : resolve()));
+    });
+  }
+}
+
+describe("blueprint docker capability bridge E2E", () => {
+  let tempRoot = "";
+  const previousBridgeFlag =
+    process.env.BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED;
+
+  beforeEach(async () => {
+    llmMocks.callLLMJson.mockReset();
+    tempRoot = await mkdtemp(
+      path.join(process.cwd(), "tmp", "blueprint-docker-e2e-")
+    );
+    process.env.BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED = "true";
+  });
+
+  afterEach(async () => {
+    if (tempRoot) {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+    if (previousBridgeFlag === undefined) {
+      delete process.env.BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED;
+    } else {
+      process.env.BLUEPRINT_DOCKER_CAPABILITY_BRIDGE_ENABLED =
+        previousBridgeFlag;
+    }
+  });
+
+  it("routes docker capability through the real executor when bridge is configured (20.1)", async () => {
+    // 构造一个成功终态事件：带 summary / artifacts / containerId / durationMs，
+    // 覆盖 bridge `buildRealInvocation` 的全部可选字段来源。
+    const terminalEvent: ExecutorEvent = {
+      version: EXECUTOR_CONTRACT_VERSION,
+      eventId: "evt-terminal-real",
+      missionId: "blueprint:job-real",
+      jobId: "placeholder-will-be-overwritten",
+      executor: "lobster",
+      type: "job.completed",
+      status: "completed",
+      occurredAt: "2026-05-06T00:00:01.834Z",
+      message: "Docker analysis finished.",
+      summary:
+        "Docker analysis completed: 3 risks, 2 recommendations.",
+      metrics: { durationMs: 1834 },
+      artifacts: [
+        {
+          kind: "report",
+          name: "analysis.json",
+          url: "/executor/artifacts/analysis.json",
+        },
+      ],
+      payload: { containerId: "ctr_abc123" },
+    };
+
+    const fakeClient = createFakeExecutorClient({
+      assertReachable: async () => {
+        // reachable
+      },
+      dispatchPlan: async (_plan, opts) => ({
+        request: {},
+        response: {
+          ok: true as const,
+          accepted: true as const,
+          jobId: opts?.jobId ?? "fake-dispatched-job",
+        },
+      }),
+      cancelJob: async () => {
+        // 不应在 real 路径下被调用，但为了保证 duck-typed 检测稳定，留一个 no-op
+      },
+    });
+
+    const fakeDispatcher = createFakeCallbackDispatcher({
+      awaitTerminal: async jobId => ({
+        ...terminalEvent,
+        jobId,
+      }),
+      collectLogs: () => ({
+        getLogs: () => [
+          "[INFO] analysis started\n",
+          "[INFO] 3 risks detected\n",
+          "[INFO] analysis complete\n",
+        ],
+        getDigest: () => "sha256:deadbeef".padEnd(64, "a"),
+        dispose: () => {},
+      }),
+    });
+
+    // 受控 now：至少 2 次调用 —— dispatchedAt / completedAt —— 让 durationMs > 0
+    // 并且足够大，能与 `deterministicCapabilityDuration(...)` 产出区分。
+    const times = [
+      new Date("2026-05-06T00:00:00.000Z"),
+      new Date("2026-05-06T00:00:01.834Z"),
+    ];
+    let nowIndex = 0;
+    const now = () => times[Math.min(nowIndex++, times.length - 1)];
+
+    const ctx = buildBlueprintServiceContext({
+      jobStore: createMemoryBlueprintJobStore(),
+      executorClient: fakeClient,
+      executorCallbackDispatcher: fakeDispatcher,
+      now,
+    });
+
+    await withServerAndCtx(tempRoot, ctx, async baseUrl => {
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "proj-docker-real",
+          targetText:
+            "Validate the docker-analysis-sandbox bridge real path.",
+          githubUrls: ["https://github.com/example/permissions"],
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      // 从 artifacts 中抽出 docker capability 的 invocation payload。
+      const invocationArtifacts = (created.job.artifacts as any[]).filter(
+        artifact => artifact.type === "capability_invocation"
+      );
+      const dockerInvocationArtifact = invocationArtifacts.find(
+        artifact =>
+          artifact.payload?.capabilityId === "docker-analysis-sandbox"
+      );
+      expect(dockerInvocationArtifact).toBeTruthy();
+      const dockerInvocation = dockerInvocationArtifact.payload as Record<
+        string,
+        any
+      >;
+
+      // 核心断言：real 路径。
+      expect(dockerInvocation.provenance.executionMode).toBe("real");
+      expect(dockerInvocation.provenance.containerId).toBe("ctr_abc123");
+      expect(dockerInvocation.provenance.artifactUrl).toMatch(
+        /analysis\.json$/
+      );
+      expect(typeof dockerInvocation.provenance.logDigest).toBe("string");
+      expect(dockerInvocation.provenance.error).toBeUndefined();
+
+      // durationMs 应当来自墙钟差（1834ms），而不是模板化 deterministic 产出。
+      const invocationInput = `Derive route candidate ${dockerInvocationArtifact.payload.input
+        .match(/route candidate (.+) with /)?.[1] ?? ""} with Docker analysis sandbox.`;
+      const templateDuration = deterministicCapabilityDuration(
+        {
+          id: "docker-analysis-sandbox",
+          label: "Docker analysis sandbox",
+          kind: "docker",
+          purpose: "",
+          description: "",
+          tags: [],
+          securityLevel: "sandboxed",
+          status: "available",
+          adapter: "blueprint.runtime.docker.simulated",
+          inputSchema: "text/plain",
+          outputTypes: ["log"],
+          supportedStages: ["route_generation"],
+          requiresApproval: false,
+          projectScoped: true,
+        },
+        {
+          capabilityId: "docker-analysis-sandbox",
+          roleId: dockerInvocation.roleId,
+          routeId: dockerInvocation.routeId,
+          input: invocationInput,
+        }
+      );
+      expect(dockerInvocation.durationMs).not.toBe(templateDuration);
+      expect(dockerInvocation.durationMs).toBeGreaterThan(0);
+
+      // outputSummary 来自终态事件，而不是 `buildCapabilityOutputSummary` 模板。
+      expect(dockerInvocation.outputSummary).toContain(
+        "Docker analysis completed"
+      );
+
+      // requestedBy 是 real 路径的 bridge 标签。
+      expect(dockerInvocation.requestedBy).toBe("docker-capability-bridge");
+
+      // sandbox.job.started / sandbox.job.completed 事件 payload 中
+      // `dockerAdapter === "blueprint.runtime.docker.lobster-executor"`。
+      const sandboxEventsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/events?family=sandbox`
+      );
+      expect(sandboxEventsResponse.status).toBe(200);
+      const sandboxEventsBody = (await sandboxEventsResponse.json()) as Record<
+        string,
+        any
+      >;
+      const routeGenerationSandboxEvents = (
+        sandboxEventsBody.events as any[]
+      ).filter(event => event.stage === "route_generation");
+      const startedEvent = routeGenerationSandboxEvents.find(
+        event => event.type === "sandbox.job.started"
+      );
+      const completedEvent = routeGenerationSandboxEvents.find(
+        event => event.type === "sandbox.job.completed"
+      );
+      expect(startedEvent?.payload?.dockerAdapter).toBe(
+        "blueprint.runtime.docker.lobster-executor"
+      );
+      expect(completedEvent?.payload?.dockerAdapter).toBe(
+        "blueprint.runtime.docker.lobster-executor"
+      );
+    });
+  });
+
+  it("falls back to deterministic simulated output when executor is unreachable (20.2)", async () => {
+    const fakeClient = createFakeExecutorClient({
+      assertReachable: async () => {
+        throw new ExecutorClientError("executor down", "unavailable");
+      },
+    });
+
+    const ctx = buildBlueprintServiceContext({
+      jobStore: createMemoryBlueprintJobStore(),
+      executorClient: fakeClient,
+      // executorCallbackDispatcher / dockerCapabilityPolicy 走默认装配
+    });
+
+    await withServerAndCtx(tempRoot, ctx, async baseUrl => {
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "proj-docker-fallback",
+          targetText:
+            "Validate the docker-analysis-sandbox bridge fallback path.",
+          githubUrls: ["https://github.com/example/permissions"],
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      const invocationArtifacts = (created.job.artifacts as any[]).filter(
+        artifact => artifact.type === "capability_invocation"
+      );
+      const dockerInvocationArtifact = invocationArtifacts.find(
+        artifact =>
+          artifact.payload?.capabilityId === "docker-analysis-sandbox"
+      );
+      expect(dockerInvocationArtifact).toBeTruthy();
+      const dockerInvocation = dockerInvocationArtifact.payload as Record<
+        string,
+        any
+      >;
+
+      // Fallback 特征：executionMode + error 前缀。
+      expect(dockerInvocation.provenance.executionMode).toBe(
+        "simulated_fallback"
+      );
+      expect(dockerInvocation.provenance.error).toMatch(
+        /executor unreachable/
+      );
+
+      // durationMs / outputSummary / logs 必须等价于模板化 helper 产出。
+      // 为此需要重建 invocation 的 input 字符串形态。
+      const match = (dockerInvocation.input as string).match(
+        /^Derive route candidate (.+) with (.+)\.$/
+      );
+      expect(match).toBeTruthy();
+      const routeTitle = match![1];
+      const capabilityLabel = match![2];
+      const capabilityForSimulated = {
+        id: "docker-analysis-sandbox",
+        label: capabilityLabel,
+        kind: "docker" as const,
+        purpose: "",
+        description: "",
+        tags: [] as string[],
+        securityLevel: "sandboxed" as const,
+        status: "available" as const,
+        adapter: "blueprint.runtime.docker.simulated",
+        inputSchema: "text/plain",
+        outputTypes: ["log"] as string[],
+        supportedStages: ["route_generation"] as string[],
+        requiresApproval: false,
+        projectScoped: true,
+      };
+      const expectedSummary = buildCapabilityOutputSummary({
+        capability: capabilityForSimulated as any,
+        routeTitle,
+        input: dockerInvocation.input,
+      });
+      const expectedLogs = buildCapabilityInvocationLogs(
+        capabilityForSimulated as any,
+        expectedSummary
+      );
+      const expectedDuration = deterministicCapabilityDuration(
+        capabilityForSimulated as any,
+        {
+          capabilityId: dockerInvocation.capabilityId,
+          roleId: dockerInvocation.roleId,
+          routeId: dockerInvocation.routeId,
+          input: dockerInvocation.input,
+        }
+      );
+
+      expect(dockerInvocation.outputSummary).toBe(expectedSummary);
+      expect(dockerInvocation.logs).toEqual(expectedLogs);
+      expect(dockerInvocation.durationMs).toBe(expectedDuration);
+
+      // Fallback 路径保留原 requestedBy 字面量（design §4.8）。
+      expect(dockerInvocation.requestedBy).toBe(
+        "route-generation-sandbox-derivation"
+      );
+
+      // sandbox.job.* 事件中 dockerAdapter 回到基线
+      // "blueprint.runtime.docker.simulated"。
+      const sandboxEventsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/events?family=sandbox`
+      );
+      expect(sandboxEventsResponse.status).toBe(200);
+      const sandboxEventsBody = (await sandboxEventsResponse.json()) as Record<
+        string,
+        any
+      >;
+      const routeGenerationSandboxEvents = (
+        sandboxEventsBody.events as any[]
+      ).filter(event => event.stage === "route_generation");
+      const startedEvent = routeGenerationSandboxEvents.find(
+        event => event.type === "sandbox.job.started"
+      );
+      const completedEvent = routeGenerationSandboxEvents.find(
+        event => event.type === "sandbox.job.completed"
+      );
+      expect(startedEvent?.payload?.dockerAdapter).toBe(
+        "blueprint.runtime.docker.simulated"
+      );
+      expect(completedEvent?.payload?.dockerAdapter).toBe(
+        "blueprint.runtime.docker.simulated"
+      );
+    });
+  });
+});

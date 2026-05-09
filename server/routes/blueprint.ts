@@ -14,6 +14,7 @@ import {
 } from "./blueprint/routeset/route-llm-generator.js";
 import { buildBlueprintServiceContext } from "./blueprint/context.js";
 import { BlueprintEventName } from "../../shared/blueprint/events.js";
+import type { BlueprintServiceContext } from "./blueprint/context.js";
 import type {
   BlueprintArtifactDiff,
   BlueprintArtifactDiffRequest,
@@ -206,6 +207,28 @@ export interface BlueprintRouterDeps {
    * router. Tests can inject a mock here to fully short-circuit LLM calls.
    */
   routeSetLlmGenerator?: RouteSetLlmGenerator;
+  /**
+   * 可选：注入一个预构建的 `BlueprintServiceContext`。
+   *
+   * 未提供时 `createBlueprintRouter(deps)` 仍按今天的本地 state 构造路径装配，
+   * 不会主动构造 context（保持既有 43 条 E2E 用例默认装配等价）。
+   *
+   * 提供时：
+   * - `server/index.ts` 主服务入口在装配 blueprint router 时，会通过
+   *   `buildBlueprintServiceContext({})` 预先构造 ctx 并把同一实例传入；
+   * - 同一 ctx 实例也会被 `/api/executor/events` 后续中间件用于访问
+   *   `ctx.executorCallbackDispatcher.handleEvent(event)`（design §4.5 接线策略），
+   *   从而保证 router 内 Task 15 起的 docker capability bridge 消费到的 dispatcher
+   *   与回调中间件使用的是同一实例；
+   * - Task 15 起的子模块（例如 `createRouteGenerationSandboxDerivation`）可以通过
+   *   ctx 读取 `executorCallbackDispatcher` / `dockerCapabilityBridge` /
+   *   `dockerCapabilityPolicy` / `executorClient` 与主服务共享运行期依赖。
+   *
+   * 引用类型 `BlueprintServiceContext` 来自 `./blueprint/context.js`；这里只以
+   * `import type` 形式引用，不引入运行期循环依赖（context.ts 已经 import 回
+   * blueprint.ts 的 `createFileBlueprintJobStore` / `BlueprintJobStore`）。
+   */
+  blueprintServiceContext?: BlueprintServiceContext;
 }
 
 export type BlueprintClarificationQuestionGenerator = (
@@ -438,6 +461,18 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
     return cachedRouteSetLlmGenerator;
   };
 
+  // Task 14.2 / 15（design §4.5 接线策略）：
+  // 可选预构建的 `BlueprintServiceContext`。当 `server/index.ts` 通过
+  // `buildBlueprintServiceContext({})` 构造并注入时，同一实例也被
+  // `/api/executor/events` 回调中间件持有，保证 Docker capability bridge
+  // 消费到的 `executorCallbackDispatcher` 与主服务回调分发器为同一对象。
+  //
+  // Task 15 起：该 ctx 经 `createGenerationJob(options)` 透传到
+  // `createRouteGenerationSandboxDerivation`，由后者在 `capability.id ===
+  // "docker-analysis-sandbox"` 分支委派给 `ctx.dockerCapabilityBridge`；
+  // 其它 capability 分支继续走模板化 simulated 路径（design §D10）。
+  const blueprintServiceContext = deps.blueprintServiceContext;
+
   router.get("/specs", async (_req, res) => {
     try {
       const payload = await collectBlueprintSpecs(deps);
@@ -616,6 +651,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
         intake: resolved.intake,
         clarificationSession: resolved.clarificationSession,
         routeSetLlmGenerator: resolveRouteSetLlmGenerator(),
+        ctx: blueprintServiceContext,
       });
 
       res.status(201).json(result);
@@ -1889,6 +1925,15 @@ interface CreateGenerationJobOptions {
    * pass a generator explicitly.
    */
   routeSetLlmGenerator: RouteSetLlmGenerator;
+  /**
+   * 可选：`BlueprintServiceContext`。
+   *
+   * Task 15 引入：`createGenerationJob` 把 ctx 透传到
+   * `createRouteGenerationSandboxDerivation`，进而把 docker capability
+   * 分支路由到 `ctx.dockerCapabilityBridge`。ctx 未提供时所有 capability
+   * 分支继续走模板化 simulated 路径（design §D10 兼容基线）。
+   */
+  ctx?: BlueprintServiceContext;
 }
 
 /**
@@ -2398,13 +2443,14 @@ export async function createGenerationJob(
     createdAt,
     payload: agentCrew,
   };
-  const routeSandboxDerivation = createRouteGenerationSandboxDerivation({
+  const routeSandboxDerivation = await createRouteGenerationSandboxDerivation({
     jobId,
     request,
     routeSet,
     agentCrew,
     capabilities: getDefaultRuntimeCapabilities(),
     createdAt,
+    ctx: options.ctx,
   });
   const contextArtifacts = buildGenerationContextArtifacts({
     createdAt,
@@ -2964,14 +3010,25 @@ interface RouteGenerationSandboxDerivationResult {
   artifacts: BlueprintGenerationArtifact[];
 }
 
-function createRouteGenerationSandboxDerivation(input: {
+async function createRouteGenerationSandboxDerivation(input: {
   jobId: string;
   request: BlueprintGenerationRequest;
   routeSet: BlueprintRouteSet;
   agentCrew: BlueprintAgentCrew;
   capabilities: BlueprintRuntimeCapability[];
   createdAt: string;
-}): RouteGenerationSandboxDerivationResult {
+  /**
+   * 可选：`BlueprintServiceContext`。
+   *
+   * - 缺省（`undefined`）时，所有 capability 分支继续走模板化 simulated 路径
+   *   （design §D10 兼容基线：测试装配与今天的生产行为等价）。
+   * - 注入时，`capability.id === "docker-analysis-sandbox"` 分支会委派给
+   *   `ctx.dockerCapabilityBridge(...)`；其它 capability 分支一行不改。
+   *
+   * 详见 design §4.6 / Task 15.1 / Task 15.5。
+   */
+  ctx?: BlueprintServiceContext;
+}): Promise<RouteGenerationSandboxDerivationResult> {
   const capabilityIds = uniqueStrings(
     input.routeSet.routes.flatMap(route =>
       route.capabilities.map(capability => capability.id)
@@ -3011,62 +3068,95 @@ function createRouteGenerationSandboxDerivation(input: {
     artifacts: [],
     events: [],
   };
-  const invocations = routeGenerationCapabilities.map((capability, index) => {
-    const route = input.routeSet.routes[index] ?? primaryRoute;
-    const invocationRoleId = resolveRouteSandboxCapabilityRoleId(capability);
-    const invocationInput = `Derive route candidate ${route.title} with ${capability.label}.`;
-    const invocation: BlueprintCapabilityInvocation = {
-      id: createId("blueprint-capability-invocation"),
-      jobId: input.jobId,
-      capabilityId: capability.id,
-      roleId: invocationRoleId,
-      capabilityLabel: capability.label,
-      kind: capability.kind,
-      status: "completed",
-      securityLevel: capability.securityLevel,
-      safetyGate: {
-        status: "allowed",
-        reason: capability.requiresApproval
-          ? `${capability.label} approved for deterministic route generation sandbox derivation.`
-          : `${capability.label} allowed for deterministic route generation sandbox derivation.`,
-        requiresApproval: capability.requiresApproval,
-        approved: capability.requiresApproval,
-        securityLevel: capability.securityLevel,
-      },
-      requestedAt: input.createdAt,
-      completedAt: input.createdAt,
-      requestedBy: "route-generation-sandbox-derivation",
-      routeId: route.id,
-      input: invocationInput,
-      outputSummary: buildCapabilityOutputSummary({
-        capability,
-        routeTitle: route.title,
-        input: invocationInput,
-      }),
-      logs: [],
-      evidenceIds: [],
-      durationMs: deterministicCapabilityDuration(capability, {
+  const invocations = await Promise.all(
+    routeGenerationCapabilities.map(async (capability, index) => {
+      const route = input.routeSet.routes[index] ?? primaryRoute;
+      const invocationRoleId = resolveRouteSandboxCapabilityRoleId(capability);
+      const invocationInput = `Derive route candidate ${route.title} with ${capability.label}.`;
+      // Task 15.3：pre-generate invocation id，保证 real / fallback 路径使用同一 id，
+      // 从而外层 evidence aggregation / sandbox job `invocationIds` / capability
+      // events 的 `invocationId` 引用稳定（design §4.2）。
+      const invocationId = createId("blueprint-capability-invocation");
+
+      // Task 15.3 / 15.5：docker capability 分支。
+      // 仅当 capability 为 `docker-analysis-sandbox` 且 ctx 注入了 bridge 时，
+      // 委派给 bridge；否则（含 ctx 为 undefined 或 bridge 未注入）继续走下方
+      // 模板化 simulated 路径，保持 design §D10 兼容基线。
+      if (
+        capability.id === "docker-analysis-sandbox" &&
+        input.ctx?.dockerCapabilityBridge
+      ) {
+        const bridgeResult = await input.ctx.dockerCapabilityBridge({
+          capability,
+          route,
+          jobId: input.jobId,
+          request: input.request,
+          routeSet: input.routeSet,
+          createdAt: input.createdAt,
+          invocationId,
+          roleId: invocationRoleId,
+        });
+        return bridgeResult.invocation;
+      }
+
+      // Task 15.4：其它 capability（mcp-github-source / aigc-spec-node /
+      // role-system-architecture / skill-svg-architecture）以及 docker 分支在
+      // ctx.dockerCapabilityBridge 未注入时，继续走原模板化 simulated 路径。
+      // 相比原实现，这里只把 `id: createId(...)` 改为 `id: invocationId`，其余
+      // 字段一行不改。
+      const invocation: BlueprintCapabilityInvocation = {
+        id: invocationId,
+        jobId: input.jobId,
         capabilityId: capability.id,
         roleId: invocationRoleId,
+        capabilityLabel: capability.label,
+        kind: capability.kind,
+        status: "completed",
+        securityLevel: capability.securityLevel,
+        safetyGate: {
+          status: "allowed",
+          reason: capability.requiresApproval
+            ? `${capability.label} approved for deterministic route generation sandbox derivation.`
+            : `${capability.label} allowed for deterministic route generation sandbox derivation.`,
+          requiresApproval: capability.requiresApproval,
+          approved: capability.requiresApproval,
+          securityLevel: capability.securityLevel,
+        },
+        requestedAt: input.createdAt,
+        completedAt: input.createdAt,
+        requestedBy: "route-generation-sandbox-derivation",
         routeId: route.id,
         input: invocationInput,
-      }),
-      provenance: {
-        jobId: input.jobId,
-        projectId: input.request.projectId,
-        sourceId: input.request.sourceId,
-        routeSetId: input.routeSet.id,
-        routeId: route.id,
-        roleId: invocationRoleId,
-        targetText: input.request.targetText,
-        githubUrls: input.request.githubUrls ?? [],
-      },
-    };
-    return {
-      ...invocation,
-      logs: buildCapabilityInvocationLogs(capability, invocation.outputSummary),
-    };
-  });
+        outputSummary: buildCapabilityOutputSummary({
+          capability,
+          routeTitle: route.title,
+          input: invocationInput,
+        }),
+        logs: [],
+        evidenceIds: [],
+        durationMs: deterministicCapabilityDuration(capability, {
+          capabilityId: capability.id,
+          roleId: invocationRoleId,
+          routeId: route.id,
+          input: invocationInput,
+        }),
+        provenance: {
+          jobId: input.jobId,
+          projectId: input.request.projectId,
+          sourceId: input.request.sourceId,
+          routeSetId: input.routeSet.id,
+          routeId: route.id,
+          roleId: invocationRoleId,
+          targetText: input.request.targetText,
+          githubUrls: input.request.githubUrls ?? [],
+        },
+      };
+      return {
+        ...invocation,
+        logs: buildCapabilityInvocationLogs(capability, invocation.outputSummary),
+      };
+    })
+  );
   const evidenceItems = invocations.map(invocation => {
     const capability = routeGenerationCapabilities.find(
       item => item.id === invocation.capabilityId
@@ -3092,6 +3182,22 @@ function createRouteGenerationSandboxDerivation(input: {
       evidenceIds: evidence ? [evidence.id] : [],
     };
   });
+  // Task 16.1 / 16.2：针对 docker capability 在 real 路径下使用
+  // "blueprint.runtime.docker.lobster-executor" adapter 字符串；
+  // fallback 路径回退到 capability.adapter（`getDefaultRuntimeCapabilities()`
+  // 返回的 "blueprint.runtime.docker.simulated"）。该值仅在 sandbox.job.*
+  // 事件 payload 中被消费，`getDefaultRuntimeCapabilities()` 本身不改
+  // （design §4.9 / §D10 / 需求 3.4）。
+  const dockerCapability = routeGenerationCapabilities.find(
+    capability => capability.id === "docker-analysis-sandbox"
+  );
+  const dockerInvocation = invocationsWithEvidence.find(
+    invocation => invocation.capabilityId === "docker-analysis-sandbox"
+  );
+  const dockerAdapter =
+    dockerInvocation?.provenance?.executionMode === "real"
+      ? "blueprint.runtime.docker.lobster-executor"
+      : (dockerCapability?.adapter ?? "blueprint.runtime.docker.simulated");
   const totalDurationMs = invocationsWithEvidence.reduce(
     (total, invocation) => total + invocation.durationMs,
     0
@@ -3314,6 +3420,10 @@ function createRouteGenerationSandboxDerivation(input: {
         executionMode: sandboxDerivationJob.executionMode,
         capabilityIds: sandboxDerivationJob.capabilityIds,
         routeSetId: input.routeSet.id,
+        // Task 16.2：docker capability adapter 在 real 路径下切换为
+        // "blueprint.runtime.docker.lobster-executor"；fallback 路径回退到
+        // getDefaultRuntimeCapabilities() 的 ".simulated" 基线。
+        dockerAdapter,
         sourceIds: {
           projectId: input.request.projectId,
           routeSetId: input.routeSet.id,
@@ -3342,6 +3452,9 @@ function createRouteGenerationSandboxDerivation(input: {
         evidenceIds: sandboxDerivationJob.evidenceIds,
         durationMs: sandboxDerivationJob.durationMs,
         routeSetId: input.routeSet.id,
+        // Task 16.2：同 sandbox.job.started，docker capability adapter 在
+        // real 路径下切换为 lobster-executor。
+        dockerAdapter,
         sourceIds: {
           projectId: input.request.projectId,
           routeSetId: input.routeSet.id,
@@ -3439,6 +3552,12 @@ function buildRouteSandboxCapabilityEventPayload(input: {
   roleId: string;
   crewId: string;
 }): Record<string, unknown> {
+  // Task 16.3：capability.invoked / capability.completed 事件 payload 追加
+  // 可选字段 executionMode / containerId / artifactUrl / logDigest，从
+  // invocation.provenance 透传（design §5.7 / 需求 3.7 / 4.2）。非 docker
+  // capability 的 provenance 不会带 executionMode，此处通过条件 spread 仅在
+  // 字段存在时注入，保持既有事件 payload 结构对其它消费者不变。
+  const provenance = input.invocation.provenance;
   return {
     capabilityId: input.invocation.capabilityId,
     roleId: input.invocation.roleId ?? input.roleId,
@@ -3457,6 +3576,18 @@ function buildRouteSandboxCapabilityEventPayload(input: {
       capabilityInvocationIds: [input.invocation.id],
       capabilityEvidenceIds: input.evidence ? [input.evidence.id] : [],
     },
+    ...(provenance.executionMode !== undefined
+      ? { executionMode: provenance.executionMode }
+      : {}),
+    ...(provenance.containerId !== undefined
+      ? { containerId: provenance.containerId }
+      : {}),
+    ...(provenance.artifactUrl !== undefined
+      ? { artifactUrl: provenance.artifactUrl }
+      : {}),
+    ...(provenance.logDigest !== undefined
+      ? { logDigest: provenance.logDigest }
+      : {}),
   };
 }
 
@@ -10319,7 +10450,7 @@ function evaluateCapabilitySafetyGate(
   };
 }
 
-function buildCapabilityOutputSummary(input: {
+export function buildCapabilityOutputSummary(input: {
   capability: BlueprintRuntimeCapability;
   routeTitle?: string;
   nodeTitle?: string;
@@ -10333,7 +10464,7 @@ function buildCapabilityOutputSummary(input: {
   return `${input.capability.label} simulated ${input.capability.kind} execution for ${target} using ${normalizedInput}.`;
 }
 
-function buildCapabilityInvocationLogs(
+export function buildCapabilityInvocationLogs(
   capability: BlueprintRuntimeCapability,
   outputSummary: string
 ): string[] {
@@ -10345,7 +10476,7 @@ function buildCapabilityInvocationLogs(
   ];
 }
 
-function deterministicCapabilityDuration(
+export function deterministicCapabilityDuration(
   capability: BlueprintRuntimeCapability,
   request: BlueprintCapabilityInvocationRequest
 ): number {
@@ -10407,6 +10538,25 @@ function buildCapabilityEvidence(input: {
       nodeId: input.invocation.nodeId,
       targetText: input.job.request.targetText,
       githubUrls: input.job.request.githubUrls ?? [],
+      // Task 17.1 / 17.2：从 invocation.provenance 继承 5 个可选字段，既有字段
+      // 一行不改。仅在字段存在时 spread，避免为非 docker capability 注入无意
+      // 义的 undefined 字段；evidence 的 JSON 序列化形态对既有消费方保持等价
+      // （design §4.10 / 需求 3.7 / 4.2 / 4.4）。
+      ...(input.invocation.provenance.executionMode !== undefined
+        ? { executionMode: input.invocation.provenance.executionMode }
+        : {}),
+      ...(input.invocation.provenance.containerId !== undefined
+        ? { containerId: input.invocation.provenance.containerId }
+        : {}),
+      ...(input.invocation.provenance.artifactUrl !== undefined
+        ? { artifactUrl: input.invocation.provenance.artifactUrl }
+        : {}),
+      ...(input.invocation.provenance.logDigest !== undefined
+        ? { logDigest: input.invocation.provenance.logDigest }
+        : {}),
+      ...(input.invocation.provenance.error !== undefined
+        ? { error: input.invocation.provenance.error }
+        : {}),
     },
   };
 }

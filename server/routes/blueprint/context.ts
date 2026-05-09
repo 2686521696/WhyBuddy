@@ -19,6 +19,7 @@ import path from "node:path";
 
 import { getAIConfig, type AIConfig } from "../../core/ai-config.js";
 import { callLLMJson } from "../../core/llm-client.js";
+import type { ExecutorClient } from "../../core/executor-client.js";
 import {
   createFileBlueprintJobStore,
   type BlueprintJobStore,
@@ -37,6 +38,14 @@ import {
   createRouteSetLlmGenerator,
   type RouteSetLlmGenerator,
 } from "./routeset/route-llm-generator.js";
+import type {
+  BlueprintExecutorCallbackDispatcher,
+  DockerCapabilityBridge,
+  DockerCapabilityPolicy,
+} from "./docker-analysis-sandbox/types.js";
+import { createBlueprintExecutorCallbackDispatcher } from "./docker-analysis-sandbox/callback-waiter.js";
+import { createDefaultDockerCapabilityPolicy } from "./docker-analysis-sandbox/policy.js";
+import { createDockerCapabilityBridge } from "./docker-analysis-sandbox/bridge.js";
 
 /**
  * 纯内存 Map 三件套：存放尚未进入 jobStore 的 intake / clarification / project context。
@@ -205,6 +214,44 @@ export interface BlueprintServiceContext {
   eventBus: BlueprintEventBus;
   specsRoot: string;
   logger: BlueprintLogger;
+  /**
+   * 可选：真实 Docker 执行器客户端。
+   *
+   * 由 `.kiro/specs/autopilot-capability-bridge-docker` 引入：当 Docker capability
+   * bridge 命中 `docker-analysis-sandbox` 时，通过这个客户端向 `services/lobster-executor`
+   * 派发真实作业。未注入时 bridge 走 simulated fallback（design §2 D2 / §4.6 step 1）。
+   *
+   * 本字段当前为类型可选；默认装配在 Task 13 处理，Task 2 只保证 "类型可选且不传也不崩"。
+   */
+  executorClient?: ExecutorClient;
+  /**
+   * 可选：HMAC 执行器回调分发器。
+   *
+   * 由 `server/index.ts` 的 `/api/executor/events` 中间件在 Task 14 接线，将收到的
+   * 回调事件通过 `handleEvent(event)` 分发给 bridge 的 `awaitTerminal(jobId, ...)`
+   * 等待者（design §4.5）。
+   *
+   * 接口形状定义在 `./docker-analysis-sandbox/types.ts`，具体实现将于 Task 7 落地。
+   */
+  executorCallbackDispatcher?: BlueprintExecutorCallbackDispatcher;
+  /**
+   * 可选：Docker capability 的安全与资源策略。
+   *
+   * 包含镜像 allow-list、内存 / CPU / pids 上限、网络策略、安全级别、
+   * 回调 / 派发超时、日志行数 / 字节上限等。`createDefaultDockerCapabilityPolicy()`
+   * 将于 Task 3 提供默认值（design §4.3）。
+   */
+  dockerCapabilityPolicy?: DockerCapabilityPolicy;
+  /**
+   * 可选：Docker capability bridge 实例本身。
+   *
+   * 一个纯异步函数：接收 bridge 输入（capability / route / request 等），返回
+   * 包含真实 invocation 或 fallback invocation 的输出（design §4.2 / §4.6）。
+   *
+   * 测试装配中可直接替换整个 bridge；默认装配由 `createDockerCapabilityBridge(ctx)`
+   * 在 Task 10 / Task 13 提供。
+   */
+  dockerCapabilityBridge?: DockerCapabilityBridge;
 }
 
 /**
@@ -232,6 +279,28 @@ export interface BlueprintServiceContextDeps {
   specsRoot?: string;
   jobStoreFile?: string;
   logger?: BlueprintLogger;
+  /**
+   * 可选：注入自定义 `ExecutorClient`（测试场景常用）。
+   * 未提供时 ctx 上 `executorClient` 字段保持 `undefined`，bridge 将据此走 fallback
+   * （Task 13 默认装配策略：不自动构造默认 `ExecutorClient` 以避免 dev 默认装配下的
+   * 额外网络往返）。
+   */
+  executorClient?: ExecutorClient;
+  /**
+   * 可选：注入自定义 `BlueprintExecutorCallbackDispatcher`。
+   * 未提供时由 `buildBlueprintServiceContext` 在 Task 13 装配默认实例。
+   */
+  executorCallbackDispatcher?: BlueprintExecutorCallbackDispatcher;
+  /**
+   * 可选：注入自定义 Docker capability 策略。
+   * 未提供时默认装配使用 `createDefaultDockerCapabilityPolicy()`（Task 3 / Task 13）。
+   */
+  dockerCapabilityPolicy?: DockerCapabilityPolicy;
+  /**
+   * 可选：直接注入 Docker capability bridge 实例。
+   * 未提供时由 Task 13 通过 `createDockerCapabilityBridge(ctx)` 装配默认实例。
+   */
+  dockerCapabilityBridge?: DockerCapabilityBridge;
 }
 
 /**
@@ -276,9 +345,42 @@ function getDefaultJobStore(storageFile?: string): BlueprintJobStore {
 export function buildBlueprintServiceContext(
   deps: BlueprintServiceContextDeps = {}
 ): BlueprintServiceContext {
+  // 装配顺序（Task 13.3）：
+  // 1. 先解析 `now` / `logger`（基础依赖）；
+  // 2. 再装配 `executorCallbackDispatcher`（依赖 `now` / `logger`）；
+  // 3. 再装配 `dockerCapabilityPolicy`（纯数据，无上游依赖）；
+  // 4. 最后装配 `dockerCapabilityBridge`（依赖 ctx 本体 —— 见下文说明）。
+  //
+  // bridge 的工厂签名是 `createDockerCapabilityBridge(ctx)`，它在闭包内持有
+  // 对 ctx 的引用，每次调用时从 ctx 读取 `executorClient` /
+  // `executorCallbackDispatcher` / `dockerCapabilityPolicy` / `logger` / `now`。
+  // 因此构造分两步：
+  //   a. 先组装除 `dockerCapabilityBridge` 外的所有字段（含 dispatcher / policy /
+  //      可选 executorClient 透传）；
+  //   b. 以 baseCtx 调用 `createDockerCapabilityBridge(baseCtx)` 得到 bridge；
+  //   c. 返回带 bridge 字段的最终 ctx（baseCtx 与最终 ctx 字段完全等价，仅
+  //      bridge 从 `undefined` 变为真实实例）。
+  //
+  // 此处不把 bridge 闭包绑定到 "未带 bridge 的 baseCtx"，因为 bridge 自身不会
+  // 通过 `ctx.dockerCapabilityBridge` 调自己；其它字段 dispatcher / policy /
+  // executorClient 在 baseCtx 上已经就位，bridge 每次调用时的字段查找都命中真值。
+  const now = deps.now ?? (() => new Date());
+  const logger = deps.logger ?? createSilentBlueprintLogger();
   const jobStore = deps.jobStore ?? getDefaultJobStore(deps.jobStoreFile);
-  const ctx: BlueprintServiceContext = {
-    now: deps.now ?? (() => new Date()),
+
+  // Task 13.1：executorCallbackDispatcher / dockerCapabilityPolicy 默认装配。
+  // Task 13.2：executorClient 继续透传，不强行装配默认实例 —— bridge 在 ctx 上
+  // `executorClient` 为 `undefined` 时会走 simulated fallback 早退路径（design
+  // §4.6 step 1），保证 dev 默认装配下不会因默认 HTTP executor 连接尝试而拖慢
+  // 响应，也保证测试默认装配行为等价于今天（design §2 D10）。
+  const executorCallbackDispatcher =
+    deps.executorCallbackDispatcher ??
+    createBlueprintExecutorCallbackDispatcher({ now, logger });
+  const dockerCapabilityPolicy =
+    deps.dockerCapabilityPolicy ?? createDefaultDockerCapabilityPolicy();
+
+  const baseCtx: BlueprintServiceContext = {
+    now,
     blueprintStores: deps.blueprintStores ?? createDefaultBlueprintStores(),
     jobStore,
     llm: {
@@ -295,8 +397,30 @@ export function buildBlueprintServiceContext(
     eventBus: deps.eventBus ?? createBlueprintEventBus(jobStore, deps.logger),
     specsRoot:
       deps.specsRoot ?? path.resolve(process.cwd(), ".kiro", "specs"),
-    logger: deps.logger ?? createSilentBlueprintLogger(),
+    logger,
+    // Docker capability bridge 相关依赖：
+    // - executorClient 仅透传（Task 13.2）；
+    // - executorCallbackDispatcher / dockerCapabilityPolicy 默认装配（Task 13.1）；
+    // - dockerCapabilityBridge 先占位为 undefined，下一步用 baseCtx 构造默认实例。
+    executorClient: deps.executorClient,
+    executorCallbackDispatcher,
+    dockerCapabilityPolicy,
+    dockerCapabilityBridge: undefined,
   };
+
+  // Task 13.1 / 13.3 最后一步：用 baseCtx 构造默认 bridge（或透传注入的 bridge）。
+  const dockerCapabilityBridge =
+    deps.dockerCapabilityBridge ?? createDockerCapabilityBridge(baseCtx);
+
+  const ctx: BlueprintServiceContext = {
+    ...baseCtx,
+    dockerCapabilityBridge,
+  };
+
+  // RouteSet LLM generator late-bind: the default generator needs the fully
+  // assembled `ctx` (including llm / logger / dockerCapabilityBridge) so we
+  // bind it here after `ctx` is finalized. See design 4.7 for the late-bind
+  // rationale.
   ctx.routeSetLlmGenerator =
     deps.routeSetLlmGenerator ?? createRouteSetLlmGenerator(ctx);
   return ctx;

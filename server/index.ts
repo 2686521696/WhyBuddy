@@ -607,7 +607,17 @@ async function startServer() {
   const reportRoutes = (await import("./routes/reports.js")).default;
   const workflowRoutes = (await import("./routes/workflows.js")).default;
   const { createOpenPageRouter } = await import("./routes/open-page.js");
-  const blueprintRoutes = (await import("./routes/blueprint.js")).default;
+  // Task 14（design §4.5 接线策略）：blueprint router 的装配改为显式构造
+  // 预先构建 `BlueprintServiceContext`，这样 server/index.ts 与 blueprint router
+  // 内部（Task 15 起的 docker capability bridge）共享同一个
+  // `executorCallbackDispatcher` 实例；`/api/executor/events` 回调中间件
+  // 也通过这个 ctx 把事件转发给 dispatcher。
+  const { createBlueprintRouter } = await import("./routes/blueprint.js");
+  const { buildBlueprintServiceContext } = await import(
+    "./routes/blueprint/context.js"
+  );
+  const blueprintServiceContext = buildBlueprintServiceContext({});
+  const blueprintRoutes = createBlueprintRouter({ blueprintServiceContext });
   const aigcMonitoringRoutes = (await import("./routes/aigc-monitoring.js"))
     .default;
   const configRoutes = (await import("./routes/config.js")).default;
@@ -645,6 +655,43 @@ async function startServer() {
     "/api/executor/events",
     installExecutorInterceptor(eventCollector, resolveMissionReplayId)
   );
+
+  // Task 14（design §4.5）：Blueprint capability bridge HMAC callback dispatcher。
+  //
+  // 这一层只做 transient in-memory 的事件分发，不持久化、不改响应、不阻塞
+  // 既有 mission runtime 事件处理：
+  //
+  // - 顺序保证：`/api/executor/events` 的 HMAC 签名校验在 POST 处理器内
+  //   （第 ~1291 行 `verifyExecutorCallbackSignature`），该校验运行在所有
+  //   `app.use(...)` 中间件之后——因此 replay interceptor 与本 dispatcher
+  //   都只是 observer，对 mission runtime 状态不做二次变更；HMAC 校验仍然
+  //   是真正阻断非法回调的唯一关口。
+  // - 实例同源：这里使用的 `blueprintServiceContext.executorCallbackDispatcher`
+  //   与注入给 blueprint router 的是同一对象（通过 `createBlueprintRouter(
+  //   { blueprintServiceContext })` 共享 ctx），所以 bridge 内 `awaitTerminal(jobId)`
+  //   能接到这里 `handleEvent(event)` 派发过来的事件。
+  // - 失败兜底：dispatcher.handleEvent 自身应当是纯内存操作；仍用 try/catch
+  //   包一层，避免 blueprint 侧任何异常把 mission runtime 回调吞掉，保证
+  //   `next()` 总会被调用（design §5.2）。
+  app.use("/api/executor/events", (request, _response, next) => {
+    try {
+      const body = request.body as ExecutorCallbackRequestBody | undefined;
+      const event = body?.event;
+      if (
+        event &&
+        typeof event.jobId === "string" &&
+        event.jobId.length > 0 &&
+        blueprintServiceContext.executorCallbackDispatcher
+      ) {
+        blueprintServiceContext.executorCallbackDispatcher.handleEvent(
+          event as unknown as ExecutorEvent
+        );
+      }
+    } catch {
+      // Never let blueprint dispatcher errors block mission runtime processing.
+    }
+    next();
+  });
 
   // ── Knowledge Graph ──
   const { GraphStore } = await import("./knowledge/graph-store.js");

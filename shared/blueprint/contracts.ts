@@ -625,6 +625,11 @@ export interface BlueprintCapabilityInvocation {
     roleId?: string;
     targetText?: string;
     githubUrls: string[];
+    executionMode?: "real" | "simulated_fallback";
+    containerId?: string;
+    artifactUrl?: string;
+    logDigest?: string;
+    error?: string;
   };
 }
 
@@ -657,6 +662,11 @@ export interface BlueprintCapabilityEvidence {
     nodeId?: string;
     targetText?: string;
     githubUrls: string[];
+    executionMode?: "real" | "simulated_fallback";
+    containerId?: string;
+    artifactUrl?: string;
+    logDigest?: string;
+    error?: string;
   };
 }
 
