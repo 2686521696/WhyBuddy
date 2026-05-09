@@ -12,9 +12,20 @@ import {
   createRouteSetLlmGenerator,
   type RouteSetLlmGenerator,
 } from "./blueprint/routeset/route-llm-generator.js";
-import { buildBlueprintServiceContext } from "./blueprint/context.js";
+import {
+  buildBlueprintServiceContext,
+  type BlueprintServiceContext,
+} from "./blueprint/context.js";
+import {
+  createFileBlueprintJobStore,
+  type BlueprintJobStore,
+} from "./blueprint/job-store.js";
+import {
+  buildCapabilityOutputSummary as fallbackBuildCapabilityOutputSummary,
+  buildCapabilityInvocationLogs as fallbackBuildCapabilityInvocationLogs,
+  deterministicCapabilityDuration as fallbackDeterministicCapabilityDuration,
+} from "./blueprint/invocation-fallback-helpers.js";
 import { BlueprintEventName } from "../../shared/blueprint/events.js";
-import type { BlueprintServiceContext } from "./blueprint/context.js";
 import type {
   BlueprintArtifactDiff,
   BlueprintArtifactDiffRequest,
@@ -229,7 +240,27 @@ export interface BlueprintRouterDeps {
    * blueprint.ts 的 `createFileBlueprintJobStore` / `BlueprintJobStore`）。
    */
   blueprintServiceContext?: BlueprintServiceContext;
+  /**
+   * MCP GitHub capability bridge inputs (autopilot-capability-bridge-mcp).
+   * All four fields are optional; when omitted the bridge falls back to the
+   * deterministic templated invocation path (design §2.D10).
+   */
+  mcpToolAdapter?: BlueprintMcpToolAdapterDependency;
+  httpFetcher?: BlueprintHttpFetcherDependency;
+  mcpGithubCapabilityPolicy?: BlueprintMcpGithubCapabilityPolicyDependency;
+  mcpGithubCapabilityBridge?: BlueprintMcpGithubCapabilityBridgeDependency;
 }
+
+// Structural re-exports so callers (e.g. server/index.ts) don't need a deep
+// `import` of `server/routes/blueprint/context.ts` to feed the router.
+export type BlueprintMcpToolAdapterDependency =
+  import("./blueprint/context.js").McpToolAdapterDependency;
+export type BlueprintHttpFetcherDependency =
+  import("./blueprint/mcp-github-source/http-fetcher.js").BlueprintHttpFetcher;
+export type BlueprintMcpGithubCapabilityPolicyDependency =
+  import("./blueprint/mcp-github-source/policy.js").McpGithubCapabilityPolicy;
+export type BlueprintMcpGithubCapabilityBridgeDependency =
+  import("./blueprint/mcp-github-source/bridge.js").McpGithubCapabilityBridge;
 
 export type BlueprintClarificationQuestionGenerator = (
   input: BlueprintClarificationQuestionGeneratorInput
@@ -254,13 +285,6 @@ interface BlueprintIntakeStores {
   intakes: Map<string, BlueprintIntake>;
   clarificationSessions: Map<string, BlueprintClarificationSession>;
   projectContexts: Map<string, BlueprintProjectDomainContext>;
-}
-
-export interface BlueprintJobStore {
-  list(): BlueprintGenerationJob[];
-  get(jobId: string): BlueprintGenerationJob | null;
-  save(job: BlueprintGenerationJob): void;
-  latest(): BlueprintGenerationJob | null;
 }
 
 interface BlueprintConfigMetadata {
@@ -332,94 +356,15 @@ const PROMPT_TARGET_PLATFORMS: BlueprintImplementationPromptTargetPlatform[] = [
 
 const defaultJobStore = createFileBlueprintJobStore();
 
-export function createMemoryBlueprintJobStore(
-  initialJobs: BlueprintGenerationJob[] = []
-): BlueprintJobStore {
-  const jobs = new Map<string, BlueprintGenerationJob>(
-    initialJobs.map(job => [job.id, job])
-  );
-
-  return {
-    list() {
-      return [...jobs.values()].sort((left, right) =>
-        right.createdAt.localeCompare(left.createdAt)
-      );
-    },
-    get(jobId) {
-      return jobs.get(jobId) ?? null;
-    },
-    save(job) {
-      jobs.set(job.id, job);
-    },
-    latest() {
-      return this.list()[0] ?? null;
-    },
-  };
-}
-
-export function createFileBlueprintJobStore(
-  storageFile = path.resolve(".kiro/blueprint-assets/jobs.json")
-): BlueprintJobStore {
-  const resolvedStorageFile = path.resolve(storageFile);
-
-  const readJobs = (): BlueprintGenerationJob[] => {
-    if (!existsSync(resolvedStorageFile)) {
-      return [];
-    }
-
-    try {
-      const raw = readFileSync(resolvedStorageFile, "utf8");
-      const parsed = JSON.parse(raw) as unknown;
-      const records = Array.isArray(parsed)
-        ? parsed
-        : isPlainRecord(parsed) && Array.isArray(parsed.jobs)
-          ? parsed.jobs
-          : [];
-
-      return records.filter(isBlueprintGenerationJob);
-    } catch {
-      return [];
-    }
-  };
-
-  const writeJobs = (jobs: BlueprintGenerationJob[]): void => {
-    mkdirSync(path.dirname(resolvedStorageFile), { recursive: true });
-    writeFileSync(
-      resolvedStorageFile,
-      JSON.stringify(
-        {
-          version: "blueprint-job-store/v1",
-          updatedAt: new Date().toISOString(),
-          jobs,
-        },
-        null,
-        2
-      ),
-      "utf8"
-    );
-  };
-
-  return {
-    list() {
-      return readJobs().sort((left, right) =>
-        right.createdAt.localeCompare(left.createdAt)
-      );
-    },
-    get(jobId) {
-      return readJobs().find(job => job.id === jobId) ?? null;
-    },
-    save(job) {
-      const jobs = readJobs();
-      const nextJobs = jobs.some(item => item.id === job.id)
-        ? jobs.map(item => (item.id === job.id ? job : item))
-        : jobs.concat(job);
-      writeJobs(nextJobs);
-    },
-    latest() {
-      return this.list()[0] ?? null;
-    },
-  };
-}
+// Re-export the job-store factories so existing callers can keep importing
+// from this router file. Physical impl lives in `./blueprint/job-store.ts`
+// to avoid a circular module-value import between `blueprint.ts` and
+// `./blueprint/context.ts`.
+export {
+  createFileBlueprintJobStore,
+  createMemoryBlueprintJobStore,
+  type BlueprintJobStore,
+} from "./blueprint/job-store.js";
 
 export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
   const router = Router();
@@ -471,7 +416,23 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
   // `createRouteGenerationSandboxDerivation`，由后者在 `capability.id ===
   // "docker-analysis-sandbox"` 分支委派给 `ctx.dockerCapabilityBridge`；
   // 其它 capability 分支继续走模板化 simulated 路径（design §D10）。
-  const blueprintServiceContext = deps.blueprintServiceContext;
+  //
+  // autopilot-capability-bridge-mcp task 19：若调用方未注入预构建 ctx，则本地构造
+  // 一个最小 ctx，把 mcpToolAdapter / httpFetcher / mcpGithubCapabilityPolicy /
+  // mcpGithubCapabilityBridge 等 MCP 桥依赖转发给
+  // `createRouteGenerationSandboxDerivation`，从而 `mcp-github-source` 能力可从
+  // 模板 fallback 升级为真实 MCP / HTTP 调用。
+  const blueprintServiceContext =
+    deps.blueprintServiceContext ??
+    buildBlueprintServiceContext({
+      now: deps.now,
+      blueprintStores,
+      jobStore,
+      mcpToolAdapter: deps.mcpToolAdapter,
+      httpFetcher: deps.httpFetcher,
+      mcpGithubCapabilityPolicy: deps.mcpGithubCapabilityPolicy,
+      mcpGithubCapabilityBridge: deps.mcpGithubCapabilityBridge,
+    });
 
   router.get("/specs", async (_req, res) => {
     try {
@@ -1930,8 +1891,12 @@ interface CreateGenerationJobOptions {
    *
    * Task 15 引入：`createGenerationJob` 把 ctx 透传到
    * `createRouteGenerationSandboxDerivation`，进而把 docker capability
-   * 分支路由到 `ctx.dockerCapabilityBridge`。ctx 未提供时所有 capability
-   * 分支继续走模板化 simulated 路径（design §D10 兼容基线）。
+   * 分支路由到 `ctx.dockerCapabilityBridge`；autopilot-capability-bridge-mcp
+   * task 19 起，同一 ctx 也承载 MCP GitHub 桥的 `mcpToolAdapter` /
+   * `httpFetcher` / `mcpGithubCapabilityPolicy` / `mcpGithubCapabilityBridge`，
+   * 从而 `mcp-github-source` 能力可以从模板 fallback 升级为真实
+   * MCP / HTTP 调用。ctx 未提供时所有 capability 分支继续走模板化 simulated 路径
+   * （design §D10 兼容基线）。
    */
   ctx?: BlueprintServiceContext;
 }
@@ -3023,7 +2988,9 @@ async function createRouteGenerationSandboxDerivation(input: {
    * - 缺省（`undefined`）时，所有 capability 分支继续走模板化 simulated 路径
    *   （design §D10 兼容基线：测试装配与今天的生产行为等价）。
    * - 注入时，`capability.id === "docker-analysis-sandbox"` 分支会委派给
-   *   `ctx.dockerCapabilityBridge(...)`；其它 capability 分支一行不改。
+   *   `ctx.dockerCapabilityBridge(...)`；`capability.id === "mcp-github-source"`
+   *   分支会委派给 `ctx.mcpGithubCapabilityBridge(...)`（autopilot-capability-bridge-mcp
+   *   task 19 / 20）；其它 capability 分支一行不改。
    *
    * 详见 design §4.6 / Task 15.1 / Task 15.5。
    */
@@ -3099,11 +3066,31 @@ async function createRouteGenerationSandboxDerivation(input: {
         return bridgeResult.invocation;
       }
 
-      // Task 15.4：其它 capability（mcp-github-source / aigc-spec-node /
-      // role-system-architecture / skill-svg-architecture）以及 docker 分支在
-      // ctx.dockerCapabilityBridge 未注入时，继续走原模板化 simulated 路径。
-      // 相比原实现，这里只把 `id: createId(...)` 改为 `id: invocationId`，其余
-      // 字段一行不改。
+      // autopilot-capability-bridge-mcp task 19 / 20：mcp-github-source 分支。
+      // 仅当 capability 为 `mcp-github-source` 且 ctx 注入了 bridge 时，委派给
+      // bridge（走真实 MCP → HTTP → templated fallback 三级路径）；否则继续走
+      // 下方模板化 simulated 路径，保持 design §D10 兼容基线。
+      if (
+        capability.id === "mcp-github-source" &&
+        input.ctx?.mcpGithubCapabilityBridge
+      ) {
+        const bridgeResult = await input.ctx.mcpGithubCapabilityBridge({
+          capability,
+          route,
+          jobId: input.jobId,
+          request: input.request,
+          routeSet: input.routeSet,
+          createdAt: input.createdAt,
+          invocationId,
+          roleId: invocationRoleId,
+        });
+        return bridgeResult.invocation;
+      }
+
+      // Task 15.4：其它 capability（aigc-spec-node / role-system-architecture /
+      // skill-svg-architecture）以及 docker / mcp-github-source 分支在对应
+      // bridge 未注入时，继续走原模板化 simulated 路径。相比原实现，这里只把
+      // `id: createId(...)` 改为 `id: invocationId`，其余字段一行不改。
       const invocation: BlueprintCapabilityInvocation = {
         id: invocationId,
         jobId: input.jobId,
@@ -3419,6 +3406,10 @@ async function createRouteGenerationSandboxDerivation(input: {
         sandboxDerivationJobId: sandboxDerivationJob.id,
         executionMode: sandboxDerivationJob.executionMode,
         capabilityIds: sandboxDerivationJob.capabilityIds,
+        capabilityAdapters: buildCapabilityAdapterMap(
+          invocationsWithEvidence,
+          routeGenerationCapabilities,
+        ),
         routeSetId: input.routeSet.id,
         // Task 16.2：docker capability adapter 在 real 路径下切换为
         // "blueprint.runtime.docker.lobster-executor"；fallback 路径回退到
@@ -3451,6 +3442,10 @@ async function createRouteGenerationSandboxDerivation(input: {
         invocationIds: sandboxDerivationJob.invocationIds,
         evidenceIds: sandboxDerivationJob.evidenceIds,
         durationMs: sandboxDerivationJob.durationMs,
+        capabilityAdapters: buildCapabilityAdapterMap(
+          invocationsWithEvidence,
+          routeGenerationCapabilities,
+        ),
         routeSetId: input.routeSet.id,
         // Task 16.2：同 sandbox.job.started，docker capability adapter 在
         // real 路径下切换为 lobster-executor。
@@ -3542,6 +3537,41 @@ function buildSandboxRoutePath(
   };
 }
 
+/**
+ * autopilot-capability-bridge-mcp task 20 — derive the user-visible adapter
+ * string per capability in the route-generation sandbox.
+ *
+ * For `mcp-github-source` the adapter is upgraded to the real MCP / HTTP
+ * label when the bridge ran a real path; otherwise it stays at the default
+ * simulated label. Other capabilities keep their baseline adapter string.
+ *
+ * The returned map is attached to `sandbox.job.started` /
+ * `sandbox.job.completed` event payloads so downstream consumers can
+ * tell real-vs-simulated without parsing every invocation.
+ */
+function buildCapabilityAdapterMap(
+  invocations: BlueprintCapabilityInvocation[],
+  capabilities: BlueprintRuntimeCapability[]
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const capability of capabilities) {
+    map[capability.id] = capability.adapter;
+  }
+  for (const invocation of invocations) {
+    if (invocation.capabilityId !== "mcp-github-source") {
+      continue;
+    }
+    const path = invocation.provenance.executionPath;
+    if (path === "mcp") {
+      map[invocation.capabilityId] = "blueprint.runtime.mcp.github.real";
+    } else if (path === "http") {
+      map[invocation.capabilityId] = "blueprint.runtime.mcp.github.http";
+    }
+    // fallback path: keep the baseline `blueprint.runtime.mcp.github.simulated`.
+  }
+  return map;
+}
+
 function buildRouteSandboxCapabilityEventPayload(input: {
   input: {
     request: BlueprintGenerationRequest;
@@ -3558,6 +3588,31 @@ function buildRouteSandboxCapabilityEventPayload(input: {
   // capability 的 provenance 不会带 executionMode，此处通过条件 spread 仅在
   // 字段存在时注入，保持既有事件 payload 结构对其它消费者不变。
   const provenance = input.invocation.provenance;
+  // autopilot-capability-bridge-mcp task 20.1/20.2: derive the real adapter
+  // string for mcp-github-source based on the bridge's `executionPath`.
+  // For other capabilities this stays undefined so the baseline shape is
+  // unchanged.
+  const mcpGithubAdapter =
+    input.invocation.capabilityId === "mcp-github-source"
+      ? provenance.executionPath === "mcp"
+        ? "blueprint.runtime.mcp.github.real"
+        : provenance.executionPath === "http"
+          ? "blueprint.runtime.mcp.github.http"
+          : undefined
+      : undefined;
+  // autopilot-capability-bridge-mcp task 20.3: pass through optional
+  // provenance fields when present. All fields stay optional to satisfy
+  // requirement 5.7 (no new mandatory assertions for existing subscribers).
+  const bridgeProvenance: Record<string, unknown> = {};
+  if (provenance.executionPath !== undefined) {
+    bridgeProvenance.executionPath = provenance.executionPath;
+  }
+  if (provenance.repoUrl !== undefined) {
+    bridgeProvenance.repoUrl = provenance.repoUrl;
+  }
+  if (provenance.mcpToolName !== undefined) {
+    bridgeProvenance.mcpToolName = provenance.mcpToolName;
+  }
   return {
     capabilityId: input.invocation.capabilityId,
     roleId: input.invocation.roleId ?? input.roleId,
@@ -3567,6 +3622,8 @@ function buildRouteSandboxCapabilityEventPayload(input: {
     routeId: input.invocation.routeId,
     routeSetId: input.input.routeSet.id,
     durationMs: input.invocation.durationMs,
+    ...(mcpGithubAdapter !== undefined ? { adapter: mcpGithubAdapter } : {}),
+    ...bridgeProvenance,
     sourceIds: {
       projectId: input.input.request.projectId,
       routeSetId: input.input.routeSet.id,
@@ -10456,32 +10513,21 @@ export function buildCapabilityOutputSummary(input: {
   nodeTitle?: string;
   input?: string;
 }): string {
-  const target = input.nodeTitle ?? input.routeTitle ?? "job context";
-  const normalizedInput = input.input
-    ? input.input.replace(/\s+/g, " ").slice(0, 120)
-    : "no explicit input";
-
-  return `${input.capability.label} simulated ${input.capability.kind} execution for ${target} using ${normalizedInput}.`;
+  return fallbackBuildCapabilityOutputSummary(input);
 }
 
 export function buildCapabilityInvocationLogs(
   capability: BlueprintRuntimeCapability,
   outputSummary: string
 ): string[] {
-  return [
-    `adapter=${capability.adapter}`,
-    `security=${capability.securityLevel}`,
-    `status=completed`,
-    outputSummary,
-  ];
+  return fallbackBuildCapabilityInvocationLogs(capability, outputSummary);
 }
 
 export function deterministicCapabilityDuration(
   capability: BlueprintRuntimeCapability,
   request: BlueprintCapabilityInvocationRequest
 ): number {
-  const seed = `${capability.id}:${request.routeId ?? ""}:${request.nodeId ?? ""}:${request.input ?? ""}`;
-  return 200 + (seed.length % 37) * 25;
+  return fallbackDeterministicCapabilityDuration(capability, request);
 }
 
 function buildCapabilityEvidence(input: {
@@ -10538,8 +10584,8 @@ function buildCapabilityEvidence(input: {
       nodeId: input.invocation.nodeId,
       targetText: input.job.request.targetText,
       githubUrls: input.job.request.githubUrls ?? [],
-      // Task 17.1 / 17.2：从 invocation.provenance 继承 5 个可选字段，既有字段
-      // 一行不改。仅在字段存在时 spread，避免为非 docker capability 注入无意
+      // Task 17.1 / 17.2：从 invocation.provenance 继承 docker bridge 的 5 个可选字段，
+      // 既有字段一行不改。仅在字段存在时 spread，避免为非 docker capability 注入无意
       // 义的 undefined 字段；evidence 的 JSON 序列化形态对既有消费方保持等价
       // （design §4.10 / 需求 3.7 / 4.2 / 4.4）。
       ...(input.invocation.provenance.executionMode !== undefined
@@ -10553,6 +10599,33 @@ function buildCapabilityEvidence(input: {
         : {}),
       ...(input.invocation.provenance.logDigest !== undefined
         ? { logDigest: input.invocation.provenance.logDigest }
+        : {}),
+      // —— autopilot-capability-bridge-mcp task 21 ——
+      // Inherit the MCP bridge-specific provenance fields from the originating
+      // invocation so evidence consumers (Artifact Replay, Agent Crew) can
+      // display the real-vs-simulated badge / audit link without reaching
+      // back to the invocation. Fields stay optional; existing evidence
+      // consumers that do not read them are unaffected (requirement 3.7 / 4.4).
+      ...(input.invocation.provenance.executionPath !== undefined
+        ? { executionPath: input.invocation.provenance.executionPath }
+        : {}),
+      ...(input.invocation.provenance.repoUrl !== undefined
+        ? { repoUrl: input.invocation.provenance.repoUrl }
+        : {}),
+      ...(input.invocation.provenance.commitSha !== undefined
+        ? { commitSha: input.invocation.provenance.commitSha }
+        : {}),
+      ...(input.invocation.provenance.fetchedAt !== undefined
+        ? { fetchedAt: input.invocation.provenance.fetchedAt }
+        : {}),
+      ...(input.invocation.provenance.defaultBranch !== undefined
+        ? { defaultBranch: input.invocation.provenance.defaultBranch }
+        : {}),
+      ...(input.invocation.provenance.apiResponseDigest !== undefined
+        ? { apiResponseDigest: input.invocation.provenance.apiResponseDigest }
+        : {}),
+      ...(input.invocation.provenance.mcpToolName !== undefined
+        ? { mcpToolName: input.invocation.provenance.mcpToolName }
         : {}),
       ...(input.invocation.provenance.error !== undefined
         ? { error: input.invocation.provenance.error }
