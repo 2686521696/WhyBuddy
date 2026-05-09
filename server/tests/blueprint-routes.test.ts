@@ -4432,3 +4432,275 @@ describe("blueprint specs route", () => {
     });
   });
 });
+
+
+// —— autopilot-capability-bridge-mcp task 23 ——
+// 3 end-to-end cases for the MCP GitHub capability bridge:
+//   - Real-MCP path (fake mcpToolAdapter only)
+//   - Real-HTTP path (fake httpFetcher only)
+//   - Fallback path (throwing httpFetcher, no mcpToolAdapter)
+// Each case drives `POST /api/blueprint/jobs` and asserts the capability
+// adapter override on the `sandbox.job.*` event payload + the mcp-github
+// invocation provenance fields.
+describe("blueprint mcp-github capability bridge — e2e", () => {
+  const ENABLED_ENV = "BLUEPRINT_MCP_CAPABILITY_BRIDGE_ENABLED";
+  let tempRoot: string;
+
+  beforeEach(async () => {
+    llmMocks.callLLMJson.mockReset();
+    tempRoot = await mkdtemp(
+      path.join(process.cwd(), "tmp", "blueprint-specs-mcp-")
+    );
+    vi.stubEnv(ENABLED_ENV, "true");
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  const realMcpResponse = {
+    ok: true,
+    status: "completed" as const,
+    targetLabel: "github/get_repository",
+    operation: "mcp_tool",
+    resource: "mcp:github/get_repository",
+    output: "",
+    response: {
+      name: "dashboard",
+      full_name: "example/dashboard",
+      language: "TypeScript",
+      default_branch: "main",
+      stargazers_count: 42,
+      pushed_at: "2026-04-01T00:00:00Z",
+      html_url: "https://github.com/example/dashboard",
+      visibility: "public",
+      commit_sha: "abc123def456",
+    },
+    governance: {
+      approval: {
+        required: false,
+        status: "not_required" as const,
+        source: "none" as const,
+      },
+    },
+    metadata: {
+      serverId: "github",
+      toolName: "github.get_repository",
+      timeoutMs: 30_000,
+      fallbackUsed: false,
+    },
+  };
+
+  const githubJsonBody = JSON.stringify({
+    name: "dashboard",
+    full_name: "example/dashboard",
+    language: "TypeScript",
+    default_branch: "main",
+    stargazers_count: 42,
+    pushed_at: "2026-04-01T00:00:00Z",
+    html_url: "https://github.com/example/dashboard",
+    visibility: "public",
+  });
+
+  it("Real-MCP path — mcp-github-source invocation reports real MCP execution when mcpToolAdapter is injected", async () => {
+    const fakeMcpAdapter = {
+      execute: vi.fn().mockResolvedValue(realMcpResponse),
+    };
+
+    await withServer(
+      tempRoot,
+      async baseUrl => {
+        const response = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetText: "Analyze release dashboard repo.",
+            githubUrls: ["https://github.com/example/dashboard"],
+          }),
+        });
+        expect(response.status).toBe(201);
+        const created = (await response.json()) as Record<string, any>;
+
+        const invocations = (created.job.artifacts as Array<Record<string, any>>)
+          .filter(artifact => artifact.type === "capability_invocation")
+          .map(artifact => artifact.payload as Record<string, any>);
+        const mcpInvocation = invocations.find(
+          invocation => invocation.capabilityId === "mcp-github-source"
+        );
+        expect(mcpInvocation).toBeDefined();
+        expect(mcpInvocation!.provenance.executionMode).toBe("real");
+        expect(mcpInvocation!.provenance.executionPath).toBe("mcp");
+        expect(mcpInvocation!.provenance.mcpToolName).toBe(
+          "github.get_repository"
+        );
+        expect(mcpInvocation!.provenance.repoUrl).toBe(
+          "https://github.com/example/dashboard"
+        );
+        expect(mcpInvocation!.provenance.defaultBranch).toBe("main");
+        expect(mcpInvocation!.provenance.commitSha).toBe("abc123def456");
+        expect(mcpInvocation!.provenance.error).toBeUndefined();
+        expect(mcpInvocation!.outputSummary).toContain("example/dashboard");
+        expect(mcpInvocation!.outputSummary).toContain("TypeScript");
+
+        const sandboxEvents = (created.job.events as Array<Record<string, any>>)
+          .filter(
+            event =>
+              event.type === "sandbox.job.started" ||
+              event.type === "sandbox.job.completed"
+          );
+        expect(sandboxEvents.length).toBeGreaterThan(0);
+        for (const event of sandboxEvents) {
+          expect(event.payload.capabilityAdapters["mcp-github-source"]).toBe(
+            "blueprint.runtime.mcp.github.real"
+          );
+          expect(
+            event.payload.capabilityAdapters["mcp-github-source"]
+          ).not.toContain(".simulated");
+        }
+
+        expect(fakeMcpAdapter.execute).toHaveBeenCalledTimes(1);
+      },
+      createMemoryBlueprintJobStore(),
+      { mcpToolAdapter: fakeMcpAdapter }
+    );
+  });
+
+  it("Real-HTTP path — mcp-github-source invocation reports real HTTP execution when httpFetcher is injected", async () => {
+    const fakeFetcher = {
+      fetch: vi.fn().mockResolvedValue({
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          etag: 'W/"abc123def4567890abc123def456789012345678"',
+        },
+        body: githubJsonBody,
+        finalUrl: "https://api.github.com/repos/example/dashboard",
+      }),
+    };
+
+    await withServer(
+      tempRoot,
+      async baseUrl => {
+        const response = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetText: "Analyze release dashboard repo.",
+            githubUrls: ["https://github.com/example/dashboard"],
+          }),
+        });
+        expect(response.status).toBe(201);
+        const created = (await response.json()) as Record<string, any>;
+
+        const invocations = (created.job.artifacts as Array<Record<string, any>>)
+          .filter(artifact => artifact.type === "capability_invocation")
+          .map(artifact => artifact.payload as Record<string, any>);
+        const httpInvocation = invocations.find(
+          invocation => invocation.capabilityId === "mcp-github-source"
+        );
+        expect(httpInvocation).toBeDefined();
+        expect(httpInvocation!.provenance.executionMode).toBe("real");
+        expect(httpInvocation!.provenance.executionPath).toBe("http");
+        expect(httpInvocation!.provenance.repoUrl).toBe(
+          "https://github.com/example/dashboard"
+        );
+        expect(httpInvocation!.provenance.fetchedAt).toMatch(
+          /^\d{4}-\d{2}-\d{2}T/
+        );
+        expect(typeof httpInvocation!.provenance.apiResponseDigest).toBe(
+          "string"
+        );
+        expect(httpInvocation!.provenance.apiResponseDigest).toMatch(
+          /^[a-f0-9]{64}$/
+        );
+        expect(httpInvocation!.provenance.commitSha).toBe(
+          "abc123def4567890abc123def456789012345678"
+        );
+        expect(httpInvocation!.provenance.mcpToolName).toBeUndefined();
+        expect(httpInvocation!.provenance.error).toBeUndefined();
+
+        const sandboxEvents = (created.job.events as Array<Record<string, any>>)
+          .filter(
+            event =>
+              event.type === "sandbox.job.started" ||
+              event.type === "sandbox.job.completed"
+          );
+        for (const event of sandboxEvents) {
+          expect(event.payload.capabilityAdapters["mcp-github-source"]).toBe(
+            "blueprint.runtime.mcp.github.http"
+          );
+          expect(
+            event.payload.capabilityAdapters["mcp-github-source"]
+          ).not.toContain(".simulated");
+        }
+
+        expect(fakeFetcher.fetch).toHaveBeenCalledTimes(1);
+      },
+      createMemoryBlueprintJobStore(),
+      { httpFetcher: fakeFetcher }
+    );
+  });
+
+  it("Fallback path — mcp-github-source invocation falls back to simulated when the fetcher throws and mcp is not injected", async () => {
+    const throwingFetcher = {
+      fetch: vi
+        .fn()
+        .mockRejectedValue(new Error("fetcher blew up: upstream 500")),
+    };
+
+    await withServer(
+      tempRoot,
+      async baseUrl => {
+        const response = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetText: "Analyze release dashboard repo.",
+            githubUrls: ["https://github.com/example/dashboard"],
+          }),
+        });
+        expect(response.status).toBe(201);
+        const created = (await response.json()) as Record<string, any>;
+
+        const invocations = (created.job.artifacts as Array<Record<string, any>>)
+          .filter(artifact => artifact.type === "capability_invocation")
+          .map(artifact => artifact.payload as Record<string, any>);
+        const fallbackInvocation = invocations.find(
+          invocation => invocation.capabilityId === "mcp-github-source"
+        );
+        expect(fallbackInvocation).toBeDefined();
+        expect(fallbackInvocation!.provenance.executionMode).toBe(
+          "simulated_fallback"
+        );
+        expect(fallbackInvocation!.provenance.executionPath).toBeUndefined();
+        expect(fallbackInvocation!.provenance.error).toMatch(/http:/);
+        expect(fallbackInvocation!.outputSummary).toMatch(
+          /simulated mcp execution/
+        );
+        expect(fallbackInvocation!.logs).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(
+              /adapter=blueprint\.runtime\.mcp\.github\.simulated/
+            ),
+          ])
+        );
+
+        const sandboxEvents = (created.job.events as Array<Record<string, any>>)
+          .filter(
+            event =>
+              event.type === "sandbox.job.started" ||
+              event.type === "sandbox.job.completed"
+          );
+        for (const event of sandboxEvents) {
+          expect(event.payload.capabilityAdapters["mcp-github-source"]).toBe(
+            "blueprint.runtime.mcp.github.simulated"
+          );
+        }
+      },
+      createMemoryBlueprintJobStore(),
+      { httpFetcher: throwingFetcher }
+    );
+  });
+});

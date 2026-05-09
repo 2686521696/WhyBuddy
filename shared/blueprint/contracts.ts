@@ -625,6 +625,36 @@ export interface BlueprintCapabilityInvocation {
     roleId?: string;
     targetText?: string;
     githubUrls: string[];
+    /**
+     * Capability bridge execution mode.
+     * - "real": bridge executed a real capability (MCP tool / HTTP fetch / Docker run)
+     * - "simulated_fallback": bridge fell back to the deterministic templated output
+     * Added by the autopilot-capability-bridge-* specs; remains optional so legacy
+     * invocations without bridge integration (and all existing 45 E2E assertions)
+     * keep passing unchanged.
+     */
+    executionMode?: "real" | "simulated_fallback";
+    /**
+     * Bridge-path discriminator (MCP GitHub spec).
+     * - "mcp": real invocation via `ctx.mcpToolAdapter.execute()`
+     * - "http": real invocation via `ctx.httpFetcher.fetch()`
+     * Absent when the bridge took the fallback path.
+     */
+    executionPath?: "mcp" | "http";
+    /** Canonical GitHub repository URL resolved by the mcp-github bridge (real paths only). */
+    repoUrl?: string;
+    /** Latest commit SHA, from MCP tool result or HTTP `ETag` header. */
+    commitSha?: string;
+    /** ISO8601 timestamp when the real invocation completed. */
+    fetchedAt?: string;
+    /** Default branch extracted from the GitHub repository metadata. */
+    defaultBranch?: string;
+    /** SHA-256 digest (hex) of the raw HTTP response body (HTTP real path). */
+    apiResponseDigest?: string;
+    /** MCP tool name used for the real invocation (MCP real path). */
+    mcpToolName?: string;
+    /** Scrubbed summary of the reason the bridge fell back, if any. */
+    error?: string;
   };
 }
 
@@ -657,6 +687,27 @@ export interface BlueprintCapabilityEvidence {
     nodeId?: string;
     targetText?: string;
     githubUrls: string[];
+    /**
+     * Mirror of {@link BlueprintCapabilityInvocation.provenance.executionMode};
+     * `buildCapabilityEvidence` inherits it from the originating invocation.
+     */
+    executionMode?: "real" | "simulated_fallback";
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.executionPath}. */
+    executionPath?: "mcp" | "http";
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.repoUrl}. */
+    repoUrl?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.commitSha}. */
+    commitSha?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.fetchedAt}. */
+    fetchedAt?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.defaultBranch}. */
+    defaultBranch?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.apiResponseDigest}. */
+    apiResponseDigest?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.mcpToolName}. */
+    mcpToolName?: string;
+    /** Mirror of {@link BlueprintCapabilityInvocation.provenance.error}. */
+    error?: string;
   };
 }
 

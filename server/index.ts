@@ -608,6 +608,10 @@ async function startServer() {
   const workflowRoutes = (await import("./routes/workflows.js")).default;
   const { createOpenPageRouter } = await import("./routes/open-page.js");
   const blueprintRoutes = (await import("./routes/blueprint.js")).default;
+  const { createBlueprintRouter } = await import("./routes/blueprint.js");
+  const { createDefaultBlueprintHttpFetcher } = await import(
+    "./routes/blueprint/mcp-github-source/http-fetcher.js"
+  );
   const aigcMonitoringRoutes = (await import("./routes/aigc-monitoring.js"))
     .default;
   const configRoutes = (await import("./routes/config.js")).default;
@@ -753,7 +757,9 @@ async function startServer() {
   app.use("/api/robot-reply", createRobotReplyRouter());
   app.use("/api/reports", reportRoutes);
   app.use("/api/workflows", workflowRoutes);
-  app.use("/api/blueprint", blueprintRoutes);
+  // NOTE: blueprint router is mounted later (see below, after `mcpToolAdapter`
+  // is constructed) so the autopilot-capability-bridge-mcp DI path can receive
+  // the mainline MCP tool adapter when `BLUEPRINT_MCP_CAPABILITY_BRIDGE_ENABLED === "true"`.
   app.use("/api/v1/:tenantId/aigc-monitoring", aigcMonitoringRoutes);
   app.use("/api/config", configRoutes);
   app.use("/api/export", exportRoutes);
@@ -1036,6 +1042,31 @@ async function startServer() {
     auditLogger: permAuditLogger,
     escalationManager: permDynamicManager,
   });
+
+  // —— autopilot-capability-bridge-mcp (task 18) ——
+  // When the feature flag is set, wire the mainline `mcpToolAdapter` + an
+  // optional default https fetcher into a fresh blueprint router instance so
+  // `createRouteGenerationSandboxDerivation` can upgrade the
+  // `mcp-github-source` capability from templated fallback to a real MCP /
+  // HTTP invocation. Otherwise we mount the default singleton and the bridge
+  // stays in fallback mode (`provenance.executionMode = "simulated_fallback"`).
+  const mcpBridgeEnabled =
+    process.env.BLUEPRINT_MCP_CAPABILITY_BRIDGE_ENABLED === "true";
+  if (mcpBridgeEnabled) {
+    const blueprintHttpFetcher = createDefaultBlueprintHttpFetcher({
+      maxResponseBodyBytes: 1_048_576,
+      defaultTimeoutMs: 30_000,
+    });
+    app.use(
+      "/api/blueprint",
+      createBlueprintRouter({
+        mcpToolAdapter,
+        httpFetcher: blueprintHttpFetcher,
+      }),
+    );
+  } else {
+    app.use("/api/blueprint", blueprintRoutes);
+  }
   app.use(
     "/api/mcp",
     createMcpRouter({

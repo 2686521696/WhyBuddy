@@ -2260,21 +2260,44 @@ export function normalizeBlueprintCapabilityInvocation(
       record.evidenceIds ?? record.evidence_ids ?? record.evidence
     ),
     durationMs: asNumber(record.durationMs ?? record.duration_ms, 0),
-    provenance: {
-      jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
-      projectId: asString(record.projectId ?? record.project_id) || undefined,
-      sourceId: asString(record.sourceId ?? record.source_id) || undefined,
-      routeSetId:
-        asString(record.routeSetId ?? record.route_set_id) || undefined,
-      routeId: routeId || undefined,
-      specTreeId:
-        asString(record.specTreeId ?? record.spec_tree_id) || undefined,
-      nodeId: nodeId || undefined,
-      roleId: asString(record.roleId ?? record.role_id) || undefined,
-      targetText:
-        asString(record.targetText ?? record.target_text) || undefined,
-      githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
-    },
+    provenance: ((): BlueprintCapabilityInvocation["provenance"] => {
+      // autopilot-capability-bridge-mcp task 24.3: pass through the optional
+      // bridge provenance fields without changing existing field mappings.
+      const provenanceRecord = asRecord(record.provenance) ?? {};
+      const executionMode = asString(provenanceRecord.executionMode);
+      const executionPath = asString(provenanceRecord.executionPath);
+      return {
+        jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
+        projectId: asString(record.projectId ?? record.project_id) || undefined,
+        sourceId: asString(record.sourceId ?? record.source_id) || undefined,
+        routeSetId:
+          asString(record.routeSetId ?? record.route_set_id) || undefined,
+        routeId: routeId || undefined,
+        specTreeId:
+          asString(record.specTreeId ?? record.spec_tree_id) || undefined,
+        nodeId: nodeId || undefined,
+        roleId: asString(record.roleId ?? record.role_id) || undefined,
+        targetText:
+          asString(record.targetText ?? record.target_text) || undefined,
+        githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
+        executionMode:
+          executionMode === "real" || executionMode === "simulated_fallback"
+            ? executionMode
+            : undefined,
+        executionPath:
+          executionPath === "mcp" || executionPath === "http"
+            ? executionPath
+            : undefined,
+        repoUrl: asString(provenanceRecord.repoUrl) || undefined,
+        commitSha: asString(provenanceRecord.commitSha) || undefined,
+        fetchedAt: asString(provenanceRecord.fetchedAt) || undefined,
+        defaultBranch: asString(provenanceRecord.defaultBranch) || undefined,
+        apiResponseDigest:
+          asString(provenanceRecord.apiResponseDigest) || undefined,
+        mcpToolName: asString(provenanceRecord.mcpToolName) || undefined,
+        error: asString(provenanceRecord.error) || undefined,
+      };
+    })(),
   };
 }
 
@@ -2360,20 +2383,43 @@ export function normalizeBlueprintCapabilityEvidence(
     payloadSummary: (asRecord(
       record.payloadSummary ?? record.payload_summary
     ) ?? {}) as BlueprintCapabilityEvidence["payloadSummary"],
-    provenance: {
-      jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
-      projectId: asString(record.projectId ?? record.project_id) || undefined,
-      sourceId: asString(record.sourceId ?? record.source_id) || undefined,
-      routeSetId:
-        asString(record.routeSetId ?? record.route_set_id) || undefined,
-      routeId: routeId || undefined,
-      specTreeId:
-        asString(record.specTreeId ?? record.spec_tree_id) || undefined,
-      nodeId: nodeId || undefined,
-      targetText:
-        asString(record.targetText ?? record.target_text) || undefined,
-      githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
-    },
+    provenance: ((): BlueprintCapabilityEvidence["provenance"] => {
+      // autopilot-capability-bridge-mcp task 24.3: mirror invocation
+      // provenance forwarding on the evidence normalizer.
+      const provenanceRecord = asRecord(record.provenance) ?? {};
+      const executionMode = asString(provenanceRecord.executionMode);
+      const executionPath = asString(provenanceRecord.executionPath);
+      return {
+        jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
+        projectId: asString(record.projectId ?? record.project_id) || undefined,
+        sourceId: asString(record.sourceId ?? record.source_id) || undefined,
+        routeSetId:
+          asString(record.routeSetId ?? record.route_set_id) || undefined,
+        routeId: routeId || undefined,
+        specTreeId:
+          asString(record.specTreeId ?? record.spec_tree_id) || undefined,
+        nodeId: nodeId || undefined,
+        targetText:
+          asString(record.targetText ?? record.target_text) || undefined,
+        githubUrls: asStringArray(record.githubUrls ?? record.github_urls),
+        executionMode:
+          executionMode === "real" || executionMode === "simulated_fallback"
+            ? executionMode
+            : undefined,
+        executionPath:
+          executionPath === "mcp" || executionPath === "http"
+            ? executionPath
+            : undefined,
+        repoUrl: asString(provenanceRecord.repoUrl) || undefined,
+        commitSha: asString(provenanceRecord.commitSha) || undefined,
+        fetchedAt: asString(provenanceRecord.fetchedAt) || undefined,
+        defaultBranch: asString(provenanceRecord.defaultBranch) || undefined,
+        apiResponseDigest:
+          asString(provenanceRecord.apiResponseDigest) || undefined,
+        mcpToolName: asString(provenanceRecord.mcpToolName) || undefined,
+        error: asString(provenanceRecord.error) || undefined,
+      };
+    })(),
   };
 }
 

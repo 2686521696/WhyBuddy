@@ -22,7 +22,7 @@ import { callLLMJson } from "../../core/llm-client.js";
 import {
   createFileBlueprintJobStore,
   type BlueprintJobStore,
-} from "../blueprint.js";
+} from "./job-store.js";
 import type {
   BlueprintClarificationSession,
   BlueprintGenerationArtifact,
@@ -32,7 +32,34 @@ import type {
   BlueprintIntake,
   BlueprintProjectDomainContext,
 } from "../../../shared/blueprint/index.js";
+import type {
+  McpToolExecutionRequest,
+  McpToolExecutionResult,
+} from "../../tool/api/mcp-tool-adapter.js";
 import { createBlueprintEventBus } from "./event-bus.js";
+import {
+  createMcpGithubCapabilityBridge,
+  type McpGithubCapabilityBridge,
+  type McpGithubCapabilityBridgeInput,
+  type McpGithubCapabilityBridgeOutput,
+} from "./mcp-github-source/bridge.js";
+import type {
+  BlueprintHttpFetcher,
+  BlueprintHttpResponse,
+} from "./mcp-github-source/http-fetcher.js";
+import {
+  createDefaultMcpGithubCapabilityPolicy,
+  type McpGithubCapabilityPolicy,
+} from "./mcp-github-source/policy.js";
+
+export type {
+  BlueprintHttpFetcher,
+  BlueprintHttpResponse,
+  McpGithubCapabilityBridge,
+  McpGithubCapabilityBridgeInput,
+  McpGithubCapabilityBridgeOutput,
+  McpGithubCapabilityPolicy,
+};
 
 /**
  * 纯内存 Map 三件套：存放尚未进入 jobStore 的 intake / clarification / project context。
@@ -156,6 +183,21 @@ export function createSilentBlueprintLogger(): BlueprintLogger {
   };
 }
 
+/**
+ * MCP 工具执行入口（只暴露 `execute(request)` 这一个能力）。
+ *
+ * 设计目标：让 `server/routes/blueprint/mcp-github-source/` 子域只通过
+ * 这一最小接口消费主线 `McpToolAdapter.execute()`，避免直接 `import` 类本身
+ * 或任何单例（需求 2.3 / 6.2 的硬约束）。主线装配时 `server/index.ts`
+ * 会把已有 `McpToolAdapter` 实例以结构化类型（duck-typing）传入。
+ *
+ * 注意：此处仅 `import type` 依赖，**绝不** import 实现；所有运行时耦合通过
+ * 注入到 {@link BlueprintServiceContext.mcpToolAdapter} 实现。
+ */
+export interface McpToolAdapterDependency {
+  execute(request: McpToolExecutionRequest): Promise<McpToolExecutionResult>;
+}
+
 // `createFallbackEventBus` 保留用于文档说明；当前默认总线由 `createBlueprintEventBus`
 // 在 `buildBlueprintServiceContext` 中直接装配。
 
@@ -190,6 +232,27 @@ export interface BlueprintServiceContext {
   eventBus: BlueprintEventBus;
   specsRoot: string;
   logger: BlueprintLogger;
+  /**
+   * MCP 工具执行入口。未注入时 {@link McpGithubCapabilityBridge} 直接走 fallback。
+   * 装配规则见 `server/index.ts`（仅在 `BLUEPRINT_MCP_CAPABILITY_BRIDGE_ENABLED === "true"`
+   * 时传入主线已装配的 `McpToolAdapter` 实例，以 {@link McpToolAdapterDependency} 形状注入）。
+   */
+  mcpToolAdapter?: McpToolAdapterDependency;
+  /**
+   * HTTPS GET 专用 fetcher。未注入时桥直接走 fallback；只接受 https / allow-list 内 URL。
+   * 实现见 `server/routes/blueprint/mcp-github-source/http-fetcher.ts`，主线装配位于
+   * `server/index.ts` 的 composition root（可选）。
+   */
+  httpFetcher?: BlueprintHttpFetcher;
+  /**
+   * MCP GitHub 能力桥安全策略。未注入时默认使用 `createDefaultMcpGithubCapabilityPolicy()`。
+   */
+  mcpGithubCapabilityPolicy?: McpGithubCapabilityPolicy;
+  /**
+   * MCP GitHub 能力桥本体。默认装配 `createMcpGithubCapabilityBridge(ctx)`；
+   * 测试可以通过 `buildBlueprintServiceContext({ mcpGithubCapabilityBridge: fake })` 注入。
+   */
+  mcpGithubCapabilityBridge?: McpGithubCapabilityBridge;
 }
 
 /**
@@ -211,6 +274,14 @@ export interface BlueprintServiceContextDeps {
   specsRoot?: string;
   jobStoreFile?: string;
   logger?: BlueprintLogger;
+  /** See {@link BlueprintServiceContext.mcpToolAdapter}. */
+  mcpToolAdapter?: McpToolAdapterDependency;
+  /** See {@link BlueprintServiceContext.httpFetcher}. */
+  httpFetcher?: BlueprintHttpFetcher;
+  /** See {@link BlueprintServiceContext.mcpGithubCapabilityPolicy}. */
+  mcpGithubCapabilityPolicy?: McpGithubCapabilityPolicy;
+  /** See {@link BlueprintServiceContext.mcpGithubCapabilityBridge}. */
+  mcpGithubCapabilityBridge?: McpGithubCapabilityBridge;
 }
 
 /**
@@ -256,7 +327,11 @@ export function buildBlueprintServiceContext(
   deps: BlueprintServiceContextDeps = {}
 ): BlueprintServiceContext {
   const jobStore = deps.jobStore ?? getDefaultJobStore(deps.jobStoreFile);
-  return {
+  // Two-phase wiring: build the mutable ctx first so that the default bridge
+  // factory can receive it and close over the same object reference. Further
+  // mutation via Object.assign keeps the ctx a stable target for subscribers
+  // that captured it during subdomain assembly.
+  const ctx: BlueprintServiceContext = {
     now: deps.now ?? (() => new Date()),
     blueprintStores: deps.blueprintStores ?? createDefaultBlueprintStores(),
     jobStore,
@@ -272,7 +347,24 @@ export function buildBlueprintServiceContext(
     specsRoot:
       deps.specsRoot ?? path.resolve(process.cwd(), ".kiro", "specs"),
     logger: deps.logger ?? createSilentBlueprintLogger(),
+    // —— MCP GitHub capability bridge 相关字段（本 spec 任务 17 默认装配）——
+    // `mcpToolAdapter` / `httpFetcher` 未注入时保持 undefined；桥检测到两条真
+    // 实路径都不可用时自动走 fallback（design §2.D2）。
+    mcpToolAdapter: deps.mcpToolAdapter,
+    httpFetcher: deps.httpFetcher,
+    // Policy 是纯数据，默认值来自 `createDefaultMcpGithubCapabilityPolicy()`；
+    // 支持通过 `BLUEPRINT_MCP_CAPABILITY_BRIDGE_ENABLED` + env overrides 调参。
+    mcpGithubCapabilityPolicy:
+      deps.mcpGithubCapabilityPolicy ??
+      createDefaultMcpGithubCapabilityPolicy(),
+    // Bridge 本体 — 懒绑定，下方填充。需要先构造 ctx 才能把 ctx 作为闭包入参
+    // 传给 `createMcpGithubCapabilityBridge`。
+    mcpGithubCapabilityBridge: deps.mcpGithubCapabilityBridge,
   };
+  if (!ctx.mcpGithubCapabilityBridge) {
+    ctx.mcpGithubCapabilityBridge = createMcpGithubCapabilityBridge(ctx);
+  }
+  return ctx;
 }
 
 /**
