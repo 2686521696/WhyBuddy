@@ -173,3 +173,35 @@ export function resolveBlueprintEventFamily(
   const [family] = eventType.split(".", 1);
   return family as BlueprintGenerationEventFamily;
 }
+
+/**
+ * Optional payload shape carried by `BlueprintEventName.PreviewGenerated`
+ * events (and, by extension, the `BlueprintEventName.JobCompleted` emit
+ * that also aggregates per-preview provenance).
+ *
+ * Added by the `autopilot-effect-preview-llm` spec (design §4.8 / §D7,
+ * requirement 6.1 / 6.2 / 6.5). All three fields are optional so event
+ * consumers that pre-date this spec remain source-compatible:
+ *
+ *  - `previewGenerationSources` — per-preview `{ nodeId, generationSource }`
+ *    summary covering the entire effect preview batch. Always filled when
+ *    at least one preview was produced.
+ *  - `promptId` — set when any preview in the batch attempted the LLM
+ *    path (i.e. `generationSource` was `"llm"` or `"llm_fallback"`).
+ *    Currently pinned to `"blueprint.effect-preview.v1"`.
+ *  - `model` — LLM model identifier read from `ctx.llm.getConfig().model`
+ *    at invocation time, filled under the same condition as `promptId`.
+ *
+ * The type is intentionally additive on top of the generic
+ * `BlueprintGenerationEvent.payload?: unknown` shape — events still
+ * validate via the existing event bus guard and this interface acts as
+ * a documented overlay for consumers that want structured access.
+ */
+export interface BlueprintPreviewGeneratedEventPayload {
+  previewGenerationSources?: Array<{
+    nodeId: string;
+    generationSource: "llm" | "llm_fallback" | "template";
+  }>;
+  promptId?: string;
+  model?: string;
+}

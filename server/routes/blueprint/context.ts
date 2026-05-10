@@ -74,6 +74,12 @@ import {
 } from "./aigc-spec-node/policy.js";
 import { createRoleSystemArchitectureCapabilityBridge } from "./role-system-architecture/bridge.js";
 import { createDefaultRoleSystemArchitectureCapabilityPolicy } from "./role-system-architecture/policy.js";
+import {
+  createDefaultEffectPreviewLlmPolicy,
+  type EffectPreviewLlmPolicy,
+} from "./effect-preview/policy.js";
+import type { EffectPreviewLlmService } from "./effect-preview/service.js";
+import { createEffectPreviewLlmService } from "./effect-preview/service.js";
 import type { AgentCrewStageActivationPolicy } from "./agent-crew-stage-activation/policy.js";
 import { createDefaultAgentCrewStageActivationPolicy } from "./agent-crew-stage-activation/policy.js";
 import type { AgentCrewStageActivationDriver } from "./agent-crew-stage-activation/driver.js";
@@ -449,6 +455,35 @@ export interface BlueprintServiceContext {
    */
   roleSystemArchitectureCapabilityBridge?: RoleSystemArchitectureCapabilityBridge;
   /**
+   * Optional: Effect Preview LLM capability policy.
+   *
+   * Contains security / schema upper bounds / redaction patterns for the
+   * Effect Preview LLM service (see
+   * `server/routes/blueprint/effect-preview/policy.ts` +
+   * `.kiro/specs/autopilot-effect-preview-llm/design.md` §4.3). When not
+   * injected, `buildBlueprintServiceContext` wires a default via
+   * `createDefaultEffectPreviewLlmPolicy()`. The field stays optional so
+   * custom {@link BlueprintServiceContext} shapes assembled directly
+   * remain backwards compatible.
+   *
+   * @see design §2.D2 / §4.3
+   */
+  effectPreviewLlmPolicy?: EffectPreviewLlmPolicy;
+  /**
+   * Optional: Effect Preview LLM service instance.
+   *
+   * A pure async function that performs per-preview LLM-driven Effect
+   * Preview generation or falls back to the templated path. When not
+   * injected, `buildBlueprintServiceContext` wires a default via
+   * `createEffectPreviewLlmService(ctx)`. The service performs its own
+   * tier-1 early-exit when `BLUEPRINT_EFFECT_PREVIEW_LLM_ENABLED !== "true"`
+   * or when the resolved apiKey is empty, so always wiring a service
+   * instance does not incur LLM traffic in default deployments.
+   *
+   * @see design §2.D1 / §2.D2 / §4.2 / §4.6
+   */
+  effectPreviewLlmService?: EffectPreviewLlmService;
+  /**
    * Agent Crew Stage Activation policy (pure data, stateless).
    * Controls event suppression, idempotence, redaction rules and schema
    * version allow-list. Defaults to `createDefaultAgentCrewStageActivationPolicy()`
@@ -550,6 +585,24 @@ export interface BlueprintServiceContextDeps {
    * @see design §2.D1 / §4.2
    */
   roleSystemArchitectureCapabilityBridge?: RoleSystemArchitectureCapabilityBridge;
+  /**
+   * Optional override for the Effect Preview LLM policy. When omitted,
+   * {@link buildBlueprintServiceContext} wires
+   * {@link createDefaultEffectPreviewLlmPolicy}.
+   *
+   * @see design §2.D2 / §4.3
+   */
+  effectPreviewLlmPolicy?: EffectPreviewLlmPolicy;
+  /**
+   * Optional override for the Effect Preview LLM service. When omitted,
+   * {@link buildBlueprintServiceContext} wires
+   * {@link createEffectPreviewLlmService} using the fully-constructed
+   * context (so the service sees the same `llm` / `logger` / `now` /
+   * `effectPreviewLlmPolicy` that the rest of the app uses).
+   *
+   * @see design §2.D1 / §2.D2 / §4.2 / §4.6
+   */
+  effectPreviewLlmService?: EffectPreviewLlmService;
   /**
    * Optional override for the Agent Crew Stage Activation policy.
    * When omitted, {@link buildBlueprintServiceContext} wires
@@ -700,6 +753,10 @@ export function buildBlueprintServiceContext(
       createDefaultRoleSystemArchitectureCapabilityPolicy(),
     roleSystemArchitectureCapabilityBridge:
       deps.roleSystemArchitectureCapabilityBridge,
+    // Effect Preview LLM: policy eagerly resolved, service late-bound.
+    effectPreviewLlmPolicy:
+      deps.effectPreviewLlmPolicy ?? createDefaultEffectPreviewLlmPolicy(),
+    effectPreviewLlmService: deps.effectPreviewLlmService,
     // Agent Crew Stage Activation: policy eagerly resolved, driver NOT
     // default-assembled (per-job lifecycle; design §2.D2).
     agentCrewStageActivationPolicy,
@@ -733,6 +790,16 @@ export function buildBlueprintServiceContext(
   if (!ctx.roleSystemArchitectureCapabilityBridge) {
     ctx.roleSystemArchitectureCapabilityBridge =
       createRoleSystemArchitectureCapabilityBridge(ctx);
+  }
+
+  // Effect Preview LLM service late-bind: service closure reads
+  // `ctx.effectPreviewLlmPolicy` / `ctx.llm` / `ctx.logger` from ctx on
+  // each invocation. See `.kiro/specs/autopilot-effect-preview-llm/design.md`
+  // §4.2 / §4.6 for the factory contract. The default service performs its
+  // own tier-1 env-gate + tier-2 apiKey check, so wiring the instance here
+  // does not incur LLM traffic in default deployments.
+  if (!ctx.effectPreviewLlmService) {
+    ctx.effectPreviewLlmService = createEffectPreviewLlmService(ctx);
   }
 
   // RouteSet LLM generator late-bind: the default generator needs the fully

@@ -1137,7 +1137,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
     });
   });
 
-  router.post("/jobs/:jobId/effect-previews", (req, res) => {
+  router.post("/jobs/:jobId/effect-previews", async (req, res) => {
     const job = jobStore.get(req.params.jobId);
     if (!job) {
       res.status(404).json({
@@ -1176,10 +1176,37 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       return;
     }
 
-    const result = generateEffectPreviews(job, specTree, parsed.request, {
-      now: deps.now,
-      store: jobStore,
-    });
+    // Resolve optional LLM context inputs from stores so the Effect Preview
+    // LLM service can construct its deterministic prompt. All three are
+    // optional — the service tolerates absent clarification / domain /
+    // primary route inputs (design §4.5).
+    const clarificationSessionId = job.request.clarificationSessionId;
+    const clarificationSession = clarificationSessionId
+      ? blueprintStores.clarificationSessions.get(clarificationSessionId)
+      : undefined;
+    const domainContext = job.projectId
+      ? blueprintStores.projectContexts.get(job.projectId)
+      : undefined;
+    const routeSet = extractRouteSet(job);
+    const primaryRoute = routeSet
+      ? routeSet.routes.find(
+          route => route.id === (specTree.selectedRouteId ?? routeSet.primaryRouteId)
+        )
+      : undefined;
+
+    const result = await generateEffectPreviews(
+      blueprintServiceContext,
+      job,
+      specTree,
+      parsed.request,
+      {
+        now: deps.now,
+        store: jobStore,
+        clarificationSession,
+        domainContext,
+        primaryRoute,
+      }
+    );
 
     if (!result.ok) {
       res.status(result.status).json({
@@ -9242,12 +9269,17 @@ type GenerateEffectPreviewsResult =
     }
   | { ok: false; status: number; error: string; message: string };
 
-function generateEffectPreviews(
+async function generateEffectPreviews(
+  ctx: BlueprintServiceContext,
   job: BlueprintGenerationJob,
   specTree: BlueprintSpecTree,
   request: BlueprintGenerateEffectPreviewsRequest,
-  options: CreateGenerationJobHelperOptions
-): GenerateEffectPreviewsResult {
+  options: CreateGenerationJobHelperOptions & {
+    clarificationSession?: BlueprintClarificationSession;
+    domainContext?: BlueprintProjectDomainContext;
+    primaryRoute?: BlueprintRouteCandidate;
+  }
+): Promise<GenerateEffectPreviewsResult> {
   const createdAt = (options.now?.() ?? new Date()).toISOString();
   const includeDrafts = request.includeDrafts ?? false;
   const targetNodeIds = request.nodeId
@@ -9275,16 +9307,26 @@ function generateEffectPreviews(
     };
   }
 
-  const previews = targetNodes
-    .map(node => {
+  // Upstream evidence — extracted once per request and shared across all
+  // per-preview `buildEffectPreview(ctx, ...)` invocations so the prompt
+  // wrapper sees a stable ordering. See design §4.7.
+  const capabilityInvocations = extractCapabilityInvocations(job);
+  const capabilityEvidence = extractCapabilityEvidence(job);
+
+  // Task 14.7: concurrent preview assembly via `Promise.all`. Since each
+  // per-preview service call is independent (per requirement 4.7) but the
+  // outer array order must stay stable (requirement 5.6 / design §2.D3),
+  // we rely on `Promise.all` preserving index order.
+  const previewCandidates = await Promise.all(
+    targetNodes.map(node => {
       const documents = sourceDocuments.filter(
         document => document.nodeId === node.id
       );
       if (documents.length === 0) {
-        return null;
+        return Promise.resolve(null);
       }
 
-      return buildEffectPreview({
+      return buildEffectPreview(ctx, {
         job,
         specTree,
         node,
@@ -9294,9 +9336,17 @@ function generateEffectPreviews(
         ),
         includeDrafts,
         createdAt,
+        clarificationSession: options.clarificationSession,
+        domainContext: options.domainContext,
+        primaryRoute: options.primaryRoute,
+        capabilityInvocations,
+        capabilityEvidence,
       });
     })
-    .filter((preview): preview is BlueprintEffectPreview => Boolean(preview));
+  );
+  const previews = previewCandidates.filter(
+    (preview): preview is BlueprintEffectPreview => Boolean(preview)
+  );
 
   if (previews.length === 0) {
     return {
@@ -9331,6 +9381,25 @@ function generateEffectPreviews(
       payload: archiveEffectPreviewVersion(payload, createdAt),
     };
   });
+
+  // Task 14.9: aggregate provenance per preview for the emit payload.
+  // Always filled (requirement 6.5). `promptId` / `model` are only filled
+  // when at least one preview attempted the LLM path.
+  const previewGenerationSources = previews.map(preview => ({
+    nodeId: preview.nodeId,
+    generationSource:
+      preview.provenance.generationSource ?? ("template" as const),
+  }));
+  const touchedLlm = previews.some(
+    preview => preview.provenance.generationSource !== "template"
+  );
+  const aggregatedPromptId = touchedLlm
+    ? "blueprint.effect-preview.v1"
+    : undefined;
+  const aggregatedModel = previews
+    .map(preview => preview.provenance.model)
+    .find((model): model is string => typeof model === "string");
+
   const updatedJob: BlueprintGenerationJob = {
     ...job,
     status: "reviewing",
@@ -9356,6 +9425,14 @@ function generateEffectPreviews(
             previews.flatMap(preview => preview.previousPreviewIds)
           ),
           includeDrafts,
+          // —— autopilot-effect-preview-llm spec 新增（全部可选） ——
+          previewGenerationSources,
+          ...(aggregatedPromptId !== undefined
+            ? { promptId: aggregatedPromptId }
+            : {}),
+          ...(aggregatedModel !== undefined
+            ? { model: aggregatedModel }
+            : {}),
         },
       }),
       createGenerationEvent({
@@ -9386,6 +9463,14 @@ function generateEffectPreviews(
               previews.flatMap(preview => preview.sourceDocumentIds)
             ),
           },
+          // —— autopilot-effect-preview-llm spec 新增（全部可选） ——
+          previewGenerationSources,
+          ...(aggregatedPromptId !== undefined
+            ? { promptId: aggregatedPromptId }
+            : {}),
+          ...(aggregatedModel !== undefined
+            ? { model: aggregatedModel }
+            : {}),
         },
       })
     ),
@@ -11992,37 +12077,32 @@ function promptPackageReplacementKey(
   return `${promptPackage.targetPlatform}:${promptPackage.nodeIds.join("|")}`;
 }
 
-function buildEffectPreview(input: {
-  job: BlueprintGenerationJob;
-  specTree: BlueprintSpecTree;
-  node: BlueprintSpecTreeNode;
-  documents: BlueprintSpecDocument[];
-  existingPreviews: BlueprintEffectPreview[];
-  includeDrafts: boolean;
-  createdAt: string;
-}): BlueprintEffectPreview {
+async function buildEffectPreview(
+  ctx: BlueprintServiceContext,
+  input: {
+    job: BlueprintGenerationJob;
+    specTree: BlueprintSpecTree;
+    node: BlueprintSpecTreeNode;
+    documents: BlueprintSpecDocument[];
+    existingPreviews: BlueprintEffectPreview[];
+    includeDrafts: boolean;
+    createdAt: string;
+    clarificationSession?: BlueprintClarificationSession;
+    domainContext?: BlueprintProjectDomainContext;
+    primaryRoute?: BlueprintRouteCandidate;
+    capabilityInvocations?: BlueprintCapabilityInvocation[];
+    capabilityEvidence?: BlueprintCapabilityEvidence[];
+  }
+): Promise<BlueprintEffectPreview> {
+  // ---- Invariant scaffold (task 14.2) ----------------------------------
+  // Structural / identity fields derived only from job + specTree + node +
+  // documents + existingPreviews. Stay byte-identical on all three paths
+  // (real LLM / llm_fallback / template) to preserve outer-layer behavior
+  // required by design §2.D3 / requirements 2.4 / 2.7.
   const sourceDocumentIds = input.documents.map(document => document.id);
   const sourceStatus = resolveEffectPreviewSourceStatus(input.documents);
   const status: BlueprintEffectPreviewStatus =
     input.includeDrafts && sourceStatus !== "accepted" ? "preview" : "completed";
-  const documentTitles = input.documents.map(document => document.title);
-  const architectureNotes = [
-    `Anchor implementation around ${input.node.title}.`,
-    input.node.dependencies.length > 0
-      ? `Respect upstream dependencies: ${input.node.dependencies.join(", ")}.`
-      : "No explicit upstream dependencies are recorded for this node.",
-    input.node.outputs.length > 0
-      ? `Expected asset outputs: ${input.node.outputs.join(", ")}.`
-      : "No explicit downstream outputs are recorded for this node.",
-  ];
-  const prototypeCues = buildEffectPreviewPrototypeCues(
-    input.node,
-    sourceDocumentIds
-  );
-  const progressPlan = buildEffectPreviewMilestones(
-    input.node,
-    input.documents
-  );
   const previewId = createId("blueprint-effect-preview");
   const previousPreviews = input.existingPreviews
     .slice()
@@ -12062,12 +12142,94 @@ function buildEffectPreview(input: {
     nodeProgress,
     dependencyOrder,
   };
+
+  // ---- Invoke Effect Preview LLM service (task 14.3) -------------------
+  // When `ctx.effectPreviewLlmService` is missing, or returns
+  // `generationSource !== "llm"`, the rest of the function falls through
+  // to the templated path below (design §2.D3 / §5.2).
+  let serviceResult:
+    | Awaited<ReturnType<NonNullable<typeof ctx.effectPreviewLlmService>>>
+    | undefined;
+  try {
+    serviceResult = await ctx.effectPreviewLlmService?.({
+      jobId: input.job.id,
+      job: input.job,
+      specTreeNode: input.node,
+      sourceDocuments: input.documents,
+      primaryRoute: input.primaryRoute,
+      clarificationSession: input.clarificationSession,
+      domainContext: input.domainContext,
+      capabilityInvocations: input.capabilityInvocations,
+      capabilityEvidence: input.capabilityEvidence,
+      includeDrafts: input.includeDrafts,
+      createdAt: input.createdAt,
+    });
+  } catch {
+    // Defence in depth: the service owns its own tier-3/6 error shielding
+    // and never rejects on the real path, but if a future custom ctx injects
+    // a service that throws we still fall back to the templated path rather
+    // than bubbling the error up and breaking `Promise.all` in the outer
+    // `generateEffectPreviews` (requirement 5.6 / design §5.3).
+    serviceResult = undefined;
+  }
+
+  const documentTitles = input.documents.map(document => document.title);
+  const templatedArchitectureNotes = [
+    `Anchor implementation around ${input.node.title}.`,
+    input.node.dependencies.length > 0
+      ? `Respect upstream dependencies: ${input.node.dependencies.join(", ")}.`
+      : "No explicit upstream dependencies are recorded for this node.",
+    input.node.outputs.length > 0
+      ? `Expected asset outputs: ${input.node.outputs.join(", ")}.`
+      : "No explicit downstream outputs are recorded for this node.",
+  ];
+  const templatedPrototypeCues = buildEffectPreviewPrototypeCues(
+    input.node,
+    sourceDocumentIds
+  );
+  const templatedProgressPlan = buildEffectPreviewMilestones(
+    input.node,
+    input.documents
+  );
+  const templatedSummary = `Preview the expected effect of ${input.node.title} using ${documentTitles.join(", ")}.`;
+
+  // Content fields resolve from the service output when the real path
+  // succeeded; otherwise the templated path output flows through unchanged
+  // (byte-identical to today's behaviour — design §2.D3 / §5.2).
+  const isLlm = serviceResult?.generationSource === "llm";
+  const summary = isLlm && serviceResult?.summary
+    ? serviceResult.summary
+    : templatedSummary;
+  const architectureNotes =
+    isLlm && serviceResult?.architectureNotes && serviceResult.architectureNotes.length > 0
+      ? serviceResult.architectureNotes
+      : templatedArchitectureNotes;
+  const prototypeCues = isLlm ? templatedPrototypeCues : templatedPrototypeCues;
+  const prototypeNotes =
+    isLlm && serviceResult?.prototypeNotes && serviceResult.prototypeNotes.length > 0
+      ? serviceResult.prototypeNotes
+      : templatedPrototypeCues.map(cue => cue.cue);
+  const progressPlan =
+    isLlm && serviceResult?.progressPlan && serviceResult.progressPlan.length > 0
+      ? serviceResult.progressPlan.map(milestone => ({
+          ...milestone,
+          sourceDocumentIds:
+            milestone.sourceDocumentIds && milestone.sourceDocumentIds.length > 0
+              ? milestone.sourceDocumentIds
+              : sourceDocumentIds,
+        }))
+      : templatedProgressPlan;
+
+  // Preview node: when running on the real path, substitute LLM-authored
+  // `summary` / `steps` / `milestones` / `prototypeCues`; structural
+  // fields (`id` / `nodeId` / `nodeTitle` / `nodeType` / `sourceDocumentIds`)
+  // stay derived from the outer node (requirement 2.4 / 2.7).
   const previewNode: BlueprintEffectPreviewNode = {
     id: createId("blueprint-effect-preview-node"),
     nodeId: input.node.id,
     nodeTitle: input.node.title,
     nodeType: input.node.type,
-    summary: input.node.summary,
+    summary: isLlm && serviceResult?.summary ? serviceResult.summary : input.node.summary,
     sourceDocumentIds,
     steps: input.documents.map((document, index) => ({
       id: createId("blueprint-effect-preview-step"),
@@ -12078,7 +12240,16 @@ function buildEffectPreview(input: {
     milestones: progressPlan,
     prototypeCues,
   };
-  const runtimeProjection = buildEffectPreviewRuntimeProjection({
+
+  // Runtime projection: build the templated runtime projection first so
+  // structural fields (`id` / `jobId` / `projectId?` / `routeSetId` /
+  // `routeId?` / `specTreeId` / `nodeId` / `effectPreviewId` /
+  // `sceneSnapshotId` / `browserPreviewId` / `sourceIds`) stay outer-layer
+  // derived in both paths. On the real path, merge in LLM-authored content
+  // fields (`hudState` / `consoleLines` / `logTimeline` / `browserPreview`)
+  // per design §4.7. When LLM did not provide `browserPreview`, preserve
+  // the templated default (design §4.7).
+  const templatedRuntimeProjection = buildEffectPreviewRuntimeProjection({
     id: previewId,
     job: input.job,
     specTree: input.specTree,
@@ -12089,6 +12260,105 @@ function buildEffectPreview(input: {
     progressPlan,
     prototypeCues,
   });
+
+  let runtimeProjection: BlueprintEffectPreviewRuntimeProjection;
+  if (isLlm && serviceResult) {
+    const hud = serviceResult.renderedHudState;
+    runtimeProjection = {
+      ...templatedRuntimeProjection,
+      // Content fields overridden; structural fields (id, jobId, projectId,
+      // routeSetId, routeId, specTreeId, nodeId, effectPreviewId,
+      // sceneSnapshotId, browserPreviewId, sourceIds) stay from template.
+      hudState: hud
+        ? {
+            id: templatedRuntimeProjection.hudState.id,
+            title: hud.title,
+            summary: hud.summary,
+            // Outer-layer `activeNodeId` / `stage` / `status` fallbacks —
+            // task 14.4 rule: merge LLM renderedHudState with outer defaults.
+            status: hud.status ?? templatedRuntimeProjection.hudState.status,
+            stage: hud.stage ?? templatedRuntimeProjection.hudState.stage,
+            progressPercent: hud.progressPercent,
+            activeNodeId:
+              hud.activeNodeId ?? templatedRuntimeProjection.hudState.activeNodeId,
+            badges: hud.badges ?? templatedRuntimeProjection.hudState.badges,
+          }
+        : templatedRuntimeProjection.hudState,
+      // Note: `renderedConsoleLines` is part of `serviceResult` but is not
+      // surfaced on the shared `BlueprintEffectPreviewRuntimeProjection`
+      // contract today. The content still flows to provenance / replay via
+      // the service digest / promptFingerprint — a future contract
+      // extension can thread it onto the projection shape (design §4.7
+      // mentions it; task 15 scoped the current extension to the 7
+      // provenance fields only).
+      logTimeline:
+        serviceResult.renderedLogTimeline && serviceResult.renderedLogTimeline.length > 0
+          ? serviceResult.renderedLogTimeline.map(entry => ({
+              id: entry.id,
+              level: entry.level,
+              message: entry.message,
+              // Outer-layer `createdAt` fallback when service omitted.
+              occurredAt: entry.occurredAt ?? input.createdAt,
+              sourceDocumentIds,
+            }))
+          : templatedRuntimeProjection.logTimeline,
+      browserPreview: serviceResult.renderedBrowserPreview
+        ? {
+            id: templatedRuntimeProjection.browserPreviewId,
+            title: serviceResult.renderedBrowserPreview.title,
+            summary: serviceResult.renderedBrowserPreview.summary,
+            routeId: templatedRuntimeProjection.browserPreview?.routeId,
+            nodeId: input.node.id,
+            url:
+              serviceResult.renderedBrowserPreview.url ??
+              templatedRuntimeProjection.browserPreview?.url,
+          }
+        : templatedRuntimeProjection.browserPreview,
+    };
+  } else {
+    runtimeProjection = templatedRuntimeProjection;
+  }
+
+  // ---- Provenance extras (task 14.4 / 14.5 / 14.6) --------------------
+  // On the real path fill the 7 new optional fields; on fallback fill
+  // `generationSource` / `promptId?` / `model?` / `promptFingerprint?` /
+  // `error?`; on template fill only `generationSource: "template"`.
+  const provenanceExtras: {
+    generationSource?: "llm" | "llm_fallback" | "template";
+    promptId?: string;
+    model?: string;
+    responseDigest?: string;
+    structuredPayloadDigest?: string;
+    promptFingerprint?: string;
+    error?: string;
+  } = {};
+  if (serviceResult) {
+    provenanceExtras.generationSource = serviceResult.generationSource;
+    if (serviceResult.promptId !== undefined) {
+      provenanceExtras.promptId = serviceResult.promptId;
+    }
+    if (serviceResult.model !== undefined) {
+      provenanceExtras.model = serviceResult.model;
+    }
+    if (serviceResult.promptFingerprint !== undefined) {
+      provenanceExtras.promptFingerprint = serviceResult.promptFingerprint;
+    }
+    if (serviceResult.responseDigest !== undefined) {
+      provenanceExtras.responseDigest = serviceResult.responseDigest;
+    }
+    if (serviceResult.structuredPayloadDigest !== undefined) {
+      provenanceExtras.structuredPayloadDigest = serviceResult.structuredPayloadDigest;
+    }
+    if (serviceResult.error !== undefined) {
+      provenanceExtras.error = serviceResult.error;
+    }
+  } else {
+    // Service not wired (default-construct ctx path from the test harness
+    // that injects a ctx without the field). Treat as template path for
+    // backward compatibility with consumers that read
+    // `provenance.generationSource`.
+    provenanceExtras.generationSource = "template";
+  }
 
   return {
     id: previewId,
@@ -12107,9 +12377,9 @@ function buildEffectPreview(input: {
     status,
     createdAt: input.createdAt,
     updatedAt: input.createdAt,
-    summary: `Preview the expected effect of ${input.node.title} using ${documentTitles.join(", ")}.`,
+    summary,
     architectureNotes,
-    prototypeNotes: prototypeCues.map(cue => cue.cue),
+    prototypeNotes,
     progressPlan,
     nodes: [previewNode],
     runtimeProjection,
@@ -12134,6 +12404,7 @@ function buildEffectPreview(input: {
           normalizeSpecDocumentStatus(document.status),
         ])
       ),
+      ...provenanceExtras,
     },
   };
 }

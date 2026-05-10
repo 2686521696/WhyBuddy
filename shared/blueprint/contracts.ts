@@ -1248,6 +1248,63 @@ export interface BlueprintEffectPreview {
     sourceStatus: BlueprintEffectPreviewSourceStatus;
     includeDrafts: boolean;
     sourceDocumentStatuses: Record<string, BlueprintSpecDocumentStatus>;
+    /**
+     * Which generation path produced this preview.
+     *
+     * Added by `autopilot-effect-preview-llm` spec (design §4.9 / §2.D6).
+     * When `"llm"`, the `summary` / `architectureNotes` / `prototypeNotes` /
+     * `progressPlan` / `runtimeProjection.hudState` / `consoleLines` /
+     * `logTimeline` / `browserPreview?` content fields were derived from
+     * an LLM invocation and the `promptId` / `model` / `*Digest` / `error`
+     * fields below describe that invocation. When `"llm_fallback"`, the
+     * LLM was attempted but failed (schema / timeout / throw / api-key
+     * missing mid-invocation) and the content fields fall back to the
+     * templated path with `error` redacted and capped. When `"template"`,
+     * the LLM was never attempted (feature-flag off or apiKey missing
+     * up-front); `error` / `promptId` / `model` stay undefined.
+     *
+     * Always optional — preserves backward compatibility with any existing
+     * consumer that pre-dates this spec (requirement 4.2 / 8.2).
+     */
+    generationSource?: "llm" | "llm_fallback" | "template";
+    /**
+     * Stable prompt-version identifier (currently pinned to
+     * `"blueprint.effect-preview.v1"`). Filled whenever `generationSource`
+     * is `"llm"` or `"llm_fallback"` (the prompt was successfully
+     * constructed before the invocation).
+     */
+    promptId?: string;
+    /**
+     * LLM model identifier read from `ctx.llm.getConfig().model` at
+     * invocation time. Filled whenever the LLM call was attempted (`"llm"`
+     * or `"llm_fallback"`).
+     */
+    model?: string;
+    /**
+     * `"sha256:<hex>"` digest of the raw LLM JSON response. Filled only on
+     * the real path (`generationSource === "llm"`) for response-level
+     * auditing.
+     */
+    responseDigest?: string;
+    /**
+     * `"sha256:<hex>"` digest of the zod-validated + normalised payload
+     * (`parsed.data`). Filled only on the real path; stable across equal
+     * structured payloads even when the raw response changed whitespace.
+     */
+    structuredPayloadDigest?: string;
+    /**
+     * `"sha256:<hex>"` digest of the prompt (system + user messages).
+     * Filled whenever the prompt was constructed (`"llm"` or
+     * `"llm_fallback"`).
+     */
+    promptFingerprint?: string;
+    /**
+     * Redacted + length-capped error description. Filled only on the
+     * fallback path (`generationSource === "llm_fallback"`); secrets
+     * (API keys, GitHub PATs, emails) are scrubbed via
+     * `applyEffectPreviewRedaction` before persisting.
+     */
+    error?: string;
   };
 }
 

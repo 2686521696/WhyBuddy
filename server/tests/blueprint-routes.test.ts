@@ -5829,3 +5829,438 @@ describe("blueprint agent-crew stage-activation driver E2E", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// autopilot-effect-preview-llm E2E tests (Tasks 17 + 18)
+// 2 end-to-end cases for the Effect Preview LLM service:
+//   - Task 17: Real LLM path (needs 9.1a) — LLM payload flows into preview
+//     content (summary / architectureNotes / hudState / logTimeline) and
+//     provenance.generationSource === "llm".
+//   - Task 18: Fallback path (needs 9.1b) — when callLLMJson throws for
+//     effect-preview prompts, content falls back to templated output and
+//     provenance.generationSource === "llm_fallback".
+// APPEND only (requirement 9.6). Does not modify any of the existing 47 E2E
+// cases above.
+// ---------------------------------------------------------------------------
+
+describe("blueprint effect-preview llm bridge — e2e", () => {
+  let tempRoot: string;
+
+  /**
+   * Detect effect-preview LLM calls by matching the locale-aware system
+   * message content. Both English (`"You are the /autopilot Effect
+   * Preview generator."`) and Chinese (`"你是 /autopilot 管线中的 Effect
+   * Preview 生成器，...效果预演..."`) messages include one of these tokens.
+   * RouteSet / role / aigc / docker / mcp prompts do not contain them.
+   */
+  function isEffectPreviewCall(messages: any): boolean {
+    const joined = JSON.stringify(messages);
+    return /Effect Preview|效果预演/i.test(joined);
+  }
+
+  function buildValidEffectPreviewLlmPayload(): Record<string, unknown> {
+    return {
+      summary:
+        "Dashboard will ship a release automation cockpit with HUD, console lines and log timeline.",
+      architectureNotes: [
+        "Align the runtime projection layer with the cockpit HUD and log timeline.",
+        "Keep HUD state mutable from normalisation output.",
+        "Surface console and log timeline through the unified channel.",
+      ],
+      prototypeNotes: [
+        "Render hero cockpit with HUD badges.",
+        "Stream console lines via runtime projection channel.",
+        "Timeline entries drive cockpit log drawer.",
+        "Browser preview mirrors cockpit HUD when present.",
+      ],
+      progressPlan: [
+        {
+          title: "Ship beta",
+          summary: "Deliver the first releasable cockpit slice.",
+          target: "Internal demo milestone",
+        },
+        {
+          title: "Stabilise telemetry",
+          summary: "Wire telemetry to the cockpit HUD badges.",
+          target: "Observability review",
+        },
+        {
+          title: "Lock runtime contract",
+          summary: "Freeze runtime adapter contract with downstream teams.",
+          target: "Contract freeze review",
+        },
+      ],
+      runtimeProjection: {
+        hudState: {
+          title: "Release Dashboard HUD",
+          summary: "HUD surfaces progress, risk and takeover.",
+          progressPercent: 42,
+        },
+        consoleLines: [
+          "preview: cockpit boot sequence ready",
+          "preview: runtime projection warm",
+          "preview: operator panel rendered",
+        ],
+        logTimeline: [
+          {
+            id: "log-alpha",
+            level: "info",
+            message: "preview: cockpit log stream initialised",
+          },
+          {
+            id: "log-beta",
+            level: "warning",
+            message: "preview: runtime projection degraded",
+          },
+          {
+            id: "log-gamma",
+            level: "success",
+            message: "preview: takeover rehearsal passed",
+          },
+        ],
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    llmMocks.callLLMJson.mockReset();
+    tempRoot = await mkdtemp(
+      path.join(process.cwd(), "tmp", "blueprint-specs-effect-preview-llm-")
+    );
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    delete process.env.BLUEPRINT_EFFECT_PREVIEW_LLM_ENABLED;
+    if (tempRoot) {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  // Task 17: E2E test 1 — Real LLM path (requirement 9.1a)
+  it("generateEffectPreviews produces LLM-driven previews when effect-preview llm is enabled", async () => {
+    process.env.BLUEPRINT_EFFECT_PREVIEW_LLM_ENABLED = "true";
+    vi.stubEnv("LLM_API_KEY", "sk-test-valid-key-for-effect-preview-bridge");
+    vi.stubEnv("LLM_MODEL", "gpt-4-turbo");
+
+    // Route LLM mock by prompt content: only effect-preview prompts receive a
+    // schema-valid payload. Other families (RouteSet / role / aigc / docker /
+    // mcp / clarification) return `{}`, which either fails their schema and
+    // falls back to templates, or is benign (family not enabled by default).
+    llmMocks.callLLMJson.mockImplementation(async (messages: any) => {
+      if (isEffectPreviewCall(messages)) {
+        return buildValidEffectPreviewLlmPayload();
+      }
+      return {};
+    });
+
+    await withServer(tempRoot, async baseUrl => {
+      // Step 1: create job (triggers RouteSet generation upstream).
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetText:
+            "Build a release dashboard with HUD, console lines and log timeline.",
+          githubUrls: ["https://github.com/example/dashboard"],
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      // Step 2: select the first route so the SPEC tree becomes selected.
+      const selectResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/route-selection`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            routeId: created.routeSet.routes[0].id,
+            selectedBy: "route-reviewer",
+            reason: "Use the first route for effect-preview LLM E2E.",
+          }),
+        }
+      );
+      expect(selectResponse.status).toBe(201);
+      const selected = (await selectResponse.json()) as Record<string, any>;
+
+      // Step 3: generate SPEC documents for the root node.
+      const generateDocumentsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/spec-documents`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeId: selected.specTree.rootNodeId,
+          }),
+        }
+      );
+      expect(generateDocumentsResponse.status).toBe(201);
+      const generatedDocuments =
+        (await generateDocumentsResponse.json()) as Record<string, any>;
+
+      // Step 4: accept every document so the preview falls into the accepted
+      // path (not draft-capable).
+      for (const document of generatedDocuments.documents) {
+        const reviewResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/${created.job.id}/spec-documents/${document.id}/review`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status: "accepted",
+              reviewedBy: "effect-preview-llm-reviewer",
+            }),
+          }
+        );
+        expect(reviewResponse.status).toBe(200);
+      }
+
+      // Step 5: generate effect preview — this is the call under test.
+      const previewResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/effect-previews`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeId: selected.specTree.rootNodeId,
+          }),
+        }
+      );
+      expect(previewResponse.status).toBe(201);
+      const preview = (await previewResponse.json()) as Record<string, any>;
+      expect(preview.effectPreviews).toHaveLength(1);
+
+      const effectPreview = preview.effectPreviews[0];
+
+      // Task 17.3: provenance reflects the real LLM path.
+      expect(effectPreview.provenance.generationSource).toBe("llm");
+      expect(effectPreview.provenance.promptId).toBe(
+        "blueprint.effect-preview.v1"
+      );
+      expect(typeof effectPreview.provenance.model).toBe("string");
+      expect(effectPreview.provenance.model.length).toBeGreaterThan(0);
+      expect(effectPreview.provenance.responseDigest).toMatch(
+        /^sha256:[a-f0-9]{64}$/
+      );
+      expect(effectPreview.provenance.structuredPayloadDigest).toMatch(
+        /^sha256:[a-f0-9]{64}$/
+      );
+      expect(effectPreview.provenance.promptFingerprint).toMatch(
+        /^sha256:[a-f0-9]{64}$/
+      );
+      expect(effectPreview.provenance.error).toBeUndefined();
+
+      // Task 17.4: LLM-derived content is visible (not templated).
+      expect(effectPreview.summary).toBe(
+        "Dashboard will ship a release automation cockpit with HUD, console lines and log timeline."
+      );
+      expect(effectPreview.summary).not.toMatch(
+        /^Preview the expected effect of /
+      );
+      expect(effectPreview.architectureNotes.length).toBeGreaterThan(0);
+      expect(effectPreview.architectureNotes[0]).not.toMatch(
+        /^Anchor implementation around /
+      );
+      expect(effectPreview.runtimeProjection.hudState.title).toBe(
+        "Release Dashboard HUD"
+      );
+      expect(effectPreview.runtimeProjection.logTimeline).toHaveLength(3);
+      expect(
+        effectPreview.runtimeProjection.logTimeline.map(
+          (entry: any) => entry.level
+        )
+      ).toEqual(["info", "warning", "success"]);
+
+      // Task 17.5: structural (non-LLM) fields preserved from the outer
+      // layer derivations.
+      expect(typeof effectPreview.id).toBe("string");
+      expect(effectPreview.jobId).toBe(created.job.id);
+      expect(effectPreview.treeId).toBe(selected.specTree.id);
+      expect(effectPreview.nodeId).toBe(selected.specTree.rootNodeId);
+      expect(effectPreview.version).toBe(1);
+      expect(effectPreview.versionStatus).toBe("current");
+      expect(effectPreview.status).toBe("completed");
+      expect(Array.isArray(effectPreview.sourceDocumentIds)).toBe(true);
+      expect(effectPreview.sourceDocumentIds.length).toBeGreaterThan(0);
+      expect(
+        typeof effectPreview.runtimeProjection.sceneSnapshotId
+      ).toBe("string");
+      expect(
+        effectPreview.runtimeProjection.sceneSnapshotId
+      ).toEqual(expect.stringContaining("blueprint-scene-snapshot"));
+      expect(effectPreview.runtimeProjection.sourceIds).toMatchObject({
+        specTreeId: selected.specTree.id,
+        nodeIds: [selected.specTree.rootNodeId],
+        effectPreviewIds: [effectPreview.id],
+      });
+
+      // Task 17.6: BlueprintEventName.PreviewGenerated payload aggregates
+      // per-preview provenance.
+      const eventsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/events?family=preview`
+      );
+      expect(eventsResponse.status).toBe(200);
+      const eventsBody = (await eventsResponse.json()) as Record<string, any>;
+      const previewGeneratedEvent = (eventsBody.events as any[]).find(
+        (event: any) => event.type === "preview.generated"
+      );
+      expect(previewGeneratedEvent).toBeTruthy();
+      expect(
+        previewGeneratedEvent.payload.previewGenerationSources
+      ).toEqual([
+        {
+          nodeId: selected.specTree.rootNodeId,
+          generationSource: "llm",
+        },
+      ]);
+      expect(previewGeneratedEvent.payload.promptId).toBe(
+        "blueprint.effect-preview.v1"
+      );
+      expect(typeof previewGeneratedEvent.payload.model).toBe("string");
+      expect(previewGeneratedEvent.payload.model.length).toBeGreaterThan(0);
+    });
+  });
+
+  // Task 18: E2E test 2 — Fallback path (requirement 9.1b)
+  it("generateEffectPreviews falls back to template when effect-preview llm call throws", async () => {
+    process.env.BLUEPRINT_EFFECT_PREVIEW_LLM_ENABLED = "true";
+    vi.stubEnv("LLM_API_KEY", "sk-test-valid-key-for-effect-preview-bridge");
+    vi.stubEnv("LLM_MODEL", "gpt-4-turbo");
+
+    // callJson throws only for effect-preview prompts; other families still
+    // receive `{}` so RouteSet falls back to templated routes without a
+    // cascading error.
+    llmMocks.callLLMJson.mockImplementation(async (messages: any) => {
+      if (isEffectPreviewCall(messages)) {
+        throw new Error("upstream 503");
+      }
+      return {};
+    });
+
+    await withServer(tempRoot, async baseUrl => {
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetText:
+            "Build a release dashboard with HUD, console lines and log timeline.",
+          githubUrls: ["https://github.com/example/dashboard"],
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as Record<string, any>;
+
+      const selectResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/route-selection`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            routeId: created.routeSet.routes[0].id,
+            selectedBy: "route-reviewer",
+            reason: "Use the first route for effect-preview LLM fallback E2E.",
+          }),
+        }
+      );
+      expect(selectResponse.status).toBe(201);
+      const selected = (await selectResponse.json()) as Record<string, any>;
+
+      const generateDocumentsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/spec-documents`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeId: selected.specTree.rootNodeId,
+          }),
+        }
+      );
+      expect(generateDocumentsResponse.status).toBe(201);
+      const generatedDocuments =
+        (await generateDocumentsResponse.json()) as Record<string, any>;
+
+      for (const document of generatedDocuments.documents) {
+        const reviewResponse = await fetch(
+          `${baseUrl}/api/blueprint/jobs/${created.job.id}/spec-documents/${document.id}/review`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status: "accepted",
+              reviewedBy: "effect-preview-llm-fallback-reviewer",
+            }),
+          }
+        );
+        expect(reviewResponse.status).toBe(200);
+      }
+
+      const previewResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/effect-previews`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeId: selected.specTree.rootNodeId,
+          }),
+        }
+      );
+      expect(previewResponse.status).toBe(201);
+      const preview = (await previewResponse.json()) as Record<string, any>;
+      expect(preview.effectPreviews).toHaveLength(1);
+
+      const effectPreview = preview.effectPreviews[0];
+
+      // Task 18.3: provenance reflects the LLM attempt + captured error.
+      expect(effectPreview.provenance.generationSource).toBe("llm_fallback");
+      expect(effectPreview.provenance.error).toMatch(
+        /upstream 503|llm callJson threw/
+      );
+      expect(effectPreview.provenance.promptId).toBe(
+        "blueprint.effect-preview.v1"
+      );
+      expect(typeof effectPreview.provenance.model).toBe("string");
+      expect(effectPreview.provenance.model.length).toBeGreaterThan(0);
+
+      // Task 18.4: content falls back to the templated path (byte-identical
+      // to today when the LLM bridge is not enabled).
+      expect(effectPreview.summary).toMatch(
+        /^Preview the expected effect of /
+      );
+      expect(effectPreview.architectureNotes.length).toBeGreaterThan(0);
+      expect(effectPreview.architectureNotes[0]).toMatch(
+        /^Anchor implementation around /
+      );
+
+      // Task 18.5: array ordering is stable — templated preview always
+      // produces a deterministic set of sourceDocumentIds / architectureNotes
+      // / prototypeNotes / progressPlan entries.
+      expect(Array.isArray(effectPreview.sourceDocumentIds)).toBe(true);
+      expect(effectPreview.sourceDocumentIds.length).toBeGreaterThan(0);
+      expect(Array.isArray(effectPreview.architectureNotes)).toBe(true);
+      expect(Array.isArray(effectPreview.prototypeNotes)).toBe(true);
+      expect(Array.isArray(effectPreview.progressPlan)).toBe(true);
+      expect(effectPreview.progressPlan.length).toBeGreaterThan(0);
+
+      // Task 18.6: BlueprintEventName.PreviewGenerated payload still
+      // aggregates per-preview provenance on the fallback path.
+      const eventsResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${created.job.id}/events?family=preview`
+      );
+      expect(eventsResponse.status).toBe(200);
+      const eventsBody = (await eventsResponse.json()) as Record<string, any>;
+      const previewGeneratedEvent = (eventsBody.events as any[]).find(
+        (event: any) => event.type === "preview.generated"
+      );
+      expect(previewGeneratedEvent).toBeTruthy();
+      expect(
+        previewGeneratedEvent.payload.previewGenerationSources
+      ).toEqual([
+        {
+          nodeId: selected.specTree.rootNodeId,
+          generationSource: "llm_fallback",
+        },
+      ]);
+    });
+  });
+});
