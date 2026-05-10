@@ -14,6 +14,8 @@
  *                 per-jobId cache + AbortController + Ignore_Stale_Policy 基础设施。
  * Spec 4 Task 3 — Wave 2 fetch（`agentCrew + capabilities + capabilityInvocations +
  *                 capabilityEvidence`）+ 懒加载 gate + registry-first 合并 + W2 cache seed。
+ * Spec 4 Task 4 — Wave 3 fetch（`effectPreviews + promptPackages + landingPlans +
+ *                 engineeringRuns`）+ 按子阶段 / job.stage 懒加载阈值 + W3 cache seed。
  *
  * 本文件目前包含的硬边界：
  * - Wave 1：`fetchLatestBlueprintGenerationJob()`；当 `initialData.job.id === jobId` 时跳过
@@ -21,11 +23,15 @@
  * - Wave 2：通过 `shouldLoadField` 懒加载 gate 触发 `Promise.allSettled` 合并 4 个 fetch（registry
  *   + job capabilities + invocations + evidence）。`agentCrew` 从 job snapshot / initialData
  *   派生，不进入 FETCH_STARTED 流程（Task 3 口径：gate 未打开时暴露 `initialData.agentCrew ?? null`）。
- * - Wave 3-4 的字段仍为占位 `loading=false`；Task 4-5 会逐步接入真实 fetch。
+ * - Wave 3：通过 `shouldLoadField` 按 `currentSubStage` / `job.stage` 双维度判定 4 个字段的懒加载
+ *   阈值，`Promise.allSettled` 并发拉取 `fetchBlueprintEffectPreviews / PromptPackages /
+ *   EngineeringLanding / EngineeringRuns`；单字段失败不阻塞其余字段，并按字段写入 W3 cache。
+ * - Wave 4 的字段仍为占位 `loading=false`；Task 5 会接入真实 fetch。
  * - SSE / polling / 指数退避由 Task 6 实现；当前版本不启动任何 `EventSource` 或 `setTimeout`。
  * - `retry` 当前只覆盖 W1 字段（job + 3 个派生字段共享同一次 refetch）；W2 的 `agentCrew.retry`
- *   与 `job.retry` 行为一致（共享 Wave 1 refetch）；W2 其余 3 个字段与 W3-W4 的 per-field retry
- *   由 Task 7 接入。
+ *   与 `job.retry` 行为一致（共享 Wave 1 refetch）；W2 其余 3 个字段共享 `retryWave2`；W3 的
+ *   4 个字段共享 `retryWave3`（共享一次 Wave 3 fetch 重跑）；W4 字段与 per-field retry 的
+ *   in-flight guard 由 Task 5/7 接入。
  *
  * 硬性约束（贯穿本 spec 全部任务）：
  * - 不订阅 `useAppStore` / `useProjectStore`；不写入全局 store。
@@ -41,7 +47,11 @@ import {
   fetchBlueprintCapabilities,
   fetchBlueprintCapabilityEvidence,
   fetchBlueprintCapabilityInvocations,
+  fetchBlueprintEffectPreviews,
+  fetchBlueprintEngineeringLanding,
+  fetchBlueprintEngineeringRuns,
   fetchBlueprintJobCapabilities,
+  fetchBlueprintPromptPackages,
   fetchLatestBlueprintGenerationJob,
   normalizeBlueprintAgentCrew,
   type BlueprintAgentCrewSnapshot,
@@ -479,6 +489,70 @@ const WAVE_2_FETCH_FIELDS: readonly RightRailFieldName[] = [
   "capabilityEvidence",
 ] as const;
 
+/**
+ * Wave 3 fetch 字段集合（顺序固定，便于 PBT 与测试断言）。
+ *
+ * 4 个字段各自通过独立 REST 入口拉取，无跨字段合并：
+ * - `effectPreviews`       → `fetchBlueprintEffectPreviews(jobId)`
+ * - `promptPackages`       → `fetchBlueprintPromptPackages(jobId)`
+ * - `landingPlans`         → `fetchBlueprintEngineeringLanding(jobId)`
+ * - `engineeringRuns`      → `fetchBlueprintEngineeringRuns(jobId)`
+ *
+ * 懒加载阈值见 `shouldLoadField`；每个字段独立判定。
+ */
+const WAVE_3_FETCH_FIELDS: readonly RightRailFieldName[] = [
+  "effectPreviews",
+  "promptPackages",
+  "landingPlans",
+  "engineeringRuns",
+] as const;
+
+// ---------------------------------------------------------------------------
+// Wave 3 lazy-loading stage sets
+//
+// Wave 3 的懒加载阈值同时以 `currentSubStage`（fabric 子阶段）与 `job.stage`（顶层生成阶段）
+// 两个维度判定，只要任一维度进入字段对应的门限集合，就触发该字段的 fetch。set 的取值参考
+// `design.md` 的「懒加载规则实现」并与 `BlueprintGenerationStage` 联合体一一对应（非法字面量
+// 在 TS 编译期即会报错，不会出现 cast）。
+// ---------------------------------------------------------------------------
+
+/**
+ * `job.stage` 打开 `effectPreviews` 阈值的集合：`preview` 或更深阶段。
+ */
+const STAGES_ALLOWING_EFFECT_PREVIEWS: ReadonlySet<
+  BlueprintGenerationJob["stage"]
+> = new Set<BlueprintGenerationJob["stage"]>([
+  "preview",
+  "effect_preview",
+  "prompt_packaging",
+  "runtime_capability",
+  "engineering_handoff",
+  "engineering_landing",
+]);
+
+/**
+ * `job.stage` 打开 `promptPackages` 阈值的集合：`prompt_packaging` 或更深阶段。
+ */
+const STAGES_ALLOWING_PROMPT_PACKAGES: ReadonlySet<
+  BlueprintGenerationJob["stage"]
+> = new Set<BlueprintGenerationJob["stage"]>([
+  "prompt_packaging",
+  "runtime_capability",
+  "engineering_handoff",
+  "engineering_landing",
+]);
+
+/**
+ * `job.stage` 打开 `landingPlans` 与 `engineeringRuns` 阈值的集合：`engineering_handoff`
+ * 或 `engineering_landing`。
+ */
+const STAGES_ALLOWING_ENGINEERING: ReadonlySet<
+  BlueprintGenerationJob["stage"]
+> = new Set<BlueprintGenerationJob["stage"]>([
+  "engineering_handoff",
+  "engineering_landing",
+]);
+
 // ---------------------------------------------------------------------------
 // Wave 2 helpers: agentCrew derivation + capabilities registry-first merge +
 // shouldLoadField 懒加载 gate。
@@ -563,8 +637,8 @@ export function mergeCapabilities(
 /**
  * 判断 `field` 是否应当在当前 `(jobStage, currentSubStage, skipLazyLoad)` 快照下发起 fetch。
  *
- * Task 3 实现范围：Wave 2 的 4 个 case 返回真实规则，Wave 3-4 的 case 全部返回 `false` 作为
- * 占位。Task 4-5 会逐步把 Wave 3-4 的规则接入。
+ * Task 3-4 实现范围：Wave 2 与 Wave 3 的 case 均返回真实规则，Wave 4 的 case 仍为 `false`
+ * 占位；Task 5 会把 Wave 4 的规则接入。
  *
  * 注：`job / routeSet / selection / specTree` 四个 W1 字段不走本 gate —— 它们始终加载（由 W1
  * effect 直接驱动），因此不作为本函数的合法输入；若误传入，函数也会在 default 分支返回 `false`。
@@ -581,7 +655,7 @@ export function shouldLoadField(
   }
 ): boolean {
   if (params.skipLazyLoad) return true;
-  const { currentSubStage } = params;
+  const { currentSubStage, jobStage } = params;
   switch (field) {
     case "agentCrew":
     case "capabilities":
@@ -590,13 +664,45 @@ export function shouldLoadField(
       // Wave 2：`currentSubStage` 存在（即 fabric 阶段）即触发。
       return Boolean(currentSubStage);
     case "effectPreviews":
+      // Wave 3：effectPreviews
+      //  - currentSubStage ∈ { effect_preview, prompt_package, runtime_capability,
+      //    engineering_handoff, artifact_memory } → 触发；
+      //  - job.stage ∈ STAGES_ALLOWING_EFFECT_PREVIEWS → 触发（无 currentSubStage 兜底，
+      //    例如 `/specs` 页面尚未进入 fabric 子阶段但 job 已推进到 preview）。
+      return (
+        currentSubStage === "effect_preview" ||
+        currentSubStage === "prompt_package" ||
+        currentSubStage === "runtime_capability" ||
+        currentSubStage === "engineering_handoff" ||
+        currentSubStage === "artifact_memory" ||
+        (jobStage !== null && STAGES_ALLOWING_EFFECT_PREVIEWS.has(jobStage))
+      );
     case "promptPackages":
+      // Wave 3：promptPackages
+      //  - currentSubStage ∈ { prompt_package, runtime_capability,
+      //    engineering_handoff, artifact_memory } → 触发；
+      //  - job.stage ∈ STAGES_ALLOWING_PROMPT_PACKAGES → 触发。
+      return (
+        currentSubStage === "prompt_package" ||
+        currentSubStage === "runtime_capability" ||
+        currentSubStage === "engineering_handoff" ||
+        currentSubStage === "artifact_memory" ||
+        (jobStage !== null && STAGES_ALLOWING_PROMPT_PACKAGES.has(jobStage))
+      );
     case "landingPlans":
     case "engineeringRuns":
+      // Wave 3：engineering 家族共享同一懒加载阈值
+      //  - currentSubStage ∈ { engineering_handoff, artifact_memory } → 触发；
+      //  - job.stage ∈ STAGES_ALLOWING_ENGINEERING → 触发。
+      return (
+        currentSubStage === "engineering_handoff" ||
+        currentSubStage === "artifact_memory" ||
+        (jobStage !== null && STAGES_ALLOWING_ENGINEERING.has(jobStage))
+      );
     case "artifactEntries":
     case "artifactReplays":
     case "artifactFeedback":
-      // Wave 3-4：Task 4-5 会扩展真实规则。
+      // Wave 4：Task 5 会扩展真实规则。
       return false;
     default:
       return false;
@@ -1014,10 +1120,234 @@ export function useAutopilotRightRailData(
     bumpW2Retry();
   }, [hasJob]);
 
-  // Wave 3-4 retry 占位（Task 4-5/7 会替换为真实实现）。
+  // -------------------------------------------------------------------------
+  // Wave 3 fetch orchestration
+  //
+  // 触发条件：W1 已经有 `job.data` + 字段级 `shouldLoadField` 判定通过。本 effect 按
+  // `(jobId, job.stage, currentSubStage, skipLazyLoad, w3RetryTrigger)` 五元组重跑，
+  // 通过 `AbortController` 取消在飞请求。
+  //
+  // 为避免与 W1 / W2 effect 的双写冲突：本 effect 只负责
+  // `effectPreviews / promptPackages / landingPlans / engineeringRuns` 4 个字段；与
+  // Wave 2 字段的 `FETCH_STARTED` 不会在 reducer 中发生交叠（字段集合互斥）。
+  //
+  // 单字段失败不阻塞其余字段：每个结果独立判定 ok；成功字段走一次批量 FETCH_FULFILLED，
+  // 失败字段走一次 FETCH_REJECTED 并附带该次 fetch 的 primaryError（记录在 field error）。
+  //
+  // 子阶段从浅切深（例如 `effect_preview → prompt_package`）时，新解锁的字段以 loading=true
+  // 进入 fetch；已经在 W3 cache 中的字段不会触发独立 fetch（通过 seed 覆盖而非重拉）。
+  // -------------------------------------------------------------------------
+  const [w3RetryTrigger, bumpW3Retry] = useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => {
+    if (!hasJob) return;
+    // 与 W2 effect 一致，要求 W1 job 数据已就绪并且指向当前 jobId，避免 gate 判定悬空。
+    if (!state.job.data || state.job.data.id !== trimmedJobId) return;
+
+    const fields = WAVE_3_FETCH_FIELDS.filter(field =>
+      shouldLoadField(
+        field as Exclude<
+          RightRailFieldName,
+          "job" | "routeSet" | "selection" | "specTree"
+        >,
+        { currentSubStage, jobStage, skipLazyLoad }
+      )
+    );
+    if (fields.length === 0) return;
+
+    const controller = new AbortController();
+    const requestId = nextRequestId();
+
+    dispatch({
+      type: "FETCH_STARTED",
+      jobId: trimmedJobId,
+      fields,
+      requestId,
+    });
+
+    void (async () => {
+      const wantEffectPreviews = fields.includes("effectPreviews");
+      const wantPromptPackages = fields.includes("promptPackages");
+      const wantLandingPlans = fields.includes("landingPlans");
+      const wantEngineeringRuns = fields.includes("engineeringRuns");
+
+      const effectPreviewsPromise = wantEffectPreviews
+        ? fetchBlueprintEffectPreviews(trimmedJobId)
+        : null;
+      const promptPackagesPromise = wantPromptPackages
+        ? fetchBlueprintPromptPackages(trimmedJobId)
+        : null;
+      const landingPlansPromise = wantLandingPlans
+        ? fetchBlueprintEngineeringLanding(trimmedJobId)
+        : null;
+      const engineeringRunsPromise = wantEngineeringRuns
+        ? fetchBlueprintEngineeringRuns(trimmedJobId)
+        : null;
+
+      const settled = await Promise.allSettled([
+        effectPreviewsPromise,
+        promptPackagesPromise,
+        landingPlansPromise,
+        engineeringRunsPromise,
+      ]);
+      if (controller.signal.aborted) return;
+
+      const [
+        effectPreviewsSettled,
+        promptPackagesSettled,
+        landingPlansSettled,
+        engineeringRunsSettled,
+      ] = settled;
+
+      const fieldUpdates: PartialFieldDataMap = {};
+      const rejectedFields: RightRailFieldName[] = [];
+      let primaryError: ApiRequestError | null = null;
+
+      const extractResult = <T,>(
+        entry: (typeof settled)[number],
+        endpoint: string
+      ):
+        | { ok: true; data: T }
+        | { ok: false; error: ApiRequestError }
+        | null => {
+        if (entry.status === "fulfilled") {
+          if (entry.value === null || entry.value === undefined) return null;
+          return entry.value as
+            | { ok: true; data: T }
+            | { ok: false; error: ApiRequestError };
+        }
+        return { ok: false, error: coerceApiRequestError(entry.reason, endpoint) };
+      };
+
+      if (wantEffectPreviews) {
+        const result = extractResult<{
+          effectPreviews: BlueprintEffectPreviewSnapshot[];
+        }>(
+          effectPreviewsSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/effect-previews`
+        );
+        if (result && result.ok) {
+          fieldUpdates.effectPreviews = result.data.effectPreviews;
+          options?.onEffectPreviewsChange?.(result.data.effectPreviews);
+        } else if (result && !result.ok) {
+          rejectedFields.push("effectPreviews");
+          primaryError ??= result.error;
+        }
+      }
+
+      if (wantPromptPackages) {
+        const result = extractResult<{
+          promptPackages: BlueprintPromptPackage[];
+        }>(
+          promptPackagesSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/prompt-packages`
+        );
+        if (result && result.ok) {
+          fieldUpdates.promptPackages = result.data.promptPackages;
+          options?.onPromptPackagesChange?.(result.data.promptPackages);
+        } else if (result && !result.ok) {
+          rejectedFields.push("promptPackages");
+          primaryError ??= result.error;
+        }
+      }
+
+      if (wantLandingPlans) {
+        const result = extractResult<{
+          landingPlans: BlueprintEngineeringLandingPlan[];
+        }>(
+          landingPlansSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/engineering-landing`
+        );
+        if (result && result.ok) {
+          fieldUpdates.landingPlans = result.data.landingPlans;
+          options?.onLandingPlansChange?.(result.data.landingPlans);
+        } else if (result && !result.ok) {
+          rejectedFields.push("landingPlans");
+          primaryError ??= result.error;
+        }
+      }
+
+      if (wantEngineeringRuns) {
+        const result = extractResult<{
+          engineeringRuns: BlueprintEngineeringRun[];
+        }>(
+          engineeringRunsSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/engineering-runs`
+        );
+        if (result && result.ok) {
+          fieldUpdates.engineeringRuns = result.data.engineeringRuns;
+          options?.onEngineeringRunsChange?.(result.data.engineeringRuns);
+        } else if (result && !result.ok) {
+          rejectedFields.push("engineeringRuns");
+          primaryError ??= result.error;
+        }
+      }
+
+      if (Object.keys(fieldUpdates).length > 0) {
+        dispatch({
+          type: "FETCH_FULFILLED",
+          jobId: trimmedJobId,
+          requestId,
+          fieldUpdates,
+        });
+
+        // 写入 W3 cache 条目，供历史 jobId 切回复用。
+        const entry: PartialCacheEntry = cacheRef.current.get(trimmedJobId) ?? {};
+        if ("effectPreviews" in fieldUpdates) {
+          entry.effectPreviews = fieldUpdates.effectPreviews;
+        }
+        if ("promptPackages" in fieldUpdates) {
+          entry.promptPackages = fieldUpdates.promptPackages;
+        }
+        if ("landingPlans" in fieldUpdates) {
+          entry.landingPlans = fieldUpdates.landingPlans;
+        }
+        if ("engineeringRuns" in fieldUpdates) {
+          entry.engineeringRuns = fieldUpdates.engineeringRuns;
+        }
+        cacheRef.current.set(trimmedJobId, entry);
+      }
+      if (rejectedFields.length > 0 && primaryError) {
+        dispatch({
+          type: "FETCH_REJECTED",
+          jobId: trimmedJobId,
+          requestId,
+          fields: rejectedFields,
+          error: primaryError,
+        });
+        for (const field of rejectedFields) {
+          options?.onFieldError?.(field, primaryError);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+    // 注：`options.on*Change` 故意排除依赖以避免消费者每 render 重建 callback 触发 W3 重发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    trimmedJobId,
+    hasJob,
+    state.job.data,
+    jobStage,
+    currentSubStage,
+    skipLazyLoad,
+    w3RetryTrigger,
+  ]);
+
+  // Wave 3 共享 retry：触发 W3 effect 重跑。
+  // Task 4 实现范围：`effectPreviews / promptPackages / landingPlans / engineeringRuns` 共享此 retry；
+  // Task 7 会把 per-field retry 替换为仅重拉单字段的版本。
+  const retryWave3 = useCallback(() => {
+    if (!hasJob) return;
+    bumpW3Retry();
+  }, [hasJob]);
+
+  // Wave 4 retry 占位（Task 5/7 会替换为真实实现）。
   // 绑定到 jobId 确保「仅在 jobId 变化时重建」的稳定引用契约。
   const noopRetry = useCallback(() => {
-    /* Task 4-5/7 会接入 W3-W4 retry */
+    /* Task 5/7 会接入 W4 retry */
   }, [trimmedJobId]);
 
   // 预先计算 Wave 2 字段的 gate 状态，view 映射中直接复用。
@@ -1086,11 +1416,11 @@ export function useAutopilotRightRailData(
       capabilities: toPublic(state.capabilities, retryWave2),
       capabilityInvocations: toPublic(state.capabilityInvocations, retryWave2),
       capabilityEvidence: toPublic(state.capabilityEvidence, retryWave2),
-      // Wave 3 占位
-      effectPreviews: toPublic(state.effectPreviews, noopRetry),
-      promptPackages: toPublic(state.promptPackages, noopRetry),
-      landingPlans: toPublic(state.landingPlans, noopRetry),
-      engineeringRuns: toPublic(state.engineeringRuns, noopRetry),
+      // Wave 3：4 个字段共享 retryWave3
+      effectPreviews: toPublic(state.effectPreviews, retryWave3),
+      promptPackages: toPublic(state.promptPackages, retryWave3),
+      landingPlans: toPublic(state.landingPlans, retryWave3),
+      engineeringRuns: toPublic(state.engineeringRuns, retryWave3),
       // Wave 4 占位
       artifactEntries: toPublic(state.artifactEntries, noopRetry),
       artifactReplays: toPublic(state.artifactReplays, noopRetry),
@@ -1102,6 +1432,7 @@ export function useAutopilotRightRailData(
     derivedAgentCrew,
     retryWave1,
     retryWave2,
+    retryWave3,
     noopRetry,
   ]);
 }
@@ -1148,7 +1479,7 @@ function coerceApiRequestError(raw: unknown, endpoint: string): ApiRequestError 
     detail:
       raw instanceof Error && raw.stack
         ? raw.stack
-        : "useAutopilotRightRailData: W2 fetch threw synchronously",
+        : "useAutopilotRightRailData: fetch threw synchronously",
     retryable: true,
   };
 }
@@ -1167,6 +1498,7 @@ export const __testing__ = {
   deriveWave1FieldUpdates,
   WAVE_1_FIELDS,
   WAVE_2_FETCH_FIELDS,
+  WAVE_3_FETCH_FIELDS,
   ALL_FIELD_NAMES,
   // Task 3：Wave 2 helpers
   shouldLoadField,

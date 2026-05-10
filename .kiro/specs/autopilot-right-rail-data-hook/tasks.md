@@ -56,7 +56,7 @@
   - **验收**:Wave 2 4 个字段按规则懒加载;既不延迟 fabric 首屏可用性,也不在 routeset 之前提前拉起
   - _需求:Requirement 2.1、2.2、2.6、Requirement 3.1、3.2、3.3_
 
-- [ ] 4. 实现 Wave 3 fetch(`effectPreviews + promptPackages + landingPlans + engineeringRuns`)+ 按子阶段懒加载
+- [x] 4. 实现 Wave 3 fetch(`effectPreviews + promptPackages + landingPlans + engineeringRuns`)+ 按子阶段懒加载
   - `effectPreviews` 调用 `fetchBlueprintEffectPreviews(jobId)`,懒加载阈值:`currentSubStage ∈ { effect_preview, prompt_package, runtime_capability, engineering_handoff, artifact_memory }` 或 `job.stage ∈ { preview, effect_preview, prompt_packaging, runtime_capability, engineering_handoff, engineering_landing }`
   - `promptPackages` 调用 `fetchBlueprintPromptPackages(jobId)`,懒加载阈值:`currentSubStage ∈ { prompt_package, runtime_capability, engineering_handoff, artifact_memory }` 或 `job.stage ∈ { prompt_packaging, runtime_capability, engineering_handoff, engineering_landing }`
   - `landingPlans` 调用 `fetchBlueprintEngineeringLanding(jobId)`,懒加载阈值:`currentSubStage ∈ { engineering_handoff, artifact_memory }` 或 `job.stage ∈ { engineering_handoff, engineering_landing }`

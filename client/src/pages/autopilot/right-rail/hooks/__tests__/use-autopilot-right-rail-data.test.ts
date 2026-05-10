@@ -12,6 +12,11 @@
  *   `FETCH_REJECTED`）、以及 `buildInitialReducerState` / `deriveWave1FieldUpdates` helper。
  * - Task 3 新增 Wave 2 helper 单测：`shouldLoadField` 懒加载 gate、`mergeCapabilities` 合并
  *   规则、`deriveAgentCrewFromJob` 派生规则。
+ * - Task 4 新增 Wave 3 范围：`shouldLoadField` 对 `effectPreviews / promptPackages /
+ *   landingPlans / engineeringRuns` 四个字段的懒加载阈值；reducer 对 Wave 3 字段的
+ *   `FETCH_STARTED / FETCH_FULFILLED / FETCH_REJECTED` 行为（与 Wave 1/2 共用 reducer，但
+ *   需覆盖 Wave 3 字段集合不污染 Wave 1/2/4）；`JOB_CHANGED` 切回历史 `jobId` 时从
+ *   `cachedFields` 恢复 Wave 3 字段；`WAVE_3_FETCH_FIELDS` 常量断言。
  * - 不测试 hook 的 fetch 副作用与 React render cycle（需要 DOM runtime；本 repo 当前不集成
  *   `@testing-library/react`，且 `useEffect` 在 `renderToStaticMarkup` 中不执行）。
  * - Task 11 的 PBT 会引入 `renderHook` 或等价手段覆盖 fetch 副作用、SSE、polling 与 retry。
@@ -42,6 +47,7 @@ const {
   deriveWave1FieldUpdates,
   WAVE_1_FIELDS,
   WAVE_2_FETCH_FIELDS,
+  WAVE_3_FETCH_FIELDS,
   ALL_FIELD_NAMES,
   shouldLoadField,
   deriveAgentCrewFromJob,
@@ -488,12 +494,8 @@ describe("shouldLoadField (Spec 4 Task 3)", () => {
     }
   });
 
-  it("Wave 3-4 字段当前仍为 false 占位（Task 4-5 会扩展）", () => {
+  it("Wave 4 字段当前仍为 false 占位（Task 5 会扩展）", () => {
     for (const field of [
-      "effectPreviews",
-      "promptPackages",
-      "landingPlans",
-      "engineeringRuns",
       "artifactEntries",
       "artifactReplays",
       "artifactFeedback",
@@ -798,5 +800,380 @@ describe("rightRailDataReducer · JOB_CHANGED seeds Wave 2 cache (Spec 4 Task 3)
     expect(next.capabilityEvidence.data).toBe(cachedEvidence);
     // pendingRequestId 始终为 null（切换后没有 pending fetch）
     expect(next.capabilities.pendingRequestId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 3 helper: shouldLoadField 按子阶段 / job.stage 双维度判定
+// ---------------------------------------------------------------------------
+
+describe("shouldLoadField · Wave 3 (Spec 4 Task 4)", () => {
+  const baseParams = {
+    jobStage: null as BlueprintGenerationJob["stage"] | null,
+    skipLazyLoad: false,
+  };
+
+  // ----- effectPreviews -----
+  it("effectPreviews: 5 个合法 currentSubStage 均返回 true", () => {
+    for (const sub of [
+      "effect_preview",
+      "prompt_package",
+      "runtime_capability",
+      "engineering_handoff",
+      "artifact_memory",
+    ] as const) {
+      expect(
+        shouldLoadField("effectPreviews", {
+          ...baseParams,
+          currentSubStage: sub,
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("effectPreviews: 非合法 currentSubStage（spec_tree/agent_crew_fabric/spec_documents）且 jobStage=null 时返回 false", () => {
+    for (const sub of [
+      "agent_crew_fabric",
+      "spec_tree",
+      "spec_documents",
+    ] as const) {
+      expect(
+        shouldLoadField("effectPreviews", {
+          ...baseParams,
+          currentSubStage: sub,
+        })
+      ).toBe(false);
+    }
+  });
+
+  it("effectPreviews: jobStage ∈ { preview, effect_preview, prompt_packaging, runtime_capability, engineering_handoff, engineering_landing } 时返回 true（即便 currentSubStage 为非合法 fabric 子阶段）", () => {
+    for (const stage of [
+      "preview",
+      "effect_preview",
+      "prompt_packaging",
+      "runtime_capability",
+      "engineering_handoff",
+      "engineering_landing",
+    ] as const) {
+      expect(
+        shouldLoadField("effectPreviews", {
+          currentSubStage: "spec_tree",
+          jobStage: stage,
+          skipLazyLoad: false,
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("effectPreviews: jobStage ∈ { input, clarification, route_generation, spec_tree, spec_docs } 且 currentSubStage 非合法时返回 false", () => {
+    for (const stage of [
+      "input",
+      "clarification",
+      "route_generation",
+      "spec_tree",
+      "spec_docs",
+    ] as const) {
+      expect(
+        shouldLoadField("effectPreviews", {
+          currentSubStage: "spec_tree",
+          jobStage: stage,
+          skipLazyLoad: false,
+        })
+      ).toBe(false);
+    }
+  });
+
+  // ----- promptPackages -----
+  it("promptPackages: 4 个合法 currentSubStage 均返回 true", () => {
+    for (const sub of [
+      "prompt_package",
+      "runtime_capability",
+      "engineering_handoff",
+      "artifact_memory",
+    ] as const) {
+      expect(
+        shouldLoadField("promptPackages", {
+          ...baseParams,
+          currentSubStage: sub,
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("promptPackages: currentSubStage === effect_preview 时返回 false（该子阶段只解锁 effectPreviews，不解锁 promptPackages）", () => {
+    expect(
+      shouldLoadField("promptPackages", {
+        ...baseParams,
+        currentSubStage: "effect_preview",
+      })
+    ).toBe(false);
+  });
+
+  it("promptPackages: jobStage ∈ { prompt_packaging, runtime_capability, engineering_handoff, engineering_landing } 时返回 true", () => {
+    for (const stage of [
+      "prompt_packaging",
+      "runtime_capability",
+      "engineering_handoff",
+      "engineering_landing",
+    ] as const) {
+      expect(
+        shouldLoadField("promptPackages", {
+          currentSubStage: "spec_tree",
+          jobStage: stage,
+          skipLazyLoad: false,
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("promptPackages: jobStage === preview 但 currentSubStage 非合法时返回 false（preview 只解锁 effectPreviews）", () => {
+    expect(
+      shouldLoadField("promptPackages", {
+        currentSubStage: "spec_tree",
+        jobStage: "preview",
+        skipLazyLoad: false,
+      })
+    ).toBe(false);
+  });
+
+  // ----- landingPlans / engineeringRuns -----
+  for (const field of ["landingPlans", "engineeringRuns"] as const) {
+    it(`${field}: 2 个合法 currentSubStage（engineering_handoff / artifact_memory）均返回 true`, () => {
+      for (const sub of ["engineering_handoff", "artifact_memory"] as const) {
+        expect(
+          shouldLoadField(field, { ...baseParams, currentSubStage: sub })
+        ).toBe(true);
+      }
+    });
+
+    it(`${field}: currentSubStage === prompt_package 且 jobStage=null 时返回 false`, () => {
+      expect(
+        shouldLoadField(field, {
+          ...baseParams,
+          currentSubStage: "prompt_package",
+        })
+      ).toBe(false);
+    });
+
+    it(`${field}: jobStage ∈ { engineering_handoff, engineering_landing } 时返回 true`, () => {
+      for (const stage of [
+        "engineering_handoff",
+        "engineering_landing",
+      ] as const) {
+        expect(
+          shouldLoadField(field, {
+            currentSubStage: "spec_tree",
+            jobStage: stage,
+            skipLazyLoad: false,
+          })
+        ).toBe(true);
+      }
+    });
+
+    it(`${field}: jobStage ∈ { prompt_packaging, runtime_capability } 且 currentSubStage 非合法时返回 false`, () => {
+      for (const stage of ["prompt_packaging", "runtime_capability"] as const) {
+        expect(
+          shouldLoadField(field, {
+            currentSubStage: "spec_tree",
+            jobStage: stage,
+            skipLazyLoad: false,
+          })
+        ).toBe(false);
+      }
+    });
+  }
+
+  it("skipLazyLoad === true 时 Wave 3 四个字段全部返回 true（即便 currentSubStage=undefined 且 jobStage=null）", () => {
+    for (const field of [
+      "effectPreviews",
+      "promptPackages",
+      "landingPlans",
+      "engineeringRuns",
+    ] as const) {
+      expect(
+        shouldLoadField(field, {
+          currentSubStage: undefined,
+          jobStage: null,
+          skipLazyLoad: true,
+        })
+      ).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reducer: Wave 3 field 行为（reducer 与 Wave 1/2 共享，但需独立覆盖 Wave 3 字段集合）
+// ---------------------------------------------------------------------------
+
+describe("rightRailDataReducer · Wave 3 fetch fields (Spec 4 Task 4)", () => {
+  it("FETCH_STARTED 只把 Wave 3 四个字段置为 loading，不动 Wave 1/2/4 字段", () => {
+    const initial = buildInitialReducerState("job-1", undefined, null);
+    const next = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: [
+        "effectPreviews",
+        "promptPackages",
+        "landingPlans",
+        "engineeringRuns",
+      ],
+      requestId: 100,
+    });
+
+    expect(next.effectPreviews.loading).toBe(true);
+    expect(next.effectPreviews.pendingRequestId).toBe(100);
+    expect(next.promptPackages.loading).toBe(true);
+    expect(next.landingPlans.loading).toBe(true);
+    expect(next.engineeringRuns.loading).toBe(true);
+    // Wave 1/2 未受影响
+    expect(next.job.loading).toBe(false);
+    expect(next.capabilities.loading).toBe(false);
+    expect(next.capabilityInvocations.loading).toBe(false);
+    expect(next.capabilityEvidence.loading).toBe(false);
+    expect(next.agentCrew.loading).toBe(false);
+    // Wave 4 未受影响
+    expect(next.artifactEntries.loading).toBe(false);
+    expect(next.artifactReplays.loading).toBe(false);
+    expect(next.artifactFeedback.loading).toBe(false);
+  });
+
+  it("FETCH_FULFILLED 批量应用 Wave 3 字段", () => {
+    const initial = buildInitialReducerState("job-1", undefined, null);
+    const started = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: [
+        "effectPreviews",
+        "promptPackages",
+        "landingPlans",
+        "engineeringRuns",
+      ],
+      requestId: 1,
+    });
+
+    const effectPreviewsPayload = [{ id: "ep-1" }] as never;
+    const promptPackagesPayload = [{ id: "pp-1" }] as never;
+    const landingPlansPayload = [{ id: "lp-1" }] as never;
+    const engineeringRunsPayload = [{ id: "er-1" }] as never;
+
+    const next = rightRailDataReducer(started, {
+      type: "FETCH_FULFILLED",
+      jobId: "job-1",
+      requestId: 1,
+      fieldUpdates: {
+        effectPreviews: effectPreviewsPayload,
+        promptPackages: promptPackagesPayload,
+        landingPlans: landingPlansPayload,
+        engineeringRuns: engineeringRunsPayload,
+      },
+    });
+
+    expect(next.effectPreviews.data).toBe(effectPreviewsPayload);
+    expect(next.effectPreviews.loading).toBe(false);
+    expect(next.effectPreviews.error).toBeNull();
+    expect(next.promptPackages.data).toBe(promptPackagesPayload);
+    expect(next.landingPlans.data).toBe(landingPlansPayload);
+    expect(next.engineeringRuns.data).toBe(engineeringRunsPayload);
+  });
+
+  it("部分字段失败时，已成功字段保持数据，失败字段保留 previousCache 并写入 error", () => {
+    const previousLanding = [{ id: "lp-old" }] as never;
+    const initial = buildInitialReducerState(
+      "job-1",
+      { landingPlans: previousLanding },
+      null
+    );
+    const started = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: ["effectPreviews", "landingPlans"],
+      requestId: 1,
+    });
+
+    // 只 fulfill effectPreviews
+    const fulfilled = rightRailDataReducer(started, {
+      type: "FETCH_FULFILLED",
+      jobId: "job-1",
+      requestId: 1,
+      fieldUpdates: { effectPreviews: [{ id: "ep-1" }] as never },
+    });
+
+    const error: ApiRequestError = {
+      kind: "error",
+      source: "network",
+      endpoint: "/api/blueprint/jobs/job-1/engineering-landing",
+      message: "boom",
+      detail: "",
+      retryable: true,
+    };
+    const rejected = rightRailDataReducer(fulfilled, {
+      type: "FETCH_REJECTED",
+      jobId: "job-1",
+      requestId: 1,
+      fields: ["landingPlans"],
+      error,
+    });
+
+    // effectPreviews 成功值不受 rejection 影响
+    expect(rejected.effectPreviews.data).toEqual([{ id: "ep-1" }]);
+    expect(rejected.effectPreviews.loading).toBe(false);
+    // landingPlans 保留 previousCache 并挂上 error
+    expect(rejected.landingPlans.data).toBe(previousLanding);
+    expect(rejected.landingPlans.error).toBe(error);
+    expect(rejected.landingPlans.loading).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JOB_CHANGED：Wave 3 字段的 cache seed 行为
+// ---------------------------------------------------------------------------
+
+describe("rightRailDataReducer · JOB_CHANGED seeds Wave 3 cache (Spec 4 Task 4)", () => {
+  it("切回历史 jobId 时从 cachedFields 恢复 effectPreviews/promptPackages/landingPlans/engineeringRuns", () => {
+    const initial = buildInitialReducerState("job-2", undefined, null);
+    const cachedEffectPreviews = [{ id: "ep-cached" }] as never;
+    const cachedPromptPackages = [{ id: "pp-cached" }] as never;
+    const cachedLandingPlans = [{ id: "lp-cached" }] as never;
+    const cachedEngineeringRuns = [{ id: "er-cached" }] as never;
+
+    const next = rightRailDataReducer(initial, {
+      type: "JOB_CHANGED",
+      jobId: "job-1",
+      initialData: undefined,
+      cachedFields: {
+        effectPreviews: cachedEffectPreviews,
+        promptPackages: cachedPromptPackages,
+        landingPlans: cachedLandingPlans,
+        engineeringRuns: cachedEngineeringRuns,
+      },
+    });
+
+    expect(next.effectPreviews.data).toBe(cachedEffectPreviews);
+    expect(next.effectPreviews.loading).toBe(false);
+    expect(next.promptPackages.data).toBe(cachedPromptPackages);
+    expect(next.landingPlans.data).toBe(cachedLandingPlans);
+    expect(next.engineeringRuns.data).toBe(cachedEngineeringRuns);
+    // pendingRequestId 始终为 null
+    expect(next.effectPreviews.pendingRequestId).toBeNull();
+    expect(next.promptPackages.pendingRequestId).toBeNull();
+    expect(next.landingPlans.pendingRequestId).toBeNull();
+    expect(next.engineeringRuns.pendingRequestId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WAVE_3_FETCH_FIELDS 常量断言
+// ---------------------------------------------------------------------------
+
+describe("WAVE_3_FETCH_FIELDS (Spec 4 Task 4)", () => {
+  it("精确等于 4 个 Wave 3 fetch 字段", () => {
+    expect([...WAVE_3_FETCH_FIELDS].sort()).toEqual(
+      [
+        "effectPreviews",
+        "promptPackages",
+        "landingPlans",
+        "engineeringRuns",
+      ].sort()
+    );
   });
 });
