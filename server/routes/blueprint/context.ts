@@ -91,6 +91,14 @@ import type { SpecDocumentsLlmPolicy } from "./spec-documents/policy.js";
 import { createDefaultSpecDocumentsLlmPolicy } from "./spec-documents/policy.js";
 import type { SpecDocumentsLlmService } from "./spec-documents/service.js";
 import { createSpecDocumentsLlmService } from "./spec-documents/service.js";
+import type { PromptPackageLlmPolicy } from "./prompt-package/policy.js";
+import { createDefaultPromptPackageLlmPolicy } from "./prompt-package/policy.js";
+import type { PromptPackageLlmService } from "./prompt-package/service.js";
+import { createPromptPackageLlmService } from "./prompt-package/service.js";
+import type { EngineeringHandoffLlmPolicy } from "./engineering-handoff/policy.js";
+import { createDefaultEngineeringHandoffLlmPolicy } from "./engineering-handoff/policy.js";
+import type { EngineeringHandoffLlmService } from "./engineering-handoff/service.js";
+import { createEngineeringHandoffLlmService } from "./engineering-handoff/service.js";
 
 /**
  * Role System Architecture capability policy interface.
@@ -545,6 +553,29 @@ export interface BlueprintServiceContext {
    * @see `.kiro/specs/autopilot-spec-documents-llm/design.md` §2.D2 / §4.2 / §4.6
    */
   specDocumentsLlmService?: SpecDocumentsLlmService;
+  /**
+   * Optional: Prompt Package LLM service policy (pure data, stateless).
+   * When omitted, `buildBlueprintServiceContext` wires a default via
+   * `createDefaultPromptPackageLlmPolicy()`.
+   */
+  promptPackageLlmPolicy?: PromptPackageLlmPolicy;
+  /**
+   * Optional: Prompt Package LLM service. When omitted,
+   * `buildBlueprintServiceContext` wires `createPromptPackageLlmService(ctx)`.
+   */
+  promptPackageLlmService?: PromptPackageLlmService;
+  /**
+   * Optional: Engineering Handoff LLM policy (pure data, stateless).
+   * When omitted, `buildBlueprintServiceContext` wires
+   * `createDefaultEngineeringHandoffLlmPolicy()`.
+   */
+  engineeringHandoffLlmPolicy?: EngineeringHandoffLlmPolicy;
+  /**
+   * Optional: Engineering Handoff LLM service. When omitted,
+   * `buildBlueprintServiceContext` wires
+   * `createEngineeringHandoffLlmService(ctx)`.
+   */
+  engineeringHandoffLlmService?: EngineeringHandoffLlmService;
 }
 
 /**
@@ -699,6 +730,14 @@ export interface BlueprintServiceContextDeps {
    * @see `.kiro/specs/autopilot-spec-documents-llm/design.md` §2.D2 / §4.6
    */
   specDocumentsLlmService?: SpecDocumentsLlmService;
+  /** See {@link BlueprintServiceContext.promptPackageLlmPolicy}. */
+  promptPackageLlmPolicy?: PromptPackageLlmPolicy;
+  /** See {@link BlueprintServiceContext.promptPackageLlmService}. */
+  promptPackageLlmService?: PromptPackageLlmService;
+  /** See {@link BlueprintServiceContext.engineeringHandoffLlmPolicy}. */
+  engineeringHandoffLlmPolicy?: EngineeringHandoffLlmPolicy;
+  /** See {@link BlueprintServiceContext.engineeringHandoffLlmService}. */
+  engineeringHandoffLlmService?: EngineeringHandoffLlmService;
 }
 
 /**
@@ -855,6 +894,15 @@ export function buildBlueprintServiceContext(
     // (needs finalized `ctx` for `llm` / `logger` / `now` closure).
     specDocumentsLlmPolicy,
     specDocumentsLlmService: deps.specDocumentsLlmService,
+    // Prompt Package LLM: policy eagerly resolved, service late-bound below.
+    promptPackageLlmPolicy:
+      deps.promptPackageLlmPolicy ?? createDefaultPromptPackageLlmPolicy(),
+    promptPackageLlmService: deps.promptPackageLlmService,
+    // Engineering Handoff LLM: policy eagerly resolved, service late-bound below.
+    engineeringHandoffLlmPolicy:
+      deps.engineeringHandoffLlmPolicy ??
+      createDefaultEngineeringHandoffLlmPolicy(),
+    engineeringHandoffLlmService: deps.engineeringHandoffLlmService,
   };
 
   // Task 13.1 / 13.3 最后一步：用 baseCtx 构造默认 docker bridge（或透传注入的 bridge）。
@@ -917,6 +965,16 @@ export function buildBlueprintServiceContext(
   // See `.kiro/specs/autopilot-spec-documents-llm/design.md` §4.6.
   if (!ctx.specDocumentsLlmService) {
     ctx.specDocumentsLlmService = createSpecDocumentsLlmService(ctx);
+  }
+
+  // Prompt Package LLM service late-bind.
+  if (!ctx.promptPackageLlmService) {
+    ctx.promptPackageLlmService = createPromptPackageLlmService(ctx);
+  }
+
+  // Engineering Handoff LLM service late-bind.
+  if (!ctx.engineeringHandoffLlmService) {
+    ctx.engineeringHandoffLlmService = createEngineeringHandoffLlmService(ctx);
   }
   return ctx;
 }

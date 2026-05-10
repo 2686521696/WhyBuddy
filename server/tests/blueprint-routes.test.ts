@@ -6931,3 +6931,194 @@ describe("blueprint prompt-package LLM E2E", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// autopilot-engineering-handoff-llm E2E tests (Task 19)
+// ---------------------------------------------------------------------------
+
+describe("blueprint engineering-handoff llm ¡ª e2e", () => {
+  const ENG_HANDOFF_ENABLED_ENV = "BLUEPRINT_ENGINEERING_HANDOFF_LLM_ENABLED";
+  let tempRoot: string;
+
+  function isEngineeringHandoffCall(messages: any): boolean {
+    const text = JSON.stringify(messages);
+    return /Engineering Handoff|¹¤³ÌÂäµØ|engineering-handoff/i.test(text);
+  }
+
+  beforeEach(async () => {
+    llmMocks.callLLMJson.mockReset();
+    tempRoot = await mkdtemp(
+      path.join(process.cwd(), "tmp", "blueprint-specs-engineering-handoff-")
+    );
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("buildEngineeringLandingPlan produces LLM-driven title/summary/steps/handoffs when engineering-handoff llm is enabled", async () => {
+    vi.stubEnv(ENG_HANDOFF_ENABLED_ENV, "true");
+
+    llmMocks.callLLMJson.mockImplementation(async messages => {
+      if (!isEngineeringHandoffCall(messages)) {
+        return undefined;
+      }
+      return {
+        title: "Deploy release dashboard to production",
+        summary: "Coordinate rollout across web and CDN surfaces.",
+        missionSummary:
+          "Ensure monitoring, rollback, and approvals are in place before enabling traffic.",
+        missionMetadata: { targetPlatform: "codex" },
+        steps: [
+          {
+            title: "Configure build pipeline",
+            summary: "Prepare the CI pipeline with release flags.",
+            mode: "automatic",
+            fileScopes: ["src/build.ts"],
+            verificationCommands: ["npm run build"],
+            riskLevel: "low",
+          },
+          {
+            title: "Coordinate manual QA",
+            summary: "Walk through smoke tests with on-call QA.",
+            mode: "manual",
+            riskLevel: "medium",
+          },
+        ],
+        acceptanceCriteria: ["Smoke tests pass", "Rollback documented"],
+        riskNotes: [{ level: "warning", message: "Monitor 5xx rate" }],
+        handoffs: [
+          {
+            platform: "codex",
+            summary: "Execute via Codex CLI",
+          },
+        ],
+      };
+    });
+
+    await withServer(tempRoot, async baseUrl => {
+      const { selected, promptPackages } = await createRootPromptPackages(
+        baseUrl,
+        ["codex"],
+      );
+      const codexPackage = promptPackages.find(
+        (p: any) => p.targetPlatform === "codex",
+      );
+      expect(codexPackage).toBeTruthy();
+
+      const landingResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${selected.job.id}/engineering-landing`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptPackageId: codexPackage.id }),
+        },
+      );
+      expect(landingResponse.status).toBe(201);
+      const landed = (await landingResponse.json()) as Record<string, any>;
+      expect(landed.engineeringLandingPlans).toHaveLength(1);
+
+      const plan = landed.engineeringLandingPlans[0];
+      expect(plan.provenance.generationSource).toBe("llm");
+      expect(plan.provenance.promptId).toBe("blueprint.engineering-handoff.v1");
+      expect(typeof plan.provenance.model).toBe("string");
+      expect(plan.provenance.responseDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(plan.provenance.structuredPayloadDigest).toMatch(
+        /^sha256:[a-f0-9]{64}$/,
+      );
+      expect(plan.provenance.promptFingerprint).toMatch(
+        /^sha256:[a-f0-9]{64}$/,
+      );
+      expect(plan.provenance.error).toBeUndefined();
+
+      expect(plan.title).toBe("Deploy release dashboard to production");
+      expect(plan.summary).toContain("**Mission summary**");
+      expect(plan.steps).toHaveLength(2);
+      expect(plan.steps[0].title).toBe("Configure build pipeline");
+      expect(plan.steps[1].title).toBe("Coordinate manual QA");
+      expect(plan.handoffs[0].content).toContain("## Acceptance criteria");
+      expect(plan.handoffs[0].content).toContain("Smoke tests pass");
+      expect(plan.handoffs[0].content).toContain("Rollback documented");
+      expect(plan.handoffs[0].content).toContain("## Risk notes");
+      expect(plan.handoffs[0].content).toContain("warning");
+      expect(plan.handoffs[0].content).toContain("Monitor 5xx rate");
+
+      expect(plan.handoffs[0].platform).toBe("codex");
+      expect(plan.handoffs[0].promptPackageId).toBe(codexPackage.id);
+
+      const handoffEvents = (landed.job.events as any[]).filter(
+        (e: any) => e.type === "mission.handoff",
+      );
+      expect(handoffEvents.length).toBeGreaterThanOrEqual(1);
+      const last = handoffEvents[handoffEvents.length - 1];
+      expect(last.payload.landingPlanGenerationSources?.[0].generationSource).toBe(
+        "llm",
+      );
+      expect(last.payload.promptId).toBe("blueprint.engineering-handoff.v1");
+      expect(typeof last.payload.model).toBe("string");
+    });
+  });
+
+  it("buildEngineeringLandingPlan falls back to template when engineering-handoff llm call throws", async () => {
+    vi.stubEnv(ENG_HANDOFF_ENABLED_ENV, "true");
+
+    llmMocks.callLLMJson.mockImplementation(async messages => {
+      if (isEngineeringHandoffCall(messages)) {
+        throw new Error("upstream 503");
+      }
+      return undefined;
+    });
+
+    await withServer(tempRoot, async baseUrl => {
+      const { selected, promptPackages } = await createRootPromptPackages(
+        baseUrl,
+        ["codex"],
+      );
+      const codexPackage = promptPackages.find(
+        (p: any) => p.targetPlatform === "codex",
+      );
+      expect(codexPackage).toBeTruthy();
+
+      const landingResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${selected.job.id}/engineering-landing`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptPackageId: codexPackage.id }),
+        },
+      );
+      expect(landingResponse.status).toBe(201);
+      const landed = (await landingResponse.json()) as Record<string, any>;
+      const plan = landed.engineeringLandingPlans[0];
+
+      expect(plan.provenance.generationSource).toBe("llm_fallback");
+      expect(plan.provenance.error).toMatch(/upstream 503|llm callJson threw/);
+      expect(plan.provenance.promptId).toBe("blueprint.engineering-handoff.v1");
+      expect(typeof plan.provenance.model).toBe("string");
+
+      expect(plan.title).toMatch(/^Engineering landing plan:/);
+      expect(plan.summary).toMatch(
+        /^Land .* for .* using .* SPEC document\(s\), and .* effect preview\(s\)\.$/,
+      );
+      expect(plan.steps).toHaveLength(3);
+      expect(plan.steps.map((s: any) => s.title)).toEqual([
+        "Bind landing sources",
+        "Apply repository bridge",
+        "Capture run evidence",
+      ]);
+      expect(plan.handoffs[0].title).toMatch(/^Platform handoff:/);
+      expect(plan.handoffs[0].content).not.toContain("## Acceptance criteria");
+      expect(plan.handoffs[0].content).not.toContain("## Risk notes");
+
+      const handoffEvents = (landed.job.events as any[]).filter(
+        (e: any) => e.type === "mission.handoff",
+      );
+      const last = handoffEvents[handoffEvents.length - 1];
+      expect(last.payload.landingPlanGenerationSources?.[0].generationSource).toBe(
+        "llm_fallback",
+      );
+      expect(last.payload.specTreeId).toBeTruthy();
+    });
+  });
+});

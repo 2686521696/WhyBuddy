@@ -1499,6 +1499,30 @@ export interface BlueprintEngineeringLandingPlan {
       string,
       BlueprintImplementationPromptTargetPlatform
     >;
+    /**
+     * Engineering Handoff LLM provenance. See
+     * `.kiro/specs/autopilot-engineering-handoff-llm/design.md` §4.9.
+     * All seven fields are optional and only populated when the Engineering
+     * Handoff LLM service was exercised (see §4.6 for tier mapping):
+     * - `"llm"`: LLM-driven path succeeded.
+     * - `"llm_fallback"`: LLM was attempted but the result was unusable; the
+     *   generator returned templated output.
+     * - `"template"`: LLM was not attempted (feature flag disabled or
+     *   apiKey missing).
+     */
+    generationSource?: "llm" | "llm_fallback" | "template";
+    /** Prompt version identifier, populated when LLM was attempted. */
+    promptId?: string;
+    /** Model identifier reported by ctx.llm.getConfig() when LLM was attempted. */
+    model?: string;
+    /** sha256 digest of the raw LLM JSON response (real path only). */
+    responseDigest?: string;
+    /** sha256 digest of the zod-validated / normalized payload (real path only). */
+    structuredPayloadDigest?: string;
+    /** sha256 fingerprint of (systemMessage + "\n\n" + userMessage). */
+    promptFingerprint?: string;
+    /** Redacted error message, populated only when generationSource === "llm_fallback". */
+    error?: string;
   };
 }
 

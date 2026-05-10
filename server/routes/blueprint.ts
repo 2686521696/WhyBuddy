@@ -1363,7 +1363,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
     });
   });
 
-  router.post("/jobs/:jobId/engineering-landing", (req, res) => {
+  router.post("/jobs/:jobId/engineering-landing", async (req, res) => {
     const job = jobStore.get(req.params.jobId);
     if (!job) {
       res.status(404).json({
@@ -1391,7 +1391,8 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       return;
     }
 
-    const result = generateEngineeringLandingPlans(
+    const result = await generateEngineeringLandingPlans(
+      blueprintServiceContext,
       job,
       specTree,
       parsed.request,
@@ -9771,12 +9772,32 @@ type GenerateEngineeringLandingPlansResult =
     }
   | { ok: false; status: number; error: string; message: string };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _GenerateEngineeringLandingPlansResultShape = Promise<GenerateEngineeringLandingPlansResult>;
+
 function generateEngineeringLandingPlans(
+  ctx: BlueprintServiceContext,
   job: BlueprintGenerationJob,
   specTree: BlueprintSpecTree,
   request: BlueprintGenerateEngineeringLandingPlansRequest,
   options: CreateGenerationJobHelperOptions
-): GenerateEngineeringLandingPlansResult {
+): Promise<GenerateEngineeringLandingPlansResult> {
+  return generateEngineeringLandingPlansAsync(
+    ctx,
+    job,
+    specTree,
+    request,
+    options,
+  );
+}
+
+async function generateEngineeringLandingPlansAsync(
+  ctx: BlueprintServiceContext,
+  job: BlueprintGenerationJob,
+  specTree: BlueprintSpecTree,
+  request: BlueprintGenerateEngineeringLandingPlansRequest,
+  options: CreateGenerationJobHelperOptions
+): Promise<GenerateEngineeringLandingPlansResult> {
   const createdAt = (options.now?.() ?? new Date()).toISOString();
   const selectedPromptPackages = selectEngineeringLandingPromptPackages(
     job,
@@ -9789,15 +9810,38 @@ function generateEngineeringLandingPlans(
 
   const sourceDocuments = extractSpecDocuments(job);
   const sourcePreviews = extractEffectPreviews(job);
-  const plans = selectedPromptPackages.promptPackages.map(promptPackage =>
-    buildEngineeringLandingPlan({
-      job,
-      specTree,
-      promptPackage,
-      sourceDocuments,
-      sourcePreviews,
-      createdAt,
-    })
+  const clarificationSession =
+    job.request.clarificationSessionId !== undefined
+      ? ctx.blueprintStores.clarificationSessions.get(
+          job.request.clarificationSessionId,
+        )
+      : undefined;
+  const domainContext =
+    job.projectId !== undefined
+      ? ctx.blueprintStores.projectContexts.get(job.projectId)
+      : undefined;
+  const routeSet = extractRouteSet(job);
+  const selectedRoute = routeSet
+    ? routeSet.routes.find(route => route.id === routeSet.primaryRouteId)
+    : undefined;
+  const capabilityInvocations = extractCapabilityInvocations(job);
+  const capabilityEvidence = extractCapabilityEvidence(job);
+  const plans = await Promise.all(
+    selectedPromptPackages.promptPackages.map(promptPackage =>
+      buildEngineeringLandingPlan(ctx, {
+        job,
+        specTree,
+        promptPackage,
+        sourceDocuments,
+        sourcePreviews,
+        createdAt,
+        clarificationSession,
+        domainContext,
+        selectedRoute,
+        capabilityInvocations,
+        capabilityEvidence,
+      })
+    ),
   );
   const generatedKeys = new Set(
     plans.map(plan => engineeringLandingPlanReplacementKey(plan))
@@ -9904,6 +9948,35 @@ function generateEngineeringLandingPlans(
             promptPackageIds: plans.flatMap(plan => plan.promptPackageIds),
             landingPlanIds: plans.map(plan => plan.id),
           },
+          landingPlanGenerationSources: plans.map(plan => ({
+            landingPlanId: plan.id,
+            promptPackageId: plan.promptPackageIds[0],
+            generationSource:
+              (plan.provenance as Record<string, unknown>).generationSource ??
+              "template",
+          })),
+          promptId: plans.find(
+            plan =>
+              typeof (plan.provenance as Record<string, unknown>).promptId ===
+              "string",
+          )
+            ? (plans.find(
+                plan =>
+                  typeof (plan.provenance as Record<string, unknown>)
+                    .promptId === "string",
+              )!.provenance as Record<string, unknown>).promptId
+            : undefined,
+          model: plans.find(
+            plan =>
+              typeof (plan.provenance as Record<string, unknown>).model ===
+              "string",
+          )
+            ? (plans.find(
+                plan =>
+                  typeof (plan.provenance as Record<string, unknown>).model ===
+                  "string",
+              )!.provenance as Record<string, unknown>).model
+            : undefined,
         },
       })
     ),
@@ -11680,14 +11753,22 @@ async function buildImplementationPromptPackage(
   };
 }
 
-function buildEngineeringLandingPlan(input: {
-  job: BlueprintGenerationJob;
-  specTree: BlueprintSpecTree;
-  promptPackage: BlueprintImplementationPromptPackage;
-  sourceDocuments: BlueprintSpecDocument[];
-  sourcePreviews: BlueprintEffectPreview[];
-  createdAt: string;
-}): BlueprintEngineeringLandingPlan {
+async function buildEngineeringLandingPlan(
+  ctx: BlueprintServiceContext,
+  input: {
+    job: BlueprintGenerationJob;
+    specTree: BlueprintSpecTree;
+    promptPackage: BlueprintImplementationPromptPackage;
+    sourceDocuments: BlueprintSpecDocument[];
+    sourcePreviews: BlueprintEffectPreview[];
+    createdAt: string;
+    clarificationSession?: BlueprintClarificationSession;
+    domainContext?: BlueprintProjectDomainContext;
+    selectedRoute?: BlueprintRouteCandidate;
+    capabilityInvocations?: BlueprintCapabilityInvocation[];
+    capabilityEvidence?: BlueprintCapabilityEvidence[];
+  }
+): Promise<BlueprintEngineeringLandingPlan> {
   const sourceNodeIds = uniqueStrings(input.promptPackage.nodeIds);
   const sourceDocumentIds = uniqueStrings(input.promptPackage.sourceDocumentIds);
   const sourcePreviewIds = uniqueStrings(input.promptPackage.sourcePreviewIds);
@@ -11703,7 +11784,28 @@ function buildEngineeringLandingPlan(input: {
   );
   const verificationCommands = buildEngineeringLandingVerificationCommands();
   const status = resolveEngineeringLandingPlanStatus(input.promptPackage);
-  const steps = buildEngineeringLandingSteps({
+
+  // Attempt LLM service per-plan. The service's tier-1/tier-2 early exits
+  // ensure default deployments return { generationSource: "template" } without
+  // any LLM traffic (design §4.6 + §2.D10).
+  const serviceResult = await ctx.engineeringHandoffLlmService?.({
+    jobId: input.job.id,
+    job: input.job,
+    specTree: input.specTree,
+    promptPackage: input.promptPackage,
+    sourceNodes,
+    sourceDocuments,
+    sourcePreviews,
+    selectedRoute: input.selectedRoute,
+    clarificationSession: input.clarificationSession,
+    domainContext: input.domainContext,
+    capabilityInvocations: input.capabilityInvocations,
+    capabilityEvidence: input.capabilityEvidence,
+    status,
+    createdAt: input.createdAt,
+  });
+
+  const templateSteps = buildEngineeringLandingSteps({
     promptPackage: input.promptPackage,
     status,
     sourceNodeIds,
@@ -11712,23 +11814,107 @@ function buildEngineeringLandingPlan(input: {
     promptPackageIds,
     verificationCommands,
   });
-  const handoffs = [
-    buildEngineeringPlatformHandoff({
-      promptPackage: input.promptPackage,
-      sourceNodes,
-      sourceDocumentIds,
-      sourcePreviewIds,
-      steps,
-      verificationCommands,
-    }),
-  ];
+  const templateHandoff = buildEngineeringPlatformHandoff({
+    promptPackage: input.promptPackage,
+    sourceNodes,
+    sourceDocumentIds,
+    sourcePreviewIds,
+    steps: templateSteps,
+    verificationCommands,
+  });
   const targetLabel = input.promptPackage.target.label;
   const sourceNodeTitle =
     sourceNodes.length === 1
       ? sourceNodes[0].title
       : `${sourceNodes.length} source node(s)`;
-  const title = `Engineering landing plan: ${targetLabel}`;
-  const summary = `Land ${input.promptPackage.title} for ${targetLabel} using ${sourceNodeTitle}, ${sourceDocumentIds.length} SPEC document(s), and ${sourcePreviewIds.length} effect preview(s).`;
+  const templateTitle = `Engineering landing plan: ${targetLabel}`;
+  const templateSummary = `Land ${input.promptPackage.title} for ${targetLabel} using ${sourceNodeTitle}, ${sourceDocumentIds.length} SPEC document(s), and ${sourcePreviewIds.length} effect preview(s).`;
+
+  let title = templateTitle;
+  let summary = templateSummary;
+  let steps = templateSteps;
+  let handoffs = [templateHandoff];
+  let provenanceExtras: Record<string, unknown> = {
+    generationSource: "template" as const,
+  };
+
+  if (serviceResult?.generationSource === "llm") {
+    title = serviceResult.renderedTitle ?? title;
+    summary = serviceResult.renderedSummaryWithMissionPrefix ?? summary;
+    if (serviceResult.renderedSteps) {
+      steps = serviceResult.renderedSteps.map(renderedStep => ({
+        id: renderedStep.id.length > 0
+          ? renderedStep.id
+          : createId("blueprint-engineering-step"),
+        title: renderedStep.title,
+        summary: renderedStep.summary,
+        mode: renderedStep.mode,
+        sourceNodeIds:
+          renderedStep.sourceNodeIds.length > 0
+            ? [...renderedStep.sourceNodeIds]
+            : sourceNodeIds,
+        sourceDocumentIds:
+          renderedStep.sourceDocumentIds.length > 0
+            ? [...renderedStep.sourceDocumentIds]
+            : sourceDocumentIds,
+        sourcePreviewIds:
+          renderedStep.sourcePreviewIds.length > 0
+            ? [...renderedStep.sourcePreviewIds]
+            : sourcePreviewIds,
+        promptPackageIds:
+          renderedStep.promptPackageIds.length > 0
+            ? [...renderedStep.promptPackageIds]
+            : promptPackageIds,
+        fileScopes:
+          renderedStep.fileScopes.length > 0
+            ? [...renderedStep.fileScopes]
+            : buildEngineeringLandingFileScopes(renderedStep.mode),
+        verificationCommands:
+          renderedStep.verificationCommands.length > 0
+            ? [...renderedStep.verificationCommands]
+            : verificationCommands,
+        riskLevel: renderedStep.riskLevel,
+      }));
+    }
+    if (serviceResult.renderedHandoffs && serviceResult.renderedHandoffs.length > 0) {
+      const renderedHandoff = serviceResult.renderedHandoffs[0];
+      const baseContent = templateHandoff.content;
+      const { renderEngineeringHandoffContent } = await import(
+        "./blueprint/engineering-handoff/render.js"
+      );
+      const policy =
+        ctx.engineeringHandoffLlmPolicy ??
+        (await import("./blueprint/engineering-handoff/policy.js")).createDefaultEngineeringHandoffLlmPolicy();
+      handoffs = [
+        {
+          ...templateHandoff,
+          summary: renderedHandoff.summary ?? templateHandoff.summary,
+          content: renderEngineeringHandoffContent({
+            basePlatformContent: baseContent,
+            acceptanceCriteria: [...(serviceResult.acceptanceCriteria ?? [])],
+            riskNotes: [...(serviceResult.riskNotes ?? [])],
+            policy,
+          }),
+        },
+      ];
+    }
+    provenanceExtras = {
+      generationSource: "llm" as const,
+      promptId: serviceResult.promptId,
+      model: serviceResult.model,
+      responseDigest: serviceResult.responseDigest,
+      structuredPayloadDigest: serviceResult.structuredPayloadDigest,
+      promptFingerprint: serviceResult.promptFingerprint,
+    };
+  } else if (serviceResult?.generationSource === "llm_fallback") {
+    provenanceExtras = {
+      generationSource: "llm_fallback" as const,
+      promptId: serviceResult.promptId,
+      model: serviceResult.model,
+      promptFingerprint: serviceResult.promptFingerprint,
+      error: serviceResult.error,
+    };
+  }
 
   return {
     id: createId("blueprint-engineering-plan"),
@@ -11768,6 +11954,7 @@ function buildEngineeringLandingPlan(input: {
       promptPackagePlatforms: {
         [input.promptPackage.id]: input.promptPackage.targetPlatform,
       },
+      ...provenanceExtras,
     },
   };
 }
