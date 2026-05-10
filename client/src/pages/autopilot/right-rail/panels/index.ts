@@ -31,3 +31,6 @@ export type { PromptPackagePanelProps } from "./PromptPackagePanel";
 
 export { RuntimeCapabilityPanel } from "./RuntimeCapabilityPanel";
 export type { RuntimeCapabilityPanelProps } from "./RuntimeCapabilityPanel";
+
+export { EngineeringHandoffPanel } from "./EngineeringHandoffPanel";
+export type { EngineeringHandoffPanelProps } from "./EngineeringHandoffPanel";

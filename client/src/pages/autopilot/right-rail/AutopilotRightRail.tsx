@@ -22,7 +22,15 @@
 
 import type { FC } from "react";
 
-import { AgentCrewFabricPanel, EffectPreviewPanel, PromptPackagePanel, RuntimeCapabilityPanel, SpecDocumentsPanel, SpecTreePanel } from "./panels";
+import {
+  AgentCrewFabricPanel,
+  EffectPreviewPanel,
+  EngineeringHandoffPanel,
+  PromptPackagePanel,
+  RuntimeCapabilityPanel,
+  SpecDocumentsPanel,
+  SpecTreePanel,
+} from "./panels";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
 import {
   RAIL_SUB_STAGE_ORDER,
@@ -185,6 +193,11 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                           capabilityInvocations={capabilityInvocations}
                           capabilityEvidence={capabilityEvidence}
                           agentCrew={agentCrew}
+                          locale={locale}
+                        />
+                      ) : subStage === "engineering_handoff" ? (
+                        <EngineeringHandoffPanel
+                          jobId={jobId}
                           locale={locale}
                         />
                       ) : (

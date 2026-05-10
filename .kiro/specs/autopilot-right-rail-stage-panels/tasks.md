@@ -85,7 +85,7 @@
   - 在 `<AutopilotRightRail>` 的 `case "runtime_capability"` 渲染 `<RuntimeCapabilityPanel jobId={jobId} specTree={specTree} capabilities={capabilities} capabilityInvocations={capabilityInvocations} capabilityEvidence={capabilityEvidence} agentCrew={agentCrew} locale={locale} />`
   - _需求：Requirement 1、2.6、3、5、6.1、7、8、10_
 
-- [ ] 7. 抽离 `EngineeringHandoffPanel`（对应 `engineering_handoff`）
+- [x] 7. 抽离 `EngineeringHandoffPanel`（对应 `engineering_handoff`）
   - 新增 `client/src/pages/autopilot/right-rail/panels/EngineeringHandoffPanel.tsx`
   - 从 `BlueprintProgressPanel.tsx::EngineeringLandingWorkbenchPanel`（~行 3661–4420）完整搬运，并改名为 `EngineeringHandoffPanel`
   - 定义 `EngineeringHandoffPanelProps = Pick<AutopilotRightRailProps, "jobId" | "locale"> & { promptPackages?: BlueprintPromptPackage[]; initialPlans?; initialRuns?; onLandingPlansChange?; onEngineeringRunsChange? }`

@@ -36,9 +36,19 @@ export type { PromptPackagePanelProps } from "./PromptPackagePanel.js";
 export { RuntimeCapabilityPanel } from "./RuntimeCapabilityPanel.js";
 export type { RuntimeCapabilityPanelProps } from "./RuntimeCapabilityPanel.js";
 
+// Canonical 组件名为 `EngineeringHandoffPanel`；shim 额外导出 `EngineeringLandingPanel`
+// 别名以兼容历史 import（需求 2.7 / 6.1）。
+export {
+  EngineeringHandoffPanel,
+  EngineeringLandingPanel,
+} from "./EngineeringLandingPanel.js";
+export type {
+  EngineeringHandoffPanelProps,
+  EngineeringLandingPanelProps,
+} from "./EngineeringLandingPanel.js";
+
 export { PROGRESS_HEADER_PANEL_PLACEHOLDER } from "./ProgressHeaderPanel.js";
 export { JOB_LEDGER_PANEL_PLACEHOLDER } from "./JobLedgerPanel.js";
-export { ENGINEERING_LANDING_PANEL_PLACEHOLDER } from "./EngineeringLandingPanel.js";
 export { ARTIFACT_MEMORY_PANEL_PLACEHOLDER } from "./ArtifactMemoryPanel.js";
 export { ROUTE_CANDIDATE_CARD_PLACEHOLDER } from "./RouteCandidateCard.js";
 export { RUNTIME_PROJECTION_CARD_PLACEHOLDER } from "./RuntimeProjectionCard.js";
