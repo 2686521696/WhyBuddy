@@ -49,6 +49,7 @@ export type {
 
 export { PROGRESS_HEADER_PANEL_PLACEHOLDER } from "./ProgressHeaderPanel.js";
 export { JOB_LEDGER_PANEL_PLACEHOLDER } from "./JobLedgerPanel.js";
-export { ARTIFACT_MEMORY_PANEL_PLACEHOLDER } from "./ArtifactMemoryPanel.js";
+export { ArtifactMemoryPanel } from "./ArtifactMemoryPanel.js";
+export type { ArtifactMemoryPanelProps } from "./ArtifactMemoryPanel.js";
 export { ROUTE_CANDIDATE_CARD_PLACEHOLDER } from "./RouteCandidateCard.js";
 export { RUNTIME_PROJECTION_CARD_PLACEHOLDER } from "./RuntimeProjectionCard.js";

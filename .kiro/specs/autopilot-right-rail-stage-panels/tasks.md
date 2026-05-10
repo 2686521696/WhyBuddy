@@ -96,7 +96,7 @@
   - 在 `<AutopilotRightRail>` 的 `case "engineering_handoff"` 渲染 `<EngineeringHandoffPanel jobId={jobId} locale={locale} />`，`promptPackages` / `initialPlans` / `initialRuns` 留空（由 `BlueprintProgressPanel` 组合时才注入）
   - _需求：Requirement 1、2.7、3、5、6.1、7、8、10_
 
-- [ ] 8. 抽离 `ArtifactMemoryPanel`（对应 `artifact_memory`）
+- [x] 8. 抽离 `ArtifactMemoryPanel`（对应 `artifact_memory`）
   - 新增 `client/src/pages/autopilot/right-rail/panels/ArtifactMemoryPanel.tsx`
   - 从 `BlueprintProgressPanel.tsx::ArtifactMemoryWorkbenchPanel`（~行 4421–5270）完整搬运
   - 定义 `ArtifactMemoryPanelProps = Pick<AutopilotRightRailProps, "jobId" | "locale"> & { initialEntries?: BlueprintArtifactLedgerEntry[]; initialReplays?: BlueprintArtifactReplay[]; initialFeedback?: BlueprintArtifactFeedback[] }`

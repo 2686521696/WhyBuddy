@@ -34,3 +34,6 @@ export type { RuntimeCapabilityPanelProps } from "./RuntimeCapabilityPanel";
 
 export { EngineeringHandoffPanel } from "./EngineeringHandoffPanel";
 export type { EngineeringHandoffPanelProps } from "./EngineeringHandoffPanel";
+
+export { ArtifactMemoryPanel } from "./ArtifactMemoryPanel";
+export type { ArtifactMemoryPanelProps } from "./ArtifactMemoryPanel";

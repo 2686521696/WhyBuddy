@@ -24,6 +24,7 @@ import type { FC } from "react";
 
 import {
   AgentCrewFabricPanel,
+  ArtifactMemoryPanel,
   EffectPreviewPanel,
   EngineeringHandoffPanel,
   PromptPackagePanel,
@@ -197,6 +198,11 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                         />
                       ) : subStage === "engineering_handoff" ? (
                         <EngineeringHandoffPanel
+                          jobId={jobId}
+                          locale={locale}
+                        />
+                      ) : subStage === "artifact_memory" ? (
+                        <ArtifactMemoryPanel
                           jobId={jobId}
                           locale={locale}
                         />
