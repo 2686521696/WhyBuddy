@@ -18,3 +18,9 @@ export {
   type AutopilotTimelineStage,
   type ResolveRailSubStageInput,
 } from "./types";
+export {
+  useAutopilotRightRailData,
+  type RightRailDataFieldStatus,
+  type RightRailDataView,
+  type UseAutopilotRightRailDataOptions,
+} from "./hooks";
