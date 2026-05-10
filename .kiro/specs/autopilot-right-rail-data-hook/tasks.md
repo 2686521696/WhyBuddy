@@ -31,7 +31,7 @@
   - **验收**:`useAutopilotRightRailData` 签名与类型导出与 `design.md` 一字不差;其它 spec 的已有测试不回归
   - _需求:Requirement 1.1、1.2、1.3、1.4、Requirement 9.3_
 
-- [ ] 2. 实现 Wave 1 fetch(`job + routeSet + selection + specTree`)+ 初始 loading/error state
+- [x] 2. 实现 Wave 1 fetch(`job + routeSet + selection + specTree`)+ 初始 loading/error state
   - 在 hook 内部引入 `useReducer` + per-jobId cache `useRef<Map<jobId, CacheEntry>>`
   - 实现 reducer 的 `JOB_CHANGED` / `FETCH_STARTED` / `FETCH_FULFILLED` / `FETCH_REJECTED` action(按 `design.md` 中「Cache 内部实现」示例)
   - 在 `useEffect([jobId])` 中调用 `fetchLatestBlueprintGenerationJob()`;当 `initialData.job` 已提供时跳过首次 fetch,直接 seed job cache
