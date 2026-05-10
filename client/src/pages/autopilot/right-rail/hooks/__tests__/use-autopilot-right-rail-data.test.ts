@@ -3,12 +3,15 @@
  *
  * 对应 spec：`.kiro/specs/autopilot-right-rail-data-hook/`
  * - Requirement 2（Ignore_Stale_Policy 在 reducer 层强制）
+ * - Requirement 3（Wave 2 懒加载 gate + registry-first 合并 + agentCrew 派生）
  * - Requirement 4（Cache 切换语义）
  * - Requirement 8（fetch 失败保留 previousCache）
  *
- * Task 2 范围：
+ * Task 2-3 范围：
  * - 只测试 reducer 的 pure 转换规则（`JOB_CHANGED` / `FETCH_STARTED` / `FETCH_FULFILLED` /
  *   `FETCH_REJECTED`）、以及 `buildInitialReducerState` / `deriveWave1FieldUpdates` helper。
+ * - Task 3 新增 Wave 2 helper 单测：`shouldLoadField` 懒加载 gate、`mergeCapabilities` 合并
+ *   规则、`deriveAgentCrewFromJob` 派生规则。
  * - 不测试 hook 的 fetch 副作用与 React render cycle（需要 DOM runtime；本 repo 当前不集成
  *   `@testing-library/react`，且 `useEffect` 在 `renderToStaticMarkup` 中不执行）。
  * - Task 11 的 PBT 会引入 `renderHook` 或等价手段覆盖 fetch 副作用、SSE、polling 与 retry。
@@ -18,9 +21,12 @@ import { describe, expect, it } from "vitest";
 
 import type { ApiRequestError } from "@/lib/api-client";
 import type {
+  BlueprintCapabilityEvidence,
+  BlueprintCapabilityInvocation,
   BlueprintGenerationJob,
   BlueprintRouteSelection,
   BlueprintRouteSet,
+  BlueprintRuntimeCapability,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
 
@@ -35,7 +41,11 @@ const {
   buildInitialReducerState,
   deriveWave1FieldUpdates,
   WAVE_1_FIELDS,
+  WAVE_2_FETCH_FIELDS,
   ALL_FIELD_NAMES,
+  shouldLoadField,
+  deriveAgentCrewFromJob,
+  mergeCapabilities,
 } = __testing__;
 
 // ---------------------------------------------------------------------------
@@ -410,5 +420,383 @@ describe("useAutopilotRightRailData · API surface (Spec 4 Task 2)", () => {
     expect([...WAVE_1_FIELDS].sort()).toEqual(
       ["job", "routeSet", "selection", "specTree"].sort()
     );
+  });
+
+  it("WAVE_2_FETCH_FIELDS 精确等于 3 个 fetch 字段（agentCrew 派生不在内）", () => {
+    expect([...WAVE_2_FETCH_FIELDS].sort()).toEqual(
+      ["capabilities", "capabilityInvocations", "capabilityEvidence"].sort()
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 2 helpers: shouldLoadField, mergeCapabilities, deriveAgentCrewFromJob
+// ---------------------------------------------------------------------------
+
+describe("shouldLoadField (Spec 4 Task 3)", () => {
+  const baseParams = {
+    jobStage: "input" as BlueprintGenerationJob["stage"],
+    skipLazyLoad: false,
+  };
+
+  it("Wave 2 字段：currentSubStage 存在（任一 fabric 子阶段）时返回 true", () => {
+    for (const field of [
+      "agentCrew",
+      "capabilities",
+      "capabilityInvocations",
+      "capabilityEvidence",
+    ] as const) {
+      expect(
+        shouldLoadField(field, { ...baseParams, currentSubStage: "spec_tree" })
+      ).toBe(true);
+      expect(
+        shouldLoadField(field, { ...baseParams, currentSubStage: "agent_crew_fabric" })
+      ).toBe(true);
+      expect(
+        shouldLoadField(field, { ...baseParams, currentSubStage: "artifact_memory" })
+      ).toBe(true);
+    }
+  });
+
+  it("Wave 2 字段：currentSubStage === undefined 且 skipLazyLoad === false 时返回 false", () => {
+    for (const field of [
+      "agentCrew",
+      "capabilities",
+      "capabilityInvocations",
+      "capabilityEvidence",
+    ] as const) {
+      expect(
+        shouldLoadField(field, { ...baseParams, currentSubStage: undefined })
+      ).toBe(false);
+    }
+  });
+
+  it("skipLazyLoad === true 时任何字段（Wave 2）都返回 true，即便 currentSubStage === undefined", () => {
+    for (const field of [
+      "agentCrew",
+      "capabilities",
+      "capabilityInvocations",
+      "capabilityEvidence",
+    ] as const) {
+      expect(
+        shouldLoadField(field, {
+          ...baseParams,
+          currentSubStage: undefined,
+          skipLazyLoad: true,
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("Wave 3-4 字段当前仍为 false 占位（Task 4-5 会扩展）", () => {
+    for (const field of [
+      "effectPreviews",
+      "promptPackages",
+      "landingPlans",
+      "engineeringRuns",
+      "artifactEntries",
+      "artifactReplays",
+      "artifactFeedback",
+    ] as const) {
+      expect(
+        shouldLoadField(field, { ...baseParams, currentSubStage: "spec_tree" })
+      ).toBe(false);
+    }
+  });
+});
+
+describe("mergeCapabilities (Spec 4 Task 3)", () => {
+  const cap = (id: string) =>
+    ({ id, label: id } as unknown as BlueprintRuntimeCapability);
+
+  it("registry-first fallback：job 非空时使用 job 列表", () => {
+    const registry = [cap("A"), cap("B")];
+    const jobList = [cap("B"), cap("C")];
+    expect(mergeCapabilities(registry, jobList)).toEqual(jobList);
+  });
+
+  it("job 为空数组时回退到 registry 列表", () => {
+    const registry = [cap("A"), cap("B")];
+    expect(mergeCapabilities(registry, [])).toEqual(registry);
+  });
+
+  it("registry 缺失时采用 job 列表（包含空数组）", () => {
+    const jobList = [cap("X")];
+    expect(mergeCapabilities(null, jobList)).toEqual(jobList);
+    expect(mergeCapabilities(null, [])).toEqual([]);
+  });
+
+  it("两侧都为 null 时返回 null（调用方据此 dispatch REJECTED）", () => {
+    expect(mergeCapabilities(null, null)).toBeNull();
+  });
+});
+
+describe("deriveAgentCrewFromJob (Spec 4 Task 3)", () => {
+  function makeJobWithArtifacts(
+    artifacts: Array<{ type: string; payload: unknown }>
+  ): BlueprintGenerationJob {
+    return {
+      id: "job-1",
+      request: { userInput: "", sources: [] } as unknown as BlueprintGenerationJob["request"],
+      status: "running",
+      stage: "spec_tree",
+      version: "1",
+      createdAt: "2026-05-11T00:00:00Z",
+      updatedAt: "2026-05-11T00:00:00Z",
+      artifacts: artifacts.map((a, i) => ({
+        id: `artifact-${i}`,
+        type: a.type,
+        title: `title-${i}`,
+        summary: `summary-${i}`,
+        createdAt: "2026-05-11T00:00:00Z",
+        payload: a.payload,
+      })) as unknown as BlueprintGenerationJob["artifacts"],
+      events: [],
+    } as unknown as BlueprintGenerationJob;
+  }
+
+  it("job 为 null 时返回 null", () => {
+    expect(deriveAgentCrewFromJob(null)).toBeNull();
+  });
+
+  it("job 无 agent_crew artifact 时返回 null", () => {
+    const job = makeJobWithArtifacts([
+      { type: "intake", payload: { anything: true } },
+    ]);
+    expect(deriveAgentCrewFromJob(job)).toBeNull();
+  });
+
+  it("job 有 agent_crew artifact 时返回 normalize 后的 snapshot", () => {
+    const crewPayload = {
+      id: "crew-1",
+      jobId: "job-1",
+      stage: "spec_tree",
+      roles: [],
+      capabilityMatrix: [],
+      activationPolicies: [],
+      presence: [],
+      roleTimelines: [],
+      createdAt: "2026-05-11T00:00:00Z",
+      updatedAt: "2026-05-11T00:00:00Z",
+    };
+    const job = makeJobWithArtifacts([
+      { type: "agent_crew", payload: crewPayload },
+    ]);
+    const snapshot = deriveAgentCrewFromJob(job);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.id).toBe("crew-1");
+  });
+
+  it("优先取最新 agent_crew payload（artifacts 中可能有多个历史版本）", () => {
+    const older = {
+      id: "crew-old",
+      jobId: "job-1",
+      stage: "spec_tree",
+      roles: [],
+      capabilityMatrix: [],
+      activationPolicies: [],
+      presence: [],
+      roleTimelines: [],
+      createdAt: "2026-05-10T00:00:00Z",
+      updatedAt: "2026-05-10T00:00:00Z",
+    };
+    const newer = { ...older, id: "crew-new" };
+    const job = makeJobWithArtifacts([
+      { type: "agent_crew", payload: older },
+      { type: "agent_crew", payload: newer },
+    ]);
+    expect(deriveAgentCrewFromJob(job)?.id).toBe("crew-new");
+  });
+
+  it("role_timeline payload 存在时会合并到 roleTimelines / presence", () => {
+    const crewPayload = {
+      id: "crew-1",
+      jobId: "job-1",
+      stage: "spec_tree",
+      roles: [{ id: "role-1", name: "Planner" }],
+      capabilityMatrix: [],
+      activationPolicies: [],
+      presence: [],
+      roleTimelines: [],
+      createdAt: "2026-05-11T00:00:00Z",
+      updatedAt: "2026-05-11T00:00:00Z",
+    };
+    const timelineEntry = {
+      id: "timeline-1",
+      jobId: "job-1",
+      roleId: "role-1",
+      roleName: "Planner",
+      displayName: "Planner",
+      displayLabel: "Planner",
+      group: "core",
+      stage: "spec_tree",
+      state: "active",
+      currentAction: "drafting",
+      capabilityIds: [],
+      capabilityLabels: [],
+      artifactIds: [],
+      evidenceIds: [],
+    };
+    const job = makeJobWithArtifacts([
+      { type: "agent_crew", payload: crewPayload },
+      { type: "role_timeline", payload: { timelines: [timelineEntry] } },
+    ]);
+    const snapshot = deriveAgentCrewFromJob(job);
+    expect(snapshot?.roleTimelines.length).toBeGreaterThan(0);
+    expect(snapshot?.presence.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reducer: Wave 2 field 行为（与 Wave 1 reducer 语义保持一致）
+// ---------------------------------------------------------------------------
+
+describe("rightRailDataReducer · Wave 2 fetch fields (Spec 4 Task 3)", () => {
+  function makeCapability(id: string): BlueprintRuntimeCapability {
+    return { id, label: id } as unknown as BlueprintRuntimeCapability;
+  }
+
+  it("FETCH_STARTED 只把目标字段置为 loading，不动 Wave 1 字段", () => {
+    const initial = buildInitialReducerState("job-1", undefined, null);
+    const next = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: [
+        "capabilities",
+        "capabilityInvocations",
+        "capabilityEvidence",
+      ],
+      requestId: 10,
+    });
+
+    expect(next.capabilities.loading).toBe(true);
+    expect(next.capabilityInvocations.loading).toBe(true);
+    expect(next.capabilityEvidence.loading).toBe(true);
+    // Wave 1 未动
+    expect(next.job.loading).toBe(false);
+    expect(next.routeSet.loading).toBe(false);
+    // agentCrew 不进入 FETCH_STARTED 流程
+    expect(next.agentCrew.loading).toBe(false);
+    expect(next.agentCrew.pendingRequestId).toBeNull();
+  });
+
+  it("FETCH_FULFILLED 批量应用 Wave 2 字段", () => {
+    const initial = buildInitialReducerState("job-1", undefined, null);
+    const started = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: ["capabilities", "capabilityInvocations", "capabilityEvidence"],
+      requestId: 1,
+    });
+
+    const mergedCapabilities = [makeCapability("A"), makeCapability("B")];
+    const invocations: BlueprintCapabilityInvocation[] = [];
+    const evidence: BlueprintCapabilityEvidence[] = [];
+
+    const next = rightRailDataReducer(started, {
+      type: "FETCH_FULFILLED",
+      jobId: "job-1",
+      requestId: 1,
+      fieldUpdates: {
+        capabilities: mergedCapabilities,
+        capabilityInvocations: invocations,
+        capabilityEvidence: evidence,
+      },
+    });
+
+    expect(next.capabilities.data).toBe(mergedCapabilities);
+    expect(next.capabilities.loading).toBe(false);
+    expect(next.capabilityInvocations.data).toBe(invocations);
+    expect(next.capabilityEvidence.data).toBe(evidence);
+  });
+
+  it("FETCH_FULFILLED 只写入目标字段，其它字段（例如部分字段失败未在 fieldUpdates 中）保持 loading", () => {
+    const initial = buildInitialReducerState("job-1", undefined, null);
+    const started = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: ["capabilities", "capabilityInvocations", "capabilityEvidence"],
+      requestId: 1,
+    });
+
+    // 只 fulfill capabilities：invocations / evidence 保持 loading = true
+    const next = rightRailDataReducer(started, {
+      type: "FETCH_FULFILLED",
+      jobId: "job-1",
+      requestId: 1,
+      fieldUpdates: { capabilities: [makeCapability("A")] },
+    });
+
+    expect(next.capabilities.loading).toBe(false);
+    expect(next.capabilityInvocations.loading).toBe(true);
+    expect(next.capabilityEvidence.loading).toBe(true);
+  });
+
+  it("FETCH_REJECTED 只把失败字段置为 error 并保留 previousCache", () => {
+    const previous = [makeCapability("PREV")];
+    const initial = buildInitialReducerState(
+      "job-1",
+      { capabilities: previous },
+      null
+    );
+    const started = rightRailDataReducer(initial, {
+      type: "FETCH_STARTED",
+      jobId: "job-1",
+      fields: ["capabilities"],
+      requestId: 1,
+    });
+
+    const error: ApiRequestError = {
+      kind: "error",
+      source: "network",
+      endpoint: "/api/blueprint/capabilities",
+      message: "boom",
+      detail: "",
+      retryable: true,
+    };
+    const next = rightRailDataReducer(started, {
+      type: "FETCH_REJECTED",
+      jobId: "job-1",
+      requestId: 1,
+      fields: ["capabilities"],
+      error,
+    });
+
+    expect(next.capabilities.data).toBe(previous);
+    expect(next.capabilities.error).toBe(error);
+    expect(next.capabilities.loading).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JOB_CHANGED：Wave 2 字段的 cache seed 行为
+// ---------------------------------------------------------------------------
+
+describe("rightRailDataReducer · JOB_CHANGED seeds Wave 2 cache (Spec 4 Task 3)", () => {
+  it("切回历史 jobId 时从 cachedFields 恢复 capabilities/capabilityInvocations/capabilityEvidence", () => {
+    const initial = buildInitialReducerState("job-2", undefined, null);
+    const cachedCapabilities = [
+      { id: "A", label: "A" } as unknown as BlueprintRuntimeCapability,
+    ];
+    const cachedInvocations: BlueprintCapabilityInvocation[] = [];
+    const cachedEvidence: BlueprintCapabilityEvidence[] = [];
+
+    const next = rightRailDataReducer(initial, {
+      type: "JOB_CHANGED",
+      jobId: "job-1",
+      initialData: undefined,
+      cachedFields: {
+        capabilities: cachedCapabilities,
+        capabilityInvocations: cachedInvocations,
+        capabilityEvidence: cachedEvidence,
+      },
+    });
+
+    expect(next.capabilities.data).toBe(cachedCapabilities);
+    expect(next.capabilities.loading).toBe(false);
+    expect(next.capabilityInvocations.data).toBe(cachedInvocations);
+    expect(next.capabilityEvidence.data).toBe(cachedEvidence);
+    // pendingRequestId 始终为 null（切换后没有 pending fetch）
+    expect(next.capabilities.pendingRequestId).toBeNull();
   });
 });

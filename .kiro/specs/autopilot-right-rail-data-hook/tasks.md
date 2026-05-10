@@ -43,7 +43,7 @@
   - **验收**:Wave 1 能独立工作,其它 4 个 Wave 字段仍为占位 `loading=false`、`data=null`;`node --run check` 通过
   - _需求:Requirement 1.5、1.6、1.8、2.1、2.2、2.4、2.5、Requirement 4.1、4.6、Requirement 8.1、8.4、8.6_
 
-- [ ] 3. 实现 Wave 2 fetch(`agentCrew + capabilities + capabilityInvocations + capabilityEvidence`)+ 懒加载 gate
+- [x] 3. 实现 Wave 2 fetch(`agentCrew + capabilities + capabilityInvocations + capabilityEvidence`)+ 懒加载 gate
   - 实现 `shouldLoadField` helper(按 `design.md` 懒加载表)
   - `agentCrew` 从 `job.agentCrew` 派生(不独立 fetch,与 `routeSet` 同策略)
   - `capabilities` 发起 `Promise.all([fetchBlueprintCapabilities(), fetchBlueprintJobCapabilities(jobId)])` 并合并(合并规则复用 `BlueprintProgressPanel` 现有 registry-first 合并逻辑)

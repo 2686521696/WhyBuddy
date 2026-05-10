@@ -12,15 +12,20 @@
  * Spec 4 Task 1 — 类型定义 + barrel。
  * Spec 4 Task 2 — Wave 1 fetch（`job + routeSet + selection + specTree`）+ reducer +
  *                 per-jobId cache + AbortController + Ignore_Stale_Policy 基础设施。
+ * Spec 4 Task 3 — Wave 2 fetch（`agentCrew + capabilities + capabilityInvocations +
+ *                 capabilityEvidence`）+ 懒加载 gate + registry-first 合并 + W2 cache seed。
  *
  * 本文件目前包含的硬边界：
- * - 只发起 Wave 1 `fetchLatestBlueprintGenerationJob()`；当 `initialData.job.id === jobId` 时
- *   跳过首次 fetch（避免在父组件已持有 job 状态时发起 N+1 请求，Requirement 6.1）。
- * - `routeSet / selection / specTree` 从 Wave 1 快照派生（不发起独立 fetch）。
- * - Wave 2-4 的字段仍为占位 `loading=false`；Task 3-5 会逐步接入真实 fetch。
+ * - Wave 1：`fetchLatestBlueprintGenerationJob()`；当 `initialData.job.id === jobId` 时跳过
+ *   首次 fetch（Requirement 6.1）；`routeSet / selection / specTree` 从 Wave 1 快照派生。
+ * - Wave 2：通过 `shouldLoadField` 懒加载 gate 触发 `Promise.allSettled` 合并 4 个 fetch（registry
+ *   + job capabilities + invocations + evidence）。`agentCrew` 从 job snapshot / initialData
+ *   派生，不进入 FETCH_STARTED 流程（Task 3 口径：gate 未打开时暴露 `initialData.agentCrew ?? null`）。
+ * - Wave 3-4 的字段仍为占位 `loading=false`；Task 4-5 会逐步接入真实 fetch。
  * - SSE / polling / 指数退避由 Task 6 实现；当前版本不启动任何 `EventSource` 或 `setTimeout`。
- * - `retry` 当前只覆盖 W1 字段（job + 3 个派生字段共享同一次 refetch）；W2-W4 的 retry 由
- *   Task 3-5 分别接入。
+ * - `retry` 当前只覆盖 W1 字段（job + 3 个派生字段共享同一次 refetch）；W2 的 `agentCrew.retry`
+ *   与 `job.retry` 行为一致（共享 Wave 1 refetch）；W2 其余 3 个字段与 W3-W4 的 per-field retry
+ *   由 Task 7 接入。
  *
  * 硬性约束（贯穿本 spec 全部任务）：
  * - 不订阅 `useAppStore` / `useProjectStore`；不写入全局 store。
@@ -33,7 +38,12 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 
 import type { ApiRequestError } from "@/lib/api-client";
 import {
+  fetchBlueprintCapabilities,
+  fetchBlueprintCapabilityEvidence,
+  fetchBlueprintCapabilityInvocations,
+  fetchBlueprintJobCapabilities,
   fetchLatestBlueprintGenerationJob,
+  normalizeBlueprintAgentCrew,
   type BlueprintAgentCrewSnapshot,
   type BlueprintArtifactFeedback,
   type BlueprintArtifactLedgerEntry,
@@ -47,6 +57,7 @@ import {
 import type {
   BlueprintCapabilityEvidence,
   BlueprintCapabilityInvocation,
+  BlueprintGenerationArtifactType,
   BlueprintGenerationJob,
   BlueprintRouteSelection,
   BlueprintRouteSet,
@@ -462,6 +473,136 @@ const WAVE_1_FIELDS: readonly RightRailFieldName[] = [
   "specTree",
 ] as const;
 
+const WAVE_2_FETCH_FIELDS: readonly RightRailFieldName[] = [
+  "capabilities",
+  "capabilityInvocations",
+  "capabilityEvidence",
+] as const;
+
+// ---------------------------------------------------------------------------
+// Wave 2 helpers: agentCrew derivation + capabilities registry-first merge +
+// shouldLoadField 懒加载 gate。
+//
+// 这些 helper 的语义与 `AutopilotRoutePage.tsx` / `BlueprintProgressPanel.tsx` /
+// `RuntimeCapabilityPanel.tsx` 现有规则保持一致（复用 `normalizeBlueprintAgentCrew`，
+// 合并规则沿用 panel 的「job 列表非空时优先，否则回退 registry」）。任何 DOM parity 回归
+// 都应先检查这组 helper 与现有代码的语义对齐。
+// ---------------------------------------------------------------------------
+
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readJobArtifactPayloads(
+  job: BlueprintGenerationJob | null,
+  type: BlueprintGenerationArtifactType
+): unknown[] {
+  if (!job) return [];
+  return job.artifacts
+    .filter(artifact => artifact.type === type)
+    .map(artifact => artifact.payload);
+}
+
+/**
+ * 从 job artifacts 派生 `BlueprintAgentCrewSnapshot`。
+ * 规则与 `AutopilotRoutePage.readAutopilotAgentCrew` 一致：
+ *   1. 先取最新 `agent_crew` payload；
+ *   2. 若有最新 `role_timeline` payload，合并其 `timelines` 到 `roleTimelines` / `presence` 上；
+ *   3. 统一走 `normalizeBlueprintAgentCrew` 完成字段标准化。
+ */
+export function deriveAgentCrewFromJob(
+  job: BlueprintGenerationJob | null
+): BlueprintAgentCrewSnapshot | null {
+  if (!job) return null;
+  const crewPayloads = readJobArtifactPayloads(job, "agent_crew");
+  const crewPayload = crewPayloads.at(-1);
+  if (crewPayload === undefined) return null;
+
+  const crewRecord = asObjectRecord(crewPayload);
+  if (!crewRecord) return normalizeBlueprintAgentCrew(crewPayload);
+
+  const timelinePayloads = readJobArtifactPayloads(job, "role_timeline");
+  const timelinePayload = timelinePayloads.at(-1);
+  const timelineRecord = asObjectRecord(timelinePayload);
+  const timelines = Array.isArray(timelineRecord?.timelines)
+    ? timelineRecord.timelines
+    : undefined;
+
+  return normalizeBlueprintAgentCrew(
+    timelines
+      ? {
+          ...crewRecord,
+          roleTimelines: timelines,
+          presence: timelines,
+        }
+      : crewRecord
+  );
+}
+
+/**
+ * registry + job 两路 capabilities 的合并规则：
+ * - 与 `RuntimeCapabilityPanel` 当前 UI 逻辑（`jobCapabilities.length ? job : registry`）等价：
+ *   只要 job 返回了非空列表，就以 job 列表为准；否则回退到 registry 列表。
+ * - 任一侧为 `null`（fetch 失败） → 退化为另一侧；两侧都是 `null` → 返回 `null`
+ *   （调用方据此决定 dispatch FULFILLED 还是 REJECTED）。
+ *
+ * 该 helper 暴露为 named export 以便在 reducer 外复用 / 单元测试。
+ */
+export function mergeCapabilities(
+  registry: BlueprintRuntimeCapability[] | null,
+  jobList: BlueprintRuntimeCapability[] | null
+): BlueprintRuntimeCapability[] | null {
+  if (jobList && jobList.length > 0) return jobList;
+  if (registry) return registry;
+  if (jobList) return jobList; // 空数组但非 null，仍优先于 null
+  return null;
+}
+
+/**
+ * 判断 `field` 是否应当在当前 `(jobStage, currentSubStage, skipLazyLoad)` 快照下发起 fetch。
+ *
+ * Task 3 实现范围：Wave 2 的 4 个 case 返回真实规则，Wave 3-4 的 case 全部返回 `false` 作为
+ * 占位。Task 4-5 会逐步把 Wave 3-4 的规则接入。
+ *
+ * 注：`job / routeSet / selection / specTree` 四个 W1 字段不走本 gate —— 它们始终加载（由 W1
+ * effect 直接驱动），因此不作为本函数的合法输入；若误传入，函数也会在 default 分支返回 `false`。
+ */
+export function shouldLoadField(
+  field: Exclude<
+    RightRailFieldName,
+    "job" | "routeSet" | "selection" | "specTree"
+  >,
+  params: {
+    currentSubStage: AutopilotRailSubStage | undefined;
+    jobStage: BlueprintGenerationJob["stage"] | null;
+    skipLazyLoad: boolean;
+  }
+): boolean {
+  if (params.skipLazyLoad) return true;
+  const { currentSubStage } = params;
+  switch (field) {
+    case "agentCrew":
+    case "capabilities":
+    case "capabilityInvocations":
+    case "capabilityEvidence":
+      // Wave 2：`currentSubStage` 存在（即 fabric 阶段）即触发。
+      return Boolean(currentSubStage);
+    case "effectPreviews":
+    case "promptPackages":
+    case "landingPlans":
+    case "engineeringRuns":
+    case "artifactEntries":
+    case "artifactReplays":
+    case "artifactFeedback":
+      // Wave 3-4：Task 4-5 会扩展真实规则。
+      return false;
+    default:
+      return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -491,7 +632,9 @@ export function useAutopilotRightRailData(
   const hasJob = trimmedJobId.length > 0;
 
   // per-jobId 历史 cache：用于切回历史 jobId 时复用 W2-W4（Requirement 4.3 策略）。
-  // Task 2 下 W2-W4 还没有真实 fetch 结果写入，因此这里先建好骨架；Task 3-5 会写入。
+  // Task 2 在 W1 成功后会写入 `job/routeSet/selection/specTree` 到 cache；Task 3 在 W2 成功
+  // 后会写入 `capabilities/capabilityInvocations/capabilityEvidence`（`agentCrew` 由于是派生
+  // 字段不进入 cache，其值在切回时会由同一 W1 job 快照重新派生出来）。
   const cacheRef = useRef<Map<string, PartialCacheEntry>>(new Map());
 
   const [state, dispatch] = useReducer(
@@ -639,11 +782,269 @@ export function useAutopilotRightRailData(
     forceRefetchBump();
   }, [hasJob]);
 
-  // Wave 2-4 retry 占位（Task 3-7 会替换为真实实现）。
+  // -------------------------------------------------------------------------
+  // Wave 2 fetch orchestration
+  //
+  // 触发条件：W1 已经有 `job.data`（或 initialData 提供了 job）+ `shouldLoadField` 判定
+  // 对应字段应当加载。本 effect 只在上述条件变化时重跑（`jobId`、`job.stage`、
+  // `currentSubStage`、`skipLazyLoad` 四元组），且通过 `abortController` 取消在飞请求。
+  //
+  // 为避免与 W1 effect 形成双写冲突：W1 负责 `job / routeSet / selection / specTree` 的
+  // loading / data / error；W2 负责 `capabilities / capabilityInvocations / capabilityEvidence`。
+  // `agentCrew` 是派生字段，不进入 FETCH_STARTED 流程，而是在 view 映射时按 gate 从
+  // `state.job.data` 派生（见 `useMemo` 末尾）。
+  //
+  // 合并规则：registry + job 两路 capabilities 使用 `mergeCapabilities`（registry-first
+  // 回退：job 列表非空时优先，否则取 registry；任一 ok → 视为该字段成功）。
+  // -------------------------------------------------------------------------
+  const [w2RetryTrigger, bumpW2Retry] = useReducer((x: number) => x + 1, 0);
+  const currentSubStage = options?.currentSubStage;
+  const skipLazyLoad = options?.skipLazyLoad === true;
+  const jobStage = state.job.data?.stage ?? null;
+
+  useEffect(() => {
+    if (!hasJob) return;
+    // 仅当 W1 已经具备 job 数据时才推进 W2（否则 gate 无法判定 fabric 阶段语义）。
+    // 注：`initialData.job.id === jobId` 时 state.job.data 已从 init seed 提供，满足此门限。
+    if (!state.job.data || state.job.data.id !== trimmedJobId) return;
+
+    const fields = WAVE_2_FETCH_FIELDS.filter(field =>
+      shouldLoadField(
+        field as Exclude<
+          RightRailFieldName,
+          "job" | "routeSet" | "selection" | "specTree"
+        >,
+        { currentSubStage, jobStage, skipLazyLoad }
+      )
+    );
+    if (fields.length === 0) return;
+
+    const controller = new AbortController();
+    const requestId = nextRequestId();
+
+    dispatch({
+      type: "FETCH_STARTED",
+      jobId: trimmedJobId,
+      fields,
+      requestId,
+    });
+
+    void (async () => {
+      // 使用 Promise.allSettled：单字段失败不阻塞其余字段；registry + job 两路合并仍按
+      // `mergeCapabilities` 处理。所有 fetchBlueprint* 函数均返回 `{ ok, ... }`（内部已
+      // 捕获网络异常），因此这里把它们当作不会 throw 的 async 函数；但仍通过
+      // `Promise.allSettled` 兜底，防止底层行为变更后穿透异常。
+      const wantCapabilities = fields.includes("capabilities");
+      const wantInvocations = fields.includes("capabilityInvocations");
+      const wantEvidence = fields.includes("capabilityEvidence");
+
+      const registryPromise = wantCapabilities
+        ? fetchBlueprintCapabilities()
+        : null;
+      const jobCapabilitiesPromise = wantCapabilities
+        ? fetchBlueprintJobCapabilities(trimmedJobId)
+        : null;
+      const invocationsPromise = wantInvocations
+        ? fetchBlueprintCapabilityInvocations(trimmedJobId)
+        : null;
+      const evidencePromise = wantEvidence
+        ? fetchBlueprintCapabilityEvidence(trimmedJobId)
+        : null;
+      const settled = await Promise.allSettled([
+        registryPromise,
+        jobCapabilitiesPromise,
+        invocationsPromise,
+        evidencePromise,
+      ]);
+      if (controller.signal.aborted) return;
+
+      const [
+        registrySettled,
+        jobCapabilitiesSettled,
+        invocationsSettled,
+        evidenceSettled,
+      ] = settled;
+
+      const fieldUpdates: PartialFieldDataMap = {};
+      const rejectedFields: RightRailFieldName[] = [];
+      let primaryError: ApiRequestError | null = null;
+
+      const extractResult = <T,>(
+        entry: (typeof settled)[number],
+        endpoint: string
+      ):
+        | { ok: true; data: T }
+        | { ok: false; error: ApiRequestError }
+        | null => {
+        if (entry.status === "fulfilled") {
+          if (entry.value === null || entry.value === undefined) return null;
+          return entry.value as
+            | { ok: true; data: T }
+            | { ok: false; error: ApiRequestError };
+        }
+        return { ok: false, error: coerceApiRequestError(entry.reason, endpoint) };
+      };
+
+      if (wantCapabilities) {
+        const registryResult = extractResult<
+          { capabilities: BlueprintRuntimeCapability[] }
+        >(registrySettled, "/api/blueprint/capabilities");
+        const jobResult = extractResult<
+          { capabilities: BlueprintRuntimeCapability[] }
+        >(
+          jobCapabilitiesSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/capabilities`
+        );
+        const registryList =
+          registryResult && registryResult.ok
+            ? registryResult.data.capabilities
+            : null;
+        const jobList =
+          jobResult && jobResult.ok ? jobResult.data.capabilities : null;
+        const merged = mergeCapabilities(registryList, jobList);
+        if (merged !== null) {
+          fieldUpdates.capabilities = merged;
+          options?.onCapabilitiesChange?.(merged);
+        } else {
+          rejectedFields.push("capabilities");
+          // 至少一个失败；按 registry 失败优先展示错误（否则用 job 的错误）。
+          if (registryResult && !registryResult.ok) {
+            primaryError ??= registryResult.error;
+          } else if (jobResult && !jobResult.ok) {
+            primaryError ??= jobResult.error;
+          }
+          options?.onCapabilitiesChange?.([]);
+        }
+      }
+
+      if (wantInvocations) {
+        const invocationsResult = extractResult<{
+          invocations: BlueprintCapabilityInvocation[];
+        }>(
+          invocationsSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/capability-invocations`
+        );
+        if (invocationsResult && invocationsResult.ok) {
+          fieldUpdates.capabilityInvocations =
+            invocationsResult.data.invocations;
+          options?.onCapabilityInvocationsChange?.(
+            invocationsResult.data.invocations
+          );
+        } else if (invocationsResult && !invocationsResult.ok) {
+          rejectedFields.push("capabilityInvocations");
+          primaryError ??= invocationsResult.error;
+        }
+      }
+
+      if (wantEvidence) {
+        const evidenceResult = extractResult<{
+          evidence: BlueprintCapabilityEvidence[];
+        }>(
+          evidenceSettled,
+          `/api/blueprint/jobs/${trimmedJobId}/capability-evidence`
+        );
+        if (evidenceResult && evidenceResult.ok) {
+          fieldUpdates.capabilityEvidence = evidenceResult.data.evidence;
+          options?.onCapabilityEvidenceChange?.(evidenceResult.data.evidence);
+        } else if (evidenceResult && !evidenceResult.ok) {
+          rejectedFields.push("capabilityEvidence");
+          primaryError ??= evidenceResult.error;
+        }
+      }
+
+      // 分两步 dispatch：先写入成功字段（批量 FULFILLED），再把失败字段单独 REJECTED。
+      // 注意：reducer 在字段级别比较 pendingRequestId，因此同一个 requestId 同时覆盖成功
+      // 与失败字段不会互相污染。
+      if (Object.keys(fieldUpdates).length > 0) {
+        dispatch({
+          type: "FETCH_FULFILLED",
+          jobId: trimmedJobId,
+          requestId,
+          fieldUpdates,
+        });
+
+        // 写入 W2 cache 条目，供历史 jobId 切回复用。
+        const entry: PartialCacheEntry = cacheRef.current.get(trimmedJobId) ?? {};
+        if ("capabilities" in fieldUpdates) {
+          entry.capabilities = fieldUpdates.capabilities;
+        }
+        if ("capabilityInvocations" in fieldUpdates) {
+          entry.capabilityInvocations = fieldUpdates.capabilityInvocations;
+        }
+        if ("capabilityEvidence" in fieldUpdates) {
+          entry.capabilityEvidence = fieldUpdates.capabilityEvidence;
+        }
+        cacheRef.current.set(trimmedJobId, entry);
+      }
+      if (rejectedFields.length > 0 && primaryError) {
+        dispatch({
+          type: "FETCH_REJECTED",
+          jobId: trimmedJobId,
+          requestId,
+          fields: rejectedFields,
+          error: primaryError,
+        });
+        for (const field of rejectedFields) {
+          options?.onFieldError?.(field, primaryError);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+    // 注：`state.job.data` 作为 gating 先决条件进入依赖（W1 完成后即可 kick off W2）。
+    // `options.on*Change` 故意排除，避免消费者每次 render 重建 callback 造成 W2 重发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    trimmedJobId,
+    hasJob,
+    state.job.data,
+    jobStage,
+    currentSubStage,
+    skipLazyLoad,
+    w2RetryTrigger,
+  ]);
+
+  // Wave 2 共享 retry：触发 W2 effect 重跑。
+  // Task 3 实现范围：`capabilities / capabilityInvocations / capabilityEvidence` 共享此 retry；
+  // Task 7 会把 per-field retry 替换为仅重拉单字段的版本。
+  const retryWave2 = useCallback(() => {
+    if (!hasJob) return;
+    bumpW2Retry();
+  }, [hasJob]);
+
+  // Wave 3-4 retry 占位（Task 4-5/7 会替换为真实实现）。
   // 绑定到 jobId 确保「仅在 jobId 变化时重建」的稳定引用契约。
   const noopRetry = useCallback(() => {
-    /* Task 3-7 会接入 W2-W4 retry */
+    /* Task 4-5/7 会接入 W3-W4 retry */
   }, [trimmedJobId]);
+
+  // 预先计算 Wave 2 字段的 gate 状态，view 映射中直接复用。
+  const wave2GateOpen = useMemo(() => {
+    return shouldLoadField("agentCrew", {
+      currentSubStage,
+      jobStage,
+      skipLazyLoad,
+    });
+  }, [currentSubStage, jobStage, skipLazyLoad]);
+
+  // `agentCrew` 是派生字段：
+  //  - gate 打开（fabric 阶段 / skipLazyLoad）→ 从当前 `state.job.data` 派生；若 initialData
+  //    提供了 agentCrew 作为首屏回退，则在派生结果为 null 时退回到它（常见于 /specs autoLoad
+  //    路径，job 尚未加载但父组件已把 agentCrew 单独缓存）。
+  //  - gate 关闭（非 fabric 阶段且未强制 skipLazyLoad）→ 暴露 `initialData.agentCrew ?? null`，
+  //    `loading=false`、`error=null`。
+  const initialAgentCrewFallback = initialData?.agentCrew ?? null;
+  const derivedAgentCrew = useMemo<
+    BlueprintAgentCrewSnapshot | null
+  >(() => {
+    if (!wave2GateOpen) {
+      return initialAgentCrewFallback;
+    }
+    const fromJob = deriveAgentCrewFromJob(state.job.data);
+    return fromJob ?? initialAgentCrewFallback;
+  }, [wave2GateOpen, state.job.data, initialAgentCrewFallback]);
 
   // 把 reducer state 映射为 public `RightRailDataView`：剥离 `pendingRequestId`，挂接 retry。
   return useMemo<RightRailDataView>(() => {
@@ -656,17 +1057,35 @@ export function useAutopilotRightRailData(
       error: internal.error,
       retry,
     });
+
+    // agentCrew view：gate 打开时与 `view.job` 共享 loading/error 生命周期，data 使用派生值；
+    // gate 关闭时退回 `initialData.agentCrew ?? null`，loading/error 清零。
+    const agentCrewView: RightRailDataFieldStatus<BlueprintAgentCrewSnapshot> =
+      wave2GateOpen
+        ? {
+            data: derivedAgentCrew,
+            loading: state.job.loading,
+            error: state.job.error,
+            retry: retryWave1,
+          }
+        : {
+            data: derivedAgentCrew,
+            loading: false,
+            error: null,
+            retry: retryWave1,
+          };
+
     return {
       // Wave 1 共享 retryWave1
       job: toPublic(state.job, retryWave1),
       routeSet: toPublic(state.routeSet, retryWave1),
       selection: toPublic(state.selection, retryWave1),
       specTree: toPublic(state.specTree, retryWave1),
-      // Wave 2 占位
-      agentCrew: toPublic(state.agentCrew, noopRetry),
-      capabilities: toPublic(state.capabilities, noopRetry),
-      capabilityInvocations: toPublic(state.capabilityInvocations, noopRetry),
-      capabilityEvidence: toPublic(state.capabilityEvidence, noopRetry),
+      // Wave 2：agentCrew 派生 + 其余 3 个字段共享 retryWave2
+      agentCrew: agentCrewView,
+      capabilities: toPublic(state.capabilities, retryWave2),
+      capabilityInvocations: toPublic(state.capabilityInvocations, retryWave2),
+      capabilityEvidence: toPublic(state.capabilityEvidence, retryWave2),
       // Wave 3 占位
       effectPreviews: toPublic(state.effectPreviews, noopRetry),
       promptPackages: toPublic(state.promptPackages, noopRetry),
@@ -677,7 +1096,14 @@ export function useAutopilotRightRailData(
       artifactReplays: toPublic(state.artifactReplays, noopRetry),
       artifactFeedback: toPublic(state.artifactFeedback, noopRetry),
     };
-  }, [state, retryWave1, noopRetry]);
+  }, [
+    state,
+    wave2GateOpen,
+    derivedAgentCrew,
+    retryWave1,
+    retryWave2,
+    noopRetry,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +1124,35 @@ function nextRequestId(): number {
   return REQUEST_ID_COUNTER;
 }
 
+/**
+ * 将意外的 `throw`（例如同步抛错或网络层未封装为 `FetchJsonSafeResult` 的异常）转换为统一
+ * `ApiRequestError`。hook 规约：async 异常不得穿透到 React render path，全部转为 field
+ * status 中的 `error`。
+ */
+function coerceApiRequestError(raw: unknown, endpoint: string): ApiRequestError {
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "kind" in raw &&
+    "source" in raw &&
+    "endpoint" in raw
+  ) {
+    // 已经是 ApiRequestError 形状（来自 `{ ok: false, error }` 的解构）
+    return raw as ApiRequestError;
+  }
+  return {
+    kind: "error",
+    source: "network",
+    endpoint,
+    message: raw instanceof Error ? raw.message : "unexpected error",
+    detail:
+      raw instanceof Error && raw.stack
+        ? raw.stack
+        : "useAutopilotRightRailData: W2 fetch threw synchronously",
+    retryable: true,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Testing-only exports
 // ---------------------------------------------------------------------------
@@ -711,5 +1166,11 @@ export const __testing__ = {
   buildInitialReducerState,
   deriveWave1FieldUpdates,
   WAVE_1_FIELDS,
+  WAVE_2_FETCH_FIELDS,
   ALL_FIELD_NAMES,
+  // Task 3：Wave 2 helpers
+  shouldLoadField,
+  deriveAgentCrewFromJob,
+  mergeCapabilities,
+  coerceApiRequestError,
 };
