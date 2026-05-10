@@ -1,10 +1,11 @@
 /**
- * Prompt package workbench 面板占位。
+ * Prompt package workbench 面板 shim。
  *
- * 当前实现：`PromptPackageWorkbenchPanel` 内联在 `../BlueprintProgressPanel.tsx`（local function）。
+ * canonical 组件位于 `@/pages/autopilot/right-rail/panels/PromptPackagePanel`
+ * （对应 `.kiro/specs/autopilot-right-rail-stage-panels/` 的需求 1.4 / 2.5 / 6.1 / 8.1）。
  *
  * 对应需求 2.6、6.2。
  */
 
-export const PROMPT_PACKAGE_PANEL_PLACEHOLDER =
-  "see client/src/pages/specs/BlueprintProgressPanel.tsx (PromptPackageWorkbenchPanel)";
+export { PromptPackagePanel } from "@/pages/autopilot/right-rail/panels/PromptPackagePanel";
+export type { PromptPackagePanelProps } from "@/pages/autopilot/right-rail/panels/PromptPackagePanel";

@@ -25,3 +25,6 @@ export type { SpecDocumentsPanelProps } from "./SpecDocumentsPanel";
 
 export { EffectPreviewPanel } from "./EffectPreviewPanel";
 export type { EffectPreviewPanelProps } from "./EffectPreviewPanel";
+
+export { PromptPackagePanel } from "./PromptPackagePanel";
+export type { PromptPackagePanelProps } from "./PromptPackagePanel";

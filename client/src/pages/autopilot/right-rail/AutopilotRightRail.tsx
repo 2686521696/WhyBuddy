@@ -22,7 +22,7 @@
 
 import type { FC } from "react";
 
-import { AgentCrewFabricPanel, EffectPreviewPanel, SpecDocumentsPanel, SpecTreePanel } from "./panels";
+import { AgentCrewFabricPanel, EffectPreviewPanel, PromptPackagePanel, SpecDocumentsPanel, SpecTreePanel } from "./panels";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
 import {
   RAIL_SUB_STAGE_ORDER,
@@ -168,6 +168,13 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                           effectPreviews={effectPreviews}
                           agentCrew={agentCrew}
                           capabilityEvidence={capabilityEvidence}
+                          locale={locale}
+                        />
+                      ) : subStage === "prompt_package" ? (
+                        <PromptPackagePanel
+                          jobId={jobId}
+                          specTree={specTree}
+                          effectPreviews={effectPreviews}
                           locale={locale}
                         />
                       ) : (

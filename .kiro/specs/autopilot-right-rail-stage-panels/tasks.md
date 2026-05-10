@@ -62,7 +62,7 @@
   - 在 `<AutopilotRightRail>` 的 `case "effect_preview"` 渲染 `<EffectPreviewPanel .../>`，`initialPreviews` / `onPreviewsChange` / `documents` 留空
   - _需求：Requirement 1、2.4、3、5、6.1、7、8、10_
 
-- [ ] 5. 抽离 `PromptPackagePanel`（对应 `prompt_package`）
+- [x] 5. 抽离 `PromptPackagePanel`（对应 `prompt_package`）
   - 新增 `client/src/pages/autopilot/right-rail/panels/PromptPackagePanel.tsx`
   - 从 `BlueprintProgressPanel.tsx::PromptPackageWorkbenchPanel`（~行 2503–2972）完整搬运
   - 定义 `PromptPackagePanelProps = Pick<AutopilotRightRailProps, "jobId" | "specTree" | "effectPreviews" | "locale"> & { documents?: BlueprintSpecDocument[]; initialPackages?: BlueprintPromptPackage[]; onPackagesChange?: (p: BlueprintPromptPackage[]) => void }`
