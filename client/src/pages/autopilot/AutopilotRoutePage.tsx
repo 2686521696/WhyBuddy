@@ -519,28 +519,18 @@ function buildFlowSteps({
     {
       id: "input",
       index: 1,
-      title: t(locale, "输入与上下文", "Input and context"),
-      detail: intake
-        ? t(locale, "输入记录已创建", "Intake recorded")
-        : t(locale, "目标或 GitHub 地址", "Goal or GitHub URLs"),
-      status: intake ? "done" : "active",
+      title: t(locale, "输入与澄清", "Input and clarification"),
+      detail: clarificationReady
+        ? t(locale, "澄清已完成", "Clarification complete")
+        : intake
+          ? readReadinessLabel(readiness, locale) || t(locale, "澄清进行中", "Clarifying...")
+          : t(locale, "目标或 GitHub 地址", "Goal or GitHub URLs"),
+      status: clarificationReady ? "done" : "active",
       icon: Link2,
     },
     {
-      id: "clarification",
-      index: 2,
-      title: t(locale, "LLM 澄清", "LLM clarification"),
-      detail: readReadinessLabel(readiness, locale),
-      status: !intake
-        ? "blocked"
-        : workflowStage === "clarification"
-          ? "active"
-          : "done",
-      icon: HelpCircle,
-    },
-    {
       id: "routeset",
-      index: 3,
+      index: 2,
       title: t(locale, "路线编排", "Route orchestration"),
       detail: routeSet
         ? countLabel(locale, routeSet.routes.length, "条候选路线", "route", "routes")
@@ -554,7 +544,7 @@ function buildFlowSteps({
     },
     {
       id: "selection",
-      index: 4,
+      index: 3,
       title: t(locale, "路线选择", "Route selection"),
       detail: specTree
         ? t(
@@ -580,7 +570,7 @@ function buildFlowSteps({
     },
     {
       id: "fabric",
-      index: 5,
+      index: 4,
       title: "AgentCrewFabric",
       detail: agentCrew
         ? t(
@@ -600,7 +590,7 @@ function buildFlowSteps({
     },
     {
       id: "projection",
-      index: 6,
+      index: 5,
       title: t(locale, "3D / HUD 联动", "3D / HUD projection"),
       detail: effectPreviews.length
         ? t(
@@ -1339,8 +1329,6 @@ function AutopilotWorkflowRail({
     switch (step.id) {
       case "input":
         return t(locale, "输入", "Input");
-      case "clarification":
-        return t(locale, "澄清", "Clarify");
       case "routeset":
         return t(locale, "编排", "RouteSet");
       case "selection":
@@ -1432,54 +1420,55 @@ function AutopilotWorkflowRail({
 
             <IntakeSummary locale={locale} intake={intake} />
             <ProjectContextSummary locale={locale} context={projectContext} />
-          </div>
-        );
-      case "clarification":
-        return (
-          <div className="grid gap-3" data-testid="autopilot-clarification-step">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2 rounded-[8px] border-slate-200 bg-white font-black text-slate-700 hover:bg-slate-50"
-                disabled={!intake || generatingClarifications}
-                onClick={onGenerateClarifications}
-                data-testid="autopilot-generate-clarifications-button"
-              >
-                {generatingClarifications ? (
-                  <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <HelpCircle className="size-4" aria-hidden="true" />
-                )}
-                {clarificationSession
-                  ? t(locale, "刷新澄清", "Refresh clarification")
-                  : t(locale, "生成澄清", "Generate clarification")}
-              </Button>
-              <span
-                className={cn(
-                  "rounded-[6px] px-2 py-1 text-[10px] font-black",
-                  readiness?.status === "ready"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-slate-100 text-slate-600"
-                )}
-                data-testid="autopilot-readiness"
-              >
-                {readReadinessLabel(readiness, locale)}
-              </span>
-              {clarificationSession ? (
-                <span className="rounded-[6px] bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">
-                  {clarificationSession.id}
-                </span>
-              ) : null}
-            </div>
-            <ClarificationPanel
-              locale={locale}
-              session={clarificationSession}
-              answerDrafts={answerDrafts}
-              onAnswerChange={onAnswerChange}
-              onSubmit={onSubmitAnswers}
-              saving={savingAnswers}
-            />
+
+            {/* 澄清区域(intake 创建后自动显示) */}
+            {intake ? (
+              <div className="grid gap-3 border-t border-slate-200 pt-3" data-testid="autopilot-clarification-step">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2 rounded-[8px] border-slate-200 bg-white font-black text-slate-700 hover:bg-slate-50"
+                    disabled={!intake || generatingClarifications}
+                    onClick={onGenerateClarifications}
+                    data-testid="autopilot-generate-clarifications-button"
+                  >
+                    {generatingClarifications ? (
+                      <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <HelpCircle className="size-4" aria-hidden="true" />
+                    )}
+                    {clarificationSession
+                      ? t(locale, "刷新澄清", "Refresh clarification")
+                      : t(locale, "生成澄清", "Generate clarification")}
+                  </Button>
+                  <span
+                    className={cn(
+                      "rounded-[6px] px-2 py-1 text-[10px] font-black",
+                      readiness?.status === "ready"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-slate-100 text-slate-600"
+                    )}
+                    data-testid="autopilot-readiness"
+                  >
+                    {readReadinessLabel(readiness, locale)}
+                  </span>
+                  {clarificationSession ? (
+                    <span className="rounded-[6px] bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">
+                      {clarificationSession.id}
+                    </span>
+                  ) : null}
+                </div>
+                <ClarificationPanel
+                  locale={locale}
+                  session={clarificationSession}
+                  answerDrafts={answerDrafts}
+                  onAnswerChange={onAnswerChange}
+                  onSubmit={onSubmitAnswers}
+                  saving={savingAnswers}
+                />
+              </div>
+            ) : null}
           </div>
         );
       case "routeset":

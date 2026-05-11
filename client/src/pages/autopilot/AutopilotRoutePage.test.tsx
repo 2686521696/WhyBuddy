@@ -112,7 +112,6 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain("Project autopilot");
     expect(markup).toContain("ant-steps-horizontal");
     expect(markup).toContain("Input");
-    expect(markup).toContain("Clarify");
     expect(markup).toContain("RouteSet");
     expect(markup).toContain("Select");
     expect(markup).toContain("Fabric");
