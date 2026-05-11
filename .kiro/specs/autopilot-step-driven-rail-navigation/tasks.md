@@ -33,7 +33,7 @@
   - **验收**：hook 签名与 Context 结构与 `design.md` 一字不差；其他 spec 产物无改动
   - _需求：Requirement 6.1、6.5、Requirement 12.9_
 
-- [ ] 2. 实现 URL `?sub=xxx` 同步（读 / 写 / 非法值降级）
+- [x] 2. 实现 URL `?sub=xxx` 同步（读 / 写 / 非法值降级）
   - 在 `use-right-rail-sub-stage-state.ts` 中实现 `readInitialSubStageFromUrl(): AutopilotRailSubStage | null`：从 `window.location.search` 读取 `?sub`，只有在 `RAIL_SUB_STAGE_ORDER` 中时返回，否则返回 `null`
   - 实现 `writeUrlSubParam(next: AutopilotRailSubStage | null): void`：通过 `new URL(window.location.href)` 构造新 URL（保留 pathname、hash、其他 query），使用 `window.history.replaceState(null, "", nextHref)` 写入；`next === null` 时删除 `sub` 参数
   - 在 hook 内部用 lazy `useState<AutopilotRailSubStage | null>(() => readInitialSubStageFromUrl())` 初始化 `pinnedSubStage`

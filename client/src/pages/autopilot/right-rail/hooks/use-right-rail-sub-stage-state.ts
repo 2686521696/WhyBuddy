@@ -1,38 +1,34 @@
 /**
- * Autopilot 右栏子阶段 state hook —— Task 1 骨架
+ * Autopilot 右栏子阶段 state hook —— Task 2 完成态
  *
  * 对应 spec：`.kiro/specs/autopilot-step-driven-rail-navigation/`
+ * - Requirement 1.1-1.7：URL `?sub=xxx` 同步（读 / 写 / 非法值降级）
+ * - Requirement 2.6：Pinned_Sub_Stage 仅 session scope（URL 层），不写 localStorage / sessionStorage
  * - Requirement 6.1：hook 在 `AutopilotRoutePage` fabric 分支调用，而非 `<AutopilotRightRail>` 内部
  * - Requirement 6.5：hook 不订阅 `useAppStore` / `useProjectStore`；不写 `localStorage` / `sessionStorage`
- * - Requirement 6.6：`setPinnedSubStage` 通过 `useCallback` 稳定引用；同时更新内部 state 与写 URL（Task 2 实现）
- * - Requirement 12.9：文件改动范围限定在 `client/src/pages/autopilot/right-rail/hooks/` 下
+ * - Requirement 6.6：`setPinnedSubStage` 通过 `useCallback` 稳定引用；同时更新内部 state 与写 URL
+ * - Requirement 6.7：`resetPin()` 等价于 `setPinnedSubStage(null)`；清除 URL `?sub` 参数
  *
- * Task 1 范围：仅建立 hook 契约、Context 结构、fallback 降级对象；
- * URL 读写、sticky pin 真实实现、键盘快捷键均留待 Task 2 及之后的任务。
+ * Task 2 范围：真实 URL 读写、lazy state 初始化、非法 URL 清理、setPinned/reset/toggle 三 setter。
+ * Task 3+ 会在 `<AutopilotRightRail>` 内部新增 scroll container、键盘快捷键、Viewport_Tier 分支等。
  *
  * 硬性约束：
- * - 不读 `window.location` / `window.history`（Task 2 落地）
+ * - 使用 `window.history.replaceState` 而非 `pushState`（Requirement 1.6）
+ * - URL 写入通过手动构造 `URLSearchParams`，不依赖 `wouter` 的 navigate（Requirement 1.7）
  * - 不订阅 store；不调用 `resolveRailSubStage()`（由 consumer 在 `AutopilotRoutePage` 计算后作为
  *   `resolvedSubStage` 输入）
- * - `setPinnedSubStage / resetPin / togglePin` 在 Task 1 全部为 no-op，确保类型与消费面先对齐
+ * - URL 解析 / 应用拆成 pure layer（`parseSubFromSearch` / `applySubToSearch`），仅通过字符串交互，
+ *   以便测试在 node 环境下直接覆盖，不依赖 jsdom
  */
 
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
 
-import type { AutopilotRailSubStage } from "../types";
+import { RAIL_SUB_STAGE_ORDER, type AutopilotRailSubStage } from "../types";
 
 /**
  * Sub_Stage_State_Hook 的返回值（同时是 Context 的载荷）。
- *
- * 字段语义：
- * - `effectiveSubStage`：权威的当前子阶段；`pinnedSubStage ?? resolvedSubStage`。
- * - `pinnedSubStage`：用户手动固定的子阶段；`null` 表示跟随派生。
- * - `isPinned`：`pinnedSubStage !== null` 的派生布尔值。
- * - `setPinnedSubStage(next)`：设置固定子阶段；`null` 表示恢复跟随。Task 2 中会同时写 URL。
- * - `resetPin()`：等价于 `setPinnedSubStage(null)`。
- * - `togglePin()`：根据当前 pin 状态在「固定到 resolvedSubStage」与「恢复跟随」间切换。
  */
 export interface RightRailSubStageContextValue {
   effectiveSubStage: AutopilotRailSubStage | undefined;
@@ -45,11 +41,6 @@ export interface RightRailSubStageContextValue {
 
 /**
  * Hook 输入参数。
- *
- * - `jobStage`：来自 `latestJob?.stage ?? null`；用于未来判定非 fabric 阶段下的 URL 写入时机
- *   （Requirement 1.5）。Task 1 暂未消费。
- * - `resolvedSubStage`：由 consumer 在 `AutopilotRoutePage` 通过 Spec 1 `resolveRailSubStage()`
- *   计算后传入；hook 内部不重复调用 resolver。
  */
 export interface UseRightRailSubStageStateInput {
   jobStage: BlueprintGenerationJob["stage"] | null;
@@ -57,12 +48,7 @@ export interface UseRightRailSubStageStateInput {
 }
 
 /**
- * Context 缺失时（例如 `/specs` 页面或测试未包裹 Provider）的降级对象。
- *
- * 所有 setter 为 no-op，`isPinned` 恒为 `false`，`pinnedSubStage` 恒为 `null`。
- * `effectiveSubStage` 设为 `undefined`，因为 Context 缺失时没有可靠的权威源。
- *
- * 导出为常量以便测试断言引用相等性。
+ * Context 缺失时的降级对象。所有 setter 为 no-op；`isPinned` 恒为 `false`。
  */
 export const NULL_CONTEXT_FALLBACK: RightRailSubStageContextValue = {
   effectiveSubStage: undefined,
@@ -81,63 +67,230 @@ export const NULL_CONTEXT_FALLBACK: RightRailSubStageContextValue = {
 
 /**
  * Right rail sub-stage Context。
- *
- * Provider 由 `AutopilotRoutePage` 在 fabric 分支包裹 `<AutopilotRightRail>`（Task 7）；
- * `<AutopilotRightRail>` 内部通过 `useRightRailSubStageContext()` 读 `togglePin / isPinned`，
- * 避免扩展 Spec 1 冻结的 `AutopilotRightRailProps` 9 字段契约。
  */
 export const RightRailSubStageContext =
   createContext<RightRailSubStageContextValue | null>(null);
 
 /**
- * 读取 Right rail sub-stage Context 的 helper。
- *
- * 在 Provider 外使用时返回 `NULL_CONTEXT_FALLBACK` 降级对象（不抛错），
- * 以便 `<AutopilotRightRail>` 在 `/specs` 等无 Provider 场景下继续渲染；
- * 此时键盘快捷键、sticky toggle 等交互均为 no-op（Requirement 9）。
+ * 读取 Context；Provider 外返回 `NULL_CONTEXT_FALLBACK`。
  */
 export function useRightRailSubStageContext(): RightRailSubStageContextValue {
   const value = useContext(RightRailSubStageContext);
   return value ?? NULL_CONTEXT_FALLBACK;
 }
 
+// =============================================================================
+// Pure helpers (不依赖 window，供 unit 测试在 node 环境直接调用)
+// =============================================================================
+
 /**
- * `useRightRailSubStageState` —— Task 1 骨架实现。
+ * 判断字符串是否为合法的 `AutopilotRailSubStage`。
  *
- * 当前行为：
- * - `effectiveSubStage` 直接返回输入的 `resolvedSubStage`（pin 能力留给 Task 2）
- * - `pinnedSubStage` 恒为 `null`
- * - `isPinned` 恒为 `false`
- * - 所有 setter 为 no-op
+ * 严格大小写匹配 `RAIL_SUB_STAGE_ORDER`；空字符串、`null` / `undefined`、
+ * 未知字符串、大小写不匹配全部视为非法（Requirement 1.3）。
+ */
+function isValidSubStage(
+  value: string | null | undefined,
+): value is AutopilotRailSubStage {
+  if (value === null || value === undefined || value === "") {
+    return false;
+  }
+  return (RAIL_SUB_STAGE_ORDER as readonly string[]).includes(value);
+}
+
+/**
+ * 从查询字符串（可含或不含开头 `?`）中解析并校验 `sub` 参数。
  *
- * 返回值通过 `useMemo` 包裹以保持引用稳定，避免 `<AutopilotRightRail>` 因 Context value
- * 身份变化而触发不必要的 re-render。
+ * 本函数不依赖 `window`，可在 node 环境下被 unit 测试直接覆盖。
+ */
+function parseSubFromSearch(search: string | null | undefined): AutopilotRailSubStage | null {
+  if (!search) {
+    return null;
+  }
+  try {
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const raw = params.get("sub");
+    return isValidSubStage(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把 `next` 应用到 `search`，返回新查询字符串（不含开头 `?`）。
  *
- * Task 2 会在此基础上补：
- * - 读写 `window.history.replaceState` 与 URL `?sub` 参数
- * - 真实的 pinnedSubStage state + setter
- * - 首次挂载时非法 URL 清理
+ * - `next === null` → 删除 `sub` 参数
+ * - `next !== null` → 写入 / 覆盖 `sub` 参数
+ * - 保留 `search` 中除 `sub` 之外的所有参数
+ *
+ * 本函数不依赖 `window`，可在 node 环境下被 unit 测试直接覆盖。
+ */
+function applySubToSearch(
+  search: string | null | undefined,
+  next: AutopilotRailSubStage | null,
+): string {
+  const params = new URLSearchParams(
+    search ? (search.startsWith("?") ? search.slice(1) : search) : "",
+  );
+  if (next === null) {
+    params.delete("sub");
+  } else {
+    params.set("sub", next);
+  }
+  return params.toString();
+}
+
+// =============================================================================
+// Impure wrappers (依赖 window；生产环境与 jsdom 集成测试使用)
+// =============================================================================
+
+/**
+ * 从 `window.location.search` 读取并校验初始 `?sub` 参数值。
+ *
+ * - `typeof window === "undefined"`（SSR / node 环境）→ `null`
+ * - 其他情况委托给 `parseSubFromSearch`
+ */
+function readInitialSubStageFromUrl(): AutopilotRailSubStage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return parseSubFromSearch(window.location.search);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把 `next` 写入或从 URL 中清除 `?sub` 参数。
+ *
+ * - `typeof window === "undefined"` → no-op
+ * - 使用 `applySubToSearch` 计算新 search，保留 pathname、hash、其他 query
+ * - 使用 `history.replaceState`，不使用 `pushState`（Requirement 1.6）
+ * - 幂等：若新 search 与当前完全一致，跳过 `replaceState` 调用
+ */
+function writeUrlSubParam(next: AutopilotRailSubStage | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const currentSearch = window.location.search;
+    const nextSearch = applySubToSearch(currentSearch, next);
+    const nextSearchPrefixed = nextSearch ? `?${nextSearch}` : "";
+    if (nextSearchPrefixed === currentSearch) {
+      return;
+    }
+    const nextRelative = `${window.location.pathname}${nextSearchPrefixed}${window.location.hash}`;
+    window.history.replaceState(null, "", nextRelative);
+  } catch {
+    /* swallow — Requirement 1.3 非法 URL 不抛错 */
+  }
+}
+
+// =============================================================================
+// The hook
+// =============================================================================
+
+/**
+ * `useRightRailSubStageState` —— Task 2 完成态。
+ *
+ * 行为：
+ * - `pinnedSubStage` 通过 `useState` 保存；初始值由 `readInitialSubStageFromUrl()` 懒加载。
+ * - 首次挂载后若 URL 中存在非法 `?sub` 值，同步调用 `writeUrlSubParam(null)` 清理。
+ * - `setPinnedSubStage(next)`：更新内部 state + 写 URL（幂等由 `writeUrlSubParam` 保护）。
+ * - `resetPin()`：等价于 `setPinnedSubStage(null)`。
+ * - `togglePin()`：通过 ref 读最新 `pinnedSubStage / resolvedSubStage`，
+ *   `pinnedSubStage === null` 时固定到 `resolvedSubStage`（缺失则回退到 `RAIL_SUB_STAGE_ORDER[0]`），
+ *   否则清除 pin。
+ *
+ * 返回对象通过 `useMemo` 包裹以保持引用稳定。
  */
 export function useRightRailSubStageState(
-  _input: UseRightRailSubStageStateInput,
+  input: UseRightRailSubStageStateInput,
 ): RightRailSubStageContextValue {
-  const { resolvedSubStage } = _input;
+  const { resolvedSubStage } = input;
+
+  const [pinnedSubStage, setPinnedSubStageState] = useState<AutopilotRailSubStage | null>(
+    () => readInitialSubStageFromUrl(),
+  );
+
+  const pinnedRef = useRef<AutopilotRailSubStage | null>(pinnedSubStage);
+  const resolvedRef = useRef<AutopilotRailSubStage | undefined>(resolvedSubStage);
+  useEffect(() => {
+    pinnedRef.current = pinnedSubStage;
+  }, [pinnedSubStage]);
+  useEffect(() => {
+    resolvedRef.current = resolvedSubStage;
+  }, [resolvedSubStage]);
+
+  // 首次挂载：非法 URL 清理（Requirement 1.3）。lazy init 已把非法值 state 设为 null；
+  // 此 effect 只负责把非法 URL 参数也从地址栏清除。
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get("sub");
+      if (raw !== null && !isValidSubStage(raw)) {
+        writeUrlSubParam(null);
+      }
+    } catch {
+      /* swallow */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setPinnedSubStage = useCallback((next: AutopilotRailSubStage | null) => {
+    setPinnedSubStageState(next);
+    writeUrlSubParam(next);
+  }, []);
+
+  const resetPin = useCallback(() => {
+    setPinnedSubStage(null);
+  }, [setPinnedSubStage]);
+
+  const togglePin = useCallback(() => {
+    if (pinnedRef.current !== null) {
+      setPinnedSubStage(null);
+      return;
+    }
+    const seed = resolvedRef.current ?? RAIL_SUB_STAGE_ORDER[0];
+    setPinnedSubStage(seed);
+  }, [setPinnedSubStage]);
+
+  const effectiveSubStage = useMemo<AutopilotRailSubStage | undefined>(
+    () => pinnedSubStage ?? resolvedSubStage,
+    [pinnedSubStage, resolvedSubStage],
+  );
 
   return useMemo<RightRailSubStageContextValue>(
     () => ({
-      effectiveSubStage: resolvedSubStage,
-      pinnedSubStage: null,
-      isPinned: false,
-      setPinnedSubStage: () => {
-        /* no-op — Task 2 实现 */
-      },
-      resetPin: () => {
-        /* no-op — Task 2 实现 */
-      },
-      togglePin: () => {
-        /* no-op — Task 2 实现 */
-      },
+      effectiveSubStage,
+      pinnedSubStage,
+      isPinned: pinnedSubStage !== null,
+      setPinnedSubStage,
+      resetPin,
+      togglePin,
     }),
-    [resolvedSubStage],
+    [effectiveSubStage, pinnedSubStage, setPinnedSubStage, resetPin, togglePin],
   );
 }
+
+// =============================================================================
+// Testing exports
+// =============================================================================
+
+/**
+ * 测试专用命名导出。仅供 `__tests__/` 下的 unit 与 PBT 测试直接调用。
+ *
+ * Pure layer（`parseSubFromSearch` / `applySubToSearch` / `isValidSubStage`）在 node 环境可用；
+ * Impure layer（`readInitialSubStageFromUrl` / `writeUrlSubParam`）需要 jsdom 环境。
+ */
+export const __testing__ = {
+  isValidSubStage,
+  parseSubFromSearch,
+  applySubToSearch,
+  readInitialSubStageFromUrl,
+  writeUrlSubParam,
+};
