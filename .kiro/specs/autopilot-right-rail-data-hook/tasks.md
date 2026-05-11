@@ -103,7 +103,7 @@
   - **验收**:单字段失败不影响其它字段;retry 不会造成风暴;consumer 通过 `onXxxChange` 能拿到最新数据
   - _需求:Requirement 7.1、7.2、7.3、7.4、7.5、Requirement 8.1、8.2、8.3、8.4、8.6_
 
-- [ ] 8. 将 `client/src/pages/specs/hooks/use-blueprint-progress-data.ts` 改为 re-export shim
+- [x] 8. 将 `client/src/pages/specs/hooks/use-blueprint-progress-data.ts` 改为 re-export shim
   - 删除占位字符串常量 `USE_BLUEPRINT_PROGRESS_DATA_PLACEHOLDER`
   - 改写为单行 re-export:
     ```ts

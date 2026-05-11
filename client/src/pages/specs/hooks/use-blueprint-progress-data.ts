@@ -1,14 +1,15 @@
 /**
- * `use-blueprint-progress-data` 占位（wt4 任务 2，方案 B）。
+ * Shim：historically `BlueprintProgressPanel` 内部聚合了多条 blueprint fetch 调用，
+ * 自 Spec 4 `autopilot-right-rail-data-hook` 起统一改由 `useAutopilotRightRailData`
+ * 承接。此文件保留为单行 re-export，兼容历史 import 路径；详细语义与类型请见：
+ *   `@/pages/autopilot/right-rail/hooks/use-autopilot-right-rail-data`
  *
- * 当前实现：`BlueprintProgressPanel.tsx` 内部直接调用多个 fetch* / normalize* helper
- * 以组装进度数据。
- *
- * 物理迁移计划：把这些取数封装成 `useBlueprintProgressData(jobId, options)` hook，
- * 让 panel 层只剩区块装配。等 `panels/*` 物理抽离后再做，避免反复改 BlueprintProgressPanel。
- *
- * 对应 `.kiro/specs/autopilot-blueprint-refactor-split` 需求 2.6。
+ * 未来 Phase B cleanup 可以直接 `git rm` 本文件，不需要额外迁移调用方。
  */
 
-export const USE_BLUEPRINT_PROGRESS_DATA_PLACEHOLDER =
-  "see client/src/pages/specs/BlueprintProgressPanel.tsx for the current fetch wiring";
+export {
+  useAutopilotRightRailData as useBlueprintProgressData,
+  type RightRailDataView,
+  type RightRailDataFieldStatus,
+  type UseAutopilotRightRailDataOptions,
+} from "@/pages/autopilot/right-rail/hooks/use-autopilot-right-rail-data";
