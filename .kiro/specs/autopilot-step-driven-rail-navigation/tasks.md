@@ -21,7 +21,7 @@
 
 ---
 
-- [ ] 1. 新增 `useRightRailSubStageState` hook 骨架 + Context 定义 + barrel 导出
+- [x] 1. 新增 `useRightRailSubStageState` hook 骨架 + Context 定义 + barrel 导出
   - 新建 `client/src/pages/autopilot/right-rail/hooks/use-right-rail-sub-stage-state.ts`
   - 导出类型 `RightRailSubStageContextValue`：`{ effectiveSubStage: AutopilotRailSubStage | undefined; pinnedSubStage: AutopilotRailSubStage | null; isPinned: boolean; setPinnedSubStage: (next: AutopilotRailSubStage | null) => void; resetPin: () => void; togglePin: () => void }`
   - 导出 `RightRailSubStageContext = createContext<RightRailSubStageContextValue | null>(null)` 与 `useRightRailSubStageContext()` helper（Context 缺失时返回 `NULL_CONTEXT_FALLBACK` 降级对象：`isPinned = false`、`toggle / reset / set` 为 no-op）

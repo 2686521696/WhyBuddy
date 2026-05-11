@@ -18,3 +18,12 @@ export {
   type RightRailDataView,
   type UseAutopilotRightRailDataOptions,
 } from "./use-autopilot-right-rail-data";
+
+export {
+  NULL_CONTEXT_FALLBACK,
+  RightRailSubStageContext,
+  useRightRailSubStageContext,
+  useRightRailSubStageState,
+  type RightRailSubStageContextValue,
+  type UseRightRailSubStageStateInput,
+} from "./use-right-rail-sub-stage-state";
