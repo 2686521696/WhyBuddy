@@ -155,7 +155,7 @@
   - **验收**：tab 点击 / 键盘 / URL / `job.stage` 推进四条路径最终都更新 `effectiveSubStage`；行为一致
   - _需求：Requirement 1.1、Requirement 2.1、Requirement 4.1-4.4、Requirement 6.1、6.6、Requirement 7.1-7.3_
 
-- [ ] 10. **[PBT]** 编写 fast-check 属性测试（3 条）+ unit 测试补全
+- [x] 10. **[PBT]** 编写 fast-check 属性测试（3 条）+ unit 测试补全
   - 新建 `client/src/pages/autopilot/right-rail/hooks/__tests__/use-right-rail-sub-stage-state.property.test.ts`
   - **P1 — URL ⇔ State idempotent**：
     - 生成器：`subStageSeq: fc.array(fc.constantFrom(...RAIL_SUB_STAGE_ORDER), { minLength: 2, maxLength: 6 })`
