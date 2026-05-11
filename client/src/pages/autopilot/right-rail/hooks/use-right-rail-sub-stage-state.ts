@@ -141,6 +141,97 @@ function applySubToSearch(
 }
 
 // =============================================================================
+// Scroll behavior helpers (不依赖 window，供组件与 unit 测试共享)
+// =============================================================================
+
+/**
+ * 根据首次挂载 / 用户动效偏好决策 `scrollIntoView` 的 behavior。
+ *
+ * - 首次挂载（`isFirstMount === true`）：返回 `"auto"`，避免 URL 恢复或派生初始位置时
+ *   出现视觉跳变（Requirement 3.4）。
+ * - `prefers-reduced-motion: reduce` 命中时：返回 `"auto"`（Requirement 3.2）。
+ * - 其他情况：返回 `"smooth"`。
+ *
+ * 本函数为纯函数，不依赖 `window` / DOM，可以在 node 环境下被测试直接调用。
+ */
+function resolveScrollBehavior(opts: {
+  isFirstMount: boolean;
+  prefersReducedMotion: boolean;
+}): ScrollBehavior {
+  if (opts.isFirstMount) {
+    return "auto";
+  }
+  if (opts.prefersReducedMotion) {
+    return "auto";
+  }
+  return "smooth";
+}
+
+/**
+ * 在指定 scroll container 内查找 anchor 并调用 `scrollIntoView`。
+ *
+ * - `container == null` → 返回 `false`
+ * - anchor 未找到 → 返回 `false`（Requirement 3.3）
+ * - anchor 找到但缺少 `scrollIntoView`（如测试 stub 元素）→ 返回 `false`
+ * - 成功调用 → 返回 `true`
+ *
+ * 不抛错；纯逐步 early-return，便于测试覆盖所有分支。
+ */
+function scrollAnchorIntoView(params: {
+  container: Element | null;
+  anchorAttr: string;
+  anchorValue: string;
+  behavior: ScrollBehavior;
+  block?: ScrollLogicalPosition;
+}): boolean {
+  if (!params.container) {
+    return false;
+  }
+  const selector = `[${params.anchorAttr}="${params.anchorValue}"]`;
+  let anchor: Element | null;
+  try {
+    anchor = params.container.querySelector(selector);
+  } catch {
+    return false;
+  }
+  if (!anchor) {
+    return false;
+  }
+  const el = anchor as HTMLElement;
+  if (typeof el.scrollIntoView !== "function") {
+    return false;
+  }
+  try {
+    el.scrollIntoView({ behavior: params.behavior, block: params.block ?? "start" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 通过 `window.matchMedia("(prefers-reduced-motion: reduce)").matches` 读取当前偏好。
+ *
+ * `window` 不可用或 `matchMedia` 不可用时返回 `false`（假设允许动效）。
+ */
+function readPrefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 对外命名导出（供 `<AutopilotRightRail>` 直接使用）。
+ * 保持为 named exports 而不是挂在 `__testing__` 下：运行时路径与测试路径都会消费它们。
+ */
+export { resolveScrollBehavior, scrollAnchorIntoView, readPrefersReducedMotion };
+
+// =============================================================================
 // Impure wrappers (依赖 window；生产环境与 jsdom 集成测试使用)
 // =============================================================================
 
@@ -293,4 +384,7 @@ export const __testing__ = {
   applySubToSearch,
   readInitialSubStageFromUrl,
   writeUrlSubParam,
+  resolveScrollBehavior,
+  scrollAnchorIntoView,
+  readPrefersReducedMotion,
 };

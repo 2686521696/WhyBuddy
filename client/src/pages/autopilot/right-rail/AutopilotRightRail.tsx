@@ -1,38 +1,37 @@
 /**
- * Autopilot 驾驶舱右栏收敛 — `<AutopilotRightRail>` 最小 scaffolding
+ * Autopilot 驾驶舱右栏收敛 — `<AutopilotRightRail>`
  *
- * 对应 spec：`.kiro/specs/autopilot-cockpit-right-rail-convergence/`
- * - 需求 3（组件仅通过 props 接收数据）
- * - 需求 6.2 / 6.5（不在组件内再发起 fetch，不 `useAppStore` 或调用 `@/lib/blueprint-api`）
- * - 需求 7.1 / 7.2（`<aside role="complementary">` + `aria-label` + 激活 sub-stage 的 `aria-current`）
+ * 对应 spec：
+ * - Spec 1 `autopilot-cockpit-right-rail-convergence/`：scaffolding 与 props 契约
+ * - Spec 2 `autopilot-right-rail-stage-panels/`：fabric 8 个 canonical 面板挂载
+ * - Spec 3 `autopilot-advanced-workbench-inline/`：fabric 右栏接管
+ * - Spec 4 `autopilot-right-rail-data-hook/`：`currentSubStage` 作为数据懒加载 gate
+ * - Spec 5 `autopilot-step-driven-rail-navigation/`：Task 3 新增 scroll container + anchor +
+ *   派生 scroll effect（尊重 `prefers-reduced-motion`）
  *
- * 本文件是 Spec 1 的最小 scaffolding：仅渲染 5 个 timeline stage 与（fabric 分支下）8 个 sub-stage
- * 的占位区块，不搬运任何真实工作台内容。Spec 2 / 3 / 4 / 5 后续会逐步接管真实内容。
+ * Spec 5 Task 3 的硬性约束：
+ * - 不修改 `AutopilotRightRailProps` 契约（Spec 1 冻结）。
+ * - 不修改 Spec 2 canonical 面板的 DOM 结构；`data-sub-stage-anchor` 加在 scaffolding 层
+ *   `<section>` 外壳而非面板内部。
+ * - 保留 `data-sub-stage-placeholder="${subStage}"` 与 `aria-current="step"` 现有断言
+ *   （Spec 3 `fabric-dispatch.property.test.tsx` 依赖）。
+ * - scroll 只作用于右栏内容 `scrollRef.current`，不触碰 `document.scrollingElement`。
+ * - 首次挂载用 `behavior: "auto"`，之后尊重 `prefers-reduced-motion`。
+ * - anchor 未找到时静默 no-op。
  *
- * Spec 2（`autopilot-right-rail-stage-panels`）收口状态（任务 11）：
- * - fabric 分支下的 8 个 `AutopilotRailSubStage`（`agent_crew_fabric` / `spec_tree` / `spec_documents`
- *   / `effect_preview` / `prompt_package` / `runtime_capability` / `engineering_handoff`
- *   / `artifact_memory`）已**全部**接入 `@/pages/autopilot/right-rail/panels` 下的真实 canonical 面板。
- * - 下方三元链覆盖 `RAIL_SUB_STAGE_ORDER` 中所有 8 个枚举值；末尾 `: subStage` 分支作为 TypeScript
- *   穷尽性的 exhaustive safety net 保留 —— 正常运行时不应触达，仅用于在未来新增 sub-stage 时让
- *   类型系统/视觉回归立刻暴露漏洞（见 `tasks.md` 任务 11.1）。
- * - 保持三元链形式而非重构为 `PANEL_MAP`，原因：每个 panel 需要的 props 子集不同，统一
- *   `Record<SubStage, ComponentType<any>>` 反而需要丢掉精确的 props narrowing，得不偿失；
- *   当前形式在已通过 Spec 2 Task 1–8 验证的基础上零改动即可维持正确性。
- *
- * 硬性约束（任务 3 明示）：
- * - 不得 `useAppStore`；
- * - 不得 import `@/lib/blueprint-api` 的运行时成员；
- * - 不得在组件内发起 fetch；
- * - 当 props 传入 `currentSubStage` 时优先使用 props 值，否则回落到本地 `resolveRailSubStage` 的结果
- *   （这样 Spec 4 / 5 的 URL / pin-state 覆盖链路可以无缝接管）；
- * - 仅在 `currentStage === "fabric"` 时渲染 8 个 sub-stage placeholder；当前激活的 sub-stage 带
- *   `aria-current="step"`；每个 sub-stage 区块带 `data-sub-stage-placeholder="${subStage}"` 属性
- *   以便未来测试锚定。
+ * Spec 5 后续任务（Task 4/5/6/9）会在本组件继续扩展：
+ * - 键盘快捷键注册（`document.addEventListener("keydown", ...)`）
+ * - Sticky toggle + sr-announcer + tab aria-current
+ * - Viewport_Tier 三档渲染分支（drawer trigger / collapse toggle）
  */
 
-import type { FC } from "react";
+import { useEffect, useRef, type FC } from "react";
 
+import {
+  readPrefersReducedMotion,
+  resolveScrollBehavior,
+  scrollAnchorIntoView,
+} from "./hooks/use-right-rail-sub-stage-state";
 import {
   AgentCrewFabricPanel,
   ArtifactMemoryPanel,
@@ -53,9 +52,6 @@ import {
 
 /**
  * 5 个顶层 timeline stage 的渲染顺序（只读）。
- *
- * 与 `AutopilotWorkflowRail` 当前使用的 5 阶段保持一致；本文件不重复建立枚举源，只在内部固定
- * 渲染顺序，供 placeholder 区块迭代使用。
  */
 const TIMELINE_STAGE_ORDER: readonly AutopilotTimelineStage[] = [
   "input",
@@ -67,9 +63,6 @@ const TIMELINE_STAGE_ORDER: readonly AutopilotTimelineStage[] = [
 
 /**
  * 5 个 timeline stage placeholder 的中英双语占位文案。
- *
- * 本表文案是 Spec 1 的占位字符串，后续 Spec 2 会将真实面板内容搬入右栏；这里只保留最短的一句中/英
- * 描述，不做 glossary 化处理。
  */
 const TIMELINE_STAGE_LABELS: Record<
   AutopilotTimelineStage,
@@ -86,9 +79,13 @@ const TIMELINE_STAGE_LABELS: Record<
 };
 
 /**
+ * Anchor 属性名（Task 3 新增）。
+ * 测试、组件、hook 共用同一常量，避免字符串漂移。
+ */
+export const RAIL_SUB_STAGE_ANCHOR_ATTR = "data-sub-stage-anchor" as const;
+
+/**
  * `<aside>` 根节点的 aria-label 值。
- *
- * 中文 locale 返回「Autopilot 右栏工作台」，其它 locale（目前只有 `en-US`）返回英文变体。
  */
 function resolveAriaLabel(locale: AutopilotRightRailProps["locale"]): string {
   return locale === "zh-CN"
@@ -97,8 +94,99 @@ function resolveAriaLabel(locale: AutopilotRightRailProps["locale"]): string {
 }
 
 /**
- * Spec 1 最小 scaffolding。后续 Spec 2 / 3 / 4 / 5 会在本组件内逐步接管真实内容。
+ * 渲染指定 sub-stage 对应的 canonical 面板。
+ *
+ * 抽离为独立函数以便主 JSX 保持扁平；面板的 props subset 仍由 Spec 2 的 `Pick` 契约决定。
+ * 本函数不修改任何面板内部 DOM。
  */
+function renderSubStagePanel(params: {
+  subStage: AutopilotRailSubStage;
+  jobId: string;
+  job: AutopilotRightRailProps["job"];
+  agentCrew: AutopilotRightRailProps["agentCrew"];
+  capabilities: AutopilotRightRailProps["capabilities"];
+  capabilityInvocations: AutopilotRightRailProps["capabilityInvocations"];
+  capabilityEvidence: AutopilotRightRailProps["capabilityEvidence"];
+  specTree: AutopilotRightRailProps["specTree"];
+  selection: AutopilotRightRailProps["selection"];
+  effectPreviews: AutopilotRightRailProps["effectPreviews"];
+  locale: AutopilotRightRailProps["locale"];
+}) {
+  const { subStage, jobId, job, agentCrew, capabilities, capabilityInvocations, capabilityEvidence, specTree, selection, effectPreviews, locale } = params;
+
+  if (subStage === "agent_crew_fabric") {
+    return (
+      <AgentCrewFabricPanel
+        jobId={jobId}
+        job={job}
+        agentCrew={agentCrew}
+        capabilities={capabilities}
+        capabilityInvocations={capabilityInvocations}
+        capabilityEvidence={capabilityEvidence}
+        locale={locale}
+      />
+    );
+  }
+  if (subStage === "spec_tree") {
+    return (
+      <SpecTreePanel
+        jobId={jobId}
+        specTree={specTree}
+        selection={selection}
+        locale={locale}
+      />
+    );
+  }
+  if (subStage === "spec_documents") {
+    return <SpecDocumentsPanel jobId={jobId} specTree={specTree} locale={locale} />;
+  }
+  if (subStage === "effect_preview") {
+    return (
+      <EffectPreviewPanel
+        jobId={jobId}
+        job={job}
+        specTree={specTree}
+        effectPreviews={effectPreviews}
+        agentCrew={agentCrew}
+        capabilityEvidence={capabilityEvidence}
+        locale={locale}
+      />
+    );
+  }
+  if (subStage === "prompt_package") {
+    return (
+      <PromptPackagePanel
+        jobId={jobId}
+        specTree={specTree}
+        effectPreviews={effectPreviews}
+        locale={locale}
+      />
+    );
+  }
+  if (subStage === "runtime_capability") {
+    return (
+      <RuntimeCapabilityPanel
+        jobId={jobId}
+        specTree={specTree}
+        capabilities={capabilities}
+        capabilityInvocations={capabilityInvocations}
+        capabilityEvidence={capabilityEvidence}
+        agentCrew={agentCrew}
+        locale={locale}
+      />
+    );
+  }
+  if (subStage === "engineering_handoff") {
+    return <EngineeringHandoffPanel jobId={jobId} locale={locale} />;
+  }
+  if (subStage === "artifact_memory") {
+    return <ArtifactMemoryPanel jobId={jobId} locale={locale} />;
+  }
+  // Exhaustive safety net for `AutopilotRailSubStage`. Reaching here implies a new
+  // sub-stage was added without updating this switch.
+  return subStage satisfies never;
+}
+
 export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const {
     jobId,
@@ -115,7 +203,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
     locale,
   } = props;
 
-  // 本地 resolver 的结果；props 值优先，保证后续 Spec 4 / 5 的 URL / pin-state 覆盖链路可以无缝接管。
+  // 本地 resolver 的结果；props 值优先，保证 Spec 4 / 5 的 URL / pin-state 覆盖链路无缝接管。
   const computedSubStage = resolveRailSubStage({
     currentStage,
     job,
@@ -125,6 +213,34 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   });
   const activeSubStage: AutopilotRailSubStage | undefined =
     currentSubStageFromProps ?? computedSubStage;
+
+  // -------------------------------------------------------------------------
+  // Spec 5 Task 3 — 步骤驱动自动滚动
+  // -------------------------------------------------------------------------
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const firstMountRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    // 非 fabric 阶段 / activeSubStage 缺失 → 不触发任何滚动。
+    if (currentStage !== "fabric" || !activeSubStage) {
+      return;
+    }
+    const behavior = resolveScrollBehavior({
+      isFirstMount: firstMountRef.current,
+      prefersReducedMotion: readPrefersReducedMotion(),
+    });
+    scrollAnchorIntoView({
+      container: scrollRef.current,
+      anchorAttr: RAIL_SUB_STAGE_ANCHOR_ATTR,
+      anchorValue: activeSubStage,
+      behavior,
+      block: "start",
+    });
+    // 首次执行后清除 first-mount flag，使后续切换可以走 smooth（除非用户偏好 reduce）。
+    if (firstMountRef.current) {
+      firstMountRef.current = false;
+    }
+  }, [currentStage, activeSubStage]);
 
   return (
     <aside
@@ -140,6 +256,19 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         const isFabric = stage === "fabric";
         const isActive = stage === currentStage;
 
+        if (!isFabric || currentStage !== "fabric") {
+          return (
+            <div
+              key={stage}
+              data-stage-placeholder={stage}
+              data-active={isActive ? "true" : "false"}
+            >
+              <div>{label}</div>
+            </div>
+          );
+        }
+
+        // fabric 分支：包裹 scroll container + 8 个 anchor <section>。
         return (
           <div
             key={stage}
@@ -147,83 +276,41 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
             data-active={isActive ? "true" : "false"}
           >
             <div>{label}</div>
-
-            {isFabric && currentStage === "fabric"
-              ? RAIL_SUB_STAGE_ORDER.map((subStage) => {
-                  const isCurrent = subStage === activeSubStage;
-                  return (
-                    <div
-                      key={subStage}
-                      data-sub-stage-placeholder={subStage}
-                      aria-current={isCurrent ? "step" : undefined}
-                    >
-                      {subStage === "agent_crew_fabric" ? (
-                        <AgentCrewFabricPanel
-                          jobId={jobId}
-                          job={job}
-                          agentCrew={agentCrew}
-                          capabilities={capabilities}
-                          capabilityInvocations={capabilityInvocations}
-                          capabilityEvidence={capabilityEvidence}
-                          locale={locale}
-                        />
-                      ) : subStage === "spec_tree" ? (
-                        <SpecTreePanel
-                          jobId={jobId}
-                          specTree={specTree}
-                          selection={selection}
-                          locale={locale}
-                        />
-                      ) : subStage === "spec_documents" ? (
-                        <SpecDocumentsPanel
-                          jobId={jobId}
-                          specTree={specTree}
-                          locale={locale}
-                        />
-                      ) : subStage === "effect_preview" ? (
-                        <EffectPreviewPanel
-                          jobId={jobId}
-                          job={job}
-                          specTree={specTree}
-                          effectPreviews={effectPreviews}
-                          agentCrew={agentCrew}
-                          capabilityEvidence={capabilityEvidence}
-                          locale={locale}
-                        />
-                      ) : subStage === "prompt_package" ? (
-                        <PromptPackagePanel
-                          jobId={jobId}
-                          specTree={specTree}
-                          effectPreviews={effectPreviews}
-                          locale={locale}
-                        />
-                      ) : subStage === "runtime_capability" ? (
-                        <RuntimeCapabilityPanel
-                          jobId={jobId}
-                          specTree={specTree}
-                          capabilities={capabilities}
-                          capabilityInvocations={capabilityInvocations}
-                          capabilityEvidence={capabilityEvidence}
-                          agentCrew={agentCrew}
-                          locale={locale}
-                        />
-                      ) : subStage === "engineering_handoff" ? (
-                        <EngineeringHandoffPanel
-                          jobId={jobId}
-                          locale={locale}
-                        />
-                      ) : subStage === "artifact_memory" ? (
-                        <ArtifactMemoryPanel
-                          jobId={jobId}
-                          locale={locale}
-                        />
-                      ) : (
-                        subStage
-                      )}
-                    </div>
-                  );
-                })
-              : null}
+            <div
+              ref={scrollRef}
+              data-testid="autopilot-right-rail-scroll-container"
+              className="relative h-full overflow-y-auto"
+            >
+              {RAIL_SUB_STAGE_ORDER.map((subStage) => {
+                const isCurrent = subStage === activeSubStage;
+                return (
+                  <section
+                    key={subStage}
+                    {...{ [RAIL_SUB_STAGE_ANCHOR_ATTR]: subStage }}
+                    data-sub-stage-placeholder={subStage}
+                    aria-current={isCurrent ? "step" : undefined}
+                    aria-hidden={isCurrent ? undefined : true}
+                    className="scroll-mt-4"
+                  >
+                    {isCurrent
+                      ? renderSubStagePanel({
+                          subStage,
+                          jobId,
+                          job,
+                          agentCrew,
+                          capabilities,
+                          capabilityInvocations,
+                          capabilityEvidence,
+                          specTree,
+                          selection,
+                          effectPreviews,
+                          locale,
+                        })
+                      : null}
+                  </section>
+                );
+              })}
+            </div>
           </div>
         );
       })}

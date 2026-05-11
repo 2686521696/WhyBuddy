@@ -49,7 +49,7 @@
   - **验收**：URL 与 state 完全同步；幂等写不产生额外 history 条目；非法 URL 不抛错
   - _需求：Requirement 1.1、1.2、1.3、1.4、1.6、1.7、Requirement 2.6、Requirement 6.6、6.7_
 
-- [ ] 3. 在 `<AutopilotRightRail>` 内补 scroll container + anchor + 派生 scroll effect（尊重 prefers-reduced-motion）
+- [x] 3. 在 `<AutopilotRightRail>` 内补 scroll container + anchor + 派生 scroll effect（尊重 prefers-reduced-motion）
   - 在 `client/src/pages/autopilot/right-rail/AutopilotRightRail.tsx` 中新增 `const scrollRef = useRef<HTMLDivElement>(null)` 与 `const firstMountRef = useRef<boolean>(true)`
   - 将 fabric 子阶段面板容器包装成 `<div ref={scrollRef} data-testid="autopilot-right-rail-scroll-container" className="relative h-full overflow-y-auto">`
   - 对 `RAIL_SUB_STAGE_ORDER` 的 8 个子阶段各渲染一个 `<section key={subStage} data-sub-stage-anchor={subStage} className="scroll-mt-4" aria-hidden={effectiveSubStage !== subStage}>`；只在 `effectiveSubStage === subStage` 时渲染对应 Spec 2 canonical 面板，其他 section 为空外壳（anchor 保持可 `querySelector`）

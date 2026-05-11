@@ -18,7 +18,13 @@ import { describe, expect, it } from "vitest";
 import { __testing__ } from "../use-right-rail-sub-stage-state";
 import { RAIL_SUB_STAGE_ORDER, type AutopilotRailSubStage } from "../../types";
 
-const { isValidSubStage, parseSubFromSearch, applySubToSearch } = __testing__;
+const {
+  isValidSubStage,
+  parseSubFromSearch,
+  applySubToSearch,
+  resolveScrollBehavior,
+  scrollAnchorIntoView,
+} = __testing__;
 
 describe("use-right-rail-sub-stage-state / Task 2 — URL pure helpers", () => {
   describe("isValidSubStage", () => {
@@ -172,6 +178,188 @@ describe("use-right-rail-sub-stage-state / Task 2 — URL pure helpers", () => {
           expect(params.get(k)).toBe(v);
         }
       }
+    });
+  });
+});
+
+// =============================================================================
+// Task 3 —— scroll behavior pure helpers
+// =============================================================================
+
+describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
+  describe("resolveScrollBehavior", () => {
+    it("returns 'auto' when isFirstMount is true, regardless of reduced motion", () => {
+      expect(
+        resolveScrollBehavior({ isFirstMount: true, prefersReducedMotion: false }),
+      ).toBe("auto");
+      expect(
+        resolveScrollBehavior({ isFirstMount: true, prefersReducedMotion: true }),
+      ).toBe("auto");
+    });
+
+    it("returns 'auto' when prefers-reduced-motion is reduce", () => {
+      expect(
+        resolveScrollBehavior({ isFirstMount: false, prefersReducedMotion: true }),
+      ).toBe("auto");
+    });
+
+    it("returns 'smooth' only when not first mount and no reduced motion", () => {
+      expect(
+        resolveScrollBehavior({ isFirstMount: false, prefersReducedMotion: false }),
+      ).toBe("smooth");
+    });
+  });
+
+  describe("scrollAnchorIntoView", () => {
+    /**
+     * 构造一个极简 stub：`container.querySelector` 返回一个带 `scrollIntoView` spy 的对象，
+     * 以便在 node 环境下覆盖 scroll 触发路径而无需 jsdom。
+     */
+    function makeContainer(options: {
+      anchorAttr: string;
+      anchorValue: string;
+      hasAnchor?: boolean;
+      anchorHasScroll?: boolean;
+      throwOnQuery?: boolean;
+      throwOnScroll?: boolean;
+    }): {
+      container: Element;
+      scrollCalls: Array<ScrollIntoViewOptions | undefined>;
+    } {
+      const scrollCalls: Array<ScrollIntoViewOptions | undefined> = [];
+      const anchor =
+        options.anchorHasScroll === false
+          ? ({} as HTMLElement)
+          : ({
+              scrollIntoView: (opts?: ScrollIntoViewOptions) => {
+                if (options.throwOnScroll) {
+                  throw new Error("stub scroll throw");
+                }
+                scrollCalls.push(opts);
+              },
+            } as unknown as HTMLElement);
+      const container = {
+        querySelector: (selector: string) => {
+          if (options.throwOnQuery) {
+            throw new Error("stub query throw");
+          }
+          const expected = `[${options.anchorAttr}="${options.anchorValue}"]`;
+          if (options.hasAnchor === false) {
+            return null;
+          }
+          if (selector === expected) {
+            return anchor;
+          }
+          return null;
+        },
+      } as unknown as Element;
+      return { container, scrollCalls };
+    }
+
+    it("returns false when container is null", () => {
+      expect(
+        scrollAnchorIntoView({
+          container: null,
+          anchorAttr: "data-sub-stage-anchor",
+          anchorValue: "spec_tree",
+          behavior: "auto",
+        }),
+      ).toBe(false);
+    });
+
+    it("returns false when anchor is not found (no throw)", () => {
+      const { container } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+        hasAnchor: false,
+      });
+      expect(
+        scrollAnchorIntoView({
+          container,
+          anchorAttr: "data-sub-stage-anchor",
+          anchorValue: "spec_tree",
+          behavior: "auto",
+        }),
+      ).toBe(false);
+    });
+
+    it("returns false when querySelector throws", () => {
+      const { container } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+        throwOnQuery: true,
+      });
+      expect(
+        scrollAnchorIntoView({
+          container,
+          anchorAttr: "data-sub-stage-anchor",
+          anchorValue: "spec_tree",
+          behavior: "auto",
+        }),
+      ).toBe(false);
+    });
+
+    it("returns false when anchor element lacks scrollIntoView", () => {
+      const { container } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+        anchorHasScroll: false,
+      });
+      expect(
+        scrollAnchorIntoView({
+          container,
+          anchorAttr: "data-sub-stage-anchor",
+          anchorValue: "spec_tree",
+          behavior: "auto",
+        }),
+      ).toBe(false);
+    });
+
+    it("returns false (no throw) when scrollIntoView itself throws", () => {
+      const { container } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+        throwOnScroll: true,
+      });
+      expect(
+        scrollAnchorIntoView({
+          container,
+          anchorAttr: "data-sub-stage-anchor",
+          anchorValue: "spec_tree",
+          behavior: "auto",
+        }),
+      ).toBe(false);
+    });
+
+    it("calls scrollIntoView with the given behavior and default block='start'", () => {
+      const { container, scrollCalls } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+      });
+      const ok = scrollAnchorIntoView({
+        container,
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "spec_tree",
+        behavior: "smooth",
+      });
+      expect(ok).toBe(true);
+      expect(scrollCalls).toHaveLength(1);
+      expect(scrollCalls[0]).toEqual({ behavior: "smooth", block: "start" });
+    });
+
+    it("respects explicit block option", () => {
+      const { container, scrollCalls } = makeContainer({
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "artifact_memory",
+      });
+      scrollAnchorIntoView({
+        container,
+        anchorAttr: "data-sub-stage-anchor",
+        anchorValue: "artifact_memory",
+        behavior: "auto",
+        block: "center",
+      });
+      expect(scrollCalls[0]).toEqual({ behavior: "auto", block: "center" });
     });
   });
 });
