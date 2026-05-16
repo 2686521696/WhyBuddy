@@ -156,11 +156,17 @@ async function resolveProxyEnvironment() {
 
 async function resolveDevEnvironment() {
   const requestedExecutionMode = resolveRequestedExecutionMode();
+  // Task 14（`.kiro/specs/autopilot-capability-runtime-enablement`）：
+  // 为所有 dev:all 启动的子进程默认注入 AUTOPILOT_REAL_RUNTIME=true，让
+  // blueprint capability bridge 的 env resolver 把 5 条桥的 tier-1 门禁
+  // 默认翻转为 "true"。用户显式设置的值始终优先（requirement 1.6）。
+  const masterSwitch = process.env.AUTOPILOT_REAL_RUNTIME ?? "true";
   const proxyEnv = await resolveProxyEnvironment();
 
   if (requestedExecutionMode !== "real") {
     return {
       LOBSTER_EXECUTION_MODE: requestedExecutionMode,
+      AUTOPILOT_REAL_RUNTIME: masterSwitch,
       ...proxyEnv,
     };
   }
@@ -174,6 +180,7 @@ async function resolveDevEnvironment() {
   if (dockerReachable) {
     return {
       LOBSTER_EXECUTION_MODE: "real",
+      AUTOPILOT_REAL_RUNTIME: masterSwitch,
       ...proxyEnv,
     };
   }
@@ -185,6 +192,7 @@ async function resolveDevEnvironment() {
 
   return {
     LOBSTER_EXECUTION_MODE: "native",
+    AUTOPILOT_REAL_RUNTIME: masterSwitch,
     ...proxyEnv,
   };
 }

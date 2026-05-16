@@ -131,6 +131,7 @@ data/audit/
 # Local debug artifacts
 .manus-logs/
 .tmp-dev-all.*.log
+.tmp-intakeid
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
