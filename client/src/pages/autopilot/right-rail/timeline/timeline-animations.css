@@ -1,0 +1,39 @@
+/* 流式时间线动画 */
+
+@keyframes timeline-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes timeline-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* 活跃节点入场动画 */
+[data-timeline-status="active"] {
+  animation: timeline-fade-in 0.3s ease-out;
+}
+
+/* 已完成节点的指标行入场 */
+[data-timeline-status="completed"] .font-mono {
+  animation: timeline-fade-in 0.2s ease-out;
+}
+
+/* prefers-reduced-motion 降级 */
+@media (prefers-reduced-motion: reduce) {
+  [data-timeline-status="active"],
+  [data-timeline-status="completed"] .font-mono {
+    animation: none;
+  }
+}
