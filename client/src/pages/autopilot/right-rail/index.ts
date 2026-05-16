@@ -39,3 +39,16 @@ export {
   VIEWPORT_TIER_BREAKPOINT_XL,
   type ViewportTier,
 } from "./hooks";
+
+
+/**
+ * autopilot-streaming-experience integration-gap-2026-05-16 — UI 消费面 barrel re-export。
+ *
+ * 三个 store-observability 组件 + HUD overlay 包装：
+ * - `StoreObservabilityHud` 是首选的跨阶段挂载形式（含三个子组件 + 浅色背景容器）；
+ * - 三个底层组件单独导出，便于在 `AutopilotRightRail` fabric 分支等其它位置就地组合。
+ */
+export { CapabilityRail } from "./CapabilityRail";
+export { FleetActivationLog } from "./FleetActivationLog";
+export { RoleStatusStrip } from "./RoleStatusStrip";
+export { StoreObservabilityHud } from "./StoreObservabilityHud";

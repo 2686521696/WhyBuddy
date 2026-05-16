@@ -39,6 +39,7 @@ import type {
   BlueprintRouteSelection,
   BlueprintRouteSet,
   BlueprintRuntimeCapability,
+  BlueprintSpecDocument,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
 
@@ -92,6 +93,20 @@ function makeSelection(id: string): BlueprintRouteSelection {
 
 function makeSpecTree(id: string): BlueprintSpecTree {
   return { id, jobId: id, nodes: [], documents: [] } as unknown as BlueprintSpecTree;
+}
+
+function makeSpecDocument(id: string): BlueprintSpecDocument {
+  return {
+    id,
+    jobId: "job-1",
+    treeId: "tree-1",
+    nodeId: "node-1",
+    type: "requirements",
+    title: "Requirements",
+    content: "# Requirements",
+    status: "draft",
+    version: 1,
+  } as unknown as BlueprintSpecDocument;
 }
 
 function makeError(message: string): ApiRequestError {
@@ -183,6 +198,22 @@ describe("deriveWave1FieldUpdates (Spec 4 Task 2)", () => {
     expect(updates.routeSet).toBeNull();
     expect(updates.selection).toBeNull();
     expect(updates.specTree).toBeNull();
+  });
+
+  it("把 snapshot.specDocuments 合并到 specTree.documents，供 SPEC 文档阶段立即识别 ready", () => {
+    const specTree = makeSpecTree("tree-1");
+    const documents = [makeSpecDocument("doc-1")];
+    const updates = deriveWave1FieldUpdates({
+      job: makeJob("job-1"),
+      specTree,
+      specDocuments: documents,
+    } as never);
+
+    expect(
+      (updates.specTree as BlueprintSpecTree & {
+        documents?: BlueprintSpecDocument[];
+      }).documents
+    ).toBe(documents);
   });
 });
 

@@ -84,6 +84,7 @@ import type {
   BlueprintRouteSelection,
   BlueprintRouteSet,
   BlueprintRuntimeCapability,
+  BlueprintSpecDocument,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
 
@@ -480,11 +481,19 @@ export function rightRailDataReducer(
 function deriveWave1FieldUpdates(
   snapshot: BlueprintLatestGenerationJobSnapshot
 ): PartialFieldDataMap {
+  const specTree =
+    snapshot.specTree && Array.isArray(snapshot.specDocuments)
+      ? ({
+          ...snapshot.specTree,
+          documents: snapshot.specDocuments as BlueprintSpecDocument[],
+        } as BlueprintSpecTree)
+      : (snapshot.specTree ?? null);
+
   return {
     job: snapshot.job ?? null,
     routeSet: snapshot.routeSet ?? null,
     selection: snapshot.selection ?? null,
-    specTree: snapshot.specTree ?? null,
+    specTree,
   };
 }
 
@@ -982,9 +991,16 @@ export function useAutopilotRightRailData(
   //   2. jobId 为空 → 不发 fetch（Requirement 1.5）。
   //   3. jobId 非空且 initialData.job.id === jobId → 跳过首次 fetch，仅建立 cache 指针
   //      （Requirement 6.1，当父组件已经持有 job state 时避免 N+1）。
-  // 注：`refetchTrigger` 是 W1 retry 时递增的本地计数器，用于强制 effect 重新执行。
+  // 注：`refetchTrigger` 是 W1 retry 时递增的 useReducer counter，用于强制 effect 重新执行。
+  //     之前版本把 state 丢弃（`const [, forceRefetchBump] = useReducer(...)`）导致 effect
+  //     依赖数组无法订阅到 counter 变化，`retryWave1()` 只是一个假 retry — 会 bump ref 但
+  //     不会重跑 effect。本版把 state 保留并加进 effect 依赖，让 W1 retry 真正生效
+  //     （例如 `handleSelectRoute` 成功后调用 `rightRailView.job.retry()` 主动刷新 W1 snapshot）。
   const refetchTriggerRef = useRef(0);
-  const [, forceRefetchBump] = useReducer((x: number) => x + 1, 0);
+  const [refetchTrigger, forceRefetchBump] = useReducer(
+    (x: number) => x + 1,
+    0
+  );
 
   useEffect(() => {
     if (!hasJob) return;
@@ -1094,7 +1110,7 @@ export function useAutopilotRightRailData(
     };
     // refetchTrigger 依赖用于 W1 retry 强制重入；initialData 故意排除在依赖外。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmedJobId, hasJob]);
+  }, [trimmedJobId, hasJob, refetchTrigger]);
 
   // W1 共享 retry：触发 W1 fetch 重跑（bump refetch trigger + 重新 mount effect）。
   // W1 4 个字段共用此 retry：因为它们从同一次 snapshot 派生。

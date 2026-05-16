@@ -53,6 +53,11 @@ export type SpecTreePanelProps = Pick<
  *
  * `SpecTreeWorkbenchPanel` 当前不消费 `locale`；这里保留字段仅用于满足
  * `AutopilotRightRailProps` 的 narrowing 契约，不做任何行为变更。
+ *
+ * 注：「一键推导规格文档」CTA 已拆分到兄弟组件 `SpecTreeAdvanceCTA`，在
+ * `render-sub-stage-panel.tsx` 中与本 panel 的 `autopilot-panel-adapter`
+ * 外包一起渲染，避免被 adapter CSS 剥掉 chrome（Spec 5 MiroFish 的剥 chrome
+ * 规则仅应用于 workbench 本体，不应压扁 CTA 按钮的圆角与背景）。
  */
 export const SpecTreePanel: FC<SpecTreePanelProps> = ({
   jobId,

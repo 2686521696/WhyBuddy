@@ -107,6 +107,16 @@ export interface AutopilotRightRailProps {
   locale: AppLocale;
   /** 用户点击子阶段导航时由父组件处理 */
   onSubStageChange: (next: AutopilotRailSubStage) => void;
+  /**
+   * 可选回调：当右栏中的某个面板（当前仅 `SpecTreePanel` 的"一键推导规格文档"按钮）
+   * 触发了后端 `job.stage` 前进时调用。父组件应在此回调里让右栏数据层 hook 重新拉一次
+   * W1 snapshot（例如调用 `rightRailView.job.retry()`），以便 `resolveRailSubStage`
+   * 感知到 stage 变化并自动切换到下一子阶段面板。
+   *
+   * 不提供时按钮本身仍可点击并成功调用 API；右栏会在 SSE / polling 通路恢复后
+   * 最终感知 stage 变化，只是不会"瞬间切换"。
+   */
+  onStageAdvanced?: () => void;
 }
 
 /**
