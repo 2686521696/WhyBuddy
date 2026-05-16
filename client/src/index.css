@@ -795,33 +795,46 @@
   will-change: transform, opacity;
 }
 
-/* -------------------------------------------------------------------------
- * Autopilot sub-stage panel adapter (Spec 5 / autopilot-sub-stage-panel-wrapping)
+/* antd Tree 使用原生样式,不做额外 override */
+
+/*
+ * autopilot-agent-reasoning-stream spec Task 10：Agent 推理流时间线等待占位的
+ * pulse-ring 动画。复用 MiroFish Step3Simulation.vue 的视觉节奏（2s scale + opacity）。
  *
- * 对应 spec：.kiro/specs/autopilot-sub-stage-panel-wrapping/
- * - 需求 2（不能修改的 SpecTreePanel / SpecDocumentsPanel 靠外层样式适配）
- * - 任务 7（在 `.mirofish-rail` scope 下添加 adapter CSS override）
- *
- * Spec 4 的 `render-sub-stage-panel.tsx` 会把 `SpecTreePanel` / `SpecDocumentsPanel`
- * 外层包一层 `<div className="autopilot-panel-adapter">`，本规则仅在
- * `.mirofish-rail` scope + `.autopilot-panel-adapter` 内部生效，不影响 `/specs`
- * 页面或其他位置的 SpecTreeWorkbenchPanel / SpecDocumentWorkbenchPanel 展示。
- * ------------------------------------------------------------------------- */
-
-.mirofish-rail .autopilot-panel-adapter > * {
-  border-radius: 0 !important;
-  background: transparent !important;
+ * 使用方式：
+ *   <div class="agent-reasoning-pulse-ring" />
+ * reduced-motion 用户：
+ *   <div class="agent-reasoning-pulse-ring reasoning-ripple-disable" />
+ * 或在媒体查询下自动 fallback 为静态环。
+ */
+@keyframes reasoning-ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+    border-color: #ccc;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+    border-color: #eaeaea;
+  }
 }
 
-.mirofish-rail .autopilot-panel-adapter [class*="rounded-"] {
-  border-radius: 0 !important;
+.agent-reasoning-pulse-ring {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #eaeaea;
+  border-radius: 50%;
+  animation: reasoning-ripple 2s infinite;
 }
 
-.mirofish-rail .autopilot-panel-adapter [class*="bg-slate-50"],
-.mirofish-rail .autopilot-panel-adapter [class*="bg-slate-100"] {
-  background-color: white !important;
+.reasoning-ripple-disable,
+.reasoning-ripple-disable * {
+  animation: none !important;
 }
 
-.mirofish-rail .autopilot-panel-adapter [class*="border-slate-200"] {
-  border-color: #EAEAEA !important;
+@media (prefers-reduced-motion: reduce) {
+  .agent-reasoning-pulse-ring {
+    animation: none;
+  }
 }

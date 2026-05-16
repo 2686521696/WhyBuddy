@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Steps } from "antd";
 import {
   Bot,
@@ -71,6 +71,13 @@ import {
   type RightRailSubStageContextValue,
   type ViewportTier,
 } from "./right-rail";
+import { useAutoAdvance } from "./right-rail/hooks/use-auto-advance";
+
+import { useAutopilotSandboxBridge } from "./hooks/useAutopilotSandboxBridge";
+import { TimelineNode } from "./right-rail/timeline";
+import { AgentReasoningSubTimeline } from "./right-rail/AgentReasoningSubTimeline";
+import { AgentReasoningTimeline } from "@/components/blueprint/AgentReasoningTimeline";
+import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i;
 
@@ -516,61 +523,27 @@ function buildFlowSteps({
 
   return [
     {
+      // 合并输入 + 澄清 + 路线生成 + 路线选择为一步。
+      // 用户在这一步完成所有前置工作,选完路线后直接进入编组。
       id: "input",
       index: 1,
-      title: t(locale, "输入与澄清", "Input and clarification"),
-      detail: clarificationReady
-        ? t(locale, "澄清已完成", "Clarification complete")
-        : intake
-          ? readReadinessLabel(readiness, locale) || t(locale, "澄清进行中", "Clarifying...")
-          : t(locale, "目标或 GitHub 地址", "Goal or GitHub URLs"),
-      status: clarificationReady ? "done" : "active",
+      title: t(locale, "输入", "Input"),
+      detail: selection
+        ? t(locale, "路线已选中", "Route selected")
+        : routeSet
+          ? t(locale, `${routeSet.routes.length} 条候选路线`, `${routeSet.routes.length} routes ready`)
+          : clarificationReady
+            ? t(locale, "澄清完成，等待路线", "Clarified; waiting for routes")
+            : intake
+              ? readReadinessLabel(readiness, locale) || t(locale, "澄清中", "Clarifying")
+              : t(locale, "目标或 GitHub 地址", "Goal or GitHub URLs"),
+      status: selection ? "done" : "active",
       icon: Link2,
     },
     {
-      id: "routeset",
-      index: 2,
-      title: t(locale, "路线编排", "Route orchestration"),
-      detail: routeSet
-        ? countLabel(locale, routeSet.routes.length, "条候选路线", "route", "routes")
-        : t(locale, "等待 RouteSet", "Waiting for RouteSet"),
-      status: !clarificationReady
-        ? "blocked"
-        : workflowStage === "routeset"
-          ? "active"
-          : "done",
-      icon: Route,
-    },
-    {
-      id: "selection",
-      index: 3,
-      title: t(locale, "路线选择", "Route selection"),
-      detail: specTree
-        ? t(
-            locale,
-            "路线已选中，SPEC 交接正在展开",
-            "Route selected; SPEC handoff is underway"
-          )
-        : selection
-          ? t(
-              locale,
-              "路线已选中，正在沉淀 SPEC 树",
-              "Route selected; the SPEC tree is being derived"
-            )
-        : routeSet
-          ? t(locale, "选中一条路线继续", "Choose a route to continue")
-          : t(locale, "等待 RouteSet", "Waiting for RouteSet"),
-      status: !routeSet
-        ? "blocked"
-        : workflowStage === "selection"
-          ? "active"
-          : "done",
-      icon: FileSearch,
-    },
-    {
       id: "fabric",
-      index: 4,
-      title: "AgentCrewFabric",
+      index: 2,
+      title: t(locale, "编组", "Fabric"),
       detail: agentCrew
         ? t(
             locale,
@@ -589,8 +562,8 @@ function buildFlowSteps({
     },
     {
       id: "projection",
-      index: 5,
-      title: t(locale, "3D / HUD 联动", "3D / HUD projection"),
+      index: 3,
+      title: t(locale, "3D/HUD", "3D/HUD"),
       detail: effectPreviews.length
         ? t(
             locale,
@@ -1222,6 +1195,8 @@ function AutopilotWorkflowRail({
   onDrawerOpenChange,
   rightRailCollapsed,
   onRightRailCollapsedChange,
+  onForceAdvance,
+  autoAdvancing,
 }: {
   locale: AppLocale;
   targetText: string;
@@ -1309,6 +1284,8 @@ function AutopilotWorkflowRail({
    */
   rightRailCollapsed: boolean;
   onRightRailCollapsedChange: (collapsed: boolean) => void;
+  onForceAdvance: () => void;
+  autoAdvancing: boolean;
 }) {
   const primaryRoute =
     routeSet?.routes.find(route => route.id === routeSet.primaryRouteId) ??
@@ -1328,10 +1305,6 @@ function AutopilotWorkflowRail({
     switch (step.id) {
       case "input":
         return t(locale, "输入", "Input");
-      case "routeset":
-        return t(locale, "编排", "RouteSet");
-      case "selection":
-        return t(locale, "选择", "Select");
       case "fabric":
         return t(locale, "编组", "Fabric");
       case "projection":
@@ -1342,227 +1315,215 @@ function AutopilotWorkflowRail({
   };
 
   const renderActiveStepBody = () => {
+    const clarificationReady = isClarificationReady(clarificationSession, readiness);
     switch (activeStepId) {
-      case "input":
+      case "input": {
+        // 输入步骤流式时间线:4 个子阶段
+        //
+        // autopilot-streaming-experience integration-gap-2026-05-16：
+        // 历史版本把"路线生成"和"路线选择"拆成两个独立子阶段，但用户反馈这两个
+        // 阶段语义高度重合（都是围绕同一个 RouteSet：先看到路线、再选一条），
+        // 拆开会让卡片冗余、视觉上干扰主线。本次合并为单一"路线"子阶段：
+        //   - 未选中前（routeSet 已生成但没有 selection）：展示路线列表 + 选择按钮
+        //   - 选中后（selection 存在）：自身仍处于 active 状态，承接选完路线后
+        //     spec_tree 派生过程的进度事件（stageId="route"），让用户能看到
+        //     "我选了路线之后系统在做什么"，避免出现"选完就什么都没了"的断层。
+        type InputSub = "target_input" | "intake_created" | "clarification" | "route";
+        const INPUT_SUBS: InputSub[] = ["target_input", "intake_created", "clarification", "route"];
+
+        // 判定当前活跃子阶段
+        let activeInputSub: InputSub = "target_input";
+        if (routeSet || selection || generatingRouteSet || clarificationReady) activeInputSub = "route";
+        else if (intake && clarificationSession) activeInputSub = "clarification";
+        else if (intake) activeInputSub = "intake_created";
+
+        const activeInputIndex = INPUT_SUBS.indexOf(activeInputSub);
+
+        const inputSubTitles: Record<InputSub, string> = {
+          target_input: t(locale, "目标输入", "Target input"),
+          intake_created: t(locale, "输入记录", "Intake record"),
+          clarification: t(locale, "澄清", "Clarification"),
+          route: t(locale, "路线", "Route"),
+        };
+
         return (
-          <div className="grid gap-3" data-testid="autopilot-preflight">
-            <label className="grid gap-1.5">
-              <span className="text-xs font-black text-slate-700">
-                {t(locale, "执行目标", "Execution goal")}
-              </span>
-              <textarea
-                value={targetText}
-                onChange={event => setTargetText(event.target.value)}
-                className="min-h-[94px] resize-y rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700 outline-none transition focus:border-slate-900/40 focus:ring-2 focus:ring-slate-900/10"
-                placeholder={t(
-                  locale,
-                  "描述你希望系统推演出的最终结果。",
-                  "Describe the final outcome the system should reason toward."
-                )}
-                data-testid="autopilot-target-input"
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-black text-slate-700">
-                {t(locale, "GitHub 地址", "GitHub URLs")}
-              </span>
-              <textarea
-                value={githubInput}
-                onChange={event => setGithubInput(event.target.value)}
-                className="min-h-[70px] resize-y rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700 outline-none transition focus:border-slate-900/40 focus:ring-2 focus:ring-slate-900/10"
-                placeholder="https://github.com/org/repo"
-                data-testid="autopilot-github-input"
-              />
-            </label>
+          <div className="space-y-0" data-testid="autopilot-preflight">
+            {INPUT_SUBS.map((sub, idx) => {
+              const isCompleted = idx < activeInputIndex;
+              const isActive = idx === activeInputIndex;
+              const isFuture = idx > activeInputIndex;
+              const status = isCompleted ? "completed" : isActive ? "active" : "future";
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              <MetricBox
-                label={t(locale, "解析链接", "Parsed links")}
-                value={parsedGithub.urls.length}
-              />
-              <MetricBox
-                label={t(locale, "本地重复", "Duplicates")}
-                value={parsedGithub.duplicates.length}
-                tone={parsedGithub.duplicates.length ? "warn" : "neutral"}
-              />
-              <MetricBox
-                label={t(locale, "项目上下文", "Context")}
-                value={
-                  loadingContext
-                    ? t(locale, "加载中", "Loading")
-                    : projectContext
-                      ? t(locale, "已挂接", "Attached")
-                      : t(locale, "等待", "Pending")
-                }
-                tone={projectContext ? "good" : "neutral"}
-              />
-            </div>
+              // 构造摘要
+              const summaryObj = {
+                title: inputSubTitles[sub],
+                apiPath:
+                  sub === "target_input"
+                    ? "POST /api/blueprint/intake"
+                    : sub === "clarification"
+                      ? "POST /api/blueprint/clarifications"
+                      : sub === "route"
+                        ? "POST /api/blueprint/jobs · POST /api/blueprint/route-selection"
+                        : "",
+                summary: "",
+                metrics: [{ label: "-", value: "-" }, { label: "-", value: "-" }, { label: "-", value: "-" }] as [{ label: string; value: string | number }, { label: string; value: string | number }, { label: string; value: string | number }],
+                dataReady: isCompleted || isActive,
+              };
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                className="gap-2 rounded-[8px] bg-slate-950 font-black text-white hover:bg-slate-800"
-                disabled={!canCreateIntake || creatingIntake}
-                onClick={onCreateIntake}
-                data-testid="autopilot-create-intake-button"
-              >
-                {creatingIntake ? (
-                  <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Link2 className="size-4" aria-hidden="true" />
-                )}
-                {intake
-                  ? t(locale, "刷新输入记录", "Refresh intake")
-                  : t(locale, "创建输入记录", "Create intake")}
-              </Button>
-            </div>
+              return (
+                <TimelineNode key={sub} index={idx} status={status} summary={summaryObj}>
+                  {/*
+                    autopilot-streaming-experience integration-gap-2026-05-16 wave 3：
+                    isCompleted 不再折叠成简略，而是把 active 时同一组组件保留下来，
+                    用户切到下一个子阶段后还能在历史卡片里看到当时输入 / 回答 / 拉取
+                    的完整详情。子时间线（AgentReasoningSubTimeline）按 stageId 过滤，
+                    历史卡片只显示自身阶段产生的事件，不会跨阶段串。
+                  */}
+                  {isCompleted && sub === "target_input" && (
+                    <div className="mt-2 space-y-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">{t(locale, "目标输入", "Target input")}</div>
+                        <div className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-700">{targetText || "—"}</div>
+                      </div>
+                      {/*
+                        autopilot-streaming-experience integration-gap-2026-05-16：
+                        历史版本会在此分支再渲染一遍 "GitHub 来源" 列表，但下一张
+                        "输入记录" 卡片里的 IntakeSummary 已经把同一组 GitHub URL
+                        以归一化形式（slug + normalizedUrl）展示给用户。这里再列
+                        一次只会让用户感觉"目标被显示了两遍"，因此 target_input
+                        历史卡片只保留用户原始输入文本，不重复列 GitHub URL。
+                      */}
+                    </div>
+                  )}
+                  {isCompleted && sub === "intake_created" && intake && (
+                    <div className="mt-2 space-y-2">
+                      <IntakeSummary locale={locale} intake={intake} />
+                      <ProjectContextSummary locale={locale} context={projectContext} />
+                      {/*
+                        autopilot-streaming-experience integration-gap-2026-05-16：
+                        仓库扫描事件 stageId 已改为 "intake_created"，因此这里要
+                        挂载子时间线，让用户在历史卡片里看到当时仓库扫描的
+                        thinking / observing 流。
+                      */}
+                      <AgentReasoningSubTimeline locale={locale} stageFilter="intake_created" />
+                    </div>
+                  )}
+                  {isCompleted && sub === "clarification" && (
+                    <div className="mt-2 space-y-2">
+                      <div className="text-xs text-slate-500">{readReadinessLabel(readiness, locale)}</div>
+                      <ClarificationPanel locale={locale} session={clarificationSession} answerDrafts={answerDrafts} onAnswerChange={onAnswerChange} onSubmit={onSubmitAnswers} saving={savingAnswers} />
+                      <AgentReasoningSubTimeline locale={locale} stageFilter="clarification" />
+                    </div>
+                  )}
+                  {isCompleted && sub === "route" && routeSet && (
+                    <div className="mt-2 space-y-2">
+                      <div className="text-xs text-slate-500">
+                        {selection
+                          ? t(locale, `已选择路线：${selection.routeTitle ?? selection.routeId}`, `Selected route: ${selection.routeTitle ?? selection.routeId}`)
+                          : t(locale, `${routeSet.routes.length} 条路线`, `${routeSet.routes.length} routes`)}
+                      </div>
+                      <div className="space-y-1">
+                        {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={false} onSelect={() => {}} />}
+                        {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={false} onSelect={() => {}} />)}
+                      </div>
+                      {/*
+                        autopilot-streaming-experience integration-gap-2026-05-16：
+                        合并后的"路线"卡片承接三段后端 stage：
+                          - route_generation：路线生成 routeEmitter
+                          - route_selection：路线选择确认（暂无 emitter，但保留 stageId 兼容）
+                          - spec_tree：选完路线后系统派生 SPEC 树的 thinking / observing
+                        让历史卡片与 active 状态一致地展示完整执行流。
+                      */}
+                      <AgentReasoningSubTimeline locale={locale} stageFilter={["route_generation", "route_selection", "spec_tree"]} />
+                    </div>
+                  )}
 
-            <IntakeSummary locale={locale} intake={intake} />
-            <ProjectContextSummary locale={locale} context={projectContext} />
+                  {/* 活跃节点交互内容 */}
+                  {isActive && sub === "target_input" && (
+                    <div className="mt-2 space-y-3">
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-black text-slate-700">{t(locale, "执行目标 / GitHub 地址", "Goal / GitHub URLs")}</span>
+                        <textarea value={targetText} onChange={e => setTargetText(e.target.value)} className="min-h-[100px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700 outline-none transition focus:border-slate-900/40 focus:ring-2 focus:ring-slate-900/10" placeholder={t(locale, "描述目标，可直接粘贴 GitHub 地址（每行一个）", "Describe your goal. Paste GitHub URLs directly (one per line).")} data-testid="autopilot-target-input" />
+                      </label>
+                      <Button type="button" className="w-full gap-2 rounded-lg bg-slate-900 font-bold text-white hover:bg-slate-700" disabled={!canCreateIntake || creatingIntake} onClick={onCreateIntake} data-testid="autopilot-create-intake-button">
+                        {creatingIntake ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Link2 className="size-4" aria-hidden="true" />}
+                        {intake ? t(locale, "刷新输入记录", "Refresh intake") : t(locale, "创建输入记录", "Create intake")}
+                      </Button>
+                    </div>
+                  )}
 
-            {/* 澄清区域(intake 创建后自动显示) */}
-            {intake ? (
-              <div className="grid gap-3 border-t border-slate-200 pt-3" data-testid="autopilot-clarification-step">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2 rounded-[8px] border-slate-200 bg-white font-black text-slate-700 hover:bg-slate-50"
-                    disabled={!intake || generatingClarifications}
-                    onClick={onGenerateClarifications}
-                    data-testid="autopilot-generate-clarifications-button"
-                  >
-                    {generatingClarifications ? (
-                      <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <HelpCircle className="size-4" aria-hidden="true" />
-                    )}
-                    {clarificationSession
-                      ? t(locale, "刷新澄清", "Refresh clarification")
-                      : t(locale, "生成澄清", "Generate clarification")}
-                  </Button>
-                  <span
-                    className={cn(
-                      "rounded-[6px] px-2 py-1 text-[10px] font-black",
-                      readiness?.status === "ready"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-slate-100 text-slate-600"
-                    )}
-                    data-testid="autopilot-readiness"
-                  >
-                    {readReadinessLabel(readiness, locale)}
-                  </span>
-                  {clarificationSession ? (
-                    <span className="rounded-[6px] bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">
-                      {clarificationSession.id}
-                    </span>
-                  ) : null}
-                </div>
-                <ClarificationPanel
-                  locale={locale}
-                  session={clarificationSession}
-                  answerDrafts={answerDrafts}
-                  onAnswerChange={onAnswerChange}
-                  onSubmit={onSubmitAnswers}
-                  saving={savingAnswers}
-                />
-              </div>
-            ) : null}
+                  {isActive && sub === "intake_created" && (
+                    <div className="mt-2 space-y-2">
+                      <IntakeSummary locale={locale} intake={intake} />
+                      <ProjectContextSummary locale={locale} context={projectContext} />
+                      {/*
+                        autopilot-streaming-experience integration-gap-2026-05-16：
+                        intake_created 阶段在 POST /api/blueprint/clarifications
+                        被实际执行（仓库扫描发生在生成澄清问题之前），因此 active
+                        时也要挂子时间线，让用户实时看到仓库扫描进度。
+                      */}
+                      <AgentReasoningSubTimeline locale={locale} stageFilter="intake_created" />
+                    </div>
+                  )}
+
+                  {isActive && sub === "clarification" && (
+                    <div className="mt-2 space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button type="button" variant="outline" className="gap-2 rounded-lg border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50" disabled={!intake || generatingClarifications} onClick={onGenerateClarifications} data-testid="autopilot-generate-clarifications-button">
+                          {generatingClarifications ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <HelpCircle className="size-4" aria-hidden="true" />}
+                          {clarificationSession ? t(locale, "刷新澄清", "Refresh") : t(locale, "生成澄清", "Generate")}
+                        </Button>
+                        <span className={cn("rounded-md px-2 py-1 text-[10px] font-bold", readiness?.status === "ready" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")} data-testid="autopilot-readiness">{readReadinessLabel(readiness, locale)}</span>
+                      </div>
+                      <ClarificationPanel locale={locale} session={clarificationSession} answerDrafts={answerDrafts} onAnswerChange={onAnswerChange} onSubmit={onSubmitAnswers} saving={savingAnswers} />
+                      <AgentReasoningSubTimeline locale={locale} stageFilter="clarification" />
+                    </div>
+                  )}
+
+                  {isActive && sub === "route" && (
+                    <div className="mt-2 space-y-3">
+                      {/*
+                        路线阶段在 active 时分两种形态：
+                        1) 路线尚未生成（routeSet === null）：显示"等待 / 生成中"占位 + spinner
+                        2) 路线已生成但未选中：列出主路线 + 备选路线，等待用户点选
+                        3) 路线已选中（selection 存在）：显示选中卡片高亮，子时间线
+                           承接 spec_tree 派生过程的 thinking / observing 事件
+                      */}
+                      {!routeSet && (
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          {generatingRouteSet
+                            ? <><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t(locale, "正在生成路线...", "Generating routes...")}</>
+                            : t(locale, "等待路线生成", "Waiting for routes")}
+                        </div>
+                      )}
+                      {routeSet && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-slate-500">
+                            {selection
+                              ? t(locale, "路线已选中，正在派生 SPEC 树...", "Route selected, deriving SPEC tree...")
+                              : t(locale, "选中一条路线后系统将派生 SPEC 树。", "Select a route and the system will derive the SPEC tree.")}
+                          </div>
+                          {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={selectingRouteId === primaryRoute.id} onSelect={selection ? () => {} : onSelectRoute} />}
+                          {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={selectingRouteId === route.id} onSelect={selection ? () => {} : onSelectRoute} />)}
+                        </div>
+                      )}
+                      {/*
+                        子时间线 stageFilter 数组形态同时承接：
+                          - route_generation：路线生成阶段（POST /api/blueprint/jobs 的 routeEmitter）
+                          - route_selection：路线选择确认（保留 stageId 兼容，暂无独立 emitter）
+                          - spec_tree：选完路线后 buildSpecTreeFromRouteSet 的 LLM 推导
+                        因此 active 状态下用户从"看路线"到"选路线"再到"系统派生 SPEC"
+                        都能在同一卡片底部看到对应的事件流，不会出现断层。
+                      */}
+                      <AgentReasoningSubTimeline locale={locale} stageFilter={["route_generation", "route_selection", "spec_tree"]} />
+                    </div>
+                  )}
+                </TimelineNode>
+              );
+            })}
           </div>
         );
-      case "routeset":
-        return (
-          <div
-            className="grid gap-3"
-            data-testid={
-              routeSet ? "autopilot-routeset-panel" : "autopilot-routeset-empty"
-            }
-          >
-            <div className="grid gap-2 sm:grid-cols-3">
-              <MetricBox
-                label="RouteSet"
-                value={
-                  routeSet
-                    ? countLabel(locale, routeSet.routes.length, "条路线", "route", "routes")
-                    : t(locale, "未生成", "Not generated")
-                }
-                tone={routeSet ? "good" : "neutral"}
-              />
-              <MetricBox
-                label={t(locale, "阶段", "Stage")}
-                value={
-                  latestJob ? stageLabel(latestJob.stage, locale) : t(locale, "等待", "Pending")
-                }
-              />
-              <MetricBox
-                label={t(locale, "状态", "Status")}
-                value={
-                  latestJob ? statusLabel(latestJob.status, locale) : t(locale, "等待", "Pending")
-                }
-              />
-            </div>
-            {routeSet ? (
-              <div className="rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold leading-5 text-slate-600">
-                {copyDynamic(locale, routeSet.nextAsset.description)}
-              </div>
-            ) : null}
-            <Button
-              type="button"
-              className="w-full gap-2 rounded-[8px] bg-slate-950 font-black text-white hover:bg-slate-800"
-              disabled={!canGenerateRouteSet || generatingRouteSet}
-              onClick={onGenerateRouteSet}
-              data-testid="autopilot-generate-routeset-button"
-            >
-              {generatingRouteSet ? (
-                <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Play className="size-4" aria-hidden="true" />
-              )}
-              {t(locale, "生成 RouteSet", "Generate RouteSet")}
-            </Button>
-          </div>
-        );
-      case "selection":
-        return (
-          <div className="grid gap-3" data-testid="autopilot-selection-step">
-            <div className="rounded-[8px] border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold leading-5 text-slate-600">
-              {t(
-                locale,
-                "选中路线后会继续进入 SPEC 交接。",
-                "Select a route to hand off into SPEC."
-              )}
-            </div>
-            {primaryRoute ? (
-              <RouteOption
-                locale={locale}
-                route={primaryRoute}
-                primary
-                selected={selection?.routeId === primaryRoute.id}
-                selecting={selectingRouteId === primaryRoute.id}
-                onSelect={onSelectRoute}
-              />
-            ) : (
-              <div className="rounded-[8px] border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-xs font-semibold leading-5 text-slate-500">
-                {t(
-                  locale,
-                  "RouteSet 生成后，主路线和备选路线会在这里展开。",
-                  "After RouteSet generation, the primary and alternative routes appear here."
-                )}
-              </div>
-            )}
-            {alternativeRoutes.map(route => (
-              <RouteOption
-                key={route.id}
-                locale={locale}
-                route={route}
-                primary={false}
-                selected={selection?.routeId === route.id}
-                selecting={selectingRouteId === route.id}
-                onSelect={onSelectRoute}
-              />
-            ))}
-          </div>
-        );
+      }
       case "fabric": {
         // Spec 5 Task 8 — Viewport_Tier 三档分支。
         // - drawer（<md）：右列不渲染；drawer trigger + <HoloDrawer> 包裹
@@ -1589,6 +1550,7 @@ function AutopilotWorkflowRail({
               effectPreviews={rightRailView.effectPreviews.data ?? []}
               locale={locale}
               onSubStageChange={subStageContext.setPinnedSubStage}
+              onStageAdvanced={onForceAdvance}
             />
           </RightRailSubStageContext.Provider>
         );
@@ -2135,6 +2097,55 @@ export function AutopilotSpecTreeHandoffPanel({
   );
 }
 
+/**
+ * autopilot-agent-reasoning-stream：/autopilot 页面内联的 Agent 推理流时间线。
+ * 挂载后 1 秒注入模拟事件（开发期临时方案，等 CallbackReceiver 接通后自动跳过）。
+ */
+function AgentReasoningTimelineInline({ jobId }: { jobId: string }) {
+  const subscribe = useBlueprintRealtimeStore(s => s.subscribe);
+  const dispatchEvent = useBlueprintRealtimeStore(s => s.dispatchEvent);
+
+  useEffect(() => {
+    subscribe(jobId);
+  }, [jobId, subscribe]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const state = useBlueprintRealtimeStore.getState();
+      if (state.agentReasoning.entries.length > 0) return;
+
+      const now = Date.now();
+      const events = [
+        { type: "role.agent.iteration_started", payload: { iteration: 1, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", thought: "我需要先分析仓库的目录结构和核心模块..." } },
+        { type: "role.agent.acting", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", actionToolId: "mcp.github.clone" } },
+        { type: "role.agent.observing", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "代码已克隆，发现 src/ 下有 12 个模块" } },
+        { type: "role.agent.iteration_started", payload: { iteration: 2, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", thought: "分析模块依赖关系，识别核心状态机和事件流..." } },
+        { type: "role.agent.acting", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", actionToolId: "aigc.code_analysis" } },
+        { type: "role.agent.observing", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "主模块是 core/engine.ts，依赖 3 个子系统" } },
+        { type: "role.agent.iteration_started", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
+        { type: "role.agent.thinking", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", thought: "基于分析结果生成实现路线规划..." } },
+        { type: "role.agent.acting", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", actionToolId: "builtin.finish" } },
+        { type: "role.agent.completed", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
+      ];
+      events.forEach((event, index) => {
+        setTimeout(() => {
+          dispatchEvent({
+            type: event.type as any,
+            jobId,
+            timestamp: new Date(now + index * 2000).toISOString(),
+            payload: event.payload as any,
+          });
+        }, index * 2000);
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [jobId, dispatchEvent]);
+
+  return <AgentReasoningTimeline jobId={jobId} className="h-full" />;
+}
+
 export default function AutopilotRoutePage() {
   const subscribedLocale = useAppStore(state => state.locale);
   const locale =
@@ -2165,6 +2176,30 @@ export default function AutopilotRoutePage() {
   const [specTree, setSpecTree] = useState<BlueprintSpecTree | null>(null);
   const [apiError, setApiError] = useState<ApiRequestError | null>(null);
   const [creatingIntake, setCreatingIntake] = useState(false);
+
+  /**
+   * autopilot-streaming-experience：流式订阅生命周期。
+   *
+   * 修复需求 1（订阅时机覆盖 clarification / route_generation 阶段）：
+   * - 派生唯一 streamKey：优先使用 latestJob.id；jobId 出现前先用 intake.id
+   *   订阅 clarification / route_generation 阶段事件（这两个阶段的 emitter
+   *   stream key 即 intake.id）。
+   * - latestJob.id 首次出现且与 intake.id 不同时，依赖变化触发 cleanup →
+   *   重新 subscribe；store.subscribe 内部已经在 jobId 切换时清空
+   *   agentReasoning 切片，无需新增 store action。
+   * - intake / latestJob 同时为空时不发起任何订阅，agentReasoning.status
+   *   维持 idle。
+   */
+  const subscribeToJob = useBlueprintRealtimeStore(s => s.subscribe);
+  const unsubscribeFromJob = useBlueprintRealtimeStore(s => s.unsubscribe);
+  useEffect(() => {
+    const streamKey = latestJob?.id ?? intake?.id ?? null;
+    if (!streamKey) return;
+    subscribeToJob(streamKey);
+    return () => {
+      unsubscribeFromJob();
+    };
+  }, [latestJob?.id, intake?.id, subscribeToJob, unsubscribeFromJob]);
   const [loadingContext, setLoadingContext] = useState(false);
   const [generatingClarifications, setGeneratingClarifications] =
     useState(false);
@@ -2173,8 +2208,8 @@ export default function AutopilotRoutePage() {
   const [selectingRouteId, setSelectingRouteId] = useState<string | null>(null);
 
   const parsedGithub = useMemo(
-    () => parseGithubInput(githubInput),
-    [githubInput]
+    () => parseGithubInput(`${targetText}\n${githubInput}`),
+    [targetText, githubInput]
   );
   const target = targetText.trim();
   const readiness =
@@ -2210,6 +2245,17 @@ export default function AutopilotRoutePage() {
     () => readAutopilotEffectPreviews(latestJob),
     [latestJob]
   );
+
+  // autopilot-streaming-experience integration-gap-2026-05-16：
+  // 把蓝图实时切片（agentReasoning.entries / effectPreviews logTimeline）镜像到
+  // 3D 场景墙面终端的 useSandboxStore，让中央 <SandboxMonitor /> 跟右栏时间线
+  // 联动，避免出现"蓝图驾驶舱里 3D 场景跟右栏 HUD 脱钩"的体验。
+  // 详细桥接策略与边界见 hook 头部 JSDoc。
+  useAutopilotSandboxBridge({
+    jobId: latestJob?.id ?? null,
+    intakeId: intake?.id ?? null,
+    effectPreviews: autopilotEffectPreviews,
+  });
   // Spec 4 Task 9：在 fabric 阶段接入右栏数据层 hook(`useAutopilotRightRailData`)。
   //
   // 用法边界：
@@ -2537,6 +2583,45 @@ export default function AutopilotRoutePage() {
     target,
   ]);
 
+  // 澄清就绪后自动触发 RouteSet 生成,用户不需要手动点按钮。
+  // 条件:澄清已就绪 + 还没有 routeSet + 没在生成中。
+  const isClarifyReady = isClarificationReady(
+    clarificationSession,
+    clarificationSession?.readiness ?? intake?.readiness ?? undefined
+  );
+  const autoRouteTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (
+      isClarifyReady &&
+      !routeSet &&
+      !generatingRouteSet &&
+      canGenerateRouteSet &&
+      !autoRouteTriggeredRef.current
+    ) {
+      autoRouteTriggeredRef.current = true;
+      handleGenerateRouteSet();
+    }
+    // 当 routeSet 被清空(例如用户刷新 intake)时,重置 trigger
+    if (!isClarifyReady) {
+      autoRouteTriggeredRef.current = false;
+    }
+  }, [isClarifyReady, routeSet, generatingRouteSet, canGenerateRouteSet, handleGenerateRouteSet]);
+
+  // Phase 2:编组阶段自动推进 — spec_tree → spec_docs → effect_preview → prompt_packaging → engineering_landing
+  const autoAdvance = useAutoAdvance({
+    jobId: latestJob?.id ?? "",
+    job: latestJob,
+    specTree,
+    rightRailSpecTree: rightRailView.specTree.data,
+    onAdvanced: nextSubStage => {
+      if (nextSubStage) {
+        subStageState.setPinnedSubStage(nextSubStage);
+      }
+      // 触发 W1 refetch 让时间线感知到新 stage
+      rightRailView.job.retry();
+    },
+  });
+
   const handleSelectRoute = useCallback(
     async (routeId: string) => {
       if (!latestJob) return;
@@ -2555,6 +2640,13 @@ export default function AutopilotRoutePage() {
           setRouteSet(result.data.routeSet);
           setSelection(result.data.selection);
           setSpecTree(result.data.specTree);
+          // 选路线后 jobId 不变、只是 stage 推进到 spec_tree。
+          // `useAutopilotRightRailData` 的 W1 fetch effect 仅依赖 `[jobId, hasJob]`,
+          // 且 `initialData` 身份变化被故意排除在依赖外(避免每 render 重置)。
+          // 为了让右栏 `rightRailView.specTree.data` 等 W1 派生字段同步到最新
+          // job snapshot,这里主动 bump W1 retry trigger,促使 hook 重新
+          // GET /api/blueprint/jobs/latest 并 dispatch FETCH_FULFILLED。
+          rightRailView.job.retry();
         } else {
           setApiError(result.error);
         }
@@ -2562,7 +2654,7 @@ export default function AutopilotRoutePage() {
         setSelectingRouteId(null);
       }
     },
-    [latestJob]
+    [latestJob, rightRailView.job.retry]
   );
 
   return (
@@ -2667,7 +2759,10 @@ export default function AutopilotRoutePage() {
             onDrawerOpenChange={setDrawerOpen}
             rightRailCollapsed={rightRailCollapsed}
             onRightRailCollapsedChange={setRightRailCollapsed}
+            onForceAdvance={autoAdvance.forceAdvance}
+            autoAdvancing={autoAdvance.advancing}
           />
+
         </div>
       </div>
     </main>

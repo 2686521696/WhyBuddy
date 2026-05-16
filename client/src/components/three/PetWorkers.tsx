@@ -12,6 +12,10 @@ import {
   type AgentAnimationType,
   type AgentVisualConfig,
 } from "@/lib/agent-config";
+import {
+  useBlueprintRealtimeStore,
+  type RolePhase,
+} from "@/lib/blueprint-realtime-store";
 import { PET_MODELS } from "@/lib/assets";
 import type { AppLocale } from "@/lib/locale";
 import {
@@ -30,6 +34,77 @@ import {
   type WorkflowOrganizationSnapshot,
 } from "@/lib/workflow-store";
 import { selectWorkflowOrganization } from "@/lib/workflow-selectors";
+
+// ---------------------------------------------------------------------------
+// Task 3: Blueprint 实时动画绑定
+// ---------------------------------------------------------------------------
+
+/**
+ * 将 RolePhase 映射到 AgentAnimationType。
+ * 覆盖所有 RolePhase 值。
+ */
+export function mapRolePhaseToAnimation(phase: RolePhase): AgentAnimationType {
+  switch (phase) {
+    case "thinking":
+      return "reading";
+    case "acting":
+      return "typing";
+    case "observing":
+      return "examining";
+    case "reviewing":
+      return "discussing";
+    case "activated":
+      return "noting";
+    case "sleeping":
+      return "listening";
+    case "completed":
+      return "organizing";
+    case "failed":
+      return "examining";
+    case "idle":
+    default:
+      return "listening";
+  }
+}
+
+/**
+ * 将 RolePhase 映射到 StatusCategory（影响光效和边框样式）。
+ */
+export function mapRolePhaseToStatusCategory(phase: RolePhase): StatusCategory {
+  switch (phase) {
+    case "thinking":
+    case "activated":
+      return "thinking";
+    case "acting":
+      return "working";
+    case "reviewing":
+    case "observing":
+      return "reviewing";
+    case "completed":
+      return "done";
+    case "failed":
+      return "error";
+    case "sleeping":
+    case "idle":
+    default:
+      return "idle";
+  }
+}
+
+/**
+ * 检测用户是否偏好减少动画。
+ */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+  return reduced;
+}
 
 type SceneAgentConfig = {
   id: string;
@@ -638,9 +713,23 @@ function AgentWorker({
   const selectedPet = useAppStore(state => state.selectedPet);
   const setSelectedPet = useAppStore(state => state.setSelectedPet);
   const agentStatuses = useWorkflowStore(state => state.agentStatuses);
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Task 3.1: 从 BlueprintRealtimeStore 读取角色实时 phase
+  const rolePhase = useBlueprintRealtimeStore(
+    state => state.rolePhases[config.id] as RolePhase | undefined
+  );
 
   const agentStatus = agentStatuses[config.id] || "idle";
   const accent = config.color;
+
+  // Task 3.2/3.3: 当有实时 rolePhase 时，使用映射后的动画和状态类别
+  const realtimeAnimation = rolePhase
+    ? mapRolePhaseToAnimation(rolePhase)
+    : null;
+  const realtimeStatusCategory = rolePhase
+    ? mapRolePhaseToStatusCategory(rolePhase)
+    : null;
   const currentRoleName = null;
   const roleColor = null;
   const hasSlowAlert = false;
@@ -697,14 +786,22 @@ function AgentWorker({
           ? 1.25
           : 1;
 
-    animateWorker(
-      groupRef.current,
-      config.animationType,
-      config.position,
-      config.rotation,
-      clock.elapsedTime,
-      speedBoost
-    );
+    // Task 3.4/3.5: 使用实时动画（带 spring 插值），尊重 prefers-reduced-motion
+    const effectiveAnimation = realtimeAnimation ?? config.animationType;
+    if (!prefersReducedMotion) {
+      animateWorker(
+        groupRef.current,
+        effectiveAnimation,
+        config.position,
+        config.rotation,
+        clock.elapsedTime,
+        speedBoost
+      );
+    } else {
+      // 降级：静态位置，不播放运动动画
+      groupRef.current.position.set(...config.position);
+      groupRef.current.rotation.set(...config.rotation);
+    }
 
     // Scale: blend base scale with guest animation progress (0.5→1 range)
     const guestScaleFactor = config.isGuest
@@ -712,12 +809,17 @@ function AgentWorker({
       : 1;
     const baseScale = config.scale * guestScaleFactor;
 
+    // Task 3.5: spring 插值实现平滑过渡（scale + 状态光效）
+    const hasRealtimePhase = Boolean(realtimeAnimation);
     const targetScale = isActive
       ? baseScale * 1.14
-      : agentStatus !== "idle"
-        ? baseScale * 1.04
-        : baseScale;
+      : hasRealtimePhase
+        ? baseScale * 1.06
+        : agentStatus !== "idle"
+          ? baseScale * 1.04
+          : baseScale;
 
+    // Spring interpolation factor (0.12 = smooth transition)
     const nextScale =
       groupRef.current.scale.x +
       (targetScale - groupRef.current.scale.x) * 0.12;
@@ -757,7 +859,11 @@ function AgentWorker({
             style={{
               background: isActive ? accent : "rgba(248, 251, 255, 0.82)",
               color: isActive ? "#ffffff" : FUTURE_OFFICE_COLORS.text,
-              ...getStatusBorderStyle(agentStatus),
+              ...getStatusBorderStyle(
+                realtimeStatusCategory
+                  ? (realtimeStatusCategory as string)
+                  : agentStatus
+              ),
             }}
           >
             <span className={isActive ? "text-white" : "text-slate-700"}>

@@ -72,9 +72,6 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain("Permission System");
     expect(markup).toContain("ant-steps-horizontal");
     expect(markup).toContain("输入");
-    expect(markup).toContain("澄清");
-    expect(markup).toContain("编排");
-    expect(markup).toContain("选择");
     expect(markup).toContain("编组");
     expect(markup).toContain("3D/HUD");
     expect(markup).not.toContain("自动驾驶画布");
@@ -112,8 +109,6 @@ describe("AutopilotRoutePage", () => {
     expect(markup).toContain("Project autopilot");
     expect(markup).toContain("ant-steps-horizontal");
     expect(markup).toContain("Input");
-    expect(markup).toContain("RouteSet");
-    expect(markup).toContain("Select");
     expect(markup).toContain("Fabric");
     expect(markup).toContain("3D/HUD");
     expect(markup).toContain("Autopilot console");
@@ -123,8 +118,7 @@ describe("AutopilotRoutePage", () => {
       "Expand for SPEC, previews, prompts, capability bridge, and replay"
     );
     expect(markup).toContain("Create intake");
-    expect(markup).toContain("Execution goal");
-    expect(markup).toContain("GitHub URLs");
+    expect(markup).toContain("Goal");
     expect(markup).not.toContain("鑷姩椹鹃┒鐢诲竷");
   });
 
