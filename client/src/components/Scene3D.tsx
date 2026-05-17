@@ -3,6 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { ACESFilmicToneMapping } from "three";
 
+import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
+
 import { useContainerWidth } from "@/hooks/useContainerWidth";
 import { useIdleActivation } from "@/hooks/useIdleActivation";
 import { useViewportTier } from "@/hooks/useViewportTier";
@@ -73,10 +75,16 @@ export interface Scene3DProps {
   projectId?: string | null;
   /**
    * 场景融合模式，默认 "mission-first"。
-   * 蓝图页（/autopilot）应显式传入 "blueprint"，让 MissionIsland 在蓝图页隐藏。
-   * Wave B / C 会进一步把 mode 透传给 PetWorkers / SceneStageFlow。
+   * 蓝图页（/autopilot）应显式传入 "blueprint"，让 MissionIsland 在蓝图页隐藏，
+   * PetWorkers 走 FSD roleId 映射桥，SceneStageFlow 用 blueprintJob 派生 9 阶段流线。
    */
   mode?: SceneFusionMode;
+  /**
+   * 蓝图模式下的当前 BlueprintGenerationJob，可选。
+   * 由 page-level 调用方（AutopilotRoutePage）传入，SceneStageFlow 据此
+   * 派生场景流线信号。mission-first 模式下应保持 null（默认）。
+   */
+  blueprintJob?: BlueprintGenerationJob | null;
 }
 
 export function Scene3D({
@@ -85,6 +93,7 @@ export function Scene3D({
   hidden = false,
   projectId = null,
   mode = "mission-first",
+  blueprintJob = null,
 }: Scene3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isMobile, isTablet, tier } = useViewportTier();
@@ -270,7 +279,11 @@ export function Scene3D({
             showSecondaryDecor={deferredDetailsReady && !reducedSceneEffects}
             reducedEffects={reducedSceneEffects}
           />
-          <SceneStageFlow projectId={projectId} />
+          <SceneStageFlow
+            projectId={projectId}
+            mode={mode}
+            blueprintJob={blueprintJob}
+          />
           <PetWorkers
             projectId={projectId}
             reducedOverlays={!deferredDetailsReady || reducedSceneEffects}

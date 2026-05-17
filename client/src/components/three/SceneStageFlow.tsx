@@ -3,6 +3,8 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
+import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
+
 import { useAppStore } from "@/lib/store";
 import { resolveProjectTaskScope } from "@/lib/project-task-scope";
 import { useProjectStore } from "@/lib/project-store";
@@ -14,6 +16,12 @@ import {
   getSceneZoneLabel,
   SCENE_FLOW_ZONES,
 } from "@/lib/scene-stage-flow";
+
+import {
+  adaptBlueprintSignalToSceneStageSignal,
+  getBlueprintSceneStageSignal,
+} from "./scene-fusion/blueprint-stage-signal";
+import type { SceneFusionMode } from "./scene-fusion/role-id-bridge";
 
 function StageFlowSegment({
   from,
@@ -135,7 +143,24 @@ function StageZonePulse({
   );
 }
 
-export function SceneStageFlow({ projectId = null }: { projectId?: string | null }) {
+export function SceneStageFlow({
+  projectId = null,
+  mode = "mission-first",
+  blueprintJob = null,
+}: {
+  projectId?: string | null;
+  /**
+   * 自动驾驶 3D 场景融合模式。
+   * - "blueprint"：用 blueprintJob 派生 9 阶段流线信号（autopilot-scene-fusion Wave C）；
+   * - "mission-first"：走原有 mission / workflow 信号路径，行为完全不变。
+   */
+  mode?: SceneFusionMode;
+  /**
+   * 蓝图模式下的当前 BlueprintGenerationJob，可选。
+   * 缺失时落到 SAFE_DEFAULT_SIGNAL（input / progress 0），AC7 初始空态稳定。
+   */
+  blueprintJob?: BlueprintGenerationJob | null;
+}) {
   const locale = useAppStore(state => state.locale);
   const tasks = useTasksStore(state => state.tasks);
   const selectedTaskId = useTasksStore(state => state.selectedTaskId);
@@ -162,16 +187,28 @@ export function SceneStageFlow({ projectId = null }: { projectId?: string | null
       : null;
   }, [currentWorkflow, projectId, projectMissions]);
 
-  const signal = useMemo(
-    () =>
-      getSceneStageSignal({
-        locale,
-        tasks: scopedTasks,
-        selectedTaskId,
-        currentWorkflow: scopedCurrentWorkflow,
-      }),
-    [locale, scopedTasks, selectedTaskId, scopedCurrentWorkflow]
-  );
+  // Wave C：mode 分流。
+  // - "blueprint" → 用 blueprintJob 派生 9 阶段信号，输出兼容 SceneStageSignal 形状；
+  // - "mission-first" → 走既有 getSceneStageSignal 路径（mission + workflow），行为不变。
+  const signal = useMemo(() => {
+    if (mode === "blueprint") {
+      const blueprintSignal = getBlueprintSceneStageSignal(blueprintJob);
+      return adaptBlueprintSignalToSceneStageSignal(blueprintSignal, locale);
+    }
+    return getSceneStageSignal({
+      locale,
+      tasks: scopedTasks,
+      selectedTaskId,
+      currentWorkflow: scopedCurrentWorkflow,
+    });
+  }, [
+    mode,
+    blueprintJob,
+    locale,
+    scopedTasks,
+    selectedTaskId,
+    scopedCurrentWorkflow,
+  ]);
 
   const zoneTrail = useMemo(
     () =>

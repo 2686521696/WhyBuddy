@@ -816,7 +816,7 @@ function AutopilotVisualStage({
         data-autopilot-crew-state={agentCrew ? "ready" : "pending"}
       >
         <div className="pointer-events-none absolute inset-0">
-          <Scene3D performanceProfile="balanced" projectId={currentProjectId} mode="blueprint" />
+          <Scene3D performanceProfile="balanced" projectId={currentProjectId} mode="blueprint" blueprintJob={job} />
         </div>
 
         {/* HUD 浮层已移除 — 指标卡固定在右栏底部(RailMetricsBlock) */}
