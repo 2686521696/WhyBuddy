@@ -58,7 +58,7 @@ export function selectAutoAdvanceSubStage(
 ): AutopilotRailSubStage | undefined {
   switch (targetStage) {
     case "spec_docs":
-      return "spec_documents";
+      return "spec_tree";
     case "effect_preview":
       return "effect_preview";
     case "prompt_packaging":
@@ -236,10 +236,6 @@ export function useAutoAdvance({
 
   // 手动强制推进:用户点击"确认并继续"时调用
   const forceAdvance = useCallback(() => {
-    const advanceSpecTree = selectAutoAdvanceSpecTree(
-      specTree,
-      rightRailSpecTree
-    );
     if (!jobId || !job) return;
     // 如果 advancing 已经超过 5 分钟，强制重置（防止死锁）
     if (advancing) {
@@ -256,7 +252,6 @@ export function useAutoAdvance({
     if (stage === "spec_tree") {
       void advance("spec_docs", async () => {
         const result = await generateBlueprintSpecDocuments(jobId, {
-          nodeId: advanceSpecTree?.rootNodeId || undefined,
           types: ["requirements", "design", "tasks"],
         });
         return { ok: result.ok, error: result.ok ? undefined : result.error };

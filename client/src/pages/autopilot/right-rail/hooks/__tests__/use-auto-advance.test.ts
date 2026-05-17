@@ -33,7 +33,7 @@ describe("selectAutoAdvanceSpecTree", () => {
 });
 
 describe("selectAutoAdvanceSubStage", () => {
-  it("maps a successful spec_docs advance to the SPEC documents rail sub-stage", () => {
-    expect(selectAutoAdvanceSubStage("spec_docs")).toBe("spec_documents");
+  it("maps a successful spec_docs advance back to the SPEC tree rail sub-stage", () => {
+    expect(selectAutoAdvanceSubStage("spec_docs")).toBe("spec_tree");
   });
 });

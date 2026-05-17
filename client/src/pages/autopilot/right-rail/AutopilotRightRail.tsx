@@ -13,8 +13,12 @@ import { useEffect, useRef, type FC } from "react";
 
 import type { AppLocale } from "@/lib/locale";
 import { SPECS_PATH } from "@/components/navigation-config";
-import type { BlueprintSpecTree } from "@shared/blueprint/contracts";
+import type {
+  BlueprintGenerationJob,
+  BlueprintSpecTree,
+} from "@shared/blueprint/contracts";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
+import { deriveSpecDocumentTreeStats } from "@/lib/blueprint-spec-document-stats";
 
 import { AgentReasoningSubTimeline } from "./AgentReasoningSubTimeline";
 import { CapabilityRail } from "./CapabilityRail";
@@ -56,6 +60,7 @@ function ActiveNodeContent({
   onConfirmAdvance,
   advancing,
   specTree,
+  job,
 }: {
   summary: { apiPath: string; summary: string; dataReady: boolean };
   locale: AppLocale;
@@ -64,8 +69,13 @@ function ActiveNodeContent({
   onConfirmAdvance?: () => void;
   advancing?: boolean;
   specTree?: BlueprintSpecTree | null;
+  job?: BlueprintGenerationJob | null;
 }) {
   const isZh = locale === "zh-CN";
+  const documentStats =
+    subStage === "spec_tree" && specTree
+      ? deriveSpecDocumentTreeStats(job, specTree)
+      : null;
   return (
     <div className="space-y-3">
       <div className="font-mono text-[10px] text-slate-400">
@@ -82,22 +92,34 @@ function ActiveNodeContent({
             {specTree.nodes.length} {isZh ? "个节点" : "nodes"} · v{specTree.version}
           </div>
           <div className="max-h-[240px] space-y-1 overflow-y-auto">
-            {specTree.nodes.slice(0, 15).map((node, i) => (
-              <div
-                key={node.id}
-                className="flex items-center gap-2 rounded px-2 py-1 text-xs"
-              >
-                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white text-[9px] font-bold text-slate-500 shadow-sm">
-                  {i + 1}
-                </span>
-                <span className="min-w-0 truncate font-medium text-slate-700">
-                  {node.title}
-                </span>
-                <span className="ml-auto shrink-0 text-[9px] text-slate-400">
-                  {node.type.replace(/_/g, " ")}
-                </span>
-              </div>
-            ))}
+            {specTree.nodes.slice(0, 15).map((node, i) => {
+              const nodeDocumentStats = documentStats?.byNodeId.get(node.id);
+
+              return (
+                <div
+                  key={node.id}
+                  className="flex items-center gap-2 rounded px-2 py-1 text-xs"
+                  data-doc-lifecycle={nodeDocumentStats?.lifecycle ?? "empty"}
+                >
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white text-[9px] font-bold text-slate-500 shadow-sm">
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 truncate font-medium text-slate-700">
+                    {node.title}
+                  </span>
+                  <span
+                    className="ml-auto shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500 shadow-sm"
+                    data-testid="spec-tree-node-doc-status"
+                  >
+                    {nodeDocumentStats?.generated ?? 0}/
+                    {nodeDocumentStats?.total ?? 3}
+                  </span>
+                  <span className="shrink-0 text-[9px] text-slate-400">
+                    {node.type.replace(/_/g, " ")}
+                  </span>
+                </div>
+              );
+            })}
             {specTree.nodes.length > 15 && (
               <div className="px-2 text-[10px] text-slate-400">
                 +{specTree.nodes.length - 15} {isZh ? "更多" : "more"}...
@@ -255,6 +277,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                     onConfirmAdvance={props.onStageAdvanced}
                     advancing={false}
                     specTree={props.specTree}
+                    job={props.job}
                   />
                 )}
               </TimelineNode>

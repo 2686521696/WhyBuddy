@@ -125,7 +125,44 @@ describe("deriveSubStageSummary", () => {
     expect(result.dataReady).toBe(true);
     expect(result.metrics[0].value).toBe(3); // nodes
     expect(result.metrics[1].value).toBe(2); // leaves: n1 & n2
-    expect(result.metrics[2].value).toBe("-"); // versions placeholder
+    expect(result.metrics[2].value).toBe("0/9"); // documents generated from tree nodes
+  });
+
+  it("spec_tree: counts generated documents from job artifacts per tree node", () => {
+    const specTree = {
+      nodes: [
+        { id: "root" },
+        { id: "n1", parentId: "root" },
+      ],
+    } as unknown as BlueprintSpecTree;
+    const job = {
+      artifacts: [
+        {
+          type: "requirements",
+          payload: { id: "root-req", nodeId: "root", type: "requirements" },
+        },
+        {
+          type: "design",
+          payload: { id: "root-design", nodeId: "root", type: "design" },
+        },
+        {
+          type: "tasks",
+          payload: { id: "root-tasks", nodeId: "root", type: "tasks" },
+        },
+        {
+          type: "requirements",
+          payload: { id: "n1-req", nodeId: "n1", type: "requirements" },
+        },
+      ],
+    } as unknown as BlueprintGenerationJob;
+
+    const props = makeProps({ specTree, job });
+    const result = deriveSubStageSummary("spec_tree", props, "en-US");
+
+    expect(result.dataReady).toBe(true);
+    expect(result.metrics[2].label).toBe("DOCS");
+    expect(result.metrics[2].value).toBe("4/6");
+    expect(result.metrics[2].hint).toBe("1 / 2 nodes complete");
   });
 
   it("spec_documents: counts documents[] derived from specTree", () => {

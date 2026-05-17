@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1120" viewBox="0 0 1680 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Autopilot 当前执行链路：路线选择到 SPEC 文档生成</title>
+  <desc id="desc">基于 .kiro/blueprint-assets/jobs.json 的最新 job 日志，展示路线选择、SPEC 树生成、规格文档生成之间的执行状态与卡点。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+      .panel-soft { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 1; }
+      .done { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.4; }
+      .current { fill: #fff7ed; stroke: #f97316; stroke-width: 1.8; }
+      .blocked { fill: #fef2f2; stroke: #ef4444; stroke-width: 1.8; }
+      .next { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.4; }
+      .muted { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1; }
+      .text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif; fill: #0f172a; }
+      .mono { font-family: Consolas, "SFMono-Regular", Menlo, monospace; fill: #334155; }
+      .h1 { font-size: 30px; font-weight: 800; }
+      .h2 { font-size: 20px; font-weight: 800; }
+      .h3 { font-size: 16px; font-weight: 800; }
+      .body { font-size: 14px; font-weight: 600; }
+      .small { font-size: 12px; font-weight: 600; fill: #475569; }
+      .tiny { font-size: 11px; font-weight: 600; fill: #64748b; }
+      .code { font-size: 12px; font-weight: 700; fill: #334155; }
+      .statusDone { fill: #047857; font-weight: 800; }
+      .statusWarn { fill: #c2410c; font-weight: 800; }
+      .statusBad { fill: #b91c1c; font-weight: 800; }
+      .statusNext { fill: #1d4ed8; font-weight: 800; }
+      .line { stroke: #94a3b8; stroke-width: 2.2; fill: none; }
+      .lineDone { stroke: #10b981; stroke-width: 3; fill: none; }
+      .lineWarn { stroke: #f97316; stroke-width: 3; fill: none; stroke-dasharray: 8 7; }
+      .lineNext { stroke: #3b82f6; stroke-width: 2.6; fill: none; stroke-dasharray: 7 6; }
+      .lineBad { stroke: #ef4444; stroke-width: 3; fill: none; stroke-dasharray: 5 6; }
+    </style>
+    <marker id="arrowDone" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#10b981"/>
+    </marker>
+    <marker id="arrowWarn" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#f97316"/>
+    </marker>
+    <marker id="arrowNext" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrowBad" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#ef4444"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1680" height="1120"/>
+
+  <text class="text h1" x="48" y="56">Autopilot 当前执行链路：路线选择 → SPEC 树 → 规格文档</text>
+  <text class="text small" x="48" y="86">数据源：.kiro/blueprint-assets/jobs.json 最新 job，读取时间：2026-05-17 12:06:26 本地文件时间</text>
+  <text class="mono code" x="48" y="108">jobId = blueprint-job-4524fb32-bf8a-4f2d-8186-402cd3e6fe95 · stage = spec_tree · status = reviewing · error = null</text>
+
+  <rect class="panel" x="48" y="132" width="1584" height="116" rx="14"/>
+  <text class="text h2" x="76" y="169">日志结论</text>
+  <text class="text body" x="76" y="199">
+    <tspan>路线选择已完成，SPEC 树已生成并进入评审态；当前没有进入后端 spec_docs 执行。</tspan>
+  </text>
+  <text class="text body" x="76" y="225">
+    <tspan class="statusBad">卡点：</tspan>
+    <tspan>从 SPEC 树评审态触发 “确认 SPEC 树并生成规格文档” 这一跳没有落到 job events / artifacts。</tspan>
+  </text>
+  <text class="mono code" x="930" y="198">artifact types = intake, github_source, route_set, route_selection, spec_tree, agent_crew, role_timeline</text>
+  <text class="mono code" x="930" y="224">document artifacts = 0 / 108 expected · spec_docs events = 0</text>
+
+  <rect class="panel" x="48" y="288" width="1584" height="430" rx="18"/>
+  <text class="text h2" x="76" y="324">实际执行链路</text>
+  <text class="text small" x="76" y="350">绿色是日志中已有的事实；橙色是当前 review gate；红色是未发生的后端请求。</text>
+
+  <rect class="done" x="76" y="388" width="270" height="148" rx="14"/>
+  <text class="text h3" x="100" y="418">1. RouteSet 生成</text>
+  <text class="text small" x="100" y="448">stage: route_generation</text>
+  <text class="text body statusDone" x="100" y="476">完成</text>
+  <text class="text small" x="100" y="504">候选路线：4 条</text>
+  <text class="mono tiny" x="100" y="526">routeSetId: ...8ea5f30b...</text>
+
+  <path class="lineDone" d="M346 462 C382 462, 396 462, 432 462" marker-end="url(#arrowDone)"/>
+
+  <rect class="done" x="432" y="388" width="286" height="148" rx="14"/>
+  <text class="text h3" x="456" y="418">2. 选择路线</text>
+  <text class="text small" x="456" y="448">artifact: route_selection</text>
+  <text class="text body statusDone" x="456" y="476">完成</text>
+  <text class="text small" x="456" y="504">仓库优先的产品能力与场景分析路线</text>
+  <text class="mono tiny" x="456" y="526">routeId: ...8ea5f30b...:primary</text>
+
+  <path class="lineDone" d="M718 462 C754 462, 768 462, 804 462" marker-end="url(#arrowDone)"/>
+
+  <rect class="done" x="804" y="388" width="286" height="148" rx="14"/>
+  <text class="text h3" x="828" y="418">3. 生成 SPEC 树</text>
+  <text class="text small" x="828" y="448">stage: spec_tree</text>
+  <text class="text body statusDone" x="828" y="476">树已生成</text>
+  <text class="text small" x="828" y="504">36 节点 · 28 叶子 · version 1</text>
+  <text class="mono tiny" x="828" y="526">treeId: ...e8c99c70...</text>
+
+  <path class="lineWarn" d="M1090 462 C1128 462, 1142 462, 1180 462" marker-end="url(#arrowWarn)"/>
+
+  <rect class="current" x="1180" y="372" width="324" height="180" rx="14"/>
+  <text class="text h3" x="1204" y="404">4. SPEC 树评审门槛</text>
+  <text class="text small" x="1204" y="434">job.status: reviewing</text>
+  <text class="text body statusWarn" x="1204" y="462">当前所在位置</text>
+  <text class="text small" x="1204" y="490">UI 按钮：确认 SPEC 树并生成规格文档</text>
+  <text class="text small" x="1204" y="516">预期触发：forceAdvance() → spec_docs</text>
+  <text class="mono tiny" x="1204" y="538">timeline-confirm-advance</text>
+
+  <path class="lineBad" d="M1342 552 C1342 602, 1342 620, 1342 666" marker-end="url(#arrowBad)"/>
+
+  <rect class="blocked" x="1100" y="666" width="484" height="134" rx="14"/>
+  <text class="text h3" x="1124" y="698">未发生：POST /api/blueprint/jobs/:id/spec-documents</text>
+  <text class="text small" x="1124" y="728">最新 job.events 没有 spec_docs job.completed</text>
+  <text class="text small" x="1124" y="754">最新 artifacts 没有 requirements / design / tasks</text>
+  <text class="mono code" x="1124" y="780">当前文档数 = 0 / (36 nodes × 3 types = 108)</text>
+
+  <rect class="panel" x="48" y="748" width="980" height="176" rx="16"/>
+  <text class="text h2" x="76" y="786">最新事件尾部</text>
+  <text class="mono code" x="76" y="818">job.stage spec_tree running: Selected route ... and started SPEC tree derivation.</text>
+  <text class="mono code" x="76" y="844">job.completed spec_tree reviewing: SPEC tree draft generated and ready for the Deduction workbench.</text>
+  <text class="mono code" x="76" y="870">role.activated spec_tree: role-architecture-planner / role-runtime-executor</text>
+  <text class="mono code" x="76" y="896">role.review_started spec_tree: role-quality-auditor is reviewing for spec_tree.</text>
+  <text class="text small" x="76" y="918">后续没有 spec_docs started/completed 事件，所以界面上的“SPEC 文档进行中”不是 job store 已进入 spec_docs 的证据。</text>
+
+  <rect class="panel" x="48" y="948" width="1584" height="126" rx="16"/>
+  <text class="text h2" x="76" y="986">预期下一跳</text>
+  <rect class="next" x="76" y="1012" width="300" height="42" rx="10"/>
+  <text class="text body statusNext" x="100" y="1039">用户确认 / forceAdvance()</text>
+  <path class="lineNext" d="M376 1033 C408 1033, 420 1033, 452 1033" marker-end="url(#arrowNext)"/>
+  <rect class="next" x="452" y="1012" width="336" height="42" rx="10"/>
+  <text class="mono code" x="476" y="1039">POST /jobs/:id/spec-documents</text>
+  <path class="lineNext" d="M788 1033 C820 1033, 832 1033, 864 1033" marker-end="url(#arrowNext)"/>
+  <rect class="next" x="864" y="1012" width="336" height="42" rx="10"/>
+  <text class="text body statusNext" x="888" y="1039">nodeId 省略，目标为全部 36 节点</text>
+  <path class="lineNext" d="M1200 1033 C1232 1033, 1244 1033, 1276 1033" marker-end="url(#arrowNext)"/>
+  <rect class="next" x="1276" y="1012" width="300" height="42" rx="10"/>
+  <text class="text body statusNext" x="1300" y="1039">生成 108 份文档 artifact</text>
+
+  <rect class="panel-soft" x="48" y="742" width="1" height="1"/>
+  <rect class="muted" x="1100" y="828" width="484" height="96" rx="14"/>
+  <text class="text h3" x="1124" y="862">对照历史 job</text>
+  <text class="text small" x="1124" y="890">历史 spec_docs job 只生成 3 份文档且只覆盖 1 个节点，说明旧链路是单节点模式。</text>
+  <text class="text small" x="1124" y="914">当前代码已改成不传 nodeId，下一次真正触发后应走整树批量生成。</text>
+</svg>

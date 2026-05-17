@@ -21,6 +21,7 @@
 
 import type { AutopilotRailSubStage, AutopilotRightRailProps } from "./types";
 import type { AppLocale } from "@/lib/locale";
+import { deriveSpecDocumentTreeStats } from "@/lib/blueprint-spec-document-stats";
 
 /**
  * 单个大号数字指标。
@@ -125,6 +126,7 @@ function deriveSpecTree(
         (node) => !nodes.some((maybeChild) => maybeChild.parentId === node.id),
       ).length
     : 0;
+  const documentStats = deriveSpecDocumentTreeStats(props.job, specTree);
 
   return {
     title: zh ? "SPEC 树" : "Spec Tree",
@@ -142,8 +144,15 @@ function deriveSpecTree(
         value: dataReady ? leaves : "-",
       },
       {
-        label: zh ? "版本数" : "VERSIONS",
-        value: "-",
+        label: zh ? "文档数" : "DOCS",
+        value: dataReady
+          ? `${documentStats.generatedDocuments}/${documentStats.totalDocuments}`
+          : "-",
+        hint: dataReady
+          ? zh
+            ? `${documentStats.completeNodes} / ${documentStats.totalNodes} 节点完成`
+            : `${documentStats.completeNodes} / ${documentStats.totalNodes} nodes complete`
+          : undefined,
       },
     ],
     dataReady,

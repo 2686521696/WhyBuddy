@@ -116,6 +116,18 @@ function subStageIndex(stage: BlueprintGenerationStage): number {
 // ---------------------------------------------------------------------------
 
 describe("resolveRailSubStage (Spec 1 PBT)", () => {
+  it("maps backend spec_docs execution back into the SPEC tree rail node", () => {
+    const result = resolveRailSubStage({
+      currentStage: "fabric",
+      job: { stage: "spec_docs" } as unknown as BlueprintGenerationJob,
+      selection: null,
+      specTree: null,
+      agentCrew: null,
+    });
+
+    expect(result).toBe("spec_tree");
+  });
+
   // -------------------------------------------------------------------------
   // P1 — total function
   // **Validates: Requirement 2.1**

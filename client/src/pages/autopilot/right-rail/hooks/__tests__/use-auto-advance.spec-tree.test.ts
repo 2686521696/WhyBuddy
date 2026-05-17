@@ -142,6 +142,21 @@ describe("useAutoAdvance — spec_tree never auto-advances (Spec 5.1)", () => {
     expect(callMatches!.length).toBe(1);
   });
 
+  it("batch-generates documents for the whole SPEC tree instead of only the root node", async () => {
+    const source = await loadHookSource();
+    const forceAdvanceBody = extractForceAdvanceBody(source);
+
+    expect(forceAdvanceBody).not.toBeNull();
+
+    const specTreeGenerateRequest = forceAdvanceBody!.match(
+      /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?generateBlueprintSpecDocuments\(\s*jobId\s*,\s*\{([\s\S]*?)\}\s*\)/
+    );
+
+    expect(specTreeGenerateRequest).not.toBeNull();
+    expect(specTreeGenerateRequest![1]).toMatch(/types\s*:/);
+    expect(specTreeGenerateRequest![1]).not.toMatch(/\bnodeId\s*:/);
+  });
+
   // ─── 用例 5：spec_docs + completed → effect_preview 自动推进保持有效 ────────
 
   it("auto-advances spec_docs (completed) to effect_preview, proving the spec_tree manual contract does not block downstream auto-advance", async () => {

@@ -79,6 +79,59 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
   });
 
+  it("keeps backend spec_docs execution inside the SPEC tree node with per-node document counts", () => {
+    const specTree = {
+      id: "spec-tree-test",
+      version: 1,
+      nodes: [
+        {
+          id: "node-root",
+          title: "Root SPEC",
+          type: "root",
+          children: ["node-docs"],
+        },
+        {
+          id: "node-docs",
+          parentId: "node-root",
+          title: "Document node",
+          type: "spec_document",
+          children: [],
+        },
+      ],
+    } as unknown as BlueprintSpecTree;
+    const job = {
+      id: "job-test",
+      stage: "spec_docs",
+      status: "reviewing",
+      artifacts: [
+        {
+          type: "requirements",
+          payload: { id: "doc-req", nodeId: "node-root", type: "requirements" },
+        },
+        {
+          type: "design",
+          payload: { id: "doc-design", nodeId: "node-root", type: "design" },
+        },
+      ],
+    } as unknown as BlueprintGenerationJob;
+
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          job,
+          specTree,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
+    expect(markup).not.toContain('data-sub-stage-placeholder="spec_documents"');
+    expect(markup).toContain('data-testid="spec-tree-node-doc-status"');
+    expect(markup).toContain("2/3");
+    expect(markup).toContain("0/3");
+  });
+
   it("case 2: renders awaiting state when specTree is null", () => {
     const markup = renderToStaticMarkup(
       <AutopilotRightRail

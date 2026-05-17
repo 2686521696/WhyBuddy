@@ -21,9 +21,11 @@
 
 import type { FC } from "react";
 
+import SpecDocumentWorkbenchPanel from "@/pages/specs/SpecDocumentWorkbenchPanel";
 import SpecTreeWorkbenchPanel from "@/pages/specs/SpecTreeWorkbenchPanel";
 import type { AutopilotRightRailProps } from "@/pages/autopilot/right-rail/types";
 import type {
+  BlueprintSpecDocument,
   BlueprintSpecTree,
   BlueprintSpecTreeVersionSnapshot,
 } from "@shared/blueprint/contracts";
@@ -46,6 +48,9 @@ export type SpecTreePanelProps = Pick<
   onSpecTreeVersionsChange?: (
     versions: BlueprintSpecTreeVersionSnapshot[]
   ) => void;
+  showDocuments?: boolean;
+  initialDocuments?: BlueprintSpecDocument[];
+  onDocumentsChange?: (documents: BlueprintSpecDocument[]) => void;
 };
 
 /**
@@ -69,6 +74,9 @@ export const SpecTreePanel: FC<SpecTreePanelProps> = ({
   versions,
   onSpecTreeChange,
   onSpecTreeVersionsChange,
+  showDocuments = false,
+  initialDocuments,
+  onDocumentsChange,
 }) => {
   if (!specTree) {
     // 空态与 BlueprintProgressPanel 在 specTree === null 分支一致
@@ -77,14 +85,25 @@ export const SpecTreePanel: FC<SpecTreePanelProps> = ({
   }
 
   return (
-    <SpecTreeWorkbenchPanel
-      specTree={specTree}
-      selection={selection}
-      jobId={jobId || undefined}
-      versions={versions ?? undefined}
-      onSpecTreeChange={onSpecTreeChange}
-      onSpecTreeVersionsChange={onSpecTreeVersionsChange}
-    />
+    <>
+      <SpecTreeWorkbenchPanel
+        specTree={specTree}
+        selection={selection}
+        jobId={jobId || undefined}
+        versions={versions ?? undefined}
+        documents={initialDocuments}
+        onSpecTreeChange={onSpecTreeChange}
+        onSpecTreeVersionsChange={onSpecTreeVersionsChange}
+      />
+      {showDocuments ? (
+        <SpecDocumentWorkbenchPanel
+          specTree={specTree}
+          jobId={jobId || undefined}
+          initialDocuments={initialDocuments}
+          onDocumentsChange={onDocumentsChange}
+        />
+      ) : null}
+    </>
   );
 };
 

@@ -54,7 +54,7 @@ export function resolveRailSubStage(
     case "spec_tree":
       return "spec_tree";
     case "spec_docs":
-      return "spec_documents";
+      return "spec_tree";
     case "preview":
     case "effect_preview":
       return "effect_preview";
