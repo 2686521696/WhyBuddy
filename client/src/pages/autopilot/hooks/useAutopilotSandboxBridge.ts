@@ -38,7 +38,7 @@ import { useEffect, useRef } from "react";
 
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 import { useSandboxStore, type LogLine } from "@/lib/sandbox-store";
-import type { BlueprintEffectPreviewSnapshot } from "@shared/blueprint/contracts";
+import type { BlueprintEffectPreviewSnapshot } from "@/lib/blueprint-api";
 
 interface UseAutopilotSandboxBridgeArgs {
   /**

@@ -79,7 +79,7 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
   });
 
-  it("keeps backend spec_docs execution inside the SPEC tree node with per-node document counts", () => {
+  it("keeps backend spec_docs execution inside the SPEC tree node with per-node document counts (now via SpecTreeWorkbench)", () => {
     const specTree = {
       id: "spec-tree-test",
       version: 1,
@@ -127,9 +127,19 @@ describe("AutopilotRightRail streaming timeline", () => {
 
     expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
     expect(markup).not.toContain('data-sub-stage-placeholder="spec_documents"');
-    expect(markup).toContain('data-testid="spec-tree-node-doc-status"');
-    expect(markup).toContain("2/3");
-    expect(markup).toContain("0/3");
+    // autopilot-spec-tree-workbench (2026-05-17): spec_tree 卡片现在挂
+    // SpecTreeWorkbench，而不是裸的 spec-tree-node-doc-status chip。
+    expect(markup).toContain('data-testid="spec-tree-workbench"');
+    expect(markup).toContain('data-testid="spec-tree-workbench-cta-all"');
+    expect(markup).toContain('data-testid="spec-tree-workbench-cta-single"');
+    // 节点行通过 testid spec-tree-workbench-row 暴露,带 chip
+    expect(markup).toContain('data-testid="spec-tree-workbench-row"');
+    expect(markup).toContain('data-node-id="node-root"');
+    expect(markup).toContain('data-node-id="node-docs"');
+    // node-root 有 2 份文档（requirements + design）→ "2/3 reviewing"
+    expect(markup).toContain("2/3 reviewing");
+    // node-docs 无文档 → "未生成"
+    expect(markup).toContain("未生成");
   });
 
   it("case 2: renders awaiting state when specTree is null", () => {

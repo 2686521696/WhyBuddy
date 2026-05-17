@@ -122,9 +122,13 @@ export function deriveSpecTreeChip(
   // 按 type 折叠到 detail 里；后者覆盖前者，调用方按 createdAt 升序传入即可。
   for (const doc of docs) {
     const status: BlueprintSpecDocumentStatus = doc.status ?? "draft";
+    // 防御性兜底：从 job.artifacts.payload 派生而来的 BlueprintSpecDocument
+    // 可能裸字段（仅 id/nodeId/type），不含 provenance。该路径下 source 视为
+    // undefined（最后由 normalizeGenerationSource 折算成 "llm"）。
+    const generationSource = doc.provenance?.generationSource;
     detail[doc.type] = {
       status,
-      source: normalizeGenerationSource(doc.provenance.generationSource),
+      source: normalizeGenerationSource(generationSource),
     };
   }
 

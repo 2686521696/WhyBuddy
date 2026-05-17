@@ -84,7 +84,9 @@ export const SpecDocPreviewBlock: FC<SpecDocPreviewBlockProps> = ({
   }
 
   const status: BlueprintSpecDocumentStatus = document.status ?? "draft";
-  const source = document.provenance.generationSource ?? "llm";
+  // 防御性兜底：从 job.artifacts.payload 派生时 provenance 可能缺失,
+  // generationSource 视为默认 "llm"。
+  const source = document.provenance?.generationSource ?? "llm";
   // generationSource 可能是 "llm" / "llm_fallback" / "template"；UI 上把
   // "llm_fallback" 显示为 "fallback"，与 chip 上的 sourceTag 保持一致。
   const sourceLabel =

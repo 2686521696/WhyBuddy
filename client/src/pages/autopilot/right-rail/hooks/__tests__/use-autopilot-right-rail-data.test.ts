@@ -876,11 +876,10 @@ describe("shouldLoadField · Wave 3 (Spec 4 Task 4)", () => {
     }
   });
 
-  it("effectPreviews: 非合法 currentSubStage（spec_tree/agent_crew_fabric/spec_documents）且 jobStage=null 时返回 false", () => {
+  it("effectPreviews: 非合法 currentSubStage（spec_tree/agent_crew_fabric）且 jobStage=null 时返回 false", () => {
     for (const sub of [
       "agent_crew_fabric",
       "spec_tree",
-      "spec_documents",
     ] as const) {
       expect(
         shouldLoadField("effectPreviews", {
@@ -1250,7 +1249,7 @@ describe("shouldLoadField · Wave 4 (Spec 4 Task 5)", () => {
     }
   });
 
-  it("非 artifact_memory 的其它合法 currentSubStage（spec_tree / agent_crew_fabric / effect_preview / prompt_package / runtime_capability / engineering_handoff / spec_documents）且 jobStage=null 时返回 false", () => {
+  it("非 artifact_memory 的其它合法 currentSubStage（spec_tree / agent_crew_fabric / effect_preview / prompt_package / runtime_capability / engineering_handoff）且 jobStage=null 时返回 false", () => {
     for (const sub of [
       "spec_tree",
       "agent_crew_fabric",
@@ -1258,7 +1257,6 @@ describe("shouldLoadField · Wave 4 (Spec 4 Task 5)", () => {
       "prompt_package",
       "runtime_capability",
       "engineering_handoff",
-      "spec_documents",
     ] as const) {
       for (const field of WAVE_4_FIELDS) {
         expect(

@@ -30,7 +30,6 @@ import type { AutopilotRailSubStage, AutopilotRightRailProps } from "../types";
 const SUB_STAGES = [
   "agent_crew_fabric",
   "spec_tree",
-  "spec_documents",
   "effect_preview",
   "prompt_package",
   "runtime_capability",
@@ -165,18 +164,12 @@ describe("deriveSubStageSummary", () => {
     expect(result.metrics[2].hint).toBe("1 / 2 nodes complete");
   });
 
-  it("spec_documents: counts documents[] derived from specTree", () => {
-    // `BlueprintSpecTree` 契约目前不含 `documents`，派生函数内部做了局部窄化；这里
-    // 沿用同样的 cast 路径构造测试数据。
-    const specTree = {
-      documents: [{}, {}],
-    } as unknown as BlueprintSpecTree;
-
-    const props = makeProps({ specTree });
-    const result = deriveSubStageSummary("spec_documents", props, "zh-CN");
-
-    expect(result.dataReady).toBe(true);
-    expect(result.metrics[0].value).toBe(2); // documents
+  it("spec_documents 子阶段已并入 spec_tree（autopilot-spec-tree-workbench, 2026-05-17）", () => {
+    // 验证 RAIL_SUB_STAGE_ORDER 7 元素中已不含 spec_documents。这里通过类型
+    // 联合断言：将 "spec_documents" 字符串赋给 AutopilotRailSubStage 应当
+    // 在 TypeScript 层失败（运行时此用例只断言常量列表）。
+    const order: readonly AutopilotRailSubStage[] = SUB_STAGES;
+    expect(order).not.toContain("spec_documents" as never);
   });
 
   it("effect_preview: counts previews, latest version, and current job.stage", () => {

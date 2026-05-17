@@ -49,14 +49,14 @@ function makeDoc(
       jobId: "job-1",
       githubUrls: [],
       treeVersion: 1,
-      nodeType: "module",
+      nodeType: "route_step",
       nodeTitle: "node-1",
       nodeSummary: "summary",
       dependencies: [],
       outputs: [],
       generationSource,
     },
-  } as BlueprintSpecDocument;
+  } as unknown as BlueprintSpecDocument;
 }
 
 // ─── 用例 ─────────────────────────────────────────────────────────────────

@@ -40,14 +40,14 @@ function makeDoc(
       jobId: "job-1",
       githubUrls: [],
       treeVersion: 1,
-      nodeType: "module",
+      nodeType: "route_step",
       nodeTitle: "node-1",
       nodeSummary: "summary",
       dependencies: [],
       outputs: [],
       generationSource: source,
     },
-  } as BlueprintSpecDocument;
+  } as unknown as BlueprintSpecDocument;
 }
 
 describe("SpecDocPreviewBlock", () => {

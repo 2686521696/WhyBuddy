@@ -44,15 +44,20 @@ export type AutopilotTimelineStage =
   | "fabric";
 
 /**
- * `fabric` stage 内部的 8 个子工作台枚举。
+ * `fabric` stage 内部的 7 个子工作台枚举。
  *
  * 仅当 `currentStage === "fabric"` 时才会出现；顺序由 `RAIL_SUB_STAGE_ORDER` 冻结，供 UI
  * 渲染与 PBT 共享。
+ *
+ * autopilot-spec-tree-workbench 重构（2026-05-17）：
+ * - 删除 `"spec_documents"` 子阶段。spec_tree 现在承载 SpecTreeWorkbench
+ *   组件，把"按节点生成 requirements / design / tasks"语义合并进同一卡片。
+ * - 后端 `BlueprintGenerationStage.spec_docs` 仍然存在，由
+ *   `resolveRailSubStage` 映射到 `"spec_tree"` 子阶段。
  */
 export type AutopilotRailSubStage =
   | "agent_crew_fabric"
   | "spec_tree"
-  | "spec_documents"
   | "effect_preview"
   | "prompt_package"
   | "runtime_capability"
@@ -60,7 +65,7 @@ export type AutopilotRailSubStage =
   | "artifact_memory";
 
 /**
- * 8 个 `AutopilotRailSubStage` 的声明顺序（只读）。
+ * 7 个 `AutopilotRailSubStage` 的声明顺序（只读）。
  *
  * 任何「子阶段是否单调推进」「是否越过某个子阶段」的属性判定都必须以本常量的 index 为准，
  * 禁止在其他文件中复制或派生一份平行的顺序源。
@@ -68,7 +73,6 @@ export type AutopilotRailSubStage =
 export const RAIL_SUB_STAGE_ORDER: readonly AutopilotRailSubStage[] = [
   "agent_crew_fabric",
   "spec_tree",
-  "spec_documents",
   "effect_preview",
   "prompt_package",
   "runtime_capability",
@@ -117,6 +121,17 @@ export interface AutopilotRightRailProps {
    * 最终感知 stage 变化，只是不会"瞬间切换"。
    */
   onStageAdvanced?: () => void;
+  /**
+   * 可选回调：SpecTreeWorkbench 调用 `POST /api/blueprint/jobs/:jobId/spec-documents`
+   * 成功后通知父组件，让 latestJob / specTree / specDocuments 等状态用新返回值更新。
+   *
+   * autopilot-spec-tree-workbench（2026-05-17）：与 onStageAdvanced 配合使用。
+   * Workbench 内部不写 store、不发 socket，只调一次 API；副作用上抛由父组件
+   * `setLatestJob(response.job)` 等承担。
+   */
+  onSpecDocumentsGenerated?: (
+    response: import("@shared/blueprint/contracts").BlueprintSpecDocumentsResponse
+  ) => void;
 }
 
 /**

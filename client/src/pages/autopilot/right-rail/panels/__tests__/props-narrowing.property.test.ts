@@ -144,7 +144,6 @@ const arbProps: fc.Arbitrary<AutopilotRightRailProps> = fc
       fc.constantFrom(
         "agent_crew_fabric",
         "spec_tree",
-        "spec_documents",
         "effect_preview",
         "prompt_package",
         "runtime_capability",

@@ -9,22 +9,27 @@
  * 数据层不变:仍消费 `AutopilotRightRailProps`,仍用 `resolveRailSubStage` 判定活跃子阶段。
  */
 
-import { useEffect, useRef, type FC } from "react";
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
 
 import type { AppLocale } from "@/lib/locale";
 import { SPECS_PATH } from "@/components/navigation-config";
 import type {
   BlueprintGenerationJob,
+  BlueprintSpecDocumentsResponse,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
+import {
+  generateBlueprintSpecDocuments,
+  type ApiRequestError,
+} from "@/lib/blueprint-api";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
-import { deriveSpecDocumentTreeStats } from "@/lib/blueprint-spec-document-stats";
 
 import { AgentReasoningSubTimeline } from "./AgentReasoningSubTimeline";
 import { CapabilityRail } from "./CapabilityRail";
 import { FleetActivationLog } from "./FleetActivationLog";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
 import { RoleStatusStrip } from "./RoleStatusStrip";
+import { SpecTreeWorkbench } from "./spec-tree-workbench/SpecTreeWorkbench";
 import { deriveSubStageSummary } from "./sub-stage-summary";
 import { TimelineNode, type TimelineNodeStatus } from "./timeline";
 import {
@@ -50,7 +55,11 @@ function resolveAriaLabel(locale: AppLocale): string {
 
 /**
  * 活跃节点的默认内容:显示 API path + 摘要文案。
- * 如果是 spec_tree 阶段且数据就绪,额外显示树节点列表 + "确认并继续"按钮。
+ *
+ * autopilot-spec-tree-workbench（2026-05-17）：spec_tree 阶段不再渲染裸的
+ * "树节点 + N/3 chip" 列表，改为挂载 <SpecTreeWorkbench>，由它承载顶部
+ * 双 CTA、节点行展开预览、ephemeral observing 桥接。底部"确认并继续"按钮
+ * 在 spec_tree 阶段被隐藏（CTA 由 Workbench 自己提供）。
  */
 function ActiveNodeContent({
   summary,
@@ -61,6 +70,10 @@ function ActiveNodeContent({
   advancing,
   specTree,
   job,
+  jobId,
+  generating,
+  onGenerateAll,
+  onGenerateNode,
 }: {
   summary: { apiPath: string; summary: string; dataReady: boolean };
   locale: AppLocale;
@@ -70,12 +83,14 @@ function ActiveNodeContent({
   advancing?: boolean;
   specTree?: BlueprintSpecTree | null;
   job?: BlueprintGenerationJob | null;
+  jobId: string;
+  generating: "all" | "single" | null;
+  onGenerateAll: () => void;
+  onGenerateNode: (nodeId: string) => void;
 }) {
   const isZh = locale === "zh-CN";
-  const documentStats =
-    subStage === "spec_tree" && specTree
-      ? deriveSpecDocumentTreeStats(job, specTree)
-      : null;
+  const isSpecTreeStage = subStage === "spec_tree";
+
   return (
     <div className="space-y-3">
       <div className="font-mono text-[10px] text-slate-400">
@@ -85,48 +100,17 @@ function ActiveNodeContent({
         {summary.summary}
       </div>
 
-      {/* spec_tree 阶段:展示树节点列表 */}
-      {subStage === "spec_tree" && specTree && specTree.nodes.length > 0 && (
-        <div className="space-y-1.5 rounded-lg border border-slate-100 bg-slate-50 p-3">
-          <div className="text-[10px] font-bold uppercase text-slate-400">
-            {specTree.nodes.length} {isZh ? "个节点" : "nodes"} · v{specTree.version}
-          </div>
-          <div className="max-h-[240px] space-y-1 overflow-y-auto">
-            {specTree.nodes.slice(0, 15).map((node, i) => {
-              const nodeDocumentStats = documentStats?.byNodeId.get(node.id);
-
-              return (
-                <div
-                  key={node.id}
-                  className="flex items-center gap-2 rounded px-2 py-1 text-xs"
-                  data-doc-lifecycle={nodeDocumentStats?.lifecycle ?? "empty"}
-                >
-                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white text-[9px] font-bold text-slate-500 shadow-sm">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 truncate font-medium text-slate-700">
-                    {node.title}
-                  </span>
-                  <span
-                    className="ml-auto shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500 shadow-sm"
-                    data-testid="spec-tree-node-doc-status"
-                  >
-                    {nodeDocumentStats?.generated ?? 0}/
-                    {nodeDocumentStats?.total ?? 3}
-                  </span>
-                  <span className="shrink-0 text-[9px] text-slate-400">
-                    {node.type.replace(/_/g, " ")}
-                  </span>
-                </div>
-              );
-            })}
-            {specTree.nodes.length > 15 && (
-              <div className="px-2 text-[10px] text-slate-400">
-                +{specTree.nodes.length - 15} {isZh ? "更多" : "more"}...
-              </div>
-            )}
-          </div>
-        </div>
+      {/* spec_tree 阶段:挂载 SpecTreeWorkbench(顶部双 CTA + 节点行展开式预览) */}
+      {isSpecTreeStage && (
+        <SpecTreeWorkbench
+          jobId={jobId}
+          job={job ?? null}
+          specTree={specTree ?? null}
+          locale={locale}
+          generating={generating}
+          onGenerateAll={onGenerateAll}
+          onGenerateNode={onGenerateNode}
+        />
       )}
 
       {!summary.dataReady && (
@@ -139,8 +123,13 @@ function ActiveNodeContent({
       {/* autopilot-agent-reasoning-stream：Agent 推理子时间线（在 active 节点内部展开） */}
       <AgentReasoningSubTimeline locale={locale} />
 
-      {/* 数据就绪时显示"确认并继续"按钮 */}
-      {dataReady && onConfirmAdvance && (
+      {/*
+        数据就绪时显示"确认并继续"按钮。
+        spec_tree 阶段下隐藏：CTA 由 SpecTreeWorkbench 顶部双按钮承担，
+        当用户点击"生成整棵树文档"完成后由父组件 onSpecDocumentsGenerated
+        回调推动后端 stage 前进，再由 useAutoAdvance 推到 effect_preview。
+      */}
+      {dataReady && onConfirmAdvance && !isSpecTreeStage && (
         <button
           type="button"
           onClick={(e) => {
@@ -156,9 +145,7 @@ function ActiveNodeContent({
         >
           {advancing
             ? (isZh ? "推进中..." : "Advancing...")
-            : subStage === "spec_tree"
-              ? (isZh ? "确认 SPEC 树并生成规格文档" : "Confirm and generate documents")
-              : (isZh ? "继续下一步" : "Continue")}
+            : (isZh ? "继续下一步" : "Continue")}
         </button>
       )}
     </div>
@@ -200,6 +187,48 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       activeRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeSubStage]);
+
+  // autopilot-spec-tree-workbench（2026-05-17）：spec_tree 子阶段的双 CTA
+  // (生成整棵树 / 生成当前节点) 由 SpecTreeWorkbench 渲染，但 in-flight 锁
+  // 与 API 调用由这里集中托管：组件内部不写 store、不发 socket，调用
+  // generateBlueprintSpecDocuments 后把响应通过 onSpecDocumentsGenerated
+  // 上抛给父组件 (AutopilotRoutePage) 让它 setLatestJob 等。
+  const [specDocsGenerating, setSpecDocsGenerating] = useState<
+    "all" | "single" | null
+  >(null);
+  const [specDocsError, setSpecDocsError] = useState<ApiRequestError | null>(
+    null
+  );
+
+  const triggerSpecDocsGeneration = useCallback(
+    async (scope: "all" | "single", nodeId?: string) => {
+      if (!props.jobId || specDocsGenerating !== null) return;
+      setSpecDocsGenerating(scope);
+      setSpecDocsError(null);
+      const result = await generateBlueprintSpecDocuments(
+        props.jobId,
+        scope === "single" && nodeId !== undefined ? { nodeId } : {}
+      );
+      setSpecDocsGenerating(null);
+      if (result.ok) {
+        props.onSpecDocumentsGenerated?.(result.data);
+      } else {
+        setSpecDocsError(result.error);
+      }
+    },
+    [props.jobId, specDocsGenerating, props.onSpecDocumentsGenerated]
+  );
+
+  const handleGenerateAllSpecDocs = useCallback(() => {
+    void triggerSpecDocsGeneration("all");
+  }, [triggerSpecDocsGeneration]);
+
+  const handleGenerateNodeSpecDocs = useCallback(
+    (nodeId: string) => {
+      void triggerSpecDocsGeneration("single", nodeId);
+    },
+    [triggerSpecDocsGeneration]
+  );
 
   // 非 fabric 阶段不渲染时间线
   if (currentStage !== "fabric") {
@@ -278,6 +307,10 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                     advancing={false}
                     specTree={props.specTree}
                     job={props.job}
+                    jobId={props.jobId}
+                    generating={specDocsGenerating}
+                    onGenerateAll={handleGenerateAllSpecDocs}
+                    onGenerateNode={handleGenerateNodeSpecDocs}
                   />
                 )}
               </TimelineNode>

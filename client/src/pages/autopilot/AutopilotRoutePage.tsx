@@ -752,6 +752,21 @@ function AutopilotMissionHud({
                   "Input, clarification, routes, and role events roll up here."
                 ))
         )}
+        {/*
+          autopilot-spec-tree-workbench（2026-05-17）：当后端 stage 是
+          spec_docs 时,前端把 spec_docs 投影到 spec_tree 卡片（resolveRailSubStage
+          已做映射）；HUD 摘要在此阶段追加一行说明,与"spec_tree 卡片高亮但
+          stage 写着 spec_docs"的视觉差消歧。
+        */}
+        {job?.stage === "spec_docs" ? (
+          <span className="block text-[10px] font-semibold text-white/50">
+            {t(
+              locale,
+              "正在为整棵 SPEC 树生成文档...",
+              "Generating documents for the full SPEC tree..."
+            )}
+          </span>
+        ) : null}
       </p>
 
       {/*
@@ -1197,6 +1212,7 @@ function AutopilotWorkflowRail({
   onRightRailCollapsedChange,
   onForceAdvance,
   autoAdvancing,
+  onSpecDocumentsGenerated,
 }: {
   locale: AppLocale;
   targetText: string;
@@ -1286,6 +1302,15 @@ function AutopilotWorkflowRail({
   onRightRailCollapsedChange: (collapsed: boolean) => void;
   onForceAdvance: () => void;
   autoAdvancing: boolean;
+  /**
+   * autopilot-spec-tree-workbench（2026-05-17）：
+   * SpecTreeWorkbench 在 spec_tree 卡片内部成功调
+   * generateBlueprintSpecDocuments 后,通过此回调把 BlueprintSpecDocumentsResponse
+   * 上抬到 AutopilotRoutePage 主体让 setLatestJob 等更新本地 state。
+   */
+  onSpecDocumentsGenerated?: (
+    response: import("@shared/blueprint/contracts").BlueprintSpecDocumentsResponse
+  ) => void;
 }) {
   const primaryRoute =
     routeSet?.routes.find(route => route.id === routeSet.primaryRouteId) ??
@@ -1551,6 +1576,20 @@ function AutopilotWorkflowRail({
               locale={locale}
               onSubStageChange={subStageContext.setPinnedSubStage}
               onStageAdvanced={onForceAdvance}
+              onSpecDocumentsGenerated={response => {
+                // autopilot-spec-tree-workbench（2026-05-17）：
+                // SpecTreeWorkbench 在卡片内部调
+                // generateBlueprintSpecDocuments 完成后通过此回调把响应抬到
+                // AutopilotRoutePage 主体（onSpecDocumentsGenerated prop），
+                // 由它调用 setLatestJob(response.job) 用新返回值更新；右栏
+                // 数据 hook (rightRailView.job) 在 setLatestJob 后会感知到
+                // 新的 job 状态并重算 specTree / specDocuments 派生。
+                onSpecDocumentsGenerated?.(response);
+                // 触发右栏数据层重新拉一次 W1 snapshot，让 stage 推进
+                // (例如 spec_docs → effect_preview) 通过 useAutoAdvance
+                // 立即生效。
+                onForceAdvance();
+              }}
             />
           </RightRailSubStageContext.Provider>
         );
@@ -2761,6 +2800,13 @@ export default function AutopilotRoutePage() {
             onRightRailCollapsedChange={setRightRailCollapsed}
             onForceAdvance={autoAdvance.forceAdvance}
             autoAdvancing={autoAdvance.advancing}
+            onSpecDocumentsGenerated={response => {
+              // autopilot-spec-tree-workbench（2026-05-17）：把 SpecTreeWorkbench
+              // 从右栏发出的响应回写到 latestJob，让 rightRailView 的派生层
+              // 重算 specTree / specDocuments；同名 onForceAdvance 已在
+              // AutopilotWorkflowRail 内部触发，这里只负责承接 setLatestJob。
+              setLatestJob(response.job);
+            }}
           />
 
         </div>

@@ -142,8 +142,8 @@ describe("use-right-rail-sub-stage-state / Task 2 — URL pure helpers", () => {
     });
 
     it("is idempotent: applying same value twice yields same result", () => {
-      const first = applySubToSearch("?foo=bar", "spec_documents");
-      const second = applySubToSearch(`?${first}`, "spec_documents");
+      const first = applySubToSearch("?foo=bar", "spec_tree");
+      const second = applySubToSearch(`?${first}`, "spec_tree");
       expect(second).toBe(first);
     });
   });

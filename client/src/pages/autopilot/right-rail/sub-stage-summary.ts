@@ -383,8 +383,6 @@ export function deriveSubStageSummary(
       return deriveAgentCrewFabric(props, locale);
     case "spec_tree":
       return deriveSpecTree(props, locale);
-    case "spec_documents":
-      return deriveSpecDocuments(props, locale);
     case "effect_preview":
       return deriveEffectPreview(props, locale);
     case "prompt_package":

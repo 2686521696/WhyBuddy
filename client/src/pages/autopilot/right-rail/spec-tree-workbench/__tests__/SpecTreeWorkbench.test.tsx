@@ -50,7 +50,7 @@ import { SpecTreeWorkbench } from "../SpecTreeWorkbench";
 function makeNode(
   id: string,
   title: string,
-  type: BlueprintSpecTreeNode["type"] = "module"
+  type: BlueprintSpecTreeNode["type"] = "route_step"
 ): BlueprintSpecTreeNode {
   return {
     id,
@@ -108,14 +108,14 @@ function makeDoc(
       jobId: "job-1",
       githubUrls: [],
       treeVersion: 1,
-      nodeType: "module",
+      nodeType: "route_step",
       nodeTitle: nodeId,
       nodeSummary: "summary",
       dependencies: [],
       outputs: [],
       generationSource: "llm",
     },
-  } as BlueprintSpecDocument;
+  } as unknown as BlueprintSpecDocument;
 }
 
 const fakeJob = {
@@ -305,7 +305,7 @@ describe("SpecTreeWorkbench (SSR contract)", () => {
         jobId: "job-1",
         githubUrls: [],
         treeVersion: 1,
-        nodeType: "module",
+        nodeType: "route_step",
         nodeTitle: "A",
         nodeSummary: "A",
         dependencies: [],
