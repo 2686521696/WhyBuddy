@@ -1,0 +1,7 @@
+{
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "createdAt": "2026-05-17",
+  "owner": "autopilot",
+  "summary": "把 /autopilot 右栏阶段卡片内部的『主体 UI + 子时间线』二分结构升级为 MiroFish 流式卡片：阶段卡顶部保留驻留 UI（输入框 / 澄清面板 / SpecTreeWorkbench / 路线列表），其下方变为统一的 MiroFishCardStream，按时间序追加 reasoning / 节点完成 / 路线决策 / 能力调用 / 产物创建 / 系统提示等卡片。"
+}
