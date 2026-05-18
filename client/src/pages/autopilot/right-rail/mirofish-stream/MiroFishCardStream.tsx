@@ -289,7 +289,7 @@ export const MiroFishCardStream: FC<MiroFishCardStreamProps> = ({
   return (
     <div
       data-testid="mirofish-card-stream"
-      className="mt-3 flex max-h-[420px] flex-col gap-2 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-3"
+      className="mt-3 flex max-h-[420px] flex-col gap-2 overflow-y-auto overflow-x-hidden rounded-lg border border-slate-100 bg-slate-50 p-3"
     >
       {groupedEntries.map((grouped, idx) => {
         if (grouped.type === "collapsed_group") {

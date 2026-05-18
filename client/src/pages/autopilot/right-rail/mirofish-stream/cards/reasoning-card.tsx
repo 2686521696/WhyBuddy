@@ -114,7 +114,7 @@ export const ReasoningCard: FC<ReasoningCardProps> = ({
 
       {/* 推理文本 */}
       {(text || streamingTokens) && (
-        <div className="font-mono text-[11px] text-slate-700 leading-relaxed">
+        <div className="font-mono text-[11px] text-slate-700 leading-relaxed break-all">
           {text}
           {/* 流式 token 追加区域 — 通过 ref 直接操作 DOM 避免 re-render */}
           {streamingTokens !== undefined && (

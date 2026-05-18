@@ -480,7 +480,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       data-testid="autopilot-right-rail"
       data-autopilot-stage={currentStage}
       data-autopilot-sub-stage={activeSubStage ?? ""}
-      className="px-4 py-5"
+      className="px-4 py-5 overflow-x-hidden"
     >
       {/* fabric 阶段的 placeholder 保留(供测试断言) */}
       <div data-stage-placeholder="fabric" data-active="true" className="hidden" />
