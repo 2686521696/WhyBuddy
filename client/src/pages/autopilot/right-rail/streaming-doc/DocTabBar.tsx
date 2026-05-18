@@ -107,6 +107,20 @@ export const DocTabBar: FC<DocTabBarProps> = ({
       data-testid="streaming-doc-tabs"
       role="tablist"
       aria-label="document tabs"
+      style={{
+        // 硬约束 DocTabBar 不超过父容器宽度。该容器是 flex flex-col 父容器
+        // 的 cross-axis stretch 子项，应当等于父级宽度，但当内部有大量
+        // whitespace-nowrap 子元素时，flex item 默认 min-width: auto = min-content
+        // 会让本元素膨胀到所有 tab 总宽度（曾达到 15000+px）。
+        // inline width / maxWidth 强制锁定到 100%，配合 overflow-x: auto
+        // 让多 tab 转为水平滚动而不是撑大父容器。
+        // 关键：本元素作为 flex item 必须 min-width: 0，否则 min-width: auto
+        // 会让本身退化为 min-content；flex-shrink 保持默认 1 让它跟随父级宽度。
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+      }}
     >
       {documents.map((doc) => {
         const isActive = doc.id === activeDocId;
@@ -121,8 +135,19 @@ export const DocTabBar: FC<DocTabBarProps> = ({
             data-testid={`streaming-doc-tab-${doc.id}`}
             data-active={isActive ? "true" : "false"}
             data-streaming={doc.isStreaming ? "true" : "false"}
+            style={{
+              // 每个 tab 也需要 maxWidth 防止单个长标题撑大滚动条。
+              maxWidth: "180px",
+              flexShrink: 0,
+            }}
           >
-            <span>{doc.title}</span>
+            <span
+              className="overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{ maxWidth: "160px", display: "inline-block" }}
+              title={doc.title}
+            >
+              {doc.title}
+            </span>
             {doc.isStreaming ? (
               <span
                 className={STREAM_DOT_CLASS}
