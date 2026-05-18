@@ -4659,7 +4659,10 @@ describe("blueprint specs route", () => {
 
   function isSpecDocumentsCall(messages: unknown): boolean {
     const text = JSON.stringify(messages);
-    return /SPEC Document|SPEC 文档/i.test(text);
+    // 精确匹配 spec-documents/prompt.ts 的 system message 签名，
+    // 避免误命中 spec_tree prompt 中 type 枚举里的 "spec_document" 或
+    // effect-preview prompt 中的 "SPEC Documents summaries" 等字样。
+    return /\/autopilot SPEC (Document|文档) generator|\/autopilot SPEC 文档生成器/i.test(text);
   }
 
   function makeSpecDocumentsLlmPayload(): Record<string, unknown> {
