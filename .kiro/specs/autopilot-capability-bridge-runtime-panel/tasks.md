@@ -49,8 +49,8 @@
     - 最大高度 240px，overflow-y-auto
     - _需求: 1.1, 2.1_
 
-- [ ] 5. 集成到 CapabilityRail
-  - [~] 5.1 增强 `client/src/components/right-rail/CapabilityRail.tsx`
+- [x] 5. 集成到 CapabilityRail
+  - [x] 5.1 增强 `client/src/components/right-rail/CapabilityRail.tsx`
     - 在现有内容下方插入 CapabilityBridgePanel
     - 无调用数据时不渲染面板
     - _需求: 1.1_

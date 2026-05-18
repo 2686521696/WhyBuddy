@@ -15,6 +15,10 @@
  * - 由 `capability.invoked` / `capability.completed` / `capability.failed`
  *   socket 事件填充，键为 capabilityId（如 `"role-system-architecture"`、
  *   `"docker-analysis-sandbox"` 等）。
+ *
+ * autopilot-capability-bridge-runtime-panel — 集成 CapabilityBridgePanel：
+ * - 在现有能力状态徽章下方渲染 Bridge 运行时面板
+ * - 面板内部调用 useCapabilityBridgeState()，无调用数据时返回 null
  */
 
 import type { FC } from "react";
@@ -23,6 +27,10 @@ import {
   useBlueprintRealtimeStore,
   type CapabilityStatus,
 } from "@/lib/blueprint-realtime-store";
+import type { AppLocale } from "@/lib/locale";
+import { useAppStore } from "@/lib/store";
+
+import { CapabilityBridgePanel } from "./capability-panel/CapabilityBridgePanel";
 
 // ---------------------------------------------------------------------------
 // 状态 → 样式映射
@@ -66,11 +74,13 @@ function statusToClass(status: CapabilityStatus): string {
  *    并通过 `truncate max-w-[160px]` 防止长 id 撑破布局。
  * 5. 排序按 capabilityId 字母序稳定（`localeCompare`），保证 DOM 顺序与
  *    渲染前后一致，便于回归断言。
+ * 6. 在状态徽章下方渲染 CapabilityBridgePanel，面板内部无调用数据时返回 null。
  */
 export const CapabilityRail: FC = () => {
   const capabilityStatuses = useBlueprintRealtimeStore(
     (s) => s.capabilityStatuses
   );
+  const locale = useAppStore((s) => s.locale) as AppLocale;
 
   // 防御性兜底：与 RoleStatusStrip 保持一致。store 初始 state 中
   // `capabilityStatuses` 即为 `{}`，正常路径下不会是 undefined / null；
@@ -90,26 +100,27 @@ export const CapabilityRail: FC = () => {
   const sorted = [...entries].sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
-    <div
-      data-testid="capability-rail"
-      className="flex flex-wrap gap-1.5"
-    >
-      {sorted.map(([capabilityId, status]) => (
-        <span
-          key={capabilityId}
-          data-capability-id={capabilityId}
-          data-capability-status={status}
-          className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${statusToClass(
-            status
-          )}`}
-        >
+    <div data-testid="capability-rail" className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {sorted.map(([capabilityId, status]) => (
           <span
-            className="w-1.5 h-1.5 rounded-full bg-current opacity-70"
-            aria-hidden="true"
-          />
-          <span className="truncate max-w-[160px]">{capabilityId}</span>
-        </span>
-      ))}
+            key={capabilityId}
+            data-capability-id={capabilityId}
+            data-capability-status={status}
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${statusToClass(
+              status
+            )}`}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-current opacity-70"
+              aria-hidden="true"
+            />
+            <span className="truncate max-w-[160px]">{capabilityId}</span>
+          </span>
+        ))}
+      </div>
+      {/* autopilot-capability-bridge-runtime-panel：Bridge 运行时面板 */}
+      <CapabilityBridgePanel locale={locale} />
     </div>
   );
 };
