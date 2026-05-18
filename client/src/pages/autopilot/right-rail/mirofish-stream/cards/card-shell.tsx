@@ -20,6 +20,16 @@ import type { FC, ReactNode } from "react";
 
 import type { MiroFishStreamTone } from "../mirofish-stream-types";
 
+/**
+ * 卡片外壳变体类型。
+ *
+ * - `default`：标准圆角边框内边距（现有样式）
+ * - `compact`：更小垂直内边距（py-1）
+ * - `minimal`：无边框无背景，仅渲染内容
+ * - `glow`：标准样式 + 微弱发光 box-shadow
+ */
+export type CardShellVariant = "default" | "compact" | "minimal" | "glow";
+
 const TONE_CARD_CLASS: Record<MiroFishStreamTone, string> = {
   neutral: "bg-white border-slate-200",
   info: "bg-sky-50 border-sky-200",
@@ -34,6 +44,21 @@ const TONE_LABEL_CLASS: Record<MiroFishStreamTone, string> = {
   success: "text-emerald-700",
   warning: "text-amber-800",
   danger: "text-red-700",
+};
+
+/**
+ * 各变体对应的容器样式类。
+ *
+ * - `default`：标准圆角边框 + 内边距
+ * - `compact`：与 default 相同但垂直内边距更小（py-1）
+ * - `minimal`：无边框、无背景、无内边距
+ * - `glow`：与 default 相同 + 微弱发光阴影
+ */
+const VARIANT_CLASS: Record<CardShellVariant, string> = {
+  default: "rounded-md border px-2.5 py-1.5",
+  compact: "rounded-md border px-2.5 py-1",
+  minimal: "",
+  glow: "rounded-md border px-2.5 py-1.5 shadow-[0_0_8px_rgba(99,102,241,0.15)]",
 };
 
 /**
@@ -53,6 +78,11 @@ export interface MiroFishCardShellProps {
   label: string;
   tone: MiroFishStreamTone;
   timestamp: string;
+  /**
+   * 外壳变体，控制容器的边框、内边距与阴影样式。
+   * @default 'default'
+   */
+  variant?: CardShellVariant;
   /** 主体行 1：核心内容，single-line truncate。 */
   primaryRow?: ReactNode;
   /** 主体行 2：补充摘要，line-clamp-2。 */
@@ -68,19 +98,24 @@ export const MiroFishCardShell: FC<MiroFishCardShellProps> = ({
   label,
   tone,
   timestamp,
+  variant = "default",
   primaryRow,
   secondaryRow,
   testid,
   dataAttrs,
 }) => {
+  // minimal 变体不应用 tone 背景/边框色
+  const toneClass = variant === "minimal" ? "" : TONE_CARD_CLASS[tone];
+  const variantClass = VARIANT_CLASS[variant];
+
   return (
     <div
       data-testid={testid ?? "mirofish-card"}
       data-tone={tone}
+      data-variant={variant}
       {...(dataAttrs ?? {})}
       className={
-        "rounded-md border px-2.5 py-1.5 transition-opacity duration-200 " +
-        TONE_CARD_CLASS[tone]
+        `${variantClass} transition-opacity duration-200 ${toneClass}`.trim()
       }
     >
       <div className="flex items-center gap-1.5 text-[10px]">

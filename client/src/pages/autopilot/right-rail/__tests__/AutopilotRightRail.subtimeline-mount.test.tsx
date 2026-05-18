@@ -162,10 +162,15 @@ describe("AutopilotRightRail subtimeline mount (source-level contract)", () => {
       /if\s*\(\s*currentStage\s*!==\s*"fabric"\s*\)\s*\{[\s\S]*?return\s*\(/
     );
 
-    // 关键事实 2：active 卡片内容仅在 status === "active" 时挂载，
-    // 该分支同时是 <AgentReasoningSubTimeline /> 的唯一 JSX 引用所在地。
+    // 关键事实 2：active 卡片内容仅在 activeSubStage !== undefined 时挂载，
+    // 该分支同时是 <ActiveNodeContent /> 的唯一 JSX 引用所在地。
+    //
+    // autopilot-streaming-doc-renderer Task 6.1（2026-05-18）：
+    // StageContent 现在通过 `activeStageKey === "spec_documents" ? <StreamingDocRenderer /> : (activeSubStage !== undefined && <ActiveNodeContent />)`
+    // 的三元分支选择渲染。`<ActiveNodeContent />` 仍然只出现在 `activeSubStage !== undefined`
+    // 这一臂中，但它现在嵌套在 ternary `:` 分支里，因此正则不再要求紧跟 `}`。
     expect(source).toMatch(
-      /\{\s*status\s*===\s*"active"\s*&&\s*\(\s*\n[\s\S]*?<ActiveNodeContent[\s\S]*?\)\s*\}/
+      /activeSubStage\s*!==\s*undefined\s*&&\s*\(\s*\n[\s\S]*?<ActiveNodeContent[\s\S]*?\)\s*\)/
     );
 
     // 关键事实 3：<AgentReasoningSubTimeline /> 的 JSX 引用恰好出现一次，

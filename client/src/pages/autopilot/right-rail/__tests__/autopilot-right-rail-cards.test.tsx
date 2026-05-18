@@ -1,13 +1,13 @@
 /**
- * Autopilot 驾驶舱右栏 — 流式时间线布局单元测试
+ * Autopilot 驾驶舱右栏 — 阶段独占视口布局单元测试
  *
- * 对应 spec：`.kiro/specs/autopilot-fabric-streaming-timeline/`
+ * 对应 spec：`.kiro/specs/autopilot-workbench-stage-rhythm/`
  *
  * 覆盖 4 个 case:
- * - case 1: activeSubStage="spec_tree" + 数据就绪,断言 completed + active 节点共存
- * - case 2: activeSubStage="spec_tree" + specTree=null,断言活跃节点展示等待状态
- * - case 3: activeSubStage="agent_crew_fabric",断言未来子阶段不渲染 placeholder
- * - case 4: 时间线节点结构正确
+ * - case 1: activeSubStage="spec_tree" + 数据就绪,断言 StageViewport 渲染 spec_tree 阶段
+ * - case 2: activeSubStage="spec_tree" + specTree=null,断言活跃阶段展示等待状态
+ * - case 3: activeSubStage="agent_crew_fabric",断言仅渲染当前阶段 placeholder
+ * - case 4: StageViewport 结构正确（header + content + cta）
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -69,9 +69,9 @@ describe("AutopilotRightRail streaming timeline", () => {
       />,
     );
 
-    // agent_crew_fabric 作为已完成节点
-    expect(markup).toContain('data-timeline-status="completed"');
-    // spec_tree 作为活跃节点
+    // StageViewport 渲染 spec_tree 阶段
+    expect(markup).toContain('data-stage-key="spec_tree"');
+    // 活跃阶段有 data-timeline-status="active" 标记
     expect(markup).toContain('data-timeline-status="active"');
     // 活跃节点有 aria-current="step"
     expect(markup).toContain('aria-current="step"');
@@ -79,7 +79,12 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
   });
 
-  it("keeps backend spec_docs execution inside the SPEC tree node with per-node document counts (now via SpecTreeWorkbench)", () => {
+  it("renders <StreamingDocRenderer /> in the spec_documents StageContent when job.stage === 'spec_docs' (autopilot-streaming-doc-renderer Task 6.1)", () => {
+    // autopilot-streaming-doc-renderer 任务 6.1（2026-05-18）：
+    // 当 `job.stage === "spec_docs"` 时，AutopilotRightRail 把 activeStageKey
+    // 锁定到 `"spec_documents"`，StageContent 由 `<StreamingDocRenderer>` 接管，
+    // 替代旧 autopilot-spec-tree-workbench (2026-05-17) 在该阶段渲染的
+    // SpecTreeWorkbench accordion 折叠面板。
     const specTree = {
       id: "spec-tree-test",
       version: 1,
@@ -106,11 +111,21 @@ describe("AutopilotRightRail streaming timeline", () => {
       artifacts: [
         {
           type: "requirements",
-          payload: { id: "doc-req", nodeId: "node-root", type: "requirements" },
+          payload: {
+            id: "doc-req",
+            nodeId: "node-root",
+            type: "requirements",
+            title: "Requirements",
+          },
         },
         {
           type: "design",
-          payload: { id: "doc-design", nodeId: "node-root", type: "design" },
+          payload: {
+            id: "doc-design",
+            nodeId: "node-root",
+            type: "design",
+            title: "Design",
+          },
         },
       ],
     } as unknown as BlueprintGenerationJob;
@@ -125,21 +140,15 @@ describe("AutopilotRightRail streaming timeline", () => {
       />,
     );
 
-    expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
-    expect(markup).not.toContain('data-sub-stage-placeholder="spec_documents"');
-    // autopilot-spec-tree-workbench (2026-05-17): spec_tree 卡片现在挂
-    // SpecTreeWorkbench，而不是裸的 spec-tree-node-doc-status chip。
-    expect(markup).toContain('data-testid="spec-tree-workbench"');
-    expect(markup).toContain('data-testid="spec-tree-workbench-cta-all"');
-    expect(markup).toContain('data-testid="spec-tree-workbench-cta-single"');
-    // 节点行通过 testid spec-tree-workbench-row 暴露,带 chip
-    expect(markup).toContain('data-testid="spec-tree-workbench-row"');
-    expect(markup).toContain('data-node-id="node-root"');
-    expect(markup).toContain('data-node-id="node-docs"');
-    // node-root 有 2 份文档（requirements + design）→ "2/3 reviewing"
-    expect(markup).toContain("2/3 reviewing");
-    // node-docs 无文档 → "未生成"
-    expect(markup).toContain("未生成");
+    // 锁定 activeStageKey === "spec_documents" 分支
+    expect(markup).toContain('data-stage-key="spec_documents"');
+    // StreamingDocRenderer 占据 StageContent 主区域
+    expect(markup).toContain('data-testid="streaming-doc-renderer"');
+    // 多份 SpecDocument 透传给 DocTabBar，按 artifact payload.id 渲染 tab
+    expect(markup).toContain('data-testid="streaming-doc-tab-doc-req"');
+    expect(markup).toContain('data-testid="streaming-doc-tab-doc-design"');
+    // 不再走 SpecTreeWorkbench 分支
+    expect(markup).not.toContain('data-testid="spec-tree-workbench"');
   });
 
   it("case 2: renders awaiting state when specTree is null", () => {
@@ -153,7 +162,9 @@ describe("AutopilotRightRail streaming timeline", () => {
       />,
     );
 
-    // 活跃节点存在
+    // StageViewport 渲染 spec_tree 阶段
+    expect(markup).toContain('data-stage-key="spec_tree"');
+    // 活跃阶段有 data-timeline-status="active" 标记
     expect(markup).toContain('data-timeline-status="active"');
     // 等待上游数据提示
     expect(markup).toContain("Awaiting upstream data");
@@ -193,12 +204,14 @@ describe("AutopilotRightRail streaming timeline", () => {
       />,
     );
 
-    // 时间线节点存在
-    expect(markup).toContain('data-testid="timeline-node"');
-    // 有 index 属性
-    expect(markup).toContain('data-timeline-index="0"');
-    expect(markup).toContain('data-timeline-index="1"');
-    // 有 future 状态节点
-    expect(markup).toContain('data-timeline-status="future"');
+    // StageViewport 容器存在
+    expect(markup).toContain('data-stage-key="spec_tree"');
+    // 有 stage-index 属性
+    expect(markup).toContain('data-stage-index="3"');
+    // StageHeader 存在
+    expect(markup).toContain("STEP 04");
+    expect(markup).toContain("SPEC TREE");
+    // StageCTA 存在
+    expect(markup).toContain("生成文档");
   });
 });

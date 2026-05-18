@@ -17,9 +17,13 @@
  * - 折叠态：visibleEntries.length === 0 时返回 null,避免空容器抢占布局
  * - 自动 scroll：有新条目时滚到底部,与 AgentReasoningSubTimeline 行为一致
  * - 受 stageFilter 过滤,缺失 stageId 视为全局事件继续显示
+ *
+ * autopilot-mirofish-card-diversity / Task 3.1：
+ * - 连续 ≥3 个 node_completed 折叠为 CollapsedNodeGroup 摘要行
+ * - 支持展开/折叠查看详情
  */
 
-import { useEffect, useMemo, useRef, type FC } from "react";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
 
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 import {
@@ -46,8 +50,107 @@ import {
 } from "./cards";
 import { deriveMiroFishStreamEntries } from "./derive-mirofish-stream-entries";
 import type {
+  MiroFishNodeCompletedEntry,
   MiroFishStreamEntry,
 } from "./mirofish-stream-types";
+
+// ─── 连续 NodeCompleted 折叠逻辑 ─────────────────────────────────────────
+
+/** 折叠阈值：连续 ≥ 此数量的 node_completed 将被折叠 */
+const COLLAPSE_THRESHOLD = 3;
+
+/**
+ * 分组后的渲染单元：普通 entry 或折叠组。
+ */
+type GroupedEntry =
+  | { type: "single"; entry: MiroFishStreamEntry }
+  | { type: "collapsed_group"; entries: MiroFishNodeCompletedEntry[] };
+
+/**
+ * 将连续 ≥3 个 node_completed entry 折叠为 CollapsedNodeGroup。
+ * 其余 entry 保持独立渲染。
+ */
+function groupConsecutiveNodeCompleted(
+  entries: MiroFishStreamEntry[]
+): GroupedEntry[] {
+  const result: GroupedEntry[] = [];
+  let i = 0;
+
+  while (i < entries.length) {
+    if (entries[i].kind === "node_completed") {
+      // 收集连续的 node_completed
+      const group: MiroFishNodeCompletedEntry[] = [];
+      while (i < entries.length && entries[i].kind === "node_completed") {
+        group.push(entries[i] as MiroFishNodeCompletedEntry);
+        i++;
+      }
+      if (group.length >= COLLAPSE_THRESHOLD) {
+        result.push({ type: "collapsed_group", entries: group });
+      } else {
+        // 不足阈值，逐个渲染
+        for (const entry of group) {
+          result.push({ type: "single", entry });
+        }
+      }
+    } else {
+      result.push({ type: "single", entry: entries[i] });
+      i++;
+    }
+  }
+
+  return result;
+}
+
+// ─── CollapsedNodeGroup 组件 ──────────────────────────────────────────────
+
+/**
+ * CollapsedNodeGroup — 连续节点完成折叠摘要行
+ *
+ * 当连续 ≥3 个 node_completed 出现时，折叠为单行摘要，
+ * 展示 "N 个节点已完成"，支持展开查看详情。
+ */
+const CollapsedNodeGroup: FC<{
+  entries: MiroFishNodeCompletedEntry[];
+  locale: AppLocale;
+}> = ({ entries, locale }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const summaryText =
+    locale === "zh-CN"
+      ? `${entries.length} 个节点已完成`
+      : `${entries.length} nodes completed`;
+
+  return (
+    <div data-testid="mirofish-collapsed-node-group">
+      {/* 摘要行 */}
+      <button
+        type="button"
+        className="flex items-center gap-2 px-2 py-1.5 w-full text-left rounded-md hover:bg-white/5 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        <span className="text-[10px] text-emerald-500 flex-shrink-0" aria-hidden="true">
+          ✓
+        </span>
+        <span className="text-[10px] text-slate-500 flex-1">
+          {summaryText}
+        </span>
+        <span className="text-[9px] text-slate-400 flex-shrink-0">
+          {expanded ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {/* 展开态：逐个渲染 NodeCompletedCard */}
+      {expanded && (
+        <div className="ml-2 border-l border-slate-200 pl-1">
+          {entries.map(entry => (
+            <NodeCompletedCard key={entry.id} entry={entry} locale={locale} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── helpers：从 latestJob 派生 routeSet / routeSelection / specTree ─────
 
@@ -164,6 +267,12 @@ export const MiroFishCardStream: FC<MiroFishCardStreamProps> = ({
     [allEntries, filterSet]
   );
 
+  // 连续 node_completed 折叠分组
+  const groupedEntries = useMemo(
+    () => groupConsecutiveNodeCompleted(visibleEntries),
+    [visibleEntries]
+  );
+
   // 自动 scroll 到底部跟踪最新条目
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -182,9 +291,24 @@ export const MiroFishCardStream: FC<MiroFishCardStreamProps> = ({
       data-testid="mirofish-card-stream"
       className="mt-3 flex max-h-[420px] flex-col gap-2 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-3"
     >
-      {visibleEntries.map(entry => (
-        <MiroFishCard key={entry.id} entry={entry} locale={locale} />
-      ))}
+      {groupedEntries.map((grouped, idx) => {
+        if (grouped.type === "collapsed_group") {
+          return (
+            <CollapsedNodeGroup
+              key={`collapsed-${grouped.entries[0].id}`}
+              entries={grouped.entries}
+              locale={locale}
+            />
+          );
+        }
+        return (
+          <MiroFishCard
+            key={grouped.entry.id}
+            entry={grouped.entry}
+            locale={locale}
+          />
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );
