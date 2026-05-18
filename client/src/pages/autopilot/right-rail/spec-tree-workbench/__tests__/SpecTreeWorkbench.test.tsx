@@ -286,6 +286,49 @@ describe("SpecTreeWorkbench (SSR contract)", () => {
     expect(markup).toContain("生成中");
   });
 
+  it("autopilot-spec-document-export Task 6.2: 至少一个节点有文档时渲染整树导出按钮", () => {
+    const tree = makeTree([makeNode("n-1", "A"), makeNode("n-2", "B")]);
+    const docs = [makeDoc("n-1", "requirements", "reviewing")];
+    const markup = renderToStaticMarkup(
+      <SpecTreeWorkbench
+        jobId="job-1"
+        job={fakeJob}
+        specTree={tree}
+        specDocuments={docs}
+        locale="zh-CN"
+        generating={null}
+        onGenerateAll={() => {}}
+        onGenerateNode={() => {}}
+      />
+    );
+    expect(markup).toContain('data-testid="spec-tree-workbench-export-all"');
+    expect(markup).toContain("导出全部 SPEC");
+    // 不应是 disabled 状态
+    expect(markup).not.toMatch(
+      /<button[^>]*data-testid="spec-tree-workbench-export-all"[^>]*disabled[^>]*>/
+    );
+  });
+
+  it("autopilot-spec-document-export Task 6.2: 全无文档时整树导出按钮 disabled", () => {
+    const tree = makeTree([makeNode("n-1", "A"), makeNode("n-2", "B")]);
+    const markup = renderToStaticMarkup(
+      <SpecTreeWorkbench
+        jobId="job-1"
+        job={fakeJob}
+        specTree={tree}
+        specDocuments={[]}
+        locale="zh-CN"
+        generating={null}
+        onGenerateAll={() => {}}
+        onGenerateNode={() => {}}
+      />
+    );
+    expect(markup).toContain('data-testid="spec-tree-workbench-export-all"');
+    expect(markup).toMatch(
+      /<button[^>]*data-testid="spec-tree-workbench-export-all"[^>]*disabled/
+    );
+  });
+
   it("不传 specDocuments 时回退到 deriveSpecDocumentTreeStats(job, specTree)", () => {
     // 这里造一个 job.artifacts 含 spec doc artifact 的场景：不显式传
     // specDocuments，让组件自己从 job.artifacts 抽 docs。

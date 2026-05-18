@@ -22,6 +22,11 @@ import { createAgentCrewStageActivationDriver } from "./blueprint/agent-crew-sta
 // 批量生成结果，不会触发 spec-docs-llm-generation.ts 内部 runtime 副作用。
 import type { SpecDocsLlmNodeOutput } from "./blueprint/spec-docs-llm-generation.js";
 import { fetchRepoContext } from "./blueprint/repo-context-fetcher.js";
+
+// `autopilot-spec-document-export` Task 3.1：SPEC 文档导出归档服务层。
+// 通过工厂注入既有 `extractSpecDocuments` + `jobStore.get` 拼装出
+// `getJob` / `listSpecDocuments` deps，永不引入 store 副作用。
+import { buildSpecExportArchive } from "./blueprint/spec-documents/export/spec-documents-export-archive.js";
 import { createStageProgressEmitter } from "./blueprint/stage-progress-emitter.js";
 import {
   createFileBlueprintJobStore,
@@ -1323,6 +1328,56 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       specTree,
       documents: filterSpecDocuments(extractSpecDocuments(job), parsed.filters),
     });
+  });
+
+  // `autopilot-spec-document-export` Task 3.1：SPEC 文档导出端点。
+  // GET /jobs/:jobId/spec-documents/export?granularity=&nodeId=&type=
+  // - granularity=single → text/markdown
+  // - granularity=node | tree → application/zip
+  router.get("/jobs/:jobId/spec-documents/export", async (req, res) => {
+    const result = await buildSpecExportArchive(
+      {
+        jobId: req.params.jobId,
+        granularity:
+          typeof req.query.granularity === "string"
+            ? req.query.granularity
+            : undefined,
+        nodeId:
+          typeof req.query.nodeId === "string" ? req.query.nodeId : undefined,
+        type:
+          typeof req.query.type === "string" ? req.query.type : undefined,
+      },
+      {
+        getJob: (jobId) => jobStore.get(jobId),
+        listSpecDocuments: (jobId) => {
+          const job = jobStore.get(jobId);
+          return job ? extractSpecDocuments(job) : [];
+        },
+        now: () => new Date(),
+      },
+    );
+
+    if (result.kind === "invalid_request") {
+      res.status(400).json({ error: result.message });
+      return;
+    }
+    if (result.kind === "not_found") {
+      res
+        .status(404)
+        .json({ error: result.message, ...(result.details ?? {}) });
+      return;
+    }
+
+    res.setHeader("Content-Type", result.archive.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${result.archive.filename}"`,
+    );
+    if (typeof result.archive.body === "string") {
+      res.send(result.archive.body);
+    } else {
+      res.send(Buffer.from(result.archive.body));
+    }
   });
 
   router.post("/jobs/:jobId/effect-previews", async (req, res) => {

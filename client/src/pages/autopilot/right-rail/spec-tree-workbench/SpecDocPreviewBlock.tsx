@@ -9,15 +9,21 @@
  * - 文档不存在时显示"尚未生成"占位，不显示标题/摘要，避免误导用户。
  * - 标题 + 摘要 + status + source 四个字段一目了然，不引入折叠层级
  *   （行展开本身已经是一层折叠）。
+ *
+ * autopilot-spec-document-export Task 5.1：在 document 存在分支追加
+ * 单文档导出按钮，点击调 `/api/blueprint/jobs/<jobId>/spec-documents/export`
+ * 触发浏览器下载（Req 2.1, 2.2, 2.3, 2.4, 2.5, 2.6）。
  */
 
-import type { FC } from "react";
+import { useState, type FC, type MouseEvent } from "react";
 
 import type {
   BlueprintSpecDocument,
   BlueprintSpecDocumentStatus,
   BlueprintSpecDocumentType,
 } from "@shared/blueprint/contracts";
+
+import { exportSpecDocumentsToDownload } from "@/lib/blueprint-api/exportSpecDocuments";
 
 import { buildSpecMarkdownPreview } from "./specMarkdownPreview";
 
@@ -52,11 +58,17 @@ export interface SpecDocPreviewBlockProps {
   document: BlueprintSpecDocument | undefined;
   /** 当 document === undefined 时仍需渲染占位行,因此该 prop 必填。 */
   type: BlueprintSpecDocumentType;
+  /**
+   * 蓝图 job UUID，用于触发 GET /api/blueprint/jobs/<jobId>/spec-documents/export。
+   * 缺失时（向后兼容）不渲染导出按钮。
+   */
+  jobId?: string;
 }
 
 export const SpecDocPreviewBlock: FC<SpecDocPreviewBlockProps> = ({
   document,
   type,
+  jobId,
 }) => {
   const typeBadge = (
     <span
@@ -119,7 +131,13 @@ export const SpecDocPreviewBlock: FC<SpecDocPreviewBlockProps> = ({
         <span className="text-[10px] font-mono text-slate-500">
           · {sourceLabel}
         </span>
-        {/* 如有 review 路由,这里挂跳转链接;暂时占位 */}
+        {jobId ? (
+          <SpecDocExportButton
+            jobId={jobId}
+            nodeId={document.nodeId}
+            type={type}
+          />
+        ) : null}
       </div>
       <div className="mt-1 text-xs font-bold text-slate-800 truncate">
         {document.title}
@@ -169,3 +187,76 @@ export const SpecDocPreviewBlock: FC<SpecDocPreviewBlockProps> = ({
 };
 
 export default SpecDocPreviewBlock;
+
+// ─── SpecDocExportButton ─────────────────────────────────────────────────
+
+/**
+ * 单文档导出按钮。Req 2.1-2.6。
+ *
+ * - aria-label 走 zh-CN 文案 "导出 <type> 文档"
+ * - 点击 stopPropagation 防止触发父行展开
+ * - 状态机：idle | downloading | error；downloading 时 aria-disabled
+ * - 失败时显示 ⚠ 文案，按钮恢复 enabled
+ */
+interface SpecDocExportButtonProps {
+  jobId: string;
+  nodeId: string;
+  type: BlueprintSpecDocumentType;
+}
+
+const SpecDocExportButton: FC<SpecDocExportButtonProps> = ({
+  jobId,
+  nodeId,
+  type,
+}) => {
+  const [exportState, setExportState] = useState<
+    "idle" | "downloading" | "error"
+  >("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const downloading = exportState === "downloading";
+  const ariaLabel = `导出 ${type} 文档`;
+
+  const onClick = async (event: MouseEvent<HTMLButtonElement>) => {
+    // Req 2.6: 不触发行展开
+    event.stopPropagation();
+    if (downloading) return;
+    setExportState("downloading");
+    setErrorMessage(null);
+    try {
+      await exportSpecDocumentsToDownload({
+        jobId,
+        granularity: "single",
+        nodeId,
+        type,
+      });
+      setExportState("idle");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(message.slice(0, 80));
+      setExportState("error");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      data-testid="spec-doc-export-button"
+      data-doc-export-state={exportState}
+      aria-label={ariaLabel}
+      aria-disabled={downloading}
+      title={errorMessage ?? ariaLabel}
+      onClick={onClick}
+      className={
+        "ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold transition " +
+        (downloading
+          ? "cursor-progress bg-slate-100 text-slate-400"
+          : exportState === "error"
+            ? "cursor-pointer bg-amber-50 text-amber-700 hover:bg-amber-100"
+            : "cursor-pointer text-slate-500 hover:bg-slate-100 hover:text-slate-800")
+      }
+    >
+      {downloading ? "…" : exportState === "error" ? "⚠" : "↓"}
+    </button>
+  );
+};

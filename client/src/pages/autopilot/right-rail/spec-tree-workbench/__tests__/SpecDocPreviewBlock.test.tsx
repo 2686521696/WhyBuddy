@@ -127,4 +127,40 @@ describe("SpecDocPreviewBlock", () => {
     expect(markup).toContain('data-doc-status="rejected"');
     expect(markup).toContain("rejected");
   });
+
+  // ─── autopilot-spec-document-export Task 5.3 导出按钮 SSR 用例 ────────────
+
+  it("autopilot-spec-document-export Task 5.3: 提供 jobId 时渲染单文档导出按钮", () => {
+    const markup = renderToStaticMarkup(
+      <SpecDocPreviewBlock
+        type="requirements"
+        document={makeDoc("requirements")}
+        jobId="job-1"
+      />
+    );
+    expect(markup).toContain('data-testid="spec-doc-export-button"');
+    expect(markup).toContain('aria-label="导出 requirements 文档"');
+    expect(markup).toContain('data-doc-export-state="idle"');
+  });
+
+  it("autopilot-spec-document-export Task 5.3: 缺 jobId 时不渲染导出按钮（向后兼容）", () => {
+    const markup = renderToStaticMarkup(
+      <SpecDocPreviewBlock
+        type="design"
+        document={makeDoc("design")}
+      />
+    );
+    expect(markup).not.toContain('data-testid="spec-doc-export-button"');
+  });
+
+  it("autopilot-spec-document-export Task 5.3: document undefined 时不渲染导出按钮", () => {
+    const markup = renderToStaticMarkup(
+      <SpecDocPreviewBlock
+        type="tasks"
+        document={undefined}
+        jobId="job-1"
+      />
+    );
+    expect(markup).not.toContain('data-testid="spec-doc-export-button"');
+  });
 });

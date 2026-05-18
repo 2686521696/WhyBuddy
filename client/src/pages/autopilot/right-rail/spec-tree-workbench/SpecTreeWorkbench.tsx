@@ -37,6 +37,7 @@ import { useCallback, useMemo, useState, type FC } from "react";
 import { blueprintCopy } from "@/lib/blueprint-copy";
 import type { AppLocale } from "@/lib/locale";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
+import { exportSpecDocumentsToDownload } from "@/lib/blueprint-api/exportSpecDocuments";
 import {
   deriveSpecDocumentTreeStats,
   type SpecDocumentTreeStats,
@@ -159,7 +160,7 @@ function pickDocByType(
 // ─── 主组件 ───────────────────────────────────────────────────────────────
 
 export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
-  jobId: _jobId,
+  jobId,
   job,
   specTree,
   specDocuments,
@@ -215,6 +216,15 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
   const generatingSingle = generating === "single";
   const anyGenerating = generating !== null;
 
+  // autopilot-spec-document-export Task 6.1：是否存在任意已生成文档，
+  // 用于决定 "导出全部 SPEC" 按钮的 disabled 状态。
+  const hasAnyDocs = useMemo(() => {
+    for (const docs of docsByNodeId.values()) {
+      if (docs.length > 0) return true;
+    }
+    return false;
+  }, [docsByNodeId]);
+
   if (!specTree || specTree.nodes.length === 0) {
     return (
       <div
@@ -261,6 +271,15 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
             {t(locale, "hintSelectFirst")}
           </span>
         ) : null}
+
+        {/* autopilot-spec-document-export Task 6.1: 整树导出按钮 */}
+        <BulkExportButton
+          jobId={jobId}
+          granularity="tree"
+          disabled={!hasAnyDocs}
+          testId="spec-tree-workbench-export-all"
+          idleLabel="导出全部 SPEC"
+        />
       </div>
 
       {/* 节点行列表 */}
@@ -271,6 +290,7 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
         {specTree.nodes.map(node => (
           <SpecTreeNodeRow
             key={node.id}
+            jobId={jobId}
             node={node}
             locale={locale}
             isSelected={selectedNodeId === node.id}
@@ -288,6 +308,10 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
 // ─── 节点行子组件 ─────────────────────────────────────────────────────────
 
 interface SpecTreeNodeRowProps {
+  /**
+   * 蓝图 job UUID，向下传给 SpecDocPreviewBlock 用于触发导出 API。
+   */
+  jobId: string;
   node: BlueprintSpecTreeNode;
   /**
    * 当前界面 locale，用于 node.title 通过 blueprintCopy 走中英文翻译表。
@@ -302,6 +326,7 @@ interface SpecTreeNodeRowProps {
 }
 
 const SpecTreeNodeRow: FC<SpecTreeNodeRowProps> = ({
+  jobId,
   node,
   locale,
   isSelected,
@@ -352,9 +377,21 @@ const SpecTreeNodeRow: FC<SpecTreeNodeRowProps> = ({
             <SpecDocPreviewBlock
               key={type}
               type={type}
+              jobId={jobId}
               document={pickDocByType(docs, type)}
             />
           ))}
+          {/* autopilot-spec-document-export Task 6.1: 节点级导出按钮 */}
+          <div className="pt-1">
+            <BulkExportButton
+              jobId={jobId}
+              granularity="node"
+              nodeId={node.id}
+              disabled={docs.length === 0}
+              testId="spec-tree-node-export-button"
+              idleLabel="导出本节点 .zip"
+            />
+          </div>
         </div>
       ) : null}
     </li>
@@ -362,3 +399,82 @@ const SpecTreeNodeRow: FC<SpecTreeNodeRowProps> = ({
 };
 
 export default SpecTreeWorkbench;
+
+// ─── BulkExportButton ────────────────────────────────────────────────────
+
+/**
+ * autopilot-spec-document-export Task 6.1：节点级 / 整树批量导出按钮。
+ *
+ * - granularity="node" 必须配合 nodeId
+ * - granularity="tree" 不需要 nodeId
+ * - 状态机：idle | downloading | error
+ * - 失败时 inline 显示 ⚠ + tooltip，按钮恢复 enabled
+ */
+interface BulkExportButtonProps {
+  jobId: string;
+  granularity: "node" | "tree";
+  nodeId?: string;
+  disabled: boolean;
+  testId: string;
+  idleLabel: string;
+}
+
+const BulkExportButton: FC<BulkExportButtonProps> = ({
+  jobId,
+  granularity,
+  nodeId,
+  disabled,
+  testId,
+  idleLabel,
+}) => {
+  const [state, setState] = useState<"idle" | "downloading" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const downloading = state === "downloading";
+  const buttonDisabled = disabled || downloading;
+
+  const onClick = async () => {
+    if (buttonDisabled) return;
+    setState("downloading");
+    setErrorMessage(null);
+    try {
+      await exportSpecDocumentsToDownload({
+        jobId,
+        granularity,
+        nodeId,
+      });
+      setState("idle");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(message.slice(0, 120));
+      setState("error");
+    }
+  };
+
+  const label = downloading
+    ? "导出中..."
+    : state === "error"
+      ? `${idleLabel} ⚠`
+      : idleLabel;
+
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-export-state={state}
+      disabled={buttonDisabled}
+      onClick={onClick}
+      title={errorMessage ?? idleLabel}
+      className={
+        "rounded-md border px-2.5 py-1 text-[11px] font-bold transition " +
+        (buttonDisabled
+          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+          : state === "error"
+            ? "cursor-pointer border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+            : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-50")
+      }
+    >
+      {label}
+    </button>
+  );
+};

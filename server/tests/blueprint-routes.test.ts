@@ -5,6 +5,8 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import JSZip from "jszip";
+
 const llmMocks = vi.hoisted(() => ({
   callLLMJson: vi.fn(),
 }));
@@ -1790,6 +1792,57 @@ describe("blueprint specs route", () => {
         jobId: selected.job.id,
         treeId: selected.specTree.id,
       });
+    });
+  });
+
+  it("exports the full SPEC tree as a zip via /spec-documents/export?granularity=tree", async () => {
+    // `autopilot-spec-document-export` Task 3.2：端到端验证导出路由。
+    // 创建一个已有 SPEC 树 + 已生成 spec documents 的 job（走模板兜底
+    // 即可），然后 GET 导出端点；断言 Content-Type / Content-Disposition
+    // 正确，zip 内文件数 = documents.length + 1（MANIFEST）。
+    await withServer(tempRoot, async baseUrl => {
+      const selected = await createSelectedSpecTree(baseUrl);
+
+      // 触发模板兜底路径生成全部 spec documents
+      const generateResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${selected.job.id}/spec-documents`,
+        {
+          method: "POST",
+        },
+      );
+      expect(generateResponse.status).toBe(201);
+      const generated = (await generateResponse.json()) as Record<string, any>;
+      const documents = generated.documents as Array<Record<string, any>>;
+      expect(documents.length).toBeGreaterThan(0);
+
+      const exportResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/${selected.job.id}/spec-documents/export?granularity=tree`,
+      );
+      expect(exportResponse.status).toBe(200);
+      expect(exportResponse.headers.get("content-type")).toContain(
+        "application/zip",
+      );
+      const disposition = exportResponse.headers.get("content-disposition");
+      expect(disposition).not.toBeNull();
+      expect(disposition).toContain("attachment");
+      expect(disposition).toMatch(/filename="[^"]+-spec\.zip"/);
+
+      const arrayBuffer = await exportResponse.arrayBuffer();
+      expect(arrayBuffer.byteLength).toBeGreaterThan(0);
+
+      const zip = await JSZip.loadAsync(new Uint8Array(arrayBuffer));
+      const entryNames = Object.keys(zip.files);
+      // documents.length + MANIFEST.json
+      const fileEntries = entryNames.filter((name) => !zip.files[name].dir);
+      expect(fileEntries).toContain("MANIFEST.json");
+      expect(fileEntries.length).toBe(documents.length + 1);
+
+      const manifestRaw = await zip.file("MANIFEST.json")?.async("string");
+      expect(manifestRaw).toBeTruthy();
+      const manifest = JSON.parse(manifestRaw ?? "{}") as Record<string, any>;
+      expect(manifest.jobId).toBe(selected.job.id);
+      expect(manifest.granularity).toBe("tree");
+      expect(manifest.documents).toHaveLength(documents.length);
     });
   });
 
