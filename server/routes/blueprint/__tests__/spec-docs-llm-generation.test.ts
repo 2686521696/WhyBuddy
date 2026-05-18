@@ -51,12 +51,20 @@ vi.mock("../../../core/ai-config.js", () => ({
 // 共享 fake 数据与工具
 // ---------------------------------------------------------------------------
 
-/** 构造合法的 spec_docs LLM 响应（requirements + design + tasks 三段 markdown）。 */
+/**
+ * 构造合法的 spec_docs LLM 响应（requirements + design + tasks 三段 markdown）。
+ *
+ * Task 12.3 (Quality Uplift Wave)：所有 fixture 必须满足
+ * `parseSpecDocsLlmResponse` 的结构最小集校验：
+ * - requirements 含 `## 简介` 与 `## 需求`
+ * - design 含 `## 概述` 与 `## 架构`
+ * - tasks 含 `## Tasks`
+ */
 function makeValidDocsResponse(suffix = "") {
   return {
-    requirements: `# Requirements${suffix}\n\nThis module should...`,
-    design: `# Design${suffix}\n\nComponents include...`,
-    tasks: `# Tasks${suffix}\n\n- [ ] Implement feature`,
+    requirements: `# 需求文档：Test${suffix}\n\n## 简介\n\nThis module should...\n\n## 术语表\n\n- Term: definition\n\n## 需求\n\n### 需求 1：example\n\n**用户故事：** As a developer, I want X, so that Y.\n\n#### 验收标准\n\n1.1 THE system SHALL X.`,
+    design: `# 设计文档：Test${suffix}\n\n## 概述\n\nComponents include...\n\n## 架构\n\n\`\`\`mermaid\ngraph TB\n  A --> B\n\`\`\`\n\n## 组件与接口\n\n\`\`\`typescript\nexport interface Foo { id: string }\n\`\`\`\n\n## 数据模型\n\nN/A.\n\n## 正确性属性\n\n### Property 1: stable\n\n**Validates: Requirements 1.1**\n\n## 错误处理\n\nN/A.\n\n## 测试策略\n\nN/A.`,
+    tasks: `# Implementation Plan: Test${suffix}\n\n## Overview\n\nplan.\n\n## Tasks\n\n- [ ] 1. Implement feature\n  - _Requirements: 1.1_`,
   };
 }
 

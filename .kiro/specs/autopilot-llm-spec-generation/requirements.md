@@ -27,10 +27,10 @@
 
 1. WHEN a user confirms a selected route, THE Blueprint_Pipeline SHALL invoke the LLM_Client with the repository structure (obtained via MCP_GitHub_Source) and the selected route context to derive the Spec_Tree.
 2. WHEN the LLM_Client returns a valid response, THE Blueprint_Pipeline SHALL parse the response into a BlueprintSpecTree structure containing nodes with proper parent-child relationships, node types, and descriptive metadata.
-3. WHEN the LLM-derived Spec_Tree is produced, THE Blueprint_Pipeline SHALL set the `generationSource` field to `"llm"` on the resulting artifact.
+3. WHEN the LLM-derived Spec_Tree is produced, THE Blueprint_Pipeline SHALL set the `generationSource` field to `"llm"` on the resulting artifact. THE `generationSource` field SHALL reflect the attempted derivation method ("llm") regardless of whether parsing or downstream tree construction subsequently fails; failure handling switches downstream artifacts to template, but the artifact-level `generationSource` for the attempt SHALL remain `"llm"`.
 4. THE Spec_Tree derivation prompt SHALL include the repository file tree, key file contents (e.g., package.json, tsconfig.json, entry points), and the selected route's steps and description as context for the LLM.
 5. WHEN the LLM_Client invocation exceeds the configured timeout (`BLUEPRINT_SPEC_TREE_LLM_TIMEOUT_MS`, default 180000ms), THE Blueprint_Pipeline SHALL abort the LLM call and fall back to the existing template-based tree mapping. Other errors (network failures, service unavailability) SHALL propagate normally without triggering timeout-specific abort logic.
-6. WHEN the LLM_Client returns an unparseable or invalid response, THE Blueprint_Pipeline SHALL fall back to the existing template-based tree mapping and log the failure reason to the diagnostics store.
+6. WHEN the LLM_Client returns an unparseable or invalid response, THE Blueprint_Pipeline SHALL fall back to the existing template-based tree mapping and log the failure reason to the diagnostics store. WHEN the LLM_Client invocation fails entirely (no response received due to network failure, exception, or service unavailability), THE Blueprint_Pipeline SHALL treat the failure equivalently — log the diagnostics with the failure reason and fall back to template-based tree mapping.
 7. WHEN parsing succeeds but tree construction fails due to malformed node relationships or missing required fields, THE Blueprint_Pipeline SHALL treat this as an invalid response and fall back to template-based tree mapping.
 
 ### Requirement 2: 规格文档 LLM 真实生成
@@ -40,11 +40,11 @@
 #### Acceptance Criteria
 
 1. WHEN the spec_docs stage is triggered for a Spec_Tree node, THE Blueprint_Pipeline SHALL invoke the LLM_Client with the node context (node metadata, parent/sibling relationships, repository analysis) to generate requirements.md, design.md, and tasks.md content.
-2. WHEN the LLM_Client returns valid document content, THE Blueprint_Pipeline SHALL store each document with its `generationSource` field set to `"llm"`.
+2. WHEN the LLM_Client returns valid document content, THE Blueprint_Pipeline SHALL store each document with its `generationSource` field set to `"llm"`. IF the storage operation itself fails after a valid LLM response has been received, THEN THE Blueprint_Pipeline SHALL treat the storage failure as a node-level fallback: log the storage failure reason to the diagnostics store, fall back to template-based generation for that node, and SHALL NOT silently drop the LLM content without recording the failure.
 3. THE spec_docs generation prompt SHALL include the Spec_Tree node's title, description, type, parent context, sibling nodes, and relevant repository file excerpts as input context.
 4. WHEN generating documents for multiple nodes, THE Blueprint_Pipeline SHALL process nodes sequentially (root-first, depth-first order) to allow parent node documents to inform child node generation.
 5. WHEN the LLM_Client invocation exceeds the configured timeout (`BLUEPRINT_SPEC_DOCUMENTS_LLM_TIMEOUT_MS`, default 180000ms) for any single node, THE Blueprint_Pipeline SHALL abort that node's generation and fall back to template-based document generation for that node.
-6. WHEN the LLM_Client returns an unparseable or invalid response for a node, THE Blueprint_Pipeline SHALL explicitly mark the generation as `fallback_to_template = true`, fall back to template-based document generation for that node, and log the failure reason to the diagnostics store. Logging SHALL succeed before proceeding with template fallback.
+6. WHEN the LLM_Client returns an unparseable or invalid response for a node, THE Blueprint_Pipeline SHALL explicitly mark the generation as `fallback_to_template = true`, fall back to template-based document generation for that node, and log the failure reason to the diagnostics store. Logging SHALL succeed before proceeding with template fallback. WHEN the LLM_Client returns valid (parseable, schema-conformant, structurally minima-compliant) content, THE Blueprint_Pipeline SHALL NOT fall back to templates as a secondary precaution — template fallback applies only to invalid / unparseable / structurally non-compliant responses or storage failures (per AC 2.2).
 7. IF the `BUILD_TARGET` environment variable equals `"test"`, THEN THE Blueprint_Pipeline SHALL force all LLM-driven generation flags to false and use template/simulated fallback exclusively.
 
 ### Requirement 3: Agent 推理时间线真实事件流
@@ -70,7 +70,7 @@
 2. WHEN `BLUEPRINT_AGENT_DRIVEN_PIPELINE_ENABLED` is `"false"` or unset, THE Blueprint_Pipeline SHALL use template/simulated fallback for both spec_tree and spec_docs stages.
 3. WHEN `BLUEPRINT_AGENT_REASONING_STREAM_ENABLED` is `"false"` or unset, THE Agent_Reasoning_Bridge SHALL suppress real reasoning events and allow the existing simulated event injection to continue.
 4. IF the `BUILD_TARGET` environment variable equals `"test"`, THEN THE Blueprint_Pipeline SHALL force `BLUEPRINT_AGENT_DRIVEN_PIPELINE_ENABLED` and `BLUEPRINT_AGENT_REASONING_STREAM_ENABLED` to `"false"` regardless of their configured values. Individual stage flags MAY override this restriction when explicitly set for integration testing scenarios.
-5. WHEN LLM-driven generation is enabled but the LLM_Client dependency is not ready (missing API key, unreachable endpoint), THE Blueprint_Pipeline SHALL detect the dependency failure at invocation time and fall back to template/simulated behavior without crashing or blocking the server startup.
+5. WHEN LLM-driven generation is enabled but the LLM_Client dependency is not ready (missing API key, unreachable endpoint), THE Blueprint_Pipeline SHALL detect the dependency failure at invocation time and fall back to template/simulated behavior without crashing or blocking the server startup. Dependency failure SHALL be inferred automatically from the combination of enabled generation flag and unready client state, without requiring an explicit `dependency_failure_detected` flag.
 6. THE Blueprint_Pipeline SHALL allow LLM-driven spec_tree and spec_docs generation to operate independently of the reasoning stream flag; LLM generation MAY proceed even when `BLUEPRINT_AGENT_REASONING_STREAM_ENABLED` is `"false"` (reasoning events will simply not be emitted).
 
 ### Requirement 5: MCP GitHub 仓库上下文获取
@@ -80,9 +80,9 @@
 #### Acceptance Criteria
 
 1. WHEN the spec_tree LLM derivation is initiated, THE Blueprint_Pipeline SHALL use the MCP_GitHub_Source bridge to retrieve the repository file tree (directory listing) for the target repository URL.
-2. WHEN the repository file tree is retrieved, THE Blueprint_Pipeline SHALL filter and truncate the tree to a maximum context size suitable for the LLM prompt (configurable, default 32000 tokens equivalent).
+2. WHEN the repository file tree is retrieved, THE Blueprint_Pipeline SHALL filter and truncate the tree to a maximum context size suitable for the LLM prompt (configurable, default 32000 tokens equivalent). IF the filter / truncate process succeeds yet the resulting context still exceeds the configured maximum (for example because individual files exceed token bounds), THEN THE Blueprint_Pipeline SHALL allow the oversized context to proceed to the LLM and SHALL log the oversize observation to the diagnostics store as a non-blocking warning.
 3. WHEN key configuration files are identified (package.json, tsconfig.json, Cargo.toml, pom.xml, or equivalent), THE Blueprint_Pipeline SHALL retrieve their content via MCP_GitHub_Source and include them in the LLM prompt context.
-4. IF the MCP_GitHub_Source bridge is unavailable or the repository fetch fails (including file tree retrieval success but context filtering failure), THEN THE Blueprint_Pipeline SHALL proceed with LLM derivation using only the route context (without repository structure) and log the degradation to the diagnostics store. Degradation SHALL be logged whenever the system falls back to route-only context, regardless of the specific failure cause.
+4. IF the MCP_GitHub_Source bridge is unavailable or the repository fetch fails (including file tree retrieval success but context filtering failure), THEN THE Blueprint_Pipeline SHALL proceed with LLM derivation using only the route context (without repository structure) and log the degradation to the diagnostics store. Degradation SHALL be logged whenever any repository processing step (fetch, filter, truncate, key file enrichment) fails, regardless of whether the system ultimately falls back to route-only context or still proceeds with partial repository context.
 5. THE Blueprint_Pipeline SHALL NOT store or cache raw repository file contents beyond the duration of a single generation request to avoid stale data.
 
 ### Requirement 6: 不扩大现有 TypeScript 基线错误
@@ -91,6 +91,32 @@
 
 #### Acceptance Criteria
 
-1. THE new implementation SHALL NOT introduce additional TypeScript compilation errors beyond the existing baseline of 113 errors.
+1. THE new implementation SHALL NOT introduce additional TypeScript compilation errors beyond the existing baseline of 113 errors. THE new implementation MAY reduce the error count below the 113 baseline; any improvement in type safety SHALL be retained and SHALL NOT be artificially raised back to the baseline.
 2. THE new implementation SHALL NOT use the `any` type in new code; all new interfaces, functions, and variables SHALL have explicit type annotations.
-3. THE new implementation SHALL NOT break existing tests; the existing 5140+ test suite SHALL continue to pass after the changes are applied. TypeScript error count and test pass status are independent checks.
+3. THE new implementation SHALL NOT break existing tests; the existing 5140+ test suite SHALL continue to pass after the changes are applied. TypeScript error count and test pass status are independent checks. Deployment SHALL be permitted when tests pass even if TypeScript error count exceeds the 113 baseline (the type baseline is informational and does not block deployment), but the team SHALL still treat TS error growth as a regression to address in a follow-up.
+
+### Requirement 7: 文档质量基线对齐 ai-enabled-sandbox（Quality Uplift Wave）
+
+**User Story:** As a developer reviewing the right-rail SPEC tree workbench output, I want each generated `requirements.md` / `design.md` / `tasks.md` per node to follow a multi-section template comparable to the hand-authored `ai-enabled-sandbox` spec, so that the documents convey real engineering intent (introduction, glossary, EARS acceptance criteria, Mermaid architecture, component interfaces, correctness properties, test strategy) instead of placeholder bullet lines.
+
+#### Acceptance Criteria
+
+7.1 THE Spec_Documents `requirements` markdown SHALL contain the following H2 / H3 sections in order: `## 简介`, `## 术语表`, `## 需求`, with at least 3 child `### 需求 N: …` blocks each containing a `**用户故事:**` line and `#### 验收标准` block. Each acceptance criterion SHALL use EARS keywords (`THE`, `WHEN`, `WHILE`, `IF/THEN`, `WHERE`) and be numbered as `N.M`.
+
+7.2 THE Spec_Documents `design` markdown SHALL contain the following H2 sections in order: `## 概述`, `## 架构`, `## 组件与接口`, `## 数据模型`, `## 正确性属性`, `## 错误处理`, `## 测试策略`. The `## 架构` section SHALL embed at least one fenced ` ```mermaid ` graph block; the `## 组件与接口` section SHALL list at least one TypeScript interface block with explicit field types; the `## 正确性属性` section SHALL declare at least 3 properties each annotated with `**Validates: Requirements x.y, x.y**`.
+
+7.3 THE Spec_Documents `tasks` markdown SHALL contain `# Implementation Plan: <node title>`, an `## Overview` paragraph, and an `## Tasks` block with at least 3 top-level tasks. Each top-level task SHALL be a `- [ ] N. <action>` line, MAY contain ≥1 sub-task `- [ ] N.M …` line, and SHALL end with a `_Requirements: x.y, x.y_` reference linking back to acceptance criteria from the same node's `requirements.md`. At least one Checkpoint task SHALL appear instructing reviewers to "ensure all tests pass, ask the user if questions arise".
+
+7.4 THE LLM prompt builder for `spec_docs` (`buildSpecDocsPrompt`) SHALL emit a system message that explicitly instructs the model to follow the section structure defined in 7.1 / 7.2 / 7.3, and SHALL append a representative `exampleOutline` field in the user payload listing the required section headings for each of `requirements` / `design` / `tasks`. The `outputSchema` field SHALL describe each of the three documents with character bounds AND required heading list.
+
+7.5 THE template fallback path (`buildSpecDocumentBody` / `buildSpecDocumentSectionLines` in `server/routes/blueprint.ts`) SHALL be replaced with a structured template that produces the same H2 / H3 section skeleton required in 7.1 / 7.2 / 7.3, populated from `BlueprintSpecTreeNode` fields (`title`, `summary`, `dependencies`, `outputs`, `priority`, `type`) and the selected primary route summary, even when LLM generation is disabled or falls back. Sections without LLM-derived content MAY contain explicit placeholder lines such as `_(Pending LLM enrichment.)_` but MUST NOT collapse to fewer than 3 H2 sections per document.
+
+7.6 THE `parseSpecDocsLlmResponse` validator SHALL additionally enforce structural minima per document: `requirements` markdown SHALL contain `## 简介` AND `## 需求` headings; `design` markdown SHALL contain `## 概述` AND `## 架构` headings; `tasks` markdown SHALL contain a `## Tasks` heading. Validation failure on these minima SHALL be treated equivalently to existing schema failure paths (Requirement 2.6) — that node falls back to template, `fallbackReason` includes `"structural validation failed: missing <section>"`, and other nodes continue.
+
+7.7 WHEN both LLM-generated and template-fallback paths are exercised in the same job, THE Spec_Documents artifact viewer (right-rail SPEC tree workbench card body) SHALL render at minimum the document title, the first H2 section title, and a 3-line preview of the first non-heading paragraph for each node, so users can visually distinguish enriched documents from placeholders without expanding each entry.
+
+7.8 THE quality uplift SHALL preserve current backwards compatibility: when `BLUEPRINT_SPEC_DOCS_LLM_ENABLED` is unset/false and Requirement 7.5 template path is in effect, existing 5140+ tests SHALL continue to pass. If any existing test asserts the old 6-line placeholder body verbatim, the test SHALL be updated in the same PR to match the new structured template, with the change documented in the PR description.
+
+7.9 IF the locale of the autopilot UI is `zh-CN`, THEN THE generated documents (both LLM and template paths) SHALL emit Chinese H2 / H3 section titles per 7.1 / 7.2 / 7.3 (e.g., `## 简介`, `## 术语表`, `## 需求`, `## 概述`, `## 架构`, `## 组件与接口`, `## 数据模型`, `## 正确性属性`, `## 错误处理`, `## 测试策略`); body prose MAY remain in the language used by the source `BlueprintSpecTreeNode.summary`. The `tasks` document MAY keep `# Implementation Plan` and `## Tasks` in English to align with existing tooling that scans these markers.
+
+7.10 THE Quality Uplift implementation SHALL NOT change `Requirements 1-6` behavior, and SHALL NOT change the existing TypeScript error baseline (Requirement 6.1) or break existing tests (Requirement 6.3).

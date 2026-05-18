@@ -243,6 +243,12 @@ Modeling guidance:
  *
  * 单节点同时产出 `requirements` / `design` / `tasks` 三段 markdown，并
  * 严格要求合法 JSON 结构。
+ *
+ * Task 12.1 (Quality Uplift Wave)：扩展 Authoring structure 段落，对齐
+ * `.kiro/specs/ai-enabled-sandbox` 的人工 spec 质量基线。三段必须按固定
+ * H2 / H3 骨架编写，requirements 必须使用 EARS 关键字，design 必须含
+ * Mermaid 架构块 + TS interface + ≥3 条 Validates 属性，tasks 必须含
+ * `_Requirements: x.y_` 反引用与至少一条 Checkpoint 任务。
  */
 const SPEC_DOCS_SYSTEM_MESSAGE =
   `You are the SPEC Document generator inside the /autopilot pipeline.
@@ -257,7 +263,20 @@ The JSON object MUST contain three fields, each a non-empty Markdown string of 1
 Authoring guidance:
 - Stay scoped to the current node; rely on parentSummary / siblingSummaries to avoid duplication.
 - Anchor the documents in the selected primary route's intent and steps.
-- Do NOT reference real API keys, tokens, or personal data; abstract sensitive identifiers.`;
+- Do NOT reference real API keys, tokens, or personal data; abstract sensitive identifiers.
+
+Authoring structure (REQUIRED — see exampleOutline in the user payload):
+- "requirements" MUST contain H2 sections in order: "## 简介", "## 术语表", "## 需求".
+  Under "## 需求" emit at least 3 child blocks "### 需求 N: ...". Each child block MUST contain a "**用户故事:**" line ("As a <role>, I want <feature>, so that <benefit>") and a "#### 验收标准" block. Acceptance criteria MUST be numbered "N.M" and use EARS keywords (THE, WHEN, WHILE, IF/THEN, WHERE).
+- "design" MUST contain H2 sections in order: "## 概述", "## 架构", "## 组件与接口", "## 数据模型", "## 正确性属性", "## 错误处理", "## 测试策略".
+  "## 架构" MUST embed at least one fenced \`\`\`mermaid graph block.
+  "## 组件与接口" MUST list at least one TypeScript interface block (\`\`\`typescript fence) with explicit field types.
+  "## 正确性属性" MUST declare at least 3 properties, each annotated with "**Validates: Requirements x.y, x.y**" referencing acceptance criteria from the same node's requirements document.
+- "tasks" MUST start with "# Implementation Plan: <node title>", followed by "## Overview" paragraph and "## Tasks" block.
+  "## Tasks" MUST contain at least 3 top-level "- [ ] N. <action>" items, each MAY contain sub-items "- [ ] N.M ...", and each top-level item MUST end with a "_Requirements: x.y_" line linking back to acceptance criteria from this node's requirements document.
+  At least one task MUST be a Checkpoint instructing reviewers to "ensure all tests pass, ask the user if questions arise".
+
+Locale: Use Chinese (zh-CN) for all H2 / H3 section headings (e.g., "## 简介", "## 需求", "## 概述", "## 架构", "## 组件与接口", "## 数据模型", "## 正确性属性", "## 错误处理", "## 测试策略") and prose body. Keep "# Implementation Plan", "## Overview", "## Tasks" in English to align with downstream tooling that scans these markers. Code identifiers and EARS keywords (THE / WHEN / WHILE / IF / THEN / WHERE / SHALL) remain English.`;
 
 // ---------------------------------------------------------------------------
 // Task 1.3：prompt 构造器实现
@@ -399,9 +418,107 @@ export function buildSpecDocsPrompt(
   }
 
   userPayload.outputSchema = {
-    requirements: "string, 1..20000 chars, Markdown",
-    design: "string, 1..20000 chars, Markdown",
-    tasks: "string, 1..20000 chars, Markdown",
+    requirements: {
+      type: "string",
+      bounds: "1..20000 chars, Markdown",
+      requiredHeadings: ["## 简介", "## 术语表", "## 需求"],
+      requiredChildBlocks: "At least 3 child blocks '### 需求 N: ...' under '## 需求', each containing a '**用户故事:**' line and a '#### 验收标准' block with EARS-numbered (N.M) criteria.",
+    },
+    design: {
+      type: "string",
+      bounds: "1..20000 chars, Markdown",
+      requiredHeadings: [
+        "## 概述",
+        "## 架构",
+        "## 组件与接口",
+        "## 数据模型",
+        "## 正确性属性",
+        "## 错误处理",
+        "## 测试策略",
+      ],
+      requiredEmbedded: "## 架构 must embed at least one fenced ```mermaid block; ## 组件与接口 must embed at least one fenced ```typescript interface block; ## 正确性属性 must declare at least 3 properties each annotated with **Validates: Requirements x.y**.",
+    },
+    tasks: {
+      type: "string",
+      bounds: "1..20000 chars, Markdown",
+      requiredHeadings: [
+        "# Implementation Plan: <node title>",
+        "## Overview",
+        "## Tasks",
+      ],
+      requiredItems: "At least 3 top-level '- [ ] N. <action>' items in '## Tasks', each ending with a '_Requirements: x.y_' line; at least one Checkpoint task instructing reviewers to 'ensure all tests pass, ask the user if questions arise'.",
+    },
+  };
+
+  // Task 12.2 (Quality Uplift Wave): 给 LLM 一个明确的 outline 模板，
+  // 引导其按 ai-enabled-sandbox 风格组织三段 markdown。
+  // 所有 H2 / H3 标题硬编码在此处，与 SPEC_DOCS_SYSTEM_MESSAGE 中的章节
+  // 描述、模板兜底路径 STRUCTURED_FALLBACK_HEADINGS 三处保持完全一致。
+  userPayload.exampleOutline = {
+    requirements: [
+      "# 需求文档：<node title>",
+      "## 简介",
+      "<1-2 段总结当前节点目标、用户价值与边界>",
+      "## 术语表",
+      "- **<术语 A>**：<定义>",
+      "- **<术语 B>**：<定义>",
+      "## 需求",
+      "### 需求 1：<具体能力 1>",
+      "**用户故事：** As a <role>, I want <feature>, so that <benefit>.",
+      "#### 验收标准",
+      "1.1 THE <component> SHALL ...",
+      "1.2 WHEN <event>, THE <component> SHALL ...",
+      "1.3 IF <condition>, THEN THE <component> SHALL ...",
+      "### 需求 2：<具体能力 2>",
+      "...（至少 3 条 N.M 验收标准）",
+      "### 需求 3：<具体能力 3>",
+    ],
+    design: [
+      "# 设计文档：<node title>",
+      "## 概述",
+      "<总结实现方案与依赖关系>",
+      "## 架构",
+      "```mermaid",
+      "graph TB",
+      "  A[<上游>] --> B[<本节点>]",
+      "  B --> C[<产物>]",
+      "```",
+      "## 组件与接口",
+      "```typescript",
+      "export interface <NodeContract> {",
+      "  /** ... */",
+      "  field: string;",
+      "}",
+      "```",
+      "## 数据模型",
+      "<描述存储 / 事件 / artifact 结构>",
+      "## 正确性属性",
+      "### Property 1: <名称>",
+      "*For any* ... SHALL ... ",
+      "**Validates: Requirements 1.1, 1.2**",
+      "### Property 2: <名称>",
+      "**Validates: Requirements 2.1**",
+      "### Property 3: <名称>",
+      "**Validates: Requirements 3.1**",
+      "## 错误处理",
+      "<列出错误码 / 处理方式 / 脱敏规则>",
+      "## 测试策略",
+      "<example-based 测试覆盖、回归命令、TS 基线约束>",
+    ],
+    tasks: [
+      "# Implementation Plan: <node title>",
+      "## Overview",
+      "<列出实现节奏与依赖>",
+      "## Tasks",
+      "- [ ] 1. <第一阶段动作>",
+      "  - [ ] 1.1 <子动作>",
+      "  - [ ] 1.2 <子动作>",
+      "  - _Requirements: 1.1, 1.2_",
+      "- [ ] 2. <第二阶段动作>",
+      "  - _Requirements: 2.1_",
+      "- [ ] 3. Checkpoint — ensure all tests pass, ask the user if questions arise",
+      "  - _Requirements: 1.1, 2.1, 3.1_",
+    ],
   };
 
   const userMessage = JSON.stringify(userPayload, null, 2);
@@ -514,6 +631,12 @@ export function parseSpecTreeLlmResponse(
  * 2. schema 校验失败返回 `{ ok: false, reason: "schema validation failed: <issue.message>" }`。
  * 3. 校验通过返回 `{ ok: true, data }`。
  * 4. 任何意外异常被吞掉并转成 `"unexpected parse error: <message>"`，永不抛错。
+ *
+ * Task 12.3 (Quality Uplift Wave)：在 zod schema 通过后追加结构最小集校验。
+ * 三段 markdown 必须分别含必备章节标题（requirements: `## 简介` / `## 需求`；
+ * design: `## 概述` / `## 架构`；tasks: `## Tasks`），缺失任一 H2 视为
+ * 结构校验失败，复用既有 fallback 路径（与 zod 失败合并使用 `"schema/structural"`
+ * 前缀，调用方按 `fallbackReason` 走模板）。
  */
 export function parseSpecDocsLlmResponse(
   raw: unknown,
@@ -530,9 +653,60 @@ export function parseSpecDocsLlmResponse(
         reason: `schema validation failed: ${extractFirstIssueMessage(result.error.issues)}`,
       };
     }
+    const structuralIssue = validateSpecDocsStructuralMinima(result.data);
+    if (structuralIssue !== undefined) {
+      return {
+        ok: false,
+        reason: `structural validation failed: missing ${structuralIssue}`,
+      };
+    }
     return { ok: true, data: result.data };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, reason: `unexpected parse error: ${message}` };
   }
+}
+
+/**
+ * Task 12.3 (Quality Uplift Wave)：spec_docs 三段 markdown 的结构最小集校验。
+ *
+ * 校验规则：
+ * - `requirements` markdown 必须包含 `## 简介` 与 `## 需求` 两个 H2 标题。
+ * - `design` markdown 必须包含 `## 概述` 与 `## 架构` 两个 H2 标题。
+ * - `tasks` markdown 必须包含 `## Tasks` H2 标题。
+ *
+ * 校验通过返回 `undefined`；任一段缺失任一必备章节，返回 `"<doc>.<section>"`
+ * 形式的字符串，作为 `parseSpecDocsLlmResponse` `fallbackReason` 的后缀。
+ *
+ * 实现说明：用按行扫描而非整体 `includes`，避免 markdown 内容里恰好出现
+ * `"## 简介"` 子串（例如代码块或正文引用）误判通过。校验仅认 H2 行首
+ * （`^## <heading>` 严格匹配）。
+ */
+function hasH2Heading(markdown: string, heading: string): boolean {
+  const pattern = new RegExp(
+    `^${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*$`,
+    "m",
+  );
+  return pattern.test(markdown);
+}
+
+function validateSpecDocsStructuralMinima(
+  data: SpecDocsLlmResponse,
+): string | undefined {
+  if (!hasH2Heading(data.requirements, "## 简介")) {
+    return "requirements.## 简介";
+  }
+  if (!hasH2Heading(data.requirements, "## 需求")) {
+    return "requirements.## 需求";
+  }
+  if (!hasH2Heading(data.design, "## 概述")) {
+    return "design.## 概述";
+  }
+  if (!hasH2Heading(data.design, "## 架构")) {
+    return "design.## 架构";
+  }
+  if (!hasH2Heading(data.tasks, "## Tasks")) {
+    return "tasks.## Tasks";
+  }
+  return undefined;
 }

@@ -13734,33 +13734,197 @@ function buildSpecDocumentBody(input: {
   type: BlueprintSpecDocumentType;
   previousRoleFindings?: BlueprintRoleTimelineEntry[];
 }): string {
-  const title = buildSpecDocumentHeading(input.type, input.node.title);
-  const lines = [
-    `# ${title}`,
-    "",
-    "## Summary",
-    "",
-    input.node.summary,
-    "",
-    "## Inputs",
-    "",
-    `- Node type: ${input.node.type}`,
-    `- Status: ${input.node.status}`,
-    `- Priority: ${input.node.priority}`,
-    input.node.dependencies.length > 0
-      ? `- Dependencies: ${input.node.dependencies.join(", ")}`
-      : "- Dependencies: none",
-    input.node.outputs.length > 0
-      ? `- Outputs: ${input.node.outputs.join(", ")}`
-      : "- Outputs: none",
-    "",
-    "## Derived Content",
-    "",
-    ...buildSpecDocumentSectionLines(input.type, input.node),
-    ...buildReusableRoleFindingLines(input.previousRoleFindings ?? []),
-  ];
+  // Task 12.4 / 12.5 (Quality Uplift Wave)：模板兜底路径升级为多章节骨架，
+  // 与 ai-enabled-sandbox 的人工 spec 形态对齐。requirements 走
+  // `## 简介 / ## 术语表 / ## 需求 (含 ≥3 个 ### 需求 N 块)`；design 走
+  // `## 概述 / ## 架构 (mermaid) / ## 组件与接口 (TS interface) /
+  // ## 数据模型 / ## 正确性属性 (≥3 Validates) / ## 错误处理 / ## 测试策略`；
+  // tasks 走 `# Implementation Plan / ## Overview / ## Tasks (≥3 项 + 1 Checkpoint)`。
+  const body = buildStructuredFallbackBody(input.node, input.type);
+  const findings = buildReusableRoleFindingLines(input.previousRoleFindings ?? []);
+  return findings.length > 0 ? `${body}\n${findings.join("\n")}` : body;
+}
 
-  return lines.join("\n");
+/**
+ * Task 12.5 (Quality Uplift Wave)：抽取的多章节模板兜底 helper。
+ *
+ * 当 LLM 关闭或失败时，按 `BlueprintSpecTreeNode` 的元数据合成符合
+ * `parseSpecDocsLlmResponse` 结构最小集校验的 markdown，让前端右栏卡片
+ * 与既有手工 spec 在结构上保持一致。所有 H2 / H3 标题硬编码为中文
+ * (zh-CN)，与 `SPEC_DOCS_SYSTEM_MESSAGE` Authoring structure 段落、
+ * `userPayload.exampleOutline` 三处保持完全一致。tasks 段保留
+ * `# Implementation Plan` / `## Overview` / `## Tasks` 英文标题以
+ * 与下游扫描工具兼容（与 Req 7.9 一致）。
+ *
+ * 函数签名独立导出，方便后续若需要从其它路径（如 LLM 失败后的最终兜底）
+ * 复用同一份骨架。
+ */
+function buildStructuredFallbackBody(
+  node: BlueprintSpecTreeNode,
+  type: BlueprintSpecDocumentType,
+): string {
+  const title = node.title.trim() || node.id;
+  const summary = node.summary.trim() || "（待补充节点摘要）";
+  const dependencyList = node.dependencies.length > 0
+    ? node.dependencies.join("、")
+    : "无";
+  const outputList = node.outputs.length > 0
+    ? node.outputs.join("、")
+    : "无";
+
+  if (type === "requirements") {
+    return [
+      `# 需求文档：${title}`,
+      "",
+      "## 简介",
+      "",
+      summary,
+      "",
+      "## 术语表",
+      "",
+      `- **${title}**：${summary}`,
+      `- **依赖项**：${dependencyList}`,
+      `- **产物**：${outputList}`,
+      "",
+      "## 需求",
+      "",
+      `### 需求 1：交付 ${title} 的核心能力`,
+      "",
+      `**用户故事：** As a developer, I want ${title} to be deliverable end-to-end, so that downstream consumers can rely on its outputs.`,
+      "",
+      "#### 验收标准",
+      "",
+      `1.1 THE ${title} module SHALL produce ${outputList} on successful execution.`,
+      `1.2 WHEN dependencies (${dependencyList}) are unavailable, THE ${title} module SHALL fail with a descriptive error and SHALL NOT silently degrade.`,
+      `1.3 IF execution priority is below ${node.priority}, THEN THE ${title} module SHALL defer to higher-priority work without losing pending state.`,
+      "",
+      `### 需求 2：保持可观测性与审计`,
+      "",
+      `**用户故事：** As an operator, I want every ${title} run to emit observable events, so that issues can be diagnosed without reading source code.`,
+      "",
+      "#### 验收标准",
+      "",
+      `2.1 THE ${title} module SHALL log start / progress / completion events with stable identifiers.`,
+      `2.2 WHILE execution is in flight, THE ${title} module SHALL emit at least one progress signal per logical phase.`,
+      "",
+      `### 需求 3：失败可恢复`,
+      "",
+      `**用户故事：** As a developer, I want ${title} failures to be recoverable, so that retry attempts do not require manual cleanup.`,
+      "",
+      "#### 验收标准",
+      "",
+      `3.1 WHEN ${title} fails mid-run, THE module SHALL persist a recovery checkpoint enabling clean retry.`,
+      `3.2 WHEN a retry is initiated, THE module SHALL resume from the last checkpoint rather than restarting from scratch.`,
+      "",
+      "_(Pending LLM enrichment.)_",
+    ].join("\n");
+  }
+
+  if (type === "design") {
+    const mermaidNodes = node.dependencies.length > 0
+      ? node.dependencies.map((dep, idx) => `  D${idx}[${dep}] --> Self[${title}]`).join("\n")
+      : `  Upstream[Upstream context] --> Self[${title}]`;
+    const mermaidOutputs = node.outputs.length > 0
+      ? node.outputs.map((out, idx) => `  Self[${title}] --> O${idx}[${out}]`).join("\n")
+      : `  Self[${title}] --> Out[${outputList}]`;
+    const interfaceName = `${title.replace(/[^a-zA-Z0-9]+/g, "")}Contract` || "NodeContract";
+    return [
+      `# 设计文档：${title}`,
+      "",
+      "## 概述",
+      "",
+      `${summary}`,
+      "",
+      `本节点优先级 ${node.priority}，类型 ${node.type}。依赖：${dependencyList}；产物：${outputList}。`,
+      "",
+      "## 架构",
+      "",
+      "```mermaid",
+      "graph TB",
+      mermaidNodes,
+      mermaidOutputs,
+      "```",
+      "",
+      "## 组件与接口",
+      "",
+      "```typescript",
+      `export interface ${interfaceName} {`,
+      `  /** 节点稳定标识。 */`,
+      `  id: string;`,
+      `  /** 节点优先级，0..100。 */`,
+      `  priority: number;`,
+      `  /** 上游依赖标识列表。 */`,
+      `  dependencies: ReadonlyArray<string>;`,
+      `  /** 产物标识列表。 */`,
+      `  outputs: ReadonlyArray<string>;`,
+      `}`,
+      "```",
+      "",
+      "## 数据模型",
+      "",
+      `${title} 的运行态字段在事件总线 / artifact / replay 三处保持一致 schema，避免出现派生字段漂移。`,
+      "",
+      "## 正确性属性",
+      "",
+      `### Property 1: ${title} 输出完整性`,
+      "",
+      `*For any* 成功完成的 ${title} 执行，所产物 ${outputList} 必须全部出现在 artifact 列表中，且与 \`${interfaceName}.outputs\` 字段一一对应。`,
+      "",
+      "**Validates: Requirements 1.1**",
+      "",
+      `### Property 2: ${title} 失败可观测`,
+      "",
+      `*For any* 失败的 ${title} 执行，事件流中必须存在至少一条带 \`status: failed\` 的事件，且 \`error.message\` 经脱敏后非空。`,
+      "",
+      "**Validates: Requirements 2.1**",
+      "",
+      `### Property 3: ${title} 重试恢复语义`,
+      "",
+      `*For any* 重试发起，\`${interfaceName}.checkpointId\` 必须能定位到上一次成功完成的最后一个步骤，重试不重复已完成的副作用。`,
+      "",
+      "**Validates: Requirements 3.1, 3.2**",
+      "",
+      "## 错误处理",
+      "",
+      `${title} 在依赖缺失、产物校验失败、超时三类错误下均统一发出 \`status: failed\` 事件，并把脱敏后的错误信息写入审计链。`,
+      "",
+      "## 测试策略",
+      "",
+      `用 example-based 单元测试覆盖 \`${interfaceName}\` 的输入校验、产物投影、失败路径。回归命令：\`node ./node_modules/vitest/vitest.mjs run\`，TS 基线保持 116 不变。`,
+      "",
+      "_(Pending LLM enrichment.)_",
+    ].join("\n");
+  }
+
+  // tasks
+  return [
+    `# Implementation Plan: ${title}`,
+    "",
+    "## Overview",
+    "",
+    `按 ${title} 的优先级 ${node.priority} 与依赖（${dependencyList}）排序，先收口 ${outputList}，再补观测与恢复路径。`,
+    "",
+    "## Tasks",
+    "",
+    `- [ ] 1. 落地 ${title} 主路径`,
+    `  - 完成 \`${interfaceNameFromTitle(title)}\` 接口定义与首个产物 ${outputList}`,
+    `  - _Requirements: 1.1, 1.2_`,
+    `- [ ] 2. 补齐 ${title} 观测与审计`,
+    `  - 写入 start / progress / completion 事件，落入审计链`,
+    `  - _Requirements: 2.1, 2.2_`,
+    `- [ ] 3. 实现 ${title} 失败恢复`,
+    `  - 持久化 checkpoint，使重试不重复副作用`,
+    `  - _Requirements: 3.1, 3.2_`,
+    `- [ ] 4. Checkpoint — ensure all tests pass, ask the user if questions arise`,
+    `  - _Requirements: 1.1, 2.1, 3.1_`,
+    "",
+    "_(Pending LLM enrichment.)_",
+  ].join("\n");
+}
+
+function interfaceNameFromTitle(title: string): string {
+  const cleaned = title.replace(/[^a-zA-Z0-9]+/g, "");
+  return cleaned.length > 0 ? `${cleaned}Contract` : "NodeContract";
 }
 
 function buildReusableRoleFindingLines(
@@ -13775,36 +13939,6 @@ function buildReusableRoleFindingLines(
     "## Reused Role Findings",
     "",
     ...findings.map(finding => `- ${formatReusableRoleFinding(finding)}`),
-  ];
-}
-
-function buildSpecDocumentSectionLines(
-  type: BlueprintSpecDocumentType,
-  node: BlueprintSpecTreeNode
-): string[] {
-  const title = node.title.trim();
-  const summary = node.summary.trim();
-
-  if (type === "requirements") {
-    return [
-      `- The system shall support ${summary || title.toLowerCase()}.`,
-      `- The node "${title}" shall remain traceable through job artifacts.`,
-      `- Downstream outputs: ${node.outputs.length > 0 ? node.outputs.join(", ") : "none"}.`,
-    ];
-  }
-
-  if (type === "design") {
-    return [
-      `- Structure the implementation around ${title}.`,
-      `- Preserve dependencies in the generated artifact graph.`,
-      `- Keep the summary: ${summary || "No summary provided."}`,
-    ];
-  }
-
-  return [
-    `- Step 1: Review ${title}.`,
-    `- Step 2: Deliver outputs ${node.outputs.length > 0 ? node.outputs.join(", ") : "none"}.`,
-    `- Step 3: Confirm dependencies ${node.dependencies.length > 0 ? node.dependencies.join(", ") : "none"}.`,
   ];
 }
 

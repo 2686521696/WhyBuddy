@@ -233,6 +233,58 @@
     - 保留为可选文档任务，便于后续真实环境复核
     - _Implements Req 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
+- [x] 12. Quality Uplift Wave — 把 spec docs 输出对齐 ai-enabled-sandbox 质量基线
+  - [x] 12.1 升级 `buildSpecDocsPrompt` system message
+    - 在 `server/routes/blueprint/llm-spec-prompts.ts` 的 `SPEC_DOCS_SYSTEM_MESSAGE` 中追加 "Authoring structure"段落，要求 LLM 输出按 Req 7.1 / 7.2 / 7.3 的章节骨架编写
+    - 列出 requirements 章节：`## 简介` / `## 术语表` / `## 需求` / 至少 3 个 `### 需求 N: …` 子块（含 `**用户故事:**` 与 `#### 验收标准`，每条用 EARS 关键词）
+    - 列出 design 章节：`## 概述` / `## 架构` / `## 组件与接口` / `## 数据模型` / `## 正确性属性` / `## 错误处理` / `## 测试策略`，要求 `## 架构` 至少嵌一个 ` ```mermaid ` 块、`## 组件与接口` 至少一个 TS interface 块、`## 正确性属性` 至少 3 条带 `**Validates: ...**`
+    - 列出 tasks 章节：`# Implementation Plan: <node title>` / `## Overview` / `## Tasks`，至少 3 个 `- [ ] N.` 顶层任务，每条含 `_Requirements: x.y_` 反引用，至少一个 Checkpoint
+    - 保持 promptId 不变 (`blueprint.spec-docs-llm.v1`)，因为是 prompt 文本扩张而非 schema 不向后兼容变更；`promptFingerprint` 自动随之刷新
+    - _Implements Req 7.4_
+  - [x] 12.2 扩展 `BuildSpecDocsPromptInput.outputSchema` 字段说明
+    - 在 `buildSpecDocsPrompt` 内的 `userPayload.outputSchema` 由 "string, 1..20000 chars, Markdown" 升级为对象，每个 doc 字段附带 `requiredHeadings: string[]`
+    - 增补 `userPayload.exampleOutline` 字段：枚举 requirements / design / tasks 三组必备 H2 / H3 标题列表，引导 LLM 依此组织
+    - 字段顺序固定（`promptId / node / parentSummary? / siblingSummaries / primaryRouteSummary / relevantRepoExcerpts? / outputSchema / exampleOutline`），保证 fingerprint 字节稳定
+    - _Implements Req 7.4_
+  - [x] 12.3 在 `parseSpecDocsLlmResponse` 中增加结构最小集校验
+    - 校验 `requirements` 含 `## 简介` 与 `## 需求`；`design` 含 `## 概述` 与 `## 架构`；`tasks` 含 `## Tasks`
+    - 任一缺失：返回 `{ ok: false, reason: "structural validation failed: missing <section>" }`，复用既有 zod safeParse 失败的同构降级路径
+    - 保留既有 zod 边界校验（1..20000 字符）；结构校验失败与 schema 失败合并为同一 `fallbackReason` 前缀语义 "schema/structural validation failed"
+    - _Implements Req 7.6_
+  - [x] 12.4 重写 `buildSpecDocumentBody` / `buildSpecDocumentSectionLines` 模板
+    - 在 `server/routes/blueprint.ts` 中把现有 6 行占位重写为按 Req 7.5 的多章节骨架
+    - 共享一个 `buildStructuredFallbackBody(node, type, primaryRouteSummary, locale)` helper：从 `BlueprintSpecTreeNode.title / summary / dependencies / outputs / priority / type` 派生章节内容
+    - requirements 模板：填 `## 简介` / `## 术语表`（基于 dependencies / outputs 列出术语）/ `## 需求` 至少 3 条 EARS 风格 `### 需求 N` 块，缺 LLM 内容时以 `_(Pending LLM enrichment.)_` 占位但保持 H2 / H3 完整
+    - design 模板：填 `## 概述` / `## 架构`（含 placeholder ` ```mermaid graph TB ... ``` ` 块，节点用 node.title 与 dependencies 名）/ `## 组件与接口`（提供占位 TS interface stub）/ `## 数据模型` / `## 正确性属性`（至少 3 条占位 + Validates ref）/ `## 错误处理` / `## 测试策略`
+    - tasks 模板：填 `# Implementation Plan: <title>` / `## Overview` / `## Tasks` 至少 3 条 `- [ ] N.`，每条 `_Requirements: x.y_`，至少一条 Checkpoint
+    - 保留既有 `buildReusableRoleFindingLines` 输出（如有）作为底部尾段
+    - 实施变更：`buildSpecDocumentSectionLines` 老 6 行占位辅助函数已删除，避免 dead code 扩大 TS 错误面
+    - _Implements Req 7.1, 7.2, 7.3, 7.5_
+  - [x] 12.5 抽取 `buildStructuredFallbackBody` 辅助层并共享 zh-CN / en-US 文案
+    - H2 / H3 章节标题硬编码在 `buildStructuredFallbackBody` 内：requirements / design 走中文 H2，tasks 保留英文 `# Implementation Plan` / `## Overview` / `## Tasks`（与现有工具兼容）
+    - 当前实现按 spec 默认 zh-CN locale，未引入额外 i18n locale 选择参数；后续如需 en-US 路径再扩展（与 Req 7.9 的 zh-CN 主路径一致）
+    - 该 helper 既被模板兜底路径使用，又为 LLM 失败后的 fallback 路径产出同形结构
+    - _Implements Req 7.9_
+  - [x] 12.6 右栏 SPEC 树工作台卡片 body 升级为结构化预览
+    - 新增 `client/src/pages/autopilot/right-rail/spec-tree-workbench/specMarkdownPreview.ts`：纯函数 `buildSpecMarkdownPreview(markdown)` 拆首个 H2 + 前 3 行非标题段落
+    - 在 `SpecDocPreviewBlock.tsx` 标题 / 摘要下方追加 preview 区块：`firstH2` 显示为加粗小字，3 行段落用 `<ul><li line-clamp-1>` 渲染
+    - 不修改受保护文件 `MiroFishCardStream.tsx`
+    - 增补 `__tests__/specMarkdownPreview.test.ts` 6 个用例覆盖 undefined / 无 H2 / 多行段落 / 截断 / 列表项 / 立即遇到下个标题
+    - _Implements Req 7.7, 7.9_
+  - [x] 12.7 兼容性回归与基线核对
+    - `node ./node_modules/vitest/vitest.mjs run server/routes/blueprint/spec-documents server/routes/blueprint/__tests__ --config vitest.config.server.ts` → 113/113 passed
+    - `node ./node_modules/vitest/vitest.mjs run client/src/pages/autopilot/right-rail/spec-tree-workbench/__tests__` → 26/26 passed
+    - `node ./node_modules/vitest/vitest.mjs run server/tests/blueprint-routes.test.ts -t "generates and reads node-level" --config vitest.config.server.ts` → 1/1 passed（更新过的 1772 断言）
+    - 同步更新 `server/tests/blueprint-routes.test.ts` 三处旧断言：1772 area `# Requirements:` / `## Derived Content` → `# 需求文档：` / `## 简介` / `## 需求`；4696 area negative assertions 改为针对新章节骨架；4790 area 按 `firstType` 分支断言三类 doc 的对应 H2
+    - 同步更新 `server/routes/blueprint/__tests__/spec-docs-llm-generation.test.ts` 中 `makeValidDocsResponse` fixture，让其满足新结构最小集校验
+    - `node --run check` → TS 错误数 116（与改动前 116 完全一致）
+    - 已知 2 处预先存在失败：`generateSpecDocuments produces LLM-driven content when spec-documents llm is enabled` / `generateSpecDocuments falls back to template when spec-documents llm call throws` 的 `expected 34 to be 33` mock call counter 失败，已通过 `git stash` 验证与本 wave 无关
+    - _Implements Req 7.8, 7.10_
+  - [x] 12.8 Checkpoint — ensure all tests pass, ask the user if questions arise
+    - 关键回归全绿；TS 116 基线不变；Quality Uplift 路径正常工作
+    - 2 处预先存在 blueprint-routes mock counter 失败留作单独跟进，不属于本 wave 引入
+    - _Implements Req 7.10, 6.3_
+
 ## 备注
 
 - 标 `*` 的子任务为可选，仅在希望进一步加固类型安全 / 文档时执行；模型不会在主线实现中触碰这些子任务
@@ -260,7 +312,11 @@
     { "id": 10, "tasks": ["8.1", "9.1"] },
     { "id": 11, "tasks": ["8.2", "8.3", "8.4", "8.5", "9.2", "9.3", "9.4"] },
     { "id": 12, "tasks": ["10.1", "10.2"] },
-    { "id": 13, "tasks": ["11.1"] }
+    { "id": 13, "tasks": ["11.1"] },
+    { "id": 14, "tasks": ["12.1", "12.2", "12.3", "12.5"] },
+    { "id": 15, "tasks": ["12.4", "12.6"] },
+    { "id": 16, "tasks": ["12.7"] },
+    { "id": 17, "tasks": ["12.8"] }
   ]
 }
 ```

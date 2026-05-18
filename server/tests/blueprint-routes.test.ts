@@ -1769,8 +1769,9 @@ describe("blueprint specs route", () => {
           nodeType: "root",
         },
       });
-      expect(requirements.content).toContain("# Requirements:");
-      expect(requirements.content).toContain("## Derived Content");
+      expect(requirements.content).toContain("# 需求文档：");
+      expect(requirements.content).toContain("## 简介");
+      expect(requirements.content).toContain("## 需求");
 
       expect(
         generated.job.artifacts.filter((artifact: any) =>
@@ -4689,14 +4690,18 @@ describe("blueprint specs route", () => {
         // `extractSpecDocuments` sorts by (nodeId, type), `documents[0]` is
         // the first sorted pair — not necessarily the first node in the spec
         // tree. We only assert LLM-shape content, not node-specific text.
+        // Task 12.4 (Quality Uplift Wave): templated 兜底升级为多章节骨架
+        // (`## 简介` / `## 需求` / `## 概述` / `## 架构` / `## Tasks`)，
+        // 因此这里负向断言改为针对新骨架，确认 LLM 路径没回退到模板。
         const anyNodeTitle = selected.specTree.nodes[0].title as string;
         expect(documents[0].title).not.toBe(`Requirements: ${anyNodeTitle}`);
         expect(documents[0].title).toBe("LLM-derived spec content");
         expect(documents[0].content.startsWith("# ")).toBe(true);
         expect(documents[0].content).toContain("## Overview");
-        expect(documents[0].content).not.toContain("## Summary");
-        expect(documents[0].content).not.toContain("## Inputs");
-        expect(documents[0].content).not.toContain("## Derived Content");
+        expect(documents[0].content).not.toContain("## 简介");
+        expect(documents[0].content).not.toContain("## 需求");
+        expect(documents[0].content).not.toContain("## 概述");
+        expect(documents[0].content).not.toContain("## 架构");
         expect(documents[0].content).not.toContain("## Reused Role Findings");
 
         // 17.5: documents cover every (specTree.nodes × SPEC_DOCUMENT_TYPES)
@@ -4787,9 +4792,20 @@ describe("blueprint specs route", () => {
         }
 
         // 18.4: content falls back to the templated body + title.
-        expect(documents[0].content).toContain("## Summary");
-        expect(documents[0].content).toContain("## Inputs");
-        expect(documents[0].content).toContain("## Derived Content");
+        // Task 12.4 (Quality Uplift Wave): templated 兜底升级为多章节骨架。
+        // requirements 段含 `## 简介` / `## 需求`；design 段含 `## 概述` /
+        // `## 架构`；tasks 段含 `## Tasks`。任意一种都至少有一处可断言。
+        const firstContent = documents[0].content as string;
+        const firstType = documents[0].type as string;
+        if (firstType === "requirements") {
+          expect(firstContent).toContain("## 简介");
+          expect(firstContent).toContain("## 需求");
+        } else if (firstType === "design") {
+          expect(firstContent).toContain("## 概述");
+          expect(firstContent).toContain("## 架构");
+        } else {
+          expect(firstContent).toContain("## Tasks");
+        }
         expect(documents[0].title).toMatch(/^(Requirements|Design|Tasks): /);
 
         // 18.5: documents.length === specTree.nodes.length * 3; documents

@@ -19,6 +19,8 @@ import type {
   BlueprintSpecDocumentType,
 } from "@shared/blueprint/contracts";
 
+import { buildSpecMarkdownPreview } from "./specMarkdownPreview";
+
 const TYPE_LABEL: Record<BlueprintSpecDocumentType, string> = {
   requirements: "requirements",
   design: "design",
@@ -125,6 +127,43 @@ export const SpecDocPreviewBlock: FC<SpecDocPreviewBlockProps> = ({
       <div className="mt-0.5 text-[11px] leading-snug text-slate-600 line-clamp-2">
         {document.summary}
       </div>
+
+      {/*
+        Task 12.6 (Quality Uplift Wave) — content preview。
+        渲染首个 H2 章节标题 + 该章节下前 3 行非标题段落，让用户在不
+        展开完整文档的前提下能直接判断这是 LLM 真生成、模板兜底，还是
+        `_(Pending LLM enrichment.)_` 占位。
+      */}
+      {(() => {
+        const preview = buildSpecMarkdownPreview(document.content);
+        if (!preview.firstH2 && preview.paragraphLines.length === 0) {
+          return null;
+        }
+        return (
+          <div
+            data-testid="spec-doc-preview-content"
+            className="mt-2 border-t border-slate-100 pt-1.5"
+          >
+            {preview.firstH2 ? (
+              <div className="text-[10px] font-bold text-slate-700">
+                {preview.firstH2}
+              </div>
+            ) : null}
+            {preview.paragraphLines.length > 0 ? (
+              <ul className="mt-0.5 space-y-0.5">
+                {preview.paragraphLines.map((line, idx) => (
+                  <li
+                    key={idx}
+                    className="line-clamp-1 text-[10px] leading-snug text-slate-500"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })()}
     </div>
   );
 };
