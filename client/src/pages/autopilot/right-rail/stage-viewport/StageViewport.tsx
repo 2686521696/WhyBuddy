@@ -72,7 +72,7 @@ const StageViewport: FC<StageViewportProps> = ({
 
       {/* StageContent 区域 — 弹性可滚动 */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-2"
         style={{
           width: "100%",
           maxWidth: "100%",

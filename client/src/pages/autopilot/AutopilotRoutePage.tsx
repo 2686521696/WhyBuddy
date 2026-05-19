@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Steps } from "antd";
 import {
   Bot,
   CheckCircle2,
@@ -1637,13 +1636,13 @@ function AutopilotWorkflowRail({
 
   return (
     <aside
-      className="grid min-w-0 content-start gap-3 xl:max-h-[calc(100vh-104px)] xl:overflow-y-auto xl:overflow-x-hidden"
+      className="grid min-w-0 content-start xl:h-full xl:max-h-full xl:overflow-y-auto xl:overflow-x-hidden"
       data-testid="autopilot-workflow-rail"
       style={{
         // 硬约束 aside 宽度。父级 grid track 是 minmax(0, 2fr)，但 grid item
         // 的 min-width: auto 默认会让 item 的最小宽度 = min-content。当内部
-        // markdown 长行 / DocTabBar 多 tab 等内容存在时，min-content 会把整个
-        // aside 撑大到内容总宽度（曾出现过 15364px）。
+        // markdown 长行 / 多 tab 等内容存在时，min-content 会把整个 aside
+        // 撑大到内容总宽度（曾出现过 15364px）。
         // 仅锁定宽度方向；垂直滚动由 className 的 xl:overflow-y-auto 承担，
         // 这里不能再用 inline overflow: hidden（inline 优先级会覆盖 class，
         // 导致 aside 内部超出视口的内容无法纵向滚动）。
@@ -1654,41 +1653,18 @@ function AutopilotWorkflowRail({
       }}
     >
       <section
-        className="min-w-0 border border-slate-200 bg-white"
+        className="min-w-0 h-full border border-slate-200 bg-white"
         data-testid="autopilot-workflow-steps"
       >
-        <div className="border-b border-slate-200 px-3 py-3">
-          <Steps
-            className="w-full min-w-0 [&_.ant-steps-item]:min-w-0 [&_.ant-steps-item-container]:min-w-0 [&_.ant-steps-item-content]:min-w-0 [&_.ant-steps-item-title]:max-w-full [&_.ant-steps-item-title]:break-words [&_.ant-steps-item-title]:text-[10px] [&_.ant-steps-item-title]:leading-3"
-            current={activeStepIndex}
-            direction="horizontal"
-            labelPlacement="vertical"
-            size="small"
-            responsive={false}
-            items={flowSteps.map(step => ({
-              title: (
-                <span className="mx-auto block max-w-[64px] break-words text-center text-[10px] font-black leading-3 text-slate-950">
-                  {railStepLabel(step)}
-                </span>
-              ),
-              status:
-                step.status === "done"
-                  ? "finish"
-                  : step.status === "active"
-                    ? "process"
-                    : "wait",
-              disabled: step.status === "blocked",
-              icon: (
-                <span className="flex size-5 items-center justify-center rounded-full bg-slate-950 text-white">
-                  <step.icon className="size-3" aria-hidden="true" />
-                </span>
-              ),
-            }))}
-          />
-        </div>
-
+        {/*
+          2026-05-19：移除顶部 antd Steps 横向步骤条（输入 / 编组 两步）。
+          阶段进度信号已经在 StageHeader 内的 StageProgressIndicator
+          (6 圆点 + 进度条) 中完整呈现，再保留 antd Steps 与 STEP 05 标题
+          视觉重复，且占用首屏宝贵空间。flowSteps 仍保留供 buildConsoleLines
+          / consoleLines 派生使用，不删除 useMemo 计算。
+        */}
         <div
-          className="space-y-4 px-4 py-4"
+          className="h-full px-0 py-0"
           data-testid={`autopilot-step-${activeStepId}`}
         >
           {renderActiveStepBody()}

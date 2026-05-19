@@ -480,7 +480,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       data-testid="autopilot-right-rail"
       data-autopilot-stage={currentStage}
       data-autopilot-sub-stage={activeSubStage ?? ""}
-      className="px-4 py-5"
+      className="flex h-full flex-col px-3 py-3 gap-2"
       style={{
         // 硬约束 aside 宽度。父级是 grid track minmax(0, 2fr)，正常情况下
         // 应该自然限制宽度，但右栏内部多层 flex / motion.div / overflow 嵌套
@@ -501,12 +501,13 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       {/* autopilot-streaming-experience integration-gap-2026-05-16 UI 消费面 Step 1：角色态条带 */}
       <RoleStatusStrip />
 
-      {/* 阶段独占视口 — 使用 resolveRailSubStage 计算 activeStageIndex，
-          将当前活跃阶段内容作为 StageViewport children 传入 */}
-      <StageTransitionWrapper
-        stageKey={activeStageKey}
-        direction={transitionDirection}
-      >
+      {/* 阶段独占视口 — 包一层 flex-1 min-h-0 让它占满 aside 剩余高度，
+          避免大屏下 StageViewport 内容只占 content-height、底部出现白色空白带。 */}
+      <div className="flex-1 min-h-0" style={{ minHeight: 0 }}>
+        <StageTransitionWrapper
+          stageKey={activeStageKey}
+          direction={transitionDirection}
+        >
         <StageViewport
           stageIndex={activeStageIndex}
           stageKey={activeStageKey}
@@ -531,14 +532,11 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                 onAction={handleReturnToActiveStage}
               />
             ) : currentStageConfig.autoAdvance ? (
-              <StageCTA
-                label={currentStageConfig.ctaLabel}
-                loading={false}
-                disabled={false}
-                readOnly={true}
-                readOnlyHint={locale === "zh-CN" ? "自动生成中..." : "Auto-generating..."}
-                onAction={() => {}}
-              />
+              // 2026-05-19：autoAdvance 阶段不再渲染底部"自动生成中..."提示条。
+              // 流式状态由 StageHeader 内的 StageProgressIndicator + 当前文档头部
+              // 的"生成中"指示器共同承载，再保留底部白色提示条会挤压主区高度并
+              // 在大屏出现底部空白带。
+              null
             ) : (
               <StageCTA
                 label={currentStageConfig.ctaLabel}
@@ -606,6 +604,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           )}
         </StageViewport>
       </StageTransitionWrapper>
+      </div>
 
       {/* autopilot-streaming-experience integration-gap-2026-05-16 UI 消费面 Step 2：能力调用条 */}
       <CapabilityRail />

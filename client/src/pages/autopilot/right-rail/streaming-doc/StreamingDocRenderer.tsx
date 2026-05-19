@@ -583,6 +583,22 @@ export const StreamingDocRenderer: FC<StreamingDocRendererProps> = ({
     return state.documents[activeDocId] ?? EMPTY_DOC_STATE;
   }, [activeDocId, state.documents]);
 
+  /**
+   * 渲染时实际使用的 markdown：优先用流式累积的 rawMarkdown，没有时
+   * 退回到稳定 `BlueprintSpecDocument.content`。这样：
+   * - 流式生成中的文档实时显示 chunk 累积
+   * - 已落库（生成完成）的文档点击侧边栏后立即回显完整 content
+   * - 切换文档不会出现"等待文档生成…"卡死状态
+   */
+  const renderedMarkdown = useMemo<string>(() => {
+    if (activeDocState.rawMarkdown.length > 0) {
+      return activeDocState.rawMarkdown;
+    }
+    if (activeDocId === null) return "";
+    const doc = docById.get(activeDocId);
+    return typeof doc?.content === "string" ? doc.content : "";
+  }, [activeDocState.rawMarkdown, activeDocId, docById]);
+
   interface ActiveDocMeta {
     id: string;
     title: string;
@@ -621,8 +637,7 @@ export const StreamingDocRenderer: FC<StreamingDocRendererProps> = ({
     state.documents,
   ]);
 
-  const isEmpty =
-    activeDocId === null || activeDocState.rawMarkdown.length === 0;
+  const isEmpty = activeDocId === null || renderedMarkdown.length === 0;
   const emptyHint = isZh ? "等待文档生成…" : "Waiting for document…";
   const ariaLabel = isZh ? "流式文档渲染区" : "Streaming document area";
 
@@ -934,7 +949,7 @@ export const StreamingDocRenderer: FC<StreamingDocRendererProps> = ({
               data-is-streaming={
                 activeDocState.isStreaming ? "true" : "false"
               }
-              data-raw-length={activeDocState.rawMarkdown.length}
+              data-raw-length={renderedMarkdown.length}
               style={{
                 width: "100%",
                 maxWidth: "100%",
@@ -945,7 +960,7 @@ export const StreamingDocRenderer: FC<StreamingDocRendererProps> = ({
               }}
             >
               <MarkdownRenderer
-                markdown={activeDocState.rawMarkdown}
+                markdown={renderedMarkdown}
                 isStreaming={activeDocState.isStreaming}
                 locale={locale}
               />
