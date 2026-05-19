@@ -1664,7 +1664,7 @@ function AutopilotWorkflowRail({
           / consoleLines 派生使用，不删除 useMemo 计算。
         */}
         <div
-          className="h-full px-0 py-0"
+          className="h-full p-2"
           data-testid={`autopilot-step-${activeStepId}`}
         >
           {renderActiveStepBody()}
