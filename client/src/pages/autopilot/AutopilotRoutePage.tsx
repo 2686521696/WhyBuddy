@@ -1644,11 +1644,12 @@ function AutopilotWorkflowRail({
         // 的 min-width: auto 默认会让 item 的最小宽度 = min-content。当内部
         // markdown 长行 / DocTabBar 多 tab 等内容存在时，min-content 会把整个
         // aside 撑大到内容总宽度（曾出现过 15364px）。
-        // inline maxWidth + width 100% + overflow hidden 是最后的硬约束。
+        // 仅锁定宽度方向；垂直滚动由 className 的 xl:overflow-y-auto 承担，
+        // 这里不能再用 inline overflow: hidden（inline 优先级会覆盖 class，
+        // 导致 aside 内部超出视口的内容无法纵向滚动）。
         width: "100%",
         maxWidth: "100%",
         minWidth: 0,
-        overflow: "hidden",
         boxSizing: "border-box",
       }}
     >

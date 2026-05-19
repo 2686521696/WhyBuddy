@@ -486,11 +486,13 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         // 应该自然限制宽度，但右栏内部多层 flex / motion.div / overflow 嵌套
         // 容易把 min-content 推到内容总宽。inline width: 100% + maxWidth: 100%
         // 直接锁定 aside 不超过 grid track。
+        // 注意：这里只锁宽度方向；垂直方向由外层 AutopilotWorkflowRail aside
+        // 的 xl:overflow-y-auto 承担，本元素不能写 overflow: hidden（inline
+        // overflow 会覆盖 class，导致超出视口的内容无法被外层 scroll 到）。
         width: "100%",
         maxWidth: "100%",
         minWidth: 0,
         boxSizing: "border-box",
-        overflow: "hidden",
       }}
     >
       {/* fabric 阶段的 placeholder 保留(供测试断言) */}
