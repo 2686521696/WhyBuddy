@@ -217,7 +217,8 @@ describe("AutopilotRightRail streaming timeline", () => {
     // StageHeader 存在
     expect(markup).toContain("STEP 04");
     expect(markup).toContain("SPEC TREE");
-    // StageCTA 存在
-    expect(markup).toContain("生成文档");
+    // 2026-05-19：StageCTA 已被移除（CTA 由 SpecTreeWorkbench 顶部双按钮承担）。
+    // 改为断言 StageHeader 内的 STEP 编号 + 中文标题仍存在。
+    expect(markup).toContain("STEP 04");
   });
 });

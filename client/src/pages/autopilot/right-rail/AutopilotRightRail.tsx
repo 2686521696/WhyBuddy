@@ -531,19 +531,14 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                 disabled={false}
                 onAction={handleReturnToActiveStage}
               />
-            ) : currentStageConfig.autoAdvance ? (
-              // 2026-05-19：autoAdvance 阶段不再渲染底部"自动生成中..."提示条。
-              // 流式状态由 StageHeader 内的 StageProgressIndicator + 当前文档头部
-              // 的"生成中"指示器共同承载，再保留底部白色提示条会挤压主区高度并
-              // 在大屏出现底部空白带。
-              null
             ) : (
-              <StageCTA
-                label={currentStageConfig.ctaLabel}
-                loading={specDocsGenerating !== null}
-                disabled={specDocsGenerating !== null}
-                onAction={handleStageAdvance}
-              />
+              // 2026-05-19：所有非回看分支不再渲染底部 StageCTA。
+              // - autoAdvance 阶段（spec_documents）：流式状态由 StreamingDocRenderer
+              //   头部"生成中"指示器承载，底部白色提示条挤压主区高度。
+              // - spec_tree 等其它阶段：CTA 已经由 SpecTreeWorkbench 顶部双 CTA
+              //   （"生成整棵树文档" / "生成当前节点文档"）承担，底部再放
+              //   "生成文档"按钮属于功能重复且分割视觉。
+              null
             )
           }
         >
