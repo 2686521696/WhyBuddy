@@ -490,13 +490,13 @@ Step 8: 工程落地/Mission (Engineering Landing)
 | 节点 | 差距 | 状态 |
 | ---- | ---- | ---- |
 | condition | 缺 6 个运算符 + AND/OR 组合 | ✅ 已补齐 14 运算符 + AND/OR |
+| image_search | mock 数据，无真实搜索 | ✅ 已实现 TF-IDF 动态搜索引擎（16 条目目录） |
+| file_slicing | 不支持 PDF/Word/Excel | ✅ 已支持 xlsx(直接) + docx(mammoth) + pdf(可选) |
 
 ### 待评估
 
 | 节点 | 差距 | 严重度 | 建议 |
 | ---- | ---- | ------ | ---- |
-| image_search | cube 是 mock 数据 + DI 钩子，无真实向量搜索 | CRITICAL | 需要接入真实 embedding + vector search |
-| file_slicing | 只支持纯文本/md/json/html，不支持 PDF/Word/Excel | MEDIUM | 评估 Autopilot 主线是否需要 |
 | knowledge_qa | cube 是 KnowledgeService 封装，管线深度取决于服务内部 | MEDIUM | 审计 knowledge-service.ts 内部实现 |
 | static_webpage_read | cube 用 regex 剥离 HTML，rbac 用 cheerio DOM 解析 | LOW | 复杂 HTML 场景可能不够 |
 | auto_agent | cube 无 ReAct 迭代循环（单次委派） | MEDIUM | Autopilot 管线的 AgentLoopStateMachine 可能已覆盖 |
