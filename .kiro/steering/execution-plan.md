@@ -7,6 +7,8 @@
 -->
 
 ---
+inclusion: auto
+---
 
 ## inclusion: auto
 

@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 迁移 Spec 执行矩阵
 
 ## 文档目标

@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # 总迁移计划：将 `web-aigc` 编排能力引入 Cube Pets Office
 
 ## 目标

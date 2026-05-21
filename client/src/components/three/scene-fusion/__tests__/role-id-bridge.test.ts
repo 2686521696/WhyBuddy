@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import type { RolePhase } from "@/lib/blueprint-realtime-store";
 import {
   readBlueprintRolePhase,
+  readBlueprintRoleRuntimeState,
   type FsdRoleId,
   type MissionAgentId,
 } from "../role-id-bridge";
@@ -37,6 +38,56 @@ describe("readBlueprintRolePhase / FSD roleId 映射", () => {
       );
     });
   }
+});
+
+describe("readBlueprintRoleRuntimeState / FSD runtime evidence mapping", () => {
+  it("maps planner runtime state to agent-manager-research", () => {
+    const runtimeStates = {
+      planner: {
+        roleId: "planner",
+        jobId: "job-1",
+        stageId: "spec_tree",
+        status: "ready",
+        runtimeKind: "fallback",
+        containerMode: "lite",
+        executionMode: "simulated_fallback",
+        fallbackReason: "executor unreachable",
+        lastUpdated: 123,
+      },
+    } as const;
+
+    expect(
+      readBlueprintRoleRuntimeState(
+        runtimeStates,
+        "agent-manager-research"
+      )
+    ).toMatchObject({
+      roleId: "planner",
+      runtimeKind: "fallback",
+      status: "ready",
+    });
+  });
+
+  it("falls back to mission agent id when no FSD runtime state exists", () => {
+    const runtimeStates = {
+      "agent-ceo": {
+        roleId: "agent-ceo",
+        status: "ready",
+        runtimeKind: "real",
+        containerMode: "real",
+        executionMode: "real",
+        lastUpdated: 456,
+      },
+    } as const;
+
+    expect(
+      readBlueprintRoleRuntimeState(runtimeStates, "agent-ceo")
+    ).toMatchObject({
+      roleId: "agent-ceo",
+      runtimeKind: "real",
+      status: "ready",
+    });
+  });
 });
 
 describe("readBlueprintRolePhase / 兼容与降级", () => {

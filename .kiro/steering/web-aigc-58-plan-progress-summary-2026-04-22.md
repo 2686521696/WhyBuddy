@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # web-aigc 58 份 Plan / Specs 进度总结（2026-04-23）
 
 ## 统计口径

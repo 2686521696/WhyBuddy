@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 58 Spec 并行执行总计划
 
 ## 文档目标

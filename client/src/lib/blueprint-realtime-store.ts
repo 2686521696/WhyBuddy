@@ -47,6 +47,41 @@ export type RolePhase =
   | "completed"
   | "failed";
 
+export type RoleRuntimeLifecycleStatus =
+  | "provisioning"
+  | "ready"
+  | "teardown"
+  | "failed";
+
+export type RoleRuntimeKind = "real" | "fallback" | "stub" | "missing";
+
+export type RoleRuntimeExecutionMode = "real" | "simulated_fallback";
+
+export type RoleRuntimeContainerMode = "real" | "lite";
+
+export interface RoleRuntimeBindingSummary {
+  mcpCount: number;
+  skillCount: number;
+  aigcNodeCount: number;
+  skippedMcps: number;
+  skippedSkills: number;
+}
+
+export interface RoleRuntimeState {
+  roleId: string;
+  jobId?: string;
+  stageId?: string;
+  status: RoleRuntimeLifecycleStatus;
+  runtimeKind: RoleRuntimeKind;
+  containerMode?: RoleRuntimeContainerMode;
+  executionMode?: RoleRuntimeExecutionMode;
+  fallbackReason?: string;
+  error?: string;
+  bindingSummary?: RoleRuntimeBindingSummary;
+  cached?: boolean;
+  lastUpdated: number;
+}
+
 /**
  * Agent 进度条目。
  */
@@ -159,6 +194,9 @@ export interface BlueprintRealtimeState {
   /** 角色阶段映射：roleId → phase */
   rolePhases: Record<string, RolePhase>;
 
+  /** Role container runtime evidence keyed by roleId. */
+  roleRuntimeStates: Record<string, RoleRuntimeState>;
+
   /** Agent 进度事件队列（最近 50 条） */
   agentProgress: AgentProgressEntry[];
 
@@ -233,6 +271,8 @@ export function mapEventTypeToPhase(type: string): RolePhase | null {
       return "activated";
     case "role.container.ready":
       return "activated";
+    case "role.container.teardown":
+      return "sleeping";
     case "role.container.failed":
       return "failed";
     default:
@@ -254,6 +294,168 @@ function mapCapabilityEventToStatus(type: string): CapabilityStatus {
     default:
       return "idle";
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function readPayloadRecord(
+  payload: BlueprintRelayedEvent["payload"]
+): Record<string, unknown> {
+  return isRecord(payload) ? payload : {};
+}
+
+function readNestedRecord(
+  record: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readRoleIdFromPayload(
+  payload: BlueprintRelayedEvent["payload"]
+): string | undefined {
+  const record = readPayloadRecord(payload);
+  const direct = readString(record.roleId);
+  if (direct) return direct;
+
+  const role = readNestedRecord(record, "role");
+  const roleId = role ? readString(role.id) : undefined;
+  if (roleId) return roleId;
+
+  const key = readNestedRecord(record, "key");
+  return key ? readString(key.roleId) : undefined;
+}
+
+function readRoleContainerKey(
+  payload: BlueprintRelayedEvent["payload"]
+): { roleId?: string; jobId?: string; stageId?: string } {
+  const record = readPayloadRecord(payload);
+  const key = readNestedRecord(record, "key");
+  return {
+    roleId: readRoleIdFromPayload(payload),
+    jobId: key ? readString(key.jobId) : undefined,
+    stageId: key ? readString(key.stageId) : undefined,
+  };
+}
+
+function readBindingSummary(
+  payload: BlueprintRelayedEvent["payload"]
+): RoleRuntimeBindingSummary | undefined {
+  const record = readPayloadRecord(payload);
+  const summary = readNestedRecord(record, "bindingSummary");
+  if (!summary) return undefined;
+  return {
+    mcpCount: readNumber(summary.mcpCount) ?? 0,
+    skillCount: readNumber(summary.skillCount) ?? 0,
+    aigcNodeCount: readNumber(summary.aigcNodeCount) ?? 0,
+    skippedMcps: readNumber(summary.skippedMcps) ?? 0,
+    skippedSkills: readNumber(summary.skippedSkills) ?? 0,
+  };
+}
+
+function mapRoleContainerEventToCapabilityStatus(
+  type: string
+): CapabilityStatus | null {
+  switch (type) {
+    case "role.container.provisioning":
+      return "invoking";
+    case "role.container.ready":
+    case "role.container.teardown":
+      return "completed";
+    case "role.container.failed":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+function mapRoleContainerEventToRuntimeStatus(
+  type: string
+): RoleRuntimeLifecycleStatus | null {
+  switch (type) {
+    case "role.container.provisioning":
+      return "provisioning";
+    case "role.container.ready":
+      return "ready";
+    case "role.container.teardown":
+      return "teardown";
+    case "role.container.failed":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+function normalizeExecutionMode(
+  value: unknown
+): RoleRuntimeExecutionMode | undefined {
+  return value === "real" || value === "simulated_fallback"
+    ? value
+    : undefined;
+}
+
+function normalizeContainerMode(
+  value: unknown
+): RoleRuntimeContainerMode | undefined {
+  return value === "real" || value === "lite" ? value : undefined;
+}
+
+function resolveRuntimeKind(
+  type: string,
+  executionMode: RoleRuntimeExecutionMode | undefined
+): RoleRuntimeKind {
+  if (type === "role.container.failed") return "stub";
+  if (executionMode === "real") return "real";
+  if (executionMode === "simulated_fallback") return "fallback";
+  return "missing";
+}
+
+function buildRoleRuntimeState(
+  event: BlueprintRelayedEvent,
+  roleId: string,
+  lastUpdated: number
+): RoleRuntimeState | null {
+  const status = mapRoleContainerEventToRuntimeStatus(event.type);
+  if (!status) return null;
+
+  const payload = readPayloadRecord(event.payload);
+  const key = readRoleContainerKey(event.payload);
+  const executionMode = normalizeExecutionMode(payload.executionMode);
+  const containerMode = normalizeContainerMode(payload.containerMode);
+  const fallbackReason = readString(payload.fallbackReason);
+  const error = readString(payload.error);
+  const bindingSummary = readBindingSummary(event.payload);
+  const cached = readBoolean(payload.cached);
+
+  return {
+    roleId,
+    ...(key.jobId ? { jobId: key.jobId } : {}),
+    ...(key.stageId ? { stageId: key.stageId } : {}),
+    status,
+    runtimeKind: resolveRuntimeKind(event.type, executionMode),
+    ...(containerMode ? { containerMode } : {}),
+    ...(executionMode ? { executionMode } : {}),
+    ...(fallbackReason ? { fallbackReason } : {}),
+    ...(error ? { error } : {}),
+    ...(bindingSummary ? { bindingSummary } : {}),
+    ...(cached !== undefined ? { cached } : {}),
+    lastUpdated,
+  };
 }
 
 /**
@@ -438,6 +640,7 @@ export function __setSocket(s: Socket | null): void {
 const initialState: BlueprintRealtimeState = {
   subscribedJobId: null,
   rolePhases: {},
+  roleRuntimeStates: {},
   agentProgress: [],
   capabilityStatuses: {},
   logEntries: [],
@@ -568,6 +771,7 @@ export const useBlueprintRealtimeStore = create<
     set({
       subscribedJobId: null,
       rolePhases: {},
+      roleRuntimeStates: {},
       agentProgress: [],
       capabilityStatuses: {},
       fleetRoleCards: [],
@@ -585,6 +789,12 @@ export const useBlueprintRealtimeStore = create<
 
     set((state) => {
       const updates: Partial<BlueprintRealtimeState> = {};
+      const eventTime =
+        typeof event.timestamp === "number"
+          ? event.timestamp
+          : new Date(event.timestamp).getTime();
+      const lastUpdated = Number.isFinite(eventTime) ? eventTime : Date.now();
+      const roleId = readRoleIdFromPayload(payload);
 
       // `autopilot-agent-reasoning-stream` spec Task 8.3 / 8.4 / 8.5：
       // role.agent.* 分支与既有 logEntries / rolePhases 等分支并行写入，
@@ -650,9 +860,6 @@ export const useBlueprintRealtimeStore = create<
 
       // Role phase 更新
       if (type.startsWith("role.")) {
-        const roleId =
-          (payload?.roleId as string) ??
-          (payload?.role as { id?: string })?.id;
         if (roleId) {
           const phase = mapEventTypeToPhase(type);
           if (phase) {
@@ -675,6 +882,25 @@ export const useBlueprintRealtimeStore = create<
       }
 
       // Agent progress 更新（job.stage 事件）
+      // Role container lifecycle events double as runtime bridge evidence.
+      const roleContainerCapabilityStatus =
+        mapRoleContainerEventToCapabilityStatus(type);
+      if (roleContainerCapabilityStatus && roleId) {
+        const capabilityId = `role-container-loader:${roleId}`;
+        updates.capabilityStatuses = {
+          ...(updates.capabilityStatuses ?? state.capabilityStatuses),
+          [capabilityId]: roleContainerCapabilityStatus,
+        };
+        const runtimeState = buildRoleRuntimeState(event, roleId, lastUpdated);
+        if (runtimeState) {
+          updates.roleRuntimeStates = {
+            ...state.roleRuntimeStates,
+            [roleId]: runtimeState,
+          };
+        }
+      }
+
+      // Agent progress 鏇存柊锛坖ob.stage 浜嬩欢锛?
       if (type === "job.stage" && payload) {
         const entry: AgentProgressEntry = {
           id: `progress-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

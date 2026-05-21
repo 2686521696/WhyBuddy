@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 主线增强批次纪要（2026-04-23）
 
 ## 范围

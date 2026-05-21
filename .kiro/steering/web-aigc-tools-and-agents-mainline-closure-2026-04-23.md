@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC Tools-and-Agents 主线收口纪要
 
 ## 更新时间

@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 11 Agent 启动顺序与首批任务清单
 
 ## 文档目标

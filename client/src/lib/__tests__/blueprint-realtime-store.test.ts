@@ -125,6 +125,100 @@ describe("BlueprintRealtimeStore", () => {
     expect(state.capabilityStatuses["cap-42"]).toBe("completed");
   });
 
+  it("should surface role container provisioning from payload.key.roleId", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "role.container.provisioning",
+        payload: {
+          key: {
+            jobId: "job-1",
+            stageId: "spec_tree",
+            roleId: "planner",
+          },
+          bindingSummary: {
+            mcpCount: 0,
+            skillCount: 0,
+            aigcNodeCount: 2,
+            skippedMcps: 0,
+            skippedSkills: 0,
+          },
+        },
+      })
+    );
+
+    const state = useBlueprintRealtimeStore.getState();
+    expect(state.rolePhases.planner).toBe("activated");
+    expect(state.capabilityStatuses["role-container-loader:planner"]).toBe(
+      "invoking"
+    );
+    expect(state.roleRuntimeStates.planner).toMatchObject({
+      roleId: "planner",
+      jobId: "job-1",
+      stageId: "spec_tree",
+      status: "provisioning",
+      runtimeKind: "missing",
+      bindingSummary: {
+        mcpCount: 0,
+        skillCount: 0,
+        aigcNodeCount: 2,
+        skippedMcps: 0,
+        skippedSkills: 0,
+      },
+    });
+  });
+
+  it("should surface role container ready fallback evidence", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "role.container.ready",
+        payload: {
+          key: {
+            jobId: "job-1",
+            stageId: "spec_tree",
+            roleId: "planner",
+          },
+          containerMode: "lite",
+          executionMode: "simulated_fallback",
+          fallbackReason: "executor unreachable",
+          bindingSummary: {
+            mcpCount: 1,
+            skillCount: 3,
+            aigcNodeCount: 2,
+            skippedMcps: 0,
+            skippedSkills: 1,
+          },
+        },
+      })
+    );
+
+    const state = useBlueprintRealtimeStore.getState();
+    expect(state.rolePhases.planner).toBe("activated");
+    expect(state.capabilityStatuses["role-container-loader:planner"]).toBe(
+      "completed"
+    );
+    expect(state.roleRuntimeStates.planner).toMatchObject({
+      roleId: "planner",
+      jobId: "job-1",
+      stageId: "spec_tree",
+      status: "ready",
+      runtimeKind: "fallback",
+      containerMode: "lite",
+      executionMode: "simulated_fallback",
+      fallbackReason: "executor unreachable",
+      bindingSummary: {
+        mcpCount: 1,
+        skillCount: 3,
+        aigcNodeCount: 2,
+        skippedMcps: 0,
+        skippedSkills: 1,
+      },
+    });
+  });
+
   // 4. dispatchEvent 任意事件 → logEntries 追加
   it("should append to logEntries on any event", () => {
     const { dispatchEvent } = useBlueprintRealtimeStore.getState();

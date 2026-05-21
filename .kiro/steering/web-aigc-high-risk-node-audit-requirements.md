@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 高风险节点审计要求矩阵
 
 ## 1. 文档目的

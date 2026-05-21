@@ -613,7 +613,10 @@ async function startServer() {
   // `executorCallbackDispatcher` 实例；`/api/executor/events` 回调中间件
   // 也通过这个 ctx 把事件转发给 dispatcher。
   const { createBlueprintRouter } = await import("./routes/blueprint.js");
-  const { buildBlueprintServiceContext } = await import(
+  const {
+    buildBlueprintServiceContext,
+    rebindBlueprintServiceContextRuntimeAdapters,
+  } = await import(
     "./routes/blueprint/context.js"
   );
   // MCP GitHub capability bridge 的默认 HTTPS fetcher（仅在
@@ -883,6 +886,14 @@ async function startServer() {
   app.use("/api/skills", skillRoutes);
   const { seedSkills } = await import("./core/skill-seed.js");
   seedSkills();
+  const { skillRegistry } = await import("./core/dynamic-organization.js");
+  const { createCoreSkillRegistryAdapter } = await import(
+    "./routes/blueprint/role-container-loader/skill-registry-adapter.js"
+  );
+  const blueprintSkillRegistry = createCoreSkillRegistryAdapter(skillRegistry);
+  rebindBlueprintServiceContextRuntimeAdapters(blueprintServiceContext, {
+    skillRegistry: blueprintSkillRegistry,
+  });
   const analyticsRoutes = (await import("./routes/analytics.js")).default;
   app.use("/api/analytics", analyticsRoutes);
   app.use("/api/replay", replayRoutes);

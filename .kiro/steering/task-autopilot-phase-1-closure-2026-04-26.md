@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Task Autopilot Phase 1 Closure（2026-04-26）
 
 ## 结论

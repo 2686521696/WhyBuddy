@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 58 Spec Agent 分派矩阵
 
 ## 文档目标

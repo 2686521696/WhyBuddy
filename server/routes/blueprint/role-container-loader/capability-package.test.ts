@@ -70,6 +70,31 @@ describe("resolveCapabilityPackage", () => {
     expect(result).toBe(catalogPkg);
   });
 
+  it("Agent Crew role id 会映射到默认能力包目录 id", () => {
+    const executionPkg: RoleCapabilityPackage = {
+      alwaysBound: [{ kind: "skill", id: "execution-playbook" }],
+    };
+    const role = buildRole({
+      id: "role-runtime-executor",
+      group: "execution",
+      capabilityPackage: undefined,
+    });
+    const result = resolveCapabilityPackage("role-runtime-executor", role, {
+      "execution-engineer": executionPkg,
+    });
+    expect(result).toBe(executionPkg);
+  });
+
+  it("agent-driven planner role id 会映射到 planning-architect 能力包", () => {
+    const planningPkg: RoleCapabilityPackage = {
+      alwaysBound: [{ kind: "skill", id: "plan-synthesis" }],
+    };
+    const result = resolveCapabilityPackage("planner", undefined, {
+      "planning-architect": planningPkg,
+    });
+    expect(result).toBe(planningPkg);
+  });
+
   it("(c) 未命中返回 undefined 并 logger.debug", () => {
     const logger = buildLogger();
     const role = buildRole({ capabilityPackage: undefined });

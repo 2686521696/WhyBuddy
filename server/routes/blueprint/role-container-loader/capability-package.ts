@@ -54,6 +54,31 @@ const BUDGET_BOUNDS = {
   mcpProbeTimeoutMs: { min: 1_000, max: 30_000, fallback: 5_000 },
 } as const;
 
+const DEFAULT_ROLE_CAPABILITY_PACKAGE_ALIASES: Record<string, string> = {
+  "role-product-decision": "decision-coordinator",
+  "role-architecture-planner": "planning-architect",
+  "role-runtime-executor": "execution-engineer",
+  "role-quality-auditor": "audit-reviewer",
+  "role-experience-presenter": "presentation-designer",
+  "role-memory-curator": "memory-librarian",
+  planner: "planning-architect",
+  clarifier: "decision-coordinator",
+  analyzer: "planning-architect",
+  generator: "execution-engineer",
+  operator: "execution-engineer",
+  reviewer: "audit-reviewer",
+  auditor: "audit-reviewer",
+};
+
+const DEFAULT_ROLE_GROUP_CAPABILITY_PACKAGE_ALIASES: Record<string, string> = {
+  decision: "decision-coordinator",
+  planning: "planning-architect",
+  execution: "execution-engineer",
+  audit: "audit-reviewer",
+  presentation: "presentation-designer",
+  memory: "memory-librarian",
+};
+
 /**
  * 创建默认资源预算。所有字段都有显式默认值，便于上层通过
  * `Required<RoleResourceBudget>` 语义消费（如 `executorClient.dispatchPlan`
@@ -90,8 +115,20 @@ export function resolveCapabilityPackage(
   if (fallback) {
     return fallback;
   }
+  const aliasId = DEFAULT_ROLE_CAPABILITY_PACKAGE_ALIASES[roleId];
+  if (aliasId && defaultsCatalog[aliasId]) {
+    return defaultsCatalog[aliasId];
+  }
+  const groupAliasId = role?.group
+    ? DEFAULT_ROLE_GROUP_CAPABILITY_PACKAGE_ALIASES[role.group]
+    : undefined;
+  if (groupAliasId && defaultsCatalog[groupAliasId]) {
+    return defaultsCatalog[groupAliasId];
+  }
   logger?.debug("role container loader: capability package not found", {
     roleId,
+    aliasId,
+    groupAliasId,
   });
   return undefined;
 }

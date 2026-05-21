@@ -22,7 +22,7 @@ export interface BridgeInvocation {
   /** 调用唯一标识（通常为 capabilityId + 时间戳） */
   id: string;
   /** Bridge 类型：docker / mcp / aigc-node / skill */
-  bridgeType: "docker" | "mcp" | "aigc-node" | "skill";
+  bridgeType: "docker" | "mcp" | "aigc-node" | "skill" | "role-container";
   /** 调用名称（如能力名或工具名） */
   name: string;
   /** 当前状态 */
@@ -83,6 +83,11 @@ export const BRIDGE_TYPE_CONFIG: Record<
     label: "AIGC",
   },
   skill: { icon: "🎯", color: "text-amber-600 bg-amber-50", label: "Skill" },
+  "role-container": {
+    icon: "R",
+    color: "text-cyan-700 bg-cyan-50",
+    label: "Role",
+  },
 };
 
 // ---------------------------------------------------------------------------

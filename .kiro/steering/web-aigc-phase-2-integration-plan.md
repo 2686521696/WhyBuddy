@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 第二阶段集成计划
 
 更新时间：2026-04-23

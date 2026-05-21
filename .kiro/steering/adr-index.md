@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # 图编排迁移 ADR 索引
 
 ## 文档目的

@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 后台智能体实时看板
 
 更新时间：2026-04-22

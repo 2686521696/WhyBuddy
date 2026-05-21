@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 下一阶段主线计划
 
 更新时间：2026-04-23

@@ -23,7 +23,7 @@ import {
   buildCapabilityInvocationLogs,
   buildCapabilityOutputSummary,
   deterministicCapabilityDuration,
-} from "../../blueprint.js";
+} from "../invocation-fallback-helpers.js";
 import type { BlueprintServiceContext } from "../context.js";
 import {
   applyAigcNodeCapabilityRedaction,

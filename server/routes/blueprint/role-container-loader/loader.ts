@@ -78,6 +78,7 @@ import {
   type AigcNodeInvoker,
   type OrchestratedAigcResult,
 } from "./aigc-orchestrator.js";
+import { createRoleContainerAigcNodeInvoker } from "./aigc-node-invoker-adapter.js";
 import {
   buildStageHandoffContext,
   type HandoffSourceContext,
@@ -302,29 +303,6 @@ function buildBindingSummary(
 }
 
 /**
- * Duck-typed AigcNodeInvoker：如果 ctx 上装配了 `aigcSpecNodeCapabilityBridge`，
- * 把它折算成 `(nodeId, input) => { success, executionMode, output, error }`。
- *
- * bridge 本身需要 `{ capability, route, jobId, request, ... }` 等完整上下文，
- * 本 loader 暂无条件凑齐这些字段；因此简化为：
- * - 如果 bridge 存在，视为 "simulated_fallback"（执行面未接通）直接返回成功占位；
- * - 如果 bridge 不存在，返回失败 "aigcSpecNodeBridge missing"。
- *
- * 后续若有需要真实驱动 aigc 节点，可在 bridge 侧提供一个 `probe(nodeId)` 风格
- * 的辅助函数再接进来。
- */
-function createAigcInvoker(
-  ctx: BlueprintServiceContext,
-): AigcNodeInvoker | undefined {
-  if (!ctx.aigcSpecNodeCapabilityBridge) return undefined;
-  return async (nodeId, _input) => ({
-    success: true,
-    executionMode: "simulated_fallback",
-    output: { nodeId, note: "lazy invoke stub" },
-  });
-}
-
-/**
  * 在 job.artifacts 中追加一条 handoff artifact。真实 BlueprintJobStore 未暴露
  * `appendArtifact`，改用 `get + push + save?`。三段式 best-effort 容错。
  */
@@ -486,7 +464,7 @@ export function createRoleContainerLoader(
     skillRegistry?: SkillRegistryDependency;
   }).skillRegistry;
 
-  const aigcInvoker = createAigcInvoker(ctx);
+  const aigcInvoker = createRoleContainerAigcNodeInvoker(ctx);
 
   // 本地绑定使用统计。key = canonicalKey。
   const mcpUsageByKey = new Map<string, Map<string, McpUsageStats>>();

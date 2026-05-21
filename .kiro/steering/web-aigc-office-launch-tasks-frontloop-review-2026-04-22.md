@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Office / Launch / Tasks 前端闭环复核（2026-04-22）
 
 ## 结论

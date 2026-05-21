@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 节点 Spec 统一模板约束
 
 ## 目的

@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # 接口清单与映射：`web-aigc` -> Cube Pets Office
 
 ## 范围

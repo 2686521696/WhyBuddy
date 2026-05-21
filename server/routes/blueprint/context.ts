@@ -38,6 +38,7 @@ import {
   type RoleContainerLoader,
   type RoleRuntimeContextStore,
 } from "./role-container-loader/loader.js";
+import { createLiteAgentAigcNodeInvoker } from "./role-container-loader/aigc-node-invoker-adapter.js";
 import type { SkillRegistryDependency } from "./role-container-loader/skills-binder.js";
 import type { RoleAgentDelegator } from "./role-agent-runtime/delegator.js";
 import { createRoleAgentDelegator } from "./role-agent-runtime/delegator.js";
@@ -999,6 +1000,117 @@ function loadDefaultRoleCapabilityPackages(
   return cachedDefaultRoleCapabilityPackages;
 }
 
+export interface BlueprintRuntimeAdapterRebindDeps {
+  mcpToolAdapter?: McpToolAdapterDependency;
+  httpFetcher?: BlueprintHttpFetcher;
+  skillRegistry?: SkillRegistryDependency;
+}
+
+function createSharedLiteAgentRuntime(
+  ctx: BlueprintServiceContext,
+  llmCall: ReturnType<typeof createLlmCall>,
+) {
+  return createLiteAgentRuntime({
+    llmCall,
+    mcpToolAdapter: ctx.mcpToolAdapter,
+    skillRegistry: ctx.skillRegistry,
+    aigcNodeInvoker: createLiteAgentAigcNodeInvoker(ctx),
+    logger: ctx.logger,
+    now: ctx.now,
+  });
+}
+
+function refreshSpecLlmFactories(ctx: BlueprintServiceContext): void {
+  const sharedLlmCall = createLlmCall({
+    llm: ctx.llm,
+    logger: ctx.logger,
+  });
+  const sharedLiteAgentRuntime = createSharedLiteAgentRuntime(ctx, sharedLlmCall);
+
+  ctx.specTreeLlmDerivation = createSpecTreeLlmDerivation({
+    llmCall: sharedLlmCall,
+    mcpToolAdapter: ctx.mcpToolAdapter,
+    liteAgentRuntime: sharedLiteAgentRuntime,
+    diagnostics: ctx.runtimeDiagnostics,
+    logger: ctx.logger,
+    now: ctx.now,
+  });
+  ctx.specDocsLlmGeneration = createSpecDocsLlmGeneration({
+    llmCall: sharedLlmCall,
+    mcpToolAdapter: ctx.mcpToolAdapter,
+    liteAgentRuntime: sharedLiteAgentRuntime,
+    diagnostics: ctx.runtimeDiagnostics,
+    logger: ctx.logger,
+    now: ctx.now,
+  });
+}
+
+function refreshRoleAgentDelegator(ctx: BlueprintServiceContext): void {
+  if (
+    process.env.BLUEPRINT_AGENT_DRIVEN_PIPELINE_ENABLED !== "true" ||
+    process.env.BUILD_TARGET === "test"
+  ) {
+    return;
+  }
+  const llmCall = createLlmCall({ llm: ctx.llm, logger: ctx.logger });
+  const routeSetGen = ctx.routeSetLlmGenerator;
+  if (!routeSetGen) {
+    return;
+  }
+  ctx.roleAgentDelegator = createRoleAgentDelegator({
+    roleRuntimeContextStore: ctx.roleRuntimeContextStore,
+    executorClient: ctx.executorClient,
+    liteAgentRuntime: createSharedLiteAgentRuntime(ctx, llmCall),
+    fallbackLlmCall: async (delegateInput) => {
+      const result = await routeSetGen({
+        request: delegateInput.context.request as any,
+        intake: delegateInput.context.intake as any,
+        clarificationSession:
+          delegateInput.context.clarificationSession as any,
+        projectContext: delegateInput.context.projectContext as any,
+        routeSetId: (delegateInput.context.routeSetId as string) ?? "fallback-routeset",
+        primaryRouteId: (delegateInput.context.primaryRouteId as string) ?? "fallback-primary",
+        createdAt: ctx.now().toISOString(),
+      });
+      return result.routes;
+    },
+    logger: ctx.logger,
+    now: ctx.now,
+  });
+}
+
+export function rebindBlueprintServiceContextRuntimeAdapters(
+  ctx: BlueprintServiceContext,
+  deps: BlueprintRuntimeAdapterRebindDeps,
+): BlueprintServiceContext {
+  let changed = false;
+  if (deps.mcpToolAdapter && ctx.mcpToolAdapter !== deps.mcpToolAdapter) {
+    ctx.mcpToolAdapter = deps.mcpToolAdapter;
+    changed = true;
+  }
+  if (deps.httpFetcher && ctx.httpFetcher !== deps.httpFetcher) {
+    ctx.httpFetcher = deps.httpFetcher;
+    changed = true;
+  }
+  if (deps.skillRegistry && ctx.skillRegistry !== deps.skillRegistry) {
+    ctx.skillRegistry = deps.skillRegistry;
+    changed = true;
+  }
+  if (!changed) {
+    return ctx;
+  }
+
+  refreshSpecLlmFactories(ctx);
+  if (process.env.BLUEPRINT_ROLE_CONTAINER_LOADER_ENABLED === "true") {
+    ctx.roleContainerLoader = createRoleContainerLoader(
+      ctx,
+      loadDefaultRoleCapabilityPackages(ctx.logger),
+    );
+  }
+  refreshRoleAgentDelegator(ctx);
+  return ctx;
+}
+
 /**
  * 懒加载默认 {@link BlueprintJobStore}。
  *
@@ -1338,13 +1450,7 @@ export function buildBlueprintServiceContext(
       llm: ctx.llm,
       logger: ctx.logger,
     });
-    const sharedLiteAgentRuntime = createLiteAgentRuntime({
-      llmCall: sharedLlmCall,
-      mcpToolAdapter: ctx.mcpToolAdapter,
-      skillRegistry: ctx.skillRegistry,
-      logger: ctx.logger,
-      now: ctx.now,
-    });
+    const sharedLiteAgentRuntime = createSharedLiteAgentRuntime(ctx, sharedLlmCall);
 
     if (!ctx.specTreeLlmDerivation) {
       ctx.specTreeLlmDerivation = createSpecTreeLlmDerivation({
@@ -1444,11 +1550,7 @@ export function buildBlueprintServiceContext(
       ctx.roleAgentDelegator = createRoleAgentDelegator({
         roleRuntimeContextStore: ctx.roleRuntimeContextStore,
         executorClient: ctx.executorClient,
-        liteAgentRuntime: createLiteAgentRuntime({
-          llmCall,
-          logger: ctx.logger,
-          now: ctx.now,
-        }),
+        liteAgentRuntime: createSharedLiteAgentRuntime(ctx, llmCall),
         fallbackLlmCall: async (delegateInput) => {
           const result = await routeSetGen({
             request: delegateInput.context.request as any,

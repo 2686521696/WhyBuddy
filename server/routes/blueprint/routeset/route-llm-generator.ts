@@ -41,7 +41,7 @@ import {
   buildClarificationRouteContext,
   buildRouteCandidate,
   type BlueprintClarificationRouteContext,
-} from "../../blueprint.js";
+} from "./route-candidate.js";
 import type { BlueprintServiceContext } from "../context.js";
 import {
   BlueprintRouteSetLlmResponseSchema,

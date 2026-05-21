@@ -5,7 +5,8 @@
     "decision-coordinator": {
       "alwaysBound": [
         { "kind": "mcp", "id": "github" },
-        { "kind": "skill", "id": "decision-brief" }
+        { "kind": "skill", "id": "directive-decomposition" },
+        { "kind": "skill", "id": "evidence-review" }
       ],
       "onDemand": {
         "aigcNodes": [
@@ -27,7 +28,8 @@
     "planning-architect": {
       "alwaysBound": [
         { "kind": "mcp", "id": "github" },
-        { "kind": "skill", "id": "blueprint-architecture" }
+        { "kind": "skill", "id": "system-design" },
+        { "kind": "skill", "id": "plan-synthesis" }
       ],
       "onDemand": {
         "aigcNodes": [
@@ -48,7 +50,8 @@
     },
     "execution-engineer": {
       "alwaysBound": [
-        { "kind": "skill", "id": "impl-toolbox" }
+        { "kind": "skill", "id": "execution-playbook" },
+        { "kind": "skill", "id": "tooling-integration" }
       ],
       "onDemand": {
         "mcps": [
@@ -71,7 +74,8 @@
     },
     "audit-reviewer": {
       "alwaysBound": [
-        { "kind": "skill", "id": "review-rubric" }
+        { "kind": "skill", "id": "quality-audit" },
+        { "kind": "skill", "id": "evidence-review" }
       ],
       "onDemand": {
         "aigcNodes": [
@@ -92,7 +96,7 @@
     },
     "presentation-designer": {
       "alwaysBound": [
-        { "kind": "skill", "id": "narrative-designer" }
+        { "kind": "skill", "id": "user-outcome-thinking" }
       ],
       "onDemand": {
         "aigcNodes": [
@@ -112,7 +116,7 @@
     "memory-librarian": {
       "alwaysBound": [
         { "kind": "mcp", "id": "vector-store" },
-        { "kind": "skill", "id": "lineage-recall" }
+        { "kind": "skill", "id": "evidence-review" }
       ],
       "onDemand": {
         "aigcNodes": []

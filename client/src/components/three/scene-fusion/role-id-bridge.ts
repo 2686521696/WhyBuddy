@@ -15,7 +15,10 @@
  * Wave B 之后所有 mode 透传链路统一从这里 import。
  */
 
-import type { RolePhase } from "@/lib/blueprint-realtime-store";
+import type {
+  RolePhase,
+  RoleRuntimeState,
+} from "@/lib/blueprint-realtime-store";
 
 /**
  * 自动驾驶 3D 场景融合模式。
@@ -101,4 +104,20 @@ export function readBlueprintRolePhase(
   }
   // fallback：直读 mission agent id
   return rolePhases[missionAgentId];
+}
+
+export function readBlueprintRoleRuntimeState(
+  roleRuntimeStates: Record<string, RoleRuntimeState> | undefined | null,
+  missionAgentId: MissionAgentId
+): RoleRuntimeState | undefined {
+  if (!roleRuntimeStates) return undefined;
+
+  for (const [fsdRoleId, mappedMissionId] of Object.entries(FSD_TO_MISSION)) {
+    if (mappedMissionId === missionAgentId) {
+      const runtimeState = roleRuntimeStates[fsdRoleId];
+      if (runtimeState !== undefined) return runtimeState;
+    }
+  }
+
+  return roleRuntimeStates[missionAgentId];
 }

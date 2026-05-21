@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC 平台任务投影：节点事件映射与回放完整性验证
 
 ## 目的

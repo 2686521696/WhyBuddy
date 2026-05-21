@@ -43,6 +43,9 @@ function inferBridgeType(
   capabilityId: string
 ): BridgeInvocation["bridgeType"] {
   const lower = capabilityId.toLowerCase();
+  if (lower.includes("role-container") || lower.includes("rolecontainer")) {
+    return "role-container";
+  }
   if (lower.includes("docker")) return "docker";
   if (lower.includes("mcp")) return "mcp";
   if (lower.includes("aigc") || lower.includes("node")) return "aigc-node";

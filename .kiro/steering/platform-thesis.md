@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # 平台主张：在 Cube Pets Office 中构建图式 Agent 运行时
 
 ## 文档目的

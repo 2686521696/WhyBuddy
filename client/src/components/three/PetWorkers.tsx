@@ -19,9 +19,11 @@ import {
 import { PET_MODELS } from "@/lib/assets";
 import {
   readBlueprintRolePhase,
+  readBlueprintRoleRuntimeState,
   type SceneFusionMode,
   type MissionAgentId,
 } from "./scene-fusion/role-id-bridge";
+import { getRoleRuntimeVisual } from "./scene-fusion/role-runtime-visual";
 import type { AppLocale } from "@/lib/locale";
 import {
   resolveProjectMissionIds,
@@ -509,6 +511,13 @@ type StatusCategory =
 
 function getStatusCategory(status: string): StatusCategory {
   switch (status) {
+    case "working":
+    case "thinking":
+    case "reviewing":
+    case "idle":
+    case "done":
+    case "error":
+      return status;
     case "executing":
     case "revising":
     case "analyzing":
@@ -733,6 +742,14 @@ function AgentWorker({
         )
       : (state.rolePhases[config.id] as RolePhase | undefined)
   );
+  const roleRuntimeState = useBlueprintRealtimeStore(state =>
+    mode === "blueprint"
+      ? readBlueprintRoleRuntimeState(
+          state.roleRuntimeStates,
+          config.id as MissionAgentId
+        )
+      : state.roleRuntimeStates?.[config.id]
+  );
 
   const agentStatus = agentStatuses[config.id] || "idle";
   const accent = config.color;
@@ -744,8 +761,21 @@ function AgentWorker({
   const realtimeStatusCategory = rolePhase
     ? mapRolePhaseToStatusCategory(rolePhase)
     : null;
+  const runtimeVisual = getRoleRuntimeVisual(roleRuntimeState);
+  const visualStatus =
+    runtimeVisual?.statusCategory ?? realtimeStatusCategory ?? agentStatus;
   const currentRoleName = null;
   const roleColor = null;
+  const activeSignalLightColor =
+    runtimeVisual?.accentColor ??
+    roleColor ??
+    (agentStatus === "executing"
+      ? FUTURE_OFFICE_COLORS.blue
+      : agentStatus === "reviewing"
+        ? FUTURE_OFFICE_COLORS.violet
+        : agentStatus === "auditing"
+          ? FUTURE_OFFICE_COLORS.cyan
+          : accent);
   const hasSlowAlert = false;
   const reputationProfile = {} as { grade?: "S" | "A" | "D" } | undefined;
   const isActive = hovered || selectedPet === config.id;
@@ -824,7 +854,7 @@ function AgentWorker({
     const baseScale = config.scale * guestScaleFactor;
 
     // Task 3.5: spring 插值实现平滑过渡（scale + 状态光效）
-    const hasRealtimePhase = Boolean(realtimeAnimation);
+    const hasRealtimePhase = Boolean(realtimeAnimation || runtimeVisual);
     const targetScale = isActive
       ? baseScale * 1.14
       : hasRealtimePhase
@@ -873,16 +903,20 @@ function AgentWorker({
             style={{
               background: isActive ? accent : "rgba(248, 251, 255, 0.82)",
               color: isActive ? "#ffffff" : FUTURE_OFFICE_COLORS.text,
-              ...getStatusBorderStyle(
-                realtimeStatusCategory
-                  ? (realtimeStatusCategory as string)
-                  : agentStatus
-              ),
+              ...getStatusBorderStyle(visualStatus),
             }}
           >
             <span className={isActive ? "text-white" : "text-slate-700"}>
               {config.emoji} {config.shortLabel}
             </span>
+            {runtimeVisual && !reducedOverlays ? (
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase leading-none tracking-normal ${runtimeVisual.className}`}
+                data-role-runtime-kind={runtimeVisual.label}
+              >
+                {runtimeVisual.label}
+              </span>
+            ) : null}
             {config.isGuest && !reducedOverlays ? (
               <span className="rounded-full bg-sky-400/85 px-1.5 py-0.5 text-[8px] font-bold text-white tracking-wider">
                 Guest
@@ -964,21 +998,11 @@ function AgentWorker({
         </Html>
       )}
 
-      {agentStatus !== "idle" && (
+      {(agentStatus !== "idle" || runtimeVisual) && (
         <pointLight
           position={[0, 1.3, 0]}
           intensity={0.42}
-          color={
-            roleColor
-              ? roleColor
-              : agentStatus === "executing"
-                ? FUTURE_OFFICE_COLORS.blue
-                : agentStatus === "reviewing"
-                  ? FUTURE_OFFICE_COLORS.violet
-                  : agentStatus === "auditing"
-                    ? FUTURE_OFFICE_COLORS.cyan
-                    : accent
-          }
+          color={activeSignalLightColor}
           distance={2.6}
           decay={2}
         />

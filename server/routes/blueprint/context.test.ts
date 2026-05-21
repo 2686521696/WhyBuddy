@@ -13,6 +13,7 @@ import {
   createDefaultBlueprintStores,
   createJobBackedReplayStore,
   createSilentBlueprintLogger,
+  rebindBlueprintServiceContextRuntimeAdapters,
 } from "./context.js";
 
 /**
@@ -143,6 +144,54 @@ describe("buildBlueprintServiceContext", () => {
 
     expect(ctx.replayStore.listEvents("anything")).toHaveLength(1);
     expect(listEvents).toHaveBeenCalledWith("anything");
+  });
+
+  it("late runtime adapter rebind patches MCP/HTTP deps and refreshes LLM factories", () => {
+    const ctx = buildBlueprintServiceContext({
+      jobStore: createMemoryBlueprintJobStore(),
+    });
+    const oldSpecTreeDerivation = ctx.specTreeLlmDerivation;
+    const oldSpecDocsGeneration = ctx.specDocsLlmGeneration;
+    const mcpToolAdapter = { execute: vi.fn() };
+    const httpFetcher = vi.fn();
+
+    rebindBlueprintServiceContextRuntimeAdapters(ctx, {
+      mcpToolAdapter,
+      httpFetcher,
+    });
+
+    expect(ctx.mcpToolAdapter).toBe(mcpToolAdapter);
+    expect(ctx.httpFetcher).toBe(httpFetcher);
+    expect(ctx.specTreeLlmDerivation).toBeDefined();
+    expect(ctx.specTreeLlmDerivation).not.toBe(oldSpecTreeDerivation);
+    expect(ctx.specDocsLlmGeneration).toBeDefined();
+    expect(ctx.specDocsLlmGeneration).not.toBe(oldSpecDocsGeneration);
+  });
+
+  it("late runtime adapter rebind patches skill registry and rebuilds role loader when enabled", () => {
+    const previousFlag = process.env.BLUEPRINT_ROLE_CONTAINER_LOADER_ENABLED;
+    process.env.BLUEPRINT_ROLE_CONTAINER_LOADER_ENABLED = "true";
+    try {
+      const ctx = buildBlueprintServiceContext({
+        jobStore: createMemoryBlueprintJobStore(),
+      });
+      const oldRoleContainerLoader = ctx.roleContainerLoader;
+      const skillRegistry = { loadForRole: vi.fn() };
+
+      rebindBlueprintServiceContextRuntimeAdapters(ctx, {
+        skillRegistry,
+      });
+
+      expect(ctx.skillRegistry).toBe(skillRegistry);
+      expect(ctx.roleContainerLoader).toBeDefined();
+      expect(ctx.roleContainerLoader).not.toBe(oldRoleContainerLoader);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.BLUEPRINT_ROLE_CONTAINER_LOADER_ENABLED;
+      } else {
+        process.env.BLUEPRINT_ROLE_CONTAINER_LOADER_ENABLED = previousFlag;
+      }
+    }
   });
 
   it("默认事件总线 emit 会把事件推给所有订阅者，unsubscribe 后不再收到", () => {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  BlueprintCapabilityInvocation,
   BlueprintGenerationEvent,
   BlueprintGenerationJob,
   RoleCapabilityPackage,
@@ -143,6 +144,8 @@ function createFakeMcpAdapter(): McpToolAdapterDependency {
 interface HarnessOptions {
   executorClient?: ExecutorClient | undefined;
   mcpToolAdapter?: McpToolAdapterDependency;
+  skillRegistry?: BlueprintServiceContext["skillRegistry"];
+  aigcSpecNodeCapabilityBridge?: BlueprintServiceContext["aigcSpecNodeCapabilityBridge"];
   job?: BlueprintGenerationJob;
   defaultsCatalog?: Record<string, RoleCapabilityPackage>;
   now?: () => Date;
@@ -174,6 +177,8 @@ function buildHarness(options: HarnessOptions = {}) {
     logger,
     executorClient: options.executorClient,
     mcpToolAdapter: options.mcpToolAdapter,
+    skillRegistry: options.skillRegistry,
+    aigcSpecNodeCapabilityBridge: options.aigcSpecNodeCapabilityBridge,
     runtimeDiagnostics,
     roleRuntimeContextStore: runtimeStore,
   } as unknown as BlueprintServiceContext;
@@ -264,6 +269,111 @@ describe("RoleContainerLoader — provision (real mode)", () => {
     expect(provEvents).toHaveLength(1);
     const secondReadyPayload = readyEvents[1].payload as { cached?: boolean };
     expect(secondReadyPayload.cached).toBe(true);
+  });
+
+  it("loads always-bound skills from the configured skill registry", async () => {
+    enableLoader();
+    const loadForRole = vi.fn(async ({ roleId, skillId }) => ({
+      roleId,
+      skillId,
+      loadedAt: "2026-05-12T00:00:00.000Z",
+      invoke: vi.fn(async (input: unknown) => ({ skillId, input })),
+    }));
+    const harness = buildHarness({
+      executorClient: createFakeExecutorClient(),
+      skillRegistry: { loadForRole },
+      defaultsCatalog: {
+        "execution-engineer": {
+          alwaysBound: [
+            { kind: "skill", id: "execution-playbook" },
+          ],
+        },
+      },
+    });
+
+    const runtime = await harness.loader.provisionRoleContainer({
+      roleId: "role-runtime-executor",
+      stageId: "runtime_capability",
+      jobId: "job-1",
+    });
+    const output = await runtime.skill.invoke("execution-playbook", {
+      directive: "ship it",
+    });
+
+    expect(loadForRole).toHaveBeenCalledWith({
+      roleId: "role-runtime-executor",
+      skillId: "execution-playbook",
+    });
+    expect(runtime.skill.list()).toEqual(["execution-playbook"]);
+    expect(output).toEqual({
+      skillId: "execution-playbook",
+      input: { directive: "ship it" },
+    });
+  });
+
+  it("on-demand AIGC nodes invoke the configured aigcSpecNodeCapabilityBridge", async () => {
+    enableLoader();
+    vi.stubEnv("BLUEPRINT_AIGC_NODE_CAPABILITY_BRIDGE_ENABLED", "true");
+    const invocation: BlueprintCapabilityInvocation = {
+      id: "inv-aigc-real",
+      jobId: "job-1",
+      capabilityId: "code-synthesis",
+      capabilityLabel: "code-synthesis",
+      kind: "aigc_node",
+      roleId: "role-runtime-executor",
+      nodeId: "code-synthesis",
+      status: "completed",
+      securityLevel: "sandboxed",
+      safetyGate: {
+        status: "allowed",
+        reason: "test",
+        requiresApproval: false,
+        approved: true,
+        securityLevel: "sandboxed",
+      },
+      requestedAt: "2026-05-12T00:00:00.000Z",
+      completedAt: "2026-05-12T00:00:01.000Z",
+      durationMs: 1000,
+      input: "fixture",
+      outputSummary: "real aigc output",
+      logs: [],
+      evidenceIds: [],
+      provenance: {
+        jobId: "job-1",
+        githubUrls: [],
+        executionMode: "real",
+      },
+    };
+    const bridge = vi.fn(async () => ({
+      invocation,
+      executionMode: "real" as const,
+      additionalEvents: [],
+    }));
+    const harness = buildHarness({
+      executorClient: createFakeExecutorClient(),
+      aigcSpecNodeCapabilityBridge: bridge,
+      defaultsCatalog: {
+        "execution-engineer": {
+          onDemand: {
+            aigcNodes: [{ kind: "aigc_node", id: "code-synthesis" }],
+          },
+        },
+      },
+    });
+
+    const runtime = await harness.loader.provisionRoleContainer({
+      roleId: "role-runtime-executor",
+      stageId: "runtime_capability",
+      jobId: "job-1",
+    });
+    const result = await runtime.aigcNode.orchestrate(["code-synthesis"], {
+      request: { targetText: "Build real AIGC bridge" },
+    });
+
+    expect(bridge).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(result.nodeResults[0]?.executionMode).toBe("real");
+    expect(result.mergedOutputSummary).toContain("real aigc output");
   });
 
   it("(d) lifecycle 抛错（executor unreachable）降级 lite，不向调用方传播", async () => {

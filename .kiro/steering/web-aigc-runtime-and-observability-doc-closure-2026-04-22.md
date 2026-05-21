@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC Runtime / Observability 文档收口（2026-04-22）
 
 ## 范围

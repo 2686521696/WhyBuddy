@@ -1,5 +1,11 @@
 # Project-First Spec Roadmap（2026-04-30）
 
+## 2026-05-21 进度更新
+
+Project-first 系列 `10/10` specs 已全部完成，`123/123` 任务项已封板。本路线图中描述的四个阶段开发范围仍然有效，作为后续深化实现的参考。
+
+详见：`.kiro/steering/specs-progress-snapshot-2026-05-21.md`
+
 ## 一句话方向
 
 `Cube Pets Office` 下一阶段从“任务发起工具 / 任务自动驾驶平台”升级为“项目级 AI 自动驾驶操作系统”：

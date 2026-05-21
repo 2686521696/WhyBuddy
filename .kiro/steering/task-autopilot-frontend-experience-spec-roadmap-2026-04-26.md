@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Task Autopilot 前端体验落地 specs 路线图（2026-04-26）
 
 ## 背景

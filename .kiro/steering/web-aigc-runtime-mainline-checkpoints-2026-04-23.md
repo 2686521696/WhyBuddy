@@ -1,3 +1,7 @@
+---
+inclusion: manual
+---
+
 # Web-AIGC Runtime 主线检查点（2026-04-23，主线接线后更新）
 
 ## 范围
