@@ -1161,6 +1161,12 @@ async function startServer() {
   const { registerWebAigcRuntimeExtraAdapters } = await import(
     "./core/web-aigc-runtime-extra-adapters.js"
   );
+  const { executeRealWebSearch } = await import(
+    "./core/web-search-provider.js"
+  );
+  const { callLLM: callLLMForTranslation } = await import(
+    "./core/llm-client.js"
+  );
   const mcpToolAdapter = new McpToolAdapter({
     invoker: new InternalMcpToolInvoker(),
     permissionEngine: permCheckEngine,
@@ -1433,7 +1439,7 @@ async function startServer() {
       })
     );
   }
-  app.use("/api/web-search", createWebSearchRouter());
+  app.use("/api/web-search", createWebSearchRouter({ executeWebSearch: executeRealWebSearch }));
   app.use(
     "/api/web-qa",
     createWebQaRouter({
@@ -1453,13 +1459,133 @@ async function startServer() {
   );
   serverRuntime.documentSearch = chatDocumentSearch;
 
+  // ── Real fetchStaticWebpageHtml implementation (Node 20+ built-in fetch) ──
+  const fetchStaticWebpageHtml = async (url: string): Promise<string> => {
+    const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
+    const TIMEOUT_MS = 10_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; CubePetsOffice/1.0; +https://github.com/nicepkg/cube-pets-office)",
+          Accept: "text/html, text/*;q=0.9",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type") ?? "";
+      if (
+        !contentType.includes("text/html") &&
+        !contentType.includes("text/")
+      ) {
+        throw new Error(
+          `Unexpected content-type: ${contentType}. Expected text/html or text/*.`,
+        );
+      }
+
+      const contentLength = response.headers.get("content-length");
+      if (
+        contentLength &&
+        Number.parseInt(contentLength, 10) > MAX_RESPONSE_SIZE
+      ) {
+        throw new Error(
+          `Response too large: ${contentLength} bytes exceeds 5MB limit.`,
+        );
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return response.text();
+      }
+
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_RESPONSE_SIZE) {
+          reader.cancel();
+          throw new Error(
+            `Response too large: exceeded 5MB limit during streaming.`,
+          );
+        }
+        chunks.push(value);
+      }
+
+      const decoder = new TextDecoder();
+      return (
+        chunks
+          .map((chunk) => decoder.decode(chunk, { stream: true }))
+          .join("") + decoder.decode()
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `Static webpage fetch timed out after ${TIMEOUT_MS}ms for URL: ${url}`,
+        );
+      }
+      throw new Error(
+        `Failed to fetch static webpage (${url}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // ── Real LLM-based file translation ──
+  const translateSegmentViaLlm = async (input: {
+    text: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    kind: string;
+    index: number;
+    fileName: string;
+    mimeType: string;
+  }): Promise<string> => {
+    if (!input.text.trim()) return input.text;
+
+    try {
+      const systemPrompt =
+        `You are a professional translator. Translate the following text from ${input.sourceLanguage === "auto" ? "the detected language" : input.sourceLanguage} to ${input.targetLanguage}. ` +
+        `Return ONLY the translated text, without any explanation, prefix, or formatting. ` +
+        `Preserve the original meaning and tone.`;
+
+      const response = await callLLMForTranslation(
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: input.text },
+        ],
+        { temperature: 0.3, maxTokens: 2048 },
+      );
+
+      const translated = response.content.trim();
+      return translated || input.text;
+    } catch {
+      // Fallback: return original text if LLM fails
+      return `[${input.targetLanguage}] ${input.text}`;
+    }
+  };
+
   registerWebAigcRuntimeExtraAdapters({
     documentSearch: chatDocumentSearch,
     knowledgeService,
     executeMcp: request => mcpToolAdapter.execute(request),
     queryService,
     permissionEngine: permCheckEngine,
+    executeWebSearch: executeRealWebSearch,
     executeImageSearch: imageSearchExecuteFn,
+    fetchStaticWebpageHtml,
+    fileTranslationRuntime: {
+      translateSegment: translateSegmentViaLlm,
+    },
     orchestrationRecognitionJumpRuntime: {
       permissionEngine: permCheckEngine,
       auditLogger: permAuditLogger,
