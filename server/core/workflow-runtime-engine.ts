@@ -45,6 +45,9 @@ import {
 } from "../routes/node-adapters/chat-node-adapter.js";
 import {
   evaluateRuntimeConditionExpression,
+  evaluateConditionRules,
+  type ConditionRule,
+  type ConditionRelation,
 } from "./web-aigc-controlflow.js";
 import { serverRuntime } from "../runtime/server-runtime.js";
 
@@ -2337,6 +2340,43 @@ class ConditionWorkflowNodeAdapter implements WorkflowNodeAdapter {
   async execute(
     context: WorkflowNodeExecutionContext,
   ): Promise<WorkflowNodeAdapterResult> {
+    // New path: rules-based evaluation (14 operators + AND/OR)
+    const rulesRaw = getNodeConfigDefaultValue(context.node, "rules");
+    if (Array.isArray(rulesRaw) && rulesRaw.length > 0) {
+      const relation: ConditionRelation =
+        (getNodeConfigDefaultValue(context.node, "relation") as string)?.toUpperCase() === "OR"
+          ? "OR"
+          : "AND";
+
+      const rulesResult = evaluateConditionRules(
+        rulesRaw as ConditionRule[],
+        relation,
+        context.variables,
+      );
+
+      const branchKey = rulesResult.matched ? "true" : "false";
+      const branchEdge = context.definition.edgeSchemas.find(
+        edge =>
+          edge.fromNodeId === context.node.id &&
+          edge.kind === "conditional" &&
+          typeof edge.label === "string" &&
+          edge.label.trim() === branchKey,
+      );
+
+      return {
+        kind: "advance",
+        output: {
+          conditionMode: "rules",
+          conditionRelation: relation,
+          conditionMatched: rulesResult.matched,
+          conditionResults: rulesResult.results,
+          branchKey,
+        },
+        nextNodeId: branchEdge?.toNodeId,
+      };
+    }
+
+    // Legacy path: expression-based evaluation (backward compatible)
     const expression =
       normalizeOptionalString(
         resolveNodeTemplateValue(

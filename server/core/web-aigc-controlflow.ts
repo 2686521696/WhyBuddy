@@ -403,6 +403,279 @@ function evaluateSimpleExpression(
   return resolveTokenValue(trimmed, context);
 }
 
+// --- Condition Rules (14 operators + AND/OR) ---
+
+export type ConditionOperator =
+  | "eq"
+  | "neq"
+  | "in"
+  | "not_in"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "is_empty"
+  | "is_not_empty"
+  | "starts_with"
+  | "ends_with"
+  | "contains"
+  | "regex";
+
+export type ConditionRelation = "AND" | "OR";
+
+export interface ConditionRule {
+  leftValue: unknown;
+  operator: ConditionOperator;
+  rightValue?: unknown;
+}
+
+export interface ConditionRulesResult {
+  matched: boolean;
+  results: Array<{ rule: ConditionRule; result: boolean }>;
+}
+
+function isNullOrUndefined(value: unknown): boolean {
+  return value === null || value === undefined;
+}
+
+function tryParseNumber(value: unknown): number | null {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    const num = Number(trimmed);
+    if (!Number.isNaN(num)) return num;
+  }
+  return null;
+}
+
+function toArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map(s => s.trim())
+      .filter(s => s !== "");
+  }
+  if (isNullOrUndefined(value)) return [];
+  return [value];
+}
+
+function evaluateOperatorEq(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) && isNullOrUndefined(right)) return true;
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const numLeft = tryParseNumber(left);
+  const numRight = tryParseNumber(right);
+  if (numLeft !== null && numRight !== null) return numLeft === numRight;
+  return String(left) === String(right);
+}
+
+function evaluateOperatorIn(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left)) return false;
+  const arr = toArray(right);
+  if (arr.length === 0) return false;
+  const leftStr = String(left);
+  return arr.some(item => {
+    if (isNullOrUndefined(item)) return false;
+    const numLeft = tryParseNumber(left);
+    const numItem = tryParseNumber(item);
+    if (numLeft !== null && numItem !== null) return numLeft === numItem;
+    return String(item) === leftStr;
+  });
+}
+
+function evaluateOperatorGt(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const numLeft = tryParseNumber(left);
+  const numRight = tryParseNumber(right);
+  if (numLeft !== null && numRight !== null) return numLeft > numRight;
+  return String(left) > String(right);
+}
+
+function evaluateOperatorGte(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const numLeft = tryParseNumber(left);
+  const numRight = tryParseNumber(right);
+  if (numLeft !== null && numRight !== null) return numLeft >= numRight;
+  return String(left) >= String(right);
+}
+
+function evaluateOperatorLt(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const numLeft = tryParseNumber(left);
+  const numRight = tryParseNumber(right);
+  if (numLeft !== null && numRight !== null) return numLeft < numRight;
+  return String(left) < String(right);
+}
+
+function evaluateOperatorLte(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const numLeft = tryParseNumber(left);
+  const numRight = tryParseNumber(right);
+  if (numLeft !== null && numRight !== null) return numLeft <= numRight;
+  return String(left) <= String(right);
+}
+
+function evaluateOperatorIsEmpty(value: unknown): boolean {
+  if (isNullOrUndefined(value)) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function evaluateOperatorStartsWith(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  return String(left).startsWith(String(right));
+}
+
+function evaluateOperatorEndsWith(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  return String(left).endsWith(String(right));
+}
+
+function evaluateOperatorContains(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  return String(left).includes(String(right));
+}
+
+const REGEX_TIMEOUT_MS = 1000;
+
+function evaluateOperatorRegex(left: unknown, right: unknown): boolean {
+  if (isNullOrUndefined(left) || isNullOrUndefined(right)) return false;
+  const pattern = String(right);
+  const text = String(left);
+  try {
+    const regex = new RegExp(pattern);
+    const startTime = Date.now();
+    const result = regex.test(text);
+    const elapsed = Date.now() - startTime;
+    if (elapsed > REGEX_TIMEOUT_MS) {
+      console.warn(
+        `[evaluateConditionRules] Regex execution exceeded ${REGEX_TIMEOUT_MS}ms threshold: ${elapsed}ms`,
+      );
+      return false;
+    }
+    return result;
+  } catch {
+    return false;
+  }
+}
+
+function evaluateSingleOperator(
+  left: unknown,
+  operator: ConditionOperator,
+  right: unknown,
+): boolean {
+  switch (operator) {
+    case "eq":
+      return evaluateOperatorEq(left, right);
+    case "neq":
+      return !evaluateOperatorEq(left, right);
+    case "in":
+      return evaluateOperatorIn(left, right);
+    case "not_in":
+      return !evaluateOperatorIn(left, right);
+    case "gt":
+      return evaluateOperatorGt(left, right);
+    case "gte":
+      return evaluateOperatorGte(left, right);
+    case "lt":
+      return evaluateOperatorLt(left, right);
+    case "lte":
+      return evaluateOperatorLte(left, right);
+    case "is_empty":
+      return evaluateOperatorIsEmpty(left);
+    case "is_not_empty":
+      return !evaluateOperatorIsEmpty(left);
+    case "starts_with":
+      return evaluateOperatorStartsWith(left, right);
+    case "ends_with":
+      return evaluateOperatorEndsWith(left, right);
+    case "contains":
+      return evaluateOperatorContains(left, right);
+    case "regex":
+      return evaluateOperatorRegex(left, right);
+    default:
+      return false;
+  }
+}
+
+function resolveConditionRuleValue(
+  value: unknown,
+  variables: Record<string, unknown>,
+): unknown {
+  if (typeof value === "string" && value.startsWith("$")) {
+    const afterDollar = value.slice(1);
+    if (afterDollar.startsWith(".")) {
+      // "$.path.to.value" → resolve nested path from variables
+      const path = afterDollar.slice(1); // remove leading "."
+      return getNestedValue(variables, path);
+    }
+    // "$varName" → flat lookup from variables
+    const context: VariableContextByScope = {
+      global: { ...variables },
+      local: {},
+      temp: {},
+    };
+    return resolveTokenValue(afterDollar, context);
+  }
+  return value;
+}
+
+function getNestedValue(obj: unknown, path: string): unknown {
+  const segments = path.split(".");
+  let current: unknown = obj;
+  for (const segment of segments) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+export function evaluateConditionRules(
+  rules: ConditionRule[],
+  relation: ConditionRelation,
+  variables: Record<string, unknown>,
+): ConditionRulesResult {
+  if (!rules || rules.length === 0) {
+    return { matched: false, results: [] };
+  }
+
+  const results: Array<{ rule: ConditionRule; result: boolean }> = [];
+
+  for (const rule of rules) {
+    const left = resolveConditionRuleValue(rule.leftValue, variables);
+    const right = resolveConditionRuleValue(rule.rightValue, variables);
+    let result = false;
+    try {
+      result = evaluateSingleOperator(left, rule.operator, right);
+    } catch {
+      result = false;
+    }
+    results.push({ rule, result });
+  }
+
+  const matched =
+    relation === "AND"
+      ? results.every(r => r.result)
+      : results.some(r => r.result);
+
+  return { matched, results };
+}
+
+// --- Legacy expression-based condition evaluation ---
+
 export interface RuntimeConditionEvaluation {
   matched: boolean;
   rationale?: string;

@@ -483,14 +483,34 @@ Step 8: 工程落地/Mission (Engineering Landing)
 
 ---
 
-## 6. Steering 文件索引
+## 6. 节点能力差距清单（vs rbac-system-pc，2026-05-21 审计）
 
-| 文件 | 用途 | 加载 |
+### 已修复
+
+| 节点 | 差距 | 状态 |
 | ---- | ---- | ---- |
-| **current-state.md**（本文件） | 项目上下文总纲 | auto |
-| project-overview.md | 项目定位、系统架构、API、目录结构 | auto |
-| implementation-guide.md | 实现约束、质量门禁、批量执行策略 | auto |
-| execution-plan.md | 历史执行顺序与依赖图（参考） | auto |
-| specs-progress-snapshot-2026-05-21.md | 全量数字快照 | auto |
-| project-first-spec-roadmap-2026-04-30.md | Project-first 阶段规划（已封板） | auto |
-| 其他 29 个历史纪要 | web-aigc / task-autopilot 阶段性文档 | manual |
+| condition | 缺 6 个运算符 + AND/OR 组合 | ✅ 已补齐 14 运算符 + AND/OR |
+
+### 待评估
+
+| 节点 | 差距 | 严重度 | 建议 |
+| ---- | ---- | ------ | ---- |
+| image_search | cube 是 mock 数据 + DI 钩子，无真实向量搜索 | CRITICAL | 需要接入真实 embedding + vector search |
+| file_slicing | 只支持纯文本/md/json/html，不支持 PDF/Word/Excel | MEDIUM | 评估 Autopilot 主线是否需要 |
+| knowledge_qa | cube 是 KnowledgeService 封装，管线深度取决于服务内部 | MEDIUM | 审计 knowledge-service.ts 内部实现 |
+| static_webpage_read | cube 用 regex 剥离 HTML，rbac 用 cheerio DOM 解析 | LOW | 复杂 HTML 场景可能不够 |
+| auto_agent | cube 无 ReAct 迭代循环（单次委派） | MEDIUM | Autopilot 管线的 AgentLoopStateMachine 可能已覆盖 |
+
+### cube 反超 rbac 的节点
+
+| 节点 | 说明 |
+| ---- | ---- |
+| audio_recognition | rbac 是 placeholder，cube 有真实 STT |
+| ocr_recognition | rbac 是 placeholder，cube 有真实 OCR + 产物持久化 |
+| web_qa | rbac 是 30 行空壳，cube 有 600+ 行完整实现 |
+| excel_read | cube 多了 dynamic_chart 兼容性分析和验证摘要 |
+| loop | cube 有 maxIterations 强制终止 + loop guard，rbac 没有 |
+
+---
+
+## 7. Steering 文件索引
