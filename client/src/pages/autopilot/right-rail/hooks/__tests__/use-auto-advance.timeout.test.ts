@@ -190,7 +190,7 @@ describe("useAutoAdvance forceAdvance entry point (source-level contract)", () =
     expect(source).toMatch(
       /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{\s*\n\s*void\s+advance\(\s*"spec_docs"\s*,/
     );
-    expect(source).toMatch(/generateBlueprintSpecDocuments\(jobId/);
+    expect(source).toMatch(/actions\.generateSpecDocuments\(jobId/);
   });
 
   it("blocks re-entrant forceAdvance while a previous advance is still pending", async () => {

@@ -9,7 +9,7 @@
  * 失败时停止推进,暴露 error + retry 给 UI。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ApiRequestError } from "@/lib/api-client";
 import {
@@ -24,11 +24,19 @@ import type {
 } from "@shared/blueprint/contracts";
 import type { AutopilotRailSubStage } from "../types";
 
+export interface UseAutoAdvanceActions {
+  generateSpecDocuments?: typeof generateBlueprintSpecDocuments;
+  generateEffectPreview?: typeof generateBlueprintEffectPreview;
+  generatePromptPackages?: typeof generateBlueprintPromptPackages;
+  generateEngineeringLanding?: typeof generateBlueprintEngineeringLanding;
+}
+
 export interface UseAutoAdvanceOptions {
   jobId: string;
   job: BlueprintGenerationJob | null;
   specTree: BlueprintSpecTree | null;
   rightRailSpecTree?: BlueprintSpecTree | null;
+  generationActions?: UseAutoAdvanceActions;
   /** 当阶段推进成功后调用,让父组件刷新数据 */
   onAdvanced: (nextSubStage?: AutopilotRailSubStage) => void;
 }
@@ -85,11 +93,29 @@ export function useAutoAdvance({
   job,
   specTree,
   rightRailSpecTree,
+  generationActions,
   onAdvanced,
 }: UseAutoAdvanceOptions): UseAutoAdvanceResult {
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState<ApiRequestError | null>(null);
   const [advancingTo, setAdvancingTo] = useState<string | null>(null);
+  const actions = useMemo(
+    () => ({
+      generateSpecDocuments:
+        generationActions?.generateSpecDocuments ??
+        generateBlueprintSpecDocuments,
+      generateEffectPreview:
+        generationActions?.generateEffectPreview ??
+        generateBlueprintEffectPreview,
+      generatePromptPackages:
+        generationActions?.generatePromptPackages ??
+        generateBlueprintPromptPackages,
+      generateEngineeringLanding:
+        generationActions?.generateEngineeringLanding ??
+        generateBlueprintEngineeringLanding,
+    }),
+    [generationActions]
+  );
 
   // 防止重复触发
   const advancedStagesRef = useRef<Set<string>>(new Set());
@@ -193,7 +219,9 @@ export function useAutoAdvance({
       !advancedStagesRef.current.has("effect_preview")
     ) {
       void advance("effect_preview", async () => {
-        const result = await generateBlueprintEffectPreview(jobId, {});
+        const result = await actions.generateEffectPreview(jobId, {
+          includeDrafts: true,
+        });
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
       return;
@@ -206,7 +234,10 @@ export function useAutoAdvance({
       !advancedStagesRef.current.has("prompt_packaging")
     ) {
       void advance("prompt_packaging", async () => {
-        const result = await generateBlueprintPromptPackages(jobId, {});
+        const result = await actions.generatePromptPackages(jobId, {
+          includeDrafts: true,
+          includePreviewDrafts: true,
+        });
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
       return;
@@ -219,12 +250,12 @@ export function useAutoAdvance({
       !advancedStagesRef.current.has("engineering_landing")
     ) {
       void advance("engineering_landing", async () => {
-        const result = await generateBlueprintEngineeringLanding(jobId, {});
+        const result = await actions.generateEngineeringLanding(jobId, {});
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
       return;
     }
-  }, [jobId, job, specTree, advancing, advance]);
+  }, [jobId, job, specTree, advancing, advance, actions]);
 
   const retry = useCallback(() => {
     if (!error || !advancingTo) return;
@@ -251,28 +282,42 @@ export function useAutoAdvance({
     // 直接调用 API,不检查 advancedStagesRef(用户主动点击应该总是执行)
     if (stage === "spec_tree") {
       void advance("spec_docs", async () => {
-        const result = await generateBlueprintSpecDocuments(jobId, {
+        const result = await actions.generateSpecDocuments(jobId, {
           types: ["requirements", "design", "tasks"],
         });
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
     } else if (stage === "spec_docs") {
       void advance("effect_preview", async () => {
-        const result = await generateBlueprintEffectPreview(jobId, {});
+        const result = await actions.generateEffectPreview(jobId, {
+          includeDrafts: true,
+        });
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
     } else if (stage === "effect_preview" || stage === "preview") {
       void advance("prompt_packaging", async () => {
-        const result = await generateBlueprintPromptPackages(jobId, {});
+        const result = await actions.generatePromptPackages(jobId, {
+          includeDrafts: true,
+          includePreviewDrafts: true,
+        });
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
     } else if (stage === "prompt_packaging") {
       void advance("engineering_landing", async () => {
-        const result = await generateBlueprintEngineeringLanding(jobId, {});
+        const result = await actions.generateEngineeringLanding(jobId, {});
         return { ok: result.ok, error: result.ok ? undefined : result.error };
       });
     }
-  }, [jobId, job, specTree, rightRailSpecTree, advancing, advance, onAdvanced]);
+  }, [
+    jobId,
+    job,
+    specTree,
+    rightRailSpecTree,
+    advancing,
+    advance,
+    onAdvanced,
+    actions,
+  ]);
 
   return { advancing, error, retry, advancingTo, forceAdvance };
 }

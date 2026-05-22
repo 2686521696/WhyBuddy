@@ -20,6 +20,7 @@ import type {
   BlueprintCapabilityEvidence,
   BlueprintCapabilityInvocation,
   BlueprintGenerationJob,
+  BlueprintGenerateSpecDocumentsRequest,
   BlueprintRouteSelection,
   BlueprintRouteSet,
   BlueprintRuntimeCapability,
@@ -28,6 +29,7 @@ import type {
 import type {
   BlueprintAgentCrewSnapshot,
   BlueprintEffectPreviewSnapshot,
+  GenerateBlueprintSpecDocumentsResult,
 } from "@/lib/blueprint-api";
 
 /**
@@ -132,6 +134,10 @@ export interface AutopilotRightRailProps {
   onSpecDocumentsGenerated?: (
     response: import("@shared/blueprint/contracts").BlueprintSpecDocumentsResponse
   ) => void;
+  generateSpecDocuments?: (
+    jobId: string,
+    request: BlueprintGenerateSpecDocumentsRequest
+  ) => Promise<GenerateBlueprintSpecDocumentsResult>;
 }
 
 /**

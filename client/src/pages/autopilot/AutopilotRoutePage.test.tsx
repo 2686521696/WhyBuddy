@@ -182,6 +182,59 @@ describe("AutopilotRoutePage", () => {
     expect(source).not.toMatch(/window\.location\.href\s*=/);
   });
 
+  it("hydrates the cockpit from the latest backend blueprint job on mount", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "./AutopilotRoutePage.tsx"),
+      "utf8"
+    );
+
+    expect(source).toMatch(/fetchLatestBlueprintGenerationJob/);
+    expect(source).toMatch(/fetchLatestBlueprintGenerationJob\(\)/);
+    expect(source).toMatch(/setLatestJob\(\s*result\.data\.job\s*\)/);
+    expect(source).toMatch(/setRouteSet\(\s*result\.data\.routeSet\s*\?\?\s*null\s*\)/);
+    expect(source).toMatch(/setSelection\(\s*result\.data\.selection\s*\?\?\s*null\s*\)/);
+    expect(source).toMatch(/setSpecTree\(\s*result\.data\.specTree\s*\?\?\s*null\s*\)/);
+    expect(source).toMatch(/setIntake\(\s*result\.data\.intake\s*\)/);
+    expect(source).toMatch(/setProjectContext\(\s*result\.data\.projectContext\s*\)/);
+  });
+
+  it("uses the GitHub Pages static blueprint runtime without remote right-rail fetches", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "./AutopilotRoutePage.tsx"),
+      "utf8"
+    );
+
+    expect(source).toMatch(/IS_GITHUB_PAGES/);
+    expect(source).toMatch(/getGithubPagesBlueprintDemoRuntime/);
+    expect(source).toMatch(/fetchLatestGenerationJob/);
+    expect(source).toMatch(/createIntake/);
+    expect(source).toMatch(/createClarificationSession/);
+    expect(source).toMatch(/createGenerationJob/);
+    expect(source).toMatch(/selectRoute/);
+    expect(source).toMatch(/disableRemoteFetch:\s*IS_GITHUB_PAGES/);
+  });
+
+  it("routes GitHub Pages downstream generation through the static runtime", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "./AutopilotRoutePage.tsx"),
+      "utf8"
+    );
+
+    expect(source).toMatch(/generationActions:\s*pagesBlueprintRuntime/);
+    expect(source).toMatch(/generateSpecDocuments:\s*pagesBlueprintRuntime\.generateSpecDocuments/);
+    expect(source).toMatch(/generateEffectPreview:\s*pagesBlueprintRuntime\.generateEffectPreviews/);
+    expect(source).toMatch(/generatePromptPackages:\s*pagesBlueprintRuntime\.generatePromptPackages/);
+    expect(source).toMatch(/generateEngineeringLanding:\s*pagesBlueprintRuntime\.generateEngineeringLanding/);
+    expect(source).toMatch(/generateSpecDocuments=\{pagesBlueprintRuntime\?\.generateSpecDocuments\}/);
+    expect(source).toMatch(/refreshPagesBlueprintSnapshot/);
+  });
+
   describe("fabric stage right rail (Spec 3 T08)", () => {
     it("mounts <AutopilotRightRail> with data-testid=\"autopilot-right-rail\" under fabric stage", () => {
       const markup = renderToStaticMarkup(

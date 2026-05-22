@@ -121,7 +121,7 @@ describe("useAutoAdvance — spec_tree never auto-advances (Spec 5.1)", () => {
 
   // ─── 用例 4：forceAdvance 在 spec_tree 阶段 *会* 调用 spec_docs API ──────────
 
-  it("calls generateBlueprintSpecDocuments exactly once when forceAdvance() is invoked in spec_tree", async () => {
+  it("calls the injected spec document action exactly once when forceAdvance() is invoked in spec_tree", async () => {
     const source = await loadHookSource();
     const forceAdvanceBody = extractForceAdvanceBody(source);
 
@@ -131,13 +131,13 @@ describe("useAutoAdvance — spec_tree never auto-advances (Spec 5.1)", () => {
     // 关键事实 2：forceAdvance 中 spec_tree 分支后紧跟一次
     //   `generateBlueprintSpecDocuments(` 调用，对应需求 5.2。
     expect(forceAdvanceBody!).toMatch(
-      /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?generateBlueprintSpecDocuments\(/
+      /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?actions\.generateSpecDocuments\(/
     );
 
     // 关键事实 3：整个 use-auto-advance.ts 文件中 generateBlueprintSpecDocuments
     //   只被调用一次（即仅在 forceAdvance 路径中）。这一全局唯一性进一步证明
     //   auto-advance effect 中没有任何 spec_docs API 调用。
-    const callMatches = source.match(/generateBlueprintSpecDocuments\(/g);
+    const callMatches = source.match(/actions\.generateSpecDocuments\(/g);
     expect(callMatches).not.toBeNull();
     expect(callMatches!.length).toBe(1);
   });
@@ -149,7 +149,7 @@ describe("useAutoAdvance — spec_tree never auto-advances (Spec 5.1)", () => {
     expect(forceAdvanceBody).not.toBeNull();
 
     const specTreeGenerateRequest = forceAdvanceBody!.match(
-      /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?generateBlueprintSpecDocuments\(\s*jobId\s*,\s*\{([\s\S]*?)\}\s*\)/
+      /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?actions\.generateSpecDocuments\(\s*jobId\s*,\s*\{([\s\S]*?)\}\s*\)/
     );
 
     expect(specTreeGenerateRequest).not.toBeNull();
@@ -174,7 +174,7 @@ describe("useAutoAdvance — spec_tree never auto-advances (Spec 5.1)", () => {
     //   `generateBlueprintEffectPreview(` 之间没有别的 if/return 早断；说明
     //   命中守卫后会真正进入 effect_preview 阶段的 API 调用。
     expect(source).toMatch(
-      /stage\s*===\s*"spec_docs"\s*&&\s*\n?\s*status\s*===\s*"completed"[\s\S]*?generateBlueprintEffectPreview\(/
+      /stage\s*===\s*"spec_docs"\s*&&\s*\n?\s*status\s*===\s*"completed"[\s\S]*?actions\.generateEffectPreview\(/
     );
 
     // 关键事实 3：effect_preview 的目标 stage 名作为字符串字面量传给

@@ -27,6 +27,7 @@ import {
   createBlueprintGenerationJob,
   createBlueprintIntake,
   fetchBlueprintProjectContext,
+  fetchLatestBlueprintGenerationJob,
   normalizeBlueprintAgentCrew,
   normalizeBlueprintCapabilityEvidenceResponse,
   normalizeBlueprintCapabilityInvocationsResponse,
@@ -38,8 +39,10 @@ import {
   type BlueprintCapabilityEvidence,
   type BlueprintCapabilityInvocation,
   type BlueprintEffectPreviewSnapshot,
+  type BlueprintLatestGenerationJobSnapshot,
   type BlueprintRuntimeCapability,
 } from "@/lib/blueprint-api";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import type { AppLocale } from "@/lib/locale";
 import { useProjectStore } from "@/lib/project-store";
 import { useAppStore } from "@/lib/store";
@@ -80,6 +83,10 @@ import { TimelineNode } from "./right-rail/timeline";
 import { AgentReasoningSubTimeline } from "./right-rail/AgentReasoningSubTimeline";
 import { AgentReasoningTimeline } from "@/components/blueprint/AgentReasoningTimeline";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
+import {
+  getGithubPagesBlueprintDemoRuntime,
+  type GithubPagesBlueprintDemoRuntime,
+} from "./github-pages-blueprint-demo";
 
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i;
 
@@ -1209,6 +1216,7 @@ function AutopilotWorkflowRail({
   autoAdvancing,
   autoAdvancingTo,
   onSpecDocumentsGenerated,
+  generateSpecDocuments,
 }: {
   locale: AppLocale;
   targetText: string;
@@ -1308,6 +1316,7 @@ function AutopilotWorkflowRail({
   onSpecDocumentsGenerated?: (
     response: import("@shared/blueprint/contracts").BlueprintSpecDocumentsResponse
   ) => void;
+  generateSpecDocuments?: GithubPagesBlueprintDemoRuntime["generateSpecDocuments"];
 }) {
   const primaryRoute =
     routeSet?.routes.find(route => route.id === routeSet.primaryRouteId) ??
@@ -1578,6 +1587,7 @@ function AutopilotWorkflowRail({
               locale={locale}
               onSubStageChange={subStageContext.setPinnedSubStage}
               onStageAdvanced={onForceAdvance}
+              generateSpecDocuments={generateSpecDocuments}
               onSpecDocumentsGenerated={response => {
                 // autopilot-spec-tree-workbench（2026-05-17）：
                 // SpecTreeWorkbench 在卡片内部调
@@ -2158,6 +2168,26 @@ export default function AutopilotRoutePage() {
   const [specTree, setSpecTree] = useState<BlueprintSpecTree | null>(null);
   const [apiError, setApiError] = useState<ApiRequestError | null>(null);
   const [creatingIntake, setCreatingIntake] = useState(false);
+  const pagesBlueprintRuntime = useMemo(
+    () => (IS_GITHUB_PAGES ? getGithubPagesBlueprintDemoRuntime() : null),
+    []
+  );
+  const pagesGenerationActions = useMemo(
+    () =>
+      pagesBlueprintRuntime
+        ? {
+            generateSpecDocuments:
+              pagesBlueprintRuntime.generateSpecDocuments,
+            generateEffectPreview:
+              pagesBlueprintRuntime.generateEffectPreviews,
+            generatePromptPackages:
+              pagesBlueprintRuntime.generatePromptPackages,
+            generateEngineeringLanding:
+              pagesBlueprintRuntime.generateEngineeringLanding,
+          }
+        : undefined,
+    [pagesBlueprintRuntime]
+  );
 
   /**
    * autopilot-streaming-experience：流式订阅生命周期。
@@ -2175,6 +2205,7 @@ export default function AutopilotRoutePage() {
   const subscribeToJob = useBlueprintRealtimeStore(s => s.subscribe);
   const unsubscribeFromJob = useBlueprintRealtimeStore(s => s.unsubscribe);
   useEffect(() => {
+    if (IS_GITHUB_PAGES) return;
     const streamKey = latestJob?.id ?? intake?.id ?? null;
     if (!streamKey) return;
     subscribeToJob(streamKey);
@@ -2188,6 +2219,69 @@ export default function AutopilotRoutePage() {
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [generatingRouteSet, setGeneratingRouteSet] = useState(false);
   const [selectingRouteId, setSelectingRouteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const latestJobRequest =
+      IS_GITHUB_PAGES && pagesBlueprintRuntime
+        ? pagesBlueprintRuntime.fetchLatestGenerationJob()
+        : fetchLatestBlueprintGenerationJob();
+
+    latestJobRequest.then(result => {
+      if (!active) return;
+      if (!result.ok) {
+        setApiError(result.error);
+        return;
+      }
+
+      setLatestJob(result.data.job);
+      setRouteSet(result.data.routeSet ?? null);
+      setSelection(result.data.selection ?? null);
+      setSpecTree(result.data.specTree ?? null);
+      if (result.data.intake) {
+        setIntake(result.data.intake);
+        setTargetText(result.data.intake.targetText ?? "");
+        setGithubInput(result.data.intake.githubUrls.join("\n"));
+      }
+      if (result.data.projectContext) {
+        setProjectContext(result.data.projectContext);
+      }
+      if (result.data.clarificationSession) {
+        setClarificationSession(result.data.clarificationSession);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [pagesBlueprintRuntime]);
+
+  const refreshPagesBlueprintSnapshot = useCallback(async () => {
+    if (!pagesBlueprintRuntime) return false;
+    const result = await pagesBlueprintRuntime.fetchLatestGenerationJob();
+    if (!result.ok) {
+      setApiError(result.error);
+      return false;
+    }
+
+    setLatestJob(result.data.job);
+    setRouteSet(result.data.routeSet ?? null);
+    setSelection(result.data.selection ?? null);
+    setSpecTree(result.data.specTree ?? null);
+    if (result.data.intake) {
+      setIntake(result.data.intake);
+      setTargetText(result.data.intake.targetText ?? "");
+      setGithubInput(result.data.intake.githubUrls.join("\n"));
+    }
+    if (result.data.projectContext) {
+      setProjectContext(result.data.projectContext);
+    }
+    if (result.data.clarificationSession) {
+      setClarificationSession(result.data.clarificationSession);
+    }
+    return true;
+  }, [pagesBlueprintRuntime]);
 
   const parsedGithub = useMemo(
     () => parseGithubInput(`${targetText}\n${githubInput}`),
@@ -2315,6 +2409,7 @@ export default function AutopilotRoutePage() {
       effectPreviews: autopilotEffectPreviews,
     },
     currentSubStage: effectiveSubStage,
+    disableRemoteFetch: IS_GITHUB_PAGES,
   });
   const flowSteps = useMemo(
     () =>
@@ -2377,7 +2472,11 @@ export default function AutopilotRoutePage() {
     if (!currentProjectId) return;
 
     setLoadingContext(true);
-    fetchBlueprintProjectContext(currentProjectId)
+    const fetchProjectContext = IS_GITHUB_PAGES
+      ? pagesBlueprintRuntime?.fetchProjectContext
+      : fetchBlueprintProjectContext;
+
+    fetchProjectContext?.(currentProjectId)
       .then(result => {
         if (!active) return;
         if (result.ok) {
@@ -2391,7 +2490,7 @@ export default function AutopilotRoutePage() {
     return () => {
       active = false;
     };
-  }, [currentProjectId]);
+  }, [currentProjectId, pagesBlueprintRuntime]);
 
   const handleAnswerChange = useCallback(
     (questionId: string, answer: string) => {
@@ -2406,11 +2505,15 @@ export default function AutopilotRoutePage() {
     setApiError(null);
 
     try {
-      const result = await createBlueprintIntake({
+      const createIntake = IS_GITHUB_PAGES
+        ? pagesBlueprintRuntime?.createIntake
+        : createBlueprintIntake;
+      const result = await createIntake?.({
         projectId: currentProjectId ?? undefined,
         targetText: target || undefined,
         githubUrls: parsedGithub.urls,
       });
+      if (!result) return;
 
       if (result.ok) {
         setIntake(result.data.intake);
@@ -2429,10 +2532,14 @@ export default function AutopilotRoutePage() {
         if (!result.data.clarificationSession) {
           setGeneratingClarifications(true);
           try {
-            const clarResult = await createBlueprintClarificationSession(
+            const createClarificationSession = IS_GITHUB_PAGES
+              ? pagesBlueprintRuntime?.createClarificationSession
+              : createBlueprintClarificationSession;
+            const clarResult = await createClarificationSession?.(
               result.data.intake.id,
               { projectId: currentProjectId ?? undefined }
             );
+            if (!clarResult) return;
             if (clarResult.ok) {
               setClarificationSession(clarResult.data.clarificationSession);
               if (clarResult.data.projectContext) {
@@ -2457,7 +2564,13 @@ export default function AutopilotRoutePage() {
     } finally {
       setCreatingIntake(false);
     }
-  }, [canCreateIntake, currentProjectId, parsedGithub.urls, target]);
+  }, [
+    canCreateIntake,
+    currentProjectId,
+    pagesBlueprintRuntime,
+    parsedGithub.urls,
+    target,
+  ]);
 
   const handleGenerateClarifications = useCallback(async () => {
     if (!intake) return;
@@ -2465,9 +2578,13 @@ export default function AutopilotRoutePage() {
     setApiError(null);
 
     try {
-      const result = await createBlueprintClarificationSession(intake.id, {
+      const createClarificationSession = IS_GITHUB_PAGES
+        ? pagesBlueprintRuntime?.createClarificationSession
+        : createBlueprintClarificationSession;
+      const result = await createClarificationSession?.(intake.id, {
         projectId: currentProjectId ?? undefined,
       });
+      if (!result) return;
 
       if (result.ok) {
         setClarificationSession(result.data.clarificationSession);
@@ -2486,7 +2603,7 @@ export default function AutopilotRoutePage() {
     } finally {
       setGeneratingClarifications(false);
     }
-  }, [currentProjectId, intake]);
+  }, [currentProjectId, intake, pagesBlueprintRuntime]);
 
   const handleSaveAnswers = useCallback(async () => {
     if (!clarificationSession || answers.length === 0) return;
@@ -2494,11 +2611,15 @@ export default function AutopilotRoutePage() {
     setApiError(null);
 
     try {
-      const result = await saveBlueprintClarificationAnswers(
+      const saveClarificationAnswers = IS_GITHUB_PAGES
+        ? pagesBlueprintRuntime?.saveClarificationAnswers
+        : saveBlueprintClarificationAnswers;
+      const result = await saveClarificationAnswers?.(
         clarificationSession.id,
         { answers, answeredBy: "autopilot" },
         clarificationSession.answers.length > 0 ? "PATCH" : "POST"
       );
+      if (!result) return;
 
       if (result.ok) {
         setClarificationSession(result.data.clarificationSession);
@@ -2514,7 +2635,7 @@ export default function AutopilotRoutePage() {
     } finally {
       setSavingAnswers(false);
     }
-  }, [answers, clarificationSession]);
+  }, [answers, clarificationSession, pagesBlueprintRuntime]);
 
   const handleGenerateRouteSet = useCallback(async () => {
     if (!canGenerateRouteSet) return;
@@ -2522,7 +2643,10 @@ export default function AutopilotRoutePage() {
     setApiError(null);
 
     try {
-      const result = await createBlueprintGenerationJob({
+      const createGenerationJob = IS_GITHUB_PAGES
+        ? pagesBlueprintRuntime?.createGenerationJob
+        : createBlueprintGenerationJob;
+      const result = await createGenerationJob?.({
         mode: "autopilot_route",
         projectId: currentProjectId ?? undefined,
         targetText: target || intake?.targetText || undefined,
@@ -2533,6 +2657,7 @@ export default function AutopilotRoutePage() {
         clarifications: answers,
         domainContext: projectContext ?? undefined,
       });
+      if (!result) return;
 
       if (result.ok) {
         setLatestJob(result.data.job);
@@ -2560,6 +2685,7 @@ export default function AutopilotRoutePage() {
     clarificationSession?.id,
     currentProjectId,
     intake,
+    pagesBlueprintRuntime,
     parsedGithub.urls,
     projectContext,
     target,
@@ -2595,11 +2721,18 @@ export default function AutopilotRoutePage() {
     job: latestJob,
     specTree,
     rightRailSpecTree: rightRailView.specTree.data,
+    generationActions: pagesBlueprintRuntime
+      ? pagesGenerationActions
+      : undefined,
     onAdvanced: nextSubStage => {
       if (nextSubStage) {
         subStageState.setPinnedSubStage(nextSubStage);
       }
       // 触发 W1 refetch 让时间线感知到新 stage
+      if (IS_GITHUB_PAGES && pagesBlueprintRuntime) {
+        void refreshPagesBlueprintSnapshot();
+        return;
+      }
       rightRailView.job.retry();
     },
   });
@@ -2611,11 +2744,15 @@ export default function AutopilotRoutePage() {
       setApiError(null);
 
       try {
-        const result = await selectBlueprintRoute(latestJob.id, {
+        const selectRoute = IS_GITHUB_PAGES
+          ? pagesBlueprintRuntime?.selectRoute
+          : selectBlueprintRoute;
+        const result = await selectRoute?.(latestJob.id, {
           routeId,
           reason: "Selected from the autopilot RouteSet workbench.",
           selectedBy: "autopilot",
         });
+        if (!result) return;
 
         if (result.ok) {
           setLatestJob(result.data.job);
@@ -2636,7 +2773,7 @@ export default function AutopilotRoutePage() {
         setSelectingRouteId(null);
       }
     },
-    [latestJob, rightRailView.job.retry]
+    [latestJob, pagesBlueprintRuntime, rightRailView.job.retry]
   );
 
   return (
@@ -2744,12 +2881,17 @@ export default function AutopilotRoutePage() {
             onForceAdvance={autoAdvance.forceAdvance}
             autoAdvancing={autoAdvance.advancing}
             autoAdvancingTo={autoAdvance.advancingTo}
+            generateSpecDocuments={pagesBlueprintRuntime?.generateSpecDocuments}
             onSpecDocumentsGenerated={response => {
               // autopilot-spec-tree-workbench（2026-05-17）：把 SpecTreeWorkbench
               // 从右栏发出的响应回写到 latestJob，让 rightRailView 的派生层
               // 重算 specTree / specDocuments；同名 onForceAdvance 已在
               // AutopilotWorkflowRail 内部触发，这里只负责承接 setLatestJob。
               setLatestJob(response.job);
+              setSpecTree(response.specTree);
+              if (IS_GITHUB_PAGES && pagesBlueprintRuntime) {
+                void refreshPagesBlueprintSnapshot();
+              }
             }}
           />
 

@@ -680,6 +680,56 @@ describe("blueprint specs route", () => {
     });
   });
 
+  it("exposes intake and project context on the latest job payload", async () => {
+    await withServer(tempRoot, async baseUrl => {
+      const intakeResponse = await fetch(`${baseUrl}/api/blueprint/intake`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "project-latest-context",
+          targetText: "Recover the autopilot cockpit from a prior intake.",
+          githubUrls: ["https://github.com/example/latest-context"],
+        }),
+      });
+
+      expect(intakeResponse.status).toBe(201);
+      const intakeBody = (await intakeResponse.json()) as Record<string, any>;
+      expect(intakeBody.intake.id).toEqual(expect.any(String));
+      expect(intakeBody.projectContext.projectId).toBe(
+        "project-latest-context"
+      );
+
+      const createResponse = await fetch(`${baseUrl}/api/blueprint/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intakeId: intakeBody.intake.id,
+        }),
+      });
+
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as Record<string, any>;
+      expect(created.intake.id).toBe(intakeBody.intake.id);
+
+      const latestResponse = await fetch(
+        `${baseUrl}/api/blueprint/jobs/latest`
+      );
+
+      expect(latestResponse.status).toBe(200);
+      const latest = (await latestResponse.json()) as Record<string, any>;
+      expect(latest.job.id).toBe(created.job.id);
+      expect(latest.intake).toMatchObject({
+        id: intakeBody.intake.id,
+        projectId: "project-latest-context",
+        targetText: "Recover the autopilot cockpit from a prior intake.",
+      });
+      expect(latest.projectContext).toMatchObject({
+        projectId: "project-latest-context",
+        intakeIds: [intakeBody.intake.id],
+      });
+    });
+  });
+
   it("supports compat generation endpoints for create, details, and events", async () => {
     await withServer(tempRoot, async baseUrl => {
       const createResponse = await fetch(

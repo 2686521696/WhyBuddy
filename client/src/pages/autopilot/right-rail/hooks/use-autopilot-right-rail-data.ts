@@ -192,6 +192,12 @@ export interface UseAutopilotRightRailDataOptions {
   skipLazyLoad?: boolean;
 
   /**
+   * GitHub Pages 静态部署没有后端 blueprint API。开启后 hook 只消费
+   * `initialData`，并禁止 W1-W4 fetch、SSE 与 polling。
+   */
+  disableRemoteFetch?: boolean;
+
+  /**
    * SSE 不可用或显式禁用时的 polling 间隔。
    * - `undefined`: 默认 15000ms；
    * - `0` 或负数：禁用 SSE + polling（测试或手动触发场景）。
@@ -815,6 +821,39 @@ export function shouldLoadField(
  * - `undefined` / 正整数 → 启用（undefined 使用默认间隔 15000ms）。
  * - `0` / 负数 / `NaN` → 禁用（测试或手动触发场景）。
  */
+function wave3FieldRequiresSpecTree(field: RightRailFieldName): boolean {
+  return (
+    field === "effectPreviews" ||
+    field === "promptPackages" ||
+    field === "landingPlans"
+  );
+}
+
+function filterWave3FetchFields(params: {
+  currentSubStage: AutopilotRailSubStage | undefined;
+  jobStage: BlueprintGenerationJob["stage"] | null;
+  skipLazyLoad: boolean;
+  hasSpecTree: boolean;
+}): RightRailFieldName[] {
+  return WAVE_3_FETCH_FIELDS.filter(field => {
+    if (wave3FieldRequiresSpecTree(field) && !params.hasSpecTree) {
+      return false;
+    }
+
+    return shouldLoadField(
+      field as Exclude<
+        RightRailFieldName,
+        "job" | "routeSet" | "selection" | "specTree"
+      >,
+      {
+        currentSubStage: params.currentSubStage,
+        jobStage: params.jobStage,
+        skipLazyLoad: params.skipLazyLoad,
+      }
+    );
+  });
+}
+
 export function isJobAutoRefreshEnabled(
   pollingIntervalMs: number | undefined
 ): boolean {
@@ -953,6 +992,7 @@ export function useAutopilotRightRailData(
   const initialData = options?.initialData;
   const trimmedJobId = jobId.trim();
   const hasJob = trimmedJobId.length > 0;
+  const disableRemoteFetch = options?.disableRemoteFetch === true;
 
   // per-jobId 历史 cache：用于切回历史 jobId 时复用 W2-W4（Requirement 4.3 策略）。
   // Task 2 在 W1 成功后会写入 `job/routeSet/selection/specTree` 到 cache；Task 3 在 W2 成功
@@ -967,24 +1007,26 @@ export function useAutopilotRightRailData(
       buildInitialReducerState(
         trimmedJobId,
         initialData,
-        cacheRef.current.get(trimmedJobId) ?? null
+        disableRemoteFetch ? null : cacheRef.current.get(trimmedJobId) ?? null
       )
   );
 
   // `jobId` 变化：重置 reducer 到新 jobId，从 cacheRef 读取可能的历史 cache seed。
   // 注：reducer init 已经处理了首次挂载；本 effect 处理后续 jobId 变化。
   useEffect(() => {
-    if (state.currentJobId === trimmedJobId) return;
+    if (!disableRemoteFetch && state.currentJobId === trimmedJobId) return;
     dispatch({
       type: "JOB_CHANGED",
       jobId: trimmedJobId,
       initialData,
-      cachedFields: cacheRef.current.get(trimmedJobId) ?? null,
+      cachedFields: disableRemoteFetch
+        ? null
+        : cacheRef.current.get(trimmedJobId) ?? null,
     });
     // 仅依赖 trimmedJobId：initialData 的身份变化不应触发整体 reset（避免父组件每 render
     // 都重建 initialData object 时频繁 reset）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmedJobId]);
+  }, [trimmedJobId, initialData, disableRemoteFetch]);
 
   // W1 fetch orchestration：
   //   1. jobId 非空且 initialData.job 不对应当前 jobId → 发起 fetchLatestBlueprintGenerationJob。
@@ -1003,6 +1045,7 @@ export function useAutopilotRightRailData(
   );
 
   useEffect(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
 
     // 若 initialData.job 对应当前 jobId 且当前 state.job 已从 initialData seed（即未被
@@ -1110,15 +1153,16 @@ export function useAutopilotRightRailData(
     };
     // refetchTrigger 依赖用于 W1 retry 强制重入；initialData 故意排除在依赖外。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trimmedJobId, hasJob, refetchTrigger]);
+  }, [trimmedJobId, hasJob, disableRemoteFetch, refetchTrigger]);
 
   // W1 共享 retry：触发 W1 fetch 重跑（bump refetch trigger + 重新 mount effect）。
   // W1 4 个字段共用此 retry：因为它们从同一次 snapshot 派生。
   const retryWave1 = useCallback(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     refetchTriggerRef.current += 1;
     forceRefetchBump();
-  }, [hasJob]);
+  }, [disableRemoteFetch, hasJob]);
 
   // -------------------------------------------------------------------------
   // Wave 2 fetch orchestration
@@ -1141,6 +1185,7 @@ export function useAutopilotRightRailData(
   const jobStage = state.job.data?.stage ?? null;
 
   useEffect(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     // 仅当 W1 已经具备 job 数据时才推进 W2（否则 gate 无法判定 fabric 阶段语义）。
     // 注：`initialData.job.id === jobId` 时 state.job.data 已从 init seed 提供，满足此门限。
@@ -1337,7 +1382,9 @@ export function useAutopilotRightRailData(
   }, [
     trimmedJobId,
     hasJob,
+    disableRemoteFetch,
     state.job.data,
+    state.specTree.data,
     jobStage,
     currentSubStage,
     skipLazyLoad,
@@ -1348,9 +1395,10 @@ export function useAutopilotRightRailData(
   // Task 3 实现范围：`capabilities / capabilityInvocations / capabilityEvidence` 共享此 retry；
   // Task 7 会把 per-field retry 替换为仅重拉单字段的版本。
   const retryWave2 = useCallback(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     bumpW2Retry();
-  }, [hasJob]);
+  }, [disableRemoteFetch, hasJob]);
 
   // -------------------------------------------------------------------------
   // Wave 3 fetch orchestration
@@ -1372,19 +1420,17 @@ export function useAutopilotRightRailData(
   const [w3RetryTrigger, bumpW3Retry] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     // 与 W2 effect 一致，要求 W1 job 数据已就绪并且指向当前 jobId，避免 gate 判定悬空。
     if (!state.job.data || state.job.data.id !== trimmedJobId) return;
 
-    const fields = WAVE_3_FETCH_FIELDS.filter(field =>
-      shouldLoadField(
-        field as Exclude<
-          RightRailFieldName,
-          "job" | "routeSet" | "selection" | "specTree"
-        >,
-        { currentSubStage, jobStage, skipLazyLoad }
-      )
-    );
+    const fields = filterWave3FetchFields({
+      currentSubStage,
+      jobStage,
+      skipLazyLoad,
+      hasSpecTree: Boolean(state.specTree.data),
+    });
     if (fields.length === 0) return;
 
     const controller = new AbortController();
@@ -1561,6 +1607,7 @@ export function useAutopilotRightRailData(
   }, [
     trimmedJobId,
     hasJob,
+    disableRemoteFetch,
     state.job.data,
     jobStage,
     currentSubStage,
@@ -1572,9 +1619,10 @@ export function useAutopilotRightRailData(
   // Task 4 实现范围：`effectPreviews / promptPackages / landingPlans / engineeringRuns` 共享此 retry；
   // Task 7 会把 per-field retry 替换为仅重拉单字段的版本。
   const retryWave3 = useCallback(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     bumpW3Retry();
-  }, [hasJob]);
+  }, [disableRemoteFetch, hasJob]);
 
   // -------------------------------------------------------------------------
   // Wave 4 fetch orchestration
@@ -1599,6 +1647,7 @@ export function useAutopilotRightRailData(
   const [w4RetryTrigger, bumpW4Retry] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     // 与 W2/W3 effect 一致，要求 W1 job 数据已就绪并且指向当前 jobId，避免 gate 判定悬空。
     if (!state.job.data || state.job.data.id !== trimmedJobId) return;
@@ -1738,6 +1787,7 @@ export function useAutopilotRightRailData(
   }, [
     trimmedJobId,
     hasJob,
+    disableRemoteFetch,
     state.job.data,
     jobStage,
     currentSubStage,
@@ -1749,9 +1799,10 @@ export function useAutopilotRightRailData(
   // Task 5 实现范围：`artifactEntries / artifactReplays` 共享此 retry；
   // `artifactFeedback` 由于是 W1 派生，retry 复用 `retryWave1`(在 view 映射中绑定)。
   const retryWave4 = useCallback(() => {
+    if (disableRemoteFetch) return;
     if (!hasJob) return;
     bumpW4Retry();
-  }, [hasJob]);
+  }, [disableRemoteFetch, hasJob]);
 
   // -------------------------------------------------------------------------
   // Task 6：SSE + polling 生命周期管理
@@ -1786,7 +1837,8 @@ export function useAutopilotRightRailData(
   //     state.currentJobId`)。
   // -------------------------------------------------------------------------
   const pollingIntervalMs = options?.pollingIntervalMs;
-  const autoRefreshEnabled = isJobAutoRefreshEnabled(pollingIntervalMs);
+  const autoRefreshEnabled =
+    !disableRemoteFetch && isJobAutoRefreshEnabled(pollingIntervalMs);
   const baseIntervalMs = pollingIntervalMs ?? 15000;
   // 保留最新 onJobStageChange 引用（不进 effect 依赖），避免订阅重建。
   const onJobStageChangeRef =
@@ -2129,17 +2181,20 @@ export function useAutopilotRightRailData(
     jobStage,
     skipLazyLoad,
     hasJob,
+    disableRemoteFetch,
   });
   gateParamsRef.current = {
     currentSubStage,
     jobStage,
     skipLazyLoad,
     hasJob,
+    disableRemoteFetch,
   };
 
   const retryField = useCallback(
     (field: RightRailFieldName) => {
       const gate = gateParamsRef.current;
+      if (gate.disableRemoteFetch) return;
       if (!gate.hasJob) return;
       const internal = stateRef.current[field] as InternalFieldState<unknown>;
       const allow = shouldTriggerPerFieldRetry(field, {
@@ -2357,6 +2412,7 @@ export const __testing__ = {
   shouldLoadField,
   deriveAgentCrewFromJob,
   mergeCapabilities,
+  filterWave3FetchFields,
   coerceApiRequestError,
   // Task 5：Wave 4 helpers
   deriveArtifactFeedbackFromJob,

@@ -63,6 +63,7 @@ const {
   mergeCapabilities,
   deriveArtifactFeedbackFromJob,
   shouldTriggerPerFieldRetry,
+  filterWave3FetchFields,
 } = __testing__;
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1049,49 @@ describe("shouldLoadField · Wave 3 (Spec 4 Task 4)", () => {
 // ---------------------------------------------------------------------------
 // Reducer: Wave 3 field 行为（reducer 与 Wave 1/2 共享，但需独立覆盖 Wave 3 字段集合）
 // ---------------------------------------------------------------------------
+
+describe("filterWave3FetchFields - spec tree readiness", () => {
+  it("keeps spec-tree-dependent Wave 3 endpoints quiet when the job has no specTree yet", () => {
+    const fields = filterWave3FetchFields({
+      currentSubStage: "runtime_capability",
+      jobStage: "runtime_capability",
+      skipLazyLoad: false,
+      hasSpecTree: false,
+    });
+
+    expect(fields).toEqual([]);
+  });
+
+  it("allows effect and prompt fetches from runtime capability once specTree is ready", () => {
+    const fields = filterWave3FetchFields({
+      currentSubStage: "runtime_capability",
+      jobStage: "runtime_capability",
+      skipLazyLoad: false,
+      hasSpecTree: true,
+    });
+
+    expect(fields).toContain("effectPreviews");
+    expect(fields).toContain("promptPackages");
+    expect(fields).not.toContain("landingPlans");
+    expect(fields).not.toContain("engineeringRuns");
+  });
+});
+
+describe("useAutopilotRightRailData static mode wiring", () => {
+  it("exposes a disableRemoteFetch option for GitHub Pages static snapshots", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "../use-autopilot-right-rail-data.ts"),
+      "utf8"
+    );
+
+    expect(source).toMatch(/disableRemoteFetch\?: boolean/);
+    expect(source).toMatch(/const disableRemoteFetch = options\?\.disableRemoteFetch === true/);
+    expect(source).toMatch(/if \(disableRemoteFetch\) return/);
+    expect(source).toMatch(/!disableRemoteFetch/);
+  });
+});
 
 describe("rightRailDataReducer · Wave 3 fetch fields (Spec 4 Task 4)", () => {
   it("FETCH_STARTED 只把 Wave 3 四个字段置为 loading，不动 Wave 1/2/4 字段", () => {

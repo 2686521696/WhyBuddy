@@ -3843,8 +3843,18 @@ export function normalizeBlueprintLatestGenerationJobResponse(
         )
       )
     : (agentCrew?.roleTimelines ?? []);
+  const intake =
+    record.intake != null ? normalizeBlueprintIntake(record.intake) : undefined;
+  const projectContext =
+    record.projectContext != null
+      ? normalizeBlueprintProjectDomainContext(record.projectContext)
+      : record.project_context != null
+        ? normalizeBlueprintProjectDomainContext(record.project_context)
+        : undefined;
   return {
     ...payload,
+    intake,
+    projectContext,
     effectPreviews,
     promptPackages: normalizeBlueprintPromptPackagesResponse(
       payload,

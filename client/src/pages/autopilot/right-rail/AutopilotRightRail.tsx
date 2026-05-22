@@ -34,10 +34,8 @@ import type {
   BlueprintSpecDocumentsResponse,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
-import {
-  generateBlueprintSpecDocuments,
-  type ApiRequestError,
-} from "@/lib/blueprint-api";
+import { generateBlueprintSpecDocuments } from "@/lib/blueprint-api";
+import type { ApiRequestError } from "@/lib/api-client";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 
 import { AgentReasoningSubTimeline } from "./AgentReasoningSubTimeline";
@@ -422,13 +420,15 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const [specDocsError, setSpecDocsError] = useState<ApiRequestError | null>(
     null
   );
+  const generateSpecDocuments =
+    props.generateSpecDocuments ?? generateBlueprintSpecDocuments;
 
   const triggerSpecDocsGeneration = useCallback(
     async (scope: "all" | "single", nodeId?: string) => {
       if (!props.jobId || specDocsGenerating !== null) return;
       setSpecDocsGenerating(scope);
       setSpecDocsError(null);
-      const result = await generateBlueprintSpecDocuments(
+      const result = await generateSpecDocuments(
         props.jobId,
         scope === "single" && nodeId !== undefined ? { nodeId } : {}
       );
@@ -439,7 +439,12 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         setSpecDocsError(result.error);
       }
     },
-    [props.jobId, specDocsGenerating, props.onSpecDocumentsGenerated]
+    [
+      generateSpecDocuments,
+      props.jobId,
+      specDocsGenerating,
+      props.onSpecDocumentsGenerated,
+    ]
   );
 
   const handleGenerateAllSpecDocs = useCallback(() => {

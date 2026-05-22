@@ -2348,6 +2348,8 @@ export interface BlueprintLatestGenerationJobResponse {
   routeSet?: BlueprintRouteSet;
   selection?: BlueprintRouteSelection;
   specTree?: BlueprintSpecTree;
+  intake?: BlueprintIntake;
+  projectContext?: BlueprintProjectDomainContext;
   specTreeVersions?: BlueprintSpecTreeVersionSnapshot[];
   specDocuments?: BlueprintSpecDocument[];
   specDocumentVersions?: BlueprintSpecDocumentVersionSnapshot[];

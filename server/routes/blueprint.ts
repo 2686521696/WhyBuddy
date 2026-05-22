@@ -784,7 +784,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       return;
     }
 
-    res.json(createJobDetailsPayload(job));
+    res.json(createJobDetailsPayload(job, blueprintStores));
   };
 
   const handleJobEvents = (req: Request, res: Response) => {
@@ -923,7 +923,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
 
   router.get("/jobs/latest", (_req, res) => {
     const job = jobStore.latest();
-    res.json(createJobDetailsPayload(job));
+    res.json(createJobDetailsPayload(job, blueprintStores));
   });
 
   router.get("/jobs/:jobId/events", handleJobEvents);
@@ -6490,17 +6490,28 @@ function comparePayloadSummaryFields(
 }
 
 function createJobDetailsPayload(
-  job: BlueprintGenerationJob | null
+  job: BlueprintGenerationJob | null,
+  stores?: BlueprintIntakeStores
 ): BlueprintLatestGenerationJobResponse {
   if (!job) {
     return { job: null };
   }
+
+  const intake = job.request.intakeId
+    ? stores?.intakes.get(job.request.intakeId)
+    : undefined;
+  const projectContextProjectId = intake?.projectId ?? job.projectId;
+  const projectContext = projectContextProjectId
+    ? stores?.projectContexts.get(projectContextProjectId)
+    : undefined;
 
   return {
     job: projectHandoffOntoJob(job),
     routeSet: extractRouteSet(job),
     selection: extractRouteSelection(job),
     specTree: extractSpecTree(job),
+    intake,
+    projectContext,
     specDocuments: extractSpecDocuments(job),
     specDocumentVersions: extractSpecDocumentVersions(job),
     effectPreviews: extractEffectPreviews(job),
