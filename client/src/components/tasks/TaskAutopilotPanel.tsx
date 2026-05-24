@@ -3297,10 +3297,12 @@ function SummaryBlock({
   wide: _wide,
 }: {
   title: string;
-  block: AutopilotBlock;
+  block?: AutopilotBlock | null;
   testId: string;
   wide?: boolean;
 }) {
+  if (!block) return null;
+
   return (
     <section className={BLOCK_CLASS} data-testid={testId}>
       <div className="flex items-start justify-between gap-3">

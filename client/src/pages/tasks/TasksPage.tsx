@@ -66,6 +66,20 @@ function t(locale: string, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
 }
 
+type ProjectTaskArchiveArtifact = Omit<
+  AddProjectArtifactInput,
+  "projectId" | "sourceMissionId"
+>;
+
+type ProjectTaskArchiveEvidence = Omit<
+  AddProjectEvidenceInput,
+  "projectId" | "sourceMissionId"
+>;
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value != null;
+}
+
 function taskStatusLabel(status: MissionTaskStatus, locale: string) {
   const zh: Record<MissionTaskStatus, string> = {
     queued: "排队中",
@@ -177,12 +191,8 @@ export function buildProjectTaskArchiveRecords(params: {
   existingArtifacts?: ProjectArtifact[];
   existingEvidence?: ProjectEvidence[];
 }): {
-  artifacts: Array<
-    Omit<AddProjectArtifactInput, "projectId" | "sourceMissionId">
-  >;
-  evidence: Array<
-    Omit<AddProjectEvidenceInput, "projectId" | "sourceMissionId">
-  >;
+  artifacts: ProjectTaskArchiveArtifact[];
+  evidence: ProjectTaskArchiveEvidence[];
 } {
   if (!params.projectId || !params.missionId || !params.detail) {
     return { artifacts: [], evidence: [] };
@@ -224,24 +234,15 @@ export function buildProjectTaskArchiveRecords(params: {
         artifact.filename ||
         undefined;
 
-      return {
+      const record: ProjectTaskArchiveArtifact = {
         type: mapTaskArtifactKindToProjectType(artifact.kind),
         title,
-        path,
-        contentPreview,
-      } satisfies Omit<
-        AddProjectArtifactInput,
-        "projectId" | "sourceMissionId"
-      >;
+        ...(path ? { path } : {}),
+        ...(contentPreview ? { contentPreview } : {}),
+      };
+      return record;
     })
-    .filter(
-      (
-        artifact
-      ): artifact is Omit<
-        AddProjectArtifactInput,
-        "projectId" | "sourceMissionId"
-      > => Boolean(artifact)
-    )
+    .filter(isPresent)
     .filter(
       artifact => !existingArtifactKeys.has(artifact.title.trim().toLowerCase())
     );
@@ -251,23 +252,14 @@ export function buildProjectTaskArchiveRecords(params: {
       const title = entry.label?.trim();
       const detail = entry.value?.trim();
       if (!title || !detail) return null;
-      return {
+      const record: ProjectTaskArchiveEvidence = {
         type: "log",
         title: `Task log: ${title}`,
         detail,
-      } satisfies Omit<
-        AddProjectEvidenceInput,
-        "projectId" | "sourceMissionId"
-      >;
+      };
+      return record;
     })
-    .filter(
-      (
-        item
-      ): item is Omit<
-        AddProjectEvidenceInput,
-        "projectId" | "sourceMissionId"
-      > => Boolean(item)
-    )
+    .filter(isPresent)
     .filter(
       item =>
         !existingEvidenceKeys.has(

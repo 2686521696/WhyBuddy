@@ -14,6 +14,7 @@ import {
   Wrench,
   Terminal,
   HelpCircle,
+  type LucideIcon,
 } from "lucide-react";
 
 /* ─── i18n helper ─── */
@@ -24,7 +25,7 @@ function t(locale: string, zh: string, en: string): string {
 
 /* ─── Role type → icon mapping ─── */
 
-const ROLE_TYPE_ICONS: Record<MissionAutopilotFleetRoleType, React.ElementType> = {
+const ROLE_TYPE_ICONS: Record<MissionAutopilotFleetRoleType, LucideIcon> = {
   planner: Settings,
   clarifier: HelpCircle,
   researcher: Search,

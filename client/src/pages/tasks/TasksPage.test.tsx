@@ -1,15 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  MissionTaskDetail,
+  MissionTaskSummary,
+} from "@/lib/tasks-store";
 
 const { tasksState, workflowState, projectState } = vi.hoisted(() => {
   const now = Date.now();
-  const missionSummary = {
+  const missionSummary: MissionTaskSummary = {
     id: "mission-1",
     title: "Review launch-free task workbench",
     kind: "general",
     sourceText: "The tasks page should inspect existing work only.",
     status: "running",
-    operatorState: "idle",
+    operatorState: "active",
     workflowStatus: "running",
     progress: 48,
     currentStageKey: "execution",
@@ -33,9 +37,19 @@ const { tasksState, workflowState, projectState } = vi.hoisted(() => {
     hasWarnings: false,
     lastSignal: null,
   };
-  const missionDetail = {
+  const missionDetail: MissionTaskDetail = {
     ...missionSummary,
-    workflow: null,
+    workflow: {
+      id: "workflow-1",
+      directive: missionSummary.sourceText,
+      status: "running",
+      current_stage: "execution",
+      departments_involved: ["Engineering"],
+      started_at: null,
+      completed_at: null,
+      results: null,
+      created_at: new Date(now).toISOString(),
+    },
     tasks: [],
     messages: [],
     report: null,
@@ -47,12 +61,13 @@ const { tasksState, workflowState, projectState } = vi.hoisted(() => {
     failureReasons: [],
     decisionPresets: [],
     decisionPrompt: null,
+    decisionPlaceholder: null,
     decisionAllowsFreeText: false,
     decision: null,
     instanceInfo: [],
     logSummary: [],
     runtimeChannels: {
-      socket: { status: "idle", label: "Socket", detail: "Idle" },
+      socket: { status: "disconnected", label: "Socket", detail: "Idle" },
       callback: { status: "idle", label: "Callback", detail: "Idle" },
     },
     decisionHistory: [],
@@ -604,7 +619,7 @@ describe("TasksPage workbench tabs", () => {
     recordProjectOperatorAction({
       projectId: "project-1",
       missionId: "mission-1",
-      action: "approve",
+      action: "resume",
       addProjectMessage,
       addProjectEvidence,
     });
@@ -615,13 +630,13 @@ describe("TasksPage workbench tabs", () => {
       role: "operator",
       kind: "decision",
       content:
-        "Operator action: approve\nOperator action submitted from project execution center.",
+        "Operator action: resume\nOperator action submitted from project execution center.",
     });
     expect(addProjectEvidence).toHaveBeenCalledWith({
       projectId: "project-1",
       sourceMissionId: "mission-1",
       type: "decision",
-      title: "Operator action: approve",
+      title: "Operator action: resume",
       detail: "Operator action submitted from project execution center.",
     });
   });

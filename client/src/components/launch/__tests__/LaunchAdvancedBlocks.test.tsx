@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
+import type { LaunchRoutePlan } from "@/lib/launch-router";
 
 const { appState } = vi.hoisted(() => ({
   appState: {
@@ -19,10 +20,10 @@ import { LaunchRoutePlanningFlow } from "../LaunchRoutePlanningFlow";
 import { LaunchCockpitGrid, COCKPIT_TOOLS } from "../LaunchCockpitGrid";
 import { LaunchOutputChips, OUTPUT_TYPES } from "../LaunchOutputChips";
 
-const mockRoutePlan = {
+const mockRoutePlan: LaunchRoutePlan = {
   decision: {
     kind: "mission" as const,
-    reasons: [] as string[],
+    reasons: [],
     requiresAdvancedRuntime: false,
     needsClarification: false,
     canOverride: true,
@@ -208,7 +209,7 @@ describe("LaunchOutputChips", () => {
     appState.locale = "en-US";
     const markup = renderToStaticMarkup(
       createElement(LaunchOutputChips, {
-        selectedTypes: new Set(),
+        selectedTypes: new Set<string>(),
         onToggle: () => {},
       })
     );
