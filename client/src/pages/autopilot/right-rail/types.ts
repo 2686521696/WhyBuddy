@@ -31,6 +31,7 @@ import type {
   BlueprintEffectPreviewSnapshot,
   GenerateBlueprintSpecDocumentsResult,
 } from "@/lib/blueprint-api";
+import type { ReplanCoordinator } from "./replan";
 
 /**
  * 左侧 5 阶段时间线的顶层 stage 枚举。
@@ -111,8 +112,11 @@ export interface AutopilotRightRailProps {
   effectPreviews: BlueprintEffectPreviewSnapshot[];
   /** i18n */
   locale: AppLocale;
+  /** Page-level coordinator for branch-aware replan atomic refresh. */
+  coordinator?: ReplanCoordinator | null;
   /** 用户点击子阶段导航时由父组件处理 */
   onSubStageChange: (next: AutopilotRailSubStage) => void;
+  onNavigateWorkflowStage?: (next: AutopilotTimelineStage) => void;
   /**
    * 可选回调：当右栏中的某个面板（当前仅 `SpecTreePanel` 的"一键推导规格文档"按钮）
    * 触发了后端 `job.stage` 前进时调用。父组件应在此回调里让右栏数据层 hook 重新拉一次
@@ -134,6 +138,8 @@ export interface AutopilotRightRailProps {
   onSpecDocumentsGenerated?: (
     response: import("@shared/blueprint/contracts").BlueprintSpecDocumentsResponse
   ) => void;
+  onJobUpdated?: (job: BlueprintGenerationJob) => void;
+  onBranchJobActivated?: (job: BlueprintGenerationJob) => void;
   generateSpecDocuments?: (
     jobId: string,
     request: BlueprintGenerateSpecDocumentsRequest

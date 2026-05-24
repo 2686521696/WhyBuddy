@@ -61,10 +61,10 @@ import {
   fetchBlueprintEffectPreviews,
   fetchBlueprintEngineeringLanding,
   fetchBlueprintEngineeringRuns,
+  fetchBlueprintGenerationJob,
   fetchBlueprintJobCapabilities,
   fetchBlueprintJobEventStreamUrl,
   fetchBlueprintPromptPackages,
-  fetchLatestBlueprintGenerationJob,
   normalizeBlueprintAgentCrew,
   type BlueprintAgentCrewSnapshot,
   type BlueprintArtifactFeedback,
@@ -501,6 +501,10 @@ function deriveWave1FieldUpdates(
     selection: snapshot.selection ?? null,
     specTree,
   };
+}
+
+function buildBlueprintGenerationJobEndpoint(jobId: string): string {
+  return `/api/blueprint/jobs/${encodeURIComponent(jobId)}`;
 }
 
 const WAVE_1_FIELDS: readonly RightRailFieldName[] = [
@@ -1060,6 +1064,7 @@ export function useAutopilotRightRailData(
 
     const controller = new AbortController();
     const requestId = nextRequestId();
+    const endpoint = buildBlueprintGenerationJobEndpoint(trimmedJobId);
 
     dispatch({
       type: "FETCH_STARTED",
@@ -1070,7 +1075,7 @@ export function useAutopilotRightRailData(
 
     void (async () => {
       try {
-        const result = await fetchLatestBlueprintGenerationJob();
+        const result = await fetchBlueprintGenerationJob(trimmedJobId);
         if (controller.signal.aborted) return;
         if (!result.ok) {
           dispatch({
@@ -1128,7 +1133,7 @@ export function useAutopilotRightRailData(
         const error: ApiRequestError = {
           kind: "error",
           source: "network",
-          endpoint: "/api/blueprint/jobs/latest",
+          endpoint,
           message:
             rawError instanceof Error ? rawError.message : "unexpected error",
           detail:
@@ -1885,6 +1890,7 @@ export function useAutopilotRightRailData(
       // 独立 requestId 的 W1 fetch；reducer 的 Ignore_Stale_Policy 会确保同字段 in-flight
       // 请求不会被老响应覆盖。
       const requestId = nextRequestId();
+      const endpoint = buildBlueprintGenerationJobEndpoint(trimmedJobId);
       dispatch({
         type: "FETCH_STARTED",
         jobId: trimmedJobId,
@@ -1893,7 +1899,7 @@ export function useAutopilotRightRailData(
       });
       void (async () => {
         try {
-          const result = await fetchLatestBlueprintGenerationJob();
+          const result = await fetchBlueprintGenerationJob(trimmedJobId);
           if (closed) return;
           if (!result.ok) {
             dispatch({
@@ -1943,7 +1949,7 @@ export function useAutopilotRightRailData(
           if (closed) return;
           const error = coerceApiRequestError(
             rawError,
-            "/api/blueprint/jobs/latest"
+            endpoint
           );
           dispatch({
             type: "FETCH_REJECTED",
@@ -1978,7 +1984,7 @@ export function useAutopilotRightRailData(
         if (closed) return;
         void (async () => {
           try {
-            const result = await fetchLatestBlueprintGenerationJob();
+            const result = await fetchBlueprintGenerationJob(trimmedJobId);
             if (closed) return;
             if (!result.ok) {
               pollingAttempt += 1;

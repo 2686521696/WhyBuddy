@@ -424,4 +424,41 @@ describe("WorkbenchExecutionPanel split layout (Phase 2 / Task 8)", () => {
       'data-testid="autopilot-workbench-execution-reasoning-empty"'
     );
   });
+
+  it("j. renders a stale badge above stale spec document artifact cards", () => {
+    mockReasoningEntries = [];
+    mockObservingSnapshot = { byNodeTitle: new Map() };
+
+    const job = {
+      id: "job-stale-doc-artifact",
+      artifacts: [
+        {
+          id: "artifact-stale-requirements",
+          type: "requirements",
+          title: "Requirements",
+          summary: "Requirements artifact",
+          createdAt: "2026-01-01T00:00:01Z",
+          payload: {},
+          staleSince: "2026-05-23T08:00:00.000Z",
+          invalidatedBy: {
+            stage: "route_generation",
+            artifactId: "route-selection-1",
+            artifactType: "route_selection",
+            reason: "upstream_route_selection_changed",
+            triggeredAt: "2026-05-23T08:00:00.000Z",
+          },
+        },
+      ],
+    } as unknown as WorkbenchExecutionPanelProps["job"];
+
+    const markup = renderToStaticMarkup(
+      <WorkbenchExecutionPanel {...makeProps({ job, reasoningEntries: [] })} />
+    );
+
+    expect(markup).toContain('data-testid="autopilot-stale-badge"');
+    expect(markup).toContain("已过期");
+    expect(markup).toContain("路线");
+    expect(markup).not.toContain("Stale: route_generation changed");
+    expect(markup).toContain('data-testid="mirofish-card-artifact"');
+  });
 });

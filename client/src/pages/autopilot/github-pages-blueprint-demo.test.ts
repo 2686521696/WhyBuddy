@@ -157,4 +157,79 @@ describe("github-pages-blueprint-demo", () => {
     expect(latest.data.job?.id).toBe(result.latest.data.job?.id);
     expect(latest.data.specTree?.id).toBe(result.latest.data.specTree?.id);
   });
+
+  it("loads an existing Pages job without stale metadata as fresh", async () => {
+    const storage = new Map<string, string>();
+    const storageLike = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+    };
+    storageLike.setItem(
+      "cube-pets-office:autopilot:pages-blueprint-demo",
+      JSON.stringify({
+        sequence: 42,
+        job: {
+          id: "legacy-pages-job",
+          projectId: "github-pages-demo-project",
+          mode: "autopilot_route",
+          status: "completed",
+          stage: "effect_preview",
+          requestedBy: "github-pages-demo",
+          request: {
+            mode: "autopilot_route",
+            targetText: "Legacy Pages job",
+            githubUrls: ["https://github.com/openai/openai-node"],
+          },
+          artifacts: [
+            {
+              id: "legacy-spec-tree",
+              type: "spec_tree",
+              title: "Legacy SPEC tree",
+              summary: "Saved before stale metadata existed.",
+              createdAt: "2026-05-22T00:00:00.000Z",
+            },
+            {
+              id: "legacy-requirements",
+              type: "requirements",
+              title: "Legacy requirements",
+              summary: "Saved before stale metadata existed.",
+              createdAt: "2026-05-22T00:00:00.000Z",
+            },
+            {
+              id: "legacy-preview",
+              type: "effect_preview",
+              title: "Legacy preview",
+              summary: "Saved before stale metadata existed.",
+              createdAt: "2026-05-22T00:00:00.000Z",
+            },
+          ],
+          events: [],
+          createdAt: "2026-05-22T00:00:00.000Z",
+          updatedAt: "2026-05-22T00:01:00.000Z",
+        },
+      })
+    );
+
+    const runtime = createGithubPagesBlueprintDemoRuntime({
+      storage: storageLike,
+      now: () => "2026-05-24T00:00:00.000Z",
+    });
+
+    const latest = await runtime.fetchLatestGenerationJob();
+
+    expect(latest.ok).toBe(true);
+    if (!latest.ok) throw new Error(latest.error.message);
+    expect(latest.data.job?.id).toBe("legacy-pages-job");
+    expect(latest.data.job?.artifacts).toHaveLength(3);
+    expect(
+      latest.data.job?.artifacts.filter(
+        artifact => artifact.staleSince || artifact.invalidatedBy
+      )
+    ).toEqual([]);
+  });
 });

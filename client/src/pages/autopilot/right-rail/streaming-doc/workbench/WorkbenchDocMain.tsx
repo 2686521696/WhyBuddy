@@ -26,7 +26,11 @@ import type { FC } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 
 import type { AppLocale } from "@/lib/locale";
-import type { BlueprintSpecDocumentType } from "@shared/blueprint/contracts";
+import { StaleBadge } from "@/pages/autopilot/stage-edit";
+import type {
+  BlueprintGenerationArtifact,
+  BlueprintSpecDocumentType,
+} from "@shared/blueprint/contracts";
 
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { StreamCursor } from "../StreamCursor";
@@ -49,6 +53,11 @@ export interface ActiveDocMeta {
   isStreaming: boolean;
 }
 
+export type WorkbenchStaleArtifactState = {
+  staleSince?: string | null;
+  invalidatedBy?: BlueprintGenerationArtifact["invalidatedBy"] | null;
+};
+
 /**
  * `WorkbenchDocMain` 对外 props。
  *
@@ -67,6 +76,7 @@ export interface WorkbenchDocMainProps {
   relatedRefs: RelatedRef[];
   /** AI 摘要：优先取 `BlueprintSpecDocument.summary`，缺失时为 null。 */
   aiSummary: string | null;
+  staleArtifact?: WorkbenchStaleArtifactState | null;
   /** 切换文档回调，复用与左侧 Spec 树相同的切换路径。 */
   onSelectDocument: (docId: string) => void;
   /** 可选受控展开态；容器保留四区不卸载，仅调整文档阅读密度。 */
@@ -100,6 +110,7 @@ export interface WorkbenchDocMainViewProps {
   relatedRefs: RelatedRef[];
   /** AI 摘要：优先取 `BlueprintSpecDocument.summary`，缺失时为 null。 */
   aiSummary: string | null;
+  staleArtifact?: WorkbenchStaleArtifactState | null;
   /** 切换文档回调，复用与左侧 Spec 树相同的切换路径。 */
   onSelectDocument: (docId: string) => void;
   locale: AppLocale;
@@ -127,6 +138,7 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
   chapterChecklist,
   relatedRefs,
   aiSummary,
+  staleArtifact,
   onSelectDocument,
   locale,
 }) => {
@@ -196,6 +208,12 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
         >
           {activeDoc?.title ?? (isZh ? "未选择文档" : "No document selected")}
         </span>
+
+        <StaleBadge
+          staleSince={staleArtifact?.staleSince}
+          invalidatedBy={staleArtifact?.invalidatedBy}
+          locale={locale}
+        />
 
         {isStreaming && (
           <span
@@ -417,6 +435,7 @@ export const WorkbenchDocMain: FC<WorkbenchDocMainProps> = ({
   chapterChecklist,
   relatedRefs,
   aiSummary,
+  staleArtifact,
   onSelectDocument,
   expanded: controlledExpanded,
   onExpandedChange,
@@ -462,6 +481,7 @@ export const WorkbenchDocMain: FC<WorkbenchDocMainProps> = ({
       chapterChecklist={chapterChecklist}
       relatedRefs={relatedRefs}
       aiSummary={aiSummary}
+      staleArtifact={staleArtifact}
       onSelectDocument={onSelectDocument}
       locale={locale}
     />

@@ -1337,6 +1337,7 @@ function buildLandingPlans(input: {
       jobId: input.job.id,
       treeId: input.specTree.id,
       promptPackageId: input.promptPackages[0]?.id,
+      promptPackageIds: input.promptPackages.map(item => item.id),
       sourcePromptPackageIds: input.promptPackages.map(item => item.id),
       platform: "codex",
       title: "Static Pages runtime landing plan",
@@ -1372,6 +1373,7 @@ function buildLandingPlans(input: {
       ],
       changedFiles: ["client/src/pages/autopilot/github-pages-blueprint-demo.ts"],
       createdAt: input.createdAt,
+      updatedAt: input.createdAt,
       provenance: {
         jobId: input.job.id,
         treeId: input.specTree.id,

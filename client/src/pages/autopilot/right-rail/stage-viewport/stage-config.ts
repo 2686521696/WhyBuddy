@@ -65,7 +65,7 @@ export const STAGE_CONFIG: Record<WorkbenchStage, StageConfigItem> = {
   },
   spec_tree: {
     englishLabel: 'SPEC TREE',
-    chineseTitle: '规格文档',
+    chineseTitle: '规格树',
     ctaLabel: '生成文档',
     autoAdvance: false,
   },

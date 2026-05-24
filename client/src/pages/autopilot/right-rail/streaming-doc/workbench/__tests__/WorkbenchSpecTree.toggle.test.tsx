@@ -500,4 +500,51 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
       /data-testid="autopilot-workbench-spec-tree-toggle-child-1a"[^>]*aria-expanded="true"/
     );
   });
+
+  it("(i) renders stale badges on stale spec tree node rows and stale document rows", () => {
+    const staleProps: Pick<
+      WorkbenchSpecTreeProps,
+      "specTreeStale" | "staleDocumentsById"
+    > = {
+      specTreeStale: {
+        staleSince: "2026-05-23T08:00:00.000Z",
+        invalidatedBy: {
+          stage: "route_generation",
+          artifactId: "route-selection-1",
+          artifactType: "route_selection",
+          reason: "upstream_route_selection_changed",
+          triggeredAt: "2026-05-23T08:00:00.000Z",
+        },
+      },
+      staleDocumentsById: new Map([
+        [
+          "doc-root-1-requirements",
+          {
+            staleSince: "2026-05-23T09:00:00.000Z",
+            invalidatedBy: {
+              stage: "clarification",
+              artifactId: "clarification-1",
+              artifactType: "clarification_session",
+              reason: "upstream_clarification_changed",
+              triggeredAt: "2026-05-23T09:00:00.000Z",
+            },
+          },
+        ],
+      ]),
+    };
+
+    const markup = renderToStaticMarkup(
+      <WorkbenchSpecTree
+        {...makeProps({
+          activeDocId: "doc-root-1-requirements",
+        })}
+        {...staleProps}
+      />
+    );
+
+    const badges = markup.match(/data-testid="autopilot-stale-badge"/g) ?? [];
+    expect(badges.length).toBeGreaterThanOrEqual(2);
+    expect(markup).toContain("Stale: route_generation changed");
+    expect(markup).toContain("Stale: clarification changed");
+  });
 });

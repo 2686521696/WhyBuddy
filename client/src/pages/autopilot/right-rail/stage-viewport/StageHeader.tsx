@@ -25,7 +25,9 @@
  */
 
 import type { FC } from "react";
+import { ChevronLeft } from "lucide-react";
 
+import type { AppLocale } from "@/lib/locale";
 import type { WorkbenchStage } from "./stage-config";
 
 /** StageHeader 组件 Props */
@@ -38,6 +40,8 @@ export interface StageHeaderProps {
   chineseTitle: string;
   /** 当前阶段是否处于 active 状态；active 时使用高对比度文字 */
   isActive: boolean;
+  /** UI locale used for the step eyebrow. */
+  locale?: AppLocale;
   /**
    * @deprecated 2026-05-19：StageProgressIndicator 已从 header 移除。
    * 字段保留以避免破坏既有调用方签名，但不再被消费。
@@ -49,6 +53,18 @@ export interface StageHeaderProps {
   stageProgress?: number;
   /** @deprecated 2026-05-19：见 `completedStages` 注释。 */
   isIndeterminate?: boolean;
+  /** Optional callback for returning to the previous workbench step. */
+  onNavigatePreviousStage?: () => void;
+  /** Accessible label for the previous-step control. */
+  previousStageLabel?: string;
+  /** Stable test/debug marker for the target previous sub-stage. */
+  previousSubStage?: string;
+  /** Stable test/debug marker for the target previous workbench stage. */
+  previousWorkbenchStage?: string;
+  /** Stable test/debug marker for the target previous outer workflow stage. */
+  previousWorkflowStage?: string;
+  /** Stable test/debug marker for which navigation model the button uses. */
+  previousTargetKind?: "sub-stage" | "workbench-stage" | "workflow-stage";
 }
 
 /**
@@ -67,29 +83,62 @@ const StageHeader: FC<StageHeaderProps> = ({
   englishLabel,
   chineseTitle,
   isActive,
+  locale = "en-US",
+  onNavigatePreviousStage,
+  previousStageLabel = "Back to previous step",
+  previousSubStage,
+  previousWorkbenchStage,
+  previousWorkflowStage,
+  previousTargetKind,
 }) => {
   // 生成两位数步骤编号：0 -> "01", 5 -> "06"
   const stepNumber = String(stageIndex + 1).padStart(2, "0");
+  const canNavigatePrevious = typeof onNavigatePreviousStage === "function";
+  const eyebrow =
+    locale === "zh-CN"
+      ? `步骤 ${stepNumber} · ${chineseTitle}`
+      : `STEP ${stepNumber} · ${englishLabel}`;
 
   return (
     <header className="sticky top-0 z-10 bg-slate-50 border-b border-slate-100 px-3 py-2">
-      {/* 英文步骤标识 */}
-      <p
-        className={`font-mono text-[10px] uppercase tracking-wider ${
-          isActive ? "text-slate-500" : "text-slate-300"
-        }`}
-      >
-        STEP {stepNumber} · {englishLabel}
-      </p>
+      <div className="flex min-w-0 items-start gap-2">
+        {canNavigatePrevious ? (
+          <button
+            type="button"
+            onClick={onNavigatePreviousStage}
+            aria-label={previousStageLabel}
+            title={previousStageLabel}
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-[7px] border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30"
+            data-testid="autopilot-stage-back-button"
+            data-previous-sub-stage={previousSubStage}
+            data-previous-workbench-stage={previousWorkbenchStage}
+            data-previous-workflow-stage={previousWorkflowStage}
+            data-previous-target-kind={previousTargetKind}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
 
-      {/* 中文大标题 */}
-      <h2
-        className={`text-sm font-semibold mt-0.5 ${
-          isActive ? "text-slate-800" : "text-slate-400"
-        }`}
-      >
-        {chineseTitle}
-      </h2>
+        <div className="min-w-0">
+          {/* 英文步骤标识 */}
+          <p
+            className={`font-mono text-[10px] uppercase tracking-wider ${
+              isActive ? "text-slate-500" : "text-slate-300"
+            }`}
+          >
+            {eyebrow}
+          </p>
+
+          {/* 中文大标题 */}
+          <h2
+            className={`mt-0.5 truncate text-sm font-semibold ${
+              isActive ? "text-slate-800" : "text-slate-400"
+            }`}
+          >
+            {chineseTitle}
+          </h2>
+        </div>
+      </div>
     </header>
   );
 };

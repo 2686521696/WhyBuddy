@@ -62,6 +62,7 @@ import type { ApiRequestError } from "@/lib/api-client";
 import { blueprintCopy as translateBlueprintCopy } from "@/lib/blueprint-copy";
 import type { AppLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
+import { StaleBadge } from "@/pages/autopilot/stage-edit";
 import {
   fetchBlueprintEffectPreviews,
   generateBlueprintEffectPreview,
@@ -72,6 +73,7 @@ import {
   type BlueprintEffectPreviewSnapshot,
 } from "@/lib/blueprint-api";
 import type {
+  BlueprintGenerationArtifact,
   BlueprintRolePresenceState,
   BlueprintRoleTimelineEntry,
   BlueprintSpecDocument,
@@ -227,7 +229,44 @@ type BlueprintEffectPreviewWithVersionSync = BlueprintEffectPreviewSnapshot & {
   preserved_preview_ids?: unknown;
   source_snapshot_hash?: unknown;
 };
+
+type StaleEffectPreviewState = {
+  staleSince?: string | null;
+  invalidatedBy?: BlueprintGenerationArtifact["invalidatedBy"] | null;
+};
 // endregion
+
+function deriveStaleEffectPreviewsById(
+  artifacts: readonly BlueprintGenerationArtifact[]
+): ReadonlyMap<string, StaleEffectPreviewState> {
+  const map = new Map<string, StaleEffectPreviewState>();
+  for (const artifact of artifacts) {
+    if (
+      !artifact.staleSince ||
+      (artifact.type !== "effect_preview" && artifact.type !== "preview")
+    ) {
+      continue;
+    }
+
+    const record =
+      artifact.payload !== null && typeof artifact.payload === "object"
+        ? (artifact.payload as Record<string, unknown>)
+        : null;
+    const state: StaleEffectPreviewState = {
+      staleSince: artifact.staleSince,
+      invalidatedBy: artifact.invalidatedBy,
+    };
+    for (const id of [
+      previewString(record?.id),
+      previewString(record?.previewId),
+      previewString(record?.preview_id),
+      artifact.id,
+    ]) {
+      if (id) map.set(id, state);
+    }
+  }
+  return map;
+}
 
 // region Helpers: role event projection
 function uniqueBlueprintStrings(values: Array<string | undefined>): string[] {
@@ -1024,6 +1063,7 @@ export const EffectPreviewPanel: FC<EffectPreviewPanelProps> = props => {
   const {
     specTree,
     jobId,
+    job,
     agentCrew,
     locale,
     initialPreviews,
@@ -1043,6 +1083,7 @@ export const EffectPreviewPanel: FC<EffectPreviewPanelProps> = props => {
     <EffectPreviewPanelInner
       specTree={specTree}
       jobId={jobId}
+      job={job}
       documents={documents}
       agentCrew={agentCrew}
       locale={locale}
@@ -1055,6 +1096,7 @@ export const EffectPreviewPanel: FC<EffectPreviewPanelProps> = props => {
 function EffectPreviewPanelInner({
   specTree,
   jobId,
+  job,
   documents,
   initialPreviews,
   agentCrew,
@@ -1063,6 +1105,7 @@ function EffectPreviewPanelInner({
 }: {
   specTree: BlueprintSpecTree;
   jobId?: string | null;
+  job?: EffectPreviewPanelProps["job"];
   documents: BlueprintSpecDocument[];
   initialPreviews?: BlueprintEffectPreviewSnapshot[];
   agentCrew?: BlueprintAgentCrewSnapshot | null;
@@ -1150,6 +1193,10 @@ function EffectPreviewPanelInner({
   const roleEventProjection = useMemo(
     () => buildRoleEventProjection(agentCrew, activeRuntimeProjection, locale),
     [activeRuntimeProjection, agentCrew, locale]
+  );
+  const stalePreviewsById = useMemo(
+    () => deriveStaleEffectPreviewsById(job?.artifacts ?? []),
+    [job?.artifacts]
   );
   const canGenerate = Boolean(jobId) && acceptedDocuments.length > 0;
 
@@ -1283,6 +1330,7 @@ function EffectPreviewPanelInner({
                   const previewWithTitle = preview as BlueprintEffectPreviewSnapshot & {
                     title?: string;
                   };
+                  const stalePreview = stalePreviewsById.get(preview.id);
                   return (
                     <button
                       key={preview.id}
@@ -1301,6 +1349,12 @@ function EffectPreviewPanelInner({
                       </div>
                       <div className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">
                         {blueprintCopy(preview.summary, locale)}
+                      </div>
+                      <div className="mt-2">
+                        <StaleBadge
+                          staleSince={stalePreview?.staleSince}
+                          invalidatedBy={stalePreview?.invalidatedBy}
+                        />
                       </div>
                       <div className="mt-2 text-[10px] font-black uppercase tracking-normal text-slate-400">
                         {formatEffectPreviewDate(

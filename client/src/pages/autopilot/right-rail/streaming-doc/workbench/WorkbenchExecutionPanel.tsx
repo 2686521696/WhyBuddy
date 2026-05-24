@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import type { FC } from "react";
 
 import type { AppLocale } from "@/lib/locale";
+import { StaleBadge } from "@/pages/autopilot/stage-edit";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 import type {
   BlueprintGenerationArtifact,
@@ -36,6 +37,13 @@ import type {
   MiroFishArtifactCreatedEntry,
   MiroFishReasoningEntry,
 } from "../../mirofish-stream/mirofish-stream-types";
+
+type StaleBadgeState = {
+  staleSince?: string | null;
+  invalidatedBy?: BlueprintGenerationArtifact["invalidatedBy"] | null;
+};
+
+type WorkbenchArtifactEntry = MiroFishArtifactCreatedEntry & StaleBadgeState;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -198,6 +206,11 @@ export const WorkbenchExecutionPanel: FC<WorkbenchExecutionPanelProps> = ({
                   data-testid="autopilot-workbench-execution-artifact-card-frame"
                   className="min-w-0 overflow-hidden [&_.truncate]:min-w-0 [&_button]:min-w-0 [&_span]:min-w-0"
                 >
+                  <StaleBadge
+                    staleSince={entry.staleSince}
+                    invalidatedBy={entry.invalidatedBy}
+                    locale={locale}
+                  />
                   <ArtifactCreatedCard
                     entry={entry}
                     locale={locale}
@@ -279,7 +292,7 @@ export default WorkbenchExecutionPanel;
 
 function deriveArtifactEntries(
   artifacts: readonly BlueprintGenerationArtifact[]
-): MiroFishArtifactCreatedEntry[] {
+): WorkbenchArtifactEntry[] {
   return artifacts
     .filter((artifact) => SPEC_DOC_ARTIFACT_TYPES.has(String(artifact.type)))
     .map((artifact, index) => ({
@@ -294,6 +307,8 @@ function deriveArtifactEntries(
       title:
         readArtifactString(artifact, "title") ??
         String(artifact.type).replace(/_/g, " "),
+      staleSince: artifact.staleSince,
+      invalidatedBy: artifact.invalidatedBy,
     }));
 }
 

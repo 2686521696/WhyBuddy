@@ -10,7 +10,7 @@
  * 需求: 2.1, 2.2, 2.3, 2.4
  */
 
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type Transition } from "framer-motion";
 
 import type { RoleCrewEntry, RoleCrewStatus } from "./types";
 
@@ -40,7 +40,13 @@ const STATUS_COLOR_MAP: Record<RoleCrewStatus, string> = {
 // 动画变体
 // ---------------------------------------------------------------------------
 
-function getAnimateProps(status: RoleCrewStatus, reducedMotion: boolean | null) {
+function getAnimateProps(
+  status: RoleCrewStatus,
+  reducedMotion: boolean | null
+): {
+  animate: { scale: number; opacity: number };
+  transition: Transition;
+} {
   if (reducedMotion) {
     // prefers-reduced-motion：无动画，仅状态色变化
     return {

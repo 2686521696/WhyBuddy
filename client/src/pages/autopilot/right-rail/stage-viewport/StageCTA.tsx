@@ -38,6 +38,8 @@ export interface StageCTAProps {
   readOnlyHint?: string;
   /** 主按钮点击回调 */
   onAction: () => void;
+  /** Stable marker for tests and browser automation. */
+  testId?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ const StageCTA: FC<StageCTAProps> = ({
   readOnly = false,
   readOnlyHint,
   onAction,
+  testId = "autopilot-stage-cta",
 }) => {
   // readOnly 态：展示只读提示文案，不渲染可点击按钮
   if (readOnly) {
@@ -69,6 +72,7 @@ const StageCTA: FC<StageCTAProps> = ({
     <div className="sticky bottom-0 z-10 bg-white border-t border-slate-100 px-4 py-3">
       <button
         type="button"
+        data-testid={testId}
         className={`w-full rounded-lg bg-slate-900 hover:bg-slate-700 text-white text-xs font-bold py-2.5 transition ${
           loading ? "animate-pulse opacity-70" : ""
         } ${disabled || loading ? "pointer-events-none opacity-50" : ""}`}

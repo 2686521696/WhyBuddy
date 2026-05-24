@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type MouseEvent,
+} from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowLeft,
   Bot,
   CheckCircle2,
   FileSearch,
@@ -18,7 +28,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Scene3D } from "@/components/Scene3D";
 import { HoloDrawer } from "@/components/HoloDrawer";
-import { SPECS_PATH } from "@/components/navigation-config";
+import { PROJECTS_PATH, SPECS_PATH } from "@/components/navigation-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ApiRequestError } from "@/lib/api-client";
@@ -42,6 +52,7 @@ import {
   type BlueprintLatestGenerationJobSnapshot,
   type BlueprintRuntimeCapability,
 } from "@/lib/blueprint-api";
+import { patchBlueprintIntake } from "@/lib/blueprint-api/intake";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import type { AppLocale } from "@/lib/locale";
 import { useProjectStore } from "@/lib/project-store";
@@ -51,8 +62,10 @@ import type {
   BlueprintClarificationAnswer,
   BlueprintClarificationReadiness,
   BlueprintClarificationSession,
+  BlueprintGenerationArtifact,
   BlueprintGenerationArtifactType,
   BlueprintGenerationJob,
+  BlueprintGenerationStage,
   BlueprintIntake,
   BlueprintProjectDomainContext,
   BlueprintRouteCandidate,
@@ -77,16 +90,155 @@ import {
   selectAutoAdvanceSubStage,
   useAutoAdvance,
 } from "./right-rail/hooks/use-auto-advance";
-
 import { useAutopilotSandboxBridge } from "./hooks/useAutopilotSandboxBridge";
 import { TimelineNode } from "./right-rail/timeline";
 import { AgentReasoningSubTimeline } from "./right-rail/AgentReasoningSubTimeline";
 import { AgentReasoningTimeline } from "@/components/blueprint/AgentReasoningTimeline";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 import {
+  getAutopilotPageForStage,
+  useAutopilotCoordination,
+  usePageTransitionChoreographer,
+  useToastQueue,
+  type AutopilotCoordinator,
+  type AutopilotPage,
+  type PageTransitionState,
+} from "@/lib/autopilot-coordination";
+import {
   getGithubPagesBlueprintDemoRuntime,
   type GithubPagesBlueprintDemoRuntime,
 } from "./github-pages-blueprint-demo";
+import { EditModeField, runInlineEditFlow } from "./stage-edit";
+import {
+  CompareView,
+  ReplanTimelineView,
+  VersionTreeView,
+  useFamilyData,
+  useSwitchActiveJob,
+  withActiveJobSearchParam,
+  type VersionHistoryJob,
+} from "./version-history";
+
+const AUTOPILOT_HISTORY_OPEN_EVENT = "autopilot:history-open";
+
+function resolveClientRouteHref(pathname: string): string {
+  const base =
+    import.meta.env.BASE_URL === "/"
+      ? ""
+      : import.meta.env.BASE_URL.replace(/\/$/, "");
+  return `${base}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+}
+
+function readAutopilotHistoryOpenFromLocation(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("history") === "1";
+}
+
+function readActiveHistoryJobIdFromLocation(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("activeJob");
+}
+
+function updateAutopilotHistorySearch(
+  updater: (url: URL) => void,
+): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  updater(url);
+  window.history.pushState({}, "", url);
+}
+
+function setAutopilotHistoryActiveJob(jobId: string): void {
+  updateAutopilotHistorySearch(url => {
+    url.search = withActiveJobSearchParam(url.search, jobId);
+    url.searchParams.set("history", "1");
+  });
+}
+
+function closeAutopilotHistorySearch(): void {
+  updateAutopilotHistorySearch(url => {
+    url.searchParams.delete("history");
+    url.searchParams.delete("activeJob");
+  });
+}
+
+export function resolveHistoryUrlSelectedJob(input: {
+  requestedJobId: string | null;
+  currentJobId: string;
+  activeJob: VersionHistoryJob | undefined;
+}): BlueprintGenerationJob | null {
+  if (!input.requestedJobId || !input.activeJob) {
+    return null;
+  }
+  if (input.activeJob.id !== input.requestedJobId) {
+    return null;
+  }
+  if (input.currentJobId === input.requestedJobId) {
+    return null;
+  }
+  return input.activeJob as BlueprintGenerationJob;
+}
+
+export function resolveHistoryActiveJobIdForCurrentJob(input: {
+  requestedJobId: string | null;
+  currentJobId: string;
+  activeJobId: string | null;
+}): string {
+  if (!input.requestedJobId || input.requestedJobId === input.currentJobId) {
+    return input.currentJobId;
+  }
+  return input.activeJobId ?? input.requestedJobId;
+}
+
+function PageTransitionWrapper({
+  page,
+  state,
+  children,
+}: {
+  page: AutopilotPage;
+  state: PageTransitionState;
+  children: ReactNode;
+}) {
+  const direction = state.direction ?? "forward";
+  const offset = direction === "forward" ? 24 : -24;
+
+  return (
+    <div
+      className="h-full min-w-0 overflow-hidden"
+      data-testid="autopilot-page-transition-wrapper"
+      data-page-transition-direction={state.direction ?? ""}
+      data-page-transition-in-flight={state.inFlight ? "true" : "false"}
+    >
+      <AnimatePresence mode="sync" initial={false} custom={direction}>
+        <motion.div
+          key={page}
+          custom={direction}
+          initial={{ x: offset, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: -offset, opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeInOut" }}
+          className="h-full min-w-0"
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function shouldUseNativeAnchorNavigation(
+  event: MouseEvent<HTMLAnchorElement>
+): boolean {
+  return (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey ||
+    event.currentTarget.target === "_blank"
+  );
+}
 
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i;
 
@@ -183,6 +335,226 @@ function readAutopilotWorkflowStage({
   if (isClarificationReady(clarificationSession, readiness)) return "routeset";
   if (intake) return "clarification";
   return "input";
+}
+
+function mapRailSubStageToCoordinationStage(
+  subStage: AutopilotRailSubStage | undefined
+): string | null {
+  switch (subStage) {
+    case undefined:
+      return null;
+    case "agent_crew_fabric":
+      return "route_generation";
+    case "spec_tree":
+      return "spec_tree";
+    case "effect_preview":
+      return "effect_preview";
+    case "prompt_package":
+      return "prompt_packaging";
+    case "runtime_capability":
+      return "runtime_capability";
+    case "engineering_handoff":
+      return "engineering_handoff";
+    case "artifact_memory":
+      return "engineering_landing";
+    default:
+      return subStage satisfies never;
+  }
+}
+
+export function resolveActiveAutopilotPage({
+  workflowStageOverride,
+  hasSelection,
+  latestJobStage,
+  effectiveSubStage,
+}: {
+  workflowStageOverride: AutopilotWorkflowStage | null;
+  hasSelection: boolean;
+  latestJobStage: string | null | undefined;
+  effectiveSubStage: AutopilotRailSubStage | undefined;
+}): AutopilotPage {
+  if (workflowStageOverride === "input" || !hasSelection) {
+    return 1;
+  }
+
+  const reviewPage = getAutopilotPageForStage(
+    mapRailSubStageToCoordinationStage(effectiveSubStage)
+  );
+  if (reviewPage === 2) {
+    return reviewPage;
+  }
+
+  const stagePage = getAutopilotPageForStage(latestJobStage);
+  if (stagePage) {
+    return stagePage;
+  }
+
+  return reviewPage ?? 1;
+}
+
+type AutopilotPageProjection = {
+  visualJob: BlueprintGenerationJob | null;
+  consoleJob: BlueprintGenerationJob | null;
+  visualSpecTree: BlueprintSpecTree | null;
+  visualAgentCrew: BlueprintAgentCrewSnapshot | null;
+  visualCapabilities: BlueprintRuntimeCapability[];
+  visualCapabilityInvocations: BlueprintCapabilityInvocation[];
+  visualCapabilityEvidence: BlueprintCapabilityEvidence[];
+  visualEffectPreviews: BlueprintEffectPreviewSnapshot[];
+};
+
+const PAGE_ONE_ARTIFACT_TYPES = new Set<BlueprintGenerationArtifactType>([
+  "intake",
+  "github_source",
+  "clarification_session",
+  "project_context",
+  "route_set",
+  "route_selection",
+]);
+
+const PAGE_TWO_ARTIFACT_TYPES = new Set<BlueprintGenerationArtifactType>([
+  "spec_tree",
+  "spec_tree_version",
+  "requirements",
+  "design",
+  "tasks",
+  "spec_document_version",
+]);
+
+const PAGE_ONE_EVENT_STAGES = new Set<string>([
+  "input",
+  "clarification",
+  "route_generation",
+  "route_selection",
+]);
+
+const PAGE_TWO_EVENT_STAGES = new Set<string>(["spec_tree", "spec_docs"]);
+
+function projectJobForAutopilotPage(
+  job: BlueprintGenerationJob | null,
+  page: AutopilotPage
+): BlueprintGenerationJob | null {
+  if (!job || page === 3) {
+    return job;
+  }
+
+  const stage: BlueprintGenerationStage =
+    page === 1 ? "route_generation" : "spec_tree";
+  const status = page === 1 ? "completed" : "reviewing";
+  const allowedArtifacts =
+    page === 1 ? PAGE_ONE_ARTIFACT_TYPES : PAGE_TWO_ARTIFACT_TYPES;
+  const allowedEventStages =
+    page === 1 ? PAGE_ONE_EVENT_STAGES : PAGE_TWO_EVENT_STAGES;
+
+  return {
+    ...job,
+    status,
+    stage,
+    handoffState: page === 2 ? "reviewing" : undefined,
+    artifacts: job.artifacts.filter((artifact: BlueprintGenerationArtifact) =>
+      allowedArtifacts.has(artifact.type)
+    ),
+    events: job.events.filter(event => allowedEventStages.has(event.stage)),
+    stageState: job.stageState
+      ? {
+          ...job.stageState,
+          stage,
+          status,
+          artifactIds: job.stageState.artifactIds.filter(artifactId =>
+            job.artifacts.some(
+              artifact =>
+                artifact.id === artifactId && allowedArtifacts.has(artifact.type)
+            )
+          ),
+        }
+      : undefined,
+  };
+}
+
+export function resolveAutopilotPageProjection({
+  activeAutopilotPage,
+  latestJob,
+  specTree,
+  agentCrew,
+  capabilities,
+  capabilityInvocations,
+  capabilityEvidence,
+  effectPreviews,
+}: {
+  activeAutopilotPage: AutopilotPage;
+  latestJob: BlueprintGenerationJob | null;
+  specTree: BlueprintSpecTree | null;
+  agentCrew: BlueprintAgentCrewSnapshot | null;
+  capabilities: BlueprintRuntimeCapability[];
+  capabilityInvocations: BlueprintCapabilityInvocation[];
+  capabilityEvidence: BlueprintCapabilityEvidence[];
+  effectPreviews: BlueprintEffectPreviewSnapshot[];
+}): AutopilotPageProjection {
+  if (activeAutopilotPage === 1) {
+    const projectedJob = projectJobForAutopilotPage(latestJob, 1);
+    return {
+      visualJob: projectedJob,
+      consoleJob: projectedJob,
+      visualSpecTree: null,
+      visualAgentCrew: null,
+      visualCapabilities: [],
+      visualCapabilityInvocations: [],
+      visualCapabilityEvidence: [],
+      visualEffectPreviews: [],
+    };
+  }
+
+  if (activeAutopilotPage === 2) {
+    const projectedJob = projectJobForAutopilotPage(latestJob, 2);
+    return {
+      visualJob: projectedJob,
+      consoleJob: projectedJob,
+      visualSpecTree: specTree,
+      visualAgentCrew: agentCrew,
+      visualCapabilities: [],
+      visualCapabilityInvocations: [],
+      visualCapabilityEvidence: [],
+      visualEffectPreviews: [],
+    };
+  }
+
+  return {
+    visualJob: latestJob,
+    consoleJob: latestJob,
+    visualSpecTree: specTree,
+    visualAgentCrew: agentCrew,
+    visualCapabilities: capabilities,
+    visualCapabilityInvocations: capabilityInvocations,
+    visualCapabilityEvidence: capabilityEvidence,
+    visualEffectPreviews: effectPreviews,
+  };
+}
+
+function mapWorkflowStageToCoordinationStage(
+  stage: AutopilotWorkflowStage | null,
+  activeJobStage: string | null | undefined
+): string | null {
+  switch (stage) {
+    case null:
+      return null;
+    case "input":
+      return "input";
+    case "clarification":
+      return "clarification";
+    case "routeset":
+    case "selection":
+      return "route_generation";
+    case "fabric":
+      return activeJobStage ?? "spec_tree";
+    default:
+      return stage satisfies never;
+  }
+}
+
+function mapCoordinationStageToWorkflowStage(
+  stage: string
+): AutopilotWorkflowStage {
+  return getAutopilotPageForStage(stage) === 1 ? "input" : "fabric";
 }
 
 function t(locale: AppLocale, zh: string, en: string): string {
@@ -580,6 +952,24 @@ function buildFlowSteps({
   ];
 }
 
+export function resolveVisibleWorkflowStepId(
+  flowSteps: readonly Pick<FlowStep, "id" | "status">[],
+  workflowStageOverride: AutopilotWorkflowStage | null
+): string {
+  if (
+    workflowStageOverride !== null &&
+    flowSteps.some(step => step.id === workflowStageOverride)
+  ) {
+    return workflowStageOverride;
+  }
+
+  return (
+    flowSteps.find(step => step.status === "active")?.id ??
+    flowSteps[flowSteps.length - 1]?.id ??
+    "input"
+  );
+}
+
 function ApiErrorNotice({
   error,
   className,
@@ -937,6 +1327,7 @@ function ClarificationPanel({
   answerDrafts,
   onAnswerChange,
   onSubmit,
+  inlineEdit,
   saving,
 }: {
   locale: AppLocale;
@@ -944,6 +1335,13 @@ function ClarificationPanel({
   answerDrafts: Record<string, string>;
   onAnswerChange: (questionId: string, answer: string) => void;
   onSubmit: () => void;
+  inlineEdit?: {
+    enabled: boolean;
+    onSubmitAnswer: (questionId: string, answer: string) => Promise<void>;
+    isStaticPreview: boolean;
+    isAdvancingThroughStage: boolean;
+    isViewingCompletedStage: boolean;
+  };
   saving: boolean;
 }) {
   if (!session) {
@@ -1041,6 +1439,27 @@ function ClarificationPanel({
               )}
               data-testid={`autopilot-answer-${question.id}`}
             />
+            {inlineEdit?.enabled ? (
+              <EditModeField
+                value={answerDrafts[question.id] ?? ""}
+                onSubmit={(value) =>
+                  inlineEdit.onSubmitAnswer(question.id, value)
+                }
+                canEdit
+                impactSummary={{ downstreamCount: 1 }}
+                fieldKey={`clarification-${question.id}`}
+                fromStage="clarification"
+                isAdvancingThroughStage={inlineEdit.isAdvancingThroughStage}
+                isStaticPreview={inlineEdit.isStaticPreview}
+                isViewingCompletedStage={inlineEdit.isViewingCompletedStage}
+                label={t(locale, "澄清答案", "Clarification answer")}
+                placeholder={t(
+                  locale,
+                  "填写这条路线规划问题的答案",
+                  "Answer this route planning question"
+                )}
+              />
+            ) : null}
           </label>
         ))}
       </div>
@@ -1167,6 +1586,153 @@ function RouteOption({
   );
 }
 
+function AutopilotVersionHistoryPanel({
+  locale,
+  job,
+  disableRemoteFetch,
+  onClose,
+  coordinator,
+  onJobSelected,
+}: {
+  locale: AppLocale;
+  job: BlueprintGenerationJob;
+  disableRemoteFetch: boolean;
+  onClose: () => void;
+  coordinator?: AutopilotCoordinator;
+  onJobSelected: (job: BlueprintGenerationJob) => void;
+}) {
+  const [activeJobId, setActiveJobId] = useState<string>(
+    () => readActiveHistoryJobIdFromLocation() ?? job.id
+  );
+  const familyState = useFamilyData({
+    jobId: job.id,
+    disableRemoteFetch,
+  });
+
+  useEffect(() => {
+    setActiveJobId(current =>
+      resolveHistoryActiveJobIdForCurrentJob({
+        requestedJobId: readActiveHistoryJobIdFromLocation(),
+        currentJobId: job.id,
+        activeJobId: current,
+      })
+    );
+  }, [job.id]);
+
+  const jobs = useMemo<VersionHistoryJob[]>(() => {
+    const familyJobs = familyState.data?.jobs ?? [];
+    return (familyJobs.length > 0 ? familyJobs : [job]) as VersionHistoryJob[];
+  }, [familyState.data?.jobs, job]);
+  const familyJobIds = useMemo(() => jobs.map(item => item.id), [jobs]);
+  const activeJob =
+    jobs.find(candidate => candidate.id === activeJobId) ?? jobs[0] ?? job;
+  const rootJob =
+    jobs.find(candidate => candidate.id === familyState.data?.rootJobId) ??
+    jobs[0] ??
+    job;
+  const replanEvents =
+    familyState.data?.replanEvents ??
+    jobs.flatMap(candidate => candidate.events ?? []);
+  const appliedHistoryJobIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const selectedJob = resolveHistoryUrlSelectedJob({
+      requestedJobId: readActiveHistoryJobIdFromLocation(),
+      currentJobId: job.id,
+      activeJob,
+    });
+    if (!selectedJob) return;
+    if (appliedHistoryJobIdRef.current === selectedJob.id) return;
+
+    appliedHistoryJobIdRef.current = selectedJob.id;
+    onJobSelected(selectedJob);
+  }, [activeJob, job.id, onJobSelected]);
+
+  const selectJob = useSwitchActiveJob({
+    jobs,
+    coordinator,
+    apply: ({ jobId }) => {
+      const selectedJob = jobs.find(candidate => candidate.id === jobId);
+      if (!selectedJob) return;
+      setActiveJobId(jobId);
+      setAutopilotHistoryActiveJob(jobId);
+      appliedHistoryJobIdRef.current = jobId;
+      onJobSelected(selectedJob);
+    },
+  });
+
+  return (
+    <section
+      className="min-w-0 rounded-[8px] border border-slate-200 bg-white px-3 py-3"
+      data-testid="autopilot-version-history-panel"
+      data-history-status={familyState.status}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-black text-slate-900">
+            {t(locale, "版本历史", "Version history")}
+          </div>
+          <div className="text-xs font-semibold text-slate-500">
+            {familyState.loading
+              ? t(locale, "正在加载 family...", "Loading family...")
+              : t(
+                  locale,
+                  `Family ${familyJobIds.length} 个 job`,
+                  `${familyJobIds.length} family job(s)`
+                )}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="rounded-[6px] border border-slate-200 px-2 py-1 text-xs font-black text-slate-600 hover:bg-slate-50"
+          onClick={onClose}
+          data-testid="autopilot-history-close"
+        >
+          {t(locale, "关闭", "Close")}
+        </button>
+      </div>
+
+      {familyState.status === "static_unsupported" ? (
+        <div
+          className="mt-2 rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
+          data-testid="autopilot-history-static-preview"
+        >
+          {t(
+            locale,
+            "静态预览使用当前 job 快照展示历史入口。",
+            "Static preview uses the current job snapshot for history."
+          )}
+        </div>
+      ) : null}
+
+      {familyState.error ? (
+        <div
+          className="mt-2 rounded-[8px] border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+          role="alert"
+        >
+          {familyState.error.message}
+        </div>
+      ) : null}
+
+      <div className="mt-3 grid gap-3">
+        <VersionTreeView
+          jobs={jobs}
+          activeJobId={activeJob.id}
+          onSelectJob={jobId => {
+            void selectJob(jobId);
+          }}
+        />
+        <ReplanTimelineView events={replanEvents} />
+        <CompareView
+          leftJob={rootJob}
+          rightJob={activeJob}
+          familyJobIds={familyJobIds}
+        />
+      </div>
+    </section>
+  );
+}
+
 function AutopilotWorkflowRail({
   locale,
   targetText,
@@ -1200,6 +1766,10 @@ function AutopilotWorkflowRail({
   onCreateIntake,
   onGenerateClarifications,
   onAnswerChange,
+  onSubmitTargetEdit,
+  onSubmitGithubUrlEdit,
+  onSubmitClarificationEdit,
+  onSubmitRouteSelectionEdit,
   onSubmitAnswers,
   onGenerateRouteSet,
   onSelectRoute,
@@ -1212,9 +1782,17 @@ function AutopilotWorkflowRail({
   onDrawerOpenChange,
   rightRailCollapsed,
   onRightRailCollapsedChange,
+  pageTransitionState,
+  activeAutopilotPage,
+  coordinator,
   onForceAdvance,
   autoAdvancing,
   autoAdvancingTo,
+  workflowStageOverride,
+  onNavigateWorkflowStage,
+  onJobUpdated,
+  onBranchJobActivated,
+  onHistoryPanelClosed,
   onSpecDocumentsGenerated,
   generateSpecDocuments,
 }: {
@@ -1250,6 +1828,13 @@ function AutopilotWorkflowRail({
   onCreateIntake: () => void;
   onGenerateClarifications: () => void;
   onAnswerChange: (questionId: string, answer: string) => void;
+  onSubmitTargetEdit: (value: string) => Promise<void>;
+  onSubmitGithubUrlEdit: (sourceIndex: number, value: string) => Promise<void>;
+  onSubmitClarificationEdit: (
+    questionId: string,
+    answer: string
+  ) => Promise<void>;
+  onSubmitRouteSelectionEdit: (routeId: string) => Promise<void>;
   onSubmitAnswers: () => void;
   onGenerateRouteSet: () => void;
   onSelectRoute: (routeId: string) => void;
@@ -1304,9 +1889,17 @@ function AutopilotWorkflowRail({
    */
   rightRailCollapsed: boolean;
   onRightRailCollapsedChange: (collapsed: boolean) => void;
+  pageTransitionState: PageTransitionState;
+  activeAutopilotPage: AutopilotPage;
+  coordinator: AutopilotCoordinator;
   onForceAdvance: () => void;
   autoAdvancing: boolean;
   autoAdvancingTo: string | null;
+  workflowStageOverride: AutopilotWorkflowStage | null;
+  onNavigateWorkflowStage: (nextStage: AutopilotWorkflowStage) => void;
+  onJobUpdated: (job: BlueprintGenerationJob) => void;
+  onBranchJobActivated?: (job: BlueprintGenerationJob) => void;
+  onHistoryPanelClosed?: () => void | Promise<void>;
   /**
    * autopilot-spec-tree-workbench（2026-05-17）：
    * SpecTreeWorkbench 在 spec_tree 卡片内部成功调
@@ -1324,14 +1917,35 @@ function AutopilotWorkflowRail({
     null;
   const alternativeRoutes =
     routeSet?.routes.filter(route => route.id !== primaryRoute?.id) ?? [];
-  const activeStepId =
-    flowSteps.find(step => step.status === "active")?.id ??
-    flowSteps[flowSteps.length - 1]?.id ??
-    "input";
+  const activeStepId = resolveVisibleWorkflowStepId(
+    flowSteps,
+    workflowStageOverride
+  );
   const activeStepIndex = Math.max(
     flowSteps.findIndex(step => step.id === activeStepId),
     0
   );
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(() =>
+    readAutopilotHistoryOpenFromLocation()
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncHistoryOpen = () => {
+      setHistoryPanelOpen(readAutopilotHistoryOpenFromLocation());
+    };
+    window.addEventListener("popstate", syncHistoryOpen);
+    window.addEventListener(AUTOPILOT_HISTORY_OPEN_EVENT, syncHistoryOpen);
+    syncHistoryOpen();
+    return () => {
+      window.removeEventListener("popstate", syncHistoryOpen);
+      window.removeEventListener(AUTOPILOT_HISTORY_OPEN_EVENT, syncHistoryOpen);
+    };
+  }, []);
+  const handleCloseHistoryPanel = useCallback(() => {
+    closeAutopilotHistorySearch();
+    setHistoryPanelOpen(false);
+    void onHistoryPanelClosed?.();
+  }, [onHistoryPanelClosed]);
   const railStepLabel = (step: FlowStep): string => {
     switch (step.id) {
       case "input":
@@ -1410,6 +2024,35 @@ function AutopilotWorkflowRail({
                   */}
                   {isCompleted && sub === "target_input" && (
                     <div className="mt-2 space-y-3">
+                      <EditModeField
+                        value={targetText}
+                        onSubmit={onSubmitTargetEdit}
+                        canEdit
+                        impactSummary={{ downstreamCount: 3 }}
+                        fieldKey="target-text"
+                        fromStage="input"
+                        isAdvancingThroughStage={autoAdvancing}
+                        isStaticPreview={IS_GITHUB_PAGES}
+                        isViewingCompletedStage={Boolean(selection)}
+                        label={t(locale, "目标输入", "Target input")}
+                      />
+                      {parsedGithub.urls.map((url, sourceIndex) => (
+                        <EditModeField
+                          key={`${url}-${sourceIndex}`}
+                          value={url}
+                          onSubmit={(value) =>
+                            onSubmitGithubUrlEdit(sourceIndex, value)
+                          }
+                          canEdit
+                          impactSummary={{ downstreamCount: 3 }}
+                          fieldKey={`github-url-${sourceIndex}`}
+                          fromStage="input"
+                          isAdvancingThroughStage={autoAdvancing}
+                          isStaticPreview={IS_GITHUB_PAGES}
+                          isViewingCompletedStage={Boolean(selection)}
+                          label={t(locale, "GitHub 来源", "GitHub source")}
+                        />
+                      ))}
                       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                         <div className="text-[10px] font-bold uppercase text-slate-400">{t(locale, "目标输入", "Target input")}</div>
                         <div className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-700">{targetText || "—"}</div>
@@ -1440,7 +2083,21 @@ function AutopilotWorkflowRail({
                   {isCompleted && sub === "clarification" && (
                     <div className="mt-2 space-y-2">
                       <div className="text-xs text-slate-500">{readReadinessLabel(readiness, locale)}</div>
-                      <ClarificationPanel locale={locale} session={clarificationSession} answerDrafts={answerDrafts} onAnswerChange={onAnswerChange} onSubmit={onSubmitAnswers} saving={savingAnswers} />
+                      <ClarificationPanel
+                        locale={locale}
+                        session={clarificationSession}
+                        answerDrafts={answerDrafts}
+                        onAnswerChange={onAnswerChange}
+                        onSubmit={onSubmitAnswers}
+                        saving={savingAnswers}
+                        inlineEdit={{
+                          enabled: Boolean(selection),
+                          onSubmitAnswer: onSubmitClarificationEdit,
+                          isStaticPreview: IS_GITHUB_PAGES,
+                          isAdvancingThroughStage: autoAdvancing,
+                          isViewingCompletedStage: Boolean(selection),
+                        }}
+                      />
                       <AgentReasoningSubTimeline locale={locale} job={latestJob} stageFilter="clarification" />
                     </div>
                   )}
@@ -1452,8 +2109,8 @@ function AutopilotWorkflowRail({
                           : t(locale, `${routeSet.routes.length} 条路线`, `${routeSet.routes.length} routes`)}
                       </div>
                       <div className="space-y-1">
-                        {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={false} onSelect={() => {}} />}
-                        {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={false} onSelect={() => {}} />)}
+                        {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={false} onSelect={onSubmitRouteSelectionEdit} />}
+                        {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={false} onSelect={onSubmitRouteSelectionEdit} />)}
                       </div>
                       {/*
                         autopilot-streaming-experience integration-gap-2026-05-16：
@@ -1504,7 +2161,21 @@ function AutopilotWorkflowRail({
                         </Button>
                         <span className={cn("rounded-md px-2 py-1 text-[10px] font-bold", readiness?.status === "ready" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")} data-testid="autopilot-readiness">{readReadinessLabel(readiness, locale)}</span>
                       </div>
-                      <ClarificationPanel locale={locale} session={clarificationSession} answerDrafts={answerDrafts} onAnswerChange={onAnswerChange} onSubmit={onSubmitAnswers} saving={savingAnswers} />
+                      <ClarificationPanel
+                        locale={locale}
+                        session={clarificationSession}
+                        answerDrafts={answerDrafts}
+                        onAnswerChange={onAnswerChange}
+                        onSubmit={onSubmitAnswers}
+                        saving={savingAnswers}
+                        inlineEdit={{
+                          enabled: Boolean(selection),
+                          onSubmitAnswer: onSubmitClarificationEdit,
+                          isStaticPreview: IS_GITHUB_PAGES,
+                          isAdvancingThroughStage: autoAdvancing,
+                          isViewingCompletedStage: Boolean(selection),
+                        }}
+                      />
                       <AgentReasoningSubTimeline locale={locale} job={latestJob} stageFilter="clarification" />
                     </div>
                   )}
@@ -1532,8 +2203,8 @@ function AutopilotWorkflowRail({
                               ? t(locale, "路线已选中，正在派生 SPEC 树...", "Route selected, deriving SPEC tree...")
                               : t(locale, "选中一条路线后系统将派生 SPEC 树。", "Select a route and the system will derive the SPEC tree.")}
                           </div>
-                          {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={selectingRouteId === primaryRoute.id} onSelect={selection ? () => {} : onSelectRoute} />}
-                          {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={selectingRouteId === route.id} onSelect={selection ? () => {} : onSelectRoute} />)}
+                          {primaryRoute && <RouteOption locale={locale} route={primaryRoute} primary selected={selection?.routeId === primaryRoute.id} selecting={selectingRouteId === primaryRoute.id} onSelect={selection ? onSubmitRouteSelectionEdit : onSelectRoute} />}
+                          {alternativeRoutes.map(route => <RouteOption key={route.id} locale={locale} route={route} primary={false} selected={selection?.routeId === route.id} selecting={selectingRouteId === route.id} onSelect={selection ? onSubmitRouteSelectionEdit : onSelectRoute} />)}
                         </div>
                       )}
                       {/*
@@ -1585,8 +2256,12 @@ function AutopilotWorkflowRail({
               capabilityEvidence={rightRailView.capabilityEvidence.data ?? []}
               effectPreviews={rightRailView.effectPreviews.data ?? []}
               locale={locale}
+              coordinator={coordinator}
               onSubStageChange={subStageContext.setPinnedSubStage}
+              onNavigateWorkflowStage={onNavigateWorkflowStage}
               onStageAdvanced={onForceAdvance}
+              onJobUpdated={onJobUpdated}
+              onBranchJobActivated={onBranchJobActivated}
               generateSpecDocuments={generateSpecDocuments}
               onSpecDocumentsGenerated={response => {
                 // autopilot-spec-tree-workbench（2026-05-17）：
@@ -1607,6 +2282,19 @@ function AutopilotWorkflowRail({
         );
         return (
           <div className="grid gap-3" data-testid="autopilot-fabric-step">
+            {historyPanelOpen && latestJob ? (
+              <AutopilotVersionHistoryPanel
+                locale={locale}
+                job={latestJob}
+                disableRemoteFetch={IS_GITHUB_PAGES}
+                onClose={handleCloseHistoryPanel}
+                coordinator={coordinator}
+                onJobSelected={selectedJob => {
+                  onNavigateWorkflowStage("fabric");
+                  onJobUpdated(selectedJob);
+                }}
+              />
+            ) : null}
             {/* Drawer tier：触发按钮 + <HoloDrawer> */}
             {tier === "drawer" ? (
               <>
@@ -1699,7 +2387,12 @@ function AutopilotWorkflowRail({
           className="h-full p-2"
           data-testid={`autopilot-step-${activeStepId}`}
         >
-          {renderActiveStepBody()}
+          <PageTransitionWrapper
+            page={activeAutopilotPage}
+            state={pageTransitionState}
+          >
+            {renderActiveStepBody()}
+          </PageTransitionWrapper>
         </div>
       </section>
 
@@ -2149,6 +2842,20 @@ export default function AutopilotRoutePage() {
   const projects = useProjectStore(state => state.projects);
   const currentProject =
     projects.find(project => project.id === currentProjectId) ?? null;
+  const projectSpaceHref = resolveClientRouteHref(PROJECTS_PATH);
+  const handleProjectSpaceBreadcrumbClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (
+        shouldUseNativeAnchorNavigation(event) ||
+        typeof window === "undefined"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      window.history.pushState(null, "", projectSpaceHref);
+    },
+    [projectSpaceHref]
+  );
 
   const [targetText, setTargetText] = useState("");
   const [githubInput, setGithubInput] = useState("");
@@ -2167,6 +2874,8 @@ export default function AutopilotRoutePage() {
   );
   const [specTree, setSpecTree] = useState<BlueprintSpecTree | null>(null);
   const [apiError, setApiError] = useState<ApiRequestError | null>(null);
+  const [workflowStageOverride, setWorkflowStageOverride] =
+    useState<AutopilotWorkflowStage | null>(null);
   const [creatingIntake, setCreatingIntake] = useState(false);
   const pagesBlueprintRuntime = useMemo(
     () => (IS_GITHUB_PAGES ? getGithubPagesBlueprintDemoRuntime() : null),
@@ -2220,13 +2929,68 @@ export default function AutopilotRoutePage() {
   const [generatingRouteSet, setGeneratingRouteSet] = useState(false);
   const [selectingRouteId, setSelectingRouteId] = useState<string | null>(null);
 
+  const resetLatestGenerationSnapshot = useCallback(() => {
+    setLatestJob(null);
+    setRouteSet(null);
+    setSelection(null);
+    setSpecTree(null);
+    setIntake(null);
+    setTargetText("");
+    setGithubInput("");
+    setProjectContext(null);
+    setClarificationSession(null);
+    setAnswerDrafts({});
+  }, []);
+
+  const applyLatestGenerationSnapshot = useCallback(
+    (snapshot: BlueprintLatestGenerationJobSnapshot) => {
+      if (!snapshot.job) {
+        resetLatestGenerationSnapshot();
+        return;
+      }
+
+      setLatestJob(snapshot.job);
+      setRouteSet(snapshot.routeSet ?? null);
+      setSelection(snapshot.selection ?? null);
+      setSpecTree(snapshot.specTree ?? null);
+      if (snapshot.intake) {
+        setIntake(snapshot.intake);
+        setTargetText(snapshot.intake.targetText ?? "");
+        setGithubInput(snapshot.intake.githubUrls.join("\n"));
+        setAnswerDrafts(
+          Object.fromEntries(
+            (snapshot.clarificationSession?.answers ?? []).map(answer => [
+              answer.questionId,
+              answer.answer,
+            ])
+          )
+        );
+      } else {
+        setIntake(null);
+        setTargetText("");
+        setGithubInput("");
+        setAnswerDrafts({});
+      }
+      setProjectContext(snapshot.projectContext ?? null);
+      setClarificationSession(snapshot.clarificationSession ?? null);
+    },
+    [resetLatestGenerationSnapshot]
+  );
+
+  useEffect(() => {
+    resetLatestGenerationSnapshot();
+    setApiError(null);
+  }, [currentProjectId, resetLatestGenerationSnapshot]);
+
   useEffect(() => {
     let active = true;
 
     const latestJobRequest =
       IS_GITHUB_PAGES && pagesBlueprintRuntime
         ? pagesBlueprintRuntime.fetchLatestGenerationJob()
-        : fetchLatestBlueprintGenerationJob();
+        : fetchLatestBlueprintGenerationJob({
+            projectId: currentProjectId ?? undefined,
+          });
 
     latestJobRequest.then(result => {
       if (!active) return;
@@ -2235,53 +2999,35 @@ export default function AutopilotRoutePage() {
         return;
       }
 
-      setLatestJob(result.data.job);
-      setRouteSet(result.data.routeSet ?? null);
-      setSelection(result.data.selection ?? null);
-      setSpecTree(result.data.specTree ?? null);
-      if (result.data.intake) {
-        setIntake(result.data.intake);
-        setTargetText(result.data.intake.targetText ?? "");
-        setGithubInput(result.data.intake.githubUrls.join("\n"));
-      }
-      if (result.data.projectContext) {
-        setProjectContext(result.data.projectContext);
-      }
-      if (result.data.clarificationSession) {
-        setClarificationSession(result.data.clarificationSession);
-      }
+      applyLatestGenerationSnapshot(result.data);
     });
 
     return () => {
       active = false;
     };
-  }, [pagesBlueprintRuntime]);
+  }, [applyLatestGenerationSnapshot, currentProjectId, pagesBlueprintRuntime]);
 
-  const refreshPagesBlueprintSnapshot = useCallback(async () => {
-    if (!pagesBlueprintRuntime) return false;
-    const result = await pagesBlueprintRuntime.fetchLatestGenerationJob();
+  const refreshLatestGenerationSnapshot = useCallback(async () => {
+    const latestJobRequest =
+      IS_GITHUB_PAGES && pagesBlueprintRuntime
+        ? pagesBlueprintRuntime.fetchLatestGenerationJob()
+        : fetchLatestBlueprintGenerationJob({
+            projectId: currentProjectId ?? undefined,
+          });
+    const result = await latestJobRequest;
     if (!result.ok) {
       setApiError(result.error);
       return false;
     }
 
-    setLatestJob(result.data.job);
-    setRouteSet(result.data.routeSet ?? null);
-    setSelection(result.data.selection ?? null);
-    setSpecTree(result.data.specTree ?? null);
-    if (result.data.intake) {
-      setIntake(result.data.intake);
-      setTargetText(result.data.intake.targetText ?? "");
-      setGithubInput(result.data.intake.githubUrls.join("\n"));
-    }
-    if (result.data.projectContext) {
-      setProjectContext(result.data.projectContext);
-    }
-    if (result.data.clarificationSession) {
-      setClarificationSession(result.data.clarificationSession);
-    }
+    applyLatestGenerationSnapshot(result.data);
     return true;
-  }, [pagesBlueprintRuntime]);
+  }, [applyLatestGenerationSnapshot, currentProjectId, pagesBlueprintRuntime]);
+
+  const refreshPagesBlueprintSnapshot = useCallback(async () => {
+    if (!pagesBlueprintRuntime) return false;
+    return refreshLatestGenerationSnapshot();
+  }, [pagesBlueprintRuntime, refreshLatestGenerationSnapshot]);
 
   const parsedGithub = useMemo(
     () => parseGithubInput(`${targetText}\n${githubInput}`),
@@ -2356,6 +3102,44 @@ export default function AutopilotRoutePage() {
   //    `<AutopilotRightRail>` 的 9 个 props 的来源（Requirement 6.6：不删除派生 helper）。
   //  - `onSubStageChange` 保持 `() => {}` no-op（Spec 5 `autopilot-step-driven-rail-
   //    navigation` 会接入 URL `?sub=xxx` 同步）。
+  const derivedWorkflowStage = useMemo(
+    () =>
+      readAutopilotWorkflowStage({
+        intake,
+        clarificationSession,
+        readiness,
+        routeSet,
+        selection,
+      }),
+    [clarificationSession, intake, readiness, routeSet, selection]
+  );
+  const activeCoordinationStage =
+    latestJob?.stage ??
+    mapWorkflowStageToCoordinationStage(
+      derivedWorkflowStage,
+      latestJob?.stage
+    ) ??
+    "input";
+  const activeCoordinationStageRef = useRef(activeCoordinationStage);
+  useEffect(() => {
+    activeCoordinationStageRef.current = activeCoordinationStage;
+  }, [activeCoordinationStage]);
+  const handleCoordinationJobUpdated = useCallback(
+    (job: BlueprintGenerationJob) => {
+      activeCoordinationStageRef.current = job.stage;
+      setLatestJob(job);
+    },
+    []
+  );
+  const handleReplanBranchJobActivated = useCallback(
+    (job: BlueprintGenerationJob) => {
+      if (readAutopilotHistoryOpenFromLocation()) {
+        setAutopilotHistoryActiveJob(job.id);
+      }
+      handleCoordinationJobUpdated(job);
+    },
+    [handleCoordinationJobUpdated]
+  );
   const fabricSubStage = useMemo(
     () =>
       resolveRailSubStage({
@@ -2382,6 +3166,53 @@ export default function AutopilotRoutePage() {
     resolvedSubStage: fabricSubStage,
   });
   const effectiveSubStage = subStageState.effectiveSubStage;
+  const activeAutopilotPage = useMemo<AutopilotPage>(
+    () =>
+      resolveActiveAutopilotPage({
+        workflowStageOverride,
+        hasSelection: Boolean(selection),
+        latestJobStage: latestJob?.stage,
+        effectiveSubStage,
+      }),
+    [effectiveSubStage, latestJob?.stage, selection, workflowStageOverride]
+  );
+  const pageTransition = usePageTransitionChoreographer();
+  const toastQueue = useToastQueue();
+  const autopilotCoordinator = useAutopilotCoordination({
+    toastQueue,
+    pageChoreographer: pageTransition,
+    readThreeLayerSnapshot: () => ({
+      urlPin: mapRailSubStageToCoordinationStage(
+        subStageState.effectiveSubStage
+      ),
+      workflowStageOverride: mapWorkflowStageToCoordinationStage(
+        workflowStageOverride,
+        activeCoordinationStageRef.current
+      ),
+      activeJobStage: activeCoordinationStageRef.current,
+    }),
+    consistencyActions: {
+      resetPin: subStageState.resetPin,
+      fallbackWorkflowStageOverride: stage => {
+        setWorkflowStageOverride(mapCoordinationStageToWorkflowStage(stage));
+      },
+    },
+  });
+  const previousAutopilotPageRef = useRef(activeAutopilotPage);
+  useEffect(() => {
+    const previousPage = previousAutopilotPageRef.current;
+    if (previousPage !== activeAutopilotPage) {
+      pageTransition.transition(previousPage, activeAutopilotPage);
+      previousAutopilotPageRef.current = activeAutopilotPage;
+    }
+  }, [activeAutopilotPage, pageTransition.transition]);
+  const handleNavigateWorkflowStage = useCallback(
+    (nextStage: AutopilotWorkflowStage) => {
+      subStageState.resetPin();
+      setWorkflowStageOverride(nextStage);
+    },
+    [subStageState.resetPin]
+  );
 
   // Spec 5 Task 8 — Viewport_Tier 三档断点 state。
   // - drawer（<md）：右栏降级为 <HoloDrawer>；drawerOpen 由用户交互触发
@@ -2411,6 +3242,29 @@ export default function AutopilotRoutePage() {
     currentSubStage: effectiveSubStage,
     disableRemoteFetch: IS_GITHUB_PAGES,
   });
+  const pageProjection = useMemo(
+    () =>
+      resolveAutopilotPageProjection({
+        activeAutopilotPage,
+        latestJob,
+        specTree,
+        agentCrew: autopilotAgentCrew,
+        capabilities: autopilotCapabilities,
+        capabilityInvocations: autopilotCapabilityInvocations,
+        capabilityEvidence: autopilotCapabilityEvidence,
+        effectPreviews: autopilotEffectPreviews,
+      }),
+    [
+      activeAutopilotPage,
+      autopilotAgentCrew,
+      autopilotCapabilities,
+      autopilotCapabilityEvidence,
+      autopilotCapabilityInvocations,
+      autopilotEffectPreviews,
+      latestJob,
+      specTree,
+    ]
+  );
   const flowSteps = useMemo(
     () =>
       buildFlowSteps({
@@ -2442,27 +3296,27 @@ export default function AutopilotRoutePage() {
         locale,
         intake,
         clarificationSession,
-        latestJob,
+        latestJob: pageProjection.consoleJob,
         routeSet,
         selection,
-        specTree,
-        capabilityInvocations: autopilotCapabilityInvocations,
-        capabilityEvidence: autopilotCapabilityEvidence,
-        effectPreviews: autopilotEffectPreviews,
+        specTree: pageProjection.visualSpecTree,
+        capabilityInvocations: pageProjection.visualCapabilityInvocations,
+        capabilityEvidence: pageProjection.visualCapabilityEvidence,
+        effectPreviews: pageProjection.visualEffectPreviews,
         apiError,
       }),
     [
       apiError,
-      autopilotCapabilityEvidence,
-      autopilotCapabilityInvocations,
-      autopilotEffectPreviews,
       clarificationSession,
       intake,
-      latestJob,
       locale,
+      pageProjection.consoleJob,
+      pageProjection.visualCapabilityEvidence,
+      pageProjection.visualCapabilityInvocations,
+      pageProjection.visualEffectPreviews,
+      pageProjection.visualSpecTree,
       routeSet,
       selection,
-      specTree,
     ]
   );
 
@@ -2497,6 +3351,116 @@ export default function AutopilotRoutePage() {
       setAnswerDrafts(previous => ({ ...previous, [questionId]: answer }));
     },
     []
+  );
+
+  const handleSubmitTargetEdit = useCallback(
+    async (value: string) => {
+      if (!intake) return;
+      await runInlineEditFlow({
+        submitEdit: async () => {
+          const result = await patchBlueprintIntake(intake.id, {
+            targetText: value,
+            reason: "inline_edit.target_text",
+          });
+          if (!result.ok) throw result.error;
+          return result.data;
+        },
+        refreshJob: (editResult) => {
+          setTargetText(editResult.intake.targetText ?? value);
+          setIntake(editResult.intake);
+          if (editResult.projectContext) {
+            setProjectContext(editResult.projectContext);
+          }
+          rightRailView.job.retry();
+        },
+        coordinator: autopilotCoordinator,
+      });
+    },
+    [autopilotCoordinator, intake, rightRailView.job.retry]
+  );
+
+  const handleSubmitGithubUrlEdit = useCallback(
+    async (sourceIndex: number, value: string) => {
+      if (!intake) return;
+      const githubUrls = [...parsedGithub.urls];
+      githubUrls[sourceIndex] = value.trim();
+      await runInlineEditFlow({
+        submitEdit: async () => {
+          const result = await patchBlueprintIntake(intake.id, {
+            githubUrls: githubUrls.filter(Boolean),
+            reason: "inline_edit.github_url",
+          });
+          if (!result.ok) throw result.error;
+          return result.data;
+        },
+        refreshJob: (editResult) => {
+          setGithubInput(editResult.intake.githubUrls.join("\n"));
+          setIntake(editResult.intake);
+          if (editResult.projectContext) {
+            setProjectContext(editResult.projectContext);
+          }
+          rightRailView.job.retry();
+        },
+        coordinator: autopilotCoordinator,
+      });
+    },
+    [autopilotCoordinator, intake, parsedGithub.urls, rightRailView.job.retry]
+  );
+
+  const handleSubmitClarificationEdit = useCallback(
+    async (questionId: string, answer: string) => {
+      if (!clarificationSession) return;
+      const mergedAnswers = new Map(
+        clarificationSession.answers.map(item => [
+          item.questionId,
+          item.answer,
+        ])
+      );
+      mergedAnswers.set(questionId, answer);
+      await runInlineEditFlow({
+        submitEdit: async () => {
+          const result = await saveBlueprintClarificationAnswers(
+            clarificationSession.id,
+            {
+              answers: Array.from(mergedAnswers.entries()).map(
+                ([answerQuestionId, answerValue]) => ({
+                  questionId: answerQuestionId,
+                  answer: answerValue,
+                })
+              ),
+              answeredBy: "autopilot",
+            },
+            "PATCH"
+          );
+          if (!result.ok) throw result.error;
+          return result.data;
+        },
+        refreshJob: (editResult) => {
+          const updatedSession =
+            editResult.clarificationSession ?? editResult.session;
+          if (updatedSession) {
+            setClarificationSession(updatedSession);
+            setAnswerDrafts(
+              Object.fromEntries(
+                updatedSession.answers.map(item => [
+                  item.questionId,
+                  item.answer,
+                ])
+              )
+            );
+          }
+          if (editResult.intake) {
+            setIntake(editResult.intake);
+          }
+          if (editResult.projectContext) {
+            setProjectContext(editResult.projectContext);
+          }
+          rightRailView.job.retry();
+        },
+        coordinator: autopilotCoordinator,
+      });
+    },
+    [autopilotCoordinator, clarificationSession, rightRailView.job.retry]
   );
 
   const handleCreateIntake = useCallback(async () => {
@@ -2755,6 +3719,7 @@ export default function AutopilotRoutePage() {
         if (!result) return;
 
         if (result.ok) {
+          setWorkflowStageOverride(null);
           setLatestJob(result.data.job);
           setRouteSet(result.data.routeSet);
           setSelection(result.data.selection);
@@ -2776,6 +3741,13 @@ export default function AutopilotRoutePage() {
     [latestJob, pagesBlueprintRuntime, rightRailView.job.retry]
   );
 
+  const handleSubmitRouteSelectionEdit = useCallback(
+    async (routeId: string) => {
+      await handleSelectRoute(routeId);
+    },
+    [handleSelectRoute]
+  );
+
   return (
     <main
       className="min-h-screen bg-[#f4f6f8] text-slate-950 xl:flex xl:h-screen xl:flex-col xl:overflow-hidden"
@@ -2792,7 +3764,22 @@ export default function AutopilotRoutePage() {
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-normal text-slate-500">
-                <span>{t(locale, "项目自动驾驶", "Project autopilot")}</span>
+                <a
+                  href={projectSpaceHref}
+                  onClick={handleProjectSpaceBreadcrumbClick}
+                  aria-label={t(
+                    locale,
+                    "返回项目空间",
+                    "Back to project space"
+                  )}
+                  className="inline-flex items-center gap-1 rounded-[6px] px-1 py-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30"
+                  data-testid="autopilot-back-to-project-space"
+                >
+                  <ArrowLeft className="size-3" aria-hidden="true" />
+                  <span>
+                    {t(locale, "项目自动驾驶", "Project autopilot")}
+                  </span>
+                </a>
                 <span className="text-slate-300">/</span>
                 <span>{t(locale, "SPEC-first 蓝图", "SPEC-first blueprint")}</span>
               </div>
@@ -2808,7 +3795,7 @@ export default function AutopilotRoutePage() {
               variant="outline"
               className="rounded-[6px] border-slate-200 bg-slate-50 text-xs font-black text-slate-600"
             >
-              {readAutopilotJobStatus(latestJob, locale)}
+              {readAutopilotJobStatus(pageProjection.visualJob, locale)}
             </Badge>
             <AutopilotLanguageSwitch
               locale={locale}
@@ -2823,13 +3810,13 @@ export default function AutopilotRoutePage() {
           <AutopilotVisualStage
             locale={locale}
             currentProjectId={currentProjectId}
-            job={latestJob}
+            job={pageProjection.visualJob}
             routeSet={routeSet}
             selection={selection}
-            specTree={specTree}
-            agentCrew={autopilotAgentCrew}
-            effectPreviews={autopilotEffectPreviews}
-            capabilityEvidence={autopilotCapabilityEvidence}
+            specTree={pageProjection.visualSpecTree}
+            agentCrew={pageProjection.visualAgentCrew}
+            effectPreviews={pageProjection.visualEffectPreviews}
+            capabilityEvidence={pageProjection.visualCapabilityEvidence}
             consoleLines={consoleLines}
           />
 
@@ -2866,6 +3853,10 @@ export default function AutopilotRoutePage() {
             onCreateIntake={handleCreateIntake}
             onGenerateClarifications={handleGenerateClarifications}
             onAnswerChange={handleAnswerChange}
+            onSubmitTargetEdit={handleSubmitTargetEdit}
+            onSubmitGithubUrlEdit={handleSubmitGithubUrlEdit}
+            onSubmitClarificationEdit={handleSubmitClarificationEdit}
+            onSubmitRouteSelectionEdit={handleSubmitRouteSelectionEdit}
             onSubmitAnswers={handleSaveAnswers}
             onGenerateRouteSet={handleGenerateRouteSet}
             onSelectRoute={handleSelectRoute}
@@ -2878,16 +3869,26 @@ export default function AutopilotRoutePage() {
             onDrawerOpenChange={setDrawerOpen}
             rightRailCollapsed={rightRailCollapsed}
             onRightRailCollapsedChange={setRightRailCollapsed}
+            pageTransitionState={pageTransition.state}
+            activeAutopilotPage={activeAutopilotPage}
+            coordinator={autopilotCoordinator}
             onForceAdvance={autoAdvance.forceAdvance}
             autoAdvancing={autoAdvance.advancing}
             autoAdvancingTo={autoAdvance.advancingTo}
+            workflowStageOverride={workflowStageOverride}
+            onNavigateWorkflowStage={handleNavigateWorkflowStage}
+            onJobUpdated={handleCoordinationJobUpdated}
+            onBranchJobActivated={handleReplanBranchJobActivated}
+            onHistoryPanelClosed={async () => {
+              await refreshLatestGenerationSnapshot();
+            }}
             generateSpecDocuments={pagesBlueprintRuntime?.generateSpecDocuments}
             onSpecDocumentsGenerated={response => {
               // autopilot-spec-tree-workbench（2026-05-17）：把 SpecTreeWorkbench
               // 从右栏发出的响应回写到 latestJob，让 rightRailView 的派生层
               // 重算 specTree / specDocuments；同名 onForceAdvance 已在
               // AutopilotWorkflowRail 内部触发，这里只负责承接 setLatestJob。
-              setLatestJob(response.job);
+              handleCoordinationJobUpdated(response.job);
               setSpecTree(response.specTree);
               if (IS_GITHUB_PAGES && pagesBlueprintRuntime) {
                 void refreshPagesBlueprintSnapshot();

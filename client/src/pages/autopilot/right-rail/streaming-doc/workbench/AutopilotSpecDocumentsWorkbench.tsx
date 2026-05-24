@@ -32,6 +32,7 @@ import { exportSpecDocumentsToDownload } from "@/lib/blueprint-api/exportSpecDoc
 import type { AppLocale } from "@/lib/locale";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 import type {
+  BlueprintGenerationArtifact,
   BlueprintGenerationJob,
   BlueprintSpecDocument,
   BlueprintSpecTree,
@@ -48,7 +49,10 @@ import {
 } from "../streaming-state";
 
 import { WorkbenchDocMain } from "./WorkbenchDocMain";
-import type { ActiveDocMeta } from "./WorkbenchDocMain";
+import type {
+  ActiveDocMeta,
+  WorkbenchStaleArtifactState,
+} from "./WorkbenchDocMain";
 import { WorkbenchExecutionPanel } from "./WorkbenchExecutionPanel";
 import { WorkbenchSpecTree } from "./WorkbenchSpecTree";
 import { WorkbenchStatusBar } from "./WorkbenchStatusBar";
@@ -217,6 +221,16 @@ export const AutopilotSpecDocumentsWorkbench: FC<
     }
     return map;
   }, [specDocuments]);
+
+  const specTreeStale = useMemo(
+    () => deriveSpecTreeStale(props.job?.artifacts ?? []),
+    [props.job?.artifacts]
+  );
+
+  const staleDocumentsById = useMemo(
+    () => deriveStaleDocumentsById(props.job?.artifacts ?? []),
+    [props.job?.artifacts]
+  );
 
   /** 仅存在于流式 reducer 中、尚未出现在 specDocuments 的 id 集合。 */
   const streamingOnlyIds = useMemo(() => {
@@ -481,6 +495,8 @@ export const AutopilotSpecDocumentsWorkbench: FC<
           specTree={specTree}
           specDocuments={specDocuments}
           reasoningEntries={entries}
+          specTreeStale={specTreeStale}
+          staleDocumentsById={staleDocumentsById}
           activeDocId={activeDocId}
           activeNodeId={activeNodeId}
           onSelectDocument={handleSelectDocument}
@@ -510,6 +526,9 @@ export const AutopilotSpecDocumentsWorkbench: FC<
           chapterChecklist={chapterChecklist}
           relatedRefs={relatedRefs}
           aiSummary={aiSummary}
+          staleArtifact={
+            activeDocId ? staleDocumentsById.get(activeDocId) ?? null : null
+          }
           onSelectDocument={handleSelectDocument}
           expanded={docExpanded}
           onExpandedChange={setDocExpanded}
@@ -535,6 +554,61 @@ export const AutopilotSpecDocumentsWorkbench: FC<
 };
 
 export default AutopilotSpecDocumentsWorkbench;
+
+const SPEC_TREE_STALE_ARTIFACT_TYPES = new Set([
+  "spec_tree",
+  "spec_tree_version",
+]);
+
+const SPEC_DOCUMENT_STALE_ARTIFACT_TYPES = new Set([
+  "requirements",
+  "design",
+  "tasks",
+  "spec_document_version",
+]);
+
+function deriveSpecTreeStale(
+  artifacts: readonly BlueprintGenerationArtifact[]
+): WorkbenchStaleArtifactState | null {
+  const artifact = artifacts.find(
+    (item) =>
+      item.staleSince && SPEC_TREE_STALE_ARTIFACT_TYPES.has(item.type)
+  );
+  return artifact ? toStaleState(artifact) : null;
+}
+
+function deriveStaleDocumentsById(
+  artifacts: readonly BlueprintGenerationArtifact[]
+): ReadonlyMap<string, WorkbenchStaleArtifactState> {
+  const map = new Map<string, WorkbenchStaleArtifactState>();
+  for (const artifact of artifacts) {
+    if (
+      !artifact.staleSince ||
+      !SPEC_DOCUMENT_STALE_ARTIFACT_TYPES.has(artifact.type)
+    ) {
+      continue;
+    }
+    const state = toStaleState(artifact);
+    for (const id of [
+      readStringField(artifact.payload, "id"),
+      readStringField(artifact.payload, "documentId"),
+      readStringField(artifact.payload, "sourceDocumentId"),
+      artifact.id,
+    ]) {
+      if (id) map.set(id, state);
+    }
+  }
+  return map;
+}
+
+function toStaleState(
+  artifact: BlueprintGenerationArtifact
+): WorkbenchStaleArtifactState {
+  return {
+    staleSince: artifact.staleSince,
+    invalidatedBy: artifact.invalidatedBy,
+  };
+}
 
 function readStringField(source: unknown, key: string): string | undefined {
   if (source === null || typeof source !== "object") return undefined;

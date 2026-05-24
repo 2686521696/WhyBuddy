@@ -302,4 +302,25 @@ describe("WorkbenchDocMain.switching", () => {
     expect(markup).toContain("whitespace-pre-wrap");
     expect(markup).toContain("break-words");
   });
+
+  it("(m) renders a stale badge in the document header for stale active spec documents", () => {
+    const markup = renderView({
+      activeDoc: makeDoc({ title: "Stale Requirements", type: "requirements" }),
+      staleArtifact: {
+        staleSince: "2026-05-23T10:00:00.000Z",
+        invalidatedBy: {
+          stage: "route_generation",
+          artifactId: "route-selection-1",
+          artifactType: "route_selection",
+          reason: "upstream_route_selection_changed",
+          triggeredAt: "2026-05-23T10:00:00.000Z",
+        },
+      },
+    } as Partial<WorkbenchDocMainViewProps>);
+
+    expect(markup).toContain('data-testid="autopilot-stale-badge"');
+    expect(markup).toContain("已过期");
+    expect(markup).toContain("路线");
+    expect(markup).toContain("Stale Requirements");
+  });
 });

@@ -54,8 +54,10 @@ import { useCallback, useMemo, useState } from "react";
 import type { FC, JSX } from "react";
 
 import type { AppLocale } from "@/lib/locale";
+import { StaleBadge } from "@/pages/autopilot/stage-edit";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 import type {
+  BlueprintGenerationArtifact,
   BlueprintSpecDocument,
   BlueprintSpecDocumentType,
   BlueprintSpecTree,
@@ -86,6 +88,11 @@ const TYPE_ORDER: Record<BlueprintSpecDocumentType, number> = {
 /** 根节点 parentId 在 `ChildrenByParent` 中使用的固定键。 */
 const ROOT_KEY = "__root__";
 
+export type WorkbenchSpecTreeStaleState = {
+  staleSince?: string | null;
+  invalidatedBy?: BlueprintGenerationArtifact["invalidatedBy"] | null;
+};
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -101,6 +108,8 @@ export interface WorkbenchSpecTreeProps {
    * 透传，不在本组件内部订阅 store。
    */
   reasoningEntries: readonly AgentReasoningEntry[];
+  specTreeStale?: WorkbenchSpecTreeStaleState | null;
+  staleDocumentsById?: ReadonlyMap<string, WorkbenchSpecTreeStaleState>;
   /** 容器层管理的 active document id，决定行 `data-active` 与文档行高亮。 */
   activeDocId: string | null;
   /** 容器层管理的 active node id；无文档的 spec_tree 阶段也能稳定选中节点。 */
@@ -380,6 +389,8 @@ interface WorkbenchSpecTreeViewProps {
   onToggleNode: (nodeId: string) => void;
   /** observing snapshot：派生 ephemeral chip 标签来源。 */
   observingSnapshot: SpecDocsObservingSnapshot;
+  specTreeStale?: WorkbenchSpecTreeStaleState | null;
+  staleDocumentsById?: ReadonlyMap<string, WorkbenchSpecTreeStaleState>;
   /** 文档分组 map：用于 chip 派生与文档行渲染。 */
   docsByNodeId: DocsByNodeId;
   /** 节点 id → 节点对象 lookup。 */
@@ -418,6 +429,8 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
     expandedNodeIds,
     onToggleNode,
     observingSnapshot,
+    specTreeStale,
+    staleDocumentsById,
     docsByNodeId,
     nodesById,
     childrenByParent,
@@ -532,6 +545,10 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
               testid={`autopilot-workbench-spec-tree-chip-${node.id}`}
             />
           </span>
+          <StaleBadge
+            staleSince={specTreeStale?.staleSince}
+            invalidatedBy={specTreeStale?.invalidatedBy}
+          />
           {isNodeSelected && onGenerateNode !== undefined ? (
             <button
               type="button"
@@ -552,6 +569,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
           <div className="grid gap-0.5 px-1 pb-1">
             {docs.map((doc) => {
               const isDocActive = activeDocId === doc.id;
+              const staleDocument = staleDocumentsById?.get(doc.id);
               return (
                 <button
                   key={doc.id}
@@ -560,13 +578,17 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
                   data-active={isDocActive ? "true" : undefined}
                   onClick={() => onSelectDocument(doc.id)}
                   className={
-                    "ml-6 min-w-0 truncate rounded-md border px-1.5 py-1 text-left text-[10px] font-semibold transition " +
+                    "ml-6 flex min-w-0 items-center gap-1 rounded-md border px-1.5 py-1 text-left text-[10px] font-semibold transition " +
                     (isDocActive
                       ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                       : "border-slate-100 bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50")
                   }
                 >
-                  {doc.title}
+                  <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+                  <StaleBadge
+                    staleSince={staleDocument?.staleSince}
+                    invalidatedBy={staleDocument?.invalidatedBy}
+                  />
                 </button>
               );
             })}
@@ -612,6 +634,8 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
     specTree,
     specDocuments,
     reasoningEntries,
+    specTreeStale,
+    staleDocumentsById,
     activeDocId,
     activeNodeId,
     onSelectDocument,
@@ -720,6 +744,8 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
       expandedNodeIds={expandedNodeIds}
       onToggleNode={onToggleNode}
       observingSnapshot={observingSnapshot}
+      specTreeStale={specTreeStale}
+      staleDocumentsById={staleDocumentsById}
       docsByNodeId={docsByNodeId}
       nodesById={treeIndex.nodesById}
       childrenByParent={treeIndex.childrenByParent}

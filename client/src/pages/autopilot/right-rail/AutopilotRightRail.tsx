@@ -25,22 +25,31 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type FC } from "react";
+import { toast as showToast } from "sonner";
 
 import type { AppLocale } from "@/lib/locale";
 import { SPECS_PATH } from "@/components/navigation-config";
 import type {
   BlueprintGenerationJob,
+  BlueprintGenerationStage,
   BlueprintSpecDocument,
   BlueprintSpecDocumentsResponse,
   BlueprintSpecTree,
 } from "@shared/blueprint/contracts";
 import { generateBlueprintSpecDocuments } from "@/lib/blueprint-api";
+import { postBlueprintReplan } from "@/lib/blueprint-api/replan";
 import type { ApiRequestError } from "@/lib/api-client";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
+import {
+  getAutopilotPageForStage,
+  useStageTransitionAnimator,
+} from "@/lib/autopilot-coordination";
 
 import { AgentReasoningSubTimeline } from "./AgentReasoningSubTimeline";
 import { CapabilityRail } from "./CapabilityRail";
 import { FleetActivationLog } from "./FleetActivationLog";
+import { stepSubStage } from "./hooks/use-right-rail-sub-stage-state";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
 import { RoleStatusStrip } from "./RoleStatusStrip";
 import { SpecTreeWorkbench } from "./spec-tree-workbench/SpecTreeWorkbench";
@@ -55,6 +64,24 @@ import type { WorkbenchStage } from "./stage-viewport/stage-config";
 import { useStageProgress } from "./stage-progress/useStageProgress";
 import { TimelineNode, type TimelineNodeStatus } from "./timeline";
 import {
+  REPLAN_STAGE_ORDER,
+  deriveDownstreamImpact as deriveReplanDownstreamImpact,
+  getReplanArtifactStage,
+  ReplanButton,
+  ReplanConfirmationModal,
+  useReplanFlow,
+  type ReplanMode,
+  type ReplanPostResult,
+  type ReplanStage,
+  type ReplanStatus,
+} from "./replan";
+import {
+  RightRailStaleIndicator,
+  type AutopilotLocalStage,
+  type RightRailStaleArtifact,
+} from "../stage-edit";
+import { HistoryEntryPoint, useFamilyData } from "../version-history";
+import {
   RAIL_SUB_STAGE_ORDER,
   type AutopilotRailSubStage,
   type AutopilotRightRailProps,
@@ -68,6 +95,11 @@ const TIMELINE_STAGE_ORDER: readonly AutopilotTimelineStage[] = [
   "selection",
   "fabric",
 ] as const;
+
+type ReplannableGenerationStage = Extract<
+  BlueprintGenerationStage,
+  ReplanStage
+>;
 
 /**
  * 将 RAIL_SUB_STAGE_ORDER 中的子阶段映射到 STAGE_ORDER 中的阶段索引。
@@ -93,6 +125,323 @@ function mapSubStageToStageIndex(subStage: AutopilotRailSubStage): number {
     default:
       return 0;
   }
+}
+
+export type ManualAdvanceAction =
+  | { type: "none" }
+  | { type: "stage" }
+  | { type: "sub-stage"; nextSubStage: AutopilotRailSubStage }
+  | {
+      type: "workbench-stage";
+      nextStage: WorkbenchStage;
+      nextSubStage?: AutopilotRailSubStage;
+    };
+
+export type ManualPreviousAction =
+  | { type: "none" }
+  | { type: "sub-stage"; previousSubStage: AutopilotRailSubStage }
+  | { type: "workflow-stage"; previousStage: AutopilotTimelineStage }
+  | {
+      type: "workbench-stage";
+      previousStage: WorkbenchStage;
+      previousSubStage?: AutopilotRailSubStage;
+    };
+
+/**
+ * Resolve what the bottom "continue" button should do.
+ *
+ * The visual workbench only has 6 stages, while the fabric rail has 7
+ * sub-stages. Several late sub-stages all render inside STEP 06, so using only
+ * `activeStageIndex + 1` makes the button a no-op there.
+ */
+export function resolveManualAdvanceAction(input: {
+  activeSubStage: AutopilotRailSubStage | undefined;
+  activeStageIndex: number;
+  isViewingCompletedStage: boolean;
+}): ManualAdvanceAction {
+  if (input.isViewingCompletedStage || input.activeSubStage === undefined) {
+    return { type: "none" };
+  }
+
+  if (input.activeSubStage === "spec_tree") {
+    const specTreeStageIndex = STAGE_ORDER.indexOf("spec_tree");
+    if (input.activeStageIndex === specTreeStageIndex) {
+      return {
+        type: "workbench-stage",
+        nextStage: "spec_documents",
+        nextSubStage: "spec_tree",
+      };
+    }
+    return { type: "none" };
+  }
+
+  const nextSubStage = stepSubStage(input.activeSubStage, "next");
+  if (nextSubStage === undefined) {
+    return { type: "none" };
+  }
+
+  switch (input.activeSubStage) {
+    case "agent_crew_fabric":
+    case "prompt_package":
+    case "runtime_capability":
+    case "engineering_handoff":
+      return { type: "sub-stage", nextSubStage };
+    case "effect_preview":
+      return { type: "stage" };
+    case "artifact_memory":
+      return { type: "none" };
+    default:
+      return input.activeSubStage satisfies never;
+  }
+}
+
+function isFoldedEffectPreviewSubStage(
+  subStage: AutopilotRailSubStage
+): boolean {
+  switch (subStage) {
+    case "effect_preview":
+    case "prompt_package":
+    case "runtime_capability":
+    case "engineering_handoff":
+    case "artifact_memory":
+      return true;
+    case "agent_crew_fabric":
+    case "spec_tree":
+      return false;
+    default:
+      return subStage satisfies never;
+  }
+}
+
+/**
+ * Resolve the header "previous" button by the visible workbench step first.
+ *
+ * `spec_documents` is a visual stage, not a rail sub-stage. If we only step
+ * through `RAIL_SUB_STAGE_ORDER`, the button jumps from SPEC documents back to
+ * `agent_crew_fabric`, or appears to do nothing when the rail sub-stage is
+ * already `spec_tree`. This resolver keeps visual-stage backtracking separate
+ * from rail-sub-stage backtracking.
+ */
+export function resolveManualPreviousAction(input: {
+  activeSubStage: AutopilotRailSubStage | undefined;
+  activeStageKey: WorkbenchStage;
+  isViewingCompletedStage: boolean;
+  isManualWorkbenchStageOverride?: boolean;
+}): ManualPreviousAction {
+  if (input.isViewingCompletedStage || input.activeSubStage === undefined) {
+    return { type: "none" };
+  }
+
+  if (
+    input.activeSubStage === "spec_tree" &&
+    (input.activeStageKey === "spec_tree" ||
+      input.activeStageKey === "spec_documents")
+  ) {
+    return {
+      type: "workflow-stage",
+      previousStage: "input",
+    };
+  }
+
+  if (
+    input.activeStageKey === "effect_preview" &&
+    isFoldedEffectPreviewSubStage(input.activeSubStage)
+  ) {
+    return {
+      type: "workbench-stage",
+      previousStage: "spec_documents",
+      previousSubStage: "spec_tree",
+    };
+  }
+
+  const previousSubStage = stepSubStage(input.activeSubStage, "prev");
+  if (previousSubStage === undefined) {
+    return { type: "none" };
+  }
+  return { type: "sub-stage", previousSubStage };
+}
+
+export function isManualWorkbenchStageOverrideValid(
+  override: WorkbenchStage | null,
+  input: {
+    activeSubStage: AutopilotRailSubStage | undefined;
+    jobStage: string | undefined;
+  }
+): override is WorkbenchStage {
+  if (override === null) {
+    return false;
+  }
+
+  if (override === "spec_tree") {
+    return input.activeSubStage === "spec_tree";
+  }
+
+  if (override === "spec_documents") {
+    if (input.activeSubStage === "spec_tree") {
+      return isAtOrBeyondSpecDocuments(input.jobStage);
+    }
+
+    return (
+      input.activeSubStage !== undefined &&
+      isFoldedEffectPreviewSubStage(input.activeSubStage)
+    );
+  }
+
+  return false;
+}
+
+export function resolveReplanCompletedViewFlag(input: {
+  isViewingCompletedStage: boolean;
+  isCurrentJobCompleted?: boolean;
+  manualStageOverride: WorkbenchStage | null;
+  coercedStaleRoutePin: boolean;
+  isViewingEarlierGenerationStage?: boolean;
+}): boolean {
+  return (
+    input.isViewingCompletedStage ||
+    input.isCurrentJobCompleted === true ||
+    input.manualStageOverride !== null ||
+    input.coercedStaleRoutePin ||
+    input.isViewingEarlierGenerationStage === true
+  );
+}
+
+export function resolveHistoryEntryFamilyCount(input: {
+  familyJobCount: number | null | undefined;
+  hasParentJob: boolean;
+}): number {
+  if (input.familyJobCount && input.familyJobCount > 0) {
+    return input.familyJobCount;
+  }
+  return 1;
+}
+
+function isViewingEarlierGenerationStage(input: {
+  currentGenerationStage: ReplanStage;
+  jobStage: string | undefined;
+}): boolean {
+  const currentIndex = REPLAN_STAGE_ORDER.indexOf(input.currentGenerationStage);
+  const jobIndex = REPLAN_STAGE_ORDER.indexOf(input.jobStage as ReplanStage);
+
+  return currentIndex >= 0 && jobIndex >= 0 && currentIndex < jobIndex;
+}
+
+function isAtOrBeyondSpecDocuments(jobStage: string | undefined): boolean {
+  switch (jobStage) {
+    case "spec_docs":
+    case "preview":
+    case "effect_preview":
+    case "prompt_packaging":
+    case "runtime_capability":
+    case "engineering_handoff":
+    case "engineering_landing":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function mapWorkbenchStageToGenerationStage(
+  stage: WorkbenchStage,
+): ReplannableGenerationStage {
+  switch (stage) {
+    case "input":
+      return "input";
+    case "clarification":
+      return "clarification";
+    case "route":
+      return "route_generation";
+    case "spec_tree":
+      return "spec_tree";
+    case "spec_documents":
+      return "spec_docs";
+    case "effect_preview":
+      return "effect_preview";
+    default:
+      return stage satisfies never;
+  }
+}
+
+function mapGenerationStageToLocalStage(
+  stage: BlueprintGenerationStage | ReplanStage,
+): AutopilotLocalStage {
+  switch (stage) {
+    case "spec_docs":
+      return "spec_documents";
+    case "agent_crew_fabric":
+      return "agent_crew";
+    default:
+      return stage;
+  }
+}
+
+function mapReplanStageToBlueprintStage(
+  stage: ReplanStage,
+): BlueprintGenerationStage {
+  switch (stage) {
+    case "agent_crew_fabric":
+      return "route_generation";
+    case "artifact_memory":
+      return "engineering_landing";
+    default:
+      return stage;
+  }
+}
+
+function normalizeReplanStatus(status: string | undefined): ReplanStatus {
+  switch (status) {
+    case "pending":
+    case "running":
+    case "waiting":
+    case "reviewing":
+    case "completed":
+    case "failed":
+      return status;
+    default:
+      return "completed";
+  }
+}
+
+function findStaleArtifactForStage(
+  job: BlueprintGenerationJob | null,
+  currentStage: AutopilotLocalStage,
+): RightRailStaleArtifact | null {
+  if (!job?.artifacts) return null;
+
+  for (const artifact of job.artifacts) {
+    if (!artifact.staleSince) continue;
+    const artifactStage = getReplanArtifactStage({
+      id: artifact.id,
+      type: artifact.type,
+    });
+    if (!artifactStage) continue;
+
+    const localStage = mapGenerationStageToLocalStage(artifactStage);
+    if (localStage !== currentStage) continue;
+
+    return {
+      id: artifact.id,
+      stage: localStage,
+      staleSince: artifact.staleSince,
+      invalidatedBy: artifact.invalidatedBy,
+    };
+  }
+
+  return null;
+}
+
+function normalizeActiveSubStageForJobProgress(input: {
+  requestedSubStage: AutopilotRailSubStage | undefined;
+  explicitSubStage: AutopilotRailSubStage | undefined;
+  jobStage: string | undefined;
+}): {
+  activeSubStage: AutopilotRailSubStage | undefined;
+  coercedStaleRoutePin: boolean;
+} {
+  return {
+    activeSubStage: input.requestedSubStage,
+    coercedStaleRoutePin: false,
+  };
 }
 
 function resolveAriaLabel(locale: AppLocale): string {
@@ -251,15 +600,33 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
     specTree,
     agentCrew,
   });
-  const activeSubStage: AutopilotRailSubStage | undefined =
+  const requestedSubStage: AutopilotRailSubStage | undefined =
     currentSubStageFromProps ??
     computedSubStage ??
     (currentStage === "fabric" ? RAIL_SUB_STAGE_ORDER[0] : undefined);
+  const { activeSubStage, coercedStaleRoutePin } =
+    normalizeActiveSubStageForJobProgress({
+      requestedSubStage,
+      explicitSubStage: currentSubStageFromProps,
+      jobStage: job?.stage,
+    });
+  const historyJobId = props.jobId || props.job?.id || null;
+  const historyFamilyState = useFamilyData({
+    jobId: historyJobId,
+    enabled: Boolean(historyJobId),
+    disableRemoteFetch: IS_GITHUB_PAGES,
+  });
+  const historyFamilyCount = resolveHistoryEntryFamilyCount({
+    familyJobCount: historyFamilyState.data?.jobs.length,
+    hasParentJob: Boolean(props.job?.parentJobId),
+  });
 
   const activeIndex =
     activeSubStage !== undefined
       ? RAIL_SUB_STAGE_ORDER.indexOf(activeSubStage)
       : -1;
+  const [manualWorkbenchStageOverride, setManualWorkbenchStageOverride] =
+    useState<WorkbenchStage | null>(null);
 
   // 计算 STAGE_ORDER 中的 activeStageIndex（用于 StageViewport）
   //
@@ -279,12 +646,125 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
     ? mapSubStageToStageIndex(activeSubStage)
     : 0;
   const isSpecDocumentsStage =
-    job?.stage === "spec_docs" && activeSubStage === "spec_tree";
-  const activeStageIndex = isSpecDocumentsStage
-    ? STAGE_ORDER.indexOf("spec_documents")
-    : baseStageIndex;
+    activeSubStage === "spec_tree" && isAtOrBeyondSpecDocuments(job?.stage);
+  const manualStageOverride = isManualWorkbenchStageOverrideValid(
+    manualWorkbenchStageOverride,
+    { activeSubStage, jobStage: job?.stage }
+  )
+    ? manualWorkbenchStageOverride
+    : null;
+  const activeStageIndex = manualStageOverride
+    ? STAGE_ORDER.indexOf(manualStageOverride)
+    : isSpecDocumentsStage
+      ? STAGE_ORDER.indexOf("spec_documents")
+      : baseStageIndex;
   const activeStageKey: WorkbenchStage = STAGE_ORDER[activeStageIndex];
   const currentStageConfig = STAGE_CONFIG[activeStageKey];
+  const currentGenerationStage =
+    mapWorkbenchStageToGenerationStage(activeStageKey);
+  const {
+    state: stageAnimatorState,
+    transition: triggerStageAnimatorTransition,
+  } = useStageTransitionAnimator();
+  const currentLocalStage =
+    mapGenerationStageToLocalStage(currentGenerationStage);
+  const replanImpact = deriveReplanDownstreamImpact({
+    fromStage: currentGenerationStage,
+    artifacts: props.job?.artifacts ?? [],
+  });
+  const staleArtifact = findStaleArtifactForStage(
+    props.job,
+    currentLocalStage,
+  );
+  const [replanOpen, setReplanOpen] = useState(false);
+  const [replanMode, setReplanMode] = useState<ReplanMode>("in_place");
+  const [replanReason, setReplanReason] = useState("");
+  const [replanLoading, setReplanLoading] = useState(false);
+  const [replanError, setReplanError] = useState<string | null>(null);
+  const replanFlow = useReplanFlow({
+    postReplan: async (request, options) => {
+      const result = await postBlueprintReplan(
+        request.jobId,
+        {
+          fromStage: mapReplanStageToBlueprintStage(request.fromStage),
+          mode: request.mode,
+          reason: request.reason.trim() || undefined,
+        },
+        { signal: options?.signal },
+      );
+      if (!result.ok) {
+        throw result.error;
+      }
+      const replanResult: ReplanPostResult = {
+        ...result.data,
+        mode: result.data.mode,
+        job: result.data.job,
+      };
+      return replanResult;
+    },
+    applyNavigation: {
+      applyInPlace: (result) => {
+        props.onJobUpdated?.(result.job as BlueprintGenerationJob);
+        props.onStageAdvanced?.();
+      },
+      activeJob: (_jobId, result) => {
+        const nextJob = result.job as BlueprintGenerationJob;
+        if (props.onBranchJobActivated) {
+          props.onBranchJobActivated(nextJob);
+        } else {
+          props.onJobUpdated?.(nextJob);
+        }
+        props.onStageAdvanced?.();
+      },
+    },
+    coordinator: props.coordinator,
+    getCoordinationTransitions: (input, result) => {
+      const fromStage = mapReplanStageToBlueprintStage(input.fromStage);
+      const toStage = result.job.stage ?? fromStage;
+      const fromPage = getAutopilotPageForStage(fromStage);
+      const toPage = getAutopilotPageForStage(toStage);
+
+      return {
+        stageTransition: {
+          fromStage,
+          toStage,
+        },
+        ...(fromPage !== null && toPage !== null
+          ? {
+              pageTransition: {
+                fromPage,
+                toPage,
+              },
+            }
+          : {}),
+      };
+    },
+    toastQueue: {
+      push: (notification) => {
+        if (notification.tone === "success") {
+          showToast.success(notification.title, {
+            description: notification.message,
+          });
+          return;
+        }
+        if (notification.tone === "error") {
+          showToast.error(notification.title, {
+            description: notification.message,
+          });
+          return;
+        }
+        showToast(notification.title, {
+          description: notification.message,
+        });
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (manualWorkbenchStageOverride !== null && manualStageOverride === null) {
+      setManualWorkbenchStageOverride(null);
+    }
+  }, [manualWorkbenchStageOverride, manualStageOverride]);
 
   // autopilot-stage-progress-indicator（任务 6.1）：
   // 把 useStageProgress() 在右栏顶层调用一次，将派生进度传给 StageHeader。
@@ -306,9 +786,23 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const prevStageIndexRef = useRef(activeStageIndex);
   const transitionDirection: "forward" | "backward" =
     activeStageIndex >= prevStageIndexRef.current ? "forward" : "backward";
+  const previousGenerationStageRef = useRef(currentGenerationStage);
   useEffect(() => {
     prevStageIndexRef.current = activeStageIndex;
   }, [activeStageIndex]);
+  useEffect(() => {
+    const previousStage = previousGenerationStageRef.current;
+    if (previousStage !== currentGenerationStage) {
+      triggerStageAnimatorTransition(previousStage, currentGenerationStage);
+      previousGenerationStageRef.current = currentGenerationStage;
+    }
+  }, [currentGenerationStage, triggerStageAnimatorTransition]);
+  const stageAnimatorDirection: "forward" | "backward" | null =
+    stageAnimatorState.direction === "advance"
+      ? "forward"
+      : stageAnimatorState.direction === "retreat"
+        ? "backward"
+        : null;
 
   /**
    * 已完成阶段数据快照缓存。
@@ -367,6 +861,16 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
 
   /** 用户是否正在回看已完成阶段 */
   const isViewingCompletedStage = viewingCompletedStageIndex !== null;
+  const isReplanCompletedView = resolveReplanCompletedViewFlag({
+    isViewingCompletedStage,
+    isCurrentJobCompleted: normalizeReplanStatus(props.job?.status) === "completed",
+    manualStageOverride,
+    coercedStaleRoutePin,
+    isViewingEarlierGenerationStage: isViewingEarlierGenerationStage({
+      currentGenerationStage,
+      jobStage: props.job?.stage,
+    }),
+  });
 
   /**
    * 阶段推进处理函数 — 带顺序守卫。
@@ -378,27 +882,43 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
    * 对应需求 5.2：不允许跳过中间阶段直接推进到后续阶段
    * 对应需求 5.3：回看时允许查看但不允许修改
    */
+  const manualAdvanceAction = resolveManualAdvanceAction({
+    activeSubStage,
+    activeStageIndex,
+    isViewingCompletedStage,
+  });
   const handleStageAdvance = useCallback(() => {
-    // 回看已完成阶段时禁止推进
-    if (isViewingCompletedStage) {
+    const action = resolveManualAdvanceAction({
+      activeSubStage,
+      activeStageIndex,
+      isViewingCompletedStage,
+    });
+
+    if (action.type === "none") {
       return;
     }
 
-    // 顺序守卫：目标阶段必须是当前阶段 + 1
-    const targetIndex = activeStageIndex + 1;
-    if (targetIndex >= STAGE_ORDER.length) {
-      // 已是最后阶段，无法继续推进
+    if (action.type === "sub-stage") {
+      props.onSubStageChange(action.nextSubStage);
       return;
     }
 
-    // 验证目标阶段确实是下一个阶段（禁止跳跃）
-    if (targetIndex !== activeStageIndex + 1) {
+    if (action.type === "workbench-stage") {
+      setManualWorkbenchStageOverride(action.nextStage);
+      if (action.nextSubStage !== undefined) {
+        props.onSubStageChange(action.nextSubStage);
+      }
       return;
     }
 
-    // 调用父组件的推进回调
     props.onStageAdvanced?.();
-  }, [isViewingCompletedStage, activeStageIndex, props.onStageAdvanced]);
+  }, [
+    activeSubStage,
+    activeStageIndex,
+    isViewingCompletedStage,
+    props.onSubStageChange,
+    props.onStageAdvanced,
+  ]);
 
   /**
    * 从回看状态返回当前活跃阶段。
@@ -408,6 +928,61 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const handleReturnToActiveStage = useCallback(() => {
     setViewingCompletedStageIndex(null);
   }, []);
+
+  const previousNavigationAction = resolveManualPreviousAction({
+    activeSubStage,
+    activeStageKey,
+    isViewingCompletedStage,
+    isManualWorkbenchStageOverride:
+      manualStageOverride !== null || coercedStaleRoutePin,
+  });
+  const previousSubStage =
+    previousNavigationAction.type === "sub-stage"
+      ? previousNavigationAction.previousSubStage
+      : previousNavigationAction.type === "workbench-stage"
+        ? previousNavigationAction.previousSubStage
+        : undefined;
+  const previousWorkbenchStage =
+    previousNavigationAction.type === "workbench-stage"
+      ? previousNavigationAction.previousStage
+      : undefined;
+  const previousWorkflowStage =
+    previousNavigationAction.type === "workflow-stage"
+      ? previousNavigationAction.previousStage
+      : undefined;
+  const previousTargetKind =
+    previousNavigationAction.type === "none"
+      ? undefined
+      : previousNavigationAction.type;
+  const previousStageLabel =
+    locale === "zh-CN" ? "返回上一步" : "Back to previous step";
+  const handleNavigatePreviousStage = useCallback(() => {
+    if (previousNavigationAction.type === "none") {
+      return;
+    }
+    setViewingCompletedStageIndex(null);
+
+    if (previousNavigationAction.type === "workbench-stage") {
+      setManualWorkbenchStageOverride(previousNavigationAction.previousStage);
+      if (previousNavigationAction.previousSubStage !== undefined) {
+        props.onSubStageChange(previousNavigationAction.previousSubStage);
+      }
+      return;
+    }
+
+    if (previousNavigationAction.type === "workflow-stage") {
+      setManualWorkbenchStageOverride(null);
+      props.onNavigateWorkflowStage?.(previousNavigationAction.previousStage);
+      return;
+    }
+
+    setManualWorkbenchStageOverride(null);
+    props.onSubStageChange(previousNavigationAction.previousSubStage);
+  }, [
+    previousNavigationAction,
+    props.onNavigateWorkflowStage,
+    props.onSubStageChange,
+  ]);
 
   // autopilot-spec-tree-workbench（2026-05-17）：spec_tree 子阶段的双 CTA
   // (生成整棵树 / 生成当前节点) 由 SpecTreeWorkbench 渲染，但 in-flight 锁
@@ -459,6 +1034,57 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   );
 
   // 非 fabric 阶段不渲染时间线
+  const handleConfirmReplan = useCallback(async () => {
+    if (!props.jobId || replanLoading) return;
+
+    setReplanLoading(true);
+    setReplanError(null);
+    try {
+      await replanFlow.confirmReplan({
+        jobId: props.jobId,
+        fromStage: currentGenerationStage,
+        mode: replanMode,
+        reason: replanReason.trim(),
+        impact: replanImpact,
+      });
+      setReplanOpen(false);
+    } catch (error) {
+      setReplanError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReplanLoading(false);
+    }
+  }, [
+    currentGenerationStage,
+    replanFlow,
+    replanImpact,
+    props.jobId,
+    replanLoading,
+    replanMode,
+    replanReason,
+  ]);
+
+  const handleOpenHistory = useCallback((jobId: string) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("history", "1");
+    url.searchParams.set("activeJob", jobId);
+    window.history.pushState({}, "", url);
+    window.dispatchEvent(
+      new CustomEvent("autopilot:history-open", { detail: { jobId } }),
+    );
+  }, []);
+
+  const handleRegenerateStaleStage = useCallback(
+    (stage: AutopilotLocalStage) => {
+      if (stage === "spec_documents" || stage === "spec_tree") {
+        handleGenerateAllSpecDocs();
+        return;
+      }
+      props.onStageAdvanced?.();
+    },
+    [handleGenerateAllSpecDocs, props.onStageAdvanced],
+  );
+
   if (currentStage !== "fabric") {
     return (
       <aside
@@ -505,6 +1131,65 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       <div data-stage-placeholder="fabric" data-active="true" className="hidden" />
 
       {/* autopilot-streaming-experience integration-gap-2026-05-16 UI 消费面 Step 1：角色态条带 */}
+      <div
+        className="mb-2 flex flex-wrap items-center gap-2 px-1"
+        data-testid="autopilot-right-rail-action-strip"
+      >
+        <HistoryEntryPoint
+          jobId={historyJobId}
+          locale={locale}
+          familyCount={historyFamilyCount}
+          staleCount={props.job?.staleArtifactIds?.length ?? 0}
+          staticPreview={IS_GITHUB_PAGES}
+          disabled={IS_GITHUB_PAGES}
+          onOpen={handleOpenHistory}
+        />
+        <ReplanButton
+          viewingStage={currentGenerationStage}
+          stageStatus={normalizeReplanStatus(props.job?.status)}
+          jobStatus={normalizeReplanStatus(props.job?.status)}
+          impact={replanImpact}
+          isViewingCompletedStage={isReplanCompletedView}
+          staticPreview={IS_GITHUB_PAGES}
+          label={locale === "zh-CN" ? "从这里重新规划" : "Replan from here"}
+          onOpen={() => setReplanOpen(true)}
+        />
+      </div>
+
+      {replanError ? (
+        <div
+          className="mb-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+          data-testid="autopilot-replan-error"
+          role="alert"
+        >
+          {replanError}
+        </div>
+      ) : null}
+
+      <ReplanConfirmationModal
+        open={replanOpen}
+        mode={replanMode}
+        reason={replanReason}
+        loading={replanLoading}
+        impact={replanImpact}
+        onModeChange={setReplanMode}
+        onReasonChange={setReplanReason}
+        onConfirm={handleConfirmReplan}
+        onCancel={() => setReplanOpen(false)}
+      />
+
+      <RightRailStaleIndicator
+        artifact={staleArtifact}
+        currentStage={currentLocalStage}
+        locale={locale}
+        status={{
+          isRegenerating: specDocsGenerating !== null,
+          isUpstreamRunning: props.job?.status === "running",
+          runningStage: props.job?.stage,
+        }}
+        onRegenerate={handleRegenerateStaleStage}
+      />
+
       <RoleStatusStrip />
 
       {/* 阶段独占视口 — 包一层 flex-1 min-h-0 让它占满 aside 剩余高度，
@@ -512,7 +1197,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       <div className="flex-1 min-h-0" style={{ minHeight: 0 }}>
         <StageTransitionWrapper
           stageKey={activeStageKey}
-          direction={transitionDirection}
+          direction={stageAnimatorDirection ?? transitionDirection}
         >
         <StageViewport
           stageIndex={activeStageIndex}
@@ -523,10 +1208,21 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
               englishLabel={currentStageConfig.englishLabel}
               chineseTitle={currentStageConfig.chineseTitle}
               isActive={true}
+              locale={locale}
               completedStages={stageProgress.completedStages}
               activeStage={stageProgress.activeStage}
               stageProgress={stageProgress.stageProgress}
               isIndeterminate={stageProgress.isIndeterminate}
+              onNavigatePreviousStage={
+                previousNavigationAction.type !== "none"
+                  ? handleNavigatePreviousStage
+                  : undefined
+              }
+              previousStageLabel={previousStageLabel}
+              previousSubStage={previousSubStage}
+              previousWorkbenchStage={previousWorkbenchStage}
+              previousWorkflowStage={previousWorkflowStage}
+              previousTargetKind={previousTargetKind}
             />
           }
           cta={
@@ -544,7 +1240,25 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
               // - spec_tree 等其它阶段：CTA 已经由 SpecTreeWorkbench 顶部双 CTA
               //   （"生成整棵树文档" / "生成当前节点文档"）承担，底部再放
               //   "生成文档"按钮属于功能重复且分割视觉。
-              null
+              manualAdvanceAction.type !== "none" ? (
+                <StageCTA
+                  label={
+                    manualAdvanceAction.type === "workbench-stage"
+                      ? locale === "zh-CN"
+                        ? "进入规格文档"
+                        : "Open spec documents"
+                      : manualAdvanceAction.type === "sub-stage"
+                        ? locale === "zh-CN"
+                          ? "继续下一步"
+                          : "Continue"
+                        : currentStageConfig.ctaLabel
+                  }
+                  loading={false}
+                  disabled={false}
+                  onAction={handleStageAdvance}
+                  testId="autopilot-stage-continue-button"
+                />
+              ) : null
             )
           }
         >
@@ -598,7 +1312,11 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                       ? completedStageSnapshotRef.current.get(activeSubStage)!.summary.dataReady
                       : deriveSubStageSummary(activeSubStage, props, locale).dataReady
                   }
-                  onConfirmAdvance={isViewingCompletedStage ? undefined : handleStageAdvance}
+                  onConfirmAdvance={
+                    manualAdvanceAction.type === "none"
+                      ? undefined
+                      : handleStageAdvance
+                  }
                   advancing={false}
                   specTree={props.specTree}
                   job={props.job}

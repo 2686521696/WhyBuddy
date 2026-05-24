@@ -19,7 +19,14 @@ import type {
 } from "@shared/blueprint/contracts";
 import type { BlueprintAgentCrewSnapshot } from "@/lib/blueprint-api";
 
-import { AutopilotRightRail } from "../AutopilotRightRail";
+import {
+  AutopilotRightRail,
+  isManualWorkbenchStageOverrideValid,
+  resolveHistoryEntryFamilyCount,
+  resolveReplanCompletedViewFlag,
+  resolveManualAdvanceAction,
+  resolveManualPreviousAction,
+} from "../AutopilotRightRail";
 import {
   RAIL_SUB_STAGE_ORDER,
   type AutopilotRailSubStage,
@@ -239,12 +246,389 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(markup).toContain('data-stage-key="spec_tree"');
     // 有 stage-index 属性
     expect(markup).toContain('data-stage-index="3"');
-    // StageHeader 存在
-    expect(markup).toContain("STEP 04");
-    expect(markup).toContain("SPEC TREE");
+    // 中文模式下 StageHeader 不再混用英文 STEP / SPEC TREE。
+    expect(markup).toContain("步骤 04");
+    expect(markup).toContain("规格树");
+    expect(markup).not.toContain("STEP 04");
+    expect(markup).not.toContain("SPEC TREE");
     // 2026-05-19：StageCTA 已被移除（CTA 由 SpecTreeWorkbench 顶部双按钮承担）。
-    // 改为断言 StageHeader 内的 STEP 编号 + 中文标题仍存在。
-    expect(markup).toContain("STEP 04");
+    // 改为断言 StageHeader 内的中文步骤编号 + 中文标题仍存在。
+    expect(markup).toContain("步骤 04");
+  });
+
+  it("renders history and replan entry points in the fabric action strip", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "effect_preview",
+          job: {
+            id: "job-test",
+            stage: "effect_preview",
+            status: "completed",
+            artifacts: [
+              { id: "artifact-preview", type: "effect_preview" },
+              { id: "artifact-prompt", type: "prompt_pack" },
+            ],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-testid="autopilot-right-rail-action-strip"');
+    expect(markup).toContain('data-testid="autopilot-history-entry"');
+    expect(markup).toContain('data-version-history-entry-point="true"');
+    expect(markup).toContain(">历史<");
+    expect(markup).not.toContain(">History<");
+    expect(markup).toContain(
+      'data-testid="autopilot-replan-from-stage-divider"'
+    );
+    expect(markup).toContain('data-stage="effect_preview"');
+  });
+
+  it("uses live family data for nested branch history counts when available", () => {
+    expect(
+      resolveHistoryEntryFamilyCount({
+        familyJobCount: 3,
+        hasParentJob: true,
+      })
+    ).toBe(3);
+
+    expect(
+      resolveHistoryEntryFamilyCount({
+        familyJobCount: null,
+        hasParentJob: true,
+      })
+    ).toBe(1);
+    expect(
+      resolveHistoryEntryFamilyCount({
+        familyJobCount: null,
+        hasParentJob: false,
+      })
+    ).toBe(1);
+  });
+
+  it("renders a stale indicator when the current stage artifact is stale", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          job: {
+            id: "job-test",
+            stage: "spec_docs",
+            status: "completed",
+            staleArtifactIds: ["artifact-requirements"],
+            artifacts: [
+              {
+                id: "artifact-requirements",
+                type: "requirements",
+                staleSince: "2026-05-23T07:00:00.000Z",
+                invalidatedBy: {
+                  stage: "clarification",
+                  artifactId: "artifact-clarification",
+                  artifactType: "clarification_session",
+                  reason: "upstream_clarification_changed",
+                  triggeredAt: "2026-05-23T07:00:00.000Z",
+                },
+              },
+            ],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain(
+      'data-testid="autopilot-right-rail-stale-indicator"',
+    );
+    expect(markup).toContain("当前阶段产物已过期");
+    expect(markup).toContain("重新生成规格文档");
+    expect(markup).not.toContain("Current stage artifact is stale");
+    expect(markup).not.toContain("Regenerate documents");
+  });
+
+  it("renders a previous-step control for non-first fabric stages", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-testid="autopilot-stage-back-button"');
+    expect(markup).toContain('data-previous-target-kind="workflow-stage"');
+    expect(markup).toContain('data-previous-workflow-stage="input"');
+    expect(markup).toContain('aria-label="返回上一步"');
+  });
+
+  it("targets the outer route-generation workflow page when returning from SPEC documents", () => {
+    const action = resolveManualPreviousAction({
+      activeSubStage: "spec_tree",
+      activeStageKey: "spec_documents",
+      isViewingCompletedStage: false,
+    });
+
+    expect(action).toEqual({
+      type: "workflow-stage",
+      previousStage: "input",
+    });
+  });
+
+  it("targets the outer route-generation workflow page from the merged SPEC tree view", () => {
+    const action = resolveManualPreviousAction({
+      activeSubStage: "spec_tree",
+      activeStageKey: "spec_tree",
+      isViewingCompletedStage: false,
+    });
+
+    expect(action).toEqual({
+      type: "workflow-stage",
+      previousStage: "input",
+    });
+  });
+
+  it("keeps SPEC documents as the visual previous step from effect preview", () => {
+    const action = resolveManualPreviousAction({
+      activeSubStage: "effect_preview",
+      activeStageKey: "effect_preview",
+      isViewingCompletedStage: false,
+    });
+
+    expect(action).toEqual({
+      type: "workbench-stage",
+      previousStage: "spec_documents",
+      previousSubStage: "spec_tree",
+    });
+  });
+
+  it("treats manual previous-workbench navigation as a completed-view replan context", () => {
+    expect(
+      resolveReplanCompletedViewFlag({
+        isViewingCompletedStage: false,
+        manualStageOverride: "spec_documents",
+        coercedStaleRoutePin: false,
+      }),
+    ).toBe(true);
+    expect(
+      resolveReplanCompletedViewFlag({
+        isViewingCompletedStage: false,
+        manualStageOverride: null,
+        coercedStaleRoutePin: true,
+      }),
+    ).toBe(true);
+    expect(
+      resolveReplanCompletedViewFlag({
+        isViewingCompletedStage: true,
+        manualStageOverride: null,
+        coercedStaleRoutePin: false,
+      }),
+    ).toBe(true);
+    expect(
+      resolveReplanCompletedViewFlag({
+        isViewingCompletedStage: false,
+        manualStageOverride: null,
+        coercedStaleRoutePin: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the SPEC documents override during the folded effect-preview handoff", () => {
+    expect(
+      isManualWorkbenchStageOverrideValid("spec_documents", {
+        activeSubStage: "runtime_capability",
+        jobStage: "runtime_capability",
+      }),
+    ).toBe(true);
+    expect(
+      isManualWorkbenchStageOverrideValid("spec_documents", {
+        activeSubStage: "runtime_capability",
+        jobStage: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps SPEC documents as the visual previous step from every STEP 06 folded sub-stage", () => {
+    const foldedSubStages: AutopilotRailSubStage[] = [
+      "prompt_package",
+      "runtime_capability",
+      "engineering_handoff",
+      "artifact_memory",
+    ];
+
+    for (const activeSubStage of foldedSubStages) {
+      const action = resolveManualPreviousAction({
+        activeSubStage,
+        activeStageKey: "effect_preview",
+        isViewingCompletedStage: false,
+      });
+
+      expect(action).toEqual({
+        type: "workbench-stage",
+        previousStage: "spec_documents",
+        previousSubStage: "spec_tree",
+      });
+    }
+  });
+
+  it("renders the SPEC documents back control with an outer workflow-page target, not the rail predecessor", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          job: {
+            id: "job-test",
+            stage: "spec_docs",
+            status: "reviewing",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-stage-key="spec_documents"');
+    expect(markup).toContain('data-testid="autopilot-stage-back-button"');
+    expect(markup).toContain('data-previous-target-kind="workflow-stage"');
+    expect(markup).toContain('data-previous-workflow-stage="input"');
+    expect(markup).not.toContain('data-previous-workbench-stage="route"');
+    expect(markup).not.toContain('data-previous-sub-stage="agent_crew_fabric"');
+  });
+
+  it("treats a downstream job pinned back to spec_tree as the merged SPEC documents page", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          job: {
+            id: "job-test",
+            stage: "runtime_capability",
+            status: "reviewing",
+            artifacts: [
+              { id: "artifact-preview", type: "effect_preview" },
+              { id: "artifact-capability", type: "capability_registry" },
+            ],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-autopilot-sub-stage="spec_tree"');
+    expect(markup).toContain('data-stage-key="spec_documents"');
+    expect(markup).toContain('data-testid="autopilot-replan-from-stage-divider"');
+    expect(markup).toContain('data-stage="spec_docs"');
+    expect(markup).toContain("2 downstream");
+  });
+
+  it("keeps the route page reachable even after downstream SPEC documents exist", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "agent_crew_fabric",
+          job: {
+            id: "job-test",
+            stage: "runtime_capability",
+            status: "reviewing",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-autopilot-sub-stage="agent_crew_fabric"');
+    expect(markup).toContain('data-stage-key="route"');
+    expect(markup).toContain("步骤 03");
+    expect(markup).not.toContain('data-testid="autopilot-workbench-action-refresh"');
+    expect(markup).not.toContain('data-testid="autopilot-stage-back-button"');
+  });
+
+  it("does not render the previous-step control at the first fabric sub-stage", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "agent_crew_fabric",
+          job: { id: "job-test", stage: "agent_crew_fabric" } as unknown as BlueprintGenerationJob,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).not.toContain('data-testid="autopilot-stage-back-button"');
+  });
+
+  it("manual continue advances within STEP 06 sub-stages instead of no-oping at the last workbench stage", () => {
+    expect(
+      resolveManualAdvanceAction({
+        activeSubStage: "prompt_package",
+        activeStageIndex: 5,
+        isViewingCompletedStage: false,
+      })
+    ).toEqual({
+      type: "sub-stage",
+      nextSubStage: "runtime_capability",
+    });
+  });
+
+  it("manual continue moves from the merged SPEC tree review back into SPEC documents", () => {
+    expect(
+      resolveManualAdvanceAction({
+        activeSubStage: "spec_tree",
+        activeStageIndex: 3,
+        isViewingCompletedStage: false,
+      })
+    ).toEqual({
+      type: "workbench-stage",
+      nextStage: "spec_documents",
+      nextSubStage: "spec_tree",
+    });
+  });
+
+  it("renders a visible continue control on the SPEC tree review page", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          job: {
+            id: "job-test",
+            stage: "spec_tree",
+            status: "reviewing",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-stage-key="spec_tree"');
+    expect(markup).toContain('data-testid="autopilot-stage-continue-button"');
+    expect(markup).toContain("进入规格文档");
+  });
+
+  it("does not render a bottom continue button when the final fabric sub-stage has no next action", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "artifact_memory",
+          job: {
+            id: "job-test",
+            stage: "engineering_landing",
+          } as unknown as BlueprintGenerationJob,
+          selection: {} as AutopilotRightRailProps["selection"],
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-sub-stage-placeholder="artifact_memory"');
+    expect(markup).not.toContain('data-testid="timeline-confirm-advance"');
   });
 
   it("does not mount the bottom NarrativeSwiper in the fabric right rail", async () => {
@@ -269,5 +653,27 @@ describe("AutopilotRightRail streaming timeline", () => {
 
     expect(source).not.toMatch(/NarrativeSwiper/);
     expect(source).not.toMatch(/narrative-swiper/);
+  });
+});
+
+describe("AutopilotRightRail replan integration contract", () => {
+  it("routes modal confirmation through useReplanFlow instead of bypassing the branch-aware flow", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "../AutopilotRightRail.tsx"),
+      "utf8",
+    );
+    const handlerStart = source.indexOf("const handleConfirmReplan");
+    const handlerEnd = source.indexOf("const handleOpenHistory");
+    const handlerSource = source.slice(handlerStart, handlerEnd);
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    expect(handlerEnd).toBeGreaterThan(handlerStart);
+    expect(source).toContain("useReplanFlow");
+    expect(handlerSource).toContain("replanFlow.confirmReplan");
+    expect(source).toContain("toastQueue");
+    expect(handlerSource).not.toContain("postBlueprintReplan(props.jobId");
+    expect(handlerSource).not.toContain("props.onJobUpdated?.(result.data.job)");
   });
 });

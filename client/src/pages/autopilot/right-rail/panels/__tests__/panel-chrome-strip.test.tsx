@@ -151,6 +151,72 @@ describe("sub-stage panel chrome strip (Spec 5)", () => {
       );
       expect(markup).not.toContain("已接受 SPEC 的效果预演");
     });
+
+    it("P3 - renders stale badge on stale effect preview tiles", () => {
+      const preview = {
+        id: "preview-stale-1",
+        jobId: "job-1",
+        treeId: "tree-1",
+        nodeId: "node-1",
+        sourceDocumentIds: [],
+        status: "ready",
+        createdAt: "2026-05-23T07:00:00.000Z",
+        updatedAt: "2026-05-23T07:30:00.000Z",
+        summary: "Preview summary",
+        architectureNotes: [],
+        prototypeNotes: [],
+        progressPlan: [],
+        nodes: [],
+        provenance: {
+          jobId: "job-1",
+          githubUrls: [],
+          treeVersion: 1,
+          nodeType: "effect_preview",
+          nodeTitle: "Preview node",
+          nodeSummary: "Preview node summary",
+          sourceStatus: "accepted",
+          includeDrafts: false,
+          sourceDocumentStatuses: {},
+        },
+      } as unknown as BlueprintEffectPreviewSnapshot;
+
+      const markup = renderToStaticMarkup(
+        <EffectPreviewPanel
+          jobId="job-1"
+          job={{
+            id: "job-1",
+            artifacts: [
+              {
+                id: "artifact-preview-stale-1",
+                type: "effect_preview",
+                title: "Effect preview",
+                summary: "Preview summary",
+                createdAt: "2026-05-23T07:00:00.000Z",
+                payload: { id: "preview-stale-1" },
+                staleSince: "2026-05-23T11:00:00.000Z",
+                invalidatedBy: {
+                  stage: "spec_docs",
+                  artifactId: "doc-1",
+                  artifactType: "requirements",
+                  reason: "upstream_spec_documents_changed",
+                  triggeredAt: "2026-05-23T11:00:00.000Z",
+                },
+              },
+            ],
+          } as any}
+          specTree={stubSpecTree}
+          effectPreviews={[preview]}
+          initialPreviews={[preview]}
+          agentCrew={null}
+          capabilityEvidence={[]}
+          locale="zh-CN"
+        />
+      );
+
+      expect(markup).toContain('data-testid="autopilot-stale-badge"');
+      expect(markup).toContain("Stale: spec_docs changed");
+      expect(markup).toContain("Preview summary");
+    });
   });
 
   describe("PromptPackagePanel", () => {

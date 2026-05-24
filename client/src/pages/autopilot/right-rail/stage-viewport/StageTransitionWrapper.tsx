@@ -68,8 +68,8 @@ const transition = {
 /**
  * 阶段切场动画包裹组件。
  *
- * 使用 `AnimatePresence mode="wait"` 确保旧阶段完全退出后再渲染新阶段，
- * 通过 `custom` 属性传递方向参数给 variants 函数。
+ * 使用 `AnimatePresence mode="sync"` 让新阶段立即挂载，避免旧阶段退出动画异常时
+ * 阻塞下一阶段内容渲染；通过 `custom` 属性传递方向参数给 variants 函数。
  *
  * 内部维护 `isTransitioning` 状态：
  * - stageKey 变化时设为 true，触发 `onTransitionStart` 回调
@@ -112,30 +112,40 @@ const StageTransitionWrapper: FC<StageTransitionWrapperProps> = ({
   };
 
   return (
-    <AnimatePresence
-      mode="wait"
-      custom={direction}
-      onExitComplete={handleExitComplete}
+    <div
+      className="grid h-full min-h-0"
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+      }}
     >
-      <motion.div
-        key={stageKey}
+      <AnimatePresence
+        mode="sync"
+        initial={false}
         custom={direction}
-        variants={variants}
-        initial="enter"
-        animate="center"
-        exit="exit"
-        transition={transition}
-        className="h-full min-h-0"
-        style={{
-          width: "100%",
-          maxWidth: "100%",
-          minWidth: 0,
-          boxSizing: "border-box",
-        }}
+        onExitComplete={handleExitComplete}
       >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+        <motion.div
+          key={stageKey}
+          custom={direction}
+          variants={variants}
+          initial={false}
+          animate="center"
+          transition={transition}
+          className="col-start-1 row-start-1 h-full min-h-0"
+          style={{
+            width: "100%",
+            maxWidth: "100%",
+            minWidth: 0,
+            boxSizing: "border-box",
+          }}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 };
 
