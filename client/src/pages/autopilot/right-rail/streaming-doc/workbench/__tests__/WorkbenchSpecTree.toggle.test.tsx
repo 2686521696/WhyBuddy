@@ -262,6 +262,7 @@ function invokeTreeView(
     onGenerateNode: props.onGenerateNode,
     generating: props.generating,
     copy,
+    locale: props.locale,
   });
 }
 
@@ -537,6 +538,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
       <WorkbenchSpecTree
         {...makeProps({
           activeDocId: "doc-root-1-requirements",
+          locale: "en-US",
         })}
         {...staleProps}
       />
@@ -544,7 +546,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
 
     const badges = markup.match(/data-testid="autopilot-stale-badge"/g) ?? [];
     expect(badges.length).toBeGreaterThanOrEqual(2);
-    expect(markup).toContain("Stale: route_generation changed");
-    expect(markup).toContain("Stale: clarification changed");
+    expect(markup).toContain("Stale because route_generation changed");
+    expect(markup).toContain("Stale because clarification changed");
   });
 });

@@ -1,10 +1,13 @@
 import type { KeyboardEvent } from "react";
 
+import type { AppLocale } from "@/lib/locale";
+
 import type { StaleAwareArtifact, VersionTreeLayoutNode } from "./types";
 
 interface TreeNodeProps {
   node: VersionTreeLayoutNode;
   activeJobId: string | null;
+  locale?: AppLocale;
   onSelectJob?: (jobId: string) => void;
   onSelect?: (jobId: string) => void;
 }
@@ -24,24 +27,34 @@ function shortJobId(jobId: string): string {
   return jobId.length > 12 ? `${jobId.slice(0, 8)}...` : jobId;
 }
 
-function stageLabel(stage: string): string {
-  const labels: Record<string, string> = {
-    input: "输入",
-    clarification: "澄清",
-    route_generation: "路线",
-    spec_tree: "规格树",
-    spec_docs: "规格文档",
-    preview: "预览",
-    effect_preview: "效果预览",
-    prompt_packaging: "提示包",
-    runtime_capability: "运行能力",
-    engineering_handoff: "工程交接",
-    engineering_landing: "工程落地",
-  };
-  return labels[stage] ?? stage;
+const STAGE_LABELS_ZH: Record<string, string> = {
+  input: "输入",
+  clarification: "澄清",
+  route_generation: "路线",
+  spec_tree: "规格树",
+  spec_docs: "规格文档",
+  preview: "预览",
+  effect_preview: "效果预览",
+  prompt_packaging: "提示包",
+  runtime_capability: "运行能力",
+  engineering_handoff: "工程交接",
+  engineering_landing: "工程落地",
+};
+
+function stageLabel(stage: string, locale: AppLocale): string {
+  if (locale === "zh-CN") {
+    return STAGE_LABELS_ZH[stage] ?? stage;
+  }
+  return stage;
 }
 
-export function TreeNode({ node, activeJobId, onSelectJob, onSelect }: TreeNodeProps) {
+export function TreeNode({
+  node,
+  activeJobId,
+  locale = "en-US",
+  onSelectJob,
+  onSelect,
+}: TreeNodeProps) {
   const isActive = activeJobId === node.job.id;
   const isStale = hasStaleMarker(node);
   const select = onSelectJob ?? onSelect;
@@ -52,6 +65,16 @@ export function TreeNode({ node, activeJobId, onSelectJob, onSelect }: TreeNodeP
       handleSelect();
     }
   };
+
+  const branchedFromStageLabel = node.job.branchedFromStage
+    ? stageLabel(node.job.branchedFromStage, locale)
+    : locale === "zh-CN"
+      ? "未知"
+      : "unknown";
+  const activeMarker = locale === "zh-CN" ? "当前" : "active";
+  const staleMarker = locale === "zh-CN" ? "已过期" : "stale";
+  const branchPrefix = locale === "zh-CN" ? "分支起点" : "branch from";
+  const branchAt = locale === "zh-CN" ? "于" : "at";
 
   return (
     <button
@@ -74,13 +97,13 @@ export function TreeNode({ node, activeJobId, onSelectJob, onSelect }: TreeNodeP
     >
       <span className="block text-sm font-semibold">{shortJobId(node.job.id)}</span>
       <span className="block text-xs text-[#4b5563]">
-        {stageLabel(node.job.stage)} / {node.job.status}
+        {stageLabel(node.job.stage, locale)} / {node.job.status}
       </span>
-      {isActive ? <span className="text-xs font-semibold">active</span> : null}
-      {isStale ? <span className="text-xs font-semibold">stale</span> : null}
+      {isActive ? <span className="text-xs font-semibold">{activeMarker}</span> : null}
+      {isStale ? <span className="text-xs font-semibold">{staleMarker}</span> : null}
       {node.job.parentJobId ? (
         <span className="block text-xs text-[#4b5563]">
-          branch from {node.job.branchedFromStage ?? "unknown"} at{" "}
+          {branchPrefix} {branchedFromStageLabel} {branchAt}{" "}
           {node.job.branchedAt ?? node.job.createdAt}
         </span>
       ) : null}

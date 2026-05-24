@@ -162,6 +162,13 @@ function closeAutopilotHistorySearch(): void {
   });
 }
 
+function readLegacyClarificationSession(
+  editResult: unknown,
+): BlueprintClarificationSession | undefined {
+  if (!editResult || typeof editResult !== "object") return undefined;
+  return (editResult as { session?: BlueprintClarificationSession }).session;
+}
+
 export function resolveHistoryUrlSelectedJob(input: {
   requestedJobId: string | null;
   currentJobId: string;
@@ -3437,7 +3444,8 @@ export default function AutopilotRoutePage() {
         },
         refreshJob: (editResult) => {
           const updatedSession =
-            editResult.clarificationSession ?? editResult.session;
+            editResult.clarificationSession ??
+            readLegacyClarificationSession(editResult);
           if (updatedSession) {
             setClarificationSession(updatedSession);
             setAnswerDrafts(

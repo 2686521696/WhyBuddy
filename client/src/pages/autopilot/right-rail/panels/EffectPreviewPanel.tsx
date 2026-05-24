@@ -1354,6 +1354,7 @@ function EffectPreviewPanelInner({
                         <StaleBadge
                           staleSince={stalePreview?.staleSince}
                           invalidatedBy={stalePreview?.invalidatedBy}
+                          locale={locale}
                         />
                       </div>
                       <div className="mt-2 text-[10px] font-black uppercase tracking-normal text-slate-400">

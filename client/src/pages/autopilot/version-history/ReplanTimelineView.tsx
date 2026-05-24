@@ -1,7 +1,9 @@
 import type { BlueprintGenerationEvent } from "@shared/blueprint";
+import type { AppLocale } from "@/lib/locale";
 
 interface ReplanTimelineViewProps {
   events: BlueprintGenerationEvent[];
+  locale?: AppLocale;
 }
 
 interface ReplanTimelinePayload {
@@ -41,13 +43,42 @@ function shortJobId(jobId: string): string {
   return jobId.length > 12 ? `${jobId.slice(0, 8)}...` : jobId;
 }
 
-function modeLabel(mode: ReplanTimelinePayload["mode"]): string {
-  if (mode === "branch") return "创建分支";
-  if (mode === "in_place") return "原地重规划";
-  return "重规划";
+function modeLabel(mode: ReplanTimelinePayload["mode"], locale: AppLocale): string {
+  if (locale === "zh-CN") {
+    if (mode === "branch") return "创建分支";
+    if (mode === "in_place") return "原地重规划";
+    return "重规划";
+  }
+  if (mode === "branch") return "Branch";
+  if (mode === "in_place") return "In place";
+  return "Replan";
 }
 
-export function ReplanTimelineView({ events }: ReplanTimelineViewProps) {
+const STAGE_LABELS_ZH: Record<string, string> = {
+  input: "输入",
+  clarification: "澄清",
+  route_generation: "路线",
+  route_selection: "路线选择",
+  spec_tree: "规格树",
+  spec_docs: "规格文档",
+  spec_documents: "规格文档",
+  preview: "预览",
+  effect_preview: "效果预览",
+  prompt_packaging: "提示包",
+  runtime_capability: "运行能力",
+  engineering_handoff: "工程交接",
+  engineering_landing: "工程落地",
+};
+
+function stageLabel(stage: string, locale: AppLocale): string {
+  if (locale === "zh-CN") return STAGE_LABELS_ZH[stage] ?? stage;
+  return stage;
+}
+
+export function ReplanTimelineView({
+  events,
+  locale = "en-US",
+}: ReplanTimelineViewProps) {
   const replanEvents = events
     .filter((event) => event.type === ("replan.triggered" as BlueprintGenerationEvent["type"]))
     .sort((a, b) => {
@@ -55,10 +86,12 @@ export function ReplanTimelineView({ events }: ReplanTimelineViewProps) {
       return byTime === 0 ? a.jobId.localeCompare(b.jobId) : byTime;
     });
 
+  const emptyText = locale === "zh-CN" ? "暂无重规划记录。" : "No replan events.";
+
   return (
     <section data-testid="replan-timeline-view" data-state={replanEvents.length ? "ready" : "empty"}>
       {replanEvents.length === 0 ? (
-        <p>No replan events.</p>
+        <p>{emptyText}</p>
       ) : (
         <ol>
           {replanEvents.map((event) => {
@@ -67,12 +100,14 @@ export function ReplanTimelineView({ events }: ReplanTimelineViewProps) {
             return (
               <li key={event.id} data-event-id={event.id}>
                 <time dateTime={eventTime(event)}>{eventTime(event)}</time>
-                <span>{modeLabel(payload.mode)}</span>
+                <span>{modeLabel(payload.mode, locale)}</span>
                 <span title={event.jobId}>{shortJobId(event.jobId)}</span>
                 {payload.parentJobId ? (
                   <span title={payload.parentJobId}>{shortJobId(payload.parentJobId)}</span>
                 ) : null}
-                {payload.fromStage ? <span>{payload.fromStage}</span> : null}
+                {payload.fromStage ? (
+                  <span>{stageLabel(payload.fromStage, locale)}</span>
+                ) : null}
                 {count === null ? null : <span>{count}</span>}
                 <span>{event.message}</span>
                 {payload.reason ? <p>{truncateReason(payload.reason)}</p> : null}

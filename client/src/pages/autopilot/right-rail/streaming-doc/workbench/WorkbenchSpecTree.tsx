@@ -416,6 +416,8 @@ interface WorkbenchSpecTreeViewProps {
   generating: "all" | "single" | null;
   /** 国际化文案。 */
   copy: SpecTreeCopy;
+  /** 国际化 locale，用于 StaleBadge 等子组件。 */
+  locale: AppLocale;
 }
 
 /**
@@ -442,6 +444,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
     onGenerateNode,
     generating,
     copy,
+    locale,
   } = props;
 
   const isSearching = query.trim().length > 0;
@@ -548,6 +551,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
           <StaleBadge
             staleSince={specTreeStale?.staleSince}
             invalidatedBy={specTreeStale?.invalidatedBy}
+            locale={locale}
           />
           {isNodeSelected && onGenerateNode !== undefined ? (
             <button
@@ -588,6 +592,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
                   <StaleBadge
                     staleSince={staleDocument?.staleSince}
                     invalidatedBy={staleDocument?.invalidatedBy}
+                    locale={locale}
                   />
                 </button>
               );
@@ -757,6 +762,7 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
       onGenerateNode={onGenerateNode}
       generating={generating}
       copy={copy}
+      locale={locale}
     />
   );
 };

@@ -165,7 +165,18 @@ export function resolveManualAdvanceAction(input: {
 
   if (input.activeSubStage === "spec_tree") {
     const specTreeStageIndex = STAGE_ORDER.indexOf("spec_tree");
-    if (input.activeStageIndex === specTreeStageIndex) {
+    const specDocumentsStageIndex = STAGE_ORDER.indexOf("spec_documents");
+    // 用户停留在 spec_tree sub-stage（不论是初次评审还是从 spec_documents
+    // 退回回看），都应该让"下一步"指向 spec_documents：
+    //  - activeStageIndex === spec_tree（步骤 04）：初次评审 SPEC 树。
+    //  - activeStageIndex === spec_documents（步骤 05）：用户从 spec_documents
+    //    点了"返回上一步"回到 SPEC 树视图，但 backend job.stage 仍是 spec_docs。
+    //    此时"前进"按钮应该让用户能够回到 spec_documents（而不是停留在
+    //    spec_tree pin 永远走不动）。
+    if (
+      input.activeStageIndex === specTreeStageIndex ||
+      input.activeStageIndex === specDocumentsStageIndex
+    ) {
       return {
         type: "workbench-stage",
         nextStage: "spec_documents",
@@ -1223,6 +1234,31 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
               previousWorkbenchStage={previousWorkbenchStage}
               previousWorkflowStage={previousWorkflowStage}
               previousTargetKind={previousTargetKind}
+              onNavigateNextStage={
+                manualAdvanceAction.type !== "none"
+                  ? handleStageAdvance
+                  : undefined
+              }
+              nextStageLabel={
+                locale === "zh-CN" ? "继续下一步" : "Continue to next step"
+              }
+              nextSubStage={
+                manualAdvanceAction.type === "sub-stage"
+                  ? manualAdvanceAction.nextSubStage
+                  : manualAdvanceAction.type === "workbench-stage"
+                    ? manualAdvanceAction.nextSubStage
+                    : undefined
+              }
+              nextWorkbenchStage={
+                manualAdvanceAction.type === "workbench-stage"
+                  ? manualAdvanceAction.nextStage
+                  : undefined
+              }
+              nextTargetKind={
+                manualAdvanceAction.type === "none"
+                  ? undefined
+                  : manualAdvanceAction.type
+              }
             />
           }
           cta={

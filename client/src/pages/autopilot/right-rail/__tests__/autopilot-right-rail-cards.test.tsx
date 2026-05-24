@@ -654,6 +654,97 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(source).not.toMatch(/NarrativeSwiper/);
     expect(source).not.toMatch(/narrative-swiper/);
   });
+
+  it("exposes a forward chevron in the StageHeader so users can re-enter SPEC documents after backtracking", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          job: {
+            id: "job-test",
+            stage: "spec_tree",
+            status: "reviewing",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).toContain('data-next-target-kind="workbench-stage"');
+    expect(markup).toContain('data-next-workbench-stage="spec_documents"');
+  });
+
+  it("exposes a forward chevron during fabric sub-stage navigation (continue within STEP 06)", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "prompt_package",
+          job: {
+            id: "job-test",
+            stage: "prompt_packaging",
+            status: "running",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+        })}
+      />,
+    );
+
+    expect(markup).toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).toContain('data-next-target-kind="sub-stage"');
+    expect(markup).toContain('data-next-sub-stage="runtime_capability"');
+  });
+
+  it("hides the StageHeader forward chevron when there is no next action (artifact_memory tail)", () => {
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "artifact_memory",
+          job: {
+            id: "job-test",
+            stage: "engineering_landing",
+          } as unknown as BlueprintGenerationJob,
+        })}
+      />,
+    );
+
+    expect(markup).not.toContain('data-testid="autopilot-stage-forward-button"');
+  });
+
+  it("after backtracking from spec_documents, the SPEC tree view exposes BOTH back AND forward navigation", () => {
+    // 模拟用户在 spec_documents 阶段点了"返回上一步" → currentSubStage 变成
+    // "spec_tree"，但 backend job.stage 仍然停在 "spec_docs"（因为后端 stage
+    // 是"已经走到哪里"的真相源；spec 5 §10.9 明确只有 replan 才能回退 backend
+    // job.stage）。这正是用户报告的"从规格文档回到上一级之后没有去下一级
+    // 的操作办法"场景。
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail
+        {...makeProps({
+          currentSubStage: "spec_tree",
+          job: {
+            id: "job-test",
+            stage: "spec_docs",
+            status: "reviewing",
+            artifacts: [],
+          } as unknown as BlueprintGenerationJob,
+          specTree: EMPTY_SPEC_TREE,
+          agentCrew: EMPTY_AGENT_CREW,
+        })}
+      />,
+    );
+
+    // 头部的"返回上一步"按钮仍然在
+    expect(markup).toContain('data-testid="autopilot-stage-back-button"');
+    // 头部新增的"继续下一步"前进箭头出现
+    expect(markup).toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).toContain('data-next-target-kind="workbench-stage"');
+    expect(markup).toContain('data-next-workbench-stage="spec_documents"');
+    // 底部 CTA 按钮也存在（双重保险）
+    expect(markup).toContain('data-testid="autopilot-stage-continue-button"');
+    expect(markup).toContain("进入规格文档");
+  });
 });
 
 describe("AutopilotRightRail replan integration contract", () => {

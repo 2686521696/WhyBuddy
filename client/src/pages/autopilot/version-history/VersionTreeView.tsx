@@ -2,6 +2,8 @@ import { useMemo } from "react";
 
 import type { BlueprintFamilyResponse } from "@shared/blueprint/contracts";
 
+import type { AppLocale } from "@/lib/locale";
+
 import type { VersionHistoryJob, VersionTreeLayoutNode } from "./types";
 
 import { TreeNode } from "./TreeNode";
@@ -22,6 +24,7 @@ interface VersionTreeViewProps {
   initialData?: BlueprintFamilyResponse | null;
   familyState?: FamilyDataState;
   staticPreview?: boolean;
+  locale?: AppLocale;
   fetchFamily?: FetchBlueprintFamily;
   activeJobId: string | null;
   onSelectJob?: (jobId: string) => void;
@@ -44,6 +47,7 @@ function renderNode(
   node: VersionTreeLayoutNode,
   activeJobId: string | null,
   onSelectJob: (jobId: string) => void,
+  locale: AppLocale,
   parentJobId?: string,
 ) {
   return (
@@ -53,11 +57,16 @@ function renderNode(
       data-switch-active="true"
       data-connection={parentJobId ? `${parentJobId}->${node.job.id}` : undefined}
     >
-      <TreeNode node={node} activeJobId={activeJobId} onSelectJob={onSelectJob} />
+      <TreeNode
+        node={node}
+        activeJobId={activeJobId}
+        onSelectJob={onSelectJob}
+        locale={locale}
+      />
       {node.children.length ? (
         <ul>
           {node.children.map((child) =>
-            renderNode(child, activeJobId, onSelectJob, node.job.id),
+            renderNode(child, activeJobId, onSelectJob, locale, node.job.id),
           )}
         </ul>
       ) : null}
@@ -71,6 +80,7 @@ export function VersionTreeView({
   initialData = null,
   familyState,
   staticPreview = false,
+  locale = "en-US",
   fetchFamily,
   activeJobId,
   onSelectJob,
@@ -105,12 +115,16 @@ export function VersionTreeView({
 
   if (staticPreview) {
     const layout = deriveVersionTreeLayout(familyJobs);
+    const staticPreviewMessage =
+      locale === "zh-CN"
+        ? "静态预览模式下不支持版本历史。"
+        : "Static preview does not support live version history.";
     return (
       <section data-testid="version-tree-view" data-state="static-preview">
-        <p>Static preview does not support live version history.</p>
+        <p>{staticPreviewMessage}</p>
         {familyJobs.length ? (
           <ul>
-            {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob))}
+            {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob, locale))}
           </ul>
         ) : null}
       </section>
@@ -118,31 +132,39 @@ export function VersionTreeView({
   }
 
   if (resolvedState.status === "error" && !familyData) {
+    const errorMessage =
+      resolvedState.error?.message ??
+      (locale === "zh-CN"
+        ? "加载版本历史失败。"
+        : "Version history could not be loaded.");
     return (
       <section data-testid="version-tree-view" data-state="error">
-        <p>{resolvedState.error?.message ?? "Version history could not be loaded."}</p>
+        <p>{errorMessage}</p>
       </section>
     );
   }
 
   if (!familyData && (resolvedState.loading || resolvedState.status === "loading")) {
+    const loadingMessage =
+      locale === "zh-CN" ? "正在加载版本历史…" : "Loading version history...";
     return (
       <section data-testid="version-tree-view" data-state="loading">
-        <p>Loading version history...</p>
+        <p>{loadingMessage}</p>
       </section>
     );
   }
 
   const layout = deriveVersionTreeLayout(familyJobs);
   const state = familyJobs.length === 0 ? "empty" : familyJobs.length === 1 ? "single" : "ready";
+  const emptyMessage = locale === "zh-CN" ? "暂无版本历史。" : "No version history yet.";
 
   return (
     <section data-testid="version-tree-view" data-state={state}>
       {familyJobs.length === 0 ? (
-        <p>No version history yet.</p>
+        <p>{emptyMessage}</p>
       ) : (
         <ul>
-          {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob))}
+          {layout.roots.map((root) => renderNode(root, activeJobId, handleSelectJob, locale))}
         </ul>
       )}
     </section>

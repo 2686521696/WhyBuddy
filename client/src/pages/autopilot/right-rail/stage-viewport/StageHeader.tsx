@@ -25,7 +25,7 @@
  */
 
 import type { FC } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { AppLocale } from "@/lib/locale";
 import type { WorkbenchStage } from "./stage-config";
@@ -65,6 +65,16 @@ export interface StageHeaderProps {
   previousWorkflowStage?: string;
   /** Stable test/debug marker for which navigation model the button uses. */
   previousTargetKind?: "sub-stage" | "workbench-stage" | "workflow-stage";
+  /** Optional callback for advancing to the next workbench step. */
+  onNavigateNextStage?: () => void;
+  /** Accessible label for the next-step control. */
+  nextStageLabel?: string;
+  /** Stable test/debug marker for the target next sub-stage. */
+  nextSubStage?: string;
+  /** Stable test/debug marker for the target next workbench stage. */
+  nextWorkbenchStage?: string;
+  /** Stable test/debug marker for which navigation model the next button uses. */
+  nextTargetKind?: "stage" | "sub-stage" | "workbench-stage";
 }
 
 /**
@@ -90,10 +100,16 @@ const StageHeader: FC<StageHeaderProps> = ({
   previousWorkbenchStage,
   previousWorkflowStage,
   previousTargetKind,
+  onNavigateNextStage,
+  nextStageLabel = "Continue to next step",
+  nextSubStage,
+  nextWorkbenchStage,
+  nextTargetKind,
 }) => {
   // 生成两位数步骤编号：0 -> "01", 5 -> "06"
   const stepNumber = String(stageIndex + 1).padStart(2, "0");
   const canNavigatePrevious = typeof onNavigatePreviousStage === "function";
+  const canNavigateNext = typeof onNavigateNextStage === "function";
   const eyebrow =
     locale === "zh-CN"
       ? `步骤 ${stepNumber} · ${chineseTitle}`
@@ -119,7 +135,7 @@ const StageHeader: FC<StageHeaderProps> = ({
           </button>
         ) : null}
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {/* 英文步骤标识 */}
           <p
             className={`font-mono text-[10px] uppercase tracking-wider ${
@@ -138,6 +154,22 @@ const StageHeader: FC<StageHeaderProps> = ({
             {chineseTitle}
           </h2>
         </div>
+
+        {canNavigateNext ? (
+          <button
+            type="button"
+            onClick={onNavigateNextStage}
+            aria-label={nextStageLabel}
+            title={nextStageLabel}
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-[7px] border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30"
+            data-testid="autopilot-stage-forward-button"
+            data-next-sub-stage={nextSubStage}
+            data-next-workbench-stage={nextWorkbenchStage}
+            data-next-target-kind={nextTargetKind}
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
     </header>
   );

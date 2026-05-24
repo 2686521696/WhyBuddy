@@ -214,7 +214,9 @@ describe("sub-stage panel chrome strip (Spec 5)", () => {
       );
 
       expect(markup).toContain('data-testid="autopilot-stale-badge"');
-      expect(markup).toContain("Stale: spec_docs changed");
+      // 中文 locale 下 StaleBadge tooltip 文案：「已过期：规格文档 在 ... 变更。原因：...」
+      expect(markup).toContain("已过期：");
+      expect(markup).toContain("规格文档");
       expect(markup).toContain("Preview summary");
     });
   });

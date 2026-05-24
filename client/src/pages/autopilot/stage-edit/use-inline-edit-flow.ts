@@ -13,7 +13,7 @@ export interface InlineEditCoordinatorEvent {
   apply: () => Promise<unknown> | unknown;
   toastPayload?: {
     key: string;
-    level: "info" | "success" | "warn" | "error";
+    level: "info" | "warn" | "error";
     message: string;
   };
 }
@@ -27,7 +27,7 @@ export interface InlineEditToast {
   message: string;
 }
 
-export interface InlineEditFlowDeps<Result extends InlineEditSubmitResult = InlineEditSubmitResult> {
+export interface InlineEditFlowDeps<Result = InlineEditSubmitResult> {
   submitEdit: () => Promise<Result> | Result;
   refreshJob: (result: Result) => Promise<unknown> | unknown;
   coordinator?: InlineEditCoordinator | null;
@@ -36,20 +36,25 @@ export interface InlineEditFlowDeps<Result extends InlineEditSubmitResult = Inli
   };
 }
 
-export interface InlineEditFlowResult<Result extends InlineEditSubmitResult> {
+export interface InlineEditFlowResult<Result> {
   submit: () => Promise<Result>;
 }
 
-function savedMessage(result: InlineEditSubmitResult) {
-  const staleCount = result.staleEdit?.newlyStaleArtifactCount ?? 0;
+function readStaleSummary(result: unknown): InlineEditStaleSummary | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const staleEdit = (result as { staleEdit?: unknown }).staleEdit;
+  if (!staleEdit || typeof staleEdit !== "object") return undefined;
+  return staleEdit as InlineEditStaleSummary;
+}
+
+function savedMessage(result: unknown) {
+  const staleCount = readStaleSummary(result)?.newlyStaleArtifactCount ?? 0;
   return staleCount > 0
     ? `Saved edit. ${staleCount} downstream artifacts marked stale.`
     : "Saved edit.";
 }
 
-export async function runInlineEditFlow<
-  Result extends InlineEditSubmitResult = InlineEditSubmitResult,
->({
+export async function runInlineEditFlow<Result = InlineEditSubmitResult>({
   submitEdit,
   refreshJob,
   coordinator,
@@ -79,9 +84,9 @@ export async function runInlineEditFlow<
   return result;
 }
 
-export function useInlineEditFlow<
-  Result extends InlineEditSubmitResult = InlineEditSubmitResult,
->(deps: InlineEditFlowDeps<Result>): InlineEditFlowResult<Result> {
+export function useInlineEditFlow<Result = InlineEditSubmitResult>(
+  deps: InlineEditFlowDeps<Result>
+): InlineEditFlowResult<Result> {
   const submit = useCallback(() => runInlineEditFlow(deps), [deps]);
 
   return { submit };
