@@ -280,6 +280,7 @@ export interface WorkPackageDisplayItem {
   department: string;
   description: string;
   version: number;
+  assigned_to?: string | null;
   deliverable: string | null;
   deliverable_v2: string | null;
   deliverable_v3: string | null;

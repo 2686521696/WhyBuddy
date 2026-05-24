@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as intake from "./intake.js";
 import * as clarification from "./clarification.js";
 import * as jobs from "./jobs.js";
+import * as replan from "./replan.js";
+import * as family from "./family.js";
 import * as agentCrew from "./agent-crew.js";
 import * as routeset from "./routeset.js";
 import * as specDocuments from "./spec-documents.js";
@@ -10,26 +12,21 @@ import * as downstream from "./downstream.js";
 import * as artifactReplay from "./artifact-replay.js";
 import * as barrel from "./index.js";
 
-/**
- * wt2 任务 3：SDK 8 个子模块的 happy-path 断言。
- *
- * 只做两件事，example-based：
- * 1. 每个子模块都至少暴露 1 个运行时符号（不是纯类型 re-export），防止整段未生效；
- * 2. barrel (`./index.ts`) 的运行时入口覆盖所有子模块的代表性符号。
- *
- * 不测具体业务行为——业务行为验证仍然由 `server/tests/blueprint-routes.test.ts`（E2E）
- * 与 `client/src/lib/blueprint-api.test.ts`（SDK unit）承担（需求 7.4）。
- */
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("blueprint-api subdomain SDK shells", () => {
-  it("intake 暴露 endpoint 常量与 fetch/create 函数", () => {
+  it("intake exposes endpoint constants plus fetch/create/patch helpers", () => {
     expect(typeof intake.BLUEPRINT_SPECS_ENDPOINT).toBe("string");
     expect(typeof intake.BLUEPRINT_INTAKE_ENDPOINT).toBe("string");
     expect(typeof intake.fetchBlueprintSpecsProgress).toBe("function");
     expect(typeof intake.createBlueprintIntake).toBe("function");
+    expect(typeof intake.patchBlueprintIntake).toBe("function");
     expect(typeof intake.fetchBlueprintProjectContext).toBe("function");
   });
 
-  it("clarification 暴露 endpoint 常量与 session / answers 函数", () => {
+  it("clarification exposes session and answers helpers", () => {
     expect(typeof clarification.BLUEPRINT_CLARIFICATIONS_ENDPOINT).toBe(
       "string"
     );
@@ -44,16 +41,157 @@ describe("blueprint-api subdomain SDK shells", () => {
     );
   });
 
-  it("jobs 暴露 endpoint 常量与 latest/event 工具", () => {
+  it("jobs exposes latest/event helpers", () => {
     expect(typeof jobs.BLUEPRINT_JOBS_ENDPOINT).toBe("string");
     expect(typeof jobs.BLUEPRINT_GENERATIONS_ENDPOINT).toBe("string");
     expect(typeof jobs.createBlueprintGenerationJob).toBe("function");
+    expect(typeof jobs.fetchBlueprintGenerationJob).toBe("function");
     expect(typeof jobs.fetchLatestBlueprintGenerationJob).toBe("function");
     expect(typeof jobs.fetchBlueprintJobEvents).toBe("function");
     expect(typeof jobs.fetchBlueprintJobEventStreamUrl("job-1")).toBe("string");
   });
 
-  it("agent-crew 暴露 capability / invocation / evidence 函数", () => {
+  it("jobs fetches a specific generation job by id for history snapshots", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ job: { id: "job 1" } }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await jobs.fetchBlueprintGenerationJob("job 1");
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        job: { id: "job 1" },
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/blueprint/jobs/job%201",
+      undefined
+    );
+  });
+
+  it("replan posts the stage edit strategy to the job replan endpoint", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ mode: "branch", job: { id: "job-2" } }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await replan.postBlueprintReplan("job 1", {
+      fromStage: "route_generation",
+      mode: "branch",
+      reason: "try another route",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { mode: "branch", job: { id: "job-2" } },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/blueprint/jobs/job%201/replan",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          fromStage: "route_generation",
+          mode: "branch",
+          reason: "try another route",
+        }),
+      })
+    );
+  });
+
+  it("replan wraps 4xx API failures in BlueprintReplanError", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "running downstream" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await replan.postBlueprintReplan("job-1", {
+      fromStage: "route_generation",
+      mode: "in_place",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(replan.BlueprintReplanError);
+      expect(result.error.status).toBe(409);
+      expect(result.error.message).toBe("running downstream");
+    }
+  });
+
+  it("barrel re-exports BlueprintReplanError", () => {
+    expect(typeof barrel.BlueprintReplanError).toBe("function");
+  });
+
+  it("family fetches the blueprint job family endpoint", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          rootJobId: "job-1",
+          jobs: [],
+          replanEvents: [],
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await family.getBlueprintFamily("job/1");
+
+    expect(result).toEqual({
+      ok: true,
+      data: { rootJobId: "job-1", jobs: [], replanEvents: [] },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/blueprint/jobs/job%2F1/family",
+      undefined
+    );
+  });
+
+  it("intake patches editable intake fields without normalizing stale edit data", async () => {
+    const payload = {
+      intake: { id: "intake-1", targetText: "new target" },
+      projectContext: { projectId: "project-1" },
+      staleEdit: {
+        fromStage: "spec_documents",
+        newlyStaleArtifactIds: ["artifact-1"],
+        newlyStaleArtifactCount: 1,
+        staleArtifactIdsSnapshot: ["artifact-1"],
+      },
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await intake.patchBlueprintIntake("intake/1", {
+      targetText: "new target",
+      reason: "source changed",
+    });
+
+    expect(result).toEqual({ ok: true, data: payload });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/blueprint/intake/intake%2F1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          targetText: "new target",
+          reason: "source changed",
+        }),
+      })
+    );
+  });
+
+  it("agent-crew exposes capability / invocation / evidence helpers", () => {
     expect(typeof agentCrew.fetchBlueprintJobCapabilities).toBe("function");
     expect(typeof agentCrew.invokeBlueprintCapability).toBe("function");
     expect(typeof agentCrew.fetchBlueprintCapabilityInvocations).toBe(
@@ -63,7 +201,7 @@ describe("blueprint-api subdomain SDK shells", () => {
     expect(typeof agentCrew.normalizeBlueprintAgentCrew).toBe("function");
   });
 
-  it("routeset 暴露 route / spec tree 函数", () => {
+  it("routeset exposes route / spec tree helpers", () => {
     expect(typeof routeset.selectBlueprintRoute).toBe("function");
     expect(typeof routeset.resetBlueprintRouteSelection).toBe("function");
     expect(typeof routeset.updateBlueprintSpecTreeNode).toBe("function");
@@ -71,7 +209,7 @@ describe("blueprint-api subdomain SDK shells", () => {
     expect(typeof routeset.runBlueprintSpecTreeAction).toBe("function");
   });
 
-  it("spec-documents 暴露 review / generate / version 函数", () => {
+  it("spec-documents exposes review / generate / version helpers", () => {
     expect(typeof specDocuments.fetchBlueprintSpecDocuments).toBe("function");
     expect(typeof specDocuments.generateBlueprintSpecDocuments).toBe(
       "function"
@@ -82,7 +220,7 @@ describe("blueprint-api subdomain SDK shells", () => {
     );
   });
 
-  it("downstream 暴露 preview / prompt / landing / run 函数", () => {
+  it("downstream exposes preview / prompt / landing / run helpers", () => {
     expect(typeof downstream.fetchBlueprintEffectPreviews).toBe("function");
     expect(typeof downstream.generateBlueprintEffectPreview).toBe("function");
     expect(typeof downstream.fetchBlueprintPromptPackages).toBe("function");
@@ -94,7 +232,7 @@ describe("blueprint-api subdomain SDK shells", () => {
     expect(typeof downstream.fetchBlueprintEngineeringRuns).toBe("function");
   });
 
-  it("artifact-replay 暴露 ledger / replay / feedback 函数", () => {
+  it("artifact-replay exposes ledger / replay / feedback helpers", () => {
     expect(typeof artifactReplay.fetchBlueprintArtifactLedger).toBe("function");
     expect(typeof artifactReplay.fetchBlueprintArtifactReplays).toBe(
       "function"
@@ -107,10 +245,13 @@ describe("blueprint-api subdomain SDK shells", () => {
     );
   });
 
-  it("barrel 汇聚 8 个子域的代表性符号", () => {
+  it("barrel aggregates representative symbols from all subdomains", () => {
     expect(typeof barrel.createBlueprintIntake).toBe("function");
+    expect(typeof barrel.patchBlueprintIntake).toBe("function");
     expect(typeof barrel.createBlueprintClarificationSession).toBe("function");
     expect(typeof barrel.fetchLatestBlueprintGenerationJob).toBe("function");
+    expect(typeof barrel.postBlueprintReplan).toBe("function");
+    expect(typeof barrel.getBlueprintFamily).toBe("function");
     expect(typeof barrel.invokeBlueprintCapability).toBe("function");
     expect(typeof barrel.selectBlueprintRoute).toBe("function");
     expect(typeof barrel.reviewBlueprintSpecDocument).toBe("function");

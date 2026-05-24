@@ -9,6 +9,7 @@ export {
   BLUEPRINT_GENERATIONS_ENDPOINT,
   createBlueprintGenerationJob,
   createBlueprintGenerationCompatJob,
+  fetchBlueprintGenerationJob,
   fetchBlueprintJobEvents,
   fetchBlueprintJobEventStreamUrl,
   fetchLatestBlueprintGenerationJob,
@@ -17,6 +18,7 @@ export {
 
 export type {
   FetchBlueprintJobEventsResult,
+  FetchBlueprintGenerationJobResult,
   BlueprintCreateGenerationJobSnapshotResponse,
   BlueprintGenerationJobResult,
 } from "../blueprint-api.js";

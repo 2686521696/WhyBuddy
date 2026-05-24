@@ -88,6 +88,11 @@ export interface TaskHubCommandSubmissionResult {
   projectId?: string | null;
 }
 
+type TaskHubCommandProjectContextById = Record<
+  string,
+  { projectId: string | null; projectName?: string | null }
+>;
+
 export interface TaskHubLaunchSession {
   draftText: string;
   commands: StrategicCommand[];
@@ -96,10 +101,7 @@ export interface TaskHubLaunchSession {
   currentDialog: ClarificationDialog | null;
   currentPlan: NLExecutionPlan | null;
   lastSubmission: TaskHubCommandSubmissionResult | null;
-  commandProjectContextById: Record<
-    string,
-    { projectId: string | null; projectName?: string | null }
-  >;
+  commandProjectContextById: TaskHubCommandProjectContextById;
   loading: boolean;
   error: string | null;
 }
@@ -697,6 +699,7 @@ interface NLCommandState {
   dashboard: DashboardResponse | null;
   draftText: string;
   lastSubmission: TaskHubCommandSubmissionResult | null;
+  commandProjectContextById: TaskHubCommandProjectContextById;
 
   // UI state
   loading: boolean;

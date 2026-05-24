@@ -165,4 +165,26 @@ describe("blueprint latest job normalization", () => {
       sourceIds: ["source-latest"],
     });
   });
+
+  it("scopes latest generation job requests by project id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        job: null,
+      })
+    );
+
+    const { fetchLatestBlueprintGenerationJob } = await import(
+      "./blueprint-api"
+    );
+
+    const result = await fetchLatestBlueprintGenerationJob({
+      projectId: "project-new",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/blueprint/jobs/latest?projectId=project-new",
+      undefined
+    );
+    expect(result.ok).toBe(true);
+  });
 });

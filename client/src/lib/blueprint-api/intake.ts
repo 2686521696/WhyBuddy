@@ -8,6 +8,14 @@
  * - 需求 2.1 子域 1、2.3、6.4（SDK 按子域切分 + barrel）
  */
 
+import { fetchJsonSafe, type ApiRequestError } from "../api-client.js";
+import type {
+  BlueprintIntake,
+  BlueprintIntakePatchRequest,
+  BlueprintProjectDomainContext,
+  BlueprintStaleEditResultSummary,
+} from "@shared/blueprint/contracts";
+
 export {
   BLUEPRINT_SPECS_ENDPOINT,
   BLUEPRINT_CAPABILITIES_ENDPOINT,
@@ -37,3 +45,43 @@ export type {
   FetchBlueprintProjectContextResult,
   FetchBlueprintCapabilitiesResult,
 } from "../blueprint-api.js";
+
+export interface PatchBlueprintIntakeResponse {
+  intake: BlueprintIntake;
+  projectContext?: BlueprintProjectDomainContext;
+  staleEdit?: BlueprintStaleEditResultSummary;
+}
+
+export type BlueprintIntakePatchError = ApiRequestError;
+
+export type PatchBlueprintIntakeResult =
+  | { ok: true; data: PatchBlueprintIntakeResponse }
+  | { ok: false; error: BlueprintIntakePatchError };
+
+function jsonHeaders(headers?: HeadersInit): Headers {
+  const merged = new Headers(headers);
+  merged.set("Content-Type", "application/json");
+  return merged;
+}
+
+export async function patchBlueprintIntake(
+  intakeId: string,
+  body: BlueprintIntakePatchRequest,
+  options?: RequestInit
+): Promise<PatchBlueprintIntakeResult> {
+  const result = await fetchJsonSafe<PatchBlueprintIntakeResponse>(
+    `/api/blueprint/intake/${encodeURIComponent(intakeId)}`,
+    {
+      ...options,
+      method: "PATCH",
+      headers: jsonHeaders(options?.headers),
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return { ok: true, data: result.data };
+}

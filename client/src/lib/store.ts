@@ -136,7 +136,8 @@ function getInitialLocale(): AppLocale {
   const stored = readStorageValue(LOCALE_STORAGE_KEY);
   if (isLocale(stored)) return stored;
 
-  if (isBlueprintChineseRoute(window.location.pathname)) return 'zh-CN';
+  const pathname = window.location?.pathname ?? '/';
+  if (isBlueprintChineseRoute(pathname)) return 'zh-CN';
 
   return DEFAULT_LOCALE;
 }

@@ -443,6 +443,7 @@ export interface BlueprintEngineeringLandingPlan {
   jobId: string;
   treeId: string;
   promptPackageId?: string;
+  promptPackageIds: string[];
   sourcePromptPackageIds: string[];
   platform: BlueprintPromptTargetPlatform;
   title: string;
@@ -731,6 +732,7 @@ export type BlueprintLatestGenerationJobSnapshot = Omit<
   BlueprintLatestGenerationJobResponse,
   | "effectPreviews"
   | "promptPackages"
+  | "landingPlans"
   | "engineeringLandingPlans"
   | "engineeringRuns"
   | "agentCrew"
@@ -758,6 +760,12 @@ export type BlueprintLatestGenerationJobSnapshot = Omit<
 export type FetchLatestBlueprintJobResult =
   | { ok: true; data: BlueprintLatestGenerationJobSnapshot }
   | { ok: false; error: ApiRequestError };
+
+export type FetchBlueprintGenerationJobResult = FetchLatestBlueprintJobResult;
+
+export interface FetchLatestBlueprintGenerationJobOptions {
+  projectId?: string;
+}
 
 export type FetchBlueprintPromptPackagesResult =
   | { ok: true; data: BlueprintPromptPackagesResponse }
@@ -2876,6 +2884,7 @@ export function normalizeBlueprintEngineeringLandingPlan(
     jobId: asString(record.jobId ?? record.job_id, fallbackJobId),
     treeId: asString(record.treeId ?? record.tree_id),
     promptPackageId: promptPackageId || undefined,
+    promptPackageIds: sourcePromptPackageIds,
     sourcePromptPackageIds,
     platform,
     title,
@@ -4535,9 +4544,38 @@ export function fetchBlueprintJobEventStreamUrl(jobId: string): string {
   return `${BLUEPRINT_JOBS_ENDPOINT}/${encodeURIComponent(jobId)}/events/stream`;
 }
 
-export async function fetchLatestBlueprintGenerationJob(): Promise<FetchLatestBlueprintJobResult> {
+function latestBlueprintGenerationJobQueryString(
+  options?: FetchLatestBlueprintGenerationJobOptions
+): string {
+  const params = new URLSearchParams();
+  const projectId = options?.projectId?.trim();
+  if (projectId) params.set("projectId", projectId);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function fetchLatestBlueprintGenerationJob(
+  options?: FetchLatestBlueprintGenerationJobOptions
+): Promise<FetchLatestBlueprintJobResult> {
   const result = await fetchJsonSafe<BlueprintLatestGenerationJobResponse>(
-    `${BLUEPRINT_JOBS_ENDPOINT}/latest`
+    `${BLUEPRINT_JOBS_ENDPOINT}/latest${latestBlueprintGenerationJobQueryString(options)}`
+  );
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return {
+    ok: true,
+    data: normalizeBlueprintLatestGenerationJobResponse(result.data),
+  };
+}
+
+export async function fetchBlueprintGenerationJob(
+  jobId: string
+): Promise<FetchBlueprintGenerationJobResult> {
+  const result = await fetchJsonSafe<BlueprintLatestGenerationJobResponse>(
+    `${BLUEPRINT_JOBS_ENDPOINT}/${encodeURIComponent(jobId)}`
   );
 
   if (!result.ok) {
