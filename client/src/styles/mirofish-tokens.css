@@ -1,0 +1,31 @@
+/* MiroFish Design Token Set
+ * Single source of truth for MiroFish visual alignment.
+ * All tokens use the --mf- prefix namespace to avoid collision with existing OKLCH design tokens.
+ * Font tokens alias to existing project CSS variables — no @font-face, no woff2, no deferred font loading.
+ */
+:root {
+  /* Colors */
+  --mf-color-bg: #FFFFFF;
+  --mf-color-fg: #000000;
+  --mf-color-accent: #FF4500;
+  --mf-color-border: #E5E5E5;
+
+  /* Typography — alias to existing project CSS variables */
+  --mf-font-title: var(--font-display);
+  --mf-font-mono: var(--font-mono);
+  --mf-font-body: "Noto Sans SC", var(--font-body);
+  --mf-title-size: 4.5rem;
+  --mf-title-weight: 500;
+  --mf-title-spacing: -2px;
+  --mf-mono-weight: 700;
+
+  /* Spacing */
+  --mf-gap-section: 60px;
+  --mf-gap-element: 16px;
+  --mf-max-width: 1400px;
+
+  /* Border */
+  --mf-border: 1px solid #E5E5E5;
+  --mf-radius: 2px;
+  --mf-shadow: none;
+}

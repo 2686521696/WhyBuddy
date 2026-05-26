@@ -1,0 +1,66 @@
+/* MiroFish Theme Layer
+ * Scoped CSS overrides activated only within [data-theme="mirofish"] boundaries.
+ * Every selector MUST include [data-theme="mirofish"] — no bare selectors permitted.
+ * Targets named surface classes and explicit data-mf-* attribute selectors only.
+ * NO wildcard selectors like [class*="rounded-"] or [class*="shadow-"].
+ */
+@layer mirofish {
+  /* === Base scope: typography and color defaults === */
+  [data-theme="mirofish"] {
+    font-family: var(--mf-font-body);
+    color: var(--mf-color-fg);
+    background-color: var(--mf-color-bg);
+  }
+
+  /* === Typography overrides for headings === */
+  [data-theme="mirofish"] h1,
+  [data-theme="mirofish"] h2,
+  [data-theme="mirofish"] h3,
+  [data-theme="mirofish"] h4 {
+    font-family: var(--mf-font-title);
+    font-weight: var(--mf-title-weight);
+    letter-spacing: var(--mf-title-spacing);
+  }
+
+  /* === Named surface classes === */
+  [data-theme="mirofish"] .glass-panel,
+  [data-theme="mirofish"] .glass-panel-strong,
+  [data-theme="mirofish"] .studio-surface,
+  [data-theme="mirofish"] .workspace-panel {
+    background: var(--mf-color-bg);
+    border: var(--mf-border);
+    border-radius: var(--mf-radius);
+    box-shadow: var(--mf-shadow);
+    backdrop-filter: none;
+  }
+
+  /* === Explicit data-mf-* attribute targets === */
+  [data-theme="mirofish"] [data-mf-surface] {
+    background: var(--mf-color-bg);
+    border: var(--mf-border);
+    border-radius: var(--mf-radius);
+    box-shadow: var(--mf-shadow);
+    backdrop-filter: none;
+  }
+
+  [data-theme="mirofish"] [data-mf-card] {
+    border: var(--mf-border);
+    border-radius: var(--mf-radius);
+    box-shadow: var(--mf-shadow);
+  }
+
+  [data-theme="mirofish"] [data-mf-button="primary"] {
+    background: var(--mf-color-fg);
+    color: var(--mf-color-bg);
+    border-radius: 0;
+    box-shadow: none;
+    font-family: var(--mf-font-mono);
+    font-weight: var(--mf-mono-weight);
+    width: 100%;
+    transition: transform 0.15s ease;
+  }
+
+  [data-theme="mirofish"] [data-mf-button="primary"]:hover {
+    transform: translateY(-2px);
+  }
+}
