@@ -32,7 +32,7 @@ export interface StageProgressEmitter {
   /** 发射 acting 事件（Agent 正在调用工具）。 */
   acting(toolId: string): void;
   /** 发射 observing 事件（Agent 观察到结果）。 */
-  observing(success: boolean, summary: string): void;
+  observing(success: boolean, summary: string, extraPayload?: Record<string, unknown>): void;
   /** 发射 completed 事件（阶段完成）。 */
   completed(reason?: string): void;
   /** 发射 error 事件（阶段失败）。 */
@@ -101,10 +101,11 @@ export function createStageProgressEmitter(
       emit("role.agent.acting", { actionToolId: toolId });
     },
 
-    observing(success: boolean, summary: string) {
+    observing(success: boolean, summary: string, extraPayload?: Record<string, unknown>) {
       emit("role.agent.observing", {
         observationSuccess: success,
         observationSummary: summary.slice(0, 2000),
+        ...extraPayload,
       });
     },
 

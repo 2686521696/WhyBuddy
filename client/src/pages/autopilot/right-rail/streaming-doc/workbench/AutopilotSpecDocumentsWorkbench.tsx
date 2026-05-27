@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { FC } from "react";
 
 import { exportSpecDocumentsToDownload } from "@/lib/blueprint-api/exportSpecDocuments";
+import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
 import type { AppLocale } from "@/lib/locale";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 import type {
@@ -148,6 +149,12 @@ export const AutopilotSpecDocumentsWorkbench: FC<
   } = props;
   // R2.4 / R7.3：`generating` 缺省时归一为 `null`，与现有 specDocsGenerating 一致。
   const generating = props.generating ?? null;
+  const realtimeSpecDocsProgress = useBlueprintRealtimeStore(
+    (s) => s.specDocsProgress
+  );
+  const realtimeSubscribedJobId = useBlueprintRealtimeStore(
+    (s) => s.subscribedJobId
+  );
 
   // -------------------------------------------------------------------------
   // 流式 reducer：entries → streaming chunks
@@ -351,8 +358,25 @@ export const AutopilotSpecDocumentsWorkbench: FC<
 
   /** 由 `deriveDocStats` 派生的统计聚合，透传给 `WorkbenchStatusBar`。 */
   const docStats = useMemo(
-    () => deriveDocStats({ specDocuments, specTree }),
-    [specDocuments, specTree]
+    () =>
+      deriveDocStats({
+        specDocuments,
+        specTree,
+        specDocsProgress:
+          generating === "all" &&
+          jobId !== undefined &&
+          realtimeSubscribedJobId === jobId
+            ? realtimeSpecDocsProgress
+            : null,
+      }),
+    [
+      generating,
+      jobId,
+      realtimeSpecDocsProgress,
+      realtimeSubscribedJobId,
+      specDocuments,
+      specTree,
+    ]
   );
 
   // -------------------------------------------------------------------------

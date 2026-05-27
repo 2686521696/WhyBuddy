@@ -1997,7 +1997,7 @@ export function BlueprintProgressPanel({
     try {
       const [progressResult, latestResult] = await Promise.all([
         fetchBlueprintSpecsProgress(),
-        fetchLatestBlueprintGenerationJob(),
+        fetchLatestBlueprintGenerationJob({ projectId: projectId ?? undefined }),
       ]);
 
       if (progressResult.ok) {
@@ -2039,7 +2039,7 @@ export function BlueprintProgressPanel({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     if (!autoLoad) return;
@@ -2051,7 +2051,7 @@ export function BlueprintProgressPanel({
 
     Promise.all([
       fetchBlueprintSpecsProgress(),
-      fetchLatestBlueprintGenerationJob(),
+      fetchLatestBlueprintGenerationJob({ projectId: projectId ?? undefined }),
     ])
       .then(([progressResult, latestResult]) => {
         if (!active) return;
@@ -2085,7 +2085,7 @@ export function BlueprintProgressPanel({
     return () => {
       active = false;
     };
-  }, [autoLoad]);
+  }, [autoLoad, projectId]);
 
   useEffect(() => {
     if (autoLoad) return;

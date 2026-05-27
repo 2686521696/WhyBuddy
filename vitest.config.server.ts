@@ -33,6 +33,8 @@ export default defineConfig({
       "client/src/runtime/demo-data/__tests__/**/*.test.ts",
       "client/src/components/__tests__/**/*.test.ts",
       "services/lobster-executor/src/__tests__/**/*.test.ts",
+      "client/src/pages/autopilot/**/streaming-doc/__tests__/*.test.ts",
+      "client/src/pages/autopilot/**/spec-docs-progress/__tests__/*.property.test.ts",
     ],
   },
 });

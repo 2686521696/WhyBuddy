@@ -39,9 +39,36 @@ export interface DocStats {
 }
 
 /** `deriveDocStats` 的输入参数。 */
+export interface SpecDocsProgressStatsOverlay {
+  batchStatus: "idle" | "running" | "assembling" | "finished";
+  totalCount: number;
+  completedCount: number;
+  assembledCount: number;
+  processedCount: number;
+}
+
 export interface DeriveDocStatsInput {
   specDocuments: readonly BlueprintSpecDocument[] | undefined;
   specTree: BlueprintSpecTree | null | undefined;
+  specDocsProgress?: SpecDocsProgressStatsOverlay | null | undefined;
+}
+
+function isSpecDocsProgressOverlayActive(
+  progress: SpecDocsProgressStatsOverlay | null | undefined
+): progress is SpecDocsProgressStatsOverlay {
+  return (
+    progress !== null &&
+    progress !== undefined &&
+    progress.totalCount > 0 &&
+    (progress.batchStatus === "running" ||
+      progress.batchStatus === "assembling" ||
+      progress.batchStatus === "finished")
+  );
+}
+
+function clampCount(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(Math.floor(value), min), max);
 }
 
 /**
@@ -83,10 +110,39 @@ export function deriveDocStats(input: DeriveDocStatsInput): DocStats {
     }
   }
 
-  const totalDocs = docs.length;
+  const progress = input.specDocsProgress;
+  const progressNodeCount = isSpecDocsProgressOverlayActive(progress)
+    ? progress.totalCount
+    : 0;
+  const targetNodeCount = nodeCount > 0 ? nodeCount : progressNodeCount;
+  const liveGeneratedNodeCount = isSpecDocsProgressOverlayActive(progress)
+    ? clampCount(
+        Math.max(progress.completedCount, progress.assembledCount),
+        0,
+        targetNodeCount
+      )
+    : 0;
+
+  if (liveGeneratedNodeCount > 0) {
+    byType.requirements.generated = Math.max(
+      byType.requirements.generated,
+      liveGeneratedNodeCount
+    );
+    byType.design.generated = Math.max(
+      byType.design.generated,
+      liveGeneratedNodeCount
+    );
+    byType.tasks.generated = Math.max(
+      byType.tasks.generated,
+      liveGeneratedNodeCount
+    );
+  }
+
+  const totalDocs =
+    byType.requirements.generated + byType.design.generated + byType.tasks.generated;
   const totalTasks = byType.tasks.generated;
-  const targetDocs = nodeCount > 0 ? nodeCount * 3 : totalDocs;
-  const targetTasks = nodeCount > 0 ? nodeCount : totalTasks;
+  const targetDocs = targetNodeCount > 0 ? targetNodeCount * 3 : totalDocs;
+  const targetTasks = targetNodeCount > 0 ? targetNodeCount : totalTasks;
 
   // completionRate：分母 = 三类 generated 之和
   const totalGenerated =

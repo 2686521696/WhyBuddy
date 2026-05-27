@@ -38,6 +38,8 @@ import { fetchRepoContext } from "./blueprint/repo-context-fetcher.js";
 // `getJob` / `listSpecDocuments` deps，永不引入 store 副作用。
 import { buildSpecExportArchive } from "./blueprint/spec-documents/export/spec-documents-export-archive.js";
 import { createStageProgressEmitter } from "./blueprint/stage-progress-emitter.js";
+import { createSpecDocsProgressEmitter } from "./blueprint/spec-docs-progress-emitter.js";
+import { assembleSpecDocumentsFromLlmCache } from "./blueprint/assemble-spec-documents-from-llm-cache.js";
 import {
   createFileBlueprintJobStore,
   type BlueprintJobStore,
@@ -9782,6 +9784,58 @@ async function generateSpecDocuments(
   const specDocsLlmGeneration = ctx?.specDocsLlmGeneration;
   const targetNodes = specTree.nodes.filter(node => targetNodeIds.has(node.id));
 
+  // ─── Spec Docs Progress Feedback ────────────────────────────────────
+  // Determine if this is a batch request (全部生成) vs single-node request.
+  // Only batch requests emit progress events; single-node requests preserve
+  // existing behavior with no progress overhead (Req 5.1).
+  const isBatchRequest = request.nodeId == null;
+  const progressEmitter = isBatchRequest && ctx?.eventBus
+    ? createSpecDocsProgressEmitter(ctx.eventBus, job.id)
+    : undefined;
+
+  // Zero-node early exit (Req 1.6): emit batch_finished with zeros and return empty.
+  if (isBatchRequest && targetNodes.length === 0) {
+    progressEmitter?.emitBatchFinished(0, 0, 0);
+    const latestJobForEvents = options.store.get(job.id) ?? job;
+    const updatedJob: BlueprintGenerationJob = {
+      ...job,
+      status: "reviewing",
+      stage: "spec_docs",
+      updatedAt: createdAt,
+      artifacts: job.artifacts,
+      events: latestJobForEvents.events.concat(
+        createGenerationEvent({
+          jobId: job.id,
+          stage: "spec_docs",
+          status: "completed",
+          type: BlueprintEventName.JobCompleted,
+          message: "SPEC documents generated from the selected SPEC tree.",
+          occurredAt: createdAt,
+          payload: {
+            specTreeId: specTree.id,
+            nodeCount: 0,
+            documentCount: 0,
+          },
+        })
+      ),
+    };
+    options.store.save(updatedJob);
+    return {
+      job: updatedJob,
+      specTree,
+      documents: extractSpecDocuments(updatedJob),
+    };
+  }
+
+  // ─── Emit batch_init BEFORE any generation (including LLM factory) ──
+  // This ensures the frontend sees "batch started" immediately when the user
+  // clicks "全部生成", not after the LLM pre-generation completes.
+  // The batchStartTime also covers the LLM factory duration in elapsedMs.
+  if (progressEmitter) {
+    progressEmitter.emitBatchInit(targetNodes.length, targetNodes.map(n => n.id));
+  }
+  const batchStartTime = progressEmitter ? Date.now() : 0;
+
   let llmNodeOutputById: Map<string, SpecDocsLlmNodeOutput> | undefined;
   if (
     specDocsLlmEnabled &&
@@ -9800,10 +9854,24 @@ async function generateSpecDocuments(
         : undefined) ??
       routeSet?.routes[0];
     if (primaryRouteForBatch !== undefined) {
+      // 关键：把进度发射器作为回调传入 LLM 模块。LLM 模块在每个节点的
+      // 真实 LLM 调用前后触发 started / completed / failed，让前端进度面板
+      // 反映**真实**的 per-node 执行时序（LLM 数秒级），而不是事后拼装时间。
+      const llmProgressBridge = progressEmitter
+        ? {
+            started: (nodeId: string, title: string, position: number) =>
+              progressEmitter.emitNodeStarted(nodeId, title, position),
+            completed: (nodeId: string, completedCount: number) =>
+              progressEmitter.emitNodeCompleted(nodeId, completedCount),
+            failed: (nodeId: string, errorSummary: string, processedCount: number) =>
+              progressEmitter.emitNodeFailed(nodeId, errorSummary, processedCount),
+          }
+        : undefined;
       const batchResult = await specDocsLlmGeneration.generate({
         jobId: job.id,
         nodes: targetNodes,
         primaryRoute: primaryRouteForBatch,
+        onNodeProgress: llmProgressBridge,
       });
       llmNodeOutputById = new Map<string, SpecDocsLlmNodeOutput>();
       for (const perNode of batchResult.perNode) {
@@ -9825,9 +9893,194 @@ async function generateSpecDocuments(
     }
   }
 
-  const documents = await Promise.all(
-    targetNodes
-      .flatMap(node => {
+  // ─── Cancellable timeout helper for per-node 120s timeout (Req 6.5) ──
+  // Returns a promise + cancel function. The timer is cleaned up on success
+  // to avoid leaving dangling timers in the event loop.
+  const TIMEOUT_SENTINEL: unique symbol = Symbol("timeout") as any;
+  function createCancellableTimeout(ms: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const promise = new Promise<typeof TIMEOUT_SENTINEL>(resolve => {
+      timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), ms);
+    });
+    const cancel = () => { if (timer !== undefined) clearTimeout(timer); };
+    return { promise, cancel };
+  }
+
+  // ─── Batch path vs single-node path ─────────────────────────────────
+  // When progressEmitter is defined (batch request with eventBus), use
+  // sequential per-node loop with progress events and 120s timeout.
+  // Otherwise, preserve existing Promise.all behavior (Req 5.1, 5.3).
+  const documents: BlueprintSpecDocument[] = [];
+
+  if (progressEmitter) {
+    let completedCount = 0;
+    let failedCount = 0;
+    // Phase 2 assembly counter — distinct from Phase 1's completedCount.
+    // A node increments assembledCount when it successfully produces documents
+    // (including template-fallback nodes that produce template docs).
+    let assembledCount = 0;
+
+    // `batchCoveredNodes`: this node appeared in the Phase 1 batch result (including
+    // template-fallback nodes). It does NOT imply LLM markdown generation succeeded.
+    // The fast-path predicate `isFastPath` is the correct signal for "LLM cache hit".
+    const batchCoveredNodes = new Set<string>(
+      llmNodeOutputById ? Array.from(llmNodeOutputById.keys()) : [],
+    );
+
+    for (let i = 0; i < targetNodes.length; i++) {
+      const node = targetNodes[i];
+      // `batchCovered`: this node appeared in the Phase 1 batch result (including
+      // template-fallback nodes). It does NOT imply LLM markdown generation succeeded.
+      // The fast-path predicate `isFastPath` is the correct signal for "LLM cache hit".
+      const batchCovered = batchCoveredNodes.has(node.id);
+      // 仅对 LLM 模块未触达的节点补发 started——这里耗时是真实的模板组装时间，
+      // 但因为 LLM 已经把大部分节点处理完毕、batchStartTime 起算点更靠前，
+      // 用户感知到的进度节奏由 LLM 调用的真实秒级耗时驱动。
+      if (!batchCovered) {
+        progressEmitter.emitNodeStarted(node.id, node.title ?? node.id, i + 1);
+      }
+
+      const previousRoleFindings = collectReusableRoleFindings(job, {
+        stages: ["route_generation", "spec_tree", "runtime_capability"],
+        routeId: node.routeId ?? specTree.selectedRouteId,
+        nodeId: node.id,
+        limit: 8,
+      });
+      const primaryRoute = node.routeId
+        ? routeById.get(node.routeId)
+        : specTree.selectedRouteId
+          ? routeById.get(specTree.selectedRouteId)
+          : undefined;
+      const llmNodeOutput = llmNodeOutputById?.get(node.id);
+
+      // ── Fast path classification (Decision 2) ──
+      // A node qualifies for the fast path when its batch result has
+      // generationSource === "llm" AND all target doc types have non-empty markdown.
+      const isFastPath =
+        llmNodeOutput?.generationSource === "llm" &&
+        targetTypes.every(type => {
+          const md = pickSpecDocsLlmMarkdownForType(llmNodeOutput, type);
+          return typeof md === "string" && md.length > 0;
+        });
+
+      try {
+        let nodeDocs: BlueprintSpecDocument[];
+
+        if (isFastPath) {
+          // FAST PATH: synchronous assembly from LLM cache — no Promise.race overhead
+          nodeDocs = assembleSpecDocumentsFromLlmCache({
+            job,
+            specTree,
+            node,
+            llmOutput: llmNodeOutput!,
+            primaryRoute,
+            createdAt,
+            previousRoleFindings,
+            clarificationSession,
+            domainContext,
+            targetTypes,
+          });
+        } else {
+          // SLOW PATH: retain existing Promise.race + 120s timeout
+          const timeout = createCancellableTimeout(120_000);
+          try {
+            const nodeDocsResult = await Promise.race([
+              Promise.all(
+                targetTypes.map(type =>
+                  buildSpecDocument(ctx, {
+                    job,
+                    specTree,
+                    node,
+                    type,
+                    createdAt,
+                    previousRoleFindings,
+                    clarificationSession,
+                    domainContext,
+                    primaryRoute,
+                    llmNodeOutput,
+                  })
+                )
+              ),
+              timeout.promise,
+            ]);
+
+            if (nodeDocsResult === TIMEOUT_SENTINEL) {
+              throw new Error("节点生成超时 (120s)");
+            }
+
+            nodeDocs = nodeDocsResult as BlueprintSpecDocument[];
+          } finally {
+            timeout.cancel();
+          }
+        }
+
+        documents.push(...nodeDocs);
+        completedCount++;
+        assembledCount++;
+
+        // Phase 1 progress guard (preserved from original) — only emit for
+        // nodes NOT already covered by the LLM batch module's own events.
+        if (!batchCovered) {
+          progressEmitter.emitNodeCompleted(node.id, completedCount);
+        }
+
+        // Phase 2 assembly event — ALWAYS emit (no batchCovered guard).
+        // This is the commit-stage signal the frontend reducer needs to
+        // transition from "assembling" to "assembled" per node.
+        progressEmitter.emitNodeAssembled({
+          nodeId: node.id,
+          position: i + 1,
+          assembledCount,
+          totalCount: targetNodes.length,
+          documentIds: nodeDocs.map(d => d.id),
+        });
+      } catch (err) {
+        failedCount++;
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        // Phase 2 failure: emit unconditionally. Unlike Phase 1 events (node_started/
+        // node_completed) which use the batchCovered guard to avoid double-counting,
+        // Phase 2 node_failed is a DIFFERENT event boundary — it signals assembly
+        // failure, not LLM generation failure. Every node MUST get either
+        // node_assembled or node_failed to satisfy the invariant.
+        progressEmitter.emitNodeFailed(node.id, errorMsg, assembledCount + failedCount);
+        // DO NOT emit node_assembled for failed nodes
+
+        // Generate fallback error documents for the failed node to maintain
+        // the result matrix (Req 8.1: documents array preserves node × type
+        // cartesian product). Without this, the HTTP response would silently
+        // omit failed nodes, breaking the expected result shape.
+        for (const type of targetTypes) {
+          documents.push({
+            id: createId("blueprint-spec-document"),
+            jobId: job.id,
+            treeId: specTree.id,
+            nodeId: node.id,
+            type,
+            title: `${type} (generation failed)`,
+            summary: `Generation failed: ${errorMsg.slice(0, 200)}`,
+            content: `<!-- Generation failed: ${errorMsg.slice(0, 400)} -->\n\n_This document could not be generated. Error: ${errorMsg.slice(0, 200)}_`,
+            createdAt,
+          } as BlueprintSpecDocument);
+        }
+        // Continue to next node (Req 6.1)
+      }
+    }
+
+    // Invariant: every node must have emitted either node_assembled or node_failed
+    if (assembledCount + failedCount !== targetNodes.length) {
+      throw new Error(
+        `[spec_docs] Phase 2 invariant violation: assembledCount(${assembledCount}) + failedCount(${failedCount}) !== totalCount(${targetNodes.length}). ` +
+        `Missing nodes: ${targetNodes.filter((_, idx) => idx >= assembledCount + failedCount).map(n => n.id).join(", ")}`
+      );
+    }
+
+    // Emit batch_finished (Req 1.5) — elapsedMs covers LLM factory + per-node assembly
+    const elapsedMs = Date.now() - batchStartTime;
+    progressEmitter.emitBatchFinished(assembledCount, failedCount, elapsedMs);
+  } else {
+    // Single-node path OR no eventBus: existing Promise.all behavior unchanged (Req 5.1)
+    const allDocs = await Promise.all(
+      targetNodes.flatMap(node => {
         const previousRoleFindings = collectReusableRoleFindings(job, {
           stages: ["route_generation", "spec_tree", "runtime_capability"],
           routeId: node.routeId ?? specTree.selectedRouteId,
@@ -9855,7 +10108,9 @@ async function generateSpecDocuments(
           })
         );
       })
-  );
+    );
+    documents.push(...allDocs);
+  }
   const generatedDocumentKeys = new Set(
     documents.map(document => `${document.nodeId}:${document.type}`)
   );
@@ -9890,13 +10145,14 @@ async function generateSpecDocuments(
       return !generatedDocumentKeys.has(`${documentNodeId}:${documentType}`);
     }
   );
+  const latestJobForEvents = options.store.get(job.id) ?? job;
   const updatedJob: BlueprintGenerationJob = {
     ...job,
     status: "reviewing",
     stage: "spec_docs",
     updatedAt: createdAt,
     artifacts: preservedArtifacts.concat(documentArtifacts),
-    events: job.events.concat(
+    events: latestJobForEvents.events.concat(
       createGenerationEvent({
         jobId: job.id,
         stage: "spec_docs",
@@ -14011,7 +14267,20 @@ async function buildSpecDocument(
       ? { reusableRoleFindings }
       : undefined;
 
-  const serviceResult = ctx?.specDocumentsLlmService
+  // ── Decision 3: batch-template-fallback short-circuit ────────────────
+  // If the batch already produced a template-source result for this node,
+  // do NOT re-attempt the legacy per-document LLM service. Skip directly
+  // to the template path. This closes the theoretical second-LLM-dispatch
+  // path under the legacy BLUEPRINT_SPEC_DOCUMENTS_LLM_ENABLED env flag.
+  // Rationale: the new pipeline already has a 5-key pool with retries in
+  // Phase 1 (spec-docs-llm-generation.ts:741-745); a 6th legacy retry is
+  // unlikely to succeed and only adds latency + cost. The resulting document
+  // carries generationSource: "template", honoring the batch generator's verdict.
+  const batchTemplateOnly =
+    input.llmNodeOutput !== undefined &&
+    input.llmNodeOutput.generationSource !== "llm";
+
+  const serviceResult = ctx?.specDocumentsLlmService && !batchTemplateOnly
     ? await ctx.specDocumentsLlmService({
         jobId: input.job.id,
         job: input.job,

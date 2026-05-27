@@ -165,6 +165,91 @@ export interface BlueprintRelayedEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Spec Docs Progress Types (spec-docs-generation-progress-feedback Task 4.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-node generation status within a batch spec document generation.
+ * "assembled" indicates Phase 2 commit (documents pushed to array) — distinct from
+ * Phase 1 "completed" (LLM generation done).
+ */
+export type SpecDocsNodeStatus = "pending" | "processing" | "completed" | "failed" | "assembled";
+
+/**
+ * Individual node entry in the spec docs progress slice.
+ */
+export interface SpecDocsNodeEntry {
+  nodeId: string;
+  title: string;
+  position: number;
+  status: SpecDocsNodeStatus;
+  errorSummary?: string;
+}
+
+/**
+ * Summary of a completed batch generation.
+ */
+export interface SpecDocsBatchSummary {
+  completedCount: number;
+  failedCount: number;
+  elapsedMs: number;
+}
+
+/**
+ * State shape for the spec docs progress slice.
+ */
+export interface SpecDocsProgressState {
+  batchStatus: "idle" | "running" | "assembling" | "finished";
+  totalCount: number;
+  completedCount: number;
+  assembledCount: number;
+  processedCount: number;
+  nodeOrder: string[];
+  nodes: Record<string, SpecDocsNodeEntry>;
+  summary: SpecDocsBatchSummary | null;
+  dismissed: boolean;
+}
+
+/**
+ * Initial state for the spec docs progress slice.
+ */
+export const INITIAL_SPEC_DOCS_PROGRESS: SpecDocsProgressState = {
+  batchStatus: "idle",
+  totalCount: 0,
+  completedCount: 0,
+  assembledCount: 0,
+  processedCount: 0,
+  nodeOrder: [],
+  nodes: {},
+  summary: null,
+  dismissed: false,
+};
+
+// ---------------------------------------------------------------------------
+// Spec Docs Progress State Machine
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid state transitions for node status.
+ * Terminal states (assembled, failed) accept no further transitions.
+ * "completed" can transition to "assembled" (Phase 2 commit).
+ */
+const VALID_TRANSITIONS: Record<SpecDocsNodeStatus, SpecDocsNodeStatus[]> = {
+  pending: ["processing"],
+  processing: ["completed", "failed"],
+  completed: ["assembled"],
+  assembled: [],
+  failed: [],
+};
+
+/**
+ * Check if a transition from one status to another is valid.
+ */
+function isValidTransition(from: SpecDocsNodeStatus, to: SpecDocsNodeStatus): boolean {
+  return VALID_TRANSITIONS[from].includes(to);
+}
+
+// ---------------------------------------------------------------------------
 // 有界队列常量
 // ---------------------------------------------------------------------------
 
@@ -260,6 +345,16 @@ export interface BlueprintRealtimeState {
    *   （spec Task 8.5）。
    */
   agentReasoning: AgentReasoningSliceState;
+
+  /**
+   * `spec-docs-generation-progress-feedback` spec Task 4.1：
+   * Spec docs batch generation progress slice.
+   *
+   * Tracks per-node progress during batch "全部生成" operations.
+   * Driven by `spec_docs` stage events with `progressAction` field.
+   * Independent of other slices (rolePhases, agentReasoning, etc.).
+   */
+  specDocsProgress: SpecDocsProgressState;
 }
 
 /**
@@ -274,6 +369,14 @@ export interface BlueprintRealtimeActions {
   dispatchEvent(event: BlueprintRelayedEvent): void;
   /** 重置状态 */
   reset(): void;
+  /** Dismiss the spec docs progress panel (Req 3.7) */
+  dismissSpecDocsProgress(): void;
+  /**
+   * Force-complete the spec docs progress panel as a fallback when
+   * Socket.IO events were dropped or coalesced. Called from the HTTP
+   * response handler after spec docs generation succeeds.
+   */
+  completeSpecDocsProgress(elapsedMs: number): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +820,238 @@ export function __setSocket(s: Socket | null): void {
 }
 
 // ---------------------------------------------------------------------------
+// Spec Docs Progress Event Handler (Task 4.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Handles spec_docs progress events dispatched through the realtime store.
+ * Detects events by checking `payload.stageId === "spec_docs"` and
+ * `payload.progressAction` being present.
+ *
+ * Returns partial state updates or null if the event is not a spec_docs progress event.
+ */
+function handleSpecDocsProgressEvent(
+  event: BlueprintRelayedEvent,
+  state: BlueprintRealtimeState
+): Partial<BlueprintRealtimeState> | null {
+  const payload = event.payload as Record<string, unknown> | undefined;
+  if (
+    event.type === "job.completed" &&
+    (typeof payload?.documentCount === "number" || typeof payload?.specTreeId === "string") &&
+    (state.specDocsProgress.batchStatus === "running" || state.specDocsProgress.batchStatus === "assembling")
+  ) {
+    const currentState = state.specDocsProgress;
+    const nodeCount = Number(payload.nodeCount) || currentState.totalCount;
+    const completedCount = currentState.totalCount || nodeCount;
+    return {
+      specDocsProgress: {
+        ...currentState,
+        batchStatus: "finished",
+        completedCount,
+        assembledCount: completedCount,
+        processedCount: completedCount,
+        summary: {
+          completedCount,
+          failedCount: 0,
+          elapsedMs: 0,
+        },
+      },
+    };
+  }
+
+  if (!payload || payload.stageId !== "spec_docs" || !payload.progressAction) {
+    return null;
+  }
+
+  const action = payload.progressAction as string;
+
+  switch (action) {
+    case "batch_init": {
+      const totalCount = Math.min(Number(payload.totalCount) || 0, 200);
+      const rawNodeIds = Array.isArray(payload.nodeIds)
+        ? (payload.nodeIds as string[])
+        : [];
+      // Cap tracked nodes to 200 to match totalCount cap (design: "only track first 200 node IDs")
+      const nodeIds = rawNodeIds.slice(0, 200);
+      const nodes: Record<string, SpecDocsNodeEntry> = {};
+      for (const id of nodeIds) {
+        nodes[id] = { nodeId: id, title: "", position: 0, status: "pending" };
+      }
+      return {
+        specDocsProgress: {
+          batchStatus: "running",
+          totalCount,
+          completedCount: 0,
+          assembledCount: 0,
+          processedCount: 0,
+          nodeOrder: nodeIds,
+          nodes,
+          summary: null,
+          dismissed: false,
+        },
+      };
+    }
+
+    case "node_started": {
+      const nodeId = payload.nodeId as string | undefined;
+      if (!nodeId) return null;
+      const currentState = state.specDocsProgress;
+      const node = currentState.nodes[nodeId];
+      if (!node) return null; // Unknown node (Req 2.8)
+      if (!isValidTransition(node.status, "processing")) return null; // (Req 2.7)
+      return {
+        specDocsProgress: {
+          ...currentState,
+          nodes: {
+            ...currentState.nodes,
+            [nodeId]: {
+              ...node,
+              status: "processing",
+              title: String(payload.nodeTitle ?? "").slice(0, 200),
+              position: Number(payload.position) || 0,
+            },
+          },
+        },
+      };
+    }
+
+    case "node_completed": {
+      const nodeId = payload.nodeId as string | undefined;
+      if (!nodeId) return null;
+      const currentState = state.specDocsProgress;
+      const node = currentState.nodes[nodeId];
+      if (!node) return null; // Unknown node (Req 2.8)
+      // Tolerate missed node_started: if the node is still pending, treat
+      // node_completed as the combined transition pending→processing→completed.
+      // This prevents the panel from getting stuck when intermediate Socket.IO
+      // events are coalesced or dropped due to TCP buffering near HTTP response.
+      if (node.status !== "pending" && !isValidTransition(node.status, "completed")) {
+        return null; // Invalid transition (e.g., from completed/failed)
+      }
+      return {
+        specDocsProgress: {
+          ...currentState,
+          completedCount: Number(payload.completedCount) || currentState.completedCount + 1,
+          processedCount: currentState.processedCount + 1,
+          nodes: {
+            ...currentState.nodes,
+            [nodeId]: { ...node, status: "completed" },
+          },
+        },
+      };
+    }
+
+    case "node_failed": {
+      const nodeId = payload.nodeId as string | undefined;
+      if (!nodeId) return null;
+      const currentState = state.specDocsProgress;
+      const node = currentState.nodes[nodeId];
+      if (!node) return null; // Unknown node (Req 2.8)
+      // Tolerate missed node_started: same rationale as node_completed above.
+      if (node.status !== "pending" && !isValidTransition(node.status, "failed")) {
+        return null; // Invalid transition (e.g., from completed/failed)
+      }
+      return {
+        specDocsProgress: {
+          ...currentState,
+          processedCount: currentState.processedCount + 1,
+          nodes: {
+            ...currentState.nodes,
+            [nodeId]: {
+              ...node,
+              status: "failed",
+              errorSummary: String(payload.errorSummary ?? "").slice(0, 500),
+            },
+          },
+        },
+      };
+    }
+
+    case "node_assembled": {
+      const nodeId = payload.nodeId as string | undefined;
+      if (!nodeId) return null;
+      const currentState = state.specDocsProgress;
+      const node = currentState.nodes[nodeId];
+      if (!node) return null; // Unknown node
+      // node_assembled arrives after node_completed; tolerate missed intermediate events
+      // by accepting from "completed" (normal) or "processing"/"pending" (missed events).
+      if (node.status === "assembled" || node.status === "failed") return null;
+      const newAssembledCount = Number(payload.assembledCount) || currentState.assembledCount + 1;
+      // Transition batchStatus to "assembling" on first node_assembled event
+      const newBatchStatus: SpecDocsProgressState["batchStatus"] =
+        currentState.batchStatus === "running" || currentState.batchStatus === "assembling"
+          ? "assembling"
+          : currentState.batchStatus;
+      return {
+        specDocsProgress: {
+          ...currentState,
+          batchStatus: newBatchStatus,
+          assembledCount: newAssembledCount,
+          nodes: {
+            ...currentState.nodes,
+            [nodeId]: { ...node, status: "assembled" },
+          },
+        },
+      };
+    }
+
+    case "batch_finished": {
+      const currentState = state.specDocsProgress;
+      const finalCompletedCount = Number(payload.completedCount) || 0;
+      const finalFailedCount = Number(payload.failedCount) || 0;
+      const finalProcessedCount = finalCompletedCount + finalFailedCount;
+
+      // Force-update counters from the authoritative batch_finished summary.
+      // This ensures the panel shows correct final state even if some
+      // intermediate node_started/node_completed events were missed or
+      // arrived out of order due to Socket.IO delivery timing.
+      //
+      // Resolve unresolved nodes based on failedCount:
+      // - If failedCount === 0: all nodes succeeded — safe to mark unresolved as assembled
+      //   (missed socket event).
+      // - If failedCount > 0: some nodes failed — don't blindly mark as assembled.
+      //   The server should have sent explicit node_failed events (Task 11 fix).
+      //   If we still have unresolved nodes, mark them as failed with a defensive summary.
+      const resolvedNodes: Record<string, SpecDocsNodeEntry> = {};
+      for (const [id, node] of Object.entries(currentState.nodes)) {
+        if (node.status === "pending" || node.status === "processing" || node.status === "completed") {
+          if (finalFailedCount === 0) {
+            // All nodes succeeded — safe to mark unresolved as assembled (missed socket event)
+            resolvedNodes[id] = { ...node, status: "assembled" };
+          } else {
+            // Some nodes failed — don't blindly mark as assembled.
+            // Leave as-is; the server should have sent explicit node_failed events.
+            // If we still have unresolved nodes, mark them with a defensive status.
+            resolvedNodes[id] = { ...node, status: "failed", errorSummary: "terminal event missed" };
+          }
+        } else {
+          resolvedNodes[id] = node;
+        }
+      }
+
+      return {
+        specDocsProgress: {
+          ...currentState,
+          batchStatus: "finished",
+          completedCount: finalCompletedCount,
+          assembledCount: finalCompletedCount,
+          processedCount: finalProcessedCount,
+          nodes: resolvedNodes,
+          summary: {
+            completedCount: finalCompletedCount,
+            failedCount: finalFailedCount,
+            elapsedMs: Number(payload.elapsedMs) || 0,
+          },
+        },
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Store 创建
 // ---------------------------------------------------------------------------
 
@@ -730,6 +1065,7 @@ const initialState: BlueprintRealtimeState = {
   fleetRoleCards: [],
   connectionState: "disconnected",
   agentReasoning: INITIAL_AGENT_REASONING,
+  specDocsProgress: INITIAL_SPEC_DOCS_PROGRESS,
 };
 
 /**
@@ -808,6 +1144,54 @@ export const useBlueprintRealtimeStore = create<
       set({ connectionState: "disconnected" });
     }
 
+    // ─── Spec Docs Event Pacing Queue ──────────────────────────────────
+    // Problem: when spec docs are generated quickly (template path or fast
+    // LLM), all per-node progress events can arrive in one Socket.IO batch
+    // within a few milliseconds. React then merges them into a single
+    // re-render and the user sees the panel jump from 0/N straight to N/N
+    // without per-node animation.
+    //
+    // Solution: intercept node_started / node_completed / node_failed
+    // events client-side, queue them, and dispatch one every PACE_MS
+    // milliseconds. batch_init and batch_finished are dispatched immediately
+    // — they're not the events that need pacing.
+    //
+    // This is purely a frontend ergonomic layer; the underlying state machine
+    // and persistence are unaffected.
+    const PACE_MS = 150;
+    const pacingQueue: BlueprintRelayedEvent[] = [];
+    let pacingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function isPacedSpecDocsEvent(_event: BlueprintRelayedEvent): boolean {
+      // 不再做客户端节奏控制——进度节奏来自真实后端执行（LLM / 沙盒每节点
+      // 秒级耗时）。客户端立即 dispatch 所有事件，保留事件原本的时序语义。
+      return false;
+    }
+
+    function startPacingTimer() {
+      if (pacingTimer !== null) return;
+      pacingTimer = setTimeout(function flushOne() {
+        const next = pacingQueue.shift();
+        if (next) {
+          get().dispatchEvent(next);
+        }
+        pacingTimer = pacingQueue.length > 0
+          ? setTimeout(flushOne, PACE_MS)
+          : null;
+      }, PACE_MS);
+    }
+
+    function dispatchWithPacing(event: BlueprintRelayedEvent) {
+      if (isPacedSpecDocsEvent(event)) {
+        pacingQueue.push(event);
+        startPacingTimer();
+      } else {
+        // Non-paced events (batch_init, batch_finished, all other event
+        // families) dispatch immediately to preserve their semantics.
+        get().dispatchEvent(event);
+      }
+    }
+
     function handleBlueprintEvent(event: BlueprintRelayedEvent) {
       // 只处理当前订阅 jobId 的事件
       const currentJobId = get().subscribedJobId;
@@ -822,7 +1206,7 @@ export const useBlueprintRealtimeStore = create<
             );
           }
         }
-        get().dispatchEvent(event);
+        dispatchWithPacing(event);
       } else if (typeof window !== "undefined") {
         const debugEnabled =
           window.localStorage?.getItem("autopilot-debug-socket") !== "off";
@@ -846,7 +1230,7 @@ export const useBlueprintRealtimeStore = create<
       const currentJobId = get().subscribedJobId;
       for (const event of events) {
         if (event.jobId === currentJobId) {
-          get().dispatchEvent(event);
+          dispatchWithPacing(event);
         }
       }
     }
@@ -894,6 +1278,15 @@ export const useBlueprintRealtimeStore = create<
           : new Date(event.timestamp).getTime();
       const lastUpdated = Number.isFinite(eventTime) ? eventTime : Date.now();
       const roleId = readRoleIdFromPayload(payload);
+
+      // `spec-docs-generation-progress-feedback` spec Task 4.1：
+      // Handle spec_docs progress events. This runs before other handlers
+      // and does NOT short-circuit — the event still falls through to
+      // logEntries 200-cap queue below.
+      const specDocsUpdate = handleSpecDocsProgressEvent(event, state);
+      if (specDocsUpdate) {
+        Object.assign(updates, specDocsUpdate);
+      }
 
       // `autopilot-agent-reasoning-stream` spec Task 8.3 / 8.4 / 8.5：
       // role.agent.* 分支与既有 logEntries / rolePhases 等分支并行写入，
@@ -1024,6 +1417,72 @@ export const useBlueprintRealtimeStore = create<
       updates.logEntries = nextLogs;
 
       return updates;
+    });
+  },
+
+  dismissSpecDocsProgress() {
+    set((state) => ({
+      specDocsProgress: { ...state.specDocsProgress, dismissed: true },
+    }));
+  },
+
+  /**
+   * Force-complete the spec docs progress panel.
+   *
+   * Called by the HTTP response handler after `generateBlueprintSpecDocuments`
+   * succeeds, as a fallback for cases where Socket.IO delivery dropped or
+   * coalesced intermediate `node_started`/`node_completed`/`batch_finished`
+   * events. Idempotent: if the panel is already finished or idle, this is a
+   * no-op.
+   *
+   * Forces all pending/processing nodes to "completed" status and sets
+   * batchStatus to "finished" with a synthesized summary.
+   */
+  completeSpecDocsProgress(elapsedMs: number) {
+    set((state) => {
+      const current = state.specDocsProgress;
+      // Only act when there's an active running or assembling batch
+      if (current.batchStatus !== "running" && current.batchStatus !== "assembling") return state;
+
+      const resolvedNodes: Record<string, SpecDocsNodeEntry> = {};
+      let resolvedCompleted = current.completedCount;
+      let resolvedProcessed = current.processedCount;
+      for (const [id, node] of Object.entries(current.nodes)) {
+        if (node.status === "assembled") {
+          // Already received node_assembled via event stream — do NOT re-transition
+          resolvedNodes[id] = node;
+        } else if (node.status === "pending" || node.status === "processing" || node.status === "completed") {
+          resolvedNodes[id] = { ...node, status: "assembled" };
+          if (node.status === "pending" || node.status === "processing") {
+            resolvedCompleted += 1;
+            resolvedProcessed += 1;
+          }
+        } else {
+          resolvedNodes[id] = node;
+        }
+      }
+
+      // Count assembled nodes for the final assembledCount
+      const finalAssembledCount = Object.values(resolvedNodes).filter(
+        (n) => n.status === "assembled"
+      ).length;
+
+      return {
+        ...state,
+        specDocsProgress: {
+          ...current,
+          batchStatus: "finished",
+          nodes: resolvedNodes,
+          completedCount: resolvedCompleted,
+          assembledCount: finalAssembledCount,
+          processedCount: resolvedProcessed,
+          summary: current.summary ?? {
+            completedCount: resolvedCompleted,
+            failedCount: current.totalCount - resolvedCompleted,
+            elapsedMs,
+          },
+        },
+      };
     });
   },
 

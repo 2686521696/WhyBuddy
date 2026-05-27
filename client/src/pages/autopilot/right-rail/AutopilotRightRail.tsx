@@ -52,6 +52,7 @@ import { FleetActivationLog } from "./FleetActivationLog";
 import { stepSubStage } from "./hooks/use-right-rail-sub-stage-state";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
 import { RoleStatusStrip } from "./RoleStatusStrip";
+import { SpecDocsProgressPanel } from "./spec-docs-progress/SpecDocsProgressPanel";
 import { SpecTreeWorkbench } from "./spec-tree-workbench/SpecTreeWorkbench";
 import { StreamingDocRenderer } from "./streaming-doc/StreamingDocRenderer";
 import { deriveSubStageSummary } from "./sub-stage-summary";
@@ -1021,12 +1022,21 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       if (!props.jobId || specDocsGenerating !== null) return;
       setSpecDocsGenerating(scope);
       setSpecDocsError(null);
+      const startTime = Date.now();
       const result = await generateSpecDocuments(
         props.jobId,
         scope === "single" && nodeId !== undefined ? { nodeId, locale } : { locale }
       );
       setSpecDocsGenerating(null);
       if (result.ok) {
+        // Fallback: ensure the progress panel reaches "finished" state even
+        // if Socket.IO dropped/coalesced batch_finished or per-node events.
+        // Idempotent — no-op when batch already finished or panel idle.
+        if (scope === "all") {
+          useBlueprintRealtimeStore
+            .getState()
+            .completeSpecDocsProgress(Date.now() - startTime);
+        }
         props.onSpecDocumentsGenerated?.(result.data);
       } else {
         setSpecDocsError(result.error);
@@ -1193,6 +1203,12 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       <div className="flex-shrink-0 overflow-x-auto pt-1">
         <RoleStatusStrip />
       </div>
+
+      {/* Spec Docs 批量生成进度面板 — 放在 workbench chrome/status 区域，
+          不在 MarkdownRenderer/StreamingDocRenderer 文档主体内。
+          组件自身处理可见性：idle 或 dismissed 时返回 null。
+          Requirements: 3.1, 3.7 */}
+      <SpecDocsProgressPanel />
 
       {/* 阶段独占视口 — 包一层 flex-1 min-h-0 让它占满 aside 剩余高度，
           避免大屏下 StageViewport 内容只占 content-height、底部出现白色空白带。 */}

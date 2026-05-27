@@ -270,6 +270,11 @@ Authoring structure (REQUIRED — see exampleOutline in the user payload):
   Under "## 需求" emit at least 3 child blocks "### 需求 N: ...". Each child block MUST contain a "**用户故事:**" line ("As a <role>, I want <feature>, so that <benefit>") and a "#### 验收标准" block. Acceptance criteria MUST be numbered "N.M" and use EARS keywords (THE, WHEN, WHILE, IF/THEN, WHERE).
 - "design" MUST contain H2 sections in order: "## 概述", "## 架构", "## 组件与接口", "## 数据模型", "## 正确性属性", "## 错误处理", "## 测试策略".
   "## 架构" MUST embed at least one fenced \`\`\`mermaid graph block.
+  CRITICAL — mermaid block formatting: the opening fence MUST be exactly "\`\`\`mermaid" (with "mermaid" attached to the fence as the language tag, NOT on a separate line inside the fence). Each mermaid statement (graph declaration, node, edge) MUST be on its own line separated by a literal "\\n" newline in the JSON string. Do NOT place multiple nodes or edges on a single line. Example of CORRECT format:
+  "\`\`\`mermaid\\ngraph TB\\n  A[Foo] --> B[Bar]\\n  B --> C[Baz]\\n\`\`\`"
+  Example of INCORRECT format (do NOT emit these):
+  "\`\`\`\\nmermaid graph TB A[Foo] --> B[Bar] B --> C[Baz]\\n\`\`\`"  (mermaid keyword inside fence, all on one line)
+  "\`\`\`mermaid\\ngraph TB A[Foo] --> B[Bar] B --> C[Baz]\\n\`\`\`"  (correct fence but body collapsed to one line)
   "## 组件与接口" MUST list at least one TypeScript interface block (\`\`\`typescript fence) with explicit field types.
   "## 正确性属性" MUST declare at least 3 properties, each annotated with "**Validates: Requirements x.y, x.y**" referencing acceptance criteria from the same node's requirements document.
 - "tasks" MUST start with "# Implementation Plan: <node title>", followed by "## Overview" paragraph and "## Tasks" block.

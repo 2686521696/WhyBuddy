@@ -189,4 +189,40 @@ describe("deriveDocStats", () => {
       expect(result.byType.tasks).toEqual({ generated: 1, completed: 1 });
     });
   });
+
+  describe("realtime progress overlay", () => {
+    it("shows in-flight generated counts from specDocsProgress without marking them accepted", () => {
+      const specTree = {
+        id: "tree-1",
+        routeSetId: "rs-1",
+        nodes: Array.from({ length: 10 }, (_, index) => ({
+          id: `node-${index + 1}`,
+          title: `Node ${index + 1}`,
+          type: "topic",
+          children: [],
+        })),
+      } as unknown as BlueprintSpecTree;
+
+      const result = deriveDocStats({
+        specDocuments: [],
+        specTree,
+        specDocsProgress: {
+          batchStatus: "running",
+          totalCount: 10,
+          completedCount: 10,
+          assembledCount: 0,
+          processedCount: 10,
+        },
+      });
+
+      expect(result.totalDocs).toBe(30);
+      expect(result.targetDocs).toBe(30);
+      expect(result.totalTasks).toBe(10);
+      expect(result.targetTasks).toBe(10);
+      expect(result.byType.requirements).toEqual({ generated: 10, completed: 0 });
+      expect(result.byType.design).toEqual({ generated: 10, completed: 0 });
+      expect(result.byType.tasks).toEqual({ generated: 10, completed: 0 });
+      expect(result.completionRate).toBe(0);
+    });
+  });
 });

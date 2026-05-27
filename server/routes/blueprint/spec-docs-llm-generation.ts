@@ -124,6 +124,19 @@ export interface SpecDocsLlmGenerationRequest {
     string,
     ReadonlyArray<{ path: string; excerpt: string }>
   >;
+  /**
+   * 可选；真实执行进度回调。LLM / 沙盒每节点开始与结束时分别触发
+   * `started` 与 `completed`/`failed`，让前端进度面板反映**真实**的
+   * per-node 执行时序（LLM 数秒级 / 沙盒数十秒级），而不是事后拼装时间。
+   *
+   * 调用方（generateSpecDocuments）会把同一个 emitter 传入，由本模块在
+   * 真实 LLM 调用前后触发对应事件；外层不再独立发 per-node 事件。
+   */
+  onNodeProgress?: {
+    started(nodeId: string, title: string, position: number): void;
+    completed(nodeId: string, completedCount: number): void;
+    failed(nodeId: string, errorSummary: string, processedCount: number): void;
+  };
 }
 
 /**
@@ -514,13 +527,62 @@ async function generateForNode(
     generationSource: "llm",
     contextTier,
     requirements: parsed.data.requirements,
-    design: parsed.data.design,
+    design: normalizeMermaidBlocks(parsed.data.design),
     tasks: parsed.data.tasks,
     promptId: SPEC_DOCS_PROMPT_ID,
     model,
     promptFingerprint,
     responseDigest: computeResponseDigest(rawAnswer),
   };
+}
+
+/**
+ * 后置规范化 LLM 返回的 design 文档中的 mermaid 代码块。
+ *
+ * LLM 偶尔会以两种方式输出畸形的 mermaid 块：
+ * 1. ` ```\nmermaid graph TD A[..] --> B[..]\n``` ` — 围栏没有语言标注，
+ *    `mermaid` 关键字塞在内容里，且所有节点/边折叠成一行。
+ * 2. ` ```mermaid\ngraph TD A[..] --> B[..]\n``` ` — 围栏正确，但 body 单行。
+ *
+ * 该函数仅对 design 文档中的 mermaid 块做以下规范化：
+ * - 把 fence 内首行的 `mermaid` 关键字提到 fence 标签上。
+ * - 在 `-->` / `---` / `==>` 边语法前插入换行 + 缩进。
+ * - 在 `]` 后跟着新节点声明 `X[` 时插入换行。
+ *
+ * 不修改非 mermaid 代码块、TypeScript 接口块、或 prose 文本。
+ */
+function normalizeMermaidBlocks(design: string): string {
+  // 匹配所有 ``` 代码围栏块（含语言标注与不含）
+  return design.replace(
+    /```([A-Za-z0-9_+-]*)\s*\n([\s\S]*?)```/g,
+    (match, lang: string, body: string) => {
+      const langLower = lang.trim().toLowerCase();
+      const trimmedBody = body.trimStart();
+      const startsWithMermaidKeyword = /^mermaid[\s\b]/i.test(trimmedBody);
+
+      // 仅处理 mermaid 块（标签或内容首词为 mermaid）
+      if (langLower !== "mermaid" && !startsWithMermaidKeyword) {
+        return match;
+      }
+
+      // 提取 mermaid 实际内容
+      let mermaidBody = langLower === "mermaid"
+        ? body
+        : trimmedBody.replace(/^mermaid[\s\b]+/i, "");
+
+      // 若 body 已多行，仅修正语言标签即可
+      if (mermaidBody.includes("\n")) {
+        return "```mermaid\n" + mermaidBody.trimEnd() + "\n```";
+      }
+
+      // body 单行：在边语法 / 节点声明前插入换行
+      mermaidBody = mermaidBody
+        .replace(/\s+(-->|---|==>)/g, "\n  $1")
+        .replace(/(\])\s+([A-Z][A-Za-z0-9_]*\[)/g, "$1\n  $2");
+
+      return "```mermaid\n" + mermaidBody.trimEnd() + "\n```";
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -661,9 +723,17 @@ export function createSpecDocsLlmGeneration(
               break;
             }
 
-            // 并发处理当前层
-            const tasks = currentLayer.map((node) => async () => {
+            // 并发处理当前层。每个 task 在自己的 LLM 调用返回时立即
+            // emit completed/failed，让前端按真实 per-node 完成顺序更新进度，
+            // 而不是等整层全部完成后一次性广播。共享计数器用闭包变量，
+            // tasks 之间不会相互阻塞——pool.runConcurrent 仍负责并发限速。
+            let _layerCompleted = perNode.filter(p => p.generationSource === "llm").length;
+            let _layerFailed = perNode.filter(p => p.generationSource === "template").length;
+            const tasks = currentLayer.map((node, layerIdx) => async () => {
               const parentSummary = node.parentId ? parentSummaryMap.get(node.parentId) : undefined;
+              // 1-indexed 全局 position：前面已 processed 的节点数 + 当前层内序号
+              const position = processed.size + layerIdx + 1;
+              request.onNodeProgress?.started(node.id, node.title ?? node.id, position);
 
               try {
                 // 用 pool key 分别生成 requirements / design / tasks（3 次调用，不要求 JSON）
@@ -675,16 +745,29 @@ export function createSpecDocsLlmGeneration(
                 ]);
 
                 if (!requirements || !design || !tasksDoc) {
+                  // 立即广播失败，不等其他并发节点
+                  _layerFailed += 1;
+                  request.onNodeProgress?.failed(
+                    node.id,
+                    "empty response from pool",
+                    _layerCompleted + _layerFailed,
+                  );
+                  emitter?.observing(false, `⚠ ${node.title} — 降级为模板`);
                   return buildNodeFallback(deps, node.id, "empty response from pool");
                 }
 
                 safeRecordDiagnostics(deps, { mode: "real" });
+                // 立即广播成功，不等其他并发节点——这是用户感知到 per-node
+                // 实时进度的关键：哪个 LLM 调用先返回，哪个节点就先标记为 completed。
+                _layerCompleted += 1;
+                request.onNodeProgress?.completed(node.id, _layerCompleted);
+                emitter?.observing(true, `✓ ${node.title} — 规格文档已生成`);
                 return {
                   nodeId: node.id,
                   generationSource: "llm" as const,
                   contextTier: "full" as "full" | "route-only",
                   requirements,
-                  design,
+                  design: normalizeMermaidBlocks(design),
                   tasks: tasksDoc,
                   promptId: SPEC_DOCS_PROMPT_ID,
                   model: pool.config.model,
@@ -693,22 +776,24 @@ export function createSpecDocsLlmGeneration(
                 } satisfies SpecDocsLlmNodeOutput;
               } catch (err) {
                 const reason = err instanceof Error ? err.message : String(err);
+                _layerFailed += 1;
+                request.onNodeProgress?.failed(
+                  node.id,
+                  `pool call failed: ${reason}`,
+                  _layerCompleted + _layerFailed,
+                );
+                emitter?.observing(false, `⚠ ${node.title} — 降级为模板`);
                 return buildNodeFallback(deps, node.id, `pool call failed: ${reason}`);
               }
             });
 
             const layerResults = await pool.runConcurrent(tasks);
+            // 仅做 perNode 累积与 spec.node_completed 事件发射；
+            // onNodeProgress 已在每个 task 内部即时发射，这里不重复发。
             for (let i = 0; i < currentLayer.length; i++) {
               const node = currentLayer[i];
               const result = layerResults[i];
               perNode.push(result);
-              processed.add(node.id);
-              // 发射每个节点完成的进度事件
-              if (result.generationSource === "llm") {
-                emitter?.observing(true, `✓ ${node.title} — 规格文档已生成`);
-              } else {
-                emitter?.observing(false, `⚠ ${node.title} — 降级为模板`);
-              }
               processed.add(node.id);
               // autopilot-mirofish-stream（2026-05-17）：
               // 在 observing 文案之外,追加结构化 spec.node_completed 事件,
@@ -765,6 +850,8 @@ export function createSpecDocsLlmGeneration(
         } else {
           // ─── 串行路径（无 pool，使用主 LLM）─────────────────────────────
           const SERIAL_MAX_LLM_NODES = 8;
+          let _serialCompleted = 0;
+          let _serialFailed = 0;
           for (let i = 0; i < request.nodes.length; i++) {
             const node = request.nodes[i];
             if (i >= SERIAL_MAX_LLM_NODES) {
@@ -776,6 +863,7 @@ export function createSpecDocsLlmGeneration(
               });
               continue;
             }
+            request.onNodeProgress?.started(node.id, node.title ?? node.id, i + 1);
             // eslint-disable-next-line no-await-in-loop
             const nodeResult = await generateForNode(
               deps,
@@ -787,6 +875,17 @@ export function createSpecDocsLlmGeneration(
               model,
             );
             perNode.push(nodeResult);
+            if (nodeResult.generationSource === "llm") {
+              _serialCompleted += 1;
+              request.onNodeProgress?.completed(node.id, _serialCompleted);
+            } else {
+              _serialFailed += 1;
+              request.onNodeProgress?.failed(
+                node.id,
+                nodeResult.fallbackReason ?? "降级为模板",
+                _serialCompleted + _serialFailed,
+              );
+            }
             if (
               nodeResult.generationSource === "llm" &&
               typeof node.summary === "string" &&
