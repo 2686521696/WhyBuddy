@@ -117,7 +117,7 @@ const StageHeader: FC<StageHeaderProps> = ({
 
   return (
     <header
-      className="sticky top-0 z-10 border-b border-[#E5E5E5] bg-white px-3 py-2"
+      className="sticky top-0 z-10 bg-white px-3 py-2"
       data-mirofish="stage-header"
     >
       <div className="flex min-w-0 items-start gap-2">

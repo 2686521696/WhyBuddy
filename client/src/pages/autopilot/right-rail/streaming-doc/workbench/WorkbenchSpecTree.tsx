@@ -782,7 +782,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
       data-testid="autopilot-workbench-spec-tree"
       role="navigation"
       aria-label="autopilot workbench spec tree"
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white"
     >
       <input
         type="search"
@@ -940,7 +940,7 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
         data-testid="autopilot-workbench-spec-tree"
         role="navigation"
         aria-label="autopilot workbench spec tree"
-        className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-dashed border-slate-200 bg-white p-1.5 shadow-sm"
+        className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white p-1.5"
       >
         <input
           type="search"
