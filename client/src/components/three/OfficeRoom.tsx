@@ -248,33 +248,37 @@ function Floor({ showFloorLines = true }: { showFloorLines?: boolean }) {
   );
 }
 
-function Walls() {
+function Walls({ tallBackWall = false }: { tallBackWall?: boolean }) {
+  const wallHeight = tallBackWall ? 8.2 : 3;
+  const wallCenterY = tallBackWall ? 4.1 : 1.5;
+  const wallWidth = tallBackWall ? 17.4 : 15.42;
+
   return (
     <group>
-      <mesh position={[0, 1.5, -4.9]} receiveShadow>
-        <boxGeometry args={[15.42, 3, 0.18]} />
+      <mesh position={[0, wallCenterY, -4.9]} receiveShadow>
+        <boxGeometry args={[wallWidth, wallHeight, 0.18]} />
         <meshStandardMaterial
           color={FUTURE_OFFICE_COLORS.wall}
           roughness={0.9}
         />
       </mesh>
       <mesh
-        position={[-7.8, 1.5, 0]}
+        position={[-7.8, wallCenterY, 0]}
         rotation={[0, Math.PI / 2, 0]}
         receiveShadow
       >
-        <boxGeometry args={[9.98, 3, 0.18]} />
+        <boxGeometry args={[9.98, wallHeight, 0.18]} />
         <meshStandardMaterial
           color={FUTURE_OFFICE_COLORS.wallSide}
           roughness={0.92}
         />
       </mesh>
       <mesh
-        position={[7.8, 1.5, 0]}
+        position={[7.8, wallCenterY, 0]}
         rotation={[0, Math.PI / 2, 0]}
         receiveShadow
       >
-        <boxGeometry args={[9.98, 3, 0.18]} />
+        <boxGeometry args={[9.98, wallHeight, 0.18]} />
         <meshStandardMaterial
           color={FUTURE_OFFICE_COLORS.wallSide}
           roughness={0.92}
@@ -1093,6 +1097,8 @@ export function OfficeRoom({
   // Mission-first keeps the full decorated office.
   const showRoomDecorLamps = mode !== "blueprint";
   const showFloorLines = mode !== "blueprint";
+  const showMissionCorkBoard = mode !== "blueprint";
+  const useTallBlueprintWall = mode === "blueprint";
   const organization = useMemo(
     () => selectWorkflowOrganization(currentWorkflow),
     [currentWorkflow]
@@ -1170,11 +1176,11 @@ export function OfficeRoom({
   return (
     <group>
       <Floor showFloorLines={showFloorLines} />
-      <Walls />
+      <Walls tallBackWall={useTallBlueprintWall} />
       {showSecondaryDecor ? (
         <ArchitecturalAccents showLamps={showRoomDecorLamps} />
       ) : null}
-      <CorkBoard />
+      {showMissionCorkBoard ? <CorkBoard /> : null}
       {showSecondaryDecor ? (
         <DepartmentDecor departments={sceneDepartments} />
       ) : null}

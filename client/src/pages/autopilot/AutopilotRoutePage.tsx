@@ -1322,6 +1322,25 @@ function AutopilotVisualStage({
     [agentCrew, locale]
   );
 
+  // blueprint-wall-process-graph-hud-2026-05-31 Task 2.2: wall process-graph
+  // inputs for the blueprint-mode Scene3D wall. These read the SAME realtime
+  // store slices the rest of the autopilot UI consumes (RoleStatusStrip,
+  // MiroFishCardStream, AutopilotRightRail, ...). The store resets every slice
+  // on `subscribe(newJobId)`, so each slice is already scoped to the active
+  // blueprint job (Req 4.1 / 4.3). We deliberately do NOT read mission-first
+  // sandbox state (useSandboxStore / mission terminal logs / screenshots) as
+  // any fallback (Req 4.4) — only blueprint-scoped data flows to the wall.
+  const wallCapabilityStatuses = useBlueprintRealtimeStore(
+    s => s.capabilityStatuses
+  );
+  const wallCapabilityOwners = useBlueprintRealtimeStore(
+    s => s.capabilityOwners
+  );
+  const wallRolePhases = useBlueprintRealtimeStore(s => s.rolePhases);
+  const wallAgentReasoningEntries = useBlueprintRealtimeStore(
+    s => s.agentReasoning.entries
+  );
+
   return (
     // 自动驾驶 3D 场景融合 follow-up（2026-05-13 v10 去边框去边距）：
     // visual stage / console panel / 外包 div 移除 rounded / border / gap，
@@ -1346,10 +1365,29 @@ function AutopilotVisualStage({
               projectId={currentProjectId}
               mode="blueprint"
               blueprintJob={job}
+              blueprintLocale={locale}
               activeJobId={job?.id}
               latestJobId={latestSceneJobId ?? job?.id}
               activeStage={job?.stage}
               roleLabels={blueprintRoleLabels}
+              // blueprint-wall-process-graph-hud-2026-05-31 Task 2.2: feed the
+              // current job-scoped blueprint wall process-graph inputs. Page
+              // props (routeSet / specTree / effectPreviews) come from the
+              // active-job projection; capability/role/reasoning slices come
+              // from the realtime store (job-scoped via subscribe() reset).
+              blueprintRouteSet={routeSet}
+              blueprintSpecTree={specTree}
+              blueprintEffectPreviews={effectPreviews}
+              blueprintAgentReasoningEntries={wallAgentReasoningEntries}
+              blueprintCapabilityStatuses={wallCapabilityStatuses}
+              blueprintCapabilityOwners={wallCapabilityOwners}
+              blueprintRolePhases={wallRolePhases}
+              // blueprintArtifacts: intentionally omitted (undefined). No
+              // current-job-scoped `BlueprintWallArtifactInput[]` source exists
+              // on the autopilot page or realtime store yet, and Req 4.4
+              // forbids pulling artifacts from mission-first sandbox data. A
+              // later artifact-input spec can supply this; until then the
+              // deriver simply produces no artifact/final nodes.
             />
           </div>
         </div>

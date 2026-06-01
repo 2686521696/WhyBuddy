@@ -1,14 +1,21 @@
 import { ContactShadows, useGLTF } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { ACESFilmicToneMapping } from "three";
 
 import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
+import type {
+  BlueprintRouteSet,
+  BlueprintSpecTree,
+} from "@shared/blueprint/contracts";
+import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
 
 import { useContainerWidth } from "@/hooks/useContainerWidth";
 import { useIdleActivation } from "@/hooks/useIdleActivation";
 import { useViewportTier } from "@/hooks/useViewportTier";
+import type { BlueprintEffectPreviewSnapshot } from "@/lib/blueprint-api";
 import { FURNITURE_MODELS, PET_MODELS } from "@/lib/assets";
+import type { AppLocale } from "@/lib/locale";
 import {
   resolveProjectTaskScope,
   resolveScopedSelectedTaskId,
@@ -24,9 +31,34 @@ import { MissionIsland } from "./three/MissionIsland";
 import { OfficeRoom } from "./three/OfficeRoom";
 import { PetWorkers } from "./three/PetWorkers";
 import { SandboxMonitor } from "./three/SandboxMonitor";
+import type {
+  BlueprintWallArtifactInput,
+  CapabilityOwner,
+  CapabilityStatus,
+  RolePhase,
+} from "./three/scene-fusion/blueprint-wall-process-data";
 import type { SceneFusionMode } from "./three/scene-fusion/role-id-bridge";
 import { SceneStageFlow } from "./three/SceneStageFlow";
 import { WaitingDecisionBubble } from "./three/WaitingDecisionBubble";
+
+/**
+ * Blueprint-mode 墙面流程图 HUD（lazy / code-split）。
+ *
+ * 关键约束（NFR-2.5 / Req 10.1）：`BlueprintWallProcessGraphHud` 静态依赖
+ * `@ant-design/graphs`（及其重型传递依赖 `@antv/g6` / `@antv/graphin` /
+ * `styled-components`）。这里通过 `React.lazy` + 动态 `import()` 建立代码分割边界，
+ * 使 mission-first 分支与 `/tasks` bundle 路径**永不静态加载** `@ant-design/graphs`：
+ * 只有当 `Scene3D` 以 `mode === "blueprint"` 渲染、真正命中该分支时，蓝图图表 chunk
+ * 才会被按需加载。
+ *
+ * 注意：本文件刻意**不**在顶层 `import { BlueprintWallProcessGraphHud } from ...`，
+ * 动态 import 边界正是这条懒加载护栏的实现手段。
+ */
+const BlueprintWallProcessGraphHud = lazy(() =>
+  import("./three/scene-fusion/BlueprintWallProcessGraphHud").then(m => ({
+    default: m.BlueprintWallProcessGraphHud,
+  }))
+);
 
 const CRITICAL_FURNITURE_MODELS = [
   FURNITURE_MODELS.floorFull,
@@ -93,6 +125,38 @@ export interface Scene3DProps {
    */
   blueprintJob?: BlueprintGenerationJob | null;
   /**
+   * Blueprint-branch-only wall process-graph inputs.
+   *
+   * These mirror `DeriveBlueprintWallProcessDataInput` (minus `job`, which is
+   * carried by `blueprintJob` above) and are consumed exclusively by the
+   * blueprint branch through `<BlueprintWallProcessGraphHud>` →
+   * `deriveBlueprintWallProcessData(...)`. Mission-first callers (`/tasks` etc.)
+   * omit them entirely; the mode switch wiring lands in Task 2.3.
+   *
+   * The capability/role types come from the deriver module (the authoritative
+   * input-contract surface), NOT from `blueprint-realtime-store` directly, so the
+   * prop types and the deriver call can never structurally drift apart.
+   */
+  blueprintRouteSet?: BlueprintRouteSet | null;
+  blueprintSpecTree?: BlueprintSpecTree | null;
+  blueprintEffectPreviews?: BlueprintEffectPreviewSnapshot[];
+  blueprintAgentReasoningEntries?: AgentReasoningEntry[];
+  blueprintCapabilityStatuses?: Record<string, CapabilityStatus>;
+  blueprintCapabilityOwners?: Record<string, CapabilityOwner>;
+  blueprintRolePhases?: Record<string, RolePhase>;
+  blueprintArtifacts?: BlueprintWallArtifactInput[];
+  /**
+   * Blueprint-branch-only locale for the wall process-graph HUD.
+   *
+   * Forwarded into `<BlueprintWallProcessGraphHud locale={...}>` →
+   * `deriveBlueprintWallProcessData(...)`, so the wall's stage labels, node
+   * types, status badges, empty state, and control buttons honor the active
+   * page locale instead of the deriver's `"zh-CN"` default. Named
+   * `blueprintLocale` to avoid colliding with any unrelated locale concept;
+   * mission-first callers (`/tasks` etc.) omit it.
+   */
+  blueprintLocale?: AppLocale;
+  /**
    * Blueprint-branch passthroughs forwarded into `<PetWorkers mode="blueprint">`
    * (which mounts BlueprintRuntimeAgents). All optional; only consumed by the
    * blueprint branch. Mission-first callers can omit them entirely.
@@ -117,6 +181,15 @@ export function Scene3D({
   projectId = null,
   mode = "mission-first",
   blueprintJob = null,
+  blueprintRouteSet = null,
+  blueprintSpecTree = null,
+  blueprintEffectPreviews,
+  blueprintAgentReasoningEntries,
+  blueprintCapabilityStatuses,
+  blueprintCapabilityOwners,
+  blueprintRolePhases,
+  blueprintArtifacts,
+  blueprintLocale,
   isReplay,
   latestJobId,
   activeJobId,
@@ -230,6 +303,8 @@ export function Scene3D({
           near: 0.1,
           far: 100,
         };
+  const cameraLookAtY =
+    mode === "blueprint" ? (isMobile ? 1.75 : 1.65) : isMobile ? 1.2 : 1.0;
   const dpr: [number, number] = reducedSceneEffects
     ? [1, 1]
     : isMobile
@@ -257,7 +332,7 @@ export function Scene3D({
           // 自动驾驶 3D 场景融合 follow-up（2026-05-13 v7 aspect 锁定）：
           // canvas aspect-[16/10] 后场景几何与视野匹配，lookAt 回到 1.0 中庸
           // （地板线落在 canvas ~75%，墙面 SandboxMonitor 占上 25%）。
-          sceneCamera.lookAt(0, isMobile ? 1.2 : 1.0, 0);
+          sceneCamera.lookAt(0, cameraLookAtY, 0);
         }}
       >
         <CameraController effectiveWidth={effectiveWidth} tier={tier} />
@@ -329,7 +404,28 @@ export function Scene3D({
             roleLabels={roleLabels}
           />
           <MissionIsland projectId={projectId} mode={mode} />
-          <SandboxMonitor projectId={projectId} />
+          {mode === "blueprint" ? (
+            // Blueprint 分支：墙面流程图 HUD（lazy chunk）。用一个嵌套
+            // `<Suspense fallback={null}>` 包裹 lazy 元素，确保即使外层 Suspense
+            // 边界后续调整，蓝图图表 chunk 的加载态也始终被就近兜住（Req 1.1）。
+            <Suspense fallback={null}>
+              <BlueprintWallProcessGraphHud
+                job={blueprintJob}
+                routeSet={blueprintRouteSet}
+                specTree={blueprintSpecTree}
+                effectPreviews={blueprintEffectPreviews}
+                agentReasoningEntries={blueprintAgentReasoningEntries}
+                capabilityStatuses={blueprintCapabilityStatuses}
+                capabilityOwners={blueprintCapabilityOwners}
+                rolePhases={blueprintRolePhases}
+                artifacts={blueprintArtifacts}
+                locale={blueprintLocale}
+              />
+            </Suspense>
+          ) : (
+            // Mission-first 分支：保持既有沙箱监控墙面，行为与改造前完全一致（Req 1.2）。
+            <SandboxMonitor projectId={projectId} />
+          )}
           <WaitingDecisionBubble projectId={projectId} />
           {!reducedSceneEffects && deferredDetailsReady ? (
             <>
