@@ -138,6 +138,16 @@ export async function executeStageWithBrainstorm(
   }
 
   // Route based on decision
+  emitEvent("brainstorm.gate.evaluated", {
+    jobId: stageContext.jobId,
+    stageId: stageContext.stageId,
+    brainstormNeeded: decision.brainstormNeeded,
+    recommendedMode: decision.recommendedMode,
+    requiredRoles: decision.requiredRoles,
+    requiredToolCategories: decision.requiredToolCategories,
+    reasoning: decision.reasoning,
+  });
+
   const routing = routeDecision(decision);
 
   if (routing.type === "single-agent") {
@@ -182,12 +192,33 @@ export async function executeStageWithBrainstorm(
       return { type: "single-agent", output };
     }
 
+    if (completedSession.status === "failed") {
+      emitEvent("brainstorm.degraded", {
+        sessionId: session.id,
+        reason: "Session failed before synthesis",
+        affectedComponent: "pipeline-integration",
+        fallbackAction: "single-agent",
+      });
+      const output = await singleAgentFallback(stageContext);
+      return { type: "single-agent", output };
+    }
+
+    let finalSession = completedSession;
+    if (completedSession.status === "synthesizing") {
+      const synthesisResult = await brainstormCtx.synthesizer.synthesize(
+        buildSynthesisInput(completedSession, stageContext.stageDescription),
+      );
+      finalSession =
+        brainstormCtx.orchestrator.completeSynthesis(session.id, synthesisResult) ??
+        completedSession;
+    }
+
     // Build and persist artifact (Req 8.4)
-    const artifact = buildSessionArtifact(completedSession);
+    const artifact = buildSessionArtifact(finalSession);
     brainstormCtx.memoryStore.persist(artifact);
 
     // Extract synthesis result as stage output (Req 8.3)
-    const synthesisResult = completedSession.synthesisResult;
+    const synthesisResult = finalSession.synthesisResult;
     const output = synthesisResult?.decision ?? "Brainstorm completed without synthesis.";
 
     return {
@@ -250,6 +281,24 @@ export function getBrainstormDiagnostics(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function buildSynthesisInput(
+  session: BrainstormSession,
+  stageContext: string,
+) {
+  return {
+    sessionId: session.id,
+    mode: session.mode,
+    stageContext,
+    crewOutputs: Array.from(session.crewMembers.entries())
+      .filter(([, member]) => member.state === "completed" && member.output)
+      .map(([roleId, member]) => ({
+        roleId,
+        content: member.output!.content,
+        confidence: member.output!.confidence,
+      })),
+  };
+}
 
 /**
  * Wait for a brainstorm session to reach a terminal state.

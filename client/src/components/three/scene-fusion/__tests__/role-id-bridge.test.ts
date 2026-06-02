@@ -40,6 +40,28 @@ describe("readBlueprintRolePhase / FSD roleId 映射", () => {
   }
 });
 
+describe("readBlueprintRolePhase / brainstorm roleId mapping", () => {
+  const cases: Array<[string, MissionAgentId]> = [
+    ["decider", "agent-ceo"],
+    ["planner", "agent-manager-research"],
+    ["architect", "agent-manager-design"],
+    ["executor", "agent-worker-research"],
+    ["auditor", "agent-worker-engineering"],
+    ["ui_previewer", "agent-worker-design"],
+  ];
+
+  for (const [brainstormRoleId, missionAgentId] of cases) {
+    it(`brainstorm ${brainstormRoleId} maps to mission ${missionAgentId}`, () => {
+      const rolePhases: Record<string, RolePhase> = {
+        [brainstormRoleId]: "acting" as RolePhase,
+      };
+      expect(readBlueprintRolePhase(rolePhases, missionAgentId)).toBe(
+        "acting"
+      );
+    });
+  }
+});
+
 describe("readBlueprintRoleRuntimeState / FSD runtime evidence mapping", () => {
   it("maps planner runtime state to agent-manager-research", () => {
     const runtimeStates = {

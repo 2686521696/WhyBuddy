@@ -45,6 +45,7 @@ import {
   mapEventTypeToPhase,
   type BlueprintRelayedEvent,
 } from "../blueprint-realtime-store";
+import { useBrainstormGraphStore } from "../brainstorm-graph-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,6 +53,7 @@ import {
 
 function resetStore() {
   useBlueprintRealtimeStore.getState().reset();
+  useBrainstormGraphStore.getState().reset();
   socketHandlers.clear();
   vi.clearAllMocks();
 }
@@ -110,6 +112,107 @@ describe("BlueprintRealtimeStore", () => {
 
     const state = useBlueprintRealtimeStore.getState();
     expect(state.rolePhases["planner-1"]).toBe("activated");
+  });
+
+  it("routes brainstorm realtime events into the brainstorm graph store", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.session.started",
+        payload: {
+          sessionId: "brainstorm-session-1",
+          mode: "vote",
+          roles: ["planner", "architect"],
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.node.created",
+        payload: {
+          sessionId: "brainstorm-session-1",
+          nodeId: "node-1",
+          parentNodeId: null,
+          roleId: "planner",
+          nodeType: "thinking",
+          status: "active",
+          title: "Planner thought",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.session.completed",
+        payload: {
+          sessionId: "brainstorm-session-1",
+          tokenUsed: 123,
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.sessionId).toBe("brainstorm-session-1");
+    expect(graph.sessionStatus).toBe("completed");
+    expect(graph.sessionMetadata.mode).toBe("vote");
+    expect(graph.nodes).toHaveLength(1);
+    expect(graph.nodes[0]).toMatchObject({
+      id: "node-1",
+      roleId: "planner",
+      type: "thinking",
+      title: "Planner thought",
+    });
+    expect(graph.sessionMetadata.totalTokenUsage).toBe(123);
+  });
+
+  it("maps brainstorm node lifecycle events into visible role phases", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.node.created",
+        payload: {
+          sessionId: "brainstorm-session-2",
+          nodeId: "node-2",
+          parentNodeId: null,
+          roleId: "planner",
+          nodeType: "thinking",
+          status: "active",
+        },
+      })
+    );
+
+    expect(useBlueprintRealtimeStore.getState().rolePhases.planner).toBe("thinking");
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.node.created",
+        payload: {
+          sessionId: "brainstorm-session-2",
+          nodeId: "node-3",
+          parentNodeId: "node-2",
+          roleId: "architect",
+          nodeType: "action",
+          status: "active",
+        },
+      })
+    );
+
+    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe("acting");
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.node.updated",
+        payload: {
+          sessionId: "brainstorm-session-2",
+          nodeId: "node-3",
+          roleId: "architect",
+          status: "completed",
+        },
+      })
+    );
+
+    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe("completed");
   });
 
   // 3. dispatchEvent capability.completed → capabilityStatuses 更新

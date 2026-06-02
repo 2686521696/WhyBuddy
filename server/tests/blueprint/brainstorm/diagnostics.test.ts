@@ -136,7 +136,7 @@ describe("Brainstorm Diagnostics Extension", () => {
     const orchestrator = new BrainstormOrchestrator(mockLLM, emitter);
 
     // Start a session (it will complete quickly with mock LLM)
-    await orchestrator.startSession({
+    const session = await orchestrator.startSession({
       jobId: "job-1",
       stageId: "stage-1",
       mode: "vote",
@@ -147,6 +147,13 @@ describe("Brainstorm Diagnostics Extension", () => {
 
     // Give time for async mode execution to complete
     await new Promise((resolve) => setTimeout(resolve, 200));
+    orchestrator.completeSynthesis(session.id, {
+      decision: "Final decision",
+      confidence: 0.8,
+      reasoningPoints: [{ roleId: "planner", point: "Planner output" }],
+      dissentingOpinions: [],
+      tokenUsage: 1,
+    });
 
     const diag = orchestrator.getDiagnostics();
 

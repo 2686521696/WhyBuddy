@@ -65,12 +65,19 @@ export function createEventEmitterAdapter(
   adapterCtx: EventEmitterAdapterContext,
 ): EventEmitterFn {
   return (type: string, payload: Record<string, unknown>): void => {
+    const payloadJobId = typeof payload.jobId === "string" ? payload.jobId : "";
+    const payloadStage =
+      typeof payload.stage === "string"
+        ? payload.stage
+        : typeof payload.stageId === "string"
+          ? payload.stageId
+          : "";
     const event: Record<string, unknown> = {
       id: crypto.randomUUID(),
       type,
       family: "brainstorm",
-      jobId: adapterCtx.jobId,
-      stage: adapterCtx.stage,
+      jobId: adapterCtx.jobId || payloadJobId,
+      stage: adapterCtx.stage || payloadStage,
       status: adapterCtx.jobStatus ?? "processing",
       occurredAt: new Date().toISOString(),
       ...payload,

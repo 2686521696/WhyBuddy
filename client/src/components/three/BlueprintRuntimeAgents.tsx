@@ -107,6 +107,7 @@ import {
   type CapabilityIconKey,
   type RoleCapabilityChip,
 } from "./scene-fusion/capability-role-binding";
+import { BrainstormWallGraphConnected } from "./scene-fusion/BrainstormWallGraph";
 
 // TODO(Wave 4): No canonical `AutopilotStage` type is exported in the codebase
 // yet (the nearest real unions are `AutopilotBackendStage` in
@@ -1408,6 +1409,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
 
   return (
     <group userData={{ shellMarker: "blueprint" }}>
+      <BrainstormWallGraphConnected />
       {sceneData.emptyHint.visible ? (
         <EmptyStateHint text={sceneData.emptyHint.text} />
       ) : null}

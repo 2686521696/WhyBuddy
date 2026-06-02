@@ -824,7 +824,7 @@ describe("BrainstormOrchestrator - Event Emission", () => {
     orchestrator.dispose();
   });
 
-  it("emits brainstorm.session.completed when all members terminate", async () => {
+  it("emits synthesizing instead of completed when all members terminate", async () => {
     const emitter = makeMockEmitter();
     const orchestrator = new BrainstormOrchestrator(
       makeMockLLMCaller(),
@@ -840,12 +840,16 @@ describe("BrainstormOrchestrator - Event Emission", () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     const emitterCalls = (emitter as any).calls as Array<[string, Record<string, unknown>]>;
+    const synthesizingEvents = emitterCalls.filter(
+      ([type]) => type === "brainstorm.session.synthesizing",
+    );
     const completedEvents = emitterCalls.filter(
       ([type]) => type === "brainstorm.session.completed",
     );
 
-    expect(completedEvents.length).toBe(1);
-    expect(completedEvents[0][1].status).toBe("synthesizing");
+    expect(synthesizingEvents.length).toBe(1);
+    expect(synthesizingEvents[0][1].status).toBe("synthesizing");
+    expect(completedEvents).toHaveLength(0);
 
     orchestrator.dispose();
   });

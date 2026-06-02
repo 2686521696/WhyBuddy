@@ -150,6 +150,18 @@ describe("P1 empty blueprint state", () => {
     expect(rederiveBody).toMatch(/setConnectionLines\(\[\]\)/);
     expect(rederiveBody).toMatch(/return\s*;/);
   });
+
+  it("source-level: mounts the connected brainstorm wall graph", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(__dirname, "../BlueprintRuntimeAgents.tsx"),
+      "utf8"
+    );
+
+    expect(source).toMatch(/import\s+\{\s*BrainstormWallGraphConnected\s*\}/);
+    expect(source).toMatch(/<BrainstormWallGraphConnected\s*\/>/);
+  });
 });
 
 // ===========================================================================
@@ -386,7 +398,9 @@ describe("P4 phase transitions", () => {
     expect(source).not.toMatch(/agent\.position\[0\]\s*\+\s*DESK_RIGHT_OFFSET_X/);
     expect(source).toMatch(/<RuntimeAgent[\s\S]*agent=\{agent\}[\s\S]*locale=\{locale\}/);
     expect(source).toMatch(/<RoleCapabilityChips[\s\S]*position=\{agent\.position\}/);
-    expect(source).toMatch(/<RoleWorkstation key=\{`desk-\$\{agent\.roleId\}`\} position=\{agent\.position\}/);
+    expect(source).toMatch(
+      /<RoleWorkstation[\s\S]*key=\{`desk-\$\{agent\.roleId\}`\}[\s\S]*position=\{agent\.position\}/
+    );
   });
 
   it("source-level: the nameplate icon row consumes agent.accentColor (non-body accent is wired)", async () => {

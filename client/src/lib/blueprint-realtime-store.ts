@@ -13,6 +13,7 @@
 
 import { create } from "zustand";
 import { io, type Socket } from "socket.io-client";
+import { dispatchBrainstormGraphEvent } from "./brainstorm-graph-store";
 import type { BlueprintGenerationEventType } from "@shared/blueprint/events";
 // `autopilot-agent-reasoning-stream` spec Task 8.1：
 // 引入 Layer 4 view model 与转译函数。`buildEntryFromSocketEvent` 接受
@@ -485,6 +486,37 @@ function mapCapabilityEventToStatus(type: string): CapabilityStatus {
       return "failed";
     default:
       return "idle";
+  }
+}
+
+function mapBrainstormEventToRolePhase(
+  type: string,
+  payload: BlueprintRelayedEvent["payload"]
+): RolePhase | null {
+  if (type === "brainstorm.node.updated") {
+    const status = payload?.status;
+    if (status === "completed") return "completed";
+    if (status === "failed") return "failed";
+    return null;
+  }
+
+  if (type !== "brainstorm.node.created") return null;
+
+  switch (payload?.nodeType) {
+    case "decision":
+      return "activated";
+    case "thinking":
+      return "thinking";
+    case "action":
+      return "acting";
+    case "observation":
+      return "observing";
+    case "synthesis":
+      return "reviewing";
+    case "error":
+      return "failed";
+    default:
+      return null;
   }
 }
 
@@ -1405,6 +1437,7 @@ export const useBlueprintRealtimeStore = create<
     }
 
     const { type, payload } = event;
+    dispatchBrainstormGraphEvent(event);
 
     set((state) => {
       const updates: Partial<BlueprintRealtimeState> = {};
@@ -1497,6 +1530,27 @@ export const useBlueprintRealtimeStore = create<
       }
 
       // Capability 状态更新
+      if (type === "brainstorm.session.started" && Array.isArray(payload?.roles)) {
+        const nextRolePhases = { ...(updates.rolePhases ?? state.rolePhases) };
+        for (const role of payload.roles) {
+          if (typeof role === "string") {
+            nextRolePhases[role] = "activated";
+          }
+        }
+        updates.rolePhases = nextRolePhases;
+      }
+
+      if (type.startsWith("brainstorm.node.")) {
+        const brainstormRoleId = readRoleIdFromPayload(payload);
+        const brainstormPhase = mapBrainstormEventToRolePhase(type, payload);
+        if (brainstormRoleId && brainstormPhase) {
+          updates.rolePhases = {
+            ...(updates.rolePhases ?? state.rolePhases),
+            [brainstormRoleId]: brainstormPhase,
+          };
+        }
+      }
+
       if (type.startsWith("capability.")) {
         const capId =
           (payload?.capabilityId as string) ?? (payload?.id as string);

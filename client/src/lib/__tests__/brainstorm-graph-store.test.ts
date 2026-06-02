@@ -13,6 +13,7 @@ import {
   useBrainstormGraphStore,
   INITIAL_BRAINSTORM_GRAPH,
   MAX_BRAINSTORM_NODES,
+  dispatchBrainstormGraphEvent,
   selectAllNodes,
   selectNodesByRole,
   selectNodesByStatus,
@@ -88,6 +89,42 @@ describe("brainstormGraph store", () => {
   });
 
   // ─── Node creation ─────────────────────────────────────────────────────
+
+  describe("dispatchBrainstormGraphEvent / decision gate", () => {
+    it("renders a decision gate evaluation as a visible root decision node", () => {
+      dispatchBrainstormGraphEvent({
+        type: "brainstorm.gate.evaluated",
+        payload: {
+          jobId: "job-1",
+          stageId: "route_generation",
+          brainstormNeeded: true,
+          recommendedMode: "division",
+          requiredRoles: ["decider", "planner", "architect"],
+          reasoning: "The route stage needs collaborative planning.",
+        },
+      });
+
+      const state = useBrainstormGraphStore.getState();
+      expect(state.sessionId).toBe("gate:job-1:route_generation");
+      expect(state.sessionStatus).toBe("active");
+      expect(state.nodes).toHaveLength(1);
+      expect(state.nodes[0]).toMatchObject({
+        id: "gate:job-1:route_generation",
+        parentNodeId: null,
+        roleId: "decider",
+        type: "decision",
+        status: "completed",
+        title: "Decision Gate",
+        content: "The route stage needs collaborative planning.",
+      });
+      expect(state.sessionMetadata.mode).toBe("division");
+      expect(state.sessionMetadata.roles).toEqual([
+        "decider",
+        "planner",
+        "architect",
+      ]);
+    });
+  });
 
   describe("handleNodeCreated", () => {
     beforeEach(() => {

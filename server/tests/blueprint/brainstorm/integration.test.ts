@@ -114,7 +114,7 @@ describe("Integration: Event flow end-to-end", () => {
     const mockLLM = makeMockLLM();
     const orchestrator = new BrainstormOrchestrator(mockLLM, emitter);
 
-    await orchestrator.startSession({
+    const session = await orchestrator.startSession({
       jobId: "job-int-2",
       stageId: "design",
       mode: "vote",
@@ -124,6 +124,13 @@ describe("Integration: Event flow end-to-end", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 500));
+    orchestrator.completeSynthesis(session.id, {
+      decision: "Integrated final decision",
+      confidence: 0.8,
+      reasoningPoints: [{ roleId: "planner", point: "Planner output" }],
+      dissentingOpinions: [],
+      tokenUsage: 1,
+    });
 
     const completedEvents = events.filter(
       (e) => e.type === "brainstorm.session.completed",
@@ -222,7 +229,7 @@ describe("Integration: Diagnostics endpoint", () => {
     const emitter = vi.fn();
     const orchestrator = new BrainstormOrchestrator(mockLLM, emitter);
 
-    await orchestrator.startSession({
+    const session = await orchestrator.startSession({
       jobId: "job-diag-1",
       stageId: "stage-1",
       mode: "vote",
@@ -232,6 +239,13 @@ describe("Integration: Diagnostics endpoint", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 500));
+    orchestrator.completeSynthesis(session.id, {
+      decision: "Diagnostic final decision",
+      confidence: 0.8,
+      reasoningPoints: [{ roleId: "planner", point: "Planner output" }],
+      dissentingOpinions: [],
+      tokenUsage: 1,
+    });
 
     const diag = orchestrator.getDiagnostics();
     expect(diag.totalSessionsCompleted).toBeGreaterThanOrEqual(1);

@@ -72,6 +72,15 @@ const FSD_TO_MISSION: Record<FsdRoleId, MissionAgentId> = {
   operator: "agent-worker-research",
 };
 
+const BRAINSTORM_TO_MISSION: Record<string, MissionAgentId> = {
+  decider: "agent-ceo",
+  planner: "agent-manager-research",
+  architect: "agent-manager-design",
+  executor: "agent-worker-research",
+  auditor: "agent-worker-engineering",
+  ui_previewer: "agent-worker-design",
+};
+
 /**
  * 真实自动驾驶 job 的 role timeline 用了远多于 7 个 FSD 名的具体角色
  * （`repository-analyst` / `spec-author` / `route-planner` / `product-strategist`
@@ -127,6 +136,9 @@ const FUZZY_FSD_KEYWORDS: ReadonlyArray<readonly [string, FsdRoleId]> = [
 export function resolveRoleIdToMissionAgent(
   roleId: string
 ): MissionAgentId | undefined {
+  const brainstorm = BRAINSTORM_TO_MISSION[roleId];
+  if (brainstorm) return brainstorm;
+
   // 1. 字面量命中（与原映射表完全等价）
   const exact = FSD_TO_MISSION[roleId as FsdRoleId];
   if (exact) return exact;

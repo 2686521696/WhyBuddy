@@ -83,6 +83,7 @@ export interface BrainstormGraphActions {
     nodeType: BranchNodeType;
     status: BranchNodeStatus;
     title?: string;
+    content?: string;
     sequenceNumber?: number;
   }): void;
 
@@ -101,6 +102,9 @@ export interface BrainstormGraphActions {
     sessionId: string;
     tokenUsed?: number;
   }): void;
+
+  /** Handle brainstorm.session.synthesizing event */
+  handleSessionSynthesizing(payload: { sessionId: string }): void;
 
   /** Handle brainstorm.session.failed event */
   handleSessionFailed(payload: { sessionId: string }): void;
@@ -209,6 +213,7 @@ export const useBrainstormGraphStore = create<
       type: payload.nodeType,
       status: payload.status ?? "active",
       title: payload.title ?? "",
+      content: payload.content,
       createdAt: now,
       updatedAt: now,
       sequenceNumber: payload.sequenceNumber ?? state.nodes.length + 1,
@@ -289,6 +294,12 @@ export const useBrainstormGraphStore = create<
     });
   },
 
+  handleSessionSynthesizing(payload) {
+    const state = get();
+    if (state.sessionId && payload.sessionId !== state.sessionId) return;
+    set({ sessionId: payload.sessionId, sessionStatus: "synthesizing" });
+  },
+
   handleSessionFailed(payload) {
     const state = get();
     if (state.sessionId && payload.sessionId !== state.sessionId) return;
@@ -299,3 +310,122 @@ export const useBrainstormGraphStore = create<
     set(INITIAL_BRAINSTORM_GRAPH);
   },
 }));
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+}
+
+export function dispatchBrainstormGraphEvent(event: {
+  type: string;
+  payload?: unknown;
+}): void {
+  if (!event.type.startsWith("brainstorm.")) return;
+
+  const payload = asRecord(event.payload);
+  const store = useBrainstormGraphStore.getState();
+
+  switch (event.type) {
+    case "brainstorm.gate.evaluated": {
+      const jobId = payload.jobId;
+      const stageId = payload.stageId;
+      if (typeof jobId !== "string" || typeof stageId !== "string") return;
+      const sessionId = `gate:${jobId}:${stageId}`;
+      store.handleSessionStarted({
+        sessionId,
+        mode: typeof payload.recommendedMode === "string"
+          ? payload.recommendedMode as CollaborationMode
+          : undefined,
+        roles: Array.isArray(payload.requiredRoles)
+          ? payload.requiredRoles as BrainstormRoleId[]
+          : undefined,
+      });
+      useBrainstormGraphStore.getState().handleNodeCreated({
+        sessionId,
+        nodeId: sessionId,
+        parentNodeId: null,
+        roleId: "decider",
+        nodeType: "decision",
+        status: "completed",
+        title: "Decision Gate",
+        content: typeof payload.reasoning === "string"
+          ? payload.reasoning
+          : `Brainstorm needed: ${String(payload.brainstormNeeded)}`,
+        sequenceNumber: 1,
+      });
+      break;
+    }
+    case "brainstorm.session.started": {
+      const sessionId = payload.sessionId;
+      if (typeof sessionId !== "string") return;
+      store.handleSessionStarted({
+        sessionId,
+        mode: typeof payload.mode === "string" ? payload.mode as CollaborationMode : undefined,
+        roles: Array.isArray(payload.roles) ? payload.roles as BrainstormRoleId[] : undefined,
+      });
+      break;
+    }
+    case "brainstorm.session.synthesizing": {
+      const sessionId = payload.sessionId;
+      if (typeof sessionId === "string") {
+        store.handleSessionSynthesizing({ sessionId });
+      }
+      break;
+    }
+    case "brainstorm.node.created": {
+      const sessionId = payload.sessionId;
+      const nodeId = payload.nodeId;
+      const roleId = payload.roleId;
+      const nodeType = payload.nodeType;
+      if (
+        typeof sessionId !== "string" ||
+        typeof nodeId !== "string" ||
+        typeof roleId !== "string" ||
+        typeof nodeType !== "string"
+      ) {
+        return;
+      }
+      store.handleNodeCreated({
+        sessionId,
+        nodeId,
+        parentNodeId: typeof payload.parentNodeId === "string" ? payload.parentNodeId : null,
+        roleId: roleId as BrainstormRoleId,
+        nodeType: nodeType as BranchNodeType,
+        status: typeof payload.status === "string" ? payload.status as BranchNodeStatus : "active",
+        title: typeof payload.title === "string" ? payload.title : undefined,
+        sequenceNumber: typeof payload.sequenceNumber === "number" ? payload.sequenceNumber : undefined,
+      });
+      break;
+    }
+    case "brainstorm.node.updated": {
+      const sessionId = payload.sessionId;
+      const nodeId = payload.nodeId;
+      if (typeof sessionId !== "string" || typeof nodeId !== "string") return;
+      store.handleNodeUpdated({
+        sessionId,
+        nodeId,
+        status: typeof payload.status === "string" ? payload.status as BranchNodeStatus : undefined,
+        content: typeof payload.content === "string" ? payload.content : undefined,
+        confidence: typeof payload.confidence === "number" ? payload.confidence : undefined,
+        tokenUsage: typeof payload.tokenUsage === "number" ? payload.tokenUsage : undefined,
+      });
+      break;
+    }
+    case "brainstorm.session.completed": {
+      const sessionId = payload.sessionId;
+      if (typeof sessionId === "string") {
+        store.handleSessionCompleted({
+          sessionId,
+          tokenUsed: typeof payload.tokenUsed === "number" ? payload.tokenUsed : undefined,
+        });
+      }
+      break;
+    }
+    case "brainstorm.session.failed": {
+      const sessionId = payload.sessionId;
+      if (typeof sessionId === "string") {
+        store.handleSessionFailed({ sessionId });
+      }
+      break;
+    }
+  }
+}

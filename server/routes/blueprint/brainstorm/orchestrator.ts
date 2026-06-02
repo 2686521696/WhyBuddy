@@ -21,6 +21,7 @@ import type {
   CrewMemberOutput,
   CrewMemberState,
   SessionConfig,
+  SynthesisResult,
 } from "../../../../shared/blueprint/brainstorm-contracts";
 
 import { getBrainstormRole } from "./role-registry";
@@ -159,6 +160,39 @@ export class BrainstormOrchestrator {
     return Array.from(this.sessions.values()).filter(
       (s) => s.status === "active" || s.status === "synthesizing",
     );
+  }
+
+  completeSynthesis(
+    sessionId: string,
+    synthesisResult: SynthesisResult,
+  ): BrainstormSession | null {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.status !== "synthesizing") {
+      return null;
+    }
+
+    session.status = "completed";
+    session.synthesisResult = synthesisResult;
+    session.completedAt = new Date();
+    session.tokenUsed += synthesisResult.tokenUsage;
+
+    this.createSynthesisNode(session, synthesisResult);
+
+    this.totalSessionsCompleted++;
+    this.totalDurationMs +=
+      session.completedAt.getTime() - session.startedAt.getTime();
+
+    this.emitEvent("brainstorm.session.completed", {
+      sessionId: session.id,
+      jobId: session.jobId,
+      stageId: session.stageId,
+      mode: session.mode,
+      status: "completed",
+      tokenUsed: session.tokenUsed,
+      synthesisResult,
+    });
+
+    return session;
   }
 
   /**
@@ -629,16 +663,10 @@ export class BrainstormOrchestrator {
     }
 
     session.status = "synthesizing";
-    session.completedAt = new Date();
 
     this.clearTimeoutWatchdog(session.id);
 
-    // Update diagnostics
-    this.totalSessionsCompleted++;
-    this.totalDurationMs +=
-      session.completedAt.getTime() - session.startedAt.getTime();
-
-    this.emitEvent("brainstorm.session.completed", {
+    this.emitEvent("brainstorm.session.synthesizing", {
       sessionId: session.id,
       jobId: session.jobId,
       stageId: session.stageId,
@@ -744,6 +772,7 @@ export class BrainstormOrchestrator {
     this.emitEvent("brainstorm.node.updated", {
       sessionId: session.id,
       nodeId,
+      roleId: node.roleId,
       status,
       content: content?.slice(0, 200),
       confidence,
@@ -751,6 +780,62 @@ export class BrainstormOrchestrator {
   }
 
   // ─── Cleanup ────────────────────────────────────────────────────────────
+
+  private createSynthesisNode(
+    session: BrainstormSession,
+    synthesisResult: SynthesisResult,
+  ): void {
+    const nodeId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const parentNode =
+      session.branchNodes.length > 0
+        ? session.branchNodes[session.branchNodes.length - 1]
+        : null;
+
+    const node: BranchNode = {
+      id: nodeId,
+      sessionId: session.id,
+      parentNodeId: parentNode?.id ?? null,
+      roleId: "decider",
+      type: "synthesis",
+      status: "completed",
+      title: "Synthesis",
+      content: synthesisResult.decision,
+      confidence: synthesisResult.confidence,
+      tokenUsage: synthesisResult.tokenUsage,
+      createdAt: now,
+      updatedAt: now,
+      sequenceNumber: this.nextSequenceNumber(session.id),
+    };
+
+    session.branchNodes.push(node);
+    if (parentNode) {
+      session.edges.push({
+        sourceNodeId: parentNode.id,
+        targetNodeId: nodeId,
+      });
+    }
+
+    this.emitEvent("brainstorm.node.created", {
+      sessionId: session.id,
+      nodeId,
+      parentNodeId: node.parentNodeId,
+      roleId: "decider",
+      nodeType: "synthesis",
+      status: "completed",
+      title: "Synthesis",
+      sequenceNumber: node.sequenceNumber,
+    });
+    this.emitEvent("brainstorm.node.updated", {
+      sessionId: session.id,
+      nodeId,
+      roleId: "decider",
+      status: "completed",
+      content: synthesisResult.decision.slice(0, 200),
+      confidence: synthesisResult.confidence,
+      tokenUsage: synthesisResult.tokenUsage,
+    });
+  }
 
   /**
    * Cleanup all sessions and timers. Used for graceful shutdown.

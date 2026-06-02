@@ -42,6 +42,12 @@ const ALL_MODES: CollaborationMode[] = [
 
 const arbRoleId: fc.Arbitrary<BrainstormRoleId> = fc.constantFrom(...ALL_ROLE_IDS);
 const arbMode: fc.Arbitrary<CollaborationMode> = fc.constantFrom(...ALL_MODES);
+const arbIsoDate = fc
+  .integer({
+    min: Date.parse("2000-01-01T00:00:00.000Z"),
+    max: Date.parse("2100-01-01T00:00:00.000Z"),
+  })
+  .map((ms) => new Date(ms).toISOString());
 
 const arbBranchNode: fc.Arbitrary<BranchNode> = fc.record({
   id: fc.uuid(),
@@ -54,8 +60,8 @@ const arbBranchNode: fc.Arbitrary<BranchNode> = fc.record({
   content: fc.option(fc.string({ minLength: 1, maxLength: 500 }), { nil: undefined }),
   confidence: fc.option(fc.double({ min: 0, max: 1, noNaN: true }), { nil: undefined }),
   tokenUsage: fc.option(fc.nat({ max: 5000 }), { nil: undefined }),
-  createdAt: fc.date().map((d) => d.toISOString()),
-  updatedAt: fc.date().map((d) => d.toISOString()),
+  createdAt: arbIsoDate,
+  updatedAt: arbIsoDate,
   sequenceNumber: fc.nat({ max: 500 }),
 });
 
@@ -91,8 +97,8 @@ const arbSessionArtifact: fc.Arbitrary<BrainstormSessionArtifact> = fc
     stageId: fc.string({ minLength: 1, maxLength: 30 }),
     mode: arbMode,
     roles: fc.uniqueArray(arbRoleId, { minLength: 1, maxLength: 6 }),
-    startedAt: fc.date().map((d) => d.toISOString()),
-    completedAt: fc.date().map((d) => d.toISOString()),
+    startedAt: arbIsoDate,
+    completedAt: arbIsoDate,
     nodes: fc.array(arbBranchNode, { minLength: 0, maxLength: 10 }),
     edges: fc.array(arbBranchEdge, { minLength: 0, maxLength: 10 }),
     synthesisResult: fc.option(arbSynthesisResult, { nil: null }),

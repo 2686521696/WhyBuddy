@@ -143,6 +143,15 @@ describe("Pipeline Integration - Routing", () => {
 
     expect(result.type).toBe("single-agent");
     expect(result.output).toBe("Single agent output");
+    expect(emitter).toHaveBeenCalledWith(
+      "brainstorm.gate.evaluated",
+      expect.objectContaining({
+        jobId: "job-1",
+        stageId: "planning",
+        brainstormNeeded: false,
+        recommendedMode: "discussion",
+      }),
+    );
 
     process.env.BLUEPRINT_BRAINSTORM_ENABLED = originalEnv;
     ctx.orchestrator.dispose();
@@ -324,6 +333,68 @@ describe("Pipeline Integration - Graceful Degradation", () => {
 // ─── Synthesis Result Feeding Back ──────────────────────────────────────────
 
 describe("Pipeline Integration - Synthesis Result", () => {
+  it("waits for synthesis and returns the synthesized decision", async () => {
+    let callIdx = 0;
+    const mockLLM: LLMCallerFn = vi.fn().mockImplementation((prompt: string) => {
+      callIdx++;
+      if (callIdx === 1) {
+        return Promise.resolve(JSON.stringify({
+          brainstormNeeded: true,
+          recommendedMode: "vote",
+          requiredRoles: ["planner"],
+          requiredToolCategories: [],
+          reasoning: "Complex task",
+        }));
+      }
+      if (prompt.includes("Respond with a JSON object matching this exact schema")) {
+        return Promise.resolve(JSON.stringify({
+          decision: "Final synthesized plan from multi-agent session",
+          confidence: 0.92,
+          reasoningPoints: [{ roleId: "planner", point: "Planner identified the staged approach." }],
+          dissentingOpinions: [],
+          tokenUsage: 42,
+        }));
+      }
+      return Promise.resolve(JSON.stringify({
+        content: "Crew member draft output",
+        confidence: 0.8,
+        needsToolCall: false,
+      }));
+    });
+
+    const emitter = makeMockEmitter();
+    const fallback = makeSingleAgentFallback();
+
+    const originalEnv = process.env.BLUEPRINT_BRAINSTORM_ENABLED;
+    process.env.BLUEPRINT_BRAINSTORM_ENABLED = "true";
+    const ctx = assembleBrainstormContext(mockLLM, emitter)!;
+
+    const result = await executeStageWithBrainstorm(
+      makeStageContext(),
+      ctx,
+      mockLLM,
+      emitter,
+      fallback,
+    );
+
+    expect(result.type).toBe("brainstorm");
+    expect(result.output).toBe("Final synthesized plan from multi-agent session");
+    expect(result.synthesisResult?.decision).toBe("Final synthesized plan from multi-agent session");
+    expect(fallback).not.toHaveBeenCalled();
+
+    const completedCalls = (emitter as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([eventType]) => eventType === "brainstorm.session.completed",
+    );
+    expect(completedCalls).toHaveLength(1);
+    expect(completedCalls[0][1].status).toBe("completed");
+    expect(completedCalls[0][1].synthesisResult).toMatchObject({
+      decision: "Final synthesized plan from multi-agent session",
+    });
+
+    process.env.BLUEPRINT_BRAINSTORM_ENABLED = originalEnv;
+    ctx.orchestrator.dispose();
+  });
+
   it("feeds synthesis result back as stage output", async () => {
     let callIdx = 0;
     const mockLLM: LLMCallerFn = vi.fn().mockImplementation(() => {

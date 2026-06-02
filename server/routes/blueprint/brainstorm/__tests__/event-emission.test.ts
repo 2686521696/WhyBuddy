@@ -110,11 +110,12 @@ describe("Brainstorm Event Emission", () => {
     for (const event of nodeUpdatedEvents) {
       expect(event.payload.sessionId).toBeDefined();
       expect(event.payload.nodeId).toBeDefined();
+      expect(event.payload.roleId).toBeDefined();
       expect(event.payload.status).toBeDefined();
     }
   });
 
-  it("emits brainstorm.session.completed when session finishes", async () => {
+  it("emits brainstorm.session.synthesizing when members finish", async () => {
     const config: SessionConfig = {
       jobId: "job-4",
       stageId: "stage-4",
@@ -127,12 +128,12 @@ describe("Brainstorm Event Emission", () => {
     await orchestrator.startSession(config);
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    const completedEvent = emittedEvents.find(
-      (e) => e.type === "brainstorm.session.completed"
+    const synthesizingEvent = emittedEvents.find(
+      (e) => e.type === "brainstorm.session.synthesizing"
     );
-    expect(completedEvent).toBeDefined();
-    expect(completedEvent!.payload.sessionId).toBeDefined();
-    expect(completedEvent!.payload.mode).toBe("vote");
+    expect(synthesizingEvent).toBeDefined();
+    expect(synthesizingEvent!.payload.sessionId).toBeDefined();
+    expect(synthesizingEvent!.payload.mode).toBe("vote");
   });
 
   it("emits brainstorm.degraded when session error occurs", async () => {
@@ -160,10 +161,10 @@ describe("Brainstorm Event Emission", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // When LLM fails, the crew member is marked as failed and the session
-    // eventually transitions to synthesizing (completion). The session.completed
-    // event should be emitted.
+    // eventually transitions to synthesizing so the pipeline can synthesize
+    // partial results or degrade.
     const completedOrDegraded = emittedEvents.filter(
-      (e) => e.type === "brainstorm.session.completed" || e.type === "brainstorm.degraded"
+      (e) => e.type === "brainstorm.session.synthesizing" || e.type === "brainstorm.degraded"
     );
     expect(completedOrDegraded.length).toBeGreaterThan(0);
     failOrchestrator.dispose();
@@ -233,8 +234,15 @@ describe("Brainstorm Event Emission", () => {
       stageContext: "Test context",
     };
 
-    await orchestrator.startSession(config);
+    const session = await orchestrator.startSession(config);
     await new Promise((resolve) => setTimeout(resolve, 200));
+    orchestrator.completeSynthesis(session.id, {
+      decision: "Final decision",
+      confidence: 0.8,
+      reasoningPoints: [{ roleId: "planner", point: "Planner output" }],
+      dissentingOpinions: [],
+      tokenUsage: 1,
+    });
 
     const completedEvent = emittedEvents.find(
       (e) => e.type === "brainstorm.session.completed"
@@ -242,6 +250,13 @@ describe("Brainstorm Event Emission", () => {
     expect(completedEvent!.payload).toHaveProperty("sessionId");
     expect(completedEvent!.payload).toHaveProperty("mode");
     expect(completedEvent!.payload).toHaveProperty("tokenUsed");
+
+    const synthesisNodeUpdate = emittedEvents.find(
+      (e) =>
+        e.type === "brainstorm.node.updated" &&
+        e.payload.content === "Final decision"
+    );
+    expect(synthesisNodeUpdate?.payload.roleId).toBe("decider");
   });
 
   // ─── Cleanup ───────────────────────────────────────────────────────────────

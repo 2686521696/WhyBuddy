@@ -128,14 +128,14 @@ describe("BRAINSTORM_NODE_COLORS", () => {
 
 describe("Layout constants", () => {
   it("has correct node dimensions", () => {
-    expect(BRAINSTORM_NODE_W).toBe(180);
-    expect(BRAINSTORM_NODE_H).toBe(56);
-    expect(BRAINSTORM_PADDING).toBe(30);
+    expect(BRAINSTORM_NODE_W).toBe(540);
+    expect(BRAINSTORM_NODE_H).toBe(168);
+    expect(BRAINSTORM_PADDING).toBe(90);
   });
 
   it("has correct canvas dimensions", () => {
-    expect(CANVAS_W).toBe(1280);
-    expect(CANVAS_H).toBe(580);
+    expect(CANVAS_W).toBe(3840);
+    expect(CANVAS_H).toBe(1740);
   });
 
   it("MAX_TITLE_LENGTH is 22", () => {
