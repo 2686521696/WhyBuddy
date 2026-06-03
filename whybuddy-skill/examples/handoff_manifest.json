@@ -1,0 +1,55 @@
+{
+  "skill": "whybuddy-closed-loop",
+  "version": "0.1.0",
+  "artifacts": [
+    {
+      "type": "diagram",
+      "path": "docs/architecture.mmd",
+      "description": "闭环总图的 Mermaid 权威版本"
+    },
+    {
+      "type": "skill_doc",
+      "path": "SKILL.md",
+      "description": "Skill 主说明与边界约定"
+    },
+    {
+      "type": "requirements",
+      "path": "docs/requirements.md",
+      "description": "功能与验收要求"
+    },
+    {
+      "type": "design",
+      "path": "docs/design.md",
+      "description": "模块设计与宿主集成说明"
+    },
+    {
+      "type": "tasks",
+      "path": "docs/tasks.md",
+      "description": "分阶段落地任务"
+    },
+    {
+      "type": "prompt_pack",
+      "path": "docs/prompt_pack.md",
+      "description": "执行提示骨架"
+    },
+    {
+      "type": "effect_preview",
+      "path": "docs/effect_preview.md",
+      "description": "用户侧效果预览描述"
+    }
+  ],
+  "scripts": [
+    "scripts/validate_spec_tree.py",
+    "scripts/fallback_tree.py",
+    "scripts/check_content_quality.py"
+  ],
+  "hostResponsibilities": [
+    "artifact_store",
+    "event_bus",
+    "socket_relay",
+    "realtime_store",
+    "status_deriver",
+    "replay_reader",
+    "invalidation_engine"
+  ]
+}
