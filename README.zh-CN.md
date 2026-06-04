@@ -7,6 +7,10 @@
 简洁通用的产品推演引擎，推演万物。</strong>
 </p>
 
+<p align="center">
+  <sub>TRAE Skill 挑战赛作品 / 社区展示项目</sub>
+</p>
+
 <blockquote>
 <strong>进度说明：</strong>当前工程化项目进度暂时落后于 WhyBuddy Skill。如需完整产品预演体验，请优先使用 <a href="./skills/whybuddy.zip">WhyBuddy Skill</a>；工程化项目仍在持续推进中。
 </blockquote>

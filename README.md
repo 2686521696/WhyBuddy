@@ -7,6 +7,10 @@
 简洁通用的产品推演引擎，推演万物。</strong>
 </p>
 
+<p align="center">
+  <sub>TRAE Skill Challenge / Community Showcase Project</sub>
+</p>
+
 <blockquote>
 <strong>Progress note:</strong> The engineering app currently trails the WhyBuddy Skill. For the complete product rehearsal experience, use the <a href="./skills/whybuddy.zip">WhyBuddy Skill</a> first; the engineered project is still moving forward.
 </blockquote>
