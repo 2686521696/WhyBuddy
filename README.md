@@ -2,12 +2,14 @@
   <img src="./docs/assets/banner.png" alt="WhyBuddy" width="100%" />
 </p>
 
-<h1 align="center">🏢 WhyBuddy</h1>
-
 <p align="center">
   <strong>A Simple and Universal Product Rehearsal Engine, Speccing Anything.
 简洁通用的产品推演引擎，推演万物。</strong>
 </p>
+
+<blockquote>
+<strong>Progress note:</strong> The engineering app currently trails the WhyBuddy Skill. For the complete product rehearsal experience, use the <a href="./skills/whybuddy.zip">WhyBuddy Skill</a> first; the engineered project is still moving forward.
+</blockquote>
 
 <p align="center">
   <a href="./README.md"><strong>English</strong></a> ·
@@ -69,6 +71,14 @@ Enter an idea → **5 minutes** → full rehearsal → decide whether it is wort
 A consolidated 36-screen photo wall from WhyBuddy example rehearsals.
 
 <img src="./docs/WhyBuddy_%E7%85%A7%E7%89%87%E5%A2%99_36%E5%9B%BE.png" alt="WhyBuddy 36-screen product photo wall" />
+
+**Watch the Full Rehearsal Demo**
+
+TRAE SOLO-based product rehearsal automation: from a one-sentence idea to executable specs.
+
+[<img src="./docs/assets/LiveVideo.png" alt="TRAE SOLO product rehearsal automation demo video" width="100%" />](https://www.bilibili.com/video/BV1BbEA6RE8a/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=f07b7d222ea8a4494ad17a2a3911b1ae)
+
+Click the video cover above to open the Bilibili demo.
 
 ---
 
@@ -144,7 +154,7 @@ python scripts/check_previews_real.py
 
 ## 🔄 Workflow
 
-The closed-loop route follows the v2 architecture diagram: solid lines are the main delivery path; dashed lines are runtime support, feedback, invalidation, and recovery.
+The closed-loop route follows the v4 architecture diagram: solid lines are the main delivery path; dashed lines are runtime support, feedback, invalidation, and recovery.
 
 ```text
 User idea / repo / file / screenshot
@@ -188,7 +198,7 @@ The runtime layer runs beside the main path: job/artifact store, event bus, sock
 
 ## 🤖 FSD Agent Fleet
 
-The v2 diagram no longer treats the team as a fixed meeting room of roles. WhyBuddy switches between a single-agent path and a multi-role collaboration path through the **Decision Gate**.
+The v4 diagram no longer treats the team as a fixed meeting room of roles. WhyBuddy switches between a single-agent path and a multi-role collaboration path through the **Decision Gate**.
 
 | Role layer | When it appears | Responsibility |
 |:-----------|:----------------|:---------------|
@@ -350,7 +360,7 @@ Or open the repository at [xiaojilele-glitch/WhyBuddy](https://github.com/xiaoji
 
 <!-- BEGIN WHYBUDDY_SKILL_ARCH -->
 
-Source: [WhyBuddy Skill closed-loop architecture v2](./docs/assets/WhyBuddyArc/Whybuddyskill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE%20%E6%94%B9%E8%BF%9B%E7%89%88v2%20%C2%B7%20MD.md)
+Source: [WhyBuddy Skill closed-loop architecture v4](./docs/assets/WhyBuddyArc/WhyBuddySkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md)
 
 ```mermaid
 flowchart TB
@@ -424,8 +434,9 @@ subgraph S6["06 效果预览与交付 / Preview and Handoff"]
   direction TB
   EP_PACK["提示词包 / Prompt Pack"]:::preview
   EP_PREV["效果预览 / Effect Preview"]:::preview
-  EP_VIS_GEN["★ 视觉预览·生成 / Gen Preview<br/>规格文档→生图提示词→生图模型<br/>UI 草样 · 标『预览·未验证』"]:::preview
+  EP_VIS_GEN["◆ 视觉预览·生成 / Gen Preview<br/>按模块(每需求一页)→生图模型<br/>只认真成功张数·防复制·禁兜底·503重试<br/>UI 草样 · 标『预览·未验证』"]:::preview
   EP_VIS_REND["★ 结构图·渲染 / Rendered<br/>规格树→Mermaid 确定性出图<br/>架构总图 · 不交给生图模型"]:::preview
+  EP_VIS_AUDIT["◆◆ 出图审计 / check_previews_real<br/>查 provenance：兜底·假成功(ok却带error)·复制充数<br/>用户自跑，agent 改不了这步"]:::companion
   EP_MATRIX["★ 可追溯矩阵 / Traceability<br/>需求↔设计↔任务↔证据↔用例"]:::preview
   EP_HAND["交付包 · 导出 / Handoff · Export<br/>md·zip · 接口契约(草稿·待核) · 验收用例<br/>未决项登记 · 校验台账 · 视觉预览(标来源)"]:::preview
 end
@@ -607,6 +618,17 @@ EP_VIS_REND -.-> EP_HAND
 SP_TREE -. 汇总追溯 .-> EP_MATRIX
 EP_MATRIX -.-> EP_HAND
 
+%% ===== ◆ v3 新增：伴随留痕进台账 + 按模块出图 gate 进台账 (112-115) =====
+CO_CRIT -. 留痕进台账 .-> QA_LEDGER
+CO_GROUND -. 留痕进台账 .-> QA_LEDGER
+SP_TREE -. 按模块驱动出图 .-> EP_VIS_GEN
+EP_VIS_GEN -. 出图核验·进台账 .-> QA_LEDGER
+
+%% ===== ◆◆ v4 新增：出图可信层 (116-118) =====
+EP_VIS_GEN -. 出图后必审计 .-> EP_VIS_AUDIT
+EP_VIS_AUDIT -. 审计结果进台账 .-> QA_LEDGER
+EP_VIS_AUDIT -. 揪出假图·回炉重出 .-> EP_VIS_GEN
+
 %% ===== 节点样式（按层）=====
 classDef entry fill:#eef6ff,stroke:#2563eb,color:#0f172a,stroke-width:2px;
 classDef input fill:#eff6ff,stroke:#2563eb,color:#111827,stroke-width:1.5px;
@@ -645,6 +667,8 @@ linkStyle 41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60 stroke:#64
 linkStyle 61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92 stroke:#ef4444,stroke-width:1.8px,stroke-dasharray:6 4;
 linkStyle 93,94,95,96,97,98,99,100 stroke:#0f766e,stroke-width:2.5px,stroke-dasharray:4 3;
 linkStyle 101,102,103,104,105,106,107,108,109,110,111 stroke:#0f766e,stroke-width:2px,stroke-dasharray:4 3;
+linkStyle 112,113,114,115 stroke:#db2777,stroke-width:2px,stroke-dasharray:3 3;
+linkStyle 116,117,118 stroke:#dc2626,stroke-width:2px,stroke-dasharray:3 3;
 ```
 
 <!-- END WHYBUDDY_SKILL_ARCH -->

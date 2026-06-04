@@ -2,12 +2,14 @@
   <img src="./docs/assets/banner.png" alt="WhyBuddy" width="100%" />
 </p>
 
-<h1 align="center">🏢 WhyBuddy</h1>
-
 <p align="center">
   <strong>A Simple and Universal Product Rehearsal Engine, Speccing Anything.
 简洁通用的产品推演引擎，推演万物。</strong>
 </p>
+
+<blockquote>
+<strong>进度说明：</strong>当前工程化项目进度暂时落后于 WhyBuddy Skill。如需完整产品预演体验，请优先使用 <a href="./skills/whybuddy.zip">WhyBuddy Skill</a>；工程化项目仍在持续推进中。
+</blockquote>
 
 <p align="center">
   <a href="./README.md"><strong>English</strong></a> ·
@@ -69,6 +71,14 @@
 来自 WhyBuddy 示例预演的 36 张界面合成照片墙。
 
 <img src="./docs/WhyBuddy_照片墙_36图.png" alt="WhyBuddy 36 张产品界面照片墙" />
+
+**观看完整产品预演演示**
+
+基于 TRAE SOLO 的产品预演全流程自动化：从一句话想法到可执行规格。
+
+[<img src="./docs/assets/LiveVideo.png" alt="基于 TRAE SOLO 的产品预演全流程自动化演示视频" width="100%" />](https://www.bilibili.com/video/BV1BbEA6RE8a/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=f07b7d222ea8a4494ad17a2a3911b1ae)
+
+点击上方视频封面即可跳转到 B 站演示视频。
 
 ---
 
@@ -143,7 +153,7 @@ python scripts/check_previews_real.py
 
 ## 🔄 工作流程
 
-闭环路线按 v2 架构图来走：实线是主交付链路，虚线是运行时支撑、反馈、失效与回炉。
+闭环路线按 v4 架构图来走：实线是主交付链路，虚线是运行时支撑、反馈、失效与回炉。
 
 ```text
 用户想法 / 仓库 / 文件 / 截图
@@ -187,7 +197,7 @@ python scripts/check_previews_real.py
 
 ## 🤖 FSD 角色车队
 
-v2 总图不再把角色车队理解成固定开会的一排角色，而是通过 **决策门** 在“单 Agent 直达”和“多角色协作”之间切换。
+v4 总图不再把角色车队理解成固定开会的一排角色，而是通过 **决策门** 在“单 Agent 直达”和“多角色协作”之间切换。
 
 | 角色层 | 什么时候出现 | 职责 |
 |:------|:------------|:-----|
@@ -347,7 +357,7 @@ pnpm run dev:frontend     # 打开 localhost:5173
 
 <!-- BEGIN WHYBUDDY_SKILL_ARCH -->
 
-来源: [WhyBuddy Skill 闭环架构图 v2](./docs/assets/WhyBuddyArc/Whybuddyskill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE%20%E6%94%B9%E8%BF%9B%E7%89%88v2%20%C2%B7%20MD.md)
+来源: [WhyBuddy Skill 闭环架构图 v4](./docs/assets/WhyBuddyArc/WhyBuddySkill%E9%97%AD%E7%8E%AF%E6%80%BB%E5%9B%BE_%E6%94%B9%E8%BF%9B%E7%89%88v4.md)
 
 ```mermaid
 flowchart TB
@@ -421,8 +431,9 @@ subgraph S6["06 效果预览与交付 / Preview and Handoff"]
   direction TB
   EP_PACK["提示词包 / Prompt Pack"]:::preview
   EP_PREV["效果预览 / Effect Preview"]:::preview
-  EP_VIS_GEN["★ 视觉预览·生成 / Gen Preview<br/>规格文档→生图提示词→生图模型<br/>UI 草样 · 标『预览·未验证』"]:::preview
+  EP_VIS_GEN["◆ 视觉预览·生成 / Gen Preview<br/>按模块(每需求一页)→生图模型<br/>只认真成功张数·防复制·禁兜底·503重试<br/>UI 草样 · 标『预览·未验证』"]:::preview
   EP_VIS_REND["★ 结构图·渲染 / Rendered<br/>规格树→Mermaid 确定性出图<br/>架构总图 · 不交给生图模型"]:::preview
+  EP_VIS_AUDIT["◆◆ 出图审计 / check_previews_real<br/>查 provenance：兜底·假成功(ok却带error)·复制充数<br/>用户自跑，agent 改不了这步"]:::companion
   EP_MATRIX["★ 可追溯矩阵 / Traceability<br/>需求↔设计↔任务↔证据↔用例"]:::preview
   EP_HAND["交付包 · 导出 / Handoff · Export<br/>md·zip · 接口契约(草稿·待核) · 验收用例<br/>未决项登记 · 校验台账 · 视觉预览(标来源)"]:::preview
 end
@@ -604,6 +615,17 @@ EP_VIS_REND -.-> EP_HAND
 SP_TREE -. 汇总追溯 .-> EP_MATRIX
 EP_MATRIX -.-> EP_HAND
 
+%% ===== ◆ v3 新增：伴随留痕进台账 + 按模块出图 gate 进台账 (112-115) =====
+CO_CRIT -. 留痕进台账 .-> QA_LEDGER
+CO_GROUND -. 留痕进台账 .-> QA_LEDGER
+SP_TREE -. 按模块驱动出图 .-> EP_VIS_GEN
+EP_VIS_GEN -. 出图核验·进台账 .-> QA_LEDGER
+
+%% ===== ◆◆ v4 新增：出图可信层 (116-118) =====
+EP_VIS_GEN -. 出图后必审计 .-> EP_VIS_AUDIT
+EP_VIS_AUDIT -. 审计结果进台账 .-> QA_LEDGER
+EP_VIS_AUDIT -. 揪出假图·回炉重出 .-> EP_VIS_GEN
+
 %% ===== 节点样式（按层）=====
 classDef entry fill:#eef6ff,stroke:#2563eb,color:#0f172a,stroke-width:2px;
 classDef input fill:#eff6ff,stroke:#2563eb,color:#111827,stroke-width:1.5px;
@@ -642,6 +664,8 @@ linkStyle 41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60 stroke:#64
 linkStyle 61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92 stroke:#ef4444,stroke-width:1.8px,stroke-dasharray:6 4;
 linkStyle 93,94,95,96,97,98,99,100 stroke:#0f766e,stroke-width:2.5px,stroke-dasharray:4 3;
 linkStyle 101,102,103,104,105,106,107,108,109,110,111 stroke:#0f766e,stroke-width:2px,stroke-dasharray:4 3;
+linkStyle 112,113,114,115 stroke:#db2777,stroke-width:2px,stroke-dasharray:3 3;
+linkStyle 116,117,118 stroke:#dc2626,stroke-width:2px,stroke-dasharray:3 3;
 ```
 
 <!-- END WHYBUDDY_SKILL_ARCH -->
