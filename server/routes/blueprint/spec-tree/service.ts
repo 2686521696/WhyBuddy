@@ -47,6 +47,7 @@ import {
   checkRequirementCoverage,
   checkNodeEvidence,
 } from "./business-invariants.js";
+import { computeFuzzinessScore } from "../companion/fuzziness.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -407,6 +408,28 @@ export function createSpecTreeLlmService(
         validator: "spec-tree/business-invariants.ts",
         output: evidence.output,
       });
+    }
+
+    // ─── Module A: 伴随式审查（spec_tree 阶段，Critic 触发）──────────
+    // 对抗独立性：只把最终 SPEC 树节点作为 artifact 传入，不含生成方推理。
+    // 非阻塞 + 按 env gate（在 companionLayer 内部判定）。
+    const companionLayer = (ctx as { companionLayer?: import("../companion/types.js").CompanionLayerService }).companionLayer;
+    if (companionLayer) {
+      try {
+        await companionLayer.evaluateAll(
+          {
+            jobId: input.jobId,
+            stage: "spec_tree",
+            fuzzinessScore: computeFuzzinessScore(remapped.nodes),
+            hasRealRepo: ((input.request as { githubUrls?: string[] }).githubUrls ?? []).length > 0,
+          },
+          remapped.nodes,
+        );
+      } catch (err) {
+        ctx.logger.warn("spec-tree: companion evaluation failed (non-blocking)", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     // Compute digests

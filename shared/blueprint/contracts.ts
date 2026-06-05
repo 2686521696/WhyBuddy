@@ -1982,6 +1982,11 @@ export interface BlueprintGenerationJob {
   staleArtifactIds?: string[];
   /** 校验台账条目（可选，append-only）。由 `blueprint-checks-ledger` spec 引入。 */
   checksLedger?: import("./checks-ledger/types.js").BlueprintChecksLedgerEntry[];
+  /**
+   * 伴随层发现（可选）。由 `blueprint-v4-full-alignment` Module A 引入。
+   * 仅 warn/error 级 finding 进入此数组，供交付/评审视图露出（R2.8/R3.8）。
+   */
+  companionFindings?: import("./companion/types.js").CompanionFinding[];
 }
 
 export interface BlueprintFamilyResponse {

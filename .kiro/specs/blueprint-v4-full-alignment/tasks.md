@@ -27,30 +27,30 @@
 
 ## Phase 3: Module A — CO 伴随式审查与接地层 (含 Module B 留痕)
 
-- [~] A.1 创建 `shared/blueprint/companion/types.ts`：CompanionFinding、CompanionTriggerContext、CriticService、GroundingService、CompanionLayerService
-- [~] A.2 创建 `shared/blueprint/companion/index.ts` barrel export
-- [~] A.3 在 `shared/blueprint/index.ts` 新增 companion re-export
-- [~] A.4 创建 `server/routes/blueprint/companion/policy.ts`：CompanionLayerPolicy 默认值
-- [~] A.5 创建 `server/routes/blueprint/companion/fuzziness.ts`：规则引擎计算模糊度评分
-- [ ] A.6 创建 `server/routes/blueprint/companion/critic.ts`：createCriticService(ctx, policy)
-  - [~] A.6.1 对抗独立性：只传 artifact，不传生成方推理/chain-of-thought
-  - [~] A.6.2 LLM 调用产出 CompanionFinding
-  - [~] A.6.3 降级：LLM 不可用时返回 info 级 finding
-- [ ] A.7 创建 `server/routes/blueprint/companion/grounding.ts`：createGroundingService(ctx, policy)
-  - [~] A.7.1 通过 ctx.mcpToolAdapter / ctx.httpFetcher 读取仓库
-  - [~] A.7.2 验证 artifact 中的声明是否有真实引用
-  - [~] A.7.3 降级：依赖不可用时返回 warn 级 finding
-- [ ] A.8 创建 `server/routes/blueprint/companion/service.ts`：createCompanionLayer(ctx) 总工厂
-  - [~] A.8.1 evaluateAll() 顺序调用 critic + grounding
-  - [~] A.8.2 每个 finding → checksLedger.recordCheck(companion_trace)
-  - [~] A.8.3 warn/error 级 finding → push 到 job.companionFindings[]
-- [~] A.9 在 `BlueprintServiceContext` 新增 `companionLayer?` 和 `companionLayerPolicy?`
-- [~] A.10 在 `buildBlueprintServiceContext()` 按 env gate 装配
-- [ ] A.11 在管线调用点接入：
-  - [~] A.11.1 Critic 接入 clarification、route_generation、spec_tree 三阶段（R2.3）
-  - [~] A.11.2 Grounding 接入 input(IN_INGEST) 和 clarification(CL_BRIEF) 两阶段（R3.1）— input 阶段是 Grounding 独有、最该读真仓库的入料点
-- [~] A.12 实现交付包 `companion_log.json` 导出（全量 findings + warn/error 醒目区块）
-- [~] A.13 单元测试：触发阈值、独立性（不传推理验证）、降级、台账写入、findings 露出
+- [x] A.1 创建 `shared/blueprint/companion/types.ts`：CompanionFinding、CompanionTriggerContext、CriticService、GroundingService、CompanionLayerService
+- [x] A.2 创建 `shared/blueprint/companion/index.ts` barrel export
+- [x] A.3 在 `shared/blueprint/index.ts` 新增 companion re-export
+- [x] A.4 创建 `server/routes/blueprint/companion/policy.ts`：CompanionLayerPolicy 默认值
+- [x] A.5 创建 `server/routes/blueprint/companion/fuzziness.ts`：规则引擎计算模糊度评分
+- [x] A.6 创建 `server/routes/blueprint/companion/critic.ts`：createCriticService(ctx, policy)
+  - [x] A.6.1 对抗独立性：只传 artifact，不传生成方推理/chain-of-thought
+  - [x] A.6.2 LLM 调用产出 CompanionFinding
+  - [x] A.6.3 降级：LLM 不可用时返回 info 级 finding
+- [x] A.7 创建 `server/routes/blueprint/companion/grounding.ts`：createGroundingService(ctx, policy)
+  - [x] A.7.1 通过 ctx.mcpToolAdapter / ctx.httpFetcher 读取仓库
+  - [x] A.7.2 验证 artifact 中的声明是否有真实引用
+  - [x] A.7.3 降级：依赖不可用时返回 warn 级 finding
+- [x] A.8 创建 `server/routes/blueprint/companion/service.ts`：createCompanionLayer(ctx) 总工厂
+  - [x] A.8.1 evaluateAll() 顺序调用 critic + grounding
+  - [x] A.8.2 每个 finding → checksLedger.recordCheck(companion_trace)
+  - [x] A.8.3 warn/error 级 finding → push 到 job.companionFindings[]
+- [x] A.9 在 `BlueprintServiceContext` 新增 `companionLayer?` 和 `companionLayerPolicy?`
+- [x] A.10 在 `buildBlueprintServiceContext()` 按 env gate 装配
+- [x] A.11 在管线调用点接入：
+  - [x] A.11.1 Critic 接入 clarification、route_generation、spec_tree 三阶段（R2.3）
+  - [x] A.11.2 Grounding 接入 input(IN_INGEST) 和 clarification(CL_BRIEF) 两阶段（R3.1）— input 阶段是 Grounding 独有、最该读真仓库的入料点
+- [x] A.12 实现交付包 `companion_log.json` 导出（全量 findings + warn/error 醒目区块）
+- [x] A.13 单元测试：触发阈值、独立性（不传推理验证）、降级、台账写入、findings 露出
 
 ## Phase 4: Module C — EP_MATRIX 可追溯矩阵
 

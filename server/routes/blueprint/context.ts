@@ -153,6 +153,7 @@ import type { EngineeringHandoffLlmService } from "./engineering-handoff/service
 import { createEngineeringHandoffLlmService } from "./engineering-handoff/service.js";
 import { createChecksLedgerService } from "./checks-ledger/service.js";
 import { createContentQualityService } from "./content-quality/service.js";
+import { createCompanionLayer } from "./companion/service.js";
 
 /**
  * Role System Architecture capability policy interface.
@@ -761,6 +762,14 @@ export interface BlueprintServiceContext {
    * @see .kiro/specs/blueprint-content-quality-check/design.md §4
    */
   contentQuality?: import("./content-quality/types.js").ContentQualityService;
+
+  /**
+   * 伴随层服务实例（可选）。`blueprint-v4-full-alignment` Module A。
+   * 由 `buildBlueprintServiceContext` 按 `BLUEPRINT_COMPANION_ENABLED === "true"` 装配。
+   */
+  companionLayer?: import("./companion/types.js").CompanionLayerService;
+  /** 伴随层策略（可选，纯数据，R17）。 */
+  companionLayerPolicy?: import("./companion/types.js").CompanionLayerPolicy;
 
   /**
    * Optional: Multi-Agent Brainstorm subsystem context.
@@ -1791,6 +1800,11 @@ export function buildBlueprintServiceContext(
   // ── Content Quality (blueprint-content-quality-check spec Task 5.2) ──
   if (!ctx.contentQuality && process.env.BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED === "true") {
     ctx.contentQuality = createContentQualityService(ctx);
+  }
+
+  // ── Companion Layer (blueprint-v4-full-alignment Module A) ──
+  if (!ctx.companionLayer && process.env.BLUEPRINT_COMPANION_ENABLED === "true") {
+    ctx.companionLayer = createCompanionLayer(ctx);
   }
 
   return ctx;

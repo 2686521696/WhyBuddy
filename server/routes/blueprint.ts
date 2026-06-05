@@ -35,6 +35,7 @@ import {
   type BlueprintServiceContext,
 } from "./blueprint/context.js";
 import { createAgentCrewStageActivationDriver } from "./blueprint/agent-crew-stage-activation/driver.js";
+import { computeFuzzinessScore as computeCompanionFuzziness } from "./blueprint/companion/fuzziness.js";
 // `autopilot-llm-spec-generation` Task 6.2：以 `import type` 引入
 // `SpecDocsLlmNodeOutput`，仅作为 `buildSpecDocument` 的可选参数注入 LLM
 // 批量生成结果，不会触发 spec-docs-llm-generation.ts 内部 runtime 副作用。
@@ -734,6 +735,25 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           deps.generateClarificationQuestions ??
           generateClarificationQuestionsWithLlm,
       });
+
+      // ── Module A: 伴随式审查（clarification 阶段）──────────────────
+      // Critic（R2.3）+ Grounding（R3.1）均在此阶段触发。非阻塞 + env gate。
+      const companionLayer = blueprintServiceContext.companionLayer;
+      if (companionLayer) {
+        try {
+          await companionLayer.evaluateAll(
+            {
+              jobId: session.id,
+              stage: "clarification",
+              fuzzinessScore: computeCompanionFuzziness(session),
+              hasRealRepo: (intake.githubUrls ?? []).length > 0,
+            },
+            session,
+          );
+        } catch {
+          // 非阻塞：伴随层失败不影响澄清会话返回
+        }
+      }
 
       res.status(201).json({ session });
     } catch (error) {
