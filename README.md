@@ -1,4 +1,11 @@
 <p align="center">
+  <sub>Sponsored by</sub><br/>
+  <a href="https://isqqw.com"><img src="https://img.shields.io/badge/ISQQW.com-Echarts_Demo集-2563eb?style=for-the-badge&logo=apache-echarts&logoColor=white" alt="ISQQW.com" /></a>
+  &nbsp;&nbsp;
+  <a href="https://codex-for.me"><img src="https://img.shields.io/badge/Codex--For.Me-Cloud_Platform-f97316?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Codex-For.Me" /></a>
+</p>
+
+<p align="center">
   <img src="./docs/assets/banner.png" alt="WhyBuddy" width="100%" />
 </p>
 
