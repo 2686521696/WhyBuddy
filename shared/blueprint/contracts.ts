@@ -1336,6 +1336,11 @@ export interface NodeImageRecord {
   promptUsed: string;
   /** ISO8601 timestamp when the image was generated. */
   generatedAt: string;
+  /**
+   * 图片来源元数据（`blueprint-v4-full-alignment` Module F / R19.5）。
+   * 供出图审计（Module E）消费。可选以保持向后兼容。
+   */
+  provenance?: import("./preview-audit/types.js").BlueprintPreviewProvenance;
 }
 
 export interface BlueprintEffectPreview {

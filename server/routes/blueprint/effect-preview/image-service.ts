@@ -87,6 +87,7 @@ import type {
   FallbackTier,
   NodeImageRecord,
 } from "../../../../shared/blueprint/contracts.js";
+import type { BlueprintPreviewProvenance } from "../../../../shared/blueprint/preview-audit/types.js";
 import { lookupImagePricing } from "../../../../shared/cost.js";
 
 import type {
@@ -210,6 +211,15 @@ export interface ImageServiceRunStageCResult {
   readonly imageBase64ByNodeId?: Record<string, NodeImageRecord>;
   readonly textOnlyEffectPreview?: ImageServiceTextOnlyEffectPreview;
   readonly progressPlan: ReadonlyArray<ProgressPlanEntry>;
+  /**
+   * Module F (R19.5)：失败节点的 provenance（source:"fallback"/"template", 通常 ok:false）。
+   * 失败节点不写 .png（不进 imageBase64ByNodeId），但其 provenance 在此暴露，
+   * 供出图审计（Module E）读取来源元数据。
+   */
+  readonly failedProvenanceByNodeId?: Record<
+    string,
+    import("../../../../shared/blueprint/preview-audit/types.js").BlueprintPreviewProvenance
+  >;
 }
 
 /**
@@ -424,13 +434,16 @@ async function runRasterPipeline(args: {
   readonly scheduler: EffectPreviewScheduler;
   readonly imageApiClient: ImageApiClient;
   readonly costTracker?: BlueprintCostTrackerLike;
+  readonly maxRetries?: number;
 }): Promise<{
   readonly progressPlan: ReadonlyArray<ProgressPlanEntry>;
   readonly imageBase64ByNodeId?: Record<string, NodeImageRecord>;
   readonly textOnlyEffectPreview?: ImageServiceTextOnlyEffectPreview;
+  readonly failedProvenanceByNodeId?: Record<string, BlueprintPreviewProvenance>;
 }> {
   let currentPlan: ReadonlyArray<ProgressPlanEntry> = args.progressPlan;
   const imageBase64ByNodeId: Record<string, NodeImageRecord> = {};
+  const failedProvenanceByNodeId: Record<string, BlueprintPreviewProvenance> = {};
   let textOnlyEffectPreview: ImageServiceTextOnlyEffectPreview | undefined;
 
   for (const nodeId of args.rasterTargets) {
@@ -449,23 +462,50 @@ async function runRasterPipeline(args: {
       n: 1,
     };
 
+    // -----------------------------------------------------------------
+    // Module F (R19.3/R19.4): 503-style 重试 + 读超时不重试。
+    // - 503 / 5xx upstream → 最多 maxRetries 次重试（默认 2）
+    // - timeout → 立即失败，不重试（R19.4）
+    // - 其它 tier（quota/moderation/env-disabled/key-missing）→ 不重试
+    // -----------------------------------------------------------------
+    const maxRetries = args.maxRetries ?? 2;
     let result: Awaited<ReturnType<ImageApiClient["generate"]>>;
-    try {
-      result = await args.imageApiClient.generate(request);
-    } catch (error) {
-      // ImageApiClient 协议保证不抛错；这里是防御性兜底。
-      // 任何意外异常被翻译为 upstream-failure，处理与正常失败一致。
-      const errorSummary =
-        error instanceof Error
-          ? error.message.slice(0, 240)
-          : "Unknown error during image API dispatch.";
-      result = {
-        kind: "error",
-        tier: "upstream-failure",
-        errorSummary,
-        durationMs: 0,
-      };
+    let retryCount = 0;
+
+    /* eslint-disable no-await-in-loop */
+    while (true) {
+      try {
+        result = await args.imageApiClient.generate(request);
+      } catch (error) {
+        // ImageApiClient 协议保证不抛错；这里是防御性兜底。
+        const errorSummary =
+          error instanceof Error
+            ? error.message.slice(0, 240)
+            : "Unknown error during image API dispatch.";
+        result = {
+          kind: "error",
+          tier: "upstream-failure",
+          errorSummary,
+          durationMs: 0,
+        };
+      }
+
+      if (result.kind === "ok") break;
+
+      // timeout 不重试（R19.4）
+      if (result.tier === "timeout") break;
+
+      // 检测 503 / 5xx upstream-failure → 可重试
+      const is503Like =
+        result.tier === "upstream-failure" &&
+        /\b50[0-9]\b/.test(result.errorSummary);
+      if (is503Like && retryCount < maxRetries) {
+        retryCount += 1;
+        continue;
+      }
+      break;
     }
+    /* eslint-enable no-await-in-loop */
 
     if (result.kind === "ok") {
       imageBase64ByNodeId[nodeId] = {
@@ -473,6 +513,14 @@ async function runRasterPipeline(args: {
         mimeType: result.mimeType,
         promptUsed,
         generatedAt: new Date().toISOString(),
+        provenance: {
+          source: "model",
+          ok: true,
+          errorIndicators: [],
+          generatedAt: new Date().toISOString(),
+          modelUsed: request.model,
+          retryCount,
+        },
       };
       currentPlan = args.scheduler.markCompleted(currentPlan, nodeId);
     } else {
@@ -482,8 +530,18 @@ async function runRasterPipeline(args: {
         result.tier,
         result.errorSummary,
       );
-      // 首个失败决定 textOnlyEffectPreview 的 reason / errorSummary —
-      // 后续节点失败只追加 progress plan 上的 fallbackTier，不覆盖。
+      // -----------------------------------------------------------------
+      // Module F (R19.5): 失败路径不写本地兜底文件 —— 失败节点不进入
+      // imageBase64ByNodeId（即不产出 .png）。provenance 记录 ok:false。
+      // 区分语义（R12.4/R19.6）：
+      //   - env-disabled / key-missing → source:"template", ok:true（合法）
+      //   - timeout → source:"fallback", ok:false, ["read_timeout_no_retry"]
+      //   - 其它失败 → source:"fallback", ok:false, [tier 或 503_exhausted]
+      // 这些 provenance 记录会附着到 textOnlyEffectPreview 供审计读取。
+      // -----------------------------------------------------------------
+      const failProvenance = buildFailureProvenance(result, retryCount, maxRetries);
+      failedProvenanceByNodeId[nodeId] = failProvenance;
+
       if (textOnlyEffectPreview === undefined) {
         textOnlyEffectPreview = {
           active: true,
@@ -518,6 +576,63 @@ async function runRasterPipeline(args: {
       ? { imageBase64ByNodeId }
       : {}),
     ...(textOnlyEffectPreview !== undefined ? { textOnlyEffectPreview } : {}),
+    ...(Object.keys(failedProvenanceByNodeId).length > 0
+      ? { failedProvenanceByNodeId }
+      : {}),
+  };
+}
+
+/**
+ * Module F (R19): 把 ImageApiFailure 映射为 BlueprintPreviewProvenance。
+ *
+ * 语义区分（R12.4/R19.6）：
+ * - env-disabled / key-missing → source:"template", ok:true（合法模板路径，非造假）
+ * - timeout → source:"fallback", ok:false, ["read_timeout_no_retry"]（不重试）
+ * - 503 重试耗尽 → source:"fallback", ok:false, ["503_exhausted"]
+ * - 其它失败 → source:"fallback", ok:false, [tier]
+ */
+function buildFailureProvenance(
+  result: Extract<Awaited<ReturnType<ImageApiClient["generate"]>>, { kind: "error" }>,
+  retryCount: number,
+  maxRetries: number,
+): BlueprintPreviewProvenance {
+  const generatedAt = new Date().toISOString();
+
+  // env-off / key-missing 是合法模板路径，不算兜底造假（R19.6）
+  if (result.tier === "env-disabled" || result.tier === "key-missing") {
+    return {
+      source: "template",
+      ok: true,
+      errorIndicators: [],
+      generatedAt,
+      retryCount: 0,
+    };
+  }
+
+  // 读超时：不重试（R19.4）
+  if (result.tier === "timeout") {
+    return {
+      source: "fallback",
+      ok: false,
+      errorIndicators: ["read_timeout_no_retry"],
+      generatedAt,
+      retryCount: 0,
+    };
+  }
+
+  // 503 重试耗尽
+  const is503Like = /\b50[0-9]\b/.test(result.errorSummary);
+  const errorIndicators =
+    is503Like && retryCount >= maxRetries
+      ? ["503_exhausted"]
+      : [result.tier];
+
+  return {
+    source: "fallback",
+    ok: false,
+    errorIndicators,
+    generatedAt,
+    retryCount,
   };
 }
 
@@ -657,6 +772,9 @@ export function createImageService(deps: ImageServiceDeps): ImageService {
             : {}),
           ...(rasterResult.textOnlyEffectPreview !== undefined
             ? { textOnlyEffectPreview: rasterResult.textOnlyEffectPreview }
+            : {}),
+          ...(rasterResult.failedProvenanceByNodeId !== undefined
+            ? { failedProvenanceByNodeId: rasterResult.failedProvenanceByNodeId }
             : {}),
         };
       } catch (error) {
