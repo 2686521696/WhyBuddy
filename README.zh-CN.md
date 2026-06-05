@@ -72,9 +72,9 @@
 
 ## 🖼️ 产品界面
 
-来自 WhyBuddy 示例预演的 36 张界面合成照片墙。
+来自 WhyBuddy 示例预演的 16 张界面合成照片墙。
 
-<img src="./docs/WhyBuddy_照片墙_36图.png" alt="WhyBuddy 36 张产品界面照片墙" />
+<img src="./docs/assets/16img.png" alt="WhyBuddy 16 张产品界面照片墙" />
 
 **观看完整产品预演演示**
 

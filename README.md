@@ -72,9 +72,9 @@ Enter an idea → **5 minutes** → full rehearsal → decide whether it is wort
 
 ## Product Screens
 
-A consolidated 36-screen photo wall from WhyBuddy example rehearsals.
+A consolidated 16-screen photo wall from WhyBuddy example rehearsals.
 
-<img src="./docs/WhyBuddy_%E7%85%A7%E7%89%87%E5%A2%99_36%E5%9B%BE.png" alt="WhyBuddy 36-screen product photo wall" />
+<img src="./docs/assets/16img.png" alt="WhyBuddy 16-screen product photo wall" />
 
 **Watch the Full Rehearsal Demo**
 
