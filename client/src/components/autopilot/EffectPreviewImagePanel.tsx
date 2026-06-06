@@ -41,6 +41,9 @@ import {
   type VisualTokenSet,
 } from "@/lib/autopilot/visual-tokens-placeholder";
 import type { ImageGalleryCache } from "@/lib/autopilot/image-gallery-cache";
+import type { AppLocale } from "@/lib/locale";
+import type { BlueprintPreviewProvenance } from "@shared/blueprint/preview-audit/types";
+import { PreviewProvenanceChip } from "./PreviewProvenanceChip";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -111,6 +114,11 @@ export interface NodeImageRecord {
   readonly promptUsed: string;
   /** ISO8601 timestamp when the image was generated. */
   readonly generatedAt: string;
+  /**
+   * v4 EP_VIS_GEN ◆：图片来源 provenance（可选，向后兼容）。存在时由
+   * `PreviewProvenanceChip` 渲染 source/ok/errorIndicators。
+   */
+  readonly provenance?: BlueprintPreviewProvenance;
 }
 
 /**
@@ -142,6 +150,13 @@ export interface EffectPreviewImagePanelProps {
   ) => void;
   readonly theme: "light" | "dark";
   readonly version?: number;
+  /**
+   * v4 EP_VIS_AUDIT ◆◆：诚实失败（无图）节点的 provenance（可选，向后兼容）。
+   * 当某节点无 image record 但出现在此映射中时，渲染「缺图」态（禁兜底假图）。
+   */
+  readonly failedProvenanceByNodeId?: Record<string, BlueprintPreviewProvenance>;
+  /** 用户区域设置，用于 provenance chip / 未验证标签文案（缺省 en-US）。 */
+  readonly locale?: AppLocale;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +261,8 @@ export function EffectPreviewImagePanel(
     onDownload,
     theme,
     version = 1,
+    failedProvenanceByNodeId,
+    locale = "en-US",
   } = props;
 
   // hooks 必须在所有 early return 之前调用，遵循 React Rules of Hooks。
@@ -524,8 +541,49 @@ export function EffectPreviewImagePanel(
                     >
                       下载图像
                     </button>
+                    {/* v4 EP_VIS_GEN ◆：来源 chip + 「预览·未验证」标签 */}
+                    <div
+                      data-testid="effect-preview-provenance-row"
+                      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem" }}
+                    >
+                      <PreviewProvenanceChip
+                        provenance={record.provenance}
+                        locale={locale}
+                      />
+                      <span
+                        data-testid="effect-preview-unverified-label"
+                        style={{ fontSize: "0.6875rem", fontWeight: 700, opacity: 0.7 }}
+                      >
+                        {locale === "zh-CN" ? "预览·未验证" : "preview · unverified"}
+                      </span>
+                    </div>
                   </div>
                 )}
+
+                {/* v4：诚实失败（无图）态 — 禁兜底假图（需求 5.6） */}
+                {record === undefined &&
+                  failedProvenanceByNodeId?.[entry.nodeId] !== undefined && (
+                    <div
+                      data-testid="effect-preview-no-image"
+                      data-node-id={entry.nodeId}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: "0.375rem",
+                        fontSize: "0.75rem",
+                        opacity: 0.8,
+                      }}
+                    >
+                      <span data-testid="effect-preview-no-image-label">
+                        {locale === "zh-CN" ? "缺图（诚实失败）" : "no image (honest failure)"}
+                      </span>
+                      <PreviewProvenanceChip
+                        provenance={failedProvenanceByNodeId[entry.nodeId]}
+                        locale={locale}
+                      />
+                    </div>
+                  )}
 
                 {entry.fallbackTier !== undefined && (
                   <span

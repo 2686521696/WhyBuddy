@@ -18,6 +18,8 @@ export * from "./clarification.js";
 export * from "./jobs.js";
 export * from "./replan.js";
 export * from "./family.js";
+export * from "./checks-ledger.js";
+export * from "./traceability-matrix.js";
 export * from "./agent-crew.js";
 export * from "./routeset.js";
 export * from "./spec-documents.js";

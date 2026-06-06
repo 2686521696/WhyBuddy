@@ -442,6 +442,33 @@ const BLUEPRINT_COPY: Record<string, string> = {
   "Bind landing sources": "绑定落地来源",
   "Apply repository bridge": "应用仓库桥接",
   "Capture run evidence": "捕获执行证据",
+
+  // ── autopilot-v4-frontend-alignment 任务 64：v4 信任层术语表（保持 v4 措辞）──
+  // 集中登记信任层 UI 术语，保证 zh-CN / en-US 措辞统一、可被 blueprintCopy 复用。
+  Trust: "信任层",
+  "Checks Ledger": "校验台账",
+  "Checks ledger summary": "校验台账摘要",
+  Traceability: "可追溯",
+  "Traceability Matrix": "可追溯矩阵",
+  "traceability matrix": "可追溯矩阵",
+  Companion: "伴随发现",
+  "Companion Findings": "伴随发现",
+  Critic: "挑刺者",
+  Grounding: "接地者",
+  Coverage: "覆盖率",
+  Gaps: "缺口",
+  "Open items": "未决项",
+  "Trust Bundle": "信任层交付包",
+  "Merge gate (human-judged)": "合并门（人判定）",
+  "Route confirm gate": "路线确认闸",
+  "Confirm route": "确认路线",
+  "Abort / Escalate": "中止 / 转人工",
+  "Abort & escalate": "中止并转人工",
+  "review signals · human is the gate": "评审信号，人是闸",
+  "Review signal; never auto-blocks or auto-merges.": "评审信号，不自动拦截 / 不自动合并。",
+  "preview · unverified": "预览·未验证",
+  "Export MD": "导出 MD",
+  Stale: "已失效",
 };
 
 export function blueprintCopy(

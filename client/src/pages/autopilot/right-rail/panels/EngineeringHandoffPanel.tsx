@@ -76,6 +76,8 @@ import {
 
 import type { AutopilotRightRailProps } from "@/pages/autopilot/right-rail/types";
 
+import { HandoffTrustBundle } from "./handoff-trust/HandoffTrustBundle";
+
 /**
  * Spec 1 冻结的 `AutopilotRightRailProps` 字段子集，严格对应 design.md
  * 「面板抽离总表」第 7 行：`Pick<AutopilotRightRailProps, "jobId" | "locale">`。
@@ -479,6 +481,11 @@ function EngineeringHandoffPanelInner({
       className="grid gap-3"
       data-testid="engineering-landing-workbench"
     >
+      {/* autopilot-v4-frontend-alignment 任务 56–58：信任层交付包（校验台账摘要 +
+          可追溯矩阵 + 未决项），作为附加 section 挂在交付工作台顶部；缺数据时
+          优雅省略，既有 spec md/zip 导出与落地计划逻辑保持不变。 */}
+      {jobId ? <HandoffTrustBundle jobId={jobId} locale={locale} /> : null}
+
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
           <Button

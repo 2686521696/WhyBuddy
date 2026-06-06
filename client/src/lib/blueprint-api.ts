@@ -5147,6 +5147,22 @@ export async function recordBlueprintArtifactFeedback(
 
 
 // ---------------------------------------------------------------------------
+// autopilot-v4-frontend-alignment 任务 6：trust-layer 只读读取封装 re-export。
+// 物理实物位于 `./blueprint-api/{checks-ledger,traceability-matrix}.ts`，此处保持
+// `@/lib/blueprint-api` 单一 import 面（与子域 barrel 同步暴露）。
+// ---------------------------------------------------------------------------
+export {
+  fetchChecksLedger,
+  type ChecksLedgerFilters,
+  type FetchChecksLedgerResult,
+} from "./blueprint-api/checks-ledger.js";
+export {
+  fetchTraceabilityMatrix,
+  type FetchTraceabilityMatrixResult,
+} from "./blueprint-api/traceability-matrix.js";
+
+
+// ---------------------------------------------------------------------------
 // wt2 任务 2 注记（autopilot-blueprint-refactor-split）：
 //
 // 本文件仍然是 blueprint SDK 的**物理真相源**，所有实物（endpoint 常量、normalizer、

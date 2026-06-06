@@ -59,6 +59,8 @@ import {
 import { AgentReasoningSubTimeline } from "./AgentReasoningSubTimeline";
 import { CapabilityRail } from "./CapabilityRail";
 import { FleetActivationLog } from "./FleetActivationLog";
+import { TrustSection } from "./TrustSection";
+import type { CompanionFindingsSource } from "./trust/companion";
 import { deriveNodeStatusById } from "./spec-docs-progress/derive-node-status-by-id";
 import { stepSubStage } from "./hooks/use-right-rail-sub-stage-state";
 import { resolveRailSubStage } from "./resolve-rail-sub-stage";
@@ -1203,6 +1205,20 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         props.onSpecDocumentsGenerated?.(result.data);
       } else {
         setSpecDocsError(result.error);
+        // autopilot-v4 fix：生成失败必须给用户即时反馈，否则按钮从"生成中…"
+        // 翻回"生成"后页面看起来毫无反应（specDocsError 此前只入 state、从不渲染）。
+        // 复用 rail 既有的 sonner toast 通道，与 replan 失败提示一致。
+        showToast.error(
+          locale === "zh-CN" ? "生成规格文档失败" : "Spec document generation failed",
+          {
+            description:
+              result.error.detail ||
+              result.error.message ||
+              (locale === "zh-CN"
+                ? "请检查 LLM 服务配置（LLM_BASE_URL / LLM_MODEL / LLM_API_KEY）后重试。"
+                : "Check the LLM service config (LLM_BASE_URL / LLM_MODEL / LLM_API_KEY) and retry."),
+          }
+        );
       }
     },
     [
@@ -1544,6 +1560,27 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           {/* autopilot-streaming-experience integration-gap-2026-05-16 UI 消费面 Step 3：激活日志 */}
           <FleetActivationLog />
         </>
+      ) : null}
+
+      {/* autopilot-v4-frontend-alignment 任务 53：跨阶段「信任层」section
+          （校验台账 / 可追溯矩阵 / 伴随发现）。非线性 sub-stage，不改
+          resolve-rail-sub-stage 契约；可用性 gating + CardErrorBoundary 由
+          TrustSection 内部承载（design.md §9）。 */}
+      {props.jobId ? (
+        <TrustSection
+          jobId={props.jobId}
+          job={props.job as unknown as CompanionFindingsSource | null}
+          locale={locale}
+          hasSpecTree={
+            ((props.specTree?.nodes?.length ?? 0) > 0) ||
+            isAtOrBeyondSpecDocuments(props.job?.stage) ||
+            props.job?.stage === "spec_tree"
+          }
+          hasSpecDocs={
+            isAtOrBeyondSpecDocuments(props.job?.stage) ||
+            (persistedSpecDocuments?.length ?? 0) > 0
+          }
+        />
       ) : null}
 
     </aside>

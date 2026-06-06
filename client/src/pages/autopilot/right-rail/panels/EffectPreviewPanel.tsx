@@ -74,6 +74,7 @@ import { visualTokens } from "@/lib/autopilot/visual-tokens-placeholder";
 import { mapImageSettingsResponseToViewModel } from "@/lib/autopilot/image-settings-mapper";
 import { blueprintCopy as translateBlueprintCopy } from "@/lib/blueprint-copy";
 import type { AppLocale } from "@/lib/locale";
+import { PreviewAuditSection } from "@/components/autopilot/PreviewAuditSection";
 import { cn } from "@/lib/utils";
 import { StaleBadge } from "@/pages/autopilot/stage-edit";
 import {
@@ -1495,6 +1496,10 @@ function EffectPreviewPanelInner({
       className="grid gap-3"
       data-testid="effect-preview-workbench"
     >
+      {/* v4 EP_VIS_AUDIT ◆◆：出图审计裁决（无 preview_audit 数据 / gate 关闭时渲染空态） */}
+      {jobId ? (
+        <PreviewAuditSection jobId={jobId} locale={locale} />
+      ) : null}
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
       <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
@@ -1747,6 +1752,7 @@ function EffectPreviewPanelInner({
                 onDownload={downloadEffectPreviewImage}
                 version={effectPreviewVersionNumber}
                 theme="light"
+                locale={locale}
               />
               <EffectPreviewScheduleTimeline
                 activeStageKey="effect_preview"

@@ -37,3 +37,34 @@ export type { EngineeringHandoffPanelProps } from "./EngineeringHandoffPanel";
 
 export { ArtifactMemoryPanel } from "./ArtifactMemoryPanel";
 export type { ArtifactMemoryPanelProps } from "./ArtifactMemoryPanel";
+
+// ── v4 信任层面板（autopilot-v4-frontend-alignment，任务 52）──────────────────
+// 这三个面板为跨阶段 (cross-cutting) 信任层视图，不属于线性 sub-stage 序列，
+// 由 AutopilotRightRail 的 Trust section 统一挂载（design.md §9）。
+
+export {
+  ChecksLedgerPanel,
+  ChecksLedgerView,
+} from "./ChecksLedgerPanel";
+export type {
+  ChecksLedgerPanelProps,
+  ChecksLedgerViewProps,
+} from "./ChecksLedgerPanel";
+
+export {
+  TraceabilityMatrixPanel,
+  TraceabilityMatrixView,
+} from "./TraceabilityMatrixPanel";
+export type {
+  TraceabilityMatrixPanelProps,
+  TraceabilityMatrixViewProps,
+} from "./TraceabilityMatrixPanel";
+
+export {
+  CompanionFindingsPanel,
+  CompanionFindingsView,
+} from "./CompanionFindingsPanel";
+export type {
+  CompanionFindingsPanelProps,
+  CompanionFindingsViewProps,
+} from "./CompanionFindingsPanel";
