@@ -372,3 +372,81 @@ const ctxLlmCallJsonFixture = (async () => ({
   model: "",
   latencyMs: 0,
 })) as unknown;
+
+/**
+ * `blueprint-v4-full-alignment` 全流程上电（opt-out on）集成校验。
+ *
+ * 验证 5 个 v4 gate 的"装配真相"：
+ * - 5 个 gate 全开时，context 真实实例化 companionLayer / contentQuality /
+ *   traceabilityMatrixService / previewAuditService / checksLedger；
+ * - 5 个 gate 全关时，对应字段一律 undefined（保护既有 85+ E2E 基线：
+ *   测试默认不设 gate，全部走 no-op optional-chaining 路径）。
+ *
+ * 这一组断言对应 `dev:all` 注入的 opt-out-on 语义在 context 层的落点。
+ */
+describe("buildBlueprintServiceContext v4 alignment gates", () => {
+  const V4_GATES = [
+    "BLUEPRINT_CHECKS_LEDGER_ENABLED",
+    "BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED",
+    "BLUEPRINT_COMPANION_ENABLED",
+    "BLUEPRINT_TRACEABILITY_MATRIX_ENABLED",
+    "BLUEPRINT_PREVIEW_AUDIT_ENABLED",
+  ] as const;
+
+  function withGates(value: "true" | "off", run: () => void): void {
+    const saved = new Map<string, string | undefined>();
+    for (const key of V4_GATES) {
+      saved.set(key, process.env[key]);
+      if (value === "true") {
+        process.env[key] = "true";
+      } else {
+        delete process.env[key];
+      }
+    }
+    try {
+      run();
+    } finally {
+      for (const key of V4_GATES) {
+        const prev = saved.get(key);
+        if (prev === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = prev;
+        }
+      }
+    }
+  }
+
+  it("5 个 gate 全开：companion / content-quality / matrix / preview-audit / ledger 全部装配", () => {
+    withGates("true", () => {
+      const ctx = buildBlueprintServiceContext({
+        jobStore: createMemoryBlueprintJobStore(),
+      });
+      expect(ctx.checksLedger).toBeDefined();
+      expect(ctx.contentQuality).toBeDefined();
+      expect(ctx.companionLayer).toBeDefined();
+      expect(ctx.traceabilityMatrixService).toBeDefined();
+      expect(ctx.previewAuditService).toBeDefined();
+      // 子服务可用性自检（不发起任何 LLM / IO）：
+      expect(typeof ctx.companionLayer!.evaluateAll).toBe("function");
+      expect(typeof ctx.contentQuality!.validateDocuments).toBe("function");
+      expect(typeof ctx.traceabilityMatrixService!.generateMatrix).toBe(
+        "function",
+      );
+      expect(typeof ctx.previewAuditService!.auditPreviews).toBe("function");
+    });
+  });
+
+  it("5 个 gate 全关：对应字段一律 undefined（保护既有 E2E 基线）", () => {
+    withGates("off", () => {
+      const ctx = buildBlueprintServiceContext({
+        jobStore: createMemoryBlueprintJobStore(),
+      });
+      expect(ctx.checksLedger).toBeUndefined();
+      expect(ctx.contentQuality).toBeUndefined();
+      expect(ctx.companionLayer).toBeUndefined();
+      expect(ctx.traceabilityMatrixService).toBeUndefined();
+      expect(ctx.previewAuditService).toBeUndefined();
+    });
+  });
+});

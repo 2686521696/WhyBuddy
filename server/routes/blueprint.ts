@@ -1004,6 +1004,26 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
         `路线规划完成，共 ${generatedRoutes.length} 条候选路线`,
       );
 
+      // ── Module A: 伴随式审查（route_generation 阶段 / R2.3）──────────
+      // Critic 对候选路线集挑刺（v4: CO_CRIT -. 伴随挑刺 .-> RT_CMP）。
+      // 对抗独立性：只把最终 RouteSet 作为 artifact 传入，不含生成方推理。
+      // 非阻塞 + env gate（gate 关闭时 companionLayer 为 undefined，直接 no-op）。
+      const routeCompanionLayer = blueprintServiceContext.companionLayer;
+      if (routeCompanionLayer && result.routeSet) {
+        try {
+          await routeCompanionLayer.evaluateAll(
+            {
+              jobId: result.job.id,
+              stage: "route_generation",
+              hasRealRepo: (resolved.intake.githubUrls ?? []).length > 0,
+            },
+            result.routeSet,
+          );
+        } catch {
+          // 非阻塞：伴随层失败不影响路线集返回。
+        }
+      }
+
       res.status(201).json(result);
     } catch (error) {
       // The generator internally swallows LLM errors / schema failures and
@@ -1635,6 +1655,26 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           }
         ),
     });
+
+    // ── QA_CONTENT 内容质量校验（blueprint-v4-full-alignment Module / R10）──
+    // 在 spec 文档产出后校验文档实质 + EARS 句式，结果写入 checks ledger。
+    // 非阻塞 + env gate（gate 关闭时 contentQuality 为 undefined，直接 no-op），
+    // 校验失败/告警只记台账供人评审，绝不改变 201 响应形态（人是闸，软检查）。
+    try {
+      const generatedDocs = (response as { documents?: unknown[] }).documents;
+      if (
+        blueprintServiceContext.contentQuality &&
+        Array.isArray(generatedDocs) &&
+        generatedDocs.length > 0
+      ) {
+        blueprintServiceContext.contentQuality.validateDocuments({
+          jobId: job.id,
+          documents: generatedDocs as BlueprintSpecDocument[],
+        });
+      }
+    } catch {
+      // 非阻塞：内容质量校验失败不影响 spec 文档返回。
+    }
 
     res.status(201).json(response);
   });

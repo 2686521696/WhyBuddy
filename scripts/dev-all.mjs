@@ -65,6 +65,30 @@ function resolveRequestedExecutionMode() {
   return "real";
 }
 
+/**
+ * `blueprint-v4-full-alignment`：把 v4 全流程的 5 个 env gate 在 dev:all 启动的
+ * 子进程里默认翻转为 "true"（opt-out on），让 checks-ledger / content-quality /
+ * companion / traceability-matrix / preview-audit 在本地开发链路里默认上电。
+ *
+ * 与 AUTOPILOT_REAL_RUNTIME 同款语义：用户在 `.env` / shell 里显式设置的值始终
+ * 优先（`process.env.X ?? "true"`）。`BUILD_TARGET=test` 路径不经过本脚本，
+ * 既有 85+ E2E 基线（gates-off）不受影响。
+ */
+function resolveV4AlignmentGates() {
+  return {
+    BLUEPRINT_CHECKS_LEDGER_ENABLED:
+      process.env.BLUEPRINT_CHECKS_LEDGER_ENABLED ?? "true",
+    BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED:
+      process.env.BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED ?? "true",
+    BLUEPRINT_COMPANION_ENABLED:
+      process.env.BLUEPRINT_COMPANION_ENABLED ?? "true",
+    BLUEPRINT_TRACEABILITY_MATRIX_ENABLED:
+      process.env.BLUEPRINT_TRACEABILITY_MATRIX_ENABLED ?? "true",
+    BLUEPRINT_PREVIEW_AUDIT_ENABLED:
+      process.env.BLUEPRINT_PREVIEW_AUDIT_ENABLED ?? "true",
+  };
+}
+
 async function isDockerReachable(dockerHost) {
   try {
     const docker = new Dockerode(parseDockerOptions(dockerHost));
@@ -163,12 +187,14 @@ async function resolveDevEnvironment() {
   // blueprint capability bridge 的 env resolver 把 5 条桥的 tier-1 门禁
   // 默认翻转为 "true"。用户显式设置的值始终优先（requirement 1.6）。
   const masterSwitch = process.env.AUTOPILOT_REAL_RUNTIME ?? "true";
+  const v4Gates = resolveV4AlignmentGates();
   const proxyEnv = await resolveProxyEnvironment();
 
   if (requestedExecutionMode !== "real") {
     return {
       LOBSTER_EXECUTION_MODE: requestedExecutionMode,
       AUTOPILOT_REAL_RUNTIME: masterSwitch,
+      ...v4Gates,
       ...proxyEnv,
     };
   }
@@ -183,6 +209,7 @@ async function resolveDevEnvironment() {
     return {
       LOBSTER_EXECUTION_MODE: "real",
       AUTOPILOT_REAL_RUNTIME: masterSwitch,
+      ...v4Gates,
       ...proxyEnv,
     };
   }
@@ -195,6 +222,7 @@ async function resolveDevEnvironment() {
   return {
     LOBSTER_EXECUTION_MODE: "native",
     AUTOPILOT_REAL_RUNTIME: masterSwitch,
+    ...v4Gates,
     ...proxyEnv,
   };
 }
