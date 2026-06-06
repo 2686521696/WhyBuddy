@@ -97,7 +97,7 @@ export type ImageGenSize = (typeof IMAGE_GEN_SIZES)[number];
 /**
  * Allowed `aspect_ratio` values (Requirement 5.2).
  */
-export const IMAGE_GEN_ASPECTS = ["1:1", "2:3", "3:2", "auto"] as const;
+export const IMAGE_GEN_ASPECTS = ["1:1", "2:3", "3:2", "16:9", "auto"] as const;
 
 export type ImageGenAspect = (typeof IMAGE_GEN_ASPECTS)[number];
 
@@ -675,7 +675,7 @@ export function createImageApiClient(
             kind: "error",
             tier: "upstream-failure",
             errorSummary:
-              "Malformed image API response: expected json.data[0].b64_json and json.data[0].mime_type.",
+              "Malformed image API response: expected a non-empty json.data[0].b64_json string.",
             durationMs: durationMs(),
           };
         }
@@ -919,9 +919,11 @@ function readResponseMessage(parsed: unknown): string {
 
 /**
  * Validate and extract `{ b64_json, mime_type }` from the proxy response
- * shape `{ data: [{ b64_json, mime_type }] }`. Returns `null` when any
- * part of the shape is missing or wrong-typed so the caller can convert
- * it into a well-formed `upstream-failure` failure.
+ * shape `{ data: [{ b64_json, mime_type? }] }`. `b64_json` is required;
+ * `mime_type` is optional and defaults to `image/png` when absent (the
+ * OpenAI-compatible response often omits it). Returns `null` only when
+ * `b64_json` is missing / wrong-typed so the caller can convert it into a
+ * well-formed `upstream-failure` failure.
  */
 function decodeImageApiSuccess(
   parsed: unknown,
@@ -938,12 +940,16 @@ function decodeImageApiSuccess(
     return null;
   }
   const b64Json = (first as { b64_json?: unknown }).b64_json;
-  const mimeType = (first as { mime_type?: unknown }).mime_type;
+  const mimeRaw = (first as { mime_type?: unknown }).mime_type;
   if (typeof b64Json !== "string" || b64Json.length === 0) {
     return null;
   }
-  if (typeof mimeType !== "string" || mimeType.length === 0) {
-    return null;
-  }
+  // `mime_type` is OPTIONAL on the wire: the OpenAI-compatible `b64_json`
+  // response shape commonly omits it (only `{ data: [{ b64_json }] }` is
+  // returned). Default to `image/png` (the configured output ext) rather than
+  // rejecting an otherwise-valid image as malformed — only a present-but-wrong
+  // value (non-string / non-empty handled by the fallback) is tolerated here.
+  const mimeType =
+    typeof mimeRaw === "string" && mimeRaw.length > 0 ? mimeRaw : "image/png";
   return { b64Json, mimeType };
 }
