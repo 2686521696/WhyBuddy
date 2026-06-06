@@ -167,7 +167,9 @@ export function createChecksLedgerService(
         type: "checks.entry.recorded" as any,
         family: "checks" as any,
         stage: entry.stage,
-        createdAt: entry.triggeredAt,
+        status: "completed" as any,
+        message: `check ${entry.checkName}: ${entry.status}`,
+        occurredAt: entry.triggeredAt,
         payload: entry,
       } as any);
 
@@ -181,7 +183,9 @@ export function createChecksLedgerService(
           type: "checks.gate.failed" as any,
           family: "checks" as any,
           stage: entry.stage,
-          createdAt: entry.triggeredAt,
+          status: "completed" as any,
+          message: `quality gate recorded a failing check at ${entry.stage}`,
+          occurredAt: entry.triggeredAt,
           payload: { jobId: entry.jobId, entry, summary },
         } as any);
       } else if (entry.status === "pass") {
@@ -196,7 +200,9 @@ export function createChecksLedgerService(
             type: "checks.gate.passed" as any,
             family: "checks" as any,
             stage: entry.stage,
-            createdAt: entry.triggeredAt,
+            status: "completed" as any,
+            message: `quality gate passing at ${entry.stage}`,
+            occurredAt: entry.triggeredAt,
             payload: { jobId: entry.jobId, summary },
           } as any);
         }
