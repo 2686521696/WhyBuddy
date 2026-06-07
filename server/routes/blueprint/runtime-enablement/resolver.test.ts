@@ -6,7 +6,13 @@ import {
   resolveAgentRuntimeConfig,
   resolveAllBridgeEnablement,
   resolveBridgeEnablement,
+  TRUST_GATE_ENABLEMENT_KEYS,
+  type TrustGateEnablementKey,
+  resolveAllTrustGateEnablement,
+  resolveTrustGateEnablement,
 } from "./resolver.js";
+
+import * as resolverModule from "./resolver.js";
 
 /**
  * Co-located unit tests for the runtime-enablement resolver module.
@@ -408,5 +414,274 @@ describe("resolveAgentRuntimeConfig", () => {
     });
     expect(cfgA.maxIterations).toBe(15);
     expect(cfgB.maxIterations).toBe(15);
+  });
+});
+
+/**
+ * `blueprint-trust-enforcement-model` spec Task 1.5：example-based unit tests
+ * for the Trust Gate resolver branches and the Requirement 1.9 defaults-only
+ * structural guarantee.
+ *
+ * These are readable precedence docs — one concrete example per ladder branch:
+ *   - Step 1a test opt-in  (BUILD_TARGET=test + explicit "true")   → "true"
+ *   - Step 1b test lock     (BUILD_TARGET=test, otherwise)          → "false"
+ *   - Step 2  explicit-wins (outside test, explicit present)        → value
+ *   - Step 3  master-on     (master exactly "true", no explicit)    → "true"
+ *   - Step 4  default       (non-canonical / unset master)          → "false"
+ *
+ * Property-based coverage lives in the sibling
+ * `trust-gate-resolver.property.test.ts`; this file documents the branches by
+ * example and asserts the pure, defaults-only shape of the API (Requirement 1.9).
+ */
+
+const CHECKS_LEDGER_KEY: TrustGateEnablementKey =
+  "BLUEPRINT_CHECKS_LEDGER_ENABLED";
+
+describe("resolveTrustGateEnablement — ladder branches (example-based)", () => {
+  it("Step 1a — BUILD_TARGET=test + explicit 'true' → 'true' (test opt-in escape, beats master 'false')", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: "true",
+      masterSwitch: "false",
+      buildTarget: "test",
+    });
+    expect(result).toBe("true");
+  });
+
+  it("Step 1b — BUILD_TARGET=test + no explicit → 'false' (test hard-lock beats master 'true')", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: undefined,
+      masterSwitch: "true",
+      buildTarget: "test",
+    });
+    expect(result).toBe("false");
+  });
+
+  it("Step 1b — BUILD_TARGET=test + explicit 'false' → 'false' (test lock)", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: "false",
+      masterSwitch: "true",
+      buildTarget: "test",
+    });
+    expect(result).toBe("false");
+  });
+
+  it("Step 2 — explicit-wins outside test: explicit 'true' overrides master 'false'", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: "true",
+      masterSwitch: "false",
+      buildTarget: undefined,
+    });
+    expect(result).toBe("true");
+  });
+
+  it("Step 2 — explicit-wins outside test: explicit 'false' overrides master 'true'", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: "false",
+      masterSwitch: "true",
+      buildTarget: undefined,
+    });
+    expect(result).toBe("false");
+  });
+
+  it("Step 2 — whitespace-only explicit value is treated as 'not set' and falls through to master default", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: "   ",
+      masterSwitch: "true",
+      buildTarget: undefined,
+    });
+    expect(result).toBe("true");
+  });
+
+  it("Step 3 — master-on default: master exactly 'true' + no explicit → 'true'", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: undefined,
+      masterSwitch: "true",
+      buildTarget: undefined,
+    });
+    expect(result).toBe("true");
+  });
+
+  it("Step 4 — non-canonical master 'TRUE' (case-sensitive) + no explicit → 'false'", () => {
+    const result = resolveTrustGateEnablement({
+      envFlag: CHECKS_LEDGER_KEY,
+      explicitEnvValue: undefined,
+      masterSwitch: "TRUE",
+      buildTarget: undefined,
+    });
+    expect(result).toBe("false");
+  });
+
+  it("Step 4 — non-canonical master lookalikes ('1', 'yes', 'on') + unset → 'false'", () => {
+    for (const master of ["1", "yes", "on", "", undefined]) {
+      const result = resolveTrustGateEnablement({
+        envFlag: CHECKS_LEDGER_KEY,
+        explicitEnvValue: undefined,
+        masterSwitch: master,
+        buildTarget: undefined,
+      });
+      expect(result).toBe("false");
+    }
+  });
+});
+
+describe("resolveAllTrustGateEnablement — aggregate ladder branches (example-based)", () => {
+  it("master 'true' + no explicits + not test → all 5 gates resolve 'true' (dev:all default shape)", () => {
+    const env: NodeJS.ProcessEnv = { AUTOPILOT_REAL_RUNTIME: "true" };
+    const snapshot = resolveAllTrustGateEnablement(env);
+
+    expect(snapshot).toEqual({
+      checksLedger: "true",
+      contentQuality: "true",
+      companion: "true",
+      traceabilityMatrix: "true",
+      previewAudit: "true",
+    });
+    for (const key of TRUST_GATE_ENABLEMENT_KEYS) {
+      expect(env[key]).toBe("true");
+    }
+  });
+
+  it("BUILD_TARGET=test + no explicits → all 5 gates resolve 'false' (test hard-lock)", () => {
+    const env: NodeJS.ProcessEnv = { BUILD_TARGET: "test" };
+    const snapshot = resolveAllTrustGateEnablement(env);
+
+    expect(snapshot).toEqual({
+      checksLedger: "false",
+      contentQuality: "false",
+      companion: "false",
+      traceabilityMatrix: "false",
+      previewAudit: "false",
+    });
+    for (const key of TRUST_GATE_ENABLEMENT_KEYS) {
+      expect(env[key]).toBe("false");
+    }
+  });
+
+  it("non-canonical master 'TRUE' + no explicits → all 5 gates resolve 'false' (latent-hazard default)", () => {
+    const env: NodeJS.ProcessEnv = { AUTOPILOT_REAL_RUNTIME: "TRUE" };
+    const snapshot = resolveAllTrustGateEnablement(env);
+
+    expect(snapshot).toEqual({
+      checksLedger: "false",
+      contentQuality: "false",
+      companion: "false",
+      traceabilityMatrix: "false",
+      previewAudit: "false",
+    });
+  });
+
+  it("explicit per-gate value wins over master default outside test", () => {
+    const env: NodeJS.ProcessEnv = {
+      AUTOPILOT_REAL_RUNTIME: "true",
+      BLUEPRINT_COMPANION_ENABLED: "false", // explicit opt-out
+    };
+    const snapshot = resolveAllTrustGateEnablement(env);
+
+    expect(snapshot.companion).toBe("false");
+    expect(snapshot.checksLedger).toBe("true");
+    expect(snapshot.contentQuality).toBe("true");
+    expect(snapshot.traceabilityMatrix).toBe("true");
+    expect(snapshot.previewAudit).toBe("true");
+  });
+});
+
+/**
+ * Requirement 1.9 (structural): the new Trust Gate resolver API exposes only
+ * pure resolution returning the `ResolvedTrustGateValue` union. There is no
+ * blocking / throwing API — the resolver decides a `"true" | "false"` *default*
+ * and never auto-blocks, confirming defaults-only resolution.
+ */
+describe("Trust Gate resolver — defaults-only structural guarantee (Requirement 1.9)", () => {
+  const ADVERSARIAL_VALUES: Array<string | undefined> = [
+    "true",
+    "false",
+    "",
+    "   ",
+    "TRUE",
+    "True",
+    "1",
+    "yes",
+    "on",
+    "block",
+    "🚫",
+    undefined,
+  ];
+
+  // The "not set" forms that always trigger *default* resolution: the
+  // defaults-only guarantee (Requirement 1.9) is about the resolved default,
+  // not about an explicit operator value (which Step 2 passes through as-is).
+  const UNSET_EXPLICIT_VALUES: Array<string | undefined> = [
+    undefined,
+    "",
+    "   ",
+  ];
+
+  it("default resolution yields only the {'true','false'} union for every key and adversarial master/build input", () => {
+    for (const key of TRUST_GATE_ENABLEMENT_KEYS) {
+      for (const explicit of UNSET_EXPLICIT_VALUES) {
+        for (const master of ADVERSARIAL_VALUES) {
+          for (const buildTarget of [undefined, "test", "production"]) {
+            const result = resolveTrustGateEnablement({
+              envFlag: key,
+              explicitEnvValue: explicit,
+              masterSwitch: master,
+              buildTarget,
+            });
+            // Defaults-only: the resolver yields a binary enable/disable
+            // default — never a blocking verdict or any other token.
+            expect(result === "true" || result === "false").toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("never throws on degenerate inputs — there is no throwing/blocking API surface", () => {
+    expect(() =>
+      resolveTrustGateEnablement({
+        envFlag: CHECKS_LEDGER_KEY,
+        explicitEnvValue: undefined,
+        masterSwitch: undefined,
+        buildTarget: undefined,
+      }),
+    ).not.toThrow();
+
+    expect(() => resolveAllTrustGateEnablement({})).not.toThrow();
+  });
+
+  it("exposes only pure resolution helpers — no exported name implies blocking/enforcement", () => {
+    // The Trust Gate surface is exactly the pure resolver + aggregate + the key
+    // table. No exported member advertises a blocking / enforcing / throwing API.
+    const trustExports = Object.keys(resolverModule).filter((name) =>
+      /trust_?gate/i.test(name),
+    );
+    expect(trustExports).toEqual(
+      expect.arrayContaining([
+        "TRUST_GATE_ENABLEMENT_KEYS",
+        "resolveTrustGateEnablement",
+        "resolveAllTrustGateEnablement",
+      ]),
+    );
+
+    const forbidden = /block|enforce|throw|reject|deny|abort/i;
+    for (const name of trustExports) {
+      expect(forbidden.test(name)).toBe(false);
+    }
+  });
+
+  it("aggregate resolves all 5 Trust Gates to a defined union value (no undefined 'unset' state)", () => {
+    const snapshot = resolveAllTrustGateEnablement({
+      AUTOPILOT_REAL_RUNTIME: "true",
+    });
+    for (const value of Object.values(snapshot)) {
+      expect(value === "true" || value === "false").toBe(true);
+    }
   });
 });

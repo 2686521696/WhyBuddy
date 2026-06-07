@@ -645,9 +645,8 @@ async function startServer() {
   const { createDefaultBlueprintHttpFetcher } = await import(
     "./routes/blueprint/mcp-github-source/http-fetcher.js"
   );
-  const { resolveAllBridgeEnablement } = await import(
-    "./routes/blueprint/runtime-enablement/resolver.js"
-  );
+  const { resolveAllBridgeEnablement, resolveAllTrustGateEnablement } =
+    await import("./routes/blueprint/runtime-enablement/resolver.js");
 
   // Task 12（design §D1 / §3.1 / requirement 1.1 / 2.1 / 3.1 / 7.7）：
   // 启动期一次性解析 5 条 capability bridge 的 enablement。
@@ -655,6 +654,16 @@ async function startServer() {
   // `process.env.X === "true"` tier-1 门禁自动继承新默认值；
   // 既有测试通过 `BUILD_TARGET=test` 强制返回 "false" 保持兼容。
   const resolvedEnablement = resolveAllBridgeEnablement(process.env);
+
+  // blueprint-trust-enforcement-model Task 2.1（design §C2 / §startup wiring /
+  // requirements 1.3, 1.8, 1.9）：紧贴 bridge enablement 解析其后，一次性解析
+  // 5 条 v4 Trust Gate 的 enable/disable 默认值，使其与 `AUTOPILOT_REAL_RUNTIME`
+  // master switch 保持一致。resolver 会把解析结果写回 `process.env`，因此必须
+  // 在 `buildBlueprintServiceContext` 读取 `process.env.BLUEPRINT_*_ENABLED`
+  // 之前调用——这修复了绕过 `scripts/dev-all.mjs` 启动时 trust loop 静默关闭的
+  // latent deployment hazard。此处只解析 default，不改变任一 Trust Gate 的
+  // advisory / non-blocking 语义，也不引入 auto-blocking（Requirement 1.9）。
+  resolveAllTrustGateEnablement(process.env);
 
   // Task 16.1-16.2（`autopilot-role-container-loader`）：解析 loader 的 enablement
   // 并写回 process.env，让 loader 的 Tier 1 gate 能读到最终值。

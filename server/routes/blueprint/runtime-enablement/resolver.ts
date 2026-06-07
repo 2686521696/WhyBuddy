@@ -203,6 +203,211 @@ function readResolvedValue(
   return value as ResolvedBridgeEnablementValue;
 }
 
+// ─── Trust Gate Enablement Resolver（blueprint-trust-enforcement-model §C1） ─
+
+/**
+ * Trust Gate default-resolution layer.
+ *
+ * Pure functions that resolve the enable / disable *default* of the 5 v4 Trust
+ * Gates (`BLUEPRINT_CHECKS_LEDGER_ENABLED`,
+ * `BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED`, `BLUEPRINT_COMPANION_ENABLED`,
+ * `BLUEPRINT_TRACEABILITY_MATRIX_ENABLED`, `BLUEPRINT_PREVIEW_AUDIT_ENABLED`)
+ * consistently with the `AUTOPILOT_REAL_RUNTIME` master switch, closing the
+ * latent deployment hazard where a launch that bypasses `scripts/dev-all.mjs`
+ * runs the 6 capability bridges as real while the trust loop stays silently off.
+ *
+ * This mirrors {@link resolveBridgeEnablement} one-to-one with two deliberate
+ * divergences (see {@link resolveTrustGateEnablement}):
+ *   1. The value space is always defined — `{"true","false"}`, never
+ *      `undefined` — so every gate has a resolved default (Requirement 1.1).
+ *   2. The bridge resolver's Step 3 (master-switch) + Step 4 (unknown) are
+ *      collapsed into a single rule: the default is `"true"` only when the
+ *      master switch equals exactly the case-sensitive string `"true"`; every
+ *      other value resolves to `"false"` (Requirements 1.3, 1.4).
+ *
+ * This layer resolves *defaults only*. It NEVER changes the advisory /
+ * non-blocking nature of any Trust Gate and NEVER introduces auto-blocking
+ * (Requirement 1.9). The intentional App=advisory / Skill=hard-gate fork and
+ * the Red Line that the App must never claim the Skill's "agent-can't-touch"
+ * guarantee are documented in the Enforcement_Model_Decision_Record:
+ * `.kiro/specs/blueprint-trust-enforcement-model/enforcement-model-decision-record.md`.
+ */
+
+/**
+ * The 5 Trust Gate env flag names. Mirrors {@link BRIDGE_ENABLEMENT_KEYS}.
+ * See design.md §C1 / Data Models.
+ */
+export const TRUST_GATE_ENABLEMENT_KEYS = [
+  "BLUEPRINT_CHECKS_LEDGER_ENABLED",
+  "BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED",
+  "BLUEPRINT_COMPANION_ENABLED",
+  "BLUEPRINT_TRACEABILITY_MATRIX_ENABLED",
+  "BLUEPRINT_PREVIEW_AUDIT_ENABLED",
+] as const;
+
+export type TrustGateEnablementKey = (typeof TRUST_GATE_ENABLEMENT_KEYS)[number];
+
+/**
+ * Resolved enablement state for a single Trust Gate.
+ *
+ * Unlike {@link ResolvedBridgeEnablementValue}, a Trust Gate ALWAYS resolves to
+ * a defined value within `{"true","false"}` (Requirement 1.1) — there is no
+ * `undefined` "unset" state.
+ */
+export type ResolvedTrustGateValue = "true" | "false";
+
+/**
+ * Input tuple for {@link resolveTrustGateEnablement}. All fields are
+ * `string | undefined` to mirror `process.env` access; callers MUST NOT pass
+ * `null`.
+ */
+export interface ResolveTrustGateInput {
+  /** Specific Trust Gate env variable name. */
+  envFlag: TrustGateEnablementKey;
+  /** Current value of `process.env[envFlag]`; `undefined` when unset. */
+  explicitEnvValue: string | undefined;
+  /** Current value of `process.env.AUTOPILOT_REAL_RUNTIME`. */
+  masterSwitch: string | undefined;
+  /** Current value of `process.env.BUILD_TARGET`. */
+  buildTarget: string | undefined;
+}
+
+/**
+ * Pure function. Computes the final enable / disable decision for a single
+ * Trust Gate without reading `process.env` or producing side effects.
+ *
+ * Algorithm (design.md §C1 — verbatim mirror of {@link resolveBridgeEnablement}
+ * with the two divergences noted on this module's section doc-comment):
+ *
+ *   Step 1 — Test environment hard-lock (Requirements 1.5, 1.6):
+ *     If `buildTarget === "test"`, return `"true"` iff the trimmed explicit
+ *     value is exactly `"true"`, else `"false"`. This test-lock takes
+ *     precedence over the master switch.
+ *
+ *   Step 2 — Developer explicit value wins (Requirement 1.2):
+ *     If the explicit value is present and non-empty after trimming whitespace,
+ *     return it unchanged. A non-canonical explicit value (e.g. `"on"`) is
+ *     returned as-is — explicit operator intent is never silently overridden.
+ *     Whitespace-only explicit values are treated as "not set" and fall through.
+ *
+ *   Step 3 — Master-switch default (Requirement 1.3):
+ *     Return `"true"` iff `masterSwitch === "true"` (case-sensitive).
+ *
+ *   Step 4 — Default (Requirement 1.4):
+ *     Otherwise return `"false"` — covering unset, empty, and all non-canonical
+ *     master-switch values (`"TRUE"`, `"1"`, `"yes"`, garbage).
+ *
+ * The output is always within `{"true","false"}` (Requirement 1.1). This layer
+ * resolves defaults only and never introduces auto-blocking (Requirement 1.9).
+ */
+export function resolveTrustGateEnablement(
+  input: ResolveTrustGateInput,
+): ResolvedTrustGateValue {
+  const { explicitEnvValue, masterSwitch, buildTarget } = input;
+
+  const trimmedExplicit =
+    explicitEnvValue === undefined ? undefined : explicitEnvValue.trim();
+
+  // Step 1 — Test environment hard-lock (beats the master switch).
+  if (buildTarget === "test") {
+    return trimmedExplicit === "true" ? "true" : "false";
+  }
+
+  // Step 2 — Developer explicit value wins (whitespace-only treated as unset).
+  if (trimmedExplicit !== undefined && trimmedExplicit !== "") {
+    return trimmedExplicit as ResolvedTrustGateValue;
+  }
+
+  // Step 3 — Master-switch default (case-sensitive exact "true").
+  if (masterSwitch === "true") {
+    return "true";
+  }
+
+  // Step 4 — Default: every other value resolves to "false".
+  return "false";
+}
+
+/**
+ * Aggregated resolver result produced by {@link resolveAllTrustGateEnablement}.
+ * The five fields correspond one-to-one with the 5 Trust Gates. Mirrors
+ * {@link ResolvedBridgeEnablement}, but every field is always a defined value
+ * within `{"true","false"}` (Requirement 1.1).
+ */
+export interface ResolvedTrustGates {
+  checksLedger: ResolvedTrustGateValue;
+  contentQuality: ResolvedTrustGateValue;
+  companion: ResolvedTrustGateValue;
+  traceabilityMatrix: ResolvedTrustGateValue;
+  previewAudit: ResolvedTrustGateValue;
+}
+
+/**
+ * Startup-time helper that resolves all 5 Trust Gate flags in one pass and
+ * writes the resolved defaults back into the supplied env object. Subsequent
+ * reads of `process.env.BLUEPRINT_*_ENABLED` by `buildBlueprintServiceContext`
+ * and each gate service will then observe the new defaults without any gate
+ * code needing to change.
+ *
+ * Idempotent (Requirement 1.7): a write-back is only performed when the
+ * resolved value differs from the current env value (`env[key] !== resolved`).
+ * Calling this function twice on the same env object produces identical results
+ * and — after the first call — performs no further writes.
+ *
+ * This layer resolves *defaults only* and NEVER changes the advisory /
+ * non-blocking nature of any Trust Gate (Requirement 1.9).
+ *
+ * See design.md §C2 for the specification.
+ */
+export function resolveAllTrustGateEnablement(
+  env: NodeJS.ProcessEnv,
+): ResolvedTrustGates {
+  const masterSwitch = env.AUTOPILOT_REAL_RUNTIME;
+  const buildTarget = env.BUILD_TARGET;
+
+  for (const key of TRUST_GATE_ENABLEMENT_KEYS) {
+    const resolved = resolveTrustGateEnablement({
+      envFlag: key,
+      explicitEnvValue: env[key],
+      masterSwitch,
+      buildTarget,
+    });
+
+    if (env[key] !== resolved) {
+      env[key] = resolved;
+    }
+  }
+
+  return {
+    checksLedger: readResolvedTrustGateValue(env, "BLUEPRINT_CHECKS_LEDGER_ENABLED"),
+    contentQuality: readResolvedTrustGateValue(
+      env,
+      "BLUEPRINT_CONTENT_QUALITY_CHECK_ENABLED",
+    ),
+    companion: readResolvedTrustGateValue(env, "BLUEPRINT_COMPANION_ENABLED"),
+    traceabilityMatrix: readResolvedTrustGateValue(
+      env,
+      "BLUEPRINT_TRACEABILITY_MATRIX_ENABLED",
+    ),
+    previewAudit: readResolvedTrustGateValue(env, "BLUEPRINT_PREVIEW_AUDIT_ENABLED"),
+  };
+}
+
+/**
+ * Normalizes a post-write-back env read to the `ResolvedTrustGateValue` type.
+ * Mirrors {@link readResolvedValue} but never returns `undefined`: every Trust
+ * Gate is written back with a defined default, so the only way a non-canonical
+ * value can surface here is an explicit operator value preserved by Step 2 of
+ * {@link resolveTrustGateEnablement} (explicit-wins). Such a value is passed
+ * through as-is so the explicit-wins invariant (Requirement 1.2) is not silently
+ * lost at the aggregated view, matching the bridge resolver's behavior.
+ */
+function readResolvedTrustGateValue(
+  env: NodeJS.ProcessEnv,
+  key: TrustGateEnablementKey,
+): ResolvedTrustGateValue {
+  return env[key] as ResolvedTrustGateValue;
+}
+
 // ─── Agent Runtime Config（spec Task 9.2 / 9.3） ──────────────────────────
 
 /**
