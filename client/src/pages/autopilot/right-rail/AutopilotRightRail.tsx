@@ -128,6 +128,12 @@ const EMPTY_FABRIC_SPEC_TREE = {
   documents: [],
 } as unknown as BlueprintSpecTree;
 
+// spec-generation-perceived-performance Task 6.2（R4.5 / R5.5）：In_Flight
+// 乐观标记的权威超时阈值。子组件 SpecTreeWorkbench 内的 deriveGenerationState
+// 也有一份 60s 乐观超时用于派生，但父级这份才是真正释放 In_Flight_Lock
+// （specDocsGenerating）并通过 toast 通道浮现超时原因的权威计时。
+const SPEC_DOCS_GENERATION_TIMEOUT_MS = 60000;
+
 /**
  * 将 RAIL_SUB_STAGE_ORDER 中的子阶段映射到 STAGE_ORDER 中的阶段索引。
  *
@@ -611,6 +617,8 @@ function ActiveNodeContent({
   generating,
   onGenerateAll,
   onGenerateNode,
+  generationError,
+  onRetry,
 }: {
   summary: { apiPath: string; summary: string; dataReady: boolean };
   locale: AppLocale;
@@ -621,6 +629,9 @@ function ActiveNodeContent({
   generating: "all" | "single" | null;
   onGenerateAll: () => void;
   onGenerateNode: (nodeId: string) => void;
+  // spec-generation-perceived-performance Task 6.1：父级失败态与重试入口透传。
+  generationError?: { message?: string; detail?: string } | null;
+  onRetry?: (scope: "all" | "single", nodeId?: string) => void;
 }) {
   const isZh = locale === "zh-CN";
   const isSpecTreeStage = subStage === "spec_tree";
@@ -662,6 +673,8 @@ function ActiveNodeContent({
           generating={generating}
           onGenerateAll={onGenerateAll}
           onGenerateNode={onGenerateNode}
+          generationError={generationError}
+          onRetry={onRetry}
         />
       )}
 
@@ -1121,6 +1134,15 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const [specDocsError, setSpecDocsError] = useState<ApiRequestError | null>(
     null
   );
+  // spec-generation-perceived-performance Task 6.2：避免在异步生成 race 决出
+  // 胜负后、组件已卸载的情况下 setState（React 泄漏告警 / 状态写孤儿）。
+  const specDocsMountedRef = useRef(true);
+  useEffect(() => {
+    specDocsMountedRef.current = true;
+    return () => {
+      specDocsMountedRef.current = false;
+    };
+  }, []);
   const generateSpecDocuments =
     props.generateSpecDocuments ?? generateBlueprintSpecDocuments;
 
@@ -1184,14 +1206,78 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
 
   const triggerSpecDocsGeneration = useCallback(
     async (scope: "all" | "single", nodeId?: string) => {
+      // In_Flight_Lock 并发幂等（R1.5 / R1.6 / R3.5）：当锁已被任意范围标记
+      // 进行中（specDocsGenerating !== null）时，后续对相同或不同范围的触发
+      // 一律 early return —— 不改变当前锁、不发起新的生成 API 调用，直至当前
+      // 请求结束。这里是唯一的 In_Flight_Lock + API + 回写锚点。
       if (!props.jobId || specDocsGenerating !== null) return;
       setSpecDocsGenerating(scope);
       setSpecDocsError(null);
       const startTime = Date.now();
-      const result = await generateSpecDocuments(
-        props.jobId,
-        scope === "single" && nodeId !== undefined ? { nodeId, locale } : { locale }
-      );
+
+      // R4.5 / R5.5：60s 超时守卫。把真实生成 promise 与一个超时哨兵竞速，
+      // 任一先到即决出胜负；超时分支结束乐观/in-flight、派生 failure、CTA
+      // 恢复 enabled（specDocsGenerating 归 null）、toast 超时原因，且绝不
+      // 向真相源（onSpecDocumentsGenerated → latestJob）写入部分结果。
+      const TIMEOUT = Symbol("spec-docs-generation-timeout");
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<typeof TIMEOUT>((resolve) => {
+        timeoutHandle = setTimeout(
+          () => resolve(TIMEOUT),
+          SPEC_DOCS_GENERATION_TIMEOUT_MS
+        );
+      });
+
+      let raceResult:
+        | Awaited<ReturnType<typeof generateSpecDocuments>>
+        | typeof TIMEOUT;
+      try {
+        raceResult = await Promise.race([
+          generateSpecDocuments(
+            props.jobId,
+            scope === "single" && nodeId !== undefined
+              ? { nodeId, locale }
+              : { locale }
+          ),
+          timeoutPromise,
+        ]);
+      } finally {
+        // 已决出胜负：清理计时器（resolved/rejected 路径都清），避免泄漏。
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      }
+
+      // 组件已卸载：不再 setState，避免 React 泄漏告警与孤儿写入。
+      if (!specDocsMountedRef.current) return;
+
+      // —— 超时分支（R4.5 / R5.5）——
+      if (raceResult === TIMEOUT) {
+        setSpecDocsGenerating(null);
+        const timeoutError: ApiRequestError = {
+          kind: "error",
+          source: "network",
+          endpoint: `/api/blueprint/jobs/${props.jobId}/spec-documents`,
+          message:
+            locale === "zh-CN"
+              ? "生成规格文档超时"
+              : "Spec document generation timed out",
+          detail:
+            locale === "zh-CN"
+              ? "生成在 60 秒内未返回结果，请稍后重试。"
+              : "Generation did not complete within 60 seconds. Please retry.",
+          retryable: true,
+        };
+        setSpecDocsError(timeoutError);
+        showToast.error(
+          locale === "zh-CN"
+            ? "生成规格文档超时"
+            : "Spec document generation timed out",
+          { description: timeoutError.detail }
+        );
+        // 不向真相源写入部分结果：不调用 onSpecDocumentsGenerated。
+        return;
+      }
+
+      const result = raceResult;
       setSpecDocsGenerating(null);
       if (result.ok) {
         // Fallback: ensure the progress panel reaches "finished" state even
@@ -1202,7 +1288,39 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
             .getState()
             .completeSpecDocsProgress(Date.now() - startTime);
         }
-        props.onSpecDocumentsGenerated?.(result.data);
+        // R5.6：回写失败映射。onSpecDocumentsGenerated 把结果回写真相源
+        // （setLatestJob 等）若抛错，视为生成失败：派生 failure + toast，
+        // 且不在真相源留下部分写入（异常即终止，不做二次回写）。
+        try {
+          props.onSpecDocumentsGenerated?.(result.data);
+        } catch (writebackError) {
+          const detail =
+            writebackError instanceof Error
+              ? writebackError.message
+              : String(writebackError);
+          const mappedError: ApiRequestError = {
+            kind: "error",
+            source: "parse",
+            endpoint: `/api/blueprint/jobs/${props.jobId}/spec-documents`,
+            message:
+              locale === "zh-CN"
+                ? "生成规格文档回写失败"
+                : "Failed to apply generated spec documents",
+            detail:
+              detail ||
+              (locale === "zh-CN"
+                ? "结果回写失败，请重试。"
+                : "Writing back the generated result failed. Please retry."),
+            retryable: true,
+          };
+          setSpecDocsError(mappedError);
+          showToast.error(
+            locale === "zh-CN"
+              ? "生成规格文档回写失败"
+              : "Failed to apply generated spec documents",
+            { description: mappedError.detail }
+          );
+        }
       } else {
         setSpecDocsError(result.error);
         // autopilot-v4 fix：生成失败必须给用户即时反馈，否则按钮从"生成中…"
@@ -1237,6 +1355,19 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const handleGenerateNodeSpecDocs = useCallback(
     (nodeId: string) => {
       void triggerSpecDocsGeneration("single", nodeId);
+    },
+    [triggerSpecDocsGeneration]
+  );
+
+  // spec-generation-perceived-performance Task 6.1：失败 → 重试入口。
+  // 复用唯一的 triggerSpecDocsGeneration（同时承载 In_Flight_Lock /
+  // specDocsGenerating、API 调用与 onSpecDocumentsGenerated 回写锚点）。
+  // triggerSpecDocsGeneration 内部已 setSpecDocsError(null)，此处再清一次让
+  // failure → pending 的交接显式且即时（同一渲染帧不残留旧 error）。
+  const handleRetrySpecDocs = useCallback(
+    (scope: "all" | "single", nodeId?: string) => {
+      setSpecDocsError(null);
+      void triggerSpecDocsGeneration(scope, nodeId);
     },
     [triggerSpecDocsGeneration]
   );
@@ -1544,6 +1675,8 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                   generating={specDocsGenerating}
                   onGenerateAll={handleGenerateAllSpecDocs}
                   onGenerateNode={handleGenerateNodeSpecDocs}
+                  generationError={specDocsError}
+                  onRetry={handleRetrySpecDocs}
                 />
               </div>
             )

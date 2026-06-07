@@ -17,6 +17,13 @@
  * - 不重写 `SpecTreeWorkbenchPanel` 内部实现（需求 9.1）
  * - 把 `AutopilotRightRailProps` 的窄化 slice 转接到既有外部面板
  * - `specTree === null` 时与 `BlueprintProgressPanel` 当前空态一致（不渲染）
+ *
+ * spec-generation-perceived-performance R3.1 / R3.3 约束：
+ * 本面板是纯 prop 转发 wrapper，刻意不实现独立的 Generation_State_Machine
+ * （`deriveGenerationState`）或 Progress_Feedback_Layer（`SpecTreeProgressLayer`），
+ * 也不维护乐观 / In_Flight 生成状态。这些感知性能能力只存在于规范实现
+ * `SpecTreeWorkbench`（经 `AutopilotRightRail` 消费）。本 wrapper 仅转接结构操作
+ * 面板（`SpecTreeWorkbenchPanel` / `SpecDocumentWorkbenchPanel`），不承载生成状态机。
  */
 
 import type { FC } from "react";

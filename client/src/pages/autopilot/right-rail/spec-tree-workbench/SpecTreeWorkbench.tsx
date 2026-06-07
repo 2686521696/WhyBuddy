@@ -32,7 +32,14 @@
  * - 不渲染外层 timeline / sub-stage 占位（由 AutopilotRightRail 负责）。
  */
 
-import { useCallback, useMemo, useState, type FC } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FC,
+} from "react";
 
 import { blueprintCopy } from "@/lib/blueprint-copy";
 import type { AppLocale } from "@/lib/locale";
@@ -54,8 +61,15 @@ import type {
 import { deriveSpecTreeChip } from "../derive-spec-tree-chip";
 import { parseSpecDocsObservingEntries } from "../parse-spec-docs-observing";
 
+import {
+  deriveGenerationState,
+  type GenerationScope,
+  type OptimisticMark,
+} from "./derive-generation-state";
+
 import { SpecTreeChip } from "./SpecTreeChip";
 import { SpecDocPreviewBlock } from "./SpecDocPreviewBlock";
+import { SpecTreeProgressLayer } from "./SpecTreeProgressLayer";
 
 const DOC_TYPE_ORDER: readonly BlueprintSpecDocumentType[] = [
   "requirements",
@@ -86,6 +100,19 @@ export interface SpecTreeWorkbenchProps {
   onGenerateAll: () => void;
   /** 次 CTA：生成单节点。父级负责调用 generateBlueprintSpecDocuments(jobId, { nodeId })。 */
   onGenerateNode: (nodeId: string) => void;
+
+  // —— spec-generation-perceived-performance 新增（全部可选，缺省退化为既有行为） ——
+  /**
+   * 父级错误（来自 `specDocsError`），存在即 `failure` 候选。
+   * 缺省（`undefined` / `null`）时不参与派生，组件行为与既有一致。
+   * 实际消费见 Task 4.2（接入 `deriveGenerationState`）/ 4.3（失败态渲染）。
+   */
+  generationError?: { message?: string; detail?: string } | null;
+  /**
+   * 重试入口：父级以"上次失败的 scope"重新发起生成。
+   * 缺省时不渲染重试入口。实际消费见 Task 4.3。
+   */
+  onRetry?: (scope: GenerationScope, nodeId?: string) => void;
 }
 
 // ─── i18n 文案 ────────────────────────────────────────────────────────────
@@ -107,6 +134,24 @@ const COPY = {
   hintSelectFirst: {
     "zh-CN": "选中一个节点以单独生成",
     "en-US": "Select a node to generate it individually",
+  },
+
+  // —— spec-generation-perceived-performance / Task 4.3：三态终态文案 ——
+  successNote: {
+    "zh-CN": "文档已生成",
+    "en-US": "Docs generated",
+  },
+  failureNote: {
+    "zh-CN": "生成失败，请重试",
+    "en-US": "Generation failed, please retry",
+  },
+  retry: {
+    "zh-CN": "重试",
+    "en-US": "Retry",
+  },
+  emptyResult: {
+    "zh-CN": "本次生成未返回任何节点文档",
+    "en-US": "This generation returned no node documents",
   },
 } as const;
 
@@ -168,6 +213,9 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
   generating,
   onGenerateAll,
   onGenerateNode,
+  // spec-generation-perceived-performance 新增（Task 4.1 引入，消费见 4.2/4.3）
+  generationError,
+  onRetry,
 }) => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [expandedNodeIds, setExpandedNodeIds] = useState<ReadonlySet<string>>(
@@ -181,6 +229,24 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
   const observingSnapshot = useMemo(
     () => parseSpecDocsObservingEntries(reasoningEntries),
     [reasoningEntries]
+  );
+
+  // ─── spec-generation-perceived-performance / Task 4.3 ────────────────────
+  // 只读 specDocsProgress 派生进度，供 pending 态进度反馈层消费。仅读取、
+  // 不订阅写入、不回写 store（满足单一真相源约束）。仅当 socket 进度处于
+  // running / assembling 时给出 determinate 进度，否则交给反馈层退化为
+  // indeterminate（progress = null）。对缺失 slice（如测试 mock）做防御。
+  const specDocsProgress = useBlueprintRealtimeStore(s => s.specDocsProgress);
+  const readonlyProgress = useMemo<{ processed: number; total: number } | null>(
+    () => {
+      if (!specDocsProgress) return null;
+      const { batchStatus, processedCount, totalCount } = specDocsProgress;
+      if (batchStatus === "running" || batchStatus === "assembling") {
+        return { processed: processedCount, total: totalCount };
+      }
+      return null;
+    },
+    [specDocsProgress]
   );
 
   // 稳定 docs 按 nodeId 分组：
@@ -214,7 +280,6 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
 
   const generatingAll = generating === "all";
   const generatingSingle = generating === "single";
-  const anyGenerating = generating !== null;
 
   // autopilot-spec-document-export Task 6.1：是否存在任意已生成文档，
   // 用于决定 "导出全部 SPEC" 按钮的 disabled 状态。
@@ -224,6 +289,143 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
     }
     return false;
   }, [docsByNodeId]);
+
+  // ─── spec-generation-perceived-performance / Task 4.1 ────────────────────
+  // 瞬态生成态脚手架。本任务只建立 props 与瞬态状态/派生字段；CTA 同步置入
+  // 乐观标记与 deriveGenerationState 接线在 Task 4.2，按 phase 渲染反馈层在
+  // Task 4.3。这些值在此处计算、留待后续任务消费，不改变当前渲染行为。
+
+  // 瞬态乐观标记（点击 CTA 时同步置入，接线见 Task 4.2）。仅 UI，不入真相源。
+  const [optimistic, setOptimistic] = useState<OptimisticMark | null>(null);
+
+  // `now` 计时：仅用于推进超时判定（deriveGenerationState 的 `now` 入参），
+  // 不承载任何业务数据。仅在存在乐观标记或父级 In_Flight_Lock 进行中时运行；
+  // 组件卸载或离开进行中档（pending）时清理，避免计时器泄漏。
+  const [now, setNow] = useState<number>(() => performance.now());
+  const generationActive = optimistic !== null || generating !== null;
+  useEffect(() => {
+    if (!generationActive) {
+      return;
+    }
+    // 进入进行中档时立即对齐一次，避免首帧使用过期 now。
+    setNow(performance.now());
+    const intervalId = globalThis.setInterval(() => {
+      setNow(performance.now());
+    }, 1000);
+    return () => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [generationActive]);
+
+  // 权威投影派生：只读既有真相源（latestJob + rightRailView 派生层），
+  // 供 Task 4.2 的 deriveGenerationState 消费，不引入第二套状态源。
+
+  // authoritativeHasDocs ← 复用既有 hasAnyDocs（docsByNodeId 中存在任意非空文档）。
+  const authoritativeHasDocs = hasAnyDocs;
+
+  // authoritativeSpecTreeReady ← hasPersistedSpecTree 语义（specTree.nodes.length > 0）。
+  const authoritativeSpecTreeReady = Boolean(specTree?.nodes?.length);
+
+  // 当前权威文档计数与 job 版本信号，用于检测回写后"文档计数 / job 版本前进"。
+  const authoritativeDocCount = useMemo(() => {
+    let count = 0;
+    for (const docs of docsByNodeId.values()) {
+      count += docs.length;
+    }
+    return count;
+  }, [docsByNodeId]);
+  const authoritativeJobVersion = job?.version ?? null;
+
+  // 生成发起时捕获的权威基线（文档计数 + job 版本）。基线在 CTA 点击置入乐观
+  // 标记时由 Task 4.2 写入；在此仅建立载体。基线为空表示本会话尚未发起生成。
+  const settledBaselineRef = useRef<{
+    docCount: number;
+    jobVersion: string | null;
+  } | null>(null);
+
+  // 记忆上次发起生成的范围（与单节点 nodeId），用于 failure 态重试入口以"相同
+  // 范围"重新发起（满足 R2.7）。在 CTA 点击同步处理内写入；不入真相源。
+  const lastGenerationRef = useRef<{
+    scope: GenerationScope;
+    nodeId?: string;
+  } | null>(null);
+
+  // authoritativeSettled ← 相对发起基线，文档计数或 job 版本是否已前进
+  // （即本次请求结果是否已被权威投影确认）。基线为空时恒为 false（派生为 idle）。
+  const authoritativeSettled = (() => {
+    const baseline = settledBaselineRef.current;
+    if (baseline === null) {
+      return false;
+    }
+    return (
+      authoritativeDocCount > baseline.docCount ||
+      authoritativeJobVersion !== baseline.jobVersion
+    );
+  })();
+
+  // ─── spec-generation-perceived-performance / Task 4.2 ────────────────────
+  // 接入 deriveGenerationState：把父级 In_Flight_Lock、父级错误、瞬态乐观标记
+  // 与权威投影派生折算为单一生成状态机 phase（idle|pending|success|failure|
+  // empty）。本任务消费 phase 用于容器 data-state 与 CTA disabled 判定；按
+  // phase 渲染反馈层 / 重试入口 / 空·成功态文案在 Task 4.3。
+  const generationStateView = deriveGenerationState({
+    inFlight: generating,
+    error: generationError ?? null,
+    optimistic,
+    authoritativeHasDocs,
+    authoritativeSpecTreeReady,
+    authoritativeSettled,
+    now,
+  });
+  const phase = generationStateView.phase;
+
+  // 乐观 → 权威单帧交接：权威状态就绪（phase 离开 pending）后，于同一渲染帧内
+  // 清除瞬态乐观标记，使乐观态与权威态并存不超过一帧、中间无 idle/空白帧。
+  useEffect(() => {
+    if (optimistic !== null && phase !== "pending") {
+      setOptimistic(null);
+    }
+  }, [optimistic, phase]);
+
+  // CTA disabled 统一以 phase 判定：pending 时所有 all/single 触发器同时 disabled。
+  const ctaDisabledByPhase = phase === "pending";
+
+  // CTA 点击同步处理：立即置入乐观标记 + 捕获权威基线（供 authoritativeSettled
+  // 检测回写后"文档计数 / job 版本前进"），再调用父级回调。乐观标记在同步事件内
+  // 写入，使派生 phase 在下一帧前即为 pending，不等待投影层传播。
+  const handleGenerateAllClick = useCallback(() => {
+    settledBaselineRef.current = {
+      docCount: authoritativeDocCount,
+      jobVersion: authoritativeJobVersion,
+    };
+    lastGenerationRef.current = { scope: "all" };
+    setOptimistic({ scope: "all", startedAt: performance.now() });
+    onGenerateAll();
+  }, [authoritativeDocCount, authoritativeJobVersion, onGenerateAll]);
+
+  const handleGenerateSingleClick = useCallback(() => {
+    if (selectedNodeId === null) return;
+    settledBaselineRef.current = {
+      docCount: authoritativeDocCount,
+      jobVersion: authoritativeJobVersion,
+    };
+    lastGenerationRef.current = { scope: "single", nodeId: selectedNodeId };
+    setOptimistic({ scope: "single", startedAt: performance.now() });
+    onGenerateNode(selectedNodeId);
+  }, [
+    authoritativeDocCount,
+    authoritativeJobVersion,
+    onGenerateNode,
+    selectedNodeId,
+  ]);
+
+  // 失败重试：以"上次失败请求的范围"（及单节点 nodeId）经父级重新发起。
+  // 仅当父级提供 onRetry 且记忆到上次发起范围时可用（缺省退化为不渲染入口）。
+  const handleRetry = useCallback(() => {
+    const last = lastGenerationRef.current;
+    if (last === null || onRetry === undefined) return;
+    onRetry(last.scope, last.nodeId);
+  }, [onRetry]);
 
   if (!specTree || specTree.nodes.length === 0) {
     return (
@@ -240,7 +442,7 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
   return (
     <div
       data-testid="spec-tree-workbench"
-      data-state="ready"
+      data-state={phase}
       data-generating={generating ?? "none"}
       className="space-y-3"
     >
@@ -249,8 +451,8 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
         <button
           type="button"
           data-testid="spec-tree-workbench-cta-all"
-          disabled={anyGenerating}
-          onClick={onGenerateAll}
+          disabled={ctaDisabledByPhase}
+          onClick={handleGenerateAllClick}
           className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-slate-700 disabled:bg-slate-400"
         >
           {generatingAll ? generatingLabel : ctaAllLabel}
@@ -258,10 +460,8 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
         <button
           type="button"
           data-testid="spec-tree-workbench-cta-single"
-          disabled={anyGenerating || selectedNodeId === null}
-          onClick={() => {
-            if (selectedNodeId !== null) onGenerateNode(selectedNodeId);
-          }}
+          disabled={ctaDisabledByPhase || selectedNodeId === null}
+          onClick={handleGenerateSingleClick}
           className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
         >
           {generatingSingle ? generatingLabel : ctaSingleLabel}
@@ -281,6 +481,56 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
           idleLabel="导出全部 SPEC"
         />
       </div>
+
+      {/* ─── spec-generation-perceived-performance / Task 4.3：按 phase 渲染反馈层 ───
+          pending → 进度反馈层；failure → 重试入口；empty → 空结果说明；
+          success → 成功提示。三类终态均保留既有树/节点内容（下方 <ul> 不卸载、
+          不清空），满足 R2.11「不 blank-out」。 */}
+      {phase === "pending" ? (
+        <SpecTreeProgressLayer
+          locale={locale}
+          scope={generationStateView.scope ?? "all"}
+          progress={readonlyProgress}
+        />
+      ) : null}
+
+      {phase === "failure" ? (
+        <div
+          data-testid="spec-tree-workbench-failure"
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"
+        >
+          <span>{t(locale, "failureNote")}</span>
+          {onRetry !== undefined && lastGenerationRef.current !== null ? (
+            <button
+              type="button"
+              data-testid="spec-tree-workbench-retry"
+              onClick={handleRetry}
+              className="shrink-0 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
+            >
+              {t(locale, "retry")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {phase === "empty" ? (
+        <div
+          data-testid="spec-tree-workbench-empty"
+          className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2 text-xs font-semibold text-slate-500"
+        >
+          {t(locale, "emptyResult")}
+        </div>
+      ) : null}
+
+      {phase === "success" ? (
+        <div
+          data-testid="spec-tree-workbench-success"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700"
+        >
+          {t(locale, "successNote")}
+        </div>
+      ) : null}
 
       {/* 节点行列表 */}
       <ul

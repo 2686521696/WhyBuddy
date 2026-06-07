@@ -190,6 +190,31 @@ function buildAntdTreeData(
   return [rootTree, ...orphans];
 }
 
+/**
+ * SpecTreeWorkbenchPanel — 故意保留的「结构操作变体」(deliberately-retained
+ * structure-operation variant)。
+ *
+ * 该面板**只承载 SPEC 树的结构操作**：节点增/删/移/合并/拆分（`runBlueprintSpecTreeAction`）、
+ * 节点字段保存（`updateBlueprintSpecTreeNode`）与版本快照（`saveBlueprintSpecTreeVersion`），
+ * 其本地状态机仅为 `saveState` / `versionSaveState` / `actionState`（`idle | saving | saved`）。
+ * `documents` prop 为**只读**输入，仅用于展示每个节点的「已生成/总数」统计徽标，
+ * 不在本面板内触发任何 spec 文档生成动作（无 `generateBlueprintSpecDocuments` /
+ * `onGenerate` 类 CTA）。
+ *
+ * 因此本面板**有意不承载** spec-generation-perceived-performance 定义的
+ * Generation_State_Machine（`idle | pending | success | failure | empty`）与
+ * Progress_Feedback_Layer（`SpecTreeProgressLayer` 骨架 + 进度信号）。spec 文档生成的
+ * 感知性能与状态一致性归属于规范实现 `SpecTreeWorkbench`，并经父级 `AutopilotRightRail`
+ * 的统一 In_Flight_Lock（`triggerSpecDocsGeneration` / `specDocsGenerating`）控制并发。
+ * 保留此独立结构操作变体不构成「不一致实现」——它根本不暴露生成动作，故不在
+ * Generation_State_Machine 的语义范围内。
+ *
+ * 参见 spec：spec-generation-perceived-performance（Requirement 3.1 / 3.2 / 3.4，
+ * design.md §5「SpecTreeWorkbenchPanel（遗留，二选一收敛）」）。
+ *
+ * 兼容性约束：autopilot-right-rail-stage-panels Requirement 9.1 要求本文件保持零行为
+ * 改动；本注释为纯文档说明，不改变签名、实现逻辑或 export 语义。
+ */
 export function SpecTreeWorkbenchPanel({
   specTree,
   selection,
