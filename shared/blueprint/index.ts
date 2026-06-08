@@ -55,6 +55,8 @@ export type * from "./traceability-matrix/index.js";
 // Preview Audit / Provenance 类型（`blueprint-v4-full-alignment` Module E/F）
 export type * from "./preview-audit/index.js";
 export type * from "./brainstorm-reasoning-graph.js";
+export type * from "./brainstorm-runtime-graph.js";
+export { isBrainstormRuntimeGraphEvent } from "./brainstorm-runtime-graph.js";
 
 // Autonomous Agent 类型（`autopilot-role-autonomous-agent` spec Task 1）
 export type * from "./agent-tool.js";

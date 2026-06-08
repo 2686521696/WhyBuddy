@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BlueprintEventName } from "../index.js";
+import { BlueprintEventName, isBrainstormRuntimeGraphEvent } from "../index.js";
 import type {
   BlueprintAgentCrew,
   BlueprintArtifactMemoryEntry,
@@ -11,6 +11,7 @@ import type {
   BlueprintFamilyResponse,
   BrainstormReasoningGraph,
   BrainstormReasoningGraphArtifactPayload,
+  BrainstormRuntimeGraphEvent,
   BlueprintImplementationPromptPackage,
   BlueprintIntake,
   BlueprintIntakePatchRequest,
@@ -182,6 +183,25 @@ describe("shared/blueprint/index.ts barrel", () => {
       "synthesis",
     ]);
     expect(artifact.graph.edges[0]?.type).toBe("supports");
+  });
+
+  it("re-exports autonomous brainstorm runtime graph contracts", () => {
+    const event = {
+      id: "runtime-event-1",
+      type: "decision.marker.emitted",
+      jobId: "job-runtime",
+      sessionId: "brainstorm-session-runtime",
+      stage: "spec_tree",
+      occurredAt: "2026-06-08T14:29:44.959Z",
+      roleId: "planner",
+      nodeId: "node-planner-1",
+      marker: "BRANCH",
+      rationale: "Planner split the SPEC work into independent branches.",
+      confidence: 0.84,
+    } satisfies BrainstormRuntimeGraphEvent;
+
+    expect(isBrainstormRuntimeGraphEvent(event)).toBe(true);
+    expect(event.marker).toBe("BRANCH");
   });
 });
 

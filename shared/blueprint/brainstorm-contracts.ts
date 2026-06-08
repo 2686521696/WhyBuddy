@@ -177,6 +177,12 @@ export interface BrainstormSession {
       roleId: BrainstormRoleId;
       opinion: string;
     }>;
+    /** Real structured critique count for this session (autopilot-brainstorm-real-collaboration). */
+    critiqueCount?: number;
+    /** Real structured rebuttal count for this session. */
+    rebuttalCount?: number;
+    /** Real adjudication call count for this session. */
+    adjudicationCount?: number;
   };
 }
 
@@ -318,4 +324,104 @@ export interface BrainstormDiagnostics {
   averageSessionDurationMs: number;
   tokenBudget: number;
   toolCallLimit: number;
+  /** Real structured critique count (autopilot-brainstorm-real-collaboration, R11.2). */
+  critiqueCount?: number;
+  /** Real structured rebuttal count. */
+  rebuttalCount?: number;
+  /** Count of critiques left unresolved across sessions. */
+  unresolvedCount?: number;
+  /** Real adjudication call count. */
+  adjudicationCount?: number;
+  /** Structured vote count. */
+  voteCount?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Real Multi-Agent Collaboration (autopilot-brainstorm-real-collaboration)
+// ---------------------------------------------------------------------------
+// All additive: structured Critique / Rebuttal / Adjudication / MajorityVote /
+// Topology types for the ChatDev-inspired real collaboration upgrade. These do
+// not break or replace any existing field.
+// @see .kiro/specs/autopilot-brainstorm-real-collaboration/design.md
+
+/** Severity of a structured critique (R1). */
+export type CritiqueSeverity = "low" | "medium" | "high";
+
+/** Stance of a structured rebuttal (R2). */
+export type RebuttalStance = "concede" | "defend";
+
+/** A challenger's real structured critique of a target role's specific claim (R1). */
+export interface Critique {
+  id: string;
+  challengerRoleId: BrainstormRoleId;
+  targetRoleId: BrainstormRoleId;
+  /** References a specific claim text from the target's own round output (never the challenger's text). */
+  targetClaim: string;
+  critique: string;
+  severity: CritiqueSeverity;
+  roundNumber: number;
+  resolved: boolean;
+}
+
+/** The target role's real structured rebuttal to a Critique (R2). */
+export interface Rebuttal {
+  id: string;
+  responderRoleId: BrainstormRoleId;
+  /** === the id of the Critique this rebuttal responds to (R2.2). */
+  challengeId: string;
+  rebuttal: string;
+  stance: RebuttalStance;
+  roundNumber: number;
+}
+
+/** Primary-model structured verdict on whether a round reached consensus (R3). */
+export interface AdjudicationResult {
+  consensusReached: boolean;
+  /** Clamped to [0, 1] (R3.2). */
+  convergenceScore: number;
+  unresolvedCritiqueIds: string[];
+  rationale: string;
+}
+
+/** A single agent's structured vote (R4.1). */
+export interface StructuredVote {
+  roleId: BrainstormRoleId;
+  chosenOption: string;
+  /** [0, 1]. */
+  confidence: number;
+  reasoning: string;
+}
+
+/** Structured majority-vote result (R4, inspired by ChatDev demo_majority_voting.yaml). */
+export interface MajorityVote {
+  winningOption: string;
+  /** Confidence-weighted score. */
+  winningScore: number;
+  secondPlaceOption: string | null;
+  /** winning - second. */
+  margin: number;
+  /** margin < threshold (R4.3). */
+  isNarrow: boolean;
+  /** Valid votes only. */
+  votes: StructuredVote[];
+  minorityReasoning: string[];
+}
+
+/** A single challenger -> target critique relationship (R5). */
+export interface TopologyCritiqueEdge {
+  challenger: BrainstormRoleId;
+  target: BrainstormRoleId;
+}
+
+/** Declarable agent interaction topology (R5). */
+export interface BrainstormTopology {
+  /** "default" | named. */
+  name: string;
+  participants: BrainstormRoleId[];
+  /** Who critiques whom. */
+  critiqueEdges: TopologyCritiqueEdge[];
+  /** Who synthesizes. */
+  synthesizerRoleId: BrainstormRoleId;
+  minRounds: number;
+  maxRounds: number;
 }

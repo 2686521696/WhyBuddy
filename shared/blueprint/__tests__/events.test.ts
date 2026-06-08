@@ -130,6 +130,9 @@ describe("BlueprintEventName", () => {
       { type: BlueprintEventName.BrainstormRoundCompleted, family: "brainstorm" },
       { type: BlueprintEventName.BrainstormChallengeIssued, family: "brainstorm" },
       { type: BlueprintEventName.BrainstormVoteCompleted, family: "brainstorm" },
+      // `autopilot-brainstorm-real-collaboration` spec Task 1.2：新增结构化反驳
+      // 事件，按首段 `.` 截取仍归入 `brainstorm` 家族，不扩展家族目录。
+      { type: BlueprintEventName.BrainstormRebuttalIssued, family: "brainstorm" },
       { type: BlueprintEventName.CompanionChallengeStarted, family: "checks" },
       { type: BlueprintEventName.CompanionChallengeResolved, family: "checks" },
       { type: BlueprintEventName.PreviewBatchCompleted, family: "preview" },
@@ -204,5 +207,15 @@ describe("BlueprintEventName", () => {
     expect(BlueprintEventName.PreviewBatchCompleted).toBe(
       "preview.batch.completed",
     );
+  });
+
+  it("exposes the brainstorm.rebuttal.issued event in the brainstorm family", () => {
+    // `autopilot-brainstorm-real-collaboration` spec Task 1.2
+    expect(BlueprintEventName.BrainstormRebuttalIssued).toBe(
+      "brainstorm.rebuttal.issued",
+    );
+    expect(
+      resolveBlueprintEventFamily("brainstorm.rebuttal.issued"),
+    ).toBe("brainstorm");
   });
 });

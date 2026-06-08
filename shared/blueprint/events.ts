@@ -9,6 +9,11 @@
  * 对应 `.kiro/specs/autopilot-blueprint-refactor-split` 需求 5.1 / 5.2 / 6.3。
  */
 
+import type {
+  CritiqueSeverity,
+  RebuttalStance,
+} from "./brainstorm-contracts";
+
 /**
  * 事件家族（13 个）。
  *
@@ -148,6 +153,10 @@ export type BlueprintGenerationEventType =
   | "brainstorm.round.completed"
   | "brainstorm.challenge.issued"
   | "brainstorm.vote.completed"
+  // Autopilot brainstorm real collaboration（`autopilot-brainstorm-real-collaboration` spec Task 1.2）：
+  // 结构化反驳事件。仍归入 `brainstorm` 家族，不扩展家族目录（R12.2）；
+  // `resolveBlueprintEventFamily` 按首段 `.` 截取会自动归入 `"brainstorm"`。
+  | "brainstorm.rebuttal.issued"
   // Blueprint v4 companion challenge/response events
   | "companion.challenge.started"
   | "companion.challenge.resolved"
@@ -249,6 +258,8 @@ export const BlueprintEventName = {
   BrainstormRoundCompleted: "brainstorm.round.completed",
   BrainstormChallengeIssued: "brainstorm.challenge.issued",
   BrainstormVoteCompleted: "brainstorm.vote.completed",
+  // Autopilot brainstorm real collaboration（`autopilot-brainstorm-real-collaboration` spec Task 1.2）
+  BrainstormRebuttalIssued: "brainstorm.rebuttal.issued",
   // Blueprint v4 companion challenge/response events
   CompanionChallengeStarted: "companion.challenge.started",
   CompanionChallengeResolved: "companion.challenge.resolved",
@@ -423,6 +434,10 @@ export interface BrainstormDegradedPayload {
 
 /**
  * Payload for `brainstorm.round.completed` events.
+ *
+ * 升级（`autopilot-brainstorm-real-collaboration` spec Task 1.2，R6.3）：
+ * 补 `consensusReached` / `unresolvedCritiqueCount`，反映 Adjudicator 真实裁决结果。
+ * 既有字段保持不变，向后兼容。
  */
 export interface BrainstormRoundCompletedPayload {
   sessionId: string;
@@ -430,16 +445,44 @@ export interface BrainstormRoundCompletedPayload {
   participatingRoleIds: BrainstormEventRoleId[];
   convergenceScore: number;
   challengesThisRound: number;
+  /** Adjudicator 是否判定本轮达成共识（R6.3）。 */
+  consensusReached: boolean;
+  /** 本轮结束时仍未解决的 Critique 数量（R6.3）。 */
+  unresolvedCritiqueCount: number;
 }
 
 /**
  * Payload for `brainstorm.challenge.issued` events.
+ *
+ * 升级（`autopilot-brainstorm-real-collaboration` spec Task 1.2，R6.1）：
+ * 补 `targetClaim` / `severity`，反映结构化 Critique 引用的具体主张与严重度。
+ * 既有字段保持不变，向后兼容。
  */
 export interface BrainstormChallengeIssuedPayload {
   sessionId: string;
   challengerRoleId: BrainstormEventRoleId;
   targetRoleId: BrainstormEventRoleId;
   challengeSummary: string;
+  roundNumber: number;
+  /** challenger 所质疑的 target 本轮产出的具体主张文本（R6.1）。 */
+  targetClaim: string;
+  /** 结构化 Critique 的严重度（R6.1）。 */
+  severity: CritiqueSeverity;
+}
+
+/**
+ * Payload for `brainstorm.rebuttal.issued` events.
+ *
+ * 新增（`autopilot-brainstorm-real-collaboration` spec Task 1.2，R6.2）：
+ * 被批评方对某条 Critique 的结构化反驳。归入 `brainstorm` 家族。
+ */
+export interface BrainstormRebuttalIssuedPayload {
+  sessionId: string;
+  responderRoleId: BrainstormEventRoleId;
+  /** === 所回应 Critique.id（R6.2）。 */
+  challengeId: string;
+  rebuttalSummary: string;
+  stance: RebuttalStance;
   roundNumber: number;
 }
 
