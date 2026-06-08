@@ -125,12 +125,27 @@ function pickStructuredGraph(
     graph.jobId === jobId && isGraphRenderable(graph)
   );
   if (candidates.length === 0) return null;
+  const activeStageAliases = stageAliases(activeSubStage);
   const stageMatched = activeSubStage
     ? candidates.find(graph =>
-        graph.stage === activeSubStage || graph.subStage === activeSubStage
+        activeStageAliases.has(normalizeReasoningStage(graph.stage)) ||
+        activeStageAliases.has(normalizeReasoningStage(graph.subStage))
       )
     : undefined;
   return stageMatched ?? candidates[0] ?? null;
+}
+
+function stageAliases(stage: string | undefined): Set<string> {
+  const normalized = normalizeReasoningStage(stage);
+  if (!normalized) return new Set<string>();
+  const aliases = new Set<string>([normalized]);
+  if (normalized === "spec_docs") aliases.add("spec_documents");
+  if (normalized === "spec_documents") aliases.add("spec_docs");
+  return aliases;
+}
+
+function normalizeReasoningStage(stage: string | undefined): string {
+  return typeof stage === "string" ? stage.trim() : "";
 }
 
 function isGraphRenderable(graph: BrainstormReasoningGraph): boolean {

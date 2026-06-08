@@ -158,6 +158,73 @@ describe("AutopilotRoutePage", () => {
     expect(source).not.toContain("readBrainstormReasoningGraphs(latest");
   });
 
+  it("keeps brainstorm reasoning graph artifacts in stage page projections", () => {
+    const graphArtifact = {
+      id: "artifact-reasoning-1",
+      type: "brainstorm_reasoning_graph",
+      title: "Reasoning graph",
+      summary: "2 nodes",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      payload: {
+        type: "brainstorm_reasoning_graph",
+        stage: "spec_tree",
+        subStage: "spec_tree",
+        graph: {
+          id: "graph-1",
+          jobId: "job-1",
+          stage: "spec_tree",
+          nodes: [
+            {
+              id: "question-1",
+              type: "question",
+              title: "Question",
+              status: "open",
+            },
+          ],
+          edges: [],
+          source: "runtime",
+        },
+      },
+    };
+
+    const latestJob = {
+      id: "job-1",
+      stage: "spec_tree",
+      status: "reviewing",
+      request: { mode: "spec_tree" },
+      version: "v1",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      updatedAt: "2026-06-08T00:00:00.000Z",
+      artifacts: [
+        graphArtifact,
+        {
+          id: "artifact-effect-preview",
+          type: "effect_preview",
+          title: "Effect preview",
+          summary: "stage 3 only",
+          createdAt: "2026-06-08T00:00:00.000Z",
+          payload: {},
+        },
+      ],
+      events: [],
+    } as any;
+
+    const pageTwoProjection = resolveAutopilotPageProjection({
+      activeAutopilotPage: 2,
+      latestJob,
+      specTree: null,
+      agentCrew: null,
+      capabilities: [],
+      capabilityInvocations: [],
+      capabilityEvidence: [],
+      effectPreviews: [],
+    });
+
+    expect(pageTwoProjection.visualJob?.artifacts.map(artifact => artifact.type)).toEqual([
+      "brainstorm_reasoning_graph",
+    ]);
+  });
+
   it("keeps partially submitted clarifications in a missing-required state", () => {
     const markup = renderToStaticMarkup(
       <ClarificationPanel
@@ -567,7 +634,7 @@ describe("AutopilotRoutePage", () => {
     });
 
     expect(fetchCalls).toEqual(["job-1", "job-1", "job-1"]);
-    expect(settled?.job.stage).toBe("spec_tree");
+    expect(settled?.job?.stage).toBe("spec_tree");
     expect(settled?.specTree?.nodes).toHaveLength(1);
   });
 

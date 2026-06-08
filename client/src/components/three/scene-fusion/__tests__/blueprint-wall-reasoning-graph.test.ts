@@ -119,6 +119,37 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     expect(result.telemetry.tokenBurn).toBe(12);
   });
 
+  it("prefers spec_documents graphs when the active stage is spec_docs", () => {
+    const result = deriveBlueprintWallReasoningGraph({
+      job: makeJob({ stage: "spec_docs" }),
+      activeSubStage: "spec_docs",
+      structuredGraphs: [
+        makeStructuredGraph({
+          id: "graph-effect",
+          stage: "effect_preview",
+          nodes: [
+            {
+              id: "effect-question",
+              type: "question",
+              title: "Effect preview question",
+              status: "open",
+            },
+          ],
+          edges: [],
+        }),
+        makeStructuredGraph({
+          id: "graph-spec-docs",
+          stage: "spec_documents",
+          subStage: undefined,
+        }),
+      ],
+    });
+
+    expect(result.mode).toBe("structured");
+    expect(result.graph?.id).toBe("graph-spec-docs");
+    expect(result.graph?.stage).toBe("spec_documents");
+  });
+
   it("ignores wrong-job structured graphs and falls back to current-job entries", () => {
     const result = deriveBlueprintWallReasoningGraph({
       job: makeJob(),

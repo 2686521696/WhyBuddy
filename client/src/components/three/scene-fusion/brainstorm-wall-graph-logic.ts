@@ -25,16 +25,16 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Canvas resolution width */
-export const CANVAS_W = 3840;
+export const CANVAS_W = 2880;
 /** Canvas resolution height */
-export const CANVAS_H = 1740;
+export const CANVAS_H = 1320;
 
 /** Node card width in layout units */
 export const BRAINSTORM_NODE_W = 540;
 /** Node card height in layout units */
 export const BRAINSTORM_NODE_H = 168;
 /** Canvas padding */
-export const BRAINSTORM_PADDING = 90;
+export const BRAINSTORM_PADDING = 180;
 
 /** Node type → color mapping (6 distinct colors for 6 types) */
 export const BRAINSTORM_NODE_COLORS: Record<BranchNodeType, string> = {
@@ -83,6 +83,25 @@ export interface BrainstormDeliberationOverlay {
   voteOutcome?: VoteOutcomeView | null;
 }
 
+export interface BrainstormEdgeConnection {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  controlOffset: number;
+}
+
+export interface BrainstormChallengeLabel {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ResolvedChallengeLabel extends BrainstormChallengeLabel {
+  textColor: string;
+  borderColor: string;
+}
+
 // ---------------------------------------------------------------------------
 // Title Truncation
 // ---------------------------------------------------------------------------
@@ -118,6 +137,81 @@ export function computeAdaptiveScale(
   const scaleY = availableHeight / graphHeight;
   // Don't scale up beyond 1.5x, and don't scale below 0.2x
   return Math.max(0.2, Math.min(scaleX, scaleY, 1.5));
+}
+
+export function resolveBrainstormEdgeConnection(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): BrainstormEdgeConnection {
+  const direction = to.x >= from.x ? 1 : -1;
+  const fromX = from.x + direction * (BRAINSTORM_NODE_W / 2);
+  const toX = to.x - direction * (BRAINSTORM_NODE_W / 2);
+  const distance = Math.max(120, Math.abs(toX - fromX));
+
+  return {
+    from: { x: fromX, y: from.y },
+    to: { x: toX, y: to.y },
+    controlOffset: direction * distance * 0.42,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function labelOverlapsNode(label: BrainstormChallengeLabel, node: LayoutNode): boolean {
+  const nodeLeft = node.x - BRAINSTORM_NODE_W / 2;
+  const nodeRight = node.x + BRAINSTORM_NODE_W / 2;
+  const nodeTop = node.y - BRAINSTORM_NODE_H / 2;
+  const nodeBottom = node.y + BRAINSTORM_NODE_H / 2;
+  return (
+    label.x < nodeRight &&
+    label.x + label.width > nodeLeft &&
+    label.y < nodeBottom &&
+    label.y + label.height > nodeTop
+  );
+}
+
+function avoidBrainstormChallengeLabelObstacles(
+  label: BrainstormChallengeLabel,
+  nodes: LayoutNode[],
+  canvasHeight: number,
+): BrainstormChallengeLabel {
+  if (!nodes.some((node) => labelOverlapsNode(label, node))) return label;
+  const offsets = [-132, 132, -240, 240, -348, 348];
+  for (const offset of offsets) {
+    const candidate = {
+      ...label,
+      y: clamp(label.y + offset, 72, canvasHeight - 72 - label.height),
+    };
+    if (!nodes.some((node) => labelOverlapsNode(candidate, node))) {
+      return candidate;
+    }
+  }
+  return label;
+}
+
+export function resolveBrainstormChallengeLabel(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  summary: string,
+  canvasWidth: number = CANVAS_W,
+  canvasHeight: number = CANVAS_H,
+): BrainstormChallengeLabel {
+  const trimmed = summary.trim() || "Runtime role interaction";
+  const text = trimmed.length > 34 ? `${trimmed.slice(0, 33)}…` : trimmed;
+  const width = clamp(80 + text.length * 12, 240, 520);
+  const height = 48;
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2 + (from.y <= to.y ? -132 : 132);
+
+  return {
+    text,
+    width,
+    height,
+    x: clamp(midX - width / 2, BRAINSTORM_PADDING, canvasWidth - BRAINSTORM_PADDING - width),
+    y: clamp(midY - height / 2, 72, canvasHeight - 72 - height),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,20 +271,18 @@ export function drawBrainstormGraph(
   ctx.setLineDash([18, 12]);
 
   for (const edge of layout.edges) {
-    const fromX = edge.from.x + BRAINSTORM_NODE_W / 2;
-    const fromY = edge.from.y;
-    const toX = edge.to.x - BRAINSTORM_NODE_W / 2;
-    const toY = edge.to.y;
-
-    const cpOffset = Math.abs(toX - fromX) * 0.4;
+    const connection = resolveBrainstormEdgeConnection(edge.from, edge.to);
 
     ctx.strokeStyle = "rgba(45, 212, 191, 0.55)";
     ctx.beginPath();
-    ctx.moveTo(fromX, fromY);
+    ctx.moveTo(connection.from.x, connection.from.y);
     ctx.bezierCurveTo(
-      fromX + cpOffset, fromY,
-      toX - cpOffset, toY,
-      toX, toY
+      connection.from.x + connection.controlOffset,
+      connection.from.y,
+      connection.to.x - connection.controlOffset,
+      connection.to.y,
+      connection.to.x,
+      connection.to.y
     );
     ctx.stroke();
 
@@ -198,37 +290,63 @@ export function drawBrainstormGraph(
     ctx.setLineDash([]);
     ctx.fillStyle = "rgba(45, 212, 191, 0.7)";
     ctx.beginPath();
-    ctx.arc(toX, toY, 9, 0, Math.PI * 2);
+    ctx.arc(connection.to.x, connection.to.y, 9, 0, Math.PI * 2);
     ctx.fill();
     ctx.setLineDash([18, 12]);
   }
 
   ctx.setLineDash([]);
 
-  const nodeByRole = new Map(layout.nodes.map((node) => [node.roleId, node]));
+  const nodeByRole = new Map<string, LayoutNode>();
+  for (const node of layout.nodes) {
+    const current = nodeByRole.get(node.roleId);
+    if (!current || node.id === `role:${node.roleId}`) {
+      nodeByRole.set(node.roleId, node);
+    }
+  }
   const challengeEdges = deliberation.challengeEdges ?? [];
+  const challengeLabels: ResolvedChallengeLabel[] = [];
   for (const challenge of challengeEdges) {
     const from = nodeByRole.get(challenge.challengerRoleId);
     const to = nodeByRole.get(challenge.targetRoleId);
     if (!from || !to) continue;
-    ctx.strokeStyle = "rgba(244, 63, 94, 0.78)";
+    const connection = resolveBrainstormEdgeConnection(from, to);
+    const arcLift = from.y <= to.y ? -96 : 96;
+    const isSupport = challenge.kind === "support";
+    const lineColor = isSupport ? "rgba(14, 165, 233, 0.78)" : "rgba(244, 63, 94, 0.78)";
+    const labelColor = isSupport ? "#0369a1" : "#be123c";
+    const borderColor = isSupport ? "rgba(14, 165, 233, 0.36)" : "rgba(244, 63, 94, 0.36)";
+    ctx.strokeStyle = lineColor;
     ctx.lineWidth = 4;
     ctx.setLineDash([10, 10]);
     ctx.beginPath();
-    ctx.moveTo(from.x + BRAINSTORM_NODE_W / 2, from.y + BRAINSTORM_NODE_H / 2);
+    ctx.moveTo(connection.from.x, connection.from.y);
     ctx.bezierCurveTo(
-      from.x + 200,
-      from.y + 80,
-      to.x - 200,
-      to.y - 80,
-      to.x - BRAINSTORM_NODE_W / 2,
-      to.y - BRAINSTORM_NODE_H / 2,
+      connection.from.x + connection.controlOffset,
+      connection.from.y + arcLift,
+      connection.to.x - connection.controlOffset,
+      connection.to.y + arcLift,
+      connection.to.x,
+      connection.to.y,
     );
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = "#be123c";
-    ctx.font = "bold 22px system-ui, sans-serif";
-    ctx.fillText(challenge.summary, (from.x + to.x) / 2 - 90, (from.y + to.y) / 2 - 34);
+    const label = avoidBrainstormChallengeLabelObstacles(
+      resolveBrainstormChallengeLabel(
+        from,
+        to,
+        challenge.summary,
+        canvasWidth,
+        canvasHeight,
+      ),
+      layout.nodes,
+      canvasHeight,
+    );
+    challengeLabels.push({
+      ...label,
+      textColor: labelColor,
+      borderColor,
+    });
   }
 
   // Draw nodes
@@ -294,6 +412,23 @@ export function drawBrainstormGraph(
 
     // Reset opacity
     ctx.globalAlpha = 1;
+  }
+
+  // Labels are drawn after cards so role-to-role interactions stay visible
+  // even when the curve crosses dense role branches.
+  for (const label of challengeLabels) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
+    ctx.beginPath();
+    ctx.roundRect(label.x, label.y, label.width, label.height, 14);
+    ctx.fill();
+    ctx.strokeStyle = label.borderColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = label.textColor;
+    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label.text, label.x + 20, label.y + label.height / 2);
   }
 
   if (deliberation.voteOutcome) {

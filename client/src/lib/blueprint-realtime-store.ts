@@ -13,8 +13,12 @@
 
 import { create } from "zustand";
 import { io, type Socket } from "socket.io-client";
-import { dispatchBrainstormGraphEvent } from "./brainstorm-graph-store";
+import {
+  dispatchBrainstormGraphEvent,
+  useBrainstormGraphStore,
+} from "./brainstorm-graph-store";
 import type { BlueprintGenerationEventType } from "@shared/blueprint/events";
+import type { BrainstormRuntimeGraphEventType } from "@shared/blueprint/brainstorm-runtime-graph";
 // `autopilot-agent-reasoning-stream` spec Task 8.1：
 // 引入 Layer 4 view model 与转译函数。`buildEntryFromSocketEvent` 接受
 // `BlueprintGenerationEvent`，store 内调用时把 relay 转发的精简事件 cast 到该类型即可，
@@ -179,7 +183,7 @@ export interface FleetRoleRealtimeCard {
  * Socket.IO 中继推送的事件 payload 结构。
  */
 export interface BlueprintRelayedEvent {
-  type: BlueprintGenerationEventType;
+  type: BlueprintGenerationEventType | BrainstormRuntimeGraphEventType;
   jobId: string;
   timestamp: string | number;
   payload?: Record<string, unknown>;
@@ -720,6 +724,39 @@ function buildLogEntry(event: BlueprintRelayedEvent): BlueprintLogEntry {
   };
 }
 
+const HISTORICAL_BRAINSTORM_PAYLOAD_KEYS = [
+  "roleId",
+  "sessionId",
+  "stageId",
+  "nodeId",
+  "parentNodeId",
+  "nodeType",
+  "mode",
+  "roles",
+  "roundNumber",
+  "convergenceScore",
+  "challengerRoleId",
+  "targetRoleId",
+  "summary",
+  "tokenUsed",
+  "content",
+  "confidence",
+  "tokenUsage",
+] as const;
+
+function copyHistoricalPayloadFields(
+  event: BlueprintGenerationEvent,
+  payload: Record<string, unknown>,
+  keys: readonly string[]
+): void {
+  const rawEvent = event as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    if (payload[key] === undefined && rawEvent[key] !== undefined) {
+      payload[key] = rawEvent[key];
+    }
+  }
+}
+
 function buildRelayedEventFromHistoricalEvent(
   event: BlueprintGenerationEvent
 ): BlueprintRelayedEvent {
@@ -731,7 +768,11 @@ function buildRelayedEventFromHistoricalEvent(
   payload.stage ??= event.stage;
   payload.status ??= event.status;
   payload.message ??= event.message;
-  payload.roleId ??= event.roleId;
+  copyHistoricalPayloadFields(
+    event,
+    payload,
+    HISTORICAL_BRAINSTORM_PAYLOAD_KEYS
+  );
 
   return {
     type: event.type as BlueprintGenerationEventType,
@@ -1263,6 +1304,7 @@ export const useBlueprintRealtimeStore = create<
         status: "idle",
       },
     });
+    useBrainstormGraphStore.getState().reset();
 
     // 绑定连接事件
     s.on("connect", handleConnect);
@@ -1428,6 +1470,7 @@ export const useBlueprintRealtimeStore = create<
       // logEntries 200-cap 队列继续作为历史记录保留，不受影响。
       agentReasoning: INITIAL_AGENT_REASONING,
     });
+    useBrainstormGraphStore.getState().reset();
   },
 
   dispatchEvent(event: BlueprintRelayedEvent) {
@@ -1729,6 +1772,7 @@ export const useBlueprintRealtimeStore = create<
       s.off("blueprint:batch");
     }
     set(initialState);
+    useBrainstormGraphStore.getState().reset();
   },
 }));
 
@@ -1753,6 +1797,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
       useBlueprintRealtimeStore.getState().dispatchEvent(event),
     getSpecDocsProgress: () =>
       useBlueprintRealtimeStore.getState().specDocsProgress,
+    getBrainstormGraph: () => useBrainstormGraphStore.getState(),
     getState: () => useBlueprintRealtimeStore.getState(),
     /**
      * DEV-only setter that lets the e2e harness pivot `batchStatus` without

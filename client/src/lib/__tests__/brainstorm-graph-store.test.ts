@@ -66,8 +66,16 @@ describe("brainstormGraph store", () => {
       const state = useBrainstormGraphStore.getState();
       expect(state.sessionId).toBe("sess-1");
       expect(state.sessionStatus).toBe("active");
-      expect(state.nodes).toEqual([]);
-      expect(state.edges).toEqual([]);
+      // handleSessionStarted now seeds one anchor node per role so that
+      // challenge/support edges always have existing endpoint nodes.
+      expect(state.nodes.map((n) => n.id)).toEqual([
+        "role:planner",
+        "role:architect",
+      ]);
+      expect(state.nodes.every((n) => n.status === "completed")).toBe(true);
+      expect(state.edges).toEqual([
+        { sourceNodeId: "role:planner", targetNodeId: "role:architect" },
+      ]);
       expect(state.sessionMetadata.mode).toBe("discussion");
       expect(state.sessionMetadata.roles).toEqual(["planner", "architect"]);
       expect(state.sessionMetadata.startedAt).not.toBeNull();
@@ -161,6 +169,7 @@ describe("brainstormGraph store", () => {
           targetRoleId: "architect",
           summary: "Clarify runtime boundary.",
           roundNumber: 2,
+          kind: "challenge",
         },
       ]);
       expect(selectVoteOutcome(state)).toEqual({
@@ -191,6 +200,109 @@ describe("brainstormGraph store", () => {
     });
   });
 
+  // ─── Rebuttal → support edge (R6.6) ──────────────────────────────────────
+
+  describe("brainstorm.rebuttal.issued dispatch (R6.6)", () => {
+    beforeEach(() => {
+      // Seeds role anchor nodes for planner + architect so endpoint nodes exist.
+      useBrainstormGraphStore.getState().handleSessionStarted({
+        sessionId: "sess-rebuttal",
+        mode: "discussion",
+        roles: ["planner", "architect"],
+      });
+    });
+
+    it("produces a SUPPORT challenge edge from responder to challenger", () => {
+      dispatchBrainstormGraphEvent({
+        type: "brainstorm.rebuttal.issued",
+        payload: {
+          sessionId: "sess-rebuttal",
+          responderRoleId: "architect",
+          challengerRoleId: "planner",
+          rebuttalSummary: "Hold the runtime boundary as designed.",
+          stance: "defend",
+          roundNumber: 3,
+        },
+      });
+
+      // Reuses handleChallengeIssued: responder → challenger, kind "support".
+      expect(
+        selectChallengeEdges(useBrainstormGraphStore.getState()),
+      ).toEqual([
+        {
+          challengerRoleId: "architect",
+          targetRoleId: "planner",
+          summary: "Hold the runtime boundary as designed.",
+          roundNumber: 3,
+          kind: "support",
+        },
+      ]);
+    });
+
+    it("drops the rebuttal edge when an endpoint role has no node (no dangling edge)", () => {
+      // 'auditor' was never seeded as a role anchor in this session, so the
+      // node-exists guard in handleChallengeIssued must reject the edge.
+      dispatchBrainstormGraphEvent({
+        type: "brainstorm.rebuttal.issued",
+        payload: {
+          sessionId: "sess-rebuttal",
+          responderRoleId: "auditor",
+          challengerRoleId: "planner",
+          rebuttalSummary: "Unknown responder concedes.",
+          stance: "concede",
+          roundNumber: 1,
+        },
+      });
+
+      expect(
+        selectChallengeEdges(useBrainstormGraphStore.getState()),
+      ).toEqual([]);
+    });
+
+    it("combines a challenge then its rebuttal into challenge + support edges", () => {
+      dispatchBrainstormGraphEvent({
+        type: "brainstorm.challenge.issued",
+        payload: {
+          sessionId: "sess-rebuttal",
+          challengerRoleId: "planner",
+          targetRoleId: "architect",
+          summary: "Runtime boundary is under-specified.",
+          roundNumber: 2,
+        },
+      });
+      dispatchBrainstormGraphEvent({
+        type: "brainstorm.rebuttal.issued",
+        payload: {
+          sessionId: "sess-rebuttal",
+          responderRoleId: "architect",
+          challengerRoleId: "planner",
+          rebuttalSummary: "Boundary is defined in the runtime contract.",
+          stance: "defend",
+          roundNumber: 2,
+        },
+      });
+
+      expect(
+        selectChallengeEdges(useBrainstormGraphStore.getState()),
+      ).toEqual([
+        {
+          challengerRoleId: "planner",
+          targetRoleId: "architect",
+          summary: "Runtime boundary is under-specified.",
+          roundNumber: 2,
+          kind: "challenge",
+        },
+        {
+          challengerRoleId: "architect",
+          targetRoleId: "planner",
+          summary: "Boundary is defined in the runtime contract.",
+          roundNumber: 2,
+          kind: "support",
+        },
+      ]);
+    });
+  });
+
   // ─── Node creation ─────────────────────────────────────────────────────
 
   describe("dispatchBrainstormGraphEvent / decision gate", () => {
@@ -210,8 +322,19 @@ describe("brainstormGraph store", () => {
       const state = useBrainstormGraphStore.getState();
       expect(state.sessionId).toBe("gate:job-1:route_generation");
       expect(state.sessionStatus).toBe("active");
-      expect(state.nodes).toHaveLength(1);
-      expect(state.nodes[0]).toMatchObject({
+      // The gate evaluation seeds one anchor node per required role
+      // (decider, planner, architect) and then appends the gate decision node.
+      expect(state.nodes).toHaveLength(4);
+      expect(state.nodes.map((n) => n.id)).toEqual([
+        "role:decider",
+        "role:planner",
+        "role:architect",
+        "gate:job-1:route_generation",
+      ]);
+      const gateNode = state.nodes.find(
+        (n) => n.id === "gate:job-1:route_generation",
+      );
+      expect(gateNode).toMatchObject({
         id: "gate:job-1:route_generation",
         parentNodeId: null,
         roleId: "decider",
@@ -494,19 +617,24 @@ describe("brainstormGraph store", () => {
 
     it("selectAllNodes returns all nodes", () => {
       const state = useBrainstormGraphStore.getState();
-      expect(selectAllNodes(state)).toHaveLength(3);
+      // 2 seeded role anchors (planner, architect) + 3 created nodes.
+      expect(selectAllNodes(state)).toHaveLength(5);
     });
 
     it("selectNodesByRole filters correctly", () => {
       const state = useBrainstormGraphStore.getState();
-      expect(selectNodesByRole(state, "planner")).toHaveLength(2);
-      expect(selectNodesByRole(state, "architect")).toHaveLength(1);
+      // role:planner anchor + n1 + n3
+      expect(selectNodesByRole(state, "planner")).toHaveLength(3);
+      // role:architect anchor + n2
+      expect(selectNodesByRole(state, "architect")).toHaveLength(2);
     });
 
     it("selectNodesByStatus filters correctly", () => {
       const state = useBrainstormGraphStore.getState();
+      // n1 + n3 are active; seeded anchors are completed.
       expect(selectNodesByStatus(state, "active")).toHaveLength(2);
-      expect(selectNodesByStatus(state, "completed")).toHaveLength(1);
+      // n2 + 2 seeded anchors (planner, architect) are completed.
+      expect(selectNodesByStatus(state, "completed")).toHaveLength(3);
     });
 
     it("selectSessionMetadata returns metadata", () => {

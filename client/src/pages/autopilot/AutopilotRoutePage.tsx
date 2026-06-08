@@ -529,6 +529,7 @@ const PAGE_ONE_ARTIFACT_TYPES = new Set<BlueprintGenerationArtifactType>([
   "project_context",
   "route_set",
   "route_selection",
+  "brainstorm_reasoning_graph",
 ]);
 
 const PAGE_TWO_ARTIFACT_TYPES = new Set<BlueprintGenerationArtifactType>([
@@ -538,6 +539,7 @@ const PAGE_TWO_ARTIFACT_TYPES = new Set<BlueprintGenerationArtifactType>([
   "design",
   "tasks",
   "spec_document_version",
+  "brainstorm_reasoning_graph",
 ]);
 
 const PAGE_ONE_EVENT_STAGES = new Set<string>([
@@ -4493,7 +4495,7 @@ export default function AutopilotRoutePage() {
           void waitForRouteSelectionSnapshot({
             jobId: result.data.job.id,
           }).then(snapshot => {
-            if (!snapshot) return;
+            if (!snapshot?.job) return;
             if (latestSceneJobIdRef.current !== snapshot.job.id) return;
             applyLatestGenerationSnapshot(snapshot);
             rightRailView.job.retry();

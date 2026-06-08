@@ -91,6 +91,8 @@ const TYPE_COLORS: Record<string, string> = {
   synthesis: "#16a34a",
   route_root: "#0d9488",
   route_step: "#6366f1",
+  route_spec: "#0284c7",
+  spec_node: "#2563eb",
   brainstorm: "#0d9488",
   capability: "#f59e0b",
   preview: "#ec4899",
@@ -378,6 +380,102 @@ function computeReasoningLayout(
   };
 }
 
+function computeRouteSetLayout(
+  graphData: GraphData,
+  nodeHeights: Map<string, number>
+): LayoutResult {
+  const nodesById = new Map(graphData.nodes.map(node => [node.id, node]));
+  const routeRoots = graphData.nodes.filter(node => node.data?.type === "route_root");
+  const routeNodes = graphData.nodes.filter(
+    node => node.id.startsWith("route-") && node.data?.type !== "route_root"
+  );
+  const selectedRoutes = routeNodes.filter(node => node.data?.status === "completed");
+  const candidateRoutes = routeNodes.filter(node => node.data?.status !== "completed");
+  const routeDetails = graphData.nodes.filter(
+    node =>
+      !node.id.startsWith("route-") &&
+      (node.data?.type === "route_step" || node.data?.type === "capability")
+  );
+  const specRoots = graphData.nodes.filter(node => node.data?.type === "route_spec");
+  const specNodes = graphData.nodes.filter(node => node.data?.type === "spec_node");
+
+  const toLayoutNode = (
+    node: GraphData["nodes"][number],
+    x: number,
+    y: number
+  ): LayoutNode => ({
+    id: node.id,
+    x,
+    y,
+    title: (node.data?.title as string) ?? node.id,
+    type: (node.data?.type as string) ?? "default",
+    status: (node.data?.status as string) ?? "pending",
+    body: (node.data?.body as string) ?? "",
+    roleLabel: (node.data?.roleLabel as string) ?? undefined,
+    height: nodeHeights.get(node.id) ?? MIN_NODE_H,
+  });
+
+  const spread = (
+    columnNodes: GraphData["nodes"],
+    x: number,
+    top: number,
+    bottom: number
+  ): LayoutNode[] => {
+    const count = Math.max(columnNodes.length, 1);
+    return columnNodes.map((node, index) => {
+      const t = count === 1 ? 0.5 : index / (count - 1);
+      const stagger = index % 2 === 0 ? 0 : 42;
+      return toLayoutNode(node, x + stagger, top + (bottom - top) * t);
+    });
+  };
+
+  const placed = new Set<string>();
+  const add = (items: LayoutNode[]) => {
+    for (const item of items) placed.add(item.id);
+    return items;
+  };
+
+  const nodes = [
+    ...add(spread(routeRoots, W * 0.1, H * 0.42, H * 0.58)),
+    ...add(spread(selectedRoutes, W * 0.34, H * 0.36, H * 0.64)),
+    ...add(spread(candidateRoutes, W * 0.34, H * 0.18, H * 0.82)),
+    ...add(spread(routeDetails, W * 0.55, H * 0.22, H * 0.78)),
+    ...add(spread(specRoots, W * 0.72, H * 0.34, H * 0.66)),
+    ...add(spread(specNodes, W * 0.9, H * 0.14, H * 0.86)),
+    ...spread(
+      graphData.nodes.filter(node => !placed.has(node.id)),
+      W * 0.52,
+      H * 0.28,
+      H * 0.72
+    ),
+  ];
+
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  const edges: LayoutEdge[] = graphData.edges
+    .filter(edge => nodesById.has(edge.source) && nodesById.has(edge.target))
+    .map(edge => {
+      const from = nodeMap.get(edge.source);
+      const to = nodeMap.get(edge.target);
+      return {
+        from: { x: from?.x ?? 0, y: from?.y ?? 0 },
+        to: { x: to?.x ?? 0, y: to?.y ?? 0 },
+        points: [],
+        label: edge.label,
+        type: edge.type,
+        sourceKind: edge.sourceKind,
+      };
+    });
+
+  return {
+    nodes,
+    edges,
+    consoleLines: graphData.consoleLines,
+    telemetry: graphData.telemetry,
+    hiddenNodeCount: graphData.hiddenNodeCount,
+    mode: graphData.mode,
+  };
+}
+
 function computeLayout(graphData: GraphData): LayoutResult {
   // Create a measurement canvas for text width calculation
   const measureCanvas = document.createElement("canvas");
@@ -391,6 +489,10 @@ function computeLayout(graphData: GraphData): LayoutResult {
     const fullText = body ? `${title} — ${body}` : title;
     const h = measureNodeHeight(fullText, measureCtx);
     nodeHeights.set(node.id, h);
+  }
+
+  if (graphData.nodes.some(node => node.data?.type === "route_root")) {
+    return computeRouteSetLayout(graphData, nodeHeights);
   }
 
   if (graphData.nodes.some(node => node.data?.type === "brainstorm")) {
@@ -532,6 +634,11 @@ function isStageTwoJob(job: BlueprintGenerationJob | null | undefined): boolean 
   return job?.stage === "spec_tree" || job?.stage === "spec_docs";
 }
 
+function shouldRenderRouteSetWall(job: BlueprintGenerationJob | null | undefined): boolean {
+  const stage = String((job as { stage?: string } | null | undefined)?.stage ?? "");
+  return stage === "route_generation" || stage === "route_selection";
+}
+
 function reasoningGraphToGraphData(
   viewModel: BlueprintWallReasoningGraphViewModel
 ): GraphData {
@@ -565,6 +672,186 @@ function reasoningEdgeData(edge: BrainstormReasoningEdge): GraphData["edges"][nu
     label: edge.label ?? edge.type.replace(/_/g, " "),
     type: edge.type,
     sourceKind: edge.sourceKind,
+  };
+}
+
+function readSelectedRouteIdFromJob(
+  job: BlueprintGenerationJob | null | undefined
+): string | null {
+  const selectionArtifact = job?.artifacts?.find(
+    artifact => artifact.type === "route_selection"
+  );
+  const payload =
+    selectionArtifact?.payload && typeof selectionArtifact.payload === "object"
+      ? selectionArtifact.payload as Record<string, unknown>
+      : {};
+  const routeId = payload.routeId ?? payload.selectedRouteId ?? payload.selectedPathId;
+  return typeof routeId === "string" && routeId.length > 0 ? routeId : null;
+}
+
+function buildRouteSetGraphData(
+  routeSet: BlueprintRouteSet,
+  job: BlueprintGenerationJob | null | undefined,
+  locale: AppLocale | undefined,
+  specTree?: BlueprintSpecTree | null
+): GraphData {
+  const nodes: GraphData["nodes"] = [];
+  const edges: GraphData["edges"] = [];
+  const selectedRouteId = readSelectedRouteIdFromJob(job) ?? routeSet.primaryRouteId;
+  const rootId = "routes-root";
+  const selectedRoute = routeSet.routes.find(route => route.id === selectedRouteId);
+  const selectedRouteNodeId = selectedRoute ? `route-${selectedRoute.id}` : null;
+
+  nodes.push({
+    id: rootId,
+    data: {
+      title: locale === "zh-CN" ? "路线选择" : "Route selection",
+      type: "route_root",
+      status: selectedRoute ? "completed" : "running",
+      body:
+        selectedRoute?.title ??
+        (locale === "zh-CN"
+          ? `${routeSet.routes.length} 条候选路线`
+          : `${routeSet.routes.length} candidate routes`),
+    },
+  });
+
+  for (const route of routeSet.routes.slice(0, 4)) {
+    const isSelected = route.id === selectedRouteId;
+    const routeNodeId = `route-${route.id}`;
+    nodes.push({
+      id: routeNodeId,
+      data: {
+        title: route.title,
+        type: isSelected ? "decision" : "route_step",
+        status: isSelected ? "completed" : "ready",
+        body: route.summary || route.rationale || route.estimatedEffort,
+      },
+    });
+    edges.push({
+      source: rootId,
+      target: routeNodeId,
+      label: isSelected
+        ? locale === "zh-CN" ? "已选" : "selected"
+        : locale === "zh-CN" ? "候选" : "candidate",
+      type: isSelected ? "supports" : "refines",
+      sourceKind: "route_set",
+    });
+
+    const visibleSteps = route.steps.slice(0, 4);
+    for (const [index, step] of visibleSteps.entries()) {
+      const stepNodeId = `${routeNodeId}-step-${step.id}`;
+      nodes.push({
+        id: stepNodeId,
+        data: {
+          title: step.title,
+          type: step.status === "blocked" ? "risk" : "capability",
+          status: step.status === "blocked" ? "failed" : step.status,
+          body: step.description || step.role,
+          roleLabel: step.role,
+        },
+      });
+      edges.push({
+        source: index === 0 ? routeNodeId : `${routeNodeId}-step-${visibleSteps[index - 1].id}`,
+        target: stepNodeId,
+        label: locale === "zh-CN" ? `步骤 ${index + 1}` : `step ${index + 1}`,
+        type: "depends_on",
+        sourceKind: "route_set",
+      });
+    }
+
+    const visibleCapabilities = route.capabilities.slice(0, 3);
+    for (const capability of visibleCapabilities) {
+      const capabilityNodeId = `${routeNodeId}-cap-${capability.id}`;
+      nodes.push({
+        id: capabilityNodeId,
+        data: {
+          title: capability.label,
+          type: "capability",
+          status: isSelected ? "running" : "ready",
+          body: capability.purpose,
+          roleLabel: capability.kind,
+        },
+      });
+      edges.push({
+        source: routeNodeId,
+        target: capabilityNodeId,
+        label: locale === "zh-CN" ? "能力" : "capability",
+        type: "supports",
+        sourceKind: "route_set",
+      });
+    }
+  }
+
+  const specTreeNodes = specTree?.nodes ?? [];
+  const specRoot = specTreeNodes.find(node => node.id === specTree?.rootNodeId) ?? specTreeNodes[0];
+  if (specRoot && selectedRouteNodeId) {
+    const specRootId = `route-spec-${specRoot.id}`;
+    nodes.push({
+      id: specRootId,
+      data: {
+        title: locale === "zh-CN" ? "SPEC 树" : "SPEC tree",
+        type: "route_spec",
+        status: "running",
+        body: specRoot.title || specRoot.summary || specTree?.id,
+      },
+    });
+    edges.push({
+      source: selectedRouteNodeId,
+      target: specRootId,
+      label: locale === "zh-CN" ? "派生" : "derives",
+      type: "synthesizes",
+      sourceKind: "route_set",
+    });
+
+    const childIds = Array.isArray(specRoot.children) ? specRoot.children : [];
+    const topSpecNodes = specTreeNodes
+      .filter(node => childIds.includes(node.id))
+      .slice(0, 6);
+    for (const specNode of topSpecNodes) {
+      const specNodeId = `route-spec-node-${specNode.id}`;
+      nodes.push({
+        id: specNodeId,
+        data: {
+          title: specNode.title,
+          type: "spec_node",
+          status: "ready",
+          body: specNode.summary,
+          roleLabel: specNode.type,
+        },
+      });
+      edges.push({
+        source: specRootId,
+        target: specNodeId,
+        label: locale === "zh-CN" ? "规格节点" : "spec node",
+        type: "depends_on",
+        sourceKind: "route_set",
+      });
+    }
+  }
+
+  return {
+    nodes,
+    edges,
+    telemetry: {
+      tokenBurn: null,
+      sourceCount: routeSet.provenance.githubUrls?.length ?? 0,
+      elapsedMs: null,
+      remainingBudget: null,
+      activeRoleCount: new Set(
+        routeSet.routes.flatMap(route => route.steps.map(step => step.role))
+      ).size,
+    },
+    consoleLines: [
+      {
+        id: `${routeSet.id}-console`,
+        kind: "Report",
+        text: selectedRoute
+          ? `Selected route: ${selectedRoute.title}`
+          : `RouteSet ${routeSet.id} has ${routeSet.routes.length} candidates.`,
+      },
+    ],
+    mode: "fallback",
   };
 }
 
@@ -839,11 +1126,19 @@ export function BlueprintWallTexture({
   // 直接从 agentReasoningEntries 构建思维导图节点
   // 按 stageId 分组为不同分支，形成多分支树形结构（类似参考图的思维导图）
   const graphData = useMemo(() => {
-    if (isStageTwoJob(job) && reasoningViewModel.mode !== "empty") {
+    if (
+      reasoningViewModel.mode === "structured"
+    ) {
       return reasoningGraphToGraphData(reasoningViewModel);
     }
 
     const entries = agentReasoningEntries ?? [];
+    if (routeSet && shouldRenderRouteSetWall(job)) {
+      return buildRouteSetGraphData(routeSet, job, locale, specTree);
+    }
+    if (isStageTwoJob(job) && reasoningViewModel.mode === "fallback") {
+      return reasoningGraphToGraphData(reasoningViewModel);
+    }
     if (entries.length === 0) return { nodes: [], edges: [] };
 
     const nodes: Array<{ id: string; data: Record<string, unknown> }> = [];
@@ -1056,7 +1351,7 @@ export function BlueprintWallTexture({
     }
 
     return { nodes, edges };
-  }, [agentReasoningEntries, job, locale, reasoningViewModel, roleLabels]);
+  }, [agentReasoningEntries, job, locale, reasoningViewModel, roleLabels, routeSet, specTree]);
 
   const isEmpty = graphData.nodes.length === 0;
 

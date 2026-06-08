@@ -8,6 +8,10 @@
  * Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect } from "vitest";
 import {
   truncateTitle,
@@ -20,8 +24,15 @@ import {
   CANVAS_W,
   CANVAS_H,
   drawBrainstormGraph,
+  resolveBrainstormEdgeConnection,
+  resolveBrainstormChallengeLabel,
 } from "../brainstorm-wall-graph-logic";
+import { computeBrainstormLayout } from "../BrainstormWallGraph";
 import type { LayoutResult } from "../brainstorm-wall-graph-logic";
+import type { BranchNode, BranchEdge } from "@/lib/brainstorm-graph-store";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const componentSource = () => readFileSync(resolve(here, "../BrainstormWallGraph.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
 // Title Truncation
@@ -101,6 +112,48 @@ describe("computeAdaptiveScale", () => {
   });
 });
 
+describe("resolveBrainstormEdgeConnection", () => {
+  it("uses opposite card sides for left-to-right edges", () => {
+    const path = resolveBrainstormEdgeConnection(
+      { x: 100, y: 200 },
+      { x: 700, y: 260 },
+    );
+
+    expect(path.from.x).toBe(100 + BRAINSTORM_NODE_W / 2);
+    expect(path.to.x).toBe(700 - BRAINSTORM_NODE_W / 2);
+    expect(path.controlOffset).toBeGreaterThan(0);
+  });
+
+  it("uses opposite card sides for right-to-left edges instead of drawing through cards", () => {
+    const path = resolveBrainstormEdgeConnection(
+      { x: 900, y: 260 },
+      { x: 200, y: 200 },
+    );
+
+    expect(path.from.x).toBe(900 - BRAINSTORM_NODE_W / 2);
+    expect(path.to.x).toBe(200 + BRAINSTORM_NODE_W / 2);
+    expect(path.controlOffset).toBeLessThan(0);
+  });
+});
+
+describe("resolveBrainstormChallengeLabel", () => {
+  it("keeps challenge labels short and inside the canvas", () => {
+    const label = resolveBrainstormChallengeLabel(
+      { x: 220, y: 180 },
+      { x: 2600, y: 1120 },
+      "This challenge summary is intentionally too long to fit cleanly on the wall without truncation.",
+      CANVAS_W,
+      CANVAS_H,
+    );
+
+    expect(label.text.length).toBeLessThanOrEqual(35);
+    expect(label.x).toBeGreaterThanOrEqual(BRAINSTORM_PADDING);
+    expect(label.y).toBeGreaterThanOrEqual(72);
+    expect(label.x + label.width).toBeLessThanOrEqual(CANVAS_W - BRAINSTORM_PADDING);
+    expect(label.y + label.height).toBeLessThanOrEqual(CANVAS_H - 72);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Node Color Mapping
 // ---------------------------------------------------------------------------
@@ -130,16 +183,177 @@ describe("Layout constants", () => {
   it("has correct node dimensions", () => {
     expect(BRAINSTORM_NODE_W).toBe(540);
     expect(BRAINSTORM_NODE_H).toBe(168);
-    expect(BRAINSTORM_PADDING).toBe(90);
+    expect(BRAINSTORM_PADDING).toBe(180);
   });
 
   it("has correct canvas dimensions", () => {
-    expect(CANVAS_W).toBe(3840);
-    expect(CANVAS_H).toBe(1740);
+    expect(CANVAS_W).toBe(2880);
+    expect(CANVAS_H).toBe(1320);
   });
 
   it("MAX_TITLE_LENGTH is 22", () => {
     expect(MAX_TITLE_LENGTH).toBe(22);
+  });
+});
+
+describe("computeBrainstormLayout", () => {
+  it("places a decision marker as the central fanout source before role anchors", () => {
+    const roles = ["decider", "planner", "architect", "executor", "auditor"] as const;
+    const nodes: BranchNode[] = [
+      {
+        id: "decision-marker",
+        sessionId: "session-runtime",
+        parentNodeId: null,
+        roleId: "decider",
+        type: "decision",
+        status: "completed",
+        title: "Decision: BRAINSTORM",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      ...roles.map((role, index) => ({
+        id: `role:${role}`,
+        sessionId: "session-runtime",
+        parentNodeId: "decision-marker",
+        roleId: role,
+        type: "decision" as const,
+        status: "completed" as const,
+        title: role,
+        createdAt: new Date((index + 1) * 1000).toISOString(),
+        updatedAt: new Date((index + 1) * 1000).toISOString(),
+      })),
+    ];
+    const edges: BranchEdge[] = roles.map((role) => ({
+      sourceNodeId: "decision-marker",
+      targetNodeId: `role:${role}`,
+    }));
+
+    const layout = computeBrainstormLayout(nodes, edges);
+    const marker = layout?.nodes.find((node) => node.id === "decision-marker");
+    const roleNodes = layout?.nodes.filter((node) => node.id.startsWith("role:")) ?? [];
+    const minRoleX = Math.min(...roleNodes.map((node) => node.x));
+
+    expect(marker).toBeDefined();
+    expect(marker?.y).toBeCloseTo(CANVAS_H / 2, 0);
+    expect(marker?.x).toBeLessThan(minRoleX - BRAINSTORM_NODE_W * 0.6);
+    expect(layout?.edges).toHaveLength(5);
+  });
+
+  it("keeps challenge and support markers near their role instead of collapsing them into the central fanout source", () => {
+    const nodes: BranchNode[] = [
+      ...(["decider", "planner", "architect", "executor", "auditor"] as const).map((role, index) => ({
+        id: `role:${role}`,
+        sessionId: "session-runtime",
+        parentNodeId: index === 0 ? null : `role:${(["decider", "planner", "architect", "executor", "auditor"] as const)[index - 1]}`,
+        roleId: role,
+        type: "decision" as const,
+        status: "completed" as const,
+        title: role,
+        createdAt: new Date((index + 1) * 1000).toISOString(),
+        updatedAt: new Date((index + 1) * 1000).toISOString(),
+      })),
+      {
+        id: "challenge-1",
+        sessionId: "session-runtime",
+        parentNodeId: "role:planner",
+        roleId: "planner",
+        type: "decision",
+        status: "completed",
+        title: "Decision: CHALLENGE",
+        createdAt: new Date(7000).toISOString(),
+        updatedAt: new Date(7000).toISOString(),
+      },
+    ];
+    const edges: BranchEdge[] = [
+      { sourceNodeId: "role:planner", targetNodeId: "challenge-1" },
+    ];
+
+    const layout = computeBrainstormLayout(nodes, edges);
+    const planner = layout?.nodes.find((node) => node.id === "role:planner");
+    const challenge = layout?.nodes.find((node) => node.id === "challenge-1");
+
+    expect(planner).toBeDefined();
+    expect(challenge).toBeDefined();
+    expect(challenge?.x).toBeGreaterThan((planner?.x ?? 0));
+    expect(challenge?.y).not.toBeCloseTo(CANVAS_H / 2, 0);
+  });
+
+  it("fans runtime role anchors across the wall instead of stacking them in one vertical column", () => {
+    const roles = ["decider", "planner", "architect", "executor", "auditor"] as const;
+    const nodes: BranchNode[] = roles.map((role, index) => ({
+      id: `role:${role}`,
+      sessionId: "session-runtime",
+      parentNodeId: index === 0 ? null : `role:${roles[index - 1]}`,
+      roleId: role,
+      type: "decision",
+      status: "completed",
+      title: role,
+      createdAt: new Date(index * 1000).toISOString(),
+      updatedAt: new Date(index * 1000).toISOString(),
+    }));
+    const edges: BranchEdge[] = [
+      { sourceNodeId: "role:decider", targetNodeId: "role:planner" },
+      { sourceNodeId: "role:planner", targetNodeId: "role:architect" },
+      { sourceNodeId: "role:architect", targetNodeId: "role:executor" },
+      { sourceNodeId: "role:executor", targetNodeId: "role:auditor" },
+      { sourceNodeId: "role:auditor", targetNodeId: "role:planner" },
+    ];
+
+    const layout = computeBrainstormLayout(nodes, edges);
+    const xs = layout?.nodes.map((node) => node.x) ?? [];
+    const ys = layout?.nodes.map((node) => node.y) ?? [];
+    const xSpread = Math.max(...xs) - Math.min(...xs);
+    const ySpread = Math.max(...ys) - Math.min(...ys);
+
+    expect(layout).not.toBeNull();
+    expect(new Set(xs.map((x) => Math.round(x))).size).toBeGreaterThanOrEqual(4);
+    expect(xSpread).toBeGreaterThan(CANVAS_W * 0.42);
+    expect(ySpread).toBeGreaterThan(CANVAS_H * 0.24);
+  });
+
+  it("lays out multi-role brainstorm nodes in role lanes instead of a single waterfall", () => {
+    const roles = ["decider", "planner", "architect", "auditor"];
+    const nodes: BranchNode[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `node-${index}`,
+      sessionId: "session-1",
+      parentNodeId: index === 0 ? null : `node-${index - 1}`,
+      roleId: roles[index % roles.length] as BranchNode["roleId"],
+      type: index === 11 ? "synthesis" : "thinking",
+      status: "completed",
+      title: "",
+      createdAt: new Date(index * 1000).toISOString(),
+      updatedAt: new Date(index * 1000).toISOString(),
+    }));
+    const edges: BranchEdge[] = nodes.slice(1).map((node, index) => ({
+      sourceNodeId: `node-${index}`,
+      targetNodeId: node.id,
+    }));
+
+    const layout = computeBrainstormLayout(nodes, edges);
+
+    expect(layout).not.toBeNull();
+    expect(layout?.nodes).toHaveLength(12);
+    expect(layout?.edges).toHaveLength(11);
+    expect(new Set(layout?.nodes.map((node) => Math.round(node.y))).size).toBeGreaterThan(3);
+    expect(new Set(layout?.nodes.map((node) => Math.round(node.x))).size).toBeGreaterThan(2);
+  });
+});
+
+describe("BrainstormWallGraph scene integration guards", () => {
+  it("keeps completed brainstorm sessions visible until an explicit idle/reset state", () => {
+    const source = componentSource();
+
+    expect(source).toContain('sessionStatus === "idle" || sessionStatus === "failed"');
+    expect(source).not.toContain('sessionStatus === "completed" || sessionStatus === "failed"');
+  });
+
+  it("renders slightly in front of the base blueprint wall texture", () => {
+    const source = componentSource();
+
+    expect(source).toContain("BRAINSTORM_WALL_GRAPH_POSITION");
+    expect(source).toContain("BLUEPRINT_WALL_GRAPH_POSITION[2] + 0.018");
+    expect(source).toContain("renderOrder={20}");
+    expect(source).toContain("depthWrite={false}");
   });
 });
 
@@ -263,5 +477,65 @@ describe("drawBrainstormGraph", () => {
     expect(text.some((value) => value.includes("Option A"))).toBe(true);
     expect(text.some((value) => value.includes("Clarify runtime boundary."))).toBe(true);
     expect(dashPatterns.some((pattern) => pattern.join(",") === "10,10")).toBe(true);
+  });
+
+  it("routes challenge overlays from the side facing the target role", () => {
+    const ctx = createMockCtx();
+    const moveToCalls: Array<[number, number]> = [];
+    (ctx as any).moveTo = (x: number, y: number) => moveToCalls.push([x, y]);
+    const layout: LayoutResult = {
+      nodes: [
+        { id: "role:architect", x: 900, y: 260, title: "Architect", type: "decision", status: "active", roleId: "architect", opacity: 1 },
+        { id: "role:planner", x: 200, y: 220, title: "Planner", type: "decision", status: "active", roleId: "planner", opacity: 1 },
+      ],
+      edges: [],
+      scale: 1,
+    };
+
+    drawBrainstormGraph(ctx, layout, CANVAS_W, CANVAS_H, {
+      challengeEdges: [
+        {
+          challengerRoleId: "architect",
+          targetRoleId: "planner",
+          summary: "Reverse challenge.",
+          roundNumber: 1,
+        },
+      ],
+    });
+
+    expect(moveToCalls).toContainEqual([
+      900 - BRAINSTORM_NODE_W / 2,
+      260,
+    ]);
+  });
+
+  it("draws challenge labels after role cards so dense branches do not cover interaction text", () => {
+    const ctx = createMockCtx();
+    const textCalls: string[] = [];
+    (ctx as any).fillText = (value: string) => textCalls.push(value);
+    const layout: LayoutResult = {
+      nodes: [
+        { id: "role:planner", x: 700, y: 260, title: "Planner card", type: "decision", status: "active", roleId: "planner", opacity: 1 },
+        { id: "role:architect", x: 1200, y: 360, title: "Architect card", type: "decision", status: "active", roleId: "architect", opacity: 1 },
+      ],
+      edges: [],
+      scale: 1,
+    };
+
+    drawBrainstormGraph(ctx, layout, CANVAS_W, CANVAS_H, {
+      challengeEdges: [
+        {
+          challengerRoleId: "planner",
+          targetRoleId: "architect",
+          summary: "Clarify runtime boundary.",
+          roundNumber: 1,
+        },
+      ],
+    });
+
+    const plannerTitleIndex = textCalls.indexOf("Planner card");
+    const challengeLabelIndex = textCalls.indexOf("Clarify runtime boundary.");
+    expect(plannerTitleIndex).toBeGreaterThanOrEqual(0);
+    expect(challengeLabelIndex).toBeGreaterThan(plannerTitleIndex);
   });
 });

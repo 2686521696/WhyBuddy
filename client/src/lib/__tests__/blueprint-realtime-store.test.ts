@@ -42,6 +42,7 @@ vi.mock("socket.io-client", () => ({
 import {
   useBlueprintRealtimeStore,
   __setSocket,
+  __setHydrateHistoricalEventsForTest,
   mapEventTypeToPhase,
   type BlueprintRelayedEvent,
 } from "../blueprint-realtime-store";
@@ -54,6 +55,7 @@ import { useBrainstormGraphStore } from "../brainstorm-graph-store";
 function resetStore() {
   useBlueprintRealtimeStore.getState().reset();
   useBrainstormGraphStore.getState().reset();
+  __setHydrateHistoricalEventsForTest(null);
   socketHandlers.clear();
   vi.clearAllMocks();
 }
@@ -155,14 +157,464 @@ describe("BlueprintRealtimeStore", () => {
     expect(graph.sessionId).toBe("brainstorm-session-1");
     expect(graph.sessionStatus).toBe("completed");
     expect(graph.sessionMetadata.mode).toBe("vote");
-    expect(graph.nodes).toHaveLength(1);
-    expect(graph.nodes[0]).toMatchObject({
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining(["role:planner", "role:architect", "node-1"])
+    );
+    expect(graph.nodes.find((node) => node.id === "node-1")).toMatchObject({
       id: "node-1",
       roleId: "planner",
       type: "thinking",
       title: "Planner thought",
     });
     expect(graph.sessionMetadata.totalTokenUsage).toBe(123);
+  });
+
+  it("seeds runtime role anchors when a brainstorm session starts", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.session.started",
+        payload: {
+          sessionId: "brainstorm-session-five-roles",
+          mode: "discussion",
+          roles: ["decider", "planner", "architect", "executor", "auditor"],
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining([
+        "role:decider",
+        "role:planner",
+        "role:architect",
+        "role:executor",
+        "role:auditor",
+      ])
+    );
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        { sourceNodeId: "role:decider", targetNodeId: "role:planner" },
+        { sourceNodeId: "role:planner", targetNodeId: "role:architect" },
+        { sourceNodeId: "role:architect", targetNodeId: "role:executor" },
+        { sourceNodeId: "role:executor", targetNodeId: "role:auditor" },
+      ])
+    );
+  });
+
+  it("fans branch decision markers out to seeded role anchors", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "decision-gate:job-1:spec_docs",
+          stage: "spec_docs",
+          nodeId: "decision-gate",
+          roleId: "decision-gate",
+          marker: "BRANCH",
+          rationale: "Route to multi-agent brainstorm.",
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining([
+        "decision-gate",
+        "role:decider",
+        "role:planner",
+        "role:architect",
+        "role:executor",
+        "role:auditor",
+      ])
+    );
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        { sourceNodeId: "decision-gate", targetNodeId: "role:decider" },
+        { sourceNodeId: "decision-gate", targetNodeId: "role:planner" },
+        { sourceNodeId: "decision-gate", targetNodeId: "role:architect" },
+        { sourceNodeId: "decision-gate", targetNodeId: "role:executor" },
+        { sourceNodeId: "decision-gate", targetNodeId: "role:auditor" },
+      ])
+    );
+  });
+
+  it("routes autonomous runtime graph events into visible brainstorm wall nodes", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "decision-gate:job-1:spec_docs",
+          stage: "spec_docs",
+          nodeId: "decision-gate",
+          roleId: "decision-gate",
+          marker: "BRANCH",
+          rationale: "The SPEC stage needs multi-role branching.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "edge.condition.evaluated",
+        jobId: "job-1",
+        payload: {
+          sessionId: "decision-gate:job-1:spec_docs",
+          edgeId: "decision-gate:brainstorm",
+          sourceNodeId: "decision-gate",
+          targetNodeId: "brainstorm-orchestrator",
+          condition: "brainstormNeeded === true",
+          matched: true,
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "edge.triggered",
+        jobId: "job-1",
+        payload: {
+          sessionId: "decision-gate:job-1:spec_docs",
+          edgeId: "decision-gate:brainstorm",
+          sourceNodeId: "decision-gate",
+          targetNodeId: "brainstorm-orchestrator",
+          reason: "Route to brainstorm orchestrator.",
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.sessionId).toBe("decision-gate:job-1:spec_docs");
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining([
+        "role:decider",
+        "role:planner",
+        "role:architect",
+        "role:auditor",
+        "decision-gate",
+        "edge-condition:decision-gate:brainstorm",
+        "brainstorm-orchestrator",
+      ])
+    );
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        {
+          sourceNodeId: "decision-gate",
+          targetNodeId: "edge-condition:decision-gate:brainstorm",
+        },
+        {
+          sourceNodeId: "decision-gate",
+          targetNodeId: "brainstorm-orchestrator",
+        },
+      ])
+    );
+  });
+
+  it("routes autonomous synthesis events into a visible synthesis wall node", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-synthesis",
+          nodeId: "node-planner",
+          roleId: "planner",
+          marker: "BRANCH",
+          rationale: "Planner branch exists.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "synthesis.started",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-synthesis",
+          sourceNodeIds: ["node-planner"],
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "synthesis.completed",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-synthesis",
+          synthesisNodeId: "node-synthesis",
+          sourceNodeIds: ["node-planner"],
+          summary: "Merged multi-role decision.",
+          confidence: 0.91,
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.nodes.map((node) => node.id)).toContain("node-synthesis");
+    expect(graph.nodes.find((node) => node.id === "node-synthesis")).toMatchObject({
+      roleId: "decider",
+      type: "synthesis",
+      status: "completed",
+      content: "Merged multi-role decision.",
+      confidence: 0.91,
+    });
+    expect(graph.edges).toContainEqual({
+      sourceNodeId: "node-planner",
+      targetNodeId: "node-synthesis",
+    });
+  });
+
+  it("routes autonomous challenge/support events into visible role interaction edges", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-interactions",
+          nodeId: "challenge:1:planner:0",
+          roleId: "planner",
+          targetRoleId: "architect",
+          marker: "CHALLENGE",
+          rationale: "Planner challenges architect risk handling.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "edge.triggered",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-interactions",
+          edgeId: "challenge:1:planner:0",
+          sourceNodeId: "role:planner",
+          targetNodeId: "role:architect",
+          reason: "Planner challenges architect.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-interactions",
+          nodeId: "rebuttal:challenge:1:planner:0:0",
+          roleId: "architect",
+          targetRoleId: "planner",
+          marker: "SUPPORT",
+          rationale: "Architect responds to planner.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "edge.triggered",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-interactions",
+          edgeId: "rebuttal:challenge:1:planner:0:0",
+          sourceNodeId: "role:architect",
+          targetNodeId: "role:planner",
+          reason: "Architect responds to planner.",
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining(["role:planner", "role:architect", "challenge:1:planner:0"])
+    );
+    expect(graph.edges).toContainEqual({
+      sourceNodeId: "role:planner",
+      targetNodeId: "role:architect",
+    });
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "planner",
+      targetRoleId: "architect",
+      summary: "Planner challenges architect.",
+      roundNumber: 1,
+      kind: "challenge",
+    });
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "architect",
+      targetRoleId: "planner",
+      summary: "Architect responds to planner.",
+      roundNumber: 1,
+      kind: "support",
+    });
+  });
+
+  it("turns autonomous challenge/support markers themselves into visible role interactions", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-marker-interactions",
+          nodeId: "challenge:planner:architect",
+          roleId: "planner",
+          targetRoleId: "architect",
+          marker: "CHALLENGE",
+          rationale: "Planner challenges architecture risk.",
+          roundNumber: 2,
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        jobId: "job-1",
+        payload: {
+          sessionId: "brainstorm-session-marker-interactions",
+          nodeId: "rebuttal:architect:planner",
+          roleId: "architect",
+          targetRoleId: "planner",
+          marker: "SUPPORT",
+          rationale: "Architect rebuts with implementation guardrails.",
+          roundNumber: 2,
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.edges).toContainEqual({
+      sourceNodeId: "role:planner",
+      targetNodeId: "role:architect",
+    });
+    expect(graph.edges).toContainEqual({
+      sourceNodeId: "role:architect",
+      targetNodeId: "role:planner",
+    });
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "planner",
+      targetRoleId: "architect",
+      summary: "Planner challenges architecture risk.",
+      roundNumber: 2,
+      kind: "challenge",
+    });
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "architect",
+      targetRoleId: "planner",
+      summary: "Architect rebuts with implementation guardrails.",
+      roundNumber: 2,
+      kind: "support",
+    });
+  });
+
+  it("routes legacy brainstorm challengeSummary and rebuttalSummary payloads into role interaction overlays", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.session.started",
+        payload: {
+          sessionId: "brainstorm-session-legacy-interactions",
+          roles: ["planner", "architect"],
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.challenge.issued",
+        payload: {
+          sessionId: "brainstorm-session-legacy-interactions",
+          challengerRoleId: "planner",
+          targetRoleId: "architect",
+          challengeSummary: "Legacy challenge summary.",
+          roundNumber: 1,
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "brainstorm.rebuttal.issued",
+        payload: {
+          sessionId: "brainstorm-session-legacy-interactions",
+          responderRoleId: "architect",
+          challengerRoleId: "planner",
+          rebuttalSummary: "Legacy rebuttal summary.",
+          roundNumber: 1,
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "planner",
+      targetRoleId: "architect",
+      summary: "Legacy challenge summary.",
+      roundNumber: 1,
+      kind: "challenge",
+    });
+    expect(graph.challengeEdges).toContainEqual({
+      challengerRoleId: "architect",
+      targetRoleId: "planner",
+      summary: "Legacy rebuttal summary.",
+      roundNumber: 1,
+      kind: "support",
+    });
+  });
+
+  it("routes autonomous tool and loop events into visible wall nodes", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent(
+      makeEvent({
+        type: "decision.marker.emitted",
+        payload: {
+          sessionId: "brainstorm-session-tool-loop",
+          nodeId: "decision-marker",
+          roleId: "planner",
+          marker: "BRANCH",
+          rationale: "Branch first.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "tool.action.selected",
+        payload: {
+          sessionId: "brainstorm-session-tool-loop",
+          nodeId: "role:planner",
+          roleId: "planner",
+          toolId: "spec-tree-diff",
+          rationale: "Inspect tree drift.",
+        },
+      })
+    );
+    dispatchEvent(
+      makeEvent({
+        type: "loop.continued",
+        payload: {
+          sessionId: "brainstorm-session-tool-loop",
+          roleId: "auditor",
+          nextRoundNumber: 3,
+          reason: "Dissent remains unresolved.",
+        },
+      })
+    );
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.nodes.some((node) => node.id.startsWith("tool:spec-tree-diff:"))).toBe(true);
+    expect(graph.nodes).toContainEqual(
+      expect.objectContaining({
+        id: "loop:3",
+        roleId: "auditor",
+        type: "observation",
+        content: "Dissent remains unresolved.",
+      })
+    );
+    expect(graph.currentRound).toBe(3);
   });
 
   it("maps brainstorm node lifecycle events into visible role phases", () => {
@@ -421,6 +873,78 @@ describe("BlueprintRealtimeStore", () => {
   });
 
   // 8. unsubscribe 重置状态（但不清空 logEntries，保留历史）
+  it("hydrates historical brainstorm node events into the wall graph store on subscribe", async () => {
+    (mockSocket as unknown as { connected: boolean }).connected = true;
+    __setHydrateHistoricalEventsForTest(async (jobId) => [
+      {
+        id: "evt-session-started",
+        family: "brainstorm",
+        type: "brainstorm.session.started",
+        jobId,
+        stage: "spec_tree",
+        status: "running",
+        message: "brainstorm.session.started",
+        occurredAt: "2026-06-08T14:29:44.959Z",
+        sessionId: "brainstorm-session-history",
+        mode: "discussion",
+        roles: ["decider", "planner", "architect", "auditor"],
+      },
+      {
+        id: "evt-node-created",
+        family: "brainstorm",
+        type: "brainstorm.node.created",
+        jobId,
+        stage: "spec_tree",
+        status: "running",
+        message: "brainstorm.node.created",
+        occurredAt: "2026-06-08T14:29:45.100Z",
+        sessionId: "brainstorm-session-history",
+        nodeId: "node-history-1",
+        parentNodeId: null,
+        roleId: "planner",
+        nodeType: "thinking",
+      },
+      {
+        id: "evt-node-updated",
+        family: "brainstorm",
+        type: "brainstorm.node.updated",
+        jobId,
+        stage: "spec_tree",
+        status: "running",
+        message: "brainstorm.node.updated",
+        occurredAt: "2026-06-08T14:29:46.000Z",
+        sessionId: "brainstorm-session-history",
+        nodeId: "node-history-1",
+        roleId: "planner",
+        payload: {
+          status: "completed",
+          content: "Historical branch content",
+          confidence: 0.82,
+        },
+      },
+    ]);
+
+    useBlueprintRealtimeStore.getState().subscribe("job-history");
+    await vi.waitFor(() => {
+      expect(
+        useBrainstormGraphStore.getState().nodes.some((node) => node.id === "node-history-1")
+      ).toBe(true);
+    });
+
+    const graph = useBrainstormGraphStore.getState();
+    expect(graph.sessionId).toBe("brainstorm-session-history");
+    expect(graph.sessionStatus).toBe("active");
+    expect(graph.nodes.find((node) => node.id === "node-history-1")).toMatchObject({
+      id: "node-history-1",
+      roleId: "planner",
+      type: "thinking",
+      status: "completed",
+      title: "",
+      content: "Historical branch content",
+      confidence: 0.82,
+    });
+  });
+
   it("should reset state on unsubscribe and clear active logEntries", () => {
     (mockSocket as unknown as { connected: boolean }).connected = true;
 

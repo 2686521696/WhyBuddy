@@ -24,6 +24,7 @@ import type {
   BrainstormRoleId,
   CollaborationMode,
 } from "@shared/blueprint/brainstorm-contracts";
+import type { BrainstormRuntimeGraphEventType } from "@shared/blueprint/brainstorm-runtime-graph";
 
 // Re-export for convenience
 export type { BranchNode, BranchEdge };
@@ -35,6 +36,13 @@ export type { BranchNode, BranchEdge };
 /** Maximum number of nodes per active session (FIFO drop). */
 export const MAX_BRAINSTORM_NODES = 500;
 export const MAX_CHALLENGE_EDGES = 500;
+const DEFAULT_RUNTIME_ROLES: BrainstormRoleId[] = [
+  "decider",
+  "planner",
+  "architect",
+  "executor",
+  "auditor",
+];
 
 // ---------------------------------------------------------------------------
 // State Shape
@@ -72,6 +80,7 @@ export interface ChallengeEdge {
   targetRoleId: BrainstormRoleId;
   summary: string;
   roundNumber: number;
+  kind?: "challenge" | "support";
 }
 
 export interface VoteOutcomeView {
@@ -140,6 +149,7 @@ export interface BrainstormGraphActions {
     targetRoleId: BrainstormRoleId;
     summary: string;
     roundNumber: number;
+    kind?: "challenge" | "support";
   }): void;
 
   handleVoteCompleted(payload: {
@@ -224,6 +234,43 @@ export const INITIAL_BRAINSTORM_GRAPH: BrainstormGraphState = {
   },
 };
 
+function seedRoleAnchorNodes(
+  sessionId: string,
+  roles: BrainstormRoleId[] = [],
+): { nodes: BranchNode[]; edges: BranchEdge[] } {
+  const now = new Date().toISOString();
+  const uniqueRoles = Array.from(new Set(roles));
+  const nodes: BranchNode[] = uniqueRoles.map((roleId, index) => ({
+    id: `role:${roleId}`,
+    sessionId,
+    parentNodeId: index === 0 ? null : `role:${uniqueRoles[index - 1]}`,
+    roleId,
+    type: "decision",
+    status: "completed",
+    title: roleId,
+    createdAt: now,
+    updatedAt: now,
+    sequenceNumber: index + 1,
+  }));
+  const edges: BranchEdge[] = uniqueRoles.slice(1).map((roleId, index) => ({
+    sourceNodeId: `role:${uniqueRoles[index]}`,
+    targetNodeId: `role:${roleId}`,
+  }));
+  return { nodes, edges };
+}
+
+function addUniqueEdges(edges: BranchEdge[], additions: BranchEdge[]): BranchEdge[] {
+  const seen = new Set(edges.map((edge) => `${edge.sourceNodeId}->${edge.targetNodeId}`));
+  const next = [...edges];
+  for (const edge of additions) {
+    const key = `${edge.sourceNodeId}->${edge.targetNodeId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(edge);
+  }
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -234,11 +281,12 @@ export const useBrainstormGraphStore = create<
   ...INITIAL_BRAINSTORM_GRAPH,
 
   handleSessionStarted(payload) {
+    const seeded = seedRoleAnchorNodes(payload.sessionId, payload.roles ?? []);
     set({
       sessionId: payload.sessionId,
       sessionStatus: "active",
-      nodes: [],
-      edges: [],
+      nodes: seeded.nodes,
+      edges: seeded.edges,
       currentRound: null,
       convergenceScore: null,
       challengeEdges: [],
@@ -389,12 +437,26 @@ export const useBrainstormGraphStore = create<
     const hasTarget = state.nodes.some(node => node.roleId === payload.targetRoleId);
     if (!hasChallenger || !hasTarget) return;
 
-    const next = state.challengeEdges.concat({
+    const edge: ChallengeEdge = {
       challengerRoleId: payload.challengerRoleId,
       targetRoleId: payload.targetRoleId,
       summary: payload.summary,
       roundNumber: payload.roundNumber,
-    });
+      kind: payload.kind ?? "challenge",
+    };
+    if (
+      state.challengeEdges.some(
+        (candidate) =>
+          candidate.challengerRoleId === edge.challengerRoleId &&
+          candidate.targetRoleId === edge.targetRoleId &&
+          candidate.summary === edge.summary &&
+          candidate.roundNumber === edge.roundNumber &&
+          (candidate.kind ?? "challenge") === (edge.kind ?? "challenge"),
+      )
+    ) {
+      return;
+    }
+    const next = state.challengeEdges.concat(edge);
     set({
       challengeEdges: next.length > MAX_CHALLENGE_EDGES
         ? next.slice(next.length - MAX_CHALLENGE_EDGES)
@@ -424,13 +486,344 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 }
 
+const RUNTIME_GRAPH_EVENT_TYPES = new Set<BrainstormRuntimeGraphEventType>([
+  "decision.marker.emitted",
+  "edge.condition.evaluated",
+  "edge.triggered",
+  "edge.suppressed",
+  "tool.action.selected",
+  "loop.continued",
+  "loop.stopped",
+  "synthesis.started",
+  "synthesis.completed",
+]);
+
+function isRuntimeGraphEventType(type: string): type is BrainstormRuntimeGraphEventType {
+  return RUNTIME_GRAPH_EVENT_TYPES.has(type as BrainstormRuntimeGraphEventType);
+}
+
+function ensureRuntimeSession(payload: Record<string, unknown>, store: BrainstormGraphState & BrainstormGraphActions): string | null {
+  const sessionId = payload.sessionId;
+  if (typeof sessionId !== "string") return null;
+  if (store.sessionId !== sessionId) {
+    store.handleSessionStarted({
+      sessionId,
+      mode: "discussion",
+      roles: DEFAULT_RUNTIME_ROLES,
+    });
+  }
+  return sessionId;
+}
+
+function hasNode(nodeId: string): boolean {
+  return useBrainstormGraphStore.getState().nodes.some((node) => node.id === nodeId);
+}
+
+function runtimeRoleId(roleId: unknown): BrainstormRoleId {
+  if (
+    roleId === "decider" ||
+    roleId === "planner" ||
+    roleId === "architect" ||
+    roleId === "executor" ||
+    roleId === "auditor" ||
+    roleId === "ui_previewer"
+  ) {
+    return roleId;
+  }
+  return "decider";
+}
+
+function roleIdFromRuntimeNodeId(nodeId: string): BrainstormRoleId | null {
+  if (!nodeId.startsWith("role:")) return null;
+  return runtimeRoleId(nodeId.slice("role:".length));
+}
+
+function runtimeSummaryFromPayload(
+  payload: Record<string, unknown>,
+  fallback: string,
+): string {
+  return typeof payload.rationale === "string"
+    ? payload.rationale
+    : typeof payload.summary === "string"
+      ? payload.summary
+      : typeof payload.reason === "string"
+        ? payload.reason
+        : fallback;
+}
+
+function ensureRuntimeNode(input: {
+  sessionId: string;
+  nodeId: string;
+  roleId: BrainstormRoleId;
+  nodeType: BranchNodeType;
+  title: string;
+  content?: string;
+  parentNodeId?: string | null;
+  status?: BranchNodeStatus;
+}): void {
+  if (hasNode(input.nodeId)) return;
+  useBrainstormGraphStore.getState().handleNodeCreated({
+    sessionId: input.sessionId,
+    nodeId: input.nodeId,
+    parentNodeId: input.parentNodeId ?? null,
+    roleId: input.roleId,
+    nodeType: input.nodeType,
+    status: input.status ?? "completed",
+    title: input.title,
+    content: input.content,
+  });
+}
+
+function dispatchRuntimeGraphEvent(
+  type: BrainstormRuntimeGraphEventType,
+  payload: Record<string, unknown>
+): void {
+  const store = useBrainstormGraphStore.getState();
+  const sessionId = ensureRuntimeSession(payload, store);
+  if (!sessionId) return;
+
+  if (type === "decision.marker.emitted") {
+    const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : "decision-marker";
+    const roleId = runtimeRoleId(payload.roleId);
+    if (!hasNode(nodeId)) {
+      useBrainstormGraphStore.getState().handleNodeCreated({
+        sessionId,
+        nodeId,
+        parentNodeId: null,
+        roleId,
+        nodeType: "decision",
+        status: "completed",
+        title:
+          typeof payload.marker === "string"
+            ? `Decision: ${payload.marker}`
+            : "Decision marker",
+        content:
+          typeof payload.rationale === "string"
+            ? payload.rationale
+            : typeof payload.summary === "string"
+              ? payload.summary
+          : undefined,
+      });
+    }
+    const marker = typeof payload.marker === "string" ? payload.marker : "";
+    if (marker === "BRANCH" || marker === "BRAINSTORM") {
+      const state = useBrainstormGraphStore.getState();
+      const fanoutEdges = state.nodes
+        .filter((node) => node.id.startsWith("role:"))
+        .map((node) => ({
+          sourceNodeId: nodeId,
+          targetNodeId: node.id,
+        }));
+      useBrainstormGraphStore.setState({
+        edges: addUniqueEdges(state.edges, fanoutEdges),
+      });
+    }
+    if (marker === "CHALLENGE" || marker === "SUPPORT") {
+      const targetRoleId = runtimeRoleId(payload.targetRoleId);
+      const state = useBrainstormGraphStore.getState();
+      const roleEdges = [
+        {
+          sourceNodeId: `role:${roleId}`,
+          targetNodeId: `role:${targetRoleId}`,
+        },
+      ];
+      useBrainstormGraphStore.setState({
+        edges: addUniqueEdges(state.edges, roleEdges),
+      });
+      useBrainstormGraphStore.getState().handleChallengeIssued({
+        sessionId,
+        challengerRoleId: roleId,
+        targetRoleId,
+        summary: runtimeSummaryFromPayload(
+          payload,
+          marker === "SUPPORT"
+            ? "Runtime support response"
+            : "Runtime challenge",
+        ),
+        roundNumber: typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
+        kind: marker === "SUPPORT" ? "support" : "challenge",
+      });
+    }
+    return;
+  }
+
+  if (type === "edge.condition.evaluated") {
+    const edgeId = typeof payload.edgeId === "string" ? payload.edgeId : "runtime-edge";
+    const sourceNodeId =
+      typeof payload.sourceNodeId === "string" ? payload.sourceNodeId : "decision-marker";
+    const nodeId = `edge-condition:${edgeId}`;
+    if (!hasNode(nodeId)) {
+      useBrainstormGraphStore.getState().handleNodeCreated({
+        sessionId,
+        nodeId,
+        parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
+        roleId: "auditor",
+        nodeType: "observation",
+        status: "completed",
+        title:
+          typeof payload.condition === "string"
+            ? payload.condition
+            : "Runtime edge condition",
+        content: `matched=${String(payload.matched)}`,
+      });
+    }
+    return;
+  }
+
+  if (type === "edge.triggered" || type === "edge.suppressed") {
+    const sourceNodeId =
+      typeof payload.sourceNodeId === "string" ? payload.sourceNodeId : "decision-marker";
+    const targetNodeId =
+      typeof payload.targetNodeId === "string"
+        ? payload.targetNodeId
+        : type === "edge.triggered"
+          ? "runtime-target"
+          : "runtime-suppressed";
+    const sourceRoleId = roleIdFromRuntimeNodeId(sourceNodeId);
+    if (sourceRoleId) {
+      ensureRuntimeNode({
+        sessionId,
+        nodeId: sourceNodeId,
+        roleId: sourceRoleId,
+        nodeType: "decision",
+        title: sourceRoleId,
+      });
+    }
+    const targetRoleId = roleIdFromRuntimeNodeId(targetNodeId);
+    if (targetRoleId) {
+      ensureRuntimeNode({
+        sessionId,
+        nodeId: targetNodeId,
+        roleId: targetRoleId,
+        nodeType: "decision",
+        title: targetRoleId,
+        parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
+      });
+    }
+    if (!hasNode(targetNodeId)) {
+      useBrainstormGraphStore.getState().handleNodeCreated({
+        sessionId,
+        nodeId: targetNodeId,
+        parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
+        roleId: type === "edge.triggered" ? "planner" : "auditor",
+        nodeType: type === "edge.triggered" ? "action" : "observation",
+        status: type === "edge.triggered" ? "active" : "completed",
+        title: type === "edge.triggered" ? "Edge triggered" : "Edge suppressed",
+        content: typeof payload.reason === "string" ? payload.reason : undefined,
+      });
+    }
+    if (sourceRoleId && targetRoleId && type === "edge.triggered") {
+      const edgeId = typeof payload.edgeId === "string" ? payload.edgeId : "";
+      useBrainstormGraphStore.getState().handleChallengeIssued({
+        sessionId,
+        challengerRoleId: sourceRoleId,
+        targetRoleId,
+        summary: typeof payload.reason === "string" ? payload.reason : "Runtime role interaction",
+        roundNumber: typeof payload.roundNumber === "number" ? payload.roundNumber : 1,
+        kind: edgeId.startsWith("rebuttal:") ? "support" : "challenge",
+      });
+    }
+    return;
+  }
+
+  if (type === "synthesis.started") {
+    useBrainstormGraphStore.getState().handleSessionSynthesizing({ sessionId });
+    return;
+  }
+
+  if (type === "tool.action.selected") {
+    const toolId = typeof payload.toolId === "string" ? payload.toolId : "runtime-tool";
+    const sourceNodeId =
+      typeof payload.nodeId === "string"
+        ? payload.nodeId
+        : `role:${runtimeRoleId(payload.roleId)}`;
+    const nodeId = `tool:${toolId}:${String(payload.id ?? Date.now())}`;
+    ensureRuntimeNode({
+      sessionId,
+      nodeId,
+      roleId: runtimeRoleId(payload.roleId),
+      nodeType: "action",
+      title: `Tool: ${toolId}`,
+      content: typeof payload.rationale === "string" ? payload.rationale : undefined,
+      parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
+      status: "completed",
+    });
+    return;
+  }
+
+  if (type === "loop.continued" || type === "loop.stopped") {
+    const sourceNodeId =
+      typeof payload.nodeId === "string"
+        ? payload.nodeId
+        : `role:${runtimeRoleId(payload.roleId)}`;
+    const loopId = type === "loop.continued"
+      ? `loop:${String(payload.nextRoundNumber ?? "next")}`
+      : "loop:stopped";
+    ensureRuntimeNode({
+      sessionId,
+      nodeId: loopId,
+      roleId: runtimeRoleId(payload.roleId),
+      nodeType: type === "loop.continued" ? "observation" : "synthesis",
+      title: type === "loop.continued" ? "Loop continued" : "Loop stopped",
+      content: typeof payload.reason === "string" ? payload.reason : undefined,
+      parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
+      status: "completed",
+    });
+    if (type === "loop.continued" && typeof payload.nextRoundNumber === "number") {
+      useBrainstormGraphStore.getState().handleRoundCompleted({
+        sessionId,
+        roundNumber: payload.nextRoundNumber,
+        convergenceScore: useBrainstormGraphStore.getState().convergenceScore ?? 0,
+      });
+    }
+    return;
+  }
+
+  if (type === "synthesis.completed") {
+    const synthesisNodeId =
+      typeof payload.synthesisNodeId === "string"
+        ? payload.synthesisNodeId
+        : typeof payload.nodeId === "string"
+          ? payload.nodeId
+          : "synthesis";
+    const sourceNodeIds = Array.isArray(payload.sourceNodeIds)
+      ? payload.sourceNodeIds.filter((value): value is string => typeof value === "string")
+      : [];
+    const parentNodeId = sourceNodeIds.find((nodeId) => hasNode(nodeId)) ?? null;
+
+    if (!hasNode(synthesisNodeId)) {
+      useBrainstormGraphStore.getState().handleNodeCreated({
+        sessionId,
+        nodeId: synthesisNodeId,
+        parentNodeId,
+        roleId: "decider",
+        nodeType: "synthesis",
+        status: "completed",
+        title: "Synthesis",
+        content: typeof payload.summary === "string" ? payload.summary : undefined,
+      });
+    }
+    useBrainstormGraphStore.getState().handleNodeUpdated({
+      sessionId,
+      nodeId: synthesisNodeId,
+      status: "completed",
+      content: typeof payload.summary === "string" ? payload.summary : undefined,
+      confidence: typeof payload.confidence === "number" ? payload.confidence : undefined,
+    });
+  }
+}
+
 export function dispatchBrainstormGraphEvent(event: {
   type: string;
   payload?: unknown;
 }): void {
+  const payload = asRecord(event.payload);
+  if (isRuntimeGraphEventType(event.type)) {
+    dispatchRuntimeGraphEvent(event.type, payload);
+    return;
+  }
   if (!event.type.startsWith("brainstorm.")) return;
 
-  const payload = asRecord(event.payload);
   const store = useBrainstormGraphStore.getState();
 
   switch (event.type) {
@@ -558,7 +951,9 @@ export function dispatchBrainstormGraphEvent(event: {
       const sessionId = payload.sessionId;
       const challengerRoleId = payload.challengerRoleId;
       const targetRoleId = payload.targetRoleId;
-      const summary = payload.summary;
+      const summary = typeof payload.summary === "string"
+        ? payload.summary
+        : payload.challengeSummary;
       const roundNumber = payload.roundNumber;
       if (
         typeof sessionId !== "string" ||
@@ -575,6 +970,33 @@ export function dispatchBrainstormGraphEvent(event: {
         targetRoleId: targetRoleId as BrainstormRoleId,
         summary,
         roundNumber,
+      });
+      break;
+    }
+    case "brainstorm.rebuttal.issued": {
+      const sessionId = payload.sessionId;
+      const responderRoleId = payload.responderRoleId;
+      const challengerRoleId = payload.challengerRoleId;
+      const summary = typeof payload.summary === "string"
+        ? payload.summary
+        : payload.rebuttalSummary;
+      const roundNumber = payload.roundNumber;
+      if (
+        typeof sessionId !== "string" ||
+        typeof responderRoleId !== "string" ||
+        typeof challengerRoleId !== "string" ||
+        typeof summary !== "string" ||
+        typeof roundNumber !== "number"
+      ) {
+        return;
+      }
+      store.handleChallengeIssued({
+        sessionId,
+        challengerRoleId: responderRoleId as BrainstormRoleId,
+        targetRoleId: challengerRoleId as BrainstormRoleId,
+        summary,
+        roundNumber,
+        kind: "support",
       });
       break;
     }

@@ -391,8 +391,10 @@ export const WorkbenchDocMain: FC<WorkbenchDocMainProps> = ({
   scrollTop,
   onScroll,
   chapterChecklist,
+  relatedRefs,
   aiSummary,
   staleArtifact,
+  onSelectDocument,
   expanded: controlledExpanded,
   onExpandedChange,
   locale,
@@ -435,8 +437,10 @@ export const WorkbenchDocMain: FC<WorkbenchDocMainProps> = ({
       scrollRef={scrollRef}
       onScrollCapture={handleScrollCapture}
       chapterChecklist={chapterChecklist}
+      relatedRefs={relatedRefs}
       aiSummary={aiSummary}
       staleArtifact={staleArtifact}
+      onSelectDocument={onSelectDocument}
       locale={locale}
     />
   );
