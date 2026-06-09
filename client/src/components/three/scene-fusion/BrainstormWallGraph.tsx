@@ -187,6 +187,7 @@ export function computeBrainstormLayout(
         status: node.status,
         roleId: node.roleId,
         confidence: node.confidence,
+        content: node.content,
         opacity: 1,
       };
     });
@@ -241,6 +242,7 @@ export function computeBrainstormLayout(
       status: node.status,
       roleId: node.roleId,
       confidence: node.confidence,
+      content: node.content,
       opacity: 1,
     };
   });

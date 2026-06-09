@@ -951,9 +951,15 @@ export function dispatchBrainstormGraphEvent(event: {
       const sessionId = payload.sessionId;
       const challengerRoleId = payload.challengerRoleId;
       const targetRoleId = payload.targetRoleId;
+      // Structured (real-collaboration) path emits the critique text as
+      // `critiqueSummary`; the legacy heuristic path uses `challengeSummary`;
+      // runtime-graph markers may use `summary`. Read all three so the edge
+      // label carries the actual critique content, not an empty/role string.
       const summary = typeof payload.summary === "string"
         ? payload.summary
-        : payload.challengeSummary;
+        : typeof payload.challengeSummary === "string"
+          ? payload.challengeSummary
+          : payload.critiqueSummary;
       const roundNumber = payload.roundNumber;
       if (
         typeof sessionId !== "string" ||

@@ -26,6 +26,7 @@ import {
   drawBrainstormGraph,
   resolveBrainstormEdgeConnection,
   resolveBrainstormChallengeLabel,
+  wrapBrainstormBody,
 } from "../brainstorm-wall-graph-logic";
 import { computeBrainstormLayout } from "../BrainstormWallGraph";
 import type { LayoutResult } from "../brainstorm-wall-graph-logic";
@@ -537,5 +538,113 @@ describe("drawBrainstormGraph", () => {
     const challengeLabelIndex = textCalls.indexOf("Clarify runtime boundary.");
     expect(plannerTitleIndex).toBeGreaterThanOrEqual(0);
     expect(challengeLabelIndex).toBeGreaterThan(plannerTitleIndex);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Node card shows the actual debate content, not just the role label.
+// ---------------------------------------------------------------------------
+
+describe("wrapBrainstormBody", () => {
+  it("returns [] for empty/whitespace input", () => {
+    expect(wrapBrainstormBody("", 20, 2)).toEqual([]);
+    expect(wrapBrainstormBody("   ", 20, 2)).toEqual([]);
+  });
+
+  it("keeps short text on a single line", () => {
+    expect(wrapBrainstormBody("Planner card", 20, 2)).toEqual(["Planner card"]);
+  });
+
+  it("wraps into at most maxLines, truncating the last line with an ellipsis", () => {
+    const lines = wrapBrainstormBody("A".repeat(100), 20, 2);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("A".repeat(20));
+    expect(lines[1].endsWith("…")).toBe(true);
+  });
+});
+
+describe("drawBrainstormGraph node body content", () => {
+  function createTextCapturingCtx(textCalls: string[]) {
+    return {
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 0,
+      font: "",
+      textAlign: "",
+      textBaseline: "",
+      globalAlpha: 1,
+      shadowColor: "",
+      shadowBlur: 0,
+      shadowOffsetY: 0,
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+      fillRect: () => {},
+      clearRect: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      bezierCurveTo: () => {},
+      fillText: (value: string) => textCalls.push(value),
+      measureText: () => ({ width: 0 }),
+      roundRect: () => {},
+      setLineDash: () => {},
+    } as unknown as CanvasRenderingContext2D;
+  }
+
+  it("renders node.content (the real claim) on the card, not just the role", () => {
+    const textCalls: string[] = [];
+    const ctx = createTextCapturingCtx(textCalls);
+    const layout: LayoutResult = {
+      nodes: [
+        {
+          id: "n1",
+          x: 300,
+          y: 300,
+          title: "spec_docs context",
+          type: "thinking",
+          status: "completed",
+          roleId: "planner",
+          content: "We should isolate the runtime behind an env gate.",
+          opacity: 1,
+        },
+      ],
+      edges: [],
+      scale: 1,
+    };
+
+    drawBrainstormGraph(ctx, layout, CANVAS_W, CANVAS_H, {});
+
+    // The role header is still drawn for identity.
+    expect(textCalls).toContain("PLANNER");
+    // The actual debate content is drawn (first wrapped line), not the title.
+    expect(textCalls.some((t) => t.startsWith("We should isolate"))).toBe(true);
+    expect(textCalls).not.toContain("spec_docs context");
+  });
+
+  it("falls back to title when a node has no content yet", () => {
+    const textCalls: string[] = [];
+    const ctx = createTextCapturingCtx(textCalls);
+    const layout: LayoutResult = {
+      nodes: [
+        {
+          id: "decision-marker",
+          x: 300,
+          y: 300,
+          title: "Decision: BRANCH",
+          type: "decision",
+          status: "completed",
+          roleId: "decision-gate",
+          opacity: 1,
+        },
+      ],
+      edges: [],
+      scale: 1,
+    };
+
+    drawBrainstormGraph(ctx, layout, CANVAS_W, CANVAS_H, {});
+
+    expect(textCalls.some((t) => t.startsWith("Decision: BRANCH"))).toBe(true);
   });
 });

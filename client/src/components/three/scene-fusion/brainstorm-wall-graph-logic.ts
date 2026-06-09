@@ -63,6 +63,12 @@ export interface LayoutNode {
   roleId: string;
   confidence?: number;
   opacity: number;
+  /**
+   * The node's actual debate text (a crew member's claim, a synthesis decision,
+   * a decision-marker rationale, ...). Carried from `BranchNode.content` so the
+   * wall card can show the real content instead of just the role label.
+   */
+  content?: string;
 }
 
 export interface LayoutEdge {
@@ -112,6 +118,34 @@ interface ResolvedChallengeLabel extends BrainstormChallengeLabel {
 export function truncateTitle(title: string): string {
   if (title.length <= MAX_TITLE_LENGTH) return title;
   return title.slice(0, MAX_TITLE_LENGTH) + "…";
+}
+
+/**
+ * Wrap a node's debate text into up to `maxLines` lines for the wall card.
+ * Character-based (CJK-safe: Chinese has no spaces) — greedily fills each line
+ * with `maxCharsPerLine` characters; if the text overflows the last line, the
+ * last line ends with an ellipsis. Returns `[]` for empty input.
+ */
+export function wrapBrainstormBody(
+  text: string,
+  maxCharsPerLine: number,
+  maxLines: number,
+): string[] {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const lines: string[] = [];
+  let rest = normalized;
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (lines.length === maxLines - 1 && rest.length > maxCharsPerLine) {
+      // Last allowed line and still overflowing → truncate with ellipsis.
+      lines.push(rest.slice(0, Math.max(0, maxCharsPerLine - 1)) + "…");
+      rest = "";
+    } else {
+      lines.push(rest.slice(0, maxCharsPerLine));
+      rest = rest.slice(maxCharsPerLine);
+    }
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,23 +425,40 @@ export function drawBrainstormGraph(
     ctx.arc(x + BRAINSTORM_NODE_W - 36, y + 36, 12, 0, Math.PI * 2);
     ctx.fill();
 
-    // Title (truncated to 22 chars)
-    ctx.fillStyle = "#1e293b";
-    ctx.font = "bold 33px system-ui, sans-serif";
+    // Role label (small header so the speaker stays identifiable)
+    ctx.fillStyle = typeColor;
+    ctx.font = "bold 22px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText(truncateTitle(node.title), x + 36, y + 30);
+    ctx.fillText(node.roleId.toUpperCase().replace(/_/g, " "), x + 36, y + 22);
 
-    // Role label
-    ctx.fillStyle = typeColor;
-    ctx.font = "bold 24px system-ui, sans-serif";
-    ctx.fillText(node.roleId.toUpperCase().replace(/_/g, " "), x + 36, y + 84);
+    // Body = the node's ACTUAL debate text (a crew member's claim, a synthesis
+    // decision, a decision-marker rationale, ...). Falls back to the structural
+    // `title` when no content has arrived yet (e.g. an active node mid-thinking,
+    // or a runtime role/decision marker whose meaning lives in its title).
+    const bodyText =
+      node.content && node.content.trim().length > 0 ? node.content : node.title;
+    const bodyLines = wrapBrainstormBody(bodyText, 20, 2);
+    ctx.fillStyle = "#1e293b";
+    ctx.font = "bold 26px system-ui, sans-serif";
+    let bodyY = y + 58;
+    for (const line of bodyLines) {
+      ctx.fillText(line, x + 36, bodyY);
+      bodyY += 38;
+    }
 
-    // Confidence indicator (if present)
+    // Confidence indicator (if present) — moved to the top-right so it never
+    // collides with the multi-line body.
     if (node.confidence !== undefined) {
       ctx.fillStyle = "#64748b";
-      ctx.font = "27px system-ui, sans-serif";
-      ctx.fillText(`conf: ${(node.confidence * 100).toFixed(0)}%`, x + 36, y + 126);
+      ctx.font = "22px system-ui, sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(
+        `conf: ${(node.confidence * 100).toFixed(0)}%`,
+        x + BRAINSTORM_NODE_W - 30,
+        y + 22,
+      );
+      ctx.textAlign = "left";
     }
 
     // Reset opacity
