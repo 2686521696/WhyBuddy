@@ -482,7 +482,7 @@ describe("drawBrainstormGraph", () => {
       }),
     ).not.toThrow();
 
-    expect(text.some((value) => value.includes("Round 2"))).toBe(true);
+    expect(text.some((value) => value.includes("轮次 2") || value.includes("Round 2"))).toBe(true);
     expect(text.some((value) => value.includes("Option A"))).toBe(true);
     expect(text.some((value) => value.includes("Clarify runtime boundary."))).toBe(true);
     expect(dashPatterns.some((pattern) => pattern.join(",") === "10,10")).toBe(true);

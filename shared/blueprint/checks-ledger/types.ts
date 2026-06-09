@@ -30,6 +30,7 @@ export type BlueprintCheckType =
   | "companion_trace"
   | "preview_audit"
   | "brainstorm_deliberation"
+  | "brainstorm_impact"
   | "traceability_matrix";
 
 /** 校验结果状态 */

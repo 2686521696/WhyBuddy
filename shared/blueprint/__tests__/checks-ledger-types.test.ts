@@ -6,8 +6,9 @@ import type {
 } from "../checks-ledger/types.js";
 
 describe("BlueprintCheckType v4 full-loop extensions", () => {
-  it("accepts brainstorm deliberation and traceability matrix check types", () => {
+  it("accepts brainstorm deliberation, impact and traceability matrix check types", () => {
     expectTypeOf<"brainstorm_deliberation">().toExtend<BlueprintCheckType>();
+    expectTypeOf<"brainstorm_impact">().toExtend<BlueprintCheckType>();
     expectTypeOf<"traceability_matrix">().toExtend<BlueprintCheckType>();
   });
 

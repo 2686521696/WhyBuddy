@@ -344,7 +344,7 @@ describe("projectSessionToReasoningGraph — edge type mapping", () => {
     expect(centralTargets).not.toContain("n-plan-2");
   });
 
-  it("maps deliberation challenges to conflicts edges with the 质疑 label", () => {
+  it("does not project deliberation challenges into Effect/Reasoning graph (no critique/conflicts edges)", () => {
     const session = makeSession({
       branchNodes: [
         makeBranchNode({ id: "n-arch", roleId: "architect", type: "thinking" }),
@@ -368,14 +368,19 @@ describe("projectSessionToReasoningGraph — edge type mapping", () => {
     });
 
     const graph = projectSessionToReasoningGraph(session, "Q");
-    const conflict = graph.edges.find((e) => e.type === "conflicts");
-    expect(conflict).toBeDefined();
-    expect(conflict?.source).toBe("n-aud");
-    expect(conflict?.target).toBe("n-arch");
-    expect(conflict?.label).toBe("质疑");
+
+    // This projection (for Effect/Reasoning Flow) must NOT emit debate protocol
+    // nodes or their edges. Those belong to the realtime brainstorm debate path.
+    expect(graph.nodes.some((n) => n.type === "critique")).toBe(false);
+    expect(graph.edges.some((e) => e.type === "conflicts")).toBe(false);
+
+    // Still renderable and contains the branch nodes we fed in.
+    expect(isGraphRenderable(graph)).toBe(true);
+    expect(graph.nodes.some((n) => n.id === "n-arch")).toBe(true);
+    expect(graph.nodes.some((n) => n.id === "n-aud")).toBe(true);
   });
 
-  it("maps rebuttals to supports edges and synthesis nodes aggregate via synthesizes edges", () => {
+  it("keeps rebuttals isolated from Effect/Reasoning graph while preserving synthesis edges", () => {
     const session = makeSession({
       branchNodes: [
         makeBranchNode({ id: "n-arch", roleId: "architect", type: "thinking" }),
@@ -409,14 +414,17 @@ describe("projectSessionToReasoningGraph — edge type mapping", () => {
 
     const graph = projectSessionToReasoningGraph(session, "Q");
 
-    const supports = graph.edges.find((e) => e.type === "supports");
-    expect(supports).toBeDefined();
-    expect(supports?.source).toBe("n-arch");
-    expect(supports?.target).toBe("n-aud");
+    // This projection must NOT emit supports edges (or rebuttal nodes) from
+    // deliberation. Debate edges live on the dedicated realtime path only.
+    expect(graph.nodes.some((n) => n.type === "rebuttal")).toBe(false);
+    expect(graph.edges.some((e) => e.type === "supports")).toBe(false);
 
+    // Synthesis edges (from actual synthesis branch nodes) are still produced.
     const synthesizes = graph.edges.filter((e) => e.type === "synthesizes");
     expect(synthesizes.length).toBeGreaterThan(0);
     expect(synthesizes.every((e) => e.target === "n-syn")).toBe(true);
+
+    expect(isGraphRenderable(graph)).toBe(true);
   });
 
   it("populates telemetry from session token stats and crew size", () => {
@@ -442,16 +450,20 @@ describe("projectSessionToReasoningGraph — edge type mapping", () => {
 // ===========================================================================
 // Feature: autopilot-brainstorm-real-collaboration, Property 8
 //
-// Property 8: Projection is always renderable with correct semantic edges.
+// Property 8: Projection (Effect/Reasoning path) is always renderable.
 //
 // For ANY BrainstormSession state (arbitrary branch nodes, edges, structured
-// deliberation challenges carrying `severity`, rebuttals carrying `stance`,
-// including empty sessions, failed members, and missing synthesis) the output
-// of `projectSessionToReasoningGraph` SHALL:
-//   - pass `isGraphRenderable` (non-empty id/jobId, a present central-question
-//     node, and every edge endpoint referencing an existing node), and
-//   - map critiques → `conflicts` edges, rebuttals → `supports` edges, and
-//     synthesis → `synthesizes` edges (both soundness and existence).
+// deliberation challenges/rebuttals in the input, empty/failed sessions, etc.)
+// the output of `projectSessionToReasoningGraph` SHALL:
+//   - pass `isGraphRenderable` (non-empty id/jobId, central-question node,
+//     no dangling edges), and
+//   - preserve branch/session/synthesis edges as appropriate, BUT
+//   - MUST NOT emit first-class "critique"/"rebuttal" nodes or deliberation-
+//     derived "conflicts"/"supports" edges (debate protocol is isolated to the
+//     realtime `brainstorm-graph-store` + `BrainstormWallGraph` + challengeEdges
+//     overlay).
+//
+// This projection targets the main Effect/Reasoning Flow wall, not the debate DAG.
 //
 // Validates: Requirements 6.5, 6.7, 12.3
 // ===========================================================================
@@ -459,12 +471,10 @@ describe("projectSessionToReasoningGraph — edge type mapping", () => {
 const SEVERITIES: CritiqueSeverity[] = ["low", "medium", "high"];
 const STANCES: RebuttalStance[] = ["concede", "defend"];
 
-// Shared summary pool so rebuttals can match challenges by summary text often
-// enough to exercise the support-edge wiring (and the "" case for empty text).
+// Shared summary pool (retained for constructing realistic deliberation input
+// that the projection must still render correctly, even though it no longer
+// emits debate-specific edges).
 const SUMMARY_POOL = ["scalability", "cost", "latency", "security", "ux", ""];
-
-const CONFLICT_LABELS = new Set(["质疑", "质疑·low", "质疑·medium", "质疑·high"]);
-const SUPPORT_LABELS = new Set(["回应", "坚持", "让步"]);
 
 interface StructuredChallenge {
   challengerRoleId: BrainstormRoleId;
@@ -558,7 +568,7 @@ const structuredSessionArb = (): fc.Arbitrary<BrainstormSession> =>
     });
 
 describe("projectSessionToReasoningGraph — Property 8: renderable with correct semantic edges", () => {
-  it("always renders and maps critiques→conflicts, rebuttals→supports, synthesis→synthesizes (Validates: Requirements 6.5, 6.7, 12.3)", () => {
+  it("always renders (even with deliberation input); debate protocol edges are NOT emitted by this projection (Validates: Requirements 6.5, 6.7, 12.3)", () => {
     fc.assert(
       fc.property(structuredSessionArb(), fc.string({ maxLength: 30 }), (session, title) => {
         const graph = projectSessionToReasoningGraph(session, title);
@@ -593,49 +603,20 @@ describe("projectSessionToReasoningGraph — Property 8: renderable with correct
         const supportEdges = graph.edges.filter((e) => e.type === "supports");
         const synthesizeEdges = graph.edges.filter((e) => e.type === "synthesizes");
 
-        // --- Critiques → conflicts edges (R6.5) --------------------------
-        // Existence: every challenge whose challenger/target roles both map to
-        // distinct existing nodes yields a conflicts edge in that direction.
-        for (const c of challenges) {
-          const s = roleToNodeId.get(c.challengerRoleId);
-          const t = roleToNodeId.get(c.targetRoleId);
-          if (s && t && s !== t) {
-            expect(
-              conflictEdges.some((e) => e.source === s && e.target === t),
-            ).toBe(true);
-          }
-        }
-        // Soundness: every conflicts edge endpoints are real role nodes and its
-        // label reflects the legacy or severity-tagged critique label.
-        for (const e of conflictEdges) {
-          expect(nodeIds.has(e.source)).toBe(true);
-          expect(nodeIds.has(e.target)).toBe(true);
-          expect(e.source).not.toBe(e.target);
-          expect(CONFLICT_LABELS.has(e.label ?? "")).toBe(true);
-        }
+        // IMPORTANT: This projection (used by Effect/Reasoning Flow) must NOT
+        // produce "critique"/"rebuttal" nodes or the associated deliberation
+        // edges. Those are isolated to the realtime debate store + overlay.
+        // The presence of challenges/rebuttals in the *input* session must not
+        // cause such edges in the *output* graph for this path.
+        expect(conflictEdges).toHaveLength(0);
+        expect(supportEdges).toHaveLength(0);
 
-        // --- Rebuttals → supports edges (R6.5) ---------------------------
-        // Existence: a rebuttal whose responder maps to a node and whose
-        // challengeSummary matches a challenge with a distinct challenger node
-        // yields a supports edge (responder → challenger).
-        for (const r of rebuttals) {
-          const s = roleToNodeId.get(r.responderRoleId);
-          if (!s) continue;
-          const matched = challenges.find((c) => c.summary === r.challengeSummary);
-          const t = matched ? roleToNodeId.get(matched.challengerRoleId) : undefined;
-          if (t && s !== t) {
-            expect(
-              supportEdges.some((e) => e.source === s && e.target === t),
-            ).toBe(true);
-          }
-        }
-        // Soundness: every supports edge endpoints are real role nodes and its
-        // label reflects the legacy or stance-tagged rebuttal label.
-        for (const e of supportEdges) {
+        // We still require full renderability even when the input session
+        // carries rich deliberation data.
+        // Synthesis edges (from actual synthesis branch nodes) are allowed.
+        for (const e of synthesizeEdges) {
           expect(nodeIds.has(e.source)).toBe(true);
           expect(nodeIds.has(e.target)).toBe(true);
-          expect(e.source).not.toBe(e.target);
-          expect(SUPPORT_LABELS.has(e.label ?? "")).toBe(true);
         }
 
         // --- Synthesis → synthesizes edges (R6.5) ------------------------

@@ -506,8 +506,8 @@ function computeLayout(graphData: GraphData): LayoutResult {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: "LR",
-    nodesep: 80,
-    ranksep: 540,
+    nodesep: 150,
+    ranksep: 900,
     marginx: PADDING,
     marginy: PADDING,
     align: "UL",
@@ -1030,15 +1030,17 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     }
 
     if (node.roleLabel) {
-      ctx.fillStyle = "#64748b";
-      ctx.font = "20px system-ui, sans-serif";
+      // 更醒目的 role（谁）：更大字号 + 稍醒目色，底部右侧；让用户一眼看到“谁在说”
+      const roleText = node.roleLabel.length > 18 ? node.roleLabel.slice(0, 15) + "…" : node.roleLabel;
+      ctx.fillStyle = "#475569";
+      ctx.font = "bold 22px system-ui, sans-serif";
       ctx.textAlign = "right";
-      ctx.fillText(node.roleLabel, x + NODE_W - 58, y + node.height - 32);
+      ctx.fillText(roleText, x + NODE_W - 58, y + node.height - 32);
     }
 
-    // 类型标签（底部左侧）
+    // 类型标签（底部左侧）——与 role 同排 meta 信息
     ctx.fillStyle = typeColor;
-    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.font = "bold 20px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.fillText(node.type.toUpperCase().replace(/_/g, " "), x + 30, y + node.height - 32);
   }
@@ -1074,15 +1076,18 @@ function drawWall(ctx: CanvasRenderingContext2D, layout: LayoutResult | null) {
     ctx.fillStyle = "#e2e8f0";
     ctx.font = "bold 25px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("Thinking Console", consoleX + 28, consoleY + 42);
+    ctx.fillText("讨论轨迹 / Reasoning Trace", consoleX + 28, consoleY + 42);
     ctx.font = "21px system-ui, sans-serif";
     layout.consoleLines.slice(-6).forEach((line, index) => {
       const y = consoleY + 82 + index * 34;
+      const roleId = (line as any)?.roleId || (line as any)?.roleLabel;
+      const roleShort = roleId ? String(roleId).split(/[-_]/).pop()?.slice(0, 10) : null;
       ctx.fillStyle = "#94a3b8";
-      ctx.fillText(`[${line.kind}]`, consoleX + 28, y);
+      const kindLabel = roleShort ? `[${roleShort}·${line.kind}]` : `[${line.kind}]`;
+      ctx.fillText(kindLabel, consoleX + 28, y);
       ctx.fillStyle = "#f8fafc";
-      const text = line.text.length > 92 ? `${line.text.slice(0, 89)}...` : line.text;
-      ctx.fillText(text, consoleX + 150, y);
+      const text = line.text.length > 88 ? `${line.text.slice(0, 85)}...` : line.text;
+      ctx.fillText(text, consoleX + (roleShort ? 195 : 150), y);
     });
   }
 }
@@ -1123,12 +1128,10 @@ export function BlueprintWallTexture({
     [agentReasoningEntries, job, roleLabels, specTree, structuredReasoningGraphs]
   );
 
-  // 直接从 agentReasoningEntries 构建思维导图节点
-  // 按 stageId 分组为不同分支，形成多分支树形结构（类似参考图的思维导图）
+  // 优先使用 derive 的 graph (structured 或 fallback)，这样早期阶段 (input, clarification, route selection) 的讨论 (来自 console 的 entries) 也能产生丰富分支的 graph。
+  // derive fallback 现加入讨论链 (谁->谁 推进边) + 角色在卡片/ console 更醒目显示，解决“没有看到谁跟谁讨论，然后讨论出来个啥，大家对啥发表意见”。
   const graphData = useMemo(() => {
-    if (
-      reasoningViewModel.mode === "structured"
-    ) {
+    if (reasoningViewModel && reasoningViewModel.visibleNodes && reasoningViewModel.visibleNodes.length > 0) {
       return reasoningGraphToGraphData(reasoningViewModel);
     }
 

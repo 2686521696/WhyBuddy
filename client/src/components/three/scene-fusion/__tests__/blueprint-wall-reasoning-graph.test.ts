@@ -289,4 +289,72 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     expect(result.emptyReason).toBe("no-job");
     expect(result.visibleNodes).toEqual([]);
   });
+
+  it("strips debate protocol nodes (critique/rebuttal) from structured graphs so they never enter Effect/Reasoning Flow", () => {
+    // A structured graph that (incorrectly) contains first-class debate nodes mixed in,
+    // as could happen while server projection still emits them (see reasoning-graph-projection).
+    const mixedGraph = makeStructuredGraph({
+      nodes: [
+        {
+          id: "question-1",
+          type: "question",
+          title: "Main question",
+          status: "open",
+          order: 0,
+        },
+        {
+          id: "evidence-1",
+          type: "evidence",
+          title: "Some evidence",
+          status: "supported",
+          order: 1,
+        },
+        {
+          id: "critique-1",
+          type: "critique",
+          title: "质疑 claim",
+          body: "针对 evidence-1 的问题",
+          status: "challenged",
+          order: 2,
+        },
+        {
+          id: "rebuttal-1",
+          type: "rebuttal",
+          title: "反驳",
+          body: "坚持原立场",
+          status: "supported",
+          order: 3,
+        },
+      ],
+      edges: [
+        { id: "e1", source: "question-1", target: "evidence-1", type: "supports", label: "", sourceKind: "llm" },
+        { id: "e2", source: "evidence-1", target: "critique-1", type: "conflicts", label: "", sourceKind: "llm" },
+        { id: "e3", source: "critique-1", target: "rebuttal-1", type: "supports", label: "", sourceKind: "llm" },
+      ],
+      consoleLines: [{ id: "c1", kind: "Report", text: "debate console should be ignored by Effect wall" }],
+    });
+
+    const result = deriveBlueprintWallReasoningGraph({
+      job: makeJob(),
+      structuredGraphs: [mixedGraph],
+    });
+
+    // Must refuse debate nodes for the Effect path.
+    const types = result.visibleNodes.map((n) => n.type);
+    expect(types).not.toContain("critique");
+    expect(types).not.toContain("rebuttal");
+    expect(result.visibleNodes.map((n) => n.id)).toEqual(["question-1", "evidence-1"]);
+
+    // Edges involving debate nodes must also be dropped.
+    expect(result.visibleEdges.some((e) => e.source === "critique-1" || e.target === "critique-1")).toBe(false);
+    expect(result.visibleEdges.some((e) => e.source === "rebuttal-1" || e.target === "rebuttal-1")).toBe(false);
+
+    // The graph is still accepted as "structured" (after stripping), not forced to fallback.
+    expect(result.mode).toBe("structured");
+
+    // Console isolation: debate-sourced consoleLines must not leak into the Effect/Reasoning
+    // wall's consoleLines (they are dropped in stripDebateProtocolNodes when debate nodes present).
+    expect(result.consoleLines).toHaveLength(0);
+    expect(result.consoleLines.some((l) => l.text.includes("debate console"))).toBe(false);
+  });
 });

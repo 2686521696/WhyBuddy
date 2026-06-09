@@ -217,6 +217,9 @@ export function computeBrainstormLayout(
 
   const posById = new Map(renderedNodes.map((n) => [n.id, n]));
   const edgeLabelFor = (child: BranchNode, layer: number): string => {
+    // Only use the declared BranchNodeType values (no critique/rebuttal here;
+    // those are carried via challengeEdges + deliberation overlay for the
+    // realtime debate DAG).
     if (child.type === "synthesis") return "收敛";
     if (child.type === "decision") return "决策";
     if (layer <= 1) return "主张";

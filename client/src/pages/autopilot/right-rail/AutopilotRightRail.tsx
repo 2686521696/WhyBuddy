@@ -48,6 +48,7 @@ import {
   generateBlueprintSpecDocuments,
 } from "@/lib/blueprint-api";
 import { postBlueprintReplan } from "@/lib/blueprint-api/replan";
+import { FRONTEND_TIMEOUT_MARKER } from "@/lib/blueprint-realtime-store";
 import type { ApiRequestError } from "@/lib/api-client";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { useBlueprintRealtimeStore } from "@/lib/blueprint-realtime-store";
@@ -1274,21 +1275,28 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           endpoint: `/api/blueprint/jobs/${props.jobId}/spec-documents`,
           message:
             locale === "zh-CN"
-              ? "生成规格文档超时"
-              : "Spec document generation timed out",
+              ? "生成规格文档请求超时（后台可能仍在生成）"
+              : "Spec document generation request timed out (backend may still be running)",
           detail:
             locale === "zh-CN"
-              ? "生成在 60 秒内未返回结果，请稍后重试。"
-              : "Generation did not complete within 60 seconds. Please retry.",
+              ? "前端 60 秒保护已触发，后端默认超时 ~5 分钟。请稍后刷新查看进度，或重试单节点生成。"
+              : "Frontend 60s guard fired; backend default LLM timeout is ~5min. Refresh later to see progress, or retry single-node.",
           retryable: true,
         };
         setSpecDocsError(timeoutError);
         showToast.error(
           locale === "zh-CN"
-            ? "生成规格文档超时"
-            : "Spec document generation timed out",
+            ? "生成规格文档请求超时（后台可能仍在生成）"
+            : "Spec document generation request timed out (backend may still be running)",
           { description: timeoutError.detail }
         );
+
+        // 关键收敛：timeout 时把 live progress 标记为 finished + failed 节点，
+        // 让 deriveNodeStatusById 的 !isBatchActive 守门生效，停止 spinner。
+        // 使用语言无关的 machine marker，这样 isFrontendTimeoutFailed 能可靠识别，
+        // 并且后端真实 "agent timeout" 等不会被误判为前端保护失败。
+        useBlueprintRealtimeStore.getState().failSpecDocsProgress(FRONTEND_TIMEOUT_MARKER);
+
         // 不向真相源写入部分结果：不调用 onSpecDocumentsGenerated。
         return;
       }

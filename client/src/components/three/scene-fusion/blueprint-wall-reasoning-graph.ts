@@ -47,7 +47,7 @@ export interface BlueprintWallReasoningGraphViewModel {
 const DEFAULT_MAX_VISIBLE_NODES = 16;
 const DEFAULT_MAX_CONSOLE_LINES = 6;
 
-const NODE_TYPE_PRIORITY: Record<BrainstormReasoningNodeType, number> = {
+const NODE_TYPE_PRIORITY: Partial<Record<BrainstormReasoningNodeType, number>> = {
   question: 0,
   clarification: 1,
   constraint: 2,
@@ -57,6 +57,9 @@ const NODE_TYPE_PRIORITY: Record<BrainstormReasoningNodeType, number> = {
   gap: 6,
   decision: 7,
   synthesis: 8,
+  // NOTE: critique/rebuttal deliberately omitted here.
+  // Effect/Reasoning Flow deriver MUST reject debate protocol nodes (see stripDebateProtocolNodes).
+  // They belong exclusively to the realtime brainstorm debate store + overlays.
 };
 
 const FALLBACK_EMPTY_TELEMETRY: BrainstormGraphTelemetry = {
@@ -66,6 +69,45 @@ const FALLBACK_EMPTY_TELEMETRY: BrainstormGraphTelemetry = {
   remainingBudget: null,
   activeRoleCount: null,
 };
+
+/** Debate protocol node types belong only to the realtime brainstorm debate path.
+ * Effect/Reasoning Flow (this deriver) must refuse them so they never bleed into
+ * the main wall process/reasoning texture or its console/rail views.
+ */
+const DEBATE_PROTOCOL_NODE_TYPES = new Set<BrainstormReasoningNodeType>([
+  "critique",
+  "rebuttal",
+]);
+
+function isDebateProtocolNode(node: BrainstormReasoningNode): boolean {
+  return DEBATE_PROTOCOL_NODE_TYPES.has(node.type);
+}
+
+export function stripDebateProtocolNodes(
+  graph: BrainstormReasoningGraph
+): BrainstormReasoningGraph {
+  const debateNodeIds = new Set(
+    graph.nodes.filter(isDebateProtocolNode).map((n) => n.id)
+  );
+  if (debateNodeIds.size === 0) return graph;
+
+  const keptNodes = graph.nodes.filter((n) => !debateNodeIds.has(n.id));
+  const keptEdges = graph.edges.filter(
+    (e) => !debateNodeIds.has(e.source) && !debateNodeIds.has(e.target)
+  );
+
+  // When we had to strip debate protocol nodes, also drop any consoleLines that
+  // came with the debate graph. Effect/Reasoning Flow must not consume
+  // brainstorm_reasoning_graph.consoleLines (or debate-sourced lines) in its
+  // main wall texture / console / rail views.
+  return {
+    ...graph,
+    nodes: keptNodes,
+    edges: keptEdges,
+    consoleLines: [],
+    // telemetry left as-is (aggregate numbers are usually harmless)
+  };
+}
 
 export function deriveBlueprintWallReasoningGraph(
   input: DeriveBlueprintWallReasoningGraphInput
@@ -78,9 +120,14 @@ export function deriveBlueprintWallReasoningGraph(
     return emptyView("no-job");
   }
 
-  const structured = pickStructuredGraph(input.structuredGraphs, job.id, input.activeSubStage);
-  if (structured !== null) {
-    return toViewModel(structured, "structured", maxVisibleNodes, maxConsoleLines);
+  const rawStructured = pickStructuredGraph(input.structuredGraphs, job.id, input.activeSubStage);
+  if (rawStructured !== null) {
+    const structured = stripDebateProtocolNodes(rawStructured);
+    // Refuse: if after stripping debate protocol nodes there is nothing left for Effect Flow,
+    // or if it was purely a debate graph, fall through to fallback/empty for this wall.
+    if (structured.nodes.length > 0) {
+      return toViewModel(structured, "structured", maxVisibleNodes, maxConsoleLines);
+    }
   }
 
   const entries = filterEntriesForJob(input.agentReasoningEntries ?? [], job.id);
@@ -188,7 +235,9 @@ function compareNodes(a: BrainstormReasoningNode, b: BrainstormReasoningNode): n
   const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
   const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
   if (orderA !== orderB) return orderA - orderB;
-  return NODE_TYPE_PRIORITY[a.type] - NODE_TYPE_PRIORITY[b.type];
+  const pa = NODE_TYPE_PRIORITY[a.type] ?? 999;
+  const pb = NODE_TYPE_PRIORITY[b.type] ?? 999;
+  return pa - pb;
 }
 
 function filterEntriesForJob(
@@ -215,9 +264,18 @@ function buildFallbackGraph(input: {
     entry.phase !== "iteration_started" && entry.phase !== "iteration_completed"
   );
 
+  // Build contribution nodes (each carries roleLabel + the "发表的意见" as title/body).
+  // Connect every one from central question (so "对啥" 意图 is clear).
+  // Additionally build a temporal discussion chain between consecutive contributions.
+  // This creates visible "谁跟谁" flow (roleA's point -> roleB's response/推进) while
+  // still showing all tied to the root intent. Layout (LR dagre) will surface the main
+  // discussion trunk + branches.
+  let prevContribId: string | null = null;
   contributionEntries.forEach((entry, index) => {
     const node = nodeFromEntry(entry, input.roleLabels, index + 1);
     nodes.push(node);
+
+    // Always link back to question for "对中央问题发表的意见" visibility
     edges.push({
       id: `fallback-edge-question-${node.id}`,
       source: questionNode.id,
@@ -226,6 +284,19 @@ function buildFallbackGraph(input: {
       label: edgeLabelForNode(node),
       sourceKind: "fallback",
     });
+
+    // Sequential discussion chain: who -> who (temporal order of entries = discussion turns)
+    if (prevContribId) {
+      edges.push({
+        id: `fallback-edge-discuss-${prevContribId}-${node.id}`,
+        source: prevContribId,
+        target: node.id,
+        type: "refines",
+        label: "推进",
+        sourceKind: "fallback",
+      });
+    }
+    prevContribId = node.id;
   });
 
   const terminalCandidates = nodes.filter(node =>
@@ -235,7 +306,7 @@ function buildFallbackGraph(input: {
     const synthesisNode: BrainstormReasoningNode = {
       id: "fallback-synthesis",
       type: "synthesis",
-      title: "SPEC reasoning synthesis",
+      title: "收敛 / 决策",
       body: "Fallback synthesis from current runtime reasoning entries.",
       status: "resolved",
       order: nodes.length + 1,
@@ -248,7 +319,7 @@ function buildFallbackGraph(input: {
         source: node.id,
         target: synthesisNode.id,
         type: "synthesizes",
-        label: "synthesizes",
+        label: "收敛",
         sourceKind: "fallback",
       });
     }
@@ -392,14 +463,15 @@ function statusForEntry(
 
 function edgeTypeForNode(node: BrainstormReasoningNode): BrainstormReasoningEdge["type"] {
   if (node.type === "synthesis" || node.type === "decision") return "synthesizes";
-  if (node.type === "evidence") return "depends_on";
+  if (node.type === "evidence") return "cites";
   return "refines";
 }
 
 function edgeLabelForNode(node: BrainstormReasoningNode): string {
-  if (node.type === "synthesis" || node.type === "decision") return "synthesizes";
-  if (node.type === "evidence") return "evidence";
-  return "refines";
+  // 产品推演语义（与 projection + 2D surface 对齐）：谁对中央问题/前序发表了什么意见
+  if (node.type === "synthesis" || node.type === "decision") return "收敛";
+  if (node.type === "evidence") return "支撑";
+  return "细化";
 }
 
 function deriveConsoleLines(entries: ReasoningEntryWithRole[]): BrainstormGraphConsoleLine[] {
@@ -470,25 +542,32 @@ function truncate(value: string, maxLength: number): string {
 }
 
 function fallbackTitleForType(type: BrainstormReasoningNodeType): string {
+  // 产品推演平台英文 fallback 标题（与 2D surface 中文化标签对齐）
   switch (type) {
     case "clarification":
       return "Clarification";
     case "hypothesis":
-      return "Hypothesis";
+      return "Assumption";
     case "evidence":
-      return "Evidence";
+      return "Insight";
     case "constraint":
       return "Constraint";
     case "risk":
       return "Risk";
     case "gap":
-      return "Information gap";
+      return "Gap";
     case "decision":
       return "Decision";
     case "synthesis":
-      return "Synthesis";
+      return "Convergence";
     case "question":
-      return "Question";
+      return "Intent";
+    // critique / rebuttal are debate protocol and must not appear in Effect/Reasoning
+    // Flow graphs (including fallback). If they ever reach here the type boundary
+    // was violated upstream; make it obvious instead of giving them a normal title.
+    case "critique":
+    case "rebuttal":
+      return "(debate protocol — isolated to realtime path)";
     default:
       return type satisfies never;
   }

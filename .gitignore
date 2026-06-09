@@ -45,6 +45,11 @@ pids
 *.seed
 *.pid.lock
 
+# Stray runtime / shell redirection artifacts and test outputs that pollute review diffs
+$null
+test-results/
+tmp/
+
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov

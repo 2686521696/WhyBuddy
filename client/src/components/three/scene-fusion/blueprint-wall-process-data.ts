@@ -1710,7 +1710,7 @@ function buildConsoleLines(
     jobId
   );
 
-  // reasoning 行在前，preview-log 行在后，保持各自输入顺序。
+  // reasoning 行在前，preview-log 行在后（主执行链路，不混入 brainstorm 辩论日志）
   const combined = [...reasoningLines, ...previewLogLines];
 
   // 确定性「保留最近」= 取尾部（与 reasoning 节点裁剪约定一致）。
@@ -2012,6 +2012,7 @@ function collectCurrentJobArtifacts(
   if (!Array.isArray(artifacts)) return [];
 
   const collected: BlueprintWallArtifactInput[] = [];
+  const seenIds = new Set<string>();
   for (const artifact of artifacts) {
     if (!artifact || typeof artifact !== "object") continue;
     if (typeof artifact.id !== "string" || artifact.id.length === 0) continue;
@@ -2020,6 +2021,8 @@ function collectCurrentJobArtifacts(
     // an absent jobId is treated as an already-scoped page prop (Req 3.3).
     if (artifact.jobId !== undefined && artifact.jobId !== jobId) continue;
 
+    if (seenIds.has(artifact.id)) continue;
+    seenIds.add(artifact.id);
     collected.push(artifact);
   }
   return collected;

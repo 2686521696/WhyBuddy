@@ -27,6 +27,11 @@ import {
 } from "./blueprint/brainstorm/stage-wrapper.js";
 import { runSecondStageBrainstormCompanion } from "./blueprint/brainstorm/second-stage-companion.js";
 import {
+  recordTypedStageOutcome,
+  getTypedStageStats,
+} from "./blueprint/brainstorm/typed-stage-stats.js";
+import { recordTypedStageDebateImpact } from "./blueprint/brainstorm/evidence-trail.js";
+import {
   isStageEnabled,
   type BrainstormEligibleStage,
 } from "./blueprint/brainstorm/stage-config.js";
@@ -687,11 +692,20 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       ? blueprintStores.projectContexts.get(intake.projectId)
       : undefined;
 
-    // 伴随式头脑风暴（intake 输入阶段）：5-key 池多角色并行辩论，旁路 side-channel。
+    // 伴随式头脑风暴（intake 输入阶段）：side-channel only（辩论仅用于墙投影 + ledger 审计）。
+    //
     // 受 BLUEPRINT_BRAINSTORM_ENABLED + BRAINSTORM_STAGE_INTAKE_ENABLED 双开关控制；
-    // BLUEPRINT_BRAINSTORM_FORCE=true 时 Decision Gate 必触发。此阶段尚无 blueprint
-    // job，故不传 onReasoningGraph（无 job 可挂 artifact），辩论过程通过 eventBus
-    // 实时外发到 3D 墙。fire-and-forget：辩论异常绝不影响 intake 201 返回。
+    // BLUEPRINT_BRAINSTORM_FORCE=true 时 Decision Gate 必触发。
+    //
+    // 重要（brainstorm-debate-integrity-observability, Req 1）：此阶段**没有** typed 路径。
+    // intake 产生的是原始输入归一化（无 job），辩论输出被显式丢弃（runSecondStageBrainstormCompanion
+    // 用空字符串作为 single-agent fallback，结果不被消费）。我们**选择选项 A**（清理空挂 flag 含义）：
+    // 保留 flag 控制 companion 行为，但明确文档化“该 flag 仅控制 side-channel，不代表辩论会影响
+    // intake 产物”。不为此阶段补充 typed 接线（除非未来有强证据证明 intake 辩论能安全改进后续产物）。
+    // 见 stage-config.ts 顶部 Cut Principle 区块 + .kiro/specs/brainstorm-debate-integrity-observability/
+    //
+    // 此阶段尚无 blueprint job，故不传 onReasoningGraph（无 job 可挂 artifact），
+    // 辩论过程通过 eventBus 实时外发到 3D 墙。fire-and-forget：辩论异常绝不影响 intake 201 返回。
     void runSecondStageBrainstormCompanion({
       brainstormContext: blueprintServiceContext.brainstormContext ?? null,
       llm: {
@@ -849,12 +863,17 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       }
 
       // ── 伴随式头脑风暴（clarification 阶段）─────────────────────────
-      // 5-key 池（ouyi）多角色并行辩论，旁路 side-channel：只产出辩论事件 /
-      // 墙面投影，绝不替换澄清问题本身。fire-and-forget，永不阻塞 201。
+      // 5-key 池（ouyi）多角色并行辩论，side-channel only：只产出辩论事件 /
+      // 墙面投影 + ledger provenance，绝不替换澄清问题本身。fire-and-forget，永不阻塞 201。
+      //
       // 受 BLUEPRINT_BRAINSTORM_ENABLED + BRAINSTORM_STAGE_CLARIFICATION_ENABLED
       // 双开关控制；BLUEPRINT_BRAINSTORM_FORCE=true 时 Decision Gate 必触发。
       // 此阶段尚无 blueprint job，故不传 onReasoningGraph（无 job 可挂 artifact），
       // 辩论过程仍通过 eventBus 实时外发。
+      //
+      // 重要（brainstorm-debate-integrity-observability, Req 1 + Req 5）：
+      // clarification 明确走 side-channel。辩论提供洞见（事件/审计），但 clarification
+      // session 的问题生成与答案是确定性/交互主路径。切分原则见 stage-config.ts 顶部。
       void runSecondStageBrainstormCompanion({
         brainstormContext: blueprintServiceContext.brainstormContext ?? null,
         llm: {
@@ -3392,9 +3411,57 @@ async function wrapTypedBlueprintStage<T>(input: {
     },
   });
 
+  const brainstormActiveForStage =
+    isStageEnabled(input.stageId) && !!input.ctx.brainstormContext;
   try {
-    return parse(wrappedOutput);
+    const parsed = parse(wrappedOutput);
+    // Only count when the debate actually ran for this stage, so the rate
+    // reflects the debate's real influence on the typed output (not the
+    // brainstorm-disabled passthrough).
+    if (brainstormActiveForStage) {
+      recordTypedStageOutcome(input.stageId, "parsed");
+      recordTypedStageDebateImpact({
+        checksLedger: input.ctx.checksLedger,
+        jobId: input.jobId,
+        stageId: input.stageId,
+        impact: "parsed",
+      });
+      // Task 2.4: surface low impact warning if debate frequently fails to
+      // influence the typed output (helps detect expensive "theater" debates).
+      const stats = getTypedStageStats();
+      if (stats.lowImpactWarning) {
+        input.ctx.logger.warn(
+          `[brainstorm] Low debate impact rate detected for stage "${input.stageId}"`,
+          {
+            jobId: input.jobId,
+            ...stats.lowImpactWarning,
+          },
+        );
+      }
+    }
+    return parsed;
   } catch (error) {
+    if (brainstormActiveForStage) {
+      recordTypedStageOutcome(input.stageId, "fallback");
+      recordTypedStageDebateImpact({
+        checksLedger: input.ctx.checksLedger,
+        jobId: input.jobId,
+        stageId: input.stageId,
+        impact: "fallback",
+      });
+      // Task 2.4: surface low impact warning if debate frequently fails to
+      // influence the typed output (helps detect expensive "theater" debates).
+      const stats = getTypedStageStats();
+      if (stats.lowImpactWarning) {
+        input.ctx.logger.warn(
+          `[brainstorm] Low debate impact rate detected for stage "${input.stageId}"`,
+          {
+            jobId: input.jobId,
+            ...stats.lowImpactWarning,
+          },
+        );
+      }
+    }
     input.ctx.logger.warn(
       `[brainstorm] Typed stage output could not be parsed for "${input.stageId}"; using single-agent fallback`,
       {

@@ -102,7 +102,8 @@ function buildCritiquePrompt(
     `{\n` +
     `  "critique": "your specific critique of the claim",\n` +
     `  "severity": "low" | "medium" | "high"\n` +
-    `}`
+    `}\n` +
+    `Please respond in Chinese.`
   );
 }
 
@@ -120,7 +121,8 @@ function buildRebuttalPrompt(
     `{\n` +
     `  "rebuttal": "your response to the critique",\n` +
     `  "stance": "concede" | "defend"\n` +
-    `}`
+    `}\n` +
+    `Please respond in Chinese.`
   );
 }
 
@@ -750,7 +752,8 @@ export class BrainstormOrchestrator {
             ? `\n\nYour previous reasoning:\n${iterationOutput}`
             : "") +
           `\n\nProvide your analysis and conclusion. ` +
-          `Respond with a JSON object: { "content": "your analysis", "confidence": 0.0-1.0, "needsToolCall": false }`;
+          `Respond with a JSON object: { "content": "your analysis", "confidence": 0.0-1.0, "needsToolCall": false }` +
+          ` Please respond in Chinese.`;
 
         try {
           const raw = await this.llmCaller(prompt, {});

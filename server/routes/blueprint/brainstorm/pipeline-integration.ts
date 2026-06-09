@@ -22,6 +22,7 @@ import type {
 import {
   decide,
   routeDecision,
+  getGateDecisionStats,
   type LLMCallerFn,
   type EventEmitterFn,
   type RoutingResult,
@@ -41,6 +42,7 @@ import {
 import { createPoolBackedBrainstormCaller } from "./pool-llm-caller";
 import { parseKeyPoolFromEnv } from "../llm-key-pool";
 import { auditSynthesis } from "./synthesis-audit";
+import { getTypedStageStats } from "./typed-stage-stats";
 import { emitReasoningGraphArtifact } from "./reasoning-graph-emitter";
 import type { BrainstormReasoningGraphArtifactPayload } from "../../../../shared/blueprint/brainstorm-reasoning-graph";
 import type {
@@ -287,6 +289,12 @@ export async function executeStageWithBrainstorm(
           extractFinalConvergenceScore(finalSession),
       }),
     });
+    // Note (brainstorm-debate-integrity-observability 4.2): This write is reached
+    // for *all* stages that run a real brainstorm session, whether they came in
+    // via wrapTypedBlueprintStage (typed product path) or via
+    // runSecondStageBrainstormCompanion (side-channel for intake/clarification/spec_docs).
+    // The companion explicitly calls executeStageWithBrainstorm, so evidence +
+    // synthesis-audit are written for side-channel stages too.
 
     // Extract synthesis result as stage output (Req 8.3)
     const synthesisResult = finalSession.synthesisResult;
@@ -488,6 +496,14 @@ export function getBrainstormDiagnostics(
     keyCount: poolConfig?.keys.length ?? 0,
   };
 
+  // Typed-stage debate impact (autopilot-brainstorm-real-collaboration): does the
+  // debate actually change the typed output, or does it parse-fail and fall back
+  // to deterministic single-agent? `parseSuccessRate` is the real influence rate.
+  const typedStageStats = getTypedStageStats();
+
+  const forceMode = (process.env.BLUEPRINT_BRAINSTORM_FORCE === "true");
+  const gateDecisionStats = getGateDecisionStats();
+
   if (!brainstormCtx) {
     return {
       enabled: false,
@@ -508,6 +524,9 @@ export function getBrainstormDiagnostics(
       voteCount: 0,
       perStageConfig,
       pool,
+      typedStageStats,
+      forceMode,
+      gateDecisionStats,
     };
   }
 
@@ -515,6 +534,9 @@ export function getBrainstormDiagnostics(
     ...brainstormCtx.orchestrator.getDiagnostics(),
     perStageConfig,
     pool,
+    typedStageStats,
+    forceMode,
+    gateDecisionStats,
   };
 }
 

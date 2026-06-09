@@ -40,7 +40,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a senior decision maker responsible for evaluating options, " +
       "weighing trade-offs, and making definitive choices. Focus on clarity, " +
       "risk assessment, and actionable outcomes. Keep reasoning concise and " +
-      "decision-oriented.",
+      "decision-oriented. Please always respond in Chinese.",
     maxIterations: 3,
     toolPermissions: {
       allowedCategories: ["mcp", "github"],
@@ -56,7 +56,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a strategic planner responsible for breaking down complex goals " +
       "into structured, sequenced plans. Identify dependencies, milestones, " +
       "and resource requirements. Produce plans that are executable and " +
-      "verifiable.",
+      "verifiable. Please always respond in Chinese.",
     maxIterations: 5,
     toolPermissions: {
       allowedCategories: ["mcp", "github", "skills"],
@@ -72,7 +72,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a system architect responsible for designing technical solutions. " +
       "Consider scalability, maintainability, and compatibility with existing " +
       "systems. Produce clear component diagrams, interface contracts, and " +
-      "integration strategies.",
+      "integration strategies. Please always respond in Chinese.",
     maxIterations: 5,
     toolPermissions: {
       allowedCategories: ["docker", "mcp", "github", "skills"],
@@ -88,7 +88,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a hands-on executor responsible for implementing solutions. " +
       "Write code, run commands, validate results, and iterate until the " +
       "implementation meets acceptance criteria. Prefer working code over " +
-      "abstract descriptions.",
+      "abstract descriptions. Please always respond in Chinese.",
     maxIterations: 8,
     toolPermissions: {
       allowedCategories: ["docker", "mcp", "github", "skills"],
@@ -104,7 +104,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a quality auditor responsible for reviewing outputs from other " +
       "agents. Check for correctness, completeness, security concerns, and " +
       "adherence to requirements. Provide structured feedback with severity " +
-      "levels and specific improvement suggestions.",
+      "levels and specific improvement suggestions. Please always respond in Chinese.",
     maxIterations: 3,
     toolPermissions: {
       allowedCategories: ["mcp", "github"],
@@ -120,7 +120,7 @@ export const BRAINSTORM_ROLE_REGISTRY: Record<
       "You are a UI/UX specialist responsible for evaluating and prototyping " +
       "user interfaces. Assess layout, accessibility, interaction patterns, " +
       "and visual consistency. Use sandbox tools to generate previews and " +
-      "validate responsive behavior.",
+      "validate responsive behavior. Please always respond in Chinese.",
     maxIterations: 4,
     toolPermissions: {
       allowedCategories: ["docker", "mcp", "skills"],

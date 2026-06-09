@@ -1,19 +1,24 @@
 /**
- * @description Session → BrainstormReasoningGraph projection.
+ * @description Session → BrainstormReasoningGraph projection (Effect/Reasoning Flow path).
  *
- * Maps a runtime `BrainstormSession` (crew members, branch nodes, deliberation
- * challenges / rebuttals, synthesis) into the shared `BrainstormReasoningGraph`
- * contract consumed by the 3D blueprint wall (`BlueprintWallTexture` structured
- * graph path).
+ * Maps a runtime `BrainstormSession` into the shared `BrainstormReasoningGraph`
+ * contract for the main blueprint wall reasoning texture / console / rail
+ * (Effect Flow and SPEC reasoning views).
+ *
+ * IMPORTANT BOUNDARY: This projection MUST NOT emit first-class debate protocol
+ * nodes (type "critique" / "rebuttal") or their direct edges into the output
+ * graph. Those belong exclusively to the realtime multi-agent debate path:
+ *   - brainstorm.* socket events
+ *   - BrainstormGraphStore (with ChallengeEdge + VoteOutcome)
+ *   - BrainstormWallGraphConnected + deliberation overlay (for the dedicated
+ *     3D layered debate DAG wall with "质疑"/"反驳"/"针对" cards and stances).
+ *
+ * The Effect/Reasoning deriver on the client will strip any that leak in, but
+ * the producer is responsible for the clean boundary.
  *
  * Hard guarantees (pure function, no IO, never throws):
- *  - The output ALWAYS satisfies the wall renderability invariant: `id` and
- *    `jobId` are non-empty, `nodes` is non-empty (it always contains a central
- *    question node), and EVERY edge's `source` and `target` reference a node
- *    that exists in `nodes` (dangling-edge guard runs before returning).
- *  - The central question is emitted as a real NODE (id `central-question`),
- *    not only as `graph.centralQuestion`, because the wall's `isGraphRenderable`
- *    treats the central question as a node target for `questions` edges.
+ *  - The output ALWAYS satisfies the wall renderability invariant...
+ *  - ...
  *
  * @see .kiro/specs/autopilot-brainstorm-companion-runtime/design.md §3
  * Requirements: 3.1, 3.2, 3.4, 3.5
@@ -25,8 +30,6 @@ import type {
   BranchNodeType,
   BrainstormRoleId,
   BrainstormSession,
-  CritiqueSeverity,
-  RebuttalStance,
 } from "../../../../shared/blueprint/brainstorm-contracts";
 import type {
   BrainstormGraphConsoleLine,
@@ -186,38 +189,13 @@ export function projectSessionToReasoningGraph(
     pushEdge(source, target, edgeTypeForTargetType(targetType), edgeLabelForType(targetType));
   }
 
-  // 3. Deliberation challenges (structured Critiques) → conflicts edges
-  //    (challenger → target). When the challenge carries a structured
-  //    `severity` (low/medium/high) the label is "质疑·{severity}"; otherwise it
-  //    falls back to the legacy "质疑" label (backward compatible).
-  const challenges = session.deliberationSummary?.challenges ?? [];
-  for (const challenge of challenges) {
-    const source = roleToNodeId.get(challenge.challengerRoleId);
-    const target = roleToNodeId.get(challenge.targetRoleId);
-    if (source && target && source !== target) {
-      const severity = readSeverity((challenge as { severity?: unknown }).severity);
-      const label = severity ? `质疑·${severity}` : "质疑";
-      pushEdge(source, target, "conflicts", label);
-    }
-  }
-
-  // 4. Rebuttals → supports edges (responder → the challenger of the matched
-  //    challenge, i.e. pushing back against the agent that raised it). When the
-  //    rebuttal carries a structured `stance`, the label reflects it
-  //    ("defend"→「坚持」, "concede"→「让步」); otherwise it falls back to the
-  //    legacy "回应" label (backward compatible).
-  const rebuttals = session.deliberationSummary?.rebuttals ?? [];
-  for (const rebuttal of rebuttals) {
-    const source = roleToNodeId.get(rebuttal.responderRoleId);
-    if (!source) continue;
-    const matched = challenges.find((c) => c.summary === rebuttal.challengeSummary);
-    const target = matched ? roleToNodeId.get(matched.challengerRoleId) : undefined;
-    if (target && source !== target) {
-      const stance = readStance((rebuttal as { stance?: unknown }).stance);
-      const label = stance === "defend" ? "坚持" : stance === "concede" ? "让步" : "回应";
-      pushEdge(source, target, "supports", label);
-    }
-  }
+  // 3+4. Deliberation (challenges/rebuttals) is deliberately ignored for node/edge
+  // production in *this* projection. The output `BrainstormReasoningGraph` is
+  // consumed by Effect/Reasoning Flow paths (wall texture, console, rail).
+  // Rich debate protocol lives exclusively on the realtime store + dedicated
+  // BrainstormWallGraph + challengeEdges overlay.
+  void session.deliberationSummary?.challenges;
+  void session.deliberationSummary?.rebuttals;
 
   // 5. Synthesis nodes aggregate terminal (non-synthesis) nodes via synthesizes edges.
   const synthesisNodeIds = mapped
@@ -326,11 +304,12 @@ function edgeTypeForTargetType(
 }
 
 function edgeLabelForType(type: BrainstormReasoningNodeType): string {
+  // 产品推演平台默认边标签（而非法律证据场景）
   switch (type) {
     case "synthesis":
-      return "综合";
+      return "收敛";
     case "evidence":
-      return "依据";
+      return "支撑";
     case "constraint":
       return "约束";
     default:
@@ -339,21 +318,22 @@ function edgeLabelForType(type: BrainstormReasoningNodeType): string {
 }
 
 function defaultTitleForType(type: BrainstormReasoningNodeType): string {
+  // 产品推演平台英文 fallback 标题
   switch (type) {
     case "hypothesis":
-      return "Hypothesis";
+      return "Assumption";
     case "evidence":
-      return "Evidence";
+      return "Insight";
     case "constraint":
       return "Constraint";
     case "synthesis":
-      return "Synthesis";
+      return "Convergence";
     case "decision":
       return "Decision";
     case "gap":
-      return "Information gap";
+      return "Gap";
     default:
-      return "Reasoning";
+      return "Reasoning Node";
   }
 }
 
@@ -438,23 +418,4 @@ function finiteOrNull(value: unknown): number | null {
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
-
-/**
- * Defensively read a structured Critique severity. The runtime
- * `deliberationSummary.challenges[]` entries may (after the deliberation engine
- * upgrade) carry a `severity` field; this never throws and returns `undefined`
- * for any absent or out-of-set value so the projection falls back to the legacy
- * label.
- */
-function readSeverity(value: unknown): CritiqueSeverity | undefined {
-  return value === "low" || value === "medium" || value === "high" ? value : undefined;
-}
-
-/**
- * Defensively read a structured Rebuttal stance. Returns `undefined` for any
- * absent or out-of-set value so the projection falls back to the legacy label.
- */
-function readStance(value: unknown): RebuttalStance | undefined {
-  return value === "concede" || value === "defend" ? value : undefined;
 }

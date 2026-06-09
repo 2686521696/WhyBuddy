@@ -595,8 +595,8 @@ function dispatchRuntimeGraphEvent(
         status: "completed",
         title:
           typeof payload.marker === "string"
-            ? `Decision: ${payload.marker}`
-            : "Decision marker",
+            ? `决策: ${payload.marker}`
+            : "决策标记",
         content:
           typeof payload.rationale === "string"
             ? payload.rationale
@@ -663,8 +663,8 @@ function dispatchRuntimeGraphEvent(
         title:
           typeof payload.condition === "string"
             ? payload.condition
-            : "Runtime edge condition",
-        content: `matched=${String(payload.matched)}`,
+            : "运行时边条件",
+        content: `匹配=${String(payload.matched)}`,
       });
     }
     return;
@@ -708,7 +708,7 @@ function dispatchRuntimeGraphEvent(
         roleId: type === "edge.triggered" ? "planner" : "auditor",
         nodeType: type === "edge.triggered" ? "action" : "observation",
         status: type === "edge.triggered" ? "active" : "completed",
-        title: type === "edge.triggered" ? "Edge triggered" : "Edge suppressed",
+        title: type === "edge.triggered" ? "边触发" : "边抑制",
         content: typeof payload.reason === "string" ? payload.reason : undefined,
       });
     }
@@ -743,7 +743,7 @@ function dispatchRuntimeGraphEvent(
       nodeId,
       roleId: runtimeRoleId(payload.roleId),
       nodeType: "action",
-      title: `Tool: ${toolId}`,
+      title: `工具: ${toolId}`,
       content: typeof payload.rationale === "string" ? payload.rationale : undefined,
       parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
       status: "completed",
@@ -764,7 +764,7 @@ function dispatchRuntimeGraphEvent(
       nodeId: loopId,
       roleId: runtimeRoleId(payload.roleId),
       nodeType: type === "loop.continued" ? "observation" : "synthesis",
-      title: type === "loop.continued" ? "Loop continued" : "Loop stopped",
+      title: type === "loop.continued" ? "循环继续" : "循环停止",
       content: typeof payload.reason === "string" ? payload.reason : undefined,
       parentNodeId: hasNode(sourceNodeId) ? sourceNodeId : null,
       status: "completed",
@@ -799,7 +799,7 @@ function dispatchRuntimeGraphEvent(
         roleId: "decider",
         nodeType: "synthesis",
         status: "completed",
-        title: "Synthesis",
+        title: "综合",
         content: typeof payload.summary === "string" ? payload.summary : undefined,
       });
     }

@@ -169,6 +169,15 @@ export async function runSecondStageBrainstormCompanion(
       options.onReasoningGraph,
     );
 
+    // (brainstorm-debate-integrity-observability task 2.3): For side-channel
+    // stages (intake/clarification/spec_docs) the "did a real synthesis/debate
+    // happen" signal is provided by the writeEvidenceToLedger call that happens
+    // inside executeStageWithBrainstorm (see pipeline-integration.ts).
+    // The existence of a `brainstorm_deliberation` ledger entry (with
+    // deliberationSummary counts) for these stages serves as the lightweight
+    // "synthesisProduced" marker. No extra per-stage impact is needed here
+    // because the output is intentionally discarded (conservative side-channel).
+
     return { triggered: true, stageResult };
   } catch (err) {
     // Best-effort: brainstorm errors must never block or break the job

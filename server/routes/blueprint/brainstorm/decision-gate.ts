@@ -46,9 +46,15 @@ export interface DecisionGateConfig {
   /**
    * Force brainstorm ON for every stage, bypassing the LLM gate entirely.
    * When undefined, `decide()` reads `BLUEPRINT_BRAINSTORM_FORCE === "true"`
-   * from the environment. Forced mode guarantees `brainstormNeeded=true` even
-   * when capability bridges are degraded (brainstorm only needs the LLM pool,
-   * not docker/mcp/github), and skips the gate LLM call to save tokens.
+   * from the environment.
+   *
+   * WARNING: This is a **test / data-collection only** escape hatch (see Req 3
+   * in brainstorm-debate-integrity-observability). It guarantees full debate
+   * cost on every stage. Production runs should rely on the real gate decision.
+   *
+   * Forced mode guarantees `brainstormNeeded=true` even when capability bridges
+   * are degraded (brainstorm only needs the LLM pool, not docker/mcp/github),
+   * and skips the gate LLM call to save tokens.
    */
   force?: boolean;
 }
@@ -91,8 +97,19 @@ export const FALLBACK_OUTPUT: DecisionGateOutput = {
 
 /**
  * Output used when brainstorm is forced ON for every stage
- * (`BLUEPRINT_BRAINSTORM_FORCE`). A multi-role discussion is requested so the
- * companion always spins up a real debate on the aux pool.
+ * (`BLUEPRINT_BRAINSTORM_FORCE`).
+ *
+ * WARNING (brainstorm-debate-integrity-observability, Req 3):
+ * This mode is intended **only for testing and pilot data collection**.
+ * It bypasses the Decision Gate LLM entirely, guarantees brainstorm on every
+ * stage (even when bridges are degraded), and forces full multi-role debate.
+ *
+ * Production / long-running use should leave BLUEPRINT_BRAINSTORM_FORCE unset
+ * (or false) so that `decide()` runs the real gate and can produce measurable
+ * "with debate vs without" signals.
+ *
+ * A multi-role discussion is requested so the companion always spins up a real
+ * debate on the aux pool.
  */
 export const FORCED_OUTPUT: DecisionGateOutput = {
   brainstormNeeded: true,
@@ -100,8 +117,65 @@ export const FORCED_OUTPUT: DecisionGateOutput = {
   requiredRoles: ["decider", "planner", "architect", "executor", "auditor"],
   requiredToolCategories: [],
   reasoning:
-    "Brainstorm forced ON for every stage (BLUEPRINT_BRAINSTORM_FORCE=true).",
+    "Brainstorm forced ON for every stage (BLUEPRINT_BRAINSTORM_FORCE=true). " +
+    "This is a test/pilot mode only — see decision-gate.ts for details.",
 };
+
+// ------------------------------------------------------------------------
+// Gate decision impact counters (brainstorm-debate-integrity-observability Req 3.2)
+// Pure, synchronous, never-throws. Mirrors the style of typed-stage-stats.
+// ------------------------------------------------------------------------
+
+type GateDecision = "realTrue" | "realFalse" | "degraded" | "forced" | "degradedOverrideFalse";
+
+const gateCounters = {
+  realTrue: 0,
+  realFalse: 0,
+  degraded: 0,
+  forced: 0,
+  degradedOverrideFalse: 0,
+};
+
+export function recordGateDecision(decision: GateDecision): void {
+  if (decision in gateCounters) {
+    (gateCounters as any)[decision] += 1;
+  }
+}
+
+export interface GateDecisionStats {
+  realDecidedTrue: number;
+  realDecidedFalse: number;
+  degraded: number;
+  forced: number;
+  degradedOverrideFalse: number;
+  total: number;
+}
+
+export function getGateDecisionStats(): GateDecisionStats {
+  const total =
+    gateCounters.realTrue +
+    gateCounters.realFalse +
+    gateCounters.degraded +
+    gateCounters.forced +
+    gateCounters.degradedOverrideFalse;
+  return {
+    realDecidedTrue: gateCounters.realTrue,
+    realDecidedFalse: gateCounters.realFalse,
+    degraded: gateCounters.degraded,
+    forced: gateCounters.forced,
+    degradedOverrideFalse: gateCounters.degradedOverrideFalse,
+    total,
+  };
+}
+
+/** Test-only reset. */
+export function __resetGateDecisionStatsForTest(): void {
+  gateCounters.realTrue = 0;
+  gateCounters.realFalse = 0;
+  gateCounters.degraded = 0;
+  gateCounters.forced = 0;
+  gateCounters.degradedOverrideFalse = 0;
+}
 
 // ---------------------------------------------------------------------------
 // Prompt Construction
@@ -248,9 +322,14 @@ export async function decide(
   // Force mode (BLUEPRINT_BRAINSTORM_FORCE): brainstorm MUST run at every stage.
   // Skip the gate LLM call entirely (saves tokens + guarantees on) and ignore
   // degraded-bridge biasing — the debate only needs the aux LLM pool.
+  //
+  // IMPORTANT: Per brainstorm-debate-integrity-observability Req 3, this mode
+  // is ONLY for test/pilot data collection. Long-term production use must allow
+  // the real Decision Gate to run so we can measure actual value vs cost.
   const forced =
     config.force ?? (process.env.BLUEPRINT_BRAINSTORM_FORCE === "true");
   if (forced) {
+    recordGateDecision("forced");
     emitEvent("brainstorm.gate.forced", {
       jobId: input.jobId,
       stageId: input.stageId,
@@ -271,6 +350,7 @@ export async function decide(
 
       const parsed = parseDecisionGateResponse(raw);
       if (!parsed) {
+        recordGateDecision("degraded");
         emitEvent("brainstorm.degraded", {
           sessionId: "",
           reason: "Decision Gate failed to parse LLM response (degraded mode)",
@@ -280,6 +360,10 @@ export async function decide(
         return FALLBACK_OUTPUT;
       }
 
+      // Record as explicit degraded override, not "realFalse".
+      // This keeps "realDecidedFalse" (from the normal path) clean for observability
+      // of the actual LLM gate decision vs. policy-based forced single-agent.
+      recordGateDecision("degradedOverrideFalse");
       // Override brainstormNeeded to false when bridges are degraded
       return {
         ...parsed,
@@ -288,6 +372,7 @@ export async function decide(
       };
     } catch (error) {
       clearTimeout(timer);
+      recordGateDecision("degraded");
       emitEvent("brainstorm.degraded", {
         sessionId: "",
         reason: `Decision Gate LLM call failed in degraded mode: ${error instanceof Error ? error.message : String(error)}`,
@@ -309,6 +394,7 @@ export async function decide(
 
     const parsed = parseDecisionGateResponse(raw);
     if (!parsed) {
+      recordGateDecision("degraded");
       emitEvent("brainstorm.degraded", {
         sessionId: "",
         reason: "Decision Gate failed to parse LLM response",
@@ -318,9 +404,11 @@ export async function decide(
       return FALLBACK_OUTPUT;
     }
 
+    recordGateDecision(parsed.brainstormNeeded ? "realTrue" : "realFalse");
     return parsed;
   } catch (error) {
     clearTimeout(timer);
+    recordGateDecision("degraded");
     const reason =
       error instanceof Error && error.name === "AbortError"
         ? "Decision Gate LLM call timed out"

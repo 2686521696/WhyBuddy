@@ -24,7 +24,9 @@ export type BrainstormReasoningNodeType =
   | "risk"
   | "gap"
   | "decision"
-  | "synthesis";
+  | "synthesis"
+  | "critique"   // reserved for debate-specific consumers (realtime brainstorm store + dedicated overlays / BrainstormWallGraph); Effect/Reasoning Flow projections (brainstorm_reasoning_graph) and walls must strip or not emit these
+  | "rebuttal"; // reserved for debate-specific consumers (realtime brainstorm store + dedicated overlays / BrainstormWallGraph); Effect/Reasoning Flow projections (brainstorm_reasoning_graph) and walls must strip or not emit these
 
 export type BrainstormReasoningNodeStatus =
   | "open"

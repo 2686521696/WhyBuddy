@@ -276,6 +276,27 @@ const VALID_TRANSITIONS: Record<SpecDocsNodeStatus, SpecDocsNodeStatus[]> = {
   failed: ["processing"],
 };
 
+/** Language- and message-agnostic marker for failures that originated purely from
+ * the frontend 60s HTTP protection timeout (as opposed to real backend node_failed).
+ * This allows later authoritative backend success events to override the UI state
+ * without treating a genuine backend failure as "recoverable via frontend timeout".
+ */
+export const FRONTEND_TIMEOUT_MARKER = "__frontend_request_timeout__";
+
+/**
+ * Helper to detect failures that originated from frontend HTTP timeout protection
+ * (as opposed to real backend node_failed).
+ * These are allowed to be overridden by subsequent backend success events
+ * (node_completed, node_assembled, batch_finished with failedCount=0).
+ */
+function isFrontendTimeoutFailed(node: SpecDocsNodeEntry | undefined): boolean {
+  if (!node || node.status !== "failed") return false;
+  // Exact match on the machine marker. Real backend errors containing the word
+  // "timeout" (e.g. "agent timeout", "llm pool timeout") will not match and will
+  // stay as genuine failures.
+  return node.errorSummary === FRONTEND_TIMEOUT_MARKER;
+}
+
 /**
  * Check if a transition from one status to another is valid.
  */
@@ -418,6 +439,13 @@ export interface BlueprintRealtimeActions {
    * response handler after spec docs generation succeeds.
    */
   completeSpecDocsProgress(elapsedMs: number): void;
+  /**
+   * Force-fail the current spec docs batch (e.g. on frontend-detected HTTP timeout).
+   * Marks in-flight nodes as failed, sets batchStatus to "finished" so that
+   * deriveNodeStatusById's stale guard treats leftover `processing` entries
+   * as non-authoritative. Idempotent if no active batch.
+   */
+  failSpecDocsProgress(reason?: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1117,8 +1145,17 @@ function handleSpecDocsProgressEvent(
       // node_completed as the combined transition pending→processing→completed.
       // This prevents the panel from getting stuck when intermediate Socket.IO
       // events are coalesced or dropped due to TCP buffering near HTTP response.
-      if (node.status !== "pending" && !isValidTransition(node.status, "completed")) {
+      //
+      // Also allow override from "failed" that was caused by frontend timeout
+      // protection (see failSpecDocsProgress). This prevents a Medium regression
+      // where a later successful backend event is ignored after frontend 60s timeout.
+      const allowFrontendTimeoutOverride = isFrontendTimeoutFailed(node);
+      if (node.status !== "pending" && !isValidTransition(node.status, "completed") && !allowFrontendTimeoutOverride) {
         return null; // Invalid transition (e.g., from completed/failed)
+      }
+      const newNode = { ...node, status: "completed" as const };
+      if (allowFrontendTimeoutOverride) {
+        delete (newNode as any).errorSummary; // clear the frontend-timeout marker on successful override
       }
       return {
         specDocsProgress: {
@@ -1127,7 +1164,7 @@ function handleSpecDocsProgressEvent(
           processedCount: currentState.processedCount + 1,
           nodes: {
             ...currentState.nodes,
-            [nodeId]: { ...node, status: "completed" },
+            [nodeId]: newNode,
           },
         },
       };
@@ -1167,13 +1204,20 @@ function handleSpecDocsProgressEvent(
       if (!node) return null; // Unknown node
       // node_assembled arrives after node_completed; tolerate missed intermediate events
       // by accepting from "completed" (normal) or "processing"/"pending" (missed events).
-      if (node.status === "assembled" || node.status === "failed") return null;
+      //
+      // Allow from frontend-timeout "failed" so that backend success can override
+      // a prior frontend protection timeout (Medium fix).
+      if (node.status === "assembled" || (node.status === "failed" && !isFrontendTimeoutFailed(node))) return null;
       const newAssembledCount = Number(payload.assembledCount) || currentState.assembledCount + 1;
       // Transition batchStatus to "assembling" on first node_assembled event
       const newBatchStatus: SpecDocsProgressState["batchStatus"] =
         currentState.batchStatus === "running" || currentState.batchStatus === "assembling"
           ? "assembling"
           : currentState.batchStatus;
+      const newNode = { ...node, status: "assembled" as const };
+      if (isFrontendTimeoutFailed(node)) {
+        delete (newNode as any).errorSummary;
+      }
       return {
         specDocsProgress: {
           ...currentState,
@@ -1181,7 +1225,7 @@ function handleSpecDocsProgressEvent(
           assembledCount: newAssembledCount,
           nodes: {
             ...currentState.nodes,
-            [nodeId]: { ...node, status: "assembled" },
+            [nodeId]: newNode,
           },
         },
       };
@@ -1206,15 +1250,31 @@ function handleSpecDocsProgressEvent(
       //   If we still have unresolved nodes, mark them as failed with a defensive summary.
       const resolvedNodes: Record<string, SpecDocsNodeEntry> = {};
       for (const [id, node] of Object.entries(currentState.nodes)) {
-        if (node.status === "pending" || node.status === "processing" || node.status === "completed") {
+        const isUnresolvedOrFrontendTimeout =
+          node.status === "pending" ||
+          node.status === "processing" ||
+          node.status === "completed" ||
+          isFrontendTimeoutFailed(node);
+
+        if (isUnresolvedOrFrontendTimeout) {
           if (finalFailedCount === 0) {
-            // All nodes succeeded — safe to mark unresolved as assembled (missed socket event)
-            resolvedNodes[id] = { ...node, status: "assembled" };
+            // All nodes succeeded (or the only "failures" were frontend timeouts) —
+            // safe to mark unresolved / frontend-timeout-failed as assembled (missed socket event).
+            // This allows backend success to override a prior frontend protection timeout.
+            const promoted = { ...node, status: "assembled" as const };
+            if (isFrontendTimeoutFailed(node)) {
+              // Clear the frontend-timeout error since it ultimately succeeded.
+              delete (promoted as any).errorSummary;
+            }
+            resolvedNodes[id] = promoted;
           } else {
             // Some nodes failed — don't blindly mark as assembled.
             // Leave as-is; the server should have sent explicit node_failed events.
             // If we still have unresolved nodes, mark them with a defensive status.
-            resolvedNodes[id] = { ...node, status: "failed", errorSummary: "terminal event missed" };
+            // For frontend-timeout ones, keep their original summary (don't overwrite with "missed").
+            resolvedNodes[id] = isFrontendTimeoutFailed(node)
+              ? node
+              : { ...node, status: "failed", errorSummary: "terminal event missed" };
           }
         } else {
           resolvedNodes[id] = node;
@@ -1787,6 +1847,50 @@ export const useBlueprintRealtimeStore = create<
             completedCount: resolvedCompleted,
             failedCount: current.totalCount - resolvedCompleted,
             elapsedMs,
+          },
+        },
+      };
+    });
+  },
+
+  failSpecDocsProgress(reason?: string) {
+    set((state) => {
+      const current = state.specDocsProgress;
+      if (current.batchStatus !== "running" && current.batchStatus !== "assembling") return state;
+
+      const failedNodes: Record<string, SpecDocsNodeEntry> = {};
+      let failedProcessed = current.processedCount;
+      let failedCompleted = current.completedCount; // completed stay, we only fail the in-flight
+
+      for (const [id, node] of Object.entries(current.nodes)) {
+        if (node.status === "pending" || node.status === "processing") {
+          failedNodes[id] = {
+            ...node,
+            status: "failed",
+            // Use the canonical machine marker so that isFrontendTimeoutFailed
+            // can reliably detect it regardless of locale or caller message.
+            errorSummary: reason === FRONTEND_TIMEOUT_MARKER
+              ? FRONTEND_TIMEOUT_MARKER
+              : (reason || "timeout"),
+          };
+          failedProcessed += 1;
+        } else {
+          failedNodes[id] = node;
+        }
+      }
+
+      return {
+        ...state,
+        specDocsProgress: {
+          ...current,
+          batchStatus: "finished",
+          nodes: failedNodes,
+          processedCount: failedProcessed,
+          // keep completed/assembled as-is; failed nodes are reflected in UI via errorSummary
+          summary: current.summary ?? {
+            completedCount: failedCompleted,
+            failedCount: Object.values(failedNodes).filter((n) => n.status === "failed").length,
+            elapsedMs: 0,
           },
         },
       };

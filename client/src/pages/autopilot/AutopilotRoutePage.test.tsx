@@ -24,6 +24,10 @@ import AutopilotRoutePage, {
   selectRightRailSpecTree,
   waitForRouteSelectionSnapshot,
 } from "./AutopilotRoutePage";
+import {
+  resolveReasoningVisualMode,
+  type VisualModePreference,
+} from "./resolve-reasoning-visual-mode";
 import { AutopilotRightRail } from "./right-rail";
 import { PROJECTS_PATH } from "@/components/navigation-config";
 import { useAppStore } from "@/lib/store";
@@ -156,6 +160,109 @@ describe("AutopilotRoutePage", () => {
     expect(source).toContain("readBrainstormReasoningGraphs(job)");
     expect(source).toContain("blueprintReasoningGraphs={wallReasoningGraphs}");
     expect(source).not.toContain("readBrainstormReasoningGraphs(latest");
+  });
+
+  it("2D ReasoningFlowSurface integration guards (source-level)", () => {
+    const source = autopilotSource();
+
+    // 2D 分支存在且使用 viewModel 路径（而非仅 raw graph）
+    expect(source).toContain("ReasoningFlowSurface");
+    expect(source).toContain("viewModel={reasoningViewModel}");
+    expect(source).toContain("deriveBlueprintWallReasoningGraph");
+
+    // 用户 preference 模型：防止 auto effect 覆盖手动选择
+    expect(source).toContain("visualModePreference");
+    expect(source).toContain("setVisualModePreference");
+    expect(source).toContain("VisualModePreference");
+    expect(source).toContain("resolveReasoningVisualMode");
+
+    // stage gating 使用 right-rail 权威的 effectiveSubStage / fabricSubStage
+    expect(source).toContain("effectiveSubStage");
+    expect(source).toContain("fabricSubStage");
+    expect(source).toContain("activeReasoningStage = effectiveSubStage ?? fabricSubStage ?? job?.stage");
+
+    // 切换控件存在
+    expect(source).toContain("3D");
+    expect(source).toContain("2D");
+    expect(source).toContain("setVisualModePreference");
+
+    // derive 使用 activeReasoningStage（而非仅 job.stage）
+    expect(source).toContain("activeSubStage: activeReasoningStage");
+  });
+
+  describe("resolveReasoningVisualMode (behavioral guard)", () => {
+    it("fallback or structured data in reasoning-heavy stage → auto defaults to 2D", () => {
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "spec_tree",
+          hasReasoningData: true,
+        })
+      ).toBe("2d");
+
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "effect_preview",
+          hasReasoningData: true,
+        })
+      ).toBe("2d");
+
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "spec_docs",
+          hasReasoningData: true,
+        })
+      ).toBe("2d");
+    });
+
+    it("non-heavy stage or no data → stays 3D under auto", () => {
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "spec_tree",
+          hasReasoningData: false,
+        })
+      ).toBe("3d");
+
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "agent_crew_fabric",
+          hasReasoningData: true,
+        })
+      ).toBe("3d");
+    });
+
+    it("explicit user preference always wins (manual 3D is respected even with data)", () => {
+      expect(
+        resolveReasoningVisualMode({
+          preference: "3d",
+          activeReasoningStage: "spec_tree",
+          hasReasoningData: true,
+        })
+      ).toBe("3d");
+
+      expect(
+        resolveReasoningVisualMode({
+          preference: "2d",
+          activeReasoningStage: "effect_preview",
+          hasReasoningData: false,
+        })
+      ).toBe("2d");
+    });
+
+    it("activeReasoningStage change (e.g. spec_tree → effect_preview) is visible to the resolver", () => {
+      // The reset to "auto" happens in the effect; the resolver just sees the new stage.
+      expect(
+        resolveReasoningVisualMode({
+          preference: "auto",
+          activeReasoningStage: "effect_preview",
+          hasReasoningData: true,
+        })
+      ).toBe("2d");
+    });
   });
 
   it("keeps brainstorm reasoning graph artifacts in stage page projections", () => {

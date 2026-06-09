@@ -36,7 +36,11 @@ export const BRAINSTORM_NODE_H = 232;
 /** Canvas padding */
 export const BRAINSTORM_PADDING = 180;
 
-/** Node type → color mapping (6 distinct colors for 6 types) */
+/** Node type → color mapping for declared BranchNodeType values.
+ * Critique/rebuttal semantics for the realtime debate are carried via
+ * challengeEdges + the deliberation overlay passed to drawBrainstormGraph,
+ * not by extending BranchNodeType.
+ */
 export const BRAINSTORM_NODE_COLORS: Record<BranchNodeType, string> = {
   decision: "#0d9488",    // teal
   thinking: "#6366f1",    // indigo
@@ -77,7 +81,7 @@ export interface LayoutEdge {
   /** Semantic relation label drawn at the edge midpoint (主张 / 质疑 / 反驳 / 收敛 …). */
   label?: string;
   /** Edge relation kind — drives color and the default label. */
-  relation?: "sequence" | "claim" | "critique" | "support" | "synthesis";
+  relation?: "sequence" | "claim" | "synthesis";
 }
 
 export interface LayoutResult {
@@ -301,7 +305,7 @@ export function drawBrainstormGraph(
     const score = typeof deliberation.convergenceScore === "number"
       ? ` · ${(deliberation.convergenceScore * 100).toFixed(0)}%`
       : "";
-    ctx.fillText(`Round ${deliberation.currentRound}${score}`, 96, 42);
+    ctx.fillText(`轮次 ${deliberation.currentRound}${score}`, 96, 42);
   }
 
   // Draw edges (bezier dashed lines)
@@ -511,6 +515,12 @@ export function drawBrainstormGraph(
     ctx.fillText(label.text, label.x + 20, label.y + label.height / 2);
   }
 
+  // Challenge / rebuttal semantics and "针对" references are rendered via the
+  // deliberation overlay (challengeLabels populated from challengeEdges in the
+  // caller) + the separate challengeEdges list passed to the component.
+  // No per-node type checks for critique/rebuttal (those live in the BranchNode
+  // contract only as the core types; debate protocol is modeled via Critique/Rebuttal + edges).
+
   if (deliberation.voteOutcome) {
     const vote = deliberation.voteOutcome;
     const x = canvasWidth - 720;
@@ -526,15 +536,15 @@ export function drawBrainstormGraph(
     ctx.font = "bold 30px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText(`Vote: ${vote.winningOption}`, x + 28, y + 24);
+    ctx.fillText(`投票: ${vote.winningOption}`, x + 28, y + 24);
     ctx.fillStyle = "#475569";
     ctx.font = "24px system-ui, sans-serif";
-    ctx.fillText(`Margin ${(vote.margin * 100).toFixed(0)}%`, x + 28, y + 72);
+    ctx.fillText(`差距 ${(vote.margin * 100).toFixed(0)}%`, x + 28, y + 72);
     if (vote.isNarrow) {
       ctx.fillStyle = "#be123c";
       ctx.font = "bold 22px system-ui, sans-serif";
-      const minority = vote.minority?.join(", ") ?? "minority noted";
-      ctx.fillText(`Dissent: ${minority}`, x + 28, y + 112);
+      const minority = vote.minority?.join(", ") ?? "少数意见";
+      ctx.fillText(`异议: ${minority}`, x + 28, y + 112);
     }
   }
 }

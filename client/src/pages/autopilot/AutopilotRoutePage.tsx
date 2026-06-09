@@ -28,6 +28,15 @@ import type { LucideIcon } from "lucide-react";
 
 import autopilotHeaderLogoUrl from "../../../../docs/assets/logo.png";
 import { Scene3D } from "@/components/Scene3D";
+import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
+import {
+  deriveBlueprintWallReasoningGraph,
+  type BlueprintWallReasoningGraphViewModel,
+} from "@/components/three/scene-fusion/blueprint-wall-reasoning-graph";
+import {
+  resolveReasoningVisualMode,
+  type VisualModePreference,
+} from "./resolve-reasoning-visual-mode";
 import { HoloDrawer } from "@/components/HoloDrawer";
 import { MirofishThemeProvider } from "@/contexts/MirofishThemeContext";
 import { useMirofishTheme } from "@/hooks/useMirofishTheme";
@@ -1388,6 +1397,8 @@ function AutopilotVisualStage({
   effectPreviews,
   capabilityEvidence,
   consoleLines,
+  effectiveSubStage,
+  fabricSubStage,
 }: {
   locale: AppLocale;
   currentProjectId: string | null;
@@ -1400,6 +1411,8 @@ function AutopilotVisualStage({
   effectPreviews: BlueprintEffectPreviewSnapshot[];
   capabilityEvidence: BlueprintCapabilityEvidence[];
   consoleLines: ConsoleLine[];
+  effectiveSubStage?: AutopilotRailSubStage;
+  fabricSubStage?: AutopilotRailSubStage;
 }) {
   const blueprintRoleLabels = useMemo(
     () => buildBlueprintRoleLabels(agentCrew, locale),
@@ -1431,10 +1444,51 @@ function AutopilotVisualStage({
     [job]
   );
 
+  // 2D ReasoningFlowSurface 集成：优先 viewModel 路径（与 3D 侧 derive 一致，含 strip 防御）。
+  // raw graph 作为后备防御入口。
+  // 使用 right-rail 的 effectiveSubStage / fabricSubStage 作为权威 gating（而非仅 job.stage）。
+  const activeReasoningStage = effectiveSubStage ?? fabricSubStage ?? job?.stage;
+
+  const [visualModePreference, setVisualModePreference] =
+    useState<VisualModePreference>("auto");
+
+  // 进入新 job 或新 reasoning stage（effectiveSubStage / fabricSubStage）时，重置为 "auto"，
+  // 让“默认 2D”规则重新生效。用户手动选 "2d" / "3d" 只在当前生命周期内生效。
+  useEffect(() => {
+    setVisualModePreference("auto");
+  }, [job?.id, activeReasoningStage]);
+
+  const reasoningViewModel = useMemo<BlueprintWallReasoningGraphViewModel>(() =>
+    deriveBlueprintWallReasoningGraph({
+      job,
+      activeSubStage: activeReasoningStage,
+      structuredGraphs: wallReasoningGraphs,
+      agentReasoningEntries: wallAgentReasoningEntries,
+      roleLabels: blueprintRoleLabels,
+      specTree,
+    }),
+    [job, activeReasoningStage, wallReasoningGraphs, wallAgentReasoningEntries, blueprintRoleLabels, specTree]
+  );
+
+  // 区分 structured artifact 和 fallback（agentReasoningEntries / specTree 构造的 viewModel）。
+  // hasReasoningData 用于决定是否显示 toggle（只要有可展示的 reasoning 就给用户选择权）。
+  const hasStructuredReasoningData = (wallReasoningGraphs?.length ?? 0) > 0;
+  const hasDerivedReasoningData = reasoningViewModel.visibleNodes.length > 0;
+  const hasReasoningData = hasStructuredReasoningData || hasDerivedReasoningData;
+
+  // 核心决策委托给纯函数，便于单元测试固化语义。
+  const is2DReasoning =
+    resolveReasoningVisualMode({
+      preference: visualModePreference,
+      activeReasoningStage,
+      hasReasoningData,
+    }) === "2d";
+
   return (
     // 自动驾驶 3D 场景融合 follow-up（2026-05-13 v10 去边框去边距）：
     // visual stage / console panel / 外包 div 移除 rounded / border / gap，
     // 让 3D 场景与 console 紧贴页面边缘 + 列边界，最大化可视面积。
+    // 现支持 2D ReasoningFlowSurface 作为 reasoning-heavy 阶段的可切换视图。
     <div className="grid xl:flex xl:h-full xl:min-h-0 xl:flex-col">
       <section
         className="min-h-0 overflow-hidden bg-slate-950 xl:flex-1"
@@ -1449,38 +1503,73 @@ function AutopilotVisualStage({
           }
           data-autopilot-crew-state={agentCrew ? "ready" : "pending"}
         >
-          <div className="pointer-events-none absolute inset-0">
-            <Scene3D
-              performanceProfile="balanced"
-              projectId={currentProjectId}
-              mode="blueprint"
-              blueprintJob={job}
-              blueprintLocale={locale}
-              activeJobId={job?.id}
-              latestJobId={latestSceneJobId ?? job?.id}
-              activeStage={job?.stage}
-              roleLabels={blueprintRoleLabels}
-              // blueprint-wall-process-graph-hud-2026-05-31 Task 2.2: feed the
-              // current job-scoped blueprint wall process-graph inputs. Page
-              // props (routeSet / specTree / effectPreviews) come from the
-              // active-job projection; capability/role/reasoning slices come
-              // from the realtime store (job-scoped via subscribe() reset).
-              blueprintRouteSet={routeSet}
-              blueprintSpecTree={specTree}
-              blueprintEffectPreviews={effectPreviews}
-              blueprintReasoningGraphs={wallReasoningGraphs}
-              blueprintAgentReasoningEntries={wallAgentReasoningEntries}
-              blueprintCapabilityStatuses={wallCapabilityStatuses}
-              blueprintCapabilityOwners={wallCapabilityOwners}
-              blueprintRolePhases={wallRolePhases}
-              // blueprintArtifacts: intentionally omitted (undefined). No
-              // current-job-scoped `BlueprintWallArtifactInput[]` source exists
-              // on the autopilot page or realtime store yet, and Req 4.4
-              // forbids pulling artifacts from mission-first sandbox data. A
-              // later artifact-input spec can supply this; until then the
-              // deriver simply produces no artifact/final nodes.
+          {/* 2D / 3D 切换控制：仅当有 reasoning 数据时出现，置于视觉区右上（z 高于 surface/chrome）。
+              使用 preference 模型：用户手动 "2d"/"3d" 不会被 auto effect 覆盖；新 job/stage 重置为 auto。 */}
+          {hasReasoningData && (
+            <div className="absolute top-2 right-2 z-[60] flex overflow-hidden rounded-md border border-white/20 bg-white/90 text-[11px] shadow-sm backdrop-blur">
+              <button
+                onClick={() => setVisualModePreference("3d")}
+                className={`px-2 py-0.5 transition ${visualModePreference === "3d" || (visualModePreference === "auto" && !is2DReasoning) ? "bg-slate-800 text-white" : "hover:bg-white/80"}`}
+                title="3D Wall (Blueprint texture)"
+              >
+                3D
+              </button>
+              <button
+                onClick={() => setVisualModePreference("2d")}
+                className={`px-2 py-0.5 transition ${visualModePreference === "2d" || (visualModePreference === "auto" && is2DReasoning) ? "bg-slate-800 text-white" : "hover:bg-white/80"}`}
+                title="2D Reasoning Map (hover to explore paths)"
+              >
+                2D
+              </button>
+            </div>
+          )}
+
+          {is2DReasoning && hasReasoningData ? (
+            // 2D infinite canvas 推理图：使用 viewModel（推荐，带 defense-in-depth strip）
+            // hover 高亮路径、平移缩放、minimap/console/telemetry 等 chrome 内置。
+            // 适合 spec_tree / effect_preview 等 reasoning 密集子阶段。
+            <ReasoningFlowSurface
+              viewModel={reasoningViewModel}
+              // 也支持 raw graph 作为后备防御入口（明确保留）：
+              // graph={wallReasoningGraphs?.[0] ?? null}
+              initialScale={0.82}
+              className="h-full w-full"
+              showChrome
             />
-          </div>
+          ) : (
+            <div className="pointer-events-none absolute inset-0">
+              <Scene3D
+                performanceProfile="balanced"
+                projectId={currentProjectId}
+                mode="blueprint"
+                blueprintJob={job}
+                blueprintLocale={locale}
+                activeJobId={job?.id}
+                latestJobId={latestSceneJobId ?? job?.id}
+                activeStage={job?.stage}
+                roleLabels={blueprintRoleLabels}
+                // blueprint-wall-process-graph-hud-2026-05-31 Task 2.2: feed the
+                // current job-scoped blueprint wall process-graph inputs. Page
+                // props (routeSet / specTree / effectPreviews) come from the
+                // active-job projection; capability/role/reasoning slices come
+                // from the realtime store (job-scoped via subscribe() reset).
+                blueprintRouteSet={routeSet}
+                blueprintSpecTree={specTree}
+                blueprintEffectPreviews={effectPreviews}
+                blueprintReasoningGraphs={wallReasoningGraphs}
+                blueprintAgentReasoningEntries={wallAgentReasoningEntries}
+                blueprintCapabilityStatuses={wallCapabilityStatuses}
+                blueprintCapabilityOwners={wallCapabilityOwners}
+                blueprintRolePhases={wallRolePhases}
+                // blueprintArtifacts: intentionally omitted (undefined). No
+                // current-job-scoped `BlueprintWallArtifactInput[]` source exists
+                // on the autopilot page or realtime store yet, and Req 4.4
+                // forbids pulling artifacts from mission-first sandbox data. A
+                // later artifact-input spec can supply this; until then the
+                // deriver simply produces no artifact/final nodes.
+              />
+            </div>
+          )}
         </div>
       </section>
 
@@ -4630,6 +4719,8 @@ export default function AutopilotRoutePage() {
             effectPreviews={pageProjection.visualEffectPreviews}
             capabilityEvidence={pageProjection.visualCapabilityEvidence}
             consoleLines={consoleLines}
+            effectiveSubStage={effectiveSubStage}
+            fabricSubStage={fabricSubStage}
           />
 
           <MirofishThemeProvider enabled className="h-full min-h-0 min-w-0 overflow-hidden" style={{ minWidth: 0, maxWidth: "100%" }}>
