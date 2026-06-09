@@ -687,6 +687,38 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
       ? blueprintStores.projectContexts.get(intake.projectId)
       : undefined;
 
+    // 伴随式头脑风暴（intake 输入阶段）：5-key 池多角色并行辩论，旁路 side-channel。
+    // 受 BLUEPRINT_BRAINSTORM_ENABLED + BRAINSTORM_STAGE_INTAKE_ENABLED 双开关控制；
+    // BLUEPRINT_BRAINSTORM_FORCE=true 时 Decision Gate 必触发。此阶段尚无 blueprint
+    // job，故不传 onReasoningGraph（无 job 可挂 artifact），辩论过程通过 eventBus
+    // 实时外发到 3D 墙。fire-and-forget：辩论异常绝不影响 intake 201 返回。
+    void runSecondStageBrainstormCompanion({
+      brainstormContext: blueprintServiceContext.brainstormContext ?? null,
+      llm: {
+        callJson: async (messages, options) => {
+          const result = await blueprintServiceContext.llm.callJson(
+            messages as any,
+            options as any
+          );
+          return {
+            content:
+              typeof result === "string" ? result : JSON.stringify(result),
+          };
+        },
+      },
+      eventBus: {
+        emit: event => blueprintServiceContext.eventBus.emit(event as any),
+      },
+      logger: blueprintServiceContext.logger,
+      jobId: intake.id,
+      projectId: intake.projectId,
+      stageId: "intake",
+      stageDescription:
+        "Interrogate the raw project intent: surface the underlying goals, hidden assumptions, target users, constraints, deliverables, and risk boundaries implied by this intake before clarification.",
+    }).catch(() => {
+      // best-effort：伴随式头脑风暴异常不影响 intake 返回。
+    });
+
     res.status(201).json({ intake, projectContext });
   });
 
@@ -841,7 +873,12 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           emit: event => blueprintServiceContext.eventBus.emit(event as any),
         },
         logger: blueprintServiceContext.logger,
-        jobId: session.id,
+        // 用 intake.id 作为事件房间键（而非 clarification session.id）：前端
+        // AutopilotRoutePage 早订阅 streamKey = latestJob?.id ?? intake?.id，
+        // 在 intake / clarification 早期阶段统一订阅 blueprint:{intake.id}。让
+        // intake 与 clarification 两段辩论落在同一面墙、无需切换房间（切换会
+        // reset brainstorm 墙）。route 生成出 job 后 streamKey 自然切到 job.id。
+        jobId: intake.id,
         projectId: intake.projectId,
         stageId: "clarification",
         stageDescription:
