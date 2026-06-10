@@ -75,7 +75,7 @@ export default function WhyBuddy() {
   // 当前可用能力池（V5 全量）
   const availableCapabilities = useMemo(() => ALL_V5_CAPABILITIES, []);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!input.trim()) return;
 
     const userText = input.trim();
@@ -124,7 +124,11 @@ export default function WhyBuddy() {
     let workingState = afterOrch;
     const committedArtifacts: WhyArtifact[] = [];
 
-    rawArtifacts.forEach((raw, idx) => {
+    // Sequential loop (was forEach) because we must re-resolve freshInputs from the *latest*
+    // workingState after each prior commit in the same turn, and we now await the swappable
+    // CapabilityExecutor (default still wraps simulateCapabilityExecution).
+    for (let idx = 0; idx < rawArtifacts.length; idx++) {
+      const raw = rawArtifacts[idx];
       const runId = `${turnId}-run-${idx}`;
       // Only force upstreams (risk/counter) when flag set, so report can demonstrate "fails because of bad upstream"
       const isUpstream = raw.capability.includes("risk") || raw.capability.includes("argue");
@@ -133,11 +137,16 @@ export default function WhyBuddy() {
       // Re-resolve inputs right before commit using current state (after previous artifacts in this round)
       const freshInputs = WhyBuddyRuntime.findInputsForCapability(workingState, raw.capability);
 
-      // Use simulator for state-dependent "execution" feel (prototype for future real MCP/agent).
-      // Falls back to previous template if simulator not rich for this cap.
-      let sim = WhyBuddyRuntime.simulateCapabilityExecution ? 
-        WhyBuddyRuntime.simulateCapabilityExecution(raw.capability, workingState, freshInputs) : null;
-      let content = sim ? sim.content : raw.content;
+      // Route through the official CapabilityExecutor (injected default keeps exact prior simulator behavior).
+      // Interface is async to allow real MCP/LLM/agent later; page awaits at the per-artifact commit sites.
+      const exec = await WhyBuddyRuntime.executeCapability({
+        capabilityId: raw.capability,
+        state: workingState,
+        inputArtifactIds: freshInputs,
+        roleId: raw.role,
+        turnId,
+      });
+      let content = exec ? exec.content : raw.content;
 
       const upstreamsForDissent = workingState.artifacts.filter((a: any) => freshInputs.includes(a.id));
       const hasStale = upstreamsForDissent.some((u: any) => workingState.staleArtifactIds.includes(u.id));
@@ -204,7 +213,7 @@ export default function WhyBuddy() {
         content,  // use the (possibly freshly built) content
         trustLevel: committed ? (committed.trustLevel as any) : "untrusted",
       });
-    });
+    }
 
     const turn: ChatTurn = {
       id: turnId,
@@ -241,7 +250,7 @@ export default function WhyBuddy() {
    * fields like `capability`/`role`/`trustLevel` being passed instead of the
    * proper `producedBy` + `provenance` shape expected by the runtime).
    */
-  function runReentryTurn(intervention: UserIntervention, turnId: string, forceFail = false) {
+  async function runReentryTurn(intervention: UserIntervention, turnId: string, forceFail = false) {
     const { preparedState, context } = WhyBuddyRuntime.intakeMessage(
       WhyBuddyRuntime.loadOrCreateSessionState(
         sessionState.sessionId || "whybuddy-main-proto",
@@ -283,14 +292,21 @@ export default function WhyBuddy() {
     let working = afterOrch;
     const committedNew: WhyArtifact[] = [];
 
-    rawNew.forEach((raw, idx) => {
+    // Sequential (was forEach) to preserve same-turn freshInputs re-resolution contract + await the
+    // CapabilityExecutor (default still simulates; real impls will be async without changing loop shape).
+    for (let idx = 0; idx < rawNew.length; idx++) {
+      const raw = rawNew[idx];
       const runId = `${turnId}-run-${idx}`;
       const freshInputs = WhyBuddyRuntime.findInputsForCapability(working, raw.capability);
 
-      let sim = WhyBuddyRuntime.simulateCapabilityExecution
-        ? WhyBuddyRuntime.simulateCapabilityExecution(raw.capability, working, freshInputs)
-        : null;
-      let content = sim ? sim.content : raw.content;
+      const exec = await WhyBuddyRuntime.executeCapability({
+        capabilityId: raw.capability,
+        state: working,
+        inputArtifactIds: freshInputs,
+        roleId: raw.role,
+        turnId,
+      });
+      let content = exec ? exec.content : raw.content;
 
       if (raw.capability === "report.write") {
         const upstreams = working.artifacts.filter((a: any) => freshInputs.includes(a.id));
@@ -340,7 +356,7 @@ export default function WhyBuddy() {
       } else {
         committedNew.push({ ...raw, content, trustLevel: "untrusted" });
       }
-    });
+    }
 
     const reentryTurn: ChatTurn = {
       id: turnId,

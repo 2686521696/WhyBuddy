@@ -512,6 +512,94 @@ export function simulateCapabilityExecution(
   return { title, summary, content };
 }
 
+/**
+ * CapabilityExecutor — swappable execution adapter (productionization step).
+ *
+ * Per approved plan: extract the simulator behind a formal interface so that
+ * future real agent / MCP / LLM / tool runners can be injected without
+ * touching the INTAKE/ORCH/commit closed loop, page flows, or re-entry paths.
+ *
+ * Default implementation delegates to the existing deterministic
+ * simulateCapabilityExecution (state-aware prototype).
+ *
+ * The interface is async because real executors (MCP calls, LLM JSON, remote
+ * agents) will be async. The page/reentry loops will await at the commit
+ * sites (sequential to preserve freshInputs resolution per turn).
+ */
+export interface CapabilityExecutor {
+  executeCapability(args: {
+    capabilityId: V5CapabilityId;
+    state: V5SessionState;
+    inputArtifactIds: string[];
+    roleId?: string;
+    turnId: string;
+  }): Promise<{
+    title: string;
+    summary: string;
+    content: string;
+    provenance?: Artifact["provenance"];
+  }>;
+}
+
+class DefaultCapabilityExecutor implements CapabilityExecutor {
+  async executeCapability(args: {
+    capabilityId: V5CapabilityId;
+    state: V5SessionState;
+    inputArtifactIds: string[];
+    roleId?: string;
+    turnId: string;
+  }): Promise<{
+    title: string;
+    summary: string;
+    content: string;
+    provenance?: Artifact["provenance"];
+  }> {
+    // Delegate to the current prototype simulator (kept for tests + internal fidelity).
+    // The simulator is sync; we wrap to honor the Promise contract for forward compat.
+    const { title, summary, content } = simulateCapabilityExecution(
+      args.capabilityId,
+      args.state,
+      args.inputArtifactIds || []
+    );
+    return {
+      title,
+      summary,
+      content,
+      // Default provenance for simulated path. Real executors can return
+      // "ai_generated" | "rendered_chart_mcp" | "llm_fallback" etc. as appropriate.
+      provenance: "ai_generated",
+    };
+  }
+}
+
+let currentCapabilityExecutor: CapabilityExecutor = new DefaultCapabilityExecutor();
+
+/**
+ * Inject a different CapabilityExecutor (real agent, MCP bridge, remote LLM runner, etc.).
+ * Swapping does not affect load/derive/intake/orchestrate/commit/invalidate/derive invariants.
+ */
+export function setCapabilityExecutor(impl: CapabilityExecutor): void {
+  currentCapabilityExecutor = impl;
+}
+
+export function getCapabilityExecutor(): CapabilityExecutor {
+  return currentCapabilityExecutor;
+}
+
+/**
+ * Official entry point for capability "execution" (content/title/summary generation).
+ * All main paths (sendMessage + runReentryTurn in page, future internal) should
+ * go through this instead of calling simulateCapabilityExecution directly.
+ *
+ * This keeps the closed loop (single INTAKE, exact producedBy.capabilityRunId binding,
+ * AWAIT park, derive-as-truth) untouched while opening the execution layer.
+ */
+export async function executeCapability(
+  args: Parameters<CapabilityExecutor["executeCapability"]>[0]
+): Promise<ReturnType<CapabilityExecutor["executeCapability"]>> {
+  return currentCapabilityExecutor.executeCapability(args);
+}
+
 // commitArtifact is the Trust Layer entry point (diagram: BUS ==> T_GATE ==> T_PROV ==> T_LEDGER ==> STATE)
 // Now with real dependency edges and report gate check.
 export function commitArtifact(
