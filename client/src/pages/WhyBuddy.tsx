@@ -67,9 +67,17 @@ export default function WhyBuddy() {
   // V5: the page now uses the thin runtime as source of truth for the closed loop.
   // We keep UI-friendly local state (chatTurns for history, dynamicGraph for the surface)
   // but all decisions, state mutations, gate logic, and invalidation go through the runtime.
+  //
+  // Initial bootstrap uses the pure create (sync) so the first paint is instant.
+  // Subsequent loads/saves go through the (now async) store so that HttpWhyBuddySessionStore
+  // can be swapped in later without changing call sites in the async handlers.
 
   const [sessionState, setSessionState] = useState(() =>
-    WhyBuddyRuntime.loadOrCreateSessionState("whybuddy-main-proto", "做一个权限管理系统（支持 RBAC + 数据范围）")
+    WhyBuddyRuntime.deriveNodeStatus
+      ? WhyBuddyRuntime.deriveNodeStatus(
+          WhyBuddyRuntime.createInitialSessionState("做一个权限管理系统（支持 RBAC + 数据范围）", "whybuddy-main-proto")
+        )
+      : WhyBuddyRuntime.createInitialSessionState("做一个权限管理系统（支持 RBAC + 数据范围）", "whybuddy-main-proto")
   );
 
   // 当前可用能力池（V5 全量）
@@ -82,7 +90,7 @@ export default function WhyBuddy() {
     const turnId = `turn-${Date.now()}`;
 
     // 必须先按 sessionId load，再走单门 INTAKE（按 修复闭环.md）：load/derive + classify (new_goal 仅空) + 准备
-    const loadedState = WhyBuddyRuntime.loadOrCreateSessionState(
+    const loadedState = await WhyBuddyRuntime.loadOrCreateSessionState(
       sessionState.sessionId || "whybuddy-main-proto",
       goal
     );
@@ -232,7 +240,7 @@ export default function WhyBuddy() {
     setDynamicGraph(workingState.graph);
 
     // 收敛后让位 → AWAIT 歇脚点（外圈闭合可被 runtime 证明：ORCH → AWAIT → 下一条 INTAKE）
-    workingState = WhyBuddyRuntime.saveSessionState(
+    workingState = await WhyBuddyRuntime.saveSessionState(
       WhyBuddyRuntime.markAwaiting(workingState, turnId)
     );
 
@@ -252,7 +260,7 @@ export default function WhyBuddy() {
    */
   async function runReentryTurn(intervention: UserIntervention, turnId: string, forceFail = false) {
     const { preparedState, context } = WhyBuddyRuntime.intakeMessage(
-      WhyBuddyRuntime.loadOrCreateSessionState(
+      await WhyBuddyRuntime.loadOrCreateSessionState(
         sessionState.sessionId || "whybuddy-main-proto",
         goal
       ),
@@ -371,7 +379,7 @@ export default function WhyBuddy() {
 
     setDynamicGraph(working.graph);
 
-    working = WhyBuddyRuntime.saveSessionState(
+    working = await WhyBuddyRuntime.saveSessionState(
       WhyBuddyRuntime.markAwaiting(working, turnId)
     );
 
@@ -423,8 +431,13 @@ export default function WhyBuddy() {
           <div className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">phase: <span className="font-mono">{(sessionState as any).runtimePhase || 'idle'}</span></div>
           <div className="text-[10px] font-mono text-slate-500">session: {(sessionState as any).sessionId}</div>
           <button
-            onClick={() => {
-              const sessions = (WhyBuddyRuntime as any).listWhyBuddySessions ? (WhyBuddyRuntime as any).listWhyBuddySessions() : [];
+            onClick={async () => {
+              let sessions: any[] = [];
+              const lister = (WhyBuddyRuntime as any).listWhyBuddySessions;
+              if (lister) {
+                const res = lister();
+                sessions = res && typeof res.then === 'function' ? await res : (res || []);
+              }
               console.log('[V5 Sessions]', sessions);
               alert(`Active V5 sessions: ${sessions.length}\n` + sessions.map((s: any) => `${s.sessionId} (${s.artifactCount} arts, ${s.phase || 'idle'})`).join('\n'));
             }}
@@ -446,10 +459,10 @@ export default function WhyBuddy() {
           </button>
           <div><span className="text-slate-500">已调用能力：</span><span className="font-medium">{[...new Set(chatTurns.flatMap(t => t.selected.map(s => s.cap)))].length}</span></div>
           <button
-            onClick={() => {
+            onClick={async () => {
               setChatTurns([]);
               setDynamicGraph({ ...REASONING_GRAPH_FIXTURE, nodes: [...REASONING_GRAPH_FIXTURE.nodes], edges: [...REASONING_GRAPH_FIXTURE.edges] });
-              const resetSession = WhyBuddyRuntime.saveSessionState(
+              const resetSession = await WhyBuddyRuntime.saveSessionState(
                 WhyBuddyRuntime.createInitialSessionState(goal, `whybuddy-reset-${Date.now()}`)
               );
               setSessionState(resetSession);

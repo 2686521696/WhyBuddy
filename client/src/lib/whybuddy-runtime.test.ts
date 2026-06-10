@@ -509,10 +509,10 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     });
   });
 
-  it('loads or creates sessions from an in-memory store and preserves saved state by sessionId', () => {
+  it('loads or creates sessions from an in-memory store and preserves saved state by sessionId', async () => {
     clearWhyBuddySessionStore();
 
-    const first = loadOrCreateSessionState('store-alpha', '权限系统');
+    const first = await loadOrCreateSessionState('store-alpha', '权限系统');
     expect(first.sessionId).toBe('store-alpha');
     expect(first.goal.text).toBe('权限系统');
     expect(first.artifacts).toHaveLength(0);
@@ -524,40 +524,42 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       false,
       []
     );
-    saveSessionState(updatedState);
+    await saveSessionState(updatedState);
 
-    const loadedAgain = loadOrCreateSessionState('store-alpha', '新目标不应覆盖已有会话');
+    const loadedAgain = await loadOrCreateSessionState('store-alpha', '新目标不应覆盖已有会话');
     expect(loadedAgain.sessionId).toBe('store-alpha');
     expect(loadedAgain.goal.text).toBe('权限系统');
     expect(loadedAgain.artifacts.map((artifact) => artifact.id)).toEqual(['store-risk']);
 
-    const beta = loadOrCreateSessionState('store-beta', '另一个会话');
+    const beta = await loadOrCreateSessionState('store-beta', '另一个会话');
     expect(beta.sessionId).toBe('store-beta');
     expect(beta.artifacts).toHaveLength(0);
   });
 
-  it('listSessions + deleteSession work on the store and are isolated', () => {
+  it('listSessions + deleteSession work on the store and are isolated', async () => {
     clearWhyBuddySessionStore();
-    const s1 = loadOrCreateSessionState('list-s1', '会话一');
-    saveSessionState(s1);
-    const s2 = loadOrCreateSessionState('list-s2', '会话二');
-    saveSessionState(s2);
+    const s1 = await loadOrCreateSessionState('list-s1', '会话一');
+    await saveSessionState(s1);
+    const s2 = await loadOrCreateSessionState('list-s2', '会话二');
+    await saveSessionState(s2);
 
-    const listed = listWhyBuddySessions ? listWhyBuddySessions() : [];
-    expect(listed.length).toBeGreaterThanOrEqual(2);
-    expect(listed.some((x: any) => x.sessionId === 'list-s1')).toBe(true);
+    const listedRaw = listWhyBuddySessions ? listWhyBuddySessions() : [];
+    const listed = listedRaw && typeof (listedRaw as any).then === 'function' ? await listedRaw : listedRaw;
+    expect((listed as any[]).length).toBeGreaterThanOrEqual(2);
+    expect((listed as any[]).some((x: any) => x.sessionId === 'list-s1')).toBe(true);
 
-    if (deleteWhyBuddySession) deleteWhyBuddySession('list-s1');
-    const listedAfter = listWhyBuddySessions ? listWhyBuddySessions() : [];
-    expect(listedAfter.some((x: any) => x.sessionId === 'list-s1')).toBe(false);
+    if (deleteWhyBuddySession) await deleteWhyBuddySession('list-s1');
+    const listedAfterRaw = listWhyBuddySessions ? listWhyBuddySessions() : [];
+    const listedAfter = listedAfterRaw && typeof (listedAfterRaw as any).then === 'function' ? await listedAfterRaw : listedAfterRaw;
+    expect((listedAfter as any[]).some((x: any) => x.sessionId === 'list-s1')).toBe(false);
   });
 
-  it('WhyBuddySessionStore is swappable and public load/save functions delegate to the injected impl', () => {
+  it('WhyBuddySessionStore is swappable and public load/save functions delegate to the injected impl', async () => {
     // Custom in-memory impl for the test (proves the contract shape for future backend)
     const customStore = new Map<string, V5SessionState>();
     const fakeImpl: WhyBuddySessionStore = {
-      load: (sid) => customStore.get(sid),
-      save: (s) => {
+      load: async (sid) => customStore.get(sid),
+      save: async (s) => {
         const sid = s.sessionId || 'fake';
         const saved = { ...s, sessionId: sid };
         customStore.set(sid, saved);
@@ -570,7 +572,7 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     try {
       setWhyBuddySessionStore(fakeImpl);
 
-      const s = loadOrCreateSessionState('swappable-sess', '可替换 store');
+      const s = await loadOrCreateSessionState('swappable-sess', '可替换 store');
       expect(s.sessionId).toBe('swappable-sess');
 
       const committed = commitArtifact(
@@ -581,9 +583,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
         []
       ).updatedState;
 
-      saveSessionState(committed);
+      await saveSessionState(committed);
 
-      const reloaded = loadOrCreateSessionState('swappable-sess', '这个goal不应该覆盖');
+      const reloaded = await loadOrCreateSessionState('swappable-sess', '这个goal不应该覆盖');
       expect(reloaded.artifacts.map((a) => a.id)).toContain('swappable-art');
       expect(reloaded.goal.text).toBe('可替换 store'); // original goal preserved
 
@@ -595,10 +597,10 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     }
   });
 
-  it('loadOrCreate + save + deriveNodeStatus ensures graph node statuses are derived from artifacts + stale (single source of truth)', () => {
+  it('loadOrCreate + save + deriveNodeStatus ensures graph node statuses are derived from artifacts + stale (single source of truth)', async () => {
     clearWhyBuddySessionStore();
 
-    let s = loadOrCreateSessionState('derive-sess', 'derive 单一真相');
+    let s = await loadOrCreateSessionState('derive-sess', 'derive 单一真相');
     // Seed nodes (per binding test pattern at ~385) so derive has targets to update (this test focuses on post-load derive, not full orchestrate flow).
     s = {
       ...s,
@@ -650,10 +652,10 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       text: '这个有问题',
     } as any);
 
-    saveSessionState(challenged);
+    await saveSessionState(challenged);
 
     // 重新 load —— 必须经过 derive
-    const reloaded = loadOrCreateSessionState('derive-sess', '不应该覆盖');
+    const reloaded = await loadOrCreateSessionState('derive-sess', '不应该覆盖');
 
     const n0 = (reloaded.graph.nodes || []).find((n: any) => n.capabilityRunId === 'derive-turn-run-0');
     const n1 = (reloaded.graph.nodes || []).find((n: any) => n.capabilityRunId === 'derive-turn-run-1');
@@ -664,9 +666,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(reloaded.goal.text).toBe('derive 单一真相'); // 原始 goal 保留
   });
 
-  it('getSessionLedger produces auditable entries from runs + gates (simulates T_LEDGER)', () => {
+  it('getSessionLedger produces auditable entries from runs + gates (simulates T_LEDGER)', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('ledger-sess', 'ledger 审计');
+    let s = await loadOrCreateSessionState('ledger-sess', 'ledger 审计');
     const { updatedState: c1 } = commitArtifact(
       s,
       createRawArtifact('l-risk', 'risk.analyze', '安全', 'risk'),
@@ -681,9 +683,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(ledger[0].gateSummary).toContain('passed');
   });
 
-  it('synthesis/report content simulates multi-role dissent when stale present (multi-agent divergence)', () => {
+  it('synthesis/report content simulates multi-role dissent when stale present (multi-agent divergence)', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('dissent-sess', '分歧合成');
+    let s = await loadOrCreateSessionState('dissent-sess', '分歧合成');
     // produce risk + counter, then stale one
     const { updatedState: after1 } = commitArtifact(s, createRawArtifact('d-risk', 'risk.analyze', '安全', 'risk'), 'd-run-0', false, []);
     const { updatedState: after2 } = commitArtifact(after1, createRawArtifact('d-counter', 'counter.argue', '挑刺', 'risk'), 'd-run-1', false, []);
@@ -697,9 +699,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     // This would lead to "分歧意见" section in report content in the page builder
   });
 
-  it('simulateCapabilityExecution produces state-dependent richer content (prototype real-exec feel)', () => {
+  it('simulateCapabilityExecution produces state-dependent richer content (prototype real-exec feel)', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('sim-sess', '模拟执行');
+    let s = await loadOrCreateSessionState('sim-sess', '模拟执行');
     const { updatedState: c } = commitArtifact(s, createRawArtifact('sim-risk', 'risk.analyze', '安全', 'risk'), 'sim-r0', false, []);
     const sim = simulateCapabilityExecution('risk.analyze', c, []);
     expect(sim.content).toContain('模拟');
@@ -710,9 +712,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(simStale.content).toContain('stale');
   });
 
-  it('full loop with simulator + ledger + derived view stays consistent after save/load', () => {
+  it('full loop with simulator + ledger + derived view stays consistent after save/load', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('full-sim', '全链路模拟');
+    let s = await loadOrCreateSessionState('full-sim', '全链路模拟');
     const { preparedState } = intakeMessage(s, { turnId: 'f1', userText: '生成报告' });
     let afterO = orchestrateReasoningTurn(preparedState, { turnId: 'f1', userText: '生成报告' }).newState;
     // Use the *planned* runId from orchestrate (contract: commit must match the capabilityRunId pre-assigned for this turn/cap in the nodes).
@@ -720,17 +722,17 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const reportRunId = reportNode ? reportNode.capabilityRunId : 'f1-run-3';
     const { updatedState: c } = commitArtifact(afterO, createRawArtifact('f-report', 'report.write', '综合', 'report'), reportRunId, false, []);
     const enriched = enrichGraphNodesAfterCommit(c, 'f1');
-    const saved = saveSessionState(enriched);
-    const reloaded = loadOrCreateSessionState('full-sim', '不应覆盖');
+    const saved = await saveSessionState(enriched);
+    const reloaded = await loadOrCreateSessionState('full-sim', '不应覆盖');
     const ledger = getSessionLedger(reloaded);
     expect(ledger.some(l => l.capabilityId === 'report.write')).toBe(true);
     const n = (reloaded.graph.nodes || []).find((n: any) => n.capabilityRunId === reportRunId);
     expect(n?.producedArtifactId).toBe('f-report');
   });
 
-  it('picker is fully state-driven: openQuestions, ledger, gaps drive picks beyond keywords', () => {
+  it('picker is fully state-driven: openQuestions, ledger, gaps drive picks beyond keywords', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('picker-state', '状态驱动 picker');
+    let s = await loadOrCreateSessionState('picker-state', '状态驱动 picker');
     // seed some state
     s = { ...s, openQuestions: [{ id: 'q1', text: '边界？' }], staleArtifactIds: ['old'] } as any;
     const picks = pickNextCapabilities(s, '随便说说');
@@ -739,9 +741,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(caps.some(c => c.includes('clarify') || c.includes('decompose'))).toBe(true);
   });
 
-  it('challenge uses exact produced target from enriched state (binding resolution)', () => {
+  it('challenge uses exact produced target from enriched state (binding resolution)', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('challenge-exact', '精确 target');
+    let s = await loadOrCreateSessionState('challenge-exact', '精确 target');
     const { preparedState } = intakeMessage(s, { turnId: 'c1', userText: '风险' });
     let o = orchestrateReasoningTurn(preparedState, { turnId: 'c1', userText: '风险' }).newState;
 
@@ -779,9 +781,9 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     // Here we at minimum prove the binding resolution from enriched node → exact target works.
   });
 
-  it('simulator + ledger + derive in full cycle with dissent', () => {
+  it('simulator + ledger + derive in full cycle with dissent', async () => {
     clearWhyBuddySessionStore();
-    let s = loadOrCreateSessionState('cycle-sim', '循环模拟');
+    let s = await loadOrCreateSessionState('cycle-sim', '循环模拟');
     const { preparedState } = intakeMessage(s, { turnId: 'cy1', userText: '报告' });
     let o = orchestrateReasoningTurn(preparedState, { turnId: 'cy1', userText: '报告' }).newState;
     // Use planned runId from orchestrate nodes (fixes contract mismatch that caused producedArtifactId to be missing).
@@ -789,7 +791,7 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const reportRunId = reportNode ? reportNode.capabilityRunId : 'cy1-run-3';
     const { updatedState: c } = commitArtifact(o, createRawArtifact('cy-r', 'report.write', '综合', 'report'), reportRunId, false, []);
     const en = enrichGraphNodesAfterCommit(c, 'cy1');
-    const saved = saveSessionState(en);
+    const saved = await saveSessionState(en);
     const ledger = getSessionLedger(saved);
     const sim = simulateCapabilityExecution('report.write', saved, []);
     expect(ledger.length).toBeGreaterThan(0);

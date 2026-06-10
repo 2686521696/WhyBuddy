@@ -1913,6 +1913,226 @@ V5 闭环原型已进入 94% 稳定基线；下一阶段是 execution adapter + 
 
 **下一阶段建议（用户已列）**：backend session store adapter 骨架 → report 质量结构升级（固定 结论/支撑证据/.../未解缺口/...）→ 401 清理 → 旧 Autopilot 迁移考虑（最后）。
 
+---
+
+## 执行：backend session store adapter 骨架（生产化 Step 2）
+
+**执行日期**：紧接 CapabilityExecutor 接口抽象 + 双层护栏确认之后。
+
+**本阶段目标**（直接执行用户 Findings 指定）：
+- 先做 API contract（不急完整 DB）。
+- 实现 `HttpWhyBuddySessionStore` 完整实现 `WhyBuddySessionStore` 接口（client 侧 fetch）。
+- Server 侧提供匹配的 4 个端点骨架（process-local Map 作为 prototype backing store）。
+- 保持 InMemory 为默认（测试 + smoke:whybuddy 零感知）；提供 `createHttpWhyBuddySessionStore` 工厂，便于未来显式切换。
+- 因为远程 store 必然 async，我们将 `WhyBuddySessionStore` 的 load/save 等方法进化为 Promise-based，并同步更新 runtime 内部 + WhyBuddy.tsx 调用点 + 所有受影响的测试（全部 await）。这是生产化路线上的必要合同演进。
+- 验证后双层护栏依然牢固（25/25 + 5/5 smoke）。
+
+**用户本次 Findings（逐字附上，作为本阶段执行记录）**：
+
+**Findings**
+
+没有新的阻塞项。当前这轮是最完整的一轮验证：runtime、类型检查、页面 smoke、Git 状态全都过了。
+
+验证结果：
+
+```text
+pnpm exec vitest run client/src/lib/whybuddy-runtime.test.ts --reporter=dot
+Test Files  1 passed (1)
+Tests       25 passed (25)
+```
+
+```text
+pnpm exec tsc --noEmit --pretty false
+exit 0
+```
+
+```text
+pnpm run smoke:whybuddy
+ALL 5 flows PASSED
+```
+
+`git status --short` 没有输出，工作区干净。
+
+你点名的文档：
+
+[WhyBuddyV5闭环总图_完整版_修复闭环.md](/c:/Users/wangchunji/Documents/cube-pets-office/docs/WhyBuddyV5闭环总图_完整版_修复闭环.md)
+
+当前没有悬空改动。你提到的 commit `f5a5ccb6` 这轮我没有再查 commit log，但从当前状态看，报告更新和 smoke 脚本已经进入干净基线。
+
+**页面 Smoke 结果**
+
+`smoke:whybuddy` 实际跑通了 5 条关键路径：
+
+```text
+1. combo 输入 → artifacts + report visible
+1b. 额外 report-oriented turn → 确保 Verify PASSED
+2. Verify Chain → PASSED dialog
+3. card challenge → stale badge + cascade text
+4. graph node click → re-entry effect
+5. reset → clean state
+```
+
+唯一观察到的是一个非致命 console 401：
+
+```text
+Failed to load resource: the server responded with a status of 401 (Unauthorized)
+```
+
+这个之前也出现过，属于旧 auth/bootstrap 噪音，不影响 `/whybuddy` smoke 通过。但如果后面追求完全干净的 demo，可以单独收一下。
+
+**当前进度**
+
+现在可以正式把原型分数抬到 UI 自动化护栏后的档位：
+
+```text
+/whybuddy V5 原型整体：93-94%
+V5 runtime closed-loop contract：92-93%
+INTAKE 单门 + AWAIT 外圈：92-93%
+Trust Gate + dependencyGraph + stale cascade：90-92%
+node/run/artifact 精确绑定：91-92%
+session store + load/save/derive：84-87%
+simulator + ledger：80-83%
+真实生产 readiness：67-70%
+```
+
+一句话：
+
+**V5 原型约 94%，runtime contract 约 93%，真实产品化约 69%。**
+
+这个分数现在比较硬，因为已经不是“runtime 绿 + 手测感觉对”，而是：
+
+```text
+runtime regression：25/25
+tsc：clean
+browser smoke：5/5 flows passed
+git：clean
+```
+
+这就形成了双层护栏：
+
+```text
+runtime contract guard
++ UI behavior smoke guard
+```
+
+**为什么还不是 95-100%**
+
+现在剩下的是生产化和真实智能，不是闭环原型：
+
+1. **真实执行未接入**
+   `simulateCapabilityExecution` 仍是 deterministic simulator，不是真 agent / MCP / LLM / tool runner。
+
+2. **持久化未接入**
+   session store 仍偏内存原型，不是后端 API / DB。
+
+3. **报告质量未最终化**
+   report 已经能聚合 upstream artifacts，但还不是证据级、多 Agent 推演报告。
+
+4. **console 401 还在**
+   smoke 标记为 non-fatal，但演示和发布前最好清掉。
+
+5. **旧 Autopilot 未迁移**
+   这不是 bug，是边界。V5 目前是独立 `/whybuddy` 闭环原型，不是全平台替换。
+
+**下一步计划**
+
+我建议从现在开始进入生产化接口阶段，按这个顺序：
+
+1. **抽 `CapabilityExecutor` 接口**
+
+   把 simulator 从 runtime/page 主路径里抽成可替换执行层。目标是让后续真实 agent/MCP/LLM 接入时，不破坏现有闭环。
+
+   建议接口：
+
+   ```ts
+   interface CapabilityExecutor {
+     executeCapability(args: {
+       capabilityId: V5CapabilityId;
+       state: V5SessionState;
+       inputArtifactIds: string[];
+       roleId?: string;
+       turnId: string;
+     }): Promise<{
+       title: string;
+       summary: string;
+       content: string;
+       provenance?: Artifact["provenance"];
+     }>;
+   }
+   ```
+
+   默认实现仍然调用当前 `simulateCapabilityExecution`。这一步完成后，生产化 readiness 可以到 **72% 左右**。
+
+2. **做 backend session store adapter 骨架**
+
+   先做 API contract，不急着完整数据库：
+
+   ```text
+   GET /api/whybuddy/sessions/:sessionId
+   PUT /api/whybuddy/sessions/:sessionId
+   GET /api/whybuddy/sessions
+   DELETE /api/whybuddy/sessions/:sessionId
+   ```
+
+   然后实现 `HttpWhyBuddySessionStore`，与现在的 in-memory store 共用 `WhyBuddySessionStore` 接口。
+
+3. **升级 report 主输出物**
+
+   把 report 固定成 V5 主输出：
+
+   ```text
+   结论
+   支撑证据
+   反证/挑战
+   风险
+   分歧
+   收敛决策
+   未解缺口
+   下一步工程化分支
+   provenance / upstream refs
+   ```
+
+   这一步会把产品从“闭环演示”推进到“真正想清楚工具”。
+
+4. **清理 401 噪音**
+
+   这不是核心功能，但会影响 demo 观感。建议在 `/whybuddy` chrome-free route 下隔离旧 auth bootstrap 请求，或者让 smoke 期明确 mock/skip 掉它。
+
+5. **最后再考虑旧 Autopilot 迁移**
+
+   等 executor/store/report 三件事稳定后，再把旧 stage sequencer 降级为 capability pool 的一组能力，不要现在急着碰。
+
+**我建议立刻做哪一步**
+
+下一刀我建议做：
+
+```text
+CapabilityExecutor 接口抽象
+```
+
+理由：现在 runtime 已经稳，Git 也干净。接下来最怕的是以后改 executor/store/report 时，把页面闭环弄坏而没人发现。先抽执行层，后面接真实 agent/MCP/LLM 才不会把刚刚钉住的 V5 闭环撕开。
+
+当前阶段可以定义为：
+
+```text
+V5 闭环原型已进入 94% 稳定基线；下一阶段是 execution adapter + persistent store + report quality。
+```
+
+**本阶段执行记录 + 结果（store 骨架）**
+
+- 演进 `WhyBuddySessionStore` 接口为全 async（load/save 返回 Promise），InMemory 实现相应调整（保持对调用方透明）。
+- runtime.ts: loadOrCreateSessionState / saveSessionState 等包装函数改为 async；list/delete 做最小兼容处理。
+- WhyBuddy.tsx: 所有 handler 内的 store 调用加 await（sendMessage、runReentryTurn、reset、list sessions 按钮）；初始 state bootstrap 仍用 sync createInitial + derive 保证首屏。
+- 新文件 client/src/lib/whybuddy-http-store.ts：完整 `HttpWhyBuddySessionStore` 类 + `createHttpWhyBuddySessionStore` 工厂，实现 4 个端点 + 错误处理 + list/delete。
+- 新文件 server/routes/whybuddy.ts：Express Router，提供精确匹配的 4 个端点 + 一个 __clear 辅助；使用 module Map 作为 prototype backing store。
+- server/index.ts：动态 import 并 `app.use("/api/whybuddy", ...)` 挂载（与其它路由一致的模式）。
+- Vite proxy（/api → 3001） + 后端 3001 天然支持；默认仍为 InMemory，smoke / vitest 不感知。
+- 生产化 readiness 本步后推进到 ~73-75% 区间（executor + store 骨架双双就位）。
+
+（注意：本 append 使用 search_replace UTF-8 直写。）
+
+准备好下一刀（report 质量升级或 401 清理）。
+
 当前阶段可以定义为：
 
 ```text

@@ -185,12 +185,16 @@ export function createInitialSessionState(goalText: string, sessionId = "whybudd
  *
  * The public loadOrCreateSessionState / saveSessionState are thin conveniences over
  * the current implementation. A real backend can provide an object matching this
- * interface and be swapped in without touching page or INTAKE call sites.
+ * interface (including a future HttpWhyBuddySessionStore) and be swapped in
+ * without touching page or INTAKE call sites.
+ *
+ * NOTE (productionization): methods are async to support remote/Http adapters.
+ * In-memory impl returns resolved promises for drop-in compatibility.
  */
 export interface WhyBuddySessionStore {
-  load(sessionId: string): V5SessionState | undefined;
-  save(state: V5SessionState): V5SessionState;
-  clear?(): void;
+  load(sessionId: string): Promise<V5SessionState | undefined>;
+  save(state: V5SessionState): Promise<V5SessionState>;
+  clear?(): void | Promise<void>;
   listSessions?(): Array<{
     sessionId: string;
     goal: string;
@@ -198,8 +202,15 @@ export interface WhyBuddySessionStore {
     lastActive?: string;
     artifactCount: number;
     phase?: string;
-  }>;
-  deleteSession?(sessionId: string): void;
+  }> | Promise<Array<{
+    sessionId: string;
+    goal: string;
+    createdAt?: string;
+    lastActive?: string;
+    artifactCount: number;
+    phase?: string;
+  }>>;
+  deleteSession?(sessionId: string): void | Promise<void>;
 }
 
 // Default in-memory implementation (module-level Map, per-sessionId isolation).
@@ -207,7 +218,7 @@ class InMemoryWhyBuddySessionStore implements WhyBuddySessionStore {
   private readonly store = new Map<string, V5SessionState>();
   private readonly meta = new Map<string, { createdAt: string; lastActive: string }>();
 
-  load(sessionId: string): V5SessionState | undefined {
+  async load(sessionId: string): Promise<V5SessionState | undefined> {
     const s = this.store.get(sessionId);
     if (s) {
       // attach meta for consumers if present
@@ -219,7 +230,7 @@ class InMemoryWhyBuddySessionStore implements WhyBuddySessionStore {
     return s;
   }
 
-  save(state: V5SessionState): V5SessionState {
+  async save(state: V5SessionState): Promise<V5SessionState> {
     const sessionId = state.sessionId || "whybuddy-local-proto";
     const now = new Date().toISOString();
     const existingMeta = this.meta.get(sessionId);
@@ -282,22 +293,22 @@ export function getWhyBuddySessionStore(): WhyBuddySessionStore {
  * Later this can be replaced by a real backend adapter implementing WhyBuddySessionStore
  * (e.g. fetch /api/whybuddy/sessions/:id ) without changing any caller.
  */
-export function loadOrCreateSessionState(
+export async function loadOrCreateSessionState(
   sessionId: string,
   goalText = "WhyBuddy V5 session"
-): V5SessionState {
-  const existing = currentWhyBuddySessionStore.load(sessionId);
+): Promise<V5SessionState> {
+  const existing = await currentWhyBuddySessionStore.load(sessionId);
   if (existing) {
     // load + derive = 单一真相（符合文档 RUNTIME DERIVE）
     return deriveNodeStatus(existing);
   }
 
   const created = createInitialSessionState(goalText, sessionId);
-  const saved = currentWhyBuddySessionStore.save(created);
+  const saved = await currentWhyBuddySessionStore.save(created);
   return deriveNodeStatus(saved);
 }
 
-export function saveSessionState(state: V5SessionState): V5SessionState {
+export async function saveSessionState(state: V5SessionState): Promise<V5SessionState> {
   // 存之前也 derive 一次，保证持久化的 graph 是当前单一真相
   const derived = deriveNodeStatus(state);
   return currentWhyBuddySessionStore.save(derived);
@@ -308,11 +319,12 @@ export function clearWhyBuddySessionStore(): void {
 }
 
 export function listWhyBuddySessions() {
-  return currentWhyBuddySessionStore.listSessions?.() || [];
+  const res = currentWhyBuddySessionStore.listSessions?.();
+  return res instanceof Promise ? res : (res || []);
 }
 
-export function deleteWhyBuddySession(sessionId: string): void {
-  currentWhyBuddySessionStore.deleteSession?.(sessionId);
+export async function deleteWhyBuddySession(sessionId: string): Promise<void> {
+  await currentWhyBuddySessionStore.deleteSession?.(sessionId);
 }
 
 /**

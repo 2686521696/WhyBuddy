@@ -2256,6 +2256,15 @@ async function startServer() {
   );
   app.use("/api/health/persistence", createPersistenceHealthRouter());
 
+  // WhyBuddy V5 closed-loop session store HTTP adapter (skeleton).
+  // Exposes exactly the 4 endpoints documented in the V5 plan so that
+  // HttpWhyBuddySessionStore (client) can be a drop-in for the in-memory one.
+  // Backing store is a process-local Map (no DB yet). Mount is unconditional
+  // for the prototype phase; the page/runtime continues to default to the
+  // in-memory store so existing tests + smoke:whybuddy are unaffected.
+  const whybuddyRouterMod = await import("./routes/whybuddy.js");
+  app.use("/api/whybuddy", whybuddyRouterMod.default);
+
   app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
