@@ -32,6 +32,7 @@ import {
   useLlmCapabilityExecutor,
   LlmCapabilityExecutor,
   createOpenAILlmCapabilityProvider,
+  createServerLlmCapabilityProvider,
   type LlmCapabilityProvider,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
@@ -1084,6 +1085,63 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
         } finally {
           fetchSpy.mockRestore();
           if (prev2 && setCapabilityExecutor) setCapabilityExecutor(prev2);
+        }
+      }
+
+      // Server-routed provider (recommended production-aligned path via /api/whybuddy/execute-capability).
+      // Uses the same seam + fallback contract. We spy fetch so the test stays hermetic.
+      {
+        const prev3 = getCapabilityExecutor ? getCapabilityExecutor() : null;
+        const fetchSpy = vi.spyOn(globalThis as any, 'fetch');
+
+        try {
+          // Success from server route
+          fetchSpy.mockResolvedValueOnce(
+            new Response(
+              JSON.stringify({
+                title: 'SERVER-RISK',
+                summary: 'from server llm',
+                content: 'server-llm-risk-content',
+                provenance: 'llm',
+              }),
+              { status: 200 }
+            ) as any
+          );
+
+          const serverProvider = createServerLlmCapabilityProvider();
+          setCapabilityExecutor(new LlmCapabilityExecutor(serverProvider));
+
+          const riskRes3 = await executeCapability({
+            capabilityId: riskEntry.capabilityId as any,
+            state: afterO,
+            inputArtifactIds: riskEntry.inputArtifactIds || [],
+            roleId: riskEntry.roleId,
+            turnId: 'srv1',
+          });
+          expect(riskRes3.title).toBe('SERVER-RISK');
+          expect(riskRes3.content).toBe('server-llm-risk-content');
+
+          // Server returns non-2xx → client provider throws → LlmCapabilityExecutor fallback
+          fetchSpy.mockResolvedValueOnce(
+            new Response(JSON.stringify({ error: 'llm_execution_failed' }), { status: 500 }) as any
+          );
+
+          const serverFailProvider = createServerLlmCapabilityProvider();
+          setCapabilityExecutor(new LlmCapabilityExecutor(serverFailProvider));
+
+          const riskFail3 = await executeCapability({
+            capabilityId: riskEntry.capabilityId as any,
+            state: afterO,
+            inputArtifactIds: riskEntry.inputArtifactIds || [],
+            roleId: riskEntry.roleId,
+            turnId: 'srv2',
+          });
+          expect(riskFail3.content).not.toContain('server-llm-risk-content');
+          expect(riskFail3).toHaveProperty('title');
+          expect(riskFail3).toHaveProperty('content');
+        } finally {
+          fetchSpy.mockRestore();
+          if (prev3 && setCapabilityExecutor) setCapabilityExecutor(prev3);
         }
       }
     } finally {

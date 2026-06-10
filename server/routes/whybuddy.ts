@@ -18,6 +18,8 @@
 
 import express, { Router, type Request, type Response } from "express";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
+import { getAIConfig } from "../core/ai-config.js";
+import { callLLMJson } from "../core/llm-client.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -174,6 +176,93 @@ if (enableTestHelpers) {
     res.status(204).end();
   });
 }
+
+// POST /api/whybuddy/execute-capability
+// Server-side LLM execution for the WhyBuddy V5 capability seam (risk.analyze + report.write).
+// Reuses the project's unified LLM stack (getAIConfig + callLLMJson) exactly like /autopilot and blueprint routes.
+// Input: the same args the LlmCapabilityProvider receives on the client.
+// Output: strictly the raw 4-field shape { title, summary, content, provenance? }.
+// On any config/LLM error we return 5xx (or throw) so the client LlmCapabilityExecutor reliably falls back
+// to PilotRealCapabilityExecutor. This route never touches commitArtifact, Trust Gate, producedBy, or session state.
+router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
+  const { capabilityId, state, inputArtifactIds = [], roleId, turnId } = (req.body || {}) as {
+    capabilityId?: string;
+    state?: V5SessionState;
+    inputArtifactIds?: string[];
+    roleId?: string;
+    turnId?: string;
+  };
+
+  if (!capabilityId || !state || !turnId) {
+    return res.status(400).json({ error: "bad_request", message: "capabilityId, state and turnId are required" });
+  }
+
+  try {
+    const config = getAIConfig();
+    if (!config.apiKey) {
+      throw new Error("LLM not configured (no apiKey from getAIConfig)");
+    }
+
+    // Build compact context (mirrors the spirit of the previous client direct prompts but now on server).
+    const goalText = (state as any)?.goal?.text || (state as any)?.goal || "";
+    const recentArtifacts = ((state as any).artifacts || []).slice(-6).map((a: any) => ({
+      title: a?.title,
+      kind: a?.kind,
+      summary: String(a?.summary || "").slice(0, 220),
+    }));
+
+    const systemPrompt =
+      "You are an expert AI collaborator for WhyBuddy V5. " +
+      "Return ONLY a single JSON object (no prose, no ```json fences) with exactly these keys:\n" +
+      '{"title": string, "summary": string, "content": string}\n' +
+      "title: short and specific. summary: one-sentence high-signal. content: professional, actionable, evidence-based.";
+
+    let userPrompt = "";
+    if (capabilityId === "risk.analyze") {
+      userPrompt =
+        `Capability: risk.analyze\nGoal: ${goalText}\n` +
+        `Context artifacts: ${JSON.stringify(recentArtifacts)}\n` +
+        `Role: ${roleId || "unspecified"}  Turn: ${turnId}\n\n` +
+        "Produce a focused risk analysis: key risks, likelihood/impact, mitigations.";
+    } else if (capabilityId === "report.write") {
+      userPrompt =
+        `Capability: report.write\nGoal: ${goalText}\n` +
+        `Context artifacts (use for facts): ${JSON.stringify(recentArtifacts)}\n` +
+        `Role: ${roleId || "综合"}  Turn: ${turnId}\n\n` +
+        "Produce a high-quality evidence report (title, summary, detailed content).";
+    } else {
+      throw new Error(`Server LLM provider does not handle capability: ${capabilityId}`);
+    }
+
+    const result = await callLLMJson<{ title?: string; summary?: string; content?: string }>(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      {
+        model: config.model,
+        temperature: 0.25,
+        timeoutMs: Math.min(config.timeoutMs, 120000),
+      } as any
+    );
+
+    const title = (result.title || (capabilityId === "risk.analyze" ? "Risk Analysis" : "Evidence Report")).trim();
+    const summary = (result.summary || "").trim();
+    const content = (result.content || "Model returned no content.").trim();
+
+    return res.json({
+      title,
+      summary: summary ? `${summary} [server-llm:${config.model}]` : `[server-llm:${config.model}]`,
+      content,
+      provenance: "llm" as const,
+    });
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    console.error("[whybuddy] /execute-capability failed:", msg);
+    // Non-2xx so the client createServerLlmCapabilityProvider will throw → LlmCapabilityExecutor falls back.
+    return res.status(500).json({ error: "llm_execution_failed", message: msg.slice(0, 300) });
+  }
+});
 
 export default router;
 

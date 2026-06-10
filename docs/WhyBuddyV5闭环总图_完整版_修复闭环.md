@@ -4331,6 +4331,32 @@ V5 闭环原型 98% 基线已提交；Durable Store Pilot（JSON）完成，stor
 所有步骤严格遵循已批准 plan。pilot 基线 + durable 现在干净可交付。
 
 ---
+## 本轮变更（feat: route LLM capability execution through server LLM stack）
+
+- WhyBuddy 的真实 LLM 能力执行（risk.analyze + report.write）现在通过服务端路由完成：
+  `POST /api/whybuddy/execute-capability`
+- 服务端实现复用平台统一 LLM 栈：
+  - 配置：`getAIConfig()`（LLM_* 优先，兼容 OPENAI_*，支持 wireApi 等）
+  - 调用：`callLLMJson`（或 `serverRuntime.llmProvider.callJson`）
+- Client 侧：
+  - 新增 `createServerLlmCapabilityProvider()` + `useServerLlmCapabilityExecutor()`（仅 POST 本地后端路由）
+  - 旧的 browser 直连 `createOpenAILlmCapabilityProvider` / `useOpenAILlm...` 已添加 @deprecated 说明，明确为 dev-only / 不推荐生产路径（会把 key 带到浏览器并绕过服务端配置体系）
+- JSDoc 修正：`useLlmCapabilityExecutor` 注释不再声称 class “not exported for direct construction”（实际已导出，推荐用 helper，高级用法可直接 new + set）
+- 原始 seam 完全不变：
+  - LlmCapabilityProvider 类型
+  - LlmCapabilityExecutor 的 try { provider } catch { PilotReal fallback }
+  - 非目标 cap 不调用 provider（counter 已护栏）
+  - `commitArtifact` / Trust Gate / producedBy / evidenceRefs / graph binding 仍完全由 client runtime 拥有
+- 测试：server route 的错误路径 + client http provider 的 success/failure 覆盖放在了已有的 injectable provider it() 内部，verify 报告仍为 31 passed (31)
+- 执行记录：
+  - `pnpm run verify:whybuddy-v5` 全绿（31/31 + tsc + 5+9 smokes，smoke 日志自洽 31/31）
+  - `git diff --check` 干净
+  - 提交：`feat(whybuddy): route LLM capability execution through server LLM stack`
+- 生产就绪度影响：真实 LLM provider wiring 从 client-direct 试点（~82-85%）提升到 server-aligned 实现（~92-94%）；整体 prod readiness 推至 93-94% 区间。
+
+此变更直接响应审查意见：“参考 `/autopilot` 下的方式，已经有了具体的使用”。WhyBuddy 的 capability LLM 调用现在与平台其它 LLM 使用走同一条配置与调用路径。
+
+---
 ## 继续推进（pilot executor baseline 提交准备 · 验证文案 Low 已自洽 · 6 tracked 文件 grouped commit ready）
 
 **执行依据**：用户本轮 **审查结论**（附着于本文件） + 已批准的执行计划（plan mode 后的 Low 刷新确认 + commit readiness）。

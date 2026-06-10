@@ -761,7 +761,9 @@ export type LlmCapabilityProvider = (args: {
  *
  * The default provider produces the current deterministic "LLM pilot" richer output.
  * A real provider (OpenAI, MCP, tool, etc.) can be injected at construction time.
- * See createOpenAILlmCapabilityProvider + useOpenAILlmCapabilityExecutor for the first concrete wiring.
+ * The recommended real path is createServerLlmCapabilityProvider + useServerLlmCapabilityExecutor
+ * (routes through the server LLM stack using the same config as /autopilot).
+ * The old direct-browser createOpenAILlm... is deprecated for production use.
  */
 export class LlmCapabilityExecutor implements CapabilityExecutor {
   private base = new PilotRealCapabilityExecutor();
@@ -850,31 +852,81 @@ export function useDefaultExecutor(): void {
  * Opt-in to the initial Real Executor Pilot (LlmCapabilityExecutor).
  * Falls back to PilotReal on error / other capabilities.
  * Use this the same way as usePilotRealExecutor for demo / pilot runs.
- * (The LlmCapabilityExecutor class itself is not exported for direct construction; use the helper or setCapabilityExecutor with a custom impl.)
+ *
+ * Recommended usage: the helper functions below.
+ * Advanced / test usage: `setCapabilityExecutor(new LlmCapabilityExecutor(yourProvider))`.
  *
  * This installs the *built-in deterministic pilot provider* (the "LLM pilot" placeholder logic).
- * For a real backend, prefer `useOpenAILlmCapabilityExecutor()` (or construct `new LlmCapabilityExecutor( createOpenAILlmCapabilityProvider(...) )`).
+ * For a real backend (recommended), use `useServerLlmCapabilityExecutor()` which routes through
+ * the project's server LLM stack (`/api/whybuddy/execute-capability` + getAIConfig + callLLMJson).
+ * The old direct browser `createOpenAILlmCapabilityProvider` is kept for dev/demo only (it sends keys
+ * to the browser and bypasses the unified server config).
  */
 export function useLlmCapabilityExecutor(): void {
   setCapabilityExecutor(new LlmCapabilityExecutor());
 }
 
 /**
- * Factory returning a real OpenAI-backed LlmCapabilityProvider.
+ * Factory for the recommended server-routed LlmCapabilityProvider.
  *
- * Scope (per V5 pilot): only risk.analyze and report.write receive rich LLM treatment.
- * All other capabilities and any error path cause the provider to throw so that
- * LlmCapabilityExecutor falls back cleanly to PilotRealCapabilityExecutor (the seam contract).
+ * The client only does a POST to the local backend (`/api/whybuddy/execute-capability`).
+ * The server is responsible for getAIConfig() + callLLMJson() (same stack as /autopilot).
+ * This keeps API keys, wireApi choice, timeouts, and telemetry on the server.
  *
- * The provider **always** returns exactly the raw shape:
- *   { title: string, summary: string, content: string, provenance? }
- * Runtime (Trust Gate, producedBy, commitArtifact, evidenceRefs, etc.) is never touched by the provider.
+ * The returned provider still obeys the exact contract:
+ *   input = { capabilityId, state, inputArtifactIds, roleId?, turnId }
+ *   output = { title, summary, content, provenance? }
  *
- * Key resolution: opts.apiKey || process.env.OPENAI_API_KEY
- * If neither is present the provider will throw on first targeted cap invocation (graceful fallback).
+ * Any non-2xx or network error from the endpoint causes the provider to throw,
+ * which LlmCapabilityExecutor will catch and turn into a clean fallback to PilotReal.
+ */
+export function createServerLlmCapabilityProvider(opts: { endpoint?: string } = {}): LlmCapabilityProvider {
+  const url = opts.endpoint || "/api/whybuddy/execute-capability";
+
+  return async (args) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`server execute-capability failed ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    // The server must return exactly the raw shape.
+    return res.json();
+  };
+}
+
+/**
+ * Opt-in to LlmCapabilityExecutor that talks to the server LLM stack for risk.analyze + report.write.
+ * This is the primary "real" path for the V5 pilot (aligns with /autopilot).
+ * Falls back to PilotRealCapabilityExecutor on any transport or server LLM error.
+ */
+export function useServerLlmCapabilityExecutor(endpoint?: string): void {
+  const provider = createServerLlmCapabilityProvider({ endpoint });
+  setCapabilityExecutor(new LlmCapabilityExecutor(provider));
+}
+
+/**
+ * @deprecated
+ * Direct browser OpenAI LlmCapabilityProvider.
  *
- * For report.write we feed the deterministic buildStructuredReport output as strong evidence
- * context so the model can polish/expand while preserving the 9-section schema and facts.
+ * This was the initial "real wiring" pilot. It performs fetch directly to api.openai.com
+ * from the client (browser) and therefore:
+ *   - sends API keys to the client environment
+ *   - bypasses the project's unified server LLM config (LLM_* / getAIConfig / wireApi etc.)
+ *   - does not go through server callLLMJson / telemetry / fallback logic used by /autopilot
+ *
+ * Prefer `createServerLlmCapabilityProvider` + `useServerLlmCapabilityExecutor` (routes through
+ * your own backend at /api/whybuddy/execute-capability, which uses the real server stack).
+ *
+ * Kept for dev/demo or very special cases only. In production the server-routed path must be used.
+ *
+ * Scope (per V5 pilot): only risk.analyze and report.write.
+ * Still returns the exact raw contract and throws on error (so LlmCapabilityExecutor fallback works).
  */
 export function createOpenAILlmCapabilityProvider(opts: { apiKey?: string; model?: string } = {}): LlmCapabilityProvider {
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
@@ -973,12 +1025,11 @@ export function createOpenAILlmCapabilityProvider(opts: { apiKey?: string; model
 }
 
 /**
- * Opt-in to a real OpenAI-backed LlmCapabilityExecutor for risk.analyze + report.write.
- * Requires OPENAI_API_KEY (or pass explicit key). Any configuration / call error
- * falls back to PilotRealCapabilityExecutor via the existing LlmCapabilityExecutor seam.
+ * @deprecated
+ * Opt-in to the old direct-browser OpenAI LlmCapabilityExecutor.
  *
- * This is the entry point for "真实 provider wiring" in the V5 pilot.
- * The rest of the runtime (intake → orchestrate → commitArtifact + Trust Gate) is unchanged.
+ * See deprecation note on createOpenAILlmCapabilityProvider.
+ * Use `useServerLlmCapabilityExecutor()` instead for the production-aligned path.
  */
 export function useOpenAILlmCapabilityExecutor(apiKey?: string): void {
   const provider = createOpenAILlmCapabilityProvider({ apiKey });
