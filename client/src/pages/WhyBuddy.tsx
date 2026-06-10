@@ -20,7 +20,7 @@ import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurfac
 import { REASONING_GRAPH_FIXTURE } from "@/dev-harness/reasoning-graph-fixture";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import { STAGE_TO_V5_CAPABILITIES, ALL_V5_CAPABILITIES, CAPABILITY_OUTPUT_KIND } from "@shared/blueprint/contracts";
-import type { BrainstormReasoningGraph } from "@shared/blueprint";
+import type { BrainstormReasoningGraph, BrainstormReasoningNode } from "@shared/blueprint";
 import * as WhyBuddyRuntime from "@/lib/whybuddy-runtime";
 import type { UserIntervention } from "@shared/blueprint/v5-reasoning-state";
 
@@ -233,33 +233,32 @@ export default function WhyBuddy() {
     setNextGateShouldFail(false);
   };
 
-  const challenge = (turn: ChatTurn, artifact: WhyArtifact) => {
-    // Real UserIntervention flowing into the runtime (V5 re-entry)
-    const intervention: UserIntervention = {
-      targetArtifactId: artifact.id,
-      intent: "challenge",
-      text: `针对 ${artifact.capability}（${artifact.role}）的结论我不满意，请重新分析或补充证据。`,
-    };
-
-    const challengeTurnId = `challenge-${Date.now()}`;
-
-    // 节点/段落挑战也必须走同一单门 INTAKE（消灭两道门）
-    const { preparedState: preparedForChallenge, context: ctxChallenge } =
-      WhyBuddyRuntime.intakeMessage(WhyBuddyRuntime.loadOrCreateSessionState(
+  /**
+   * Shared re-entry execution helper.
+   * Both card challenge and graph-node click go through this so they use the
+   * exact same commitArtifact payload shape and contract.
+   * This eliminates the duplication that caused the tsc error (wrong UI-local
+   * fields like `capability`/`role`/`trustLevel` being passed instead of the
+   * proper `producedBy` + `provenance` shape expected by the runtime).
+   */
+  function runReentryTurn(intervention: UserIntervention, turnId: string, forceFail = false) {
+    const { preparedState, context } = WhyBuddyRuntime.intakeMessage(
+      WhyBuddyRuntime.loadOrCreateSessionState(
         sessionState.sessionId || "whybuddy-main-proto",
         goal
-      ), {
-        turnId: challengeTurnId,
+      ),
+      {
+        turnId,
         userText: intervention.text,
         intervention,
-      });
+      }
+    );
 
-    const { newState: afterReOrch, plan: rePlan } = WhyBuddyRuntime.orchestrateReasoningTurn(
-      preparedForChallenge,
-      ctxChallenge
+    const { newState: afterOrch, plan: rePlan } = WhyBuddyRuntime.orchestrateReasoningTurn(
+      preparedState,
+      context
     ) as any;
 
-    // Produce raw artifacts from the re-plan
     const rawNew: WhyArtifact[] = (rePlan.selected || []).map((sel: any, idx: number) => {
       const cap = sel.capabilityId as V5CapabilityId;
       const outputKind = CAPABILITY_OUTPUT_KIND[cap] ?? "risk";
@@ -269,10 +268,10 @@ export default function WhyBuddy() {
       } else if (cap === "counter.argue") {
         reContent = `【重入】${sel.roleId || "agent"} 通过 counter.argue 贡献了：反驳过早引入 ABAC（会增加策略调试成本）；建议 MVP 先采用 RBAC + scoped data filter，保留策略接口。`;
       } else {
-        reContent = `【重入】${sel.roleId || "agent"} 针对上次质疑通过 ${cap} 提供了反证/补充`;
+        reContent = `【重入】${sel.roleId || "agent"} 针对干预通过 ${cap} 提供了反证/补充`;
       }
       return {
-        id: `${challengeTurnId}-art-${idx}`,
+        id: `${turnId}-art-${idx}`,
         kind: outputKind,
         capability: cap,
         role: sel.roleId || "挑刺",
@@ -281,18 +280,18 @@ export default function WhyBuddy() {
       };
     });
 
-    let working = afterReOrch;
+    let working = afterOrch;
     const committedNew: WhyArtifact[] = [];
 
-    // Commit one-by-one with fresh input resolution for cascade deps
     rawNew.forEach((raw, idx) => {
-      const runId = `${challengeTurnId}-run-${idx}`;
+      const runId = `${turnId}-run-${idx}`;
       const freshInputs = WhyBuddyRuntime.findInputsForCapability(working, raw.capability);
 
-      // Use simulator for state-dependent execution (consistent with main path).
-      let sim = WhyBuddyRuntime.simulateCapabilityExecution ? 
-        WhyBuddyRuntime.simulateCapabilityExecution(raw.capability, working, freshInputs) : null;
+      let sim = WhyBuddyRuntime.simulateCapabilityExecution
+        ? WhyBuddyRuntime.simulateCapabilityExecution(raw.capability, working, freshInputs)
+        : null;
       let content = sim ? sim.content : raw.content;
+
       if (raw.capability === "report.write") {
         const upstreams = working.artifacts.filter((a: any) => freshInputs.includes(a.id));
         const fragments = upstreams.flatMap((u: any) => {
@@ -303,7 +302,7 @@ export default function WhyBuddy() {
         const upstreamSummary = upstreams.length > 0
           ? upstreams.map((u: any) => `${u.kind}(${u.producedBy?.capabilityId || u.capability}×${u.producedBy?.roleId || u.role})`).join(', ')
           : '无';
-        content = `【可行性 / 产品推演报告 (重入后)】\n结论：建议推进权限系统建设（基于本轮多角色讨论）。\n支撑证据片段：\n${fragments || '（无具体片段）'}\n\n证据引用：${upstreamSummary}（共 ${upstreams.length} 个已 gated_pass 的上游 artifact）。\n收敛：MVP 先做 RBAC + 基础数据范围，预留策略扩展。\n下一步：进入 structure.decompose 生成任务树。`;
+        content = `【可行性 / 产品推演报告 (重入)】\n结论：建议推进权限系统建设（基于本轮多角色讨论）。\n支撑证据片段：\n${fragments || '（无具体片段）'}\n\n证据引用：${upstreamSummary}（共 ${upstreams.length} 个已 gated_pass 的上游 artifact）。\n收敛：MVP 先做 RBAC + 基础数据范围，预留策略扩展。\n下一步：进入 structure.decompose 生成任务树。`;
       }
 
       if (raw.capability === "synthesis.merge") {
@@ -312,45 +311,84 @@ export default function WhyBuddy() {
           const extracted = WhyBuddyRuntime.extractArtifactFragments(u, 90);
           return extracted.map((fragment) => `• [${u.producedBy?.capabilityId || u.capability} / ${fragment.label}] ${fragment.text}`);
         }).join('\n');
-        content = `【综合收敛 (synthesis.merge，重入后)】\n本轮从 ${upstreams.length} 个上游聚合：\n${mergedPoints || '（无上游片段）'}\n\n初步结论：权限系统建议采用 RBAC + 数据范围 MVP，预留策略扩展。`;
+        content = `【综合收敛 (synthesis.merge，重入)】\n本轮从 ${upstreams.length} 个上游聚合：\n${mergedPoints || '（无上游片段）'}\n\n初步结论：权限系统建议采用 RBAC + 数据范围 MVP，预留策略扩展。`;
       }
 
-      const { updatedState, committed } = WhyBuddyRuntime.commitArtifact(working, {
+      // Correct payload shape expected by runtime commitArtifact
+      // (matches the shape already used in the sendMessage path)
+      const payload = {
         id: raw.id,
         kind: raw.kind as any,
         provenance: "ai_generated",
         producedBy: { capabilityRunId: runId, capabilityId: raw.capability, roleId: raw.role },
-        // Pass the (possibly freshly aggregated) content (not raw) so runtime persists the enhanced text
         title: content ? content.split('\n')[0]?.slice(0, 80) : undefined,
         summary: content ? content.slice(0, 200) : undefined,
         content,
-      } as any, runId, false, freshInputs);
+      };
+
+      const { updatedState, committed } = WhyBuddyRuntime.commitArtifact(
+        working,
+        payload as any,
+        runId,
+        forceFail,
+        freshInputs
+      );
+
       working = updatedState;
-      if (committed) committedNew.push({ ...raw, content, trustLevel: committed.trustLevel as any });
-      else committedNew.push({ ...raw, content, trustLevel: "untrusted" });
+      if (committed) {
+        committedNew.push({ ...raw, content, trustLevel: committed.trustLevel as any });
+      } else {
+        committedNew.push({ ...raw, content, trustLevel: "untrusted" });
+      }
     });
 
-    const challengeTurn: ChatTurn = {
-      id: challengeTurnId,
+    const reentryTurn: ChatTurn = {
+      id: turnId,
       user: intervention.text,
       selected: rePlan.selected.map((s: any) => ({ cap: s.capabilityId, role: s.roleId || "agent" })),
-      reason: "用户干预 → 失效/补充 → Orchestrator 重新挑选能力（演示 V5 可重入 + 失效级联）",
+      reason: "用户干预（卡片或节点）→ 失效/补充 → Orchestrator 重新挑选能力",
       artifacts: committedNew,
     };
 
-    // 先把本轮真正产出的 artifact 精确回写到对应 graph node（run 级绑定闭环，重入路径也必须做）
-    working = WhyBuddyRuntime.enrichGraphNodesAfterCommit(working, challengeTurnId);
+    working = WhyBuddyRuntime.enrichGraphNodesAfterCommit(working, turnId);
     working = WhyBuddyRuntime.deriveNodeStatus ? WhyBuddyRuntime.deriveNodeStatus(working) : working;
 
     setDynamicGraph(working.graph);
 
-    // 挑战重入收敛后同样进入 AWAIT
     working = WhyBuddyRuntime.saveSessionState(
-      WhyBuddyRuntime.markAwaiting(working, challengeTurnId)
+      WhyBuddyRuntime.markAwaiting(working, turnId)
     );
 
     setSessionState(working);
-    setChatTurns((prev) => [...prev, challengeTurn]);
+    setChatTurns((prev) => [...prev, reentryTurn]);
+  }
+
+  const challenge = (turn: ChatTurn, artifact: WhyArtifact) => {
+    const intervention: UserIntervention = {
+      targetArtifactId: artifact.id,
+      intent: "challenge",
+      text: `针对 ${artifact.capability}（${artifact.role}）的结论我不满意，请重新分析或补充证据。`,
+    };
+    const turnId = `challenge-${Date.now()}`;
+    runReentryTurn(intervention, turnId, nextGateShouldFail);
+  };
+
+  const handleGraphNodeClick = (node: BrainstormReasoningNode) => {
+    // Node-specific resolution: prefer the enriched producedArtifactId for exact
+    // run/artifact binding (the whole point of the previous binding work).
+    // Fall back to targetNodeId so the runtime's invalidate logic can still match.
+    const producedArtifactId = (node as any).producedArtifactId as string | undefined;
+
+    const intervention: UserIntervention = {
+      ...(producedArtifactId
+        ? { targetArtifactId: producedArtifactId }
+        : { targetNodeId: node.id }),
+      intent: "challenge",
+      text: `针对图中节点「${node.title || (node as any).capabilityId || node.id}」的结论我不满意，请重新分析或补充证据。`,
+    };
+
+    const turnId = `node-challenge-${Date.now()}`;
+    runReentryTurn(intervention, turnId, nextGateShouldFail);
   };
 
   const currentGraphForSurface = useMemo(() => dynamicGraph, [dynamicGraph]);
@@ -547,6 +585,7 @@ export default function WhyBuddy() {
         <div className="flex flex-1 flex-col overflow-hidden border-t md:border-t-0">
           <div className="border-b bg-white px-4 py-2 text-xs font-medium text-slate-500 flex items-center justify-between">
             <span>动态推演画布（复用 ReasoningFlowSurface · 随能力调用实时更新）</span>
+            <span className="text-[10px] text-slate-400">点击节点可针对该结论发起挑战（与卡片等效精确重入）</span>
             {pinnedArtifact && (
               <button onClick={() => setPinnedArtifact(null)} className="text-rose-600">取消 Pin</button>
             )}
@@ -561,6 +600,7 @@ export default function WhyBuddy() {
                 initialScale={0.75}
                 className="h-full w-full"
                 showChrome={false}
+                onNodeClick={handleGraphNodeClick}
               />
             </div>
 

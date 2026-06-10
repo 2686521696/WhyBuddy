@@ -65,6 +65,11 @@ export interface ReasoningFlowSurfaceProps {
   className?: string;
   /** 是否显示完整 chrome（telemetry / console / minimap / controls）。默认 true。 */
   showChrome?: boolean;
+  /**
+   * 可选：节点被点击时的回调。用于 /whybuddy 等场景实现 "BOARD 可点节点" 精确重入。
+   * 当提供时，节点卡片会显示为可点击（cursor-pointer）。
+   */
+  onNodeClick?: (node: BrainstormReasoningNode) => void;
 }
 
 interface PositionedNode extends BrainstormReasoningNode {
@@ -280,6 +285,7 @@ export function ReasoningFlowSurface({
   initialScale = 0.85,
   className = "",
   showChrome = true,
+  onNodeClick,
 }: ReasoningFlowSurfaceProps) {
   // 统一数据源 + defense-in-depth（与 stripDebateProtocolNodes 语义对齐）。
   // - raw graph 路径：safeSource 已经过 stripDebateProtocolNodes（移除 debate 节点/边 + 清空 consoleLines）。
@@ -715,18 +721,20 @@ export function ReasoningFlowSurface({
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
 
+            const clickable = !!onNodeClick;
             return (
               <div
                 key={node.id}
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(null)}
+                onClick={clickable ? () => onNodeClick!(node) : undefined}
                 className={`absolute rounded-xl border bg-white/95 overflow-hidden transition-all ${
                   isDimmed
                     ? "opacity-25 saturate-[0.6]"
                     : isHighlighted
                     ? "opacity-100 shadow-md scale-[1.015] border-slate-300"
                     : "border-slate-200 shadow-[0_1px_2px_rgb(0,0,0,0.04)] hover:shadow-md hover:border-slate-300"
-                }`}
+                } ${clickable ? "cursor-pointer" : ""}`}
                 style={{
                   left: node.x,
                   top: node.y,
@@ -735,6 +743,7 @@ export function ReasoningFlowSurface({
                   padding: "7px 10px",
                   boxSizing: "border-box",
                 }}
+                title={clickable ? "点击发起挑战 / 继续讨论" : undefined}
               >
                 {/* 左侧类型色条 + 状态小点 */}
                 <div
