@@ -123,6 +123,9 @@ export interface V5SessionState {
 
   /** V5.1 Knife 6: optional cost telemetry ledger (v1: estimated tokens/duration per run). */
   costLedger?: CapabilityCostRecord[];
+
+  /** V5.1 Knife 7: optional coverage gaps for gap lifecycle (resolved/waived) under authored CoverageContract. */
+  coverageGaps?: CoverageGap[];
 }
 
 export interface UserIntervention {
@@ -183,15 +186,18 @@ export interface SchedulingDecision {
   challengeText?: string;
 }
 
-/** V5.1 CONTRACT / GCOV (P1/A): Coverage contract authored for the session/goal to declare what is required before convergence (report/AWAIT) is allowed. v1 mechanical rules only. */
+/** V5.1 CONTRACT / GCOV (P1/A): Coverage contract authored for the session/goal to declare what is required before convergence (report/AWAIT) is allowed. Now supports authored/versioned/frozen baseline + blockingGapIds for gap lifecycle (Knife 7). */
 export interface CoverageContract {
   id: string;
   version: 1;
   mode: "simple" | "complex";
+  authoredBy: "system" | "user" | "imported";
+  authoredAt: string;
+  frozenAtTurnId?: string;
   requiredCapabilities: string[];
   conditionalCapabilities: string[];
   minEvidencePerRequirement: number;
-  frozenAtTurnId?: string;
+  blockingGapIds: string[];
 }
 
 /** V5.1 GCOV gate result: mechanical check outcome before allowing report.write or AWAIT converge. */
@@ -201,6 +207,21 @@ export interface CoverageGateResult {
   unresolvedGaps: string[];
   waivedGaps: string[];
   reason: string;
+}
+
+/** V5.1 Knife 7: Coverage gap with lifecycle (open/resolved/waived). Used by authored CoverageContract baseline. */
+export interface CoverageGap {
+  id: string;
+  kind: "missing_capability" | "missing_evidence" | "open_question" | "risk_unresolved";
+  label: string;
+  requiredCapabilityId?: string;
+  status: "open" | "resolved" | "waived";
+  reason?: string;
+  resolvedByArtifactId?: string;
+  waivedBy?: "user" | "system";
+  waivedReason?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 /** V5.1 FLOWB (Knife 4): Flow Boundary check record. Records purification of brainstorm/critique/rebuttal/debate protocol before formal artifact/report/synthesis content. v1 mechanical strip only. */

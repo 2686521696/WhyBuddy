@@ -43,6 +43,7 @@ import type {
   CoverageGateResult,
   FlowBoundaryCheck,
   CapabilityCostRecord,
+  CoverageGap,
 } from "@shared/blueprint/v5-reasoning-state";
 import type { BrainstormReasoningGraph, BrainstormReasoningNode, BrainstormReasoningEdge } from "@shared/blueprint/brainstorm-reasoning-graph";
 import { V5_CAPABILITY_POOL, ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
@@ -326,6 +327,7 @@ export function createInitialSessionState(goalText: string, sessionId = "whybudd
   coverageGate: undefined,
   flowBoundaryLedger: [],
   costLedger: [],
+  coverageGaps: [],
   };
 }
 
@@ -634,21 +636,102 @@ export function getDecisionLedger(state: V5SessionState): SchedulingDecision[] {
 // Mechanical rules only (no deep semantics). Contract + gate prevent premature "想清楚了" (report/AWAIT).
 // Inserted after DLEDGER in ORCH per spec. Budget remains the prior gate.
 
-export function inferCoverageContract(goalText: string, turnId?: string): CoverageContract {
+export function authorCoverageContract(goalText: string, turnId?: string): { contract: CoverageContract; gaps: CoverageGap[] } {
   const t = (goalText || "").toLowerCase();
   const isComplex = /风险|risk|安全|审计|反驳|复杂|complex|rebuttal/.test(t);
   const mode: "simple" | "complex" = isComplex ? "complex" : "simple";
   const requiredCapabilities = isComplex ? ["risk.analyze", "report.write"] : ["report.write"];
   const conditionalCapabilities = isComplex ? ["synthesis.merge"] : [];
-  return {
+
+  const now = new Date().toISOString();
+  const contract: CoverageContract = {
     id: `cov-${turnId || Date.now()}`,
     version: 1,
     mode,
+    authoredBy: "system",
+    authoredAt: now,
+    frozenAtTurnId: turnId,
     requiredCapabilities,
     conditionalCapabilities,
     minEvidencePerRequirement: 1,
-    frozenAtTurnId: turnId,
+    blockingGapIds: [],
   };
+
+  const gaps: CoverageGap[] = [];
+  const nowGap = now;
+  for (const cap of requiredCapabilities) {
+    if (cap === "report.write") continue; // report is the convergence action, not a pre-req gap
+    const gap: CoverageGap = {
+      id: `gap-${cap}-${turnId || Date.now()}`,
+      kind: "missing_capability",
+      label: `Missing required capability: ${cap}`,
+      requiredCapabilityId: cap,
+      status: "open",
+      createdAt: nowGap,
+    };
+    gaps.push(gap);
+    contract.blockingGapIds.push(gap.id);
+  }
+  // For complex, also seed a generic evidence gap if no upstreams (will be checked at gate time)
+  if (isComplex) {
+    const evGap: CoverageGap = {
+      id: `gap-evidence-${turnId || Date.now()}`,
+      kind: "missing_evidence",
+      label: "Missing trusted upstream evidence for report",
+      status: "open",
+      createdAt: nowGap,
+    };
+    gaps.push(evGap);
+    contract.blockingGapIds.push(evGap.id);
+  }
+
+  return { contract, gaps };
+}
+
+/** Knife 7: resolve open coverage gaps that are now satisfied by current trusted state (e.g. after commit). */
+export function resolveCoverageGapsFromState(state: V5SessionState): V5SessionState {
+  const contract = state.coverageContract;
+  if (!contract) return state;
+  let gaps = [...(state.coverageGaps || [])] as CoverageGap[];
+  let changed = false;
+  const now = new Date().toISOString();
+
+  for (const g of gaps) {
+    if (g.status !== "open") continue;
+    if (g.kind === "missing_capability" && g.requiredCapabilityId) {
+      if (hasTrustedCommittedForCap(state, g.requiredCapabilityId)) {
+        g.status = "resolved";
+        g.updatedAt = now;
+        const arts = (state.artifacts || []).filter((a: any) => a.producedBy?.capabilityId === g.requiredCapabilityId && (a.trustLevel === "gated_pass" || a.trustLevel === "audited"));
+        if (arts.length) g.resolvedByArtifactId = arts[arts.length - 1].id;
+        changed = true;
+      }
+    } else if (g.kind === "missing_evidence") {
+      if (countTrustedUpstreams(state) >= (contract.minEvidencePerRequirement || 1)) {
+        g.status = "resolved";
+        g.updatedAt = now;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) return state;
+  return { ...state, coverageGaps: gaps };
+}
+
+/** Knife 7: waive an open gap (runtime helper; UI can call later). */
+export function waiveCoverageGap(state: V5SessionState, gapId: string, reason: string): V5SessionState {
+  let gaps = [...(state.coverageGaps || [])] as CoverageGap[];
+  const idx = gaps.findIndex((g) => g.id === gapId);
+  if (idx < 0) return state;
+  const g = { ...gaps[idx] };
+  if (g.status !== "open") return state;
+  g.status = "waived";
+  g.waivedBy = "system";
+  g.waivedReason = reason;
+  g.updatedAt = new Date().toISOString();
+  gaps[idx] = g;
+  return { ...state, coverageGaps: gaps };
 }
 
 function hasTrustedCommittedForCap(state: V5SessionState, capId: string): boolean {
@@ -677,16 +760,24 @@ export function evaluateCoverageGate(
   selected: Array<{ capabilityId: string; roleId?: string }> = [],
   existingContract?: CoverageContract
 ): CoverageGateResult {
-  const contract = existingContract || inferCoverageContract(state.goal?.text || "", (state as any).lastTurnId);
+  const contract = existingContract || authorCoverageContract(state.goal?.text || "", (state as any).lastTurnId).contract;
+  const gaps = (state.coverageGaps || []) as CoverageGap[];
+
+  // Use gap lifecycle for decision: blocking gaps must be resolved or waived.
+  const blockingGaps = gaps.filter((g: CoverageGap) => contract.blockingGapIds.includes(g.id));
+  const openBlocking = blockingGaps.filter((g: CoverageGap) => g.status === "open");
+  const unresolvedGaps = openBlocking.map((g: CoverageGap) => g.id);
+  const waivedGaps = blockingGaps.filter((g: CoverageGap) => g.status === "waived").map((g: CoverageGap) => g.id);
+
+  // Still compute missing caps for backward compat / DLEDGER addresses.
   const missing: string[] = [];
-  // Pre-reqs are the required caps *except* report.write itself (report.write is the converge action we are gating;
-  // we check its prereqs + upstream evidence, not that report is "already committed").
   const preReqs = contract.requiredCapabilities.filter((c) => c !== 'report.write');
   for (const req of preReqs) {
     if (!hasTrustedCommittedForCap(state, req)) {
       missing.push(req);
     }
   }
+
   const hasReportIntent = selected.some((s: any) => s.capabilityId === 'report.write');
   let upstreamOk = true;
   if (hasReportIntent) {
@@ -695,19 +786,20 @@ export function evaluateCoverageGate(
       upstreamOk = false;
     }
   }
-  const passed = missing.length === 0 && upstreamOk;
-  const unresolvedGaps: string[] = [];
-  if (!upstreamOk) {
-    unresolvedGaps.push('insufficient trusted upstream evidence for report');
-  }
+
+  // Core gate: all blocking gaps handled + no missing pre-reqs + upstreams ok.
+  const allBlockingHandled = openBlocking.length === 0;
+  const passed = allBlockingHandled && missing.length === 0 && upstreamOk;
+
   const reason = passed
-    ? `Coverage sufficient (mode=${contract.mode}, required met, upstreams ok)`
-    : `Missing required capabilities or evidence: ${missing.join(', ') || 'upstream evidence'}`;
+    ? `Coverage sufficient (mode=${contract.mode}, baseline frozen, all blocking gaps resolved/waived)`
+    : `Blocking gaps open: ${unresolvedGaps.length}; missing caps: ${missing.join(', ') || 'none'}; upstreams ok: ${upstreamOk}`;
+
   return {
     passed,
     missingCapabilities: missing,
     unresolvedGaps,
-    waivedGaps: [],
+    waivedGaps,
     reason,
   };
 }
@@ -1501,17 +1593,26 @@ export function commitArtifact(
   // Merge any cost ledger updates from record during this commit.
   const finalCostLedger = (costedStateForRun as any).costLedger || (state.costLedger || []);
 
+  // Build the candidate updated state first (with new artifacts/runs so resolve can see the just-committed trusted run/art).
+  let updated: V5SessionState = {
+    ...state,
+    artifacts: newArtifacts,
+    capabilityRuns: newRuns,
+    gates: newGates,
+    dependencyGraph: [...state.dependencyGraph, ...newDeps],
+    costLedger: finalCostLedger,
+    flowBoundaryLedger,
+    decisionLedger: finalDecisionLedger,
+    coverageGaps: state.coverageGaps || [],
+  };
+
+  // Knife 7: after successful formal commit, auto-resolve any gaps now satisfied (e.g. required cap delivered).
+  if (allPassed && (isReport || isSynthesisLike || capId === "risk.analyze")) {
+    updated = resolveCoverageGapsFromState(updated);
+  }
+
   return {
-    updatedState: {
-      ...state,
-      artifacts: newArtifacts,
-      capabilityRuns: newRuns,
-      gates: newGates,
-      dependencyGraph: [...state.dependencyGraph, ...newDeps],
-      flowBoundaryLedger,
-      decisionLedger: finalDecisionLedger,
-      costLedger: finalCostLedger,
-    },
+    updatedState: updated,
     committed: allPassed ? committed : null,
     run,
   };
@@ -1977,11 +2078,16 @@ export function orchestrateReasoningTurn(
     /报告|report|总结|收敛|converge/.test(userTextForPick);
   if (!working.coverageContract) {
     // Contract is goal/session level; prioritize goal.text for mode (simple vs complex) even if this turn's userText is short.
+    // Knife 7: author + freeze baseline + init gaps on first use.
     const goalForContract = working.goal?.text || userTextForPick || "";
+    const { contract, gaps } = authorCoverageContract(goalForContract, turnId);
     working = {
       ...working,
-      coverageContract: inferCoverageContract(goalForContract, turnId),
+      coverageContract: contract,
+      coverageGaps: gaps,
     };
+    // Knife 7: on first authoring in this ORCH, immediately resolve any gaps already satisfied by prior state (e.g. previous turns' commits).
+    working = resolveCoverageGapsFromState(working);
   }
   const gateResult = evaluateCoverageGate(working, selected, working.coverageContract);
   working = {
@@ -2016,7 +2122,9 @@ export function orchestrateReasoningTurn(
       const lastDec: any = ledgerArr[ledgerArr.length - 1];
       if (lastDec) {
         const covAdds = missing.map((m) => `coverage:required:${m}`);
-        lastDec.addresses = [...(lastDec.addresses || []), ...covAdds];
+        // Knife 7: richer addresses with gaps from current contract
+        const gapAdds = ((working.coverageGaps || []) as any[]).filter((g: any) => (working.coverageContract as any)?.blockingGapIds?.includes(g.id)).map((g: any) => `coverage:gap:${g.id}`);
+        lastDec.addresses = [...(lastDec.addresses || []), ...covAdds, ...gapAdds];
         if (forced.length > 0) {
           lastDec.chose = [...(lastDec.chose || []), ...forcedIds];
           lastDec.skipped = (lastDec.skipped || []).filter((sk: any) => !forcedIds.includes(sk.capabilityId));

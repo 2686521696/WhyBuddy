@@ -49,6 +49,10 @@ import {
   type FlowBoundaryCheck,
   type CapabilityCostRecord,
   type BudgetSnapshot,
+  type CoverageGap,
+  authorCoverageContract,
+  resolveCoverageGapsFromState,
+  waiveCoverageGap,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
@@ -1862,5 +1866,66 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(snap.totalEstimatedTokens).toBeGreaterThan(0);
     expect(snap.perCapTokens && snap.perCapTokens['risk.analyze']).toBeGreaterThan(0);
     expect(typeof snap.costRecordCount).toBe('number');
+  });
+
+  // ===== Knife 7: authored CoverageContract baseline + gap lifecycle (4 new tests, 52 -> 56) =====
+
+  it('authored CoverageContract creates frozen baseline + blocking gaps', () => {
+    let s = createInitialSessionState('有风险的权限系统报告', 'cov7-1');
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't1');
+    expect(contract.authoredBy).toBe('system');
+    expect(contract.frozenAtTurnId).toBe('t1');
+    expect(contract.blockingGapIds.length).toBeGreaterThan(0);
+    expect(gaps.some((g: CoverageGap) => g.kind === 'missing_capability' && g.requiredCapabilityId === 'risk.analyze')).toBe(true);
+    // Apply to state like ORCH does
+    s = { ...s, coverageContract: contract, coverageGaps: gaps };
+    expect(s.coverageContract!.blockingGapIds.length).toBeGreaterThan(0);
+  });
+
+  it('committing required capability resolves corresponding gap', () => {
+    let s = createInitialSessionState('权限报告', 'cov7-2');
+    const { contract, gaps } = authorCoverageContract('有风险', 't2');
+    s = { ...s, coverageContract: contract, coverageGaps: gaps };
+    // Commit a trusted risk
+    const { updatedState: after } = commitArtifact(
+      s,
+      createRawArtifact('risk7', 'risk.analyze', '安全', 'risk'),
+      'r7',
+      false,
+      []
+    );
+    const gap = (after.coverageGaps || []).find((g: CoverageGap) => g.requiredCapabilityId === 'risk.analyze');
+    expect(gap?.status).toBe('resolved');
+    expect(gap?.resolvedByArtifactId).toBeTruthy();
+  });
+
+  it('GCOV blocks when blocking gap remains open', () => {
+    let s = createInitialSessionState('复杂风险报告', 'cov7-3');
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't3');
+    s = { ...s, coverageContract: contract, coverageGaps: gaps }; // gaps open
+    const { newState: afterO, plan } = orchestrateReasoningTurn(s, { turnId: 't3', userText: '写报告' });
+    const gate = afterO.coverageGate as any;
+    expect(gate.passed).toBe(false);
+    expect(gate.unresolvedGaps.length).toBeGreaterThan(0);
+    // plan should not be pure report (block or reconsider)
+    const caps = (plan.selected || []).map((p: any) => p.capabilityId);
+    const onlyReport = caps.length === 1 && caps[0] === 'report.write';
+    expect(onlyReport).toBe(false);
+  });
+
+  it('GCOV passes when blocking gaps are resolved or waived', () => {
+    let s = createInitialSessionState('有风险报告', 'cov7-4');
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't4');
+    s = { ...s, coverageContract: contract, coverageGaps: gaps };
+    // resolve by committing risk
+    const { updatedState: s2 } = commitArtifact(s, createRawArtifact('r4', 'risk.analyze', '安全', 'risk'), 'r4', false, []);
+    // waive the evidence gap if present
+    const evGap = (s2.coverageGaps || []).find((g: CoverageGap) => g.kind === 'missing_evidence');
+    let s3 = s2;
+    if (evGap) s3 = waiveCoverageGap(s2, evGap.id, 'demo waive for test');
+    const { newState: afterO } = orchestrateReasoningTurn(s3, { turnId: 't4', userText: '现在报告' });
+    const gate = afterO.coverageGate as any;
+    expect(gate.passed).toBe(true);
+    expect(gate.unresolvedGaps.length).toBe(0);
   });
 });

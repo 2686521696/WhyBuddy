@@ -5348,6 +5348,217 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 7：authored CoverageContract baseline + gap lifecycle（按用户 review "收到。Knife 6 这刀把 Budget 从“能挡”..."）
+
+**执行日期**：紧接 Knife 6 cost telemetry + 用户 "可以进 Knife 7" 之后。
+
+**用户本次 Findings（原文 verbatim 完整）**
+
+```text
+收到。Knife 6 这刀把 Budget 从“能挡”推进到“能算账、能解释”，V5.1 控制平面又厚了一层。
+
+我按你执行结果更新：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：94%
+V5.1 控制平面完成度：92-93%
+验证护栏：98%+
+
+现在 Budget / Cost 这块已经有了 v1 闭环：
+
+capability execution -> cost record -> costLedger -> BudgetSnapshot -> audit
+
+而且你这次保持得很克制：只做 ledger + estimated tokens + duration，不急着用 token 硬挡。这是对的。真实 token blocking 很容易误伤，现在先让系统“看得见成本”比“马上按成本杀任务”更稳。
+
+**当前 V5.1 主链**
+
+现在链条可以写成：
+
+INTAKE
+ -> BUDGET(count + cost snapshot)
+ -> ORCH
+ -> DLEDGER(decision audit + challenge)
+ -> GCOV(coverage gate)
+ -> FLOWB(protocol boundary)
+ -> commit / plan / AWAIT
+
+对应能力：
+
+BUDGET：别跑爆 + 成本可观测
+DLEDGER：为什么这么跑 + 可挑战
+GCOV：跑够了没有，不够不许收敛
+FLOWB：正式路径前协议净化
+CostLedger：每个 capability run 的估算消耗
+
+这已经非常接近 V5.1 架构图了。
+
+**为什么现在是 94%，不是 96%**
+
+剩下最大缺口就是你也点到的 Knife 7：
+
+CoverageContract authored baseline + gap resolved/waived
+
+现在 GCOV 能机械判断 required capability / upstream evidence，但它的 contract 还是 v1 自动推断，不是“ authored / versioned / frozen baseline ”。  
+也就是说现在系统能说：
+
+复杂目标需要 risk.analyze + report.write
+
+但还不能完整说：
+
+这个 session 的 coverage baseline 是第几版；
+哪些 gap 是 blocking；
+哪些已经 resolved；
+哪些被 waived；
+waive 的理由是什么；
+GCOV 是基于哪一版 contract 判定的。
+
+这就是 94% 到 96% 的差距。
+
+**下一刀：Knife 7 CoverageContract Authored Baseline + Gap Lifecycle**
+
+建议 commit：
+
+feat(whybuddy): add authored CoverageContract baseline and gap lifecycle
+
+目标一句话：
+
+> CoverageContract 不再只是机械推断规则，而是 session 级、版本化、冻结的 coverage baseline；GCOV 能基于 gap resolved/waived 做二元判定。
+
+**Knife 7 最小可交付**
+
+1. 扩展 `CoverageContract`：
+
+interface CoverageContract {
+  id: string;
+  version: 1;
+  mode: "simple" | "complex";
+  authoredBy: "system" | "user" | "imported";
+  authoredAt: string;
+  frozenAtTurnId?: string;
+  requiredCapabilities: string[];
+  conditionalCapabilities: string[];
+  minEvidencePerRequirement: number;
+  blockingGapIds: string[];
+}
+
+2. 新增 gap 类型：
+
+interface CoverageGap {
+  id: string;
+  kind: "missing_capability" | "missing_evidence" | "open_question" | "risk_unresolved";
+  label: string;
+  requiredCapabilityId?: string;
+  status: "open" | "resolved" | "waived";
+  reason?: string;
+  resolvedByArtifactId?: string;
+  waivedBy?: "user" | "system";
+  waivedReason?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+3. 在 `V5SessionState` 加：
+
+coverageGaps?: CoverageGap[];
+
+optional，durable-safe。
+
+4. `inferCoverageContract` 改成“author contract”语义：
+
+authorCoverageContract(goalText, turnId): {
+  contract,
+  gaps
+}
+
+第一次创建时冻结 baseline：
+
+coverageContract.authoredBy = "system"
+coverageContract.authoredAt = now
+coverageContract.frozenAtTurnId = turnId
+coverageGaps = initial blocking gaps
+
+5. `evaluateCoverageGate` 改为看 gap lifecycle：
+
+blocking gaps 全部 resolved 或 waived
+required capabilities 有 trusted committed artifact
+report.write 有 upstream evidence
+
+如果缺 capability，则对应 gap open。  
+如果 commitArtifact 后满足了某 gap，则可以标记 resolved。
+
+6. 提供两个 helper：
+
+resolveCoverageGapsFromState(state): V5SessionState
+waiveCoverageGap(state, gapId, reason): V5SessionState
+
+v1 可以只 runtime-level，不接 UI。
+
+7. DLEDGER addresses 改得更实：
+
+coverage:gap:<gapId>
+coverage:required:<capabilityId>
+
+8. 测试至少 4 个：
+
+authored CoverageContract creates frozen baseline + blocking gaps
+committing required capability resolves corresponding gap
+GCOV blocks when blocking gap remains open
+GCOV passes when blocking gaps are resolved or waived
+
+如果加 4 个：
+
+52 -> 56
+
+smoke 文案同步：
+
+52/52 -> 56/56
+
+**做完 Knife 7 后预计**
+
+V5.1 架构图效果：94% -> 96%
+V5.1 控制平面完成度：92-93% -> 95%
+
+这会让 V5.1 的 “CONTRACT 一份合约喂两个闸” 真正成立：
+
+CONTRACT -> GCOV：别太早停 / 别太早写结论
+CONTRACT -> BUDGET：够了就停 / 不要无限跑
+
+第一条 Knife 7 可以直接做。第二条可以先只预留，不必马上让 Budget 读 contract 停跑，避免过大。
+
+**后续路线**
+
+Knife 7：CoverageContract authored baseline + gap resolved/waived
+Knife 8：UI decision challenge + coverage/cost visible status
+Knife 9：FLOWB deeper brainstorm protocol integration
+Knife 10：真实 token / provider usage cost 接入
+
+一句话：**可以进 Knife 7。**  
+现在 V5.1 已经有控制平面了，下一步要把 CoverageContract 从“推断规则”升级为“有版本、有 gap 生命周期、有 resolved/waived 证据的正式合约”。
+```
+
+**本阶段执行记录 + 结果（Knife 7）**
+
+- State 扩展：CoverageContract 增加 authoredBy/authoredAt/frozenAtTurnId/blockingGapIds；新增 CoverageGap 接口；V5SessionState 加 coverageGaps?。
+- authorCoverageContract（替换旧 infer）：创建时设 authoredBy="system"、authoredAt、frozenAtTurnId，初始化 blockingGapIds + gaps（missing_capability / missing_evidence）。
+- evaluateCoverageGate 改用 gap lifecycle：all blocking gaps resolved/waived + 旧 missing/pre-req/upstream 检查；unresolvedGaps/waivedGaps 现在是 gap ids。
+- 新 helpers：resolveCoverageGapsFromState（commit 后或 authoring 时自动把已满足的 gap 标 resolved，link artifact）；waiveCoverageGap（设 waived + reason）。
+- 集成：ORCH authoring 后立即 resolve（让 prior commits 生效）；commitArtifact 在 formal cap 成功提交后调用 resolve（新 artifact 触发 gap close）。
+- DLEDGER addresses 增强：coverage:required: + coverage:gap:。
+- +4 tests（authored frozen baseline + gaps；commit resolves gap；GCOV block on open gap；GCOV pass on resolved/waived）→ 56 passed (56)。
+- Smokes 同步 52/52 → 56/56。
+- 完整 verify 绿（tsc clean 后全链通过）。
+- 主 doc + session plan append verbatim review + 记录。
+- Git 仅 V5，commit 消息使用建议值。
+
+现在 CoverageContract 是 “authored / frozen baseline”，GCOV 用 gap 生命周期做判定，CONTRACT 一份合约喂两个闸的语义成立。v1 仍 runtime 级（helpers 可被 UI 后续调用）。
+
+进度（用户口径）：94% → 96% 架构图；92-93% → 95% 控制平面。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+下一步按用户：Knife 8 UI decision challenge entry + visible status 等。
+
 ## Knife 6：Cost Telemetry / Budget Ledger（按用户 review "收到。Knife 5 这刀是质变..."）
 
 **执行日期**：紧接 Knife 5 decision challenge + 用户 "可以进 Knife 6" 之后。
