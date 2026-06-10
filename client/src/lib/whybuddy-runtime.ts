@@ -38,6 +38,7 @@ import type {
   UserIntervention,
   TurnPlan,
   OrchestrateContext,
+  SchedulingDecision,
 } from "@shared/blueprint/v5-reasoning-state";
 import type { BrainstormReasoningGraph, BrainstormReasoningNode, BrainstormReasoningEdge } from "@shared/blueprint/brainstorm-reasoning-graph";
 import { V5_CAPABILITY_POOL, ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
@@ -281,6 +282,7 @@ export function createInitialSessionState(goalText: string, sessionId = "whybudd
     staleArtifactIds: [],
     sessionId,
     runtimePhase: "idle",
+    decisionLedger: [],
   };
 }
 
@@ -578,6 +580,11 @@ export function getSessionLedger(state: V5SessionState): Array<{
       gateSummary,
     };
   });
+}
+
+/** V5.1 DLEDGER helper (parallel to getSessionLedger). Returns a defensive copy. */
+export function getDecisionLedger(state: V5SessionState): SchedulingDecision[] {
+  return [...(state.decisionLedger || [])];
 }
 
 /**
@@ -1597,6 +1604,26 @@ export function orchestrateReasoningTurn(
     };
     // Record hook (v1 no-op beyond trace; real cost telemetry lands in DLEDGER later)
     parked = recordCapabilityRunCost(parked, { id: `${turnId}-budget-run`, capabilityId: 'budget.gate' as any, turnId, inputs: [], outputs: [], gateResults: [] } as any);
+
+    // V5.1 DLEDGER: even on budget block we record a decision (decided policy: special blocked entry for complete history).
+    const nowIsoBlock = new Date().toISOString();
+    const allCapIdsBlock = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
+    const blockDecision: SchedulingDecision = {
+      id: `${turnId}-dledger-budget`,
+      turnId,
+      saw: allCapIdsBlock,
+      chose: [],
+      skipped: allCapIdsBlock.map((cid) => ({ capabilityId: cid, reason: "blocked_by_budget" })),
+      addresses: [],
+      rationale: `blocked_by_budget: ${budgetCheck.reason}`,
+      alternativesRejected: allCapIdsBlock,
+      createdAt: nowIsoBlock,
+    };
+    parked = {
+      ...parked,
+      decisionLedger: [...(parked.decisionLedger || []), blockDecision],
+    };
+
     return {
       newState: parked,
       plan: { selected: [], reason: `BUDGET_EXCEEDED: ${budgetCheck.reason}`, expectedArtifacts: [] } as TurnPlan,
@@ -1609,6 +1636,34 @@ export function orchestrateReasoningTurn(
 
   // 3. Pick (this is where the real intelligence will live)
   const selected = pickNextCapabilities(working, userTextForPick);
+
+  // ===== V5.1 DLEDGER (P1/A) =====
+  // Record immediately after every pickNextCapabilities (per user spec).
+  // This makes scheduling decisions auditable / challengeable (future decision challenge target).
+  const nowIso = new Date().toISOString();
+  const choseIds = selected.map((s: any) => s.capabilityId as string);
+  // For v1 "saw" we use the full pool (the candidates the heuristic considered).
+  // In a more advanced picker this could be the actually considered subset.
+  const allCapIds = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
+  const saw = allCapIds;
+  const skipped = saw
+    .filter((cid) => !choseIds.includes(cid))
+    .map((cid) => ({ capabilityId: cid, reason: "not chosen by current pickNext heuristic for this turn" }));
+  const decision: SchedulingDecision = {
+    id: `${turnId}-dledger`,
+    turnId,
+    saw,
+    chose: choseIds,
+    skipped,
+    addresses: [], // v1 stub; future: map from open gaps / openQuestions
+    rationale: `Goal/stale/keyword-driven pick for: ${(userTextForPick || "").slice(0, 80)}... (stale=${(working.staleArtifactIds || []).length}, hasRisk=${(working.artifacts || []).some((a: any) => a.kind === "risk")})`,
+    alternativesRejected: skipped.map((s) => s.capabilityId),
+    createdAt: nowIso,
+  };
+  working = {
+    ...working,
+    decisionLedger: [...(working.decisionLedger || []), decision],
+  };
 
   // 4. For each selected, declare real inputs from current state (this populates dependencyGraph later in commit)
   const selectedWithInputs = selected.map((sel) => ({

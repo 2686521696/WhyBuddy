@@ -37,8 +37,10 @@ import {
   evaluateBudgetBeforeOrchestrate,
   getDefaultBudgetPolicy,
   recordCapabilityRunCost,
+  getDecisionLedger,
   type BudgetPolicy,
   type BudgetSnapshot,
+  type SchedulingDecision,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
@@ -1402,5 +1404,72 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const afterRec = recordCapabilityRunCost(s, dummyRun, { tokens: 123 });
     expect(afterRec).toBeTruthy();
     expect((afterRec.capabilityRuns || []).length).toBe(0); // v1 no side effect on count
+  });
+
+  // ===== V5.1 Decision Ledger v1 tests (Knife 2) =====
+  it('Decision Ledger v1: normal orchestrate appends a decision; chose matches plan.selected exactly', () => {
+    const s = createInitialSessionState('dledger normal', 'd1');
+    const { newState: afterO, plan } = orchestrateReasoningTurn(s, {
+      turnId: 'd1',
+      userText: '分析风险并生成报告',
+    });
+
+    const ledger = getDecisionLedger(afterO);
+    expect(ledger.length).toBe(1);
+    const d = ledger[0];
+    expect(d.turnId).toBe('d1');
+    expect(d.chose.length).toBeGreaterThan(0);
+    // chose ids must match the plan.selected
+    const planIds = (plan.selected || []).map((p: any) => p.capabilityId);
+    expect(d.chose).toEqual(planIds);
+    expect(d.saw.length).toBeGreaterThan(0);
+    expect(d.skipped.every((sk: any) => !d.chose.includes(sk.capabilityId))).toBe(true);
+  });
+
+  it('Decision Ledger v1: skipped has reasons and does not overlap chose', () => {
+    const s = createInitialSessionState('dledger skipped', 'd2');
+    const { newState: afterO } = orchestrateReasoningTurn(s, {
+      turnId: 'd2',
+      userText: '做个报告',
+    });
+
+    const ledger = getDecisionLedger(afterO);
+    expect(ledger.length).toBe(1);
+    const d = ledger[0];
+    expect(d.skipped.length).toBeGreaterThan(0);
+    d.skipped.forEach((sk: any) => {
+      expect(sk.reason).toBeTruthy();
+      expect(d.chose.includes(sk.capabilityId)).toBe(false);
+    });
+  });
+
+  it('Decision Ledger v1 + Budget block: records special blocked_by_budget decision (per decided policy)', () => {
+    let heavy = createInitialSessionState('dledger budget block', 'd3');
+    // Force budget block (reuse the high-turns pattern from Budget tests)
+    const fakeRuns: any[] = Array.from({ length: 31 }, (_, i) => ({
+      id: `r${i}`,
+      capabilityId: 'evidence.search',
+      turnId: `t${i}`,
+      inputs: [],
+      outputs: [],
+      gateResults: [],
+    }));
+    heavy = { ...heavy, capabilityRuns: fakeRuns };
+
+    const { newState: afterO, plan } = orchestrateReasoningTurn(heavy, {
+      turnId: 'd3-block',
+      userText: '继续',
+    });
+
+    expect(afterO.runtimePhase).toBe('awaiting');
+    expect(plan.selected.length).toBe(0);
+
+    const ledger = getDecisionLedger(afterO);
+    // At least the block decision (may have prior from heavy state, but we check the last one)
+    const last = ledger[ledger.length - 1];
+    expect(last).toBeTruthy();
+    expect(last.chose).toEqual([]);
+    expect(last.rationale).toMatch(/blocked_by_budget/);
+    expect(last.skipped.some((sk: any) => sk.reason === 'blocked_by_budget')).toBe(true);
   });
 });

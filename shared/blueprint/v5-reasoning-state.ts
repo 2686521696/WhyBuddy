@@ -110,6 +110,9 @@ export interface V5SessionState {
   sessionId?: string;
   runtimePhase?: "idle" | "orchestrating" | "awaiting" | "failed";
   lastTurnId?: string;
+
+  /** V5.1 DLEDGER (P1/A): scheduling decision ledger, appended on every pickNextCapabilities (or special budget block entry). */
+  decisionLedger?: SchedulingDecision[];
 }
 
 export interface UserIntervention {
@@ -148,4 +151,17 @@ export interface OrchestrateContext {
   turnId: string;
   userText: string;
   intervention?: UserIntervention;
+}
+
+/** V5.1 DLEDGER (P1/A): auditable record of each pickNextCapabilities decision. */
+export interface SchedulingDecision {
+  id: string;
+  turnId: string;
+  saw: string[];
+  chose: string[];
+  skipped: Array<{ capabilityId: string; reason: string }>;
+  addresses: string[];
+  rationale: string;
+  alternativesRejected: string[];
+  createdAt: string;
 }

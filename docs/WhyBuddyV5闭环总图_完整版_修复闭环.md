@@ -4837,6 +4837,148 @@ V5 原型 99% 封顶；GitHub MCP adapter P0 已落地并通过收口（07403708
 
 ---
 
+## V5.1 控制平面第二刀：Decision Ledger v1（按用户最新 review + 三刀路线）
+
+**执行日期**：紧接 Budget Gate v1 commit + 用户 review “收到。Budget Gate v1 这刀很关键...” + 明确 “我建议马上做 Knife 2” 之后。
+
+**用户本次 Findings（原文 verbatim 完整复制关键判断 + 表格 + spec + 为什么 DLEDGER + 预计分数 + 一句话结论）**
+
+```text
+收到。Budget Gate v1 这刀很关键，它不是“又加了个功能”，而是 V5.1 控制平面第一次真正进了 runtime 路径。
+
+我按你这次执行结果更新判断：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：63% -> 70%
+V5.1 控制平面完成度：38% -> 50% 左右
+验证护栏：98%
+
+这次为什么能从 63% 提到 70%：因为 `BUDGET` 不是外围模块，它是 V5.1 图里“所有进 ORCH 的路必须过闸”的核心边。现在它已经插在 `orchestrateReasoningTurn` 顶部、`pickNextCapabilities` 之前，并且超限能停到 `AWAIT`，还能落 `[BUDGET] exceeded` 系统 note。这就从文档节点变成了运行时行为。
+
+当前 V5.1 图真实达成情况
+
+| V5.1 节点/边 | 当前状态 | 评价 |
+|---|---:|---|
+| AWAIT | 已落地 | 很稳 |
+| INTAKE 单门 | 已落地 | 很稳 |
+| DERIVE 只读投影 | 已落地 | 基本满足 |
+| 单一 re-entry / stale cascade | 已落地 | 很接近 V5.1 |
+| CapabilityExecutor / BUS seam | 已落地 | 很强 |
+| Server LLM / GitHub evidence | 已落地 | 生产化能力强 |
+| Durable Store | 已落地 | 可交付 |
+| BUDGET | 已落地 v1 | 这轮新增核心进展 |
+| DLEDGER | 未落地 | 下一刀 |
+| CONTRACT / GCOV | 未落地 | 第三刀 |
+| FLOWB | 未落地 | 第四刀 |
+| Cost telemetry 真实 token | 仅 stub | 后续增强 |
+| decision-level challenge | 未落地 | DLEDGER 后做 |
+
+所以我现在不会再说 V5.1 是 63%。当前实打实是 70% 左右。  
+但也还不能说 80%+，因为 DLEDGER 和 GCOV 还没进运行时。
+
+下一刀：Decision Ledger v1
+
+我建议马上做 Knife 2：
+
+feat(whybuddy): Decision Ledger v1
+
+目标很明确：**每次 `pickNextCapabilities` 必须留下可审计决策账。**
+
+最小可交付不要做太大，先做这几件：
+
+1. 新增类型：
+   interface SchedulingDecision {
+     id: string;
+     turnId: string;
+     saw: string[];
+     chose: string[];
+     skipped: Array<{ capabilityId: string; reason: string }>;
+     addresses: string[];
+     rationale: string;
+     alternativesRejected: string[];
+     createdAt: string;
+   }
+
+2. 在 `V5SessionState` 上挂：
+   decisionLedger: SchedulingDecision[]
+
+3. 在 `orchestrateReasoningTurn` 调用 `pickNextCapabilities` 后立即记录：
+   saw = candidate capability ids
+   chose = selected capability ids
+   skipped = saw - chose
+   rationale = 基于 intent / stale / goal / report 请求 / risk 请求 的简短规则说明
+   addresses = 当前先空数组或 gap ids stub
+   alternativesRejected = skipped reason 汇总
+
+4. 测试至少加 3 个：
+   - 每次 orchestrate 都追加一条 ledger。
+   - ledger.chose 与 `plan.selected` 一致。
+   - skipped 有 reason，且不会把 chosen 也放进 skipped。
+   - Budget 拦截时不应新增 normal decision，或者新增一条 `blocked_by_budget` decision，二选一，要定死。
+
+5. smoke 文案更新：34/34 -> 37/37（如果加 3 个 client tests）。
+
+6. 验证：
+   pnpm run verify:whybuddy-v5
+   git diff --check
+   git status --short
+
+为什么 Decision Ledger 是下一刀，而不是 GCOV
+
+因为 GCOV 需要知道“为什么之前选了这些能力、哪些 gap 被覆盖、哪些能力被跳过”。  
+没有 DLEDGER，GCOV 会变成一个孤立 gate，只能看 artifact 结果；有了 DLEDGER，它才能审计调度过程。
+
+顺序应该是：
+
+BUDGET -> DLEDGER -> CONTRACT/GCOV -> FLOWB
+
+现在 BUDGET 已经完成，所以 DLEDGER 是自然下一步。
+
+做完 DLEDGER 后预计进度
+
+V5.1 架构图效果：70% -> 76-78%
+V5.1 控制平面完成度：50% -> 62-65%
+
+一句话
+
+这轮 Budget Gate v1 是 V5.1 真正开始落地的第一颗控制平面铆钉。现在不是继续接 adapter 的时候了，下一刀应该非常专注：**让每次能力调度都能被解释、被追责、被 challenge。**  
+也就是：Decision Ledger v1。
+```
+
+**本阶段执行记录 + 结果**（逐条，严格最小实现）：
+
+- shared/blueprint/v5-reasoning-state.ts：新增 `SchedulingDecision` 接口（字段完全按用户 spec）；在 `V5SessionState` 增加可选 `decisionLedger?: SchedulingDecision[]`。
+- client/src/lib/whybuddy-runtime.ts：
+  - `createInitialSessionState` 初始化 `decisionLedger: []`。
+  - 新增 `getDecisionLedger(state)` 辅助（防御性拷贝）。
+  - 在正常路径（Budget 放行后 `pickNextCapabilities` 立即返回后）：构造并 push decision（saw = 全 pool keys、chose = selected ids、skipped 带 reason、rationale 含当前状态信号、addresses/alternativesRejected v1 stub）。
+  - 在 Budget 拦截 early return 分支：按定死策略记录一条特殊 `blocked_by_budget` decision（chose:[]，rationale 含 blocked，skipped 全集 + reason "blocked_by_budget"），保证 ledger 是完整调度历史。
+  - decision 同时写回 working/parked state 并体现在返回的 newState。
+- client/src/lib/whybuddy-runtime.test.ts：+3 it（正常 append + chose 匹配 plan.selected；skipped 有 reason 且不与 chose 重叠；Budget block 按策略产生 blocked decision）。总 34 → **37 passed**。
+- smokes 护栏刷新：browser-smoke + store-smoke 34/34 → 37/37。
+- 验证：
+  - `pnpm exec vitest run client/src/lib/whybuddy-runtime.test.ts --reporter=dot` → 37 passed (37)
+  - `pnpm run verify:whybuddy-v5` → 完整绿（37 client + 12 server + tsc clean + ALL 5 flows + ALL 9 store + durability）。
+- Git：`git diff --check` 仅 CRLF；`git status --short` 仅 5 个 V5 M（runtime.ts、runtime.test.ts、2 smokes、主 doc）+ ??（GROK_* + v5.1/AsBuilt 相关）。显式只 add 这 5 个。
+- 主 doc append：已将用户本次 review 全文（70% 更新、表格、DLEDGER 5 点 spec、为什么在 GCOV 前、预计分数、一句话）作为 Findings + 本执行记录干净 append。
+
+**当前阶段可以定义为（延续用户评分）**：
+
+```text
+V5 原型 99% + 生产化底座 95-96%；V5.1 控制平面 Budget v1 + DLEDGER v1 已落地（决策账可审计、可追责，含 Budget block 策略）；整体 V5.1 架构图效果 ~76-78%；控制平面 ~62-65%；准备第三刀 CONTRACT/GCOV。
+```
+
+所有步骤严格遵循已批准 plan（用户最新 review verbatim + “BUDGET -> DLEDGER -> CONTRACT/GCOV” 顺序 + 最小 spec + “定死” Budget block 策略 + 四层护栏 + 显式 selective git hygiene + UTF-8 append）。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+下一步（用户路线）：第三刀 CoverageContract + GCOV v1。FLOWB 第四。目标 84-86%+。
+
+（本轮变更严格只补 V5.1 DLEDGER 边；V5 骨架 + 现有脊柱 + Budget 门完全不动。）
+
+---
+
 ## V5.1 控制平面第一刀：Budget Gate v1（按 @docs/whybuddy_v5.1.md + 用户 63% 评估 + 三刀路线）
 
 **执行日期**：紧接 static repo analyzer v1 + GitHub enrichment 收口（verify 全绿、tree clean for V5）之后，按用户最新 assessment 直接执行“第一刀：Budget Gate v1”。
