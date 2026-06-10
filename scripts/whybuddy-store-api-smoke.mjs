@@ -160,7 +160,7 @@ async function main() {
   }
 
   console.log('[whybuddy-store-smoke] ALL HTTP store endpoints PASSED (PUT/GET/LIST/DELETE/404).');
-  console.log('[whybuddy-store-smoke] This + prior 25/25 + smoke:whybuddy 5/5 = adapters now end-to-end nailed.');
+  console.log('[whybuddy-store-smoke] This + prior 28/28 + smoke:whybuddy 5/5 = adapters now end-to-end nailed.');
 }
 
 main().catch((e) => {

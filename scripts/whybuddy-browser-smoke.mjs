@@ -22,7 +22,7 @@ mkdirSync(dataRoot, { recursive: true });
  *   4. 点击 graph node → 同一 re-entry/stale 行为
  *   5. reset → session/UI state clean
  *
- * This + 25/25 runtime vitest = runtime + UI 双层护栏, enabling the 93-94% prototype claim.
+ * This + 28/28 runtime vitest = runtime + UI 双层护栏, enabling the 93-94% prototype claim.
  *
  * Intended to be run while `pnpm dev:frontend` is serving on :3000 (strictPort:false).
  * Usage: node scripts/whybuddy-browser-smoke.mjs   (or `pnpm run smoke:whybuddy` after registration)
@@ -211,7 +211,7 @@ async function runSmoke() {
   }
 
   log("ALL 5 flows PASSED. Screenshots saved under tmp/whybuddy-browser-smoke/");
-  log("This + 25/25 vitest + tsc = runtime + UI 双层 regression 护栏就绪。");
+  log("This + 28/28 vitest + tsc = runtime + UI 双层 regression 护栏就绪。");
 }
 
 runSmoke().then(() => {

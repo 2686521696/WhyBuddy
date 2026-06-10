@@ -604,6 +604,120 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
   }
 }
 
+/**
+ * PilotRealCapabilityExecutor — "真实 executor pilot" for the current phase.
+ *
+ * Per approved plan (真实 executor pilot：先接 risk.analyze + report.write):
+ * - Only risk.analyze and report.write get richer/"pilot real" logic (still deterministic for repeatability + no external deps).
+ * - All other capabilities transparently fall back to DefaultCapabilityExecutor (simulator).
+ * - Executor contract strictly followed: only returns raw {title, summary, content, provenance?}.
+ *   Trust Gate / evidenceRefs / producedBy / capabilityRunId binding / 9-section schema for report
+ *   remain 100% the responsibility of commitArtifact + buildStructuredReport.
+ * - This proves the swappable seam works for future real MCP/LLM/Tool impls without touching the closed loop.
+ */
+class PilotRealCapabilityExecutor implements CapabilityExecutor {
+  private base = new DefaultCapabilityExecutor();
+
+  async executeCapability(args: {
+    capabilityId: V5CapabilityId;
+    state: V5SessionState;
+    inputArtifactIds: string[];
+    roleId?: string;
+    turnId: string;
+  }): Promise<{
+    title: string;
+    summary: string;
+    content: string;
+    provenance?: Artifact["provenance"];
+  }> {
+    if (args.capabilityId === 'risk.analyze') {
+      return this.executeRiskPilot(args);
+    }
+    if (args.capabilityId === 'report.write') {
+      return this.executeReportPilot(args);
+    }
+    // Fallback for everything else keeps full backward compat for tests/smoke/default flows.
+    return this.base.executeCapability(args);
+  }
+
+  private async executeRiskPilot(args: any) {
+    const { state, inputArtifactIds, roleId, turnId } = args;
+    const upstreams = (state.artifacts || []).filter((a: any) => inputArtifactIds.includes(a.id));
+    const hasStale = (state.staleArtifactIds || []).length > 0 || upstreams.some((a: any) => (state.staleArtifactIds || []).includes(a.id));
+    const priorRisks = (state.artifacts || []).filter((a: any) => a.kind === 'risk').length;
+
+    // Richer pilot content (more specific evidence, explicit counters, actionable next, stale awareness).
+    // Still pure + deterministic. Marked for easy identification in tests/smoke.
+    const fragments = upstreams.flatMap((u: any) => extractArtifactFragments(u, 120)).map((f: any) => `- ${f.label}: ${f.text}`).join('\n');
+    const content = `【真实试点 executor - risk.analyze】
+基于 ${upstreams.length} upstreams（含 ${priorRisks} 历史风险）。${hasStale ? '注意：存在 stale 上游，风险评估已级联标记。' : '上下文稳定。'}
+
+主要风险：
+- 数据范围越权（跨项目/租户边界 RBAC 不足以表达；需引入 scoped filter + 显式 tenant/project 约束）
+- 审计追溯不足（权限变更缺少操作者、时间、影响对象、before/after 快照）
+${fragments ? '证据片段：\n' + fragments : ''}
+
+反证/缓解：
+- MVP 阶段可先做 RBAC + 基础范围过滤，预留 ABAC 扩展点（降低初期调试成本）。
+- 引入操作审计表（持久化 + 可查询）作为硬性前置条件。
+
+下一步工程化（可执行）：
+- 走 structure.decompose 将风险拆成带证据的 SPEC tasks
+- 替换本 pilot 为真实 Tool/MCP/LLM 能力（risk.analyze + report.write 已优先试点）
+- 持久化层（SQLite / Postgres）替换 process Map backing（HTTP surface 不变）
+
+pilot provenance：role=${roleId || '安全'} turn=${turnId}（deterministic richer pilot）`;
+
+    return {
+      title: '风险分析 (真实试点 executor)',
+      summary: `Pilot richer risk analysis over ${upstreams.length} upstreams. ${hasStale ? '含 stale 级联警示。' : ''}`,
+      content,
+      provenance: 'ai_generated' as const,
+    };
+  }
+
+  private async executeReportPilot(args: any) {
+    // Still produce the exact 9-section schema (labels unchanged). Pilot only enriches depth/clarity.
+    const built = buildStructuredReport({
+      state: args.state,
+      inputArtifactIds: args.inputArtifactIds || [],
+      roleId: args.roleId,
+      turnLabel: args.turnId?.includes('challenge') || args.turnId?.includes('node') ? '重入' : '试点',
+    });
+
+    // Light pilot enrichment while preserving every required label and structure.
+    // We keep the builder output as the base (provenance/upstreams/fragments already correct) and
+    // inject clearer decision rationale + more executable engineering branches.
+    let content = built.content;
+    if (!content.includes('【真实试点 executor')) {
+      content = content.replace(
+        '【可行性 / 产品推演报告',
+        '【真实试点 executor - 可行性 / 产品推演报告'
+      );
+      // Enrich the "下一步工程化分支" section with pilot-specific concrete items (still schema-compliant).
+      content = content.replace(
+        /下一步工程化分支：[\s\S]*?(?=\nprovenance \/ upstream refs：|$)/,
+        `下一步工程化分支：
+- 走 structure.decompose 将收敛结论拆成可执行任务树（带证据引用）
+- 替换默认 CapabilityExecutor 为真实 Tool/OpenAI/MCP 实现（risk.analyze + report.write 已优先试点）
+- 将 process-local Map backing 的 HTTP session store 替换为 SQLite / Postgres 等 durable 存储（保持 /api/whybuddy surface 不变）
+- 报告主输出支持导出为带 provenance 签名的 Markdown / PDF
+- 引入真实 Trust Gate 后端（不再仅模拟 evaluateGates）
+- Pilot 验证：本报告由 PilotRealCapabilityExecutor 产生，commitArtifact 仍负责 Trust Gate + producedBy 绑定（证据级闭环不变）
+
+（以上分支直接对应当前 V5 生产化路线，pilot 内容更具体可执行）`
+      );
+    }
+
+    return {
+      title: built.title.replace('V5 Evidence Report', 'V5 Evidence Report (真实试点)'),
+      summary: built.summary + ' [pilot richer]',
+      content,
+      provenance: 'ai_generated' as const,
+    };
+  }
+}
+
 let currentCapabilityExecutor: CapabilityExecutor = new DefaultCapabilityExecutor();
 
 /**
@@ -619,16 +733,40 @@ export function getCapabilityExecutor(): CapabilityExecutor {
 }
 
 /**
+ * Convenience helpers for the 真实 executor pilot phase.
+ * Tests and the /whybuddy page (demo) can opt-in to richer pilot outputs for risk.analyze + report.write.
+ * Default remains the pure simulator so that all existing guards (28 tests, smoke 5 flows, store smoke) stay unchanged unless explicitly swapped.
+ */
+export function usePilotRealExecutor(): void {
+  setCapabilityExecutor(new PilotRealCapabilityExecutor());
+}
+
+export function useDefaultExecutor(): void {
+  setCapabilityExecutor(new DefaultCapabilityExecutor());
+}
+
+/**
+ * Clean return type for the public executeCapability wrapper.
+ * The interface method already returns Promise<...>, so we use Awaited to avoid
+ * publishing a nested Promise<Promise<Result>> contract to adapter authors.
+ */
+type CapabilityExecutionResult = Awaited<ReturnType<CapabilityExecutor["executeCapability"]>>;
+
+/**
  * Official entry point for capability "execution" (content/title/summary generation).
  * All main paths (sendMessage + runReentryTurn in page, future internal) should
  * go through this instead of calling simulateCapabilityExecution directly.
  *
  * This keeps the closed loop (single INTAKE, exact producedBy.capabilityRunId binding,
  * AWAIT park, derive-as-truth) untouched while opening the execution layer.
+ *
+ * Return type is deliberately non-nested (CapabilityExecutionResult) so the contract
+ * seen by real adapter authors (LlmCapabilityExecutor, ToolCapabilityExecutor, etc.)
+ * is clean and unambiguous.
  */
 export async function executeCapability(
   args: Parameters<CapabilityExecutor["executeCapability"]>[0]
-): Promise<ReturnType<CapabilityExecutor["executeCapability"]>> {
+): Promise<CapabilityExecutionResult> {
   return currentCapabilityExecutor.executeCapability(args);
 }
 

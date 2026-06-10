@@ -27,6 +27,8 @@ import {
   getCapabilityExecutor,
   executeCapability,
   buildStructuredReport,
+  usePilotRealExecutor,
+  useDefaultExecutor,
 } from './whybuddy-runtime';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
 import type { V5CapabilityId } from '@shared/blueprint/contracts';
@@ -899,6 +901,111 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     } finally {
       // Restore previous executor (or let default be recreated by the module)
       if (prev && setCapabilityExecutor) setCapabilityExecutor(prev);
+      clearWhyBuddySessionStore();
+    }
+  });
+
+  it('PilotRealCapabilityExecutor (via usePilotRealExecutor) produces richer content for risk.analyze + report.write while preserving 9-section schema + fallback for other caps', async () => {
+    clearWhyBuddySessionStore();
+
+    const prev = getCapabilityExecutor ? getCapabilityExecutor() : null;
+
+    try {
+      // Enable pilot (richer deterministic logic for the two targeted caps)
+      usePilotRealExecutor();
+
+      let s = await loadOrCreateSessionState('pilot-test', 'pilot executor regression');
+      const { preparedState } = intakeMessage(s, { turnId: 'p1', userText: '分析风险并生成结构化报告' });
+      const { newState: afterO } = orchestrateReasoningTurn(preparedState, { turnId: 'p1', userText: '分析风险并生成结构化报告' });
+
+      const planSelected: any[] = (afterO as any).plan?.selected || [];
+      const riskEntry = planSelected.find((e: any) => e.capabilityId === 'risk.analyze') || { capabilityId: 'risk.analyze', roleId: '安全', inputArtifactIds: [] };
+      const reportEntry = planSelected.find((e: any) => e.capabilityId === 'report.write') || { capabilityId: 'report.write', roleId: '综合', inputArtifactIds: [] };
+
+      // Execute risk via pilot
+      const riskRes = await executeCapability({
+        capabilityId: riskEntry.capabilityId as any,
+        state: afterO,
+        inputArtifactIds: riskEntry.inputArtifactIds || [],
+        roleId: riskEntry.roleId,
+        turnId: 'p1',
+      });
+      expect(riskRes.content).toContain('【真实试点 executor - risk.analyze】');
+      expect(riskRes.content).toContain('数据范围越权');
+      expect(riskRes.content).toContain('下一步工程化');
+
+      // Commit a risk artifact using pilot output (mirrors page flow)
+      const riskRunId = 'p1-run-risk';
+      const riskPayload = {
+        id: 'pilot-risk-art',
+        kind: 'risk' as any,
+        provenance: 'ai_generated' as const,
+        producedBy: { capabilityRunId: riskRunId, capabilityId: riskEntry.capabilityId, roleId: riskEntry.roleId || '安全' },
+        title: riskRes.title,
+        summary: riskRes.summary,
+        content: riskRes.content,
+      };
+      const { updatedState: withRisk } = commitArtifact(afterO, riskPayload as any, riskRunId, false, riskEntry.inputArtifactIds || []);
+
+      // Now execute report via pilot (should still emit exact 9 labels + pilot enrichment)
+      const reportRes = await executeCapability({
+        capabilityId: reportEntry.capabilityId as any,
+        state: withRisk,
+        inputArtifactIds: reportEntry.inputArtifactIds || [],
+        roleId: reportEntry.roleId,
+        turnId: 'p1',
+      });
+      // 9-section schema preserved (labels from buildStructuredReport, pilot only enriches)
+      expect(reportRes.content).toContain('结论：');
+      expect(reportRes.content).toContain('支撑证据：');
+      expect(reportRes.content).toContain('反证/挑战：');
+      expect(reportRes.content).toContain('风险：');
+      expect(reportRes.content).toContain('分歧：');
+      expect(reportRes.content).toContain('收敛决策：');
+      expect(reportRes.content).toContain('未解缺口：');
+      expect(reportRes.content).toContain('下一步工程化分支：');
+      expect(reportRes.content).toContain('provenance / upstream refs：');
+      // Pilot enrichment markers / richer engineering branches
+      expect(reportRes.content).toContain('真实试点 executor');
+      expect(reportRes.content).toContain('Pilot 验证：本报告由 PilotRealCapabilityExecutor 产生');
+
+      // Commit the report artifact
+      const reportRunId = 'p1-run-report';
+      const reportPayload = {
+        id: 'pilot-report-art',
+        kind: 'report' as any,
+        provenance: 'ai_generated' as const,
+        producedBy: { capabilityRunId: reportRunId, capabilityId: reportEntry.capabilityId, roleId: reportEntry.roleId || '综合' },
+        title: reportRes.title,
+        summary: reportRes.summary,
+        content: reportRes.content,
+      };
+      const { updatedState: withReport } = commitArtifact(withRisk, reportPayload as any, reportRunId, false, reportEntry.inputArtifactIds || []);
+
+      // Verify a non-pilot capability still falls back to simulator style
+      const synthEntry = planSelected.find((e: any) => String(e.capabilityId).includes('synth')) || { capabilityId: 'synthesis.merge', roleId: '综合', inputArtifactIds: [] };
+      const synthRes = await executeCapability({
+        capabilityId: synthEntry.capabilityId as any,
+        state: withReport,
+        inputArtifactIds: synthEntry.inputArtifactIds || [],
+        roleId: synthEntry.roleId,
+        turnId: 'p1',
+      });
+      // Simulator path (not pilot richer) — content should not carry the pilot risk/report markers
+      expect(synthRes.content).not.toContain('【真实试点 executor');
+      // But still contains typical simulator phrasing or state-driven content
+      expect(synthRes.content.length).toBeGreaterThan(10);
+
+      // Final committed report artifact carries the pilot-enriched 9-section content
+      const finalReportArt = (withReport.artifacts || []).find((a: any) => a.id === 'pilot-report-art');
+      expect(finalReportArt).toBeTruthy();
+      expect(finalReportArt!.content).toContain('真实试点 executor');
+      expect(finalReportArt!.content).toContain('下一步工程化分支：');
+
+    } finally {
+      // Always restore default + clean
+      if (prev && setCapabilityExecutor) setCapabilityExecutor(prev);
+      else useDefaultExecutor();
       clearWhyBuddySessionStore();
     }
   });

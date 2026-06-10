@@ -45,6 +45,24 @@ type ChatTurn = {
 };
 
 export default function WhyBuddy() {
+  // V5 pilot phase: opt the demo into richer PilotRealCapabilityExecutor for risk.analyze + report.write.
+  // Pilot is now strictly scoped to this page's lifecycle (mount activates, unmount restores prior/default).
+  // This ensures "默认仍是 simulator，pilot 仅 demo opt-in" is literally true for any other consumer
+  // of the runtime in the same frontend process. commitArtifact still owns Trust Gate + producedBy binding;
+  // 9-section schema and all closed-loop invariants are untouched.
+  React.useEffect(() => {
+    const prev = WhyBuddyRuntime.getCapabilityExecutor?.();
+    WhyBuddyRuntime.usePilotRealExecutor?.();
+
+    return () => {
+      if (prev && WhyBuddyRuntime.setCapabilityExecutor) {
+        WhyBuddyRuntime.setCapabilityExecutor(prev);
+      } else {
+        WhyBuddyRuntime.useDefaultExecutor?.();
+      }
+    };
+  }, []);
+
   // V5: ensure clean product identity, no old autopilot title leaking
   React.useEffect(() => {
     const prevTitle = document.title;
