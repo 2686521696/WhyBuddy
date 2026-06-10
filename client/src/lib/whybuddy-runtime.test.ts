@@ -40,11 +40,13 @@ import {
   getDecisionLedger,
   evaluateCoverageGate,
   inferCoverageContract,
+  sanitizeThroughFlowBoundary,
   type BudgetPolicy,
   type BudgetSnapshot,
   type SchedulingDecision,
   type CoverageContract,
   type CoverageGateResult,
+  type FlowBoundaryCheck,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
@@ -1690,5 +1692,61 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const ledger = getDecisionLedger(afterO);
     const last = ledger[ledger.length - 1];
     expect(last.rationale).toMatch(/GCOV_BLOCKED|GCOV/);
+  });
+
+  // ===== Knife 4: FLOWB boundary guard v1 (3 new tests, 43 -> 46) =====
+
+  it('FLOWB strips critique/rebuttal protocol nodes from formal report input', () => {
+    // Create upstream with protocol noise in content (simulates brainstorm leakage)
+    let s = createInitialSessionState('权限系统报告', 'flowb-1');
+    const polluted = createRawArtifact('polluted-up', 'risk.analyze', '安全', 'risk', '结论：用RBAC。\ncritique: 太早引入ABAC\nrebuttal: 成本高\n普通证据：RBAC足够');
+    const { updatedState: sUp } = commitArtifact(s, polluted, 'f1-run-up', false, []);
+    // Force a report turn that will consume the upstream fragment
+    const { preparedState } = intakeMessage(sUp, { turnId: 'f1', userText: '生成报告' });
+    const { newState: afterO } = orchestrateReasoningTurn(preparedState, { turnId: 'f1', userText: '生成报告' });
+    // Find the report node/run and commit a raw that would normally carry the polluted fragments (builder pulls from upstream)
+    const reportNode = (afterO.graph.nodes || []).find((n: any) => n.capabilityId === 'report.write');
+    const reportRunId = reportNode ? reportNode.capabilityRunId : 'f1-run-r';
+    // Simulate the executor output containing the fragments (in real it would via build)
+    const rawReport = createRawArtifact('rpt', 'report.write', '综合', 'report', '结论：RBAC\ncritique: 反对\nrebuttal: 成本\n证据：好');
+    const { updatedState: afterCommit, committed } = commitArtifact(afterO, rawReport, reportRunId, false, [polluted.id]);
+    expect(committed).toBeTruthy();
+    const finalContent = committed!.content || '';
+    expect(finalContent).not.toMatch(/critique:/i);
+    expect(finalContent).not.toMatch(/rebuttal:/i);
+    // But the ledger recorded the strip
+    const ledger = afterCommit.flowBoundaryLedger || [];
+    expect(ledger.length).toBeGreaterThan(0);
+    const lastCheck = ledger[ledger.length - 1] as FlowBoundaryCheck;
+    expect(lastCheck.strippedProtocolNodes.some((n: string) => /critique|rebuttal/i.test(n))).toBe(true);
+  });
+
+  it('FLOWB records boundary assertion in ledger', () => {
+    let s = createInitialSessionState('有辩论的综合', 'flowb-2');
+    const polluted = createRawArtifact('p2', 'synthesis.merge', '综合', 'synthesis', '结论：RBAC\n debate: 角色A vs B\n role vote: 3:1');
+    const { updatedState: sUp } = commitArtifact(s, polluted, 'f2-run', false, []);
+    // Direct commit for synthesis to exercise the boundary at commit time
+    const rawSyn = createRawArtifact('syn', 'synthesis.merge', '综合', 'synthesis', polluted.content);
+    const { updatedState: afterC } = commitArtifact(sUp, rawSyn, 'f2-run2', false, []);
+    const ledger = afterC.flowBoundaryLedger || [];
+    expect(ledger.some((c: any) => (c.strippedProtocolNodes || []).length > 0 || (c.assertions || []).some((a: string) => /strip|protocol/i.test(a)))).toBe(true);
+  });
+
+  it('FLOWB leaves ordinary evidence text unchanged', () => {
+    let s = createInitialSessionState('干净证据', 'flowb-3');
+    const clean = createRawArtifact('clean-ev', 'evidence.search', '接地', 'evidence', '普通证据文本：RBAC MVP 可落地，无任何辩论协议。');
+    const { updatedState: afterC, committed } = commitArtifact(s, clean, 'f3-run', false, []);
+    expect(committed).toBeTruthy();
+    expect(committed!.content).toContain('普通证据文本');
+    expect(committed!.content).not.toMatch(/critique|rebuttal|debate/i);
+    // No spurious FLOWB entry or empty strip
+    const ledger = afterC.flowBoundaryLedger || [];
+    // May have entry but with no stripped nodes for clean text
+    if (ledger.length > 0) {
+      const last = ledger[ledger.length - 1] as any;
+      if (last.source === 'artifact' || last.strippedProtocolNodes) {
+        expect((last.strippedProtocolNodes || []).length).toBe(0);
+      }
+    }
   });
 });

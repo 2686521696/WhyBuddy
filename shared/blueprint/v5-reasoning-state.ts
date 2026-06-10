@@ -117,6 +117,9 @@ export interface V5SessionState {
   /** V5.1 CONTRACT + GCOV (Knife 3): optional coverage contract and last gate result. Kept optional for durable old-state compat. */
   coverageContract?: CoverageContract;
   coverageGate?: CoverageGateResult;
+
+  /** V5.1 FLOWB (Knife 4): optional ledger of boundary purifications for formal paths (report/synthesis). */
+  flowBoundaryLedger?: FlowBoundaryCheck[];
 }
 
 export interface UserIntervention {
@@ -188,4 +191,15 @@ export interface CoverageGateResult {
   unresolvedGaps: string[];
   waivedGaps: string[];
   reason: string;
+}
+
+/** V5.1 FLOWB (Knife 4): Flow Boundary check record. Records purification of brainstorm/critique/rebuttal/debate protocol before formal artifact/report/synthesis content. v1 mechanical strip only. */
+export interface FlowBoundaryCheck {
+  id: string;
+  turnId: string;
+  source: "brainstorm" | "discussion" | "artifact" | "executor";
+  strippedProtocolNodes: string[];
+  assertions: string[];
+  passed: boolean;
+  createdAt: string;
 }

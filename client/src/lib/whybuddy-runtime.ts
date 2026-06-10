@@ -41,6 +41,7 @@ import type {
   SchedulingDecision,
   CoverageContract,
   CoverageGateResult,
+  FlowBoundaryCheck,
 } from "@shared/blueprint/v5-reasoning-state";
 import type { BrainstormReasoningGraph, BrainstormReasoningNode, BrainstormReasoningEdge } from "@shared/blueprint/brainstorm-reasoning-graph";
 import { V5_CAPABILITY_POOL, ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
@@ -287,6 +288,7 @@ export function createInitialSessionState(goalText: string, sessionId = "whybudd
     decisionLedger: [],
   coverageContract: undefined,
   coverageGate: undefined,
+  flowBoundaryLedger: [],
   };
 }
 
@@ -671,6 +673,51 @@ export function evaluateCoverageGate(
     waivedGaps: [],
     reason,
   };
+}
+
+// ===== V5.1 FLOWB boundary guard v1 (Knife 4) =====
+// Pure mechanical sanitizer. Strips brainstorm/critique/rebuttal/debate protocol noise
+// before it enters formal report/synthesis content. Records what was stripped for audit.
+// v1 is deliberately simple regex/line filter; no deep parsing of full debate tree.
+
+export function sanitizeThroughFlowBoundary(
+  input: string,
+  context: { turnId: string; source?: "brainstorm" | "discussion" | "artifact" | "executor" }
+): { cleanedText: string; check: FlowBoundaryCheck } {
+  const original = String(input || "");
+  const markers = ["critique:", "rebuttal:", "debate:", "challengeEdges", "role vote", "brainstorm console", "brainstorm:"];
+  const lines = original.split(/\r?\n/);
+  const strippedProtocolNodes: string[] = [];
+  const cleanedLines: string[] = [];
+
+  for (const line of lines) {
+    const lower = line.toLowerCase().trim();
+    let isProtocol = false;
+    for (const m of markers) {
+      if (lower.includes(m.toLowerCase())) {
+        strippedProtocolNodes.push(line.trim());
+        isProtocol = true;
+        break;
+      }
+    }
+    if (!isProtocol) {
+      cleanedLines.push(line);
+    }
+  }
+
+  const cleanedText = cleanedLines.join("\n").trim();
+  const check: FlowBoundaryCheck = {
+    id: `flowb-${context.turnId || Date.now()}`,
+    turnId: context.turnId,
+    source: (context.source || "artifact") as FlowBoundaryCheck["source"],
+    strippedProtocolNodes,
+    assertions: strippedProtocolNodes.length > 0
+      ? [`stripped ${strippedProtocolNodes.length} protocol nodes before formal content`]
+      : ["no protocol noise detected; text passed through boundary"],
+    passed: true,
+    createdAt: new Date().toISOString(),
+  };
+  return { cleanedText, check };
 }
 
 /**
@@ -1294,6 +1341,20 @@ export function commitArtifact(
     }
   }
 
+  // ===== V5.1 FLOWB (Knife 4): sanitize input fragments / content for formal report/synthesis
+  // before it becomes the committed artifact. This is the key insertion for "fragments enter formal content".
+  // Strips protocol noise, records the boundary check in state, optionally links to DLEDGER.
+  let workingContent = rawArtifact.content || "";
+  let flowCheck: FlowBoundaryCheck | null = null;
+  if (isReport || isSynthesisLike) {
+    const { cleanedText, check } = sanitizeThroughFlowBoundary(workingContent, {
+      turnId: runId,
+      source: isReport ? "artifact" : "executor",
+    });
+    workingContent = cleanedText;
+    flowCheck = check;
+  }
+
   const gateResults = evaluateGates(rawArtifact as any, effectiveForceFail);
 
   const passedGates = gateResults.filter((g) => g.status === "passed").map((g) => g.gateId);
@@ -1301,6 +1362,7 @@ export function commitArtifact(
 
   const committed: Artifact = {
     ...rawArtifact,
+    content: workingContent,  // FLOWB-cleaned for report/synthesis formal paths
     trustLevel: allPassed ? (rawArtifact.provenance.includes("rendered") ? "audited" : "gated_pass") : "untrusted",
     passedGates,
     producedBy: {
@@ -1312,7 +1374,6 @@ export function commitArtifact(
     // Persist content fields so that report/synthesis can aggregate real fragments from upstreams
     title: (rawArtifact as any).title,
     summary: (rawArtifact as any).summary,
-    content: (rawArtifact as any).content,
   };
 
   // Build real dependency edges: for each declared input, input -> this output
@@ -1348,6 +1409,21 @@ export function commitArtifact(
     })),
   ];
 
+  // FLOWB ledger + optional DLEDGER linkage (v1)
+  let flowBoundaryLedger = state.flowBoundaryLedger || [];
+  if (flowCheck) {
+    flowBoundaryLedger = [...flowBoundaryLedger, flowCheck];
+  }
+
+  // Optional: link to the most recent DLEDGER decision for this turn (if present)
+  let finalDecisionLedger = state.decisionLedger || [];
+  if (flowCheck && finalDecisionLedger.length > 0) {
+    const lastDec: any = finalDecisionLedger[finalDecisionLedger.length - 1];
+    if (lastDec && typeof lastDec.turnId === "string" && runId.startsWith(lastDec.turnId.split("-")[0])) {
+      lastDec.addresses = [...(lastDec.addresses || []), `flowb:${flowCheck.id}`];
+    }
+  }
+
   return {
     updatedState: {
       ...state,
@@ -1355,6 +1431,8 @@ export function commitArtifact(
       capabilityRuns: newRuns,
       gates: newGates,
       dependencyGraph: [...state.dependencyGraph, ...newDeps],
+      flowBoundaryLedger,
+      decisionLedger: finalDecisionLedger,
     },
     committed: allPassed ? committed : null,
     run,

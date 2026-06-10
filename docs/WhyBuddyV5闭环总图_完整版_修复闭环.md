@@ -5348,6 +5348,168 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 4：FLOWB boundary guard v1（按用户 review "收到，Knife 3.1 这次是很关键的..."）
+
+**执行日期**：紧接 Knife 3.1 硬化 + 用户明确 “可以开始 FLOWB 了。但要保持 v1 克制” 之后。
+
+**用户本次 Findings（原文 verbatim 完整）**
+
+```text
+收到，Knife 3.1 这次是很关键的“把门关严”收口。
+
+我按你这次结果更新判断：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：85-86%
+V5.1 控制平面完成度：80%+
+验证护栏：98%+
+
+这次两个关键边界都补上了：
+
+1. **DLEDGER 不再自相矛盾**  
+   GCOV-forced capability 不会同时出现在 `chose` 和 `skipped` / `alternativesRejected`。这让 Decision Ledger 真正能作为审计账，不是“看起来有账”。
+
+2. **GCOV fail 现在真能硬阻断 premature report**  
+   如果 required prerequisite 没补齐且 report 还在 plan 里，直接 `AWAIT partial` + 空 plan + `[GCOV] blocked` note。这个语义就对了：  
+   **GCOV 不再只是标红提醒，而是真的能挡住过早收敛。**
+
+所以现在这条链我会认为是真正成立了：
+
+INTAKE -> BUDGET -> ORCH -> DLEDGER -> GCOV -> plan / AWAIT
+
+当前 V5.1 图里，最核心的三件套已经落地：
+
+BUDGET：别跑爆
+DLEDGER：为什么这么跑
+GCOV：跑够了没有，不够不许收敛
+
+这就是为什么我现在愿意把 V5.1 架构图效果从之前的 82-83% 调到 **85-86%**。  
+这不是因为测试数量从 41 到 43，而是因为两个 contract 漏洞被补了：账不矛盾，闸能硬挡。
+
+**当前还没到 90% 的原因**
+
+剩下主要是 V5.1 图里的后半段：
+
+| 模块 | 当前状态 | 缺口 |
+|---|---:|---|
+| FLOWB | 未落地 | brainstorm / debate / critique 协议出正式路径前还没有剥离守卫 |
+| decision-level challenge | Ledger 已有，但用户还不能直接挑战某条 decision | 需要 `targetDecisionId` / UI entry |
+| Cost telemetry | Budget v1 是 count-based | 还没有 token/cost 真实入账 |
+| CoverageContract richness | v1 mechanical | 还没有 authored/versioned baseline、gap resolved/waived |
+| GCOV UI 可观测 | runtime 有 gate，页面展示还比较轻 | 可以在 status/verify 里展示 coverage state |
+
+所以我的阶段判断是：
+
+85-86%：V5.1 核心控制平面成立
+90%+：需要 FLOWB + decision challenge + cost telemetry / richer coverage
+
+**下一步我建议进 Knife 4：FLOWB**
+
+可以开始，但我建议 Knife 4 不要做太大。不要一上来重建 brainstorm 系统，先做 **Flow Boundary v1**：
+
+feat(whybuddy): add FLOWB boundary guard v1
+
+目标一句话：
+
+> 任何 brainstorm / critique / rebuttal / debate 协议内容进入正式 artifact / report / pair execution 前，先经过 FLOWB 净化，记录 boundary assertion，并确保正式路径不携带 debate console 原始协议噪音。
+
+**Knife 4 最小可交付**
+
+1. 新增类型：
+
+interface FlowBoundaryCheck {
+  id: string;
+  turnId: string;
+  source: "brainstorm" | "discussion" | "artifact" | "executor";
+  strippedProtocolNodes: string[];
+  assertions: string[];
+  passed: boolean;
+  createdAt: string;
+}
+
+2. 在 `V5SessionState` 加 optional：
+
+flowBoundaryLedger?: FlowBoundaryCheck[];
+
+3. 新增纯函数：
+
+sanitizeThroughFlowBoundary(input, context): {
+  cleanedText: string;
+  check: FlowBoundaryCheck;
+}
+
+v1 机械规则即可，识别/剥离：
+
+critique:
+rebuttal:
+debate:
+challengeEdges
+role vote
+brainstorm console
+
+4. 插入点不要太多，先插一个关键点：
+
+report.write / synthesis.merge 的 input fragments 进入正式内容前
+
+也就是不要动 UI，不要动整个 role system。先让正式 report/synthesis 不吞 debate 协议噪音。
+
+5. Ledger 接入：
+
+FLOWB result -> state.flowBoundaryLedger
+DLEDGER.addresses += ["flowb:..."] 可选
+
+6. 测试至少 3 个：
+
+FLOWB strips critique/rebuttal protocol nodes from formal report input
+FLOWB records boundary assertion in ledger
+FLOWB leaves ordinary evidence text unchanged
+
+如果加 3 个，client tests：
+
+43 -> 46
+
+同步 smoke 文案：
+
+43/43 -> 46/46
+
+**做完 Knife 4 后预期**
+
+V5.1 架构图效果：85-86% -> 89-90%
+V5.1 控制平面完成度：80%+ -> 86-88%
+
+再往后如果做 `decision-level challenge` 和 `cost telemetry`，就能冲 92% 左右。
+
+**我建议的顺序**
+
+Knife 4: FLOWB boundary guard v1
+Knife 5: decision-level challenge
+Knife 6: cost telemetry / richer Budget ledger
+Knife 7: CoverageContract authored baseline + gaps resolved/waived
+
+一句话：**可以开始 FLOWB 了。**  
+但要保持 v1 克制，只做“正式路径前的协议净化 + ledger 记录”，不要把整个 brainstorm 交互系统一次性搬进来。
+```
+
+**本阶段执行记录 + 结果**
+
+- 类型 + State：在 shared/blueprint/v5-reasoning-state.ts 新增 `FlowBoundaryCheck`，V5SessionState 挂 `flowBoundaryLedger?: ...`，createInitial 初始化为 []。
+- 纯函数 `sanitizeThroughFlowBoundary` 实现（mechanical line filter for the listed markers; 返回 cleanedText + 带 strippedProtocolNodes / assertions 的 check）。
+- 插入点：在 `commitArtifact` 里对 isReport / isSynthesisLike 的 raw content 做 sanitize，committed.content 用 cleaned 版；记录 check 到 state.flowBoundaryLedger；可选 patch 最近 DLEDGER decision 的 addresses 加 `flowb:xxx`。
+- 也同步更新了 createInitial 和 import。
+- +3 tests（strip from report input、records assertion、ordinary text unchanged），client 43→**46 passed (46)**。
+- Smoke 43/43 → 46/46。
+- `pnpm run verify:whybuddy-v5` 全绿（46 client + 12 server + tsc + 5 flows + 9 store + durability，日志带 46/46）。
+- 主 doc append 了用户完整 review + 记录。
+- Git：仅 V5 文件，commit 消息使用用户建议的 `feat(whybuddy): add FLOWB boundary guard v1`。
+- 进度：按用户 “85-86% -> 89-90%” 方向推进；核心三件套 + FLOWB 净化已就位，正式路径干净。
+
+所有步骤严格克制 v1、只插 report/synthesis 正式内容路径、不碰 UI/全 role system/brainstorm 交互。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+下一步按用户建议顺序：Knife 5 decision-level challenge 等。
+
 ## Knife 3.1 收口（High/Medium 修复）：harden GCOV ledger consistency and block premature report
 
 **执行日期**：紧接 Knife 3 交付 + 用户 Findings 审查（High: DLEDGER chose/skipped overlap；Medium: GCOV fail 仍可能让 report 留在 plan；Low: P0 注释）之后。小刀收口，不进新大特性。
