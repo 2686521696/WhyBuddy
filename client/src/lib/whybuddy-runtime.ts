@@ -265,15 +265,23 @@ export function evaluateBudgetBeforeOrchestrate(
 export function recordCapabilityRunCost(
   state: V5SessionState,
   run: CapabilityRun,
-  cost?: { tokens?: number; durationMs?: number; estimatedCostUsd?: number; source?: "estimated" | "server" | "manual"; [k: string]: any }
+  cost?: { tokens?: number; durationMs?: number; estimatedCostUsd?: number; source?: "estimated" | "server" | "manual"; usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; model?: string }; [k: string]: any }
 ): V5SessionState {
-  // v1: now real append to costLedger for telemetry.
-  // Uses provided cost or falls back to simple estimate from run (for direct calls).
+  // Knife 11: prefer real provider usage if present (from server LLM), else fallback estimate.
   const now = new Date().toISOString();
-  const tokens = cost?.tokens ?? 0;
+  const usage = cost?.usage;
+  let tokens = 0;
+  let src: CapabilityCostRecord["source"] = (cost?.source ?? "estimated") as any;
+
+  if (usage?.totalTokens) {
+    tokens = usage.totalTokens;
+    src = "server";
+  } else {
+    tokens = cost?.tokens ?? 0;
+  }
+
   const durationMs = cost?.durationMs ?? 0;
   const estimatedCostUsd = cost?.estimatedCostUsd;
-  const source = (cost?.source ?? "estimated") as CapabilityCostRecord["source"];
 
   const rec: CapabilityCostRecord = {
     id: `${run.turnId || "turn"}-cost-${run.capabilityId}-${Date.now()}`,
@@ -283,9 +291,14 @@ export function recordCapabilityRunCost(
     estimatedTokens: tokens || undefined,
     estimatedCostUsd,
     durationMs: durationMs || undefined,
-    source,
+    source: src,
     createdAt: now,
   };
+
+  // Optionally attach raw usage on the record for audit (non-breaking, since extra fields ok in v1).
+  if (usage) {
+    (rec as any).usage = usage;
+  }
 
   const newLedger = [...(state.costLedger || []), rec];
   return {
@@ -981,6 +994,13 @@ export interface CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    /** Knife 11: real provider usage if available from server LLM (input/output/total tokens, model). */
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+      model?: string;
+    };
   }>;
 }
 
@@ -996,6 +1016,12 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+      model?: string;
+    };
   }> {
     const start = performance.now();
 
@@ -1091,6 +1117,12 @@ class PilotRealCapabilityExecutor implements CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+      model?: string;
+    };
   }> {
     const start = performance.now();
     if (args.capabilityId === 'risk.analyze') {
@@ -1259,10 +1291,34 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+      model?: string;
+    };
   }> {
     if (args.capabilityId === 'risk.analyze' || args.capabilityId === 'report.write') {
       try {
-        return await this.provider(args);
+        const result: any = await this.provider(args);
+        // Knife 11: record real usage if provider returned it (server LLM), else estimate.
+        const usage = result?.usage;
+        const contentLen = (result?.content || "").length;
+        const tokens = usage?.totalTokens ?? Math.ceil(contentLen / 4);
+        const src = usage ? "server" : "estimated";
+        recordCapabilityRunCost(args.state, {
+          id: `${args.turnId}-run`,
+          capabilityId: args.capabilityId,
+          turnId: args.turnId,
+          inputs: args.inputArtifactIds || [],
+          outputs: [],
+          gateResults: [],
+        } as any, {
+          tokens,
+          source: src as any,
+          ...(usage ? { usage } : {}),
+        });
+        return result;
       } catch (e) {
         // Provider (external) failure — reliable fallback as required by the plan.
         return await this.base.executeCapability(args);

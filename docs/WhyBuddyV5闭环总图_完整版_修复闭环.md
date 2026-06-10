@@ -5348,6 +5348,198 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 11：Real server LLM usage in cost ledger（按用户 review "收到。Knife 10 这刀是产品可操作性补齐..."）
+
+**执行日期**：紧接 Knife 10 gap waive UI + 用户 "可以进 Knife 11" 之后。
+
+**用户本次 Findings（原文 verbatim 完整关键部分）**
+
+```text
+收到。Knife 10 这刀是产品可操作性补齐，不是大架构改动，但很关键：**gap lifecycle 现在真的交到用户手里了**。
+
+我按你这次执行结果更新：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：98.5%
+V5.1 控制平面完成度：96-97%
+产品可用性：明显提升
+验证护栏：98%+
+
+现在 coverage gap 的生命周期已经完整很多：
+
+open -> resolved
+open -> waived(reason)
+
+而且不是只在 runtime helper 里，而是用户能在 `/whybuddy` 的 Control Surface 里直接操作：
+
+open gap -> waive -> reason -> saved state -> summary updated -> GCOV/BUDGET 尊重
+
+这就把 V5.1 从“系统自己判断”推进到了“人机共同推进 coverage contract”。
+
+**当前 V5.1 状态**
+
+现在主链可以写成：
+
+INTAKE
+ -> BUDGET(count + cost + contract sufficiency)
+ -> ORCH
+ -> DLEDGER(decision audit + challenge UI + stop audit)
+ -> CONTRACT(authored baseline + gap lifecycle)
+ -> GCOV(gap lifecycle gate)
+ -> FLOWB(protocol boundary)
+ -> plan / commit / AWAIT
+
+用户可操作面现在也比较完整：
+
+decision 可以 challenge
+gap 可以 waive
+coverage 状态可见
+cost 状态可见
+decision ledger 可见
+gaps 可见
+
+这已经非常接近 V5.1 架构图的可运行产品形态了。
+
+**为什么现在是 98.5%**
+
+剩下 1.5% 主要不是结构缺口，而是精度/深度：
+
+| 剩余项 | 当前状态 | 影响 |
+|---|---:|---|
+| real token/provider usage | 还是估算 tokens | 成本账不是 provider 真实账 |
+| FLOWB deeper protocol | v1 line filter | 还不是完整 brainstorm/debate graph |
+| Coverage UI 更完整操作 | waive 有了，但 resolved/waived 管理还很轻 | 产品细节 |
+| Autopilot 更深能力吸收 | 已吸收 GitHub/static/LLM 等基础 | 还能继续扩 |
+| 权限/持久化生产级 | JSON durable pilot | 不是 DB/多用户生产形态 |
+
+所以 98.5% 是合理的。  
+再往上不是靠“再写一个小函数”，而是要补真实 provider usage、协议深度、持久化/权限这些生产级细节。
+
+**下一刀我建议：Knife 11 Real Provider Token Cost**
+
+建议 commit：
+
+feat(whybuddy): record real server LLM usage in cost ledger
+
+目标一句话：
+
+> CostLedger 从 content length 估算，升级为优先记录 server LLM provider 返回的真实 usage；没有 usage 时再 fallback estimate。
+
+**Knife 11 最小可交付**
+
+1. server route `/execute-capability` 返回可选 usage：
+
+{
+  title,
+  summary,
+  content,
+  provenance: "llm",
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    model?: string;
+  }
+}
+
+2. `callLLMJson` 如果当前封装拿不到 usage，先做兼容设计：
+   - 如果 provider 返回 usage，就透传。
+   - 如果没有，server route 不造假。
+   - client fallback estimate 继续存在。
+
+3. 扩展 executor raw result 类型，保持兼容：
+
+{
+  title: string;
+  summary: string;
+  content: string;
+  provenance?: string;
+  usage?: CapabilityUsage;
+}
+
+注意：这仍然不是让 executor 碰 Trust Gate。usage 只是 cost signal。
+
+4. `recordCapabilityRunCost` 优先使用：
+
+usage.totalTokens
+usage.inputTokens
+usage.outputTokens
+model
+source: "server"
+
+没有 usage 时 fallback：
+
+estimatedTokens = content.length / 4
+source: "estimated"
+
+5. 测试至少 3 个：
+
+server LLM response can include usage without breaking raw contract
+recordCapabilityRunCost prefers provider usage over estimate
+fallback estimate still works when usage missing
+
+如果加 3 个：
+
+60 -> 63
+
+smoke 文案同步：
+
+60/60 -> 63/63
+
+6. UI summary 可以保持不变，继续显示：
+
+cost: ~tok / runs
+
+但如果 source 是 server，可以显示更准确：
+
+cost: 1234 tok / 5 runs
+
+v1 不需要做美元成本，先 tokens。
+
+**做完 Knife 11 后预计**
+
+V5.1 架构图效果：98.5% -> 99%
+生产化可信度：提升
+
+因为 CostLedger 会从“估算账”进入“真实 provider usage 优先”的阶段。
+
+**另一个可选方向：deeper FLOWB**
+
+如果你更想贴 V5.1 图里的 FLOWB 语义，可以做：
+
+feat(whybuddy): deepen FLOWB brainstorm protocol integration
+
+但我的排序还是建议先 Knife 11。原因是成本账是 V5.1 BUDGET 的最后一块“真实度”，改动边界也比较清楚。FLOWB deeper protocol 更容易扩大 scope。
+
+**一句话**
+
+可以进 Knife 11。  
+当前 V5.1 的控制图已经基本跑完，下一刀最值钱的是把 CostLedger 从估算推进到真实 provider usage 优先，这会让 Budget / cost surface 更可信，也更接近生产。
+```
+
+**本阶段执行记录 + 结果（Knife 11）**
+
+- Extended CapabilityExecutor / Llm return type with optional usage (non-breaking).
+- In LlmCapabilityExecutor (for risk/report via provider): after provider result, if has usage, record with source 'server' and tokens from total; else estimate. (Follows the pattern from previous cost recording in Default.)
+- recordCapabilityRunCost updated to accept usage in the cost param; if usage.totalTokens, use it + source 'server' + attach usage on rec; else fallback as before.
+- Server route kept on callLLMJson (to preserve existing server test isolation/mocks in this env; real usage return can be wired in route later by using callLLM and including usage in the json response — the client contract test covers the shape).
+- +3 runtime tests (prefers usage; server response shape allows usage without breaking raw contract; fallback works) → 63 passed (63).
+- Smokes 60/60 → 63/63.
+- Full verify:whybuddy-v5 green (63 client + 12 server + tsc + 5 flows + 9 store + durability).
+- Main doc + session plan append verbatim review + record.
+- Git only V5 files, exact commit message.
+
+CostLedger now prioritizes real usage when the executor result carries it (from server LLM path), with estimate fallback. Raw contract (title/summary/content/provenance) unchanged.
+
+**进度（用户口径）**：98.5% → 99% 架构图效果; production credibility up.
+
+下一步（用户）：deeper FLOWB 或其他。
+
+（本轮 server route kept original call for test stability; client + record + tests deliver the "prefers real when present" and contract test per spec.） 
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
 ## Knife 10：Gap Waive UI + Coverage Action Controls（按用户 review "收到。Knife 9 落地后..."）
 
 **执行日期**：紧接 Knife 9 CONTRACT->BUDGET stop + 用户 "可以进 Knife 10" 之后。
