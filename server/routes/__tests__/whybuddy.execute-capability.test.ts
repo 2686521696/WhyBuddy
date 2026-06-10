@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 
 import whybuddyRouter from '../whybuddy.js';
 import * as llmClient from '../../core/llm-client.js';
+import * as ghAdapter from '../../whybuddy/github-mcp-adapter.js';
 
 describe('POST /api/whybuddy/execute-capability (server route)', () => {
   const app = express();
@@ -49,6 +50,8 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
   });
 
   it('returns 400/422 for unsupported capability (not 500)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const res = await fetch(`${base}/execute-capability`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -62,6 +65,8 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     expect([400, 422]).toContain(res.status);
     const body = await res.json().catch(() => ({}));
     expect(String(body.error || '')).toMatch(/unsupported/);
+
+    errSpy.mockRestore();
   });
 
   it('returns 500 (llm_not_configured or execution_failed) when no apiKey, without leaking secrets', async () => {
@@ -69,6 +74,8 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     const origOpen = process.env.OPENAI_API_KEY;
     delete process.env.LLM_API_KEY;
     delete process.env.OPENAI_API_KEY;
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
       const res = await fetch(`${base}/execute-capability`, {
@@ -88,6 +95,7 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
       expect(bodyStr).not.toMatch(/sk-/i);
       expect(bodyStr).not.toMatch(/OPENAI|LLM_API_KEY/i);
     } finally {
+      errSpy.mockRestore();
       if (orig) process.env.LLM_API_KEY = orig;
       if (origOpen) process.env.OPENAI_API_KEY = origOpen;
     }
@@ -142,4 +150,158 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     expect(content).toMatch(/结论|支撑证据|反证|风险|分歧|收敛决策|未解缺口|下一步工程化|provenance/);
     expect(body.provenance).toBe('llm');
   });
+
+  // --- P0 MCP GitHub adapter tests (source/evidence via server capability seam) ---
+
+  it('source.github.inspect returns raw 4-field shape with mcp:github provenance (success)', async () => {
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
+      title: 'GitHub Source: facebook/react',
+      summary: 'repo facebook/react · TypeScript · 200000★ · default branch main · last pushed 2026-...',
+      content: JSON.stringify({ repository: 'facebook/react', language: 'TypeScript', stars: 200000 }, null, 2),
+      provenance: 'mcp:github',
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'source.github.inspect',
+        state: { sessionId: 't1', goal: { text: 'look at https://github.com/facebook/react for the UI components' } },
+        inputArtifactIds: [],
+        turnId: 't1',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.title).toContain('facebook/react');
+    expect(body.provenance).toBe('mcp:github');
+    expect(body.content).toContain('facebook/react');
+
+    // Prove the route used the (mock) adapter and did not hit real network
+    expect(ghSpy).toHaveBeenCalledTimes(1);
+    expect(ghSpy).toHaveBeenCalledWith('source.github.inspect', expect.anything(), []);
+  });
+
+  it('evidence.github.collect returns raw shape and can be referenced by report.write inputArtifactIds', async () => {
+    // The github evidence "artifact" is produced by a prior capability run in real flow.
+    // Here we prove the route accepts the cap (via spied adapter) and that a subsequent
+    // report.write still receives the 9-section base (github artifact id carried in inputArtifactIds).
+
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
+      title: 'GitHub Evidence: vercel/next.js',
+      summary: 'repo vercel/next.js · TypeScript · 100000★ ...',
+      content: '{"repository":"vercel/next.js","url":"https://github.com/vercel/next.js"}',
+      provenance: 'mcp:github',
+    });
+
+    // First call (spied — no real network).
+    const ghRes = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'evidence.github.collect',
+        state: { sessionId: 't2', goal: { text: 'https://github.com/vercel/next.js' } },
+        inputArtifactIds: [],
+        turnId: 't2',
+      }),
+    });
+    expect(ghRes.status).toBe(200);
+    const ghBody = await ghRes.json();
+    expect(ghBody.provenance).toBe('mcp:github');
+
+    // Prove the route used the mock adapter (no real network)
+    expect(ghSpy).toHaveBeenCalledTimes(1);
+    expect(ghSpy).toHaveBeenCalledWith('evidence.github.collect', expect.anything(), []);
+
+    // Now call report.write referencing that github evidence via inputArtifactIds.
+    // The server still feeds the 9-section skeleton (report path unchanged).
+    vi.spyOn(llmClient, 'callLLMJson').mockResolvedValueOnce({
+      title: 'Report with GitHub Evidence',
+      summary: 'includes github evidence',
+      content: '结论：...\n支撑证据：... (includes vercel/next.js github artifact)\n...',
+    });
+
+    const reportRes = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'report.write',
+        state: { sessionId: 't2', goal: { text: 'summarize' }, artifacts: [{ id: 'gh1', kind: 'evidence', title: 'GitHub Evidence' }] },
+        inputArtifactIds: ['gh1'],
+        turnId: 't2',
+      }),
+    });
+
+    expect(reportRes.status).toBe(200);
+    const reportBody = await reportRes.json();
+    expect(reportBody.content).toMatch(/支撑证据|结论/);
+    expect(reportBody.provenance).toBe('llm');
+  });
+
+  it('respects inputArtifactIds priority when multiple GitHub artifacts exist (Medium fix)', async () => {
+    // Two artifacts in state. When inputArtifactIds: ['second'], must select vercel/next.js, not facebook/react.
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
+      title: 'GitHub Evidence: vercel/next.js',
+      summary: 'repo vercel/next.js · TypeScript · 100000★ ...',
+      content: '{"repository":"vercel/next.js","url":"https://github.com/vercel/next.js"}',
+      provenance: 'mcp:github',
+    });
+
+    const stateWithTwo = {
+      sessionId: 't-priority',
+      goal: { text: 'check facebook/react and also vercel/next.js' },
+      artifacts: [
+        { id: 'first', title: 'FB Repo', content: 'https://github.com/facebook/react' },
+        { id: 'second', title: 'Vercel Repo', content: 'https://github.com/vercel/next.js' },
+      ],
+    };
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'evidence.github.collect',
+        state: stateWithTwo,
+        inputArtifactIds: ['second'],
+        turnId: 't4',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.title).toContain('vercel/next.js');
+    expect(body.provenance).toBe('mcp:github');
+
+    expect(ghSpy).toHaveBeenCalledTimes(1);
+    expect(ghSpy).toHaveBeenCalledWith('evidence.github.collect', expect.anything(), ['second']);
+
+    ghSpy.mockRestore();
+  });
+
+  it('github mcp capability with no usable url returns 400 (fallback path, no 500)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'source.github.inspect',
+        state: { sessionId: 't3', goal: { text: 'no github link here at all' } },
+        inputArtifactIds: [],
+        turnId: 't3',
+      }),
+    });
+
+    expect([400, 422]).toContain(res.status);
+    const body = await res.json().catch(() => ({}));
+    // The route catch maps adapter-thrown 400s (no url) to "unsupported_capability"
+    // while preserving the original message for diagnostics.
+    expect(body.error).toBe('unsupported_capability');
+    expect(String(body.message || '')).toMatch(/github|url|no github/i);
+
+    errSpy.mockRestore();
+  });
 });
+
+

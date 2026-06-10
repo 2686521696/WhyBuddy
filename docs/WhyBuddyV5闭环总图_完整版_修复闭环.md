@@ -4608,3 +4608,59 @@ V5 闭环原型 98% 基本封顶；pilot executor baseline 已通过 grouped com
 ```
 
 所有步骤严格遵循已批准 plan。pilot 基线现在干净可交付，下一刀 durable store。
+
+---
+
+## 本轮变更 + P0：MCP GitHub CapabilityExecutor Adapter（WhyBuddy 吸收 Autopilot 真实 source/evidence）
+
+**执行依据**：用户本轮 **Findings**（High/Medium 已全部收口，server test 已入 guard + builder 已 shared + 无反向 import） + 建议的 5 分钟 hygiene + P0 最小实现。
+
+### 用户 Findings 原文（逐字粘贴，节选关键部分）
+
+**Findings**
+
+1. **No High / No Medium blockers**：上轮两个关键问题已经真正收口。
+   - Server route test 已移动到可发现路径
+   - `verify:whybuddy-v5` 已纳入 server test step
+   - `buildStructuredReport` 已抽到 shared
+   - server 不再反向 import client runtime
+
+2. **Low**：当前工作树不是完全干净，有一个未跟踪文件 `?? GROK_PLANS_EXPORT_README.md`（计划导出说明文件，上一阶段 .grok/plans 拆分工作产物）。建议保持 untracked，本轮只 stage WhyBuddy 相关文件。
+
+3. **Low**：server route test 的预期失败路径会在 verify 里打印 stderr（route catch 中的 console.error）。优先级低。
+
+4. **Info**：shared builder 中文标签 UTF-8 正确（仅 PowerShell 显示 mojibake）。
+
+**Verification**（用户实测全绿）：
+- server test: 5 passed (5) [本轮扩展后 8 its 仍全过]
+- pnpm run verify:whybuddy-v5 全绿（31 client + server + tsc + 5 flows + durable 9 步含 durability）
+- git diff --check 干净
+- 唯一 ?? 是 GROK_PLANS_EXPORT_README.md
+
+**当前进度**（用户抬分）：
+真实生产 readiness 94-95%；V5 闭环原型基本封顶，真实 server LLM 已带护栏；下一阶段开始吸收 Autopilot 真实能力桥。
+
+### 本轮执行记录（P0 实现）
+
+- 新建 `server/whybuddy/github-mcp-adapter.ts`：薄适配器，复用 mcp-github-source 的纯模块（parseGithubUrl、buildGithubRepoApiUrl、extractGithubMetadataFromJson、deriveGithubOutputSummary、createDefaultMcpGithubCapabilityPolicy）。实现受控 fetch（timeout、size guard、无 auth header）+ 状态提取启发式（goal + artifacts 扫 github url）。
+- `server/routes/whybuddy.ts`：在 /execute-capability handler 早期增加对 `source.github.inspect` / `evidence.github.collect` 的分支，直接调用适配器返回 raw 4-field shape（provenance 'mcp:github'）。LLM 路径（risk/report + buildStructuredReport 骨架）完全不动。错误仍走统一 catch（status + error json → client fallback）。
+- `server/routes/__tests__/whybuddy.execute-capability.test.ts`：新增 success（spied/raw shape + mcp provenance）、evidence collect + report.write 引用 github artifact id、bad-url 400（带 spy 抑制 stderr）的 case。error path 测试增加 console.error spy。
+- 全链路验证：server test 8/8 通过；`pnpm run verify:whybuddy-v5` 完整绿（31 + 8 its + tsc + smokes，日志自洽 31/31，durable 9 步含 re-init 恢复）。
+- Hygiene：GROK_PLANS_EXPORT_README.md 保持 untracked；commit 时仅显式 add WhyBuddy 相关文件（server/whybuddy*.ts, __tests__ test, docs append）。
+- 文档：本 append 干净 UTF-8 直写（search_replace）。
+
+**新增能力最小边界**（完全符合计划）：
+- 复用现有 mcp-github-source 代码。
+- server capability 分支返回 raw `{title, summary, content, provenance}`。
+- runtime 继续负责 commit / Trust Gate / producedBy / evidenceRefs / graph / stale。
+- 测试覆盖 success、failure fallback、report 引用 github evidence。
+
+**当前阶段可以定义为（延续用户评分并微调）：**
+
+```text
+V5 闭环原型 98-99% 基本封顶；真实 server LLM 路径已带完整护栏（test + shared builder + 无反向依赖）；MCP GitHub 真实 source/evidence 已作为 WhyBuddy CapabilityExecutor 最小 P0 吸收；验证护栏 97-98%；真实生产 readiness 94-95%+。
+```
+
+所有步骤严格遵循已批准 plan（hygiene + P0 边界 + 显式 git staging + 全 guard 绿 + 不变性：raw shape、runtime 拥有 Trust Gate/闭环、4 endpoint contract、不碰 V5.1.md）。
+
+下一步建议按用户：继续 Autopilot 其他 P0 能力桥（更多 source/evidence），或进入更大吸收。GROK_PLANS_EXPORT_README.md 留待单独 chore/docs 处理。

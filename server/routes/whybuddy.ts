@@ -21,6 +21,7 @@ import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.j
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJson } from "../core/llm-client.js";
 import { buildStructuredReport } from "../../shared/blueprint/whybuddy-report-builder.js";
+import { executeGithubMcpCapability } from "../whybuddy/github-mcp-adapter.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -199,6 +200,15 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
   }
 
   try {
+    // GitHub MCP source/evidence capabilities (P0 Autopilot absorption).
+    // These bypass LLM entirely and return the raw executor shape using the
+    // existing mcp-github-source reusable modules (url parse + safe http + summary derivation).
+    // WhyBuddy runtime still owns commitArtifact, Trust Gate, producedBy, evidenceRefs, etc.
+    if (capabilityId === "source.github.inspect" || capabilityId === "evidence.github.collect") {
+      const gh = await executeGithubMcpCapability(capabilityId, state, inputArtifactIds);
+      return res.json(gh);
+    }
+
     const config = getAIConfig();
     if (!config.apiKey) {
       throw new Error("LLM not configured (no apiKey from getAIConfig)");
