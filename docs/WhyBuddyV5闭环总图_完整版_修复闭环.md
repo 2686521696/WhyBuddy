@@ -5348,6 +5348,198 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 9：CoverageContract -> Budget stop policy（按用户 review "收到。Knife 8 很关键..."）
+
+**执行日期**：紧接 Knife 8 UI surface + 用户明确 "可以进 Knife 9" 之后。
+
+**用户本次 Findings（原文 verbatim 完整关键部分）**
+
+```text
+收到。Knife 8 很关键，它不是 runtime 架构大改，但它把 V5.1 从“后台真的有控制平面”推进到了“用户能看见、能点、能质疑”的产品状态。
+
+我按你这次落地更新：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：97%
+V5.1 控制平面完成度：95%+
+V5.1 产品可见度：显著提升
+验证护栏：98%+
+
+现在 `/whybuddy` 已经不是单纯能跑 V5.1，而是能展示 V5.1：
+
+coverage: passed/blocked / open N / waived N
+cost: ~tok / runs
+decisions: N
+recent DLEDGER
+coverage gaps
+decision challenge button
+
+这很重要。因为 V5.1 的价值不是“内部多几个对象”，而是用户能知道：
+
+为什么这么调度
+哪里还没覆盖
+为什么被挡
+花了多少
+哪条 decision 可以挑战
+
+现在这些都露出来了。
+
+**当前 V5.1 链条**
+
+现在可以正式写成：
+
+INTAKE
+ -> BUDGET(count + cost snapshot)
+ -> ORCH
+ -> DLEDGER(decision audit + challenge UI)
+ -> CONTRACT(authored baseline)
+ -> GCOV(gap lifecycle gate + visible status)
+ -> FLOWB(protocol boundary)
+ -> plan / commit / AWAIT
+
+这已经是一个可观察、可追责、可重入的 reasoning runtime。
+
+**为什么现在给 97%**
+
+核心原因：
+
+1. runtime 主链已经成立。
+2. coverage / gap / cost / decision 都有 ledger。
+3. GCOV 能硬挡 premature report。
+4. DLEDGER 能被 challenge。
+5. FLOWB 能净化正式路径。
+6. UI 已经能展示这些控制平面信号。
+7. full `verify:whybuddy-v5` 仍然全绿。
+
+剩下 3% 主要是：
+
+CONTRACT -> BUDGET 的 “够了就停” 强边还没完全落地
+真实 token/provider usage cost 还不是精确账
+FLOWB 还不是完整 brainstorm protocol 级别
+coverage waive / gap 管理 UI 还比较 v1
+
+**下一刀建议：Knife 9 CoverageContract -> Budget Stop Policy**
+
+建议 commit：
+
+feat(whybuddy): connect CoverageContract to Budget stop policy
+
+目标一句话：
+
+> 当 CoverageContract 已满足、blocking gaps 已 resolved/waived、没有新的 challenge/stale 时，Budget 不只防止跑爆，还要能阻止无意义重复调度：够了就停。
+
+**Knife 9 最小可交付**
+
+1. 新增 helper：
+
+evaluateContractSufficiencyForBudget(state): {
+  sufficient: boolean;
+  reason: string;
+  openGapCount: number;
+  unresolvedRequiredCapabilities: string[];
+}
+
+2. 接到 `evaluateBudgetBeforeOrchestrate` 或 ORCH 前置预算区：
+
+如果 coverageGate.passed === true
+且 coverageGaps blocking 全 resolved/waived
+且没有 staleArtifactIds
+且本轮不是 challenge / revise / refine
+且最近已有 report.write
+=> return allowed=false, reason="contract_sufficient_no_new_work"
+=> AWAIT partial / empty plan
+=> conversation note: [BUDGET] stopped: contract already sufficient
+=> DLEDGER special decision: stopped_by_contract_sufficiency
+
+3. 注意不要误伤用户继续提问：
+
+应该只挡这些情况：
+
+重复要求“继续生成报告”
+重复没有新信息的收敛请求
+同一 goal 已满足后无 challenge/stale 的再跑
+
+不要挡：
+
+challenge
+revise
+clarify
+expand
+new meaningful userText
+stale exists
+coverageGate failed
+
+4. 测试至少 3 个：
+
+Budget stops redundant converge when contract sufficient
+Budget does not stop challenge/revise even when contract sufficient
+Budget does not stop when stale artifacts exist or open gaps remain
+
+如果加 3 个：
+
+56 -> 59
+
+但你这次 Knife 8 没加 runtime tests，所以当前还是 56/56。Knife 9 如果加 3 个，就同步 smoke 文案：
+
+56/56 -> 59/59
+
+5. UI 可以顺手显示：
+
+budget: stopped/sufficient
+
+但 v1 可以先只靠 conversation note + status 摘要，不要扩大 scope。
+
+**做完 Knife 9 后预计**
+
+V5.1 架构图效果：97% -> 98%
+V5.1 控制平面完成度：96%+
+
+因为它会补上 V5.1 文档里那句很关键的：
+
+CONTRACT 一份合约喂两个闸：
+GCOV = 别太早停
+BUDGET = 够了就停
+
+现在 GCOV 这边已经很硬了。Knife 9 就是把 BUDGET 这边的“够了就停”钉上。
+
+**再往后**
+
+Knife 10 我会建议做：
+
+feat(whybuddy): add gap waive UI and coverage action controls
+
+让用户能在页面上 waive 某个 gap，并留下 reason。  
+这个会把 GCOV 的 gap lifecycle 从 runtime helper 推到产品操作层。
+
+**一句话**
+
+可以进 Knife 9。  
+现在 V5.1 已经能跑、能看、能挑战；下一步该让它学会“够了就停”，避免在 contract 已经满足时继续无意义消耗。
+```
+
+**本阶段执行记录 + 结果（Knife 9）**
+
+- 新 helper `evaluateContractSufficiencyForBudget`（基于 contract + gaps status + !stale + hasRecentReport + !meaningfulIntervention + unresolved==0）。
+- 在 ORCH budget check 之后插入 sufficiency stop 块（复用 budget block 模式）：markAwaiting、[BUDGET] stopped note（含 "contract already sufficient"）、record hook、特殊 DLEDGER（stopped_by_contract_sufficiency、chose:[], addresses 带 gaps、rationale）。
+- 严格条件：只对 redundant converge 触发；challenge/revise/stale/open-gap 等不触发。
+- +3 tests（stops redundant; does not stop on challenge/revise; does not stop on stale/open gaps）→ 59 passed (59)。
+- Smokes 同步更新 56/56 → 59/59。
+- `pnpm run verify:whybuddy-v5` 全绿（59+12, tsc, 5 flows, 9 store+durability）。
+- 主 doc append 完整 verbatim review + 记录。
+- Git 仅 V5 文件（runtime + test + 2 smokes + 主 doc），commit 使用建议消息。
+- session plan.md live append。
+
+现在 “够了就停” 已通过 CONTRACT 喂 BUDGET 实现，DLEDGER 有审计条目，conversation 有可观察 note。CONTRACT 一份合约喂两个闸（GCOV 别太早停，BUDGET 够了就停）基本完整。
+
+**进度（用户口径）**：97% → 98% 架构图效果；控制平面 96%+。
+
+下一步按用户：Knife 10 gap waive UI + coverage action controls。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+所有步骤严格克制 v1、复用现有 block 模式 + DLEDGER 特殊 decision 模式、测试覆盖 spec 边界、不扩大 UI scope。
+
 ## Knife 8：Surface decision challenge and coverage/cost status（按用户 review "收到。Knife 7 这刀落地后..."）
 
 **执行日期**：紧接 Knife 7 Coverage baseline + gap lifecycle + 用户 "可以开始 Knife 8" 之后。

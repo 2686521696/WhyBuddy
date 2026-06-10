@@ -53,6 +53,7 @@ import {
   authorCoverageContract,
   resolveCoverageGapsFromState,
   waiveCoverageGap,
+  evaluateContractSufficiencyForBudget,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
@@ -1927,5 +1928,112 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const gate = afterO.coverageGate as any;
     expect(gate.passed).toBe(true);
     expect(gate.unresolvedGaps.length).toBe(0);
+  });
+
+  // ===== Knife 9: CoverageContract -> Budget stop policy (3 new tests, 56 -> 59) =====
+
+  it('Budget stops redundant converge when contract sufficient', () => {
+    let s = createInitialSessionState('权限系统', 'budget-stop-1');
+    // Author contract and simulate satisfied state: no stale, has recent report, gaps resolved
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't-stop');
+    // Mark all gaps resolved for this test
+    const satisfiedGaps = gaps.map((g: any) => ({ ...g, status: 'resolved' as const }));
+    s = { ...s, coverageContract: contract, coverageGaps: satisfiedGaps };
+
+    // Add a recent trusted report artifact (so hasRecentReport true)
+    const { updatedState: sWithReport } = commitArtifact(
+      s,
+      createRawArtifact('rep-stop', 'report.write', '综合', 'report'),
+      't-stop-run-rep',
+      false,
+      []
+    );
+    // Force the report to be trusted
+    const repArt = (sWithReport.artifacts || []).find((a: any) => a.id === 'rep-stop');
+    if (repArt) {
+      (repArt as any).trustLevel = 'gated_pass';
+      (repArt as any).passedGates = ['commit'];
+    }
+
+    // Redundant converge request (not challenge/revise)
+    const { newState: afterO, plan } = orchestrateReasoningTurn(sWithReport, {
+      turnId: 't-stop',
+      userText: '再生成一次报告',
+    });
+
+    // Should have stopped (empty plan, AWAIT, note, special DLEDGER)
+    expect(afterO.runtimePhase).toBe('awaiting');
+    expect(plan.selected.length).toBe(0);
+    expect(plan.reason).toMatch(/CONTRACT_SUFFICIENT|contract_sufficient/);
+
+    const hasStopNote = (afterO.conversation || []).some((c: any) => (c.text || '').includes('contract already sufficient'));
+    expect(hasStopNote).toBe(true);
+
+    const ledger = getDecisionLedger(afterO);
+    const last = ledger[ledger.length - 1];
+    expect(last.rationale).toMatch(/stopped_by_contract_sufficiency/);
+    expect(last.chose.length).toBe(0);
+  });
+
+  it('Budget does not stop challenge/revise even when contract sufficient', () => {
+    let s = createInitialSessionState('权限系统', 'budget-stop-2');
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't-stop2');
+    const satisfiedGaps = gaps.map((g: any) => ({ ...g, status: 'resolved' as const }));
+    s = { ...s, coverageContract: contract, coverageGaps: satisfiedGaps };
+
+    const { updatedState: sWithReport } = commitArtifact(
+      s,
+      createRawArtifact('rep2', 'report.write', '综合', 'report'),
+      't2-run-rep',
+      false,
+      []
+    );
+    const repArt = (sWithReport.artifacts || []).find((a: any) => a.id === 'rep2');
+    if (repArt) { (repArt as any).trustLevel = 'gated_pass'; (repArt as any).passedGates = ['commit']; }
+
+    // Challenge intervention should NOT trigger stop
+    const intv: any = { intent: 'challenge', targetDecisionId: 'some-dec', text: '质疑' };
+    const { newState: afterO, plan } = orchestrateReasoningTurn(sWithReport, {
+      turnId: 't-stop2',
+      userText: '再报告',
+      intervention: intv,
+    });
+
+    // Should not have the contract stop (plan may have items or at least not the stop reason/note)
+    const hasContractStopNote = (afterO.conversation || []).some((c: any) => (c.text || '').includes('contract already sufficient'));
+    expect(hasContractStopNote).toBe(false);
+    // The decision should not be the sufficiency stop one
+    const ledger = getDecisionLedger(afterO);
+    const last = ledger[ledger.length - 1];
+    expect(last.rationale).not.toMatch(/stopped_by_contract_sufficiency/);
+  });
+
+  it('Budget does not stop when stale artifacts exist or open gaps remain', () => {
+    let s = createInitialSessionState('权限系统', 'budget-stop-3');
+    const { contract, gaps } = authorCoverageContract(s.goal.text, 't-stop3');
+    // Leave one gap open
+    s = { ...s, coverageContract: contract, coverageGaps: gaps, staleArtifactIds: ['old-stale'] };
+
+    const { updatedState: sWithReport } = commitArtifact(
+      s,
+      createRawArtifact('rep3', 'report.write', '综合', 'report'),
+      't3-run-rep',
+      false,
+      []
+    );
+    const repArt = (sWithReport.artifacts || []).find((a: any) => a.id === 'rep3');
+    if (repArt) { (repArt as any).trustLevel = 'gated_pass'; (repArt as any).passedGates = ['commit']; }
+
+    const { newState: afterO, plan } = orchestrateReasoningTurn(sWithReport, {
+      turnId: 't-stop3',
+      userText: '再生成报告',
+    });
+
+    // Should not stop due to stale + open gaps
+    const hasContractStopNote = (afterO.conversation || []).some((c: any) => (c.text || '').includes('contract already sufficient'));
+    expect(hasContractStopNote).toBe(false);
+    const ledger = getDecisionLedger(afterO);
+    const last = ledger[ledger.length - 1];
+    expect(last.rationale).not.toMatch(/stopped_by_contract_sufficiency/);
   });
 });

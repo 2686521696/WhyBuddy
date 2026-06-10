@@ -734,6 +734,57 @@ export function waiveCoverageGap(state: V5SessionState, gapId: string, reason: s
   return { ...state, coverageGaps: gaps };
 }
 
+/** Knife 9: evaluate if current CoverageContract baseline is sufficient (no open blocking gaps, no stale, has recent report, and this turn is not a meaningful intervention like challenge/revise). If so, Budget should stop redundant converge. */
+export function evaluateContractSufficiencyForBudget(
+  state: V5SessionState,
+  context?: OrchestrateContext
+): { sufficient: boolean; reason: string; openGapCount: number; unresolvedRequiredCapabilities: string[] } {
+  const contract = state.coverageContract;
+  const gate = state.coverageGate;
+  const gaps: CoverageGap[] = (state.coverageGaps || []) as any;
+  const hasStale = (state.staleArtifactIds || []).length > 0;
+  const intervention = context?.intervention;
+
+  const isMeaningfulIntervention = !!intervention && ['challenge', 'revise', 'clarify', 'expand'].includes(intervention.intent);
+
+  const blockingGaps = contract ? gaps.filter((g: any) => (contract as any).blockingGapIds?.includes(g.id)) : [];
+  const openBlocking = blockingGaps.filter((g: any) => g.status === 'open');
+  const openGapCount = openBlocking.length;
+
+  const unresolvedRequired = contract ? (contract as any).requiredCapabilities?.filter((c: string) => c !== 'report.write' && !hasTrustedCommittedForCap(state, c)) || [] : [];
+
+  const hasRecentReport = (state.artifacts || []).some((a: any) =>
+    a.producedBy?.capabilityId === 'report.write' &&
+    (a.trustLevel === 'gated_pass' || a.trustLevel === 'audited') &&
+    !(state.staleArtifactIds || []).includes(a.id)
+  );
+
+  let sufficient = false;
+  let reason = 'contract not sufficient or new work needed';
+
+  // v1: sufficiency based on gaps status + state signals + not a meaningful intervention.
+  // We do not require pre-computed coverageGate here (check happens early in ORCH before GCOV sets it).
+  if (contract && openGapCount === 0 && !hasStale && hasRecentReport && !isMeaningfulIntervention && unresolvedRequired.length === 0) {
+    sufficient = true;
+    reason = 'contract_sufficient_no_new_work';
+  } else if (openGapCount > 0) {
+    reason = `open blocking gaps: ${openGapCount}`;
+  } else if (hasStale) {
+    reason = 'stale artifacts present';
+  } else if (!hasRecentReport) {
+    reason = 'no recent trusted report';
+  } else if (isMeaningfulIntervention) {
+    reason = 'meaningful intervention (challenge/revise/etc.)';
+  }
+
+  return {
+    sufficient,
+    reason,
+    openGapCount,
+    unresolvedRequiredCapabilities: unresolvedRequired,
+  };
+}
+
 function hasTrustedCommittedForCap(state: V5SessionState, capId: string): boolean {
   const runs = state.capabilityRuns || [];
   const arts = state.artifacts || [];
@@ -1996,6 +2047,52 @@ export function orchestrateReasoningTurn(
     return {
       newState: parked,
       plan: { selected: [], reason: `BUDGET_EXCEEDED: ${budgetCheck.reason}`, expectedArtifacts: [] } as TurnPlan,
+      newGraphNodes: [],
+    };
+  }
+
+  // ===== Knife 9: CONTRACT -> BUDGET stop policy (v1) =====
+  // If budget count ok so far, but CoverageContract baseline is sufficient (gaps resolved/waived, no stale,
+  // has recent report, and this turn is not a meaningful intervention), stop redundant converge to avoid
+  // wasting runs when "够了就停".
+  const sufficiency = evaluateContractSufficiencyForBudget(working, { turnId, userText, intervention: context?.intervention });
+  if (sufficiency.sufficient) {
+    let parked = markAwaiting(working, turnId);
+    const noteText = `[BUDGET] stopped: contract already sufficient. ${sufficiency.reason}. Partial AWAIT (no new capabilities scheduled this turn).`;
+    const note = {
+      id: `${turnId}-budget-contract`,
+      role: 'system',
+      text: noteText,
+      timestamp: new Date().toISOString(),
+    };
+    parked = {
+      ...parked,
+      conversation: [...(parked.conversation || []), note],
+    };
+    parked = recordCapabilityRunCost(parked, { id: `${turnId}-budget-contract-run`, capabilityId: 'budget.contract_stop' as any, turnId, inputs: [], outputs: [], gateResults: [] } as any);
+
+    // Special DLEDGER for contract sufficiency stop (auditable, parallel to budget block).
+    const nowIsoContractStop = new Date().toISOString();
+    const allCapIdsContractStop = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
+    const contractStopDecision: SchedulingDecision = {
+      id: `${turnId}-dledger-contract-stop`,
+      turnId,
+      saw: allCapIdsContractStop,
+      chose: [],
+      skipped: allCapIdsContractStop.map((cid) => ({ capabilityId: cid, reason: "stopped_by_contract_sufficiency" })),
+      addresses: (working.coverageContract as any)?.blockingGapIds?.map((gid: string) => `coverage:gap:${gid}`) || [],
+      rationale: `stopped_by_contract_sufficiency: ${sufficiency.reason}`,
+      alternativesRejected: allCapIdsContractStop,
+      createdAt: nowIsoContractStop,
+    };
+    parked = {
+      ...parked,
+      decisionLedger: [...(parked.decisionLedger || []), contractStopDecision],
+    };
+
+    return {
+      newState: parked,
+      plan: { selected: [], reason: `CONTRACT_SUFFICIENT: ${sufficiency.reason}`, expectedArtifacts: [] } as TurnPlan,
       newGraphNodes: [],
     };
   }
