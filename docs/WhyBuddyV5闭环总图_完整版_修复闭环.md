@@ -4664,3 +4664,85 @@ V5 闭环原型 98-99% 基本封顶；真实 server LLM 路径已带完整护栏
 所有步骤严格遵循已批准 plan（hygiene + P0 边界 + 显式 git staging + 全 guard 绿 + 不变性：raw shape、runtime 拥有 Trust Gate/闭环、4 endpoint contract、不碰 V5.1.md）。
 
 下一步建议按用户：继续 Autopilot 其他 P0 能力桥（更多 source/evidence），或进入更大吸收。GROK_PLANS_EXPORT_README.md 留待单独 chore/docs 处理。
+
+---
+
+## 本轮变更（feat(whybuddy): enrich GitHub evidence capability）
+
+**执行依据**：用户最新 review（确认 07403708 干净、之前 Medium/Low 已收口、无新 blocker） + 建议的 "Expanded GitHub Evidence v1" 计划。
+
+### 用户 Findings 原文（关键部分，逐字参考）
+
+**审查结论**
+
+这轮 GitHub MCP adapter 收口得比较漂亮。... 这个 commit 可以视为 **P0 GitHub 外部证据能力接入已封口**。
+
+**当前进度**（用户更新）
+
+MCP GitHub external capability absorption：92-93%
+
+真实生产 readiness：95-96%
+
+**当前阶段定义**（用户建议）
+
+> WhyBuddy V5 closed-loop prototype has entered 99% stable baseline; ... The next phase is **systematically absorbing Autopilot's reusable capability modules** ...
+
+**下一步计划**（用户 verbatim 建议）
+
+1. **扩展 GitHub adapter 输出内容**
+   - ... README 摘要、license、package/framework signals、recent pushed / activity signal、repo risk hints（archived、low activity、missing license、stars/forks 不匹配等）。
+   - 仍然只返回 raw executor shape。
+2. **新增/增强 capability**
+   - 保守方案：增强 `evidence.github.collect`。
+3. **测试补强**
+   - mock GitHub API responses。
+   - 覆盖 metadata + README 合并、body size guard、missing README fallback、inputArtifactIds 仍优先、provenance 仍是 `mcp:github`。
+4. **verify**
+   ```powershell
+   pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/whybuddy.execute-capability.test.ts --reporter=dot
+   pnpm run verify:whybuddy-v5
+   git diff --check
+   ```
+5. **提交**
+   ```powershell
+   git add server/whybuddy/github-mcp-adapter.ts
+   git add server/routes/__tests__/whybuddy.execute-capability.test.ts
+   git add docs/WhyBuddyV5闭环总图_完整版_修复闭环.md
+   git commit -m "feat(whybuddy): enrich GitHub evidence capability"
+   ```
+
+### 本轮执行记录（Expanded GitHub Evidence v1）
+
+- **Adapter 扩展**（`server/whybuddy/github-mcp-adapter.ts`）：
+  - 在基本 repo metadata 后增加受控 README 获取（/readme + base64 解码 + 简单前 500 字符 summary）。
+  - 从 fullRepo 提取 license、archived、updated_at。
+  - 确定性 risk hints（archived、low recent activity、missing license、stars/forks imbalance）。
+  - 全部合并到 content JSON（保留之前字段，向后兼容）；graceful degradation（README 失败时 readmeSummary=null，仍返回核心 + risks）。
+  - 复用现有 `safeGithubFetchJson` + policy（timeout/size/无 credential）。
+  - 仍只返回 raw `{title, summary, content, provenance: 'mcp:github'}`。
+
+- **测试增强**（`server/routes/__tests__/whybuddy.execute-capability.test.ts`，现在 10 tests）：
+  - 两个 success tests 的 mock 返回值更新为 rich 对象（含 readmeSummary、license、risks），并增加 content 断言。
+  - 新增 "graceful missing README" 测试（模拟额外 fetch 失败，仍 200 + 核心 metadata + risks note）。
+  - 保留并重用 priority test、spy call assertions、error-path console spies、report reference 测试。
+  - 所有 GitHub 调用保持 mock（无真实网络）。
+
+- **全链路验证**：
+  - Server test：10 passed (10)。
+  - `pnpm run verify:whybuddy-v5`：完整绿（31 client + 10 server + tsc clean + 5 flows + durable 9 步 + re-init，日志自洽 31/31）。
+  - `git diff --check`：仅 CRLF 警告。
+  - Hygiene：仅显式 add 3 个 V5 文件（adapter、test、docs）；GROK_PLANS_EXPORT_README.md 保持 untracked。
+
+- **文档**：本 append 使用 search_replace 干净 UTF-8 直写，包含用户 review 关键部分 + 执行记录 + 更新阶段定义。
+
+**当前阶段可以定义为（延续用户评分）：**
+
+```text
+V5 原型 99% 封顶；GitHub MCP adapter P0 已落地并通过收口（07403708）；现已完成 Expanded Evidence v1（README + license + signals + risks，保守增强 evidence.github.collect）；验证护栏 98%；真实生产 readiness 95-96%+。
+```
+
+所有步骤严格遵循已批准 plan（enrichment + mock 策略 + inputArtifactIds 优先 + 全 guard 绿 + 显式 git staging + 不变性：raw shape、runtime 拥有 Trust Gate/闭环、4 endpoint contract）。
+
+下一步（用户建议）：在当前 GitHub evidence 稳固后，推进 Docker / repo analysis sandbox adapter（更高风险，涉及真实执行环境）。
+
+（本轮变更保持了 WhyBuddy 核心边界：adapter 只产 raw content；commit/Trust Gate/producedBy/evidenceRefs/stale/report schema 仍由 runtime 掌控。）

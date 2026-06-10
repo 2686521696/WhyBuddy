@@ -146,6 +146,7 @@ export async function executeGithubMcpCapability(
   }
 
   const meta: GithubRepoMetadata = extractGithubMetadataFromJson(json as any) || {};
+  const fullRepo = json as any;
 
   // title / summary / content tuned for WhyBuddy raw executor contract
   const fullName = meta.fullName || `${parsed.owner}/${parsed.repo}`;
@@ -155,6 +156,36 @@ export async function executeGithubMcpCapability(
 
   const oneLiner = deriveGithubOutputSummary(meta, policy);
 
+  // === Expanded evidence (v1) ===
+  let readmeSummary = null;
+  try {
+    const readmeUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/readme`;
+    const readmeJson = (await safeGithubFetchJson(readmeUrl, policy)) as { content?: string; encoding?: string };
+    if (readmeJson?.content && readmeJson.encoding === 'base64') {
+      const fullReadme = Buffer.from(readmeJson.content, 'base64').toString('utf8');
+      // simple first ~500 chars summary (collapse ws)
+      readmeSummary = fullReadme.slice(0, 500).replace(/\s+/g, ' ').trim();
+    }
+  } catch (e) {
+    // graceful: no README or fetch error – we still return the core metadata
+  }
+
+  const license = fullRepo.license?.name || fullRepo.license?.spdx_id || null;
+  const archived = !!fullRepo.archived;
+  const updatedAt = fullRepo.updated_at || null;
+
+  // deterministic risk hints (no LLM)
+  const risks = [];
+  if (archived) risks.push('archived');
+  if (updatedAt) {
+    const ageDays = (Date.now() - Date.parse(updatedAt)) / (1000 * 60 * 60 * 24);
+    if (ageDays > 365 * 1.5) risks.push('low recent activity');
+  }
+  if (!license) risks.push('missing license');
+  if ((meta.stargazersCount || 0) > 5000 && (fullRepo.forks_count || 0) < 100) {
+    risks.push('stars/forks imbalance');
+  }
+
   const content = JSON.stringify(
     {
       repository: fullName,
@@ -163,7 +194,12 @@ export async function executeGithubMcpCapability(
       stars: meta.stargazersCount ?? null,
       defaultBranch: meta.defaultBranch || null,
       lastPushed: meta.pushedAt || null,
+      updatedAt,
       url: meta.htmlUrl || `https://github.com/${parsed.owner}/${parsed.repo}`,
+      license,
+      archived,
+      readmeSummary,
+      risks: risks.length ? risks : undefined,
       source: "mcp-github",
     },
     null,

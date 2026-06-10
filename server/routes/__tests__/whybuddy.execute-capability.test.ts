@@ -157,7 +157,15 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
       title: 'GitHub Source: facebook/react',
       summary: 'repo facebook/react · TypeScript · 200000★ · default branch main · last pushed 2026-...',
-      content: JSON.stringify({ repository: 'facebook/react', language: 'TypeScript', stars: 200000 }, null, 2),
+      content: JSON.stringify({
+        repository: 'facebook/react',
+        language: 'TypeScript',
+        stars: 200000,
+        license: 'MIT License',
+        readmeSummary: 'A JavaScript library for building user interfaces...',
+        risks: ['low recent activity'],
+        source: 'mcp-github',
+      }, null, 2),
       provenance: 'mcp:github',
     });
 
@@ -177,6 +185,10 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     expect(body.title).toContain('facebook/react');
     expect(body.provenance).toBe('mcp:github');
     expect(body.content).toContain('facebook/react');
+    // enrichment assertions (v1)
+    expect(body.content).toContain('readmeSummary');
+    expect(body.content).toContain('license');
+    expect(body.content).toContain('risks');
 
     // Prove the route used the (mock) adapter and did not hit real network
     expect(ghSpy).toHaveBeenCalledTimes(1);
@@ -191,7 +203,14 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
       title: 'GitHub Evidence: vercel/next.js',
       summary: 'repo vercel/next.js · TypeScript · 100000★ ...',
-      content: '{"repository":"vercel/next.js","url":"https://github.com/vercel/next.js"}',
+      content: JSON.stringify({
+        repository: 'vercel/next.js',
+        url: 'https://github.com/vercel/next.js',
+        license: 'MIT License',
+        readmeSummary: 'The React Framework for the Web...',
+        risks: [],
+        source: 'mcp-github',
+      }, null, 2),
       provenance: 'mcp:github',
     });
 
@@ -209,6 +228,9 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     expect(ghRes.status).toBe(200);
     const ghBody = await ghRes.json();
     expect(ghBody.provenance).toBe('mcp:github');
+    // enrichment assertions (v1)
+    expect(ghBody.content).toContain('readmeSummary');
+    expect(ghBody.content).toContain('license');
 
     // Prove the route used the mock adapter (no real network)
     expect(ghSpy).toHaveBeenCalledTimes(1);
@@ -237,6 +259,46 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     const reportBody = await reportRes.json();
     expect(reportBody.content).toMatch(/支撑证据|结论/);
     expect(reportBody.provenance).toBe('llm');
+  });
+
+  it('graceful missing README still returns 200 with core metadata + note (enrichment v1)', async () => {
+    // Simulate the inner README fetch failing (404 or error) – adapter must degrade gracefully
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
+      title: 'GitHub Evidence: facebook/react',
+      summary: 'repo facebook/react · JavaScript · 200000★ ...',
+      content: JSON.stringify({
+        repository: 'facebook/react',
+        description: 'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
+        language: 'JavaScript',
+        stars: 200000,
+        license: null, // or 'MIT'
+        readmeSummary: null,
+        risks: ['missing license'],
+        source: 'mcp-github',
+      }, null, 2),
+      provenance: 'mcp:github',
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'evidence.github.collect',
+        state: { sessionId: 't-missing-readme', goal: { text: 'https://github.com/facebook/react' } },
+        inputArtifactIds: [],
+        turnId: 't5',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('mcp:github');
+    expect(body.content).toContain('facebook/react');
+    // graceful: no readmeSummary, but still has core + risks note
+    expect(body.content).not.toContain('readmeSummary": "'); // or check it's null
+    expect(body.content).toContain('risks');
+
+    ghSpy.mockRestore();
   });
 
   it('respects inputArtifactIds priority when multiple GitHub artifacts exist (Medium fix)', async () => {
