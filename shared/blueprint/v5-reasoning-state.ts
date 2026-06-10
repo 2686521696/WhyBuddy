@@ -120,6 +120,9 @@ export interface V5SessionState {
 
   /** V5.1 FLOWB (Knife 4): optional ledger of boundary purifications for formal paths (report/synthesis). */
   flowBoundaryLedger?: FlowBoundaryCheck[];
+
+  /** V5.1 Knife 6: optional cost telemetry ledger (v1: estimated tokens/duration per run). */
+  costLedger?: CapabilityCostRecord[];
 }
 
 export interface UserIntervention {
@@ -208,5 +211,18 @@ export interface FlowBoundaryCheck {
   strippedProtocolNodes: string[];
   assertions: string[];
   passed: boolean;
+  createdAt: string;
+}
+
+/** V5.1 Knife 6: Cost telemetry record for a capability run (v1 estimated). */
+export interface CapabilityCostRecord {
+  id: string;
+  turnId: string;
+  capabilityRunId: string;
+  capabilityId: string;
+  estimatedTokens?: number;
+  estimatedCostUsd?: number;
+  durationMs?: number;
+  source: "estimated" | "server" | "manual";
   createdAt: string;
 }

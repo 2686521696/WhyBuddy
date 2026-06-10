@@ -47,6 +47,8 @@ import {
   type CoverageContract,
   type CoverageGateResult,
   type FlowBoundaryCheck,
+  type CapabilityCostRecord,
+  type BudgetSnapshot,
 } from './whybuddy-runtime';
 import { isTestHelperEnabled } from '../../../server/routes/whybuddy.ts';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
@@ -1813,5 +1815,52 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     // At minimum the turn happened under challenge context and DLEDGER captured it.
     // To show selected influence, if prior had chose we expect at least the mechanism ran (rationale already proves).
     expect(planCapIds.length).toBeGreaterThanOrEqual(0); // plan may be empty or not; main signal is the ledger rationale
+  });
+
+  // ===== Knife 6: cost telemetry / Budget ledger v1 (3 new tests, 49 -> 52) =====
+
+  it('recordCapabilityRunCost appends cost record', () => {
+    let s = createInitialSessionState('成本记录测试', 'cost-1');
+    const run: any = {
+      id: 'cost-run-1',
+      capabilityId: 'risk.analyze',
+      turnId: 't1',
+      inputs: [],
+      outputs: [],
+      gateResults: [],
+    };
+    const costed = recordCapabilityRunCost(s, run, { tokens: 123, durationMs: 45, source: 'estimated' });
+    const ledger = (costed.costLedger || []) as CapabilityCostRecord[];
+    expect(ledger.length).toBeGreaterThan(0);
+    const rec = ledger[ledger.length - 1];
+    expect(rec.capabilityId).toBe('risk.analyze');
+    expect(rec.estimatedTokens).toBe(123);
+    expect(rec.durationMs).toBe(45);
+    expect(rec.source).toBe('estimated');
+  });
+
+  it('cost ledger survives commit/run flow', () => {
+    let s = createInitialSessionState('成本随 commit 留存', 'cost-2');
+    const { updatedState: afterRisk } = commitArtifact(
+      s,
+      createRawArtifact('r1', 'risk.analyze', '安全', 'risk'),
+      'c2-run-r',
+      false,
+      []
+    );
+    // After commit, cost record for the run should be present (via commit wiring)
+    const ledger = (afterRisk.costLedger || []) as CapabilityCostRecord[];
+    expect(ledger.some((c: any) => c.capabilityId === 'risk.analyze')).toBe(true);
+  });
+
+  it('budget snapshot includes cost summary', () => {
+    let s = createInitialSessionState('预算快照含成本', 'cost-3');
+    // seed some cost
+    s = recordCapabilityRunCost(s, { id: 'r', capabilityId: 'risk.analyze', turnId: 't', inputs: [], outputs: [], gateResults: [] } as any, { tokens: 500, durationMs: 10, source: 'estimated' });
+    const res = evaluateBudgetBeforeOrchestrate(s) as any;
+    const snap = res.snapshot || res; // support both return shape and direct for legacy
+    expect(snap.totalEstimatedTokens).toBeGreaterThan(0);
+    expect(snap.perCapTokens && snap.perCapTokens['risk.analyze']).toBeGreaterThan(0);
+    expect(typeof snap.costRecordCount).toBe('number');
   });
 });

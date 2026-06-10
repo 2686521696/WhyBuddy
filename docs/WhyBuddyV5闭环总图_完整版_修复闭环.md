@@ -5348,6 +5348,191 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 6：Cost Telemetry / Budget Ledger（按用户 review "收到。Knife 5 这刀是质变..."）
+
+**执行日期**：紧接 Knife 5 decision challenge + 用户 "可以进 Knife 6" 之后。
+
+**用户本次 Findings（原文 verbatim）**
+
+```text
+收到。Knife 5 这刀是质变：**DLEDGER 从“可审计”升级成“可操作、可挑战、可重新调度”的问责中枢**。
+
+我按你这次执行结果更新：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：92%
+V5.1 控制平面完成度：90%+
+验证护栏：98%+
+
+现在这条链已经非常完整：
+
+INTAKE -> BUDGET -> ORCH -> DLEDGER(可挑战) -> GCOV -> FLOWB -> plan / AWAIT
+
+这和 V5.1 架构图的核心语义已经基本对齐了：
+
+BUDGET：别跑爆
+DLEDGER：为什么这么跑
+Decision Challenge：不服这条调度，可以重开
+GCOV：跑够了没有，不够不许收敛
+FLOWB：正式路径前协议净化
+AWAIT：每轮停住，等用户继续
+
+**为什么现在可以给 92%**
+
+因为之前 DLEDGER 只是账，现在它变成了可交互控制点：
+
+- `UserIntervention.targetDecisionId` 有了。
+- `SchedulingDecision.status/challengedAt/challengeText` 有了。
+- `invalidateForIntervention` 能标记 decision challenged。
+- `intakeMessage` 仍然是唯一入口。
+- 下一轮 `orchestrateReasoningTurn` 的 rationale / selected 会体现 reconsider。
+- 测试也锁住了单门 re-entry 和调度影响。
+
+这正好打中了 V5.1 文档里那句关键要求：
+
+challenge 一条 decision 能重开对应 gap 并触发重排程
+
+虽然 v1 还不是完整 gap-level reopen，但已经具备“挑战 decision -> 重新调度”的真实运行路径。
+
+**当前还差什么**
+
+现在不是“架构没成”，而是“账还不够细、合约还不够富”：
+
+| 剩余项 | 当前状态 | 影响 |
+|---|---:|---|
+| Cost telemetry | Budget 是 count-based | 还不能审计 token/cost/time |
+| Budget ledger artifact | 有 blocking note / decision，但成本账还薄 | demo 可用，生产审计还差 |
+| CoverageContract authored baseline | v1 mechanical | 还没有人工/系统冻结的 coverage baseline |
+| gap resolved/waived | 还是 stub/机械 | GCOV 能挡，但 gap 生命周期不完整 |
+| FLOWB deeper integration | line-filter v1 | 还没接完整 brainstorm protocol |
+| UI decision challenge | runtime 已有 | 页面入口如果没做，还需要补一个可见入口 |
+
+所以 92% 我觉得合理。  
+要到 95%，下一步不是再接 adapter，而是把 **成本账 + coverage baseline** 做厚。
+
+**下一刀建议：Knife 6 Cost Telemetry / Budget Ledger**
+
+建议 commit：
+
+feat(whybuddy): add cost telemetry to Budget ledger
+
+目标一句话：
+
+> Budget 不只会挡，还能解释每轮/每个 capability run 花了多少预算、为什么还能继续、为什么被挡。
+
+**Knife 6 最小可交付**
+
+1. 扩展 Budget 数据结构：
+
+interface CapabilityCostRecord {
+  id: string;
+  turnId: string;
+  capabilityRunId: string;
+  capabilityId: string;
+  estimatedTokens?: number;
+  estimatedCostUsd?: number;
+  durationMs?: number;
+  source: "estimated" | "server" | "manual";
+  createdAt: string;
+}
+
+2. 在 `V5SessionState` 加：
+
+costLedger?: CapabilityCostRecord[];
+
+optional，durable-safe。
+
+3. `recordCapabilityRunCost` 从 no-op stub 变成 v1 真实 append：
+
+recordCapabilityRunCost(state, {
+  turnId,
+  capabilityRunId,
+  capabilityId,
+  estimatedTokens,
+  durationMs,
+  source
+})
+
+4. 页面 commit loop 里包一下 executor：
+
+const started = performance.now()
+const exec = await executeCapability(...)
+const durationMs = performance.now() - started
+recordCapabilityRunCost(...)
+
+v1 不用真实 token，先估：
+
+estimatedTokens = content.length / 4
+
+5. `evaluateBudgetBeforeOrchestrate` 可以先不按 tokens 硬挡，先读 count + ledger summary。  
+如果要硬一点，可以加：
+
+maxEstimatedTokensPerSession
+
+但 Knife 6 v1 我建议先只做 ledger，不急着 token blocking，避免误伤。
+
+6. 状态条可以小展示：
+
+cost: ~1234 tok / 5 runs
+
+但如果你想最小化，UI 可先不动，runtime + tests 足够。
+
+7. 测试至少 3 个：
+
+recordCapabilityRunCost appends cost record
+cost ledger survives commit/run flow
+budget snapshot includes cost summary
+
+如果加 3 个：
+
+49 -> 52
+
+smoke 文案同步：
+
+49/49 -> 52/52
+
+**做完 Knife 6 后预期**
+
+V5.1 架构图效果：92% -> 94%
+V5.1 控制平面完成度：90%+ -> 92-93%
+
+再做 Knife 7 `CoverageContract authored baseline + gap resolved/waived` 后，可以到：
+
+95-96%
+
+**我建议的后续路线**
+
+Knife 6：Cost telemetry / Budget ledger
+Knife 7：CoverageContract authored baseline + gap resolved/waived
+Knife 8：UI decision challenge entry + coverage/cost visible status
+Knife 9：FLOWB deeper brainstorm protocol integration
+
+一句话：**可以进 Knife 6。**  
+现在 V5.1 的“能控、能审、能挡、能挑战”已经成立，下一步要让它“能算账”。
+```
+
+**本阶段执行记录 + 结果**
+
+- 新增 `CapabilityCostRecord` 类型 + `costLedger?: ...` 于 V5SessionState（durable safe）。
+- `recordCapabilityRunCost` 从 stub 实现为真实 append（使用传入 cost 或默认 estimated）。
+- 在 DefaultCapabilityExecutor（及 Pilot risk 路径）包 executor 执行，测量 duration，估 tokens = content.length/4，调用 record（source: estimated）。
+- 在 commitArtifact 为每个 run 确保创建 cost record（内容长度估 tokens，duration 0），并合并到返回 state 的 costLedger。
+- evaluateBudgetBeforeOrchestrate 增强：从 costLedger 聚合 totalEstimatedTokens / perCapTokens / costRecordCount 放入 snapshot。
+- BudgetSnapshot 接口文档新增可选 cost 字段。
+- +3 tests（appends record、survives commit/run、snapshot has cost summary）→ 52 passed (52)。
+- Smokes 同步 49/49 → 52/52。
+- 完整 verify:whybuddy-v5 全绿（52 client +12 + tsc + smokes，logs 带 52/52）。
+- 主 doc append 完整 verbatim review + 记录。
+- Git 仅 V5 文件，commit 使用建议消息。
+- 进度按用户：92% → 94% 架构；90%+ → 92-93% 控制平面。
+
+v1 克制：ledger + estimate + snapshot 可见，不做硬 token 挡（保持 count 为主）。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+下一步按用户建议：Knife 7 CoverageContract authored baseline + gap resolved/waived。
+
 ## Knife 5：decision-level challenge re-entry（按用户 review "收到。Knife 4 这刀落地后..."）
 
 **执行日期**：紧接 Knife 4 FLOWB 净化 + 用户确认 "现在 V5.1 的骨架已经站起来了，下一步应该让用户能够“挑战为什么这么调度”" 之后。
