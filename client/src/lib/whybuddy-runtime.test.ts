@@ -1007,13 +1007,18 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       // It should not contain the success marker from the previous provider; fallback produces PilotReal-style content.
       expect(riskFail.content).not.toContain('success-risk');
 
-      // Non-target cap should fall back without calling a "LLM" provider (we can detect via a side-effect counter if needed, but for now just ensure it returns something).
-      const otherCap = planSelected.find((e: any) => e.capabilityId !== 'risk.analyze' && e.capabilityId !== 'report.write');
-      if (otherCap) {
-        const otherRes = await executeCapability({ capabilityId: otherCap.capabilityId as any, state: afterO, inputArtifactIds: otherCap.inputArtifactIds || [], roleId: otherCap.roleId, turnId: 'prov1' });
-        expect(otherRes).toHaveProperty('title');
-        expect(otherRes).toHaveProperty('content');
-      }
+      // Non-target cap should fall back without calling a "LLM" provider.
+      // Use an explicit counter to strictly prove the provider is never invoked for non risk/report caps.
+      let providerCalls = 0;
+      const trackingProvider: LlmCapabilityProvider = async () => {
+        providerCalls++;
+        return { title: 'DUMMY', summary: '', content: '', provenance: 'llm' as const };
+      };
+      setCapabilityExecutor(new LlmCapabilityExecutor(trackingProvider));
+
+      // Drive a non-target capability directly (the executor decides based on capabilityId)
+      await executeCapability({ capabilityId: 'synthesis.merge', state: afterO, inputArtifactIds: [], turnId: 'prov1' });
+      expect(providerCalls).toBe(0);
     } finally {
       if (prev && setCapabilityExecutor) setCapabilityExecutor(prev);
       clearWhyBuddySessionStore();
