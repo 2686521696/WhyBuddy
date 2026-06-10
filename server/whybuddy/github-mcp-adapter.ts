@@ -215,7 +215,7 @@ export async function executeGithubMcpCapability(
   };
 }
 
-function scanForGithubUrl(text: string): string | null {
+export function scanForGithubUrl(text: string): string | null {
   if (typeof text !== "string" || text.length === 0) return null;
   const m = text.match(/https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/);
   if (m) {
@@ -224,7 +224,7 @@ function scanForGithubUrl(text: string): string | null {
   return null;
 }
 
-function extractFirstGithubUrl(state: any, inputArtifactIds: string[] = []): string | null {
+export function extractFirstGithubUrl(state: any, inputArtifactIds: string[] = []): string | null {
   const artifacts: any[] = (state as any)?.artifacts || [];
 
   // Priority 1: explicitly requested artifacts via inputArtifactIds (precise evidence binding)
