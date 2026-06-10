@@ -112,6 +112,43 @@ export default function WhyBuddy() {
   // 当前可用能力池（V5 全量）
   const availableCapabilities = useMemo(() => ALL_V5_CAPABILITIES, []);
 
+  // Knife 8: decision challenge handler (single door, re-uses existing intake/orch/markAwait flow)
+  const challengeDecision = async (decId: string) => {
+    const text = window.prompt('质疑这条调度决策的原因？', '质疑这条调度决策，请重新考虑') || '质疑这条调度决策，请重新考虑';
+    const turnId = `turn-ch-${Date.now()}`;
+
+    const loadedState = await WhyBuddyRuntime.loadOrCreateSessionState(
+      sessionState.sessionId || "whybuddy-main-proto",
+      goal
+    );
+    const intv: any = { intent: 'challenge', targetDecisionId: decId, text };
+    const { preparedState, context } = WhyBuddyRuntime.intakeMessage(loadedState, {
+      turnId,
+      userText: text,
+      intervention: intv,
+    });
+
+    const { newState: afterOrch } = WhyBuddyRuntime.orchestrateReasoningTurn(preparedState, context);
+
+    // Minimal re-entry surface: update state (DLEDGER will have "reconsider" rationale from runtime),
+    // mark AWAIT, add a note turn so user sees the challenge took effect.
+    let final = await WhyBuddyRuntime.saveSessionState(
+      WhyBuddyRuntime.markAwaiting(afterOrch, turnId)
+    );
+    final = WhyBuddyRuntime.deriveNodeStatus ? WhyBuddyRuntime.deriveNodeStatus(final) : final;
+
+    setSessionState(final);
+    setDynamicGraph(final.graph || dynamicGraph);
+
+    setChatTurns((prev) => [...prev, {
+      id: turnId,
+      user: `[decision challenge on ${decId}] ${text}`,
+      selected: [],
+      reason: 're-entry from DLEDGER decision challenge (runtime reconsider)',
+      artifacts: [],
+    }]);
+  };
+
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -435,6 +472,24 @@ export default function WhyBuddy() {
             ledger
           </button>
           <div><span className="text-slate-500">已调用能力：</span><span className="font-medium">{[...new Set(chatTurns.flatMap(t => t.selected.map(s => s.cap)))].length}</span></div>
+          {/* Knife 8: V5.1 coverage / cost / decisions summary (surface runtime ledgers) */}
+          {(() => {
+            const gate: any = (sessionState as any).coverageGate;
+            const covGaps: any[] = (sessionState as any).coverageGaps || [];
+            const open = covGaps.filter(g => g.status === 'open').length;
+            const wvd = covGaps.filter(g => g.status === 'waived').length;
+            const covTxt = gate ? `${gate.passed ? 'passed' : 'blocked'} / open ${open} / waived ${wvd}` : 'n/a';
+            const csts: any[] = (sessionState as any).costLedger || [];
+            const tok = csts.reduce((s: number, c: any) => s + (c.estimatedTokens || 0), 0);
+            const decs: any[] = WhyBuddyRuntime.getDecisionLedger ? WhyBuddyRuntime.getDecisionLedger(sessionState) : [];
+            return (
+              <>
+                <div>coverage: <span className="font-mono">{covTxt}</span></div>
+                <div>cost: <span className="font-mono">{tok} tok / {csts.length} runs</span></div>
+                <div>decisions: <span className="font-mono">{decs.length}</span></div>
+              </>
+            );
+          })()}
           <button
             onClick={async () => {
               setChatTurns([]);
@@ -543,6 +598,48 @@ export default function WhyBuddy() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Knife 8: V5.1 Control Surface — surface DLEDGER / GCOV gaps / Cost for visibility + actionable challenge */}
+          <div className="border-t bg-slate-50 p-2 text-[11px]">
+            <div className="font-semibold text-slate-600 mb-1">V5.1 Control Surface (runtime ledgers)</div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {(() => {
+                const decs: any[] = WhyBuddyRuntime.getDecisionLedger ? WhyBuddyRuntime.getDecisionLedger(sessionState) : [];
+                const recent = [...decs].slice(-3).reverse();
+                const covGaps: any[] = (sessionState as any).coverageGaps || [];
+                const gapBadges = covGaps.length ? covGaps.map((g: any) => `${g.label} [${g.status}]`).join(' · ') : 'no gaps';
+                return (
+                  <>
+                    <div>decisions: <span className="font-mono">{decs.length}</span></div>
+                    <div>gaps: <span className="text-[10px]">{gapBadges}</span></div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Recent decisions with challenge buttons (last 3) */}
+            <div className="mt-1">
+              <div className="text-slate-500 mb-0.5">Recent DLEDGER decisions (click to challenge → single-door re-entry):</div>
+              {(() => {
+                const decs: any[] = WhyBuddyRuntime.getDecisionLedger ? WhyBuddyRuntime.getDecisionLedger(sessionState) : [];
+                const recent = [...decs].slice(-3).reverse();
+                if (!recent.length) return <div className="text-slate-400">no decisions yet</div>;
+                return recent.map((d: any, i: number) => (
+                  <div key={i} className="border-l-2 pl-1 mb-0.5 text-[10px] leading-tight">
+                    {d.id} · chose: {(d.chose || []).join(', ')} · {d.status === 'challenged' ? <span className="text-amber-600">challenged</span> : ''}
+                    <button
+                      onClick={() => challengeDecision(d.id)}
+                      className="ml-2 rounded border px-1 text-blue-600 hover:bg-blue-50"
+                      title="构造 targetDecisionId challenge intervention，走单门 INTAKE + ORCH reconsider"
+                    >
+                      challenge
+                    </button>
+                    <div className="text-slate-400 truncate">{(d.rationale || '').slice(0, 80)}...</div>
+                  </div>
+                ));
+              })()}
+            </div>
           </div>
 
           {/* 聊天输入（操纵杆） */}

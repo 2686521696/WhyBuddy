@@ -5348,6 +5348,194 @@ V5 原型 99% 封顶 + 生产化底座 95-96%；V5.1 控制平面三件套（BUD
 
 ---
 
+## Knife 8：Surface decision challenge and coverage/cost status（按用户 review "收到。Knife 7 这刀落地后..."）
+
+**执行日期**：紧接 Knife 7 Coverage baseline + gap lifecycle + 用户 "可以开始 Knife 8" 之后。
+
+**用户本次 Findings（原文 verbatim 完整）**
+
+```text
+收到。Knife 7 这刀落地后，V5.1 的核心控制平面基本算成型了。
+
+我按你执行结果更新：
+
+V5 原型完成度：99%
+V5 生产化底座：95-96%
+V5.1 架构图效果：96%
+V5.1 控制平面完成度：95%
+验证护栏：98%+
+
+这次最大的意义是：**CoverageContract 不再是临时推断规则，而是正式的 authored / frozen baseline，并且有 gap 生命周期。**
+
+现在 GCOV 的语义终于完整了：
+
+不是 “我觉得差 risk”
+而是 “contract v1 里 blocking gap X 仍 open，所以不能收敛”
+
+这就很 V5.1。
+
+**当前 V5.1 主链**
+
+现在可以写成：
+
+INTAKE
+ -> BUDGET(count + cost snapshot)
+ -> ORCH
+ -> DLEDGER(decision audit + challenge)
+ -> CONTRACT(authored baseline)
+ -> GCOV(gap lifecycle gate)
+ -> FLOWB(protocol boundary)
+ -> commit / plan / AWAIT
+
+对应能力：
+
+BUDGET：别跑爆 + 成本可观测
+DLEDGER：为什么这么跑 + 可挑战
+CONTRACT：有版本、有冻结 baseline、有 required/gap
+GCOV：blocking gap 未 resolved/waived 不许收敛
+FLOWB：正式路径前协议净化
+CostLedger：按 capability run 留成本账
+
+这已经基本达到 V5.1 架构图的“运行时效果”了。
+
+**为什么现在可以给 96%**
+
+因为 V5.1 图里最核心的三个控制平面问题都已经从文档变成代码事实：
+
+1. **为什么跑这些能力？**  
+   DLEDGER 回答。
+
+2. **会不会跑爆？花了多少？**  
+   BUDGET + CostLedger 回答。
+
+3. **够不够收敛？有没有没解决的 gap？**  
+   CoverageContract + GCOV 回答。
+
+再加上：
+
+4. **正式路径有没有吞 debate / critique 噪音？**  
+   FLOWB 回答。
+
+这就是 V5.1 的主干。
+
+**剩下 4% 是什么**
+
+剩下不是核心 runtime 骨架，而是“产品可见性 + 更深协议接入”：
+
+| 剩余项 | 当前状态 | 为什么扣分 |
+|---|---:|---|
+| UI decision challenge entry | runtime 已有，UI 可能还不明显 | 用户还不一定能肉眼操作 decision challenge |
+| coverage/cost visible status | runtime ledger 已有 | 页面状态条还没有完整展示 contract/gap/cost |
+| Budget 读 Contract “够了就停” | 语义就位，但 v1 可能还没真正用 contract 控制停止 | 还差一条 CONTRACT -> BUDGET 的强边 |
+| FLOWB deeper brainstorm protocol | v1 line filter | 还不是完整 debate wall / brainstorm protocol 守卫 |
+| real token/provider cost | estimated v1 | 还不是 provider usage 真成本 |
+
+所以 96% 合理，不建议再虚高到 98-99%。  
+V5.1 架构图效果已经达成，但 V5.1 产品化可见体验还可以再补。
+
+**下一刀建议：Knife 8 UI Decision Challenge + Coverage/Cost Status**
+
+建议 commit：
+
+feat(whybuddy): surface decision challenge and coverage cost status
+
+目标一句话：
+
+> 把已经存在于 runtime 的 DLEDGER / GCOV / CostLedger 变成用户看得见、点得动的控制面。
+
+**Knife 8 最小可交付**
+
+1. 页面状态条展示 coverage/cost 摘要：
+
+coverage: passed / blocked / gaps open N / waived N
+cost: ~tokens / runs
+decisions: N
+
+2. BOARD 或侧边调试区展示最近 3 条 decision：
+
+Decision #turn-dledger
+chose: risk.analyze, report.write
+reason: ...
+challenge 按钮
+
+3. Challenge 按钮构造：
+
+UserIntervention {
+  intent: "challenge",
+  targetDecisionId: decision.id,
+  text: "质疑这条调度决策：..."
+}
+
+然后走现有单门：
+
+handleDecisionChallenge -> intakeMessage -> orchestrateReasoningTurn
+
+不要新开第二条路。
+
+4. coverage gaps 可见：
+
+open gap
+resolved gap
+waived gap
+
+v1 只显示，不做 waive UI。  
+如果要做一个最小 waive，也可以加按钮，但我建议先只显示，保持 Knife 8 小。
+
+5. 测试/烟测：
+
+- runtime 已有，不需要大量新增 runtime tests。
+- 可以给 browser smoke 加一个轻量检查：
+  - 页面能看到 `coverage:` / `cost:` / `decisions:`
+  - 点击 decision challenge 后出现 re-entry turn 或 stale/reconsider 标记
+
+如果加 UI smoke 较重，可以先加页面单测/或者保持 smoke 不动，只用 `pnpm run verify` 确认 UI 不炸。看你想多稳。
+
+**做完 Knife 8 后预计**
+
+V5.1 架构图效果：96% -> 97%
+V5.1 产品可见度：明显提升
+
+它不会像 Knife 7 那样大幅提升 runtime 架构分，但会显著提升“用户看得懂 V5.1 在干什么”的体验。
+
+**再下一刀**
+
+Knife 9 可以做：
+
+feat(whybuddy): connect CoverageContract to Budget stop policy
+
+也就是让 CONTRACT 真正喂 BUDGET：
+
+required gaps resolved + enough evidence -> 不再继续跑重复能力
+too many repeat / no gap progress -> AWAIT partial
+
+这个会把“够了就停”的语义再钉一层。
+
+**一句话**
+
+可以开始 Knife 8。  
+现在 runtime 已经有脑子、有账、有闸、有边界了，下一步该把这些东西亮给用户看，让 `/whybuddy` 页面不仅能跑 V5.1，还能让人看见 V5.1 为什么这么跑、哪里被挡、花了多少、哪条 decision 可以挑战。
+```
+
+**本阶段执行记录 + 结果（Knife 8）**
+
+- WhyBuddy.tsx 增强：
+  - 顶栏状态摘要实时显示 coverage（gate.passed + gaps open/waived count）、cost（tokens + runs from costLedger）、decisions count（from getDecisionLedger）。
+  - 新增 “V5.1 Control Surface” 面板（紧贴聊天输入上方）：展示最近 3 条 DLEDGER decision（id / chose / rationale 片段 / challenged 标记），每个带 “challenge” 按钮；同时展示 coverage gaps 列表（label [status]）。
+- challengeDecision 处理器：构造带 targetDecisionId 的 UserIntervention，走 intakeMessage（单门）+ orchestrateReasoningTurn（runtime 会产生 “reconsider” rationale），然后 markAwait + setSessionState + 追加 note turn（让 re-entry / 影响在 UI 可见）。
+- 所有操作复用现有 runtime（getDecisionLedger、intake、orch、save、derive），无新 runtime contract 变更。
+- browser smoke 保持 5 flows 不变（UI 改动不破坏现有点击/输入/Verify/节点挑战/reset 路径）；`pnpm run verify` 全绿（56/56 + 12 + tsc + 5/5 + 9 store + durability）。
+- 主 doc append 完整 verbatim review + 执行记录。
+- Git 仅 V5 文件（WhyBuddy.tsx + 计划/doc 更新），commit 消息使用用户建议值。
+- 轻量 v1：只显示 + 触发已有 runtime 能力；没有新 waive UI 或复杂 BOARD 重构。
+
+现在用户在 `/whybuddy` 页面能肉眼看到 V5.1 的账（DLEDGER / GCOV gaps / Cost），并能直接点 decision 发起 challenge（单门重入 + reconsider 效果可见）。
+
+进度（用户口径）：96% → 97% 架构 + 产品可见度显著提升。
+
+（注意：本 append 使用 search_replace UTF-8 直写，避免任何终端编码污染。）
+
+下一步按用户：Knife 9 CONTRACT → BUDGET 强边（让 baseline 真正控制“够了就停”）。
+
 ## Knife 7：authored CoverageContract baseline + gap lifecycle（按用户 review "收到。Knife 6 这刀把 Budget 从“能挡”..."）
 
 **执行日期**：紧接 Knife 6 cost telemetry + 用户 "可以进 Knife 7" 之后。
