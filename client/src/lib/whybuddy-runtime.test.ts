@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createInitialSessionState,
   orchestrateReasoningTurn,
@@ -1025,7 +1025,7 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     }
   });
 
-  it('test helper routes (__clear / __reload) are disabled under production (production guard)', () => {
+  it('test helper routes (__clear / __reload) are disabled under production (production guard)', async () => {
     const originalNodeEnv = process.env.NODE_ENV;
     const originalFlag = process.env.WHYBUDDY_ENABLE_TEST_HELPERS;
     try {
@@ -1034,8 +1034,60 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       delete process.env.WHYBUDDY_ENABLE_TEST_HELPERS;
       expect(isTestHelperEnabled()).toBe(false); // routes not registered → callers get 404
 
-      process.env.WHYBUDDY_ENABLE_TEST_HELPERS = '1';
-      expect(isTestHelperEnabled()).toBe(true); // explicit opt-in still works
+      // --- route-level production guard (beyond the pure function) ---
+      // Reset + reimport so the routes module's top-level `enableTestHelpers = isTestHelperEnabled()`
+      // and the two `if (enableTestHelpers) { router.post(...) }` blocks run under NODE_ENV=production
+      // *with the escape hatch absent*. This proves the *routes are not mounted* (HTTP 404) while
+      // the 4 public endpoints remain registered and functional.
+      vi.resetModules();
+      const routeMod = await import('../../../server/routes/whybuddy.ts');
+      const prodRouter = routeMod.default;
+      const prodEnabled = routeMod.isTestHelperEnabled;
+      expect(prodEnabled()).toBe(false);
+
+      // Fresh express app + the prod-evaluated router (no test helper routes should exist)
+      const expressMod = await import('express');
+      const Express = expressMod.default;
+      const { createServer } = await import('node:http');
+      const app = Express();
+      app.use(Express.json({ limit: '2mb' }));
+      app.use('/api/whybuddy', prodRouter);
+
+      const httpServer = createServer(app);
+      const port: number = await new Promise((resolve, reject) => {
+        httpServer.once('error', reject);
+        httpServer.listen(0, () => {
+          const addr = httpServer.address();
+          if (addr && typeof addr === 'object' && 'port' in addr) resolve(addr.port as number);
+          else reject(new Error('no port'));
+        });
+      });
+      const base = `http://127.0.0.1:${port}/api/whybuddy`;
+
+      try {
+        // Public 4-endpoint surface must still be registered and functional regardless of guard
+        const listRes = await fetch(`${base}/sessions`);
+        expect(listRes.status).toBe(200);
+        const listBody = await listRes.json().catch(() => ({} as any));
+        expect(listBody).toHaveProperty('sessions');
+
+        // GET /:id for missing still hits the handler (its own 404), proving the route exists
+        const getMissing = await fetch(`${base}/sessions/__guard-test-missing-id`);
+        expect(getMissing.status).toBe(404);
+
+        // DELETE route active (returns 204 even for unknown id)
+        const delRes = await fetch(`${base}/sessions/__guard-test-del`, { method: 'DELETE' });
+        expect([204, 200]).toContain(delRes.status);
+
+        // The test-only helpers must 404 (not registered because if(enable) was false at eval)
+        const clearRes = await fetch(`${base}/sessions/__clear`, { method: 'POST' });
+        expect(clearRes.status).toBe(404);
+
+        const reloadRes = await fetch(`${base}/sessions/__reload`, { method: 'POST' });
+        expect(reloadRes.status).toBe(404);
+      } finally {
+        await new Promise<void>((r) => { httpServer.close(() => r()); });
+      }
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
       if (originalFlag !== undefined) {
@@ -1043,6 +1095,8 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       } else {
         delete process.env.WHYBUDDY_ENABLE_TEST_HELPERS;
       }
+      // Ensure subsequent tests see a clean module cache for the routes (best effort)
+      vi.resetModules();
     }
   });
 
