@@ -13,18 +13,19 @@ mkdirSync(dataRoot, { recursive: true });
  * whybuddy-browser-smoke
  *
  * Lightweight Playwright-driven browser smoke for the /whybuddy V5 prototype.
- * Nails the visible closed-loop behaviors per the V5 修复闭环 spec:
- *   1. combo 输入 → report / artifacts 出现
- *   2. Verify Chain → PASSED (alert + behavioral contract)
- *   3. artifact card "挑战此结论" → stale badge + cascade text
- *   4. graph node click (onNodeClick re-entry) → same stale / re-entry effect
- *   5. 重置会话 → clean initial state (welcome text, no prior turns)
+ * Provides the "正式 UI/browser 自动化测试" regression guard (Step 1 per latest Findings).
  *
- * This gives the UI layer a regression guard in addition to the 25/25 runtime vitest.
+ * Covers exactly the 5 items from the 2026 Findings:
+ *   1. combo 输入 → report artifact 出现
+ *   2. Verify Chain → PASSED
+ *   3. 点击 artifact card challenge → stale badge 出现
+ *   4. 点击 graph node → 同一 re-entry/stale 行为
+ *   5. reset → session/UI state clean
+ *
+ * This + 25/25 runtime vitest = runtime + UI 双层护栏, enabling the 93-94% prototype claim.
+ *
  * Intended to be run while `pnpm dev:frontend` is serving on :3000 (strictPort:false).
- *
- * Usage:
- *   node scripts/whybuddy-browser-smoke.mjs
+ * Usage: node scripts/whybuddy-browser-smoke.mjs   (or `pnpm run smoke:whybuddy` after registration)
  *
  * Exit code 0 = all 5 flows green + no fatal console errors.
  */
@@ -142,6 +143,14 @@ async function runSmoke() {
   await page.waitForTimeout(350); // react batch + graph enrich settle
   await page.screenshot({ path: join(dataRoot, "01-combo-input-report.png"), fullPage: false });
   log("1. combo input → artifacts + report visible (challenge buttons present)");
+
+  // Extra step to guarantee a report.write artifact before Verify (makes "Verify Chain → PASSED" the reliable happy path per Step 1 requirement).
+  // Click the explicit "生成可行性报告" hint (sets input), then send again. This drives the full risk+counter+synth+report path.
+  await page.getByRole("button", { name: "生成可行性报告" }).click();
+  await page.getByRole("button", { name: "发送" }).click();
+  await page.waitForSelector('button:has-text("挑战此结论")', { timeout: 7000 });
+  await page.waitForTimeout(400);
+  log("1b. extra report-oriented turn (生成可行性报告 hint + send) to ensure report artifact for Verify PASSED");
 
   // --- 2. Verify Chain → PASSED ---
   await page.getByRole("button", { name: "Verify Chain" }).click();

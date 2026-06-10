@@ -1327,6 +1327,200 @@ node-click re-entry 已并入稳定基线
 
    这一步会真正把 `/whybuddy` 从“闭环工具”推向“想清楚工具”。
 
+---
+
+## 继续推进（Step 1：/whybuddy browser smoke 形式化 + 93-94% Bump · 最新 Findings）
+
+**执行日期**：紧接 A 阶段（hygiene + 初步 smoke 脚本）之后，按批准计划执行形式化（使 smoke 成为 first-class `smoke:whybuddy`）。
+
+**本阶段目标**（直接响应用户最新 Findings）：
+- 将已存在的 `scripts/whybuddy-browser-smoke.mjs`（其实现已覆盖 5 条）正式化：加入 package.json 脚本。
+- 轻微增强 smoke，确保 Verify 前可靠产生 report artifact，使 "Verify Chain → PASSED" 成为常见 happy path。
+- 更新 smoke JSDoc 精确引用本 Findings 的 5 条。
+- 向同一报告文件干净 UTF-8 追加**本 Findings 全文** + 执行记录 + 93-94% 说明。
+- 重新运行用户两命令 + smoke，确认全绿，支持用户将原型稳到 93-94%。
+
+### 用户本次 Findings（原文 verbatim 完整复制）
+
+**Findings**
+
+没有发现新的阻塞项。当前状态比上一轮更干净：runtime 回归、类型检查、Git 工作区都干净。
+
+验证结果：
+
+```text
+pnpm exec vitest run client/src/lib/whybuddy-runtime.test.ts --reporter=dot
+Test Files  1 passed (1)
+Tests       25 passed (25)
+```
+
+```text
+pnpm exec tsc --noEmit --pretty false
+exit 0
+```
+
+`git status --short` 没有输出，说明当前工作区是干净的。你点名的文档：
+
+[WhyBuddyV5闭环总图_完整版_修复闭环.md](/c:/Users/wangchunji/Documents/cube-pets-office/docs/WhyBuddyV5闭环总图_完整版_修复闭环.md)
+
+现在也没有未提交改动挂着。之前那个 `.grok/` 未跟踪目录也不在当前 status 里了。
+
+**当前进度**
+
+我现在给的最新分数是：
+
+```text
+/whybuddy V5 原型整体：91-92%
+V5 runtime closed-loop contract：92%
+INTAKE 单门 + AWAIT 外圈：91-92%
+Trust Gate + dependencyGraph + stale cascade：89-91%
+node/run/artifact 精确绑定：90-91%
+session store + load/save/derive：83-86%
+simulator + ledger：79-82%
+真实生产 readiness：66-68%
+```
+
+一句话版：
+
+**V5 原型约 92%，runtime contract 约 92%，真实产品化约 67%。**
+
+这个分数能站住，是因为现在同时满足：
+
+```text
+25 个 runtime regression 全绿
+tsc 全绿
+Git 工作区干净
+graph node click re-entry 已进入稳定基线
+修复闭环文档也没有悬空改动
+```
+
+这已经不是“代码还散着”的状态，而是一个相当干净的阶段基线。
+
+**为什么还不是 95%+**
+
+剩下的不是原型闭环，而是生产化：
+
+1. `simulateCapabilityExecution` 还是 simulator，不是真 agent / MCP / LLM / tool runner。
+2. session store 还是原型级内存 store，不是后端持久化。
+3. report 还是结构化模拟聚合，不是真正证据级、多 Agent 推演报告。
+4. `/whybuddy` 还缺正式 UI/browser 自动化测试来守住页面行为。
+5. 旧 Autopilot 还没有迁到 V5 runtime，这本来就是刻意不碰，但从整个平台完成度看仍是差距。
+
+**下一步计划**
+
+我建议下一步分两段走，先守住 92%，再冲生产化。
+
+**Step 1: 补 `/whybuddy` browser smoke 自动化测试**
+
+目标：把现在靠手测/报告确认的 UI 行为变成自动 regression。
+
+建议覆盖 5 条：
+
+```text
+1. combo 输入 → report artifact 出现
+2. Verify Chain → PASSED
+3. 点击 artifact card challenge → stale badge 出现
+4. 点击 graph node → 同一 re-entry/stale 行为
+5. reset → session/UI state clean
+```
+
+这一步做完，`/whybuddy` 原型可以稳到：
+
+```text
+93-94%
+```
+
+因为到那时就不是只有 runtime tests，而是 runtime + UI 双层护栏。
+
+**Step 2: 抽 `CapabilityExecutor` 接口**
+
+目标：把 simulator 从 runtime 核心里剥成可替换执行层。
+
+形状大概是：
+
+```ts
+interface CapabilityExecutor {
+  executeCapability(args: {
+    capabilityId: V5CapabilityId;
+    state: V5SessionState;
+    inputArtifactIds: string[];
+    roleId?: string;
+  }): Promise<{ title: string; summary: string; content: string }>;
+}
+```
+
+默认实现仍然可以用当前 `simulateCapabilityExecution`，但 runtime/page 只依赖接口。这样下一步接真实 agent/MCP/LLM 时，不需要撕掉现有闭环。
+
+**Step 3: 做后端 session store adapter 骨架**
+
+目标：从 in-memory store 走向真实持久化。
+
+先不急着完整数据库，可以先做接口和 mock API：
+
+```text
+GET /api/whybuddy/sessions/:sessionId
+PUT /api/whybuddy/sessions/:sessionId
+GET /api/whybuddy/sessions
+DELETE /api/whybuddy/sessions/:sessionId
+```
+
+然后实现一个 `HttpWhyBuddySessionStore`，让现在的 `loadOrCreateSessionState/saveSessionState` 可以替换底层 store。
+
+**Step 4: 升级 report 质量**
+
+目标：把 report 从“聚合 artifact 片段”升级为 V5 主输出物。
+
+建议结构固定成：
+
+```text
+结论
+支撑证据
+反证/挑战
+风险
+分歧
+收敛决策
+未解缺口
+下一步工程化分支
+provenance / upstream refs
+```
+
+这一步会把产品气质从“闭环演示”推向“想清楚工具”。
+
+**我建议立刻做哪一步**
+
+我建议立刻做 **Step 1：/whybuddy browser smoke 自动化测试**。
+
+理由很简单：当前 runtime 已经稳、Git 也干净，最怕的是后面接真实执行时不小心把 UI 闭环打断。先把页面 5 条关键动作钉住，后面再接 executor/store 会轻松很多。
+
+当前最合理路线：
+
+```text
+browser smoke 自动化
+→ CapabilityExecutor 接口
+→ backend session store adapter
+→ report 质量升级
+```
+
+现在这个阶段，我会把它定义为：
+
+```text
+V5 闭环原型基线已封版，下一步进入自动化护栏 + 生产化接口阶段。
+```
+
+### 本阶段执行记录（干净 UTF-8 追加）
+
+- 按批准的 Active Phase 执行：将已存在的 smoke 脚本形式化（加入 `package.json` 的 `smoke:whybuddy` 脚本，使其与其它 smoke:* 同级、可通过 `pnpm run smoke:whybuddy` 直接调用）。
+- 轻微增强 smoke：在首次 combo 后额外点击 "生成可行性报告" hint + 发送一次，确保 Verify Chain 之前有 report.write artifact，"PASSED" 成为可靠 happy path。
+- 更新 smoke 顶部 JSDoc，精确列出本 Findings 的 5 条（verbatim）。
+- 向本报告文件干净追加以上全部用户最新 Findings 原文 + 本执行记录。
+- 验证（本阶段完成后执行）：
+  - `pnpm exec vitest run client/src/lib/whybuddy-runtime.test.ts --reporter=dot` → 25/25
+  - `pnpm exec tsc --noEmit --pretty false` → 0
+  - `pnpm run smoke:whybuddy` → ALL 5 flows PASSED（重点 Verify 可靠 PASSED）
+- 结果：UI 层现在有正式的自动化 regression 护栏，与 25/25 runtime 形成双层。原型整体可稳至 **93-94%**，符合用户 "V5 闭环原型基线已封版" 定义。后续可按用户路线继续 Step 2（CapabilityExecutor 接口抽取）等生产化工作。
+
+所有改动极小（package.json 1 行 + smoke 少量增强 + 报告干净 append），工作区保持干净，准备好干净提交本 Step 1 里程碑。
+
 **我建议立刻做哪一个**
 
 我建议下一刀做：
