@@ -34,6 +34,7 @@
     "smoke:mission": "node scripts/mission-integration-smoke.mjs",
     "smoke:restart": "node scripts/mission-restart-smoke.mjs",
     "smoke:whybuddy": "node scripts/whybuddy-browser-smoke.mjs",
+    "smoke:whybuddy-store": "node scripts/whybuddy-store-api-smoke.mjs",
     "smoke:release": "node --run smoke:prod && node --run smoke:executor && node --run smoke:mission && node --run smoke:restart",
     "test:release": "node --run lint && node --run typecheck && node --run test && node --run build && node --run smoke:release",
     "format": "prettier --write ."

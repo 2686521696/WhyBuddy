@@ -2133,6 +2133,245 @@ V5 闭环原型已进入 94% 稳定基线；下一阶段是 execution adapter + 
 
 准备好下一刀（report 质量升级或 401 清理）。
 
+---
+
+## 继续推进（HTTP store integration smoke + CapabilityExecutor fake injection test · 按最新 Findings）
+
+**执行日期**：紧接 store skeleton 落地 + 四层验证（25/25 + tsc + smoke 5/5 + git clean）确认之后。
+
+**本阶段目标**（直接执行用户最新 Findings 指定）：
+- 补 HTTP store integration smoke（最小脚本，钉住 PUT/GET/LIST/DELETE + GET deleted → 404）。
+- 给 CapabilityExecutor 加 fake executor 注入测试（set + execute 返回 fake content + commit 后 artifact.content 验证 + reset）。
+- 让两个生产化“可替换入口”从“代码形状对、tsc 过”变成“端到端有自动化护栏可证”。
+- Append 逐字本 Findings + 执行记录 + 分数微调到 report。
+- 保持原有双层护栏（runtime 25/25 + UI smoke 5/5）零回归。
+- 结果：production readiness 继续向 75%+ 推进，adapters 真正“钉住”。
+
+**用户本次 Findings（逐字附上，作为本阶段执行记录）**：
+
+**Findings**
+
+没有新的阻塞项。store adapter skeleton 这刀没有破坏现有闭环，当前四层验证都通过：
+
+```text
+pnpm exec vitest run client/src/lib/whybuddy-runtime.test.ts --reporter=dot
+Test Files  1 passed (1)
+Tests       25 passed (25)
+```
+
+```text
+pnpm exec tsc --noEmit --pretty false
+exit 0
+```
+
+```text
+pnpm run smoke:whybuddy
+ALL 5 flows PASSED
+```
+
+`git status --short` 没有输出，工作区干净。你点名的文档：
+
+[WhyBuddyV5闭环总图_完整版_修复闭环.md](/c:/Users/wangchunji/Documents/cube-pets-office/docs/WhyBuddyV5闭环总图_完整版_修复闭环.md)
+
+当前也没有悬空改动。
+
+**代码审查结论**
+
+1. **HTTP store adapter 形状正确**
+
+   位置：[whybuddy-http-store.ts](/c:/Users/wangchunji/Documents/cube-pets-office/client/src/lib/whybuddy-http-store.ts:28)
+
+   `HttpWhyBuddySessionStore` 实现了 `WhyBuddySessionStore`，覆盖四个端点：
+
+   ```text
+   GET    /api/whybuddy/sessions
+   GET    /api/whybuddy/sessions/:sessionId
+   PUT    /api/whybuddy/sessions/:sessionId
+   DELETE /api/whybuddy/sessions/:sessionId
+   ```
+
+   `load` 对 404 返回 `undefined`，`save` 用 URL sessionId 持久化，`listSessions` 支持 `{ sessions: [...] }` 和 raw array 两种形状。这是一个可替换 adapter 的正确骨架。
+
+2. **server route 是 skeleton，但 contract 对齐**
+
+   位置：[whybuddy.ts](/c:/Users/wangchunji/Documents/cube-pets-office/server/routes/whybuddy.ts:24)
+
+   服务端用 process-local `Map` 做 backing store，路由齐全：
+
+   ```text
+   GET /sessions
+   GET /sessions/:sessionId
+   PUT /sessions/:sessionId
+   DELETE /sessions/:sessionId
+   ```
+
+   并且 `PUT` 会用 URL 里的 `sessionId` 覆盖 body，避免 client body 写错 key。作为 skeleton 是合格的。
+
+3. **runtime store contract async 化方向对**
+
+   位置：[whybuddy-runtime.ts](/c:/Users/wangchunji/Documents/cube-pets-office/client/src/lib/whybuddy-runtime.ts:194)
+
+   `WhyBuddySessionStore` 已经 async 化：
+
+   ```ts
+   load(sessionId): Promise<V5SessionState | undefined>
+   save(state): Promise<V5SessionState>
+   ```
+
+   `loadOrCreateSessionState` / `saveSessionState` 也改成 `async`，页面的 send/reentry/reset/list 都已 await。这个变化是必要的，否则 HTTP adapter 会变成“接口看起来可替换，实际替不上”。
+
+4. **默认行为保持稳定**
+
+   页面 bootstrap 仍用 sync `createInitialSessionState + deriveNodeStatus` 快速首屏，后续 handler 才走 async store。默认 store 仍是 in-memory，所以 runtime tests 和 smoke 没受影响。HTTP path 是 opt-in，这个边界是克制的。
+
+5. **Low: HTTP adapter 还没被 smoke 或 integration test 直接打到**
+
+   当前 `smoke:whybuddy` 仍走默认 in-memory store，能证明“store async 化没有破坏页面”，但不能证明 HTTP adapter 和 server route 端到端可用。代码形状看起来对，tsc 也过，但下一步最好加一个小的 integration test 或脚本：
+
+   ```text
+   start server
+   PUT /api/whybuddy/sessions/test
+   GET /api/whybuddy/sessions/test
+   GET /api/whybuddy/sessions
+   DELETE /api/whybuddy/sessions/test
+   ```
+
+   这不是 blocker，但它是从 skeleton 走向 75%+ production readiness 的关键护栏。
+
+6. **Low: 401 console 噪音仍在**
+
+   `smoke:whybuddy` 仍报告：
+
+   ```text
+   Failed to load resource: the server responded with a status of 401 (Unauthorized)
+   ```
+
+   仍然 non-fatal，但公开 demo 或录屏前建议清掉。
+
+**当前进度**
+
+store adapter skeleton 落地后，生产化分数可以再上调一点：
+
+```text
+/whybuddy V5 原型整体：94%
+V5 runtime closed-loop contract：93%
+INTAKE 单门 + AWAIT 外圈：92-93%
+Trust Gate + dependencyGraph + stale cascade：90-92%
+node/run/artifact 精确绑定：91-92%
+CapabilityExecutor / execution adapter：72-76%
+session store + HTTP adapter skeleton：74-78%
+simulator + ledger：80-83%
+真实生产 readiness：73-75%
+```
+
+一句话：
+
+**V5 原型约 94%，runtime contract 约 93%，真实产品化约 74%。**
+
+这次最关键的变化是：生产化的两条大口子已经都有“可替换入口”了：
+
+```text
+CapabilityExecutor → 未来接真实 agent/MCP/LLM
+WhyBuddySessionStore / HttpWhyBuddySessionStore → 未来接真实后端持久化
+```
+
+还没是真生产，但已经不再是“原型里写死 simulator + 内存状态”的结构。
+
+**为什么还不是 80%+ production readiness**
+
+1. HTTP store 还是 process-local Map，不是 DB。
+2. HTTP adapter 还没有独立 integration test。
+3. executor 默认实现仍是 simulator。
+4. report 还没升级成证据级、多 Agent 推演报告。
+5. 401 console 噪音仍在。
+6. 旧 Autopilot 尚未迁移，这仍是刻意边界。
+
+**下一步计划**
+
+我建议下一步按这个顺序：
+
+1. **补 HTTP store integration test / smoke**
+
+   最小脚本即可，钉住四端点：
+
+   ```text
+   PUT session
+   GET session
+   LIST sessions
+   DELETE session
+   GET deleted session → 404
+   ```
+
+   这一步会让 store adapter 从“代码形状对”变成“端到端可证”。
+
+2. **升级 report 主输出物**
+
+   固定 report schema：
+
+   ```text
+   结论
+   支撑证据
+   反证/挑战
+   风险
+   分歧
+   收敛决策
+   未解缺口
+   下一步工程化分支
+   provenance / upstream refs
+   ```
+
+   这是最能提升产品感的一步。它会把 `/whybuddy` 从“闭环稳定”推向“真的能产出一份可信推演报告”。
+
+3. **给 CapabilityExecutor 加 fake executor 注入测试**
+
+   现在接口有了，但最好补一条测试确保：
+
+   ```text
+   setCapabilityExecutor(fake)
+   executeCapability 返回 fake content
+   commit 后 artifact.content 进入 state
+   reset executor
+   ```
+
+   这样未来接真实 executor 时有护栏。
+
+4. **清理 401 console 噪音**
+
+   非核心，但影响 demo 干净度。建议在 `/whybuddy` chrome-free route 下隔离旧 auth/bootstrap 请求。
+
+5. **再考虑真实 DB / old Autopilot migration**
+
+   等 store integration、report quality、executor injection 都稳了，再决定是否接 DB 或迁旧线。
+
+**我建议立刻做哪一步**
+
+下一刀我建议做：
+
+```text
+HTTP store integration smoke + CapabilityExecutor fake injection test
+```
+
+理由：你刚刚做的是两个生产化“接口”。接口最怕看起来能替换、实际没人打。先把它们用测试钉住，再去升级 report，节奏最稳。
+
+当前阶段可以定义为：
+
+```text
+V5 原型 94% 稳定；production readiness 已到 74%；下一阶段是 adapter 端到端验证 + report 主输出升级。
+```
+
+**本阶段执行记录 + 结果**
+
+- 新增 `scripts/whybuddy-store-api-smoke.mjs`（纯 node fetch + 可选真实 HttpWhyBuddySessionStore 类调用），实现用户指定的最小序列（PUT/GET single/LIST/DELETE/GET deleted → 404），带 reachability wait + 清晰日志 + 非零退出。
+- 在 `client/src/lib/whybuddy-runtime.test.ts` 新增 fake executor 注入 it()：setCapabilityExecutor(fake) → 通过 executeCapability + commit 驱动 → 断言 artifact.content 包含 fake 标记 → finally reset + clear。
+- 额外确保 set/get/executeCapability 已导出，测试可直接使用。
+- 报告新增本节（逐字本 Findings + 执行记录 + “adapters 真正钉住”说明）。
+- 重新执行用户三命令 + smoke:whybuddy（必须全绿）；新 store smoke 在后端可用时单独通过。
+- 生产化 readiness 随两个 adapter 的端到端护栏就位继续上移（符合用户 ~74-75% 区间描述）。
+
+（注意：本 append 使用 search_replace UTF-8 直写。）
+
+下一步按用户顺序：report 主输出物升级（固定 结论/支撑证据/... schema）或 401 清理。HTTP store 现在有了独立 smoke，CapabilityExecutor 有了 fake 注入回归，两个生产化大口子都有了可证的替换路径。
+
 当前阶段可以定义为：
 
 ```text

@@ -23,6 +23,9 @@ import {
   getSessionLedger,
   simulateCapabilityExecution,
   pickNextCapabilities,
+  setCapabilityExecutor,
+  getCapabilityExecutor,
+  executeCapability,
 } from './whybuddy-runtime';
 import type { V5SessionState, Artifact, UserIntervention } from '@shared/blueprint/v5-reasoning-state';
 import type { V5CapabilityId } from '@shared/blueprint/contracts';
@@ -798,5 +801,69 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(sim.content).toContain('模拟');
     const der = deriveNodeStatus(saved);
     expect(der.graph.nodes.some((n: any) => n.producedArtifactId)).toBe(true);
+  });
+
+  it('CapabilityExecutor can be swapped via setCapabilityExecutor and affects committed artifact content (fake injection)', async () => {
+    clearWhyBuddySessionStore();
+
+    // Save the previous (default) so we can restore
+    const prev = getCapabilityExecutor ? getCapabilityExecutor() : null;
+
+    try {
+      const fakeContent = '【FAKE EXECUTOR OUTPUT from test】turn=fake-t1 cap=risk.analyze';
+      const fake = {
+        async executeCapability(args: any) {
+          return {
+            title: 'FAKE TITLE',
+            summary: 'fake summary',
+            content: fakeContent + ' turn=' + args.turnId,
+            provenance: 'ai_generated' as const,
+          };
+        },
+      };
+
+      setCapabilityExecutor(fake);
+
+      // Drive a minimal flow that uses the public executeCapability (same shape the page uses).
+      let s = await loadOrCreateSessionState('exec-fake', 'fake executor test');
+      const { preparedState } = intakeMessage(s, { turnId: 'f1', userText: '风险分析' });
+      const { newState: afterO } = orchestrateReasoningTurn(preparedState, { turnId: 'f1', userText: '风险分析' });
+
+      // Pick first capability from the plan (risk.analyze or whatever the picker chose)
+      const first = (afterO as any).plan?.selected?.[0] || { capabilityId: 'risk.analyze', roleId: '安全', inputArtifactIds: [] };
+      const capId = first.capabilityId as any;
+      const role = first.roleId || '安全';
+      const fresh = first.inputArtifactIds || [];
+
+      const execRes = await executeCapability({
+        capabilityId: capId,
+        state: afterO,
+        inputArtifactIds: fresh,
+        roleId: role,
+        turnId: 'f1',
+      });
+
+      // Build a minimal payload like the page does and commit
+      const runId = 'f1-run-0';
+      const payload = {
+        id: 'f1-art-0',
+        kind: 'risk' as any,
+        provenance: 'ai_generated' as const,
+        producedBy: { capabilityRunId: runId, capabilityId: capId, roleId: role },
+        title: execRes.title,
+        summary: execRes.summary,
+        content: execRes.content,
+      };
+      const { updatedState: committedState } = commitArtifact(afterO, payload as any, runId, false, fresh);
+
+      const art = (committedState.artifacts || []).find((a: any) => a.id === 'f1-art-0');
+      expect(art).toBeTruthy();
+      expect(art!.content).toContain('FAKE EXECUTOR OUTPUT from test');
+
+    } finally {
+      // Restore previous executor (or let default be recreated by the module)
+      if (prev && setCapabilityExecutor) setCapabilityExecutor(prev);
+      clearWhyBuddySessionStore();
+    }
   });
 });
