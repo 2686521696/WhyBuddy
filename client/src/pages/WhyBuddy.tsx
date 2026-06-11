@@ -11,6 +11,7 @@ import { useWhyBuddySession } from "./whybuddy/useWhyBuddySession";
 import { projectConclusionBadge } from "./whybuddy/conclusion-badge";
 import { autopilotTheme } from "./whybuddy/autopilot-theme";
 import type { ActionTrace, LiveAction } from "@shared/blueprint/capability-process-labels";
+import { narrationFallbackHint } from "@/lib/whybuddy-narrator";
 import type { UiTurn } from "./whybuddy/types";
 
 const HINT_CHIPS = [
@@ -119,12 +120,11 @@ function TurnFootnote({
   }
 
   if (turn.assistantSource === "fallback") {
+    const fallbackHint =
+      narrationFallbackHint(turn.narrationReason) ||
+      "叙述服务暂不可用，本条为系统模板回复（产物与结论状态不受影响）";
     parts.push(
-      <span
-        key="fallback"
-        className="text-slate-400"
-        title="叙述服务暂不可用，本条为系统模板回复（产物与结论状态不受影响）"
-      >
+      <span key="fallback" className="text-slate-400" title={fallbackHint}>
         模板回复
       </span>
     );

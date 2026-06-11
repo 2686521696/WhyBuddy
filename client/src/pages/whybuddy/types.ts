@@ -1,5 +1,6 @@
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { ActionTrace } from "@shared/blueprint/capability-process-labels";
+import type { NarrationFallbackReason } from "@/lib/whybuddy-narrator";
 
 export type WhyArtifact = {
   id: string;
@@ -17,6 +18,7 @@ export type UiTurn = {
   user: string;
   assistant: string;
   assistantSource: "llm" | "fallback";
+  narrationReason?: NarrationFallbackReason;
   main: { artifactId: string; kind: string; realLlm: boolean } | null;
   actions: ActionTrace[];
 };

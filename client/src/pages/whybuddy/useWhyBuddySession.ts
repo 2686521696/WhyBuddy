@@ -276,6 +276,7 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         user: userText.trim(),
         assistant: narration.text,
         assistantSource: narration.source,
+        narrationReason: narration.reason,
         main,
         actions,
       };

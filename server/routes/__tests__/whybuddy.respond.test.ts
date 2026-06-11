@@ -66,6 +66,7 @@ describe("POST /api/whybuddy/respond", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.source).toBe("fallback");
+    expect(body.reason).toBe("no_api_key");
     expect(body.text).toContain("本轮完成了");
     expect(body.text).not.toMatch(/artifact|provenance|capability/i);
     expect(body.text).not.toContain("下一步工程化分支");

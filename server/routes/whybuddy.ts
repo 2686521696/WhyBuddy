@@ -249,6 +249,8 @@ function buildNarrationUserPrompt(body: WhyBuddyRespondBody): string {
   return prompt;
 }
 
+export type NarrationFallbackReason = "no_api_key" | "llm_error" | "empty_response";
+
 // POST /api/whybuddy/respond — user-facing narration (LLM or deterministic fallback, always 200).
 router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
   const body = (req.body || {}) as WhyBuddyRespondBody;
@@ -276,7 +278,12 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
   try {
     const config = getAIConfig();
     if (!config.apiKey) {
-      return res.json({ text: fallback(), source: "fallback" as const });
+      console.warn("[whybuddy] /respond fallback: no_api_key (LLM_API_KEY/OPENAI_API_KEY unset)");
+      return res.json({
+        text: fallback(),
+        source: "fallback" as const,
+        reason: "no_api_key" as const,
+      });
     }
 
     const { content, usage } = await callLLM(
@@ -293,7 +300,12 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
 
     const text = String(content || "").trim();
     if (!text) {
-      return res.json({ text: fallback(), source: "fallback" as const });
+      console.warn("[whybuddy] /respond fallback: empty_response from LLM");
+      return res.json({
+        text: fallback(),
+        source: "fallback" as const,
+        reason: "empty_response" as const,
+      });
     }
 
     return res.json({
@@ -309,8 +321,12 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
         : undefined,
     });
   } catch (e: any) {
-    console.error("[whybuddy] /respond fallback:", String(e?.message || e).slice(0, 200));
-    return res.json({ text: fallback(), source: "fallback" as const });
+    console.warn("[whybuddy] /respond fallback: llm_error —", String(e?.message || e).slice(0, 200));
+    return res.json({
+      text: fallback(),
+      source: "fallback" as const,
+      reason: "llm_error" as const,
+    });
   }
 });
 
