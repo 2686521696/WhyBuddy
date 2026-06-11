@@ -1,5 +1,6 @@
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { ActionTrace } from "@shared/blueprint/capability-process-labels";
+import type { TurnRouteFacts } from "@shared/blueprint/whybuddy-turn-route";
 import type { NarrationFallbackReason } from "@/lib/whybuddy-narrator";
 
 export type WhyArtifact = {
@@ -43,6 +44,10 @@ export type UiTurn = {
   user: string;
   status: "streaming" | "complete";
   steps: TurnStep[];
+  /** S9: runtime-recorded facts for turn-route projection. */
+  routeFacts: TurnRouteFacts;
+  routeExpanded: boolean;
+  routeLitCount: number;
   assistant: string;
   assistantSource: "llm" | "fallback";
   narrationReason?: NarrationFallbackReason;

@@ -14,7 +14,10 @@ import * as WhyBuddyRuntime from "@/lib/whybuddy-runtime";
 import { fetchNarration } from "@/lib/whybuddy-narrator";
 import { fetchOrchestratePlan } from "@/lib/whybuddy-orchestrator";
 import type { Artifact, UserIntervention, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
-import { buildOpeningPlanNarration, buildStepNarration } from "./step-narration";
+import { deriveTurnRoute } from "@shared/blueprint/whybuddy-turn-route";
+import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
+import { challengeTargetLabel } from "./challenge-target-label";
+import { buildStepNarration } from "./step-narration";
 import type { TurnStep, UiTurn, WhyArtifact, WhyBuddyExecutorMode } from "./types";
 
 const DEFAULT_GOAL = "做一个权限管理系统（支持 RBAC + 数据范围）";
@@ -38,6 +41,17 @@ function resolveExecutorMode(): WhyBuddyExecutorMode {
   if (params.get("executor") === "server-llm") return "server-llm";
   if (params.get("executor") === "default") return "default";
   return "pilot";
+}
+
+function latestDledgerForTurn(
+  ledger: SchedulingDecision[] | undefined,
+  turnId: string
+): SchedulingDecision | null {
+  const arr = ledger || [];
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i].turnId === turnId) return arr[i];
+  }
+  return null;
 }
 
 function pickMainArtifact(committed: WhyArtifact[]): UiTurn["main"] {
@@ -238,6 +252,26 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       );
     };
 
+    const turnTimestamp = new Date().toISOString();
+
+    const patchRoute = (
+      patch: Partial<UiTurn["routeFacts"]>,
+      litCount?: number
+    ) => {
+      setUiTurns((prev) =>
+        prev.map((t) => {
+          if (t.id !== turnId) return t;
+          const routeFacts = { ...t.routeFacts, ...patch };
+          const derived = deriveTurnRoute(routeFacts);
+          return {
+            ...t,
+            routeFacts,
+            routeLitCount: litCount ?? derived.length,
+          };
+        })
+      );
+    };
+
     setUiTurns((prev) => [
       ...prev,
       {
@@ -245,6 +279,9 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         user: userText.trim(),
         status: "streaming",
         steps: [],
+        routeFacts: { turnId, timestamp: turnTimestamp },
+        routeExpanded: true,
+        routeLitCount: 1,
         assistant: "",
         assistantSource: "fallback",
         main: null,
@@ -257,11 +294,38 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         sessionState.sessionId || sessionId,
         goal
       );
+      const goalStatusBefore = loadedState.goal?.status;
+      const staleArtifactIdsBefore = [...(loadedState.staleArtifactIds || [])];
+
       const { preparedState, context } = WhyBuddyRuntime.intakeMessage(loadedState, {
         turnId,
         userText: userText.trim(),
         intervention,
       });
+
+      const challengeArt = intervention?.targetArtifactId
+        ? (loadedState.artifacts || []).find((a) => a.id === intervention.targetArtifactId)
+        : undefined;
+
+      patchRoute(
+        {
+          goalStatusBefore,
+          staleArtifactIdsBefore,
+          staleArtifactIdsAfter: [...(preparedState.staleArtifactIds || [])],
+          goalStatusAfterInvalidate: preparedState.goal?.status,
+          interventionIntent: intervention?.intent ?? null,
+          challengeTargetLabel: challengeTargetLabel(challengeArt),
+        },
+        deriveTurnRoute({
+          turnId,
+          interventionIntent: intervention?.intent ?? null,
+          challengeTargetLabel: challengeTargetLabel(challengeArt),
+          goalStatusBefore,
+          goalStatusAfterInvalidate: preparedState.goal?.status,
+          staleArtifactIdsBefore,
+          staleArtifactIdsAfter: [...(preparedState.staleArtifactIds || [])],
+        }).length
+      );
 
       setLiveAction({ label: "正在规划本轮动作…", external: false });
 
@@ -305,22 +369,33 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         }
       }
 
-      const openingNarration = buildOpeningPlanNarration(
-        planResponse?.rationale,
-        planResponse?.source
-      );
-      if (openingNarration) {
-        appendStep({
-          id: `${turnId}-plan`,
-          kind: "narration",
-          text: openingNarration,
-          source: planResponse?.source === "llm" ? "llm" : "fallback",
-        });
-      }
-
       const { newState: afterOrch, plan } = WhyBuddyRuntime.orchestrateReasoningTurn(
         stateForOrch,
         orchContext
+      );
+
+      const dledger = latestDledgerForTurn(afterOrch.decisionLedger, turnId);
+      patchRoute(
+        {
+          planReason: plan.reason,
+          planSelectedCount: plan.selected.length,
+          planSource: dledger?.source ?? (planResponse ? planResponse.source : "local_heuristic"),
+          dledgerDecisionId: dledger?.id ?? null,
+        },
+        deriveTurnRoute({
+          turnId,
+          timestamp: turnTimestamp,
+          interventionIntent: intervention?.intent ?? null,
+          challengeTargetLabel: challengeTargetLabel(challengeArt),
+          goalStatusBefore,
+          goalStatusAfterInvalidate: preparedState.goal?.status,
+          staleArtifactIdsBefore,
+          staleArtifactIdsAfter: [...(preparedState.staleArtifactIds || [])],
+          planReason: plan.reason,
+          planSelectedCount: plan.selected.length,
+          planSource: dledger?.source ?? (planResponse ? planResponse.source : "local_heuristic"),
+          dledgerDecisionId: dledger?.id ?? null,
+        }).filter((s) => s.kind !== "execution" && s.kind !== "trust_gate" && s.kind !== "verdict" && s.kind !== "await").length
       );
 
       if (plan.selected.length > 0) {
@@ -333,6 +408,23 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         );
       }
 
+      const onExecStep = (step: TurnStep) => {
+        appendStep(step);
+        setUiTurns((prev) =>
+          prev.map((t) => {
+            if (t.id !== turnId) return t;
+            const execLit = deriveTurnRoute({
+              ...t.routeFacts,
+              planSelectedCount: plan.selected.length,
+            }).findIndex((s) => s.kind === "execution");
+            return {
+              ...t,
+              routeLitCount: Math.max(t.routeLitCount, execLit + 1),
+            };
+          })
+        );
+      };
+
       const { working, committed, actions } = await commitSelectedArtifacts(
         afterOrch,
         turnId,
@@ -342,12 +434,25 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         })),
         { userText: userText.trim(), goalText: goal },
         "",
-        appendStep
+        onExecStep
       );
+
+      const trustTotalCount = committed.length;
+      const trustPassedCount = committed.filter(
+        (a) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
+      ).length;
 
       let final = WhyBuddyRuntime.enrichGraphNodesAfterCommit(working, turnId);
       final = await persistSession(WhyBuddyRuntime.markAwaiting(final, turnId));
       applyPersistedState(final);
+
+      patchRoute({
+        committedCount: trustTotalCount,
+        trustPassedCount,
+        trustTotalCount,
+        goalStatusAfter: final.goal?.status,
+        runtimePhase: final.runtimePhase,
+      });
 
       const main = pickMainArtifact(committed);
       const mainArt = main ? committed.find((a) => a.id === main.artifactId) : undefined;
@@ -381,19 +486,26 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       });
 
       setUiTurns((prev) =>
-        prev.map((t) =>
-          t.id === turnId
-            ? {
-                ...t,
-                status: "complete",
-                assistant: narration.text,
-                assistantSource: narration.source,
-                narrationReason: narration.reason,
-                main,
-                actions,
-              }
-            : t
-        )
+        prev.map((t) => {
+          if (t.id !== turnId) return t;
+          const routeFacts = {
+            ...t.routeFacts,
+            goalStatusAfter: final.goal?.status,
+            runtimePhase: final.runtimePhase ?? "awaiting",
+          };
+          return {
+            ...t,
+            status: "complete",
+            routeFacts,
+            routeExpanded: false,
+            routeLitCount: deriveTurnRoute(routeFacts).length,
+            assistant: narration.text,
+            assistantSource: narration.source,
+            narrationReason: narration.reason,
+            main,
+            actions,
+          };
+        })
       );
       setNextGateShouldFail(false);
     } finally {
@@ -408,6 +520,14 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     setInput("");
     await runTurn(text);
   };
+
+  const toggleRouteExpanded = useCallback((turnId: string) => {
+    setUiTurns((prev) =>
+      prev.map((t) =>
+        t.id === turnId ? { ...t, routeExpanded: !t.routeExpanded } : t
+      )
+    );
+  }, []);
 
   const challengeTurn = async (artifactId: string) => {
     const reason =
@@ -432,5 +552,6 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     sendMessage,
     runTurn,
     challengeTurn,
+    toggleRouteExpanded,
   };
 }

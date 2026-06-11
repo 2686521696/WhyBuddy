@@ -1,7 +1,7 @@
 /**
  * WhyBuddy — 产品视图（/whybuddy）· 纯对话形态
  *
- * 每一轮：用户气泡 → 助手整段行文(打字机) → 极淡脚注。
+ * 每一轮：用户气泡 → 回合路径时间线(S9) → 终叙述(打字机) → 极淡脚注。
  * Runtime 经 useWhyBuddySession + intakeMessage；本文件仅表现层。
  * 工程驾驶舱见 /whybuddy/dev。
  */
@@ -10,9 +10,11 @@ import React, { useEffect, useState } from "react";
 import { useWhyBuddySession } from "./whybuddy/useWhyBuddySession";
 import { projectConclusionBadge } from "./whybuddy/conclusion-badge";
 import { autopilotTheme } from "./whybuddy/autopilot-theme";
-import type { ActionTrace, LiveAction } from "@shared/blueprint/capability-process-labels";
+import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { narrationFallbackHint } from "@/lib/whybuddy-narrator";
-import type { TurnStep, UiTurn } from "./whybuddy/types";
+import { TurnRouteTimeline } from "./whybuddy/TurnRouteTimeline";
+import { finalNarrationStep } from "./whybuddy/turn-route-steps";
+import type { UiTurn } from "./whybuddy/types";
 
 const HINT_CHIPS = [
   "路线对比一下",
@@ -50,17 +52,6 @@ function TypewriterText({ text, active }: { text: string; active: boolean }) {
   );
 }
 
-function ActionTraceRow({ traces, sessionId }: { traces: ActionTrace[]; sessionId: string }) {
-  if (traces.length === 0) return null;
-  const href = `/whybuddy/dev?session=${encodeURIComponent(sessionId)}`;
-  const text = traces.map((t) => t.label).join(" · ");
-  return (
-    <a href={href} className={autopilotTheme.actionTrace}>
-      ⚡ {text}
-    </a>
-  );
-}
-
 function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
   return (
     <div
@@ -76,41 +67,6 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
         </span>
       )}
       {liveAction.label}
-    </div>
-  );
-}
-
-function CapabilityChip({ step }: { step: Extract<TurnStep, { kind: "chip" }> }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] ring-1 ring-inset ${
-        step.realLlm
-          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-          : "bg-slate-50 text-slate-600 ring-slate-200"
-      }`}
-    >
-      {step.label}
-    </span>
-  );
-}
-
-function TurnStepView({
-  step,
-  active,
-}: {
-  step: TurnStep;
-  active: boolean;
-}) {
-  if (step.kind === "chip") {
-    return (
-      <div className="py-1">
-        <CapabilityChip step={step} />
-      </div>
-    );
-  }
-  return (
-    <div className="py-1">
-      <TypewriterText text={step.text} active={active} />
     </div>
   );
 }
@@ -188,6 +144,7 @@ export default function WhyBuddy() {
     sessionState,
     sendMessage,
     challengeTurn,
+    toggleRouteExpanded,
   } = useWhyBuddySession({
     sessionId: "whybuddy-main-proto",
     documentTitle: "WhyBuddy",
@@ -238,32 +195,36 @@ export default function WhyBuddy() {
               <div className="flex justify-end">
                 <div className={autopilotTheme.userBubble}>{turn.user}</div>
               </div>
-              <div className="pl-1">
-                {turn.status === "complete" && (
-                  <ActionTraceRow
-                    traces={turn.actions}
-                    sessionId={sessionState.sessionId || "whybuddy-main-proto"}
-                  />
-                )}
-                {turn.steps.length > 0 ? (
-                  turn.steps.map((step) => (
-                    <TurnStepView
-                      key={step.id}
-                      step={step}
+              <div className="rounded-lg border border-slate-200/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+                <TurnRouteTimeline
+                  facts={turn.routeFacts}
+                  steps={turn.steps}
+                  actions={turn.actions}
+                  sessionId={sessionState.sessionId || "whybuddy-main-proto"}
+                  expanded={turn.routeExpanded}
+                  onToggle={() => toggleRouteExpanded(turn.id)}
+                  litCount={turn.routeLitCount}
+                  streaming={turn.status === "streaming"}
+                  liveAction={
+                    turn.id === latestTurnId && turn.status === "streaming" ? liveAction : null
+                  }
+                  activeStepId={turn.id === latestTurnId ? latestActiveStepId : null}
+                />
+                {(() => {
+                  const finalStep = finalNarrationStep(turn.steps);
+                  const narrationText = finalStep?.text ?? turn.assistant;
+                  if (!narrationText) return null;
+                  return (
+                    <TypewriterText
+                      text={narrationText}
                       active={
                         turn.id === latestTurnId &&
-                        step.id === latestActiveStepId &&
                         (turn.status === "streaming" ||
-                          (step.kind === "narration" && step.isFinal === true))
+                          (finalStep != null && turn.status === "complete"))
                       }
                     />
-                  ))
-                ) : (
-                  <TypewriterText
-                    text={turn.assistant}
-                    active={turn.id === latestTurnId && turn.status === "complete"}
-                  />
-                )}
+                  );
+                })()}
                 {turn.status === "complete" && (
                   <TurnFootnote
                     turn={turn}
