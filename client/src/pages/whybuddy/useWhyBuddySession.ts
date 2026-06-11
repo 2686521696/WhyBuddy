@@ -375,11 +375,18 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       );
 
       const dledger = latestDledgerForTurn(afterOrch.decisionLedger, turnId);
+      const planSource =
+        dledger?.source ?? (planResponse ? planResponse.source : "local_heuristic");
+      const planOrchestrateReason =
+        planSource !== "llm"
+          ? (planResponse?.reason ?? (planResponse ? null : "orchestrate_unreachable"))
+          : null;
       patchRoute(
         {
           planReason: plan.reason,
           planSelectedCount: plan.selected.length,
-          planSource: dledger?.source ?? (planResponse ? planResponse.source : "local_heuristic"),
+          planSource,
+          planOrchestrateReason,
           dledgerDecisionId: dledger?.id ?? null,
         },
         deriveTurnRoute({
@@ -393,7 +400,8 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
           staleArtifactIdsAfter: [...(preparedState.staleArtifactIds || [])],
           planReason: plan.reason,
           planSelectedCount: plan.selected.length,
-          planSource: dledger?.source ?? (planResponse ? planResponse.source : "local_heuristic"),
+          planSource,
+          planOrchestrateReason,
           dledgerDecisionId: dledger?.id ?? null,
         }).filter((s) => s.kind !== "execution" && s.kind !== "trust_gate" && s.kind !== "verdict" && s.kind !== "await").length
       );

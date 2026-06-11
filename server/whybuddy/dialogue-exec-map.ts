@@ -171,11 +171,12 @@ function isHealthyArtifact(artifact: Artifact, staleSet: Set<string>): boolean {
 
 function artifactSnippet(artifact: Artifact): Record<string, string> {
   const text = String(artifact.content || artifact.summary || artifact.title || "").trim();
+  const limit = artifact.kind === "route_options" ? 2000 : 300;
   return {
     id: artifact.id,
     kind: artifact.kind,
     title: String(artifact.title || "").slice(0, 80),
-    content: text.slice(0, 300),
+    content: text.slice(0, limit),
   };
 }
 

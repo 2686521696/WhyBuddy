@@ -170,7 +170,7 @@ export async function executeOrchestratePlan(
       {
         model: config.model,
         temperature: 0.2,
-        timeoutMs: Math.min(config.timeoutMs, 12_000),
+        timeoutMs: Math.min(config.timeoutMs, 30_000),
         retryAttempts: 1,
       } as any
     );

@@ -23,6 +23,8 @@ export type TurnRouteFacts = {
   planReason?: string;
   planSelectedCount?: number;
   planSource?: PlanSourceValue;
+  /** R1/D1: orchestrate-plan fallback reason when source ≠ llm (dev + timeline hint). */
+  planOrchestrateReason?: string | null;
   dledgerDecisionId?: string | null;
 
   committedCount?: number;
@@ -139,11 +141,15 @@ export function deriveTurnRoute(facts: TurnRouteFacts): RouteStation[] {
   if (hasPlanData(facts)) {
     const n = facts.planSelectedCount ?? 0;
     const src = planSourceUserLabel(facts.planSource);
+    const reasonHint =
+      facts.planSource !== "llm" && facts.planOrchestrateReason
+        ? ` (${facts.planOrchestrateReason})`
+        : "";
     stations.push({
       id: `${facts.turnId}-plan`,
       kind: "plan",
       title: "规划",
-      detail: `选定 ${n} 个动作${budgetBlocked ? "" : "回补缺口"}${src ? ` · ${src}` : ""}`,
+      detail: `选定 ${n} 个动作${budgetBlocked ? "" : "回补缺口"}${src ? ` · ${src}` : ""}${reasonHint}`,
       tone: "process",
       dledgerDecisionId: facts.dledgerDecisionId || undefined,
       summaryToken: "规划",

@@ -28,7 +28,8 @@ export type OrchestratePlanResponse = {
   reason?: OrchestratePlanFallbackReason;
 };
 
-const DEFAULT_TIMEOUT_MS = 13_000;
+/** Server orchestrate LLM cap is 30s — client must wait longer than that + network. */
+const DEFAULT_TIMEOUT_MS = 40_000;
 
 export async function fetchOrchestratePlan(
   req: OrchestratePlanRequest,
