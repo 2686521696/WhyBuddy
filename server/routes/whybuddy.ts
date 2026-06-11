@@ -294,7 +294,8 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
       {
         model: config.model,
         temperature: 0.4,
-        timeoutMs: Math.min(config.timeoutMs, 45000),
+        // Align with execute-capability (120s cap). gpt-5.5 + high reasoning often exceeds 45s.
+        timeoutMs: Math.min(config.timeoutMs, 120_000),
       } as any
     );
 
@@ -385,11 +386,23 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       return res.json(result);
     }
 
+    const isLlmBacked =
+      isDeliberationCapability(capabilityId) ||
+      capabilityId === "risk.analyze" ||
+      capabilityId === "report.write";
+
+    if (!isLlmBacked) {
+      const err = new Error(`Server LLM provider does not handle capability: ${capabilityId}`);
+      (err as any).status = 400;
+      throw err;
+    }
+
+    const config = getAIConfig();
+    if (!config.apiKey) {
+      throw new Error("LLM not configured (no apiKey from getAIConfig)");
+    }
+
     if (isDeliberationCapability(capabilityId)) {
-      const config = getAIConfig();
-      if (!config.apiKey) {
-        throw new Error("LLM not configured (no apiKey from getAIConfig)");
-      }
       const result = await executeDeliberationCapabilityMapped({
         capabilityId: capabilityId as any,
         state,
@@ -400,11 +413,6 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         targetRoleId,
       });
       return res.json(result);
-    }
-
-    const config = getAIConfig();
-    if (!config.apiKey) {
-      throw new Error("LLM not configured (no apiKey from getAIConfig)");
     }
 
     // Build compact context (mirrors the spirit of the previous client direct prompts but now on server).
@@ -438,11 +446,6 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         `BASE_TITLE: ${built.title}\nBASE_SUMMARY: ${built.summary}\nBASE_CONTENT:\n${built.content}\n\n` +
         `Role: ${roleId || "综合"}  Turn: ${turnId}\n\n` +
         "Return the polished final evidence report as the required JSON {title, summary, content}.";
-    } else {
-      // Client error, not LLM execution error.
-      const err = new Error(`Server LLM provider does not handle capability: ${capabilityId}`);
-      (err as any).status = 400;
-      throw err;
     }
 
     const { json: result, usage } = await callLLMJsonWithUsage<{ title?: string; summary?: string; content?: string }>(

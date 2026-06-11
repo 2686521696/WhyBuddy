@@ -1039,7 +1039,7 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       expect(riskFail.content).not.toContain('success-risk');
 
       // Non-target cap should fall back without calling a "LLM" provider.
-      // Use an explicit counter to strictly prove the provider is never invoked for non risk/report caps.
+      // Use an explicit counter to strictly prove the provider is never invoked for caps outside serverRouted.
       let providerCalls = 0;
       const trackingProvider: LlmCapabilityProvider = async () => {
         providerCalls++;
@@ -1047,9 +1047,26 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
       };
       setCapabilityExecutor(new LlmCapabilityExecutor(trackingProvider));
 
-      // Drive a non-target capability directly (the executor decides based on capabilityId)
-      await executeCapability({ capabilityId: 'synthesis.merge', state: afterO, inputArtifactIds: [], turnId: 'prov1' });
+      // intent.parse is not server-routed (R2b added synthesis.merge et al. to serverRouted).
+      await executeCapability({ capabilityId: 'intent.parse', state: afterO, inputArtifactIds: [], turnId: 'prov1' });
       expect(providerCalls).toBe(0);
+
+      // All four deliberation capabilities must route through the provider (R2 contract).
+      const deliberationIds = [
+        'counter.argue',
+        'critique.generate',
+        'rebuttal.resolve',
+        'synthesis.merge',
+      ] as const;
+      for (const capId of deliberationIds) {
+        await executeCapability({
+          capabilityId: capId,
+          state: afterO,
+          inputArtifactIds: [],
+          turnId: 'prov1',
+        });
+      }
+      expect(providerCalls).toBe(deliberationIds.length);
 
       // --- Real provider wiring: createOpenAILlmCapabilityProvider (mocked, hermetic) ---
       // Verifies the factory produces a valid LlmCapabilityProvider for the two pilot caps,

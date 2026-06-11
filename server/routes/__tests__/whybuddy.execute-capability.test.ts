@@ -22,9 +22,12 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
 
   let server: any;
   let base: string;
+  const origKey = process.env.LLM_API_KEY;
+  const origOpen = process.env.OPENAI_API_KEY;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    process.env.LLM_API_KEY = process.env.LLM_API_KEY || 'test-key';
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address();
@@ -34,6 +37,10 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    if (origKey) process.env.LLM_API_KEY = origKey;
+    else delete process.env.LLM_API_KEY;
+    if (origOpen) process.env.OPENAI_API_KEY = origOpen;
+    else delete process.env.OPENAI_API_KEY;
     if (server) {
       await new Promise<void>((r) => server.close(() => r()));
     }
