@@ -23,8 +23,8 @@
  *       {createInitialSessionState, applyGoalConclusion}.
  *  - N1 direct mutation guard:          /goal\.status\s*=[^=]/g   (expected count 0)
  *  - N2 budget-before-pick order:       indexOf("evaluateBudgetBeforeOrchestrate(") <
- *                                        indexOf("pickNextCapabilities(") inside the
- *                                        orchestrateReasoningTurn body.
+ *                                        earliest of pickNextCapabilitiesHeuristic( /
+ *                                        pickNextCapabilities( inside orchestrateReasoningTurn.
  *  - N4 forbidden legacy recycle ids:   /\bFB\b/  and  /\bRP\b/  (CASE-SENSITIVE — case-insensitive
  *       would false-match the `rePlan` local variable, which lowercases to "replan").
  */
@@ -271,13 +271,20 @@ describe('N1 · no bypass writing GOAL=clear', () => {
 // N2 · 不存在绕过 BUDGET 进 ORCH
 // =====================================================================================
 
+function earliestPickAnchorIdx(body: string): number {
+  const anchors = ['pickNextCapabilitiesHeuristic(', 'pickNextCapabilities('];
+  const indices = anchors.map((a) => body.indexOf(a)).filter((i) => i >= 0);
+  if (indices.length === 0) return -1;
+  return Math.min(...indices);
+}
+
 describe('N2 · no bypass into ORCH without BUDGET', () => {
   it('STATIC: orchestrateReasoningTurn evaluates the budget gate before pickNextCapabilities', () => {
     const body = extractFunctionBody(RUNTIME_SRC, 'orchestrateReasoningTurn');
     expect(body.length).toBeGreaterThan(0);
 
     const budgetIdx = body.indexOf('evaluateBudgetBeforeOrchestrate(');
-    const pickIdx = body.indexOf('pickNextCapabilities(');
+    const pickIdx = earliestPickAnchorIdx(body);
     expect(budgetIdx).toBeGreaterThanOrEqual(0); // budget gate is present
     expect(pickIdx).toBeGreaterThanOrEqual(0); // pick is present
     expect(budgetIdx).toBeLessThan(pickIdx); // budget precedes pick (gate-first)

@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 
 import whybuddyRouter from "../whybuddy.js";
 import * as llmClient from "../../core/llm-client.js";
+import { withStubbedLlmKey } from "./helpers/with-stubbed-llm-key.js";
 
 describe("POST /api/whybuddy/orchestrate-plan (R1-B2)", () => {
   const app = express();
@@ -12,7 +13,7 @@ describe("POST /api/whybuddy/orchestrate-plan (R1-B2)", () => {
 
   let server: any;
   let base: string;
-  const origKey = process.env.LLM_API_KEY;
+  let restoreLlmKey: (() => void) | undefined;
 
   const baseBody = {
     turnId: "t-orch",
@@ -29,7 +30,7 @@ describe("POST /api/whybuddy/orchestrate-plan (R1-B2)", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
-    process.env.LLM_API_KEY = process.env.LLM_API_KEY || "test-key";
+    ({ restore: restoreLlmKey } = withStubbedLlmKey());
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address();
@@ -39,8 +40,8 @@ describe("POST /api/whybuddy/orchestrate-plan (R1-B2)", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    if (origKey) process.env.LLM_API_KEY = origKey;
-    else delete process.env.LLM_API_KEY;
+    restoreLlmKey?.();
+    restoreLlmKey = undefined;
     if (server) {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -56,6 +57,8 @@ describe("POST /api/whybuddy/orchestrate-plan (R1-B2)", () => {
   });
 
   it("returns heuristic_fallback with reason no_api_key when key absent", async () => {
+    restoreLlmKey?.();
+    restoreLlmKey = undefined;
     delete process.env.LLM_API_KEY;
     delete process.env.OPENAI_API_KEY;
 

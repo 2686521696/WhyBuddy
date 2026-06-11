@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 
 import whybuddyRouter from "../whybuddy.js";
 import * as llmClient from "../../core/llm-client.js";
+import { withStubbedLlmKey } from "./helpers/with-stubbed-llm-key.js";
 
 describe("POST /api/whybuddy/respond", () => {
   const app = express();
@@ -12,9 +13,11 @@ describe("POST /api/whybuddy/respond", () => {
 
   let server: any;
   let base: string;
+  let restoreLlmKey: (() => void) | undefined;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    ({ restore: restoreLlmKey } = withStubbedLlmKey());
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address();
@@ -24,6 +27,8 @@ describe("POST /api/whybuddy/respond", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    restoreLlmKey?.();
+    restoreLlmKey = undefined;
     if (server) {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -39,6 +44,8 @@ describe("POST /api/whybuddy/respond", () => {
   });
 
   it("returns fallback narration with HTTP 200 when LLM is unavailable", async () => {
+    restoreLlmKey?.();
+    restoreLlmKey = undefined;
     const orig = process.env.LLM_API_KEY;
     const origOpen = process.env.OPENAI_API_KEY;
     delete process.env.LLM_API_KEY;
