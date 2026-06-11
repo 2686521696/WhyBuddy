@@ -456,6 +456,77 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     expect(staticSpy).toHaveBeenCalledWith('repo.static.inspect', expect.anything(), []);
   });
 
+  it('repo.inspect maps to static + github adapters when goal has GitHub URL (F1 B4)', async () => {
+    const staticSpy = vi.spyOn(repoStaticAnalyzer, 'executeRepoStaticInspect').mockResolvedValueOnce({
+      title: 'Static Repo Analysis: facebook/react',
+      summary: 'Detected react stack.',
+      content: JSON.stringify({
+        repository: 'facebook/react',
+        detectedStack: ['react', 'typescript'],
+        ci: { workflowCount: 12 },
+      }),
+      provenance: 'repo:static',
+    });
+
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability').mockResolvedValueOnce({
+      title: 'GitHub Source: facebook/react',
+      summary: 'repo facebook/react · TypeScript · 200000★',
+      content: JSON.stringify({
+        repository: 'facebook/react',
+        stars: 200000,
+        readmeSummary: 'A JavaScript library for building user interfaces.',
+        source: 'mcp-github',
+      }),
+      provenance: 'mcp:github',
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'repo.inspect',
+        state: {
+          sessionId: 't-f1',
+          goal: { text: '分析 https://github.com/facebook/react 的工程结构' },
+        },
+        inputArtifactIds: [],
+        turnId: 't-f1',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(staticSpy).toHaveBeenCalledWith('repo.static.inspect', expect.anything(), []);
+    expect(ghSpy).toHaveBeenCalledWith('source.github.inspect', expect.anything(), []);
+    expect(body.provenance).toBe('mcp:github');
+    expect(body.content).toContain('facebook/react');
+    expect(body.content).toContain('stars');
+    expect(body.content).toContain('readmeSummary');
+  });
+
+  it('repo.inspect without GitHub URL degrades to rule fallback without calling adapters (F1)', async () => {
+    const staticSpy = vi.spyOn(repoStaticAnalyzer, 'executeRepoStaticInspect');
+    const ghSpy = vi.spyOn(ghAdapter, 'executeGithubMcpCapability');
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'repo.inspect',
+        state: { sessionId: 't-f1-fallback', goal: { text: '做一个权限管理系统' } },
+        inputArtifactIds: [],
+        turnId: 't-f1-fallback',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('ai_generated');
+    expect(body.content).toMatch(/未能从目标中识别|未找到 GitHub/i);
+    expect(staticSpy).not.toHaveBeenCalled();
+    expect(ghSpy).not.toHaveBeenCalled();
+  });
+
   it('repo.static.inspect respects inputArtifactIds priority and graceful missing files', async () => {
     const staticSpy = vi.spyOn(repoStaticAnalyzer, 'executeRepoStaticInspect').mockResolvedValueOnce({
       title: 'Static Repo Analysis: vercel/next.js',

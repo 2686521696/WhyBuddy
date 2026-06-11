@@ -19,10 +19,16 @@
 import express, { Router, type Request, type Response } from "express";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import { getAIConfig } from "../core/ai-config.js";
-import { callLLMJson, callLLMJsonWithUsage } from "../core/llm-client.js";
+import { callLLM, callLLMJson, callLLMJsonWithUsage } from "../core/llm-client.js";
 import { buildStructuredReport } from "../../shared/blueprint/whybuddy-report-builder.js";
+import { buildFallbackNarration } from "../../shared/blueprint/whybuddy-deliverable-sanitize.js";
+import type { GoalStatusForNarration } from "../../shared/blueprint/whybuddy-deliverable-sanitize.js";
 import { executeGithubMcpCapability } from "../whybuddy/github-mcp-adapter.js";
 import { executeRepoStaticInspect } from "../whybuddy/repo-static-analyzer.js";
+import {
+  executeEvidenceSearchMapped,
+  executeRepoInspectMapped,
+} from "../whybuddy/capability-exec-map.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -180,6 +186,130 @@ if (enableTestHelpers) {
   });
 }
 
+type WhyBuddyRespondBody = {
+  state?: V5SessionState;
+  turnId?: string;
+  userText?: string;
+  intervention?: { intent?: string } | null;
+  selected?: Array<{ capabilityId?: string; roleId?: string }>;
+  artifacts?: Array<{ kind?: string; title?: string; summary?: string; realLlm?: boolean }>;
+  mainArtifact?: { kind?: string; title?: string; content?: string } | null;
+};
+
+function buildNarrationSystemPrompt(hasMain: boolean): string {
+  const lengthRule = hasMain
+    ? "When mainArtifact is provided: rewrite the material into 300–700 Chinese characters for the user. Preserve ALL facts, evidence, risks, disagreements, and open gaps from the material. Do NOT add conclusions not present in the material. Remove engineering implementation details and internal references. Use short section headings and line breaks; avoid bullet-symbol stacking. Open with one sentence responding to the user input; end with one forward-looking question or next-step suggestion."
+    : "When no mainArtifact: reply in 120–260 Chinese characters summarizing the turn.";
+
+  return (
+    "You are WhyBuddy's user-facing narrator for a reasoning product.\n" +
+    "Discipline (mandatory):\n" +
+    "1. Transcribe mechanical conclusions only — never adjudicate goal.status yourself.\n" +
+    "2. Never use internal engineering terms (artifact, stale, upstream, gate, capability, provenance, orchestrator, etc.) in user-visible text.\n" +
+    "3. Never announce optimistic trust labels like '已收敛·可信' unless the mechanical state already says clear — and even then describe neutrally.\n" +
+    "4. " +
+    lengthRule +
+    "\n" +
+    "5. Output plain Chinese prose only — no JSON, no markdown code fences."
+  );
+}
+
+function buildNarrationUserPrompt(body: WhyBuddyRespondBody): string {
+  const goalStatus = (body.state as any)?.goal?.status as GoalStatusForNarration;
+  const selected = (body.selected || [])
+    .map((s) => `${s.capabilityId || "?"}×${s.roleId || "?"}`)
+    .join(", ");
+  const artifactSummaries = (body.artifacts || [])
+    .map(
+      (a, i) =>
+        `${i + 1}. [${a.kind || "item"}] ${String(a.title || "").slice(0, 80)} — ${String(a.summary || "").slice(0, 200)}`
+    )
+    .join("\n");
+
+  let prompt =
+    `Turn: ${body.turnId}\n` +
+    `User input: ${body.userText || ""}\n` +
+    `Mechanical goal.status (transcribe faithfully, do not override): ${goalStatus || "needs_refinement"}\n` +
+    `Intervention: ${body.intervention?.intent || "none"}\n` +
+    `Selected analyses: ${selected || "(none)"}\n` +
+    `Artifact summaries:\n${artifactSummaries || "(none)"}\n`;
+
+  if (body.mainArtifact?.content) {
+    prompt +=
+      `\n本轮主产物(权威素材,你的回复要把它完整改写为面向用户的行文——保留其中全部\n` +
+      `事实、证据、风险、分歧与未解缺口,不得新增任何素材里没有的结论,砍掉工程实现\n` +
+      `细节与内部引用):\n` +
+      `${String(body.mainArtifact.content).slice(0, 6000)}`;
+  }
+
+  return prompt;
+}
+
+// POST /api/whybuddy/respond — user-facing narration (LLM or deterministic fallback, always 200).
+router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
+  const body = (req.body || {}) as WhyBuddyRespondBody;
+
+  if (!body.turnId || !String(body.turnId).trim()) {
+    return res.status(400).json({ error: "bad_request", message: "turnId is required" });
+  }
+  if (!body.state) {
+    return res.status(400).json({ error: "bad_request", message: "state is required" });
+  }
+
+  const goalStatus = (body.state as any)?.goal?.status as GoalStatusForNarration;
+  const analysisCount = (body.selected || []).length || (body.artifacts || []).length;
+  const hasMain = Boolean(body.mainArtifact?.content);
+
+  const fallback = () =>
+    buildFallbackNarration({
+      userText: body.userText || "",
+      goalStatus,
+      analysisCount,
+      interventionIntent: body.intervention?.intent,
+      mainArtifactContent: body.mainArtifact?.content || null,
+    });
+
+  try {
+    const config = getAIConfig();
+    if (!config.apiKey) {
+      return res.json({ text: fallback(), source: "fallback" as const });
+    }
+
+    const { content, usage } = await callLLM(
+      [
+        { role: "system", content: buildNarrationSystemPrompt(hasMain) },
+        { role: "user", content: buildNarrationUserPrompt(body) },
+      ],
+      {
+        model: config.model,
+        temperature: 0.4,
+        timeoutMs: Math.min(config.timeoutMs, 45000),
+      } as any
+    );
+
+    const text = String(content || "").trim();
+    if (!text) {
+      return res.json({ text: fallback(), source: "fallback" as const });
+    }
+
+    return res.json({
+      text,
+      source: "llm" as const,
+      usage: usage
+        ? {
+            inputTokens: usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+            model: config.model,
+          }
+        : undefined,
+    });
+  } catch (e: any) {
+    console.error("[whybuddy] /respond fallback:", String(e?.message || e).slice(0, 200));
+    return res.json({ text: fallback(), source: "fallback" as const });
+  }
+});
+
 // POST /api/whybuddy/execute-capability
 // Server-side LLM execution for the WhyBuddy V5 capability seam (risk.analyze + report.write).
 // Reuses the project's unified LLM stack (getAIConfig + callLLMJson) exactly like /autopilot and blueprint routes.
@@ -212,6 +342,16 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
 
     if (capabilityId === "repo.static.inspect") {
       const result = await executeRepoStaticInspect(capabilityId, state, inputArtifactIds);
+      return res.json(result);
+    }
+
+    if (capabilityId === "repo.inspect") {
+      const result = await executeRepoInspectMapped(state, inputArtifactIds);
+      return res.json(result);
+    }
+
+    if (capabilityId === "evidence.search") {
+      const result = await executeEvidenceSearchMapped(state, inputArtifactIds, roleId);
       return res.json(result);
     }
 

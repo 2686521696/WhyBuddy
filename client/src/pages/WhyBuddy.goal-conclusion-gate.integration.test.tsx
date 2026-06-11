@@ -50,24 +50,14 @@ vi.mock('./whybuddy/useWhyBuddySession', () => ({
     return {
       goal: state.goal?.text || '',
       sessionState: state,
-      chatTurns: [],
+      uiTurns: [],
       input: '',
       setInput: () => {},
-      pinnedArtifact: null,
-      setPinnedArtifact: () => {},
-      nextGateShouldFail: false,
-      setNextGateShouldFail: () => {},
-      dynamicGraph: state.graph || { nodes: [], edges: [] },
-      executorMode: 'pilot' as const,
+      isRunning: false,
+      liveAction: null,
       sendMessage: async () => {},
-      challenge: () => {},
-      challengeDecision: async () => {},
-      waiveGap: async () => {},
-      handleGraphNodeClick: () => {},
-      resetSession: async () => {},
-      verifyChain: () => {},
-      listSessions: async () => {},
-      showLedger: () => {},
+      runTurn: async () => {},
+      challengeTurn: async () => {},
     };
   },
 }));
@@ -205,12 +195,12 @@ describe('INTEGRATION (Task 4): full /whybuddy flow surfaces the GCOV conclusion
 
     // The STATUS bar renders the conclusion badge bound to sessionState.goal.status.
     expect(html).toContain('data-testid="whybuddy-conclusion-badge"');
-    expect(html).toMatch(/已收敛·可信|已收敛/);
+    expect(html).toMatch(/已收敛\s*\/\s*clear|已收敛/);
     // The not-yet-converged / not-recommended labels must NOT appear for a clear conclusion.
     expect(html).not.toContain('不建议');
   });
 
-  it('HARD-BLOCK flow: converge with missing pre-reqs → partial AWAIT → STATUS bar stays "推演中"', async () => {
+  it('HARD-BLOCK flow: converge with missing pre-reqs → partial AWAIT → STATUS bar stays "待细化"', async () => {
     // The flow hard-blocked into a partial AWAIT and left goal.status unchanged.
     const gate = hardBlockState.coverageGate as CoverageGateResult | undefined;
     expect(gate?.passed).toBe(false);
@@ -221,7 +211,7 @@ describe('INTEGRATION (Task 4): full /whybuddy flow surfaces the GCOV conclusion
 
     // The conclusion badge is present but shows the needs_refinement label, never "clear".
     expect(html).toContain('data-testid="whybuddy-conclusion-badge"');
-    expect(html).toContain('推演中');
-    expect(html).not.toMatch(/已收敛·可信/);
+    expect(html).toContain('待细化');
+    expect(html).not.toMatch(/已收敛\s*\/\s*clear/);
   });
 });

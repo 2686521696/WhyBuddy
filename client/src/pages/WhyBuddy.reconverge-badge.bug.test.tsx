@@ -55,24 +55,14 @@ vi.mock('./whybuddy/useWhyBuddySession', async () => {
     useWhyBuddySession: () => ({
       goal: '分析权限系统的风险并给出最终报告',
       sessionState: staged,
-      chatTurns: [],
+      uiTurns: [],
       input: '',
       setInput: () => {},
-      pinnedArtifact: null,
-      setPinnedArtifact: () => {},
-      nextGateShouldFail: false,
-      setNextGateShouldFail: () => {},
-      dynamicGraph: { nodes: [], edges: [] },
-      executorMode: 'pilot' as const,
+      isRunning: false,
+      liveAction: null,
       sendMessage: async () => {},
-      challenge: () => {},
-      challengeDecision: async () => {},
-      waiveGap: async () => {},
-      handleGraphNodeClick: () => {},
-      resetSession: async () => {},
-      verifyChain: () => {},
-      listSessions: async () => {},
-      showLedger: () => {},
+      runTurn: async () => {},
+      challengeTurn: async () => {},
     }),
   };
 });
@@ -143,7 +133,7 @@ vi.mock('@/lib/whybuddy-runtime', async () => {
 import WhyBuddy from './WhyBuddy';
 
 describe('BUG: WhyBuddy STATUS badge shows a stale "clear" after a challenge (Property 1 edge case — EXPECTED TO FAIL on unfixed code)', () => {
-  it('renders the conclusion badge as "已被质疑·重新推演" after a challenge on a converged conclusion', () => {
+  it('renders the conclusion badge as "待细化" after a challenge on a converged conclusion', () => {
     const html = renderToStaticMarkup(React.createElement(WhyBuddy));
 
     // Sanity: the conclusion badge bound to sessionState.goal.status is present.
@@ -152,7 +142,7 @@ describe('BUG: WhyBuddy STATUS badge shows a stale "clear" after a challenge (Pr
     // EXPECTED (design Property 2 / Req 1.6, 2.7): after the challenge the conclusion is downgraded,
     // so the badge surfaces "待细化". FAILS on unfixed code — invalidateForIntervention leaves
     // goal.status === "clear", so the badge still shows the stale "已收敛 / clear".
-    expect(html).toContain('已被质疑·重新推演');
-    expect(html).not.toMatch(/已收敛·可信/);
+    expect(html).toContain('待细化');
+    expect(html).not.toMatch(/已收敛\s*\/\s*clear/);
   });
 });

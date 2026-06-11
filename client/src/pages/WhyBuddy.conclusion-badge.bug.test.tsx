@@ -37,24 +37,14 @@ vi.mock('./whybuddy/useWhyBuddySession', async () => {
     useWhyBuddySession: () => ({
       goal: '做一个权限管理系统（支持 RBAC + 数据范围）',
       sessionState,
-      chatTurns: [],
+      uiTurns: [],
       input: '',
       setInput: () => {},
-      pinnedArtifact: null,
-      setPinnedArtifact: () => {},
-      nextGateShouldFail: false,
-      setNextGateShouldFail: () => {},
-      dynamicGraph: { nodes: [], edges: [] },
-      executorMode: 'pilot' as const,
+      isRunning: false,
+      liveAction: null,
       sendMessage: async () => {},
-      challenge: () => {},
-      challengeDecision: async () => {},
-      waiveGap: async () => {},
-      handleGraphNodeClick: () => {},
-      resetSession: async () => {},
-      verifyChain: () => {},
-      listSessions: async () => {},
-      showLedger: () => {},
+      runTurn: async () => {},
+      challengeTurn: async () => {},
     }),
   };
 });
@@ -86,6 +76,6 @@ describe('BUG: WhyBuddy STATUS bar never surfaces sessionState.goal.status (Prop
 
     // EXPECTED: the badge surfaces the "clear" conclusion label (design: clear -> 已收敛 / clear).
     // FAILS on unfixed code (the STATUS bar only renders the local `goal` text string).
-    expect(html).toMatch(/已收敛·可信|已收敛/);
+    expect(html).toMatch(/已收敛\s*\/\s*clear|已收敛/);
   });
 });

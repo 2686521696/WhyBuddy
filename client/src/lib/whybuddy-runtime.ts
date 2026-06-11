@@ -54,6 +54,7 @@ import {
   type ArtifactFragment,
   type FragmentKind,
 } from "@shared/blueprint/whybuddy-report-builder.js";
+import { findGithubUrlInTexts } from "@shared/blueprint/whybuddy-github-context";
 
 // Simple deterministic picker (can be replaced by real ML / agent later)
 // Now significantly state-aware for target-driven scheduling (per V5 doc).
@@ -84,6 +85,17 @@ export function pickNextCapabilities(
   const openQCount = (state.openQuestions || []).length;
   const ledger = getSessionLedger(state);
   const recentLedgerCaps = ledger.slice(-4).map(l => l.capabilityId);
+
+  // GitHub repo context → prefer external inspection capabilities (F1)
+  const ghUrl = findGithubUrlInTexts(lower, (state.goal?.text || ""));
+  if (ghUrl) {
+    if (available.has("repo.inspect") && !picks.some((p) => p.capabilityId === "repo.inspect")) {
+      picks.push({ capabilityId: "repo.inspect", roleId: "工程" });
+    }
+    if (available.has("evidence.search") && !picks.some((p) => p.capabilityId === "evidence.search")) {
+      picks.push({ capabilityId: "evidence.search", roleId: "接地" });
+    }
+  }
 
   // Keyword driven (still useful as user "manipulator")
   if (lower.includes("路线") || lower.includes("route") || lower.includes("对比")) {
@@ -1390,7 +1402,16 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
       model?: string;
     };
   }> {
-    if (args.capabilityId === 'risk.analyze' || args.capabilityId === 'report.write') {
+    const serverRouted: V5CapabilityId[] = [
+      'risk.analyze',
+      'report.write',
+      'repo.inspect',
+      'evidence.search',
+      'mcp.call',
+      'skill.invoke',
+      'memory.recall',
+    ];
+    if (serverRouted.includes(args.capabilityId)) {
       try {
         const result: any = await this.provider(args);
         // Knife 11: record real usage if provider returned it (server LLM), else estimate.
