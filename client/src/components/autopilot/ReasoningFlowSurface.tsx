@@ -483,10 +483,19 @@ export function ReasoningFlowSurface({
   }, [edges]);
 
   // 当前高亮的节点集合（自己 + 祖先 + 后代）
-  const externalHighlightSet = useMemo(
-    () => new Set(externalHighlightedIds || []),
-    [externalHighlightedIds]
+  const visibleNodeIdSet = useMemo(
+    () => new Set(nodes.map((n) => n.id)),
+    [nodes]
   );
+
+  // Only highlight ids that exist in the current projection (avoids dimming the whole graph when
+  // lineage/evidence targets a ::ev- child that compact mode has not materialized yet).
+  const externalHighlightSet = useMemo(() => {
+    const matched = (externalHighlightedIds || []).filter((id) =>
+      visibleNodeIdSet.has(id)
+    );
+    return new Set(matched);
+  }, [externalHighlightedIds, visibleNodeIdSet]);
 
   const highlightedNodeIds = useMemo(() => {
     if (externalHighlightSet.size > 0) {
@@ -529,7 +538,17 @@ export function ReasoningFlowSurface({
 
   // “是否处于 hover 模式”应基于 hover 状态本身，而不是是否有高亮边。
   // 这样即使 hover 孤立节点（或未来无边节点），非相关元素仍会正确进入淡化状态。
-  const isAnyHovered = hoveredNodeId !== null || externalHighlightSet.size > 0;
+  const isPathFocusActive =
+    hoveredNodeId !== null || externalHighlightSet.size > 0;
+  const isHoverFocusActive = hoveredNodeId !== null;
+  const denseGraph = nodes.length > 36;
+  const dimNodeClass = dark
+    ? denseGraph
+      ? "opacity-60 saturate-[0.82] border-zinc-800/90 bg-zinc-900/90"
+      : "opacity-50 saturate-[0.88] border-zinc-800/90 bg-zinc-900/90"
+    : denseGraph
+    ? "opacity-60 saturate-[0.9] border-slate-200/90 bg-white/95"
+    : "opacity-55 saturate-[0.92] border-slate-200/90 bg-white/95";
 
   // 视口状态（2D infinite canvas 核心）
   const [scale, setScale] = useState(initialScale);
@@ -906,10 +925,28 @@ export function ReasoningFlowSurface({
                     strokeWidth={isEdgeHighlighted ? 2.1 : 1.25}
                     strokeDasharray={isEdgeHighlighted ? undefined : "5 3"}
                     markerEnd={`url(#${arrowId})`}
-                    opacity={isEdgeHighlighted ? 0.95 : isAnyHovered ? 0.22 : 0.65}
+                    opacity={
+                      isEdgeHighlighted
+                        ? 0.95
+                        : isHoverFocusActive
+                        ? 0.38
+                        : isPathFocusActive
+                        ? 0.52
+                        : 0.72
+                    }
                   />
                 {edge.label && (
-                  <g opacity={isEdgeHighlighted ? 0.95 : isAnyHovered ? 0.28 : 1}>
+                  <g
+                    opacity={
+                      isEdgeHighlighted
+                        ? 0.95
+                        : isHoverFocusActive
+                        ? 0.45
+                        : isPathFocusActive
+                        ? 0.58
+                        : 1
+                    }
+                  >
                     {/* subtle label background for readability on canvas */}
                     {(() => {
                       const w = estimateLabelWidth(edge.label);
@@ -971,6 +1008,7 @@ export function ReasoningFlowSurface({
 
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
+            const isProjectionChild = node.id.includes("::");
 
             const clickable = !!onNodeClick && !isTerminal;
             const flowTooltip = buildFlowTooltip(node);
@@ -1004,15 +1042,19 @@ export function ReasoningFlowSurface({
                     ? "border-emerald-400/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.98),rgba(209,250,229,0.92))] shadow-[0_10px_28px_rgba(16,185,129,0.18)] ring-1 ring-emerald-200/60"
                     : dark
                     ? (isDimmed
-                        ? "opacity-25 saturate-[0.6] border-zinc-800/90 bg-zinc-900/90"
+                        ? dimNodeClass
                         : isHighlighted
-                        ? "scale-[1.012] border-zinc-600 bg-zinc-900 shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
-                        : "border-zinc-700/90 bg-zinc-900/95 hover:border-zinc-600 hover:shadow-[0_6px_18px_rgba(0,0,0,0.28)]")
+                        ? "scale-[1.012] border-zinc-500 bg-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.35)] ring-1 ring-zinc-500/40"
+                        : isProjectionChild
+                        ? "border-zinc-600/90 bg-zinc-800/95 hover:border-zinc-500"
+                        : "border-zinc-600/90 bg-zinc-900/95 hover:border-zinc-500 hover:shadow-[0_6px_18px_rgba(0,0,0,0.28)]")
                     : (isDimmed
-                        ? "opacity-25 saturate-[0.6] border-slate-200/90 bg-white/92"
+                        ? dimNodeClass
                         : isHighlighted
-                        ? "scale-[1.012] border-slate-300 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.12)]"
-                        : "border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] shadow-[0_2px_8px_rgba(15,23,42,0.05)] hover:border-slate-300 hover:shadow-[0_6px_16px_rgba(15,23,42,0.08)]")
+                        ? "scale-[1.012] border-slate-400 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.14)] ring-1 ring-slate-300/80"
+                        : isProjectionChild
+                        ? "border-slate-300/95 bg-white shadow-[0_1px_4px_rgba(15,23,42,0.06)] hover:border-slate-400"
+                        : "border-slate-300/95 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.07)] hover:border-slate-400 hover:shadow-[0_6px_16px_rgba(15,23,42,0.1)]")
                 } ${clickable ? "cursor-pointer" : ""}`}
                 style={{
                   left: node.x,
@@ -1130,7 +1172,7 @@ export function ReasoningFlowSurface({
                   ) : (
                     <div
                       className={`min-h-0 flex-1 text-[11px] ${
-                        dark ? "text-zinc-300" : "text-slate-700"
+                        dark ? "text-zinc-200" : "text-slate-800"
                       }`}
                       style={{
                         ...flowTextClampStyle(bodyLines),
@@ -1147,7 +1189,7 @@ export function ReasoningFlowSurface({
                         <span className={dark ? "text-zinc-500" : "text-slate-400"}> — </span>
                       ) : null}
                       {bodyText ? (
-                        <span className={dark ? "text-zinc-400" : "text-slate-600"}>{bodyText}</span>
+                        <span className={dark ? "text-zinc-300" : "text-slate-700"}>{bodyText}</span>
                       ) : null}
                       {!titleText && !bodyText ? (
                         <span className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}>

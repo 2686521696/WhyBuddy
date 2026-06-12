@@ -734,6 +734,9 @@ export default function WhyBuddy() {
 
   const handleProjectionDensityChange = useCallback((density: ProjectionDensity) => {
     setProjectionDensity(density);
+    if (density === "compact") {
+      setLineageHighlightIds([]);
+    }
     try {
       localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, density);
     } catch {
@@ -758,14 +761,24 @@ export default function WhyBuddy() {
         return;
       }
       if (action === "lineage") {
-        setLineageHighlightIds(deriveLineageHighlightNodeIds(sessionState));
+        if (projectionDensity === "compact") {
+          setProjectionDensity("detailed");
+          try {
+            localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, "detailed");
+          } catch {
+            /* ignore */
+          }
+        }
+        const ids = deriveLineageHighlightNodeIds(sessionState);
+        setLineageHighlightIds(ids);
+        if (ids[0]) setFocusNodeId(ids[0]);
         return;
       }
       if (action === "export" && reasoningViewModel.terminalMeta?.canExport) {
         downloadWhyBuddyDeliveryMd(sessionState);
       }
     },
-    [sessionState, reasoningViewModel.terminalMeta?.canExport]
+    [sessionState, reasoningViewModel.terminalMeta?.canExport, projectionDensity]
   );
 
   const handleEvidenceRefClick = useCallback(
