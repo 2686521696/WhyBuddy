@@ -116,6 +116,18 @@ export async function executeStructureDecomposeMapped(
     },
   });
 
+  // K5 explicit: attempt full old derivation pipeline as fallback / backfill (for nodes, comparison, or when primary enriched LLM path is weak).
+  // This makes the "tryDeriveWithOldPipeline" reuse visible and exercised in the live structure executor (not just prompt enrichment).
+  // Safe: non-blocking, only attaches if successful.
+  try {
+    const old = await tryDeriveWithOldPipeline(state, inputArtifactIds);
+    if (old && old.nodes && old.nodes.length > 0) {
+      (result as any).oldDerivationFallback = { nodes: old.nodes, fromOldDerivation: true };
+    }
+  } catch {
+    // silent; primary path always wins
+  }
+
   return {
     title: result.title,
     summary: result.summary,

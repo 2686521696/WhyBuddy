@@ -101,21 +101,27 @@ async function runSmoke() {
     log("dev server not responding on :3000");
     log("auto-spawning `pnpm dev:frontend` (Vite) for hermetic run...");
     try {
-      devServerProc = spawn(
-        process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-        ['run', 'dev:frontend'],
-        {
-          stdio: 'ignore',
-          detached: process.platform !== 'win32',
-          shell: false,
-        }
-      );
+      // Robust hermetic spawn (Windows EINVAL / pnpm.cmd quirks).
+      // Use cmd /c on win to avoid shell+args deprecation and EINVAL.
+      let cmd, args;
+      if (process.platform === 'win32') {
+        cmd = 'cmd.exe';
+        args = ['/c', 'pnpm', 'run', 'dev:frontend'];
+      } else {
+        cmd = 'pnpm';
+        args = ['run', 'dev:frontend'];
+      }
+      devServerProc = spawn(cmd, args, {
+        stdio: 'ignore',
+        detached: process.platform !== 'win32',
+        shell: false,
+        windowsHide: true,
+      });
       if (typeof devServerProc.unref === 'function') {
         devServerProc.unref();
       }
     } catch (e) {
-      log("ERROR: failed to spawn dev:frontend: " + (e?.message || e));
-      throw new Error("dev:frontend auto-spawn failed");
+      log("WARN: spawn dev:frontend failed (" + (e?.message || e) + "). Will still wait in case server is provided externally.");
     }
 
     // Give Vite a generous cold-start window (typical first run on a clean env)
