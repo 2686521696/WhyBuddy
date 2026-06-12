@@ -27,6 +27,11 @@ import { ArchitectureProcessPanel } from "./whybuddy/ArchitectureProcessPanel";
 import { ComposerDock } from "./whybuddy/ComposerDock";
 import { deriveComposerHintChips } from "./whybuddy/derive-composer-hints";
 import type { UiTurn } from "./whybuddy/types";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import {
+  GITHUB_PAGES_DEMO_SESSION_ID,
+  GITHUB_PAGES_DEMO_GOAL,
+} from "./whybuddy/github-pages-whybuddy-demo";
 
 const HINT_CHIPS_SPLIT = [
   "路线对比一下",
@@ -590,8 +595,9 @@ export default function WhyBuddy() {
     toggleRouteExpanded,
     retryCapability,
   } = useWhyBuddySession({
-    sessionId: "whybuddy-v51-product",
-    documentTitle: "WhyBuddy",
+    sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "whybuddy-v51-product",
+    documentTitle: IS_GITHUB_PAGES ? "WhyBuddy · 演示" : "WhyBuddy",
+    initialGoal: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_GOAL : undefined,
   });
 
   const imSurfaceMode = useMemo(() => resolveImSurfaceMode(), []);

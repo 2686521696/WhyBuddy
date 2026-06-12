@@ -11,8 +11,14 @@ import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { createUiCapabilityExecutor, mapArtifactsToWhyArtifacts } from "./ui-capability-executor";
 import { createHttpWhyBuddySessionStore } from "@/lib/whybuddy-http-store";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { TurnStep, UiTurn, WhyArtifact, WhyBuddyExecutorMode } from "./types";
+import {
+  createGithubPagesWhyBuddySeedSession,
+  createGithubPagesWhyBuddySessionStore,
+  loadOrSeedGithubPagesDemoSession,
+} from "./github-pages-whybuddy-demo";
 
 const DEFAULT_SESSION_ID = "whybuddy-v51-product";
 
@@ -35,6 +41,7 @@ async function persistSession(state: V5SessionState): Promise<V5SessionState> {
 }
 
 function resolveExecutorMode(): WhyBuddyExecutorMode {
+  if (IS_GITHUB_PAGES) return "demo";
   const params = new URLSearchParams(window.location.search);
   if (params.get("executor") === "pilot") return "pilot";
   if (params.get("executor") === "default") return "default";
@@ -103,17 +110,22 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     const mode = resolveExecutorMode();
     setExecutorMode(mode);
 
-    // B-5: product default uses durable Http store (survives refresh via server JSON file).
-    if (mode === "server-llm" && WhyBuddyRuntime.setWhyBuddySessionStore) {
+    if (IS_GITHUB_PAGES && WhyBuddyRuntime.setWhyBuddySessionStore) {
+      WhyBuddyRuntime.setWhyBuddySessionStore(createGithubPagesWhyBuddySessionStore());
+      WhyBuddyRuntime.usePilotRealExecutor?.();
+    } else if (mode === "server-llm" && WhyBuddyRuntime.setWhyBuddySessionStore) {
+      // B-5: product default uses durable Http store (survives refresh via server JSON file).
       WhyBuddyRuntime.setWhyBuddySessionStore(createHttpWhyBuddySessionStore());
     }
 
-    if (mode === "server-llm" && WhyBuddyRuntime.useServerLlmCapabilityExecutor) {
-      WhyBuddyRuntime.useServerLlmCapabilityExecutor?.();
-    } else if (mode === "default") {
-      WhyBuddyRuntime.useDefaultExecutor?.();
-    } else {
-      WhyBuddyRuntime.usePilotRealExecutor?.();
+    if (!IS_GITHUB_PAGES) {
+      if (mode === "server-llm" && WhyBuddyRuntime.useServerLlmCapabilityExecutor) {
+        WhyBuddyRuntime.useServerLlmCapabilityExecutor?.();
+      } else if (mode === "default") {
+        WhyBuddyRuntime.useDefaultExecutor?.();
+      } else {
+        WhyBuddyRuntime.usePilotRealExecutor?.();
+      }
     }
 
     return () => {
@@ -131,9 +143,15 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let loaded = await WhyBuddyRuntime.loadOrCreateSessionState(sessionId);
-      if (WhyBuddyRuntime.isLegacyEmptySessionSeed(loaded)) {
-        loaded = await persistSession(sanitizeLegacyEmptySeed(loaded));
+      let loaded: V5SessionState;
+      if (IS_GITHUB_PAGES) {
+        const store = WhyBuddyRuntime.getWhyBuddySessionStore();
+        loaded = await loadOrSeedGithubPagesDemoSession(store, sessionId);
+      } else {
+        loaded = await WhyBuddyRuntime.loadOrCreateSessionState(sessionId);
+        if (WhyBuddyRuntime.isLegacyEmptySessionSeed(loaded)) {
+          loaded = await persistSession(sanitizeLegacyEmptySeed(loaded));
+        }
       }
       if (!cancelled) {
         setSessionState(loaded);
@@ -275,7 +293,9 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         turnSeedId: turnId,
         userText: userText.trim(),
         intervention,
-        router: WhyBuddyRuntime.createServerReasoningRouter(),
+        router: IS_GITHUB_PAGES
+          ? WhyBuddyRuntime.createDeterministicRouter()
+          : WhyBuddyRuntime.createServerReasoningRouter(),
         executor: uiExecutor,
         maxLoopsPerMessage: resolveMaxLoopsPerMessage(),
         onCapabilityRound: (payload) => {
@@ -659,16 +679,23 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
   const resetSession = useCallback(async () => {
     if (isRunning) return;
     const sid = sessionState.sessionId || sessionId;
-    if (WhyBuddyRuntime.deleteWhyBuddySession) {
-      await WhyBuddyRuntime.deleteWhyBuddySession(sid);
+    if (IS_GITHUB_PAGES) {
+      const store = WhyBuddyRuntime.getWhyBuddySessionStore();
+      await store.deleteSession?.(sid);
+      const seeded = await store.save(createGithubPagesWhyBuddySeedSession());
+      setSessionState(seeded);
+    } else {
+      if (WhyBuddyRuntime.deleteWhyBuddySession) {
+        await WhyBuddyRuntime.deleteWhyBuddySession(sid);
+      }
+      const fresh = sanitizeLegacyEmptySeed(
+        await WhyBuddyRuntime.loadOrCreateSessionState(
+          sid,
+          WhyBuddyRuntime.EMPTY_SESSION_GOAL_TEXT
+        )
+      );
+      setSessionState(fresh);
     }
-    const fresh = sanitizeLegacyEmptySeed(
-      await WhyBuddyRuntime.loadOrCreateSessionState(
-        sid,
-        WhyBuddyRuntime.EMPTY_SESSION_GOAL_TEXT
-      )
-    );
-    setSessionState(fresh);
     setUiTurns([]);
     setInput("");
     setLiveAction(null);

@@ -71,7 +71,7 @@ export type UiTurn = {
   actions: ActionTrace[];
 };
 
-export type WhyBuddyExecutorMode = "pilot" | "server-llm" | "default";
+export type WhyBuddyExecutorMode = "pilot" | "server-llm" | "default" | "demo";
 
 /** @deprecated Engineering cockpit only — product page uses UiTurn. */
 export type ChatTurn = {

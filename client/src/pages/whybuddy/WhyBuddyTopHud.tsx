@@ -4,6 +4,7 @@ import type { BrainstormGraphTelemetry } from "@shared/blueprint/brainstorm-reas
 import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
 import type { WhyBuddyExecutorMode } from "./types";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 
 export function WhyBuddyTopHud({
   state,
@@ -46,6 +47,14 @@ export function WhyBuddyTopHud({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             STATUS
           </span>
+          {IS_GITHUB_PAGES && (
+            <span
+              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-800 ring-1 ring-inset ring-indigo-200/80"
+              data-testid="whybuddy-pages-demo-badge"
+            >
+              GitHub Pages 演示
+            </span>
+          )}
           <span
             data-testid="whybuddy-conclusion-badge"
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${facts.conclusionClassName}`}

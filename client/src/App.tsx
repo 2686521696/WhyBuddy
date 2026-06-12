@@ -55,7 +55,11 @@ const routerBase =
 function Router() {
   return (
     <Switch>
-      <Route path={"/"}>{() => <RedirectRoute to={PROJECTS_PATH} />}</Route>
+      <Route path={"/"}>
+        {() => (
+          <RedirectRoute to={IS_GITHUB_PAGES ? WHYBUDDY_PATH : PROJECTS_PATH} />
+        )}
+      </Route>
       <Route path={PROJECTS_PATH}>{() => <ProjectCockpitHome />}</Route>
       <Route path={AUTOPILOT_PATH} component={AutopilotRoutePage} />
       <Route path={`${PROJECTS_PATH}/:projectId/tasks/:taskId`}>

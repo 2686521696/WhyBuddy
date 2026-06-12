@@ -167,13 +167,17 @@ export function deriveStatusBarFacts(
 
   const executorMode = opts.executorMode ?? "server-llm";
   const executorModeLabel =
-    executorMode === "server-llm"
+    executorMode === "demo"
+      ? "demo · 模拟数据"
+      : executorMode === "server-llm"
       ? "executor: server-llm"
       : executorMode === "pilot"
       ? "executor: pilot"
       : "executor: default";
   const executorModeClassName =
-    executorMode === "server-llm"
+    executorMode === "demo"
+      ? "bg-amber-50 text-amber-900 ring-amber-200/80"
+      : executorMode === "server-llm"
       ? "bg-sky-50 text-sky-800 ring-sky-200/80"
       : "bg-violet-50 text-violet-800 ring-violet-200/80";
 
