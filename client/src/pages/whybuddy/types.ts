@@ -29,13 +29,29 @@ export type TurnStep =
       roleId: string;
       label: string;
       realLlm: boolean;
+      loopTurnId?: string;
+      progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
     }
   | {
       id: string;
       kind: "step_narration";
       text: string;
       capabilityId: V5CapabilityId;
+      roleId?: string;
       realLlm: boolean;
+      loopTurnId?: string;
+      capabilityRunId?: string;
+      runIndex?: number;
+    }
+  | {
+      id: string;
+      kind: "capability_fail";
+      capabilityId: V5CapabilityId;
+      roleId: string;
+      loopTurnId: string;
+      capabilityRunId: string;
+      runIndex: number;
+      message: string;
     };
 
 /** Product page turn — progressive conversation (user bubble + step stream). */

@@ -1,25 +1,34 @@
 /**
- * WhyBuddy — 产品视图（/whybuddy）· 左 Flow + 右 IM
+ * WhyBuddy — 产品视图（/whybuddy）· 全屏画布 + 浮层 HUD
  *
- * 左侧：ReasoningFlowSurface 推演路径（随能力调用实时更新）
- * 右侧：对话操纵杆 — 用户气泡 → 回合路径时间线(S9) → 终叙述(打字机) → 极淡脚注
- * Runtime 经 useWhyBuddySession + intakeMessage；本文件仅表现层。
- * 工程驾驶舱见 /whybuddy/dev。
+ * 沉浸布局（默认 product / minimal）：
+ * - 画布占满视口
+ * - 顶部左：话题 + 指标 + 角色并行流
+ * - 顶部右：架构调用过程（console + 流式节拍）
+ * - 底部居中：IM 输入浮层
+ *
+ * ?im=dev / engineering 保留左右分栏工程驾驶舱。
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useWhyBuddySession } from "./whybuddy/useWhyBuddySession";
-import { projectConclusionBadge } from "./whybuddy/conclusion-badge";
 import { autopilotTheme } from "./whybuddy/autopilot-theme";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { narrationFallbackHint } from "@/lib/whybuddy-narrator";
 import { TurnRouteTimeline } from "./whybuddy/TurnRouteTimeline";
 import { finalNarrationStep } from "./whybuddy/turn-route-steps";
+import { deriveWhyBuddyReasoningViewModel } from "./whybuddy/derive-reasoning-view-model";
+import { resolveImSurfaceMode } from "./whybuddy/im-surface-mode";
+import { WhyBuddyStatusBar } from "./whybuddy/WhyBuddyStatusBar";
+import { WhyBuddyTopHud } from "./whybuddy/WhyBuddyTopHud";
+import { ArchitectureProcessPanel } from "./whybuddy/ArchitectureProcessPanel";
+import { ComposerDock } from "./whybuddy/ComposerDock";
+import { deriveComposerHintChips } from "./whybuddy/derive-composer-hints";
 import type { UiTurn } from "./whybuddy/types";
 
-const HINT_CHIPS = [
+const HINT_CHIPS_SPLIT = [
   "路线对比一下",
   "澄清权限边界",
   "分析安全风险",
@@ -52,6 +61,19 @@ function TypewriterText({ text, active }: { text: string; active: boolean }) {
 
   return (
     <div className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{text.slice(0, shown)}</div>
+  );
+}
+
+function ImStreamingPlaceholder() {
+  return (
+    <p className="m-0 flex items-center gap-2 text-sm text-slate-400">
+      <span className="inline-flex gap-1">
+        <span className="size-1.5 animate-pulse rounded-full bg-slate-300" />
+        <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:120ms]" />
+        <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:240ms]" />
+      </span>
+      架构节点推进中…
+    </p>
   );
 }
 
@@ -136,102 +158,339 @@ function TurnFootnote({
   );
 }
 
-export default function WhyBuddy() {
-  const {
-    goal,
-    uiTurns,
-    input,
-    setInput,
-    isRunning,
-    liveAction,
-    sessionState,
-    sendMessage,
-    challengeTurn,
-    toggleRouteExpanded,
-  } = useWhyBuddySession({
-    sessionId: "whybuddy-main-proto",
-    documentTitle: "WhyBuddy",
-  });
-
-  const badge = projectConclusionBadge(sessionState);
-  const latestTurn = uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : null;
-  const latestTurnId = latestTurn?.id ?? null;
-  const latestActiveStepId =
-    latestTurn && latestTurn.status === "streaming"
-      ? latestTurn.steps[latestTurn.steps.length - 1]?.id
-      : latestTurn?.steps.find((s) => s.kind === "narration" && "isFinal" in s && s.isFinal)?.id ??
-        latestTurn?.steps[latestTurn.steps.length - 1]?.id;
-
-  const graphNodeCount = sessionState.graph?.nodes?.length ?? 0;
-
-  const handleGraphNodeClick = useCallback(
-    (node: BrainstormReasoningNode) => {
-      const producedArtifactId = (node as { producedArtifactId?: string }).producedArtifactId;
-      if (producedArtifactId) {
-        challengeTurn(producedArtifactId);
-      }
-    },
-    [challengeTurn]
+function WhyBuddyImmersion({
+  goal,
+  uiTurns,
+  input,
+  setInput,
+  isRunning,
+  liveAction,
+  sessionState,
+  sendMessage,
+  challengeTurn,
+  resetSession,
+  retryCapability,
+  toggleRouteExpanded,
+  reasoningViewModel,
+  graphNodeCount,
+  graphRevision,
+  handleGraphNodeClick,
+  imSurfaceMode,
+  latestTurn,
+  latestTurnId,
+}: {
+  goal: string;
+  uiTurns: UiTurn[];
+  input: string;
+  setInput: (v: string) => void;
+  isRunning: boolean;
+  liveAction: LiveAction | null;
+  sessionState: ReturnType<typeof useWhyBuddySession>["sessionState"];
+  sendMessage: () => void;
+  challengeTurn: (id: string) => void;
+  resetSession: () => void;
+  retryCapability: ReturnType<typeof useWhyBuddySession>["retryCapability"];
+  toggleRouteExpanded: (turnId: string) => void;
+  reasoningViewModel: ReturnType<typeof deriveWhyBuddyReasoningViewModel>;
+  graphNodeCount: number;
+  graphRevision: string;
+  handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
+  latestTurn: UiTurn | null;
+  latestTurnId: string | null;
+}) {
+  const sessionId = sessionState.sessionId || "whybuddy-v51-product";
+  const composerHints = useMemo(
+    () => deriveComposerHintChips(sessionState),
+    [sessionState]
   );
+
+  return (
+    <div className={autopilotTheme.immersionPage}>
+      <div className={autopilotTheme.immersionCanvas}>
+        {graphNodeCount > 0 ? (
+          <ReasoningFlowSurface
+            viewModel={reasoningViewModel}
+            initialScale={0.88}
+            graphRevision={graphRevision}
+            className="absolute inset-0"
+            showChrome={false}
+            showBottomChrome
+            onNodeClick={handleGraphNodeClick}
+          />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+            <p className="m-0 text-sm font-medium text-slate-500">
+              全屏推演画布
+            </p>
+            <p className="mt-2 max-w-md text-xs text-slate-400">
+              在底部输入想法，架构图从 INTAKE 展开；顶部显示角色并行流与调用过程。
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className={autopilotTheme.immersionOverlayTop}>
+        <WhyBuddyTopHud
+          state={sessionState}
+          goal={goal}
+          turnCount={uiTurns.length}
+          isRunning={isRunning}
+          driveLoopCount={
+            latestTurn?.routeFacts.rounds?.length ??
+            (latestTurn && latestTurn.routeFacts.planSelectedCount ? 1 : 0)
+          }
+          telemetry={reasoningViewModel.telemetry}
+          onResetSession={resetSession}
+        />
+        <div className={autopilotTheme.immersionOverlayArchRow}>
+          <ArchitectureProcessPanel
+            liveAction={isRunning ? liveAction : null}
+            latestTurn={
+              latestTurn
+                ? {
+                    id: latestTurn.id,
+                    routeFacts: latestTurn.routeFacts,
+                    steps: latestTurn.steps,
+                    actions: latestTurn.actions,
+                    status: latestTurn.status,
+                    routeLitCount: latestTurn.routeLitCount,
+                    routeExpanded: latestTurn.routeExpanded,
+                  }
+                : null
+            }
+            sessionId={sessionId}
+            isRunning={isRunning}
+            onToggleRoute={
+              latestTurn ? () => toggleRouteExpanded(latestTurn.id) : undefined
+            }
+            onRetryCapability={
+              latestTurn
+                ? (params) => retryCapability(latestTurn.id, params)
+                : undefined
+            }
+          />
+        </div>
+      </div>
+
+      {imSurfaceMode === "minimal" && latestTurn && (
+        <div className="pointer-events-none absolute left-1/2 top-[42%] z-10 w-[min(90%,480px)] -translate-x-1/2">
+          <div className="pointer-events-auto rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-xl">
+            {(() => {
+              const finalStep = finalNarrationStep(latestTurn.steps);
+              const narrationText = finalStep?.text ?? latestTurn.assistant;
+              if (!narrationText && latestTurn.status === "streaming") {
+                return <ImStreamingPlaceholder />;
+              }
+              if (!narrationText) return null;
+              return (
+                <TypewriterText
+                  text={narrationText}
+                  active={
+                    latestTurn.id === latestTurnId &&
+                    (latestTurn.status === "streaming" ||
+                      (finalStep != null && latestTurn.status === "complete"))
+                  }
+                />
+              );
+            })()}
+            {latestTurn.status === "complete" && (
+              <TurnFootnote
+                turn={latestTurn}
+                sessionId={sessionId}
+                onChallenge={challengeTurn}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className={autopilotTheme.immersionOverlayBottom}>
+        <ComposerDock
+          input={input}
+          setInput={setInput}
+          sendMessage={sendMessage}
+          isRunning={isRunning}
+          goal={goal}
+          latestUserText={latestTurn?.user}
+          hintChips={composerHints}
+        />
+      </div>
+    </div>
+  );
+}
+
+function WhyBuddySplitEngineering({
+  goal,
+  uiTurns,
+  input,
+  setInput,
+  isRunning,
+  liveAction,
+  sessionState,
+  sendMessage,
+  challengeTurn,
+  resetSession,
+  toggleRouteExpanded,
+  retryCapability,
+  reasoningViewModel,
+  graphNodeCount,
+  graphRevision,
+  handleGraphNodeClick,
+  imSurfaceMode,
+  latestTurn,
+  latestTurnId,
+}: {
+  goal: string;
+  uiTurns: UiTurn[];
+  input: string;
+  setInput: (v: string) => void;
+  isRunning: boolean;
+  liveAction: LiveAction | null;
+  sessionState: ReturnType<typeof useWhyBuddySession>["sessionState"];
+  sendMessage: () => void;
+  challengeTurn: (id: string) => void;
+  resetSession: () => void;
+  toggleRouteExpanded: (id: string) => void;
+  retryCapability: ReturnType<typeof useWhyBuddySession>["retryCapability"];
+  reasoningViewModel: ReturnType<typeof deriveWhyBuddyReasoningViewModel>;
+  graphNodeCount: number;
+  graphRevision: string;
+  handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
+  latestTurn: UiTurn | null;
+  latestTurnId: string | null;
+}) {
+  const imScrollRef = useRef<HTMLElement>(null);
+  const imBottomRef = useRef<HTMLDivElement>(null);
+  const imAtBottomRef = useRef(true);
+
+  const imScrollSignature = useMemo(
+    () =>
+      uiTurns
+        .map((t) => {
+          const last = t.steps[t.steps.length - 1];
+          const lastBody =
+            last && "text" in last
+              ? last.text.length
+              : last && "label" in last
+              ? last.label.length
+              : 0;
+          return `${t.id}:${t.status}:${t.routeLitCount}:${t.steps.length}:${t.actions.length}:${last?.id ?? ""}:${lastBody}`;
+        })
+        .join("|"),
+    [uiTurns]
+  );
+
+  useEffect(() => {
+    const el = imScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      imAtBottomRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight <= 32;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!isRunning && !imAtBottomRef.current) return;
+    requestAnimationFrame(() => {
+      imBottomRef.current?.scrollIntoView({ block: "end" });
+      if (imScrollRef.current) {
+        imScrollRef.current.scrollTop = imScrollRef.current.scrollHeight;
+      }
+      imAtBottomRef.current = true;
+    });
+  }, [imScrollSignature, isRunning, uiTurns.length]);
 
   return (
     <div className={autopilotTheme.page}>
       <header className={autopilotTheme.header}>
         <div className="min-w-0 flex-1">
           <div className={autopilotTheme.label}>我的想法</div>
-          <div className={autopilotTheme.goal}>{goal}</div>
+          <div
+            className={`${autopilotTheme.goal} ${!goal ? "text-slate-400" : ""}`}
+            data-testid="whybuddy-goal-display"
+          >
+            {goal || "输入你的想法，开始推演…"}
+          </div>
         </div>
         <div className="flex items-center gap-3 pl-4">
-          <div
-            data-testid="whybuddy-conclusion-badge"
-            className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${badge.className}`}
+          <button
+            type="button"
+            onClick={resetSession}
+            disabled={isRunning}
+            data-testid="whybuddy-reset-session"
+            className={autopilotTheme.auditBtn}
+            title={isRunning ? "推演进行中，请稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
           >
-            {badge.label}
-          </div>
+            重置会话
+          </button>
           <a href="/whybuddy/dev" className={autopilotTheme.devLink} title="打开工程驾驶舱">
             Dev
           </a>
         </div>
       </header>
 
+      <WhyBuddyStatusBar
+        state={sessionState}
+        turnCount={uiTurns.length}
+        isRunning={isRunning}
+        driveLoopCount={
+          latestTurn?.routeFacts.rounds?.length ??
+          (latestTurn && latestTurn.routeFacts.planSelectedCount ? 1 : 0)
+        }
+        closureReason={latestTurn?.routeFacts.closureReason ?? null}
+      />
+
       <div className={autopilotTheme.split}>
-        <section className={autopilotTheme.flowPanel} aria-label="推演路径">
+        <section className={autopilotTheme.flowPanelWide} aria-label="推演路径">
           <div className={autopilotTheme.flowPanelHeader}>
             <span className={autopilotTheme.label}>推演路径</span>
-            <span className="text-[10px] text-slate-400">点击节点可质疑该结论</span>
+            <div className="flex min-w-0 flex-col items-end gap-0.5">
+              {isRunning && liveAction ? (
+                <LiveActionIndicator liveAction={liveAction} />
+              ) : (
+                <span className="text-[10px] text-slate-400">
+                  {graphNodeCount > 0
+                    ? `${graphNodeCount} 节点 · 点击可质疑`
+                    : "发送消息后展开推理地图"}
+                </span>
+              )}
+            </div>
           </div>
-          <div className={autopilotTheme.flowPanelBody}>
+          <div className={`${autopilotTheme.flowPanelBody} relative`}>
             {graphNodeCount > 0 ? (
               <ReasoningFlowSurface
-                graph={sessionState.graph}
-                initialScale={0.75}
+                viewModel={reasoningViewModel}
+                initialScale={0.82}
+                graphRevision={graphRevision}
                 className="absolute inset-0"
-                showChrome={false}
+                showChrome
                 onNodeClick={handleGraphNodeClick}
               />
             ) : (
               <div className={autopilotTheme.flowEmpty}>
                 发送第一条消息后，推演路径会在这里展开。
-                <div className="mt-2 text-xs text-slate-400">
-                  左侧看全局结构，右侧继续对话或质疑结论。
-                </div>
               </div>
             )}
           </div>
         </section>
 
         <section className={autopilotTheme.imPanel} aria-label="对话">
-          <main className={autopilotTheme.main}>
+          <main ref={imScrollRef} className={autopilotTheme.main}>
             <div className="space-y-6">
-              {uiTurns.length === 0 && !isRunning && (
+              {uiTurns.length === 0 && (
                 <div className={autopilotTheme.emptyState}>
-                  描述你的想法，WhyBuddy 会推演结论并告诉你能否信任。
-                  <div className={autopilotTheme.emptyHint}>
-                    例如：「分析权限方案风险并生成可行性报告」
-                  </div>
+                  欢迎来到 WhyBuddy V5。
+                  <p className={autopilotTheme.emptyHint}>
+                    在下方输入你的目标或质疑，系统会从丰富的能力池中动态挑选 (capability × role) 进行推演。
+                    没有固定阶段，一切由当前状态和你的输入驱动。
+                  </p>
                 </div>
               )}
-
               {uiTurns.map((turn) => (
                 <div key={turn.id} className="space-y-2">
                   <div className="flex justify-end">
@@ -242,47 +501,31 @@ export default function WhyBuddy() {
                       facts={turn.routeFacts}
                       steps={turn.steps}
                       actions={turn.actions}
-                      sessionId={sessionState.sessionId || "whybuddy-main-proto"}
-                      expanded={turn.routeExpanded}
+                      sessionId={sessionState.sessionId || "whybuddy-v51-product"}
+                      expanded={turn.routeExpanded || turn.status === "streaming"}
                       onToggle={() => toggleRouteExpanded(turn.id)}
                       litCount={turn.routeLitCount}
                       streaming={turn.status === "streaming"}
                       liveAction={
-                        turn.id === latestTurnId && turn.status === "streaming" ? liveAction : null
+                        turn.id === latestTurnId && turn.status === "streaming"
+                          ? liveAction
+                          : null
                       }
-                      activeStepId={turn.id === latestTurnId ? latestActiveStepId : null}
+                      surfaceMode={imSurfaceMode}
+                      retrying={isRunning}
+                      onRetryCapability={(params) => retryCapability(turn.id, params)}
                     />
-                    {(() => {
-                      const finalStep = finalNarrationStep(turn.steps);
-                      const narrationText = finalStep?.text ?? turn.assistant;
-                      if (!narrationText) return null;
-                      return (
-                        <TypewriterText
-                          text={narrationText}
-                          active={
-                            turn.id === latestTurnId &&
-                            (turn.status === "streaming" ||
-                              (finalStep != null && turn.status === "complete"))
-                          }
-                        />
-                      );
-                    })()}
                     {turn.status === "complete" && (
                       <TurnFootnote
                         turn={turn}
-                        sessionId={sessionState.sessionId || "whybuddy-main-proto"}
+                        sessionId={sessionState.sessionId || "whybuddy-v51-product"}
                         onChallenge={challengeTurn}
                       />
                     )}
                   </div>
                 </div>
               ))}
-
-              {isRunning && liveAction && (
-                <div className="pl-1">
-                  <LiveActionIndicator liveAction={liveAction} />
-                </div>
-              )}
+              <div ref={imBottomRef} className="h-px shrink-0" aria-hidden />
             </div>
           </main>
 
@@ -292,7 +535,7 @@ export default function WhyBuddy() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !isRunning && sendMessage()}
-                placeholder="继续补充想法，或质疑上一轮结论…"
+                placeholder="工程路径完整 IM…"
                 disabled={isRunning}
                 className={autopilotTheme.input}
               />
@@ -306,7 +549,7 @@ export default function WhyBuddy() {
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {HINT_CHIPS.map((hint) => (
+              {HINT_CHIPS_SPLIT.map((hint) => (
                 <button
                   key={hint}
                   type="button"
@@ -323,4 +566,77 @@ export default function WhyBuddy() {
       </div>
     </div>
   );
+}
+
+export default function WhyBuddy() {
+  const {
+    goal,
+    uiTurns,
+    input,
+    setInput,
+    isRunning,
+    liveAction,
+    sessionState,
+    sendMessage,
+    challengeTurn,
+    resetSession,
+    toggleRouteExpanded,
+    retryCapability,
+  } = useWhyBuddySession({
+    sessionId: "whybuddy-v51-product",
+    documentTitle: "WhyBuddy",
+  });
+
+  const imSurfaceMode = useMemo(() => resolveImSurfaceMode(), []);
+  const isImmersion = imSurfaceMode !== "engineering";
+  const latestTurn = uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : null;
+  const latestTurnId = latestTurn?.id ?? null;
+
+  const reasoningViewModel = useMemo(
+    () =>
+      deriveWhyBuddyReasoningViewModel(sessionState, {
+        liveAction: isRunning ? liveAction : null,
+      }),
+    [sessionState, isRunning, liveAction]
+  );
+  const graphNodeCount = reasoningViewModel.visibleNodes.length;
+  const graphRevision = `${sessionState.sessionId}-${graphNodeCount}-${sessionState.artifacts?.length ?? 0}-${isRunning}`;
+
+  const handleGraphNodeClick = useCallback(
+    (node: BrainstormReasoningNode) => {
+      const producedArtifactId = (node as { producedArtifactId?: string }).producedArtifactId;
+      if (producedArtifactId) {
+        challengeTurn(producedArtifactId);
+      }
+    },
+    [challengeTurn]
+  );
+
+  const shared = {
+    goal,
+    uiTurns,
+    input,
+    setInput,
+    isRunning,
+    liveAction,
+    sessionState,
+    sendMessage,
+    challengeTurn,
+    resetSession,
+    retryCapability,
+    toggleRouteExpanded,
+    reasoningViewModel,
+    graphNodeCount,
+    graphRevision,
+    handleGraphNodeClick,
+    imSurfaceMode,
+    latestTurn,
+    latestTurnId,
+  };
+
+  if (isImmersion) {
+    return <WhyBuddyImmersion {...shared} />;
+  }
+
+  return <WhyBuddySplitEngineering {...shared} />;
 }

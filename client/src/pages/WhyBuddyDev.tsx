@@ -513,8 +513,13 @@ export default function WhyBuddyDev() {
             onClick={async () => {
               setChatTurns([]);
               setDynamicGraph({ ...REASONING_GRAPH_FIXTURE, nodes: [...REASONING_GRAPH_FIXTURE.nodes], edges: [...REASONING_GRAPH_FIXTURE.edges] });
-              const resetSession = await WhyBuddyRuntime.saveSessionState(
-                WhyBuddyRuntime.createInitialSessionState(goal, `whybuddy-reset-${Date.now()}`)
+              const sid = sessionState.sessionId || "whybuddy-dev-proto";
+              if (WhyBuddyRuntime.deleteWhyBuddySession) {
+                await WhyBuddyRuntime.deleteWhyBuddySession(sid);
+              }
+              const resetSession = await WhyBuddyRuntime.loadOrCreateSessionState(
+                sid,
+                WhyBuddyRuntime.EMPTY_SESSION_GOAL_TEXT
               );
               setSessionState(resetSession);
               setPinnedArtifact(null);

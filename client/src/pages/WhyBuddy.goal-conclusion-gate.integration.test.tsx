@@ -31,6 +31,7 @@ import type {
   CoverageGateResult,
 } from '@shared/blueprint/v5-reasoning-state';
 import type { V5CapabilityId } from '@shared/blueprint/contracts';
+import { commitGroundedEvidence } from '@/lib/whybuddy-fullpath-fixtures';
 
 type RuntimeModule = typeof import('@/lib/whybuddy-runtime');
 
@@ -58,6 +59,8 @@ vi.mock('./whybuddy/useWhyBuddySession', () => ({
       sendMessage: async () => {},
       runTurn: async () => {},
       challengeTurn: async () => {},
+      toggleRouteExpanded: () => {},
+      sessionHydrated: true,
     };
   },
 }));
@@ -125,8 +128,9 @@ function buildClearFlowState(rt: RuntimeModule): V5SessionState {
   const goalText = '分析权限系统的风险并给出最终报告';
   let s = rt.createInitialSessionState(goalText, 'integration-clear');
 
-  // Ordinary upstream turns produce trusted required pre-reqs.
+  // Ordinary upstream turns produce trusted required pre-reqs (incl. grounded evidence for G-GROUND).
   s = commitTrusted(rt, s, 'risk-1', 'risk.analyze', '安全', 'risk', 'int-r0');
+  s = commitGroundedEvidence(s, 'ev-ground-1', 'int-r0b');
   s = commitTrusted(rt, s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'int-r1');
 
   // Converge turn drives the GCOV-gated conclusion write.

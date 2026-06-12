@@ -29,11 +29,16 @@ export function buildTurnRoundsFromDrive(
     const parkReason = loop.stopSignal ?? (idx === drive.loops.length - 1 ? drive.stopReason : undefined);
     return {
       roundIndex: idx + 1,
+      loopTurnId: loop.loopTurnId,
       planSelectedCount: loop.plan.selected.length,
       planSource,
       planReason: loop.plan.reason,
       dledgerDecisionId: dledger?.id ?? null,
       parkReason,
+      selectedCapabilities: loop.plan.selected.map((s) => ({
+        capabilityId: String(s.capabilityId),
+        roleId: String(s.roleId || "agent"),
+      })),
     };
   });
 }

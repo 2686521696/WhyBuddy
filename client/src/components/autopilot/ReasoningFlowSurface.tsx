@@ -66,12 +66,19 @@ export interface ReasoningFlowSurfaceProps {
   /** 是否显示完整 chrome（telemetry / console / minimap / controls）。默认 true。 */
   showChrome?: boolean;
   /**
+   * 沉浸布局：showChrome=false 时仍可保留左下 console + 右下 minimap。
+   * 默认跟随 showChrome。
+   */
+  showBottomChrome?: boolean;
+  /**
    * 可选：节点被点击时的回调。用于 /whybuddy 等场景实现 "BOARD 可点节点" 精确重入。
    * 当提供时，节点卡片会显示为可点击（cursor-pointer）。
    */
   onNodeClick?: (node: BrainstormReasoningNode) => void;
   /** 启用深色（Grok 风格）主题。默认 false 保持原有浅色产品图感。WhyBuddy V5 等暗色宿主传入 true。 */
   dark?: boolean;
+  /** Bump to re-run fit() when the graph grows (e.g. mid-drive session updates). */
+  graphRevision?: number | string;
 }
 
 interface PositionedNode extends BrainstormReasoningNode {
@@ -287,9 +294,12 @@ export function ReasoningFlowSurface({
   initialScale = 0.85,
   className = "",
   showChrome = true,
+  showBottomChrome,
   onNodeClick,
   dark = false,
+  graphRevision,
 }: ReasoningFlowSurfaceProps) {
+  const bottomChrome = showBottomChrome ?? showChrome;
   // 统一数据源 + defense-in-depth（与 stripDebateProtocolNodes 语义对齐）。
   // - raw graph 路径：safeSource 已经过 stripDebateProtocolNodes（移除 debate 节点/边 + 清空 consoleLines）。
   // - viewModel 路径（推荐）：derive 理论上已 strip，但我们仍做本地防御。
@@ -547,6 +557,12 @@ export function ReasoningFlowSurface({
     setTy(80);
   };
 
+  useEffect(() => {
+    if (graphRevision === undefined) return;
+    const id = window.requestAnimationFrame(() => fit());
+    return () => window.cancelAnimationFrame(id);
+  }, [graphRevision, fit, nodes.length]);
+
   // QA keyboard shortcut: F / f triggers fit (for consistent reference composition screenshots)
   // Guard against global pollution: ignore when focus is in editable fields (inputs, textareas, contentEditable)
   // so that when this surface is embedded in AutopilotRoutePage it won't steal 'f' from text fields.
@@ -719,7 +735,20 @@ export function ReasoningFlowSurface({
           {positioned.map((node) => {
             const color = TYPE_COLORS[node.type] ?? TYPE_COLORS.default;
             const typeLabel = NODE_TYPE_LABELS[node.type] ?? node.type;
-            const roleLabel = node.roleLabel || node.roleId;
+            const conclusionBadge =
+              node.roleLabel &&
+              /结论明确|结论待完善|用户命题|信息缺失/.test(node.roleLabel)
+                ? node.roleLabel
+                : null;
+            const roleLabel = conclusionBadge ? null : node.roleLabel || node.roleId;
+            const badgeTone =
+              conclusionBadge === "结论明确"
+                ? "text-emerald-700"
+                : conclusionBadge === "信息缺失"
+                ? "text-rose-600"
+                : conclusionBadge === "用户命题"
+                ? "text-teal-700"
+                : "text-violet-700";
             const isActive = node.status === "active" || node.status === "open";
 
             const isHighlighted = highlightedNodeIds.has(node.id);
@@ -770,14 +799,22 @@ export function ReasoningFlowSurface({
                 <div className="pl-[7px] pr-2 flex flex-col h-full">
                   {/* 头部：role（谁）更醒目 + 类型（对啥的意见类型）。让用户直接看到“谁在对什么发表什么意见”。 */}
                   <div className={`flex min-w-0 items-center gap-1.5 text-[9.5px] font-medium leading-none mb-0.5 ${dark ? 'text-zinc-500' : 'text-slate-500'}`}>
-                    {roleLabel && (
-                      <span className={`${dark ? 'text-zinc-400' : 'text-slate-600'} font-semibold tracking-normal shrink-0`}>
-                        {roleLabel}
+                    {conclusionBadge ? (
+                      <span className={`font-semibold tracking-normal shrink-0 ${badgeTone}`}>
+                        {conclusionBadge}
                       </span>
+                    ) : (
+                      <>
+                        {roleLabel && (
+                          <span className={`${dark ? 'text-zinc-400' : 'text-slate-600'} font-semibold tracking-normal shrink-0`}>
+                            {roleLabel}
+                          </span>
+                        )}
+                        <span style={{ color }} className="font-semibold tracking-normal shrink-0">
+                          {typeLabel}
+                        </span>
+                      </>
                     )}
-                    <span style={{ color }} className="font-semibold tracking-normal shrink-0">
-                      {typeLabel}
-                    </span>
                   </div>
 
                   {/* 标题 + 正文区域（flex-1 保证底部元信息对齐） */}
@@ -836,11 +873,25 @@ export function ReasoningFlowSurface({
             </div>
           </div>
 
-          {/* 左下 console 浮层 — Ask / Search / Thinking / Report 结构化轨迹 */}
-          {/* 产品感：LLM 自主推演执行日志（最近 6 条，kind 着色分类） */}
-          {/* 后续可扩展成底部 full-width trace 或与 page console 协调 */}
+          {/* 右上控制区 */}
+          {/* Narrow viewport: drop below the left telemetry card so they don't overlap horizontally */}
+          <div className="absolute right-4 top-4 flex gap-1.5 max-[520px]:top-20">
+            <button onClick={zoomOut} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">−</button>
+            <button onClick={zoomIn} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">+</button>
+            <button onClick={fit} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">fit</button>
+            <button onClick={reset} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">reset</button>
+            <button className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">⛶</button>
+          </div>
+        </>
+      )}
+
+      {bottomChrome && (
+        <>
           {consoleLines.length > 0 && (
-            <div className="absolute bottom-4 left-4 rounded-lg border border-slate-200 bg-white/90 backdrop-blur shadow-sm px-3 py-1.5 text-[10px] font-mono text-slate-600 max-w-[440px] max-h-[100px] overflow-auto max-[640px]:left-3 max-[640px]:right-3 max-[640px]:max-w-none max-[640px]:bottom-[156px]">
+            <div
+              className="absolute bottom-4 left-4 z-20 rounded-lg border border-slate-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono text-slate-600 shadow-sm backdrop-blur max-h-[100px] max-w-[440px] overflow-auto max-[640px]:bottom-[132px] max-[640px]:left-3 max-[640px]:max-w-none max-[640px]:right-auto"
+              data-testid="reasoning-flow-console"
+            >
               {consoleLines.slice(-6).map((line, idx) => {
                 const rawKind = (line.kind || "").trim();
                 const basis = rawKind || line.text || "";
@@ -867,21 +918,18 @@ export function ReasoningFlowSurface({
             </div>
           )}
 
-          {/* 右下 minimap（可点击跳转） */}
-          {/* Narrow: smaller footprint + tighter bottom/right to coexist with raised console */}
           <div
-            className="absolute bottom-4 right-4 rounded-lg border border-slate-200 bg-white/95 shadow-sm overflow-hidden cursor-crosshair bg-slate-50 max-[640px]:bottom-3 max-[640px]:right-3"
+            className="absolute bottom-4 right-4 z-20 cursor-crosshair overflow-hidden rounded-lg border border-slate-200 bg-slate-50 bg-white/95 shadow-sm max-[640px]:bottom-[132px] max-[640px]:right-3"
             style={{ width: minimapW, height: minimapH }}
+            data-testid="reasoning-flow-minimap"
             onClick={(e) => {
               const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
               const clickX = (e.clientX - rect.left) / rect.width;
               const clickY = (e.clientY - rect.top) / rect.height;
 
-              // map minimap click back to world center
               const targetWorldX = clickX * graphWidth;
               const targetWorldY = clickY * graphHeight;
 
-              // center the viewport on the clicked world point
               const newTx = containerSize.w / 2 - targetWorldX * scale;
               const newTy = containerSize.h / 2 - targetWorldY * scale;
 
@@ -890,12 +938,10 @@ export function ReasoningFlowSurface({
             }}
             title="Click to center view"
           >
-            {/* Crisp node thumbnails (outside scale transform, using % of the final 220×140 box).
-                This keeps them readable instead of sub-pixel after scale(0.12). */}
             {positioned.map((n, i) => (
               <div
                 key={`mini-node-${i}`}
-                className="absolute bg-slate-500/85 pointer-events-none"
+                className="pointer-events-none absolute bg-slate-500/85"
                 style={{
                   left: `${(n.x / graphWidth) * 100}%`,
                   top: `${(n.y / graphHeight) * 100}%`,
@@ -906,13 +952,10 @@ export function ReasoningFlowSurface({
               />
             ))}
 
-            {/* Scaled layer — now primarily carries the accurate viewport rect (uses large inner coords + scale).
-                The bg-slate-50 moved to the outer container so the % dots sit on the minimap paper. */}
             <div
               className="relative h-full w-full"
               style={{ transform: `scale(${minimapScale})`, transformOrigin: "top left" }}
             >
-              {/* 视口范围提示 rect（clamp + 大视口时只描边不填充，避免洗掉缩略节点） */}
               {(() => {
                 const s = minimapScale;
                 const miW = minimapW / s;
@@ -922,7 +965,6 @@ export function ReasoningFlowSurface({
                 let mw = ((viewportRect.right - viewportRect.left) / graphWidth) * miW;
                 let mh = ((viewportRect.bottom - viewportRect.top) / graphHeight) * miH;
 
-                // clamp to minimap inner bounds
                 ml = Math.max(0, Math.min(ml, miW - 2));
                 mt = Math.max(0, Math.min(mt, miH - 2));
                 mw = Math.max(6, Math.min(mw, miW - ml));
@@ -931,36 +973,28 @@ export function ReasoningFlowSurface({
                 const coversMost = (mw / miW > 0.88) || (mh / miH > 0.88);
                 return (
                   <div
-                    className={`absolute ${coversMost ? 'border border-blue-400/60' : 'border border-blue-500/70 bg-blue-500/10'}`}
+                    className={`absolute ${coversMost ? "border border-blue-400/60" : "border border-blue-500/70 bg-blue-500/10"}`}
                     style={{
                       left: ml,
                       top: mt,
                       width: mw,
                       height: mh,
-                      background: coversMost ? 'transparent' : undefined,
+                      background: coversMost ? "transparent" : undefined,
                     }}
                   />
                 );
               })()}
             </div>
 
-            <div className="absolute bottom-0.5 right-1 text-[9px] text-slate-400">minimap (click to center)</div>
-          </div>
-
-          {/* 右上控制区 */}
-          {/* Narrow viewport: drop below the left telemetry card so they don't overlap horizontally */}
-          <div className="absolute right-4 top-4 flex gap-1.5 max-[520px]:top-20">
-            <button onClick={zoomOut} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">−</button>
-            <button onClick={zoomIn} className="rounded-md border bg-white px-2 py-1 text-sm shadow-sm active:bg-slate-100">+</button>
-            <button onClick={fit} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">fit</button>
-            <button onClick={reset} className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">reset</button>
-            <button className="rounded-md border bg-white px-2 py-1 text-xs shadow-sm active:bg-slate-100">⛶</button>
+            <div className="absolute bottom-0.5 right-1 text-[9px] text-slate-400">
+              minimap (click to center)
+            </div>
           </div>
         </>
       )}
 
       {/* 调试提示：console 激活时隐藏，避免与左下浮层重叠；产品化时可并入 telemetry 或移除 */}
-      {showChrome && consoleLines.length === 0 && (
+      {(showChrome || bottomChrome) && consoleLines.length === 0 && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-slate-400">
           drag to pan • wheel to zoom • {nodes.length} nodes • {edges.length} edges
         </div>

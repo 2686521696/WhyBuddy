@@ -3,11 +3,38 @@
  * light gray page (#f4f6f8), white chrome, slate controls.
  */
 export const autopilotTheme = {
+  /** Full-screen canvas host — graph under floating HUD layers. */
+  immersionPage: "relative h-screen w-screen overflow-hidden bg-[#eef1f4] text-slate-950",
+  immersionCanvas: "absolute inset-0 z-0",
+  immersionOverlayTop:
+    "pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3 sm:gap-2.5 sm:p-4",
+  immersionOverlayHeader: "pointer-events-auto w-full",
+  /** 架构树节拍 — 顶栏下方、右对齐，预留顶栏右侧放 Dev / 导出等操作 */
+  immersionOverlayArchRow: "pointer-events-none flex w-full justify-end",
+  immersionHudLeft:
+    "pointer-events-auto flex min-w-0 flex-1 flex-col gap-1.5",
+  immersionHudRight:
+    "pointer-events-auto w-[min(100%,600px)] shrink-0 sm:w-[min(52vw,560px)] lg:w-[min(48vw,600px)]",
+  overlayTransparent: "bg-transparent",
+  overlayBar:
+    "flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-900/[0.06] pb-1.5 text-[11px] text-slate-700",
+  immersionOverlayBottom:
+    "pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-5 pt-2 sm:pb-6",
+  glassPanel:
+    "pointer-events-auto max-h-[min(70vh,520px)] w-[min(100%,340px)] overflow-hidden rounded-2xl border border-white/70 bg-white/75 px-3 py-3 shadow-[0_8px_32px_rgb(15_23_42/0.12)] backdrop-blur-xl sm:px-4 sm:py-3.5",
+  glassPanelWide:
+    "pointer-events-auto max-w-[min(100%,560px)] rounded-2xl border border-white/70 bg-white/75 px-3 py-3 shadow-[0_8px_32px_rgb(15_23_42/0.12)] backdrop-blur-xl sm:px-4 sm:py-3.5",
+  composerDock:
+    "rounded-2xl border border-white/80 bg-white/88 px-3 py-3 shadow-[0_12px_40px_rgb(15_23_42/0.14)] backdrop-blur-2xl sm:px-4",
+
   page: "relative flex h-screen flex-col bg-[#f4f6f8] text-slate-950",
   header: "flex items-center justify-between border-b border-[#E5E5E5] bg-white px-4 py-3",
   label: "font-mono text-[10px] uppercase tracking-[0.06em] text-[#666]",
   goal: "truncate text-sm font-medium tracking-tight text-black",
   split: "flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row",
+  /** Left reasoning map takes majority width (screenshot parity with wall-fixture). */
+  flowPanelWide:
+    "flex min-h-[320px] min-w-0 flex-[1.35] flex-col border-b border-[#E5E5E5] bg-white lg:min-h-0 lg:border-b-0 lg:border-r",
   flowPanel:
     "flex min-h-[280px] min-w-0 flex-1 flex-col border-b border-[#E5E5E5] bg-white lg:min-h-0 lg:border-b-0 lg:border-r",
   flowPanelHeader:
@@ -15,7 +42,7 @@ export const autopilotTheme = {
   flowPanelBody: "relative min-h-0 flex-1",
   flowEmpty:
     "flex h-full items-center justify-center px-6 text-center text-sm text-slate-500",
-  imPanel: "flex w-full min-h-0 flex-col bg-[#f4f6f8] lg:w-[420px] xl:w-[480px]",
+  imPanel: "flex w-full min-h-0 flex-col bg-[#f4f6f8] lg:w-[min(420px,34%)] xl:w-[min(440px,32%)] lg:shrink-0",
   main: "flex-1 overflow-auto px-4 py-4",
   footer: "shrink-0 border-t border-[#E5E5E5] bg-white px-4 py-3",
 

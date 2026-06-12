@@ -1,35 +1,55 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ActionTrace, LiveAction } from "@shared/blueprint/capability-process-labels";
 import * as WhyBuddyRuntime from "@/lib/whybuddy-runtime";
 import { fetchNarration } from "@/lib/whybuddy-narrator";
 import { pickMainArtifactByKind } from "@shared/blueprint/whybuddy-main-artifact";
 import type { UserIntervention, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/whybuddy-turn-route";
+import { resolveImSurfaceMode } from "./im-surface-mode";
 import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { createUiCapabilityExecutor, mapArtifactsToWhyArtifacts } from "./ui-capability-executor";
+import { createHttpWhyBuddySessionStore } from "@/lib/whybuddy-http-store";
+import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { TurnStep, UiTurn, WhyArtifact, WhyBuddyExecutorMode } from "./types";
 
-const DEFAULT_GOAL = "做一个权限管理系统（支持 RBAC + 数据范围）";
-const DEFAULT_SESSION_ID = "whybuddy-main-proto";
-function initialSessionState(goal: string, sessionId: string): V5SessionState {
-  const base = WhyBuddyRuntime.createInitialSessionState(goal, sessionId);
+const DEFAULT_SESSION_ID = "whybuddy-v51-product";
+
+function createEmptySessionState(sessionId: string): V5SessionState {
+  const base = WhyBuddyRuntime.createInitialSessionState(
+    WhyBuddyRuntime.EMPTY_SESSION_GOAL_TEXT,
+    sessionId
+  );
   return WhyBuddyRuntime.deriveNodeStatus ? WhyBuddyRuntime.deriveNodeStatus(base) : base;
 }
 
+function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
+  if (!WhyBuddyRuntime.isLegacyEmptySessionSeed(state)) return state;
+  const cleared = createEmptySessionState(state.sessionId || DEFAULT_SESSION_ID);
+  return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
+}
+
 async function persistSession(state: V5SessionState): Promise<V5SessionState> {
-  const derived = WhyBuddyRuntime.deriveNodeStatus
-    ? WhyBuddyRuntime.deriveNodeStatus(state)
-    : state;
-  return WhyBuddyRuntime.saveSessionState(derived);
+  return WhyBuddyRuntime.saveSessionState(state);
 }
 
 function resolveExecutorMode(): WhyBuddyExecutorMode {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("executor") === "server-llm") return "server-llm";
+  if (params.get("executor") === "pilot") return "pilot";
   if (params.get("executor") === "default") return "default";
-  return "pilot";
+  // V5.1 product default: real server LLM executor (override with ?executor=pilot for offline).
+  return "server-llm";
+}
+
+function resolveMaxLoopsPerMessage(): number {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("maxLoops");
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return WhyBuddyRuntime.PRODUCT_PREVIEW_MAX_LOOPS_PER_MESSAGE;
 }
 
 function latestDledgerForTurn(
@@ -59,7 +79,6 @@ export type UseWhyBuddySessionOptions = {
 
 export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
   const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
-  const [goal] = useState(options.initialGoal ?? DEFAULT_GOAL);
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -67,13 +86,27 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
   const [nextGateShouldFail, setNextGateShouldFail] = useState(false);
   const [executorMode, setExecutorMode] = useState<WhyBuddyExecutorMode>("pilot");
   const [sessionState, setSessionState] = useState(() =>
-    initialSessionState(options.initialGoal ?? DEFAULT_GOAL, sessionId)
+    createEmptySessionState(sessionId)
   );
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+
+  const goal = useMemo(() => {
+    const fromState = sessionState.goal?.text?.trim();
+    if (fromState) return fromState;
+    const lastUser = [...uiTurns].reverse().find((t) => t.user.trim())?.user.trim();
+    return lastUser || "";
+  }, [sessionState.goal?.text, uiTurns]);
 
   useEffect(() => {
     const prev = WhyBuddyRuntime.getCapabilityExecutor?.();
+    const prevStore = WhyBuddyRuntime.getWhyBuddySessionStore?.();
     const mode = resolveExecutorMode();
     setExecutorMode(mode);
+
+    // B-5: product default uses durable Http store (survives refresh via server JSON file).
+    if (mode === "server-llm" && WhyBuddyRuntime.setWhyBuddySessionStore) {
+      WhyBuddyRuntime.setWhyBuddySessionStore(createHttpWhyBuddySessionStore());
+    }
 
     if (mode === "server-llm" && WhyBuddyRuntime.useServerLlmCapabilityExecutor) {
       WhyBuddyRuntime.useServerLlmCapabilityExecutor?.();
@@ -84,6 +117,9 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     }
 
     return () => {
+      if (prevStore && WhyBuddyRuntime.setWhyBuddySessionStore) {
+        WhyBuddyRuntime.setWhyBuddySessionStore(prevStore);
+      }
       if (prev && WhyBuddyRuntime.setCapabilityExecutor) {
         WhyBuddyRuntime.setCapabilityExecutor(prev);
       } else {
@@ -91,6 +127,23 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let loaded = await WhyBuddyRuntime.loadOrCreateSessionState(sessionId);
+      if (WhyBuddyRuntime.isLegacyEmptySessionSeed(loaded)) {
+        loaded = await persistSession(sanitizeLegacyEmptySeed(loaded));
+      }
+      if (!cancelled) {
+        setSessionState(loaded);
+        setSessionHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     if (!options.documentTitle) return;
@@ -155,10 +208,10 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     ]);
 
     try {
-      const loadedState = await WhyBuddyRuntime.loadOrCreateSessionState(
-        sessionState.sessionId || sessionId,
-        goal
+      const loadedState = sanitizeLegacyEmptySeed(
+        await WhyBuddyRuntime.loadOrCreateSessionState(sessionState.sessionId || sessionId)
       );
+
       const goalStatusBefore = loadedState.goal?.status;
       const staleArtifactIdsBefore = [...(loadedState.staleArtifactIds || [])];
 
@@ -167,6 +220,9 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         userText: userText.trim(),
         intervention,
       });
+
+      const activeGoalText = preparedState.goal?.text?.trim() || userText.trim();
+      applyPersistedState(preparedState);
 
       const challengeArt = intervention?.targetArtifactId
         ? (loadedState.artifacts || []).find((a) => a.id === intervention.targetArtifactId)
@@ -194,31 +250,24 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
 
       setLiveAction({ label: "正在规划本轮动作…", external: false });
 
-      const actionTraces: ActionTrace[] = [];
       const firstLoopPlanCountRef = { value: 0 };
+      const driveLoopsRef: WhyBuddyRuntime.DriveReasoningResult["loops"] = [];
 
-      const onExecStep = (step: TurnStep) => {
-        appendStep(step);
-        setUiTurns((prev) =>
-          prev.map((t) => {
-            if (t.id !== turnId) return t;
-            const execLit = deriveTurnRoute({
-              ...t.routeFacts,
-              planSelectedCount: firstLoopPlanCountRef.value,
-            }).findIndex((s) => s.kind === "execution");
-            return {
-              ...t,
-              routeLitCount: Math.max(t.routeLitCount, execLit + 1),
-            };
-          })
-        );
-      };
-
+      const imMode = resolveImSurfaceMode();
+      const actionsAcc: ActionTrace[] = [];
       const uiExecutor = createUiCapabilityExecutor(WhyBuddyRuntime.getCapabilityExecutor(), {
         userText: userText.trim(),
-        goalText: goal,
-        onStep: onExecStep,
-        onActionTrace: (trace) => actionTraces.push(trace),
+        goalText: activeGoalText,
+        emitImSteps: imMode !== "minimal",
+        onStep: appendStep,
+        onActionTrace: (trace) => {
+          actionsAcc.push(trace);
+          setUiTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId ? { ...t, actions: [...t.actions, trace] } : t
+            )
+          );
+        },
         setLiveAction,
       });
 
@@ -228,6 +277,72 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         intervention,
         router: WhyBuddyRuntime.createServerReasoningRouter(),
         executor: uiExecutor,
+        maxLoopsPerMessage: resolveMaxLoopsPerMessage(),
+        onCapabilityRound: (payload) => {
+          if (!payload.gateFailed && !payload.execFailed) return;
+          const message = payload.gateFailed
+            ? payload.gateMessage === "ground"
+              ? "外部证据未接地 · 本轮为规则推演"
+              : `提交闸未通过${payload.gateMessage ? ` · ${payload.gateMessage}` : ""}`
+            : "能力执行失败，可重试";
+          appendStep({
+            id: `${payload.loopTurnId}-fail-gate-${payload.runIndex}`,
+            kind: "capability_fail",
+            capabilityId: payload.capabilityId,
+            roleId: payload.roleId,
+            loopTurnId: payload.loopTurnId,
+            capabilityRunId: payload.runId,
+            runIndex: payload.runIndex,
+            message,
+          });
+        },
+        onLoopComplete: async ({
+          state,
+          plan,
+          loopTurnId,
+          committedArtifactIds,
+          stopSignal,
+        }) => {
+          driveLoopsRef.push({
+            loopTurnId,
+            plan,
+            committedArtifactIds,
+            stopSignal,
+          });
+          const derived = WhyBuddyRuntime.deriveNodeStatus
+            ? WhyBuddyRuntime.deriveNodeStatus(state)
+            : state;
+          const loopPersisted = await persistSession(derived);
+          applyPersistedState(loopPersisted);
+          if (driveLoopsRef.length === 1) {
+            firstLoopPlanCountRef.value = plan.selected.length;
+          }
+          const partialRounds = buildTurnRoundsFromDrive(loopPersisted.decisionLedger, {
+            loops: driveLoopsRef,
+            stopReason: "budget_exhausted",
+          });
+          const partialFacts = {
+            turnId,
+            timestamp: turnTimestamp,
+            interventionIntent: intervention?.intent ?? null,
+            challengeTargetLabel: challengeTargetLabel(challengeArt),
+            goalStatusBefore,
+            goalStatusAfterInvalidate: preparedState.goal?.status,
+            staleArtifactIdsBefore,
+            staleArtifactIdsAfter: [...(loopPersisted.staleArtifactIds || [])],
+            rounds: partialRounds,
+            selectedCapabilities: driveLoopsRef.flatMap((l) =>
+              l.plan.selected.map((s) => ({
+                capabilityId: String(s.capabilityId),
+                roleId: String(s.roleId || "agent"),
+              }))
+            ),
+          };
+          patchRoute(
+            { rounds: partialRounds },
+            deriveTurnRoute(partialFacts).length
+          );
+        },
       });
 
       let final = drive.finalState;
@@ -247,6 +362,60 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason;
       const planSelectedCount = firstLoop?.plan.selected.length ?? 0;
 
+      const committedIds = drive.loops.flatMap((l) => l.committedArtifactIds);
+      const committed = mapArtifactsToWhyArtifacts(final, committedIds);
+
+      const loopTurnIds = new Set(drive.loops.map((l) => l.loopTurnId));
+      const runsThisTurn = (final.capabilityRuns || []).filter((r) =>
+        loopTurnIds.has(r.turnId)
+      );
+      const trustTotalCount = runsThisTurn.length || committed.length;
+      const trustPassedCount =
+        runsThisTurn.length > 0
+          ? runsThisTurn.filter((r) =>
+              (r.gateResults || []).every((g) => g.status === "passed")
+            ).length
+          : committed.filter(
+              (a) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
+            ).length;
+      const trustGroundFailedCount = runsThisTurn.filter((r) =>
+        (r.gateResults || []).some(
+          (g) => g.gateId === "ground" && g.status === "failed"
+        )
+      ).length;
+
+      const selectedCapabilities = drive.loops.flatMap((l) =>
+        l.plan.selected.map((s) => ({
+          capabilityId: String(s.capabilityId),
+          roleId: String(s.roleId || "agent"),
+        }))
+      );
+
+      const completeRouteFacts = {
+        turnId,
+        timestamp: turnTimestamp,
+        interventionIntent: intervention?.intent ?? null,
+        challengeTargetLabel: challengeTargetLabel(challengeArt),
+        goalStatusBefore,
+        goalStatusAfterInvalidate: preparedState.goal?.status,
+        staleArtifactIdsBefore,
+        staleArtifactIdsAfter: [...(final.staleArtifactIds || [])],
+        planReason,
+        planSelectedCount,
+        planSource,
+        planOrchestrateReason,
+        dledgerDecisionId: dledger?.id ?? null,
+        rounds,
+        selectedCapabilities,
+        committedCount: committed.length,
+        trustPassedCount,
+        trustTotalCount,
+        trustGroundFailedCount,
+        goalStatusAfter: final.goal?.status,
+        runtimePhase: final.runtimePhase,
+        closureReason: drive.stopReason,
+      };
+
       patchRoute(
         {
           planReason,
@@ -255,97 +424,75 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
           planOrchestrateReason,
           dledgerDecisionId: dledger?.id ?? null,
           rounds,
+          committedCount: committed.length,
+          trustPassedCount,
+          trustTotalCount,
+          trustGroundFailedCount,
+          goalStatusAfter: final.goal?.status,
+          runtimePhase: final.runtimePhase,
+          closureReason: drive.stopReason,
         },
-        deriveTurnRoute({
-          turnId,
-          timestamp: turnTimestamp,
-          interventionIntent: intervention?.intent ?? null,
-          challengeTargetLabel: challengeTargetLabel(challengeArt),
-          goalStatusBefore,
-          goalStatusAfterInvalidate: preparedState.goal?.status,
-          staleArtifactIdsBefore,
-          staleArtifactIdsAfter: [...(preparedState.staleArtifactIds || [])],
-          planReason,
-          planSelectedCount,
-          planSource,
-          planOrchestrateReason,
-          dledgerDecisionId: dledger?.id ?? null,
-          rounds,
-        }).filter((s) => s.kind !== "execution" && s.kind !== "trust_gate" && s.kind !== "verdict" && s.kind !== "await").length
+        deriveTurnRoute(completeRouteFacts).length
       );
-
-      const committedIds = drive.loops.flatMap((l) => l.committedArtifactIds);
-      const committed = mapArtifactsToWhyArtifacts(final, committedIds);
-      const actions = actionTraces;
-
-      const trustTotalCount = committed.length;
-      const trustPassedCount = committed.filter(
-        (a) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
-      ).length;
-
-      patchRoute({
-        committedCount: trustTotalCount,
-        trustPassedCount,
-        trustTotalCount,
-        goalStatusAfter: final.goal?.status,
-        runtimePhase: final.runtimePhase,
-      });
 
       const main = pickMainArtifact(committed);
       const mainArt = main ? committed.find((a) => a.id === main.artifactId) : undefined;
 
-      const narration = await fetchNarration({
-        state: final,
-        turnId,
-        userText: userText.trim(),
-        intervention: intervention ? { intent: intervention.intent } : null,
-        selected: drive.loops.flatMap((l) =>
-          l.plan.selected.map((s) => ({
-            capabilityId: s.capabilityId,
-            roleId: s.roleId,
-          }))
-        ),
-        artifacts: committed.map((a) => ({
-          kind: a.kind,
-          title: a.content.split("\n")[0]?.slice(0, 80),
-          summary: a.content.slice(0, 200),
-          realLlm: a.realLlm,
-        })),
-        mainArtifact: mainArt
-          ? { kind: mainArt.kind, title: mainArt.content.split("\n")[0], content: mainArt.content }
-          : null,
-        goalStatusBefore,
-        planReason: planReason ?? "",
-        skipped: dledger?.skipped,
-      });
+      let assistantText = "";
+      let assistantSource: UiTurn["assistantSource"] = "fallback";
+      let narrationReason: UiTurn["narrationReason"];
 
-      appendStep({
-        id: `${turnId}-final`,
-        kind: "narration",
-        text: narration.text,
-        source: narration.source,
-        isFinal: true,
-      });
+      if (imMode === "minimal") {
+        const narration = await fetchNarration({
+          state: final,
+          turnId,
+          userText: userText.trim(),
+          intervention: intervention ? { intent: intervention.intent } : null,
+          selected: drive.loops.flatMap((l) =>
+            l.plan.selected.map((s) => ({
+              capabilityId: s.capabilityId,
+              roleId: s.roleId,
+            }))
+          ),
+          artifacts: committed.map((a) => ({
+            kind: a.kind,
+            title: a.content.split("\n")[0]?.slice(0, 80),
+            summary: a.content.slice(0, 200),
+            realLlm: a.realLlm,
+          })),
+          mainArtifact: mainArt
+            ? { kind: mainArt.kind, title: mainArt.content.split("\n")[0], content: mainArt.content }
+            : null,
+          goalStatusBefore,
+          planReason: planReason ?? "",
+          skipped: dledger?.skipped,
+        });
+        assistantText = narration.text;
+        assistantSource = narration.source;
+        narrationReason = narration.reason;
+        appendStep({
+          id: `${turnId}-final`,
+          kind: "narration",
+          text: narration.text,
+          source: narration.source,
+          isFinal: true,
+        });
+      }
 
       setUiTurns((prev) =>
         prev.map((t) => {
           if (t.id !== turnId) return t;
-          const routeFacts = {
-            ...t.routeFacts,
-            goalStatusAfter: final.goal?.status,
-            runtimePhase: final.runtimePhase ?? "awaiting",
-          };
           return {
             ...t,
             status: "complete",
-            routeFacts,
-            routeExpanded: false,
-            routeLitCount: deriveTurnRoute(routeFacts).length,
-            assistant: narration.text,
-            assistantSource: narration.source,
-            narrationReason: narration.reason,
+            routeFacts: completeRouteFacts,
+            routeExpanded: imMode !== "minimal",
+            routeLitCount: deriveTurnRoute(completeRouteFacts).length,
+            assistant: assistantText,
+            assistantSource,
+            narrationReason,
             main,
-            actions,
+            actions: actionsAcc,
           };
         })
       );
@@ -371,6 +518,133 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     );
   }, []);
 
+  const retryCapability = useCallback(
+    async (
+      turnId: string,
+      params: {
+        loopTurnId: string;
+        capabilityId: V5CapabilityId;
+        roleId: string;
+        runIndex: number;
+      }
+    ) => {
+      if (isRunning) return;
+
+      const turn = uiTurns.find((t) => t.id === turnId);
+      if (!turn) return;
+
+      setIsRunning(true);
+
+      const stripFailSteps = (steps: TurnStep[]) =>
+        steps.filter(
+          (s) =>
+            !(
+              s.kind === "capability_fail" &&
+              s.loopTurnId === params.loopTurnId &&
+              s.capabilityId === params.capabilityId &&
+              s.runIndex === params.runIndex
+            )
+        );
+
+      const appendStep = (step: TurnStep) => {
+        setUiTurns((prev) =>
+          prev.map((t) => {
+            if (t.id !== turnId) return t;
+            const base = stripFailSteps(t.steps);
+            return { ...t, steps: [...base, step] };
+          })
+        );
+      };
+
+      try {
+        let loaded = await WhyBuddyRuntime.loadOrCreateSessionState(
+          sessionState.sessionId || sessionId
+        );
+        loaded = sanitizeLegacyEmptySeed(loaded);
+
+        const goalText = loaded.goal?.text?.trim() || turn.user.trim();
+        const uiExecutor = createUiCapabilityExecutor(
+          WhyBuddyRuntime.getCapabilityExecutor(),
+          {
+            userText: turn.user.trim(),
+            goalText,
+            emitImSteps: true,
+            onStep: appendStep,
+            onActionTrace: (trace) => {
+              setUiTurns((prev) =>
+                prev.map((t) =>
+                  t.id === turnId ? { ...t, actions: [...t.actions, trace] } : t
+                )
+              );
+            },
+            setLiveAction,
+          }
+        );
+
+        const result = await WhyBuddyRuntime.retrySingleCapability(loaded, {
+          ...params,
+          executor: uiExecutor,
+        });
+
+        let final = await persistSession(result.state);
+        applyPersistedState(final);
+
+        const loopTurnIds = new Set(
+          (turn.routeFacts.rounds || []).map((r) => r.loopTurnId)
+        );
+        if (loopTurnIds.size === 0) {
+          loopTurnIds.add(params.loopTurnId);
+        }
+        const runsThisTurn = (final.capabilityRuns || []).filter((r) =>
+          loopTurnIds.has(r.turnId)
+        );
+        const trustTotalCount = runsThisTurn.length;
+        const trustPassedCount = runsThisTurn.filter((r) =>
+          (r.gateResults || []).every((g) => g.status === "passed")
+        ).length;
+        const trustGroundFailedCount = runsThisTurn.filter((r) =>
+          (r.gateResults || []).some(
+            (g) => g.gateId === "ground" && g.status === "failed"
+          )
+        ).length;
+
+        const committedIds = (final.artifacts || [])
+          .filter((a) => {
+            const runId = a.producedBy?.capabilityRunId || "";
+            return [...loopTurnIds].some((lt) => runId.startsWith(`${lt}-run-`));
+          })
+          .map((a) => a.id);
+        const committed = mapArtifactsToWhyArtifacts(final, committedIds);
+        const main = pickMainArtifact(committed);
+
+        setUiTurns((prev) =>
+          prev.map((t) => {
+            if (t.id !== turnId) return t;
+            const routeFacts = {
+              ...t.routeFacts,
+              committedCount: committed.length,
+              trustPassedCount,
+              trustTotalCount,
+              trustGroundFailedCount,
+              goalStatusAfter: final.goal?.status,
+              runtimePhase: final.runtimePhase,
+            };
+            return {
+              ...t,
+              routeFacts,
+              routeLitCount: deriveTurnRoute(routeFacts).length,
+              main: main ?? t.main,
+            };
+          })
+        );
+      } finally {
+        setIsRunning(false);
+        setLiveAction(null);
+      }
+    },
+    [isRunning, uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
+  );
+
   const challengeTurn = async (artifactId: string) => {
     const reason =
       window.prompt("你想如何质疑这轮结论？", "这个结论的依据不够充分，请重新推演。") ||
@@ -382,8 +656,28 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     });
   };
 
+  const resetSession = useCallback(async () => {
+    if (isRunning) return;
+    const sid = sessionState.sessionId || sessionId;
+    if (WhyBuddyRuntime.deleteWhyBuddySession) {
+      await WhyBuddyRuntime.deleteWhyBuddySession(sid);
+    }
+    const fresh = sanitizeLegacyEmptySeed(
+      await WhyBuddyRuntime.loadOrCreateSessionState(
+        sid,
+        WhyBuddyRuntime.EMPTY_SESSION_GOAL_TEXT
+      )
+    );
+    setSessionState(fresh);
+    setUiTurns([]);
+    setInput("");
+    setLiveAction(null);
+    setNextGateShouldFail(false);
+  }, [isRunning, sessionState.sessionId, sessionId]);
+
   return {
     goal,
+    sessionHydrated,
     uiTurns,
     input,
     setInput,
@@ -394,6 +688,8 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     sendMessage,
     runTurn,
     challengeTurn,
+    resetSession,
     toggleRouteExpanded,
+    retryCapability,
   };
 }

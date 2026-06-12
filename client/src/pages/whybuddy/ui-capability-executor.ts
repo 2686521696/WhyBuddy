@@ -16,7 +16,10 @@ import type { TurnStep, WhyArtifact } from "./types";
 export type UiCapabilityExecutorContext = {
   userText: string;
   goalText: string;
-  onStep: (step: TurnStep) => void;
+  /** When false (V5.1 product IM), capability chips/narration stay on Flow nodes only. */
+  emitImSteps?: boolean;
+  onStep?: (step: TurnStep) => void;
+  onCapabilityProgress?: () => void;
   onActionTrace?: (trace: ActionTrace) => void;
   setLiveAction: (action: LiveAction | null) => void;
 };
@@ -36,26 +39,52 @@ export function createUiCapabilityExecutor(
       const live = getLiveAction(args.capabilityId, labelCtx);
       ctx.setLiveAction(live);
       const seq = stepSeq++;
-      ctx.onStep({
-        id: `${args.turnId}-chip-${seq}`,
-        kind: "chip",
-        capabilityId: args.capabilityId,
-        roleId: args.roleId || "agent",
-        label: live.label,
-        realLlm: false,
-      });
+      const roleId = args.roleId || "agent";
+      const runId = args.capabilityRunId || `${args.turnId}-run-${seq}`;
+      const runIndexMatch = runId.match(/-run-(\d+)$/);
+      const runIndex = runIndexMatch ? Number(runIndexMatch[1]) : seq;
+
+      if (ctx.emitImSteps !== false && ctx.onStep) {
+        ctx.onStep({
+          id: `${args.turnId}-chip-${seq}`,
+          kind: "chip",
+          capabilityId: args.capabilityId,
+          roleId,
+          label: live.label,
+          realLlm: false,
+          loopTurnId: args.turnId,
+          progressType: "thinking",
+        });
+      } else {
+        ctx.onCapabilityProgress?.();
+      }
 
       let exec: Awaited<ReturnType<CapabilityExecutor["executeCapability"]>> | null = null;
       let execThrew = false;
       try {
         exec = await base.executeCapability(args);
-      } catch {
+      } catch (err) {
         execThrew = true;
+        if (ctx.emitImSteps !== false && ctx.onStep) {
+          ctx.onStep({
+            id: `${args.turnId}-fail-${seq}`,
+            kind: "capability_fail",
+            capabilityId: args.capabilityId,
+            roleId,
+            loopTurnId: args.turnId,
+            capabilityRunId: runId,
+            runIndex,
+            message:
+              err instanceof Error ? err.message.slice(0, 160) : "能力执行失败，可重试",
+          });
+        }
       }
 
       const enrichedCtx = inferProcessContextFromExec(args.capabilityId, labelCtx, exec);
       const trace = buildActionTrace(args.capabilityId, !execThrew, enrichedCtx, exec);
-      if (trace) ctx.onActionTrace?.(trace);
+      if (ctx.emitImSteps !== false && trace) {
+        ctx.onActionTrace?.({ ...trace, turnId: args.turnId });
+      }
 
       const realLlm =
         isExternalProvenance(exec?.provenance) ||
@@ -63,21 +92,36 @@ export function createUiCapabilityExecutor(
         exec?.provenance === "llm_fallback" ||
         String(exec?.summary || "").includes("server-llm");
 
-      ctx.onStep({
-        id: `${args.turnId}-step-${seq}`,
-        kind: "step_narration",
-        capabilityId: args.capabilityId,
-        realLlm,
-        text: buildStepNarration({
+      if (ctx.emitImSteps !== false && ctx.onStep) {
+        ctx.onStep({
+          id: `${args.turnId}-step-${seq}`,
+          kind: "step_narration",
           capabilityId: args.capabilityId,
+          roleId,
           realLlm,
-          summary: exec?.summary,
-        }),
-      });
+          loopTurnId: args.turnId,
+          capabilityRunId: runId,
+          runIndex,
+          text: buildStepNarration({
+            capabilityId: args.capabilityId,
+            realLlm,
+            summary: exec?.summary,
+          }),
+        });
+        ctx.onStep({
+          id: `${args.turnId}-chip-done-${seq}`,
+          kind: "chip",
+          capabilityId: args.capabilityId,
+          roleId,
+          label: realLlm ? "LLM 推演完成" : "规则推演完成",
+          realLlm,
+          loopTurnId: args.turnId,
+          progressType: execThrew ? "failed" : "completed",
+        });
+      }
 
       if (exec) return exec;
 
-      const roleId = args.roleId || "agent";
       const cap = args.capabilityId;
       let content = `${roleId} 通过 ${cap} 贡献了新洞察/证据/方案`;
       if (cap === "risk.analyze") {
