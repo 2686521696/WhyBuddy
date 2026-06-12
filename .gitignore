@@ -49,6 +49,22 @@ pids
 $null
 test-results/
 tmp/
+.tmp/
+
+# Agent / IDE session caches (never part of product source)
+.codex-logs/
+.superpowers/
+terminals/
+
+# One-off local diagnostics (npx tsx scripts/_*.mjs)
+scripts/_*.mjs
+scripts/_*.json
+
+# Stray root-level log dumps from local tsc/smoke runs
+tsc-*.log
+t.log
+gcm-diagnose.log
+.tmp-tscheck*.log
 
 # Coverage directory used by tools like istanbul
 coverage/
