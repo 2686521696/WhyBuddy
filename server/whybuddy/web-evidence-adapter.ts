@@ -1,6 +1,6 @@
 /**
  * F2 · Web evidence seam for WhyBuddy evidence.search (全网检索).
- * Reuses server/core/web-search-provider (SerpAPI / DuckDuckGo / graceful mock).
+ * Reuses server/core/web-search-provider (SerpAPI / Bing CN / DuckDuckGo / graceful mock).
  */
 
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";

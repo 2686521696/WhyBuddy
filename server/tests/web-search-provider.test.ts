@@ -1,10 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { executeRealWebSearch } from "../core/web-search-provider.js";
+import {
+  executeRealWebSearch,
+  parseBingCnHtml,
+} from "../core/web-search-provider.js";
+
+function htmlFetchResponse(html: string) {
+  return {
+    ok: true,
+    headers: new Headers({ "content-type": "text/html" }),
+    body: {
+      getReader: () => {
+        let done = false;
+        return {
+          read: async () => {
+            if (done) return { done: true, value: undefined };
+            done = true;
+            return {
+              done: false,
+              value: new TextEncoder().encode(html),
+            };
+          },
+          cancel: async () => {},
+        };
+      },
+    },
+  };
+}
 
 describe("executeRealWebSearch", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubEnv("WEB_SEARCH_CN_ENABLED", "");
   });
 
   afterEach(() => {
@@ -28,7 +55,40 @@ describe("executeRealWebSearch", () => {
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("parses DuckDuckGo HTML results when no API key is set", async () => {
+  it("parses Bing CN HTML first when no API key is set", async () => {
+    vi.stubEnv("WEB_SEARCH_API_KEY", "");
+
+    const mockHtml = `
+      <html><body>
+        <li class="b_algo">
+          <h2><a href="https://zhuanlan.zhihu.com/p/123">RBAC 权限模型指南</a></h2>
+          <div class="b_caption"><p>基于角色的访问控制模型介绍。</p></div>
+        </li>
+        <li class="b_algo">
+          <h2><a href="https://blog.csdn.net/article/1">CSDN RBAC 文章</a></h2>
+          <div class="b_caption"><p>企业权限系统设计实践。</p></div>
+        </li>
+      </body></html>
+    `;
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      htmlFetchResponse(mockHtml)
+    );
+
+    const result = await executeRealWebSearch({
+      query: "RBAC 权限",
+      options: { topK: 5 },
+    });
+
+    expect(result.mode).toBe("hybrid");
+    expect(result.results.length).toBe(2);
+    expect(result.results[0].source).toBe("bing-cn");
+    expect(result.results[0].url).toBe("https://zhuanlan.zhihu.com/p/123");
+    expect(result.results[0].title).toBe("RBAC 权限模型指南");
+    expect(result.results[0].snippet).toBe("基于角色的访问控制模型介绍。");
+  });
+
+  it("falls back to DuckDuckGo when Bing CN returns no parseable results", async () => {
     vi.stubEnv("WEB_SEARCH_API_KEY", "");
 
     const mockHtml = `
@@ -48,26 +108,9 @@ describe("executeRealWebSearch", () => {
       </html>
     `;
 
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      headers: new Headers({ "content-type": "text/html" }),
-      body: {
-        getReader: () => {
-          let done = false;
-          return {
-            read: async () => {
-              if (done) return { done: true, value: undefined };
-              done = true;
-              return {
-                done: false,
-                value: new TextEncoder().encode(mockHtml),
-              };
-            },
-            cancel: async () => {},
-          };
-        },
-      },
-    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(htmlFetchResponse("<html><body>No bing hits</body></html>"))
+      .mockResolvedValueOnce(htmlFetchResponse(mockHtml));
 
     const result = await executeRealWebSearch({
       query: "example test",
@@ -85,6 +128,7 @@ describe("executeRealWebSearch", () => {
     expect(result.results[0].source).toBe("duckduckgo");
     expect(result.results[1].title).toBe("Example Page Two");
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("uses SerpAPI when WEB_SEARCH_API_KEY is set", async () => {
@@ -130,38 +174,31 @@ describe("executeRealWebSearch", () => {
     expect(fetchCall).toContain("q=api+search+test");
   });
 
-  it("falls back to mock when DuckDuckGo returns no parseable results", async () => {
+  it("falls back to mock when Bing CN and DuckDuckGo return no parseable results", async () => {
     vi.stubEnv("WEB_SEARCH_API_KEY", "");
 
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      headers: new Headers({ "content-type": "text/html" }),
-      body: {
-        getReader: () => {
-          let done = false;
-          return {
-            read: async () => {
-              if (done) return { done: true, value: undefined };
-              done = true;
-              return {
-                done: false,
-                value: new TextEncoder().encode("<html><body>No results</body></html>"),
-              };
-            },
-            cancel: async () => {},
-          };
-        },
-      },
-    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      htmlFetchResponse("<html><body>No results</body></html>")
+    );
 
     const result = await executeRealWebSearch({
       query: "obscure query with no results",
     });
 
-    // Should fall back to mock results since no real results were parsed
     expect(result.query).toBe("obscure query with no results");
     expect(result.mode).toBe("mock");
     expect(result.results.length).toBeGreaterThan(0);
+  });
+
+  it("parseBingCnHtml strips entities from captions", () => {
+    const parsed = parseBingCnHtml(
+      `<h2><a href="https://example.cn/a">标题</a></h2>
+       <div class="b_caption"><p>2025年&amp;ensp;&#0183;&ensp;摘要文本</p></div>`,
+      3
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].source).toBe("bing-cn");
+    expect(parsed[0].snippet).toContain("摘要文本");
   });
 
   it("respects topK parameter", async () => {
