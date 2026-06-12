@@ -231,16 +231,41 @@ describe("whybuddy-delivery-chain (S19/S20)", () => {
     expect(isReviewPassIntent("继续分析风险")).toBe(false);
   });
 
-  it("hasReviewPassRecorded detects RV pass conversation marker", () => {
+  it("hasReviewPassRecorded requires scoped reportId when multiple report runs exist", () => {
     const state = {
-      conversation: [{ id: "1", role: "system", text: "[RV] 评审通过 · DONE" }],
-    };
-    expect(hasReviewPassRecorded(state as V5SessionState)).toBe(true);
+      goal: { text: "x", status: "clear" as const },
+      artifacts: [
+        {
+          id: "r2",
+          kind: "report",
+          provenance: "ai_generated",
+          trustLevel: "gated_pass",
+          passedGates: ["commit"],
+          producedBy: { capabilityRunId: "run-2", capabilityId: "report.write", roleId: "综合" },
+          content: "new",
+        },
+      ],
+      capabilityRuns: [
+        { id: "run-1", capabilityId: "report.write", inputs: [], outputs: ["r1"], gateResults: [], turnId: "t1" },
+        { id: "run-2", capabilityId: "report.write", inputs: [], outputs: ["r2"], gateResults: [], turnId: "t2" },
+      ],
+      conversation: [{ id: "1", role: "system", text: "[RV] 评审通过 · reportId=r1" }],
+      graph: { id: "g", jobId: "j", stage: "effect_preview", nodes: [], edges: [] },
+      openQuestions: [],
+      evidence: [],
+      decisions: [],
+      risks: [],
+      gates: [],
+      dependencyGraph: [],
+      staleArtifactIds: [],
+    } as V5SessionState;
+    expect(hasReviewPassRecorded(state, state.artifacts![0])).toBe(false);
     expect(
       hasReviewPassRecorded({
-        conversation: [{ id: "2", role: "system", text: "[RV] blocked" }],
-      } as V5SessionState)
-    ).toBe(false);
+        ...state,
+        conversation: [{ id: "2", role: "system", text: "[RV] 评审通过 · reportId=r2" }],
+      })
+    ).toBe(true);
   });
 
   it("evaluateReviewPassGate requires trusted report + clear goal", () => {

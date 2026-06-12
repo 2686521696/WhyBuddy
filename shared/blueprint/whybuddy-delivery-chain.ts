@@ -34,9 +34,36 @@ export function evaluateReviewPassGate(state: V5SessionState): {
   };
 }
 
-/** True when an RV pass was recorded in conversation (S20 · lighter than full ship). */
-export function hasReviewPassRecorded(state: V5SessionState): boolean {
-  return (state.conversation || []).some((c) => /\[RV\]\s*评审通过/i.test(String(c.text || "")));
+/** True when an RV pass was recorded for the given (or latest trusted) report. */
+export function hasReviewPassRecorded(
+  state: V5SessionState,
+  report?: { id: string; producedBy?: { capabilityRunId?: string } } | null
+): boolean {
+  const target = report ?? latestTrustedReport(state);
+  if (!target) return false;
+
+  const stale = new Set(state.staleArtifactIds || []);
+  const trustedReportCount = (state.artifacts || []).filter(
+    (a) =>
+      a.kind === "report" &&
+      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
+      !stale.has(a.id)
+  ).length;
+  const reportWriteRuns = (state.capabilityRuns || []).filter(
+    (r) => r.capabilityId === "report.write"
+  ).length;
+
+  for (let i = (state.conversation || []).length - 1; i >= 0; i--) {
+    const text = String(state.conversation![i].text || "");
+    if (!/\[RV\]\s*评审通过/i.test(text)) continue;
+
+    if (text.includes(`reportId=${target.id}`)) return true;
+
+    // Legacy unscoped RV lines: only when a single report lifecycle exists.
+    if (trustedReportCount === 1 && reportWriteRuns <= 1) return true;
+    break;
+  }
+  return false;
 }
 
 export function latestTrustedReport(state: V5SessionState) {

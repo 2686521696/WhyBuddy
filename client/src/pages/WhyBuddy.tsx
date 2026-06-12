@@ -770,6 +770,14 @@ export default function WhyBuddy() {
 
   const handleEvidenceRefClick = useCallback(
     (artifactId: string) => {
+      if (projectionDensity === "compact") {
+        setProjectionDensity("detailed");
+        try {
+          localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, "detailed");
+        } catch {
+          /* ignore */
+        }
+      }
       const nodeId = graphNodeIdForArtifact(sessionState, artifactId);
       if (nodeId) {
         setLineageHighlightIds([nodeId]);
@@ -777,7 +785,7 @@ export default function WhyBuddy() {
       }
       setReportReaderOpen(false);
     },
-    [sessionState]
+    [sessionState, projectionDensity]
   );
 
   const shared = {

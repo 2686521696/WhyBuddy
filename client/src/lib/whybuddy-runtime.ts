@@ -3005,6 +3005,7 @@ export function intakeMessage(
   // S20 · RV pass → DONE (trusted report + clear; full ship is S19 handoff path).
   if (isReviewPassIntent(userText) && working.goal?.status === "clear") {
     const rv = evaluateReviewPassGate(working);
+    const rvReport = latestTrustedReport(working);
     working = {
       ...working,
       deliveryPhase: rv.passed ? "shipped" : working.deliveryPhase,
@@ -3014,7 +3015,11 @@ export function intakeMessage(
         {
           id: `${turnId}-rv-pass`,
           role: "system",
-          text: `[RV] ${rv.passed ? "评审通过 · DONE" : rv.reason}`,
+          text: `[RV] ${
+            rv.passed
+              ? `评审通过 · reportId=${rvReport?.id ?? "unknown"}`
+              : rv.reason
+          }`,
           timestamp: new Date().toISOString(),
         },
       ],

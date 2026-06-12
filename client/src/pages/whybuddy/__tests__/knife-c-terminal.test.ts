@@ -37,8 +37,8 @@ describe("Knife C · terminal delivery platform", () => {
     expect(seal.commitTotal).toBeLessThan((state.gates || []).length);
   });
 
-  it("canExport enables on RV pass recorded in conversation", () => {
-    const { state } = buildClearStateWithTrustedReport("knife-c-rv");
+  it("canExport enables on scoped RV pass for current report", () => {
+    const { state, reportId } = buildClearStateWithTrustedReport("knife-c-rv");
     const withRv = {
       ...state,
       conversation: [
@@ -46,12 +46,58 @@ describe("Knife C · terminal delivery platform", () => {
         {
           id: "rv-pass",
           role: "system",
-          text: "[RV] 评审通过 · DONE",
+          text: `[RV] 评审通过 · reportId=${reportId}`,
         },
       ],
     };
     const vm = deriveWhyBuddyReasoningViewModel(withRv);
     expect(vm.terminalMeta?.canExport).toBe(true);
+  });
+
+  it("canExport stays false when legacy RV targets a superseded report", () => {
+    const { state, reportId } = buildClearStateWithTrustedReport("knife-c-rv-stale");
+    const withStaleRv = {
+      ...state,
+      artifacts: [
+        ...(state.artifacts || []),
+        {
+          id: "report-2",
+          kind: "report" as const,
+          provenance: "ai_generated" as const,
+          trustLevel: "gated_pass" as const,
+          passedGates: ["commit"],
+          producedBy: {
+            capabilityRunId: "run-report-2",
+            capabilityId: "report.write" as const,
+            roleId: "综合",
+          },
+          content: "新报告",
+          title: "新报告",
+        },
+      ],
+      capabilityRuns: [
+        ...(state.capabilityRuns || []),
+        {
+          id: "run-report-2",
+          capabilityId: "report.write" as const,
+          roleId: "综合",
+          inputs: [],
+          outputs: ["report-2"],
+          gateResults: [{ gateId: "commit", status: "passed" as const }],
+          turnId: "t2",
+        },
+      ],
+      conversation: [
+        ...(state.conversation || []),
+        {
+          id: "rv-old",
+          role: "system",
+          text: `[RV] 评审通过 · reportId=${reportId}`,
+        },
+      ],
+    };
+    const vm = deriveWhyBuddyReasoningViewModel(withStaleRv);
+    expect(vm.terminalMeta?.canExport).toBe(false);
   });
 
   it("parseReportSections yields named sections from structured report", () => {

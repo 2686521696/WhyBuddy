@@ -46,7 +46,7 @@ export function deriveTerminalProjection(
   const statusLabel = goalStatusLabel(goalStatus);
   const canExport =
     goalStatus === "clear" &&
-    (state.deliveryPhase === "shipped" || hasReviewPassRecorded(state));
+    (state.deliveryPhase === "shipped" || hasReviewPassRecorded(state, report));
 
   const summaryExcerpt = String(report.summary || report.content || "")
     .replace(/\s+/g, " ")

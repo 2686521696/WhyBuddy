@@ -6,6 +6,10 @@ import {
   markTrusted,
 } from "@/lib/whybuddy-fullpath-fixtures";
 import { commitArtifact, createInitialSessionState } from "@/lib/whybuddy-runtime";
+import {
+  buildTemplateTree,
+  formatTreeContent,
+} from "@shared/blueprint/whybuddy-structure-chain";
 import { deriveWhyBuddyReasoningViewModel } from "../derive-reasoning-view-model";
 import { expandProjectionNodes } from "../expand-projection-nodes";
 
@@ -53,6 +57,44 @@ describe("Knife B · projection density", () => {
     expect(
       phaseNodes.some((n) => /T_GATE|G-GROUND|产出/.test(n.body || ""))
     ).toBe(true);
+  });
+
+  it("spec_tree expands formatTreeContent production serialization", () => {
+    let state = createInitialSessionState("权限 MVP", "knife-b-fmt");
+    const treeContent = formatTreeContent(buildTemplateTree("权限 MVP"), {
+      source: "template",
+      gateNote: "C_PROMPT:built · G_SCHEMA:attempt1:passed · G_INV:attempt1:passed",
+    });
+    const { updatedState } = commitArtifact(
+      state,
+      createRawArtifact("tree-fmt", "structure.decompose", "架构", "spec_tree", treeContent),
+      "knife-b-fmt-run",
+      false,
+      []
+    );
+    markTrusted(updatedState, "tree-fmt");
+    state = updatedState;
+
+    const expanded = expandProjectionNodes(
+      state,
+      [
+        {
+          id: "node-spec-tree",
+          type: "hypothesis",
+          title: "SPEC Tree",
+          status: "resolved",
+          capabilityId: "structure.decompose",
+          producedArtifactId: "tree-fmt",
+          roleId: "架构",
+        },
+      ],
+      [],
+      "detailed"
+    );
+    const treeNodes = expanded.nodes.filter((n) => n.id.includes("::tree-"));
+    expect(treeNodes.length).toBeGreaterThanOrEqual(4);
+    expect(treeNodes.some((n) => n.id.endsWith("::tree-root"))).toBe(true);
+    expect(treeNodes.some((n) => n.title.includes("核心需求"))).toBe(true);
   });
 
   it("spec_tree children form a tree (siblings share parent)", () => {

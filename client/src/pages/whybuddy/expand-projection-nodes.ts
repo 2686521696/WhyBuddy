@@ -40,7 +40,7 @@ function resolveCapabilityRunId(
   return art?.producedBy?.capabilityRunId;
 }
 
-type PhaseKind = "thinking" | "acting" | "observing" | "completed";
+type PhaseKind = "thinking" | "acting" | "observing" | "completed" | "failed";
 
 type PhaseFact = {
   kind: PhaseKind;
@@ -54,12 +54,14 @@ const PHASE_LABEL: Record<PhaseKind, string> = {
   acting: "执行",
   observing: "观察",
   completed: "完成",
+  failed: "失败",
 };
 
 function progressTypeToPhaseKind(
   progressType?: "thinking" | "acting" | "observing" | "completed" | "failed"
 ): PhaseKind | null {
-  if (!progressType || progressType === "failed") return null;
+  if (!progressType) return null;
+  if (progressType === "failed") return "failed";
   if (progressType === "acting") return "acting";
   if (progressType === "observing") return "observing";
   if (progressType === "completed") return "completed";
@@ -173,17 +175,19 @@ function derivePhaseFacts(
     }
   }
 
-  for (const c of state.conversation || []) {
-    const text = String(c.text || "");
-    if (!/\[T_LEDGER\]|\[G-GROUND\]/i.test(text)) continue;
-    if (runId && !ledgerMatchesRun(text, runId, capId, run?.turnId)) continue;
+  if (runId) {
+    for (const c of state.conversation || []) {
+      const text = String(c.text || "");
+      if (!/\[T_LEDGER\]|\[G-GROUND\]/i.test(text)) continue;
+      if (!ledgerMatchesRun(text, runId, capId, run?.turnId)) continue;
     const kind: PhaseKind = /\[G-GROUND\]/i.test(text) ? "observing" : "thinking";
-    push({
-      kind,
-      label: PHASE_LABEL[kind],
-      body: text.slice(0, 160),
-      sourceKey: `ledger:${c.id}`,
-    });
+      push({
+        kind,
+        label: PHASE_LABEL[kind],
+        body: text.slice(0, 160),
+        sourceKey: `ledger:${c.id}`,
+      });
+    }
   }
 
   return facts.slice(0, MAX_PHASE_CHILDREN);
@@ -224,14 +228,46 @@ function expandEvidenceChildren(
   return { nodes, edges };
 }
 
+function isSpecTreeMetaLine(trimmed: string): boolean {
+  if (!trimmed) return true;
+  if (trimmed.startsWith("【SPEC Tree")) return true;
+  if (/^(C_[A-Z]|G_[A-Z])/.test(trimmed)) return true;
+  if (/G_SCHEMA:|G_INV:|C_REDACT:|C_SFALL:/.test(trimmed)) return true;
+  return false;
+}
+
 function parseSpecTreeLines(content: string): Array<{ id: string; title: string; depth: number }> {
   const rows: Array<{ id: string; title: string; depth: number }> = [];
+  const typeCounts = new Map<string, number>();
+
   for (const line of content.split("\n")) {
-    const m = line.match(/^(\s*)-\s*(?:\[([^\]]+)\]\s*)?(.+)$/);
-    if (!m) continue;
-    const depth = Math.min(MAX_TREE_DEPTH, Math.floor(m[1].length / 2) + 1);
-    const id = (m[2] || `line-${rows.length}`).replace(/\s+/g, "-");
-    rows.push({ id, title: m[3].trim().slice(0, 80), depth });
+    const trimmed = line.trim();
+    if (isSpecTreeMetaLine(trimmed)) continue;
+
+    const md = line.match(/^(\s*)-\s*(?:\[([^\]]+)\]\s*)?(.+)$/);
+    if (md) {
+      const depth = Math.min(MAX_TREE_DEPTH, Math.floor(md[1].length / 2) + 1);
+      const id = (md[2] || `line-${rows.length}`).replace(/\s+/g, "-");
+      rows.push({ id, title: md[3].trim().slice(0, 80), depth });
+      if (rows.length >= 12) break;
+      continue;
+    }
+
+    const fmt = line.match(/^(\s*(?:├─\s*|│\s*└─\s*)?)\[([^\]]+)\]\s*([^:]+):\s*(.+)$/);
+    if (!fmt) continue;
+
+    const prefix = fmt[1];
+    let depth = 1;
+    if (/│\s*└─/.test(prefix)) depth = 3;
+    else if (/├─/.test(prefix)) depth = 2;
+
+    const nodeType = fmt[2].trim();
+    const title = fmt[3].trim().slice(0, 80);
+    const count = (typeCounts.get(nodeType) ?? 0) + 1;
+    typeCounts.set(nodeType, count);
+    const id = nodeType === "root" && count === 1 ? "root" : `${nodeType}-${count}`;
+
+    rows.push({ id, title, depth: Math.min(MAX_TREE_DEPTH, depth) });
     if (rows.length >= 12) break;
   }
   return rows;
@@ -289,7 +325,7 @@ function buildPhaseChild(
     type: "clarification",
     title: fact.label,
     body: fact.body,
-    status: "resolved",
+    status: fact.kind === "failed" ? "failed" : "resolved",
     roleId: parent.roleId,
     roleLabel: parent.roleLabel,
     conclusionBadge: fact.label,
