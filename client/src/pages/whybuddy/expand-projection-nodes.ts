@@ -150,40 +150,102 @@ function derivePhaseFacts(
     : undefined;
 
   if (run) {
-    const ground = run.gateResults?.find((g) => g.gateId === "ground");
+    const ground = run.gateResults?.find((g) => g.gateId === "ground" || g.gateId === "G-GROUND");
     if (ground) {
+      const checked = ground.checkedArtifactIds?.length || run.inputs?.length || 0;
+      const ev = ground.evidenceRefs?.length || 0;
+      const detail = ground.detail || ground.reason || "";
+      const obsBody = detail
+        ? `观察 · 接地检查${ground.status === "passed" ? "通过" : "未过"}\n检查对象：${(ground.checkedArtifactIds || run.inputs || []).slice(0, 2).join(", ") || "上游产物"}${checked ? ` · ${checked} 引用` : ""}${ev ? ` · 证据 ${ev}` : ""}${detail ? `\n${detail.slice(0, 80)}` : ""}`
+        : `观察 · 接地检查${ground.status === "passed" ? "通过" : "未过"}\n检查 ${checked || "上游"} 产物 · 证据完整性`;
       push({
         kind: "observing",
         label: "观察",
-        body: `G-GROUND gate · ${ground.status}`,
+        body: obsBody,
         sourceKey: `run:${run.id}:ground`,
       });
     }
-    const commitGate = run.gateResults?.find((g) => g.gateId === "commit");
+    const commitGate = run.gateResults?.find((g) => g.gateId === "commit" || g.gateId === "T_GATE");
     if (commitGate) {
+      const detail = commitGate.detail || commitGate.reason || "";
+      const thkBody = detail
+        ? `思考 · 提交闸判断\n${detail.slice(0, 140)}`
+        : `思考 · 提交闸判断\nartifact 非空 · 具 title/summary · passedGates 包含 ground`;
       push({
         kind: "thinking",
         label: "思考",
-        body: `T_GATE commit · ${commitGate.status}`,
+        body: thkBody,
         sourceKey: `run:${run.id}:commit`,
       });
     }
+
+    // Rich completed: resolve real artifacts for summary instead of raw ids (core of content thickness fix)
     if (run.outputs?.length > 0) {
-      push({
-        kind: "completed",
-        label: "完成",
-        body: `产出 ${run.outputs.join(", ")}`,
-        sourceKey: `run:${run.id}:outputs`,
-      });
+      const arts = run.outputs
+        .map((oid) => (state.artifacts || []).find((a) => a.id === oid))
+        .filter(Boolean) as any[];
+      if (arts.length > 0) {
+        const a0 = arts[0];
+        const k = a0?.kind || "synthesis";
+        const t = (a0?.title || "").trim();
+        const s = (a0?.summary || "").trim();
+        const c = (a0?.content || "").trim();
+        let compBody = "";
+        if (k === "risk") {
+          // risk specific: list first risks
+          const risks = (a0?.payload as any)?.risks || [];
+          const riskLines = Array.isArray(risks)
+            ? risks.slice(0, 3).map((r: any) => `• ${String(r.title || r.label || r).slice(0, 48)}`).join("\n")
+            : "";
+          compBody = `完成 · 风险分析\n${t || "识别风险"}\n${riskLines || (s ? s.slice(0, 120) : (c ? c.split("\n").slice(0, 3).join(" ") : ""))}`;
+        } else if (k === "report" || k === "synthesis") {
+          compBody = `完成 · ${k === "report" ? "报告" : "综合"}\n${t || "产出"}\n${(s || c.split("\n")[0] || "").slice(0, 140)}`;
+        } else if (k === "evidence") {
+          compBody = `完成 · 证据\n${t || "外部证据"}\n引用 ${a0?.evidenceRefs?.length || 0} 源 · ${(s || c).slice(0, 100)}`;
+        } else {
+          compBody = `完成 · ${k}\n${t || run.outputs[0]}\n${(s || c.slice(0, 120) || "可用产物").slice(0, 140)}`;
+        }
+        push({
+          kind: "completed",
+          label: "完成",
+          body: compBody,
+          sourceKey: `run:${run.id}:outputs`,
+        });
+      } else {
+        // fallback thin only if no artifacts resolved
+        push({
+          kind: "completed",
+          label: "完成",
+          body: `产出 ${run.outputs.join(", ")}`,
+          sourceKey: `run:${run.id}:outputs`,
+        });
+      }
     }
   }
 
   if (runId) {
+    // decisionLedger rationale for "思考" depth (prefer over thin gate)
+    const ledgers = (state.decisionLedger || []).filter((d: any) =>
+      ledgerMatchesRun(String(d.rationale || d.id || ""), runId, capId, run?.turnId) ||
+      (d.turnId && d.turnId === run?.turnId)
+    );
+    for (const ld of ledgers.slice(0, 1)) {
+      const rat = String(ld.rationale || "").trim();
+      if (rat) {
+        push({
+          kind: "thinking",
+          label: "思考",
+          body: `思考 · 调度判断\n${rat.slice(0, 160)}`,
+          sourceKey: `dledger:${ld.id || runId}`,
+        });
+      }
+    }
+
     for (const c of state.conversation || []) {
       const text = String(c.text || "");
       if (!/\[T_LEDGER\]|\[G-GROUND\]/i.test(text)) continue;
       if (!ledgerMatchesRun(text, runId, capId, run?.turnId)) continue;
-    const kind: PhaseKind = /\[G-GROUND\]/i.test(text) ? "observing" : "thinking";
+      const kind: PhaseKind = /\[G-GROUND\]/i.test(text) ? "observing" : "thinking";
       push({
         kind,
         label: PHASE_LABEL[kind],
@@ -336,9 +398,17 @@ function buildPhaseChild(
   parent: BrainstormReasoningNode,
   fact: PhaseFact
 ): BrainstormReasoningNode {
+  // Semantic type mapping so phase children are not all "clarification" (visual + meaning alignment)
+  let nodeType: BrainstormReasoningNode["type"] = "clarification";
+  if (fact.kind === "thinking") nodeType = "decision";
+  else if (fact.kind === "observing") nodeType = "evidence";
+  else if (fact.kind === "completed") nodeType = "synthesis";
+  else if (fact.kind === "failed") nodeType = "risk";
+  else if (fact.kind === "acting") nodeType = "hypothesis";
+
   return {
     id: `${parent.id}::phase-${fact.kind}-${fact.sourceKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
-    type: "clarification",
+    type: nodeType,
     title: fact.label,
     body: fact.body,
     status: fact.kind === "failed" ? "failed" : "resolved",

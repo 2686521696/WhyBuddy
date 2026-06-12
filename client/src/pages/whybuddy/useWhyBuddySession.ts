@@ -366,9 +366,9 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       });
 
       // M2/M3/M4/M5/M6: driveMode selects single vs marathon thin layer.
-      // Always use inner driveReasoningSession (spine zero) for live onLoop/onStep callbacks + full UI wire.
-      // When marathon, after a turn we use real exported digest/propose (M3/M6) for auto-seed + ledger; full driver loop used for budget/policy in M4/M5 demo.
-      const drive = await WhyBuddyRuntime.driveReasoningSession(preparedState, {
+      // Product path for marathon now uses driveMarathon (with budget enforcement and real M3/M6 ledger append).
+      // Live callbacks forwarded to inner drives for UI updates.
+      const driveOpts = {
         turnSeedId: turnId,
         userText: userText.trim(),
         intervention,
@@ -378,7 +378,7 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         executor: uiExecutor,
         maxLoopsPerMessage: resolveMaxLoopsPerMessage(),
         abortSignal: controller.signal, // M1
-        onCapabilityRound: (payload) => {
+        onCapabilityRound: (payload: any) => {
           if (!payload.gateFailed && !payload.execFailed) return;
           const message = payload.gateFailed
             ? payload.gateMessage === "ground"
@@ -396,13 +396,8 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
             message,
           });
         },
-        onLoopComplete: async ({
-          state,
-          plan,
-          loopTurnId,
-          committedArtifactIds,
-          stopSignal,
-        }) => {
+        onLoopComplete: async (p: any) => {
+          const { state, plan, loopTurnId, committedArtifactIds, stopSignal } = p || {};
           driveLoopsRef.push({
             loopTurnId,
             plan,
@@ -431,8 +426,8 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
             staleArtifactIdsBefore,
             staleArtifactIdsAfter: [...(loopPersisted.staleArtifactIds || [])],
             rounds: partialRounds,
-            selectedCapabilities: driveLoopsRef.flatMap((l) =>
-              l.plan.selected.map((s) => ({
+            selectedCapabilities: driveLoopsRef.flatMap((l: any) =>
+              l.plan.selected.map((s: any) => ({
                 capabilityId: String(s.capabilityId),
                 roleId: String(s.roleId || "agent"),
               }))
@@ -443,7 +438,28 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
             deriveTurnRoute(partialFacts).length
           );
         },
-      });
+      };
+
+      let drive: any;
+      let usedMarathonDriver = false;
+      if (driveMode === "marathon") {
+        const { driveMarathon } = await import("@/lib/whybuddy-marathon-driver");
+        const marathonRes = await driveMarathon(preparedState, userText.trim(), {
+          stopSignal: controller.signal,
+          budget: { maxTokens: marathonBudget?.maxTokens || 12000, declaredAt: new Date().toISOString() },
+          policy: { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true },
+          executor: driveOpts.executor,
+          onCapabilityRound: driveOpts.onCapabilityRound,
+          onLoopComplete: driveOpts.onLoopComplete,
+          router: driveOpts.router,
+          maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
+        });
+        drive = { finalState: marathonRes.finalState, stopReason: marathonRes.stopReason, loops: [] };
+        usedMarathonDriver = true;
+      } else {
+        drive = await WhyBuddyRuntime.driveReasoningSession(preparedState, driveOpts as any);
+        usedMarathonDriver = false;
+      }
 
       let final = drive.finalState;
       final = await persistSession(final);
@@ -465,11 +481,12 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
           const digest = createRoundDigest(final, recentIds);
           const proposal = await proposeFrontier(final, digest, []);
           // Append visible evidence of real M3 (prompt + rationale + ledger) into last assistant for demo thickness
-          lastDigestNote = `\n\n【M6 真实 digest 过质量门】 ${digest.title}\n${(digest.content || "").slice(0, 420)}...\n\n【M3 真实 frontier.propose】\nprompt(节选): ${proposal.prompt.slice(0, 280)}...\nrationale: ${proposal.rationale}\nledger: ${JSON.stringify(proposal.ledgerEntry).slice(0, 220)}\nproposedSeed: ${proposal.seed}`;
+          lastDigestNote = `\n\n【M6 真实 digest 过质量门 + 9段结构化报告】 ${digest.title}\n${(digest.content || "").slice(0, 380)}...\n\n【M3 真实 frontier.propose (prompt+rationale+ledger)】\nseed: ${proposal.seed}\nprompt(节选): ${proposal.prompt.slice(0, 220)}...\nrationale: ${proposal.rationale}\nledgerEntry: ${JSON.stringify(proposal.ledgerEntry).slice(0, 180)}`;
           marathonAutoSeed = proposal.seed;
-          // M6 superseded sync to final (driver also does)
+          // M6 superseded sync + M4 policy attach (for hud + audit visibility)
           if (!final.supersededArtifactIds) final.supersededArtifactIds = [];
           final.supersededArtifactIds = [...new Set([...(final.supersededArtifactIds || []), ...( (digest as any).supersededIds || recentIds )])];
+          (final as any).autopilotPolicy = { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true, declaredAt: new Date().toISOString(), source: "hybrid-marathon-post" };
           final = await persistSession(final);
           applyPersistedState(final);
         } catch (e) {
@@ -516,37 +533,37 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
 
       // M4 complete resume demo: after real frontier (M3), auto-continue 1 round in marathon to show "持续推演" thickness (user aborts via stop anytime; M1 signal respected).
       // Real digest/propose already injected above; this gives multi-round without extra clicks for video/demo.
-      if (driveMode === "marathon" && marathonAutoSeed && (drive.stopReason === "convergence_signal" || drive.stopReason === "coverage_sufficient")) {
+      if (driveMode === "marathon" && marathonAutoSeed && (drive.stopReason === "convergence_signal" || drive.stopReason === "coverage_sufficient") && !usedMarathonDriver) {
         // schedule after current ui paint; isRunning will be re-set inside runTurn
         setTimeout(() => {
           runTurn(marathonAutoSeed!).catch(() => {});
         }, 80);
       }
 
-      const committedIds = drive.loops.flatMap((l) => l.committedArtifactIds);
+      const committedIds = drive.loops.flatMap((l: any) => l.committedArtifactIds);
       const committed = mapArtifactsToWhyArtifacts(final, committedIds);
 
-      const loopTurnIds = new Set(drive.loops.map((l) => l.loopTurnId));
-      const runsThisTurn = (final.capabilityRuns || []).filter((r) =>
+      const loopTurnIds = new Set(drive.loops.map((l: any) => l.loopTurnId));
+      const runsThisTurn = (final.capabilityRuns || []).filter((r: any) =>
         loopTurnIds.has(r.turnId)
       );
       const trustTotalCount = runsThisTurn.length || committed.length;
       const trustPassedCount =
         runsThisTurn.length > 0
-          ? runsThisTurn.filter((r) =>
-              (r.gateResults || []).every((g) => g.status === "passed")
+          ? runsThisTurn.filter((r: any) =>
+              (r.gateResults || []).every((g: any) => g.status === "passed")
             ).length
           : committed.filter(
-              (a) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
+              (a: any) => a.trustLevel === "gated_pass" || a.trustLevel === "audited"
             ).length;
-      const trustGroundFailedCount = runsThisTurn.filter((r) =>
+      const trustGroundFailedCount = runsThisTurn.filter((r: any) =>
         (r.gateResults || []).some(
-          (g) => g.gateId === "ground" && g.status === "failed"
+          (g: any) => g.gateId === "ground" && g.status === "failed"
         )
       ).length;
 
-      const selectedCapabilities = drive.loops.flatMap((l) =>
-        l.plan.selected.map((s) => ({
+      const selectedCapabilities = drive.loops.flatMap((l: any) =>
+        l.plan.selected.map((s: any) => ({
           capabilityId: String(s.capabilityId),
           roleId: String(s.roleId || "agent"),
         }))
@@ -609,13 +626,13 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
           turnId,
           userText: userText.trim(),
           intervention: intervention ? { intent: intervention.intent } : null,
-          selected: drive.loops.flatMap((l) =>
-            l.plan.selected.map((s) => ({
+          selected: drive.loops.flatMap((l: any) =>
+            l.plan.selected.map((s: any) => ({
               capabilityId: s.capabilityId,
               roleId: s.roleId,
             }))
           ),
-          artifacts: committed.map((a) => ({
+          artifacts: committed.map((a: any) => ({
             kind: a.kind,
             title: a.content.split("\n")[0]?.slice(0, 80),
             summary: a.content.slice(0, 200),
@@ -638,6 +655,10 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
           source: narration.source,
           isFinal: true,
         });
+      }
+
+      if (lastDigestNote) {
+        assistantText = (assistantText || "") + lastDigestNote;
       }
 
       setUiTurns((prev) =>
@@ -664,7 +685,17 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     }
   };
 
+  const stop = useCallback(() => {
+    abortControllerRef.current?.abort();
+    setIsRunning(false);
+    setLiveAction(null);
+  }, []);
+
   const sendMessage = async () => {
+    if (isRunning) {
+      stop();
+      return;
+    }
     if (!input.trim()) return;
     const text = input.trim();
     setInput("");
@@ -756,25 +787,25 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
         if (loopTurnIds.size === 0) {
           loopTurnIds.add(params.loopTurnId);
         }
-        const runsThisTurn = (final.capabilityRuns || []).filter((r) =>
+        const runsThisTurn = (final.capabilityRuns || []).filter((r: any) =>
           loopTurnIds.has(r.turnId)
         );
         const trustTotalCount = runsThisTurn.length;
-        const trustPassedCount = runsThisTurn.filter((r) =>
-          (r.gateResults || []).every((g) => g.status === "passed")
+        const trustPassedCount = runsThisTurn.filter((r: any) =>
+          (r.gateResults || []).every((g: any) => g.status === "passed")
         ).length;
-        const trustGroundFailedCount = runsThisTurn.filter((r) =>
+        const trustGroundFailedCount = runsThisTurn.filter((r: any) =>
           (r.gateResults || []).some(
-            (g) => g.gateId === "ground" && g.status === "failed"
+            (g: any) => g.gateId === "ground" && g.status === "failed"
           )
         ).length;
 
         const committedIds = (final.artifacts || [])
-          .filter((a) => {
+          .filter((a: any) => {
             const runId = a.producedBy?.capabilityRunId || "";
-            return [...loopTurnIds].some((lt) => runId.startsWith(`${lt}-run-`));
+            return [...loopTurnIds].some((lt: any) => runId.startsWith(`${lt}-run-`));
           })
-          .map((a) => a.id);
+          .map((a: any) => a.id);
         const committed = mapArtifactsToWhyArtifacts(final, committedIds);
         const main = pickMainArtifact(committed);
 
@@ -855,6 +886,7 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
     executorMode,
     driveMode,
     setDriveMode,
+    stop,
     // M5: real budget for marathon (强制 UI 已弹；此处暴露供 hud 同步)
     marathonBudget,
     setMarathonBudget: (b: { maxTokens: number; declaredAt: string }) => setMarathonBudget(b),

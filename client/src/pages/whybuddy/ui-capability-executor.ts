@@ -16,7 +16,7 @@ import type { TurnStep, WhyArtifact } from "./types";
 export type UiCapabilityExecutorContext = {
   userText: string;
   goalText: string;
-  /** When false (V5.1 product IM), capability chips/narration stay on Flow nodes only. */
+  /** Legacy: emitImSteps only affects IM surface visibility in caller. Process facts (steps/traces) are now ALWAYS recorded for Flow derive/phase children/liveText (see derive + expand-projection). */
   emitImSteps?: boolean;
   onStep?: (step: TurnStep) => void;
   onCapabilityProgress?: () => void;
@@ -44,7 +44,9 @@ export function createUiCapabilityExecutor(
       const runIndexMatch = runId.match(/-run-(\d+)$/);
       const runIndex = runIndexMatch ? Number(runIndexMatch[1]) : seq;
 
-      if (ctx.emitImSteps !== false && ctx.onStep) {
+      // Always record process facts (chips + narration) for Flow phase projection / derive / liveText.
+      // emitImSteps only gates visible IM surface chips (product minimal mode hides IM list; facts still feed canvas Flow nodes).
+      if (ctx.onStep) {
         ctx.onStep({
           id: `${args.turnId}-chip-${seq}`,
           kind: "chip",
@@ -65,7 +67,7 @@ export function createUiCapabilityExecutor(
         exec = await base.executeCapability(args);
       } catch (err) {
         execThrew = true;
-        if (ctx.emitImSteps !== false && ctx.onStep) {
+        if (ctx.onStep) {
           ctx.onStep({
             id: `${args.turnId}-fail-${seq}`,
             kind: "capability_fail",
@@ -82,7 +84,8 @@ export function createUiCapabilityExecutor(
 
       const enrichedCtx = inferProcessContextFromExec(args.capabilityId, labelCtx, exec);
       const trace = buildActionTrace(args.capabilityId, !execThrew, enrichedCtx, exec);
-      if (ctx.emitImSteps !== false && trace) {
+      // Always record action traces for Flow fallback (derive phase from traces when no steps); IM visibility decided by mode at render.
+      if (trace) {
         ctx.onActionTrace?.({ ...trace, turnId: args.turnId });
       }
 
@@ -92,7 +95,7 @@ export function createUiCapabilityExecutor(
         exec?.provenance === "llm_fallback" ||
         String(exec?.summary || "").includes("server-llm");
 
-      if (ctx.emitImSteps !== false && ctx.onStep) {
+      if (ctx.onStep) {
         ctx.onStep({
           id: `${args.turnId}-step-${seq}`,
           kind: "step_narration",

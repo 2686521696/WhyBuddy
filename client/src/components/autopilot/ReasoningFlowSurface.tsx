@@ -213,6 +213,65 @@ function hexWithAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * Typewriter effect for live "正在思考" content inside Flow nodes.
+ * Reveals the current narration/thinking text chunk-by-chunk with cursor.
+ * Re-uses the spirit of the one in WhyBuddy.tsx for consistency.
+ */
+function LiveThinking({ text, isActive }: { text?: string; isActive?: boolean }) {
+  const [display, setDisplay] = useState("");
+  const prevRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!text) {
+      setDisplay("");
+      prevRef.current = "";
+      return;
+    }
+    const prev = prevRef.current || "";
+    if (!isActive) {
+      setDisplay(text);
+      prevRef.current = text;
+      return;
+    }
+    if (text.startsWith(prev)) {
+      const delta = text.slice(prev.length);
+      let i = 0;
+      setDisplay(prev);
+      const iv = setInterval(() => {
+        i++;
+        setDisplay(prev + delta.slice(0, i));
+        if (i >= delta.length) {
+          clearInterval(iv);
+          prevRef.current = text;
+        }
+      }, 18);
+      return () => clearInterval(iv);
+    } else {
+      setDisplay("");
+      let i = 0;
+      const iv = setInterval(() => {
+        i++;
+        setDisplay(text.slice(0, i));
+        if (i >= text.length) {
+          clearInterval(iv);
+          prevRef.current = text;
+        }
+      }, 18);
+      return () => clearInterval(iv);
+    }
+  }, [text, isActive]);
+
+  if (!text && !display) return null;
+
+  return (
+    <div className="mt-0.5 text-[8px] leading-[1.15] text-amber-600 font-mono overflow-hidden whitespace-pre-wrap break-words">
+      {display}
+      {isActive && <span className="animate-pulse">▌</span>}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------------
 // Pure Layout (复用/简化项目中 computeLayout + dagre 思路)
 // ------------------------------------------------------------------------
@@ -1005,6 +1064,7 @@ export function ReasoningFlowSurface({
                 ? "text-teal-700"
                 : "text-violet-700";
             const isActive = node.status === "active" || node.status === "open";
+            const isCompleted = ((node.status as any) === "completed" || (node.status as any) === "done" || !!(node as any).producedBy?.artifactId);
 
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
@@ -1014,7 +1074,8 @@ export function ReasoningFlowSurface({
             const flowTooltip = buildFlowTooltip(node);
             const titleText = (node.title || "").trim();
             const bodyText = (node.body || "").trim();
-            const bodyLines = isTerminal ? 8 : node.id.includes("::") ? 3 : FLOW_MAX_LINES;
+            const isPhaseChild = node.id.includes("::phase-");
+            const bodyLines = isTerminal ? 8 : isPhaseChild ? 6 : node.id.includes("::") ? 3 : (isCompleted ? 8 : FLOW_MAX_LINES);
             const cardTitle = isTerminal
               ? flowTooltip
               : clickable
@@ -1022,6 +1083,7 @@ export function ReasoningFlowSurface({
               : flowTooltip;
             const sealLine = isTerminal ? bodyText.split("\n")[0] : "";
             const summaryLine = isTerminal ? bodyText.split("\n").slice(1).join(" ") : bodyText;
+            const liveText = (node as any).liveText;
 
             return (
               <div
@@ -1185,13 +1247,15 @@ export function ReasoningFlowSurface({
                           {titleText}
                         </span>
                       ) : null}
-                      {titleText && bodyText ? (
+                      {titleText && (liveText || bodyText) ? (
                         <span className={dark ? "text-zinc-500" : "text-slate-400"}> — </span>
                       ) : null}
-                      {bodyText ? (
+                      {liveText ? (
+                        <LiveThinking text={liveText} isActive={isActive} />
+                      ) : bodyText ? (
                         <span className={dark ? "text-zinc-300" : "text-slate-700"}>{bodyText}</span>
                       ) : null}
-                      {!titleText && !bodyText ? (
+                      {!titleText && !bodyText && !liveText ? (
                         <span className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}>
                           {node.id}
                         </span>

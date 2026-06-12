@@ -92,7 +92,15 @@ export interface CapabilityRun {
   roleId?: string; // (capability, role) 对
   inputs: string[]; // 依赖的 artifactId
   outputs: string[]; // 产出的 artifactId
-  gateResults: { gateId: string; status: "passed" | "failed" }[];
+  gateResults: Array<{
+    gateId: string;
+    status: "passed" | "failed";
+    /** Optional richer audit info for Flow phase projection (ground/commit etc). Writers may populate. */
+    reason?: string;
+    checkedArtifactIds?: string[];
+    evidenceRefs?: string[];
+    detail?: string;
+  }>;
   ledgerEntryId?: string; // 台账留痕
   turnId: string;
 }

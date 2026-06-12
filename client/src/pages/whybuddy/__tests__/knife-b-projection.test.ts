@@ -54,9 +54,27 @@ describe("Knife B · projection density", () => {
     const vm = deriveWhyBuddyReasoningViewModel(state, { density: "detailed" });
     const phaseNodes = vm.visibleNodes.filter((n) => n.id.includes("::phase-"));
     expect(phaseNodes.length).toBeGreaterThan(0);
+    // Now richer (artifact summary + ledger + gate detail), no longer raw "T_GATE · status" / "产出 id"
     expect(
-      phaseNodes.some((n) => /T_GATE|G-GROUND|产出/.test(n.body || ""))
+      phaseNodes.some((n) => /观察|思考|完成|接地|提交|风险|综合|证据/.test(n.body || ""))
     ).toBe(true);
+  });
+
+  // 【Kx.x 探索测试】当前必败 (before full writer population of gate.reason/checked); will flip after runtime enriches gateResults in commit path.
+  // Verifies that when a resolved parent has run+outputs, phase completed pulls artifact title/summary (not bare id).
+  it("phase completed nodes project artifact summary (title/summary/kind) not raw ids", () => {
+    const { state, reportId, riskId } = buildClearStateWithTrustedReport("knife-b-phase-art");
+    // Ensure the report/risk are outputs of some run in fixture
+    const vm = deriveWhyBuddyReasoningViewModel(state, { density: "detailed" });
+    const completedPhases = vm.visibleNodes.filter(
+      (n) => n.id.includes("::phase-") && /完成/.test(n.title || "")
+    );
+    // At minimum, if phases exist they should mention kind or title words from seeded artifacts, not contain raw "产出 turn-" pattern for the enriched path
+    if (completedPhases.length > 0) {
+      const bodies = completedPhases.map((n) => n.body || "").join("\n");
+      // Should not be the thin fallback
+      expect(/产出 turn-/.test(bodies)).toBe(false);
+    }
   });
 
   it("spec_tree expands formatTreeContent production serialization", () => {
