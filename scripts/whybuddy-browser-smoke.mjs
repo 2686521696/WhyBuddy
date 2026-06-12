@@ -201,9 +201,11 @@ async function runSmoke() {
   await page.getByPlaceholder(/输入目标、质疑或指令/).fill(combo);
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Wait for at least one artifact card with challenge action (means report + orch + commit happened)
-  await page.waitForSelector('button:has-text("挑战此结论")', { timeout: 9000 });
-  await page.waitForTimeout(350); // react batch + graph enrich settle
+  // Wait for report-like content first (more reliable than exact button in headless / timing variance),
+  // then the challenge button. Bump timeouts for CI / slower Playwright on Windows.
+  await page.waitForSelector('text=/报告|可行性|结论/', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('button:has-text("挑战此结论")', { timeout: 15000 });
+  await page.waitForTimeout(400); // react batch + graph enrich settle
   await page.screenshot({ path: join(dataRoot, "01-combo-input-report.png"), fullPage: false });
   log("1. combo input → artifacts + report visible (challenge buttons present)");
 
@@ -211,7 +213,8 @@ async function runSmoke() {
   // Click the explicit "生成可行性报告" hint (sets input), then send again. This drives the full risk+counter+synth+report path.
   await page.getByRole("button", { name: "生成可行性报告" }).click();
   await page.getByRole("button", { name: "发送" }).click();
-  await page.waitForSelector('button:has-text("挑战此结论")', { timeout: 7000 });
+  await page.waitForSelector('text=/报告|可行性|结论/', { timeout: 12000 }).catch(() => {});
+  await page.waitForSelector('button:has-text("挑战此结论")', { timeout: 12000 });
   await page.waitForTimeout(400);
   log("1b. extra report-oriented turn (生成可行性报告 hint + send) to ensure report artifact for Verify PASSED");
 

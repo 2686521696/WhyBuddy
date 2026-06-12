@@ -911,30 +911,47 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
   });
 
   it('B2 BYOK config: save/load/clear/validate/mask roundtrip and security', () => {
-    const cfg = {
-      version: 1 as const,
-      entries: [{
-        id: "k1",
-        label: "test-key",
-        presetId: "openai" as const,
-        endpoint: "https://api.openai.com/v1/chat/completions",
-        model: "gpt-4o-mini",
-        apiKey: "sk-test-1234567890abcdef",
-        enabled: true,
-      }],
-      dispatch: "least-busy" as const,
-      raceMode: false,
-    };
-    clearByokPool();
-    saveByokPool(cfg);
-    const loaded = loadByokPool();
-    expect(loaded?.entries[0].apiKey).toBe("sk-test-1234567890abcdef");
-    expect(maskKey(cfg.entries[0].apiKey)).toBe("sk-t…ef");
-    expect(validateByokPool(cfg).ok).toBe(true);
-    const bad = { ...cfg, version: 2 as any };
-    expect(validateByokPool(bad as any).ok).toBe(false);
-    clearByokPool();
-    expect(loadByokPool()).toBeNull();
+    // Hermetic mock: the pure functions use localStorage (browser). In this vitest client leg
+    // (no jsdom for lib/*.test by default) it is undefined → load returns null and the test hard-fails
+    // the whole verify:whybuddy-v5 chain. Install a minimal in-memory stand-in just for this it.
+    const mem: Record<string, string> = {};
+    const mockLS = {
+      getItem: (k: string) => (k in mem ? mem[k] : null),
+      setItem: (k: string, v: string) => { mem[k] = String(v); },
+      removeItem: (k: string) => { delete mem[k]; },
+      clear: () => { for (const k of Object.keys(mem)) delete mem[k]; },
+    } as Storage;
+
+    const orig = (globalThis as any).localStorage;
+    (globalThis as any).localStorage = mockLS;
+    try {
+      const cfg = {
+        version: 1 as const,
+        entries: [{
+          id: "k1",
+          label: "test-key",
+          presetId: "openai" as const,
+          endpoint: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini",
+          apiKey: "sk-test-1234567890abcdef",
+          enabled: true,
+        }],
+        dispatch: "least-busy" as const,
+        raceMode: false,
+      };
+      clearByokPool();
+      saveByokPool(cfg);
+      const loaded = loadByokPool();
+      expect(loaded?.entries[0].apiKey).toBe("sk-test-1234567890abcdef");
+      expect(maskKey(cfg.entries[0].apiKey)).toBe("sk-t…ef");
+      expect(validateByokPool(cfg).ok).toBe(true);
+      const bad = { ...cfg, version: 2 as any };
+      expect(validateByokPool(bad as any).ok).toBe(false);
+      clearByokPool();
+      expect(loadByokPool()).toBeNull();
+    } finally {
+      (globalThis as any).localStorage = orig;
+    }
   });
 
   it("B7: BYOK key never leaks into session state, artifacts, conversation or exports (zero-trust boundary)", () => {
