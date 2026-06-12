@@ -10,7 +10,9 @@ describe("github-pages-whybuddy-demo", () => {
   it("seeds a session with goal, risk, and grounded web evidence", () => {
     const state = createGithubPagesWhyBuddySeedSession();
     expect(state.goal?.text).toBe(GITHUB_PAGES_DEMO_GOAL);
-    expect(state.artifacts?.length).toBeGreaterThanOrEqual(2);
+    expect(state.artifacts?.length).toBeGreaterThanOrEqual(4);
+    expect(state.goal?.status).toBe("clear");
+    expect(state.deliveryPhase).toBe("shipped");
     const evidence = state.artifacts?.find((a) => a.id === "demo-evidence-1");
     expect(evidence?.provenance).toBe("web:search");
     expect(state.graph?.nodes?.length).toBeGreaterThan(0);

@@ -4,6 +4,7 @@ import type { BrainstormGraphTelemetry } from "@shared/blueprint/brainstorm-reas
 import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
 import type { WhyBuddyExecutorMode } from "./types";
+import type { ProjectionDensity } from "./whybuddy-projection-constants";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 
 export function WhyBuddyTopHud({
@@ -14,6 +15,8 @@ export function WhyBuddyTopHud({
   driveLoopCount,
   telemetry,
   executorMode,
+  projectionDensity,
+  onProjectionDensityChange,
   onResetSession,
 }: {
   state: V5SessionState;
@@ -23,6 +26,8 @@ export function WhyBuddyTopHud({
   driveLoopCount?: number;
   telemetry?: BrainstormGraphTelemetry | null;
   executorMode?: WhyBuddyExecutorMode;
+  projectionDensity?: ProjectionDensity;
+  onProjectionDensityChange?: (density: ProjectionDensity) => void;
   onResetSession?: () => void;
 }) {
   const facts = deriveStatusBarFacts(state, {
@@ -112,6 +117,28 @@ export function WhyBuddyTopHud({
             <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
               dataReady
             </span>
+          )}
+          {onProjectionDensityChange && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5 ring-1 ring-slate-200/80"
+              data-testid="whybuddy-density-toggle"
+            >
+              {(["compact", "detailed"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={isRunning}
+                  onClick={() => onProjectionDensityChange(mode)}
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
+                    projectionDensity === mode
+                      ? "bg-white text-slate-800 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {mode === "compact" ? "简" : "详"}
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <div

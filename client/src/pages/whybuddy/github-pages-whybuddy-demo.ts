@@ -10,18 +10,19 @@ import {
   deriveNodeStatus,
   intakeMessage,
 } from "@/lib/whybuddy-runtime";
-import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
+import type { Artifact, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import {
   commitTrusted,
   createRawArtifact,
   markTrusted,
 } from "@/lib/whybuddy-fullpath-fixtures";
+import { buildStructuredReport } from "@shared/blueprint/whybuddy-report-builder";
 
 export const GITHUB_PAGES_DEMO_SESSION_ID = "github-pages-whybuddy-demo";
 export const GITHUB_PAGES_DEMO_GOAL =
   "做一个权限管理系统（支持 RBAC + 数据范围）";
 
-const STORAGE_KEY_PREFIX = "whybuddy:github-pages-demo:v1:";
+const STORAGE_KEY_PREFIX = "whybuddy:github-pages-demo:v2:";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -74,7 +75,7 @@ export function createGithubPagesWhyBuddySeedSession(): V5SessionState {
       "   摘要: 数据范围过滤 + 角色授权的组合实践。",
     ].join("\n")
   );
-  evidenceRaw.provenance = "web:search";
+  evidenceRaw.provenance = "web:search" as Artifact["provenance"];
   evidenceRaw.summary = "【来源: F2_Web_Search 取数】检索「RBAC 权限」· 2 条（演示）";
 
   const committed = commitArtifact(
@@ -87,9 +88,71 @@ export function createGithubPagesWhyBuddySeedSession(): V5SessionState {
   state = committed.updatedState;
   markTrusted(state, "demo-evidence-1");
 
+  state = commitTrusted(
+    state,
+    "demo-synth-1",
+    "synthesis.merge",
+    "综合",
+    "synthesis",
+    "pages-demo-run-synth",
+    ["demo-risk-1", "demo-evidence-1"]
+  );
+
+  state = commitTrusted(
+    state,
+    "demo-tree-1",
+    "structure.decompose",
+    "架构",
+    "spec_tree",
+    "pages-demo-run-tree",
+    ["demo-risk-1", "demo-evidence-1"],
+  );
+  const treeArt = state.artifacts?.find((a) => a.id === "demo-tree-1");
+  if (treeArt) {
+    treeArt.content =
+      "C_PROMPT:built · G_INV:attempt1:passed\n" +
+      "【SPEC Tree · template】\n" +
+      "- [root] RBAC 权限系统\n" +
+      "  - [req-1] 角色与权限模型\n" +
+      "  - [req-2] 数据范围过滤\n" +
+      "  - [task-1] 审计日志";
+  }
+
+  const built = buildStructuredReport({
+    state,
+    inputArtifactIds: ["demo-risk-1", "demo-evidence-1", "demo-synth-1"],
+    roleId: "综合",
+    turnLabel: "演示",
+  });
+  const reportRaw = createRawArtifact(
+    "demo-report-1",
+    "report.write",
+    "综合",
+    "report",
+    built.content
+  );
+  reportRaw.title = built.title;
+  reportRaw.summary = built.summary;
+  reportRaw.evidenceRefs = ["demo-evidence-1", "demo-risk-1"];
+
+  const reportCommit = commitArtifact(
+    state,
+    reportRaw,
+    "pages-demo-run-report",
+    false,
+    ["demo-synth-1", "demo-evidence-1", "demo-risk-1"]
+  );
+  state = reportCommit.updatedState;
+  markTrusted(state, "demo-report-1");
+
   state = {
     ...state,
-    runtimePhase: "reasoning",
+    goal: {
+      text: GITHUB_PAGES_DEMO_GOAL,
+      status: "clear",
+    },
+    runtimePhase: "done",
+    deliveryPhase: "shipped",
   };
 
   return deriveNodeStatus(state);

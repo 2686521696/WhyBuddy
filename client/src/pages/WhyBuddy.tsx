@@ -32,6 +32,18 @@ import {
   GITHUB_PAGES_DEMO_SESSION_ID,
   GITHUB_PAGES_DEMO_GOAL,
 } from "./whybuddy/github-pages-whybuddy-demo";
+import { latestTrustedReport } from "@shared/blueprint/whybuddy-delivery-chain";
+import {
+  deriveLineageHighlightNodeIds,
+  graphNodeIdForArtifact,
+} from "./whybuddy/derive-lineage-highlight";
+import { WhyBuddyReportReader } from "./whybuddy/WhyBuddyReportReader";
+import { downloadWhyBuddyDeliveryMd } from "./whybuddy/serialize-whybuddy-delivery-md";
+import {
+  PROJECTION_DENSITY_STORAGE_KEY,
+  WHYBUDDY_TERMINAL_NODE_ID,
+  type ProjectionDensity,
+} from "./whybuddy/whybuddy-projection-constants";
 
 const HINT_CHIPS_SPLIT = [
   "路线对比一下",
@@ -180,6 +192,15 @@ function WhyBuddyImmersion({
   graphNodeCount,
   graphRevision,
   handleGraphNodeClick,
+  handleTerminalAction,
+  focusNodeId,
+  lineageHighlightIds,
+  reportReaderOpen,
+  trustedReport,
+  onCloseReportReader,
+  onEvidenceRefClick,
+  projectionDensity,
+  onProjectionDensityChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -201,6 +222,15 @@ function WhyBuddyImmersion({
   graphNodeCount: number;
   graphRevision: string;
   handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  handleTerminalAction: (action: "report" | "lineage" | "export") => void;
+  focusNodeId: string | null;
+  lineageHighlightIds: string[];
+  reportReaderOpen: boolean;
+  trustedReport: ReturnType<typeof latestTrustedReport>;
+  onCloseReportReader: () => void;
+  onEvidenceRefClick: (artifactId: string) => void;
+  projectionDensity: ProjectionDensity;
+  onProjectionDensityChange: (density: ProjectionDensity) => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -224,6 +254,10 @@ function WhyBuddyImmersion({
             showChrome={false}
             showBottomChrome
             onNodeClick={handleGraphNodeClick}
+            externalHighlightedIds={lineageHighlightIds}
+            focusNodeId={focusNodeId}
+            onTerminalAction={handleTerminalAction}
+            terminalCanExport={reasoningViewModel.terminalMeta?.canExport}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-8 text-center">
@@ -249,6 +283,8 @@ function WhyBuddyImmersion({
           }
           telemetry={reasoningViewModel.telemetry}
           executorMode={executorMode}
+          projectionDensity={projectionDensity}
+          onProjectionDensityChange={onProjectionDensityChange}
           onResetSession={resetSession}
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
@@ -324,6 +360,19 @@ function WhyBuddyImmersion({
           hintChips={composerHints}
         />
       </div>
+
+      {reportReaderOpen && trustedReport && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-slate-200 bg-white shadow-2xl"
+          data-testid="whybuddy-report-drawer"
+        >
+          <WhyBuddyReportReader
+            report={trustedReport}
+            onClose={onCloseReportReader}
+            onEvidenceRefClick={onEvidenceRefClick}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -345,6 +394,15 @@ function WhyBuddySplitEngineering({
   graphNodeCount,
   graphRevision,
   handleGraphNodeClick,
+  handleTerminalAction,
+  focusNodeId,
+  lineageHighlightIds,
+  reportReaderOpen,
+  trustedReport,
+  onCloseReportReader,
+  onEvidenceRefClick,
+  projectionDensity,
+  onProjectionDensityChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -366,6 +424,15 @@ function WhyBuddySplitEngineering({
   graphNodeCount: number;
   graphRevision: string;
   handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  handleTerminalAction: (action: "report" | "lineage" | "export") => void;
+  focusNodeId: string | null;
+  lineageHighlightIds: string[];
+  reportReaderOpen: boolean;
+  trustedReport: ReturnType<typeof latestTrustedReport>;
+  onCloseReportReader: () => void;
+  onEvidenceRefClick: (artifactId: string) => void;
+  projectionDensity: ProjectionDensity;
+  onProjectionDensityChange: (density: ProjectionDensity) => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -481,6 +548,10 @@ function WhyBuddySplitEngineering({
                 className="absolute inset-0"
                 showChrome
                 onNodeClick={handleGraphNodeClick}
+                externalHighlightedIds={lineageHighlightIds}
+                focusNodeId={focusNodeId}
+                onTerminalAction={handleTerminalAction}
+                terminalCanExport={reasoningViewModel.terminalMeta?.canExport}
               />
             ) : (
               <div className={autopilotTheme.flowEmpty}>
@@ -575,6 +646,19 @@ function WhyBuddySplitEngineering({
           </footer>
         </section>
       </div>
+
+      {reportReaderOpen && trustedReport && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-slate-200 bg-white shadow-2xl"
+          data-testid="whybuddy-report-drawer"
+        >
+          <WhyBuddyReportReader
+            report={trustedReport}
+            onClose={onCloseReportReader}
+            onEvidenceRefClick={onEvidenceRefClick}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -605,15 +689,57 @@ export default function WhyBuddy() {
   const latestTurn = uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : null;
   const latestTurnId = latestTurn?.id ?? null;
 
+  const [projectionDensity, setProjectionDensity] = useState<ProjectionDensity>(() => {
+    try {
+      const stored = localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY);
+      return stored === "detailed" ? "detailed" : "compact";
+    } catch {
+      return "compact";
+    }
+  });
+  const [reportReaderOpen, setReportReaderOpen] = useState(false);
+  const [lineageHighlightIds, setLineageHighlightIds] = useState<string[]>([]);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+
+  const trustedReport = useMemo(
+    () => latestTrustedReport(sessionState),
+    [sessionState]
+  );
+
   const reasoningViewModel = useMemo(
     () =>
       deriveWhyBuddyReasoningViewModel(sessionState, {
         liveAction: isRunning ? liveAction : null,
+        density: projectionDensity,
+        latestUiTurn: latestTurn,
+        lineageHighlightIds,
       }),
-    [sessionState, isRunning, liveAction]
+    [
+      sessionState,
+      isRunning,
+      liveAction,
+      projectionDensity,
+      latestTurn,
+      lineageHighlightIds,
+    ]
   );
   const graphNodeCount = reasoningViewModel.visibleNodes.length;
-  const graphRevision = `${sessionState.sessionId}-${graphNodeCount}-${sessionState.artifacts?.length ?? 0}-${isRunning}`;
+  const graphRevision = `${sessionState.sessionId}-${graphNodeCount}-${sessionState.artifacts?.length ?? 0}-${projectionDensity}-${isRunning}`;
+
+  useEffect(() => {
+    if (reasoningViewModel.terminalNode) {
+      setFocusNodeId(WHYBUDDY_TERMINAL_NODE_ID);
+    }
+  }, [reasoningViewModel.terminalNode?.id, sessionState.goal?.status]);
+
+  const handleProjectionDensityChange = useCallback((density: ProjectionDensity) => {
+    setProjectionDensity(density);
+    try {
+      localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, density);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const handleGraphNodeClick = useCallback(
     (node: BrainstormReasoningNode) => {
@@ -623,6 +749,35 @@ export default function WhyBuddy() {
       }
     },
     [challengeTurn]
+  );
+
+  const handleTerminalAction = useCallback(
+    (action: "report" | "lineage" | "export") => {
+      if (action === "report") {
+        setReportReaderOpen(true);
+        return;
+      }
+      if (action === "lineage") {
+        setLineageHighlightIds(deriveLineageHighlightNodeIds(sessionState));
+        return;
+      }
+      if (action === "export" && reasoningViewModel.terminalMeta?.canExport) {
+        downloadWhyBuddyDeliveryMd(sessionState);
+      }
+    },
+    [sessionState, reasoningViewModel.terminalMeta?.canExport]
+  );
+
+  const handleEvidenceRefClick = useCallback(
+    (artifactId: string) => {
+      const nodeId = graphNodeIdForArtifact(sessionState, artifactId);
+      if (nodeId) {
+        setLineageHighlightIds([nodeId]);
+        setFocusNodeId(nodeId);
+      }
+      setReportReaderOpen(false);
+    },
+    [sessionState]
   );
 
   const shared = {
@@ -642,6 +797,15 @@ export default function WhyBuddy() {
     graphNodeCount,
     graphRevision,
     handleGraphNodeClick,
+    handleTerminalAction,
+    focusNodeId,
+    lineageHighlightIds,
+    reportReaderOpen,
+    trustedReport,
+    onCloseReportReader: () => setReportReaderOpen(false),
+    onEvidenceRefClick: handleEvidenceRefClick,
+    projectionDensity,
+    onProjectionDensityChange: handleProjectionDensityChange,
     imSurfaceMode,
     latestTurn,
     latestTurnId,

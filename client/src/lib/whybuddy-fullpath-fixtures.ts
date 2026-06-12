@@ -31,6 +31,7 @@ import type {
   Artifact,
 } from '@shared/blueprint/v5-reasoning-state';
 import type { V5CapabilityId } from '@shared/blueprint/contracts';
+import { buildStructuredReport } from '@shared/blueprint/whybuddy-report-builder';
 
 // ===== Trigger-word constants (plan §1 trigger cheatsheet + existing combo test) =====
 
@@ -227,9 +228,14 @@ export function buildClearStateWithTrustedReport(sessionId: string): {
   const reportRunId = (reportNode as any)?.capabilityRunId ?? `${sessionId}-cv-run-0`;
   const reportInputs = findInputsForCapability(newState, 'report.write');
   const reportId = 'report-1';
+  const structuredReport = buildStructuredReport({
+    state: newState,
+    inputArtifactIds: reportInputs,
+    roleId: '综合',
+  });
   const { updatedState, committed } = commitArtifact(
     newState,
-    createRawArtifact(reportId, 'report.write', '综合', 'report'),
+    createRawArtifact(reportId, 'report.write', '综合', 'report', structuredReport.content),
     reportRunId,
     false,
     reportInputs

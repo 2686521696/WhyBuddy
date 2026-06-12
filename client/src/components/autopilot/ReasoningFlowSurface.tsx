@@ -79,7 +79,19 @@ export interface ReasoningFlowSurfaceProps {
   dark?: boolean;
   /** Bump to re-run fit() when the graph grows (e.g. mid-drive session updates). */
   graphRevision?: number | string;
+  /** External lineage / evidence-ref highlight (merged with hover highlight). */
+  externalHighlightedIds?: string[];
+  /** Pan viewport to center this node when it appears (e.g. terminal delivery). */
+  focusNodeId?: string | null;
+  /** Terminal delivery node actions (Knife C). */
+  onTerminalAction?: (action: "report" | "lineage" | "export") => void;
+  /** When set, terminal node shows export as enabled. */
+  terminalCanExport?: boolean;
 }
+
+const TERMINAL_NODE_ID = "whybuddy-terminal-delivery";
+const TERMINAL_NODE_WIDTH = 280;
+const TERMINAL_NODE_HEIGHT = 168;
 
 interface PositionedNode extends BrainstormReasoningNode {
   x: number;
@@ -205,6 +217,16 @@ function hexWithAlpha(hex: string, alpha: number): string {
 // Pure Layout (复用/简化项目中 computeLayout + dagre 思路)
 // ------------------------------------------------------------------------
 
+function nodeDimensions(node: BrainstormReasoningNode): { width: number; height: number } {
+  if (node.id === TERMINAL_NODE_ID) {
+    return { width: TERMINAL_NODE_WIDTH, height: TERMINAL_NODE_HEIGHT };
+  }
+  if (node.id.includes("::ev-") || node.id.includes("::phase-")) {
+    return { width: 200, height: 88 };
+  }
+  return { width: NODE_WIDTH, height: NODE_HEIGHT };
+}
+
 function computeReasoningPositions(
   nodes: BrainstormReasoningNode[],
   edges: BrainstormReasoningEdge[]
@@ -222,7 +244,8 @@ function computeReasoningPositions(
   g.setDefaultEdgeLabel(() => ({}));
 
   nodes.forEach((node) => {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const dim = nodeDimensions(node);
+    g.setNode(node.id, { width: dim.width, height: dim.height });
   });
 
   edges.forEach((edge) => {
@@ -240,13 +263,14 @@ function computeReasoningPositions(
 
   const positioned: PositionedNode[] = nodes.map((node) => {
     const n = g.node(node.id);
-    const x = n.x - NODE_WIDTH / 2;
-    const y = n.y - NODE_HEIGHT / 2;
+    const dim = nodeDimensions(node);
+    const x = n.x - dim.width / 2;
+    const y = n.y - dim.height / 2;
 
     minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x + NODE_WIDTH);
+    maxX = Math.max(maxX, x + dim.width);
     minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y + NODE_HEIGHT);
+    maxY = Math.max(maxY, y + dim.height);
 
     return { ...node, x, y };
   });
@@ -276,10 +300,12 @@ function buildEdgePaths(
       const tgt = posById.get(edge.target);
       if (!src || !tgt) return null;
 
-      const x1 = src.x + NODE_WIDTH;
-      const y1 = src.y + NODE_HEIGHT / 2;
+      const srcDim = nodeDimensions(src);
+      const tgtDim = nodeDimensions(tgt);
+      const x1 = src.x + srcDim.width;
+      const y1 = src.y + srcDim.height / 2;
       const x2 = tgt.x;
-      const y2 = tgt.y + NODE_HEIGHT / 2;
+      const y2 = tgt.y + tgtDim.height / 2;
 
       // Fan-out dispersion: use stable array index (reliable even without id or duplicate s/t)
       const siblings = edgesBySource.get(edge.source) || [];
@@ -327,6 +353,10 @@ export function ReasoningFlowSurface({
   onNodeClick,
   dark = false,
   graphRevision,
+  externalHighlightedIds,
+  focusNodeId,
+  onTerminalAction,
+  terminalCanExport = false,
 }: ReasoningFlowSurfaceProps) {
   const bottomChrome = showBottomChrome ?? showChrome;
   // 统一数据源 + defense-in-depth（与 stripDebateProtocolNodes 语义对齐）。
@@ -453,7 +483,15 @@ export function ReasoningFlowSurface({
   }, [edges]);
 
   // 当前高亮的节点集合（自己 + 祖先 + 后代）
+  const externalHighlightSet = useMemo(
+    () => new Set(externalHighlightedIds || []),
+    [externalHighlightedIds]
+  );
+
   const highlightedNodeIds = useMemo(() => {
+    if (externalHighlightSet.size > 0) {
+      return new Set(externalHighlightSet);
+    }
     if (!hoveredNodeId) return new Set<string>();
     const set = new Set<string>([hoveredNodeId]);
 
@@ -475,7 +513,7 @@ export function ReasoningFlowSurface({
       qDown.push(...(childMap.get(id) ?? []));
     }
     return set;
-  }, [hoveredNodeId, parentMap, childMap]);
+  }, [hoveredNodeId, parentMap, childMap, externalHighlightSet]);
 
   // 高亮的边：仅当边的两端都在高亮节点集合内时才算路径边
   const highlightedEdgeIds = useMemo(() => {
@@ -491,7 +529,7 @@ export function ReasoningFlowSurface({
 
   // “是否处于 hover 模式”应基于 hover 状态本身，而不是是否有高亮边。
   // 这样即使 hover 孤立节点（或未来无边节点），非相关元素仍会正确进入淡化状态。
-  const isAnyHovered = hoveredNodeId !== null;
+  const isAnyHovered = hoveredNodeId !== null || externalHighlightSet.size > 0;
 
   // 视口状态（2D infinite canvas 核心）
   const [scale, setScale] = useState(initialScale);
@@ -713,6 +751,26 @@ export function ReasoningFlowSurface({
     return () => window.cancelAnimationFrame(id);
   }, [graphRevision, fit, nodes.length]);
 
+  const panToNode = useCallback(
+    (nodeId: string) => {
+      const el = viewportRef.current;
+      const target = positioned.find((n) => n.id === nodeId);
+      if (!el || !target) return;
+      const dim = nodeDimensions(target);
+      const cx = target.x + dim.width / 2;
+      const cy = target.y + dim.height / 2;
+      setTx(el.clientWidth / 2 - cx * scale);
+      setTy(el.clientHeight / 2 - cy * scale);
+    },
+    [positioned, scale]
+  );
+
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const id = window.requestAnimationFrame(() => panToNode(focusNodeId));
+    return () => window.cancelAnimationFrame(id);
+  }, [focusNodeId, panToNode]);
+
   // QA keyboard shortcut: F / f triggers fit (for consistent reference composition screenshots)
   // Guard against global pollution: ignore when focus is in editable fields (inputs, textareas, contentEditable)
   // so that when this surface is embedded in AutopilotRoutePage it won't steal 'f' from text fields.
@@ -888,17 +946,19 @@ export function ReasoningFlowSurface({
 
           {/* HTML 节点卡片层（轻量 2D 产品风格） */}
           {positioned.map((node) => {
-            const color = TYPE_COLORS[node.type] ?? TYPE_COLORS.default;
+            const isTerminal = node.id === TERMINAL_NODE_ID;
+            const dim = nodeDimensions(node);
+            const color = isTerminal ? "#10b981" : (TYPE_COLORS[node.type] ?? TYPE_COLORS.default);
             const typeLabel = NODE_TYPE_LABELS[node.type] ?? node.type;
             const conclusionBadge =
               node.conclusionBadge ||
               (node.roleLabel &&
-              /结论明确|结论待完善|用户命题|信息缺失/.test(node.roleLabel)
+              /结论明确|结论待完善|用户命题|信息缺失|终点交付/.test(node.roleLabel)
                 ? node.roleLabel
                 : null);
             const roleLabel = conclusionBadge ? null : node.roleLabel || node.roleId;
             const badgeTone =
-              conclusionBadge === "结论明确"
+              conclusionBadge === "结论明确" || conclusionBadge === "终点交付"
                 ? "text-emerald-700"
                 : conclusionBadge === "信息缺失"
                 ? "text-rose-600"
@@ -910,17 +970,23 @@ export function ReasoningFlowSurface({
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
 
-            const clickable = !!onNodeClick;
+            const clickable = !!onNodeClick && !isTerminal;
             const flowTooltip = buildFlowTooltip(node);
             const titleText = (node.title || "").trim();
             const bodyText = (node.body || "").trim();
-            const cardTitle = clickable
+            const bodyLines = isTerminal ? 8 : node.id.includes("::") ? 3 : FLOW_MAX_LINES;
+            const cardTitle = isTerminal
+              ? flowTooltip
+              : clickable
               ? `${flowTooltip}\n\n点击发起挑战 / 继续讨论`
               : flowTooltip;
+            const sealLine = isTerminal ? bodyText.split("\n")[0] : "";
+            const summaryLine = isTerminal ? bodyText.split("\n").slice(1).join(" ") : bodyText;
 
             return (
               <div
                 key={node.id}
+                data-testid={isTerminal ? "whybuddy-terminal-node" : undefined}
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(null)}
                 onClick={
@@ -932,7 +998,9 @@ export function ReasoningFlowSurface({
                     : undefined
                 }
                 className={`absolute overflow-hidden rounded-[11px] border transition-all duration-150 ${
-                  dark
+                  isTerminal
+                    ? "border-emerald-400/80 bg-[linear-gradient(180deg,rgba(236,253,245,0.98),rgba(209,250,229,0.92))] shadow-[0_10px_28px_rgba(16,185,129,0.18)] ring-1 ring-emerald-200/60"
+                    : dark
                     ? (isDimmed
                         ? "opacity-25 saturate-[0.6] border-zinc-800/90 bg-zinc-900/90"
                         : isHighlighted
@@ -947,8 +1015,8 @@ export function ReasoningFlowSurface({
                 style={{
                   left: node.x,
                   top: node.y,
-                  width: NODE_WIDTH,
-                  height: NODE_HEIGHT,
+                  width: dim.width,
+                  height: dim.height,
                   padding: "9px 11px 8px",
                   boxSizing: "border-box",
                 }}
@@ -1008,33 +1076,84 @@ export function ReasoningFlowSurface({
                     )}
                   </div>
 
-                  <div
-                    className={`min-h-0 flex-1 text-[11px] ${
-                      dark ? "text-zinc-300" : "text-slate-700"
-                    }`}
-                    style={{
-                      ...flowTextClampStyle(FLOW_MAX_LINES),
-                      lineHeight: `${FLOW_LINE_HEIGHT_PX}px`,
-                    }}
-                    title={flowTooltip}
-                  >
-                    {titleText ? (
-                      <span className={`font-semibold ${dark ? "text-zinc-100" : "text-slate-800"}`}>
-                        {titleText}
-                      </span>
-                    ) : null}
-                    {titleText && bodyText ? (
-                      <span className={dark ? "text-zinc-500" : "text-slate-400"}> — </span>
-                    ) : null}
-                    {bodyText ? (
-                      <span className={dark ? "text-zinc-400" : "text-slate-600"}>{bodyText}</span>
-                    ) : null}
-                    {!titleText && !bodyText ? (
-                      <span className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}>
-                        {node.id}
-                      </span>
-                    ) : null}
-                  </div>
+                  {isTerminal ? (
+                    <div className="flex min-h-0 flex-1 flex-col gap-1.5 text-[10px]">
+                      <div
+                        className="font-mono text-[9px] font-medium leading-snug text-emerald-800"
+                        data-testid="whybuddy-trust-seal"
+                      >
+                        {sealLine}
+                      </div>
+                      <div className="line-clamp-3 leading-snug text-slate-700">{summaryLine}</div>
+                      {onTerminalAction && (
+                        <div className="mt-auto flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            data-testid="terminal-action-report"
+                            className="rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-medium text-white hover:bg-emerald-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTerminalAction("report");
+                            }}
+                          >
+                            查看报告
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="terminal-action-lineage"
+                            className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTerminalAction("lineage");
+                            }}
+                          >
+                            研究思路
+                          </button>
+                          {terminalCanExport && (
+                            <button
+                              type="button"
+                              data-testid="terminal-action-export"
+                              className="rounded bg-white px-2 py-0.5 text-[9px] font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onTerminalAction("export");
+                              }}
+                            >
+                              交付导出
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className={`min-h-0 flex-1 text-[11px] ${
+                        dark ? "text-zinc-300" : "text-slate-700"
+                      }`}
+                      style={{
+                        ...flowTextClampStyle(bodyLines),
+                        lineHeight: `${FLOW_LINE_HEIGHT_PX}px`,
+                      }}
+                      title={flowTooltip}
+                    >
+                      {titleText ? (
+                        <span className={`font-semibold ${dark ? "text-zinc-100" : "text-slate-800"}`}>
+                          {titleText}
+                        </span>
+                      ) : null}
+                      {titleText && bodyText ? (
+                        <span className={dark ? "text-zinc-500" : "text-slate-400"}> — </span>
+                      ) : null}
+                      {bodyText ? (
+                        <span className={dark ? "text-zinc-400" : "text-slate-600"}>{bodyText}</span>
+                      ) : null}
+                      {!titleText && !bodyText ? (
+                        <span className={`font-medium ${dark ? "text-zinc-500" : "text-slate-500"}`}>
+                          {node.id}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
 
                   {typeof node.confidence === "number" && (
                     <div className="mt-0.5 flex justify-end">

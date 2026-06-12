@@ -15,6 +15,7 @@ import {
   pickReadinessChainCapabilities,
 } from "./whybuddy-readiness-chain.js";
 import {
+  hasSpecTreeArtifact,
   isDeliveryIntent,
   pickDeliveryCapabilities,
   pickStructureBeforeDelivery,
@@ -34,6 +35,16 @@ function isHealthyArtifact(
     (artifact.trustLevel === "gated_pass" || artifact.trustLevel === "audited") &&
     !staleSet.has(artifact.id)
   );
+}
+
+/** Knife A′: extended structure/decompose intent (CN + EN, case-insensitive spec tree). */
+export function hasStructureDecomposeIntent(userText: string): boolean {
+  if (/结构|分解|decompose/.test(userText)) return true;
+  const lower = userText.toLowerCase();
+  if (lower.includes("树") || lower.includes("拆解")) return true;
+  if (/spec\s*tree/i.test(userText)) return true;
+  if (/\btree\b/i.test(userText)) return true;
+  return false;
 }
 
 export function pickNextCapabilities(
@@ -114,8 +125,12 @@ export function pickNextCapabilities(
     if (available.has("risk.analyze")) picks.push({ capabilityId: "risk.analyze", roleId: "安全" });
     if (available.has("counter.argue")) picks.push({ capabilityId: "counter.argue", roleId: "挑刺" });
   }
-  if (lower.includes("树") || lower.includes("拆解") || lower.includes("spec tree")) {
-    if (available.has("structure.decompose")) picks.push({ capabilityId: "structure.decompose", roleId: "架构" });
+  if (
+    hasStructureDecomposeIntent(userText) &&
+    !hasSpecTreeArtifact(state) &&
+    available.has("structure.decompose")
+  ) {
+    picks.push({ capabilityId: "structure.decompose", roleId: "架构" });
   }
   if (lower.includes("报告") || lower.includes("report") || lower.includes("可行性") || lower.includes("总结")) {
     if (!hasRisk && available.has("risk.analyze")) picks.push({ capabilityId: "risk.analyze", roleId: "安全" });
@@ -144,7 +159,13 @@ export function pickNextCapabilities(
 
   if (openQCount > 0) {
     if (available.has("intent.clarify")) picks.push({ capabilityId: "intent.clarify", roleId: "产品" });
-    if (available.has("structure.decompose")) picks.push({ capabilityId: "structure.decompose", roleId: "架构" });
+    if (
+      available.has("structure.decompose") &&
+      !hasSpecTreeArtifact(state) &&
+      !picks.some((p) => p.capabilityId === "structure.decompose")
+    ) {
+      picks.push({ capabilityId: "structure.decompose", roleId: "架构" });
+    }
   }
 
   if (staleCount === 0 && !shouldSkipEvidenceSearch) {

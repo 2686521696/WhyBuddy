@@ -16,6 +16,10 @@ import {
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
+import { expandProjectionNodes } from "./expand-projection-nodes";
+import { deriveTerminalProjection, type TerminalNodeMeta } from "./derive-terminal-node";
+import type { UiTurn } from "./types";
+import type { ProjectionDensity } from "./whybuddy-projection-constants";
 
 function artifactForNode(
   state: V5SessionState,
@@ -149,6 +153,16 @@ function buildRichConsoleLines(
 
 export type DeriveReasoningViewModelOptions = {
   liveAction?: LiveAction | null;
+  density?: ProjectionDensity;
+  latestUiTurn?: UiTurn | null;
+  lineageHighlightIds?: string[];
+};
+
+export type WhyBuddyReasoningViewModel = BlueprintWallReasoningGraphViewModel & {
+  terminalNode: BrainstormReasoningNode | null;
+  terminalMeta: TerminalNodeMeta | null;
+  density: ProjectionDensity;
+  lineageHighlightIds: string[];
 };
 
 function buildTelemetry(state: V5SessionState, visibleNodes: BrainstormReasoningNode[]): BrainstormGraphTelemetry {
@@ -207,28 +221,39 @@ function buildTelemetry(state: V5SessionState, visibleNodes: BrainstormReasoning
   };
 }
 
+function emptyWhyBuddyViewModel(): WhyBuddyReasoningViewModel {
+  return {
+    graph: null,
+    mode: "empty",
+    emptyReason: "no-reasoning-data",
+    visibleNodes: [],
+    visibleEdges: [],
+    hiddenNodeCount: 0,
+    consoleLines: [],
+    telemetry: {
+      tokenBurn: null,
+      sourceCount: null,
+      elapsedMs: null,
+      remainingBudget: null,
+      activeRoleCount: null,
+    },
+    terminalNode: null,
+    terminalMeta: null,
+    density: "compact",
+    lineageHighlightIds: [],
+  };
+}
+
 export function deriveWhyBuddyReasoningViewModel(
   state: V5SessionState,
   options: DeriveReasoningViewModelOptions = {}
-): BlueprintWallReasoningGraphViewModel {
+): WhyBuddyReasoningViewModel {
+  const density = options.density ?? "compact";
+  const lineageHighlightIds = options.lineageHighlightIds ?? [];
+
   const graph = state.graph;
   if (!graph?.nodes?.length) {
-    return {
-      graph: null,
-      mode: "empty",
-      emptyReason: "no-reasoning-data",
-      visibleNodes: [],
-      visibleEdges: [],
-      hiddenNodeCount: 0,
-      consoleLines: [],
-      telemetry: {
-        tokenBurn: null,
-        sourceCount: null,
-        elapsedMs: null,
-        remainingBudget: null,
-        activeRoleCount: null,
-      },
-    };
+    return emptyWhyBuddyViewModel();
   }
 
   const root = getPropositionRootNode(state);
@@ -252,10 +277,28 @@ export function deriveWhyBuddyReasoningViewModel(
     };
   });
 
-  const visibleEdges: BrainstormReasoningEdge[] = projectedEdges;
+  let visibleEdges: BrainstormReasoningEdge[] = projectedEdges;
+
+  const expanded = expandProjectionNodes(
+    state,
+    visibleNodes,
+    visibleEdges,
+    density,
+    options.latestUiTurn
+  );
+  let finalNodes = expanded.nodes;
+  let finalEdges = expanded.edges;
+
+  const terminal = deriveTerminalProjection(state);
+  if (terminal) {
+    finalNodes = [...finalNodes, terminal.node];
+    if (terminal.edge) {
+      finalEdges = [...finalEdges, terminal.edge];
+    }
+  }
 
   const consoleLines = buildRichConsoleLines(state, options.liveAction);
-  const telemetry = buildTelemetry(state, visibleNodes);
+  const telemetry = buildTelemetry(state, finalNodes);
 
   return {
     graph: {
@@ -264,10 +307,14 @@ export function deriveWhyBuddyReasoningViewModel(
       consoleLines,
     },
     mode: "structured",
-    visibleNodes,
-    visibleEdges,
+    visibleNodes: finalNodes,
+    visibleEdges: finalEdges,
     hiddenNodeCount: Math.max(0, (graph.nodes?.length ?? 0) - visibleNodes.length),
     consoleLines,
     telemetry,
+    terminalNode: terminal?.node ?? null,
+    terminalMeta: terminal?.meta ?? null,
+    density,
+    lineageHighlightIds,
   };
 }
