@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- B5: CSP for GitHub Pages BYOK browser-llm (connect to LLM vendors only; no proxy) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:;" />
     <link rel="icon" type="image/x-icon" href="%BASE_URL%favicon.ico" />
     <title>WhyBuddy · 任务自动驾驶</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

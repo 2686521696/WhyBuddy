@@ -173,12 +173,16 @@ export function deriveStatusBarFacts(
       ? "executor: server-llm"
       : executorMode === "pilot"
       ? "executor: pilot"
+      : executorMode === "browser-llm"
+      ? "executor: browser-llm (BYOK, production)"
       : "executor: default";
   const executorModeClassName =
     executorMode === "demo"
       ? "bg-amber-50 text-amber-900 ring-amber-200/80"
       : executorMode === "server-llm"
       ? "bg-sky-50 text-sky-800 ring-sky-200/80"
+      : executorMode === "browser-llm"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200/80"
       : "bg-violet-50 text-violet-800 ring-violet-200/80";
 
   return {

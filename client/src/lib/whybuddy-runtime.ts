@@ -72,6 +72,7 @@ import {
   type FragmentKind,
 } from "@shared/blueprint/whybuddy-report-builder.js";
 import { findGithubUrlInTexts } from "@shared/blueprint/whybuddy-github-context";
+import { createBrowserLlmCapabilityProvider } from "./whybuddy-browser-llm";
 import { pickNextCapabilities as pickNextCapabilitiesHeuristic } from "@shared/blueprint/whybuddy-pick-heuristic";
 import { validateProposedPlan } from "@shared/blueprint/whybuddy-plan-validation";
 import { fetchOrchestratePlan } from "./whybuddy-orchestrator";
@@ -1447,6 +1448,11 @@ export interface CapabilityExecutor {
       totalTokens?: number;
       model?: string;
     };
+    /** K3 result-declared baseline: the producing executor declares the quality baseline used.
+     * This allows driveReasoningSession / commitArtifact to pass the correct baseline without guessing the executor.
+     * "production" for real LLM paths; "pilot-template" for simulators / fallbacks.
+     */
+    qualityBaseline?: "production" | "pilot-template";
   }>;
 }
 
@@ -1468,13 +1474,14 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
       totalTokens?: number;
       model?: string;
     };
+    qualityBaseline?: "production" | "pilot-template";
   }> {
     const start = performance.now();
 
     // Special case for the V5 main output (report.write): use the structured 9-section builder
     // so the committed artifact carries evidence-grade content even under the default simulator path.
     // This is the "wire into CapabilityExecutor" step: page no longer post-processes report strings.
-    let result: { title: string; summary: string; content: string; provenance?: Artifact["provenance"] };
+    let result: { title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; model?: string }; qualityBaseline?: "production" | "pilot-template" };
     if (args.capabilityId === 'report.write') {
       const built = buildStructuredReport({
         state: args.state,
@@ -1488,6 +1495,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
         summary: built.summary,
         content: built.content,
         provenance: 'ai_generated',
+        qualityBaseline: 'pilot-template',
       };
     } else {
       // Delegate everything else (including legacy direct simulate calls in tests) to the state-aware simulator.
@@ -1501,6 +1509,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
         summary,
         content,
         provenance: "ai_generated",
+        qualityBaseline: 'pilot-template',
       };
     }
 
@@ -1582,6 +1591,7 @@ class PilotRealCapabilityExecutor implements CapabilityExecutor {
       totalTokens?: number;
       model?: string;
     };
+    qualityBaseline?: "production" | "pilot-template";
   }> {
     const start = performance.now();
     if (EXTERNAL_SERVER_CAPABILITY_IDS.has(args.capabilityId)) {
@@ -1601,7 +1611,7 @@ class PilotRealCapabilityExecutor implements CapabilityExecutor {
     return this.base.executeCapability(args);
   }
 
-  private async executeRiskPilot(args: any) {
+  private async executeRiskPilot(args: any): Promise<{ title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: any; qualityBaseline?: "production" | "pilot-template" }> {
     const { state, inputArtifactIds, roleId, turnId } = args;
     const upstreams = (state.artifacts || []).filter((a: any) => inputArtifactIds.includes(a.id));
     const hasStale = (state.staleArtifactIds || []).length > 0 || upstreams.some((a: any) => (state.staleArtifactIds || []).includes(a.id));
@@ -1634,10 +1644,11 @@ pilot provenance：role=${roleId || '安全'} turn=${turnId}（deterministic ric
       summary: `Pilot richer risk analysis over ${upstreams.length} upstreams. ${hasStale ? '含 stale 级联警示。' : ''}`,
       content,
       provenance: 'ai_generated' as const,
+      qualityBaseline: 'pilot-template',
     };
   }
 
-  private async executeReportPilot(args: any) {
+  private async executeReportPilot(args: any): Promise<{ title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: any; qualityBaseline?: "production" | "pilot-template" }> {
     // Still produce the exact 9-section schema (labels unchanged). Pilot only enriches depth/clarity.
     const built = buildStructuredReport({
       state: args.state,
@@ -1675,6 +1686,7 @@ pilot provenance：role=${roleId || '安全'} turn=${turnId}（deterministic ric
       summary: built.summary + ' [pilot richer]',
       content,
       provenance: 'ai_generated' as const,
+      qualityBaseline: 'pilot-template',
     };
   }
 }
@@ -1764,6 +1776,7 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
       totalTokens?: number;
       model?: string;
     };
+    qualityBaseline?: "production" | "pilot-template";
   }> {
     const serverRouted: V5CapabilityId[] = [
       'risk.analyze',
@@ -1802,14 +1815,17 @@ export class LlmCapabilityExecutor implements CapabilityExecutor {
           source: src as any,
           ...(usage ? { usage } : {}),
         });
-        return result;
+        return { ...result, qualityBaseline: 'production' };
       } catch (e) {
         // Provider (external) failure — reliable fallback as required by the plan.
-        return await this.base.executeCapability(args);
+        // Fallback produces pilot-template content, so declare it explicitly.
+        const fb = await this.base.executeCapability(args);
+        return { ...fb, qualityBaseline: 'pilot-template' };
       }
     }
     // Non-pilot caps: fall back without calling the provider.
-    return await this.base.executeCapability(args);
+    const fb = await this.base.executeCapability(args);
+    return { ...fb, qualityBaseline: 'pilot-template' };
   }
 }
 
@@ -1900,6 +1916,17 @@ export function createServerLlmCapabilityProvider(opts: { endpoint?: string } = 
  */
 export function useServerLlmCapabilityExecutor(endpoint?: string): void {
   const provider = createServerLlmCapabilityProvider({ endpoint });
+  setCapabilityExecutor(new LlmCapabilityExecutor(provider));
+}
+
+/**
+ * Opt-in to browser-direct LLM (BYOK) for GitHub Pages / static demo.
+ * Uses user's localStorage keys, direct fetch to vendor (no proxy).
+ * Falls back to PilotReal on error (CORS, auth, rate, etc.).
+ * Must be called with valid BYOK pool configured.
+ */
+export function useBrowserLlmCapabilityExecutor(): void {
+  const provider = createBrowserLlmCapabilityProvider();
   setCapabilityExecutor(new LlmCapabilityExecutor(provider));
 }
 
@@ -2309,6 +2336,7 @@ export async function retrySingleCapability(
   const content =
     exec?.content || `${params.roleId} 通过 ${params.capabilityId} 产出新洞察/证据/方案`;
   const outputKind = CAPABILITY_OUTPUT_KIND[params.capabilityId] ?? "decision";
+  const baseline = (exec as any)?.qualityBaseline ?? "production";
   const { updatedState, committed, run } = commitArtifact(
     state,
     {
@@ -2326,7 +2354,8 @@ export async function retrySingleCapability(
     } as Omit<Artifact, "trustLevel" | "passedGates">,
     runId,
     false,
-    freshInputs
+    freshInputs,
+    baseline
   );
 
   const gateFailed = (run.gateResults || []).some((g) => g.status === "failed");
@@ -2374,7 +2403,7 @@ export function commitArtifact(
   runId: string,
   forceGateFail = false,
   declaredInputs: string[] = [], // pass the upstream artifact ids this run depends on
-  pilotBaseline = false // K3+K4: explicit for pilot/demo seeds (use relaxed baseline)
+  baseline: "production" | "pilot-template" = "production" // K3 result-declared baseline from executor (drive extracts exec?.qualityBaseline); demo/pilot seeds pass "pilot-template" for relaxed gate
 ): { updatedState: V5SessionState; committed: Artifact | null; run: CapabilityRun } {
   // General Trust Layer rule (extended for demo consistency):
   // Any capability that declares upstreams will gate-fail if any upstream is untrusted/stale.
@@ -2449,8 +2478,8 @@ export function commitArtifact(
   }
 
   // K3: quality gate now fully participates in the trustLevel decision (core of "保下限").
-  // Call site passes explicit baseline (production for real paths; pilot for demo/simulate seeds).
-  const gateResults = evaluateGates(rawArtifact as any, effectiveForceFail, groundingOk, pilotBaseline ? "pilot-template" : "production");
+  // Receives result-declared baseline (drive/retry pull from exec; explicit "pilot-template" only from demo seeds / test pilots).
+  const gateResults = evaluateGates(rawArtifact as any, effectiveForceFail, groundingOk, baseline);
 
   const passedGates = gateResults.filter((g) => g.status === "passed").map((g) => g.gateId);
   const allPassed = gateResults.every((g) => g.status === "passed");
@@ -4191,6 +4220,7 @@ export async function driveReasoningSession(
           : undefined;
 
       const execFailed = exec == null;
+      const baseline = (exec as any)?.qualityBaseline ?? "production";
       const { updatedState, committed, run } = commitArtifact(
         working,
         {
@@ -4209,7 +4239,8 @@ export async function driveReasoningSession(
         } as Omit<Artifact, "trustLevel" | "passedGates">,
         runId,
         false,
-        freshInputs
+        freshInputs,
+        baseline
       );
 
       working = updatedState;

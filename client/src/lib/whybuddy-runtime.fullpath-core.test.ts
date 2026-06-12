@@ -47,6 +47,7 @@ import {
   replayCoverage,
   countDistinctTurns,
 } from './whybuddy-fullpath-fixtures';
+import { buildStructuredReport } from '@shared/blueprint/whybuddy-report-builder';
 import type {
   V5SessionState,
   Artifact,
@@ -79,11 +80,16 @@ function runFullTurn(
         : cap === 'risk.analyze' || cap === 'counter.argue'
         ? 'risk'
         : 'evidence';
+    let contentForCommit: string | undefined;
+    if (cap === 'report.write') {
+      const structured = buildStructuredReport({ state: working, inputArtifactIds: inputs, roleId: role });
+      contentForCommit = structured.content;
+    }
     const raw =
       cap === 'evidence.search'
         ? createGroundedEvidenceRaw(`${turnId}-art-${idx}`)
-        : createRawArtifact(`${turnId}-art-${idx}`, cap, role, kind);
-    const { updatedState, committed } = commitArtifact(working, raw, runId, false, inputs);
+        : createRawArtifact(`${turnId}-art-${idx}`, cap, role, kind, contentForCommit);
+    const { updatedState, committed } = commitArtifact(working, raw, runId, false, inputs, "pilot-template"); // sim-driven fullpath helper now feeds real builder content for report (aligns with production serialize rule); pilot baseline keeps demo paths relaxed while quality gate participates
     working = updatedState;
     if (committed) committedIds.push(committed.id);
   });

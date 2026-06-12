@@ -61,7 +61,7 @@ export interface QualityGateResult extends GateVerdict {
 
 function countEarsLike(text: string): number {
   // 简易 EARS 检测：英文 + 中文（当/若/如果 ... 应/必须/须）
-  const re = /\b(WHEN|IF|AS SOON AS|THE .* (SHALL|SHOULD|MUST|WILL))\b| (当|若|如果)[^。\n]{2,80}(应|必须|须)/gi;
+  const re = /\b(WHEN|IF|AS SOON AS|THE .* (SHALL|SHOULD|MUST|WILL))\b|(?:^|[\s，。；：、])(当|若|如果)[^。\n]{2,80}(应|必须|须)/gi;
   return (text.match(re) || []).length;
 }
 

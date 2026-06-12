@@ -6,6 +6,18 @@ import { autopilotTheme } from "./autopilot-theme";
 import type { WhyBuddyExecutorMode } from "./types";
 import type { ProjectionDensity } from "./whybuddy-projection-constants";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import * as WhyBuddyRuntime from "@/lib/whybuddy-runtime";
+import {
+  loadByokPool,
+  saveByokPool,
+  clearByokPool,
+  validateByokPool,
+  maskKey,
+  PRESET_ENDPOINTS,
+  PRESET_MODELS,
+  type ByokPresetId,
+} from "@/lib/whybuddy-byok-config";
+import { getByokDispatcher } from "@/lib/whybuddy-byok-dispatcher";
 
 export function WhyBuddyTopHud({
   state,
@@ -37,6 +49,59 @@ export function WhyBuddyTopHud({
     immersion: true,
     executorMode,
   });
+
+  // B4: GitHub Pages BYOK key config UI (visible only in Pages mode)
+  const [byokDraft, setByokDraft] = React.useState(() => {
+    const p = loadByokPool();
+    const e = p?.entries?.[0];
+    return { preset: (e?.presetId as ByokPresetId) || "openai", key: e ? "********" : "" };
+  });
+
+  const currentByok = React.useMemo(() => loadByokPool(), [byokDraft]); // re-eval on draft change for demo
+
+  const saveByok = () => {
+    if (!byokDraft.key || byokDraft.key === "********") {
+      alert("请输入有效 API Key");
+      return;
+    }
+    const endpoint = PRESET_ENDPOINTS[byokDraft.preset] || "";
+    const model = PRESET_MODELS[byokDraft.preset] || "gpt-4o-mini";
+    const pool = {
+      version: 1 as const,
+      entries: [{
+        id: "user-key-1",
+        label: `${byokDraft.preset} (BYOK)`,
+        presetId: byokDraft.preset,
+        endpoint,
+        model,
+        apiKey: byokDraft.key,
+        enabled: true,
+      }],
+      dispatch: "least-busy" as const,
+      raceMode: false,
+    };
+    if (!validateByokPool(pool).ok) {
+      alert("配置无效，请检查 preset/key");
+      return;
+    }
+    saveByokPool(pool);
+    if (IS_GITHUB_PAGES && WhyBuddyRuntime.useBrowserLlmCapabilityExecutor) {
+      WhyBuddyRuntime.useBrowserLlmCapabilityExecutor();
+    }
+    setByokDraft({ ...byokDraft, key: "********" });
+    window.dispatchEvent(new CustomEvent("byok-config-changed"));
+    alert("Key 已保存到本机 localStorage（零服务器）。下一轮推演将使用 browser-llm (production baseline)。配置变更立即生效（下一 turn）。");
+  };
+
+  const clearByok = () => {
+    clearByokPool();
+    setByokDraft({ preset: "openai", key: "" });
+    if (IS_GITHUB_PAGES && WhyBuddyRuntime.usePilotRealExecutor) {
+      WhyBuddyRuntime.usePilotRealExecutor();
+    }
+    window.dispatchEvent(new CustomEvent("byok-config-changed"));
+    alert("已清除 BYOK 配置，回退到 pilot 模板演示。");
+  };
 
   return (
     <header
@@ -96,6 +161,47 @@ export function WhyBuddyTopHud({
               onClick={() => onProjectionDensityChange("detailed")}
             >
               [切详看溯源]
+            </span>
+          )}
+
+          {/* B4: BYOK 配置入口 (仅 Pages 模式可见) - advanced multi-key */}
+          {IS_GITHUB_PAGES && (
+            <span className="ml-2 flex flex-col gap-0.5 text-[9px] text-slate-300">
+              <span>BYOK (multi-key pool):</span>
+              {currentByok?.entries?.length ? (
+                currentByok.entries.map((e, i) => {
+                  const snap = getByokDispatcher().snapshot().entries.find(s => s.id === e.id) || { inFlight: 0, totalTokens: 0, cooledUntil: null, enabled: e.enabled };
+                  return (
+                    <span key={i} className="text-[8px] text-emerald-300" title={`Key ${i+1}: ${e.label} (masked)`}>
+                      {e.presetId} {e.label} ({maskKey(e.apiKey)}) inFlight:{snap.inFlight} tokens:{snap.totalTokens} {snap.cooledUntil ? 'cooled' : ''}
+                    </span>
+                  );
+                })
+              ) : <span className="text-amber-400">not set</span>}
+              <div className="flex items-center gap-1">
+                <select
+                  value={byokDraft.preset}
+                  onChange={(e) => setByokDraft({ ...byokDraft, preset: e.target.value as any })}
+                  className="rounded bg-slate-800 px-1 text-[8px] text-white"
+                >
+                  {Object.keys(PRESET_ENDPOINTS).map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                  <option value="custom">custom</option>
+                </select>
+                <input
+                  type="password"
+                  placeholder="sk-..."
+                  value={byokDraft.key === "********" ? "" : byokDraft.key}
+                  onChange={(e) => setByokDraft({ ...byokDraft, key: e.target.value })}
+                  className="w-16 rounded bg-slate-800 px-1 text-[8px] text-white"
+                />
+                <button onClick={saveByok} className="rounded bg-emerald-700 px-1 text-white text-[8px]">Add/Save</button>
+                <button onClick={clearByok} className="rounded bg-rose-700 px-1 text-white text-[8px]">Clear All</button>
+              </div>
+              <span className="text-[7px] text-amber-400" title="Keys only in localStorage. Snapshot from dispatcher.">
+                (本机, snapshot: in-flight/tokens)
+              </span>
             </span>
           )}
           <span className="font-mono text-[10px] text-slate-400">话题</span>

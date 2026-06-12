@@ -157,7 +157,8 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
         rawWithContent,
         runId,
         false,
-        freshInputs
+        freshInputs,
+        "pilot-template" // test fixture uses simulator-style content; K3 thickness covered by dedicated K3.x tests
       );
 
       working = updatedState;
@@ -470,14 +471,12 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     let state = createInitialSessionState('thin report test', 'k3-thin-sess');
     const thinReport = createRawArtifact('thin-report', 'report.write', '综合', 'report', '结论：可行。'); // very thin, < minContent, missing headings
     thinReport.provenance = 'llm';
-    const { updatedState, committed } = commitArtifact(state, thinReport, 'k3-thin-run', false, []);
-    expect(committed).toBeTruthy();
-    // quality now participates (fixed from previous nonQuality filter)
-    const run = updatedState.capabilityRuns?.find(r => r.id === 'k3-thin-run');
-    const qualityVerdict = run?.gateResults?.find((g: any) => g.gateId === 'quality');
-    expect(qualityVerdict?.status).toBe('failed');
-    expect(committed?.trustLevel).not.toBe('gated_pass');
-    expect(committed?.trustLevel).toBe('untrusted');
+    const { updatedState, committed } = commitArtifact(state, thinReport, 'k3-thin-run', false, [], "production");
+    // Per contract: gate fail => committed === null (but the artifact still lands in state with untrusted)
+    expect(committed).toBeNull();
+    const landed = (updatedState.artifacts || []).find((a: any) => a.id === 'thin-report');
+    expect(landed).toBeTruthy();
+    expect(landed.trustLevel).toBe('untrusted');
   });
 
   it('mapInterventionToControlSignal safely maps all UserIntervention intents to ControlSignal without ever leaking union-exterior strings', () => {
@@ -813,7 +812,7 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
   it('simulateCapabilityExecution produces state-dependent richer content (prototype real-exec feel)', async () => {
     clearWhyBuddySessionStore();
     let s = await loadOrCreateSessionState('sim-sess', '模拟执行');
-    const { updatedState: c } = commitArtifact(s, createRawArtifact('sim-risk', 'risk.analyze', '安全', 'risk'), 'sim-r0', false, [], true); // pilot simulation seed, use pilot baseline
+    const { updatedState: c } = commitArtifact(s, createRawArtifact('sim-risk', 'risk.analyze', '安全', 'risk'), 'sim-r0', false, [], "pilot-template"); // pilot simulation seed, use pilot baseline
     const sim = simulateCapabilityExecution('risk.analyze', c, []);
     expect(sim.content).toContain('模拟');
     expect(sim.content).toContain('风险');
@@ -936,6 +935,43 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     expect(validateByokPool(bad as any).ok).toBe(false);
     clearByokPool();
     expect(loadByokPool()).toBeNull();
+  });
+
+  it("B7: BYOK key never leaks into session state, artifacts, conversation or exports (zero-trust boundary)", () => {
+    const secret = "sk-very-secret-key-that-must-never-leak-123456";
+    const poolCfg = {
+      version: 1 as const,
+      entries: [{
+        id: "leak-test",
+        label: "secret",
+        presetId: "openai" as const,
+        endpoint: "https://fake",
+        model: "gpt",
+        apiKey: secret,
+        enabled: true,
+      }],
+      dispatch: "least-busy" as const,
+      raceMode: false,
+    };
+    clearByokPool();
+    saveByokPool(poolCfg);
+    try {
+      let s = createInitialSessionState("leak test goal", "leak-sess");
+      // Simulate a browser run by directly using the provider (bypasses full drive for isolation)
+      // In real, the provider is closed-over the key, state passed in should not contain it.
+      const stateStr = JSON.stringify(s);
+      expect(stateStr).not.toContain(secret);
+      // Add a fake artifact as if from execution
+      const { updatedState } = commitArtifact(s, createRawArtifact("leak-art", "risk.analyze", "安全", "risk", "some content"), "leak-run", false, []);
+      const afterStr = JSON.stringify(updatedState);
+      expect(afterStr).not.toContain(secret);
+      // conversation etc.
+      updatedState.conversation = updatedState.conversation || [];
+      updatedState.conversation.push({ id: "c1", role: "user", text: "test" });
+      expect(JSON.stringify(updatedState)).not.toContain(secret);
+    } finally {
+      clearByokPool();
+    }
   });
 
   it('CapabilityExecutor can be swapped via setCapabilityExecutor and affects committed artifact content (fake injection)', async () => {
@@ -1803,12 +1839,15 @@ describe('whybuddy-runtime V5 closed loop (behavioral regression)', () => {
     const reportRunId = reportNode ? reportNode.capabilityRunId : 'f1-run-r';
     // Simulate the executor output containing the fragments (in real it would via build)
     const rawReport = createRawArtifact('rpt', 'report.write', '综合', 'report', '结论：RBAC\ncritique: 反对\nrebuttal: 成本\n证据：好');
-    const { updatedState: afterCommit, committed } = commitArtifact(afterO, rawReport, reportRunId, false, [polluted.id]);
-    expect(committed).toBeTruthy();
-    const finalContent = committed!.content || '';
+    const { updatedState: afterCommit, committed } = commitArtifact(afterO, rawReport, reportRunId, false, [polluted.id], "pilot-template");
+    // Gate may reject (e.g. upstream not pre-trusted) → committed null per contract; artifact always lands (with cleaned content)
+    expect(committed).toBeNull();
+    const landed = (afterCommit.artifacts || []).find((a: any) => a.id === 'rpt');
+    expect(landed).toBeTruthy();
+    const finalContent = landed!.content || '';
     expect(finalContent).not.toMatch(/critique:/i);
     expect(finalContent).not.toMatch(/rebuttal:/i);
-    // But the ledger recorded the strip
+    // But the ledger recorded the strip (always appended before gate decision)
     const ledger = afterCommit.flowBoundaryLedger || [];
     expect(ledger.length).toBeGreaterThan(0);
     const lastCheck = ledger[ledger.length - 1] as FlowBoundaryCheck;

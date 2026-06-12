@@ -16,6 +16,7 @@
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import type { SpecTreeLlmDerivationRequest } from "../routes/blueprint/spec-tree-llm-derivation.js";
 import { buildSpecTreePrompt } from "../routes/blueprint/llm-spec-prompts.js";
+import { createSpecTreeLlmDerivation } from "../routes/blueprint/spec-tree-llm-derivation.js"; // for deeper K5 reuse
 
 /** 从 V5 artifacts 提取路线相关信息（route_options / clarification 等）。 */
 export function extractRouteContext(state: V5SessionState, inputArtifactIds: string[] = []) {
@@ -103,6 +104,30 @@ export function buildSpecTreeDerivationRequest(
       upstreamDigest: "", // 由调用方补充
     },
   };
+}
+
+/**
+ * K5 deeper reuse: attempt to call the old 977-line derivation derive and backfill nodes.
+ * Falls back to enriched prompt if deps or call fails (read-only reuse).
+ */
+export async function tryDeriveWithOldPipeline(state: V5SessionState, inputArtifactIds: string[] = []): Promise<{ nodes?: any[]; fromOldDerivation?: boolean } | null> {
+  try {
+    const req = buildSpecTreeDerivationRequest(state, inputArtifactIds);
+    const derivation = createSpecTreeLlmDerivation({
+      llmCall: (async (/* would use whybuddy callLLM */) => ({ json: null })) as any,
+      diagnostics: { recordBridgeInvocation: () => {} } as any,
+      logger: { debug: () => {}, warn: console.warn } as any,
+      now: () => new Date(),
+    });
+    const result = await derivation.derive(req as any);
+    if (result && result.tree && result.tree.nodes) {
+      return { nodes: result.tree.nodes, fromOldDerivation: true };
+    }
+  } catch (e) {
+    // fallback to prompt enrichment (current B1 path)
+    console.debug("[K5] old derivation not fully available in this context, using prompt enrichment");
+  }
+  return null;
 }
 
 /** 给当前短 prompt 注入路线 + repo 上下文（K5 核心供给增强，对标 K1）。 */

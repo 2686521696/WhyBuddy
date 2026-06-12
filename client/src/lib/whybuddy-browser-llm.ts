@@ -8,6 +8,13 @@
  * 生产 baseline 显式（由调用方在 B4 切换时传）。
  *
  * key 零信任：仅在闭包 + fetch header，绝不泄露。
+ *
+ * B5 CORS/错误矩阵（手动验证建议）：
+ * - anthropic: 需 header "anthropic-dangerous-direct-browser-access: true" + version；浏览器直连支持但需特殊头。
+ * - openrouter: 官方支持浏览器直连，无额外头。
+ * - deepseek / openai: 标准 OpenAI 兼容，通常支持，但部分地区/CORS 策略可能需 custom 或换厂商。
+ * - 不默认包含的厂商（许多国内模型服务无浏览器 CORS）：不在预设；用户可用 custom 自担风险（或自建代理，但 spec non-goal）。
+ * 失败时提供可行动提示（CORS、key、rate）。
  */
 
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
@@ -15,18 +22,7 @@ import { buildCapabilityPrompt } from "@shared/blueprint/whybuddy-capability-pro
 import type { ByokPoolDispatcher, ByokLease } from "./whybuddy-byok-dispatcher";
 import { createByokDispatcher } from "./whybuddy-byok-dispatcher";
 import type { ByokKeyEntry } from "./whybuddy-byok-config";
-
-export interface LlmCapabilityProvider {
-  // simplified for whybuddy: the executor will call with state etc.
-  // for direct, we expose the execute for the capability.
-  executeCapability(params: {
-    capabilityId: string;
-    state: V5SessionState;
-    inputArtifactIds: string[];
-    roleId?: string;
-    turnId: string;
-  }): Promise<{ title: string; summary: string; content: string; provenance?: string; usage?: any }>;
-}
+import type { LlmCapabilityProvider } from "./whybuddy-runtime";
 
 export function createBrowserLlmCapabilityProvider(dispatcher?: ByokPoolDispatcher): LlmCapabilityProvider {
   const pool = dispatcher || createByokDispatcher();
@@ -148,51 +144,66 @@ export function createBrowserLlmCapabilityProvider(dispatcher?: ByokPoolDispatch
       };
     } catch (e: any) {
       clearTimeout(timeout);
-      if (e.name === "AbortError") throw new Error("timeout");
+      const msg = String(e?.message || e || "").toLowerCase();
+      if (e.name === "AbortError" || msg.includes("abort") || msg.includes("timeout")) {
+        throw new Error("LLM request timeout or aborted. Slow models (thinking) may need more time or a faster preset.");
+      }
+      if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("cors") || msg.includes("typeerror")) {
+        throw new Error("Failed to fetch from LLM endpoint (likely CORS, network, or the vendor does not allow browser direct access). No proxy is used. Try a CORS-friendly vendor like OpenRouter, or configure 'custom' with a compatible endpoint. See docs for CORS matrix.");
+      }
+      if (msg.includes("401") || msg.includes("403") || msg.includes("unauthorized")) {
+        throw new Error("Authentication failed (401/403). Check your API key (masked in UI).");
+      }
+      if (msg.includes("429") || msg.includes("rate limit")) {
+        throw new Error("Rate limited (429). Key hit limits; the pool will rotate to next key if available, or backoff.");
+      }
       throw e;
     }
   }
 
-  return {
-    async executeCapability(params: {
-      capabilityId: string;
-      state: V5SessionState;
-      inputArtifactIds: string[];
-      roleId?: string;
-      turnId: string;
-    }) {
-      const prompt = buildCapabilityPrompt({
-        capabilityId: params.capabilityId,
-        state: params.state,
-        inputArtifactIds: params.inputArtifactIds,
-        roleId: params.roleId,
-        turnId: params.turnId,
-      });
+  // Return the provider function directly (matches LlmCapabilityExecutor expectation and server provider shape)
+  const providerFn = async (params: {
+    capabilityId: string;
+    state: V5SessionState;
+    inputArtifactIds: string[];
+    roleId?: string;
+    turnId: string;
+  }) => {
+    const prompt = buildCapabilityPrompt({
+      capabilityId: params.capabilityId,
+      state: params.state,
+      inputArtifactIds: params.inputArtifactIds,
+      roleId: params.roleId,
+      turnId: params.turnId,
+    });
 
-      let lease: ByokLease | null = null;
-      try {
-        lease = await pool.acquire();
-        const result = await doFetch(lease, prompt.systemPrompt, prompt.userPrompt, prompt.maxTokens, prompt.temperature);
-        pool.release(lease, "ok");
-        // record tokens if possible (dispatcher snapshot)
-        return {
-          title: result.title,
-          summary: result.summary,
-          content: result.content,
-          provenance: result.provenance,
-          usage: result.usage,
-        };
-      } catch (e: any) {
-        if (lease) {
-          const msg = String(e?.message || e);
-          const outcome: any = msg.includes("429") ? "http_429" : msg.includes("401") ? "http_401" : "error";
-          pool.release(lease, outcome);
-        }
-        // rethrow to trigger fallback in executor
-        throw e;
+    // B7: defense-in-depth redaction (generalize C_REDACT) - strip any accidental key-like strings from prompts before send
+    const redact = (s: string) => s.replace(/\bsk-[a-zA-Z0-9]{10,}\b/gi, "[REDACTED_KEY]").replace(/Bearer\s+[a-zA-Z0-9._-]{10,}/gi, "Bearer [REDACTED]");
+    const safeSystem = redact(prompt.systemPrompt);
+    const safeUser = redact(prompt.userPrompt);
+
+    let lease: ByokLease | null = null;
+    try {
+      lease = await pool.acquire();
+      const result = await doFetch(lease, safeSystem, safeUser, prompt.maxTokens, prompt.temperature);
+      pool.release(lease!, "ok");
+      return {
+        title: result.title,
+        summary: result.summary,
+        content: result.content,
+        provenance: result.provenance,
+        usage: result.usage,
+      };
+    } catch (e: any) {
+      if (lease) {
+        const msg = String(e?.message || e);
+        const outcome: any = msg.includes("429") ? "http_429" : msg.includes("401") ? "http_401" : "error";
+        pool.release(lease, outcome);
       }
-    },
+      throw e;
+    }
   };
+  return providerFn as LlmCapabilityProvider;
 }
 
 export function useBrowserLlmCapabilityExecutor(dispatcher?: ByokPoolDispatcher) {

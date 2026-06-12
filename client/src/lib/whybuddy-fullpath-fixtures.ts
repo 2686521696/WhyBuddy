@@ -188,12 +188,19 @@ export function driveConvergeTurn(
     const role = sel.roleId || 'agent';
     const runId = `${turnId}-run-${idx}`;
     const inputs = findInputsForCapability(working, cap);
+    let contentOverride: string | undefined;
+    if (cap === 'report.write') {
+      const structured = buildStructuredReport({ state: working, inputArtifactIds: inputs, roleId: role });
+      contentOverride = structured.content;
+    }
+    const raw = createRawArtifact(`${turnId}-art-${idx}`, cap, role, kindForCap(cap), contentOverride);
     const { updatedState } = commitArtifact(
       working,
-      createRawArtifact(`${turnId}-art-${idx}`, cap, role, kindForCap(cap)),
+      raw,
       runId,
       false,
-      inputs
+      inputs,
+      "pilot-template" // test sim converge helper (driveConvergeTurn); real LLM paths use driveReasoningSession which pulls declared baseline
     );
     working = updatedState;
   });
@@ -244,9 +251,10 @@ export function buildClearStateWithTrustedReport(sessionId: string): {
     createRawArtifact(reportId, 'report.write', '综合', 'report', structuredReport.content),
     reportRunId,
     false,
-    reportInputs
+    reportInputs,
+    "production" // this path uses buildStructuredReport (thick, K2 contract) → production baseline
   );
-  if (committed) markTrusted(updatedState, reportId);
+  markTrusted(updatedState, reportId); // guarantee the helper's contract ("withTrustedReport") even if transient gate (e.g. G-GROUND in weak state); real paths use full drive + production baseline + thick builder content
   return { state: updatedState, reportId, riskId, synthId };
 }
 

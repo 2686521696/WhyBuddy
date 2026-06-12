@@ -45,7 +45,16 @@ export interface ByokPoolDispatcher {
   snapshot(): PoolSnapshot;
 }
 
-export function createByokDispatcher(initialConfig?: ByokPoolConfig): ByokPoolDispatcher {
+let sharedDispatcher: ByokPoolDispatcher | null = null;
+
+export function getByokDispatcher(): ByokPoolDispatcher {
+  if (!sharedDispatcher) {
+    sharedDispatcher = createByokDispatcherInternal();
+  }
+  return sharedDispatcher;
+}
+
+function createByokDispatcherInternal(initialConfig?: ByokPoolConfig): ByokPoolDispatcher {
   const config = initialConfig || loadByokPool() || { version: 1, entries: [], dispatch: "least-busy", raceMode: false };
   const states: Record<string, KeyState> = {};
   for (const e of config.entries) {
@@ -139,4 +148,10 @@ export function createByokDispatcher(initialConfig?: ByokPoolConfig): ByokPoolDi
 export function recordUsageOnLease(dispatcher: ByokPoolDispatcher, lease: ByokLease, tokens: number) {
   // since internal state, for demo we can expose or just note in snapshot via provider
   // for real, dispatcher would have internal update, here we keep simple (tokens updated in provider closure if needed)
+}
+
+export function createByokDispatcher(initialConfig?: ByokPoolConfig): ByokPoolDispatcher {
+  const d = createByokDispatcherInternal(initialConfig);
+  sharedDispatcher = d;
+  return d;
 }

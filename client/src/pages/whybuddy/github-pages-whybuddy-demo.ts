@@ -84,7 +84,7 @@ export function createGithubPagesWhyBuddySeedSession(): V5SessionState {
     "pages-demo-run-evidence",
     false,
     ["demo-risk-1"],
-    true // pilot/demo seed -> use pilot-template baseline for K3
+    "pilot-template" // pilot/demo seed -> use pilot-template baseline for K3
   );
   state = committed.updatedState;
   markTrusted(state, "demo-evidence-1");
@@ -142,7 +142,7 @@ export function createGithubPagesWhyBuddySeedSession(): V5SessionState {
     "pages-demo-run-report",
     false,
     ["demo-synth-1", "demo-evidence-1", "demo-risk-1"],
-    true // pilot/demo seed -> use pilot-template baseline for K3
+    "pilot-template" // pilot/demo seed -> use pilot-template baseline for K3
   );
   state = reportCommit.updatedState;
   markTrusted(state, "demo-report-1");
@@ -159,6 +159,18 @@ export function createGithubPagesWhyBuddySeedSession(): V5SessionState {
 
   return deriveNodeStatus(state);
 }
+
+/**
+ * Note for GitHub Pages BYOK demo (B4):
+ * - Open the top HUD (always visible in Pages mode).
+ * - Look for "BYOK: not set" section → choose preset (e.g. openai/deepseek), paste your API key → Save.
+ * - Key stays 100% in your browser localStorage (never sent to this site or anywhere but the vendor you chose).
+ * - Next input will switch to browser-llm executor (production baseline, real LLM via K1/K2/K3).
+ * - Clear to revert to pilot templates.
+ * - CSP allows direct connect to the presets (see client/index.html).
+ * - Multi-key pool supported in storage (advanced: edit localStorage or extend UI).
+ */
+
 
 export function createGithubPagesWhyBuddySessionStore(
   opts: { storage?: StorageLike | null } = {}

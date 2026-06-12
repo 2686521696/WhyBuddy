@@ -168,8 +168,7 @@ describe("K3 · G_QUALITY content gate (with K2 contract)", () => {
     expect(q?.gateId).toBe("quality");
     expect(String(q?.reason || "")).toMatch(/content|heading|contract/i);
 
-    // K3.1 commitArtifact 集成（修复后）：quality 参与 allPassed，薄产物在 production baseline 下
-    // trustLevel 不会是 gated_pass（阻断 2 核心）。调用点显式传 baseline（阻断 3）。
+    // K3.1 集成验证见 client/src/lib/whybuddy-runtime.test.ts 中的对应测试（调用真实 commitArtifact 路径，检查 updatedState.artifacts 中的 trustLevel + 返回的 committed === null）。
   });
 
   it("【K3.2 保全测试】 厚 content（满足 report contract）+ pilot baseline 下质量门 passed；commit gates 集合不变", () => {

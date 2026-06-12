@@ -78,16 +78,18 @@ export function validateByokPool(c: ByokPoolConfig): { ok: boolean; reason?: str
   return { ok: true };
 }
 
-export const PRESET_ENDPOINTS: Record<Exclude<ByokPresetId, "custom">, string> = {
+export const PRESET_ENDPOINTS: Record<ByokPresetId, string> = {
   anthropic: "https://api.anthropic.com/v1/messages",
   deepseek: "https://api.deepseek.com/chat/completions",
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
   openai: "https://api.openai.com/v1/chat/completions",
+  custom: "",
 };
 
-export const PRESET_MODELS: Record<Exclude<ByokPresetId, "custom">, string> = {
+export const PRESET_MODELS: Record<ByokPresetId, string> = {
   anthropic: "claude-3-5-sonnet-20241022",
   deepseek: "deepseek-chat",
   openrouter: "anthropic/claude-3.5-sonnet",
   openai: "gpt-4o-mini",
+  custom: "gpt-4o-mini",
 };

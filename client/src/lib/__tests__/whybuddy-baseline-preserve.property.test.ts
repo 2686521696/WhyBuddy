@@ -19,7 +19,7 @@ import { ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
 const PBT_OPTS = { numRuns: 100 };
 
 const REPORT_SECTIONS = [
-  "结论：",
+  "结论",  // tolerate "结论：" (strong) and "结论（待补证）：" (weak-evidence/G-GROUND path in current builder)
   "支撑证据：",
   "反证/挑战：",
   "风险：",

@@ -12,6 +12,7 @@ import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { createUiCapabilityExecutor, mapArtifactsToWhyArtifacts } from "./ui-capability-executor";
 import { createHttpWhyBuddySessionStore } from "@/lib/whybuddy-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import { loadByokPool, validateByokPool } from "@/lib/whybuddy-byok-config";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { TurnStep, UiTurn, WhyArtifact, WhyBuddyExecutorMode } from "./types";
 import {
@@ -41,7 +42,13 @@ async function persistSession(state: V5SessionState): Promise<V5SessionState> {
 }
 
 function resolveExecutorMode(): WhyBuddyExecutorMode {
-  if (IS_GITHUB_PAGES) return "demo";
+  if (IS_GITHUB_PAGES) {
+    const pool = loadByokPool();
+    if (pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey)) {
+      return "browser-llm";
+    }
+    return "demo";
+  }
   const params = new URLSearchParams(window.location.search);
   if (params.get("executor") === "pilot") return "pilot";
   if (params.get("executor") === "default") return "default";
@@ -112,7 +119,12 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
 
     if (IS_GITHUB_PAGES && WhyBuddyRuntime.setWhyBuddySessionStore) {
       WhyBuddyRuntime.setWhyBuddySessionStore(createGithubPagesWhyBuddySessionStore());
-      WhyBuddyRuntime.usePilotRealExecutor?.();
+      const pool = loadByokPool();
+      if (pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey)) {
+        WhyBuddyRuntime.useBrowserLlmCapabilityExecutor?.();
+      } else {
+        WhyBuddyRuntime.usePilotRealExecutor?.();
+      }
     } else if (mode === "server-llm" && WhyBuddyRuntime.setWhyBuddySessionStore) {
       // B-5: product default uses durable Http store (survives refresh via server JSON file).
       WhyBuddyRuntime.setWhyBuddySessionStore(createHttpWhyBuddySessionStore());
@@ -137,6 +149,30 @@ export function useWhyBuddySession(options: UseWhyBuddySessionOptions = {}) {
       } else {
         WhyBuddyRuntime.useDefaultExecutor?.();
       }
+    };
+  }, []);
+
+  // B4: live BYOK config change (storage or custom event) -> re-apply executor + mode without full refresh
+  useEffect(() => {
+    const reapplyByok = () => {
+      if (!IS_GITHUB_PAGES) return;
+      const mode = resolveExecutorMode();
+      setExecutorMode(mode);
+      if (mode === "browser-llm" && WhyBuddyRuntime.useBrowserLlmCapabilityExecutor) {
+        WhyBuddyRuntime.useBrowserLlmCapabilityExecutor?.();
+      } else {
+        WhyBuddyRuntime.usePilotRealExecutor?.();
+      }
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key.includes("whybuddy:llm-pool")) reapplyByok();
+    };
+    const onCustom = () => reapplyByok();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("byok-config-changed", onCustom);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("byok-config-changed", onCustom);
     };
   }, []);
 

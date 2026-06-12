@@ -153,11 +153,15 @@ describe("S16 · brainstorm complex path + FLOWB", () => {
       createRawArtifact("S16-report", "report.write", "综合", "report", pollutedReport),
       reportRunId,
       false,
-      findInputsForCapability(afterO, "report.write")
+      findInputsForCapability(afterO, "report.write"),
+      "pilot-template"
     );
 
-    expect(committed).toBeTruthy();
-    expect(formalContentHasProtocolMarkers(committed!.content || "")).toBe(false);
+    // Gate may null the return (quality or other on thin polluted input); artifact always lands with FLOWB-cleaned content
+    expect(committed).toBeNull();
+    const landed = (afterReport.artifacts || []).find((a: any) => a.id === "S16-report");
+    expect(landed).toBeTruthy();
+    expect(formalContentHasProtocolMarkers(landed!.content || "")).toBe(false);
     const ledger = afterReport.flowBoundaryLedger || [];
     expect(ledger.length).toBeGreaterThan(0);
     expect(
