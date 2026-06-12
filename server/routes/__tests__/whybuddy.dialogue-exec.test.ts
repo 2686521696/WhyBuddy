@@ -10,6 +10,7 @@ import whybuddyRouter from "../whybuddy.js";
 import * as llmClient from "../../core/llm-client.js";
 import { withStubbedLlmKey } from "./helpers/with-stubbed-llm-key.js";
 import { buildDialogueUserPrompt } from "../../whybuddy/dialogue-exec-map.js";
+import { resetWhyBuddyCapabilityPoolCache } from "../../whybuddy/pool-json-llm.js";
 import { DOMAIN_ANCHORING_RULE } from "../../../shared/blueprint/whybuddy-narration-immunity.js";
 
 const GOAL = "做一个权限管理系统（支持 RBAC + 数据范围）";
@@ -55,6 +56,9 @@ describe("D1 dialogue execute-capability", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    vi.stubEnv("WHYBUDDY_CAPABILITY_POOL_ENABLED", "0");
+    vi.stubEnv("BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS", "");
+    resetWhyBuddyCapabilityPoolCache();
     ({ restore: restoreLlmKey } = withStubbedLlmKey());
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));

@@ -18,6 +18,9 @@
 
 import express, { Router, type Request, type Response } from "express";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
+import { stripProjectionForPersist } from "../../shared/blueprint/whybuddy-projection-persist.js";
+import { applyReplayOnSave } from "../../shared/blueprint/whybuddy-session-replay.js";
+import { sanitizeGoalStatusOnPut } from "../../shared/blueprint/whybuddy-coverage-gate.js";
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLM, callLLMJson, callLLMJsonWithUsage } from "../core/llm-client.js";
 import { buildStructuredReport } from "../../shared/blueprint/whybuddy-report-builder.js";
@@ -36,6 +39,18 @@ import {
   executeRepoInspectMapped,
 } from "../whybuddy/capability-exec-map.js";
 import {
+  executeStructureDecomposeMapped,
+  isStructureCapability,
+} from "../whybuddy/structure-exec-map.js";
+import {
+  executeDeliveryCapabilityMapped,
+  isDeliveryCapability,
+} from "../whybuddy/delivery-exec-map.js";
+import {
+  executeVisualCapabilityMapped,
+  isVisualCapability,
+} from "../whybuddy/visual-exec-map.js";
+import {
   executeDeliberationCapabilityMapped,
   isDeliberationCapability,
 } from "../whybuddy/deliberation-exec-map.js";
@@ -43,7 +58,18 @@ import {
   executeDialogueCapability,
   isDialogueCapability,
 } from "../whybuddy/dialogue-exec-map.js";
+import {
+  buildCapabilityLlmFallback,
+  isLlmContentHijackError,
+} from "../whybuddy/capability-llm-fallback.js";
+import { shouldSkipPrimaryLlmAfterPoolExhausted } from "../whybuddy/pool-json-llm.js";
 import { executeOrchestratePlan } from "../whybuddy/orchestrate-plan.js";
+import {
+  callPoolJsonLlm,
+  formatPoolSummaryTag,
+  getWhyBuddyCapabilityPool,
+  isWhyBuddyCapabilityPoolEnabled,
+} from "../whybuddy/pool-json-llm.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -127,16 +153,21 @@ router.get("/sessions/:sessionId", (req: Request, res: Response) => {
 
 // PUT /api/whybuddy/sessions/:sessionId
 // Body: the full V5SessionState (or a partial that we treat as the new truth for the session).
-// We trust the client for the prototype phase (same as the in-memory client store did).
+// N1 guard strips unauthorized goal.status=clear writes (GCOV bypass).
 router.put("/sessions/:sessionId", express.json({ limit: "2mb" }), (req: Request, res: Response) => {
   const sid = req.params.sessionId;
   const body = (req.body || {}) as Partial<V5SessionState> & { sessionId?: string };
 
+  const previous = sessions.get(sid);
+
   // Force the key from the URL (defense in depth)
-  const state: V5SessionState = {
-    ...(body as V5SessionState),
-    sessionId: sid,
-  };
+  let state: V5SessionState = sanitizeGoalStatusOnPut(
+    {
+      ...(body as V5SessionState),
+      sessionId: sid,
+    },
+    previous
+  );
 
   // Stamp lastActive for list views (client also does this, server does it too for purity)
   (state as any).lastActive = new Date().toISOString();
@@ -145,7 +176,8 @@ router.put("/sessions/:sessionId", express.json({ limit: "2mb" }), (req: Request
     (state as any).createdAt = (existing as any)?.createdAt || (state as any).lastActive;
   }
 
-  const previous = sessions.get(sid);
+  state = applyReplayOnSave(previous, state);
+  state = stripProjectionForPersist(state);
   sessions.set(sid, state);
   if (!flushToDisk()) {
     if (previous) sessions.set(sid, previous);
@@ -252,6 +284,35 @@ export type NarrationFallbackReason =
   | "llm_error"
   | "empty_response"
   | "hijacked";
+
+// GET /api/whybuddy/ai-topology — 6-AI layout (1 primary scheduler + 5-key aux pool).
+router.get("/ai-topology", (_req: Request, res: Response) => {
+  const primary = getAIConfig();
+  const pool = getWhyBuddyCapabilityPool();
+  res.json({
+    primary: {
+      role: "orchestrate + report.write",
+      model: primary.model,
+      configured: Boolean(primary.apiKey),
+    },
+    auxPool: {
+      enabled: isWhyBuddyCapabilityPoolEnabled(),
+      size: pool?.size ?? 0,
+      model: pool?.config.model ?? null,
+      capabilities: [
+        "intent.clarify",
+        "route.generate",
+        "route.compare",
+        "requirement.write",
+        "risk.analyze",
+        "counter.argue",
+        "critique.generate",
+        "synthesis.merge",
+      ],
+    },
+    parallelSameRound: true,
+  });
+});
 
 // POST /api/whybuddy/orchestrate-plan — scheduling proposal (LLM or heuristic fallback, always 200).
 router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
@@ -429,6 +490,26 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       return res.json(result);
     }
 
+    if (isStructureCapability(capabilityId)) {
+      const result = await executeStructureDecomposeMapped(
+        state,
+        inputArtifactIds,
+        roleId,
+        turnId
+      );
+      return res.json(result);
+    }
+
+    if (isDeliveryCapability(capabilityId)) {
+      const result = await executeDeliveryCapabilityMapped(capabilityId, state, inputArtifactIds);
+      return res.json(result);
+    }
+
+    if (isVisualCapability(capabilityId)) {
+      const result = await executeVisualCapabilityMapped(capabilityId, state);
+      return res.json(result);
+    }
+
     const isLlmBacked =
       isDeliberationCapability(capabilityId) ||
       isDialogueCapability(capabilityId) ||
@@ -442,9 +523,6 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
     }
 
     const config = getAIConfig();
-    if (!config.apiKey) {
-      throw new Error("LLM not configured (no apiKey from getAIConfig)");
-    }
 
     if (isDeliberationCapability(capabilityId)) {
       const result = await executeDeliberationCapabilityMapped({
@@ -494,6 +572,25 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         `Context artifacts: ${JSON.stringify(recentArtifacts)}\n` +
         `Role: ${roleId || "unspecified"}  Turn: ${turnId}\n\n` +
         "Produce a focused risk analysis: key risks, likelihood/impact, mitigations.";
+
+      const pooledRisk = await callPoolJsonLlm<{
+        title?: string;
+        summary?: string;
+        content?: string;
+      }>(systemPrompt, userPrompt, 0.25);
+      if (pooledRisk?.json) {
+        const title = String(pooledRisk.json.title || "Risk Analysis").trim();
+        const summary = String(pooledRisk.json.summary || "").trim();
+        const content = String(pooledRisk.json.content || "").trim() || "Model returned no content.";
+        const tag = formatPoolSummaryTag(pooledRisk.model, pooledRisk.poolLabel);
+        return res.json({
+          title,
+          summary: summary ? `${summary} ${tag}` : tag,
+          content,
+          provenance: "llm" as const,
+          usage: pooledRisk.usage,
+        });
+      }
     } else if (capabilityId === "report.write") {
       // Use the deterministic 9-section builder as authoritative base (LLM only polishes/expands).
       // This ensures the main report artifact keeps the strong schema + evidence refs even when real server LLM is active.
@@ -507,6 +604,17 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         "Return the polished final evidence report as the required JSON {title, summary, content}.";
     }
 
+    if (
+      capabilityId === "risk.analyze" &&
+      shouldSkipPrimaryLlmAfterPoolExhausted()
+    ) {
+      throw new Error("pool_exhausted_skip_primary");
+    }
+
+    if (!config.apiKey) {
+      throw new Error("LLM not configured (no apiKey from getAIConfig)");
+    }
+
     const { json: result, usage } = await callLLMJsonWithUsage<{ title?: string; summary?: string; content?: string }>(
       [
         { role: "system", content: systemPrompt },
@@ -515,6 +623,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       {
         model: config.model,
         temperature: 0.25,
+        maxTokens: capabilityId === "report.write" ? 12000 : 8000,
         timeoutMs: Math.min(config.timeoutMs, 120000),
       } as any
     );
@@ -539,11 +648,33 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
     });
   } catch (e: any) {
     const msg = String(e?.message || e);
-    console.error("[whybuddy] /execute-capability failed:", msg);
     const status = e?.status || 500;
-    const code = status === 400 || status === 422 ? "unsupported_capability" : "llm_execution_failed";
-    // Non-2xx so the client provider throws → LlmCapabilityExecutor fallback.
-    return res.status(status).json({ error: code, message: msg.slice(0, 300) });
+
+    if (status === 400 || status === 422) {
+      const code = "unsupported_capability";
+      return res.status(status).json({ error: code, message: msg.slice(0, 300) });
+    }
+
+    if (isLlmContentHijackError(msg)) {
+      console.error("[whybuddy] /execute-capability hijack blocked:", msg.slice(0, 200));
+      return res.status(500).json({ error: "llm_execution_failed", message: msg.slice(0, 300) });
+    }
+
+    const fb = buildCapabilityLlmFallback({
+      capabilityId,
+      state,
+      inputArtifactIds,
+      roleId,
+      turnId,
+      reason: msg.slice(0, 120),
+    });
+    if (fb) {
+      console.warn("[whybuddy] /execute-capability degraded:", msg.slice(0, 200));
+      return res.json(fb);
+    }
+
+    console.error("[whybuddy] /execute-capability failed:", msg);
+    return res.status(500).json({ error: "llm_execution_failed", message: msg.slice(0, 300) });
   }
 });
 

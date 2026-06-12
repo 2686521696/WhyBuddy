@@ -11,6 +11,12 @@ import {
 } from "../../shared/blueprint/whybuddy-narration-immunity.js";
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJsonWithUsage } from "../core/llm-client.js";
+import {
+  callPoolJsonLlm,
+  formatPoolSummaryTag,
+  shouldSkipPrimaryLlmAfterPoolExhausted,
+} from "./pool-json-llm.js";
+import { buildCapabilityLlmFallback } from "./capability-llm-fallback.js";
 
 export const DIALOGUE_SYSTEM_PROMPT = `你是 WhyBuddy 的推演引擎,为「想清楚再建」服务:在写任何代码之前,把一个产品想法
 推演清楚。你不是聊天助手,不自我介绍,不寒暄,直接产出内容。
@@ -32,12 +38,16 @@ title ≤ 30 字,具体到本次内容;summary 一句话高信息量;content 为
 
 export type DialogueCapabilityId =
   | "intent.clarify"
+  | "gap.ask"
+  | "question.expand"
   | "route.generate"
   | "route.compare"
   | "requirement.write";
 
 const DIALOGUE_CAPABILITIES = new Set<DialogueCapabilityId>([
   "intent.clarify",
+  "gap.ask",
+  "question.expand",
   "route.generate",
   "route.compare",
   "requirement.write",
@@ -45,6 +55,8 @@ const DIALOGUE_CAPABILITIES = new Set<DialogueCapabilityId>([
 
 const UPSTREAM_KINDS: Record<DialogueCapabilityId, Artifact["kind"][]> = {
   "intent.clarify": ["clarification", "decision"],
+  "gap.ask": ["clarification"],
+  "question.expand": ["clarification"],
   "route.generate": ["clarification", "risk", "evidence"],
   "route.compare": ["route_options", "risk", "evidence"],
   "requirement.write": ["clarification", "route_options", "synthesis", "risk"],
@@ -71,6 +83,27 @@ const TASK_PROMPTS: Record<DialogueCapabilityId, string> = {
 - 默认假设:如果用户不回答,你建议按什么假设继续,以及该假设的风险
 
 收尾一句话:邀请用户优先回答第 1 个问题,或直接说"按默认假设继续"。`,
+
+  "gap.ask": `任务:阻塞性缺口定位 (C_GAP)。
+
+针对「用户目标」列出 3~5 个**阻塞规划**的未决问题——缺了答案就无法选路线或写需求。
+格式硬性要求:
+【阻塞缺口】
+- 每条以「?」或「？」结尾,必须特定于本目标(禁止万金油)
+- 标注「阻塞原因」: 不回答会导致什么决策无法做
+
+禁止 LLM 替用户回答;禁止宣布目标已足够清晰。`,
+
+  "question.expand": `任务:扩展关键问题 (C_QEXP)。
+
+在 gap.ask 或澄清材料基础上,把每个阻塞缺口展开为可操作的追问:
+【扩展问题】
+对每个阻塞点 2~3 行:
+- 追问句(必须可回答)
+- 默认假设(若用户沉默则采用)
+- 采用默认的风险
+
+结尾明确:需用户从 INTAKE 补充,系统不得自答确认。`,
 
   "route.generate": `任务:生成实现路线。
 
@@ -132,6 +165,8 @@ P0 每条必须带验收标准;验收标准必须可判定("体验好""响应快
 
 const TEMPERATURE: Record<DialogueCapabilityId, number> = {
   "intent.clarify": 0.3,
+  "gap.ask": 0.25,
+  "question.expand": 0.35,
   "route.generate": 0.5,
   "route.compare": 0.25,
   "requirement.write": 0.3,
@@ -149,7 +184,7 @@ export type DialogueExecutorResult = {
   title: string;
   summary: string;
   content: string;
-  provenance?: "llm";
+  provenance?: "llm" | "llm_fallback";
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -247,51 +282,96 @@ export async function executeDialogueCapability(
   args: DialogueExecArgs
 ): Promise<DialogueExecutorResult> {
   const config = getAIConfig();
-  if (!config.apiKey) {
-    throw new Error("LLM not configured (no apiKey from getAIConfig)");
-  }
-
   const userPrompt = buildDialogueUserPrompt(args);
   const temperature = TEMPERATURE[args.capabilityId] ?? 0.3;
 
-  const { json, usage } = await callLLMJsonWithUsage<{
-    title?: string;
-    summary?: string;
-    content?: string;
-  }>(
-    [
-      { role: "system", content: DIALOGUE_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    {
-      model: config.model,
-      temperature,
-      timeoutMs: Math.min(config.timeoutMs, 120_000),
-      retryAttempts: 1,
-    } as any
-  );
+  try {
+    const pooled = await callPoolJsonLlm<{
+      title?: string;
+      summary?: string;
+      content?: string;
+    }>(DIALOGUE_SYSTEM_PROMPT, userPrompt, temperature);
 
-  const title = String(json?.title || "").trim().slice(0, 30) || "推演结果";
-  const summary = String(json?.summary || "").trim();
-  const content = String(json?.content || "").trim();
-  if (!content) {
-    throw new Error("empty dialogue content from LLM");
-  }
+    let json: { title?: string; summary?: string; content?: string } | undefined;
+    let usage:
+      | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+      | undefined;
+    let modelTag = config.model;
+    let summaryTag = `[server-llm:${config.model}]`;
 
-  assertContentNotHijacked(title, summary, content);
-
-  return {
-    title,
-    summary: summary ? `${summary} [server-llm:${config.model}]` : `[server-llm:${config.model}]`,
-    content,
-    provenance: "llm",
-    usage: usage
-      ? {
-          inputTokens: usage.prompt_tokens,
-          outputTokens: usage.completion_tokens,
-          totalTokens: usage.total_tokens,
+    if (pooled?.json) {
+      json = pooled.json;
+      usage = pooled.usage
+        ? {
+            prompt_tokens: pooled.usage.inputTokens,
+            completion_tokens: pooled.usage.outputTokens,
+            total_tokens: pooled.usage.totalTokens,
+          }
+        : undefined;
+      modelTag = pooled.model;
+      summaryTag = formatPoolSummaryTag(pooled.model, pooled.poolLabel);
+    } else if (config.apiKey && !shouldSkipPrimaryLlmAfterPoolExhausted()) {
+      const primary = await callLLMJsonWithUsage<{
+        title?: string;
+        summary?: string;
+        content?: string;
+      }>(
+        [
+          { role: "system", content: DIALOGUE_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        {
           model: config.model,
-        }
-      : undefined,
-  };
+          temperature,
+          maxTokens: 8000,
+          timeoutMs: Math.min(config.timeoutMs, 120_000),
+          retryAttempts: 1,
+        } as any
+      );
+      json = primary.json;
+      usage = primary.usage;
+    }
+
+    const title = String(json?.title || "").trim().slice(0, 30) || "推演结果";
+    const summary = String(json?.summary || "").trim();
+    const content = String(json?.content || "").trim();
+    if (!content) {
+      throw new Error("empty dialogue content from LLM");
+    }
+
+    assertContentNotHijacked(title, summary, content);
+
+    return {
+      title,
+      summary: summary ? `${summary} ${summaryTag}` : summaryTag,
+      content,
+      provenance: "llm",
+      usage: usage
+        ? {
+            inputTokens: usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+            model: modelTag,
+          }
+        : undefined,
+    };
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (/hijacked/i.test(msg)) throw e;
+    const fb = buildCapabilityLlmFallback({
+      capabilityId: args.capabilityId,
+      state: args.state,
+      inputArtifactIds: args.inputArtifactIds,
+      roleId: args.roleId,
+      turnId: args.turnId,
+      reason: msg.slice(0, 120),
+    });
+    if (!fb) throw e;
+    return {
+      title: fb.title,
+      summary: fb.summary,
+      content: fb.content,
+      provenance: "llm_fallback" as const,
+    };
+  }
 }

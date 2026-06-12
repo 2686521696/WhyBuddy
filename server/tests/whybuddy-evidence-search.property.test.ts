@@ -10,8 +10,10 @@ import {
   EVIDENCE_SOURCE_LABELS,
   EVIDENCE_SOURCE_IN_SESSION,
   EVIDENCE_SOURCE_F1_GITHUB,
+  EVIDENCE_SOURCE_WEB_SEARCH,
 } from "../whybuddy/capability-exec-map.js";
 import * as ghAdapter from "../whybuddy/github-mcp-adapter.js";
+import { __setWebSearchExecutorForTests } from "../whybuddy/web-evidence-adapter.js";
 
 const PBT_OPTS = { numRuns: 100 };
 
@@ -26,6 +28,15 @@ const baseState = (goalText: string): V5SessionState => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  __setWebSearchExecutorForTests(undefined);
+});
+
+const mockWebSearchMiss = async () => ({
+  query: "x",
+  results: [],
+  totalCandidates: 0,
+  latencyMs: 1,
+  mode: "mock" as const,
 });
 
 /**
@@ -38,6 +49,7 @@ describe("Property 14: evidence source labels", () => {
       fc.asyncProperty(
         fc.string({ minLength: 4, maxLength: 80 }).filter((s) => !s.includes("github.com")),
         async (goal) => {
+          __setWebSearchExecutorForTests(mockWebSearchMiss);
           const res = await executeEvidenceSearchMapped(baseState(goal), [], "研究员");
           expect(res.evidenceSource).toBeDefined();
           expect(EVIDENCE_SOURCE_LABELS).toContain(res.evidenceSource);
@@ -49,15 +61,16 @@ describe("Property 14: evidence source labels", () => {
 });
 
 /**
- * Feature: whybuddy-llm-autonomous-reasoning, Property 15: evidence.search 无任意联网(F1 除外)
- * Validates: Requirements 5.4
+ * Feature: whybuddy-llm-autonomous-reasoning, Property 15: 无 GitHub 线索时不走 F1
+ * Validates: Requirements 5.4 (F1 carve-out only when repo clue present)
  */
-describe("Property 15: no network without GitHub clue", () => {
-  it("zero github adapter calls when goal has no repo clue", async () => {
+describe("Property 15: no F1 without GitHub clue", () => {
+  it("zero github adapter calls when goal has no repo clue (F2 may run separately)", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 4, maxLength: 100 }).filter((s) => !/github\.com\/[\w-]+\/[\w-]+/i.test(s)),
         async (goal) => {
+          __setWebSearchExecutorForTests(mockWebSearchMiss);
           const spy = vi.spyOn(ghAdapter, "executeGithubMcpCapability").mockRejectedValue(
             new Error("should not be called")
           );
@@ -82,6 +95,7 @@ describe("Property 16: F1 path when GitHub clue present", () => {
         fc.constantFrom("acme", "widgets", "org-demo"),
         fc.constantFrom("api", "service", "lib-core"),
         async (owner, repo) => {
+          __setWebSearchExecutorForTests(mockWebSearchMiss);
           const goal = `Review https://github.com/${owner}/${repo} for security`;
           const spy = vi.spyOn(ghAdapter, "executeGithubMcpCapability").mockResolvedValue({
             title: "gh evidence",
@@ -103,10 +117,38 @@ describe("Property 16: F1 path when GitHub clue present", () => {
  * Feature: whybuddy-llm-autonomous-reasoning, Property 17: evidence.search 优雅降级
  * Validates: Requirements 5.6
  */
+describe("Property 18: F2 web search when provider returns real hits", () => {
+  it("grounds evidence via web:search without GitHub clue", async () => {
+    __setWebSearchExecutorForTests(async (req) => ({
+      query: req.query,
+      mode: "hybrid",
+      latencyMs: 3,
+      totalCandidates: 1,
+      results: [
+        {
+          title: "Doc",
+          url: "https://docs.example.org/page",
+          snippet: "evidence snippet",
+          source: "duckduckgo",
+        },
+      ],
+    }));
+
+    const res = await executeEvidenceSearchMapped(
+      baseState("企业权限系统最佳实践"),
+      [],
+      "接地"
+    );
+    expect(res.evidenceSource).toBe(EVIDENCE_SOURCE_WEB_SEARCH);
+    expect(res.provenance).toBe("web:search");
+  });
+});
+
 describe("Property 17: graceful degradation", () => {
   it("never throws when F1 fetch fails; falls back to in-session synthesis", async () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom("acme", "beta"), fc.constantFrom("app", "tool"), async (owner, repo) => {
+        __setWebSearchExecutorForTests(mockWebSearchMiss);
         const goal = `Check https://github.com/${owner}/${repo}`;
         vi.spyOn(ghAdapter, "executeGithubMcpCapability").mockRejectedValue(new Error("network down"));
         await expect(

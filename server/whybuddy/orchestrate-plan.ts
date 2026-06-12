@@ -10,6 +10,12 @@ import {
 import { capabilityDomainAnchoringBlock } from "../../shared/blueprint/whybuddy-narration-immunity.js";
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJsonWithUsage } from "../core/llm-client.js";
+import { callPoolJsonLlm, shouldSkipPrimaryLlmAfterPoolExhausted } from "./pool-json-llm.js";
+import {
+  hasGroundedExternalEvidence,
+  isGroundedEvidenceArtifact,
+  recentUngroundedEvidenceAttempts,
+} from "../../shared/blueprint/whybuddy-grounding.js";
 
 /** Resolved routing model (需求 3.1): `routerModel` when set, else primary `model`. */
 export function resolveRouterModel(config: { routerModel?: string; model: string }): string {
@@ -120,6 +126,61 @@ function buildCapabilityCatalogBlock(): string {
  * full artifact content — preserving the existing compression constraint
  * (prompt passes only id/kind/summary, never full content).
  */
+function buildOpenGapsBlock(state: V5SessionState): string {
+  const contract = state.coverageContract;
+  const gaps = state.coverageGaps || [];
+  if (!contract || gaps.length === 0) {
+    return "OPEN_GAPS: (none)";
+  }
+  const blocking = new Set(contract.blockingGapIds || []);
+  const open = gaps.filter((g) => blocking.has(g.id) && g.status === "open");
+  if (open.length === 0) return "OPEN_GAPS: (all blocking gaps resolved/waived)";
+  return (
+    "OPEN_GAPS (blocking — must address before converge):\n" +
+    open
+      .map(
+        (g) =>
+          `  - ${g.id}: ${g.kind}${g.requiredCapabilityId ? ` → ${g.requiredCapabilityId}` : ""} (${g.label})`
+      )
+      .join("\n")
+  );
+}
+
+function buildEvidenceStatusBlock(state: V5SessionState): string {
+  const grounded = hasGroundedExternalEvidence(state);
+  const attempts = recentUngroundedEvidenceAttempts(state, 6);
+  const runs = (state.capabilityRuns || []).slice(-4);
+  const evLines = runs
+    .filter((r) => r.capabilityId === "evidence.search")
+    .map((r) => {
+      const art = (state.artifacts || []).find((a) => a.producedBy?.capabilityRunId === r.id);
+      const ok = art ? isGroundedEvidenceArtifact(art) : false;
+      const trust = art?.trustLevel || "none";
+      return `  - run ${r.id}: grounded=${ok} trust=${trust}`;
+    });
+  return (
+    `EVIDENCE_STATUS: session_grounded=${grounded}; recent_ungrounded_attempts=${attempts}\n` +
+    (evLines.length ? evLines.join("\n") : "  (no recent evidence.search runs)")
+  );
+}
+
+function buildFailureEventsBlock(state: V5SessionState): string {
+  const conv = (state.conversation || [])
+    .filter((c) => c.role === "system" && /\[G-ROOT\]|\[GCOV\]|\[G-GROUND\]|检索失败|未引入外部证据/i.test(c.text || ""))
+    .slice(-6)
+    .map((c) => `  - ${c.text?.slice(0, 160)}`);
+  const failedRuns = (state.capabilityRuns || [])
+    .slice(-8)
+    .filter((r) => {
+      const gates = r.gateResults || [];
+      return gates.some((g) => g.gateId === "ground" && g.status === "failed");
+    })
+    .map((r) => `  - ${r.capabilityId} @ ${r.id}: G-GROUND failed`);
+  const lines = [...conv, ...failedRuns];
+  if (lines.length === 0) return "FAILURE_EVENTS: (none recent)";
+  return "FAILURE_EVENTS (must not repeat blindly — change query/source or mark blocking):\n" + lines.join("\n");
+}
+
 function buildCoverageContractBlock(state: V5SessionState): string {
   const contract = state.coverageContract;
   if (!contract) {
@@ -178,6 +239,9 @@ export function buildOrchestrateUserPrompt(req: OrchestratePlanRequest): string 
     `BUDGET: turns_used=${budget.turns} runs=${budget.runs} est_tokens=${budget.estimatedTokens} ` +
     `remaining_turns≈${budget.remainingTurns} remaining_runs≈${budget.remainingRuns}\n\n` +
     `${buildCoverageContractBlock(state)}\n\n` +
+    `${buildOpenGapsBlock(state)}\n\n` +
+    `${buildEvidenceStatusBlock(state)}\n\n` +
+    `${buildFailureEventsBlock(state)}\n\n` +
     `CAPABILITY_CATALOG:\n${buildCapabilityCatalogBlock()}`
   );
 }
@@ -200,33 +264,72 @@ export async function executeOrchestratePlan(
   req: OrchestratePlanRequest
 ): Promise<OrchestratePlanResponse> {
   const config = getAIConfig();
-  if (!config.apiKey) {
-    console.warn("[whybuddy] /orchestrate-plan fallback: no_api_key");
-    return heuristicFallback(req, "no_api_key");
-  }
 
   // Net-new (需求 3.1): route with the low-cost router model when configured,
   // else fall back to the primary model. R1 validation / clamp / fallback below
   // is consumed as preserved baseline and not redesigned.
   const routerModel = resolveRouterModel(config);
 
-  try {
+  const parseOrchestrateJson = async (): Promise<{
+    json: {
+      selected?: Array<{ capabilityId?: string; roleId?: string; why?: string }>;
+      rationale?: string;
+      converged?: boolean;
+    };
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    modelLabel: string;
+  } | null> => {
+    const userPrompt = buildOrchestrateUserPrompt(req);
+    const systemPrompt = buildOrchestrateSystemPrompt();
+
+    const pooled = await callPoolJsonLlm<{
+      selected?: Array<{ capabilityId?: string; roleId?: string; why?: string }>;
+      rationale?: string;
+      converged?: boolean;
+    }>(systemPrompt, userPrompt, 0.2);
+    if (pooled?.json) {
+      return {
+        json: pooled.json,
+        usage: pooled.usage
+          ? {
+              prompt_tokens: pooled.usage.inputTokens,
+              completion_tokens: pooled.usage.outputTokens,
+              total_tokens: pooled.usage.totalTokens,
+            }
+          : undefined,
+        modelLabel: `${pooled.model}@${pooled.poolLabel}`,
+      };
+    }
+
+    if (!config.apiKey || shouldSkipPrimaryLlmAfterPoolExhausted()) return null;
+
     const { json, usage } = await callLLMJsonWithUsage<{
       selected?: Array<{ capabilityId?: string; roleId?: string; why?: string }>;
       rationale?: string;
       converged?: boolean;
     }>(
       [
-        { role: "system", content: buildOrchestrateSystemPrompt() },
-        { role: "user", content: buildOrchestrateUserPrompt(req) },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
       {
         model: routerModel,
         temperature: 0.2,
-        timeoutMs: Math.min(config.timeoutMs, 30_000),
+        maxTokens: 4000,
+        timeoutMs: Math.min(config.timeoutMs, 45_000),
         retryAttempts: 1,
       } as any
     );
+    return { json, usage, modelLabel: routerModel };
+  };
+
+  try {
+    const parsed = await parseOrchestrateJson();
+    if (!parsed) {
+      console.warn("[whybuddy] /orchestrate-plan fallback: no_llm_available");
+      return heuristicFallback(req, "no_api_key");
+    }
+    const { json, usage, modelLabel } = parsed;
 
     const rationale = String(json?.rationale || "").trim();
 
@@ -248,9 +351,9 @@ export async function executeOrchestratePlan(
               inputTokens: usage.prompt_tokens,
               outputTokens: usage.completion_tokens,
               totalTokens: usage.total_tokens,
-              model: routerModel,
-            }
-          : undefined,
+            model: modelLabel,
+          }
+        : undefined,
       };
     }
 
@@ -281,7 +384,7 @@ export async function executeOrchestratePlan(
             inputTokens: usage.prompt_tokens,
             outputTokens: usage.completion_tokens,
             totalTokens: usage.total_tokens,
-            model: routerModel,
+            model: modelLabel,
           }
         : undefined,
     };

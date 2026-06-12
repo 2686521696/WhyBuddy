@@ -74,12 +74,15 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
     errSpy.mockRestore();
   });
 
-  it('returns 500 (llm_not_configured or execution_failed) when no apiKey, without leaking secrets', async () => {
+  it('returns llm_fallback template when no apiKey (no 500), without leaking secrets', async () => {
     restoreLlmKey?.();
     delete process.env.LLM_API_KEY;
     delete process.env.OPENAI_API_KEY;
+    delete process.env.BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS;
+    const { resetWhyBuddyCapabilityPoolCache } = await import("../../whybuddy/pool-json-llm.js");
+    resetWhyBuddyCapabilityPoolCache();
 
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     try {
       const res = await fetch(`${base}/execute-capability`, {
@@ -87,19 +90,21 @@ describe('POST /api/whybuddy/execute-capability (server route)', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           capabilityId: 'risk.analyze',
-          state: { sessionId: 't1', goal: { text: 'x' } },
+          state: { sessionId: 't1', goal: { text: '分析权限边界' } },
           inputArtifactIds: [],
           turnId: 't1',
         }),
       });
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(200);
       const body = await res.json().catch(() => ({}));
-      expect(String(body.error || '')).toMatch(/llm_not_configured|execution_failed/);
+      expect(body.provenance).toBe('llm_fallback');
+      expect(body.degraded).toBe(true);
+      expect(String(body.content || '')).toContain('权限');
       const bodyStr = JSON.stringify(body);
       expect(bodyStr).not.toMatch(/sk-/i);
       expect(bodyStr).not.toMatch(/OPENAI|LLM_API_KEY/i);
     } finally {
-      errSpy.mockRestore();
+      warnSpy.mockRestore();
     }
   });
 

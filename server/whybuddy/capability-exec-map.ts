@@ -7,28 +7,35 @@ import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.j
 import { findGithubUrlInTexts, extractGithubRepoSlug } from "../../shared/blueprint/whybuddy-github-context.js";
 import { executeGithubMcpCapability } from "./github-mcp-adapter.js";
 import { executeRepoStaticInspect } from "./repo-static-analyzer.js";
+import {
+  EVIDENCE_SOURCE_WEB_SEARCH,
+  executeWebEvidenceSearch,
+} from "./web-evidence-adapter.js";
 
 /**
  * Closed set of evidence.search source labels (Requirement 5.2 / Property 14).
  * Every evidence.search result is tagged with exactly one of these:
  *   - in-conversation synthesis,
- *   - F1 GitHub fetch (the only sanctioned external seam — Requirement 5.5),
+ *   - F1 GitHub fetch (repo-linked external seam — Requirement 5.5),
+ *   - F2 Web search (全网检索 — sanctioned web_search provider),
  *   - model-knowledge reasoning.
- * No other source is permitted (Requirement 5.4: no arbitrary web browsing / RAG).
  */
 export const EVIDENCE_SOURCE_IN_SESSION = "会话内综合" as const;
 export const EVIDENCE_SOURCE_F1_GITHUB = "F1_Github_Source 取数" as const;
+export { EVIDENCE_SOURCE_WEB_SEARCH };
 export const EVIDENCE_SOURCE_MODEL_KNOWLEDGE = "模型知识推理" as const;
 
 export type EvidenceSourceLabel =
   | typeof EVIDENCE_SOURCE_IN_SESSION
   | typeof EVIDENCE_SOURCE_F1_GITHUB
+  | typeof EVIDENCE_SOURCE_WEB_SEARCH
   | typeof EVIDENCE_SOURCE_MODEL_KNOWLEDGE;
 
 /** The exhaustive, closed set of allowed evidence.search source labels. */
 export const EVIDENCE_SOURCE_LABELS: readonly EvidenceSourceLabel[] = [
   EVIDENCE_SOURCE_IN_SESSION,
   EVIDENCE_SOURCE_F1_GITHUB,
+  EVIDENCE_SOURCE_WEB_SEARCH,
   EVIDENCE_SOURCE_MODEL_KNOWLEDGE,
 ];
 
@@ -42,6 +49,8 @@ export type RawExecutorResult = {
    * of EVIDENCE_SOURCE_LABELS when set. Optional so repo.inspect paths can omit it.
    */
   evidenceSource?: EvidenceSourceLabel;
+  /** S15: explicit degraded marker when repo/evidence path downgrades. */
+  payload?: { degraded?: boolean; degradedReason?: string; [key: string]: unknown };
 };
 
 function ruleEvidenceFallback(state: V5SessionState, roleId?: string): RawExecutorResult {
@@ -85,7 +94,11 @@ export async function executeRepoInspectMapped(
   );
 
   if (!url) {
-    return ruleRepoFallback(state);
+    const fb = ruleRepoFallback(state);
+    return {
+      ...fb,
+      payload: { degraded: true, degradedReason: "no_github_clue" },
+    };
   }
 
   const slug = extractGithubRepoSlug(url);
@@ -117,6 +130,7 @@ export async function executeRepoInspectMapped(
         summary: "外部仓库检索失败，已降级为规则说明。",
         content: `尝试检查 ${url} 时网络或服务不可用。本轮未引入外部仓库元数据。`,
         provenance: "ai_generated",
+        payload: { degraded: true, degradedReason: "repo_fetch_failed", url },
       };
     }
   }
@@ -139,8 +153,13 @@ export async function executeEvidenceSearchMapped(
   const convo = ((state as any)?.conversation || [])
     .slice(-8)
     .map((c: any) => String(c?.text || ""));
-  // Pure string scan only — no network / RAG seam (Requirement 5.4). The sole sanctioned
-  // external seam is the F1 GitHub path below, gated behind a recognizable github.com/owner/repo clue.
+
+  // F2 · 全网检索（优先）：goal/对话 → web_search provider → G-GROUND web:search
+  const webResult = await executeWebEvidenceSearch(state, recentTexts);
+  if (webResult) {
+    return webResult;
+  }
+
   const url = findGithubUrlInTexts(
     goalText,
     ...convo,
@@ -148,14 +167,11 @@ export async function executeEvidenceSearchMapped(
     ...collectArtifactTexts(state, inputArtifactIds)
   );
 
-  // Negative invariant (Requirement 5.4): no recognizable GitHub clue → zero external seam
-  // invocation. Return in-conversation synthesis (会话内综合) without ever touching the network.
   if (!url) {
     return ruleEvidenceFallback(state, roleId);
   }
 
-  // Explicit F1 carve-out (Requirement 5.5): a GitHub clue is the ONLY condition under which an
-  // external fetch (raw.githubusercontent.com / api.github.com) is allowed.
+  // F1 · GitHub 取数（有仓库链接且 F2 未命中时）
   try {
     const gh = await executeGithubMcpCapability("evidence.github.collect", state, inputArtifactIds);
     // Tag the F1 result as F1_Github_Source 取数 (Requirement 5.2) without altering F1's own
@@ -174,6 +190,7 @@ export async function executeEvidenceSearchMapped(
       content: `尝试从 ${url} 收集证据时失败。本轮未引入新的外部证据，改用会话内材料综合。`,
       provenance: "ai_generated",
       evidenceSource: EVIDENCE_SOURCE_IN_SESSION,
+      payload: { degraded: true, degradedReason: "evidence_fetch_failed", url },
     };
   }
 }

@@ -5,9 +5,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { createServer } from "http";
+import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
 import {
   MISSION_CORE_STAGE_BLUEPRINT,
   type MissionArtifact,
@@ -23,10 +23,10 @@ import type {
   ExecutorPreviewSessionType,
 } from "../shared/executor/contracts.js";
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 const STARTUP_TRACE_ENABLED = process.env.STARTUP_TRACE === "1";
 
 function traceStartup(step: string): void {
