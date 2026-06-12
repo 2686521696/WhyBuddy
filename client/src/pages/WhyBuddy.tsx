@@ -178,6 +178,7 @@ function WhyBuddyImmersion({
   imSurfaceMode,
   latestTurn,
   latestTurnId,
+  executorMode,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -198,6 +199,7 @@ function WhyBuddyImmersion({
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
+  executorMode: ReturnType<typeof useWhyBuddySession>["executorMode"];
 }) {
   const sessionId = sessionState.sessionId || "whybuddy-v51-product";
   const composerHints = useMemo(
@@ -241,6 +243,7 @@ function WhyBuddyImmersion({
             (latestTurn && latestTurn.routeFacts.planSelectedCount ? 1 : 0)
           }
           telemetry={reasoningViewModel.telemetry}
+          executorMode={executorMode}
           onResetSession={resetSession}
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
@@ -340,6 +343,7 @@ function WhyBuddySplitEngineering({
   imSurfaceMode,
   latestTurn,
   latestTurnId,
+  executorMode,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -360,6 +364,7 @@ function WhyBuddySplitEngineering({
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
+  executorMode: ReturnType<typeof useWhyBuddySession>["executorMode"];
 }) {
   const imScrollRef = useRef<HTMLElement>(null);
   const imBottomRef = useRef<HTMLDivElement>(null);
@@ -443,6 +448,7 @@ function WhyBuddySplitEngineering({
           (latestTurn && latestTurn.routeFacts.planSelectedCount ? 1 : 0)
         }
         closureReason={latestTurn?.routeFacts.closureReason ?? null}
+        executorMode={executorMode}
       />
 
       <div className={autopilotTheme.split}>
@@ -577,6 +583,7 @@ export default function WhyBuddy() {
     isRunning,
     liveAction,
     sessionState,
+    executorMode,
     sendMessage,
     challengeTurn,
     resetSession,
@@ -632,6 +639,7 @@ export default function WhyBuddy() {
     imSurfaceMode,
     latestTurn,
     latestTurnId,
+    executorMode,
   };
 
   if (isImmersion) {

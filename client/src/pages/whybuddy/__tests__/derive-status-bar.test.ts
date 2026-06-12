@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInitialSessionState } from "@/lib/whybuddy-runtime";
+import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/whybuddy-runtime";
 import { deriveStatusBarFacts } from "../derive-status-bar";
 
 describe("deriveStatusBarFacts", () => {
@@ -47,5 +47,53 @@ describe("deriveStatusBarFacts", () => {
     expect(facts.driveLoopCount).toBe(2);
     expect(facts.trustedArtifactCount).toBeGreaterThanOrEqual(0);
     expect(facts.parkHint).toContain("convergence_signal");
+  });
+
+  it("surfaces G-GROUND degraded badge after ungrounded evidence.search", () => {
+    const s0 = createInitialSessionState("", "status-ground");
+    const { preparedState, context } = intakeMessage(s0, {
+      turnId: "t-ground",
+      userText: "分析权限与风险",
+    });
+    const { newState } = orchestrateReasoningTurn(preparedState, context);
+    const withUngroundedEvidence = {
+      ...newState,
+      capabilityRuns: [
+        ...(newState.capabilityRuns || []),
+        {
+          id: "r-ev-unground",
+          capabilityId: "evidence.search",
+          turnId: "t-ground",
+          inputs: [],
+          outputs: [],
+          gateResults: [],
+        },
+      ],
+      artifacts: [
+        ...(newState.artifacts || []),
+        {
+          id: "ev-unground",
+          kind: "evidence" as const,
+          provenance: "ai_generated" as const,
+          trustLevel: "untrusted" as const,
+          producedBy: {
+            capabilityRunId: "r-ev-unground",
+            capabilityId: "evidence.search",
+            roleId: "接地",
+          },
+          content: "【来源: 会话内综合】未找到可检索的公开仓库线索。",
+          payload: { evidenceSource: "会话内综合" },
+          passedGates: [],
+        },
+      ],
+    };
+    const facts = deriveStatusBarFacts(withUngroundedEvidence, {
+      turnCount: 1,
+      isRunning: false,
+      executorMode: "server-llm",
+    });
+    expect(facts.groundingLabel).toContain("degraded");
+    expect(facts.groundingHint).toContain("外部证据未接地");
+    expect(facts.executorModeLabel).toContain("server-llm");
   });
 });

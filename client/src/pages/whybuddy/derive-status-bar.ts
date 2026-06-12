@@ -5,6 +5,12 @@
 
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { goalStatusUserLabel } from "@shared/blueprint/whybuddy-turn-route";
+import {
+  countGroundedTrustedArtifacts,
+  hasGroundedExternalEvidence,
+  recentUngroundedEvidenceAttempts,
+} from "@shared/blueprint/whybuddy-grounding";
+import type { WhyBuddyExecutorMode } from "./types";
 import { projectConclusionBadge } from "./conclusion-badge";
 
 export type StatusBarFacts = {
@@ -20,6 +26,14 @@ export type StatusBarFacts = {
   trustedArtifactCount: number;
   driveLoopCount: number;
   dataReady: boolean;
+  /** G-GROUND: external evidence grounding for feasibility claims. */
+  groundingLabel: string;
+  groundingClassName: string;
+  groundingHint: string | null;
+  groundedEvidenceCount: number;
+  /** Capability executor seam (pilot vs server-llm). */
+  executorModeLabel: string;
+  executorModeClassName: string;
 };
 
 export function deriveStatusBarFacts(
@@ -31,6 +45,7 @@ export function deriveStatusBarFacts(
     closureReason?: string | null;
     /** 沉浸画布：不展示「停泊/歇脚」文案，架构图无 AWAIT 歇脚点。 */
     immersion?: boolean;
+    executorMode?: WhyBuddyExecutorMode;
   }
 ): StatusBarFacts {
   const badge = projectConclusionBadge(state);
@@ -124,6 +139,44 @@ export function deriveStatusBarFacts(
     openGapCount === 0 &&
     (phase === "awaiting" || state.goal?.status === "clear");
 
+  const groundedEvidenceCount = countGroundedTrustedArtifacts(state);
+  const sessionGrounded = hasGroundedExternalEvidence(state);
+  const ungroundedAttempts = recentUngroundedEvidenceAttempts(state, 6);
+  const gcovGroundingOk = state.coverageGate?.reason?.includes("G-GROUND: true") ?? false;
+
+  let groundingLabel: string;
+  let groundingClassName: string;
+  let groundingHint: string | null = null;
+
+  if (sessionGrounded || groundedEvidenceCount > 0) {
+    groundingLabel = `接地 ${groundedEvidenceCount}`;
+    groundingClassName =
+      "bg-emerald-50 text-emerald-800 ring-emerald-200/80";
+  } else if (ungroundedAttempts > 0) {
+    groundingLabel = "接地 degraded";
+    groundingClassName = "bg-amber-50 text-amber-800 ring-amber-200/80";
+    groundingHint = "外部证据未接地 · 本轮为规则推演";
+  } else if (state.coverageGate && !gcovGroundingOk) {
+    groundingLabel = "待外部接地";
+    groundingClassName = "bg-slate-100 text-slate-600 ring-slate-200/80";
+    groundingHint = "G-GROUND 未满足 · 需 F1/F2 外部来源";
+  } else {
+    groundingLabel = "未接地";
+    groundingClassName = "bg-slate-100 text-slate-500 ring-slate-200/70";
+  }
+
+  const executorMode = opts.executorMode ?? "server-llm";
+  const executorModeLabel =
+    executorMode === "server-llm"
+      ? "executor: server-llm"
+      : executorMode === "pilot"
+      ? "executor: pilot"
+      : "executor: default";
+  const executorModeClassName =
+    executorMode === "server-llm"
+      ? "bg-sky-50 text-sky-800 ring-sky-200/80"
+      : "bg-violet-50 text-violet-800 ring-violet-200/80";
+
   return {
     goalSnippet,
     conclusionLabel: badge.label,
@@ -137,6 +190,12 @@ export function deriveStatusBarFacts(
     trustedArtifactCount,
     driveLoopCount,
     dataReady,
+    groundingLabel,
+    groundingClassName,
+    groundingHint,
+    groundedEvidenceCount,
+    executorModeLabel,
+    executorModeClassName,
   };
 }
 

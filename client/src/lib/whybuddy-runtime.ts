@@ -2704,8 +2704,8 @@ export function invalidateForIntervention(
       // Monotonic stale-set contract (bugfix 2.6): this decision-level early return spreads
       // `...state` and never reassigns `staleArtifactIds`, so any previously-stale ids are
       // preserved intact on this path. Preservation here is intentional, not incidental — do NOT
-      // introduce any shrink of `staleArtifactIds` on this path; the set may only shrink through
-      // the supersede / explicit-resolve exits, which live elsewhere.
+      // introduce any shrink of `staleArtifactIds` on this path; shrinking only happens in
+      // `invalidateForIntervention` supersede paths and explicit gap-resolve helpers.
       let nextState: V5SessionState = {
         ...state,
         decisionLedger: newLedger,

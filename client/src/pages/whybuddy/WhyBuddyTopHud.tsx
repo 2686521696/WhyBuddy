@@ -3,6 +3,8 @@ import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import type { BrainstormGraphTelemetry } from "@shared/blueprint/brainstorm-reasoning-graph";
 import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
+import type { WhyBuddyExecutorMode } from "./types";
+
 export function WhyBuddyTopHud({
   state,
   goal,
@@ -10,6 +12,7 @@ export function WhyBuddyTopHud({
   isRunning,
   driveLoopCount,
   telemetry,
+  executorMode,
   onResetSession,
 }: {
   state: V5SessionState;
@@ -18,6 +21,7 @@ export function WhyBuddyTopHud({
   isRunning: boolean;
   driveLoopCount?: number;
   telemetry?: BrainstormGraphTelemetry | null;
+  executorMode?: WhyBuddyExecutorMode;
   onResetSession?: () => void;
 }) {
   const facts = deriveStatusBarFacts(state, {
@@ -25,6 +29,7 @@ export function WhyBuddyTopHud({
     isRunning,
     driveLoopCount,
     immersion: true,
+    executorMode,
   });
 
   return (
@@ -47,6 +52,27 @@ export function WhyBuddyTopHud({
           >
             {facts.conclusionLabel}
           </span>
+          <span
+            data-testid="whybuddy-grounding-badge"
+            title={facts.groundingHint || facts.groundingLabel}
+            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${facts.groundingClassName}`}
+          >
+            {facts.groundingLabel}
+          </span>
+          <span
+            data-testid="whybuddy-executor-mode"
+            className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-medium ring-1 ring-inset ${facts.executorModeClassName}`}
+          >
+            {facts.executorModeLabel}
+          </span>
+          {facts.groundingHint && (
+            <span
+              className="hidden text-[10px] text-amber-700 lg:inline"
+              data-testid="whybuddy-grounding-hint"
+            >
+              {facts.groundingHint}
+            </span>
+          )}
           <span className="hidden h-3 w-px bg-slate-300 sm:inline-block" aria-hidden />
           <span className="font-mono text-[10px] text-slate-400">话题</span>
           <span
