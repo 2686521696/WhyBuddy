@@ -148,8 +148,6 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
-
 export default defineConfig(() => {
   const repository = process.env.GITHUB_REPOSITORY || "opencroc/whybuddy";
   const repositoryName = repository.split("/")[1] || "whybuddy";
@@ -157,6 +155,29 @@ export default defineConfig(() => {
   const isGitHubPagesBuild =
     process.env.GITHUB_PAGES === "true" ||
     process.env.DEPLOY_TARGET === "github-pages";
+
+  // B5: CSP injection plugin - injects the strict connect-src policy for browser-llm zero-trust.
+  // Done via transform (instead of hardcoded in index.html) to prevent Vite html-proxy / transformIndexHtml
+  // module resolution errors during `vite build` for GitHub Pages static export.
+  // Also applies in dev for the demo.
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:;" />`;
+  const vitePluginCspForByok = {
+    name: "csp-for-byok-pages",
+    transformIndexHtml(html) {
+      // Avoid duplicate if somehow present
+      if (html.includes("Content-Security-Policy")) return html;
+      // Insert early in <head>
+      return html.replace(/<head>/i, `<head>\n    ${cspMeta}`);
+    },
+  };
+
+  const plugins = [
+    react(),
+    tailwindcss(),
+    vitePluginManusRuntime(),
+    vitePluginManusDebugCollector(),
+    vitePluginCspForByok,
+  ];
 
   return {
     base: isGitHubPagesBuild ? `/${repositoryName}/` : "/",

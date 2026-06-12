@@ -104,6 +104,29 @@ export function WhyBuddyTopHud({
     alert("已清除 BYOK 配置，回退到 pilot 模板演示。");
   };
 
+  // Per-key remove for true multi-key support
+  const removeByokEntry = (id: string) => {
+    const pool = loadByokPool();
+    if (!pool || !pool.entries) return;
+    const newEntries = pool.entries.filter((e: any) => e.id !== id);
+    const newPool = { ...pool, entries: newEntries };
+    saveByokPool(newPool);
+    // bump draft to re-render list
+    setByokDraft({ ...byokDraft, key: byokDraft.key });
+    if (IS_GITHUB_PAGES && newEntries.length === 0 && WhyBuddyRuntime.usePilotRealExecutor) {
+      WhyBuddyRuntime.usePilotRealExecutor();
+    }
+    window.dispatchEvent(new CustomEvent("byok-config-changed"));
+  };
+
+  // Edit: load the entry's values into the draft form so user can modify preset/key and Add/Save (append or re-configure)
+  const editByokEntry = (e: any) => {
+    setByokDraft({ preset: e.presetId as ByokPresetId, key: "********" });
+    // Optional: remove the old one first so re-save replaces it (user intent for "edit")
+    // For safety we just load; user can Clear or remove if they want exact replace.
+    alert(`Loaded ${e.presetId} for edit. Change values and click Add/Save (it will add; use × to remove old duplicate if needed).`);
+  };
+
   return (
     <header
       className={autopilotTheme.immersionOverlayHeader}
@@ -173,8 +196,22 @@ export function WhyBuddyTopHud({
                 currentByok.entries.map((e, i) => {
                   const snap = getByokDispatcher().snapshot().entries.find(s => s.id === e.id) || { inFlight: 0, totalTokens: 0, cooledUntil: null, enabled: e.enabled };
                   return (
-                    <span key={i} className="text-[8px] text-emerald-300" title={`Key ${i+1}: ${e.label} (masked)`}>
+                    <span key={i} className="text-[8px] text-emerald-300 flex items-center gap-1" title={`Key ${i+1}: ${e.label} (masked)`}>
                       {e.presetId} {e.label} ({maskKey(e.apiKey)}) inFlight:{snap.inFlight} tokens:{snap.totalTokens} {snap.cooledUntil ? 'cooled' : ''}
+                      <button
+                        onClick={() => removeByokEntry(e.id)}
+                        className="ml-1 rounded bg-rose-800/70 px-0.5 text-[7px] text-white hover:bg-rose-600"
+                        title="Remove this key"
+                      >
+                        ×
+                      </button>
+                      <button
+                        onClick={() => editByokEntry(e)}
+                        className="rounded bg-sky-800/70 px-0.5 text-[7px] text-white hover:bg-sky-600"
+                        title="Load for edit (change preset/key then Add/Save)"
+                      >
+                        ✎
+                      </button>
                     </span>
                   );
                 })
