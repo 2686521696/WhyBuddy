@@ -119,12 +119,11 @@ export function WhyBuddyTopHud({
     window.dispatchEvent(new CustomEvent("byok-config-changed"));
   };
 
-  // Edit: load the entry's values into the draft form so user can modify preset/key and Add/Save (append or re-configure)
+  // Edit: remove old, load for re-add (replace semantics for "edit")
   const editByokEntry = (e: any) => {
+    removeByokEntry(e.id); // remove first
     setByokDraft({ preset: e.presetId as ByokPresetId, key: "********" });
-    // Optional: remove the old one first so re-save replaces it (user intent for "edit")
-    // For safety we just load; user can Clear or remove if they want exact replace.
-    alert(`Loaded ${e.presetId} for edit. Change values and click Add/Save (it will add; use × to remove old duplicate if needed).`);
+    alert(`Loaded ${e.presetId} for edit (old removed). Change and Add/Save to re-add updated.`);
   };
 
   return (
