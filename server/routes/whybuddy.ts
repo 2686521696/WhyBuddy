@@ -24,6 +24,16 @@ import { sanitizeGoalStatusOnPut } from "../../shared/blueprint/whybuddy-coverag
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLM, callLLMJson, callLLMJsonWithUsage } from "../core/llm-client.js";
 import { buildStructuredReport } from "../../shared/blueprint/whybuddy-report-builder.js";
+import {
+  buildCapabilityContext,
+  formatContextForPrompt,
+  classifyCapabilityTier,
+} from "../../shared/blueprint/whybuddy-capability-context.js";
+import {
+  getOutputContract,
+  renderContractForPrompt,
+  renderContractSchema,
+} from "../../shared/blueprint/whybuddy-output-contracts.js";
 import { buildFallbackNarration } from "../../shared/blueprint/whybuddy-deliverable-sanitize.js";
 import type { GoalStatusForNarration } from "../../shared/blueprint/whybuddy-deliverable-sanitize.js";
 import {
@@ -548,30 +558,38 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       return res.json(result);
     }
 
-    // Build compact context (mirrors the spirit of the previous client direct prompts but now on server).
+    // K1: 分级上下文供给（取代原 220 字符硬截断阀门）。
+    // 收敛类给完整 content（单 6000 / 总 24000，显式 [truncated] 标注）；分析类 800；其余轻量 220。
     const goalText = (state as any)?.goal?.text || (state as any)?.goal || "";
-    const recentArtifacts = ((state as any).artifacts || []).slice(-6).map((a: any) => ({
-      title: a?.title,
-      kind: a?.kind,
-      summary: String(a?.summary || "").slice(0, 220),
-    }));
+    const ctxEntries = buildCapabilityContext(state as any, capabilityId, inputArtifactIds);
+    const contextBlock = formatContextForPrompt(ctxEntries);
+    const tier = classifyCapabilityTier(capabilityId);
 
     const domainAnchor = capabilityDomainAnchoringBlock(goalText);
-    const systemPrompt =
+
+    // K2: 输出契约注入（单一真相，可被 K3 质量门复用）。
+    const contract = getOutputContract(capabilityId);
+    const contractBlock = contract ? renderContractForPrompt(contract) : "";
+    const contractSchema = contract ? renderContractSchema(contract) : null;
+
+    let systemPrompt =
       "You are an expert AI collaborator for WhyBuddy V5. " +
       domainAnchor +
       "Return ONLY a single JSON object (no prose, no ```json fences) with exactly these keys:\n" +
       '{"title": string, "summary": string, "content": string}\n' +
       "title: short and specific. summary: one-sentence high-signal. content: professional, actionable, evidence-based.";
+    if (contractBlock) {
+      systemPrompt += "\n\n" + contractBlock;
+    }
 
     let userPrompt = "";
     if (capabilityId === "risk.analyze") {
       userPrompt =
         `${domainAnchor}` +
-        `Capability: risk.analyze\nGoal: ${goalText}\n` +
-        `Context artifacts: ${JSON.stringify(recentArtifacts)}\n` +
+        `Capability: risk.analyze (tier=${tier})\nGoal: ${goalText}\n` +
+        `Upstream context (full for analysis tier):\n${contextBlock}\n` +
         `Role: ${roleId || "unspecified"}  Turn: ${turnId}\n\n` +
-        "Produce a focused risk analysis: key risks, likelihood/impact, mitigations.";
+        "Produce a focused risk analysis: key risks, likelihood/impact, mitigations. Use the provided upstream content verbatim where relevant.";
 
       const pooledRisk = await callPoolJsonLlm<{
         title?: string;
@@ -592,16 +610,19 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         });
       }
     } else if (capabilityId === "report.write") {
-      // Use the deterministic 9-section builder as authoritative base (LLM only polishes/expands).
-      // This ensures the main report artifact keeps the strong schema + evidence refs even when real server LLM is active.
+      // K1+K2: 确定性 9 段 BASE 作为事实脊柱 + 完整上游供给 + 契约驱动扩展。
+      // 严禁“only polish”类限制（K2 核心改造）。
       const built = buildStructuredReport({ state, inputArtifactIds, roleId });
+      const fullCtx = formatContextForPrompt(ctxEntries);
       userPrompt =
         `${domainAnchor}` +
-        `Capability: report.write\nGoal: ${goalText}\n` +
-        `Base structured evidence (authoritative 9-section skeleton from buildStructuredReport — preserve all sections, key facts, upstream refs, risks, gaps, and the exact structure; only polish narrative, flow, insight and professionalism):\n` +
+        `Capability: report.write (tier=${tier})\nGoal: ${goalText}\n` +
+        `Base structured evidence (authoritative 9-section skeleton from buildStructuredReport — preserve all sections, key facts, upstream refs, risks, gaps, and the exact structure verbatim in meaning):\n` +
         `BASE_TITLE: ${built.title}\nBASE_SUMMARY: ${built.summary}\nBASE_CONTENT:\n${built.content}\n\n` +
+        `Full upstream context (for expansion, with visible truncation marks):\n${fullCtx}\n\n` +
+        (contractBlock ? `Output contract to satisfy:\n${contractBlock}\nContract schema: ${JSON.stringify(contractSchema)}\n\n` : "") +
         `Role: ${roleId || "综合"}  Turn: ${turnId}\n\n` +
-        "Return the polished final evidence report as the required JSON {title, summary, content}.";
+        "Expand each section to satisfy the output contract. Preserve all base facts, refs, risks, gaps verbatim in meaning; add depth, do not pad. Return the final evidence report as {title, summary, content}.";
     }
 
     if (
@@ -623,7 +644,8 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       {
         model: config.model,
         temperature: 0.25,
-        maxTokens: capabilityId === "report.write" ? 12000 : 8000,
+        // K2: 重型产出（document/requirement 契约）对齐旧管线 16k；report 维持 12k 已有预算
+        maxTokens: capabilityId === "report.write" ? 12000 : (contract && ["document.draft", "requirement.write"].includes(capabilityId) ? 16000 : 8000),
         timeoutMs: Math.min(config.timeoutMs, 120000),
       } as any
     );

@@ -34,33 +34,48 @@ export function evaluateReviewPassGate(state: V5SessionState): {
   };
 }
 
-/** True when an RV pass was recorded for the given (or latest trusted) report. */
+/** True when an RV pass was recorded for the given (or latest trusted) report.
+ * K6.2: 必须 scope 到具体 report（reportId 匹配 或 时间晚于该 report 的 createdAt）。
+ * 避免老的 unscoped RV 被后续新报告“借用”。
+ */
 export function hasReviewPassRecorded(
   state: V5SessionState,
-  report?: { id: string; producedBy?: { capabilityRunId?: string } } | null
+  report?: { id: string; createdAt?: string; producedBy?: { capabilityRunId?: string } } | null
 ): boolean {
   const target = report ?? latestTrustedReport(state);
   if (!target) return false;
 
-  const stale = new Set(state.staleArtifactIds || []);
-  const trustedReportCount = (state.artifacts || []).filter(
-    (a) =>
-      a.kind === "report" &&
-      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
-      !stale.has(a.id)
-  ).length;
-  const reportWriteRuns = (state.capabilityRuns || []).filter(
-    (r) => r.capabilityId === "report.write"
-  ).length;
+  const targetTime = target.createdAt ? Date.parse(target.createdAt) : 0;
 
-  for (let i = (state.conversation || []).length - 1; i >= 0; i--) {
-    const text = String(state.conversation![i].text || "");
+  const conv = state.conversation || [];
+  for (let i = conv.length - 1; i >= 0; i--) {
+    const entry = conv[i];
+    const text = String(entry.text || "");
     if (!/\[RV\]\s*评审通过/i.test(text)) continue;
 
+    // 优先：显式 reportId 绑定
     if (text.includes(`reportId=${target.id}`)) return true;
 
-    // Legacy unscoped RV lines: only when a single report lifecycle exists.
-    if (trustedReportCount === 1 && reportWriteRuns <= 1) return true;
+    // 时间 scope：只有当双方都有有效时间戳时，才用时间判断“RV 晚于该 report”
+    const rvTime = entry.timestamp ? Date.parse(entry.timestamp) : 0;
+    if (rvTime > 0 && targetTime > 0 && rvTime >= targetTime) return true;
+
+    // 仅在完全没有时间信息且只有一个报告生命周期时，容忍 legacy unscoped RV（强烈不推荐，易被后续报告借用）
+    const stale = new Set(state.staleArtifactIds || []);
+    const trustedReports = (state.artifacts || []).filter(
+      (a) =>
+        a.kind === "report" &&
+        (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
+        !stale.has(a.id)
+    );
+    const reportWriteRuns = (state.capabilityRuns || []).filter(
+      (r) => r.capabilityId === "report.write"
+    ).length;
+
+    if (trustedReports.length === 1 && reportWriteRuns <= 1 && targetTime === 0 && rvTime === 0) {
+      return true;
+    }
+    // 发现不匹配的 RV 后停止（避免跨报告借用更早的 RV）
     break;
   }
   return false;

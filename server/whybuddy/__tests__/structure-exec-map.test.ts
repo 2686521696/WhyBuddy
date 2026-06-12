@@ -161,4 +161,44 @@ describe("structure-exec-map (S13/S14)", () => {
     );
     expect(inv.passed).toBe(true);
   });
+
+  it("【K5.1 探索测试】 server-llm 路径 prompt 应包含 route 摘要与 repo 片段（修复前短 prompt 仅 6 行 upstream_digest 120 字符 → 必败）", async () => {
+    // 构造带 route_options 和 repo.inspect 的 state（模拟 V5 会话已有 selected route + repo 产物）
+    const stateWithContext: any = {
+      ...baseState("权限系统 V5.1 厚度回归"),
+      artifacts: [
+        {
+          id: "r1",
+          kind: "route_options",
+          title: "推荐路线",
+          content: "selectedRouteId: primary-route-42\n主路线：RBAC + 审计优先，备选 ABAC 扩展。\n理由：MVP 成本与风险平衡。",
+          producedBy: { capabilityId: "route.select" },
+        },
+        {
+          id: "repo1",
+          kind: "repo",
+          title: "repo.inspect",
+          content: "https://github.com/example/whybuddy-demo\n关键文件：src/auth/rbac.ts (120 行), docs/permissions.md\n权限模型变更历史：3 次最近提交涉及 scope 边界。",
+          producedBy: { capabilityId: "repo.inspect" },
+        },
+      ],
+    };
+
+    const result = await executeStructureDecomposeMapped(stateWithContext, ["r1", "repo1"], "架构", "k5-rich");
+
+    const prompt = String(result.payload?.promptExcerpt || result.payload?.userPrompt || "");
+    // 断言适配后的 prompt（或上游 digest）包含路线与仓库信息
+    expect(prompt).toMatch(/route|primary-route-42|RBAC \+ 审计/i);
+    expect(prompt).toMatch(/repo|github.com|rbac.ts|permissions/i);
+    // 同时仍应包含 C_PROMPT 等标记（保全既有流程）
+    expect(prompt).toContain("C_PROMPT");
+    // 确认复用了旧管线 prompt builder (K5) - rich context appended
+    expect(prompt).toContain("blueprint.spec-tree-llm.v1");
+  });
+
+  it("K5 continued: structure prompt includes K2 contract requirements (nodes, depth, EARS, evidenceRef)", async () => {
+    const result = await executeStructureDecomposeMapped(baseState("test contract"), [], "架构", "k5-contract");
+    const prompt = String(result.payload?.promptExcerpt || "");
+    expect(prompt).toMatch(/nodes >=|depth >=|EARS|evidenceRef/i);
+  });
 });

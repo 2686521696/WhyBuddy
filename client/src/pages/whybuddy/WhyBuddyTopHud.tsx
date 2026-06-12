@@ -88,6 +88,16 @@ export function WhyBuddyTopHud({
             </span>
           )}
           <span className="hidden h-3 w-px bg-slate-300 sm:inline-block" aria-hidden />
+          {/* K6.5: 详略开关可发现性提示 - 首次或切换时建议切详模式看溯源链 (ev/phase/tree 子节点) */}
+          {projectionDensity === "compact" && onProjectionDensityChange && (
+            <span
+              className="ml-1 hidden text-[9px] text-amber-600 lg:inline cursor-pointer hover:underline"
+              title="切详模式看证据/阶段/树溯源链"
+              onClick={() => onProjectionDensityChange("detailed")}
+            >
+              [切详看溯源]
+            </span>
+          )}
           <span className="font-mono text-[10px] text-slate-400">话题</span>
           <span
             className={`min-w-0 max-w-[min(36vw,280px)] truncate font-medium text-slate-800 sm:max-w-[min(42vw,360px)] ${

@@ -88,6 +88,7 @@ function derivePhaseFacts(
 ): PhaseFact[] {
   const capId = parent.capabilityId;
   const runId = resolveCapabilityRunId(state, parent as any);
+  // K6.3: when runId cannot be resolved, skip run-based ledger / phase兜底 (宁缺毋滥, no cross-run pollution)
   const facts: PhaseFact[] = [];
   const seen = new Set<string>();
 
@@ -121,13 +122,18 @@ function derivePhaseFacts(
     }
   }
 
+  // K6.4: support failed from traces (make failed steps visible for "可挑战" narrative)
   if (facts.length === 0 && latestUiTurn?.actions?.length && runId) {
     const turnId = latestUiTurn.id;
     for (const trace of latestUiTurn.actions as ActionTrace[]) {
       if (trace.turnId && trace.turnId !== turnId) continue;
+      let kind: PhaseKind = trace.ok ? "completed" : "observing";
+      if (!trace.ok && /fail|error|失败|reject|打回/i.test(String(trace.label || trace.detail || ""))) {
+        kind = "failed";
+      }
       push({
-        kind: trace.ok ? "completed" : "observing",
-        label: trace.ok ? "完成" : "观察",
+        kind,
+        label: PHASE_LABEL[kind],
         body: trace.label,
         sourceKey: `trace:${trace.label}:${trace.turnId ?? turnId}`,
       });
@@ -138,12 +144,9 @@ function derivePhaseFacts(
     return facts.slice(0, MAX_PHASE_CHILDREN);
   }
 
+  // K6.3: strict - only use exact runId, no capId fallback for phase/ledger (宁缺毋滥)
   const run = runId
     ? (state.capabilityRuns || []).find((r) => r.id === runId)
-    : capId
-    ? [...(state.capabilityRuns || [])]
-        .reverse()
-        .find((r) => r.capabilityId === capId)
     : undefined;
 
   if (run) {
@@ -236,15 +239,45 @@ function isSpecTreeMetaLine(trimmed: string): boolean {
   return false;
 }
 
+/**
+ * K6.1 修复：专为 formatTreeContent 真实产出格式增加可靠分支。
+ * 跳过 gateNote + 头行； [root] 明确 depth=1；├─ =2；│  └─ =3。
+ * 保留原 markdown - 兜底（其他来源的树序列化）。
+ */
 function parseSpecTreeLines(content: string): Array<{ id: string; title: string; depth: number }> {
   const rows: Array<{ id: string; title: string; depth: number }> = [];
   const typeCounts = new Map<string, number>();
 
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
     if (isSpecTreeMetaLine(trimmed)) continue;
 
-    const md = line.match(/^(\s*)-\s*(?:\[([^\]]+)\]\s*)?(.+)$/);
+    // 优先：真实 formatTreeContent 产出格式（[type] title: summary）
+    // 显式识别 root / ├─ / │  └─ 前缀来决定 depth
+    const fmt = rawLine.match(/^(\s*(?:├─\s*|│\s*└─\s*)?)\[([^\]]+)\]\s*([^:]+):\s*(.+)$/);
+    if (fmt) {
+      const prefix = fmt[1] || "";
+      let depth = 1;
+      if (/│\s*└─/.test(prefix)) depth = 3;
+      else if (/├─/.test(prefix)) depth = 2;
+      // 根行无前缀 → 1（显式）
+      if (fmt[2].trim() === "root") depth = 1;
+
+      const nodeType = fmt[2].trim();
+      const title = fmt[3].trim().slice(0, 80);
+      const count = (typeCounts.get(nodeType) ?? 0) + 1;
+      typeCounts.set(nodeType, count);
+      const id = nodeType === "root" && count === 1 ? "root" : `${nodeType}-${count}`;
+
+      rows.push({ id, title, depth: Math.min(MAX_TREE_DEPTH, depth) });
+      if (rows.length >= 12) break;
+      continue;
+    }
+
+    // 兜底：旧 markdown 列表风格（- [id] title ...）
+    const md = rawLine.match(/^(\s*)-\s*(?:\[([^\]]+)\]\s*)?(.+)$/);
     if (md) {
       const depth = Math.min(MAX_TREE_DEPTH, Math.floor(md[1].length / 2) + 1);
       const id = (md[2] || `line-${rows.length}`).replace(/\s+/g, "-");
@@ -252,23 +285,6 @@ function parseSpecTreeLines(content: string): Array<{ id: string; title: string;
       if (rows.length >= 12) break;
       continue;
     }
-
-    const fmt = line.match(/^(\s*(?:├─\s*|│\s*└─\s*)?)\[([^\]]+)\]\s*([^:]+):\s*(.+)$/);
-    if (!fmt) continue;
-
-    const prefix = fmt[1];
-    let depth = 1;
-    if (/│\s*└─/.test(prefix)) depth = 3;
-    else if (/├─/.test(prefix)) depth = 2;
-
-    const nodeType = fmt[2].trim();
-    const title = fmt[3].trim().slice(0, 80);
-    const count = (typeCounts.get(nodeType) ?? 0) + 1;
-    typeCounts.set(nodeType, count);
-    const id = nodeType === "root" && count === 1 ? "root" : `${nodeType}-${count}`;
-
-    rows.push({ id, title, depth: Math.min(MAX_TREE_DEPTH, depth) });
-    if (rows.length >= 12) break;
   }
   return rows;
 }

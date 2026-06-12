@@ -251,6 +251,13 @@ export function deriveWhyBuddyReasoningViewModel(
   const density = options.density ?? "compact";
   const lineageHighlightIds = options.lineageHighlightIds ?? [];
 
+  // K6.5: 简模式回跳静默失效修复 - 当 lineage 高亮 ::ev- (ReportReader 证据回跳) 时自动切详模式
+  // 避免在 compact 下点击报告证据后子节点不可见
+  let effectiveDensity = density;
+  if (density === "compact" && lineageHighlightIds.some((id) => id.includes("::ev-"))) {
+    effectiveDensity = "detailed";
+  }
+
   const graph = state.graph;
   if (!graph?.nodes?.length) {
     return emptyWhyBuddyViewModel();
@@ -283,7 +290,7 @@ export function deriveWhyBuddyReasoningViewModel(
     state,
     visibleNodes,
     visibleEdges,
-    density,
+    effectiveDensity,
     options.latestUiTurn
   );
   let finalNodes = expanded.nodes;
@@ -314,7 +321,7 @@ export function deriveWhyBuddyReasoningViewModel(
     telemetry,
     terminalNode: terminal?.node ?? null,
     terminalMeta: terminal?.meta ?? null,
-    density,
+    density: effectiveDensity,
     lineageHighlightIds,
   };
 }

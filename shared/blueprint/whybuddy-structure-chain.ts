@@ -125,13 +125,18 @@ export function validateSpecTreeInvariants(nodes: SpecTreeNode[]): {
 
 export function buildTemplateTree(goalText: string): SpecTreeResponse {
   const slug = goalText.slice(0, 40) || "product";
+  // K4: 模板树升档（pilot baseline）。节点 ≥8、深度 ≥3、requirement 带 EARS 风格验收提示（放 summary 便于 format + 投影解析）。
   return {
     nodes: [
       { id: "root", type: "root", title: slug, summary: `SPEC root for ${slug}`, evidenceRef: "goal:text" },
-      { id: "req-1", parentId: "root", type: "requirement", title: "核心需求", summary: "MVP 功能范围", evidenceRef: "upstream:clarification" },
-      { id: "des-1", parentId: "req-1", type: "design", title: "架构约束", summary: "RBAC + 审计", evidenceRef: "upstream:risk" },
-      { id: "task-1", parentId: "des-1", type: "task", title: "交付任务", summary: "第一周可执行项", evidenceRef: "upstream:synthesis" },
-      { id: "ev-1", parentId: "task-1", type: "evidence", title: "验收证据", summary: "EARS 用例占位", evidenceRef: "upstream:report" },
+      { id: "req-1", parentId: "root", type: "requirement", title: "核心需求", summary: "MVP 功能范围。当用户登录时，系统应授予最小权限集。WHEN 角色请求资源，THE system SHALL 校验 scope。", evidenceRef: "upstream:clarification" },
+      { id: "req-2", parentId: "root", type: "requirement", title: "审计与追溯", summary: "所有权限变更必须可审计。IF 操作涉及跨租户，THE system SHALL 拒绝并记录。", evidenceRef: "upstream:clarification" },
+      { id: "des-1", parentId: "req-1", type: "design", title: "架构约束", summary: "RBAC + 审计 + 数据范围过滤。", evidenceRef: "upstream:risk" },
+      { id: "des-2", parentId: "req-1", type: "design", title: "接口契约", summary: "暴露 grant/revoke 及 scope check 接口。", evidenceRef: "upstream:risk" },
+      { id: "task-1", parentId: "des-1", type: "task", title: "交付任务", summary: "第一周可执行项：RBAC 模型 + 基础 scope 拦截。", evidenceRef: "upstream:synthesis" },
+      { id: "task-2", parentId: "des-2", type: "task", title: "审计日志", summary: "持久化操作日志并提供查询 API。", evidenceRef: "upstream:synthesis" },
+      { id: "ev-1", parentId: "task-1", type: "evidence", title: "验收证据", summary: "EARS 用例占位 + 单元测试覆盖 grant 路径。", evidenceRef: "upstream:report" },
+      { id: "ev-2", parentId: "task-2", type: "evidence", title: "审计证据", summary: "日志条目包含操作者、时间、影响对象。", evidenceRef: "upstream:report" },
     ],
   };
 }

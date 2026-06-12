@@ -9,6 +9,12 @@ import {
   collectStructureUpstreamSummary,
   runStructureDecomposePipeline,
 } from "../../shared/blueprint/whybuddy-structure-chain.js";
+import {
+  enrichStructureUpstream,
+  buildRichStructureContextForOldDerivation,
+  buildRichSpecTreePromptFromOld,
+} from "./structure-derivation-adapter.js";
+import { getOutputContract, renderContractForPrompt } from "../../shared/blueprint/whybuddy-output-contracts.js";
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJsonWithUsage } from "../core/llm-client.js";
 import { callPoolJsonLlm, formatPoolSummaryTag } from "./pool-json-llm.js";
@@ -37,7 +43,8 @@ export function __setStructureLlmForTests(fn: StructureLlmFn | undefined): void 
 const STRUCTURE_SYSTEM_PROMPT =
   "You are a SPEC Tree generator for WhyBuddy V5.1. Return ONLY JSON: " +
   '{"nodes":[{"id","parentId?","title","summary","type":"root|requirement|design|task|evidence","evidenceRef"}]} ' +
-  "Rules: exactly 1 root, unique ids, parent reachable, no cycles, every node has evidenceRef.";
+  "Rules: exactly 1 root, unique ids, parent reachable, no cycles, every node has evidenceRef. " +
+  "Per K2 output contract: nodes >= max(8, success criteria * 2), depth >=3, every requirement node must have EARS-style acceptance + evidenceRef.";
 
 async function callStructureLlm(
   systemPrompt: string,
@@ -84,9 +91,18 @@ export async function executeStructureDecomposeMapped(
   turnId?: string
 ): Promise<RawExecutorResult & { payload?: { schemaPassed: boolean; invariantPassed: boolean; gateLedger: string[] } }> {
   const goalText = state.goal?.text || "目标";
-  const upstream = collectStructureUpstreamSummary(state, inputArtifactIds);
+  const baseUpstream = collectStructureUpstreamSummary(state, inputArtifactIds);
+  // K5: 适配层复用旧管线上下文 (buildRichSpecTreePromptFromOld + route/repo extracts)
+  // 保持 V5 prompt 结构 (C_PROMPT 等) 以便红action + pipeline + G_SCHEMA/G_INV/ledger 复用。
+  // 追加旧 prompt builder 的 rich payload 作为额外上下文指导 (parent/route/repo/schema)。
+  // 同时加 K2 contract。 pilot 仍 template。
+  const upstream = enrichStructureUpstream(baseUpstream, state, inputArtifactIds);
   const prompt = buildStructurePrompt({ goalText, upstreamSummary: upstream, turnId });
-  const { redacted, redactionCount } = redactStructurePrompt(prompt);
+  const richOld = buildRichSpecTreePromptFromOld(state, inputArtifactIds);
+  const contract = getOutputContract("structure.decompose");
+  const contractBlock = contract ? "\n\n" + renderContractForPrompt(contract) : "";
+  const fullUserPrompt = `${prompt}\n\n[rich context reused from old derivation pipeline]\n${richOld}` + contractBlock;
+  const { redacted, redactionCount } = redactStructurePrompt(fullUserPrompt);
   const gateLedgerPrefix = ["C_PROMPT:built", `C_REDACT:applied:${redactionCount}`];
 
   const result = await runStructureDecomposePipeline({
@@ -107,7 +123,7 @@ export async function executeStructureDecomposeMapped(
     provenance: result.provenance,
     payload: {
       ...result.payload,
-      promptExcerpt: prompt.slice(0, 240),
+      promptExcerpt: fullUserPrompt.slice(0, 800), // larger to capture rich old context for K5 verification
       redactedExcerpt: redacted.slice(0, 240),
     },
   };
