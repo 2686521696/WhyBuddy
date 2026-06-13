@@ -244,7 +244,7 @@ export function WhyBuddyTopHud({
           {/* M5 real: budget + costLedger usage (Knife 6). M4 policy. Sync to hud for marathon. */}
           {((state as any).costLedger?.length || (state as any).autopilotPolicy) && (
             <span className="ml-2 text-[8px] text-indigo-300" title="M5: 真实 costLedger 累计 + marathon budget。M4 policy 代答。">
-              自动驾驶 · 预算 {((state as any).costLedger || []).length}条记录 / 预设上限 {((window as any).__whybuddyMarathonBudget?.maxTokens) || 12000}
+              自动驾驶 · 预算 {((state as any).costLedger || []).length}条记录 / 预设上限 {(typeof window !== "undefined" && (window as any).__whybuddyMarathonBudget?.maxTokens) || 12000}
             </span>
           )}
           {/* M7: 真实抽屉面板 (非 alert)。点击展开固定右侧面板，展示 policy/ledger/cost/superseded/frontier/M3 prompt 片段。默认用户语言不泄内部 token。 */}
