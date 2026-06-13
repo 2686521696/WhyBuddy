@@ -2,6 +2,7 @@
  * S13–S14 · structure.decompose server executor (/sliderule execute-capability).
  */
 
+import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import {
   buildStructurePrompt,
@@ -58,7 +59,7 @@ async function callStructureLlm(
   }
   const config = getAIConfig();
   const poolEnabled =
-    process.env.SLIDERULE_CAPABILITY_POOL_ENABLED !== "0" &&
+    readEnvCompat("SLIDERULE_CAPABILITY_POOL_ENABLED") !== "0" &&
     Boolean(process.env.BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS?.trim());
   if (poolEnabled) {
     const pooled = await callPoolJsonLlm<Record<string, unknown>>(systemPrompt, userPrompt, 0.2);

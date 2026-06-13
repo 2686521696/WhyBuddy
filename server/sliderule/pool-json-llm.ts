@@ -6,6 +6,7 @@
  * SlideRule defaults to the same "race" semantics — first successful key wins, not 5× serial wait.
  */
 
+import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import {
   callLlmWithPoolKey,
   createLlmKeyPool,
@@ -40,7 +41,7 @@ export function resetSlideRuleCapabilityPoolCache(): void {
 }
 
 export function resolveSlideRulePoolTimeoutMs(poolDefault?: number): number {
-  const raw = process.env.SLIDERULE_POOL_TIMEOUT_MS;
+  const raw = readEnvCompat("SLIDERULE_POOL_TIMEOUT_MS");
   if (raw) {
     const n = Number.parseInt(raw, 10);
     if (Number.isFinite(n) && n > 0) return n;
@@ -51,18 +52,18 @@ export function resolveSlideRulePoolTimeoutMs(poolDefault?: number): number {
 
 /** parallel (race) | sequential — default parallel to match spec_docs pool UX. */
 export function resolveSlideRulePoolRaceMode(): "parallel" | "sequential" {
-  const raw = (process.env.SLIDERULE_POOL_RACE_MODE || "parallel").toLowerCase();
+  const raw = (readEnvCompat("SLIDERULE_POOL_RACE_MODE") || "parallel").toLowerCase();
   return raw === "sequential" ? "sequential" : "parallel";
 }
 
 /** When pool is configured, skip duplicate primary LLM hop (same endpoint / cooldown waste). */
 export function shouldSkipPrimaryLlmAfterPoolExhausted(): boolean {
-  if (process.env.SLIDERULE_SKIP_PRIMARY_AFTER_POOL === "0") return false;
+  if (readEnvCompat("SLIDERULE_SKIP_PRIMARY_AFTER_POOL") === "0") return false;
   return isSlideRuleCapabilityPoolEnabled();
 }
 
 export function isSlideRuleCapabilityPoolEnabled(): boolean {
-  if (process.env.SLIDERULE_CAPABILITY_POOL_ENABLED === "0") return false;
+  if (readEnvCompat("SLIDERULE_CAPABILITY_POOL_ENABLED") === "0") return false;
   return getSlideRuleCapabilityPool() !== null;
 }
 
@@ -250,7 +251,7 @@ export async function callPoolJsonLlm<T extends Record<string, unknown>>(
 ): Promise<PoolJsonLlmResult<T> | null> {
   void temperature; // pool HTTP uses fixed temperature in callLlmWithPoolKey today
   const pool = getSlideRuleCapabilityPool();
-  if (!pool || process.env.SLIDERULE_CAPABILITY_POOL_ENABLED === "0") return null;
+  if (!pool || readEnvCompat("SLIDERULE_CAPABILITY_POOL_ENABLED") === "0") return null;
 
   const config: LlmKeyPoolConfig = {
     ...pool.config,

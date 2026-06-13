@@ -16,6 +16,7 @@
  * (tsx watch on server/ files will pick up changes live.)
  */
 
+import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import express, { Router, type Request, type Response } from "express";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import { stripProjectionForPersist } from "../../shared/blueprint/sliderule-projection-persist.js";
@@ -91,9 +92,26 @@ const router = Router();
 // - Map is hot cache for speed + simple list/GET shaping.
 // - load/reload from disk; flushToDisk after every mutate (set/delete/clear) — now returns boolean.
 // - Atomic write: write .tmp then renameSync.
-const DATA_FILE = process.env.SLIDERULE_SESSIONS_FILE
-  ? path.resolve(process.cwd(), process.env.SLIDERULE_SESSIONS_FILE)
+const SESSIONS_FILE_ENV = readEnvCompat("SLIDERULE_SESSIONS_FILE");
+const DATA_FILE = SESSIONS_FILE_ENV
+  ? path.resolve(process.cwd(), SESSIONS_FILE_ENV)
   : path.resolve(process.cwd(), "data", "sliderule-sessions.json");
+
+// Rename-migration shim: the default sessions file used to be data/whybuddy-sessions.json.
+// Copy (not move — keep the old file for rollback) once, only when the new file doesn't exist yet.
+const LEGACY_DATA_FILE = path.resolve(process.cwd(), "data", "whybuddy-sessions.json");
+function migrateLegacySessionsFile(): void {
+  if (SESSIONS_FILE_ENV) return; // explicit path → operator owns the location, nothing to migrate
+  try {
+    if (!fs.existsSync(DATA_FILE) && fs.existsSync(LEGACY_DATA_FILE)) {
+      fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+      fs.copyFileSync(LEGACY_DATA_FILE, DATA_FILE);
+      console.log("[sliderule-store] migrated legacy sessions file:", LEGACY_DATA_FILE, "->", DATA_FILE);
+    }
+  } catch (e) {
+    console.error("[sliderule-store] legacy sessions file migration failed (starting from new file):", (e as Error)?.message || e);
+  }
+}
 
 const sessions = new Map<string, V5SessionState>();
 
@@ -136,6 +154,7 @@ function flushToDisk(): boolean {
 }
 
 // Initial load (runs once when tsx loads this module; watch will re-exec on file change).
+migrateLegacySessionsFile();
 loadFromDisk();
 
 // GET /api/sliderule/sessions
@@ -219,7 +238,7 @@ router.delete("/sessions/:sessionId", (req: Request, res: Response) => {
 // production-like deployment of the session store.
 export const isTestHelperEnabled = () =>
   process.env.NODE_ENV !== "production" ||
-  process.env.SLIDERULE_ENABLE_TEST_HELPERS === "1";
+  readEnvCompat("SLIDERULE_ENABLE_TEST_HELPERS") === "1";
 
 const enableTestHelpers = isTestHelperEnabled();
 

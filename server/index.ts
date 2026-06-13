@@ -2264,6 +2264,10 @@ async function startServer() {
   // in-memory store so existing tests + smoke:sliderule are unaffected.
   const slideruleRouterMod = await import("./routes/sliderule.js");
   app.use("/api/sliderule", slideruleRouterMod.default);
+  // Rename-migration alias (WhyBuddy → SlideRule): same router, kept one release
+  // cycle for old clients / TRAE Skill packages hardcoding the legacy path.
+  // Remove together with the env / localStorage shims.
+  app.use("/api/whybuddy", slideruleRouterMod.default);
 
   app.get("/api/health", (_req, res) => {
     res.json({

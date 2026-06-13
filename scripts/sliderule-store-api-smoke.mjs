@@ -25,7 +25,7 @@
  * Exit code: 0 on all checks pass, non-zero on any failure.
  */
 
-const BASE = process.env.SLIDERULE_API_BASE || 'http://localhost:3001/api/sliderule';
+const BASE = process.env.SLIDERULE_API_BASE ?? process.env.WHYBUDDY_API_BASE ?? 'http://localhost:3001/api/sliderule';
 const TEST_SESSION_ID = 'sliderule-store-smoke-' + Date.now();
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

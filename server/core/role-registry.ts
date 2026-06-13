@@ -6,6 +6,7 @@
  * @see Requirements 1.2, 1.3, 1.4, 1.5
  */
 
+import { readEnvCompat } from '../../shared/env/read-env-compat.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,7 @@ const __rr_dirname = dirname(__rr_filename);
 
 function shouldPersistRoleRegistryByDefault(): boolean {
   if (
-    process.env.SLIDERULE_DISABLE_ROLE_PERSISTENCE === '1' ||
+    readEnvCompat("SLIDERULE_DISABLE_ROLE_PERSISTENCE") === '1' ||
     process.env["CUBE_" + "PETS_DISABLE_ROLE_PERSISTENCE"] === '1'
   ) {
     return false;

@@ -3,6 +3,10 @@ import App from "./App";
 import "./index.css";
 import "./styles/mirofish-tokens.css";
 import "./styles/mirofish-layer.css";
+import { migrateLegacyStorage } from "./lib/migrate-storage";
+
+// WhyBuddy → SlideRule rename: move legacy localStorage entries before anything reads them.
+migrateLegacyStorage();
 
 createRoot(document.getElementById("root")!).render(<App />);
 

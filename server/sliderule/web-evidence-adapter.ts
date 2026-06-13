@@ -3,6 +3,7 @@
  * Reuses server/core/web-search-provider (SerpAPI / Bing CN / DuckDuckGo / graceful mock).
  */
 
+import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
 import { executeRealWebSearch } from "../core/web-search-provider.js";
 import type { WebSearchResponse } from "../../shared/web-search.js";
@@ -27,7 +28,7 @@ export function __setWebSearchExecutorForTests(fn: WebSearchExecutor | undefined
 }
 
 export function isWebSearchEnabled(): boolean {
-  return process.env.SLIDERULE_WEB_SEARCH_ENABLED !== "0";
+  return readEnvCompat("SLIDERULE_WEB_SEARCH_ENABLED") !== "0";
 }
 
 /** Build a concise query from goal + recent user turns. */

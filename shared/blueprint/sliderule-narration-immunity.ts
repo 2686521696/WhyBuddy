@@ -3,6 +3,8 @@
  * Shared so server narration and tests use one implementation.
  */
 
+import { readEnvCompat } from "../env/read-env-compat.js";
+
 export const DOMAIN_ANCHORING_RULE =
   "领域锚定：用户消息与产物中的「路线」「对比」「方案」「架构」「树」等短语，一律指围绕当前目标的技术/产品方案路线，" +
   "不得理解为交通导航、地理路线、出行路径、地图导航等无关领域。";
@@ -31,7 +33,7 @@ export type HijackDetectionResult = {
 };
 
 export function resolveNarrationBrandWords(): string[] {
-  const raw = process.env.SLIDERULE_NARRATION_BRAND_WORDS || "";
+  const raw = readEnvCompat("SLIDERULE_NARRATION_BRAND_WORDS") || "";
   if (!raw.trim()) return [...DEFAULT_BRAND_WORDS];
   return raw
     .split(/[,;|]/)

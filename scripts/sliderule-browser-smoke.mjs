@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const PORT = Number.parseInt(process.env.SLIDERULE_SMOKE_PORT || "3000", 10);
+const PORT = Number.parseInt(process.env.SLIDERULE_SMOKE_PORT ?? process.env.WHYBUDDY_SMOKE_PORT ?? "3000", 10);
 const baseUrl = `http://localhost:${PORT}`;
 const dataRoot = resolve("tmp", "sliderule-browser-smoke");
 
