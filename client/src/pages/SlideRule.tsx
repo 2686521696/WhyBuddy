@@ -23,7 +23,7 @@ import { deriveSlideRuleReasoningViewModel } from "./sliderule/derive-reasoning-
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
-import { LlmConfigPanel } from "./sliderule/LlmConfigPanel";
+import { SettingsDialog } from "./sliderule/SettingsDialog";
 import { ArchitectureProcessPanel } from "./sliderule/ArchitectureProcessPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
@@ -208,6 +208,8 @@ function SlideRuleImmersion({
   executorMode,
   driveMode,
   setDriveMode,
+  marathonBudget,
+  setMarathonBudget,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -240,9 +242,11 @@ function SlideRuleImmersion({
   executorMode: ReturnType<typeof useSlideRuleSession>["executorMode"];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
+  marathonBudget?: { maxTokens: number; declaredAt: string };
+  setMarathonBudget?: (b: { maxTokens: number; declaredAt: string }) => void;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
-  const [llmConfigOpen, setLlmConfigOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const composerHints = useMemo(
     () => deriveComposerHintChips(sessionState),
     [sessionState]
@@ -266,32 +270,13 @@ function SlideRuleImmersion({
             terminalCanExport={reasoningViewModel.terminalMeta?.canExport}
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center px-8 pb-[18vh] text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 shadow-sm ring-1 ring-slate-200/70 backdrop-blur">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-slate-400"
-                aria-hidden
-              >
-                <circle cx="6" cy="6" r="2.4" />
-                <circle cx="18" cy="6" r="2.4" />
-                <circle cx="12" cy="18" r="2.4" />
-                <path d="M7.6 7.7 11 15.8M16.4 7.7 13 15.8" />
-              </svg>
-            </div>
-            <p className="mt-4 text-base font-semibold text-slate-600">
-              从一个想法开始推演
-            </p>
-            <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-slate-500">
-              在下方输入框写下想法或问题，架构图会从 INTAKE 节点逐步展开，顶部实时显示角色协作与调用过程。
-            </p>
+          <div className="flex h-full items-center justify-center px-6 pb-[16vh] pt-24">
+            <img
+              src="/assets/SlideRule_transparent_cropped.png"
+              alt="SlideRule"
+              className="w-[min(82vw,360px)] object-contain opacity-[0.35] drop-shadow-[0_14px_30px_rgb(15_23_42/0.08)]"
+              title="SlideRule"
+            />
           </div>
         )}
       </div>
@@ -311,7 +296,7 @@ function SlideRuleImmersion({
           projectionDensity={projectionDensity}
           onProjectionDensityChange={onProjectionDensityChange}
           onResetSession={resetSession}
-          onOpenLlmConfig={() => setLlmConfigOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
           <ArchitectureProcessPanel
@@ -402,7 +387,16 @@ function SlideRuleImmersion({
         </div>
       )}
 
-      <LlmConfigPanel open={llmConfigOpen} onClose={() => setLlmConfigOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        projectionDensity={projectionDensity}
+        onProjectionDensityChange={onProjectionDensityChange}
+        driveMode={driveMode}
+        setDriveMode={setDriveMode}
+        marathonBudget={marathonBudget}
+        setMarathonBudget={setMarathonBudget}
+      />
     </div>
   );
 }
@@ -519,6 +513,12 @@ function SlideRuleSplitEngineering({
   return (
     <div className={autopilotTheme.page}>
       <header className={autopilotTheme.header}>
+        <img
+          src="/assets/sliderule_icon_flat_transparent.png"
+          alt="SlideRule"
+          className="mr-2 h-5 w-5 shrink-0 self-center opacity-70"
+          title="SlideRule"
+        />
         <div className="min-w-0 flex-1">
           <div className={autopilotTheme.label}>我的想法</div>
           <div
@@ -720,6 +720,8 @@ export default function SlideRule() {
     retryCapability,
     driveMode,
     setDriveMode,
+    marathonBudget,
+    setMarathonBudget,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
@@ -875,6 +877,8 @@ export default function SlideRule() {
     executorMode,
     driveMode,
     setDriveMode,
+    marathonBudget,
+    setMarathonBudget,
   };
 
   if (isImmersion) {

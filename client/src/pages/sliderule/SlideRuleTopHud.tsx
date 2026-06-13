@@ -19,7 +19,7 @@ export function SlideRuleTopHud({
   projectionDensity,
   onProjectionDensityChange,
   onResetSession,
-  onOpenLlmConfig,
+  onOpenSettings,
 }: {
   state: V5SessionState;
   goal: string;
@@ -31,7 +31,7 @@ export function SlideRuleTopHud({
   projectionDensity?: ProjectionDensity;
   onProjectionDensityChange?: (density: ProjectionDensity) => void;
   onResetSession?: () => void;
-  onOpenLlmConfig?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const facts = deriveStatusBarFacts(state, {
     turnCount,
@@ -46,12 +46,17 @@ export function SlideRuleTopHud({
       className={autopilotTheme.immersionOverlayHeader}
       data-testid="sliderule-status-bar"
     >
-      <div
-        className="flex w-full items-center gap-3 rounded-xl border border-slate-900/[0.05] bg-white/55 px-3 py-1.5 shadow-[0_2px_12px_rgb(15_23_42/0.04)] backdrop-blur-md"
-      >
+      <div className="flex w-full items-start justify-between gap-4">
+
         <div
-          className={`${autopilotTheme.overlayBar} min-w-0 flex-1 border-b-0 pb-0`}
+          className={`${autopilotTheme.overlayBar} min-w-0 flex-1 pr-4`}
         >
+          <img
+            src="/assets/sliderule_logo_wordmark_transparent.png"
+            alt="SlideRule"
+            className="mr-3 h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
+            title="SlideRule"
+          />
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             STATUS
           </span>
@@ -144,7 +149,7 @@ export function SlideRuleTopHud({
           )}
           <span className="font-mono text-[10px] text-slate-400">话题</span>
           <span
-            className={`min-w-0 max-w-[min(36vw,280px)] truncate font-medium text-slate-800 sm:max-w-[min(42vw,360px)] ${
+            className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-slate-800 sm:max-w-[min(38vw,420px)] ${
               !goal ? "text-slate-400" : ""
             }`}
             data-testid="sliderule-goal-display"
@@ -168,7 +173,7 @@ export function SlideRuleTopHud({
               )}
             </>
           )}
-          <span className="text-slate-400">
+          <span className="hidden text-slate-400 sm:inline">
             阶段{" "}
             <span className="font-mono font-semibold text-slate-700">{facts.phaseLabel}</span>
           </span>
@@ -201,19 +206,19 @@ export function SlideRuleTopHud({
           )}
         </div>
         <div
-          className="flex shrink-0 items-center gap-2"
+          className="flex shrink-0 items-center justify-end gap-2 py-1"
           data-testid="sliderule-header-actions"
         >
-          {onOpenLlmConfig && (
+          {onOpenSettings && (
             <button
               type="button"
-              onClick={onOpenLlmConfig}
-              data-testid="sliderule-llm-config-open"
-              className={`${autopilotTheme.auditBtn} flex items-center gap-1`}
-              title="配置推演用的 LLM（自带 key 浏览器直连，仅存本机）"
+              onClick={onOpenSettings}
+              data-testid="sliderule-settings-open"
+              className={`${autopilotTheme.auditBtn} flex items-center justify-center`}
+              title="设置（模型 / 推演偏好）"
+              aria-label="设置"
             >
               <Settings2 className="h-3.5 w-3.5" />
-              LLM
             </button>
           )}
           {onResetSession && (
