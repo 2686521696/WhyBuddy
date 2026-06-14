@@ -17,7 +17,8 @@ import {
   shouldSkipPrimaryLlmAfterPoolExhausted,
 } from "./pool-json-llm.js";
 import { buildCapabilityLlmFallback } from "./capability-llm-fallback.js";
-import { extractClarifyBlock } from "../../shared/blueprint/sliderule-readiness-chain.js";
+import { extractClarifyBlock, SLIDERULE_CLARIFICATION_TEMPLATES } from "../../shared/blueprint/sliderule-readiness-chain.js";
+import { generateClarificationQuestionsWithLlm } from "../routes/blueprint.js"; // V4 generator for full template + LLM + budget logic
 
 export const DIALOGUE_SYSTEM_PROMPT = `你是 SlideRule 的推演引擎,为「想清楚再建」服务:在写任何代码之前,把一个产品想法
 推演清楚。你不是聊天助手,不自我介绍,不寒暄,直接产出内容。
@@ -64,7 +65,9 @@ const UPSTREAM_KINDS: Record<DialogueCapabilityId, Artifact["kind"][]> = {
 };
 
 const TASK_PROMPTS: Record<DialogueCapabilityId, string> = {
-  "intent.clarify": `任务:需求澄清。
+  "intent.clarify": `任务:需求澄清 (参考 V4 架构澄清模板方式)。
+
+使用 V4-style 模板维度(用户群/平台/场景/范围),结合当前目标与上游,输出结构化理解。
 
 把「用户目标」从一句话推演成一份可开工的理解,分三段:
 
@@ -77,7 +80,7 @@ const TASK_PROMPTS: Record<DialogueCapabilityId, string> = {
 还是材料推断)。没有就写"目前只有目标一句话本身"。
 
 【最需要回答的问题】
-3~5 个关键未决问题,按"答案会改变方案走向"的程度排序。每个问题三行:
+参考 V4 模板维度,列出 3~5 个关键未决问题(优先缺失的 users/platform/scenario/scope),按"答案会改变方案走向"的程度排序。每个问题三行:
 - 问题本身(必须特定于这个目标——"数据范围按部门还是按项目隔离?"是好问题,
   "预算多少?"这种放之四海皆准的问题禁止出现)
 - 为什么关键:答案不同会导致哪两种不同的做法
@@ -87,7 +90,17 @@ const TASK_PROMPTS: Record<DialogueCapabilityId, string> = {
 
   "gap.ask": `任务:阻塞性缺口定位 (C_GAP)。
 
-针对「用户目标」列出 3~5 个**阻塞规划**的未决问题——缺了答案就无法选路线或写需求。
+参考 V4 架构的澄清方式:使用固定模板结构(类似 CLARIFICATION_QUESTION_BLUEPRINTS 的维度),LLM 负责针对当前目标填充具体内容。
+
+针对「用户目标」只针对缺失的规约维度(用户群/平台/核心场景·验收/范围边界)列出阻塞问题。
+必须严格使用以下 V4-style 模板维度 (每个问题必须对应一个 kind):
+- users (kind:"audience"): 主要面向谁使用? (options from template or tailored)
+- platform (kind:"platform"): 优先在什么平台落地?
+- scenario (kind:"success-criteria"): 核心成功标准 / 验收指标是什么?
+- scope (kind:"scope"): 本期范围边界:明确不做什么?
+
+参考 V4 CLARIFICATION_QUESTION_BLUEPRINTS: 固定模板结构，LLM 只负责基于当前目标填充具体 prompt 文字、简洁 options (2-4个)、context、defaultAnswer。不要发明新维度。
+
 格式硬性要求:
 【阻塞缺口】
 - 每条以「?」或「？」结尾,必须特定于本目标(禁止万金油)
@@ -95,15 +108,19 @@ const TASK_PROMPTS: Record<DialogueCapabilityId, string> = {
 
 禁止 LLM 替用户回答;禁止宣布目标已足够清晰。
 
-在 content 正文末尾,额外追加一个围栏块(便于前端做成可点选的澄清卡片;字段对齐 blueprint 澄清 schema),格式严格如下:
+在 content 正文末尾,额外追加一个围栏块(便于前端做成可点选的澄清卡片;字段对齐 V4 BlueprintClarificationQuestion schema),格式严格如下:
 \`\`\`clarify-json
-[{"prompt":"问题原文","type":"single_choice","options":["典型答法A","典型答法B"],"context":"这个答案如何影响路线(一句话)","defaultAnswer":"典型答法A"}]
+[
+  {"kind":"audience","prompt":"「目标」主要面向谁使用?","type":"single_choice","options":["个人 / C端","企业内部"],"context":"决定交互与合规","defaultAnswer":"个人 / C端"},
+  {"kind":"scope","prompt":"本期范围边界:明确不做什么?","type":"free_text","context":"避免范围漂移"}
+]
 \`\`\`
+- kind: 必须使用上面列出的模板 kind 之一 ("audience", "platform", "success-criteria", "scope")。
 - type: 选择题用 "single_choice"(或可多选 "multi_choice");没有明确候选则 "free_text"。
 - options: type 为选择题时给 2~4 个**简洁候选答法**(供用户快速选,不是你替用户拍板);free_text 时省略。
 - context: 一句话说明该问题的答案会如何影响后续路线/方案。
 - defaultAnswer: 你建议的默认假设/推荐项(对应某个 option 文本或一句假设)。
-每个【阻塞缺口】问题对应数组里一条。`,
+每个【阻塞缺口】问题对应数组里一条。**严格**使用模板维度 + kind, 不要发明新问题。`,
 
   "question.expand": `任务:扩展关键问题 (C_QEXP)。
 
@@ -297,6 +314,87 @@ export async function executeDialogueCapability(
   const config = getAIConfig();
   const userPrompt = buildDialogueUserPrompt(args);
   const temperature = TEMPERATURE[args.capabilityId] ?? 0.3;
+
+  // 完整 generator 切换 for clarify: 直接调用 V4 的 generateClarificationQuestionsWithLlm
+  // 传入我们的 SLIDERULE_CLARIFICATION_TEMPLATES 映射为 V4 blueprint + goal/state 作为 input
+  // 让 LLM 走 V4 完整逻辑 (budget, 过滤, 多轮 preview + LLM, fallback to templates)
+  if (args.capabilityId === "gap.ask" || args.capabilityId === "intent.clarify") {
+    try {
+      // 映射我们的 templates 到 V4 的 BlueprintClarificationQuestionBlueprint 形状
+      const templateQuestions = SLIDERULE_CLARIFICATION_TEMPLATES.map(t => ({
+        id: t.id,
+        kind: t.kind as any,
+        prompt: t.promptTemplate.replace("{goal}", args.state?.goal?.text || ""),
+        required: true,
+        routeDimension: t.key as any,
+        readinessSignal: t.key as any,
+        // defaultAnswer 可从模板
+      } as any));
+
+      // 最小 intake for SlideRule: 用 goal 作为 targetText, 空 sources (V4 会 fallback)
+      const intake = {
+        id: args.turnId || "sliderule-clarify",
+        targetText: args.state?.goal?.text || "",
+        githubUrls: [],
+        sources: [],
+        domainNotes: "",
+        assets: [],
+      } as any;
+
+      const strategy = {
+        id: "sliderule-readiness",
+        label: "SlideRule readiness clarification",
+        templateId: "sliderule-readiness",
+        summary: "Readiness gaps for users/platform/scenario/scope using V4 templates",
+      } as any;
+
+      const v4Result = await generateClarificationQuestionsWithLlm({
+        intake,
+        strategy,
+        templateQuestions,
+        now: new Date().toISOString(),
+        locale: "zh-CN",
+      } as any);
+
+      const v4Questions = v4Result.questions || [];
+      if (v4Questions.length > 0) {
+        // 映射回我们的 ClarifyQuestion (kind, prompt, type, options, context, defaultAnswer)
+        const mapped = v4Questions.map((q: any) => ({
+          id: q.id,
+          kind: q.kind,
+          prompt: q.prompt,
+          type: q.type || (q.options?.length ? "single_choice" : "free_text"),
+          options: q.options,
+          defaultAnswer: q.defaultAnswer,
+          context: q.context,
+        }));
+
+        const title = "需求澄清";
+        const summary = "基于 V4 模板的结构化澄清问题";
+        // 构造 content 包含阻塞缺口描述 + clarify-json 块 (保持向下兼容 extract / payload)
+        let content = `【阻塞缺口】\n${mapped.map((q: any) => `- ${q.prompt}`).join("\n")}\n\n`;
+        content += "```clarify-json\n" + JSON.stringify(mapped.map((q: any) => ({
+          kind: q.kind,
+          prompt: q.prompt,
+          type: q.type,
+          options: q.options,
+          context: q.context,
+          defaultAnswer: q.defaultAnswer,
+        }))) + "\n```";
+
+        return {
+          title,
+          summary,
+          content,
+          provenance: v4Result.source === "llm" ? "llm" : "llm_fallback",
+          payload: { clarifyQuestions: mapped },
+          usage: v4Result.model ? { model: v4Result.model } : undefined,
+        };
+      }
+    } catch (e) {
+      // fallback to original prompt + LLM path below
+    }
+  }
 
   try {
     const pooled = await callPoolJsonLlm<{

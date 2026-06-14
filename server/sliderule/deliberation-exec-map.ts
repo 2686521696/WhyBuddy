@@ -383,6 +383,22 @@ async function runCritiqueSession(args: {
 
 type PanelPosition = { roleId: BrainstormRoleId; v5Role: string; content: string };
 
+type PanelPayload = {
+  panel: true;
+  positions: PanelPosition[];
+  critiques: Critique[];
+  convergenceScore: number;
+  consensusReached: boolean;
+  dissent: Array<{ roleId: BrainstormRoleId; opinion: string }>;
+};
+
+type PanelMeta = {
+  convergenceScore: number;
+  consensusReached: boolean;
+  dissent: Array<{ roleId: string; opinion: string }>;
+  positions: PanelPosition[];
+};
+
 /** 产品搭建三视角：产品(planner) / 架构(architect) / 安全·挑刺(auditor)。 */
 function pickPanelRoles(): BrainstormRoleId[] {
   return ["planner", "architect", "auditor"];
@@ -534,7 +550,7 @@ async function runPanelSession(args: {
       convergenceScore,
       consensusReached,
       dissent,
-    },
+    } as PanelPayload,
     provenance: degraded ? "llm_fallback" : "llm",
     usage: toExecutorUsage(usage),
     degraded: degraded || undefined,
@@ -652,20 +668,20 @@ async function runSynthesisMerge(args: {
     candidateArts.find((a) => a?.payload?.panel && Array.isArray(a.payload.positions) && a.payload.positions.length > 0) ||
     arts.slice(-8).find((a) => a?.payload?.panel && Array.isArray(a.payload?.positions) && a.payload.positions.length > 0);
 
-  let panelMeta:
-    | { convergenceScore: number; consensusReached: boolean; dissent: Array<{ roleId: string; opinion: string }> }
-    | null = null;
+  let panelMeta: PanelMeta | null = null;
   let crewOutputs: Array<{ roleId: BrainstormRoleId; content: string; confidence: number }>;
 
   if (panelArt) {
-    const pl: any = panelArt.payload;
+    const pl = (panelArt.payload || {}) as Partial<PanelPayload> & Record<string, unknown>;
     panelMeta = {
       convergenceScore: Number(pl.convergenceScore ?? 0),
       consensusReached: Boolean(pl.consensusReached),
       dissent: Array.isArray(pl.dissent) ? pl.dissent : [],
+      // Forward full positions so synthesis artifact can drive canvas projection of 3 stances + verdict
+      positions: Array.isArray(pl.positions) ? pl.positions : [],
     };
-    crewOutputs = (pl.positions as any[])
-      .map((p) => ({
+    crewOutputs = (pl.positions || [])
+      .map((p: any) => ({
         roleId: p.roleId as BrainstormRoleId,
         content: String(p.content || ""),
         confidence: 0.8,

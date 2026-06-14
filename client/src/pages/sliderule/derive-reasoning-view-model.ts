@@ -211,11 +211,16 @@ function buildTelemetry(state: V5SessionState, visibleNodes: BrainstormReasoning
   );
 
   // R2.5 多角色面板：把面板真实参与角色计入「角色 N」（密度无关 —— 直接读产物 payload）。
+  // Supports both critique direct shape and synthesis { panel: { positions, ... } } shape.
   const panelRoles = new Set<string>();
   for (const a of state.artifacts || []) {
-    const pl = (a as any).payload;
-    if (pl?.panel && Array.isArray(pl.positions)) {
-      for (const p of pl.positions) {
+    const raw = (a as any).payload || {};
+    let positions = Array.isArray(raw?.positions) ? raw.positions : null;
+    if (!positions && raw?.panel && typeof raw.panel === "object") {
+      positions = Array.isArray(raw.panel.positions) ? raw.panel.positions : null;
+    }
+    if (positions) {
+      for (const p of positions) {
         const r = String(p?.v5Role || p?.roleId || "").trim();
         if (r) panelRoles.add(r);
       }

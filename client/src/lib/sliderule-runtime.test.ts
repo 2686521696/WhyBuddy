@@ -906,7 +906,8 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
     const ledger = getSessionLedger(saved);
     const sim = simulateCapabilityExecution('report.write', saved, []);
     expect(ledger.length).toBeGreaterThan(0);
-    expect(sim.content).toContain('模拟');
+    // report.write 走 buildStructuredReport(结构化报告,非通用「模拟」桩)——断言它产出真实报告段落。
+    expect(sim.content).toContain('收敛决策');
     const der = deriveNodeStatus(saved);
     expect(der.graph.nodes.some((n: any) => n.producedArtifactId)).toBe(true);
   });

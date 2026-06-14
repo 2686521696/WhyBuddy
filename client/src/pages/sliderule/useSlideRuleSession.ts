@@ -906,6 +906,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       .map((g) => ({
         id: g.id,
         prompt: g.label,
+        kind: g.clarifyKind,  // V4 alignment
         type: g.clarifyType,
         options: g.options,
         defaultAnswer: g.defaultAnswer,

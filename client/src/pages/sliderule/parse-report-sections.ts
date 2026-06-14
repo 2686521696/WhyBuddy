@@ -64,7 +64,7 @@ function splitByHeaders(content: string): ReportSection[] {
   return sections;
 }
 
-/** Parse report.write artifact into named sections for SlideRuleReportReader. */
+/** Parse report.write artifact into named sections for DeliverablesPanel (and md export). */
 export function parseReportSections(report: Artifact): ReportSection[] {
   const content = String(report.content || report.summary || "");
   const fromHeaders = splitByHeaders(content);

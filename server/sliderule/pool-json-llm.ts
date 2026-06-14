@@ -50,10 +50,63 @@ export function resolveSlideRulePoolTimeoutMs(poolDefault?: number): number {
   return Math.min(poolDefault ?? 300_000, 90_000);
 }
 
-/** parallel (race) | sequential — default parallel to match spec_docs pool UX. */
+/** 
+ * parallel (race) | sequential.
+ * Default is now "sequential" for SlideRule to be stable behind dev proxies (Clash etc.).
+ * Many local proxies have flaky behavior under 5x concurrent CONNECT to the same upstream.
+ * User can still force parallel with SLIDERULE_POOL_RACE_MODE=parallel.
+ */
 export function resolveSlideRulePoolRaceMode(): "parallel" | "sequential" {
-  const raw = (readEnvCompat("SLIDERULE_POOL_RACE_MODE") || "parallel").toLowerCase();
-  return raw === "sequential" ? "sequential" : "parallel";
+  const raw = readEnvCompat("SLIDERULE_POOL_RACE_MODE");
+  if (raw) {
+    const lowered = raw.toLowerCase();
+    if (lowered === "parallel" || lowered === "sequential") return lowered as any;
+  }
+
+  // Auto-detect dev proxy and prefer sequential for reliability.
+  const hasProxy = !!(readEnvCompat("HTTP_PROXY") || process.env.HTTP_PROXY ||
+                      readEnvCompat("HTTPS_PROXY") || process.env.HTTPS_PROXY ||
+                      readEnvCompat("ALL_PROXY") || process.env.ALL_PROXY ||
+                      readEnvCompat("NODE_USE_ENV_PROXY") || process.env.NODE_USE_ENV_PROXY);
+  if (hasProxy) {
+    return "sequential";
+  }
+
+  // Original default behavior for non-proxy environments (speed).
+  return "parallel";
+}
+
+/** Safe one-time-ish diagnostic for proxy situation (no secret values). */
+let proxyDiagLogged = false;
+function logProxyEnvDiag(baseUrl: string, mode: string, keyCount: number) {
+  if (proxyDiagLogged) return;
+  proxyDiagLogged = true;
+
+  const nodeUse = readEnvCompat("NODE_USE_ENV_PROXY") || process.env.NODE_USE_ENV_PROXY || "";
+  const httpP = !!(readEnvCompat("HTTP_PROXY") || process.env.HTTP_PROXY || process.env.http_proxy);
+  const httpsP = !!(readEnvCompat("HTTPS_PROXY") || process.env.HTTPS_PROXY || process.env.https_proxy);
+
+  const host = (() => {
+    try { return new URL(baseUrl).host; } catch { return baseUrl; }
+  })();
+
+  console.log(
+    `[sliderule-pool] env proxy: NODE_USE_ENV_PROXY=${nodeUse || "0"} ` +
+    `HTTP_PROXY=${httpP ? "set" : "unset"} HTTPS_PROXY=${httpsP ? "set" : "unset"} ` +
+    `baseUrl=${host} mode=${mode} keys=${keyCount}`
+  );
+}
+
+function formatTransportError(e: unknown): string {
+  const err = e as any;
+  const msg = String(err?.message || e || "unknown").slice(0, 120);
+  const cause = err?.cause;
+  const causeCode = cause?.code || cause?.errno || "";
+  const causeMsg = cause?.message ? String(cause.message).slice(0, 80) : "";
+  if (causeCode || causeMsg) {
+    return `${msg} | cause=${causeCode}${causeMsg ? ` ${causeMsg}` : ""}`;
+  }
+  return msg;
 }
 
 /** When pool is configured, skip duplicate primary LLM hop (same endpoint / cooldown waste). */
@@ -161,6 +214,39 @@ async function tryPoolKeyOnce<T extends Record<string, unknown>>(
   return buildPoolResult(json as T, config, entry, raw, systemPrompt, userPrompt);
 }
 
+/** Lightweight retry for transient transport errors (common behind dev proxies). */
+async function tryPoolKeyWithRetry<T extends Record<string, unknown>>(
+  entry: LlmKeyPoolEntry,
+  config: LlmKeyPoolConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  maxAttempts = 2
+): Promise<PoolJsonLlmResult<T> | null> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await tryPoolKeyOnce<T>(entry, config, systemPrompt, userPrompt);
+      if (res) return res;
+      // If we got a response but no JSON, don't retry (it's a semantic issue).
+      return null;
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message || e).toLowerCase();
+      const isTransient = msg.includes("fetch failed") ||
+                          msg.includes("timeout") ||
+                          msg.includes("econnreset") ||
+                          msg.includes("und_err") ||
+                          msg.includes("connect");
+      if (!isTransient || attempt === maxAttempts) {
+        throw e;
+      }
+      // Small backoff for proxy transient issues.
+      await new Promise(r => setTimeout(r, 300 * attempt));
+    }
+  }
+  throw lastErr;
+}
+
 /** Race all pool keys; resolve on first valid JSON (matches spec_docs concurrency UX). */
 async function callPoolJsonLlmParallel<T extends Record<string, unknown>>(
   pool: LlmKeyPool,
@@ -183,7 +269,7 @@ async function callPoolJsonLlmParallel<T extends Record<string, unknown>>(
     };
 
     for (const entry of keys) {
-      tryPoolKeyOnce<T>(entry, config, systemPrompt, userPrompt)
+      tryPoolKeyWithRetry<T>(entry, config, systemPrompt, userPrompt)
         .then((result) => {
           if (result) {
             finish(result);
@@ -198,7 +284,7 @@ async function callPoolJsonLlmParallel<T extends Record<string, unknown>>(
           pending -= 1;
           console.warn(
             `[sliderule-pool] key ${entry.label} failed:`,
-            String((e as Error)?.message || e).slice(0, 160)
+            formatTransportError(e)
           );
           if (pending === 0) {
             if (failures > 0) {
@@ -223,14 +309,14 @@ async function callPoolJsonLlmSequential<T extends Record<string, unknown>>(
   for (let i = 0; i < attempts; i++) {
     const entry = pool.next();
     try {
-      const result = await tryPoolKeyOnce<T>(entry, config, systemPrompt, userPrompt);
+      const result = await tryPoolKeyWithRetry<T>(entry, config, systemPrompt, userPrompt);
       if (result) return result;
       lastErr = new Error("pool_json_parse_failed");
     } catch (e) {
       lastErr = e;
       console.warn(
         `[sliderule-pool] key ${entry.label} failed:`,
-        String((e as Error)?.message || e).slice(0, 160)
+        formatTransportError(e)
       );
     }
   }
@@ -238,7 +324,7 @@ async function callPoolJsonLlmSequential<T extends Record<string, unknown>>(
   if (lastErr) {
     console.warn(
       "[sliderule-pool] all keys exhausted:",
-      String((lastErr as Error)?.message || lastErr).slice(0, 160)
+      formatTransportError(lastErr)
     );
   }
   return null;
@@ -259,6 +345,19 @@ export async function callPoolJsonLlm<T extends Record<string, unknown>>(
   };
 
   const mode = resolveSlideRulePoolRaceMode();
+  const keyCount = pool.size;
+
+  // Diagnostic (once) so we can tell whether the server child actually saw proxy env
+  // when a whole race of pool keys transport-failed before auth.
+  try {
+    logProxyEnvDiag(pool.config.baseUrl || "", mode, keyCount);
+  } catch {}
+
+  // Friendly note for developers using local proxies (Clash, V2Ray, etc.)
+  if (mode === "sequential" && keyCount > 1) {
+    // This is expected and good for stability.
+  }
+
   if (mode === "parallel") {
     return callPoolJsonLlmParallel<T>(pool, config, systemPrompt, userPrompt);
   }

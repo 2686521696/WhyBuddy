@@ -16963,7 +16963,7 @@ function resolveBlueprintClarificationMaxTokens(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
 }
 
-async function generateClarificationQuestionsWithLlm(
+export async function generateClarificationQuestionsWithLlm(
   input: BlueprintClarificationQuestionGeneratorInput
 ): Promise<BlueprintClarificationQuestionGenerationResult> {
   const aiConfig = getAIConfig();

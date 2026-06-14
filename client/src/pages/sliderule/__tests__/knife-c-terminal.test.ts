@@ -142,7 +142,7 @@ describe("Knife C · terminal delivery platform", () => {
     const before = JSON.stringify(state);
     const md = serializeSlideRuleDeliveryMd(state);
     expect(md).toContain("GCOV 覆盖回放");
-    expect(md).toContain("报告全文");
+    expect(md).toContain("推演报告"); // 导出已增强为人类可读版(含推演报告章节)
     expect(JSON.stringify(state)).toBe(before);
   });
 

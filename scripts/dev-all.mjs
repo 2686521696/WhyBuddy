@@ -168,7 +168,7 @@ async function resolveProxyEnvironment() {
 
   const proxyUrl = `http://127.0.0.1:${localProxyPort}`;
   console.warn(
-    `[dev:all] Detected local proxy at ${proxyUrl}. Enabling Node env proxy for dev child processes.`
+    `[dev:all] Detected local proxy at ${proxyUrl}. Enabling Node env proxy (HTTP_PROXY/HTTPS_PROXY + NODE_USE_ENV_PROXY=1) for dev child processes.`
   );
 
   return {
@@ -396,6 +396,14 @@ process.on("SIGTERM", () => shutdown(0));
 
 async function main() {
   const sharedDevEnv = await resolveDevEnvironment();
+
+  // Explicit visibility: the server child will receive the resolved proxy env (if any).
+  if (sharedDevEnv.HTTP_PROXY || sharedDevEnv.HTTPS_PROXY) {
+    console.log(
+      `[dev:all] Starting server child with proxy: HTTP_PROXY=${sharedDevEnv.HTTP_PROXY ? "set" : ""} ` +
+      `HTTPS_PROXY=${sharedDevEnv.HTTPS_PROXY ? "set" : ""} NODE_USE_ENV_PROXY=${sharedDevEnv.NODE_USE_ENV_PROXY || ""}`
+    );
+  }
 
   const server = run(
     "server",

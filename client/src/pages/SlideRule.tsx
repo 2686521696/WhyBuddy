@@ -35,12 +35,12 @@ import {
   GITHUB_PAGES_DEMO_SESSION_ID,
   GITHUB_PAGES_DEMO_GOAL,
 } from "./sliderule/github-pages-sliderule-demo";
-import { latestTrustedReport } from "@shared/blueprint/sliderule-delivery-chain";
+
 import {
   deriveLineageHighlightNodeIds,
   graphNodeIdForArtifact,
 } from "./sliderule/derive-lineage-highlight";
-import { SlideRuleReportReader } from "./sliderule/SlideRuleReportReader";
+
 import { downloadSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
 import {
   PROJECTION_DENSITY_STORAGE_KEY,
@@ -199,9 +199,6 @@ function SlideRuleImmersion({
   handleTerminalAction,
   focusNodeId,
   lineageHighlightIds,
-  reportReaderOpen,
-  trustedReport,
-  onCloseReportReader,
   onEvidenceRefClick,
   projectionDensity,
   onProjectionDensityChange,
@@ -217,6 +214,10 @@ function SlideRuleImmersion({
   answerClarifications,
   generateDeliverables,
   onExportDeliverables,
+  stop,
+  deliverablesOpen,
+  setDeliverablesOpen,
+  openDeliverables,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -238,9 +239,6 @@ function SlideRuleImmersion({
   handleTerminalAction: (action: "report" | "lineage" | "export") => void;
   focusNodeId: string | null;
   lineageHighlightIds: string[];
-  reportReaderOpen: boolean;
-  trustedReport: ReturnType<typeof latestTrustedReport>;
-  onCloseReportReader: () => void;
   onEvidenceRefClick: (artifactId: string) => void;
   projectionDensity: ProjectionDensity;
   onProjectionDensityChange: (density: ProjectionDensity) => void;
@@ -254,12 +252,15 @@ function SlideRuleImmersion({
   setMarathonBudget?: (b: { maxTokens: number; declaredAt: string }) => void;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (answers: Array<{ gapId: string; answer: string }>) => void;
-  generateDeliverables?: () => void;
-  onExportDeliverables?: () => void;
+  generateDeliverables: () => void;
+  onExportDeliverables: () => void;
+  stop?: () => void;
+  deliverablesOpen: boolean;
+  setDeliverablesOpen: (open: boolean) => void;
+  openDeliverables: () => void;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deliverablesOpen, setDeliverablesOpen] = useState(false);
   const composerHints = useMemo(
     () => deriveComposerHintChips(sessionState),
     [sessionState]
@@ -320,7 +321,7 @@ function SlideRuleImmersion({
           onProjectionDensityChange={onProjectionDensityChange}
           onResetSession={resetSession}
           onOpenSettings={() => setSettingsOpen(true)}
-          onOpenDeliverables={() => setDeliverablesOpen(true)}
+          onOpenDeliverables={openDeliverables}
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
           <ArchitectureProcessPanel
@@ -403,22 +404,12 @@ function SlideRuleImmersion({
             hintChips={composerHints}
             driveMode={driveMode}
             setDriveMode={setDriveMode}
+            stop={stop}
           />
         </div>
       </div>
 
-      {reportReaderOpen && trustedReport && (
-        <div
-          className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-slate-200 bg-white shadow-2xl"
-          data-testid="sliderule-report-drawer"
-        >
-          <SlideRuleReportReader
-            report={trustedReport}
-            onClose={onCloseReportReader}
-            onEvidenceRefClick={onEvidenceRefClick}
-          />
-        </div>
-      )}
+
 
       <SettingsDialog
         open={settingsOpen}
@@ -436,8 +427,8 @@ function SlideRuleImmersion({
         onClose={() => setDeliverablesOpen(false)}
         sessionState={sessionState}
         isRunning={isRunning}
-        onGenerate={() => generateDeliverables?.()}
-        onExportMd={() => onExportDeliverables?.()}
+        onGenerate={() => generateDeliverables()}
+        onExportMd={() => onExportDeliverables()}
         onEvidenceRefClick={onEvidenceRefClick}
       />
     </div>
@@ -465,9 +456,6 @@ function SlideRuleSplitEngineering({
   handleTerminalAction,
   focusNodeId,
   lineageHighlightIds,
-  reportReaderOpen,
-  trustedReport,
-  onCloseReportReader,
   onEvidenceRefClick,
   projectionDensity,
   onProjectionDensityChange,
@@ -479,6 +467,10 @@ function SlideRuleSplitEngineering({
   setDriveMode,
   generateDeliverables,
   onExportDeliverables,
+  stop,
+  deliverablesOpen,
+  setDeliverablesOpen,
+  openDeliverables,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -500,9 +492,6 @@ function SlideRuleSplitEngineering({
   handleTerminalAction: (action: "report" | "lineage" | "export") => void;
   focusNodeId: string | null;
   lineageHighlightIds: string[];
-  reportReaderOpen: boolean;
-  trustedReport: ReturnType<typeof latestTrustedReport>;
-  onCloseReportReader: () => void;
   onEvidenceRefClick: (artifactId: string) => void;
   projectionDensity: ProjectionDensity;
   onProjectionDensityChange: (density: ProjectionDensity) => void;
@@ -512,10 +501,13 @@ function SlideRuleSplitEngineering({
   executorMode: ReturnType<typeof useSlideRuleSession>["executorMode"];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
-  generateDeliverables?: () => void;
-  onExportDeliverables?: () => void;
+  generateDeliverables: () => void;
+  onExportDeliverables: () => void;
+  stop?: () => void;
+  deliverablesOpen: boolean;
+  setDeliverablesOpen: (open: boolean) => void;
+  openDeliverables: () => void;
 }) {
-  const [deliverablesOpen, setDeliverablesOpen] = useState(false);
   const imScrollRef = useRef<HTMLElement>(null);
   const imBottomRef = useRef<HTMLDivElement>(null);
   const imAtBottomRef = useRef(true);
@@ -581,7 +573,7 @@ function SlideRuleSplitEngineering({
         <div className="flex items-center gap-3 pl-4">
           <button
             type="button"
-            onClick={() => setDeliverablesOpen(true)}
+            onClick={openDeliverables}
             data-testid="sliderule-deliverables-open"
             className={autopilotTheme.auditBtn}
             title="交付物（报告 / 规格树 / 文档 / 提示词包 / 架构图 / 交接包）"
@@ -716,7 +708,7 @@ function SlideRuleSplitEngineering({
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !isRunning && sendMessage()}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
                 placeholder="工程路径完整 IM…"
                 disabled={isRunning}
                 className={autopilotTheme.input}
@@ -724,10 +716,10 @@ function SlideRuleSplitEngineering({
               <button
                 type="button"
                 onClick={sendMessage}
-                disabled={isRunning || !input.trim()}
+                disabled={!input.trim()}
                 className={autopilotTheme.sendBtn}
               >
-                发送
+                {isRunning ? "停止" : "发送"}
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -747,26 +739,15 @@ function SlideRuleSplitEngineering({
         </section>
       </div>
 
-      {reportReaderOpen && trustedReport && (
-        <div
-          className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-slate-200 bg-white shadow-2xl"
-          data-testid="sliderule-report-drawer"
-        >
-          <SlideRuleReportReader
-            report={trustedReport}
-            onClose={onCloseReportReader}
-            onEvidenceRefClick={onEvidenceRefClick}
-          />
-        </div>
-      )}
+
 
       <DeliverablesPanel
         open={deliverablesOpen}
         onClose={() => setDeliverablesOpen(false)}
         sessionState={sessionState}
         isRunning={isRunning}
-        onGenerate={() => generateDeliverables?.()}
-        onExportMd={() => onExportDeliverables?.()}
+        onGenerate={() => generateDeliverables()}
+        onExportMd={() => onExportDeliverables()}
         onEvidenceRefClick={onEvidenceRefClick}
       />
     </div>
@@ -796,6 +777,7 @@ export default function SlideRule() {
     pendingClarifications,
     answerClarifications,
     generateDeliverables,
+    stop,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
@@ -815,14 +797,10 @@ export default function SlideRule() {
       return "compact";
     }
   });
-  const [reportReaderOpen, setReportReaderOpen] = useState(false);
   const [lineageHighlightIds, setLineageHighlightIds] = useState<string[]>([]);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
-
-  const trustedReport = useMemo(
-    () => latestTrustedReport(sessionState),
-    [sessionState]
-  );
+  const [deliverablesOpen, setDeliverablesOpen] = useState(false);
+  const openDeliverables = useCallback(() => setDeliverablesOpen(true), []);
 
   const reasoningViewModel = useMemo(
     () =>
@@ -879,7 +857,7 @@ export default function SlideRule() {
   const handleTerminalAction = useCallback(
     (action: "report" | "lineage" | "export") => {
       if (action === "report") {
-        setReportReaderOpen(true);
+        openDeliverables();
         return;
       }
       if (action === "lineage") {
@@ -900,7 +878,7 @@ export default function SlideRule() {
         downloadSlideRuleDeliveryMd(sessionState);
       }
     },
-    [sessionState, reasoningViewModel.terminalMeta?.canExport, projectionDensity]
+    [sessionState, reasoningViewModel.terminalMeta?.canExport, projectionDensity, openDeliverables]
   );
 
   const handleEvidenceRefClick = useCallback(
@@ -918,7 +896,6 @@ export default function SlideRule() {
         setLineageHighlightIds([nodeId]);
         setFocusNodeId(nodeId);
       }
-      setReportReaderOpen(false);
     },
     [sessionState, projectionDensity]
   );
@@ -944,9 +921,6 @@ export default function SlideRule() {
     handleTerminalAction,
     focusNodeId,
     lineageHighlightIds,
-    reportReaderOpen,
-    trustedReport,
-    onCloseReportReader: () => setReportReaderOpen(false),
     onEvidenceRefClick: handleEvidenceRefClick,
     projectionDensity,
     onProjectionDensityChange: handleProjectionDensityChange,
@@ -961,7 +935,11 @@ export default function SlideRule() {
     pendingClarifications,
     answerClarifications,
     generateDeliverables,
+    stop,
     onExportDeliverables: () => downloadSlideRuleDeliveryMd(sessionState),
+    deliverablesOpen,
+    setDeliverablesOpen,
+    openDeliverables,
   };
 
   if (isImmersion) {

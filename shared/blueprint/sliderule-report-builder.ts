@@ -139,6 +139,77 @@ export function buildStructuredReport(input: StructuredReportInput): { title: st
     ? '分歧：部分上游 artifact 已被标记 stale（依赖链级联），多角色间存在异议，建议再澄清一轮或回炉重跑。\n'
     : '';
 
+  // R2.5 multi-role panel integration: aggressively pull the latest panel data
+  // from upstreams OR full state (more robust, so even if report is built with limited upstreams it still gets the 3 stances).
+  let multiRolePanelBlock = '';
+  let panelData: any = null;
+
+  // 1. Try upstreams first (preferred, as they are the direct inputs to this report)
+  const panelUpstream = upstreams.find((u: any) => u.payload && (u.payload.panel === true || (u.payload.panel && typeof u.payload.panel === 'object')));
+  if (panelUpstream) {
+    const p = panelUpstream.payload as any;
+    panelData = p.panel && typeof p.panel === 'object' ? p.panel : p;
+  }
+
+  // 2. Fallback: scan full state for the most recent artifact that has panel positions (handles cases where report upstreams are limited)
+  if (!panelData || !Array.isArray(panelData.positions) || panelData.positions.length === 0) {
+    const allArtifacts: any[] = (input.state as any)?.artifacts || [];
+    for (let i = allArtifacts.length - 1; i >= 0; i--) {
+      const a = allArtifacts[i];
+      const p = a?.payload;
+      const pl = p && (p.panel === true || (p.panel && typeof p.panel === 'object')) ? (p.panel || p) : null;
+      if (pl && Array.isArray(pl.positions) && pl.positions.length > 0) {
+        panelData = pl;
+        break;
+      }
+    }
+  }
+
+  if (panelData && Array.isArray(panelData.positions) && panelData.positions.length > 0) {
+    const posLines = panelData.positions
+      .map((p: any) => `  - ${p.v5Role || p.roleId || '角色'}：${String(p.content || '').trim().slice(0, 180)}`)
+      .join('\n');
+    const score = typeof panelData.convergenceScore === 'number' ? panelData.convergenceScore.toFixed(2) : '—';
+    const consensus = panelData.consensusReached ? '已共识' : '有分歧';
+    const dissentSummary = Array.isArray(panelData.dissent) && panelData.dissent.length > 0
+      ? panelData.dissent.map((d: any) => `  - ${d.roleId || ''}：${String(d.opinion || '').slice(0, 100)}`).join('\n')
+      : '  （无保留异议）';
+    multiRolePanelBlock = `${posLines}
+
+收敛分 ${score}（${consensus}）
+保留异议：
+${dissentSummary}
+`;
+  }
+
+  // 澄清贡献：从 state coverageGaps 或 upstream clarification artifacts 拉取结构化 gaps (from gap.ask / clarifyQuestions, with kind)
+  // 延续 R2 panel + 之前 broadened inputs 改善，显式结构化展示（带 kind + 与 panel 立场联动）
+  let clarificationBlock = '';
+  const clarifyGaps: any[] = (input.state as any)?.coverageGaps || [];
+  const clarifyQuestions = clarifyGaps
+    .filter((g: any) => g.kind === "open_question" && g.clarifyType)
+    .map((g: any) => ({
+      kind: g.clarifyKind || g.questionId || "clarification",
+      prompt: g.label,
+      type: g.clarifyType,
+      options: g.options,
+      defaultAnswer: g.defaultAnswer,
+      context: g.context,
+    }));
+  if (clarifyQuestions.length > 0) {
+    const qLines = clarifyQuestions.map((q: any) => `  - [${q.kind}] ${q.prompt}${q.options ? ` (选项: ${q.options.join(", ")})` : ""}${q.defaultAnswer ? ` 默认:${q.defaultAnswer}` : ""}`).join("\n");
+    clarificationBlock = `${qLines}\n\n（澄清问题已解析为 open_question gaps，部分已由用户回答或用于多角色面板上下文；证据引用见上游 clarification artifacts 或 report evidenceRefs）`;
+  } else {
+    // fallback: 扫描 upstreams 中的 clarification artifact
+    const clarifyArt = upstreams.find((u: any) => u.producedBy?.capabilityId?.includes("clarify") || u.kind === "clarification");
+    if (clarifyArt) {
+      clarificationBlock = String(clarifyArt.content || clarifyArt.summary || "").slice(0, 400);
+    }
+  }
+  if (clarificationBlock && multiRolePanelBlock) {
+    clarificationBlock += `\n\n与 panel 立场交叉引用: 以上澄清 kind 可直接映射到多角色 panel 的 crew (e.g. audience kind → 产品角色立场)。`;
+  }
+
   const prefix = turnLabel
     ? `【可行性 / 产品推演报告 (${turnLabel})】`
     : '【可行性 / 产品推演报告】';
@@ -179,19 +250,24 @@ ${riskStaleNote}
 分歧：
 ${dissentBlock || `（当前轮次意见基本收敛，无显著角色分歧。针对「${goalSlug}」的多角色讨论已就上游证据形成一致基线；如后续引入新 upstream 或外部证据，建议触发重入轮次以更新分歧评估与收敛决策。）`}
 
+多角色立场（面板贡献）：
+${multiRolePanelBlock ? multiRolePanelBlock.replace(/多角色立场（面板贡献）：\n?/, '').trim() : '（当前轮次未触发多角色面板或无立场数据）'}
+
+澄清贡献（结构化问题 + kind，与 V4 blueprint 对齐；联动 panel 立场）：
+${clarificationBlock || '（本轮暂无结构化澄清 gaps 或未命中 open_question）'}
+
 ${convergeDecision}
 
 ${gaps}
 
 下一步工程化分支：
-针对「${goalSlug}」的推进，结合当前证据状态与平台能力，建议按以下工程化路径执行：
-- 走 structure.decompose 将收敛结论拆成可执行任务树（带证据引用）
-- 替换默认 CapabilityExecutor 为真实 Tool/OpenAI/MCP 实现（先试点 risk.analyze + report.write）
-- 将 process-local Map  backing 的 HTTP session store 替换为 SQLite / Postgres 等 durable 存储（保持 /api/sliderule surface 不变）
-- 报告主输出支持导出为带 provenance 签名的 Markdown / PDF
-- 引入真实 Trust Gate 后端（不再仅模拟 evaluateGates）
+针对「${goalSlug}」的推进，当前已形成可验证的 MVP 路径。建议后续：
+- 通过 structure.decompose 拆解为带证据的执行任务树
+- 在真实执行器（MCP / LLM / 工具）上试点验证
+- 导出带签名的交付物（MD / PDF）供团队 review
+- 按需补全外部证据并更新报告
 
-provenance / upstream refs：${upstreamSummary}（共 ${upstreams.length} 个已 gated 的上游 artifact；evidenceRefs 已在 commitArtifact 阶段记录到 report 上，供后续依赖图与 invalidate 消费）。
+provenance / upstream refs：${upstreamSummary}（共 ${upstreams.length} 个已 gated 的上游 artifact）。（完整审计明细见导出或面板的审计部分）
 `;
 
   const title = (prefix.replace(/【|】/g, '') + ' · V5 Evidence Report').slice(0, 72);

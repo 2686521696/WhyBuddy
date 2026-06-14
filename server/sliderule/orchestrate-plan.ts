@@ -11,6 +11,7 @@ import { capabilityDomainAnchoringBlock } from "../../shared/blueprint/sliderule
 import { getAIConfig } from "../core/ai-config.js";
 import { callLLMJsonWithUsage } from "../core/llm-client.js";
 import { callPoolJsonLlm, shouldSkipPrimaryLlmAfterPoolExhausted } from "./pool-json-llm.js";
+import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import {
   hasGroundedExternalEvidence,
   isGroundedEvidenceArtifact,
@@ -301,7 +302,18 @@ export async function executeOrchestratePlan(
       };
     }
 
-    if (!config.apiKey || shouldSkipPrimaryLlmAfterPoolExhausted()) return null;
+    if (!config.apiKey) return null;
+
+    // Good resilience fix: when we are behind a dev proxy (very common in this setup),
+    // pool transport failures are often transient (concurrent CONNECT issues).
+    // In that case, still try the primary LLM instead of hard "no_llm_available".
+    const proxyActive = !!(readEnvCompat("HTTP_PROXY") || process.env.HTTP_PROXY ||
+                           readEnvCompat("HTTPS_PROXY") || process.env.HTTPS_PROXY ||
+                           readEnvCompat("NODE_USE_ENV_PROXY") || process.env.NODE_USE_ENV_PROXY);
+
+    if (shouldSkipPrimaryLlmAfterPoolExhausted() && !proxyActive) {
+      return null;
+    }
 
     const { json, usage } = await callLLMJsonWithUsage<{
       selected?: Array<{ capabilityId?: string; roleId?: string; why?: string }>;

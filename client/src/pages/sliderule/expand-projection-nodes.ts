@@ -28,23 +28,29 @@ function expandPanelRoleChildren(
   parent: BrainstormReasoningNode
 ): { nodes: BrainstormReasoningNode[]; edges: BrainstormReasoningEdge[] } {
   const art = artifactForNode(state, parent as any);
-  const pl = art?.payload as
-    | {
-        panel?: boolean;
-        positions?: Array<{ roleId?: string; v5Role?: string; content?: string }>;
-        convergenceScore?: number;
-        consensusReached?: boolean;
-        dissent?: Array<unknown>;
-      }
-    | undefined;
-  if (!pl?.panel || !Array.isArray(pl.positions) || pl.positions.length === 0) {
+  const raw = (art?.payload || {}) as any;
+
+  // Support two shapes:
+  // 1. Critique panel artifact: { panel: true, positions: [...], convergenceScore, ... }
+  // 2. Synthesis artifact (after forwarding): { panel: { positions: [...], convergenceScore, consensusReached, dissent }, ... }
+  let pl: any = raw;
+  if (raw.panel && typeof raw.panel === "object" && !raw.positions) {
+    pl = { panel: true, ...raw.panel };
+  }
+
+  const hasPanelFlag = !!pl?.panel;
+  const positions = Array.isArray(pl?.positions) ? pl.positions : [];
+  const hasConvergence = typeof pl?.convergenceScore === "number";
+
+  // Allow rendering at least the verdict if we have convergence data (even without full positions on this artifact)
+  if (!hasPanelFlag && !hasConvergence && positions.length === 0) {
     return { nodes: [], edges: [] };
   }
 
   const nodes: BrainstormReasoningNode[] = [];
   const edges: BrainstormReasoningEdge[] = [];
 
-  for (const pos of pl.positions.slice(0, MAX_PANEL_ROLES)) {
+  for (const pos of positions.slice(0, MAX_PANEL_ROLES)) {
     const v5 = String(pos.v5Role || pos.roleId || "角色");
     const childId = `${parent.id}::role-${String(pos.roleId || v5)}`;
     nodes.push({
@@ -67,15 +73,16 @@ function expandPanelRoleChildren(
     });
   }
 
-  if (typeof pl.convergenceScore === "number") {
-    const consensus = Boolean(pl.consensusReached);
-    const dissentCount = Array.isArray(pl.dissent) ? pl.dissent.length : 0;
+  if (hasConvergence) {
+    const consensus = Boolean(pl.consensusReached ?? pl.consensus);
+    const dissentArr = Array.isArray(pl.dissent) ? pl.dissent : [];
+    const dissentCount = dissentArr.length;
     const childId = `${parent.id}::role-_verdict`;
     nodes.push({
       id: childId,
       type: consensus ? "synthesis" : "risk",
       title: consensus ? "共识" : "分歧",
-      body: `收敛分 ${pl.convergenceScore.toFixed(2)}${dissentCount ? ` · ${dissentCount} 条保留异议` : ""}`,
+      body: `收敛分 ${Number(pl.convergenceScore).toFixed(2)}${dissentCount ? ` · ${dissentCount} 条保留异议` : ""}`,
       status: "resolved",
       roleId: "综合",
       roleLabel: "裁决",

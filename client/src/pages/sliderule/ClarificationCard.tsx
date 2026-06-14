@@ -9,6 +9,7 @@ import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 export type ClarificationItem = {
   id: string;
   prompt: string;
+  kind?: string;  // V4 alignment (e.g. "audience", blueprint question id)
   type?: "free_text" | "single_choice" | "multi_choice";
   options?: string[];
   defaultAnswer?: string;
@@ -120,7 +121,18 @@ export function ClarificationCard({
       </div>
 
       <div className="px-4 py-3">
-        <p className="text-sm font-semibold text-slate-800">{q.prompt}</p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-sm font-semibold text-slate-800">{q.prompt}</p>
+          {q.kind && (
+            <span className={`rounded px-1 py-0 text-[9px] font-mono ${
+              q.kind.includes("audience") || q.kind.includes("users") ? "bg-blue-100 text-blue-700" :
+              q.kind.includes("platform") ? "bg-green-100 text-green-700" :
+              q.kind.includes("scope") ? "bg-amber-100 text-amber-700" :
+              q.kind.includes("success") || q.kind.includes("scenario") ? "bg-purple-100 text-purple-700" :
+              "bg-indigo-100 text-indigo-700"
+            }`}>{q.kind}</span>
+          )}
+        </div>
         {q.context && <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{q.context}</p>}
 
         <div className="mt-3 space-y-1.5">
@@ -234,6 +246,23 @@ export function ClarificationCard({
               data-testid="sliderule-clarification-submit"
             >
               提交补充
+            </button>
+          )}
+          {/* UI 增强: 按 kind 批量提交基础 (如果当前题有 kind, 提供批量选项) */}
+          {q.kind && total > 1 && (
+            <button
+              onClick={() => {
+                // 简单批量: 提交所有同 kind 的已答 (基础实现, 可扩展)
+                const sameKind = questions.filter(item => item.kind === q.kind);
+                const answers: ClarificationAnswer[] = sameKind
+                  .map((item) => ({ gapId: item.id, answer: answerFor(item) }))
+                  .filter((a) => a.answer.length > 0);
+                if (answers.length > 0) onSubmit(answers);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+              title={`批量提交同 kind (${q.kind})`}
+            >
+              批量 {q.kind}
             </button>
           )}
         </div>

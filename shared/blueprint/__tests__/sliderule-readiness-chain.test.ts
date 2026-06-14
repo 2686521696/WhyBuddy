@@ -10,6 +10,8 @@ import {
   resolveReadinessGapsByIds,
   isUnderSpecifiedGoal,
   buildSimulatedClarifyQuestions,
+  generateSlideRuleClarifyQuestions,
+  SLIDERULE_CLARIFICATION_TEMPLATES,
 } from "../sliderule-readiness-chain.js";
 import { pickNextCapabilities } from "../sliderule-pick-heuristic.js";
 
@@ -70,7 +72,7 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
     const content =
       "【阻塞缺口】\n- 面向谁使用？\n\n```clarify-json\n" +
       JSON.stringify([
-        { prompt: "面向谁使用？", type: "single_choice", options: ["企业内部", "公开用户"], defaultAnswer: "企业内部", context: "决定权限模型" },
+        { kind: "audience", prompt: "面向谁使用？", type: "single_choice", options: ["企业内部", "公开用户"], defaultAnswer: "企业内部", context: "决定权限模型" },
         { prompt: "补充说明？", type: "free_text" },
       ]) +
       "\n```";
@@ -78,6 +80,7 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
     expect(questions).toHaveLength(2);
     expect(questions![0]).toMatchObject({
       prompt: "面向谁使用？",
+      kind: "audience",
       type: "single_choice",
       options: ["企业内部", "公开用户"],
       defaultAnswer: "企业内部",
@@ -93,7 +96,7 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
 
   it("gapsFromClarifyQuestions materializes gaps carrying options/defaultAnswer/type", () => {
     const gaps = gapsFromClarifyQuestions(
-      [{ prompt: "面向谁？", type: "single_choice", options: ["A", "B"], defaultAnswer: "A", context: "ctx" }],
+      [{ prompt: "面向谁？", kind: "audience", type: "single_choice", options: ["A", "B"], defaultAnswer: "A", context: "ctx" }],
       "t1",
       "art-1"
     );
@@ -106,6 +109,21 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
       defaultAnswer: "A",
       context: "ctx",
     });
+    expect((gaps[0] as { clarifyKind?: string }).clarifyKind).toBe("audience"); // V4 template kind propagated (不覆盖 open_question 判别式)
+  });
+
+  it("generateSlideRuleClarifyQuestions and extract respect V4 templates + kind validation", async () => {
+    const qs = await generateSlideRuleClarifyQuestions("权限系统", false);
+    expect(qs.length).toBeGreaterThan(0);
+    expect(qs.every(q => q.kind && SLIDERULE_CLARIFICATION_TEMPLATES.some(t => t.kind === q.kind))).toBe(true);
+
+    // simulate LLM output with kind
+    const content = "【阻塞缺口】\n```clarify-json\n" + JSON.stringify([
+      { kind: "audience", prompt: "面向谁？", type: "single_choice", options: ["A", "B"] }
+    ]) + "\n```";
+    const { questions } = extractClarifyBlock(content);
+    expect(questions).toHaveLength(1);
+    expect(questions![0].kind).toBe("audience");
   });
 
   // ===== 欠规约即澄清(放宽触发,修复「具体产品目标从不澄清」)=====

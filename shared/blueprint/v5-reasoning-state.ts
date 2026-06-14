@@ -293,6 +293,8 @@ export interface CoverageGap {
   defaultAnswer?: string;
   context?: string;
   questionId?: string;
+  /** V4 alignment for clarification kind (e.g. "audience", "blueprint-question-xxx"); does not override the gap's 'kind' discriminant. */
+  clarifyKind?: string;
 }
 
 /** S13/S14 · G_SCHEMA / G_INV results persisted for structure.decompose (edges 88–89). */
