@@ -681,15 +681,16 @@ export function TurnRouteTimeline({
               : "completed";
 
             const r = roundOf(station.id);
-            if (foldRounds && r != null && r !== maxRound && !expandedRounds.has(r)) {
-              if (emittedHeaders.has(r)) return null;
-              emittedHeaders.add(r);
+            const isFoldableRound = foldRounds && r != null && r !== maxRound;
+            if (isFoldableRound && !expandedRounds.has(r!)) {
+              if (emittedHeaders.has(r!)) return null;
+              emittedHeaders.add(r!);
               const stepsInRound = visibleStations.filter((s) => roundOf(s.id) === r).length;
               return (
                 <button
                   key={`round-fold-${r}`}
                   type="button"
-                  onClick={() => toggleRound(r)}
+                  onClick={() => toggleRound(r!)}
                   className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-slate-400 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-600"
                   data-testid={`sliderule-timeline-round-fold-${r}`}
                 >
@@ -698,9 +699,24 @@ export function TurnRouteTimeline({
                 </button>
               );
             }
-          return (
+          // 展开的历史轮:在该轮第一步前插一个「收起」入口(此前展开后无法再折叠)。
+          let collapseHeader: React.ReactNode = null;
+          if (isFoldableRound && expandedRounds.has(r!) && !emittedHeaders.has(r!)) {
+            emittedHeaders.add(r!);
+            collapseHeader = (
+              <button
+                type="button"
+                onClick={() => toggleRound(r!)}
+                className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                data-testid={`sliderule-timeline-round-collapse-${r}`}
+              >
+                <span className="font-mono">▾</span>
+                第 {r} 轮 · 点击收起
+              </button>
+            );
+          }
+          const stationRow = (
             <StationRow
-              key={station.id}
               station={station}
               steps={steps}
               actions={actions}
@@ -722,6 +738,14 @@ export function TurnRouteTimeline({
               retrying={retrying}
               immersionOverlay={immersionOverlay}
             />
+          );
+          return collapseHeader ? (
+            <React.Fragment key={station.id}>
+              {collapseHeader}
+              {stationRow}
+            </React.Fragment>
+          ) : (
+            <React.Fragment key={station.id}>{stationRow}</React.Fragment>
           );
           });
         })()}

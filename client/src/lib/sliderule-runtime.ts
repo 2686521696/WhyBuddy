@@ -2840,22 +2840,30 @@ export function commitArtifact(
 }
 
 // Helper: declare expected input kinds for a capability (for prototype dependency tracking)
+// 每个能力关心的上游 artifact 种类。下游(synthesis/report/structure)收敛节点应吃到
+// 全部相关上游,而非单一来源 —— 否则画布里产出节点只挂一两个父节点("第二层"),
+// 推理上下文也不完整。聚合类能力的 kind 集合放宽到覆盖全链路。
 const CAPABILITY_INPUT_KINDS: Partial<Record<V5CapabilityId, string[]>> = {
   "risk.analyze": ["clarification", "evidence"],
-  "counter.argue": ["risk"],
-  "synthesis.merge": ["risk", "evidence", "route_options"],
-  "report.write": ["synthesis", "risk", "evidence", "route_options"],
-  "structure.decompose": ["clarification", "evidence"],
+  "counter.argue": ["risk", "evidence"],
+  "synthesis.merge": ["risk", "evidence", "route_options", "clarification"],
+  "report.write": ["synthesis", "risk", "evidence", "route_options", "clarification", "preview"],
+  "structure.decompose": ["clarification", "evidence", "synthesis", "risk", "report"],
 };
 
-// Find recent artifacts in state that match the required kinds for this capability
+// 单能力可挂的上游上限(防止极端会话把画布塞爆;远大于此前的 neededKinds.length 封顶)。
+const MAX_INPUTS_PER_CAPABILITY = 24;
+
+// Find artifacts in state matching the required kinds for this capability.
+// 收集**全部**匹配 kind 的健康上游(不再按 kind 数量封顶),让收敛节点依赖完整上下文 ——
+// 画布依赖边因此完整、产出不再悬在"第二层"。仅留一个高位安全上限防极端膨胀。
 export function findInputsForCapability(state: V5SessionState, capabilityId: V5CapabilityId): string[] {
   const neededKinds = CAPABILITY_INPUT_KINDS[capabilityId] || [];
   if (neededKinds.length === 0) return [];
 
   const stales = new Set(state.staleArtifactIds || []);
   const inputs: string[] = [];
-  // walk backwards to find most recent matching healthy artifact
+  // walk backwards (most-recent first) collecting every healthy artifact of a needed kind
   for (let i = state.artifacts.length - 1; i >= 0; i--) {
     const art = state.artifacts[i];
     if (
@@ -2864,7 +2872,7 @@ export function findInputsForCapability(state: V5SessionState, capabilityId: V5C
       !inputs.includes(art.id)
     ) {
       inputs.push(art.id);
-      if (inputs.length >= neededKinds.length) break;
+      if (inputs.length >= MAX_INPUTS_PER_CAPABILITY) break;
     }
   }
   return inputs;

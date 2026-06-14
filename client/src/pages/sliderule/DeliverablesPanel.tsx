@@ -45,6 +45,22 @@ function extractMermaid(content: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+// SPEC 树正文前缀里夹着内部门控字样(C_PROMPT:built · C_REDACT… / 【SPEC Tree · template】),
+// 这些是机制审计行,不该展示给用户;剥掉后保留 ├─/└─ 树形,交给等宽 <pre> 渲染。
+function cleanSpecTree(content: string): string {
+  return content
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^C_PROMPT\s*:/.test(t)) return false;
+      if (/^【\s*SPEC\s*Tree/i.test(t)) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
 export function DeliverablesPanel({
   open,
   onClose,
@@ -293,7 +309,19 @@ function DeliverableViewer({
     );
   }
 
-  // spec_tree / docs / prompt / handoff: Markdown 渲染(LLM/模板输出多为 markdown)
+  if (category === "spec_tree") {
+    const tree = cleanSpecTree(content);
+    return (
+      <div className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">{artifact.title || "规格树"}</h2>
+        <pre className="overflow-x-auto whitespace-pre rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[12px] leading-relaxed text-slate-700">
+          {tree || "（空）"}
+        </pre>
+      </div>
+    );
+  }
+
+  // docs / prompt / handoff: Markdown 渲染(LLM/模板输出多为 markdown)
   return (
     <div className="space-y-2 text-[13px] leading-relaxed text-slate-700">
       <h2 className="text-base font-bold text-slate-900">{artifact.title || CATEGORY_META[category].label}</h2>
