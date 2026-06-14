@@ -115,12 +115,12 @@ options 给 2~4 个简洁候选答法(供快速选,不替用户拍板);没有明
   {"kind":"scope","prompt":"本期范围边界:明确不做什么?","type":"free_text","context":"避免范围漂移"}
 ]
 \`\`\`
-- kind: 必须使用上面列出的模板 kind 之一 ("audience", "platform", "success-criteria", "scope")。
+- kind: 复用上面列出的模板 kind 之一 ("audience", "platform", "success-criteria", "scope") 给问题打标签(用于卡片分组/着色);选最贴切的即可。
 - type: 选择题用 "single_choice"(或可多选 "multi_choice");没有明确候选则 "free_text"。
 - options: type 为选择题时给 2~4 个**简洁候选答法**(供用户快速选,不是你替用户拍板);free_text 时省略。
 - context: 一句话说明该问题的答案会如何影响后续路线/方案。
 - defaultAnswer: 你建议的默认假设/推荐项(对应某个 option 文本或一句假设)。
-每个【阻塞缺口】问题对应数组里一条。**严格**使用模板维度 + kind, 不要发明新问题。`,
+每个【阻塞缺口】问题对应数组里一条。问题文本/选项必须针对本目标、随目标变化(可按目标特性增减题目);kind 仅作分组标签复用上述四类之一,不要每次都输出同一套模板四问。`,
 
   "question.expand": `任务:扩展关键问题 (C_QEXP)。
 
