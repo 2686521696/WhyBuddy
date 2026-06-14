@@ -101,6 +101,7 @@ import {
   mergeGapAskIntoState,
   resolveReadinessGapsFromUserText,
   resolveReadinessGapsByIds,
+  buildSimulatedClarifyQuestions,
   type ClarifyQuestion,
 } from "@shared/blueprint/sliderule-readiness-chain";
 import {
@@ -1401,12 +1402,27 @@ export function simulateCapabilityExecution(
     content = `【文档草案 · pilot-template baseline】\n基于 ${upstreams.length} 上游产物（risk + synthesis + clarification）生成。\n\n## 概述\n为 ${state.goal?.text || "目标"} 提供 RBAC + 审计的实现路径。\n\n## 需求\n### 需求 1：权限模型\n用户故事：作为平台管理员，我希望定义基于角色的权限，以便安全地隔离不同项目的数据。\n#### 验收标准\n1.1 WHEN 管理员创建角色，THE 系统 SHALL 持久化并返回 roleId。\n1.2 IF 用户不具备对应 scope，THE 系统 SHALL 拒绝访问并记录审计日志。\n\n## 设计\n组件包含 RoleService、ScopeChecker、AuditLogger。\n\n（pilot 演示数据，已厚化避免被 K3 质量门拦截）。`;
     title = "文档草案 (pilot)";
   } else if (capabilityId === "traceability.matrix") {
+    const goal = state.goal?.text || "目标";
+    const ev = upstreams[0]?.id || "report";
     content =
-      `【可追溯矩阵】\n| 需求 | 设计 | 任务 | 证据 | 用例 |\n|---|---|---|---|---|\n` +
-      `| REQ-1 | DES-1 | TASK-1 | ${upstreams[0]?.id || "upstream"} | EARS-1 |`;
+      `## 可追溯矩阵\n\n` +
+      `针对「${goal}」建立需求↔设计↔任务↔证据↔用例的双向追溯，确保每条需求都有设计落点、可执行任务、证据支撑与验收用例，避免范围漂移与漏实现。\n\n` +
+      `| 需求 | 设计 | 任务 | 证据 | 用例 |\n|---|---|---|---|---|\n` +
+      `| REQ-1 核心闭环 | DES-1 模块划分 | TASK-1 MVP 实现 | ${ev} | EARS-1 |\n` +
+      `| REQ-2 权限/边界 | DES-2 访问控制 | TASK-2 鉴权接入 | ${ev} | EARS-2 |\n` +
+      `| REQ-3 审计追溯 | DES-3 操作日志 | TASK-3 审计落库 | ${ev} | EARS-3 |\n\n` +
+      `**覆盖说明**：P0 需求全部具备验收用例与证据引用；未覆盖项需回到推演澄清后补登。`;
     title = "可追溯矩阵";
   } else if (capabilityId === "task.write") {
-    content = `【工程任务】\n1. MVP 实现\n2. 验收对齐 report\n3. 交接 checklist`;
+    const goal = state.goal?.text || "目标";
+    content =
+      `## 工程任务清单\n\n` +
+      `面向「${goal}」的可执行任务拆解，含依赖与验收锚点，供工程 agent 按序落地 MVP。\n\n` +
+      `1. **实现核心闭环**（blockedBy: 无）：搭建最小可用路径，打通主流程。验收：核心场景端到端跑通。\n` +
+      `2. **接入权限与边界控制**（blockedBy: 1）：RBAC + scope 过滤，拒绝越权并审计。\n` +
+      `3. **操作审计落库**（blockedBy: 2）：保留操作者/时间/对象/before-after。\n` +
+      `4. **验收用例对齐报告**（blockedBy: 3）：每条 P0 需求映射到可机械判定的验收。\n` +
+      `5. **交接 checklist**（blockedBy: 4）：整理交付包与未决项，移交工程。`;
     title = "工程任务清单";
   } else if (capabilityId === "handoff.package") {
     content = buildHandoffPackageContent(state);
@@ -1488,6 +1504,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    payload?: unknown;
     usage?: {
       inputTokens?: number;
       outputTokens?: number;
@@ -1501,7 +1518,7 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
     // Special case for the V5 main output (report.write): use the structured 9-section builder
     // so the committed artifact carries evidence-grade content even under the default simulator path.
     // This is the "wire into CapabilityExecutor" step: page no longer post-processes report strings.
-    let result: { title: string; summary: string; content: string; provenance?: Artifact["provenance"]; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; model?: string }; qualityBaseline?: "production" | "pilot-template" };
+    let result: { title: string; summary: string; content: string; provenance?: Artifact["provenance"]; payload?: unknown; usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; model?: string }; qualityBaseline?: "production" | "pilot-template" };
     if (args.capabilityId === 'report.write') {
       const built = buildStructuredReport({
         state: args.state,
@@ -1515,6 +1532,25 @@ class DefaultCapabilityExecutor implements CapabilityExecutor {
         summary: built.summary,
         content: built.content,
         provenance: 'ai_generated',
+        qualityBaseline: 'pilot-template',
+      };
+    } else if (args.capabilityId === 'gap.ask') {
+      // 澄清:产出结构化 clarifyQuestions(带选项),只问目标缺失的规约维度。
+      // payload.clarifyQuestions 经 drive → commit → gapsFromClarifyQuestions → 澄清卡片(带选项)。
+      const questions = buildSimulatedClarifyQuestions(args.state.goal?.text || "");
+      const body = questions
+        .map((q, i) => {
+          const opts = q.options && q.options.length > 0 ? `\n   选项:${q.options.join(" / ")}` : "";
+          const ctx = q.context ? `\n   (${q.context})` : "";
+          return `${i + 1}. ${q.prompt}${opts}${ctx}`;
+        })
+        .join("\n");
+      result = {
+        title: "阻塞缺口清单",
+        summary: "定位阻塞规划的关键未决问题(带候选答法)",
+        content: `## 待澄清(回答后即可推进)\n\n${body}`,
+        provenance: "ai_generated",
+        payload: { clarifyQuestions: questions },
         qualityBaseline: 'pilot-template',
       };
     } else {
@@ -1605,6 +1641,7 @@ class PilotRealCapabilityExecutor implements CapabilityExecutor {
     summary: string;
     content: string;
     provenance?: Artifact["provenance"];
+    payload?: unknown;
     usage?: {
       inputTokens?: number;
       outputTokens?: number;
@@ -3467,7 +3504,14 @@ export function orchestrateReasoningTurn(
   const proposed = context?.proposedPlan;
   let convergenceRejectedByGcov = false;
 
-  if (proposed?.converged === true && (proposed.selected?.length ?? 0) === 0) {
+  // S19 交付意图短路:一键「生成交付物」(delivery intent + clear)必须跑完整确定性交付流水线
+  // (spec 树→文档→矩阵→提示词包→架构图→交接包),不能交给 LLM orchestrate 提案随机裁量
+  // (否则常只挑 report.write,导致规格文档/spec 树不产出)。本地启发式已含该流水线分支。
+  if (isDeliveryIntent(userTextForPick) && working.goal?.status === "clear") {
+    selected = pickNextCapabilitiesHeuristic(working, userTextForPick);
+    planSource = "local_heuristic";
+    pickRationale = `delivery-intent forced deterministic ship pipeline (bypass LLM proposal) for: ${(userTextForPick || "").slice(0, 80)}`;
+  } else if (proposed?.converged === true && (proposed.selected?.length ?? 0) === 0) {
     const nowIso = new Date().toISOString();
     const allCapIds = Array.from(V5_CAPABILITY_POOL.keys()) as string[];
     const convergenceDecision: SchedulingDecision = {

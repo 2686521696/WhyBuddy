@@ -8,6 +8,8 @@ import {
   extractBlockingQuestions,
   extractClarifyBlock,
   resolveReadinessGapsByIds,
+  isUnderSpecifiedGoal,
+  buildSimulatedClarifyQuestions,
 } from "../sliderule-readiness-chain.js";
 import { pickNextCapabilities } from "../sliderule-pick-heuristic.js";
 
@@ -104,6 +106,52 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
       defaultAnswer: "A",
       context: "ctx",
     });
+  });
+
+  // ===== 欠规约即澄清(放宽触发,修复「具体产品目标从不澄清」)=====
+
+  it("isUnderSpecifiedGoal: 具体但欠规约的产品目标视为欠规约", () => {
+    expect(isUnderSpecifiedGoal("万年历+倒数日提醒工具")).toBe(true); // 无用户群/平台/范围信号
+    expect(isUnderSpecifiedGoal("做一个系统")).toBe(true);
+    expect(isUnderSpecifiedGoal("")).toBe(true);
+  });
+
+  it("isUnderSpecifiedGoal: 命中 ≥2 规约维度或长描述视为充分", () => {
+    // 用户群 + 平台 + 范围
+    expect(isUnderSpecifiedGoal("面向企业团队的考勤 SaaS,web 平台,MVP 只做打卡与统计")).toBe(false);
+    // 长描述
+    expect(isUnderSpecifiedGoal("x".repeat(80))).toBe(false);
+  });
+
+  it("needsReadinessChain: 具体但欠规约的新目标触发澄清(此前永不触发的 bug)", () => {
+    expect(needsReadinessChain(stub("万年历+倒数日提醒工具"), "万年历+倒数日提醒工具")).toBe(true);
+  });
+
+  it("needsReadinessChain: 充分规约 / clear / 显式交付指令 不触发", () => {
+    const detailed = "面向企业团队的考勤 SaaS,web 平台,MVP 只做打卡与统计";
+    expect(needsReadinessChain(stub(detailed), detailed)).toBe(false);
+    const clear = { ...stub("万年历提醒工具"), goal: { text: "万年历提醒工具", status: "clear" as const } };
+    expect(needsReadinessChain(clear, "继续")).toBe(false);
+    // 显式收敛/交付意图不被澄清抢占
+    expect(needsReadinessChain(stub("万年历提醒工具"), "生成可行性报告")).toBe(false);
+  });
+
+  it("needsReadinessChain: 本会话已跑过 gap.ask 后不再重复触发(每会话一次)", () => {
+    const ran = {
+      ...stub("万年历提醒工具"),
+      capabilityRuns: [{ id: "r", capabilityId: "gap.ask", inputs: [], outputs: [], gateResults: [], turnId: "t1" }],
+    } as unknown as V5SessionState;
+    expect(needsReadinessChain(ran, "万年历提醒工具")).toBe(false);
+  });
+
+  it("buildSimulatedClarifyQuestions: 只对缺失维度发问,选择题带候选选项", () => {
+    const qs = buildSimulatedClarifyQuestions("万年历+倒数日提醒工具");
+    expect(qs.length).toBeGreaterThanOrEqual(2);
+    const single = qs.find((q) => q.type === "single_choice");
+    expect(single?.options?.length).toBeGreaterThanOrEqual(2);
+    // 已含用户群信号时,不再问用户群
+    const qs2 = buildSimulatedClarifyQuestions("面向企业团队的内部工具");
+    expect(qs2.some((q) => /面向谁/.test(q.prompt))).toBe(false);
   });
 
   it("resolveReadinessGapsByIds resolves only the answered gaps (partial answers)", () => {

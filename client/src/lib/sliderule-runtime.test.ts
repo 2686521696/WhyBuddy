@@ -846,9 +846,10 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
     // seed some state
     s = { ...s, openQuestions: [{ id: 'q1', text: '边界？' }], staleArtifactIds: ['old'] } as any;
     const picks = pickNextCapabilities(s, '随便说说');
-    // should pick clarify or decompose due to openQ, and risk due to stale
+    // should pick a clarify-family cap (intent.clarify / decompose) or — for an under-specified
+    // goal — the readiness chain (gap.ask / question.expand,「欠规约即澄清」放宽后的前置澄清)。
     const caps = picks.map(p => p.capabilityId);
-    expect(caps.some(c => c.includes('clarify') || c.includes('decompose'))).toBe(true);
+    expect(caps.some(c => /clarify|decompose|gap\.ask|question\.expand/.test(c))).toBe(true);
   });
 
   it('challenge uses exact produced target from enriched state (binding resolution)', async () => {

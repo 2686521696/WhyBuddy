@@ -2,6 +2,8 @@ import React from "react";
 import { Download, FileText, GitBranch, Layers, PackageCheck, ScrollText, Sparkles, Workflow, X } from "lucide-react";
 import type { Artifact, V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { parseReportSections } from "./parse-report-sections";
+import { MarkdownRenderer } from "@/pages/autopilot/right-rail/streaming-doc/MarkdownRenderer";
+import { DEFAULT_LOCALE } from "@/lib/locale";
 
 /**
  * 交付物面板（SettingsDialog 同构外壳）。
@@ -75,7 +77,14 @@ export function DeliverablesPanel({
   const available = CATEGORY_ORDER.filter((c) => (grouped.get(c)?.length ?? 0) > 0);
   const [active, setActive] = React.useState<CategoryId>("report");
   React.useEffect(() => {
-    if (open && available.length > 0 && !available.includes(active)) setActive(available[0]);
+    if (open && available.length > 0) {
+      // Prefer "report" when opening the delivery dialog (e.g. from "查看报告" terminal action)
+      if (available.includes("report")) {
+        setActive("report");
+      } else if (!available.includes(active)) {
+        setActive(available[0]);
+      }
+    }
   }, [open, available, active]);
 
   if (!open) return null;
@@ -210,9 +219,48 @@ function DeliverableViewer({
         {sections.map((sec) => (
           <section key={sec.id} className="border-b border-slate-100 pb-4 last:border-0">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-800">{sec.label}</h3>
-            <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
-              {sec.body.trim() || "（空）"}
-            </p>
+            {sec.label.includes('多角色立场') ? (
+              <div className="mt-2 space-y-3">
+                {(() => {
+                  const lines = sec.body.trim().split('\n').filter(Boolean);
+                  const roles: Array<{role: string, content: string}> = [];
+                  let convergence = '';
+                  let dissent = '';
+                  lines.forEach(line => {
+                    const roleMatch = line.match(/^\s*-\s*([^：:]+)：(.+)$/);
+                    if (roleMatch) {
+                      roles.push({ role: roleMatch[1].trim(), content: roleMatch[2].trim() });
+                    } else if (line.includes('收敛分')) {
+                      convergence = line.trim();
+                    } else if (line.includes('保留异议') || line.includes('异议')) {
+                      dissent = line.trim();
+                    }
+                  });
+                  return (
+                    <>
+                      {roles.length > 0 && (
+                        <div className="grid grid-cols-1 gap-2">
+                          {roles.map((r, idx) => (
+                            <div key={idx} className="rounded border border-slate-200 bg-slate-50 p-2 text-[12px]">
+                              <div className="font-semibold text-emerald-700">{r.role} · 立场</div>
+                              <div className="mt-1 whitespace-pre-wrap text-slate-700">{r.content}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {convergence && <div className="text-[12px] text-slate-600 font-medium">{convergence}</div>}
+                      {dissent && <div className="text-[12px] text-amber-700">{dissent}</div>}
+                    </>
+                  );
+                })()}
+              </div>
+            ) : sec.body.trim() ? (
+              <div className="mt-2 text-[13px] leading-relaxed text-slate-700">
+                <MarkdownRenderer markdown={sec.body.trim()} isStreaming={false} locale={DEFAULT_LOCALE} />
+              </div>
+            ) : (
+              <p className="mt-2 text-[13px] text-slate-400">（空）</p>
+            )}
             {sec.evidenceRefs.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {sec.evidenceRefs.map((refId) => (
@@ -245,13 +293,15 @@ function DeliverableViewer({
     );
   }
 
-  // spec_tree / docs / prompt / handoff: 文本分段呈现
+  // spec_tree / docs / prompt / handoff: Markdown 渲染(LLM/模板输出多为 markdown)
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 text-[13px] leading-relaxed text-slate-700">
       <h2 className="text-base font-bold text-slate-900">{artifact.title || CATEGORY_META[category].label}</h2>
-      <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-slate-700">
-        {content.trim() || "（空）"}
-      </pre>
+      {content.trim() ? (
+        <MarkdownRenderer markdown={content.trim()} isStreaming={false} locale={DEFAULT_LOCALE} />
+      ) : (
+        <p className="text-slate-400">（空）</p>
+      )}
     </div>
   );
 }

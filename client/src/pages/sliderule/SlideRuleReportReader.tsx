@@ -2,6 +2,8 @@ import React from "react";
 import type { Artifact } from "@shared/blueprint/v5-reasoning-state";
 import { parseReportSections } from "./parse-report-sections";
 import { autopilotTheme } from "./autopilot-theme";
+import { MarkdownRenderer } from "@/pages/autopilot/right-rail/streaming-doc/MarkdownRenderer";
+import { DEFAULT_LOCALE } from "@/lib/locale";
 
 export function SlideRuleReportReader({
   report,
@@ -48,9 +50,13 @@ export function SlideRuleReportReader({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
               {sec.label}
             </h3>
-            <pre className="mt-2 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-slate-700">
-              {sec.body.trim() || "（空）"}
-            </pre>
+            {sec.body.trim() ? (
+              <div className="mt-2 text-[13px] leading-relaxed text-slate-700">
+                <MarkdownRenderer markdown={sec.body.trim()} isStreaming={false} locale={DEFAULT_LOCALE} />
+              </div>
+            ) : (
+              <p className="mt-2 text-[13px] text-slate-400">（空）</p>
+            )}
             {sec.evidenceRefs.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {sec.evidenceRefs.map((refId) => (

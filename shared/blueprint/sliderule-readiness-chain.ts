@@ -5,7 +5,31 @@
 
 import type { V5CapabilityId } from "./contracts.js";
 import type { CoverageGap, V5SessionState } from "./v5-reasoning-state.js";
-import { isVagueGoal, userClearsReadiness } from "./sliderule-interactive-gates.js";
+import { userClearsReadiness } from "./sliderule-interactive-gates.js";
+
+/**
+ * 规约维度信号:目标文本是否提及「用户群 / 平台 / 核心场景·验收 / 范围边界」。
+ * 命中越少→越欠规约。澄清问题(buildSimulatedClarifyQuestions)只针对缺失的维度发问,
+ * 与 isUnderSpecifiedGoal 共用同一组判定(单一真相)。
+ */
+const SPEC_DIMENSIONS: Array<{
+  key: "users" | "platform" | "scenario" | "scope";
+  test: RegExp;
+}> = [
+  { key: "users", test: /用户|面向|客户|企业|个人|团队|学生|老人|儿童|开发者|商家|to ?[cb]/i },
+  { key: "platform", test: /平台|web|网页|ios|android|安卓|小程序|桌面|客户端|saas|api|浏览器/i },
+  { key: "scenario", test: /场景|流程|用于|目标是|核心|kpi|指标|验收|成功标准|解决/i },
+  { key: "scope", test: /范围|不做|边界|mvp|仅|只做|首期|第一期|优先/i },
+];
+
+/** 欠规约:目标过短或提及的规约维度 < 2 → 需要先澄清(用户选定「欠规约即澄清」)。 */
+export function isUnderSpecifiedGoal(goalText: string): boolean {
+  const t = (goalText || "").trim();
+  if (!t) return true;
+  if (t.length >= 80) return false; // 长描述视为已充分规约
+  const hits = SPEC_DIMENSIONS.filter((d) => d.test.test(t)).length;
+  return hits < 2;
+}
 
 export function openReadinessBlockingGaps(state: V5SessionState): CoverageGap[] {
   const contract = state.coverageContract;
@@ -31,16 +55,25 @@ export function hasTrustedGapAskArtifact(state: V5SessionState): boolean {
 /** True when ORCH should run gap.ask → question.expand before risk/report. */
 export function needsReadinessChain(state: V5SessionState, userText: string): boolean {
   if (userClearsReadiness(userText, state)) return false;
-  // Converge / delivery / report intents must not be preempted by S11 prepending.
-  if (/报告|可行性|总结|收敛|report|落地|交付|路线|对比|预览|风险|安全/.test(userText)) return false;
+  // 显式能力指令(收敛/交付/报告/结构化/路线/风险/预览…)不被澄清前置抢占 ——
+  // 澄清只在用户「仅丢下一个欠规约目标、未点名具体能力」时触发。
+  if (
+    /报告|可行性|总结|收敛|report|落地|交付|路线|对比|预览|风险|安全|结构|拆解|structure|decompose|需求树|spec/.test(
+      userText
+    )
+  )
+    return false;
   if (state.goal?.status === "clear" || state.deliveryPhase === "shipping") return false;
 
   const openQ = openReadinessBlockingGaps(state).filter((g) => g.kind === "open_question");
   if (openQ.length > 0) return true;
 
   const goalText = state.goal?.text || "";
-  // S11 applies only to genuinely vague goals before gap.ask has run once.
-  if (isVagueGoal(goalText) && !hasTrustedGapAskArtifact(state)) return true;
+  // 欠规约即澄清(用户选定):仅在「会话起步」(尚无任何能力运行)且目标欠规约时,放行一次澄清轮 ——
+  // 已经有推演产物/运行后(如已跑 risk/synthesis、brainstorm)不再回头打断,澄清只发生在最前。
+  // 由 buildSimulatedClarifyQuestions 只对缺失维度发问;每会话一次、卡片可跳过。
+  const isEarly = (state.capabilityRuns || []).length === 0;
+  if (isEarly && isUnderSpecifiedGoal(goalText) && !hasTrustedGapAskArtifact(state)) return true;
 
   return false;
 }
@@ -74,6 +107,43 @@ export interface ClarifyQuestion {
   options?: string[];
   defaultAnswer?: string;
   context?: string;
+}
+
+/**
+ * 模拟器 gap.ask 的结构化澄清问题(带选项),只针对目标缺失的规约维度发问。
+ * 让澄清卡片在 server-llm / pilot / demo 所有执行器模式下都有选项(server clarify-json 之外的兜底)。
+ */
+export function buildSimulatedClarifyQuestions(goalText: string): ClarifyQuestion[] {
+  const goal = (goalText || "目标").trim();
+  const bank: Record<(typeof SPEC_DIMENSIONS)[number]["key"], ClarifyQuestion> = {
+    users: {
+      prompt: `「${goal}」主要面向谁使用?`,
+      type: "single_choice",
+      options: ["个人 / C 端用户", "企业 / 团队内部", "开发者 / 技术人员", "多方平台(撮合)"],
+      defaultAnswer: "个人 / C 端用户",
+      context: "用户群决定技术路线、交互复杂度与合规要求",
+    },
+    platform: {
+      prompt: "优先在什么平台落地?",
+      type: "single_choice",
+      options: ["Web", "移动端(iOS/Android)", "小程序", "桌面端"],
+      defaultAnswer: "Web",
+      context: "平台影响实现栈、发布方式与能力边界",
+    },
+    scenario: {
+      prompt: "核心成功标准 / 验收指标是什么?",
+      type: "free_text",
+      context: "缺少可验收指标无法写 P0 需求",
+    },
+    scope: {
+      prompt: "本期范围边界:明确不做什么?",
+      type: "free_text",
+      context: "界定边界避免范围漂移",
+    },
+  };
+  const missing = SPEC_DIMENSIONS.filter((d) => !d.test.test(goal)).map((d) => bank[d.key]);
+  // 若意外全部命中(理论上不会进到这里),至少问一个核心场景,保证卡片有内容。
+  return missing.length > 0 ? missing : [bank.scenario];
 }
 
 /** 解析 gap.ask content 内的 ```clarify-json 围栏块 → 结构化问题 + 去块后的可读正文。 */
