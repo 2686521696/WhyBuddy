@@ -57,7 +57,7 @@ function Router() {
     <Switch>
       <Route path={"/"}>
         {() => (
-          <RedirectRoute to={IS_GITHUB_PAGES ? SLIDERULE_PATH : PROJECTS_PATH} />
+          <RedirectRoute to={SLIDERULE_PATH} />
         )}
       </Route>
       <Route path={PROJECTS_PATH}>{() => <ProjectCockpitHome />}</Route>
