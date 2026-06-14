@@ -6,6 +6,7 @@
 
 import type { V5CapabilityId } from "../../shared/blueprint/contracts.js";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
+import type { ReasoningEvent } from "../../shared/blueprint/sliderule-reasoning-events.js";
 import { buildStructuredReport } from "../../shared/blueprint/sliderule-report-builder.js";
 import { goalStatusUserLabel } from "../../shared/blueprint/sliderule-turn-route.js";
 import { isDialogueCapability, type DialogueCapabilityId } from "./dialogue-exec-map.js";
@@ -27,6 +28,7 @@ export type CapabilityFallbackResult = {
   provenance: "llm_fallback";
   degraded: true;
   degradedReason: string;
+  events?: ReasoningEvent[];  // V5.3 P2.4
 };
 
 function goalText(state: V5SessionState): string {
@@ -132,6 +134,12 @@ function dialogueFallback(
   };
 
   const block = bodies[cap];
+  // V5.3 P2.4: emit think events for fallback with "模板兜底" meta
+  const fbRunId = `fb-${Date.now()}`;
+  // (simple 1-2 think; full makeEventSequence imported in caller if needed; here return shape)
+  const fbEvents: any[] = [
+    { kind: "think", text: "使用模板兜底生成结果", meta: { source: "template_fallback", reason: reason || "llm_unavailable" } },
+  ];
   return {
     title: block.title,
     summary: `${block.summary} ${tag(reason)}`,
@@ -139,6 +147,7 @@ function dialogueFallback(
     provenance: "llm_fallback",
     degraded: true,
     degradedReason: reason || "llm_unavailable",
+    events: fbEvents,
   };
 }
 

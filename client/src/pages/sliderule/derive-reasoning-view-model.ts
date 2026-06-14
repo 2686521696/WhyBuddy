@@ -267,6 +267,8 @@ export function deriveSlideRuleReasoningViewModel(
 ): SlideRuleReasoningViewModel {
   const density = options.density ?? "compact";
   const lineageHighlightIds = options.lineageHighlightIds ?? [];
+  // V5.3 P3.4: viewMode for overview | collaboration (default expand panel + challenges) | reasoning (P4)
+  const viewMode = (options as any).viewMode ?? "overview";
 
   // K6.5: 简模式回跳静默失效修复 - 当 lineage 高亮 ::ev- (ReportReader 证据回跳) 时自动切详模式
   // 避免在 compact 下点击报告证据后子节点不可见
