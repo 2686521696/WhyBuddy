@@ -8,7 +8,11 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LlmProviderSettings } from "../LlmProviderSettings";
-import { providerStatus, type LlmProvidersConfig } from "@/lib/sliderule-llm-providers";
+import {
+  modelSuggestionsFor,
+  providerStatus,
+  type LlmProvidersConfig,
+} from "@/lib/sliderule-llm-providers";
 
 function makeDraft(over?: Partial<LlmProvidersConfig>): LlmProvidersConfig {
   return {
@@ -79,5 +83,39 @@ describe("LlmProviderSettings 视觉/布局（Aspect ①）", () => {
     const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
     // 默认选中第一个（OpenAI）
     expect(html).toMatch(/data-provider="openai"[^>]*aria-current="true"/);
+  });
+});
+
+describe("LlmProviderSettings 模型管理 UX（Aspect ②）", () => {
+  it("默认模型显示「默认」徽章 + 选中的单选", () => {
+    const draft = makeDraft();
+    draft.providers[0].defaultModelId = "gpt-4o-mini";
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toContain('data-testid="sliderule-model-default-badge"');
+    expect(html).toContain("默认");
+    expect(html).toMatch(/data-testid="sliderule-model-default-gpt-4o-mini"[^>]*checked/);
+  });
+
+  it("能力标签是可点切换的按钮（aria-pressed 反映 on/off）", () => {
+    const draft = makeDraft();
+    draft.providers[0].models[0].capabilities = ["tools"]; // 有 tools，没 stream
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toMatch(/aria-pressed="true"[^>]*data-testid="sliderule-model-cap-gpt-4o-mini-tools"/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*data-testid="sliderule-model-cap-gpt-4o-mini-stream"/);
+  });
+
+  it("模型为空时给空态 + 「拉取模型列表」按钮", () => {
+    const draft = makeDraft();
+    draft.providers[0].models = [];
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toContain('data-testid="sliderule-model-empty"');
+    expect(html).toContain('data-testid="sliderule-model-fetch"');
+    expect(html).toContain("拉取模型列表");
+  });
+
+  it("modelSuggestionsFor 给出该预设的常见模型名", () => {
+    expect(modelSuggestionsFor("openai")).toContain("gpt-4o");
+    expect(modelSuggestionsFor("anthropic")[0]).toMatch(/^claude-/);
+    expect(modelSuggestionsFor("custom")).toEqual([]);
   });
 });

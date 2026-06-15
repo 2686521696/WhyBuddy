@@ -41,6 +41,11 @@ export interface LlmProviderConfig {
   baseUrl: string; // 例如 https://api.openai.com/v1
   enabled: boolean;
   models: LlmModelDef[];
+  /**
+   * 用户标记的默认模型 id（纯偏好/展示，向后兼容可选字段）。
+   * 不改变编译结果集与 executor 注入——只是 UI 上的「默认」徽章/单选。
+   */
+  defaultModelId?: string;
   /** 服务端托管的预设（只读展示，不参与编译；预留位）。 */
   serverManaged?: boolean;
 }
@@ -94,6 +99,28 @@ export function providerStatus(p: LlmProviderConfig): ProviderStatus {
   if (p.requiresApiKey && !p.apiKey.trim()) return "needs-key";
   if (keyReady) return "configured";
   return "idle";
+}
+
+/**
+ * 各预设常见模型名（「新建模型」下拉建议，可自由输入覆盖）。
+ * 仅作输入辅助，不是白名单——用户填任何 id 都允许。
+ */
+export const PROVIDER_MODEL_SUGGESTIONS: Record<string, string[]> = {
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3-mini"],
+  anthropic: [
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+  ],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  openrouter: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-exp"],
+  zhipu: ["glm-4-flash", "glm-4-plus", "glm-4-air"],
+  siliconflow: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3"],
+};
+
+export function modelSuggestionsFor(presetId: string): string[] {
+  return PROVIDER_MODEL_SUGGESTIONS[presetId] ?? [];
 }
 
 function seedProvider(p: ProviderPreset): LlmProviderConfig {
@@ -221,6 +248,67 @@ export function clearProvidersConfig(): void {
     window.dispatchEvent(new CustomEvent("byok-config-changed"));
   } catch {
     /* ignore */
+  }
+}
+
+/** 把 baseUrl 归约成 `${base}/models` 列表端点（去掉已有的 chat/messages 尾巴）。 */
+export function deriveModelsEndpoint(baseUrl: string): string {
+  const base = (baseUrl || "").trim().replace(/\/+$/, "").replace(/\/(chat\/completions|messages)$/, "");
+  if (!base) return "";
+  return `${base}/models`;
+}
+
+export interface FetchModelsResult {
+  ok: boolean;
+  status?: number;
+  models?: string[];
+  message: string;
+}
+
+/**
+ * 真实拉取厂商 `/models` 列表（GET，OpenAI 兼容 `{ data: [{ id }] }`）。
+ * 不 mock：失败统一返回脱敏 message，UI 据此提示。
+ */
+export async function fetchProviderModels(input: {
+  protocol: LlmProtocol;
+  baseUrl: string;
+  apiKey: string;
+}): Promise<FetchModelsResult> {
+  const endpoint = deriveModelsEndpoint(input.baseUrl);
+  if (!endpoint) return { ok: false, message: "Base URL 为空或无效" };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  const headers: Record<string, string> =
+    input.protocol === "anthropic"
+      ? {
+          "x-api-key": input.apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        }
+      : { authorization: `Bearer ${input.apiKey}` };
+  try {
+    const res = await fetch(endpoint, { method: "GET", headers, signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, status: res.status, message: `鉴权失败（${res.status}）：检查 API Key` };
+      }
+      if (res.status === 404) return { ok: false, status: 404, message: "该厂商不支持 /models 列表（404）" };
+      return { ok: false, status: res.status, message: `HTTP ${res.status}` };
+    }
+    const json = await res.json().catch(() => null);
+    const data = json && Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+    const models = data
+      .map((m: any) => (typeof m === "string" ? m : m?.id))
+      .filter((id: any): id is string => typeof id === "string" && id.trim().length > 0);
+    if (models.length === 0) return { ok: false, message: "返回为空或格式不识别" };
+    return { ok: true, models, message: `拉取到 ${models.length} 个模型` };
+  } catch (e: any) {
+    clearTimeout(timer);
+    const msg = String(e?.message || e);
+    if (msg.includes("abort")) return { ok: false, message: "请求超时" };
+    return { ok: false, message: `网络或 CORS 失败（该厂商可能不支持浏览器直连）` };
   }
 }
 
