@@ -79,6 +79,23 @@ export function presetGlyph(presetId: string): string {
   return SEED_PRESETS.find((p) => p.presetId === presetId)?.glyph ?? "·";
 }
 
+/**
+ * 厂商配置状态（仅用于列表状态点的纯展示派生，不参与编译/存取）。
+ * - `ready`     已启用且密钥就绪（或本地服务无需密钥）→ 下一轮会进池
+ * - `needs-key` 勾了「需要密钥」却没填 → 启用也进不了池
+ * - `configured` 密钥就绪但未启用
+ * - `idle`      未配置且未启用
+ */
+export type ProviderStatus = "ready" | "needs-key" | "configured" | "idle";
+
+export function providerStatus(p: LlmProviderConfig): ProviderStatus {
+  const keyReady = !p.requiresApiKey || !!p.apiKey.trim();
+  if (p.enabled && keyReady) return "ready";
+  if (p.requiresApiKey && !p.apiKey.trim()) return "needs-key";
+  if (keyReady) return "configured";
+  return "idle";
+}
+
 function seedProvider(p: ProviderPreset): LlmProviderConfig {
   return {
     id: p.presetId,

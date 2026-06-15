@@ -16,6 +16,7 @@ import {
   deriveEndpoint,
   pingLlmEndpoint,
   presetGlyph,
+  providerStatus,
   SEED_PRESETS,
   type LlmModelDef,
   type LlmProviderConfig,
@@ -42,6 +43,44 @@ function ProviderBadge({ glyph, active }: { glyph: string; active?: boolean }) {
     >
       {glyph}
     </span>
+  );
+}
+
+/** 列表项右侧的配置状态点：绿=已配/就绪，琥珀=缺密钥，灰=未配。 */
+function StatusDot({ status }: { status: ReturnType<typeof providerStatus> }) {
+  const map: Record<ReturnType<typeof providerStatus>, { cls: string; title: string }> = {
+    ready: { cls: "bg-emerald-500", title: "已启用 · 下一轮生效" },
+    configured: { cls: "bg-emerald-400/70", title: "已配密钥（未启用）" },
+    "needs-key": { cls: "bg-amber-400", title: "需要 API 密钥" },
+    idle: { cls: "bg-slate-300", title: "未配置" },
+  };
+  const { cls, title } = map[status];
+  return <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cls}`} title={title} data-status={status} />;
+}
+
+/** 右栏分区卡片：标题 + 细分隔线，收拢留白。 */
+function Section({
+  title,
+  action,
+  children,
+  testid,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <section
+      className="rounded-xl border border-slate-200 bg-white/60 p-4 shadow-[0_1px_2px_rgb(15_23_42/0.04)]"
+      data-testid={testid}
+    >
+      <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 className="text-[13px] font-bold text-slate-800">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -149,10 +188,13 @@ export function LlmProviderSettings({
   };
 
   return (
-    <div className="flex h-full min-h-0">
-      {/* 中栏：厂商列表 */}
-      <div className="flex w-[210px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/60">
-        <ul className="flex-1 overflow-y-auto p-2" data-testid="sliderule-provider-list">
+    <div className="flex h-full min-h-0 flex-col min-[900px]:flex-row">
+      {/* 中栏：厂商列表（窄屏折到顶部，宽屏左侧） */}
+      <div className="flex shrink-0 flex-col border-b border-slate-200 bg-slate-50/60 min-[900px]:w-[210px] min-[900px]:border-b-0 min-[900px]:border-r">
+        <ul
+          className="max-h-[148px] flex-1 overflow-y-auto p-2 min-[900px]:max-h-none"
+          data-testid="sliderule-provider-list"
+        >
           {draft.providers.map((p) => {
             const active = p.id === selected?.id;
             return (
@@ -161,17 +203,22 @@ export function LlmProviderSettings({
                   type="button"
                   onClick={() => setSelectedId(p.id)}
                   data-provider={p.presetId}
-                  className={`mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition ${
+                  aria-current={active}
+                  className={`relative mb-0.5 flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-left transition ${
                     active ? "bg-white shadow-sm ring-1 ring-slate-200" : "hover:bg-white/70"
                   }`}
                 >
+                  {/* 选中高亮条 */}
+                  <span
+                    className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full transition-colors ${
+                      active ? "bg-indigo-500" : "bg-transparent"
+                    }`}
+                  />
                   <ProviderBadge glyph={presetGlyph(p.presetId)} active={active} />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-700">
                     {p.name}
                   </span>
-                  {p.enabled ? (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" title="已启用" />
-                  ) : null}
+                  <StatusDot status={providerStatus(p)} />
                 </button>
               </li>
             );
@@ -190,11 +237,11 @@ export function LlmProviderSettings({
       </div>
 
       {/* 右栏：厂商详情 */}
-      <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-w-0 flex-1 overflow-y-auto bg-slate-50/30 px-6 py-5">
         {!selected ? (
           <p className="text-sm text-slate-400">左侧选择或添加一个厂商</p>
         ) : (
-          <div className="space-y-5" data-testid="sliderule-provider-detail">
+          <div className="space-y-4" data-testid="sliderule-provider-detail">
             {/* header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -245,72 +292,74 @@ export function LlmProviderSettings({
               </div>
             </div>
 
-            {/* API key */}
-            <div>
-              <label className={labelClass}>
-                <Key className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
-                API 密钥
-              </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={selected.apiKey}
-                    onChange={(e) => patchProvider({ apiKey: e.target.value })}
-                    placeholder="sk-..."
-                    className={`${inputClass} pr-9 font-mono`}
-                    data-testid="sliderule-provider-apikey"
-                  />
+            {/* 连接 */}
+            <Section title="连接" testid="sliderule-section-connection">
+              <div>
+                <label className={labelClass}>
+                  <Key className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
+                  API 密钥
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showKey ? "text" : "password"}
+                      value={selected.apiKey}
+                      onChange={(e) => patchProvider({ apiKey: e.target.value })}
+                      placeholder="sk-..."
+                      className={`${inputClass} pr-9 font-mono`}
+                      data-testid="sliderule-provider-apikey"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey((s) => !s)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-700"
+                      title={showKey ? "隐藏" : "显示"}
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setShowKey((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-700"
-                    title={showKey ? "隐藏" : "显示"}
+                    onClick={() => runTest()}
+                    disabled={testing}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                    data-testid="sliderule-provider-test"
                   >
-                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Zap className="h-3.5 w-3.5" />
+                    {testing ? "测试中…" : "测试连接"}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => runTest()}
-                  disabled={testing}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                  data-testid="sliderule-provider-test"
-                >
-                  <Zap className="h-3.5 w-3.5" />
-                  {testing ? "测试中…" : "测试连接"}
-                </button>
+                <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={selected.requiresApiKey}
+                    onChange={(e) => patchProvider({ requiresApiKey: e.target.checked })}
+                    className="h-3.5 w-3.5 accent-indigo-600"
+                  />
+                  需要 API 密钥（本地服务可取消勾选）
+                </label>
               </div>
-              <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-500">
-                <input
-                  type="checkbox"
-                  checked={selected.requiresApiKey}
-                  onChange={(e) => patchProvider({ requiresApiKey: e.target.checked })}
-                  className="h-3.5 w-3.5 accent-indigo-600"
-                />
-                需要 API 密钥（本地服务可取消勾选）
-              </label>
-            </div>
 
-            {/* Base URL */}
-            <div>
-              <label className={labelClass}>Base URL</label>
-              <input
-                value={selected.baseUrl}
-                onChange={(e) => patchProvider({ baseUrl: e.target.value })}
-                placeholder="https://api.openai.com/v1"
-                className={`${inputClass} font-mono`}
-                data-testid="sliderule-provider-baseurl"
-              />
-              <p className="mt-1 text-[11px] text-slate-400">
-                请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
-              </p>
-            </div>
+              <div className="mt-4">
+                <label className={labelClass}>Base URL</label>
+                <input
+                  value={selected.baseUrl}
+                  onChange={(e) => patchProvider({ baseUrl: e.target.value })}
+                  placeholder="https://api.openai.com/v1"
+                  className={`${inputClass} font-mono`}
+                  data-testid="sliderule-provider-baseurl"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
+                </p>
+              </div>
+            </Section>
 
             {/* 模型 */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-bold text-slate-800">模型</span>
+            <Section
+              title="模型"
+              testid="sliderule-section-models"
+              action={
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -332,7 +381,8 @@ export function LlmProviderSettings({
                     <Plus className="h-3.5 w-3.5" /> 新建模型
                   </button>
                 </div>
-              </div>
+              }
+            >
               {selected.models.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-[12px] text-slate-400">
                   还没有模型 — 点「新建模型」添加
@@ -401,7 +451,7 @@ export function LlmProviderSettings({
                   ))}
                 </ul>
               )}
-            </div>
+            </Section>
           </div>
         )}
       </div>
