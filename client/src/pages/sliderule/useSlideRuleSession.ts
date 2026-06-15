@@ -861,14 +861,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     [isRunning, uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
   );
 
-  const challengeTurn = async (artifactId: string) => {
-    const reason =
+  // reason 已给(节点内联编辑确认)→ 直接重推,不再弹窗;未给(IM footnote 质疑链接)→ 兼容旧 prompt。
+  const challengeTurn = async (artifactId: string, reason?: string) => {
+    const text =
+      (reason && reason.trim()) ||
       window.prompt("你想如何质疑这轮结论？", "这个结论的依据不够充分，请重新推演。") ||
       "这个结论的依据不够充分，请重新推演。";
-    await runTurn(reason, {
+    await runTurn(text, {
       targetArtifactId: artifactId,
       intent: "challenge",
-      text: reason,
+      text,
     });
   };
 

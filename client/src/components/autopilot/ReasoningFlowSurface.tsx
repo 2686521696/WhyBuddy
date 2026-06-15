@@ -77,6 +77,10 @@ export interface ReasoningFlowSurfaceProps {
    */
   onNodeClick?: (node: BrainstormReasoningNode) => void;
   /**
+   * V5.3 节点内联编辑:节点右下角「编辑」→ 卡内文本框 → 确认即带该文本对此节点重推(替代弹窗)。
+   */
+  onNodeEditSubmit?: (node: BrainstormReasoningNode, text: string) => void;
+  /**
    * For resolving interactive gates like G_CONFIRM (route confirmation) with user selection.
    * gateNodeId: the id of the gate node in the graph.
    * choice: the chosen value (e.g. route id or 'primary' for confirm, null for cancel/reject).
@@ -426,6 +430,7 @@ export function ReasoningFlowSurface({
   showChrome = true,
   showBottomChrome,
   onNodeClick,
+  onNodeEditSubmit,
   onResolveInteractiveGate,
   dark = false,
   graphRevision,
@@ -630,6 +635,10 @@ export function ReasoningFlowSurface({
   const [scale, setScale] = useState(initialScale);
   const [tx, setTx] = useState(120); // 初始偏移，让图不要贴边
   const [ty, setTy] = useState(80);
+
+  // V5.3 节点内联编辑(替代弹窗):正在编辑的节点 id + 草稿文本
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -1180,6 +1189,69 @@ export function ReasoningFlowSurface({
                 }}
                 title={cardTitle}
               >
+                {/* V5.3 节点内联编辑:右下角「编辑」→ 卡内文本框 + 确认/取消(替代弹窗) */}
+                {onNodeEditSubmit &&
+                  (node as { producedArtifactId?: string }).producedArtifactId &&
+                  !isTerminal &&
+                  !isProjectionChild &&
+                  editingNodeId !== node.id && (
+                    <button
+                      type="button"
+                      title="编辑后重新推演此节点"
+                      data-testid="flow-node-edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingNodeId(node.id);
+                        setEditDraft("");
+                      }}
+                      className="absolute bottom-1 right-1 z-10 rounded-md border border-slate-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur hover:text-slate-800"
+                    >
+                      编辑
+                    </button>
+                  )}
+                {onNodeEditSubmit && editingNodeId === node.id && (
+                  <div
+                    className="absolute inset-0 z-20 flex flex-col gap-1 rounded-[11px] bg-white p-2"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <textarea
+                      autoFocus
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      placeholder="说明如何重新理解 / 质疑这个节点,确认后据此重推…"
+                      className="min-h-0 flex-1 resize-none rounded border border-slate-200 p-1.5 text-[11px] leading-snug text-slate-700 outline-none focus:border-indigo-400"
+                    />
+                    <div className="flex shrink-0 justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNodeId(null);
+                          setEditDraft("");
+                        }}
+                        className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-50"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="flow-node-edit-confirm"
+                        disabled={!editDraft.trim()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const t = editDraft.trim();
+                          setEditingNodeId(null);
+                          setEditDraft("");
+                          if (t) onNodeEditSubmit(node, t);
+                        }}
+                        className="rounded bg-indigo-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                      >
+                        确认
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div
                   className={`absolute bottom-2 left-0 top-2 w-1 rounded-r-sm transition-all ${
                     isHighlighted ? "opacity-100" : "opacity-90"

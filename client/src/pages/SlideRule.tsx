@@ -195,6 +195,7 @@ function SlideRuleImmersion({
   graphNodeCount,
   graphRevision,
   handleGraphNodeClick,
+  handleNodeEditSubmit,
   handleResolveInteractiveGate,
   handleTerminalAction,
   focusNodeId,
@@ -237,6 +238,7 @@ function SlideRuleImmersion({
   graphNodeCount: number;
   graphRevision: string;
   handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  handleNodeEditSubmit: (node: BrainstormReasoningNode, text: string) => void;
   handleResolveInteractiveGate?: (gateNodeId: string, choice: string | null) => void;
   handleTerminalAction: (action: "report" | "lineage" | "export") => void;
   focusNodeId: string | null;
@@ -291,6 +293,7 @@ function SlideRuleImmersion({
             showChrome={false}
             showBottomChrome
             onNodeClick={handleGraphNodeClick}
+            onNodeEditSubmit={handleNodeEditSubmit}
             onResolveInteractiveGate={handleResolveInteractiveGate}
             externalHighlightedIds={lineageHighlightIds}
             focusNodeId={focusNodeId}
@@ -458,6 +461,7 @@ function SlideRuleSplitEngineering({
   graphNodeCount,
   graphRevision,
   handleGraphNodeClick,
+  handleNodeEditSubmit,
   handleResolveInteractiveGate,
   handleTerminalAction,
   focusNodeId,
@@ -496,6 +500,7 @@ function SlideRuleSplitEngineering({
   graphNodeCount: number;
   graphRevision: string;
   handleGraphNodeClick: (node: BrainstormReasoningNode) => void;
+  handleNodeEditSubmit: (node: BrainstormReasoningNode, text: string) => void;
   handleResolveInteractiveGate?: (gateNodeId: string, choice: string | null) => void;
   handleTerminalAction: (action: "report" | "lineage" | "export") => void;
   focusNodeId: string | null;
@@ -643,6 +648,7 @@ function SlideRuleSplitEngineering({
                 className="absolute inset-0"
                 showChrome
                 onNodeClick={handleGraphNodeClick}
+                onNodeEditSubmit={handleNodeEditSubmit}
                 onResolveInteractiveGate={handleResolveInteractiveGate}
                 externalHighlightedIds={lineageHighlightIds}
                 focusNodeId={focusNodeId}
@@ -868,11 +874,16 @@ export default function SlideRule() {
     }
   }, []);
 
-  const handleGraphNodeClick = useCallback(
-    (node: BrainstormReasoningNode) => {
+  // 普通点击不再弹窗发起挑战(用户反馈 #1)—— 重推改由 Flow 节点右下角「编辑」按钮内联触发,
+  // 见 onNodeEditSubmit。这里保留为无副作用(可作未来选中/聚焦钩子)。
+  const handleGraphNodeClick = useCallback((_node: BrainstormReasoningNode) => {}, []);
+
+  // 节点内联编辑确认 → 带用户输入直接重推(不弹窗)。
+  const handleNodeEditSubmit = useCallback(
+    (node: BrainstormReasoningNode, text: string) => {
       const producedArtifactId = (node as { producedArtifactId?: string }).producedArtifactId;
-      if (producedArtifactId) {
-        challengeTurn(producedArtifactId);
+      if (producedArtifactId && text.trim()) {
+        challengeTurn(producedArtifactId, text.trim());
       }
     },
     [challengeTurn]
@@ -945,6 +956,7 @@ export default function SlideRule() {
     graphNodeCount,
     graphRevision,
     handleGraphNodeClick,
+    handleNodeEditSubmit,
     handleResolveInteractiveGate,
     handleTerminalAction,
     focusNodeId,
