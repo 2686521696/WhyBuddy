@@ -690,6 +690,11 @@ export function ReasoningFlowSurface({
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
+      // 滚轮落在文本框/输入框内(如节点内联编辑)→ 放行让其自身滚动,不缩放画布。
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && tgt.closest('textarea, input, [contenteditable="true"]')) {
+        return;
+      }
       e.preventDefault();
 
       const rect = el.getBoundingClientRect();
