@@ -1,16 +1,19 @@
 import React from "react";
 import {
   Check,
+  CheckCircle2,
   DownloadCloud,
   Eye,
   EyeOff,
   Key,
+  Loader2,
   Pencil,
   Plus,
   RotateCcw,
   Star,
   Trash2,
   X,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,6 +25,7 @@ import {
   presetGlyph,
   providerStatus,
   SEED_PRESETS,
+  validateProviderConfig,
   type LlmModelDef,
   type LlmProviderConfig,
   type LlmProvidersConfig,
@@ -91,6 +95,50 @@ function Section({
   );
 }
 
+/** 测试连接的三态（idle 不渲染）。 */
+export type TestState =
+  | { kind: "idle" }
+  | { kind: "testing" }
+  | { kind: "ok"; model: string; latencyMs?: number }
+  | { kind: "error"; message: string };
+
+/** 测试连接结果的内联反馈：loading / 绿✓+模型+延迟 / 红+脱敏原因。 */
+export function TestConnectionResult({ state }: { state: TestState }) {
+  if (state.kind === "idle") return null;
+  if (state.kind === "testing") {
+    return (
+      <p
+        className="mt-2 flex items-center gap-1.5 text-[12px] text-slate-500"
+        data-testid="sliderule-test-result"
+        data-state="testing"
+      >
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在测试连接…
+      </p>
+    );
+  }
+  if (state.kind === "ok") {
+    return (
+      <p
+        className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-emerald-600"
+        data-testid="sliderule-test-result"
+        data-state="ok"
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" /> 连接成功 · {state.model}
+        {typeof state.latencyMs === "number" ? ` · ${state.latencyMs}ms` : ""}
+      </p>
+    );
+  }
+  return (
+    <p
+      className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-rose-600"
+      data-testid="sliderule-test-result"
+      data-state="error"
+    >
+      <XCircle className="h-3.5 w-3.5 shrink-0" /> <span className="min-w-0">{state.message}</span>
+    </p>
+  );
+}
+
 export function LlmProviderSettings({
   draft,
   setDraft,
@@ -103,7 +151,8 @@ export function LlmProviderSettings({
     draft.providers.find((p) => p.id === selectedId) ?? draft.providers[0] ?? null;
 
   const [showKey, setShowKey] = React.useState(false);
-  const [testing, setTesting] = React.useState(false);
+  const [testState, setTestState] = React.useState<TestState>({ kind: "idle" });
+  const testing = testState.kind === "testing";
   const [modelModalOpen, setModelModalOpen] = React.useState(false);
   const [editingModel, setEditingModel] = React.useState<LlmModelDef | null>(null);
   // Track the *original* model.id when we started editing (so rename of id doesn't leave a stale entry behind).
@@ -114,6 +163,10 @@ export function LlmProviderSettings({
   const [fetchingModels, setFetchingModels] = React.useState(false);
 
   const patchProvider = (patch: Partial<LlmProviderConfig>) => {
+    // 改了连接相关字段 → 旧的测试结果作废，回到 idle，避免误导。
+    if ("apiKey" in patch || "baseUrl" in patch || "protocol" in patch) {
+      setTestState({ kind: "idle" });
+    }
     setDraft((current: LlmProvidersConfig | null) => {
       if (!current) return current;
       const targetId = selectedId;
@@ -124,6 +177,11 @@ export function LlmProviderSettings({
       };
     });
   };
+
+  // 切换厂商时清掉上一个厂商的测试结果。
+  React.useEffect(() => {
+    setTestState({ kind: "idle" });
+  }, [selectedId]);
 
   const addCustomProvider = () => {
     const id = `custom-${Date.now()}`;
@@ -244,17 +302,28 @@ export function LlmProviderSettings({
   const runTest = async (modelId?: string) => {
     if (!selected) return;
     const model = modelId || selected.models.find((m) => m.enabled)?.id || selected.models[0]?.id || "";
-    setTesting(true);
+    setTestState({ kind: "testing" });
+    // 复用真实 ping（不 mock），三态内联反馈 + toast（兼顾 modal 内触发）。
     const r = await pingLlmEndpoint({
       protocol: selected.protocol,
       baseUrl: selected.baseUrl,
       apiKey: selected.apiKey,
       model,
     });
-    setTesting(false);
-    if (r.ok) toast.success("连接成功", { description: `${selected.name} · ${model}` });
-    else toast.error("连接失败", { description: r.message });
+    if (r.ok) {
+      setTestState({ kind: "ok", model, latencyMs: r.latencyMs });
+      toast.success("连接成功", {
+        description: `${selected.name} · ${model}${typeof r.latencyMs === "number" ? ` · ${r.latencyMs}ms` : ""}`,
+      });
+    } else {
+      setTestState({ kind: "error", message: r.message });
+      toast.error("连接失败", { description: r.message });
+    }
   };
+
+  const validation = selected
+    ? validateProviderConfig(selected)
+    : { keyError: null, baseUrlError: null };
 
   return (
     <div className="flex h-full min-h-0 flex-col min-[900px]:flex-row">
@@ -375,7 +444,10 @@ export function LlmProviderSettings({
                       value={selected.apiKey}
                       onChange={(e) => patchProvider({ apiKey: e.target.value })}
                       placeholder="sk-..."
-                      className={`${inputClass} pr-9 font-mono`}
+                      aria-invalid={!!validation.keyError}
+                      className={`${inputClass} pr-9 font-mono ${
+                        validation.keyError ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""
+                      }`}
                       data-testid="sliderule-provider-apikey"
                     />
                     <button
@@ -398,6 +470,13 @@ export function LlmProviderSettings({
                     {testing ? "测试中…" : "测试连接"}
                   </button>
                 </div>
+                {validation.keyError && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-500" data-testid="sliderule-key-error">
+                    {validation.keyError}
+                  </p>
+                )}
+                {/* 测试连接三态内联反馈 */}
+                <TestConnectionResult state={testState} />
                 <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-500">
                   <input
                     type="checkbox"
@@ -415,12 +494,21 @@ export function LlmProviderSettings({
                   value={selected.baseUrl}
                   onChange={(e) => patchProvider({ baseUrl: e.target.value })}
                   placeholder="https://api.openai.com/v1"
-                  className={`${inputClass} font-mono`}
+                  aria-invalid={!!validation.baseUrlError}
+                  className={`${inputClass} font-mono ${
+                    validation.baseUrlError ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""
+                  }`}
                   data-testid="sliderule-provider-baseurl"
                 />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
-                </p>
+                {validation.baseUrlError ? (
+                  <p className="mt-1 text-[11px] font-medium text-rose-500" data-testid="sliderule-baseurl-error">
+                    {validation.baseUrlError}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
+                  </p>
+                )}
               </div>
             </Section>
 

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { ProjectionDensity } from "./sliderule-projection-constants";
 import { LlmProviderSettings } from "./LlmProviderSettings";
 import {
+  isEnabledProviderReady,
   loadProvidersConfig,
   saveProvidersConfig,
   type LlmProvidersConfig,
@@ -73,6 +74,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
     // Only persist + toast when there is a meaningful change (avoids "设置已保存" spam on no-op).
     if (!isLlmDirty) {
       onClose();
+      return;
+    }
+    // 阻塞非法配置：启用的厂商必须密钥就绪 + Base URL 合法（否则进池会失败）。
+    const invalid = draft.providers.find((p) => p.enabled && !isEnabledProviderReady(p));
+    if (invalid) {
+      toast.error("配置未通过校验", {
+        description: `「${invalid.name}」已启用但密钥或 Base URL 不完整，请修正后保存。`,
+      });
       return;
     }
     saveProvidersConfig(draft);

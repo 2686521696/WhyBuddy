@@ -316,6 +316,30 @@ export interface PingResult {
   ok: boolean;
   status?: number;
   message: string;
+  /** 往返延迟（ms），成功时填充，供 UI 显示。 */
+  latencyMs?: number;
+}
+
+/** 连接 / Base URL 的即时校验（纯派生，供 UI 标红 + 保存阻塞复用）。 */
+export interface ProviderValidation {
+  keyError: string | null;
+  baseUrlError: string | null;
+}
+
+export function validateProviderConfig(p: LlmProviderConfig): ProviderValidation {
+  const keyError =
+    p.requiresApiKey && !p.apiKey.trim() ? "已勾选「需要 API 密钥」，请填写密钥" : null;
+  const base = (p.baseUrl || "").trim();
+  // 空 Base URL 不在此标红（仅保存启用厂商时阻塞）；非空但 scheme 不对则立即提示。
+  const baseUrlError =
+    base && !/^https?:\/\//i.test(base) ? "Base URL 需以 http(s):// 开头" : null;
+  return { keyError, baseUrlError };
+}
+
+/** 启用的厂商是否可保存：字段校验通过且 Base URL 非空（能编译出端点）。 */
+export function isEnabledProviderReady(p: LlmProviderConfig): boolean {
+  const v = validateProviderConfig(p);
+  return !v.keyError && !v.baseUrlError && !!p.baseUrl.trim();
 }
 
 /**
@@ -334,6 +358,7 @@ export async function pingLlmEndpoint(input: {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
+  const startedAt = Date.now();
   try {
     let res: Response;
     if (input.protocol === "anthropic") {
@@ -368,7 +393,8 @@ export async function pingLlmEndpoint(input: {
       });
     }
     clearTimeout(timer);
-    if (res.ok) return { ok: true, status: res.status, message: "连接成功" };
+    if (res.ok)
+      return { ok: true, status: res.status, message: "连接成功", latencyMs: Date.now() - startedAt };
     const text = await res.text().catch(() => "");
     if (res.status === 401 || res.status === 403) {
       return { ok: false, status: res.status, message: `鉴权失败（${res.status}）：检查 API Key` };

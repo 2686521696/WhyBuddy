@@ -7,10 +7,12 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { LlmProviderSettings } from "../LlmProviderSettings";
+import { LlmProviderSettings, TestConnectionResult } from "../LlmProviderSettings";
 import {
+  isEnabledProviderReady,
   modelSuggestionsFor,
   providerStatus,
+  validateProviderConfig,
   type LlmProvidersConfig,
 } from "@/lib/sliderule-llm-providers";
 
@@ -117,5 +119,52 @@ describe("LlmProviderSettings 模型管理 UX（Aspect ②）", () => {
     expect(modelSuggestionsFor("openai")).toContain("gpt-4o");
     expect(modelSuggestionsFor("anthropic")[0]).toMatch(/^claude-/);
     expect(modelSuggestionsFor("custom")).toEqual([]);
+  });
+});
+
+describe("测试连接 / 校验（Aspect ③）", () => {
+  it("validateProviderConfig：缺密钥 / 非 http(s) Base URL", () => {
+    const v1 = validateProviderConfig(makeDraft().providers[1]); // Claude: requiresApiKey + 空 key
+    expect(v1.keyError).toBeTruthy();
+    const p = { ...makeDraft().providers[0], baseUrl: "api.openai.com/v1" };
+    expect(validateProviderConfig(p).baseUrlError).toBeTruthy();
+    // 合法配置无错
+    expect(validateProviderConfig(makeDraft().providers[0])).toEqual({ keyError: null, baseUrlError: null });
+  });
+
+  it("isEnabledProviderReady：空 Base URL 的启用厂商不可保存", () => {
+    const p = { ...makeDraft().providers[0], baseUrl: "" };
+    expect(isEnabledProviderReady(p)).toBe(false);
+    expect(isEnabledProviderReady(makeDraft().providers[0])).toBe(true);
+  });
+
+  it("TestConnectionResult 三态：idle 不渲染 / 成功带模型+延迟 / 失败带脱敏原因", () => {
+    expect(renderToStaticMarkup(<TestConnectionResult state={{ kind: "idle" }} />)).toBe("");
+
+    const testing = renderToStaticMarkup(<TestConnectionResult state={{ kind: "testing" }} />);
+    expect(testing).toContain('data-state="testing"');
+
+    const ok = renderToStaticMarkup(
+      <TestConnectionResult state={{ kind: "ok", model: "gpt-4o", latencyMs: 123 }} />
+    );
+    expect(ok).toContain('data-state="ok"');
+    expect(ok).toContain("gpt-4o");
+    expect(ok).toContain("123ms");
+
+    const err = renderToStaticMarkup(
+      <TestConnectionResult state={{ kind: "error", message: "鉴权失败（401）：检查 API Key" }} />
+    );
+    expect(err).toContain('data-state="error"');
+    expect(err).toContain("鉴权失败（401）");
+  });
+
+  it("即时校验：缺密钥/非法 Base URL 在面板内标红", () => {
+    const draft = makeDraft();
+    // 选中第一个厂商：勾了需要密钥但清空 key，且 Base URL 非 http(s)
+    draft.providers[0].apiKey = "";
+    draft.providers[0].baseUrl = "ftp://x";
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toContain('data-testid="sliderule-key-error"');
+    expect(html).toContain('data-testid="sliderule-baseurl-error"');
   });
 });
