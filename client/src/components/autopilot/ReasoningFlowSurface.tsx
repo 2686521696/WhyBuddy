@@ -1202,7 +1202,8 @@ export function ReasoningFlowSurface({
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingNodeId(node.id);
-                        setEditDraft("");
+                        // 把节点现有内容(标题+正文)带进文本框,供编辑而非空手重输。
+                        setEditDraft([titleText, bodyText].filter(Boolean).join("\n").trim());
                       }}
                       className="absolute bottom-1 right-1 z-10 rounded-md border border-slate-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur hover:text-slate-800"
                     >
