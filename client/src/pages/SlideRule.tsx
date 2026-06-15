@@ -862,11 +862,19 @@ export default function SlideRule() {
   const graphNodeCount = reasoningViewModel.visibleNodes.length;
   const graphRevision = `${sessionState.sessionId}-${graphNodeCount}-${sessionState.artifacts?.length ?? 0}-${projectionDensity}-${isRunning}`;
 
+  // 仅在 terminal「本会话内新出现」(刚收敛,看一眼交付)时聚焦;刷新已收敛会话时 terminal
+  // 从首帧就存在,不抢镜头(否则刷新后视角被拉到交付节点)。让 fit 框住整图。
+  const terminalMountedRef = useRef(false);
+  const prevTerminalIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (reasoningViewModel.terminalNode) {
-      setFocusNodeId(SLIDERULE_TERMINAL_NODE_ID);
-    }
-  }, [reasoningViewModel.terminalNode?.id, sessionState.goal?.status]);
+    const tid = reasoningViewModel.terminalNode?.id ?? null;
+    const wasMounted = terminalMountedRef.current;
+    const prevTid = prevTerminalIdRef.current;
+    prevTerminalIdRef.current = tid;
+    terminalMountedRef.current = true;
+    if (!wasMounted) return; // 初次挂载(含刷新)不聚焦
+    if (tid && tid !== prevTid) setFocusNodeId(SLIDERULE_TERMINAL_NODE_ID);
+  }, [reasoningViewModel.terminalNode?.id]);
 
   const handleProjectionDensityChange = useCallback((density: ProjectionDensity) => {
     setProjectionDensity(density);
