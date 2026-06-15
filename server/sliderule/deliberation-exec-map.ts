@@ -43,6 +43,49 @@ import {
   seedTargetMemberOutput,
 } from "./mini-session.js";
 
+import type { ReasoningEvent } from "../../shared/blueprint/sliderule-reasoning-events.js";
+import { makeEventSequence } from "../../shared/blueprint/sliderule-reasoning-events.js";
+
+/**
+ * V5.3 P2.1: 把多角色面板结果(positions/critiques/收敛)塑形为 ReasoningEvent 序列。
+ * 纯函数(不依赖 LLM),供 runPanelSession 调用 + 单测确定性验证 emit 契约。
+ */
+export function buildPanelEvents(p: {
+  turnId: string;
+  capabilityRunId: string;
+  capabilityId: string;
+  positions: Array<{ v5Role?: string; roleId?: string; content?: string }>;
+  critiques?: Array<{ challengerRoleId?: string; targetRoleId?: string; critique?: string }>;
+  convergenceScore: number;
+  consensusReached: boolean;
+  dissent: Array<{ roleId: string; opinion: string }>;
+}): ReasoningEvent[] {
+  const steps = [
+    { kind: "capability_start" as const, text: "多角色面板开始评估", roleId: "综合" },
+    ...p.positions.map((x) => ({
+      kind: "role_position" as const,
+      roleId: String(x.v5Role || x.roleId || "角色"),
+      text: String(x.content || "").slice(0, 200),
+    })),
+    ...(p.critiques || []).map((c) => ({
+      kind: "role_critique" as const,
+      roleId: String(c.challengerRoleId || "挑刺"),
+      targetRoleId: String(c.targetRoleId || ""),
+      text: String(c.critique || "").slice(0, 200),
+    })),
+    {
+      kind: "panel_converge" as const,
+      roleId: "综合",
+      text: `收敛分 ${p.convergenceScore.toFixed(2)} · ${p.consensusReached ? "已共识" : "有分歧"}`,
+      meta: { convergenceScore: p.convergenceScore, consensusReached: p.consensusReached, dissent: p.dissent },
+    },
+  ];
+  return makeEventSequence(
+    { turnId: p.turnId, capabilityRunId: p.capabilityRunId, capabilityId: p.capabilityId },
+    steps
+  );
+}
+
 export type DeliberationExecutorResult = {
   title: string;
   summary: string;
@@ -57,6 +100,7 @@ export type DeliberationExecutorResult = {
   };
   degraded?: boolean;
   degradedReason?: string;
+  events?: ReasoningEvent[];  // V5.3 P2: append only, for Flow visibility (role_position / role_critique / panel_converge etc.)
 };
 
 export type DeliberationExecArgs = {
@@ -431,6 +475,8 @@ async function runPanelSession(args: {
   turnId: string;
   claimText: string;
   maxRounds: number;
+  capabilityRunId?: string;   // V5.3 P2: for events alignment with capability node
+  capabilityId?: V5CapabilityId;
 }): Promise<DeliberationExecutorResult> {
   const goalText = String((args.state as any)?.goal?.text || "");
   const stageContext = buildStageContext(goalText, args.claimText);
@@ -537,6 +583,21 @@ async function runPanelSession(args: {
     opinion: d.opinion,
   }));
 
+  // V5.3 P2.1: emit real panel events (in addition to payload.panel)
+  // runId aligned via caller (panelRunId = `${turnId}-run-${capabilityId}`)
+  const runId = (args as any).capabilityRunId || `${args.turnId}-run-panel`;
+  const capIdForEvent = (args as any).capabilityId || ("critique.generate" as V5CapabilityId);
+  const events = buildPanelEvents({
+    turnId: args.turnId,
+    capabilityRunId: runId,
+    capabilityId: capIdForEvent,
+    positions,
+    critiques: collectedCritiques,
+    convergenceScore,
+    consensusReached,
+    dissent,
+  });
+
   return {
     title: `多角色面板：${positions.map((p) => p.v5Role).join(" · ") || "(降级)"}`,
     summary: degraded
@@ -555,6 +616,7 @@ async function runPanelSession(args: {
     usage: toExecutorUsage(usage),
     degraded: degraded || undefined,
     degradedReason: degraded ? "no_panel_positions" : undefined,
+    events,  // appended for Flow visibility (P2)
   };
 }
 
@@ -720,6 +782,25 @@ async function runSynthesisMerge(args: {
     primaryCaller,
   });
 
+  // V5.3 P2.2: if panel was consumed, emit panel_converge under synthesis run (or forward converge info)
+  const synRunId = `${args.turnId}-run-synthesis.merge`;
+  const synSteps: any[] = [
+    { kind: "capability_start" as const, text: "综合多角色立场与上游证据", roleId: String(synthesizerRole) },
+  ];
+  if (panelMeta) {
+    synSteps.push({
+      kind: "panel_converge" as const,
+      roleId: "综合",
+      text: `收敛分 ${panelMeta.convergenceScore.toFixed(2)} · ${panelMeta.consensusReached ? "已共识" : "有分歧"}`,
+      meta: panelMeta,
+    });
+  }
+  synSteps.push({ kind: "capability_complete" as const, text: "产出综合结论", roleId: String(synthesizerRole) });
+  const synEvents = makeEventSequence(
+    { turnId: args.turnId, capabilityRunId: synRunId, capabilityId: "synthesis.merge" as any },
+    synSteps
+  );
+
   return {
     title: "综合结论",
     summary: synthesis.decision.slice(0, 120),
@@ -728,6 +809,7 @@ async function runSynthesisMerge(args: {
     payload: panelMeta ? { synthesis, audit, panel: panelMeta } : { synthesis, audit },
     provenance: "llm",
     usage: toExecutorUsage(usage),
+    events: synEvents,  // P2.2 forward panel converge info + start/complete
   };
 }
 
@@ -761,11 +843,14 @@ export async function executeDeliberationCapabilityMapped(
     const claim = extractUpstreamClaim(args.state, inputArtifactIds) || goalText;
     // complex 模式跑多角色面板（产品/架构/安全交叉质疑）；simple 维持成对质疑。
     if (resolveRoleMode(args.state, "") === "complex") {
+      const panelRunId = `${args.turnId}-run-${args.capabilityId}`;
       return runPanelSession({
         state: args.state,
         turnId: args.turnId,
         claimText: claim,
         maxRounds,
+        capabilityRunId: panelRunId,
+        capabilityId: args.capabilityId,
       });
     }
     const challengerBs: BrainstormRoleId = "auditor";

@@ -20,6 +20,9 @@ import { buildCapabilityLlmFallback } from "./capability-llm-fallback.js";
 import { extractClarifyBlock, SLIDERULE_CLARIFICATION_TEMPLATES } from "../../shared/blueprint/sliderule-readiness-chain.js";
 import { generateClarificationQuestionsWithLlm } from "../routes/blueprint.js"; // V4 generator for full template + LLM + budget logic
 
+import type { ReasoningEvent } from "../../shared/blueprint/sliderule-reasoning-events.js";
+import { makeEventSequence } from "../../shared/blueprint/sliderule-reasoning-events.js";
+
 export const DIALOGUE_SYSTEM_PROMPT = `你是 SlideRule 的推演引擎,为「想清楚再建」服务:在写任何代码之前,把一个产品想法
 推演清楚。你不是聊天助手,不自我介绍,不寒暄,直接产出内容。
 
@@ -221,6 +224,7 @@ export type DialogueExecutorResult = {
     totalTokens?: number;
     model?: string;
   };
+  events?: ReasoningEvent[];  // V5.3 P2: append only for visibility (think/observe/tool etc.)
 };
 
 export function isDialogueCapability(id: string): id is DialogueCapabilityId {
@@ -382,6 +386,12 @@ export async function executeDialogueCapability(
           defaultAnswer: q.defaultAnswer,
         }))) + "\n```";
 
+        const clarifyBase = { turnId: args.turnId, capabilityRunId: `${args.turnId}-run-${args.capabilityId}`, capabilityId: args.capabilityId as any };
+        const clarifyEvents = makeEventSequence(clarifyBase, [
+          { kind: "capability_start" as const, text: `开始 ${args.capabilityId}` },
+          { kind: "think" as const, text: "正在理解目标与上游材料，生成结构化澄清问题…" },
+          { kind: "capability_complete" as const, text: "完成澄清问题生成" },
+        ]);
         return {
           title,
           summary,
@@ -389,6 +399,7 @@ export async function executeDialogueCapability(
           provenance: v4Result.source === "llm" ? "llm" : "llm_fallback",
           payload: { clarifyQuestions: mapped },
           usage: v4Result.model ? { model: v4Result.model } : undefined,
+          events: clarifyEvents,
         };
       }
     } catch (e) {
@@ -462,6 +473,17 @@ export async function executeDialogueCapability(
 
     assertContentNotHijacked(title, summary, content);
 
+    // V5.3 P2.3: emit for dialogue caps (start/think/complete; observe if relevant)
+    const dlgRunId = `${args.turnId}-run-${args.capabilityId}`;
+    const dlgBase = { turnId: args.turnId, capabilityRunId: dlgRunId, capabilityId: args.capabilityId as any };
+    const dlgSteps = [
+      { kind: "capability_start" as const, text: `开始 ${args.capabilityId}` },
+      { kind: "think" as const, text: "正在理解目标与上游材料…" },
+      // For gap.ask etc the V4 or LLM already did the work; here we mark the thinking step
+      { kind: "capability_complete" as const, text: "完成对话能力执行" },
+    ];
+    const dlgEvents = makeEventSequence(dlgBase, dlgSteps);
+
     return {
       title,
       summary: summary ? `${summary} ${summaryTag}` : summaryTag,
@@ -476,6 +498,7 @@ export async function executeDialogueCapability(
             model: modelTag,
           }
         : undefined,
+      events: dlgEvents,
     };
   } catch (e: any) {
     const msg = String(e?.message || e);
@@ -489,11 +512,20 @@ export async function executeDialogueCapability(
       reason: msg.slice(0, 120),
     });
     if (!fb) throw e;
+    // V5.3 P2.4: fallback also emits think event with "模板兜底" meta
+    const fbRunId = `${args.turnId}-run-${args.capabilityId}`;
+    const fbBase = { turnId: args.turnId, capabilityRunId: fbRunId, capabilityId: args.capabilityId as any };
+    const fbEvents = makeEventSequence(fbBase, [
+      { kind: "capability_start" as const, text: `开始 ${args.capabilityId} (fallback)` },
+      { kind: "think" as const, text: "使用模板兜底生成结果", meta: { source: "template_fallback" } },
+      { kind: "capability_complete" as const, text: "完成对话能力执行 (fallback)" },
+    ]);
     return {
       title: fb.title,
       summary: fb.summary,
       content: fb.content,
       provenance: "llm_fallback" as const,
+      events: fbEvents,
     };
   }
 }

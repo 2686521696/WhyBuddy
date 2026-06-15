@@ -18,6 +18,8 @@ export function SlideRuleTopHud({
   executorMode,
   projectionDensity,
   onProjectionDensityChange,
+  viewMode,
+  onViewModeChange,
   onResetSession,
   onOpenSettings,
   onOpenDeliverables,
@@ -31,6 +33,8 @@ export function SlideRuleTopHud({
   executorMode?: SlideRuleExecutorMode;
   projectionDensity?: ProjectionDensity;
   onProjectionDensityChange?: (density: ProjectionDensity) => void;
+  viewMode?: "overview" | "collaboration" | "reasoning";
+  onViewModeChange?: (mode: "overview" | "collaboration" | "reasoning") => void;
   onResetSession?: () => void;
   onOpenSettings?: () => void;
   onOpenDeliverables?: () => void;
@@ -184,24 +188,25 @@ export function SlideRuleTopHud({
               dataReady
             </span>
           )}
-          {turnCount > 0 && onProjectionDensityChange && (
+          {turnCount > 0 && onViewModeChange && (
             <div
               className="flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5 ring-1 ring-slate-200/80"
-              data-testid="sliderule-density-toggle"
+              data-testid="sliderule-viewmode-toggle"
             >
-              {(["compact", "detailed"] as const).map((mode) => (
+              {(["overview", "collaboration", "reasoning"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   disabled={isRunning}
-                  onClick={() => onProjectionDensityChange(mode)}
+                  onClick={() => onViewModeChange(mode)}
                   className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
-                    projectionDensity === mode
+                    viewMode === mode
                       ? "bg-white text-slate-800 shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
+                  title={mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "思考链"}
                 >
-                  {mode === "compact" ? "简" : "详"}
+                  {mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "链"}
                 </button>
               ))}
             </div>

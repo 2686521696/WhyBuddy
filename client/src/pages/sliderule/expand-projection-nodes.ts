@@ -6,6 +6,8 @@ import type { ActionTrace } from "@shared/blueprint/capability-process-labels";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import type { TurnStep, UiTurn } from "./types";
 import type { ProjectionDensity } from "./sliderule-projection-constants";
+import { eventsByRun } from "@shared/blueprint/sliderule-reasoning-events.js"; // V5.3 P3 for role_critique from events
+import type { ReasoningEvent } from "@shared/blueprint/sliderule-reasoning-events";
 
 const MAX_EVIDENCE_CHILDREN = 8;
 const MAX_TREE_DEPTH = 4;
@@ -22,10 +24,13 @@ function isProjectionChildId(id: string): boolean {
 
 const MAX_PANEL_ROLES = 5;
 
-/** R2.5 多角色面板投影：每角色立场一个子节点 + 一个收敛/分歧裁决节点（DERIVE only）。 */
+/** R2.5 多角色面板投影：每角色立场一个子节点 + 一个收敛/分歧裁决节点（DERIVE only）。
+ * V5.3 P3: support defaultExpanded for collaboration view; generate non-depends_on "challenges" edges from role_critique events or payload.
+ */
 function expandPanelRoleChildren(
   state: V5SessionState,
-  parent: BrainstormReasoningNode
+  parent: BrainstormReasoningNode,
+  opts: { defaultExpanded?: boolean } = {}
 ): { nodes: BrainstormReasoningNode[]; edges: BrainstormReasoningEdge[] } {
   const art = artifactForNode(state, parent as any);
   const raw = (art?.payload || {}) as any;
@@ -45,6 +50,12 @@ function expandPanelRoleChildren(
   // Allow rendering at least the verdict if we have convergence data (even without full positions on this artifact)
   if (!hasPanelFlag && !hasConvergence && positions.length === 0) {
     return { nodes: [], edges: [] };
+  }
+
+  // V5.3 P3.1: in overview mode (defaultExpanded false) we can skip children (caller decides);
+  // for collaboration we expand by default.
+  if (opts.defaultExpanded === false) {
+    // still return empty to let caller control; in practice derive calls with flag=true for collab
   }
 
   const nodes: BrainstormReasoningNode[] = [];
@@ -97,6 +108,74 @@ function expandPanelRoleChildren(
       label: consensus ? "共识" : "分歧",
     });
   }
+
+  // V5.3 P3.2: generate "challenges" (non-depends_on) edges from role_critique events or payload.critiques
+  // (avoids G-ROOT-2 single-parent check)
+  const runId = (parent as any).capabilityRunId;
+  let critiquesSrc: any[] = [];
+  if (runId) {
+    const evs = eventsByRun(state).get(runId) || [];
+    critiquesSrc = evs.filter((e: any) => e.kind === "role_critique").map((e: any) => ({
+      fromRole: e.roleId,
+      targetRole: e.targetRoleId,
+      content: e.text,
+    }));
+  }
+  if (critiquesSrc.length === 0 && Array.isArray(pl?.critiques)) {
+    critiquesSrc = pl.critiques;
+  }
+  for (const c of critiquesSrc) {
+    const from = String(c.fromRole || c.challengerRoleId || c.roleId || "");
+    const to = String(c.targetRole || c.targetRoleId || "");
+    if (!from || !to) continue;
+    const fromId = `${parent.id}::role-${from}`;
+    const toId = `${parent.id}::role-${to}`;
+    // only if role nodes exist
+    if (nodes.some(n => n.id === fromId) && nodes.some(n => n.id === toId)) {
+      edges.push({
+        id: `${parent.id}-challenge-${from}-to-${to}`,
+        source: fromId,
+        target: toId,
+        type: "challenges" as any,  // non-depends_on !
+        label: "质疑",
+      });
+    }
+  }
+
+  return { nodes, edges };
+}
+
+/** V5.3 P4: turn a cap's think/observe/tool/subtask events into ordered sub-step nodes + "step" edges (non-depends_on). */
+export function expandReasoningChain(
+  parent: BrainstormReasoningNode,
+  events: ReasoningEvent[]
+): { nodes: BrainstormReasoningNode[]; edges: BrainstormReasoningEdge[] } {
+  const subEvents = (events || [])
+    .filter((e: any) => ["think", "observe", "tool_call", "subtask"].includes(e.kind))
+    .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+  const nodes: BrainstormReasoningNode[] = [];
+  const edges: BrainstormReasoningEdge[] = [];
+
+  subEvents.forEach((ev: any, i: number) => {
+    const childId = `${parent.id}::step-${i}`;
+    nodes.push({
+      id: childId,
+      type: "decision" as any,
+      title: ev.kind,
+      body: String(ev.text || "").slice(0, 200),
+      // projection-only derived fields
+      ...( { eventKind: ev.kind } as any ),
+      derivedFrom: [parent.id],
+    });
+    edges.push({
+      id: `${parent.id}-step-${i}`,
+      source: parent.id,
+      target: childId,
+      type: "step" as any, // non-depends_on per red line
+      label: ev.kind,
+    });
+  });
 
   return { nodes, edges };
 }
@@ -546,7 +625,8 @@ export function expandProjectionNodes(
     extraNodes.push(...treeNodes);
     extraEdges.push(...treeEdges);
 
-    const { nodes: panelNodes, edges: panelEdges } = expandPanelRoleChildren(state, parent);
+    // V5.3 P3.1: default expand for collaboration view (pass flag; derive/viewMode will drive in full)
+    const { nodes: panelNodes, edges: panelEdges } = expandPanelRoleChildren(state, parent, { defaultExpanded: true });
     extraNodes.push(...panelNodes);
     extraEdges.push(...panelEdges);
 

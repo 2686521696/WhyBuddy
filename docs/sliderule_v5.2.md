@@ -127,6 +127,12 @@ subgraph REENTRY["05 失效与重入 / Invalidation & Re-entry（单一回炉 ·
   INVAL["失效引擎 / Invalidation"]:::reentry
   STALE["失效索引 / Stale Index<br/>信任失效·级联重算"]:::reentry
   SUPERSEDED["◆ 替代索引 / Superseded Index<br/>被纪要替代·信任不变·不级联<br/>语义独立于stale"]:::reentry
+
+---
+
+**V5.3 增量（执行可见性 #4）**：P1 数据底座（ReasoningEvent + 透传）· P2 后端 emit（panel/dialogue/fallback + route + 脱敏）· P3 协作视图（默认展开 + challenges 非-depends_on 边 + verdict）· P4 思考链（子步链 + overview 角标 + viewMode）· P5 UI（三态 + 渲染新节点边 + streaming + 点击）· P6 打磨 + 文档 + 验证 + 合并。
+
+详见 `docs/sliderule_v5.3_*` 三件套。红线全守，DoD 满足（collaboration 默认立场+质疑边+裁决；reasoning 子步；三态/实时/点击；无额外 LLM；脱敏；兼容）。
   RECOMP["重算 + 重新调度 / Recompute"]:::reentry
 end
  

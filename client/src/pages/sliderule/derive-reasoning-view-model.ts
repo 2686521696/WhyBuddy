@@ -13,6 +13,8 @@ import {
   projectSessionGraphForDisplay,
   roleIdToDisplayLabel,
 } from "@shared/blueprint/sliderule-graph-projection";
+import { eventsByRun, foldEventsForOverview } from "@shared/blueprint/sliderule-reasoning-events.js"; // V5.3 P4
+import { expandReasoningChain } from "./expand-projection-nodes.js"; // V5.3 P4
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
@@ -156,6 +158,8 @@ export type DeriveReasoningViewModelOptions = {
   density?: ProjectionDensity;
   latestUiTurn?: UiTurn | null;
   lineageHighlightIds?: string[];
+  /** V5.3 #4: overview(turn 视图) | collaboration(默认展开多角色立场+质疑边) | reasoning(思考链子步)。 */
+  viewMode?: "overview" | "collaboration" | "reasoning";
 };
 
 export type SlideRuleReasoningViewModel = BlueprintWallReasoningGraphViewModel & {
@@ -267,6 +271,8 @@ export function deriveSlideRuleReasoningViewModel(
 ): SlideRuleReasoningViewModel {
   const density = options.density ?? "compact";
   const lineageHighlightIds = options.lineageHighlightIds ?? [];
+  // V5.3 P3.4: viewMode for overview | collaboration (default expand panel + challenges) | reasoning (P4)
+  const viewMode = (options as any).viewMode ?? "overview";
 
   // K6.5: 简模式回跳静默失效修复 - 当 lineage 高亮 ::ev- (ReportReader 证据回跳) 时自动切详模式
   // 避免在 compact 下点击报告证据后子节点不可见
@@ -303,15 +309,62 @@ export function deriveSlideRuleReasoningViewModel(
 
   let visibleEdges: BrainstormReasoningEdge[] = projectedEdges;
 
+  // V5.3 P3/P4: collaboration / reasoning 模式需要展开子节点(角色立场/思考链),
+  // 不受简/详密度影响 —— 否则 compact 下 expandProjectionNodes 直接返回 base,panel 角色节点永不出现。
+  const expansionDensity: ProjectionDensity =
+    viewMode === "collaboration" || viewMode === "reasoning" ? "detailed" : effectiveDensity;
   const expanded = expandProjectionNodes(
     state,
     visibleNodes,
     visibleEdges,
-    effectiveDensity,
+    expansionDensity,
     options.latestUiTurn
   );
   let finalNodes = expanded.nodes;
   let finalEdges = expanded.edges;
+
+  // V5.3 P4: reasoning chain + overview badges based on viewMode
+  if (viewMode === "reasoning") {
+    const byRun = eventsByRun(state);
+    finalNodes = finalNodes.map((n: any) => {
+      const runId = n.capabilityRunId || (n as any).producedBy?.capabilityRunId;
+      if (!runId) return n;
+      const evs = byRun.get(runId) || [];
+      const extra = expandReasoningChain(n, evs as any);
+      return {
+        ...n,
+        // attach for surface if needed
+        ...(extra.nodes.length ? { _reasoningSubsteps: extra.nodes } : {}),
+      };
+    });
+    // also append the sub nodes and edges for visibility (surface will render if present)
+    const allExtraNodes: any[] = [];
+    const allExtraEdges: any[] = [];
+    finalNodes.forEach((n: any) => {
+      const runId = n.capabilityRunId || (n as any).producedBy?.capabilityRunId;
+      if (runId) {
+        const evs = byRun.get(runId) || [];
+        const extra = expandReasoningChain(n, evs as any);
+        allExtraNodes.push(...extra.nodes);
+        allExtraEdges.push(...extra.edges);
+      }
+    });
+    finalNodes = [...finalNodes, ...allExtraNodes];
+    finalEdges = [...finalEdges, ...allExtraEdges];
+  } else if (viewMode === "overview") {
+    const byRun = eventsByRun(state);
+    finalNodes = finalNodes.map((n: any) => {
+      const runId = n.capabilityRunId || (n as any).producedBy?.capabilityRunId;
+      if (!runId) return n;
+      const evs = byRun.get(runId) || [];
+      const fold = foldEventsForOverview(evs as any);
+      const badge = `💭${fold.think}·🔍${fold.observe}·🔧${fold.tool}·👥${fold.role}`.replace(/·0/g, "");
+      return {
+        ...n,
+        overviewBadge: badge || undefined,
+      };
+    });
+  }
 
   const terminal = deriveTerminalProjection(state);
   if (terminal) {

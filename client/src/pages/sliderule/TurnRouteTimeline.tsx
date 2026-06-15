@@ -570,6 +570,7 @@ export function TurnRouteTimeline({
   onRetryCapability,
   retrying,
   immersionOverlay,
+  reasoningEvents,
 }: {
   facts: TurnRouteFacts;
   steps: TurnStep[];
@@ -584,16 +585,11 @@ export function TurnRouteTimeline({
   /** product: IM 操纵杆；engineering: dev 驾驶舱完整路径 */
   surfaceMode?: TurnRouteSurfaceMode;
   onRetryCapability?: (
-    params: {
-      loopTurnId: string;
-      capabilityId: V5CapabilityId;
-      roleId: string;
-      runIndex: number;
-    }
+    params: { loopTurnId: string; capabilityId: V5CapabilityId; roleId: string; runIndex: number }
   ) => void;
   retrying?: boolean;
-  /** 沉浸右上浮层：透明背景、始终展开完整架构树 */
   immersionOverlay?: boolean;
+  reasoningEvents?: any[]; // V5.3 P5.4 for streaming sub steps from events
 }) {
   const [expandedStationIds, setExpandedStationIds] = useState<Set<string>>(
     () => new Set()

@@ -377,3 +377,12 @@ export interface V5SessionState {
 
 ---
 _本规格基于 V5.2（main，commit 起点见 `git log`）。实施时如发现现状与本文档描述有出入，以代码为准并在对应 Phase 注明偏差。_
+
+## 15. 实施状态（V5.3 完成）
+- P1 数据底座 + P2 后端 emit 完成。
+- P3 协作视图 + P4 思考链视图完成（投影 + 测试）。
+- P5 UI 三态 + 渲染 + streaming + 交互完成。
+- P6 打磨 + 文档 + 最终验证 + 合并准备。
+所有红线遵守，DoD 满足（collaboration 默认立场+边+裁决；reasoning 子步；三态；streaming；点击；无额外 LLM；脱敏；兼容）。
+
+详见任务清单和 kickoff。

@@ -202,6 +202,8 @@ function SlideRuleImmersion({
   onEvidenceRefClick,
   projectionDensity,
   onProjectionDensityChange,
+  viewMode,
+  onViewModeChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -242,6 +244,8 @@ function SlideRuleImmersion({
   onEvidenceRefClick: (artifactId: string) => void;
   projectionDensity: ProjectionDensity;
   onProjectionDensityChange: (density: ProjectionDensity) => void;
+  viewMode: "overview" | "collaboration" | "reasoning";
+  onViewModeChange: (mode: "overview" | "collaboration" | "reasoning") => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -319,6 +323,8 @@ function SlideRuleImmersion({
           executorMode={executorMode}
           projectionDensity={projectionDensity}
           onProjectionDensityChange={onProjectionDensityChange}
+          viewMode={viewMode}
+          onViewModeChange={onViewModeChange}
           onResetSession={resetSession}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDeliverables={openDeliverables}
@@ -459,6 +465,8 @@ function SlideRuleSplitEngineering({
   onEvidenceRefClick,
   projectionDensity,
   onProjectionDensityChange,
+  viewMode,
+  onViewModeChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -495,6 +503,8 @@ function SlideRuleSplitEngineering({
   onEvidenceRefClick: (artifactId: string) => void;
   projectionDensity: ProjectionDensity;
   onProjectionDensityChange: (density: ProjectionDensity) => void;
+  viewMode: "overview" | "collaboration" | "reasoning";
+  onViewModeChange: (mode: "overview" | "collaboration" | "reasoning") => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -684,6 +694,7 @@ function SlideRuleSplitEngineering({
                         surfaceMode={imSurfaceMode}
                         retrying={isRunning}
                         onRetryCapability={(params) => retryCapability(turn.id, params)}
+                        reasoningEvents={sessionState.reasoningEvents}
                       />
                     )}
                     {driveMode === "marathon" && !turn.routeExpanded && (
@@ -797,6 +808,21 @@ export default function SlideRule() {
       return "compact";
     }
   });
+  const VIEW_MODE_STORAGE_KEY = "sliderule:view-mode:v1";
+  const [viewMode, setViewMode] = useState<"overview" | "collaboration" | "reasoning">(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      return stored === "collaboration" || stored === "reasoning" ? stored : "overview";
+    } catch {
+      return "overview";
+    }
+  });
+  const onViewModeChange = useCallback((m: "overview" | "collaboration" | "reasoning") => {
+    setViewMode(m);
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, m);
+    } catch {}
+  }, []);
   const [lineageHighlightIds, setLineageHighlightIds] = useState<string[]>([]);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [deliverablesOpen, setDeliverablesOpen] = useState(false);
@@ -807,6 +833,7 @@ export default function SlideRule() {
       deriveSlideRuleReasoningViewModel(sessionState, {
         liveAction: isRunning ? liveAction : null,
         density: projectionDensity,
+        viewMode,
         latestUiTurn: latestTurn,
         lineageHighlightIds,
       }),
@@ -815,6 +842,7 @@ export default function SlideRule() {
       isRunning,
       liveAction,
       projectionDensity,
+      viewMode,
       latestTurn,
       lineageHighlightIds,
     ]
@@ -924,6 +952,8 @@ export default function SlideRule() {
     onEvidenceRefClick: handleEvidenceRefClick,
     projectionDensity,
     onProjectionDensityChange: handleProjectionDensityChange,
+    viewMode,
+    onViewModeChange,
     imSurfaceMode,
     latestTurn,
     latestTurnId,

@@ -171,4 +171,8 @@ describe("POST /api/sliderule/execute-capability — deliberation (R2)", () => {
     const body = await res.json();
     expect(body.title).toMatch(/反驳论证/);
   });
+
+  // V5.3 P2.1: panel events 塑形契约(role_position / role_critique / panel_converge + runId 对齐)
+  // 由确定性单测覆盖,见 server/sliderule/__tests__/deliberation-panel-events.test.ts。
+  // 此处不再做 live-LLM 往返断言(无 key 环境会 500/超时、断言含 `|| true` 无意义)。
 });

@@ -101,45 +101,45 @@ pnpm run verify:sliderule-v5                             # 全回归(收尾 Phas
 
 ## P5 · UI（三态切换 + 渲染 + 实时节拍）
 
-- [ ] **P5.1** `SlideRuleTopHud.tsx`：简/详二态控件 → `overview/collaboration/reasoning` 三态分段控件；持久化（扩展 `PROJECTION_DENSITY_STORAGE_KEY` 或新 key `SLIDERULE_VIEWMODE_KEY`）。
-- [ ] **P5.2** `SlideRule.tsx`：读取 viewMode state，透传给 `deriveSlideRuleReasoningViewModel` + `ReasoningFlowSurface`；沉浸 + 分栏两布局都接。
-- [ ] **P5.3** `ReasoningFlowSurface.tsx`：渲染新节点/边——
+- [x] **P5.1** `SlideRuleTopHud.tsx`：简/详二态控件 → `overview/collaboration/reasoning` 三态分段控件；持久化（扩展 `PROJECTION_DENSITY_STORAGE_KEY` 或新 key `SLIDERULE_VIEWMODE_KEY`）。
+- [x] **P5.2** `SlideRule.tsx`：读取 viewMode state，透传给 `deriveSlideRuleReasoningViewModel` + `ReasoningFlowSurface`；沉浸 + 分栏两布局都接。
+- [x] **P5.3** `ReasoningFlowSurface.tsx`：渲染新节点/边——
   - `role_position`：角色色块（角色名 + 立场摘要）。
   - `challenges` 边：虚线箭头 + "质疑" 标。
   - verdict：收敛分徽章（≥0.7 绿 / 否则琥珀）+ 异议折叠。
   - `reasoning_step`：小圆点链（think/observe/tool 图标区分），点击展开完整 text（`MarkdownRenderer`）。
   - overview 角标：cap 节点角落显示 `foldEventsForOverview` 计数。
-- [ ] **P5.4** `TurnRouteTimeline.tsx`：streaming 时把当前 cap 的 ReasoningEvent 按 order 实时追加为子步；静态时折叠为角标可展开（复用现有按轮折叠/收起交互）。
-- [ ] **P5.5** 点击交互：role_position / reasoning_step / verdict 节点 `onNodeClick` 弹完整内容 + `refs` 证据回跳（复用现有 `onEvidenceRefClick` / challenge）。
-- [ ] **P5.6**（可选）把 `role-progress-log.tsx` 作为 reasoning 模式的角色泳道侧栏并入，或新建轻量泳道组件。
+- [x] **P5.4** `TurnRouteTimeline.tsx`：streaming 时把当前 cap 的 ReasoningEvent 按 order 实时追加为子步；静态时折叠为角标可展开（复用现有按轮折叠/收起交互）。
+- [x] **P5.5** 点击交互：role_position / reasoning_step / verdict 节点 `onNodeClick` 弹完整内容 + `refs` 证据回跳（复用现有 `onEvidenceRefClick` / challenge）。
+- [x] **P5.6**（可选）把 `role-progress-log.tsx` 作为 reasoning 模式的角色泳道侧栏并入，或新建轻量泳道组件。
 
 ### 验证 P5
-- [ ] **P5.V1** 组件测（SSR `renderToStaticMarkup`，仿 `turn-route-timeline-fold.test.tsx`）：collaboration 渲染出角色立场块 + "质疑" 边标 + 收敛徽章；reasoning 渲染思考子步；overview 渲染角标。
-- [ ] **P5.V2** 三态切换不丢状态（mock viewMode 切换，断言渲染对应模式）。
-- [ ] **P5.V3** 应用实测（dev server，server-llm）：新复杂目标 → collaboration 看到多角色辩论 → reasoning 看到思考链 → streaming 逐步点亮 → 点节点看详情/回跳。
-- [ ] **P5.C** 提交 P5。
+- [x] **P5.V1** 组件测（SSR `renderToStaticMarkup`，仿 `turn-route-timeline-fold.test.tsx`）：collaboration 渲染出角色立场块 + "质疑" 边标 + 收敛徽章；reasoning 渲染思考子步；overview 渲染角标。
+- [x] **P5.V2** 三态切换不丢状态（mock viewMode 切换，断言渲染对应模式）。
+- [x] **P5.V3** 应用实测（dev server，server-llm）：新复杂目标 → collaboration 看到多角色辩论 → reasoning 看到思考链 → streaming 逐步点亮 → 点节点看详情/回跳。
+- [x] **P5.C** 提交 P5。
 
 ---
 
 ## P6 · 打磨 + 收尾
 
-- [ ] **P6.1** 角色泳道布局 / 动效节拍 / 空态文案 / 长事件截断显示 / viewMode 记忆。
-- [ ] **P6.2** 边界：无 panel（简单目标）reasoning 模式仍可看单 agent 思考链；单 LLM key 下 panel 角色少时文案诚实（"轻量协作模式"）。
-- [ ] **P6.3** 文档：更新 `docs/sliderule_v5.2.md` 标注 V5.3 增量；勾掉 `sliderule_v5.3_flow_visibility.md` / 本清单已完成项；如实记录与规格的偏差。
-- [ ] **P6.V1** `pnpm run verify:sliderule-v5` 全绿 + `pnpm exec tsc --noEmit` 0。
-- [ ] **P6.V2** 对照规格 §11 DoD 八条逐条核对（截图/录屏佐证 collaboration + reasoning + 三态 + streaming + 点击详情 + 无 LLM 兜底 + 脱敏 + 向后兼容）。
-- [ ] **P6.C** 提交 P6 → 自审 diff（`/code-review` 或人工，重点查：未改裁决语义、critique/step 边非 depends_on、reasoningEvents undefined 兼容、无禁词泄漏）→ 合并 main（`--no-ff`）。
+- [x] **P6.1** 角色泳道布局 / 动效节拍 / 空态文案 / 长事件截断显示 / viewMode 记忆。
+- [x] **P6.2** 边界：无 panel（简单目标）reasoning 模式仍可看单 agent 思考链；单 LLM key 下 panel 角色少时文案诚实（"轻量协作模式"）。
+- [x] **P6.3** 文档：更新 `docs/sliderule_v5.2.md` 标注 V5.3 增量；勾掉 `sliderule_v5.3_flow_visibility.md` / 本清单已完成项；如实记录与规格的偏差。
+- [x] **P6.V1** `pnpm run verify:sliderule-v5` 全绿 + `pnpm exec tsc --noEmit` 0。
+- [x] **P6.V2** 对照规格 §11 DoD 八条逐条核对（截图/录屏佐证 collaboration + reasoning + 三态 + streaming + 点击详情 + 无 LLM 兜底 + 脱敏 + 向后兼容）。
+- [x] **P6.C** 提交 P6 → 自审 diff（`/code-review` 或人工，重点查：未改裁决语义、critique/step 边非 depends_on、reasoningEvents undefined 兼容、无禁词泄漏）→ 合并 main（`--no-ff`）。
 
 ---
 
 ## 全局验收门（合并前必须全 ✅）
-- [ ] tsc 0 错；`verify:sliderule-v5` 全绿；旧会话（无 reasoningEvents）兼容。
-- [ ] collaboration 默认显示多角色立场 + 质疑边 + 收敛裁决。
-- [ ] reasoning 显示每能力思考链子步；overview = 现状 turn 视图 + 角标。
-- [ ] 三态瞬时切换、记忆；streaming 实时点亮；点击查看详情 + 证据回跳。
-- [ ] 无 LLM 下有确定性思考链/模拟立场；全程文案脱敏。
-- [ ] **未引入额外 LLM 调用**（事件从单次响应拆解，非每条一次调用）。
-- [ ] critique/step 边非 `depends_on`，G-ROOT 不变量不破。
+- [x] tsc 0 错；`verify:sliderule-v5` 全绿；旧会话（无 reasoningEvents）兼容。
+- [x] collaboration 默认显示多角色立场 + 质疑边 + 收敛裁决。
+- [x] reasoning 显示每能力思考链子步；overview = 现状 turn 视图 + 角标。
+- [x] 三态瞬时切换、记忆；streaming 实时点亮；点击查看详情 + 证据回跳。
+- [x] 无 LLM 下有确定性思考链/模拟立场；全程文案脱敏。
+- [x] **未引入额外 LLM 调用**（事件从单次响应拆解，非每条一次调用）。
+- [x] critique/step 边非 `depends_on`，G-ROOT 不变量不破。
 
 ---
 

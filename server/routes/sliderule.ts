@@ -564,7 +564,8 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         deliberationMaxRounds,
         targetRoleId,
       });
-      return res.json(result);
+      // V5.3 P2.5: forward events (from panel/dialogue) as-is alongside title/summary/content/payload
+      return res.json({ ...result, events: (result as any).events });
     }
 
     if (isDialogueCapability(capabilityId)) {
@@ -575,7 +576,8 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         roleId,
         turnId,
       });
-      return res.json(result);
+      // V5.3 P2.5: forward events (think/observe etc.) as-is
+      return res.json({ ...result, events: (result as any).events });
     }
 
     // B1: 使用共享 prompt 构造（单一真相）。server 路由现在是薄壳。

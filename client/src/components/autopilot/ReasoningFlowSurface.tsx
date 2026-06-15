@@ -135,6 +135,8 @@ const TYPE_COLORS: Record<string, string> = {
   synthesis: "#10b981",
   critique: "#f43f5e",
   rebuttal: "#0ea5e9",
+  role_position: "#6366f1", // indigo for roles
+  reasoning_step: "#64748b", // slate for steps
   default: "#64748b",
 };
 
@@ -152,6 +154,8 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   synthesis: "收敛",
   critique: "已隔离",
   rebuttal: "已隔离",
+  role_position: "立场",
+  reasoning_step: "步骤",
   default: "节点",
 };
 
@@ -288,6 +292,12 @@ function nodeDimensions(node: BrainstormReasoningNode): { width: number; height:
   }
   if (node.id.includes("::ev-") || node.id.includes("::phase-")) {
     return { width: 200, height: 88 };
+  }
+  if (node.id.includes("::step-")) {
+    return { width: 160, height: 48 };
+  }
+  if (node.id.includes("::role-")) {
+    return { width: 220, height: 72 };
   }
   return { width: NODE_WIDTH, height: NODE_HEIGHT };
 }
@@ -1011,7 +1021,13 @@ export function ReasoningFlowSurface({
                     fill="none"
                     stroke={ec}
                     strokeWidth={isEdgeHighlighted ? 2.1 : 1.25}
-                    strokeDasharray={isEdgeHighlighted ? undefined : "5 3"}
+                    strokeDasharray={
+                      isEdgeHighlighted
+                        ? undefined
+                        : (edge.label === "质疑" || (edge as any).type === "challenges")
+                        ? "4 2"
+                        : "5 3"
+                    }
                     markerEnd={`url(#${arrowId})`}
                     opacity={
                       isEdgeHighlighted
@@ -1098,6 +1114,9 @@ export function ReasoningFlowSurface({
             const isHighlighted = highlightedNodeIds.has(node.id);
             const isDimmed = highlightedNodeIds.size > 0 && !isHighlighted;
             const isProjectionChild = node.id.includes("::");
+            const overviewBadge = (node as any).overviewBadge;
+            const isRolePosition = node.id.includes("::role-");
+            const isReasoningStep = node.id.includes("::step-");
 
             const clickable = !!onNodeClick && !isTerminal;
             const flowTooltip = buildFlowTooltip(node);
@@ -1169,6 +1188,11 @@ export function ReasoningFlowSurface({
                   }`}
                   style={{ backgroundColor: isActive ? "#10b981" : "#94a3b8" }}
                 />
+                {overviewBadge && (
+                  <div className="absolute -top-0.5 right-1 rounded bg-amber-100 px-0.5 py-px text-[8px] font-mono text-amber-700 shadow-sm">
+                    {overviewBadge}
+                  </div>
+                )}
 
                 <div className="flex h-full min-w-0 flex-col pl-2.5 pr-1">
                   <div className="mb-1 flex min-w-0 items-center gap-1">
