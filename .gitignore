@@ -55,6 +55,8 @@ tmp/
 .codex-logs/
 .superpowers/
 terminals/
+.agent-loop/
+.worktrees/
 
 # One-off local diagnostics (npx tsx scripts/_*.mjs)
 scripts/_*.mjs
