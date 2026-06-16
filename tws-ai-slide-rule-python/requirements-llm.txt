@@ -1,0 +1,3 @@
+# Phase 1 (LLM layer) deps only. Kept separate from the legacy/fake requirements.
+httpx>=0.27
+pytest>=8.0
