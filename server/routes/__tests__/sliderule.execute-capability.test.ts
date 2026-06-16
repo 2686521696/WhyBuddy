@@ -6,28 +6,47 @@
  * vitest.config.server.ts (the __tests__ pattern in its include).
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import express from 'express';
 import { createServer } from 'node:http';
 
-import slideruleRouter from '../sliderule.js';
 import * as llmClient from '../../core/llm-client.js';
+import * as poolJsonLlm from '../../sliderule/pool-json-llm.js';
 import * as ghAdapter from '../../sliderule/github-mcp-adapter.js';
 import * as repoStaticAnalyzer from '../../sliderule/repo-static-analyzer.js';
 import { withStubbedLlmKey } from './helpers/with-stubbed-llm-key.js';
 
-describe('POST /api/sliderule/execute-capability (server route)', () => {
-  const app = express();
-  app.use(express.json({ limit: '2mb' }));
-  app.use('/api/sliderule', slideruleRouter);
+// IMPORTANT: vi.mock must be declared before any static import that pulls in
+// routes/sliderule.js (which does `import { callPythonSlideRule } from '../sliderule/python-delegation.js'`).
+// We then use dynamic import *after* the mock so the route module receives the mocked version.
+// This fixes the "mock not taking effect / real Python hit" issue reported in audit.
+vi.mock('../../sliderule/python-delegation.js', () => ({
+  callPythonSlideRule: vi.fn(),
+}));
 
+let slideruleRouter: any;
+let pythonDelegation: any;
+
+describe('POST /api/sliderule/execute-capability (server route)', () => {
+  let app: any;
   let server: any;
   let base: string;
   let restoreLlmKey: (() => void) | undefined;
 
+  beforeAll(async () => {
+    // Dynamic import of the route *after* vi.mock registration.
+    const routerModule = await import('../sliderule.js');
+    slideruleRouter = routerModule.default;
+    pythonDelegation = await import('../../sliderule/python-delegation.js');
+  });
+
   beforeEach(async () => {
     vi.restoreAllMocks();
     ({ restore: restoreLlmKey } = withStubbedLlmKey());
+    // Fresh app per test using the (mocked) router loaded under the vi.mock.
+    app = express();
+    app.use(express.json({ limit: '2mb' }));
+    app.use('/api/sliderule', slideruleRouter);
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address();
@@ -37,6 +56,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
     restoreLlmKey?.();
     if (server) {
       await new Promise<void>((r) => server.close(() => r()));
@@ -75,6 +96,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
   });
 
   it('returns llm_fallback template when no apiKey (no 500), without leaking secrets', async () => {
+    // Legacy path test: under python backend risk/report delegate first and do not hit Node llm_fallback.
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     restoreLlmKey?.();
     delete process.env.LLM_API_KEY;
     delete process.env.OPENAI_API_KEY;
@@ -109,6 +132,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
   });
 
   it('returns raw 4-field shape on mocked success for risk.analyze', async () => {
+    // Legacy path (Node LLM) test; python backend delegates report/risk to V5 RAG.
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     vi.spyOn(llmClient, 'callLLMJsonWithUsage').mockResolvedValueOnce({
       json: {
         title: 'Server Risk Title',
@@ -137,6 +162,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
   });
 
   it('returns normalized usage when llm-client provides usage (Knife 11.1)', async () => {
+    // Legacy Node LLM path test for usage normalization.
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     vi.spyOn(llmClient, 'callLLMJsonWithUsage').mockResolvedValueOnce({
       json: {
         title: 'Risk with Usage',
@@ -174,6 +201,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
   });
 
   it('report.write success returns content that reflects the 9-section base structure', async () => {
+    // Legacy Node LLM path test (python backend now owns report.write with RAG sources).
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     vi.spyOn(llmClient, 'callLLMJsonWithUsage').mockResolvedValueOnce({
       json: {
         title: 'Server Report Title',
@@ -199,6 +228,92 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     const content = body.content || '';
     expect(content).toMatch(/结论|支撑证据|反证|风险|分歧|收敛决策|未解缺口|下一步工程化|provenance/);
     expect(body.provenance).toBe('llm');
+  });
+
+  it('report.write uses pool result when pool succeeds (skips primary)', async () => {
+    // Legacy pool path test only (under python backend, report.write always delegates to V5 RAG first).
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    vi.spyOn(poolJsonLlm, 'callPoolJsonLlm').mockResolvedValueOnce({
+      json: {
+        title: 'Pool Report',
+        summary: 'from pool',
+        content: '结论：pool\n支撑证据：pool\n反证/挑战：pool\n风险：pool\n分歧：pool\n收敛决策：pool\n未解缺口：pool\n下一步工程化分支：pool\nprovenance / upstream refs：pool',
+      },
+      model: 'gpt-5.4',
+      poolLabel: 'default-1',
+      usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, model: 'gpt-5.4@default-1' },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'report.write',
+        state: { sessionId: 't-pool', goal: { text: '权限系统' }, artifacts: [] },
+        inputArtifactIds: [],
+        turnId: 't-pool',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.title).toBe('Pool Report');
+    expect(body.provenance).toBe('llm');
+    expect(body.summary).toContain('[pool-llm:');
+    expect(primarySpy).not.toHaveBeenCalled();
+  });
+
+  it('report.write delegates to Python V5 backend when pool is configured but exhausted (migration path)', async () => {
+    // Explicitly python path: only assert delegation behavior, python-rag, helper called with correct endpoint/payload, no Node LLM/pool calls.
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    vi.spyOn(poolJsonLlm, 'callPoolJsonLlm').mockResolvedValueOnce(null);
+
+    // Use the mocked delegation module. With dynamic import of router *after* vi.mock (see beforeAll),
+    // the route's import of callPythonSlideRule receives this mock (no more real Python / "RAG generated report").
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Report from Python RAG',
+      summary: '检索了外部证据',
+      content: '结论：权限系统采用 RBAC + 范围过滤，审计完整。',
+      provenance: 'python-rag',
+      sources: [{ id: 'rbac1', content: 'RBAC scoping', source: 'internal-policy' }]
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'report.write',
+        state: { sessionId: 't-fb', goal: { text: '权限系统' }, artifacts: [] },
+        inputArtifactIds: [],
+        turnId: 't-fb',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-rag');
+    expect(body.summary).toContain('检索了外部证据');
+    expect(primarySpy).not.toHaveBeenCalled();  // delegation skips Node LLM path
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalled();
+    // Thin proxy contract per audit request
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({ capabilityId: 'report.write', state: expect.any(Object) }),
+      expect.any(String)
+    );
   });
 
   // --- P0 MCP GitHub adapter tests (source/evidence via server capability seam) ---
@@ -287,7 +402,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     expect(ghSpy).toHaveBeenCalledWith('evidence.github.collect', expect.anything(), []);
 
     // Now call report.write referencing that github evidence via inputArtifactIds.
-    // The server still feeds the 9-section skeleton (report path unchanged).
+    // Legacy path assertion (under python backend this would delegate; we force legacy here to keep the Node llm + 'llm' provenance contract test).
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'legacy');
     vi.spyOn(llmClient, 'callLLMJsonWithUsage').mockResolvedValueOnce({
       json: {
         title: 'Report with GitHub Evidence',
@@ -583,5 +699,10 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     staticSpy.mockRestore();
   });
 });
+
+// Live Node->Python delegation smoke has been moved to its own file:
+// server/routes/__tests__/sliderule.live-delegation.test.ts
+// Run with LIVE_NODE_TO_PYTHON_SLIDERULE=1 to exercise real delegation through the Node router.
+// This keeps the main contract tests (17 passed) completely stable and isolated from live service requirements.
 
 

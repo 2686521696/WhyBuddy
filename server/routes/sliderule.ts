@@ -23,7 +23,12 @@ import { stripProjectionForPersist } from "../../shared/blueprint/sliderule-proj
 import { applyReplayOnSave } from "../../shared/blueprint/sliderule-session-replay.js";
 import { sanitizeGoalStatusOnPut } from "../../shared/blueprint/sliderule-coverage-gate.js";
 import { getAIConfig } from "../core/ai-config.js";
-import { callLLM, callLLMJson, callLLMJsonWithUsage } from "../core/llm-client.js";
+import {
+  callLLM,
+  callLLMJson,
+  callLLMJsonWithUsage,
+  clearPrimaryLLMCooldown,
+} from "../core/llm-client.js";
 import { isEmptyDialogueJsonShape } from "../core/llm-json-budget.js";
 import {
   createExecuteCapabilityLogger,
@@ -80,18 +85,23 @@ import {
   buildCapabilityLlmFallback,
   isLlmContentHijackError,
 } from "../sliderule/capability-llm-fallback.js";
-import { shouldSkipPrimaryLlmAfterPoolExhausted } from "../sliderule/pool-json-llm.js";
 import { executeOrchestratePlan } from "../sliderule/orchestrate-plan.js";
 import {
   callPoolJsonLlm,
   formatPoolSummaryTag,
   getSlideRuleCapabilityPool,
   isSlideRuleCapabilityPoolEnabled,
+  shouldSkipPrimaryLlmAfterPoolExhausted,
+  type PoolJsonLlmResult,
 } from "../sliderule/pool-json-llm.js";
+import { callPythonSlideRule } from "../sliderule/python-delegation.js";
 import * as fs from "fs";
 import * as path from "path";
 
 const router = Router();
+
+// Re-export for test spies / external (the real interception for internal calls happens via the imported binding + vi.mock on python-delegation module)
+export { callPythonSlideRule };
 
 // Durable file-backed pilot store.
 // - DATA_FILE lives under data/ (runtime artifacts are explicitly gitignored below).
@@ -470,6 +480,50 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
   }
 });
 
+type PooledDialogueJson = { title?: string; summary?: string; content?: string };
+
+function formatPooledCapabilityJson(
+  pooled: PoolJsonLlmResult<PooledDialogueJson>,
+  defaultTitle: string
+) {
+  const title = String(pooled.json.title || defaultTitle).trim();
+  const summary = String(pooled.json.summary || "").trim();
+  const content = String(pooled.json.content || "").trim();
+  const tag = formatPoolSummaryTag(pooled.model, pooled.poolLabel);
+  return {
+    title,
+    summary: summary ? `${summary} ${tag}` : tag,
+    content,
+    provenance: "llm" as const,
+    usage: pooled.usage,
+  };
+}
+
+async function tryPooledDialogueCapability(
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number
+): Promise<PoolJsonLlmResult<PooledDialogueJson> | null> {
+  const pooled = await callPoolJsonLlm<PooledDialogueJson>(
+    systemPrompt,
+    userPrompt,
+    temperature
+  );
+  if (pooled?.json && !isEmptyDialogueJsonShape(pooled.json)) {
+    return pooled;
+  }
+  return null;
+}
+
+function isPrimaryLlmRecoverableError(errMsg: string): boolean {
+  return (
+    /HTTP 5\d\d|504|502|503|service error|gateway timeout/i.test(errMsg) ||
+    /temporarily unavailable|provider cooling down|all llm providers are temporarily unavailable/i.test(
+      errMsg
+    )
+  );
+}
+
 // POST /api/sliderule/execute-capability
 // Server-side LLM execution for the SlideRule V5 capability seam
 // (risk/report + D1 dialogue + R2 deliberation + F1 mapped caps).
@@ -535,6 +589,72 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
     if (capabilityId === "repo.inspect") {
       const result = await executeRepoInspectMapped(state, inputArtifactIds);
       return sendJson(result);
+    }
+
+    // V5 backend switch (per migration audit) - read live from process.env so tests can vi.stubEnv per-it.
+    // Must run before Node mapped structure/delivery/visual/evidence handlers so python mode wins.
+    // - 'python' (default): listed V5 caps delegate to tws-ai-slide-rule-python (real RAG, python-rag provenance).
+    // - 'legacy': preserve old Node LLM/pool/llm_fallback paths + legacy contract tests for report/risk/etc.
+    const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
+
+    const isPythonV5Cap =
+      capabilityId === 'mcp.call' ||
+      capabilityId === 'skill.invoke' ||
+      capabilityId === 'evidence.search' ||
+      capabilityId === 'report.write' ||
+      capabilityId === 'risk.analyze' ||
+      capabilityId === 'orchestrate.plan' ||
+      capabilityId === 'structure.decompose' ||
+      capabilityId === 'document.draft' ||
+      capabilityId === 'traceability.matrix' ||
+      capabilityId === 'task.write' ||
+      capabilityId === 'instruction.package' ||
+      capabilityId === 'outcome.visualize' ||
+      capabilityId === 'handoff.package' ||
+      capabilityId === 'ux.preview';
+
+    if (v5Backend === 'python' && isPythonV5Cap) {
+      // Delegate V5 paths to the new tws-ai-slide-rule-python backend (correct /api/sliderule/* surface)
+      // This replaces the old Node LLM pool / primary path for these capabilities.
+      // Use stable Python RAG for real external evidence (no more template/degraded).
+      // Controlled by SLIDERULE_V5_BACKEND=python (default) | legacy .
+      const pythonBase = (process.env.PYTHON_SLIDE_RULE_BASE_URL || 'http://localhost:9700').replace(/\/$/, '');
+      const internalKey = process.env.PYTHON_SLIDE_RULE_INTERNAL_KEY || 'dev-slide-rule-internal';
+
+      const payload = {
+        capabilityId,
+        state,
+        inputArtifactIds: inputArtifactIds || [],
+        roleId,
+        turnId,
+        userText: state.goal?.text || '',
+      };
+
+      try {
+        const endpoint = capabilityId === 'orchestrate.plan'
+          ? '/api/sliderule/orchestrate-plan'
+          : '/api/sliderule/execute-capability';
+        const data = await callPythonSlideRule(pythonBase, endpoint, payload, internalKey);
+        return sendJson(data);
+      } catch (e) {
+        console.warn('[sliderule] python V5 delegation failed', e);
+      }
+
+      // IMPORTANT: do not return a pseudo-success when Python is unavailable.
+      // Returning a 200 "python-delegated" result can make callers think RAG evidence
+      // was successfully retrieved. Make failure explicit (degraded + 5xx) so tests,
+      // UI, and upper layers can distinguish "real Python RAG" from "Python down".
+      return sendJson(
+        {
+          title: `${capabilityId} (delegated)`,
+          summary: 'Python V5 backend unavailable',
+          content: '委托 tws-ai-slide-rule-python 失败（服务不可用、端口或 key 错误等）。',
+          provenance: 'python-delegated-failed',
+          degraded: true,
+          error: 'python_unavailable',
+        },
+        502,
+      );
     }
 
     if (capabilityId === "evidence.search") {
@@ -612,27 +732,22 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       turnId,
     });
 
-    if (capabilityId === "risk.analyze") {
-      const pooledRisk = await callPoolJsonLlm<{
-        title?: string;
-        summary?: string;
-        content?: string;
-      }>(systemPrompt, userPrompt, temperature);
-      if (pooledRisk?.json && !isEmptyDialogueJsonShape(pooledRisk.json)) {
-        const title = String(pooledRisk.json.title || "Risk Analysis").trim();
-        const summary = String(pooledRisk.json.summary || "").trim();
-        const content = String(pooledRisk.json.content || "").trim();
-        const tag = formatPoolSummaryTag(pooledRisk.model, pooledRisk.poolLabel);
-        return sendJson({
-          title,
-          summary: summary ? `${summary} ${tag}` : tag,
-          content,
-          provenance: "llm" as const,
-          usage: pooledRisk.usage,
-        });
+    if (capabilityId === "risk.analyze" || capabilityId === "report.write") {
+      const defaultTitle =
+        capabilityId === "risk.analyze" ? "Risk Analysis" : "Report";
+      const pooled = await tryPooledDialogueCapability(
+        systemPrompt,
+        userPrompt,
+        temperature
+      );
+      if (pooled) {
+        return sendJson(formatPooledCapabilityJson(pooled, defaultTitle));
       }
-    } else if (capabilityId === "report.write") {
-      // report 走直接 LLM（无 pool 特殊处理）
+
+      // report.write prefers pool (to avoid large-prompt 504s on high-model primary like su8),
+      // but if pool is exhausted we still allow primary as last resort before template (more resilient than hard skip).
+      // (The hard skip only applies to risk.analyze in this path.)
+      // Note: V5 caps like report.write are now delegated early to Python backend above; this is legacy for non-delegated flow.
     }
 
     if (
@@ -646,19 +761,87 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       throw new Error("LLM not configured (no apiKey from getAIConfig)");
     }
 
-    const { json: result, usage } = await callSlideRuleDialogueJsonLlm(
-      capabilityId,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      {
-        model: config.model,
-        temperature,
-        maxTokens,
-        timeoutMs: Math.min(config.timeoutMs, 120000),
+    let llmResult: { json: any; usage?: any } | null = null;
+    const llmCallOptions = {
+      model: config.model,
+      temperature,
+      maxTokens,
+      timeoutMs: Math.min(config.timeoutMs, 120000),
+    };
+
+    try {
+      llmResult = await callSlideRuleDialogueJsonLlm(
+        capabilityId,
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        llmCallOptions as any
+      );
+    } catch (llmErr: any) {
+      const errMsg = String(llmErr?.message || llmErr);
+      const isGateway5xx = /HTTP 5\d\d|504|502|503|service error|gateway timeout/i.test(errMsg);
+
+      if (isPrimaryLlmRecoverableError(errMsg)) {
+        const promptLen = (systemPrompt?.length || 0) + (userPrompt?.length || 0);
+        console.warn(
+          `[sliderule] /execute-capability primary recoverable error for ${capabilityId}, promptLen≈${promptLen}. ` +
+            `Will clear cooldown → pool retry → lighter before degraded.`
+        );
+
+        try {
+          clearPrimaryLLMCooldown();
+        } catch {}
+
+        if (isSlideRuleCapabilityPoolEnabled()) {
+          const pooledRetry = await tryPooledDialogueCapability(
+            systemPrompt,
+            userPrompt,
+            temperature
+          );
+          if (pooledRetry) {
+            const defaultTitle =
+              capabilityId === "risk.analyze" ? "Risk Analysis" : "Evidence Report";
+            console.warn(
+              `[sliderule] /execute-capability pool retry succeeded for ${capabilityId}`
+            );
+            return sendJson(formatPooledCapabilityJson(pooledRetry, defaultTitle));
+          }
+        }
+
+        if (!isGateway5xx) {
+          throw llmErr;
+        }
+
+        const lighterMax = Math.max(4000, Math.floor(maxTokens * 0.6));
+        try {
+          llmResult = await callSlideRuleDialogueJsonLlm(
+            capabilityId,
+            [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            {
+              ...llmCallOptions,
+              maxTokens: lighterMax,
+              reasoningEffort: "low",
+            } as any
+          );
+          console.warn(
+            `[sliderule] /execute-capability lighter retry succeeded for ${capabilityId}`
+          );
+          try {
+            clearPrimaryLLMCooldown();
+          } catch {}
+        } catch (lighterErr) {
+          throw lighterErr;
+        }
+      } else {
+        throw llmErr;
       }
-    );
+    }
+
+    const { json: result, usage } = llmResult!;
 
     const title = (result.title || (capabilityId === "risk.analyze" ? "Risk Analysis" : "Evidence Report")).trim();
     const summary = (result.summary || "").trim();

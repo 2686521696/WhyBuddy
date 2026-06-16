@@ -1,0 +1,19 @@
+# tws-ai-slide-rule-python - requirements for runnable V5 backend
+# Modeled on tws-ai-ask-python structure (FastAPI + services for RAG/LLM/knowledge)
+# This makes the Python side actually importable and the /api/sliderule surface testable
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.9.0
+pydantic-settings>=2.5.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+pytest>=8.0.0
+
+# RAG / retrieval (real external evidence, replacing Node stubs)
+qdrant-client>=1.12.0
+openai>=1.50.0  # for LLM calls in stable style (reference project uses similar)
+
+# Persistence (sessions, like reference)
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
