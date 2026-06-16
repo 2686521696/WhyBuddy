@@ -6,12 +6,15 @@ import { resolveAgents } from './resolveAgents.js';
 import { runProcess } from './runProcess.js';
 import { extractFirstJsonObject } from './json.js';
 import { buildCodexReviewArgs, buildGrokJsonArgs } from './commands.js';
-import { buildProbeReport } from './report.js';
+import { buildAgentNotFoundReport, buildProbeReport } from './report.js';
+import { parseProbeArgs } from './indexArgs.js';
+import { resolveAgentInvocation } from './agentProcess.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
 async function main() {
+  const options = parseProbeArgs(process.argv.slice(2));
   const runId = timestamp();
   const probeDir = path.join(root, 'probes', runId);
   const latestDir = path.join(root, 'probes', 'latest');
@@ -24,20 +27,12 @@ async function main() {
   await writeJsonBoth(probeDir, latestDir, 'agents.json', agents);
 
   if (!agents.codex || !agents.grok) {
-    const report = [];
-    report.push('# AgentLoop Phase 0 探测报告 / Probe Report');
-    report.push('');
-    report.push(`运行 ID / Run ID: \`${runId}\``);
-    report.push('');
-    report.push('## 代理 / Agents');
-    report.push('');
-    report.push(`- Codex: ${agents.codex ? `\`${agents.codex}\`` : '**NOT FOUND**'}`);
-    report.push(`- Grok: ${agents.grok ? `\`${agents.grok}\`` : '**NOT FOUND**'}`);
-    report.push('');
-    report.push('## Verdict');
-    report.push('');
-    report.push('HALT_AGENT_NOT_FOUND. 一个或多个必需的代理可执行文件未找到。');
-    await writeTextBoth(probeDir, latestDir, 'probe-report.md', report.join('\n'));
+    const report = buildAgentNotFoundReport({
+      runId,
+      agents,
+      lang: options.lang,
+    });
+    await writeTextBoth(probeDir, latestDir, 'probe-report.md', report);
     console.log(path.join(latestDir, 'probe-report.md'));
     process.exitCode = 2;
     return;
@@ -102,6 +97,7 @@ async function main() {
       grokParsed,
       grokTextParsed,
     },
+    lang: options.lang,
   });
 
   await writeTextBoth(probeDir, latestDir, 'probe-report.md', report);
@@ -121,12 +117,13 @@ async function createProbeRepo(repoDir) {
 }
 
 async function runAndRecord(name, command, args, cwd, probeDir, latestDir, timeoutMs) {
-  const result = await runProcess(command, args, { cwd, timeoutMs });
+  const invocation = resolveAgentInvocation(command, args);
+  const result = await runProcess(invocation.command, invocation.args, { cwd, timeoutMs });
   await writeTextBoth(probeDir, latestDir, `${name}.stdout.log`, result.stdout);
   await writeTextBoth(probeDir, latestDir, `${name}.stderr.log`, result.stderr);
   await writeJsonBoth(probeDir, latestDir, `${name}.exit.json`, {
-    command,
-    args,
+    command: invocation.command,
+    args: invocation.args,
     cwd,
     exitCode: result.exitCode,
     signal: result.signal,

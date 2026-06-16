@@ -10,6 +10,7 @@ import { buildCodexReviewArgs, buildGrokJsonArgs } from './commands.js';
 import { madeGateProgress, summarizeGateProgress } from './gateProgress.js';
 import { classifyAgentFailure } from './agentFailure.js';
 import { analyzeDiffGuard } from './diffGuard.js';
+import { resolveAgentInvocation } from './agentProcess.js';
 
 export async function runLoop({ options, runId = timestamp(), runDir, latestDir, resumeState = null, deps = {} }) {
   const {
@@ -374,11 +375,8 @@ function artifactPath(runDir, fileName) {
 }
 
 function runAgentProcess(runProcess, agent, args, options) {
-  if (Array.isArray(agent)) {
-    const [command, ...prefixArgs] = agent;
-    return runProcess(command, [...prefixArgs, ...args], options);
-  }
-  return runProcess(agent, args, options);
+  const invocation = resolveAgentInvocation(agent, args);
+  return runProcess(invocation.command, invocation.args, options);
 }
 
 function summarizeGate(gate) {

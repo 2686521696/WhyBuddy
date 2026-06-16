@@ -52,16 +52,20 @@ async function scanPath(target) {
 function shouldSkip(name) {
   return [
     '.git',
+    '.agent-loop',
     '.venv',
     '.pytest_cache',
     '__pycache__',
     'node_modules',
     'data',
+    'probes',
+    'tmp',
     'mojibake.js',
     'mojibake.test.js',
   ].includes(name);
 }
 
 function shouldScanFile(file) {
+  if (/\.(stdout|stderr)\.log$/i.test(file)) return false;
   return /\.(py|md|ts|tsx|js|mjs|json)$/i.test(file);
 }
