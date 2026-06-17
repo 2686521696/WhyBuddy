@@ -451,7 +451,16 @@ async function runFinalReview({
 
   let promptInput = null;
   if (scoped || reviewAgent === 'grok') {
-    const prompt = buildAgentReviewPrompt({ taskText, workerAgent: fixAgent });
+    const lastIteration = iterations.at(-1);
+    const prompt = buildAgentReviewPrompt({
+      taskText,
+      workerAgent: fixAgent,
+      reviewContext: {
+        gateSnapshot: lastIteration?.gateSnapshot ?? state.baselineGateSnapshot,
+        diffText: lastIteration?.diffText ?? state.baselineDiffText ?? '',
+        hadFixIterations: iterations.length > 0,
+      },
+    });
     await writeArtifact('review-request.md', prompt, 'text');
     promptInput = prompt;
   }

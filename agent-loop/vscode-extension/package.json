@@ -2,7 +2,7 @@
   "name": "agent-loop-dashboard",
   "displayName": "AgentLoop Dashboard",
   "description": "Visual progress for AgentLoop migration queue, gates, and Codex/Grok review runs.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "cube-pets-office",
   "license": "MIT",
   "engines": {

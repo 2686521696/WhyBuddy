@@ -101,12 +101,78 @@ export function buildGrokFixPrompt(args) {
   return buildAgentFixPrompt(args);
 }
 
-export function buildAgentReviewPrompt({ taskText, workerAgent = 'grok' }) {
+function formatGateEvidence(gateSnapshot) {
+  if (!gateSnapshot?.runs?.length) {
+    return '没有附带 gate 运行记录。';
+  }
+
+  return gateSnapshot.runs.map((run, index) => {
+    return [
+      `### Gate ${index + 1}`,
+      '',
+      `- command: ${run.label}`,
+      `- exitCode: ${run.exitCode}`,
+      `- timedOut: ${run.timedOut}`,
+      run.spawnError ? `- spawnError: ${run.spawnError}` : '',
+      '',
+      '#### stdout',
+      '```text',
+      truncate(stripAnsi(run.stdout || ''), 6000),
+      '```',
+      '',
+      '#### stderr',
+      '```text',
+      truncate(stripAnsi(run.stderr || ''), 6000),
+      '```',
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function buildReviewFocusBlock({ diffText, gateSnapshot, hadFixIterations }) {
+  const hasDiff = Boolean(String(diffText || '').trim());
+  const gateGreen = gateSnapshot?.ok === true;
+
+  if (hasDiff) {
+    return [
+      '- 审查焦点：当前 worktree 的**未提交改动**。',
+      '- 以下「未提交 diff」是主要证据；gate 输出用于验证这些改动是否满足任务。',
+    ].join('\n');
+  }
+
+  if (gateGreen && !hadFixIterations) {
+    return [
+      '- 审查焦点：实现已在 **HEAD 提交** 中，当前未提交 diff 为空或只含无关元数据。',
+      '- 不要因为没有未提交 Python/源码 diff 就判定「未开发」；请读取任务「允许修改的文件」在 HEAD 中的内容。',
+      '- 不要自己执行 gate / pytest / shell 命令；以下 AgentLoop 已验证的 gate 输出就是测试证据。',
+    ].join('\n');
+  }
+
+  return [
+    '- 审查焦点：以 AgentLoop 附带的 gate 结果与允许文件路径为准。',
+    '- 若未提交 diff 为空，请审查 HEAD 中允许文件的实现是否满足任务。',
+    '- 不要自己重跑 gate 或 live LLM。',
+  ].join('\n');
+}
+
+export function buildAgentReviewPrompt({
+  taskText,
+  workerAgent = 'grok',
+  reviewContext = {},
+}) {
+  const {
+    gateSnapshot = null,
+    diffText = '',
+    hadFixIterations = false,
+  } = reviewContext;
+  const diffBlock = String(diffText || '').trim()
+    ? ['```diff', truncate(diffText, 12000), '```'].join('\n')
+    : '（无未提交 diff，或 diff 为空。）';
+
   return [
     '# AgentLoop 审查请求',
     '',
-    `你是代码审查员。${workerAgent} 已完成修改，或基线 gate 已通过等待你审查。`,
-    '请审查当前 worktree 里的未提交改动。',
+    `你是代码审查员。${workerAgent} 已完成修改，或 AgentLoop gate 已通过等待你审查。`,
+    '请根据下方证据审查任务是否完成；不要依赖你自己重跑 gate。',
     '',
     '## 任务',
     '',
@@ -116,14 +182,26 @@ export function buildAgentReviewPrompt({ taskText, workerAgent = 'grok' }) {
     '',
     '- 优先只审查任务「允许修改的文件」段落列出的路径。',
     '- 不要要求全仓库大扫除；忽略无关脏 diff 时请在 summary 里说明。',
-    '- 不要自己跑 live LLM；以 gate 与 diff 为准。',
+    '- 不要自己跑 live LLM。',
+    buildReviewFocusBlock({ diffText, gateSnapshot, hadFixIterations }),
+    '',
+    '## AgentLoop gate 结果（已验证，勿重跑）',
+    '',
+    gateSnapshot?.ok === true ? '- 总结: green' : gateSnapshot?.ok === false ? '- 总结: red' : '- 总结: unknown',
+    gateSnapshot?.failureCount != null ? `- failureCount: ${gateSnapshot.failureCount}` : '',
+    '',
+    formatGateEvidence(gateSnapshot),
+    '',
+    '## 未提交 diff',
+    '',
+    diffBlock,
     '',
     '## 输出格式',
     '',
-    '只输出 JSON，不要 markdown fence：',
+    '第一轮回复只输出 JSON，不要 markdown fence，不要先跑 shell：',
     '',
     '{"verdict":"pass|needs_changes|blocked","summary":"简短结论","findings":[{"severity":"blocker|major|minor","path":"相对路径","message":"说明"}]}',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function truncate(value, maxLength) {

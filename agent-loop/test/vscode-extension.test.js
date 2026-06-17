@@ -142,7 +142,8 @@ test('packaged extension sources do not require external agent-loop runSummary.j
 });
 
 test('VSIX contents are self-contained for run summary', async () => {
-  const vsixPath = path.join(extensionRoot, 'agent-loop-dashboard-0.1.0.vsix');
+  const packageJson = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
+  const vsixPath = path.join(extensionRoot, `agent-loop-dashboard-${packageJson.version}.vsix`);
   try {
     await fs.access(vsixPath);
   } catch (error) {

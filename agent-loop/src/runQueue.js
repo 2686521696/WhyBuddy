@@ -97,6 +97,9 @@ export function buildLoopArgsForQueueEntry({
   const scopedReview = entry.scopedReview ?? defaults.scopedReview;
   if (scopedReview != null) args.push('--scoped-review', String(scopedReview));
 
+  const grokMaxTurns = entry.grokMaxTurns ?? defaults.grokMaxTurns;
+  if (grokMaxTurns != null) args.push('--grok-max-turns', String(grokMaxTurns));
+
   const reviewMaxTurns = entry.reviewMaxTurns ?? defaults.reviewMaxTurns;
   if (reviewMaxTurns != null) args.push('--review-max-turns', String(reviewMaxTurns));
   if (entry.guardTests ?? defaults.guardTests ?? true) args.push('--guard-tests');
