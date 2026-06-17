@@ -102,6 +102,34 @@ def test_critique_generate_returns_v5_shape_with_python_llm_provenance():
     assert "challenge weak assumptions" in joined
 
 
+def test_synthesis_merge_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "synthesis.merge",
+        "state": {"goal": {"text": "design a pet office progression system"}},
+        "userText": "converge critique and counterpoints into one next step",
+        "roleId": "综合",
+        "turnId": "t-synthesis",
+    }
+    captured = {}
+
+    def fake_caller(messages, **kwargs):
+        captured["messages"] = messages
+        return _fake_result(
+            "## Synthesized conclusion\n- Keep desk upgrades as the core progression loop\n"
+            "## Remaining disagreements\n- Speed-first vs depth-first onboarding is unresolved\n"
+            "## Next action\n- Prototype one desk-upgrade loop with two onboarding paths"
+        )
+
+    out = execute_capability(body, caller=fake_caller)
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Synthesis merge"
+    assert out["summary"] == "Synthesized conclusion"
+    assert "desk-upgrade loop" in out["content"]
+    joined = " ".join(m["content"] for m in captured["messages"])
+    assert "pet office progression system" in joined
+    assert "converge critique" in joined
+
+
 def test_question_expand_returns_v5_shape_with_python_llm_provenance():
     body = {
         "capabilityId": "question.expand",
@@ -127,7 +155,6 @@ def test_question_expand_returns_v5_shape_with_python_llm_provenance():
 
 
 PENDING_NATIVE_CAPABILITIES = (
-    "synthesis.merge",
     "rebuttal.resolve",
     "counter.argue",
     "report.write",
@@ -165,6 +192,7 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("gap.ask") is True
     assert is_python_native_capability("question.expand") is True
     assert is_python_native_capability("critique.generate") is True
+    assert is_python_native_capability("synthesis.merge") is True
     for cap in PENDING_NATIVE_CAPABILITIES:
         assert is_python_native_capability(cap) is False
         with pytest.raises(UnsupportedCapability):

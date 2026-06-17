@@ -54,6 +54,13 @@ CAPABILITY_PROMPTS: dict[str, str] = {
         "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
         "Output markdown only: no JSON, no code fence, no preamble."
     ),
+    "synthesis.merge": (
+        "You are SlideRule V5's deliberation-synthesis role. Given the user's goal and message, write a "
+        "concise **markdown** convergence with three short sections: (1) synthesized conclusion, "
+        "(2) remaining disagreements, (3) smallest next action. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
 }
 
 CAPABILITY_TITLES: dict[str, str] = {
@@ -61,6 +68,7 @@ CAPABILITY_TITLES: dict[str, str] = {
     "gap.ask": "Gap questions",
     "question.expand": "Expanded questions",
     "critique.generate": "Structured critique",
+    "synthesis.merge": "Synthesis merge",
 }
 
 

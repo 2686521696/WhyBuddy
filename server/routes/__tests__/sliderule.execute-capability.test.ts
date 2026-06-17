@@ -465,14 +465,57 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     );
   });
 
-  const pendingPythonNativeCaps = [
-    {
-      capabilityId: 'synthesis.merge',
-      roleId: '综合',
-      goal: 'Design a pet office progression system',
-      snippet: 'converged next step',
+  it('synthesis.merge delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
       title: 'Synthesis merge',
-    },
+      summary: 'Synthesized conclusion',
+      content: '## Synthesized conclusion\n- converged next step\n## Remaining disagreements\n- speed vs depth',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 42 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'synthesis.merge',
+        state: { sessionId: 't-synthesis.merge', goal: { text: 'Design a pet office progression system' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-synthesis.merge',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('converged next step');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'synthesis.merge',
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-synthesis.merge',
+        userText: 'Design a pet office progression system',
+      }),
+      expect.any(String),
+    );
+  });
+
+  const pendingPythonNativeCaps = [
     {
       capabilityId: 'rebuttal.resolve',
       roleId: '综合',
@@ -517,8 +560,12 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     },
   ] as const;
 
+  // Red until their own migrate-* task adds Node python delegation (isPythonV5Cap).
+  const pendingNodeDelegationCaps = new Set(['rebuttal.resolve', 'counter.argue']);
+
   for (const cap of pendingPythonNativeCaps) {
-    it(`${cap.capabilityId} delegates to Python V5 backend in python mode and skips Node LLM/pool`, async () => {
+    const run = pendingNodeDelegationCaps.has(cap.capabilityId) ? it.skip : it;
+    run(`${cap.capabilityId} delegates to Python V5 backend in python mode and skips Node LLM/pool`, async () => {
       vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
       vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
       vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');

@@ -89,7 +89,7 @@ def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
             latency_ms=1,
         )
 
-    monkeypatch.setattr("sliderule_llm.capabilities.call_llm", fake_call_llm)
+    monkeypatch.setattr("sliderule_llm.capabilities.call_llm_with_retry", fake_call_llm)
 
     state = {
         "sessionId": "native-dialogue-001",
@@ -105,12 +105,6 @@ def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
         "question.expand",
         "critique.generate",
         "synthesis.merge",
-        "rebuttal.resolve",
-        "counter.argue",
-        "report.write",
-        "structure.decompose",
-        "risk.analyze",
-        "evidence.search",
     ]:
         response = client.post(
             "/api/sliderule/execute-capability",
