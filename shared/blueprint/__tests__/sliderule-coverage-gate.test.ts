@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  authorCoverageContract,
   evaluateCoverageGate,
+  reconcileCoverageContract,
   sanitizeGoalStatusOnPut,
 } from "../sliderule-coverage-gate.js";
 import { EVIDENCE_SOURCE_WEB_SEARCH } from "../sliderule-grounding.js";
@@ -63,6 +65,33 @@ function forgedClearState(sessionId: string): V5SessionState {
   } as V5SessionState;
 }
 
+describe("authorCoverageContract", () => {
+  it("uses complex mode + deliberation caps for product-build RPG goals", () => {
+    const goal = "写一个以LLM为核心驱动引擎的多Agent自定义RPG游戏";
+    const { contract, gaps } = authorCoverageContract(goal, "t-rpg");
+    expect(contract.mode).toBe("complex");
+    expect(contract.requiredCapabilities).toEqual([
+      "critique.generate",
+      "risk.analyze",
+      "synthesis.merge",
+      "evidence.search",
+      "report.write",
+      "structure.decompose",
+      "mcp.call",
+      "skill.invoke",
+    ]);
+    expect(
+      gaps.some((g) => g.requiredCapabilityId === "critique.generate")
+    ).toBe(true);
+  });
+
+  it("keeps simple contract for non-build chatter", () => {
+    const { contract } = authorCoverageContract("你好", "t-hi");
+    expect(contract.mode).toBe("simple");
+    expect(contract.requiredCapabilities).toEqual(["evidence.search", "report.write"]);
+  });
+});
+
 describe("sliderule-coverage-gate (N1 server recompute)", () => {
   it("evaluateCoverageGate does not pass on empty session even if client claims passed", () => {
     const state = {
@@ -108,5 +137,78 @@ describe("sliderule-coverage-gate (N1 server recompute)", () => {
     const saved = sanitizeGoalStatusOnPut(forged, previous);
     expect(saved.goal?.status).toBe("clear");
     expect(saved.coverageGate?.passed).toBe(true);
+  });
+});
+
+describe("reconcileCoverageContract (old session upgrade guard)", () => {
+  it("upgrades an old 'simple' contract to complex when goal text implies multi-agent/RPG build", () => {
+    const oldState = {
+      sessionId: "old-rpg",
+      goal: { text: "做一个 LLM 多 Agent RPG 游戏，支持多角色头脑风暴", status: "needs_refinement" },
+      coverageContract: {
+        id: "cov-old",
+        version: 1,
+        mode: "simple" as const,
+        authoredBy: "system",
+        authoredAt: "2026-01-01T00:00:00.000Z",
+        frozenAtTurnId: "t-old",
+        requiredCapabilities: ["evidence.search", "report.write"],
+        conditionalCapabilities: [],
+        minEvidencePerRequirement: 1,
+        blockingGapIds: [],
+      },
+      coverageGaps: [],
+      artifacts: [],
+      capabilityRuns: [],
+      conversation: [],
+      openQuestions: [],
+      evidence: [],
+      decisions: [],
+      risks: [],
+      gates: [],
+      dependencyGraph: [],
+      staleArtifactIds: [],
+      graph: { nodes: [], edges: [] },
+    } as V5SessionState;
+
+    const reconciled = reconcileCoverageContract(oldState, "t-upgrade");
+    expect(reconciled.coverageContract?.mode).toBe("complex");
+    expect(reconciled.coverageContract?.requiredCapabilities).toContain("critique.generate");
+    expect(reconciled.coverageContract?.requiredCapabilities).toContain("synthesis.merge");
+    // Old frozenAt preserved where sensible, but mode updated
+    expect(reconciled.coverageContract?.authoredAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("preserves resolved gap status across reconcile upgrade", () => {
+    const goal = "搭建多Agent RPG游戏平台";
+    const fresh = authorCoverageContract(goal, "t1");
+    // Simulate a prior resolved critique gap
+    const priorGaps = fresh.gaps.map((g) =>
+      g.requiredCapabilityId === "critique.generate"
+        ? { ...g, status: "resolved" as const, updatedAt: "2026-06-01" }
+        : g
+    );
+    const oldState: V5SessionState = {
+      sessionId: "old-upg",
+      goal: { text: goal, status: "needs_refinement" },
+      coverageContract: { ...fresh.contract, mode: "simple" as const, requiredCapabilities: ["evidence.search", "report.write"] },
+      coverageGaps: priorGaps,
+      artifacts: [],
+      capabilityRuns: [],
+      conversation: [],
+      openQuestions: [],
+      evidence: [],
+      decisions: [],
+      risks: [],
+      gates: [],
+      dependencyGraph: [],
+      staleArtifactIds: [],
+      graph: { nodes: [], edges: [] },
+    } as any;
+
+    const up = reconcileCoverageContract(oldState, "t2");
+    const crit = (up.coverageGaps || []).find((g) => g.requiredCapabilityId === "critique.generate");
+    expect(crit?.status).toBe("resolved");
+    expect(up.coverageContract?.mode).toBe("complex");
   });
 });

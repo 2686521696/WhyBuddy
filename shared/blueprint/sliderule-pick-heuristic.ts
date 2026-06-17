@@ -57,8 +57,21 @@ export function pickNextCapabilities(
   const available = V5_CAPABILITY_POOL;
 
   // P0 S11: vague goal / open_question → gap.ask → question.expand before anything else.
+  // V5.2/V5.3 audit (RPG marathon): for complex goals (product / game / multi-agent) we still want
+  // clarification on cold start, *but* must front-load brainstorm primers per contract.
+  // So: if complex, merge primers in front of readiness picks instead of pure short-circuit.
+  const roleMode = resolveRoleMode(state, userText);
   if (needsReadinessChain(state, userText)) {
-    return pickReadinessChainCapabilities(state).filter((p) => available.has(p.capabilityId));
+    let picks = pickReadinessChainCapabilities(state).filter((p) => available.has(p.capabilityId));
+    if (roleMode === "complex" && !shouldDegradeBrainstorm(state, userText)) {
+      const primers = pickBrainstormChain(state).filter(
+        (p) => available.has(p.capabilityId) && !picks.some((x) => x.capabilityId === p.capabilityId)
+      );
+      if (primers.length > 0) {
+        picks = [...primers, ...picks];
+      }
+    }
+    return picks;
   }
 
   // S19: after clear, delivery intent runs ship pipeline.
@@ -87,7 +100,7 @@ export function pickNextCapabilities(
   }
 
   // P6: complex role mode primes deliberation before standard picks.
-  const roleMode = resolveRoleMode(state, userText);
+  // (roleMode already computed above for the readiness+complex merge)
 
   const stales = new Set(state.staleArtifactIds || []);
   const existingKinds = new Set(
@@ -229,9 +242,9 @@ export function pickNextCapabilities(
     if (available.has("synthesis.merge")) picks.push({ capabilityId: "synthesis.merge", roleId: "综合" });
   }
 
-  if (roleMode === "complex" && !shouldDegradeBrainstorm(state, userText) && picks.length < 4) {
+  if (roleMode === "complex" && !shouldDegradeBrainstorm(state, userText)) {
     // 多角色面板链需保持顺序：critique.generate(面板) → synthesis.merge → ……(report)。
-    // 整体前置（不用逐个 unshift，否则会把顺序倒过来让 synthesis 跑在 critique 之前）。
+    // complex 目标始终前置（不受 picks.length 限制，避免冷启动 4 项挤掉 brainstorm）。
     const primers = pickBrainstormChain(state).filter(
       (primer) =>
         available.has(primer.capabilityId) &&
@@ -239,6 +252,27 @@ export function pickNextCapabilities(
     );
     if (primers.length > 0) {
       picks.unshift(...primers);
+    }
+  }
+
+  // For multi-agent / RPG / 游戏 goals (even under single main LLM), force additional "查询" (evidence)
+  // and "工具" (mcp/skill) to make the design concrete and actionable. This addresses the "角色、工具、查询、头脑风暴 几乎0调用" observation
+  // when using single high-quality model without the old 5-key pool parallelism.
+  const goalTextForGame = ((state.goal?.text || "") + " " + userText).toLowerCase();
+  const isMultiAgentGame = /rpg|游戏|multi.?agent|多\s?agent|多角色.*(游戏|引擎)|自定义.*游戏/i.test(goalTextForGame);
+  if (isMultiAgentGame && roleMode === "complex") {
+    if (!picks.some((p) => p.capabilityId === "evidence.search") && available.has("evidence.search")) {
+      picks.push({ capabilityId: "evidence.search", roleId: "接地" });
+    }
+    if (available.has("mcp.call") && !picks.some((p) => p.capabilityId === "mcp.call")) {
+      picks.push({ capabilityId: "mcp.call", roleId: "工程" });
+    }
+    if (available.has("skill.invoke") && !picks.some((p) => p.capabilityId === "skill.invoke")) {
+      picks.push({ capabilityId: "skill.invoke", roleId: "工程" });
+    }
+    // Also encourage structure for game design
+    if (available.has("structure.decompose") && !picks.some((p) => p.capabilityId === "structure.decompose")) {
+      picks.push({ capabilityId: "structure.decompose", roleId: "架构" });
     }
   }
 
