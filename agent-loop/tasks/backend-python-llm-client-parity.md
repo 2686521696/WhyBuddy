@@ -9,13 +9,13 @@
 
 - 最近执行：2026-06-17
 - 最近确认：2026-06-17
-- AgentLoop run id：`2026-06-17T11-42-36-043Z`
-- AgentLoop 本地时间：`2026-06-17 19:42:36 (Asia/Shanghai)`
-- AgentLoop 结果：`HALT_HUMAN`
-- AgentLoop 运行模式：`halt-human-after-grok-review`
+- AgentLoop run id：`2026-06-17T11-44-32-372Z`
+- AgentLoop 本地时间：`2026-06-17 19:44:32 (Asia/Shanghai)`
+- AgentLoop 结果：`DONE_REVIEWED`
+- AgentLoop 运行模式：`grok-review`
 - Grok 已运行：`true`
 - Codex 已运行：`false`
-- gate 结果：最近状态为 `HALT_HUMAN`
+- gate 结果：最终状态为 `DONE_REVIEWED`
 ### 状态清单
 
 - [x] `classify_llm_failure_kind()` 错误分类与 Node 口径对齐
