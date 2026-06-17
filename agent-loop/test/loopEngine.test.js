@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { runLoop } from '../src/loopEngine.js';
 
-test('runLoop drives Grok through multiple gate rounds until green, then runs Codex review', async () => {
+test('runLoop drives Grok through multiple gate rounds until green, then runs Grok review', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
   await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
@@ -57,13 +57,14 @@ test('runLoop drives Grok through multiple gate rounds until green, then runs Co
 
   assert.equal(result.status, 'DONE_REVIEWED');
   assert.equal(result.iterations.length, 2);
-  assert.equal(grokPrompts.length, 2);
-  assert.equal(processCalls.filter((call) => call.command === 'grok.exe').length, 2);
-  assert.equal(processCalls.filter((call) => call.command === 'codex.exe').length, 1);
+  assert.equal(grokPrompts.length, 3);
+  assert.equal(processCalls.filter((call) => call.command === 'grok.exe').length, 3);
+  assert.equal(processCalls.filter((call) => call.command === 'codex.exe').length, 0);
   assert.deepEqual(
     transitions.filter((status) => status === 'GROK_FIX'),
     ['GROK_FIX', 'GROK_FIX']
   );
+  assert.equal(transitions.at(-2), 'GROK_REVIEW');
 });
 
 test('runLoop audit-only succeeds without agents when review is skipped and auto-fix is disabled', async () => {

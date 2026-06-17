@@ -253,7 +253,7 @@ test('list-runs CLI prints filtered JSON summaries', async () => {
       status: 'DONE_FIXED',
       task: 'tasks/fixed.md',
       fixAgent: 'grok',
-      reviewAgent: 'codex',
+      reviewAgent: 'grok',
       runMode: 'grok-fix',
       grokRan: true,
       codexRan: false,

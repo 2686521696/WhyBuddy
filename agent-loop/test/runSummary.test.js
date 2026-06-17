@@ -30,20 +30,40 @@ test('classifyRunMode marks Grok fix runs with and without Codex review', () => 
       iterations: [{ iteration: 1 }],
       grokFix: { exitCode: 0, timedOut: false },
       codexReview: { exitCode: 0, timedOut: false },
+      reviewAgent: 'codex',
     }),
     'grok-fix+codex-review'
   );
+  assert.equal(
+    classifyRunMode({
+      status: 'DONE_REVIEWED',
+      iterations: [{ iteration: 1 }],
+      grokFix: { exitCode: 0, timedOut: false },
+      grokReview: { exitCode: 0, timedOut: false },
+    }),
+    'grok-fix+grok-review'
+  );
 });
 
-test('classifyRunMode marks baseline-green Codex review without Grok as codex-review', () => {
+test('classifyRunMode marks baseline-green review without Grok fix by review agent', () => {
   assert.equal(
     classifyRunMode({
       status: 'DONE_REVIEWED',
       iterations: [],
       grokFix: null,
       codexReview: { exitCode: 0, timedOut: false },
+      reviewAgent: 'codex',
     }),
     'codex-review'
+  );
+  assert.equal(
+    classifyRunMode({
+      status: 'DONE_REVIEWED',
+      iterations: [],
+      grokFix: null,
+      grokReview: { exitCode: 0, timedOut: false },
+    }),
+    'grok-review'
   );
 });
 
@@ -97,7 +117,7 @@ test('summarizeRunRecord exposes run mode and agent activity flags', () => {
     status: 'DONE_GATE_ONLY',
     task: 'tasks/baseline-index-audit.md',
     fixAgent: 'grok',
-    reviewAgent: 'codex',
+    reviewAgent: 'grok',
     runMode: 'gate-only',
     grokRan: false,
     codexRan: false,

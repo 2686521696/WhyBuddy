@@ -121,6 +121,7 @@ test('buildQueueSummaryFromState exposes grokRan codexRan and runMode', () => {
     state: {
       runId: '2026-06-17T03-29-42-364Z',
       status: 'DONE_REVIEWED',
+      options: { fixAgent: 'grok', reviewAgent: 'codex' },
       iterations: [{ iteration: 1, grokFix: { exitCode: 0 } }],
       grokFix: { exitCode: 0 },
       codexReview: { exitCode: 0 },
