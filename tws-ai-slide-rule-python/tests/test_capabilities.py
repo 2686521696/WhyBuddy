@@ -130,6 +130,60 @@ def test_synthesis_merge_returns_v5_shape_with_python_llm_provenance():
     assert "converge critique" in joined
 
 
+def test_rebuttal_resolve_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "rebuttal.resolve",
+        "state": {"goal": {"text": "design a pet office progression system"}},
+        "userText": "respond to critique without pretending the disagreement is gone",
+        "roleId": "综合",
+        "turnId": "t-rebuttal",
+    }
+    captured = {}
+
+    def fake_caller(messages, **kwargs):
+        captured["messages"] = messages
+        return _fake_result(
+            "## Response points\n- Desk upgrades can stay incremental without blocking onboarding depth\n"
+            "## Unresolved disagreements\n- unresolved disagreement on speed-first rollout\n"
+            "## Verification\n- Compare two onboarding paths in a one-week prototype"
+        )
+
+    out = execute_capability(body, caller=fake_caller)
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Rebuttal resolution"
+    assert out["summary"] == "Response points"
+    assert "unresolved disagreement" in out["content"]
+    joined = " ".join(m["content"] for m in captured["messages"])
+    assert "pet office progression system" in joined
+
+
+def test_counter_argue_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "counter.argue",
+        "state": {"goal": {"text": "design a pet office progression system"}},
+        "userText": "stress-test the roadmap with counterpoints",
+        "roleId": "挑刺",
+        "turnId": "t-counter",
+    }
+    captured = {}
+
+    def fake_caller(messages, **kwargs):
+        captured["messages"] = messages
+        return _fake_result(
+            "## Counterpoints\n- counterpoint evidence that desk upgrades may hide balance issues\n"
+            "## Evidence gaps\n- No player retention data for the proposed loop\n"
+            "## Rebuttal path\n- Run a short playtest before expanding the skill tree"
+        )
+
+    out = execute_capability(body, caller=fake_caller)
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Counter argument"
+    assert out["summary"] == "Counterpoints"
+    assert "counterpoint evidence" in out["content"]
+    joined = " ".join(m["content"] for m in captured["messages"])
+    assert "pet office progression system" in joined
+
+
 def test_question_expand_returns_v5_shape_with_python_llm_provenance():
     body = {
         "capabilityId": "question.expand",
@@ -155,8 +209,6 @@ def test_question_expand_returns_v5_shape_with_python_llm_provenance():
 
 
 PENDING_NATIVE_CAPABILITIES = (
-    "rebuttal.resolve",
-    "counter.argue",
     "report.write",
     "structure.decompose",
     "risk.analyze",
@@ -193,6 +245,8 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("question.expand") is True
     assert is_python_native_capability("critique.generate") is True
     assert is_python_native_capability("synthesis.merge") is True
+    assert is_python_native_capability("rebuttal.resolve") is True
+    assert is_python_native_capability("counter.argue") is True
     for cap in PENDING_NATIVE_CAPABILITIES:
         assert is_python_native_capability(cap) is False
         with pytest.raises(UnsupportedCapability):

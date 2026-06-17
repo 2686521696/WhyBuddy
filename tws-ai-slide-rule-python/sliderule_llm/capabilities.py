@@ -61,6 +61,20 @@ CAPABILITY_PROMPTS: dict[str, str] = {
         "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
         "Output markdown only: no JSON, no code fence, no preamble."
     ),
+    "rebuttal.resolve": (
+        "You are SlideRule V5's rebuttal-resolution role. Given the user's goal and message, write a "
+        "concise **markdown** rebuttal response with three short sections: (1) response points, "
+        "(2) unresolved disagreements, (3) suggested verification steps. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
+    "counter.argue": (
+        "You are SlideRule V5's counter-argument role. Given the user's goal and message, write a "
+        "concise **markdown** counter-argument with three short sections: (1) counterpoints, "
+        "(2) evidence gaps, (3) verifiable rebuttal path. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
 }
 
 CAPABILITY_TITLES: dict[str, str] = {
@@ -69,6 +83,8 @@ CAPABILITY_TITLES: dict[str, str] = {
     "question.expand": "Expanded questions",
     "critique.generate": "Structured critique",
     "synthesis.merge": "Synthesis merge",
+    "rebuttal.resolve": "Rebuttal resolution",
+    "counter.argue": "Counter argument",
 }
 
 

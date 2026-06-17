@@ -603,6 +603,8 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       capabilityId === 'question.expand' ||
       capabilityId === 'critique.generate' ||
       capabilityId === 'synthesis.merge' ||
+      capabilityId === 'rebuttal.resolve' ||
+      capabilityId === 'counter.argue' ||
       capabilityId === 'mcp.call' ||
       capabilityId === 'skill.invoke' ||
       capabilityId === 'evidence.search' ||

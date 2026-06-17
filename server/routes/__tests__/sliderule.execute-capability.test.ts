@@ -515,21 +515,103 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     );
   });
 
-  const pendingPythonNativeCaps = [
-    {
-      capabilityId: 'rebuttal.resolve',
-      roleId: '综合',
-      goal: 'Design a pet office progression system',
-      snippet: 'unresolved disagreement',
+  it('rebuttal.resolve delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
       title: 'Rebuttal resolution',
-    },
-    {
-      capabilityId: 'counter.argue',
-      roleId: '挑刺',
-      goal: 'Design a pet office progression system',
-      snippet: 'counterpoint evidence',
+      summary: 'Response points',
+      content: '## Response points\n- unresolved disagreement remains on rollout speed',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 43 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'rebuttal.resolve',
+        state: { sessionId: 't-rebuttal.resolve', goal: { text: 'Design a pet office progression system' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-rebuttal.resolve',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('unresolved disagreement');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'rebuttal.resolve',
+        roleId: '综合',
+        turnId: 't-rebuttal.resolve',
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('counter.argue delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
       title: 'Counter argument',
-    },
+      summary: 'Counterpoints',
+      content: '## Counterpoints\n- counterpoint evidence against the current roadmap',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 44 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'counter.argue',
+        state: { sessionId: 't-counter.argue', goal: { text: 'Design a pet office progression system' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '挑刺',
+        turnId: 't-counter.argue',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('counterpoint evidence');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'counter.argue',
+        roleId: '挑刺',
+        turnId: 't-counter.argue',
+      }),
+      expect.any(String),
+    );
+  });
+
+  const pendingPythonNativeCaps = [
     {
       capabilityId: 'report.write',
       roleId: '综合',
@@ -560,12 +642,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     },
   ] as const;
 
-  // Red until their own migrate-* task adds Node python delegation (isPythonV5Cap).
-  const pendingNodeDelegationCaps = new Set(['rebuttal.resolve', 'counter.argue']);
-
   for (const cap of pendingPythonNativeCaps) {
-    const run = pendingNodeDelegationCaps.has(cap.capabilityId) ? it.skip : it;
-    run(`${cap.capabilityId} delegates to Python V5 backend in python mode and skips Node LLM/pool`, async () => {
+    it(`${cap.capabilityId} delegates to Python V5 backend in python mode and skips Node LLM/pool`, async () => {
       vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
       vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
       vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
