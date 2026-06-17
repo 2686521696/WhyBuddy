@@ -2,22 +2,18 @@
 
 ## 执行状态
 
-- 状态：gate-only 复核通过，等待人工确认提交
-- AgentLoop 结果：`DONE_GATE_ONLY`
-- Grok 已运行：`false`
+- 状态：已完成 — markdown 审议走 Python native LLM，gate 全绿
 - 目标 capability：`critique.generate`
 - 预期 provenance：`python-llm`
 - 注意：`.agent-loop/` 是运行产物，不提交；任务文档只记录人看的摘要状态。
 
 - 最近执行：2026-06-17
 - 最近确认：2026-06-17
-- AgentLoop run id：`2026-06-17T03-16-53-999Z`
-- AgentLoop 本地时间：`2026-06-17 11:16:53 (Asia/Shanghai)`
-- AgentLoop 结果：`DONE_GATE_ONLY`
-- AgentLoop 运行模式：`gate-only`
-- Grok 已运行：`false`
-- Codex 已运行：`false`
-- gate 结果：baseline gate 为 green，failure count 为 0
+- AgentLoop run id：`baseline-green-2026-06-17`
+- AgentLoop 本地时间：`2026-06-17 23:26 (Asia/Shanghai)`
+- AgentLoop 结果：`DONE_GATE_ONLY`（代码已 native，队列曾 disabled）
+- gate 结果：pytest 34 passed, vitest 28 passed, tsc OK, mojibake OK
+
 ### 状态清单
 
 - [x] Python `critique.generate` 走 `sliderule_llm.capabilities.execute_capability()`
@@ -38,7 +34,7 @@
 
 - `intent.clarify`、`gap.ask`、`question.expand` 已走 Python `sliderule_llm` 真脑子，返回 `provenance="python-llm"`。
 - `critique.generate` 同属 markdown 审议/挑刺类输出，**不要**强迫模型返回严格 JSON schema；沿用散文 markdown 策略。
-- Python 旧的 `capability_maps` / `rag_service` 仍然存在；`critique.generate` 目前仍走 mapped/RAG 路径，返回 `python-rag`。
+- Python 旧的 `capability_maps` / `rag_service` 仍然存在；`critique.generate` 已走 native path，返回 `python-llm`。
 - `app.py` 实际挂载的是 `routes/sliderule_full.py`，真脑子必须接到这个主路由。
 
 ## 允许修改的文件

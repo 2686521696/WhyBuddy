@@ -25,7 +25,7 @@ const LIVE_FLAG = 'LIVE_NODE_TO_PYTHON_SLIDERULE';
 const PYTHON_BASE_URL = process.env.PYTHON_SLIDE_RULE_BASE_URL || 'http://localhost:9700';
 
 describe.runIf(process.env[LIVE_FLAG] === '1')('live Node->Python delegation (real router + real :9700)', () => {
-  it('report.write returns python-rag + sources via real Node delegation (no Node LLM/pool)', async () => {
+  it('report.write returns python-llm + V5 sections via real Node delegation (no Node LLM/pool)', async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
     vi.stubEnv('PYTHON_SLIDE_RULE_BASE_URL', PYTHON_BASE_URL);
     vi.stubEnv('PYTHON_SLIDE_RULE_INTERNAL_KEY', 'dev-slide-rule-internal');
@@ -65,9 +65,9 @@ describe.runIf(process.env[LIVE_FLAG] === '1')('live Node->Python delegation (re
       expect(res.status).toBe(200);
       const body = await res.json();
 
-      expect(body.provenance).toMatch(/^python-/);
-      expect(Array.isArray(body.sources) && body.sources.length > 0).toBe(true);
+      expect(body.provenance).toBe('python-llm');
       expect((body.content || '').length).toBeGreaterThan(80);
+      expect(String(body.content || '')).toMatch(/结论|支撑证据|风险|收敛决策/);
       expect(String(body.content || '')).not.toMatch(/Capability .* completed with RAG evidence/i);
 
       // Real delegation path taken; Node-side LLM/pool never called
@@ -76,7 +76,7 @@ describe.runIf(process.env[LIVE_FLAG] === '1')('live Node->Python delegation (re
     } finally {
       liveSrv.close();
     }
-  });
+  }, 60000);
 
   it('structure.decompose also works end-to-end through Node delegation', async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');

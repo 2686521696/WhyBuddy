@@ -2,17 +2,26 @@
 
 ## 执行状态
 
-- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复
+- 状态：已完成 — JSON 结构化报告走 Python native LLM，gate 全绿
 - 目标 capability：`report.write`
 - 预期 provenance：`python-llm`
 - 前置：`backend-python-llm-json-hardening.md` 应先完成
 
+- 最近执行：2026-06-17
+- 最近确认：2026-06-17
+- AgentLoop run id：`manual-2026-06-17`
+- AgentLoop 本地时间：`2026-06-17 23:26 (Asia/Shanghai)`
+- AgentLoop 结果：`DONE_GATE_ONLY`（手动迁移，Grok HALT_NO_CHANGES）
+- AgentLoop 运行模式：`manual`
+- Grok 已运行：`false`
+- Codex 已运行：`true`
+- gate 结果：pytest 34 passed, vitest 28 passed, tsc OK, mojibake OK
 ### 状态清单
 
-- [ ] Python `report.write` 走 native 真 LLM（非 mapped RAG 罐头）
-- [ ] 输出满足 V5 报告契约（title/summary/content，可 markdown 九段精神）
-- [ ] Node 委托不变，provenance 升为 `python-llm`
-- [ ] gate 全绿
+- [x] Python `report.write` 走 native 真 LLM（非 mapped RAG 罐头）
+- [x] 输出满足 V5 报告契约（title/summary/content，可 markdown 九段精神）
+- [x] Node 委托不变，provenance 升为 `python-llm`
+- [x] gate 全绿
 
 ## 目标
 

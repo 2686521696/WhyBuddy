@@ -130,3 +130,69 @@ def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
         assert "Desk assignment" in data.get("content", "")
         assert "RBAC" not in data.get("content", "")
         assert "data scoping" not in data.get("content", "").lower()
+
+
+def test_python_native_report_write_uses_real_llm_json_not_rag_stub(monkeypatch):
+    from sliderule_llm.client import LlmResult
+
+    def fake_call_llm_json_with_shape(messages, **kwargs):
+        joined = "\n".join(m["content"] for m in messages)
+        assert "pet office" in joined
+        content = (
+            "结论：evidence-backed conclusion\n"
+            "支撑证据：desk assignment rules from playtests\n"
+            "反证/挑战：speed-first concerns\n"
+            "风险：retention grind risk\n"
+            "分歧：onboarding depth unresolved\n"
+            "收敛决策：prototype desk loop first\n"
+            "未解缺口：retention benchmark missing\n"
+            "下一步工程化分支：ship MVP desk loop\n"
+            "provenance / upstream refs：contract-native-report"
+        )
+        return (
+            {
+                "title": "Feasibility report",
+                "summary": "evidence-backed conclusion",
+                "content": content,
+            },
+            LlmResult(
+                content='{"title":"Feasibility report","summary":"evidence-backed conclusion","content":"..."}',
+                usage={"total_tokens": 80},
+                finish_reason="stop",
+                model="fake-native-report",
+                latency_ms=2,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "sliderule_llm.capabilities.call_llm_json_with_shape",
+        fake_call_llm_json_with_shape,
+    )
+
+    state = {
+        "sessionId": "native-report-001",
+        "goal": {"text": "design a pet office feasibility report"},
+        "artifacts": [],
+        "capabilityRuns": [],
+        "coverageGaps": [],
+        "coverageContract": None,
+    }
+    response = client.post(
+        "/api/sliderule/execute-capability",
+        json={
+            "capabilityId": "report.write",
+            "state": state,
+            "inputArtifactIds": [],
+            "roleId": "综合",
+            "turnId": "native-report-write",
+            "userText": "write the final feasibility report",
+        },
+        headers={"X-Internal-Key": INTERNAL_KEY},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data.get("provenance") == "python-llm"
+    assert data.get("model") == "fake-native-report"
+    assert "evidence-backed conclusion" in data.get("content", "")
+    assert "支撑证据" in data.get("content", "")
+    assert "RBAC" not in data.get("content", "")

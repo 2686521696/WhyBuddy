@@ -39,7 +39,40 @@ def test_sessions_crud():
     assert r.status_code == 200
     assert "state" in r.json() or "goal" in r.json()
 
-def test_orchestrate_and_execute_report_with_real_rag():
+def test_orchestrate_and_execute_report_with_native_llm(monkeypatch):
+    from sliderule_llm.client import LlmResult
+
+    def fake_call_llm_json_with_shape(messages, **kwargs):
+        content = (
+            "结论：pet office feasibility conclusion grounded in goal\n"
+            "支撑证据：desk-upgrade experiments support pacing\n"
+            "反证/挑战：speed-first rollout risks balance issues\n"
+            "风险：retention grind if upgrades feel cosmetic\n"
+            "分歧：onboarding depth still unresolved\n"
+            "收敛决策：prototype one desk-upgrade loop first\n"
+            "未解缺口：retention benchmark missing\n"
+            "下一步工程化分支：ship MVP desk loop and measure retention\n"
+            "provenance / upstream refs：smoke-native-llm"
+        )
+        return (
+            {
+                "title": "Feasibility report",
+                "summary": "Pet office feasibility summary",
+                "content": content,
+            },
+            LlmResult(
+                content="{}",
+                usage={"total_tokens": 90},
+                finish_reason="stop",
+                model="fake-smoke-report",
+                latency_ms=1,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "sliderule_llm.capabilities.call_llm_json_with_shape",
+        fake_call_llm_json_with_shape,
+    )
     state = {
         "sessionId": "smoke-002",
         "goal": {"text": "分析权限系统的风险并给出最终报告"},
@@ -59,7 +92,7 @@ def test_orchestrate_and_execute_report_with_real_rag():
     # With RAG, should prefer evidence/tool/report for this goal
     assert any(c in selected for c in ["evidence.search", "mcp.call", "skill.invoke", "report.write", "risk.analyze"])
 
-    # Execute report.write — should get structured content + sources from RAG (not tiny template)
+    # Execute report.write — native JSON LLM path (not RAG canned stub)
     exec_payload = {
         "capabilityId": "report.write",
         "state": plan.get("state", state),
@@ -74,8 +107,9 @@ def test_orchestrate_and_execute_report_with_real_rag():
     )
     assert exec_resp.status_code == 200
     data = exec_resp.json()
-    assert data.get("provenance", "").startswith("python-rag") or "RAG" in str(data.get("provenance", ""))
+    assert data.get("provenance") == "python-llm"
     content = data.get("content", "")
-    assert len(content) > 150  # real structured report, not stub
-    assert "支撑证据" in content or "风险" in content or "证据" in content.lower()
-    assert len(data.get("sources", [])) > 0 or "source" in content.lower()  # real external evidence
+    assert len(content) > 150
+    assert "支撑证据" in content
+    assert "收敛决策" in content
+    assert "provenance" in content.lower()

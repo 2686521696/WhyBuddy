@@ -10,15 +10,15 @@ Dialogue-family caps emit MARKDOWN prose (not a strict JSON schema): reasoning m
 gemini) reliably write grounded markdown but routinely ignore an exact JSON shape, so we package the
 prose into the V5 fields ourselves rather than depending on the model obeying a schema.
 
-Only capabilities listed in CAPABILITY_PROMPTS are "really migrated"; anything else raises
-UnsupportedCapability so the caller can fall back (we migrate one slice at a time).
+Markdown dialogue caps use CAPABILITY_PROMPTS; structured caps (e.g. report.write) use JSON via
+call_llm_json_with_shape. Anything else raises UnsupportedCapability so the caller can fall back.
 """
 from __future__ import annotations
 
 import re
 from typing import Any, Callable
 
-from .client import LlmError, LlmResult, call_llm_with_retry
+from .client import LlmError, LlmResult, call_llm_json_with_shape, call_llm_with_retry
 
 
 class UnsupportedCapability(Exception):
@@ -110,11 +110,39 @@ CAPABILITY_TITLES: dict[str, str] = {
     "structure.decompose": "Structure decomposition",
     "risk.analyze": "Risk analysis",
     "evidence.search": "Evidence search",
+    "report.write": "Feasibility report",
 }
+
+STRUCTURED_JSON_CAPABILITIES: frozenset[str] = frozenset({"report.write"})
+
+REPORT_WRITE_REQUIRED_KEYS = ("title", "summary", "content")
+REPORT_WRITE_MAX_TOKENS = 4000
+REPORT_WRITE_SECTION_MARKERS = (
+    "结论",
+    "支撑证据",
+    "反证",
+    "风险",
+    "分歧",
+    "收敛决策",
+    "未解缺口",
+    "下一步工程化",
+    "provenance",
+)
+
+REPORT_WRITE_SYSTEM_PROMPT = (
+    "You are SlideRule V5's feasibility-report writer. Return ONLY a JSON object with exactly these keys: "
+    "title (string), summary (string), content (string). "
+    "The content string must include these nine labeled sections in order: "
+    "结论, 支撑证据, 反证/挑战, 风险, 分歧, 收敛决策, 未解缺口, 下一步工程化分支, "
+    "provenance / upstream refs. "
+    "Stay strictly grounded in the user's actual goal — do not invent an unrelated domain "
+    "(no generic RBAC/data-scoping boilerplate unless the goal is about permissions). "
+    "No markdown code fences, no preamble outside the JSON object."
+)
 
 
 def is_python_native_capability(capability_id: str) -> bool:
-    return capability_id in CAPABILITY_PROMPTS
+    return capability_id in CAPABILITY_PROMPTS or capability_id in STRUCTURED_JSON_CAPABILITIES
 
 
 def build_messages(capability_id: str, body: dict[str, Any]) -> list[dict[str, str]]:
@@ -177,17 +205,78 @@ def _evidence_sources_from_content(content: str) -> list[dict[str, str]]:
     return sources
 
 
+def _goal_and_user(body: dict[str, Any]) -> tuple[str, str]:
+    state = body.get("state") or {}
+    goal = ((state.get("goal") or {}).get("text") or "").strip()
+    user_text = (body.get("userText") or "").strip()
+    return goal, user_text
+
+
+def build_report_write_messages(body: dict[str, Any]) -> list[dict[str, str]]:
+    goal, user_text = _goal_and_user(body)
+    user = (
+        f"GOAL: {goal or '(none stated)'}\n"
+        f"USER_MESSAGE: {user_text or '(none)'}\n"
+        f"ROLE: {body.get('roleId', 'agent')}  TURN: {body.get('turnId', '')}\n\n"
+        "Write the JSON report object now."
+    )
+    return [
+        {"role": "system", "content": REPORT_WRITE_SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+
+def _report_content_has_required_sections(content: str) -> bool:
+    hits = sum(1 for marker in REPORT_WRITE_SECTION_MARKERS if marker in content)
+    return hits >= 5
+
+
+def _execute_report_write(
+    body: dict[str, Any],
+    *,
+    json_caller: Callable[..., tuple[dict[str, Any], LlmResult]] | None = None,
+    max_tokens: int = REPORT_WRITE_MAX_TOKENS,
+) -> dict[str, Any]:
+    messages = build_report_write_messages(body)
+    caller = json_caller or call_llm_json_with_shape
+    parsed, result = caller(
+        messages,
+        required_keys=REPORT_WRITE_REQUIRED_KEYS,
+        max_shape_retries=1,
+        max_tokens=max_tokens,
+    )
+    title = _clean(str(parsed.get("title") or ""))
+    summary = _clean(str(parsed.get("summary") or ""))
+    content = _clean(str(parsed.get("content") or ""))
+    if not title or not summary or not content:
+        raise LlmError("python backend produced empty report.write fields", transient=False)
+    if not _report_content_has_required_sections(content):
+        raise LlmError("report.write content missing required V5 sections", transient=False)
+    return {
+        "title": title,
+        "summary": summary,
+        "content": content,
+        "provenance": "python-llm",
+        "model": result.model,
+        "usage": result.usage,
+    }
+
+
 def execute_capability(
     body: dict[str, Any],
     *,
     caller: Callable[..., LlmResult] | None = None,
+    json_caller: Callable[..., tuple[dict[str, Any], LlmResult]] | None = None,
     max_tokens: int = 2000,
 ) -> dict[str, Any]:
     """Run one capability via a REAL LLM call. Raises UnsupportedCapability / LlmError on failure
-    (caller decides fallback). `caller` is injectable for deterministic unit tests."""
+    (caller decides fallback). `caller` / `json_caller` are injectable for deterministic unit tests."""
     capability_id = body.get("capabilityId")
     if not is_python_native_capability(capability_id):
         raise UnsupportedCapability(str(capability_id))
+
+    if capability_id == "report.write":
+        return _execute_report_write(body, json_caller=json_caller, max_tokens=max_tokens or REPORT_WRITE_MAX_TOKENS)
 
     messages = build_messages(capability_id, body)
     llm_caller = caller or call_llm_with_retry

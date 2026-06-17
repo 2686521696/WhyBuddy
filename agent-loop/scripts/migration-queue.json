@@ -94,7 +94,7 @@
     {
       "id": "sliderule-critique-generate",
       "task": "agent-loop/tasks/migrate-sliderule-critique-generate.md",
-      "enabled": false
+      "enabled": true
     }
   ]
 }

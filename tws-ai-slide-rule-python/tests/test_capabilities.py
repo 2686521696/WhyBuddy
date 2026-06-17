@@ -279,9 +279,53 @@ def test_evidence_search_returns_sources_with_python_llm_provenance():
     assert out["sources"][0]["provenance"] == "python-llm"
 
 
-PENDING_NATIVE_CAPABILITIES = (
-    "report.write",
-)
+def _fake_report_json(messages, **kwargs):
+    content = (
+        "结论：evidence-backed conclusion for the pet office roadmap\n"
+        "支撑证据：desk-upgrade playtests show pacing works\n"
+        "反证/挑战：speed-first rollout may hide balance issues\n"
+        "风险：players grind without meaningful choices\n"
+        "分歧：depth-first onboarding still debated\n"
+        "收敛决策：prototype one desk-upgrade loop before expanding\n"
+        "未解缺口：no retention benchmark yet\n"
+        "下一步工程化分支：ship MVP desk loop and measure retention\n"
+        "provenance / upstream refs：native-llm-report-write"
+    )
+    return (
+        {
+            "title": "Feasibility report",
+            "summary": "evidence-backed conclusion",
+            "content": content,
+        },
+        LlmResult(
+            content=content,
+            usage={"total_tokens": 80},
+            finish_reason="stop",
+            model="fake-report-json",
+            latency_ms=12,
+        ),
+    )
+
+
+def test_report_write_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "report.write",
+        "state": {"goal": {"text": "design a pet office feasibility report"}},
+        "userText": "write the final feasibility report",
+        "roleId": "综合",
+        "turnId": "t-report",
+    }
+
+    out = execute_capability(body, json_caller=_fake_report_json)
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Feasibility report"
+    assert "evidence-backed conclusion" in out["content"]
+    assert "支撑证据" in out["content"]
+    assert "收敛决策" in out["content"]
+    assert "RBAC" not in out["content"]
+
+
+PENDING_NATIVE_CAPABILITIES: tuple[str, ...] = ()
 
 
 @pytest.mark.parametrize("capability_id", PENDING_NATIVE_CAPABILITIES)
@@ -318,6 +362,7 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("structure.decompose") is True
     assert is_python_native_capability("risk.analyze") is True
     assert is_python_native_capability("evidence.search") is True
+    assert is_python_native_capability("report.write") is True
     for cap in PENDING_NATIVE_CAPABILITIES:
         assert is_python_native_capability(cap) is False
         with pytest.raises(UnsupportedCapability):

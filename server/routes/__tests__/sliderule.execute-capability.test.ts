@@ -726,66 +726,66 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     expect(poolSpy).not.toHaveBeenCalled();
   });
 
-  const pendingPythonNativeCaps = [
-    {
-      capabilityId: 'report.write',
-      roleId: '综合',
-      goal: 'Design a pet office feasibility report',
-      snippet: 'evidence-backed conclusion',
+  it('report.write delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    const reportContent = [
+      '结论：evidence-backed conclusion',
+      '支撑证据：desk-upgrade playtests',
+      '反证/挑战：speed-first concerns',
+      '风险：retention grind',
+      '分歧：onboarding depth',
+      '收敛决策：prototype desk loop',
+      '未解缺口：retention benchmark',
+      '下一步工程化分支：ship MVP desk loop',
+      'provenance / upstream refs：native-llm',
+    ].join('\n');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
       title: 'Feasibility report',
-    },
-  ] as const;
-
-  for (const cap of pendingPythonNativeCaps) {
-    it(`${cap.capabilityId} delegates to Python V5 backend in python mode and skips Node LLM/pool`, async () => {
-      vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
-      vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
-      vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
-      vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
-      poolJsonLlm.resetSlideRuleCapabilityPoolCache();
-
-      const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
-      const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
-      pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
-        title: cap.title,
-        summary: cap.title,
-        content: `## ${cap.title}\n- ${cap.snippet}`,
-        provenance: 'python-llm',
-        model: 'fake-python-model',
-        usage: { total_tokens: 40 },
-      });
-
-      const res = await fetch(`${base}/execute-capability`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          capabilityId: cap.capabilityId,
-          state: { sessionId: `t-${cap.capabilityId}`, goal: { text: cap.goal }, artifacts: [] },
-          inputArtifactIds: ['goal-1'],
-          roleId: cap.roleId,
-          turnId: `t-${cap.capabilityId}`,
-        }),
-      });
-
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.provenance).toBe('python-llm');
-      expect(body.content).toContain(cap.snippet);
-      expect(primarySpy).not.toHaveBeenCalled();
-      expect(poolSpy).not.toHaveBeenCalled();
-      expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
-        expect.stringContaining('localhost:9700'),
-        '/api/sliderule/execute-capability',
-        expect.objectContaining({
-          capabilityId: cap.capabilityId,
-          roleId: cap.roleId,
-          turnId: `t-${cap.capabilityId}`,
-          userText: cap.goal,
-        }),
-        expect.any(String),
-      );
+      summary: 'evidence-backed conclusion',
+      content: reportContent,
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 48 },
     });
-  }
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'report.write',
+        state: { sessionId: 't-report.write', goal: { text: 'Design a pet office feasibility report' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-report.write',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('evidence-backed conclusion');
+    expect(body.content).toMatch(/结论|支撑证据|反证|风险|分歧|收敛决策|未解缺口|下一步工程化|provenance/);
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'report.write',
+        roleId: '综合',
+        turnId: 't-report.write',
+        userText: 'Design a pet office feasibility report',
+      }),
+      expect.any(String),
+    );
+  });
 
   it('question.expand delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
