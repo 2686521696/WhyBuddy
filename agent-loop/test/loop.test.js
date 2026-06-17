@@ -8,7 +8,13 @@ import { evaluateGate } from '../src/gates.js';
 import { decideNextState } from '../src/stateMachine.js';
 import { hasDiffChanged } from '../src/diff.js';
 import { buildGrokFixPrompt } from '../src/grokPrompt.js';
-import { getWorktreePath, resetWorktreeWorkingTree, seedWorktreeFromRepo } from '../src/worktree.js';
+import {
+  alignWorktreeToRepoHead,
+  ensureWorktree,
+  getWorktreePath,
+  resetWorktreeWorkingTree,
+  seedWorktreeFromRepo,
+} from '../src/worktree.js';
 
 test('parseLoopArgs requires cwd, task, and at least one gate', () => {
   assert.deepEqual(
@@ -414,6 +420,91 @@ test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async 
   assert.equal(applyCount, 2);
   assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'utf8'), 'repo-version\n');
   await assert.doesNotReject(async () => resetWorktreeWorkingTree({ worktreePath, run, timeoutMs: 1000 }));
+});
+
+test('alignWorktreeToRepoHead resets worktree to repo HEAD before seeding', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-align-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'align-test');
+  await fs.mkdir(worktreePath, { recursive: true });
+
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, cwd: options.cwd });
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === repoRoot) {
+      return { exitCode: 0, stdout: 'abc123repo\n', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  const repoHead = await alignWorktreeToRepoHead({ repoRoot, worktreePath, run, timeoutMs: 1000 });
+  assert.equal(repoHead, 'abc123repo');
+  assert.deepEqual(
+    calls.filter((call) => call.command === 'git' && call.args[0] === 'reset'),
+    [{ command: 'git', args: ['reset', '--hard', 'abc123repo'], cwd: worktreePath }],
+  );
+});
+
+test('ensureWorktree reuses existing directory and aligns to repo HEAD', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-reuse-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'reuse-test');
+  await fs.mkdir(worktreePath, { recursive: true });
+
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, cwd: options.cwd });
+    if (command === 'git' && args[0] === 'check-ignore') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === repoRoot) {
+      return { exitCode: 0, stdout: 'repo-head\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'ls-files') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  const result = await ensureWorktree({ repoRoot, name: 'reuse-test', run, timeoutMs: 1000 });
+  assert.equal(result.created, false);
+  assert.equal(result.path, worktreePath);
+  assert.ok(!calls.some((call) => call.command === 'git' && call.args[0] === 'worktree'));
+  assert.ok(calls.some((call) => call.command === 'git' && call.args.join(' ') === 'reset --hard repo-head'));
+});
+
+test('ensureWorktree propagates seed failures instead of retrying git worktree add', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-seed-fail-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'seed-fail-test');
+  await fs.mkdir(worktreePath, { recursive: true });
+
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, cwd: options.cwd });
+    if (command === 'git' && args[0] === 'check-ignore') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === repoRoot) {
+      return { exitCode: 0, stdout: 'repo-head\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === worktreePath) {
+      return { exitCode: 0, stdout: 'stale-head\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
+      return { exitCode: 0, stdout: 'diff --git a/a.txt b/a.txt\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'apply') {
+      return { exitCode: 1, stdout: '', stderr: 'patch does not apply' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  await assert.rejects(
+    () => ensureWorktree({ repoRoot, name: 'seed-fail-test', run, timeoutMs: 1000 }),
+    /seed worktree from diff HEAD --binary failed .*patch does not apply/,
+  );
+  assert.ok(!calls.some((call) => call.command === 'git' && call.args[0] === 'worktree'));
 });
 
 test('getWorktreePath creates project-local hidden worktree paths', () => {

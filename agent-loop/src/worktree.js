@@ -18,15 +18,30 @@ export async function ensureWorktree({
   const worktreePath = getWorktreePath({ repoRoot, name });
   await ensureWorktreesIgnored({ repoRoot, run, timeoutMs });
 
+  let stat = null;
   try {
-    const stat = await fs.stat(worktreePath);
-    if (stat.isDirectory()) {
-      const existing = { path: worktreePath, created: false };
-      await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs, resetBeforeSeed: true });
-      return existing;
+    stat = await fs.stat(worktreePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
     }
-  } catch {
-    // create below
+  }
+
+  if (stat?.isDirectory()) {
+    const existing = { path: worktreePath, created: false };
+    await seedWorktreeFromRepo({
+      repoRoot,
+      worktreePath,
+      run,
+      timeoutMs,
+      resetBeforeSeed: true,
+      alignToRepoHead: true,
+    });
+    return existing;
+  }
+
+  if (stat) {
+    throw new Error(`worktree path exists but is not a directory: ${worktreePath}`);
   }
 
   await fs.mkdir(path.dirname(worktreePath), { recursive: true });
@@ -47,8 +62,9 @@ export async function resetWorktreeWorkingTree({
   worktreePath,
   run = runProcess,
   timeoutMs = 120000,
+  resetRef = 'HEAD',
 }) {
-  const hard = await run('git', ['reset', '--hard', 'HEAD'], { cwd: worktreePath, timeoutMs });
+  const hard = await run('git', ['reset', '--hard', resetRef], { cwd: worktreePath, timeoutMs });
   if (hard.exitCode !== 0 || hard.timedOut || hard.spawnError) {
     throw new Error(`worktree reset --hard failed: ${hard.stderr || hard.spawnError || hard.exitCode}`);
   }
@@ -59,15 +75,43 @@ export async function resetWorktreeWorkingTree({
   }
 }
 
+export async function resolveRepoHead({
+  repoRoot,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const result = await run('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, timeoutMs });
+  if (result.exitCode !== 0 || result.timedOut || result.spawnError || !result.stdout?.trim()) {
+    throw new Error(`resolve repo HEAD failed: ${result.stderr || result.spawnError || result.exitCode}`);
+  }
+  return result.stdout.trim();
+}
+
+export async function alignWorktreeToRepoHead({
+  repoRoot,
+  worktreePath,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const repoHead = await resolveRepoHead({ repoRoot, run, timeoutMs });
+  await resetWorktreeWorkingTree({ worktreePath, run, timeoutMs, resetRef: repoHead });
+  return repoHead;
+}
+
 export async function seedWorktreeFromRepo({
   repoRoot,
   worktreePath,
   run = runProcess,
   timeoutMs = 120000,
   resetBeforeSeed = false,
+  alignToRepoHead = false,
 }) {
   if (resetBeforeSeed) {
-    await resetWorktreeWorkingTree({ worktreePath, run, timeoutMs });
+    if (alignToRepoHead) {
+      await alignWorktreeToRepoHead({ repoRoot, worktreePath, run, timeoutMs });
+    } else {
+      await resetWorktreeWorkingTree({ worktreePath, run, timeoutMs });
+    }
   }
 
   await applyRepoDiff({
@@ -89,7 +133,15 @@ async function applyRepoDiff({ repoRoot, worktreePath, run, timeoutMs, diffArgs 
     input: diff.stdout,
   });
   if (applied.exitCode !== 0 || applied.timedOut || applied.spawnError) {
-    throw new Error(`seed worktree from ${diffArgs.join(' ')} failed: ${applied.stderr || applied.spawnError || applied.exitCode}`);
+    const repoHead = await resolveRepoHead({ repoRoot, run, timeoutMs }).catch(() => 'unknown');
+    const worktreeHead = await run('git', ['rev-parse', 'HEAD'], { cwd: worktreePath, timeoutMs })
+      .then((result) => (result.exitCode === 0 ? result.stdout.trim() : 'unknown'))
+      .catch(() => 'unknown');
+    throw new Error(
+      `seed worktree from ${diffArgs.join(' ')} failed `
+      + `(repo=${repoRoot}@${repoHead}, worktree=${worktreePath}@${worktreeHead}): `
+      + `${applied.stderr || applied.spawnError || applied.exitCode}`,
+    );
   }
 }
 
