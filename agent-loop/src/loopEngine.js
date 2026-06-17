@@ -9,7 +9,8 @@ import {
   reviewStatusForAgent,
   useScopedReview,
 } from './agentRoles.js';
-import { buildAgentFixPrompt, buildAgentReviewPrompt } from './grokPrompt.js';
+import { buildAgentChecklistFixPrompt, buildAgentFixPrompt, buildAgentReviewPrompt } from './grokPrompt.js';
+import { parseTaskChecklist, shouldRunDevFix } from './taskChecklist.js';
 import { ensureWorktree as defaultEnsureWorktree } from './worktree.js';
 import { resolveAgents as defaultResolveAgents } from './resolveAgents.js';
 import { runProcess as defaultRunProcess } from './runProcess.js';
@@ -120,7 +121,14 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     throw new Error('resume state is missing baselineGateSnapshot');
   }
 
-  if (!resumeState && baselineGate.ok) {
+  const taskChecklist = parseTaskChecklist(taskText);
+  const baselineDevFix = shouldRunDevFix({
+    baselineGateOk: baselineGate.ok,
+    checklist: taskChecklist,
+    autoFix: options.autoFix,
+  });
+
+  if (!resumeState && baselineGate.ok && !baselineDevFix) {
     if (options.skipReview) {
       await transition('DONE_GATE_ONLY');
       return snapshotState(state);
@@ -167,11 +175,19 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   for (let iteration = startIteration; iteration <= maxIterations; iteration++) {
     await transition('BUDGET_LOOP_HEAD', { currentIteration: iteration });
 
-    const prompt = buildAgentFixPrompt({
-      taskText,
-      gate: currentGate,
-      workerAgent: fixAgent,
-    });
+    const checklist = parseTaskChecklist(taskText);
+    const useChecklistPrompt = checklist.hasPending && currentGate.ok;
+    const prompt = useChecklistPrompt
+      ? buildAgentChecklistFixPrompt({
+        taskText,
+        pendingItems: checklist.pending,
+        workerAgent: fixAgent,
+      })
+      : buildAgentFixPrompt({
+        taskText,
+        gate: currentGate,
+        workerAgent: fixAgent,
+      });
     const requestFile = fixRequestArtifact(fixAgent, iteration);
     await writeArtifact(requestFile, prompt, 'text');
     if (fixAgent === 'grok') {

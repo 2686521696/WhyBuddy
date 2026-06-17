@@ -2,29 +2,29 @@
 
 ## 执行状态
 
-- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复
+- 状态：已实现 — client parity 代码与单测已补齐，待 AgentLoop 审查闭环
 - 目标：让 Python `sliderule_llm.client` 从「能调用」升级到「可承压的后端底座切片」
 - 前置：`backend-python-llm-config-parity.md` 已完成
 - 注意：本任务不发 live LLM；用 mock HTTP / 纯单测锁住行为。
 
 - 最近执行：2026-06-17
 - 最近确认：2026-06-17
-- AgentLoop run id：`2026-06-17T06-18-55-042Z`
-- AgentLoop 本地时间：`2026-06-17 14:18:55 (Asia/Shanghai)`
+- AgentLoop run id：`2026-06-17T09-32-31-200Z`
+- AgentLoop 本地时间：`2026-06-17 17:32:31 (Asia/Shanghai)`
 - AgentLoop 结果：`HALT_HUMAN`
-- AgentLoop 运行模式：`halt-human-after-review`
-- Grok 已运行：`false`
-- Codex 已运行：`true`
+- AgentLoop 运行模式：`halt-human-after-grok-review`
+- Grok 已运行：`true`
+- Codex 已运行：`false`
 - gate 结果：最近状态为 `HALT_HUMAN`
 ### 状态清单
 
-- [ ] `classify_llm_failure_kind()` 错误分类与 Node 口径对齐
-- [ ] transient 错误支持 retry/backoff
-- [ ] usage 字段标准化（`total_tokens` / `prompt_tokens` / `completion_tokens`）
-- [ ] finish reason / empty content 处理
-- [ ] 读取 `get_fallback_llm_config()` 并接入 provider fallback 链（mock 级）
-- [ ] `tests/test_client_parity.py` 绿灯
-- [ ] 现有 `test_config.py` / `test_capabilities.py` 无回归
+- [x] `classify_llm_failure_kind()` 错误分类与 Node 口径对齐
+- [x] transient 错误支持 retry/backoff
+- [x] usage 字段标准化（`total_tokens` / `prompt_tokens` / `completion_tokens`）
+- [x] finish reason / empty content 处理
+- [x] 读取 `get_fallback_llm_config()` 并接入 provider fallback 链（mock 级）
+- [x] `tests/test_client_parity.py` 绿灯
+- [x] 现有 `test_config.py` / `test_capabilities.py` 无回归
 
 ## 目标
 

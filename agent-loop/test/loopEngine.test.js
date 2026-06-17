@@ -900,6 +900,74 @@ test('runLoop can use grok for scoped review after a green baseline gate', async
   assert.equal(result.codexReview, null);
 });
 
+test('runLoop enters grok fix when baseline gate is green but checklist has pending items', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, [
+    '# Dev task',
+    '',
+    '### 状态清单',
+    '',
+    '- [ ] provider fallback chain',
+    '',
+    '## 允许修改的文件',
+    '',
+    '- `src/client.py`',
+    '',
+  ].join('\n'), 'utf8');
+
+  const gateResults = [
+    gate(true, 0, ''),
+    gate(true, 0, ''),
+  ];
+  const diffs = [
+    '',
+    'diff --git a/src/client.py b/src/client.py\n+fallback\n',
+  ];
+  const transitions = [];
+  const grokPrompts = [];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: true,
+      timeoutMs: 1000,
+      maxIterations: 2,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gateResults.shift() ?? gate(true, 0, ''),
+      captureDiff: async () => ({ text: diffs.shift() ?? diffs.at(-1) }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe' && args.includes('--prompt-file')) {
+          const promptArgIndex = args.indexOf('--prompt-file');
+          const promptFile = args[promptArgIndex + 1];
+          const prompt = await fs.readFile(promptFile, 'utf8');
+          grokPrompts.push(prompt);
+          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async (state) => transitions.push(state.status),
+    },
+  });
+
+  assert.equal(result.status, 'DONE_FIXED');
+  assert.equal(result.iterations.length, 1);
+  assert.equal(transitions.includes('GROK_FIX'), true);
+  assert.equal(transitions.includes('GROK_REVIEW'), false);
+  assert.match(grokPrompts[0], /开发请求/);
+  assert.match(grokPrompts[0], /provider fallback chain/);
+});
+
 function artifactWriter(cwd) {
   return async (fileName, content, kind) => {
     await fs.writeFile(

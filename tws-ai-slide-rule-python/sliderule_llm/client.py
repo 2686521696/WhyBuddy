@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
-from .config import LlmConfig, get_llm_config
+from .config import FallbackLlmConfig, LlmConfig, get_fallback_llm_config, get_llm_config
 
 Message = dict[str, str]
 
@@ -40,15 +41,82 @@ def _headers(api_key: str) -> dict[str, str]:
     return {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
 
 
+def _provider_name(base_url: str) -> str:
+    parsed = urlparse(base_url or "")
+    return parsed.netloc or base_url
+
+
+def _fallback_to_llm_config(fallback: FallbackLlmConfig) -> LlmConfig:
+    return LlmConfig(
+        api_key=fallback.api_key,
+        base_url=fallback.base_url,
+        model=fallback.model,
+        router_model=None,
+        wire_api=fallback.wire_api,
+        reasoning_effort=fallback.reasoning_effort,
+        timeout_ms=fallback.timeout_ms,
+        stream=fallback.stream,
+        unlimited_models=(),
+        model_fallbacks=(),
+        max_context=1_000_000,
+        max_concurrent=9999,
+        provider_name=_provider_name(fallback.base_url),
+        chat_thinking_type=fallback.chat_thinking_type,
+    )
+
+
+def build_provider_configs(explicit: LlmConfig | None = None) -> list[tuple[str, LlmConfig]]:
+    """Port of llm-client buildProviders: primary, model fallbacks, then env fallback provider."""
+    if explicit is not None:
+        return [("explicit", explicit)]
+
+    primary = get_llm_config()
+    chain: list[tuple[str, LlmConfig]] = []
+    if primary.api_key and primary.base_url:
+        chain.append(("primary", primary))
+        for model in primary.model_fallbacks:
+            chain.append((f"primary:{model}", replace(primary, model=model)))
+
+    fallback = get_fallback_llm_config()
+    if fallback.enabled:
+        chain.append(("fallback", _fallback_to_llm_config(fallback)))
+    return chain
+
+
+def should_try_next_provider(error: LlmError) -> bool:
+    """Mirror Node shouldTryNextProvider for provider-chain failover."""
+    message = str(error).lower()
+    if error.status == 404:
+        return True
+    patterns = (
+        "no available clients",
+        "temporarily unavailable",
+        "upstream",
+        "timeout",
+        "cannot reach",
+        "rate limit",
+        "rate_limit",
+        "out of quota",
+        "empty content",
+        "malformed",
+        "model/endpoint mismatch",
+        "404:",
+    )
+    return any(pattern in message for pattern in patterns) or error.transient
+
+
 def _normalize_error(status: int, body: str) -> LlmError:
     """Port of normalizeLLMError status mapping."""
     snippet = (body or "")[:200]
+    lower = snippet.lower()
+    if status == 429 or (status == 403 and re.search(r"quota|billing|rate.?limit|insufficient_quota", lower)):
+        return LlmError("429: rate limited or out of quota", status=status, transient=True)
     if status in (401, 403):
         return LlmError(f"auth failed ({status}): check API key", status=status, transient=False)
     if status == 404:
         return LlmError("404: check base URL / model id", status=status, transient=False)
-    if status == 429:
-        return LlmError("429: rate limited or out of quota", status=status, transient=True)
+    if status == 524:
+        return LlmError(f"gateway timeout (524): {snippet}", status=status, transient=True)
     if 500 <= status < 600:
         return LlmError(f"upstream {status}: {snippet}", status=status, transient=True)
     return LlmError(f"HTTP {status}: {snippet}", status=status, transient=False)
@@ -94,7 +162,6 @@ def _responses_payload(messages, model, temperature, max_tokens, reasoning, stre
 
 def _extract(data: dict[str, Any], wire: str) -> tuple[str, dict | None, str | None]:
     if wire == "responses":
-        # Responses API: prefer output_text, else walk output[].content[].text
         text = data.get("output_text")
         if not text:
             parts: list[str] = []
@@ -104,24 +171,50 @@ def _extract(data: dict[str, Any], wire: str) -> tuple[str, dict | None, str | N
                         parts.append(c["text"])
             text = "".join(parts)
         return text or "", data.get("usage"), data.get("status")
-    # chat.completions
     choice = (data.get("choices") or [{}])[0]
     msg = choice.get("message") or {}
     return (msg.get("content") or ""), data.get("usage"), choice.get("finish_reason")
 
 
-def call_llm(
+def normalize_finish_reason(finish_reason: str | None) -> str | None:
+    if finish_reason is None:
+        return None
+    normalized = finish_reason.strip().lower()
+    return normalized or None
+
+
+def normalize_usage(usage: dict[str, Any] | None) -> dict[str, int]:
+    data = usage or {}
+    prompt_tokens = int(data.get("prompt_tokens") or data.get("input_tokens") or 0)
+    completion_tokens = int(data.get("completion_tokens") or data.get("output_tokens") or 0)
+    total_tokens = int(data.get("total_tokens") or (prompt_tokens + completion_tokens))
+    return {
+        "total_tokens": total_tokens,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }
+
+
+def _finalize_result(result: LlmResult) -> LlmResult:
+    return LlmResult(
+        content=result.content,
+        usage=normalize_usage(result.usage),
+        finish_reason=normalize_finish_reason(result.finish_reason),
+        model=result.model,
+        latency_ms=result.latency_ms,
+    )
+
+
+def _call_llm_once(
     messages: list[Message],
     *,
-    config: LlmConfig | None = None,
+    cfg: LlmConfig,
     model: str | None = None,
     temperature: float = 0.2,
     max_tokens: int = 2000,
     reasoning_effort: str | None = None,
     timeout_ms: int | None = None,
 ) -> LlmResult:
-    """Single real LLM call. Raises LlmError on any failure (never returns a stub)."""
-    cfg = config or get_llm_config()
     if not cfg.api_key:
         raise LlmError("LLM not configured (no api_key)", transient=False)
     model = model or cfg.model
@@ -137,7 +230,6 @@ def call_llm(
 
     started = time.time()
     try:
-        # trust_env=True (default) → honors HTTP_PROXY/HTTPS_PROXY/NO_PROXY (Clash) natively.
         with httpx.Client(timeout=timeout_s) as client:
             r = client.post(url, headers=_headers(cfg.api_key), json=payload)
     except httpx.TimeoutException as e:
@@ -166,6 +258,44 @@ def call_llm(
     )
 
 
+def call_llm(
+    messages: list[Message],
+    *,
+    config: LlmConfig | None = None,
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 2000,
+    reasoning_effort: str | None = None,
+    timeout_ms: int | None = None,
+) -> LlmResult:
+    """Provider-chain LLM call. Raises LlmError on any failure (never returns a stub)."""
+    providers = build_provider_configs(config)
+    if not providers:
+        raise LlmError("LLM not configured (no provider chain)", transient=False)
+
+    last_error: LlmError | None = None
+    for _name, cfg in providers:
+        try:
+            return _finalize_result(
+                _call_llm_once(
+                    messages,
+                    cfg=cfg,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    reasoning_effort=reasoning_effort,
+                    timeout_ms=timeout_ms,
+                )
+            )
+        except LlmError as error:
+            last_error = error
+            if config is not None or not should_try_next_provider(error):
+                raise
+    if last_error is not None:
+        raise last_error
+    raise LlmError("LLM provider chain exhausted", transient=False)
+
+
 # ── JSON helper (port of callLLMJson: strip ```json fences, parse) ────────────
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
@@ -182,31 +312,19 @@ def classify_llm_failure_kind(error: LlmError) -> str:
     """Align Python failure labels with Node llm-client semantics."""
     status = error.status
     message = str(error).lower()
-    if status == 429 or "rate limit" in message or "rate_limit" in message:
+    if status == 429 or "rate limit" in message or "rate_limit" in message or "out of quota" in message:
         return "rate_limit"
     if status in (401, 403) or "auth" in message:
         return "auth"
-    if status == 404:
+    if status == 404 or "model/endpoint mismatch" in message:
         return "not_found"
-    if "timeout" in message:
+    if "timeout" in message or status == 524:
         return "timeout"
     if status is not None and 500 <= status < 600:
         return "upstream"
     if error.transient:
         return "transient"
     return "unknown"
-
-
-def normalize_usage(usage: dict[str, Any] | None) -> dict[str, int]:
-    data = usage or {}
-    prompt_tokens = int(data.get("prompt_tokens") or data.get("input_tokens") or 0)
-    completion_tokens = int(data.get("completion_tokens") or data.get("output_tokens") or 0)
-    total_tokens = int(data.get("total_tokens") or (prompt_tokens + completion_tokens))
-    return {
-        "total_tokens": total_tokens,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-    }
 
 
 def call_llm_with_retry(
@@ -267,9 +385,9 @@ def call_llm_json_with_shape(
 def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any], LlmResult]:
     """call_llm_with_retry + parse the content as a JSON object. Raises LlmError if not parseable."""
     max_attempts = int(kwargs.pop("max_attempts", 3))
+    max_tokens = kwargs.get("max_tokens", "default")
     result = call_llm_with_retry(messages, max_attempts=max_attempts, **kwargs)
     raw = _strip_fences(result.content)
-    # tolerate leading/trailing prose: extract the first {...} block
     if not raw.startswith("{"):
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if m:
@@ -277,4 +395,10 @@ def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any
     try:
         return json.loads(raw), result
     except json.JSONDecodeError as e:
+        if result.finish_reason == "length":
+            raise LlmError(
+                f"LLM JSON response was truncated by the max token limit ({max_tokens}). "
+                "Increase maxTokens or reduce the requested JSON size.",
+                transient=False,
+            ) from e
         raise LlmError(f"LLM JSON parse failed: {result.content[:200]}", transient=False) from e

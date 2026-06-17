@@ -57,6 +57,46 @@ export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
   ].join('\n');
 }
 
+export function buildAgentChecklistFixPrompt({ taskText, pendingItems = [], workerAgent = 'grok' }) {
+  const pendingBlock = pendingItems.length
+    ? pendingItems.map((item) => `- [ ] ${item}`).join('\n')
+    : '- 没有解析到未完成项。';
+
+  return [
+    `# AgentLoop ${workerAgent} 开发请求`,
+    '',
+    '你是开发执行者。基线 gate 已通过，但任务「状态清单」仍有未完成项，请继续实现。',
+    '',
+    '## 任务',
+    '',
+    taskText,
+    '',
+    '## 待完成清单',
+    '',
+    pendingBlock,
+    '',
+    '## Safety Guardrails',
+    '',
+    '- Do not delete, weaken, skip, or rewrite tests to make the gate pass.',
+    '- Do not change gate commands, test scripts, CI config, or test runner config unless the task explicitly asks for that.',
+    '- Do not bypass assertions, mark tests skipped/only, lower coverage, or replace checks with placeholders.',
+    '',
+    '## 规则',
+    '',
+    '- 只实现清单中与任务目标直接相关的未完成项。',
+    '- 优先补齐测试与实现，使清单项可以勾选为完成。',
+    '- 若任务允许修改 task markdown，可将已完成项从 `[ ]` 改为 `[x]`。',
+    '- 不要提交、不要 git add、不要改写历史。',
+    '- 不要做无关重构。',
+    '- 如果无法完成，请不要伪造成功。',
+    '- 修改完成后，只输出 JSON，不要 markdown fence。',
+    '',
+    '## 输出格式',
+    '',
+    '{"verdict":"changed|blocked","summary":"简短说明","files":["相对路径"]}',
+  ].join('\n');
+}
+
 export function buildGrokFixPrompt(args) {
   return buildAgentFixPrompt(args);
 }
