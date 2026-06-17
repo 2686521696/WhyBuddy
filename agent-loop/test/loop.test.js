@@ -14,6 +14,7 @@ import {
   getWorktreePath,
   resetWorktreeWorkingTree,
   seedWorktreeFromRepo,
+  syncAgentLoopTaskDocsFromRepo,
 } from '../src/worktree.js';
 
 test('parseLoopArgs requires cwd, task, and at least one gate', () => {
@@ -350,7 +351,7 @@ test('parseLoopArgs allows auto-fix with create-worktree instead of fix-cwd', ()
   assert.equal(parsed.fixCwd, null);
 });
 
-test('seedWorktreeFromRepo applies HEAD binary diff and copies untracked files', async () => {
+test('seedWorktreeFromRepo copies tracked working tree changes and untracked files', async () => {
   const repoRoot = path.join(os.tmpdir(), `agent-loop-seed-${Date.now()}`);
   const worktreePath = path.join(repoRoot, '.worktrees', 'seed-test');
   await fs.mkdir(path.join(repoRoot, 'pkg'), { recursive: true });
@@ -362,15 +363,11 @@ test('seedWorktreeFromRepo applies HEAD binary diff and copies untracked files',
   const calls = [];
   const run = async (command, args, options = {}) => {
     calls.push({ command, args, options });
-    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD' && args[2] === '--binary') {
-      return { exitCode: 0, stdout: 'diff --git a/pkg/tracked.txt b/pkg/tracked.txt\n', stderr: '' };
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
+      return { exitCode: 0, stdout: 'M\tpkg/tracked.txt\n', stderr: '' };
     }
     if (command === 'git' && args[0] === 'ls-files') {
       return { exitCode: 0, stdout: 'pkg/new.txt\n', stderr: '' };
-    }
-    if (command === 'git' && args[0] === 'apply') {
-      await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
-      return { exitCode: 0, stdout: '', stderr: '' };
     }
     return { exitCode: 0, stdout: '', stderr: '' };
   };
@@ -379,8 +376,91 @@ test('seedWorktreeFromRepo applies HEAD binary diff and copies untracked files',
 
   assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'utf8'), 'repo-version\n');
   assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'new.txt'), 'utf8'), 'fresh\n');
-  assert.ok(calls.some((call) => call.command === 'git' && call.args.join(' ') === 'diff HEAD --binary'));
-  assert.equal(calls.filter((call) => call.command === 'git' && call.args[0] === 'apply').length, 1);
+  assert.ok(calls.some((call) => call.command === 'git' && call.args.join(' ') === 'diff --name-status HEAD'));
+  assert.equal(calls.filter((call) => call.command === 'git' && call.args[0] === 'apply').length, 0);
+});
+
+test('seedWorktreeFromRepo overwrites agent-loop task docs from repo after working tree sync', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-task-sync-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'task-sync-test');
+  await fs.mkdir(path.join(repoRoot, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.mkdir(path.join(worktreePath, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.writeFile(
+    path.join(repoRoot, 'agent-loop', 'tasks', 'sample-task.md'),
+    '- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复\n',
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(worktreePath, 'agent-loop', 'tasks', 'sample-task.md'),
+    '- 状态：进\uFFFD\uFFFD中 — 红灯测试已落地，等待 AgentLoop + Grok 修复\n',
+    'utf8',
+  );
+
+  const run = async (command, args) => {
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'ls-files') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000 });
+
+  assert.equal(
+    await fs.readFile(path.join(worktreePath, 'agent-loop', 'tasks', 'sample-task.md'), 'utf8'),
+    '- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复\n',
+  );
+});
+
+test('seedWorktreeFromRepo copies task docs even when worktree has stale task content', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-task-copy-seed-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'task-copy-seed-test');
+  await fs.mkdir(path.join(repoRoot, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.mkdir(path.join(worktreePath, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.writeFile(
+    path.join(repoRoot, 'agent-loop', 'tasks', 'sample-task.md'),
+    '- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复\n',
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(worktreePath, 'agent-loop', 'tasks', 'sample-task.md'),
+    '- 状态：旧内容\n',
+    'utf8',
+  );
+
+  const run = async (command, args) => {
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
+      return { exitCode: 0, stdout: 'M\tagent-loop/tasks/sample-task.md\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'ls-files') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000 });
+
+  assert.equal(
+    await fs.readFile(path.join(worktreePath, 'agent-loop', 'tasks', 'sample-task.md'), 'utf8'),
+    '- 状态：进行中 — 红灯测试已落地，等待 AgentLoop + Grok 修复\n',
+  );
+});
+
+test('syncAgentLoopTaskDocsFromRepo copies only markdown task docs', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-task-copy-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'task-copy-test');
+  await fs.mkdir(path.join(repoRoot, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.mkdir(path.join(worktreePath, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.writeFile(path.join(repoRoot, 'agent-loop', 'tasks', 'keep.md'), 'ok\n', 'utf8');
+  await fs.writeFile(path.join(repoRoot, 'agent-loop', 'tasks', 'ignore.txt'), 'skip\n', 'utf8');
+  await fs.writeFile(path.join(worktreePath, 'agent-loop', 'tasks', 'keep.md'), 'stale\n', 'utf8');
+
+  await syncAgentLoopTaskDocsFromRepo({ repoRoot, worktreePath });
+
+  assert.equal(await fs.readFile(path.join(worktreePath, 'agent-loop', 'tasks', 'keep.md'), 'utf8'), 'ok\n');
+  await assert.rejects(() => fs.access(path.join(worktreePath, 'agent-loop', 'tasks', 'ignore.txt')));
 });
 
 test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async () => {
@@ -391,7 +471,7 @@ test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async 
   await fs.writeFile(path.join(repoRoot, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
   await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'stale-grok-version\n', 'utf8');
 
-  let applyCount = 0;
+  let syncCount = 0;
   const run = async (command, args, options = {}) => {
     if (command === 'git' && args[0] === 'reset' && args[1] === '--hard') {
       await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'clean-base\n', 'utf8');
@@ -400,15 +480,11 @@ test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async 
     if (command === 'git' && args[0] === 'clean') {
       return { exitCode: 0, stdout: '', stderr: '' };
     }
-    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
-      return { exitCode: 0, stdout: 'diff --git a/pkg/tracked.txt b/pkg/tracked.txt\n', stderr: '' };
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
+      syncCount += 1;
+      return { exitCode: 0, stdout: 'M\tpkg/tracked.txt\n', stderr: '' };
     }
     if (command === 'git' && args[0] === 'ls-files') {
-      return { exitCode: 0, stdout: '', stderr: '' };
-    }
-    if (command === 'git' && args[0] === 'apply') {
-      applyCount += 1;
-      await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
       return { exitCode: 0, stdout: '', stderr: '' };
     }
     return { exitCode: 0, stdout: '', stderr: '' };
@@ -417,7 +493,7 @@ test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async 
   await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000, resetBeforeSeed: true });
   await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000, resetBeforeSeed: true });
 
-  assert.equal(applyCount, 2);
+  assert.equal(syncCount, 2);
   assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'utf8'), 'repo-version\n');
   await assert.doesNotReject(async () => resetWorktreeWorkingTree({ worktreePath, run, timeoutMs: 1000 }));
 });
@@ -458,7 +534,7 @@ test('ensureWorktree reuses existing directory and aligns to repo HEAD', async (
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === repoRoot) {
       return { exitCode: 0, stdout: 'repo-head\n', stderr: '' };
     }
-    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
       return { exitCode: 0, stdout: '', stderr: '' };
     }
     if (command === 'git' && args[0] === 'ls-files') {
@@ -491,18 +567,15 @@ test('ensureWorktree propagates seed failures instead of retrying git worktree a
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' && options.cwd === worktreePath) {
       return { exitCode: 0, stdout: 'stale-head\n', stderr: '' };
     }
-    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
-      return { exitCode: 0, stdout: 'diff --git a/a.txt b/a.txt\n', stderr: '' };
-    }
-    if (command === 'git' && args[0] === 'apply') {
-      return { exitCode: 1, stdout: '', stderr: 'patch does not apply' };
+    if (command === 'git' && args[0] === 'diff' && args[1] === '--name-status' && args[2] === 'HEAD') {
+      return { exitCode: 0, stdout: 'M\tmissing.txt\n', stderr: '' };
     }
     return { exitCode: 0, stdout: '', stderr: '' };
   };
 
   await assert.rejects(
     () => ensureWorktree({ repoRoot, name: 'seed-fail-test', run, timeoutMs: 1000 }),
-    /seed worktree from diff HEAD --binary failed .*patch does not apply/,
+    /seed worktree copy failed .*missing\.txt/,
   );
   assert.ok(!calls.some((call) => call.command === 'git' && call.args[0] === 'worktree'));
 });

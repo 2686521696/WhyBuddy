@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resolveActiveLogPath = exports.findNewestFixLog = void 0;
+exports.resolveLogRoot = exports.resolveActiveLogPath = exports.resolveActiveLogCandidates = exports.formatAgentLogTail = exports.findNewestFixLog = void 0;
 exports.readJsonFile = readJsonFile;
 exports.readTextTail = readTextTail;
 exports.buildRunSnapshot = buildRunSnapshot;
@@ -47,7 +47,10 @@ const paths_1 = require("./paths");
 const runSummary_1 = require("./runSummary");
 var activeLog_2 = require("./activeLog");
 Object.defineProperty(exports, "findNewestFixLog", { enumerable: true, get: function () { return activeLog_2.findNewestFixLog; } });
+Object.defineProperty(exports, "formatAgentLogTail", { enumerable: true, get: function () { return activeLog_2.formatAgentLogTail; } });
+Object.defineProperty(exports, "resolveActiveLogCandidates", { enumerable: true, get: function () { return activeLog_2.resolveActiveLogCandidates; } });
 Object.defineProperty(exports, "resolveActiveLogPath", { enumerable: true, get: function () { return activeLog_2.resolveActiveLogPath; } });
+Object.defineProperty(exports, "resolveLogRoot", { enumerable: true, get: function () { return activeLog_2.resolveLogRoot; } });
 const ANSI_ESCAPE_RE = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 async function readJsonFile(filePath) {
     try {
@@ -62,8 +65,7 @@ async function readTextTail(filePath, maxLines = 6) {
     try {
         const raw = await fs.readFile(filePath, 'utf8');
         const bytes = Buffer.byteLength(raw, 'utf8');
-        const lines = stripAnsi(raw).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        return { tail: lines.slice(-maxLines).join('\n'), bytes };
+        return { tail: (0, activeLog_1.formatAgentLogTail)(raw, maxLines), bytes };
     }
     catch {
         return { tail: '', bytes: 0 };
@@ -73,14 +75,19 @@ async function buildRunSnapshot(repoRoot, phaseStartedAt, runStartedAt) {
     const state = await readJsonFile(path.join((0, paths_1.latestDir)(repoRoot), 'state.json'));
     const queue = await readJsonFile((0, paths_1.queuePath)(repoRoot));
     const queueDefaults = queue?.defaults ?? null;
-    const activeLogPath = await (0, activeLog_1.resolveActiveLogPath)((0, paths_1.latestDir)(repoRoot), state);
-    const activeLog = await readTextTail(activeLogPath);
+    const logRoot = (0, activeLog_1.resolveLogRoot)(state, repoRoot);
+    const activeLogPath = await (0, activeLog_1.resolveActiveLogPath)(logRoot, state);
+    let activeLog = await readTextTail(activeLogPath);
+    if (!activeLog.tail) {
+        activeLog = await readProgressHint(logRoot, state);
+    }
     const { details, taskLabel } = (0, phaseLabels_1.describeSnapshot)(state, queueDefaults);
     const summary = state ? (0, runSummary_1.summarizeStateRun)(state, state.runId || 'latest') : null;
     const { fixAgent, reviewAgent } = (0, phaseLabels_1.resolveAgentRoles)(state, queueDefaults);
     const now = Date.now();
     return {
         state,
+        queueRunning: false,
         agentTail: activeLog.tail,
         agentLogBytes: activeLog.bytes,
         taskLabel,
@@ -148,5 +155,21 @@ function snapshotStatusLine(snapshot) {
 }
 function stripAnsi(text) {
     return text.replace(ANSI_ESCAPE_RE, '');
+}
+async function readProgressHint(logRoot, state) {
+    const status = state?.status || '';
+    if (status === 'GROK_FIX' || status === 'CODEX_FIX' || status === 'BUDGET_LOOP_HEAD') {
+        const request = await readTextTail(path.join(logRoot, 'grok-request.1.md'), 4);
+        if (request.tail) {
+            return { tail: `（Grok 修复中，尚无 stdout）\n${request.tail}`, bytes: request.bytes };
+        }
+    }
+    if (status === 'BASELINE_GATE_RESULT' || status === 'WORKTREE_READY' || status === 'INIT' || status === 'PROBED') {
+        const gate = await readTextTail(path.join(logRoot, 'baseline-gate-1.stdout.log'), 4);
+        if (gate.tail) {
+            return { tail: `（Gate 输出）\n${gate.tail}`, bytes: gate.bytes };
+        }
+    }
+    return { tail: '', bytes: 0 };
 }
 //# sourceMappingURL=stateReader.js.map

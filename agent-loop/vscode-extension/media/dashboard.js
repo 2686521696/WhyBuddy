@@ -4,6 +4,8 @@
   const els = {
     title: document.getElementById('title'),
     subtitle: document.getElementById('subtitle'),
+    runBtn: document.getElementById('runBtn'),
+    stopBtn: document.getElementById('stopBtn'),
     roles: document.getElementById('roles'),
     status: document.getElementById('status'),
     phase: document.getElementById('phase'),
@@ -61,9 +63,15 @@
     else els.gate.classList.add('warn');
   }
 
+  function setToolbarState(queueRunning) {
+    if (els.runBtn) els.runBtn.disabled = Boolean(queueRunning);
+    if (els.stopBtn) els.stopBtn.disabled = !queueRunning;
+  }
+
   function render(snapshot) {
     const status = snapshot?.state?.status || 'IDLE';
     const task = snapshot?.taskLabel || '—';
+    setToolbarState(snapshot?.queueRunning);
     els.title.textContent = task;
     els.subtitle.textContent = snapshot?.state?.runId ? `run ${snapshot.state.runId}` : '等待 AgentLoop 运行';
     if (els.roles) {
@@ -88,6 +96,13 @@
       render(message.payload);
     }
   });
+
+  if (els.runBtn) {
+    els.runBtn.addEventListener('click', () => vscode.postMessage({ type: 'runQueue' }));
+  }
+  if (els.stopBtn) {
+    els.stopBtn.addEventListener('click', () => vscode.postMessage({ type: 'stopRun' }));
+  }
 
   vscode.postMessage({ type: 'ready' });
 })();

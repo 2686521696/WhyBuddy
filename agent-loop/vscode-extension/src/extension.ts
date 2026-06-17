@@ -21,7 +21,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const queueTree = new QueueTreeProvider(repoRoot);
   const runsTree = new RunsTreeProvider(repoRoot);
 
-  monitor = new StateMonitor(repoRoot, context.extensionUri, output);
   runController = new RunController(
     repoRoot,
     output,
@@ -29,8 +28,9 @@ export function activate(context: vscode.ExtensionContext): void {
       monitor?.markRunStarted();
       if (vscode.workspace.getConfiguration('agentLoop').get<boolean>('openDashboardOnRun', true)) {
         const panel = DashboardPanel.show(context.extensionUri);
-        const snapshot = monitor?.getSnapshot();
-        if (snapshot) panel.update(snapshot);
+        void monitor?.refresh().then((snapshot) => panel.update(snapshot));
+      } else {
+        void monitor?.refresh();
       }
     },
     () => {
@@ -39,6 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
       runsTree.refresh();
     },
   );
+  monitor = new StateMonitor(repoRoot, context.extensionUri, output, () => runController?.running ?? false);
 
   monitor.onDidUpdate((snapshot) => {
     currentRunTree.refresh(snapshot);

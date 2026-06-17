@@ -50,7 +50,7 @@ npm run smoke:live -- --timeout-ms 180000
 - `list-runs --json` 给脚本用，可配合 `--mode`、`--status`、`--task` 查最近运行。
 - `loop` 默认会在结束时自动回写当前 task 的 `## 执行状态`，并尝试同步迁移总表；可用 `--no-sync-task-status` / `--no-sync-migration-status` 关闭。
 - `sync:task-status` 默认 `--cwd` 指向 repo 根目录（与 `loop --cwd` 一致）；也可手动回写 `tasks/*.md`，加 `--include-migration-status` 时同步更新迁移总表。
-- `run-queue` 按 `scripts/migration-queue.json` 顺序跑迁移任务；默认 `--auto-fix --guard-tests --max-iterations 3`，某任务失败即停队列。队列配置在 `agent-loop/scripts/migration-queue.json`，不在 `tasks/` 下。
+- `run-queue` 按 `scripts/migration-queue.json` 顺序串行跑任务；默认 `--auto-fix --guard-tests --max-iterations 3`，**单个任务失败不会中断后续任务**（continue-on-failure），队列结束后按 `done / task-failed / crashed / quarantined` 汇总并以非零退出码提示仍有失败。队列配置在 `agent-loop/scripts/migration-queue.json`，不在 `tasks/` 下。
 - 自动回写失败只会 stderr warning，不会让已经成功的 `DONE_*` run 变成退出码 1。
 - `list-runs` 默认按 `Asia/Shanghai` 显示本地时间；也可用 `--time-zone` 或环境变量 `TZ` 覆盖。
 - `.agent-loop/runs/<runId>` 里的 `runId` 是机器安全的 UTC 路径名；人看的时间请用 `list-runs`。

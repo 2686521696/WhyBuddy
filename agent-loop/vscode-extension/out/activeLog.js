@@ -33,34 +33,63 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveLogRoot = resolveLogRoot;
 exports.resolveActiveLogPath = resolveActiveLogPath;
+exports.resolveActiveLogCandidates = resolveActiveLogCandidates;
 exports.findNewestFixLog = findNewestFixLog;
+exports.formatAgentLogTail = formatAgentLogTail;
 const fs = __importStar(require("node:fs/promises"));
 const path = __importStar(require("node:path"));
 const phaseLabels_1 = require("./phaseLabels");
-async function resolveActiveLogPath(latestRoot, state) {
-    const status = state?.status;
-    const { fixAgent } = (0, phaseLabels_1.resolveAgentRoles)(state);
-    if (status === 'GROK_REVIEW') {
-        return path.join(latestRoot, 'review-output.grok.stderr.log');
+function resolveLogRoot(state, repoRoot) {
+    const runDir = state?.artifacts?.runDir;
+    if (runDir) {
+        return path.isAbsolute(runDir) ? runDir : path.resolve(repoRoot, runDir);
     }
-    if (status === 'CODEX_REVIEW') {
-        return path.join(latestRoot, 'codex-review.stderr.log');
+    return path.join(repoRoot, '.agent-loop', 'latest');
+}
+const TERMINAL_STATUSES = new Set([
+    'DONE_REVIEWED',
+    'DONE_FIXED',
+    'DONE_GATE_ONLY',
+    'HALT_HUMAN',
+    'HALT_NO_CHANGES',
+    'HALT_NO_PROGRESS',
+    'HALT_BUDGET',
+]);
+async function resolveActiveLogPath(latestRoot, state) {
+    const candidates = await resolveActiveLogCandidates(latestRoot, state);
+    const fallback = candidates[0] || path.join(latestRoot, 'review-output.grok.stdout.log');
+    return pickFirstReadableLog(candidates, fallback);
+}
+async function resolveActiveLogCandidates(latestRoot, state) {
+    const status = state?.status;
+    const { fixAgent, reviewAgent } = (0, phaseLabels_1.resolveAgentRoles)(state);
+    const candidates = [];
+    if (status === 'GROK_REVIEW' || status === 'CODEX_REVIEW') {
+        pushReviewLogs(candidates, latestRoot, reviewAgent);
+        return candidates;
     }
     const inFixPhase = status === 'GROK_FIX'
         || status === 'CODEX_FIX'
         || status === 'BUDGET_LOOP_HEAD';
     if (inFixPhase) {
-        const iteration = state?.currentIteration
-            || state?.iterations?.at(-1)?.iteration
-            || 1;
-        const prefix = fixAgent === 'codex' ? 'fix-output.codex' : 'grok-output';
-        const resolved = await findNewestFixLog(latestRoot, prefix, iteration);
-        if (resolved)
-            return resolved;
-        return path.join(latestRoot, `${prefix}.${iteration}.stderr.log`);
+        await pushFixLogs(candidates, latestRoot, fixAgent, state);
+        return candidates;
     }
-    return path.join(latestRoot, 'codex-review.stderr.log');
+    if (status && TERMINAL_STATUSES.has(status)) {
+        if (reviewAgentRan(state)) {
+            pushReviewLogs(candidates, latestRoot, reviewAgent);
+        }
+        if (fixAgentRan(state)) {
+            await pushFixLogs(candidates, latestRoot, fixAgent, state);
+        }
+        if (candidates.length)
+            return candidates;
+    }
+    pushReviewLogs(candidates, latestRoot, reviewAgent);
+    await pushFixLogs(candidates, latestRoot, fixAgent, state);
+    return candidates;
 }
 async function findNewestFixLog(latestRoot, prefix, iteration) {
     let entries = [];
@@ -105,5 +134,86 @@ async function findNewestFixLog(latestRoot, prefix, iteration) {
         return b.mtimeMs - a.mtimeMs;
     });
     return candidates[0].filePath;
+}
+async function pickFirstReadableLog(candidates, fallback) {
+    for (const candidate of candidates) {
+        if (await fileHasContent(candidate))
+            return candidate;
+    }
+    return fallback;
+}
+async function fileHasContent(filePath) {
+    try {
+        const raw = await fs.readFile(filePath, 'utf8');
+        return raw.trim().length > 0;
+    }
+    catch {
+        return false;
+    }
+}
+function pushReviewLogs(candidates, latestRoot, reviewAgent) {
+    if (reviewAgent === 'grok') {
+        candidates.push(path.join(latestRoot, 'review-output.grok.stdout.log'), path.join(latestRoot, 'review-output.grok.stderr.log'));
+        return;
+    }
+    if (reviewAgent === 'codex') {
+        candidates.push(path.join(latestRoot, 'codex-review.stdout.log'), path.join(latestRoot, 'codex-review.stderr.log'));
+    }
+}
+async function pushFixLogs(candidates, latestRoot, fixAgent, state) {
+    const iteration = state?.currentIteration
+        || state?.iterations?.at(-1)?.iteration
+        || 1;
+    const prefix = fixAgent === 'codex' ? 'fix-output.codex' : 'grok-output';
+    const resolved = await findNewestFixLog(latestRoot, prefix, iteration);
+    if (resolved) {
+        candidates.push(resolved, swapLogStream(resolved, 'stdout'));
+        return;
+    }
+    candidates.push(path.join(latestRoot, `${prefix}.${iteration}.stderr.log`), path.join(latestRoot, `${prefix}.${iteration}.stdout.log`));
+}
+function swapLogStream(filePath, stream) {
+    return filePath.replace(/\.(stderr|stdout)\.log$/, `.${stream}.log`);
+}
+function reviewAgentRan(state) {
+    return Boolean(state?.grokReview || state?.codexReview || state?.agentReview);
+}
+function fixAgentRan(state) {
+    return Boolean(state?.iterations?.length
+        || state?.grokFix
+        || state?.agentFix
+        || state?.currentIteration);
+}
+const ANSI_ESCAPE_RE = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+function formatAgentLogTail(raw, maxLines = 6) {
+    const trimmed = stripAnsi(raw).trim();
+    if (!trimmed)
+        return '';
+    try {
+        const outer = JSON.parse(trimmed);
+        if (typeof outer.text === 'string' && outer.text.trim()) {
+            try {
+                const inner = JSON.parse(outer.text);
+                const parts = [];
+                if (inner.verdict)
+                    parts.push(`verdict: ${inner.verdict}`);
+                if (inner.summary)
+                    parts.push(inner.summary);
+                if (parts.length)
+                    return parts.join('\n');
+            }
+            catch {
+                return outer.text.trim();
+            }
+        }
+    }
+    catch {
+        // fall through to plain-text tail
+    }
+    const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return lines.slice(-maxLines).join('\n');
+}
+function stripAnsi(text) {
+    return text.replace(ANSI_ESCAPE_RE, '');
 }
 //# sourceMappingURL=activeLog.js.map

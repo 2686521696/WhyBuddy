@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { resolveActiveLogPath } from './activeLog';
+import { formatAgentLogTail, resolveActiveLogPath, resolveLogRoot } from './activeLog';
 import { activeAgentLabel, buildPipelineSteps, describeSnapshot, formatElapsed, phaseLabel, resolveAgentRoles } from './phaseLabels';
 import { latestDir, queuePath } from './paths';
 import { summarizeStateRun } from './runSummary';
 
-export { findNewestFixLog, resolveActiveLogPath } from './activeLog';
+export { findNewestFixLog, formatAgentLogTail, resolveActiveLogCandidates, resolveActiveLogPath, resolveLogRoot } from './activeLog';
 import type { LoopState, QueueFile, RunSnapshot, RunSummaryItem } from './types';
 
 const ANSI_ESCAPE_RE = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
@@ -23,8 +23,7 @@ export async function readTextTail(filePath: string, maxLines = 6): Promise<{ ta
   try {
     const raw = await fs.readFile(filePath, 'utf8');
     const bytes = Buffer.byteLength(raw, 'utf8');
-    const lines = stripAnsi(raw).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    return { tail: lines.slice(-maxLines).join('\n'), bytes };
+    return { tail: formatAgentLogTail(raw, maxLines), bytes };
   } catch {
     return { tail: '', bytes: 0 };
   }
@@ -34,8 +33,12 @@ export async function buildRunSnapshot(repoRoot: string, phaseStartedAt: number,
   const state = await readJsonFile<LoopState>(path.join(latestDir(repoRoot), 'state.json'));
   const queue = await readJsonFile<QueueFile>(queuePath(repoRoot));
   const queueDefaults = queue?.defaults ?? null;
-  const activeLogPath = await resolveActiveLogPath(latestDir(repoRoot), state);
-  const activeLog = await readTextTail(activeLogPath);
+  const logRoot = resolveLogRoot(state, repoRoot);
+  const activeLogPath = await resolveActiveLogPath(logRoot, state);
+  let activeLog = await readTextTail(activeLogPath);
+  if (!activeLog.tail) {
+    activeLog = await readProgressHint(logRoot, state);
+  }
   const { details, taskLabel } = describeSnapshot(state, queueDefaults);
   const summary = state ? summarizeStateRun(state, state.runId || 'latest') : null;
   const { fixAgent, reviewAgent } = resolveAgentRoles(state, queueDefaults);
@@ -43,6 +46,7 @@ export async function buildRunSnapshot(repoRoot: string, phaseStartedAt: number,
 
   return {
     state,
+    queueRunning: false,
     agentTail: activeLog.tail,
     agentLogBytes: activeLog.bytes,
     taskLabel,
@@ -111,4 +115,24 @@ export function snapshotStatusLine(snapshot: RunSnapshot): string {
 
 function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE_RE, '');
+}
+
+async function readProgressHint(
+  logRoot: string,
+  state: LoopState | null,
+): Promise<{ tail: string; bytes: number }> {
+  const status = state?.status || '';
+  if (status === 'GROK_FIX' || status === 'CODEX_FIX' || status === 'BUDGET_LOOP_HEAD') {
+    const request = await readTextTail(path.join(logRoot, 'grok-request.1.md'), 4);
+    if (request.tail) {
+      return { tail: `（Grok 修复中，尚无 stdout）\n${request.tail}`, bytes: request.bytes };
+    }
+  }
+  if (status === 'BASELINE_GATE_RESULT' || status === 'WORKTREE_READY' || status === 'INIT' || status === 'PROBED') {
+    const gate = await readTextTail(path.join(logRoot, 'baseline-gate-1.stdout.log'), 4);
+    if (gate.tail) {
+      return { tail: `（Gate 输出）\n${gate.tail}`, bytes: gate.bytes };
+    }
+  }
+  return { tail: '', bytes: 0 };
 }

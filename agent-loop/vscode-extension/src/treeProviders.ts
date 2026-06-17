@@ -40,7 +40,7 @@ class CurrentRunNode extends BaseNode {
 
 class QueueRootNode extends BaseNode {
   constructor(count: number) {
-    super('queue-root', `迁移队列 (${count})`, vscode.TreeItemCollapsibleState.Expanded);
+    super('queue-root', `任务队列 (${count})`, vscode.TreeItemCollapsibleState.Expanded);
     this.iconPath = new vscode.ThemeIcon('list-tree');
   }
 }

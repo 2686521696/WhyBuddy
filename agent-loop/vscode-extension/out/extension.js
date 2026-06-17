@@ -54,20 +54,21 @@ function activate(context) {
     const currentRunTree = new treeProviders_1.CurrentRunTreeProvider();
     const queueTree = new treeProviders_1.QueueTreeProvider(repoRoot);
     const runsTree = new treeProviders_1.RunsTreeProvider(repoRoot);
-    monitor = new stateMonitor_1.StateMonitor(repoRoot, context.extensionUri, output);
     runController = new runController_1.RunController(repoRoot, output, () => {
         monitor?.markRunStarted();
         if (vscode.workspace.getConfiguration('agentLoop').get('openDashboardOnRun', true)) {
             const panel = dashboardPanel_1.DashboardPanel.show(context.extensionUri);
-            const snapshot = monitor?.getSnapshot();
-            if (snapshot)
-                panel.update(snapshot);
+            void monitor?.refresh().then((snapshot) => panel.update(snapshot));
+        }
+        else {
+            void monitor?.refresh();
         }
     }, () => {
         void monitor?.refresh();
         queueTree.refresh();
         runsTree.refresh();
     });
+    monitor = new stateMonitor_1.StateMonitor(repoRoot, context.extensionUri, output, () => runController?.running ?? false);
     monitor.onDidUpdate((snapshot) => {
         currentRunTree.refresh(snapshot);
     });

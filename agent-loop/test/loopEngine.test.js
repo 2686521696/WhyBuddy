@@ -900,7 +900,7 @@ test('runLoop can use grok for scoped review after a green baseline gate', async
   assert.equal(result.codexReview, null);
 });
 
-test('runLoop enters grok fix when baseline gate is green but checklist has pending items', async () => {
+test('runLoop skips grok fix and completes when baseline gate is green but checklist is pending', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
   await fs.writeFile(taskPath, [
@@ -916,14 +916,6 @@ test('runLoop enters grok fix when baseline gate is green but checklist has pend
     '',
   ].join('\n'), 'utf8');
 
-  const gateResults = [
-    gate(true, 0, ''),
-    gate(true, 0, ''),
-  ];
-  const diffs = [
-    '',
-    'diff --git a/src/client.py b/src/client.py\n+fallback\n',
-  ];
   const transitions = [];
   const grokPrompts = [];
 
@@ -943,15 +935,14 @@ test('runLoop enters grok fix when baseline gate is green but checklist has pend
     latestDir: cwd,
     deps: {
       resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
-      evaluateGate: async () => gateResults.shift() ?? gate(true, 0, ''),
-      captureDiff: async () => ({ text: diffs.shift() ?? diffs.at(-1) }),
-      runProcess: async (command, args, options) => {
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args) => {
         if (command === 'grok.exe' && args.includes('--prompt-file')) {
           const promptArgIndex = args.indexOf('--prompt-file');
           const promptFile = args[promptArgIndex + 1];
-          const prompt = await fs.readFile(promptFile, 'utf8');
-          grokPrompts.push(prompt);
-          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+          grokPrompts.push(await fs.readFile(promptFile, 'utf8'));
+          return runOk(command, args, cwd, '{"verdict":"changed"}');
         }
         throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
       },
@@ -960,12 +951,11 @@ test('runLoop enters grok fix when baseline gate is green but checklist has pend
     },
   });
 
-  assert.equal(result.status, 'DONE_FIXED');
-  assert.equal(result.iterations.length, 1);
-  assert.equal(transitions.includes('GROK_FIX'), true);
-  assert.equal(transitions.includes('GROK_REVIEW'), false);
-  assert.match(grokPrompts[0], /开发请求/);
-  assert.match(grokPrompts[0], /provider fallback chain/);
+  assert.equal(result.status, 'DONE_GATE_ONLY');
+  assert.equal(result.iterations.length, 0);
+  assert.equal(transitions.includes('GROK_FIX'), false);
+  assert.equal(grokPrompts.length, 0);
+  assert.match(await fs.readFile(taskPath, 'utf8'), /- \[x\] provider fallback chain/);
 });
 
 function artifactWriter(cwd) {

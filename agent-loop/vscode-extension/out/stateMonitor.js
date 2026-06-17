@@ -43,6 +43,7 @@ class StateMonitor {
     repoRoot;
     extensionUri;
     output;
+    isQueueRunning;
     listeners = new Set();
     disposables = [];
     pollTimer;
@@ -51,10 +52,11 @@ class StateMonitor {
     lastStatus;
     latestSnapshot = null;
     statusBarItem;
-    constructor(repoRoot, extensionUri, output) {
+    constructor(repoRoot, extensionUri, output, isQueueRunning = () => false) {
         this.repoRoot = repoRoot;
         this.extensionUri = extensionUri;
         this.output = output;
+        this.isQueueRunning = isQueueRunning;
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.statusBarItem.command = 'agentLoop.openDashboard';
         this.statusBarItem.show();
@@ -62,9 +64,13 @@ class StateMonitor {
         const latest = (0, paths_1.latestDir)(repoRoot);
         const patterns = [
             new vscode.RelativePattern(latest, 'state.json'),
+            new vscode.RelativePattern(latest, 'codex-review.stdout.log'),
             new vscode.RelativePattern(latest, 'codex-review.stderr.log'),
+            new vscode.RelativePattern(latest, 'review-output.grok.stdout.log'),
             new vscode.RelativePattern(latest, 'review-output.grok.stderr.log'),
+            new vscode.RelativePattern(latest, 'grok-output.*.stdout.log'),
             new vscode.RelativePattern(latest, 'grok-output.*.stderr.log'),
+            new vscode.RelativePattern(latest, 'fix-output.codex.*.stdout.log'),
             new vscode.RelativePattern(latest, 'fix-output.codex.*.stderr.log'),
             new vscode.RelativePattern(latest, 'final-report.md'),
         ];
@@ -92,7 +98,7 @@ class StateMonitor {
         this.lastStatus = undefined;
     }
     async refresh() {
-        const snapshot = await (0, stateReader_1.buildRunSnapshot)(this.repoRoot, this.phaseStartedAt, this.runStartedAt);
+        const snapshot = this.enrichSnapshot(await (0, stateReader_1.buildRunSnapshot)(this.repoRoot, this.phaseStartedAt, this.runStartedAt));
         const status = snapshot.state?.status;
         if (status && status !== this.lastStatus) {
             this.lastStatus = status;
@@ -116,6 +122,9 @@ class StateMonitor {
         if (dashboardPanel_1.DashboardPanel.current) {
             dashboardPanel_1.DashboardPanel.current.update(snapshot);
         }
+    }
+    enrichSnapshot(snapshot) {
+        return { ...snapshot, queueRunning: this.isQueueRunning() };
     }
     startPolling() {
         const interval = vscode.workspace.getConfiguration('agentLoop').get('pollIntervalMs', 1500);

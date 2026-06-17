@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseTaskChecklist, shouldRunDevFix } from '../src/taskChecklist.js';
+import { markAllChecklistItemsDone, parseTaskChecklist, shouldRunDevFix } from '../src/taskChecklist.js';
 
 test('parseTaskChecklist splits pending and done items', () => {
   const markdown = [
@@ -33,13 +33,35 @@ test('parseTaskChecklist returns empty when section is missing', () => {
   assert.deepEqual(checklist.pending, []);
 });
 
-test('shouldRunDevFix requires green baseline, pending checklist, and autoFix', () => {
+test('shouldRunDevFix skips green baseline and only targets red gate with pending checklist', () => {
   const checklist = parseTaskChecklist('### 状态清单\n\n- [ ] still open\n');
 
-  assert.equal(shouldRunDevFix({ baselineGateOk: true, checklist, autoFix: true }), true);
-  assert.equal(shouldRunDevFix({ baselineGateOk: false, checklist, autoFix: true }), false);
+  assert.equal(shouldRunDevFix({ baselineGateOk: true, checklist, autoFix: true }), false);
+  assert.equal(shouldRunDevFix({ baselineGateOk: false, checklist, autoFix: true }), true);
   assert.equal(shouldRunDevFix({ baselineGateOk: true, checklist, autoFix: false }), false);
 
   const doneOnly = parseTaskChecklist('### 状态清单\n\n- [x] done\n');
   assert.equal(shouldRunDevFix({ baselineGateOk: true, checklist: doneOnly, autoFix: true }), false);
+  assert.equal(shouldRunDevFix({ baselineGateOk: false, checklist: doneOnly, autoFix: true }), false);
+});
+
+test('markAllChecklistItemsDone checks every pending checklist item', () => {
+  const source = [
+    '# Task',
+    '',
+    '### 状态清单',
+    '',
+    '- [ ] open one',
+    '- [x] already done',
+    '- [ ] open two',
+    '',
+    '## 目标',
+    '',
+  ].join('\n');
+
+  const updated = markAllChecklistItemsDone(source);
+
+  assert.match(updated, /- \[x\] open one/);
+  assert.match(updated, /- \[x\] open two/);
+  assert.doesNotMatch(updated, /- \[ \] open/);
 });

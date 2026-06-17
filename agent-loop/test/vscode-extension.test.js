@@ -128,6 +128,74 @@ test('findNewestFixLog prefers attempt stderr over iteration alias during fix', 
   assert.equal(path.basename(resolved), 'grok-output.1.2.stderr.log');
 });
 
+test('resolveActiveLogPath prefers grok review stdout after DONE_REVIEWED', async () => {
+  const { resolveActiveLogPath } = requireFromExtension('./out/activeLog.js');
+  const latest = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-latest-log-'));
+  await fs.writeFile(path.join(latest, 'review-output.grok.stderr.log'), '', 'utf8');
+  await fs.writeFile(
+    path.join(latest, 'review-output.grok.stdout.log'),
+    JSON.stringify({
+      text: JSON.stringify({ verdict: 'pass', summary: 'pool parity 已完成' }),
+    }),
+    'utf8',
+  );
+
+  const resolved = await resolveActiveLogPath(latest, {
+    status: 'DONE_REVIEWED',
+    options: { reviewAgent: 'grok', skipReview: false },
+    grokReview: { exitCode: 0 },
+    iterations: [],
+  });
+
+  assert.equal(path.basename(resolved), 'review-output.grok.stdout.log');
+});
+
+test('resolveActiveLogPath shows fix stderr after HALT_NO_CHANGES', async () => {
+  const { resolveActiveLogPath } = requireFromExtension('./out/activeLog.js');
+  const latest = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-latest-log-'));
+  await fs.writeFile(path.join(latest, 'grok-output.1.1.stderr.log'), 'Error: max turns reached\n', 'utf8');
+  await fs.writeFile(
+    path.join(latest, 'grok-output.1.1.stdout.log'),
+    JSON.stringify({ text: '正在读取相关文件\n' }),
+    'utf8',
+  );
+
+  const resolved = await resolveActiveLogPath(latest, {
+    status: 'HALT_NO_CHANGES',
+    options: { fixAgent: 'grok', skipReview: false, reviewAgent: 'grok' },
+    currentIteration: 1,
+    iterations: [{ iteration: 1, grokFix: { exitCode: 1 } }],
+    grokFix: { exitCode: 1 },
+  });
+
+  assert.equal(path.basename(resolved), 'grok-output.1.1.stderr.log');
+});
+
+test('resolveLogRoot prefers run artifacts directory over latest', async () => {
+  const { resolveLogRoot } = requireFromExtension('./out/activeLog.js');
+  const repoRoot = 'C:\\repo';
+  const runDir = 'C:\\repo\\.agent-loop\\runs\\2026-06-17T14-07-19-291Z';
+
+  assert.equal(
+    resolveLogRoot({ artifacts: { runDir } }, repoRoot),
+    runDir,
+  );
+  assert.equal(
+    resolveLogRoot(null, repoRoot),
+    path.join(repoRoot, '.agent-loop', 'latest'),
+  );
+});
+
+test('formatAgentLogTail formats grok review json into readable lines', async () => {
+  const { formatAgentLogTail } = requireFromExtension('./out/activeLog.js');
+  const tail = formatAgentLogTail(JSON.stringify({
+    text: JSON.stringify({ verdict: 'pass', summary: 'gate 全绿，审查通过' }),
+  }));
+
+  assert.match(tail, /verdict: pass/);
+  assert.match(tail, /gate 全绿，审查通过/);
+});
+
 test('packaged extension sources do not require external agent-loop runSummary.js', async () => {
   const offenders = [];
   const files = await fs.readdir(extensionOut);

@@ -1,8 +1,8 @@
 {
   "name": "agent-loop-dashboard",
   "displayName": "AgentLoop Dashboard",
-  "description": "Visual progress for AgentLoop migration queue, gates, and Codex/Grok review runs.",
-  "version": "0.1.1",
+  "description": "Visual progress for AgentLoop task queue, gates, and Codex/Grok review runs.",
+  "version": "0.1.5",
   "publisher": "cube-pets-office",
   "license": "MIT",
   "engines": {
@@ -33,7 +33,7 @@
         },
         {
           "id": "agentLoop.queue",
-          "name": "迁移队列"
+          "name": "任务队列"
         },
         {
           "id": "agentLoop.runs",
@@ -44,7 +44,7 @@
     "commands": [
       {
         "command": "agentLoop.runQueue",
-        "title": "AgentLoop: 运行迁移队列",
+        "title": "AgentLoop: 运行任务队列",
         "icon": "$(play)"
       },
       {
@@ -77,17 +77,17 @@
       "view/title": [
         {
           "command": "agentLoop.runQueue",
-          "when": "view == agentLoop.queue",
+          "when": "view == agentLoop.queue && !agentLoop.queueRunning",
           "group": "navigation@1"
         },
         {
           "command": "agentLoop.stopRun",
-          "when": "view == agentLoop.currentRun",
+          "when": "(view == agentLoop.queue || view == agentLoop.currentRun) && agentLoop.queueRunning",
           "group": "navigation@1"
         },
         {
           "command": "agentLoop.openDashboard",
-          "when": "view == agentLoop.currentRun",
+          "when": "view == agentLoop.currentRun || view == agentLoop.queue",
           "group": "navigation@2"
         },
         {
@@ -109,7 +109,7 @@
         "agentLoop.queuePath": {
           "type": "string",
           "default": "agent-loop/scripts/migration-queue.json",
-          "description": "迁移队列 JSON 路径（相对仓库根目录）"
+          "description": "任务队列 JSON 路径（相对仓库根目录）"
         },
         "agentLoop.openDashboardOnRun": {
           "type": "boolean",

@@ -31,8 +31,26 @@ export function parseTaskChecklist(taskText) {
 
 export function shouldRunDevFix({ baselineGateOk, checklist, autoFix }) {
   if (!autoFix) return false;
-  if (!checklist?.hasPending) return false;
-  return Boolean(baselineGateOk);
+  // Green baseline goes to review (or gate-only done), not a checklist-only Grok fix pass.
+  if (baselineGateOk) return false;
+  return Boolean(checklist?.hasPending);
+}
+
+export function markAllChecklistItemsDone(taskText) {
+  const lines = String(taskText ?? '').split('\n');
+  const start = lines.findIndex((line) => line.trim() === CHECKLIST_HEADING);
+  if (start < 0) return String(taskText ?? '');
+
+  let changed = false;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index])) break;
+    const match = lines[index].match(/^(-\s+\[)( |x|X)(\]\s+.+)$/);
+    if (!match || match[2].toLowerCase() === 'x') continue;
+    lines[index] = `${match[1]}x${match[3]}`;
+    changed = true;
+  }
+
+  return changed ? lines.join('\n') : String(taskText ?? '');
 }
 
 function extractChecklistSection(taskText) {

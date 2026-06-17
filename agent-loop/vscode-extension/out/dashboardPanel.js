@@ -46,7 +46,14 @@ class DashboardPanel {
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
         this.panel.webview.onDidReceiveMessage((message) => {
             if (message?.type === 'ready') {
-                // no-op; host pushes snapshots
+                return;
+            }
+            if (message?.type === 'runQueue') {
+                void vscode.commands.executeCommand('agentLoop.runQueue');
+                return;
+            }
+            if (message?.type === 'stopRun') {
+                vscode.commands.executeCommand('agentLoop.stopRun');
             }
         }, null, this.disposables);
     }
@@ -104,8 +111,16 @@ class DashboardPanel {
   <title>AgentLoop Dashboard</title>
 </head>
 <body>
-  <h1 id="title">AgentLoop</h1>
-  <div class="subtitle" id="subtitle">等待运行</div>
+  <div class="header">
+    <div>
+      <h1 id="title">AgentLoop</h1>
+      <div class="subtitle" id="subtitle">等待运行</div>
+    </div>
+    <div class="toolbar" id="toolbar">
+      <button class="action" id="runBtn" type="button">运行任务队列</button>
+      <button class="action danger" id="stopBtn" type="button">停止</button>
+    </div>
+  </div>
   <div class="roles" id="roles"></div>
   <div class="pipeline" id="pipeline"></div>
   <div class="grid">

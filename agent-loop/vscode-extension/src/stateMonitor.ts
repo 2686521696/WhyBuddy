@@ -21,6 +21,7 @@ export class StateMonitor implements vscode.Disposable {
     private readonly repoRoot: string,
     private readonly extensionUri: vscode.Uri,
     private readonly output: vscode.OutputChannel,
+    private readonly isQueueRunning: () => boolean = () => false,
   ) {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.statusBarItem.command = 'agentLoop.openDashboard';
@@ -30,9 +31,13 @@ export class StateMonitor implements vscode.Disposable {
     const latest = latestDir(repoRoot);
     const patterns = [
       new vscode.RelativePattern(latest, 'state.json'),
+      new vscode.RelativePattern(latest, 'codex-review.stdout.log'),
       new vscode.RelativePattern(latest, 'codex-review.stderr.log'),
+      new vscode.RelativePattern(latest, 'review-output.grok.stdout.log'),
       new vscode.RelativePattern(latest, 'review-output.grok.stderr.log'),
+      new vscode.RelativePattern(latest, 'grok-output.*.stdout.log'),
       new vscode.RelativePattern(latest, 'grok-output.*.stderr.log'),
+      new vscode.RelativePattern(latest, 'fix-output.codex.*.stdout.log'),
       new vscode.RelativePattern(latest, 'fix-output.codex.*.stderr.log'),
       new vscode.RelativePattern(latest, 'final-report.md'),
     ];
@@ -65,7 +70,7 @@ export class StateMonitor implements vscode.Disposable {
   }
 
   public async refresh(): Promise<RunSnapshot> {
-    const snapshot = await buildRunSnapshot(this.repoRoot, this.phaseStartedAt, this.runStartedAt);
+    const snapshot = this.enrichSnapshot(await buildRunSnapshot(this.repoRoot, this.phaseStartedAt, this.runStartedAt));
     const status = snapshot.state?.status;
 
     if (status && status !== this.lastStatus) {
@@ -92,6 +97,10 @@ export class StateMonitor implements vscode.Disposable {
     if (DashboardPanel.current) {
       DashboardPanel.current.update(snapshot);
     }
+  }
+
+  private enrichSnapshot(snapshot: RunSnapshot): RunSnapshot {
+    return { ...snapshot, queueRunning: this.isQueueRunning() };
   }
 
   private startPolling(): void {

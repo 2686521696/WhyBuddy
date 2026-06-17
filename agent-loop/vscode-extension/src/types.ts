@@ -26,6 +26,10 @@ export interface LoopState {
   agentReview?: AgentRunSummary | null;
   grokReview?: AgentRunSummary | null;
   codexReview?: AgentRunSummary | null;
+  artifacts?: {
+    runDir?: string;
+    latestDir?: string;
+  };
 }
 
 export interface AgentRunSummary {
@@ -64,6 +68,7 @@ export interface PipelineStep {
 
 export interface RunSnapshot {
   state: LoopState | null;
+  queueRunning: boolean;
   agentTail: string;
   agentLogBytes: number;
   taskLabel: string;
