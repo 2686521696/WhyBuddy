@@ -61,6 +61,9 @@ async function oneCall({ baseUrl, apiKey, model, reasoningEffort, index, signal 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${raw.slice(0, 200)}`);
   }
+  if (!raw.trim()) {
+    throw new Error("Empty body");
+  }
   let content = "";
   try {
     const data = JSON.parse(raw);

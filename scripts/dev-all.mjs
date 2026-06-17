@@ -1,9 +1,38 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import net from "node:net";
 import dotenv from "dotenv";
 import Dockerode from "dockerode";
 
-dotenv.config();
+const __devAllDir = dirname(fileURLToPath(import.meta.url));
+const __projectRoot = resolve(__devAllDir, "..");
+
+/** Read NO_PROXY from .env file (dotenv does not override pre-set OS env vars on Windows). */
+function readNoProxyFromEnvFile() {
+  try {
+    const text = readFileSync(resolve(__projectRoot, ".env"), "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (trimmed.startsWith("NO_PROXY=")) {
+        return trimmed.slice("NO_PROXY=".length).trim();
+      }
+      if (trimmed.startsWith("no_proxy=")) {
+        return trimmed.slice("no_proxy=".length).trim();
+      }
+    }
+  } catch {
+    /* .env optional */
+  }
+  return "";
+}
+
+// Force .env values (including NO_PROXY for blackaicoding.com / custom LLM hosts) to override
+// any pre-existing system env (common on Windows with Clash etc.). This ensures child
+// processes see the correct NO_PROXY list for direct LLM calls.
+dotenv.config({ override: true });
 
 const children = [];
 let shuttingDown = false;
@@ -167,15 +196,43 @@ async function resolveProxyEnvironment() {
   }
 
   const proxyUrl = `http://127.0.0.1:${localProxyPort}`;
+
+  // Robust NO_PROXY construction (V5.3 audit fix for blackaicoding.com / custom LLM):
+  // 1. Prefer explicit read from .env (now with override above).
+  // 2. Always merge localhost + any LLM host hints from env (LLM_API_BASE, OPENAI_BASE etc.).
+  // 3. Append known custom domains if present in .env or process.
+  const envNoProxy = readNoProxyFromEnvFile() || process.env.NO_PROXY || process.env.no_proxy || "";
+  const llmHosts = [
+    process.env.LLM_API_BASE,
+    process.env.LLM_HOST,
+    process.env.OPENAI_API_BASE,
+    process.env.OPENAI_BASE_URL,
+    // common custom hosts seen in this repo (su8 is current primary + pool host)
+    "blackaicoding.com",
+    "api.rcouyi.com",
+    "www.su8.codes",
+  ].filter(Boolean).map(h => {
+    try { return new URL(h).hostname; } catch { return h.replace(/^https?:\/\//, "").split("/")[0]; }
+  });
+  const base = "localhost,127.0.0.1,::1";
+  const merged = [envNoProxy, base, ...llmHosts]
+    .filter(Boolean)
+    .join(",")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  const noProxy = Array.from(new Set(merged)).join(",");
+
   console.warn(
     `[dev:all] Detected local proxy at ${proxyUrl}. Enabling Node env proxy (HTTP_PROXY/HTTPS_PROXY + NODE_USE_ENV_PROXY=1) for dev child processes.`
   );
+  console.log(`[dev:all] NO_PROXY for child processes: ${noProxy} (includes LLM hosts from .env + blackaicoding etc.)`);
 
   return {
     HTTP_PROXY: proxyUrl,
     HTTPS_PROXY: proxyUrl,
-    NO_PROXY: process.env.NO_PROXY || "localhost,127.0.0.1",
-    no_proxy: process.env.NO_PROXY || process.env.no_proxy || "localhost,127.0.0.1",
+    NO_PROXY: noProxy,
+    no_proxy: noProxy,
     NODE_USE_ENV_PROXY: "1",
   };
 }
@@ -401,7 +458,8 @@ async function main() {
   if (sharedDevEnv.HTTP_PROXY || sharedDevEnv.HTTPS_PROXY) {
     console.log(
       `[dev:all] Starting server child with proxy: HTTP_PROXY=${sharedDevEnv.HTTP_PROXY ? "set" : ""} ` +
-      `HTTPS_PROXY=${sharedDevEnv.HTTPS_PROXY ? "set" : ""} NODE_USE_ENV_PROXY=${sharedDevEnv.NODE_USE_ENV_PROXY || ""}`
+        `HTTPS_PROXY=${sharedDevEnv.HTTPS_PROXY ? "set" : ""} NODE_USE_ENV_PROXY=${sharedDevEnv.NODE_USE_ENV_PROXY || ""} ` +
+        `NO_PROXY=${sharedDevEnv.NO_PROXY || sharedDevEnv.no_proxy || "(unset)"}`
     );
   }
 
