@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 # ── env helpers ───────────────────────────────────────────────────────────────
 
@@ -36,6 +37,28 @@ def _bool(v: str | None, default: bool = False) -> bool:
 
 def _csv(v: str | None) -> tuple[str, ...]:
     return tuple(s.strip() for s in (v or "").split(",") if s.strip())
+
+
+def _positive_int(v: str | None, default: int) -> int:
+    parsed = _int(v, default)
+    return parsed if parsed > 0 else default
+
+
+def _provider_name(base_url: str) -> str:
+    parsed = urlparse(base_url or "")
+    return parsed.netloc or base_url
+
+
+def _dedupe_models(models: tuple[str, ...], primary_model: str) -> tuple[str, ...]:
+    seen = {primary_model.strip().lower()} if primary_model else set()
+    result: list[str] = []
+    for model in models:
+        normalized = model.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(model)
+    return tuple(result)
 
 
 # ── wire selection (port of ai-config.ts:104-121) ─────────────────────────────
@@ -73,27 +96,78 @@ class LlmConfig:
     api_key: str
     base_url: str
     model: str
+    router_model: str | None
     wire_api: str  # "chat_completions" | "responses"
     reasoning_effort: str | None
     timeout_ms: int
     stream: bool
     unlimited_models: tuple[str, ...]
+    model_fallbacks: tuple[str, ...]
+    max_context: int
+    max_concurrent: int
+    provider_name: str
+    chat_thinking_type: str | None
 
 
 def get_llm_config() -> LlmConfig:
     base = (_pick("LLM_BASE_URL", "OPENAI_BASE_URL") or "").rstrip("/")
     model = _pick("LLM_MODEL", "OPENAI_MODEL") or "gpt-5.5"
+    router_model = _pick("LLM_ROUTER_MODEL", "OPENAI_ROUTER_MODEL")
     reasoning = _pick("LLM_REASONING_EFFORT", "OPENAI_REASONING_EFFORT")
     raw_wire = _pick("LLM_WIRE_API", "OPENAI_WIRE_API")
     return LlmConfig(
         api_key=_pick("LLM_API_KEY", "OPENAI_API_KEY") or "",
         base_url=base,
         model=model,
+        router_model=router_model,
         wire_api=select_wire_api(raw_wire, model, reasoning),
         reasoning_effort=reasoning,
-        timeout_ms=_int(_pick("LLM_TIMEOUT_MS", "OPENAI_TIMEOUT_MS"), 600_000),
+        timeout_ms=_positive_int(_pick("LLM_TIMEOUT_MS", "OPENAI_TIMEOUT_MS"), 600_000),
         stream=_bool(_pick("LLM_STREAM", "OPENAI_STREAM"), False),
         unlimited_models=_csv(_pick("LLM_UNLIMITED_MODELS")),
+        model_fallbacks=_dedupe_models(_csv(_pick("LLM_MODEL_FALLBACKS")), model),
+        max_context=_positive_int(_pick("LLM_MAX_CONTEXT"), 1_000_000),
+        max_concurrent=max(1, _int(_pick("LLM_MAX_CONCURRENT"), 9999)),
+        provider_name=_provider_name(base),
+        chat_thinking_type=_pick("LLM_CHAT_THINKING_TYPE", "OPENAI_CHAT_THINKING_TYPE"),
+    )
+
+
+# ── fallback provider config (port of llm-client buildProviders env) ───────────
+
+@dataclass(frozen=True)
+class FallbackLlmConfig:
+    enabled: bool
+    api_key: str
+    base_url: str
+    model: str
+    wire_api: str
+    timeout_ms: int
+    reasoning_effort: str | None
+    force_model: bool
+    stream: bool
+    chat_thinking_type: str | None
+    retries: int
+    cooldown_ms: int
+
+
+def get_fallback_llm_config() -> FallbackLlmConfig:
+    api_key = _pick("FALLBACK_LLM_API_KEY") or ""
+    base_url = (_pick("FALLBACK_LLM_BASE_URL") or "").rstrip("/")
+    model = _pick("FALLBACK_LLM_MODEL") or "glm-4.6"
+    return FallbackLlmConfig(
+        enabled=bool(api_key and base_url),
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        wire_api="responses" if (_pick("FALLBACK_LLM_WIRE_API") or "").lower() == "responses" else "chat_completions",
+        timeout_ms=_positive_int(_pick("FALLBACK_LLM_TIMEOUT_MS"), 600_000),
+        reasoning_effort=_pick("FALLBACK_LLM_REASONING_EFFORT"),
+        force_model=(_pick("FALLBACK_LLM_FORCE_MODEL") or "true").lower() != "false",
+        stream=(_pick("FALLBACK_LLM_STREAM") or "false").lower() != "false",
+        chat_thinking_type=_pick("FALLBACK_LLM_CHAT_THINKING_TYPE") or "disabled",
+        retries=_positive_int(_pick("FALLBACK_LLM_RETRIES"), 3),
+        cooldown_ms=_positive_int(_pick("FALLBACK_LLM_COOLDOWN_MS"), 30_000),
     )
 
 
@@ -106,6 +180,7 @@ class PoolConfig:
     base_url: str
     model: str
     timeout_ms: int
+    wire_api: str
     race_mode: str  # "parallel" | "sequential"
     enabled: bool
 
@@ -127,12 +202,21 @@ def get_pool_config() -> PoolConfig:
     labels = _csv(_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_LABELS"))
     if len(labels) != len(keys):
         labels = tuple(f"key-{i + 1}" for i in range(len(keys)))
+    model = _pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_MODEL") or "ouyi-5-preview-thinking"
+    raw_wire = (_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_WIRE_API") or "").strip().lower()
+    if raw_wire:
+        wire_api = "responses" if raw_wire == "responses" else "chat_completions"
+    elif re.search(r"gpt-5|gpt5|5\.[0-9]", model or "", re.IGNORECASE):
+        wire_api = "responses"
+    else:
+        wire_api = "chat_completions"
     return PoolConfig(
         keys=keys,
         labels=labels,
-        base_url=(_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL") or "").rstrip("/"),
-        model=_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_MODEL") or "gpt-5.5",
-        timeout_ms=_int(_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_TIMEOUT_MS"), 300_000),
+        base_url=(_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL") or "https://api.rcouyi.com/v1").rstrip("/"),
+        model=model,
+        timeout_ms=_positive_int(_pick("BLUEPRINT_SPEC_DOCS_LLM_POOL_TIMEOUT_MS"), 300_000),
+        wire_api=wire_api,
         race_mode=_resolve_race_mode(),
         enabled=_bool(_pick("SLIDERULE_CAPABILITY_POOL_ENABLED"), False),
     )

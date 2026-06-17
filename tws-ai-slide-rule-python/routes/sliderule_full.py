@@ -18,6 +18,8 @@ from services.slide_rule_coverage import author_coverage_contract, evaluate_cove
 from services.capability_maps import execute_mapped_capability
 from services.v5_session_driver import drive_v5_full_path
 from config.settings import settings
+from sliderule_llm.capabilities import execute_capability, is_python_native_capability
+from sliderule_llm.client import LlmError
 
 router = APIRouter(tags=["SlideRule V5 (Full Migration to Python)"])  # prefix handled at include time to avoid double /api/sliderule/api/sliderule/...
 
@@ -63,6 +65,15 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
     _auth(x_internal_key)
     state = V5SessionState(**payload["state"])
     cap = payload["capabilityId"]
+    if is_python_native_capability(cap):
+        try:
+            result = execute_capability(payload)
+        except LlmError as e:
+            raise HTTPException(502, f"python LLM failed for {cap}: {e}")
+        run_id = f"run-{payload['turnId']}-{cap}"
+        state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
+        save_session(state)
+        return result
     # Use mapped for all V5 caps - stable RAG
     result = execute_mapped_capability(cap, state, payload.get("inputArtifactIds", []), payload.get("roleId", "agent"), payload["turnId"])
     # For tools/evidence, always "introduce" via RAG

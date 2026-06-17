@@ -15,8 +15,10 @@ config is imported eagerly (stdlib only). client/pool are imported lazily so tha
 config-only consumers (and the network-free unit tests) don't require httpx.
 """
 from .config import (  # stdlib only — safe to import eagerly
+    FallbackLlmConfig,
     LlmConfig,
     PoolConfig,
+    get_fallback_llm_config,
     get_llm_config,
     get_pool_config,
     select_wire_api,
@@ -32,8 +34,10 @@ _LAZY = {
 }
 
 __all__ = [
+    "FallbackLlmConfig",
     "LlmConfig",
     "PoolConfig",
+    "get_fallback_llm_config",
     "get_llm_config",
     "get_pool_config",
     "select_wire_api",

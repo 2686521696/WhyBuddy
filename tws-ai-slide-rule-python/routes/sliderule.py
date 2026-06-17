@@ -16,6 +16,8 @@ from models.v5_state import V5SessionState, ExecuteCapabilityResult, Orchestrate
 from services.slide_rule_orchestrator import orchestrate_plan
 from services.capability_maps import execute_mapped_capability
 from config.settings import settings
+from sliderule_llm.capabilities import execute_capability, is_python_native_capability
+from sliderule_llm.client import LlmError
 
 router = APIRouter()
 
@@ -51,18 +53,23 @@ async def do_orchestrate(payload: Dict[str, Any], x_internal_key: Optional[str] 
 @router.post("/execute-capability")
 async def do_execute(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _check_internal_key(x_internal_key)
-    state = V5SessionState(**payload["state"])
     cap_id = payload["capabilityId"]
-    # Use the mapped executor (capability_maps) so structure.decompose, instruction.package,
-    # handoff.package, visual, dialogue, delivery etc. get their dedicated RAG paths
-    # instead of only the three special cases in the basic slide_rule_executor.
-    result = execute_mapped_capability(
+    # Migrated-for-real caps (intent.clarify, ...) run on the REAL LLM brain (sliderule_llm).
+    # On LLM failure we 502 so the Node side falls back to its own path — we never silently
+    # return canned/stub output for a cap that's supposed to be really migrated.
+    if is_python_native_capability(cap_id):
+        try:
+            return execute_capability(payload)
+        except LlmError as e:
+            raise HTTPException(502, f"python LLM failed for {cap_id}: {e}")
+    # Not yet migrated → existing mapped path (still stub until its slice lands).
+    state = V5SessionState(**payload["state"])
+    return execute_mapped_capability(
         cap_id,
         state,
         payload.get("inputArtifactIds", []),
         payload.get("roleId", "agent"),
         payload["turnId"],
     )
-    return result
 
 # Add more endpoints (list sessions, etc.) as full migration progresses.

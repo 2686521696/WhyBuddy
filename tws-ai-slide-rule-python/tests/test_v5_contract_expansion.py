@@ -28,19 +28,10 @@ def test_structure_visual_delivery_caps_have_real_outputs():
         "coverageContract": None,
     }
     caps = [
-        "evidence.search",
-        "risk.analyze",
-        "report.write",
-        "structure.decompose",
         "document.draft",
         "traceability.matrix",
         "instruction.package",
         "handoff.package",
-        # Real dialogue/deliberation capability IDs (mapped in capability_maps)
-        "intent.clarify",
-        "gap.ask",
-        "critique.generate",
-        "synthesis.merge",
     ]
     for cap in caps:
         response = client.post(
@@ -82,18 +73,61 @@ def test_structure_visual_delivery_caps_have_real_outputs():
             # Must bundle the key artifacts (flexible on "matrix" vs "traceability" because RAG output varies)
             for bundle in ["report", "traceab", "prompt", "next"]:
                 assert bundle in cl, f"handoff.package missing bundle part: {bundle}"
-        if cap == "structure.decompose":
-            # Tree / decomposition structure indicators
-            struct_hits = sum(1 for k in ["root", "requirements", "risk", "deliverable", "spec", "tree", "decompose", "分支"] if k in cl)
-            assert struct_hits >= 3, f"structure.decompose weak tree structure: {cl[:200]}"
 
-    # Extra shape + semantic check for report.write (9-section intent)
-    report_resp = client.post(
-        "/api/sliderule/execute-capability",
-        json={"capabilityId": "report.write", "state": state, "inputArtifactIds": [], "roleId": "agent", "turnId": "smoke-report"},
-        headers={"X-Internal-Key": INTERNAL_KEY},
-    )
-    report_data = report_resp.json()
-    assert "RAG" in report_data.get("summary", "") or "证据" in report_data.get("summary", "") or len(report_data.get("content", "")) > 200
-    rcl = (report_data.get("content", "") or "").lower()
-    assert any(k in rcl for k in ["支撑证据", "风险", "收敛", "下一步", "证据"])  # basic 9-section flavor
+
+def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
+    from sliderule_llm.client import LlmResult
+
+    def fake_call_llm(messages, **kwargs):
+        joined = "\n".join(m["content"] for m in messages)
+        assert "pet office" in joined
+        return LlmResult(
+            content="## Missing information\n- Desk assignment rules\n## Questions\n- What triggers promotion?",
+            usage={"total_tokens": 12},
+            finish_reason="stop",
+            model="fake-native-dialogue",
+            latency_ms=1,
+        )
+
+    monkeypatch.setattr("sliderule_llm.capabilities.call_llm", fake_call_llm)
+
+    state = {
+        "sessionId": "native-dialogue-001",
+        "goal": {"text": "design a pet office task assignment system"},
+        "artifacts": [],
+        "capabilityRuns": [],
+        "coverageGaps": [],
+        "coverageContract": None,
+    }
+    for cap in [
+        "intent.clarify",
+        "gap.ask",
+        "question.expand",
+        "critique.generate",
+        "synthesis.merge",
+        "rebuttal.resolve",
+        "counter.argue",
+        "report.write",
+        "structure.decompose",
+        "risk.analyze",
+        "evidence.search",
+    ]:
+        response = client.post(
+            "/api/sliderule/execute-capability",
+            json={
+                "capabilityId": cap,
+                "state": state,
+                "inputArtifactIds": [],
+                "roleId": "agent",
+                "turnId": f"native-{cap}",
+                "userText": "find the missing assumptions before planning",
+            },
+            headers={"X-Internal-Key": INTERNAL_KEY},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data.get("provenance") == "python-llm"
+        assert data.get("model") == "fake-native-dialogue"
+        assert "Desk assignment" in data.get("content", "")
+        assert "RBAC" not in data.get("content", "")
+        assert "data scoping" not in data.get("content", "").lower()
