@@ -49,6 +49,94 @@ test('loop CLI pauses and resumes from the same run directory without real agent
   assert.match(await fs.readFile(path.join(repo, '.agent-loop', 'latest', 'final-report.md'), 'utf8'), /DONE_FIXED/);
 });
 
+test('loop CLI auto-syncs execution status into task.md after completion', async () => {
+  const { repo, env, commonArgs, taskPath } = await createCliFixture({
+    initialValue: 1,
+    finalValue: 2,
+  });
+
+  await fs.writeFile(taskPath, [
+    '# 修复任务',
+    '',
+    '## 执行状态',
+    '',
+    '- 最近执行：2026-06-01',
+    '- AgentLoop run id：`old-run`',
+    '',
+    '## 目标',
+    '',
+    'Make npm test pass by changing value.js.',
+    '',
+  ].join('\n'), 'utf8');
+
+  const result = await runProcess(process.execPath, [
+    ...commonArgs,
+    '--skip-review',
+  ], {
+    cwd: agentLoopRoot,
+    env,
+    timeoutMs: 60000,
+  });
+
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  const taskText = await fs.readFile(taskPath, 'utf8');
+  assert.match(taskText, /AgentLoop 运行模式：`grok-fix`/);
+  assert.match(taskText, /AgentLoop 结果：`DONE_FIXED`/);
+  assert.match(taskText, /Grok 已运行：`true`/);
+  assert.doesNotMatch(taskText, /`old-run`/);
+  assert.match(result.stderr, /Synced task status: /);
+});
+
+test('loop CLI resume preserves disabled task status sync from the paused run', async () => {
+  const { repo, env, commonArgs, taskPath } = await createCliFixture({
+    initialValue: 1,
+    finalValue: 2,
+  });
+
+  await fs.writeFile(taskPath, [
+    '# 修复任务',
+    '',
+    '## 执行状态',
+    '',
+    '- 最近执行：2026-06-01',
+    '- AgentLoop run id：`old-run`',
+    '',
+    '## 目标',
+    '',
+    'Make npm test pass by changing value.js.',
+    '',
+  ].join('\n'), 'utf8');
+
+  const paused = await runProcess(process.execPath, [
+    ...commonArgs,
+    '--pause-before-fix',
+    '--no-sync-task-status',
+  ], {
+    cwd: agentLoopRoot,
+    env,
+    timeoutMs: 60000,
+  });
+  assert.equal(paused.exitCode, 0, paused.stderr || paused.stdout);
+  assert.match(await fs.readFile(taskPath, 'utf8'), /`old-run`/);
+
+  const statePath = path.join(repo, '.agent-loop', 'latest', 'state.json');
+  const resumed = await runProcess(process.execPath, [
+    path.join(agentLoopRoot, 'src', 'loop.js'),
+    '--resume',
+    statePath,
+  ], {
+    cwd: agentLoopRoot,
+    env,
+    timeoutMs: 60000,
+  });
+
+  assert.equal(resumed.exitCode, 0, resumed.stderr || resumed.stdout);
+  const taskText = await fs.readFile(taskPath, 'utf8');
+  assert.match(taskText, /`old-run`/);
+  assert.doesNotMatch(taskText, /DONE_FIXED/);
+  assert.doesNotMatch(resumed.stderr, /Synced task status: /);
+});
+
 test('loop CLI pauses after a progressing iteration and resumes from the next one', async () => {
   const { repo, env, commonArgs } = await createCliFixture({
     initialValue: 1,
@@ -164,7 +252,12 @@ async function createCliFixture({ initialValue, partialValue = null, finalValue 
     '30000',
   ];
 
-  return { repo, env, commonArgs };
+  return {
+    repo,
+    env,
+    commonArgs,
+    taskPath: path.join(repo, 'task.md'),
+  };
 }
 
 async function runOk(command, args, options) {

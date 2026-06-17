@@ -1,0 +1,133 @@
+{
+  "name": "agent-loop-dashboard",
+  "displayName": "AgentLoop Dashboard",
+  "description": "Visual progress for AgentLoop migration queue, gates, and Codex/Grok review runs.",
+  "version": "0.1.0",
+  "publisher": "cube-pets-office",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:agent-loop/package.json"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agent-loop",
+          "title": "AgentLoop",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agent-loop": [
+        {
+          "id": "agentLoop.currentRun",
+          "name": "当前运行"
+        },
+        {
+          "id": "agentLoop.queue",
+          "name": "迁移队列"
+        },
+        {
+          "id": "agentLoop.runs",
+          "name": "历史运行"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentLoop.runQueue",
+        "title": "AgentLoop: 运行迁移队列",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentLoop.stopRun",
+        "title": "AgentLoop: 停止当前运行",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "agentLoop.openDashboard",
+        "title": "AgentLoop: 打开可视化面板",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "agentLoop.openFinalReport",
+        "title": "AgentLoop: 打开最终报告",
+        "icon": "$(book)"
+      },
+      {
+        "command": "agentLoop.openStateJson",
+        "title": "AgentLoop: 打开 state.json",
+        "icon": "$(json)"
+      },
+      {
+        "command": "agentLoop.refresh",
+        "title": "刷新",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentLoop.runQueue",
+          "when": "view == agentLoop.queue",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentLoop.stopRun",
+          "when": "view == agentLoop.currentRun",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentLoop.openDashboard",
+          "when": "view == agentLoop.currentRun",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentLoop.refresh",
+          "when": "view == agentLoop.currentRun || view == agentLoop.queue || view == agentLoop.runs",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AgentLoop",
+      "properties": {
+        "agentLoop.pollIntervalMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 500,
+          "description": "轮询 .agent-loop/latest/state.json 的间隔（毫秒）"
+        },
+        "agentLoop.queuePath": {
+          "type": "string",
+          "default": "agent-loop/scripts/migration-queue.json",
+          "description": "迁移队列 JSON 路径（相对仓库根目录）"
+        },
+        "agentLoop.openDashboardOnRun": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动 run-queue 时自动打开可视化面板"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "node --test ../test/vscode-extension.test.js",
+    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

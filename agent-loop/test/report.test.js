@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildAgentNotFoundReport, buildProbeReport } from '../src/report.js';
+import { buildLoopReport } from '../src/loopReport.js';
 
 const sampleReportInput = {
   runId: '2026-06-16T08-24-33-531Z',
@@ -89,4 +90,165 @@ test('builds localized agent-not-found reports', () => {
   assert.match(english, /One or more required agent executables were not found\./);
   assert.match(chinese, /^## 结论$/m);
   assert.match(chinese, /一个或多个必需的代理可执行文件未找到。/);
+});
+
+test('buildLoopReport marks run mode and localizes status notes', () => {
+  const report = buildLoopReport({
+    runId: '2026-06-16T11-08-17-334Z',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo',
+    task: 'tasks/a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: true, failureCount: 0, progress: { effectiveFailureCount: 0 } },
+    finalState: 'DONE_GATE_ONLY',
+    iterations: [],
+    maxIterations: 3,
+    lang: 'zh-CN',
+    runMode: 'gate-only',
+    grokRan: false,
+    codexRan: false,
+    runTimeLocal: '2026-06-16 19:08:17 (Asia/Shanghai)',
+    runTimeUtc: '2026-06-16 11:08:17 (UTC)',
+  });
+
+  assert.match(report, /^# AgentLoop 闭环报告$/m);
+  assert.match(report, /^本地时间: `2026-06-16 19:08:17 \(Asia\/Shanghai\)`$/m);
+  assert.match(report, /^UTC 时间: `2026-06-16 11:08:17 \(UTC\)`$/m);
+  assert.match(report, /^运行模式: `gate-only`$/m);
+  assert.match(report, /^Grok 已运行: `false`$/m);
+  assert.match(report, /^Codex 已运行: `false`$/m);
+  assert.match(report, /^## 状态说明$/m);
+  assert.match(report, /`DONE_GATE_ONLY`：基线 gate 已通过，且跳过了 review。/);
+  assert.match(report, /最终审查成功/);
+});
+
+test('buildLoopReport survives codex fix attempts without grokFix fields', () => {
+  const report = buildLoopReport({
+    runId: '2026-06-16T11-08-17-334Z',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo',
+    task: 'tasks/a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: false, failureCount: 2 },
+    finalState: 'DONE_FIXED',
+    fixAgent: 'codex',
+    reviewAgent: 'grok',
+    agentFix: { exitCode: 0, timedOut: false },
+    iterations: [
+      {
+        iteration: 1,
+        agentFix: { exitCode: 0, timedOut: false },
+        attempts: [
+          {
+            attempt: 1,
+            agentFix: { exitCode: 0 },
+            failure: { kind: 'none', retryable: false },
+            diffChanged: true,
+          },
+        ],
+        gate: { ok: true, failureCount: 0 },
+      },
+    ],
+    maxIterations: 3,
+    lang: 'en',
+    runMode: 'codex-fix',
+    grokRan: false,
+    codexRan: true,
+  });
+
+  assert.match(report, /^## codex Fix Iterations$/m);
+  assert.match(report, /codex exitCode: `0`/);
+  assert.match(report, /Attempt 1: Exit code=`0`/);
+  assert.match(report, /^## grok Review$/m);
+  assert.doesNotMatch(report, /Cannot read properties of null/);
+});
+
+test('buildLoopReport localizes iteration detail labels when lang is zh-CN', () => {
+  const report = buildLoopReport({
+    runId: '2026-06-16T11-08-17-334Z',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo',
+    task: 'tasks/a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: false, failureCount: 2 },
+    finalState: 'DONE_FIXED',
+    iterations: [
+      {
+        iteration: 1,
+        grokFix: { exitCode: 0, timedOut: false },
+        attempts: [
+          {
+            attempt: 1,
+            grokFix: { exitCode: 1 },
+            failure: { kind: 'timeout', retryable: true },
+            diffChanged: false,
+          },
+        ],
+        gate: { ok: true, failureCount: 0 },
+        gateProgress: { innerFailureCount: 1, effectiveFailureCount: 0 },
+        diff: { bytes: 120 },
+        diffGuard: {
+          findings: [
+            {
+              reason: 'protected_path_changed',
+              path: 'test.js',
+              addedLines: 1,
+              deletedLines: 0,
+            },
+          ],
+        },
+      },
+    ],
+    maxIterations: 3,
+    lang: 'zh-CN',
+    runMode: 'grok-fix',
+    grokRan: true,
+    codexRan: false,
+    runTimeLocal: '2026-06-16 19:08:17 (Asia/Shanghai)',
+    runTimeUtc: '2026-06-16 11:08:17 (UTC)',
+  });
+
+  assert.match(report, /grok 退出码: `0`/);
+  assert.match(report, /grok 是否超时: `false`/);
+  assert.match(report, /grok 尝试次数: `1`/);
+  assert.match(report, /尝试 1: 退出码=`1`, 失败=`timeout`, 可重试=`true`, diff 已变化=`false`/);
+  assert.match(report, /内部失败数: `1`/);
+  assert.match(report, /Diff 字节数: `120`/);
+  assert.match(report, /Diff 保护检查: `1`/);
+  assert.match(report, /受保护路径被修改: `test.js`/);
+  assert.match(report, /文件: `grok-request.1.md, grok-output.1.\*, diff.1.patch`/);
+});
+
+test('buildLoopReport localizes gate-not-run and unknown counts when lang is zh-CN', () => {
+  const report = buildLoopReport({
+    runId: '2026-06-16T11-08-17-334Z',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo',
+    task: 'tasks/a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: false, failureCount: 2 },
+    finalState: 'HALT_HUMAN',
+    iterations: [
+      {
+        iteration: 1,
+        grokFix: { exitCode: 1, timedOut: false },
+      },
+      {
+        iteration: 2,
+        grokFix: { exitCode: 0, timedOut: false },
+        gate: { ok: false, failureCount: 2 },
+        gateProgress: { innerFailureCount: null, effectiveFailureCount: 2 },
+      },
+    ],
+    maxIterations: 3,
+    lang: 'zh-CN',
+    runMode: 'halt-human-after-grok',
+    grokRan: true,
+    codexRan: false,
+  });
+
+  assert.match(report, /Gate 结果: `未运行`/);
+  assert.match(report, /Gate 结果: `失败`/);
+  assert.match(report, /内部失败数: `未知`/);
+  assert.match(report, /缺少本次运行真正需要的 agent/);
 });

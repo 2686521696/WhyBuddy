@@ -1,0 +1,95 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "reviewAgent": "grok",
+    "scopedReview": true,
+    "reviewMaxTurns": 2,
+    "guardTests": true,
+    "maxIterations": 3,
+    "timeoutMs": 1800000,
+    "lang": "zh-CN",
+    "pythonExe": "tws-ai-slide-rule-python/.venv/Scripts/python.exe"
+  },
+  "gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js tws-ai-slide-rule-python server/routes/__tests__/sliderule.execute-capability.test.ts"
+  ],
+  "infraGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_client_parity.py tests/test_config.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_client_parity.py"
+  ],
+  "poolGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_pool_parity.py tests/test_pool.py tests/test_config.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_pool_parity.py"
+  ],
+  "jsonGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_json_hardening.py tests/test_client_parity.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_json_hardening.py"
+  ],
+  "tasks": [
+    {
+      "id": "backend-python-llm-client-parity",
+      "task": "agent-loop/tasks/backend-python-llm-client-parity.md",
+      "gatesKey": "infraGates",
+      "enabled": true
+    },
+    {
+      "id": "backend-python-llm-pool-parity",
+      "task": "agent-loop/tasks/backend-python-llm-pool-parity.md",
+      "gatesKey": "poolGates",
+      "enabled": true
+    },
+    {
+      "id": "backend-python-llm-json-hardening",
+      "task": "agent-loop/tasks/backend-python-llm-json-hardening.md",
+      "gatesKey": "jsonGates",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-synthesis-merge",
+      "task": "agent-loop/tasks/migrate-sliderule-synthesis-merge.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-rebuttal-resolve",
+      "task": "agent-loop/tasks/migrate-sliderule-rebuttal-resolve.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-counter-argue",
+      "task": "agent-loop/tasks/migrate-sliderule-counter-argue.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-report-write",
+      "task": "agent-loop/tasks/migrate-sliderule-report-write.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-structure-decompose",
+      "task": "agent-loop/tasks/migrate-sliderule-structure-decompose.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-risk-analyze",
+      "task": "agent-loop/tasks/migrate-sliderule-risk-analyze.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-evidence-search",
+      "task": "agent-loop/tasks/migrate-sliderule-evidence-search.md",
+      "enabled": true
+    },
+    {
+      "id": "sliderule-critique-generate",
+      "task": "agent-loop/tasks/migrate-sliderule-critique-generate.md",
+      "enabled": false
+    }
+  ]
+}

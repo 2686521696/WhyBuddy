@@ -1,0 +1,226 @@
+# SlideRule Python 迁移任务状态
+
+这个文件是给人看的迁移总表，用来回答“哪一片已经执行完、哪一片还没做”。详细的机器运行记录仍然放在 `.agent-loop/latest/` 和 `.agent-loop/runs/`，这些目录是运行产物，不提交。
+
+## 状态规则
+
+- `[x]`：已经实现并通过当前记录的 gate 或 live 验证。
+- `[ ]`：还没有迁移，或没有足够验证证据。
+- `provenance="python-llm"`：Python 真 LLM 输出，不是旧 RAG 罐头。
+- `provenance="python-rag"`：仍走旧 Python mapped/RAG 路径，后续需要按能力逐片替换。
+
+## 能力迁移清单
+
+- [x] `intent.clarify`：已迁到 Python 真脑子，返回 `python-llm`。
+- [x] `gap.ask`：已迁到 Python 真脑子，返回 `python-llm`。
+- [x] `question.expand`：已迁到 Python 真脑子，返回 `python-llm`。
+- [x] `critique.generate`：已迁到 Python 真脑子，返回 `python-llm`。
+- [ ] `report.write`：仍走旧 Python mapped/RAG 路径。
+- [ ] `structure.decompose`：仍走旧 Python mapped/RAG 路径。
+- [ ] 其它 SlideRule V5 能力：未逐片审计，不能按已迁移处理。
+
+## 最近验证记录
+
+### `gap.ask`
+
+- 最近执行：`loop` 结束时会自动回写；也可手动执行 `npm run sync:task-status -- --task agent-loop/tasks/migrate-sliderule-gap-ask.md --include-migration-status`
+
+- AgentLoop 报告：`.agent-loop/latest/final-report.md`
+- 预期结果：`DONE_GATE_ONLY` / `runMode=gate-only`
+
+已记录通过的 gate：
+
+- [x] Python pytest：`tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py`
+- [x] Node vitest：`sliderule.execute-capability.test.ts` 和 `sliderule.live-delegation.test.ts`
+- [x] TypeScript：`pnpm exec tsc --noEmit --pretty false`
+- [x] mojibake：`node agent-loop/src/check-mojibake.js ...`
+- [x] 手工 live smoke：隔离端口验证 `intent.clarify` / `gap.ask` 返回 `python-llm`
+
+### `intent.clarify`
+
+- 状态：已实现并验证通过
+- 结果：Node 在 Python mode 下委托 Python，Python 返回 `python-llm`
+- 这条也是 gate-only 验证闭环，不代表 AgentLoop 这轮做了 Grok 自动修复。
+- 注意：旧文档里的 `python-rag` 说法已经过时；真脑子路径应记录为 `python-llm`
+
+### `question.expand`
+
+- 状态：已实现并验证通过
+- AgentLoop run id：`2026-06-17T02-07-11-436Z`
+- AgentLoop 结果：`DONE_GATE_ONLY`
+- 运行模式：`gate-only`
+- Grok 已运行：`false`
+- Codex 已运行：`false`
+- 结果：Node 在 Python mode 下委托 Python，Python 返回 `python-llm`
+- 说明：这条是对话类能力，沿用 markdown 输出策略；不是结构化 JSON 能力迁移模板。
+
+已记录通过的 gate：
+
+- [x] Python pytest：`tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py`
+- [x] Node vitest：`sliderule.execute-capability.test.ts` 和 `sliderule.live-delegation.test.ts` 默认 gate
+- [x] TypeScript：`pnpm exec tsc --noEmit --pretty false`
+- [x] mojibake：`node agent-loop/src/check-mojibake.js ...`
+
+## 分层进度口径
+
+这些比例只用于把范围说清楚，不要把它们混成一个总数。尤其不能把 SlideRule 某条链路的高进度，误报成整个 NodeJS 后端的迁移进度。
+
+| 范围 | 当前判断 | 说明 |
+|---|---:|---|
+| 整体 NodeJS 后端迁 Python | 约 8-12% | 大分母是整个 NodeJS backend。SlideRule 只是其中一个子系统，所以整体仍接近 10%。 |
+| SlideRule V5 子系统迁移 | 约 58-62% | V5 Python baseline、部分 contract、部分 Node 委托已经建立，但能力覆盖还没有完成。 |
+| SlideRule V5 Node 到 Python 薄代理链路 | 约 85% | Node Python mode、delegation helper、contract/live smoke 已比较成熟，但还要继续扩 capability 白名单。 |
+| Python V5 可运行基线 | 约 70% | Python 服务、核心 smoke、contract expansion 能跑；RAG/vector、配置清理、部署策略仍要继续补。 |
+| LLM infra 迁移 | 约 15-25% | Python `sliderule_llm` 有真实 Phase 1 低层切片，但 provider fallback、pool hardening、JSON hardening、telemetry/cost、并发/熔断等全后端底座能力仍主要在 Node。 |
+| 能力覆盖 | 低到中 | `intent.clarify`、`gap.ask`、`question.expand`、`critique.generate` 已接真 LLM；队列下一批见 `scripts/migration-queue.json`。 |
+
+## 整体迁移进度
+
+### 当前结论
+
+Phase 0 盘点已确认：**整体 NodeJS 后端迁 Python 仍按约 8-12% 口径记录**。这是整体后端的大分母口径，不是 SlideRule 单子系统口径。
+
+关键原因：
+
+- `server/` 和 `shared/` 的主要资产仍在 Node/TypeScript，尤其是 Blueprint/Autopilot、LLM infra、RAG/vector、auth/admin/audit/permission、executor/tasks、web-aigc 工具路由。
+- `tws-ai-slide-rule-python/` 当前主要覆盖 SlideRule V5 baseline，不是整个后端的 Python 替代服务。
+- `intent.clarify`、`gap.ask`、`question.expand` 已是真 LLM；其它很多 V5 capability 仍是 `python-rag` baseline 或待审计映射。
+- 最近 Phase 0 是 `gate-only` 盘点和验证，不是 Grok 自动修复，也不是业务迁移完成。
+
+Phase 0 盘点任务文档：`agent-loop/tasks/backend-python-phase0-inventory.md`
+
+LLM infra 审计任务文档：`agent-loop/tasks/backend-python-llm-infra-audit.md`
+
+LLM config parity 任务文档：`agent-loop/tasks/backend-python-llm-config-parity.md`
+
+### LLM infra 当前结论
+
+`tws-ai-slide-rule-python/sliderule_llm/` 已经是真实现，不是旧 `services/*.py` 那类罐头 stub。它能做主 LLM 配置、基础 chat/responses 调用、基础 JSON 解析和基础 pool 调用，因此可以支撑当前几片 SlideRule 对话类能力。
+
+2026-06-17 已完成 **LLM config parity 第一片**：
+
+- Python `LlmConfig` 已补 `router_model`、`model_fallbacks`、`max_context`、`max_concurrent`、`provider_name`、`chat_thinking_type`。
+- Python 已新增 `FallbackLlmConfig` / `get_fallback_llm_config()`，能读取 `FALLBACK_LLM_*`，但还没有接入真实 fallback provider 链。
+- Python `PoolConfig` 已补 `wire_api`，并对齐 Blueprint pool 的 base/model/timeout 默认值和 gpt-5 pool wire 推断。
+- `pool.py` 已修复旧 `LlmConfig(...)` 构造路径，避免新增字段导致 pool 运行时报错。
+- AgentLoop run：`2026-06-17T02-51-25-969Z`，结果 `DONE_GATE_ONLY`，`20 passed, 1 skipped` + mojibake gate 通过。
+
+但它还不能作为整个后端的 Python LLM 底座。Node 侧仍有这些关键能力没有 Python 等价实现：
+
+- `FALLBACK_LLM_*` provider fallback。
+- `LLM_MODEL_FALLBACKS` 模型 fallback。
+- provider cooldown、global cooldown、retry/backoff、并发限制。
+- SSE / stream 解析、多模态 content parts、vision/fallback 配置。
+- usage/cost/telemetry 统计。
+- `SLIDERULE_JSON_LLM_MAX_TOKENS`、空 JSON shape retry、finish reason/length 处理。
+- `BLUEPRINT_SPEC_DOCS_LLM_POOL_WIRE_API`、pool 504 penalty、pool metadata、spec-doc markdown 形状校验。
+- 代理环境下的 `NO_PROXY` / `LLM_PROXY_THROUGH` 等 Node 侧运行细节。
+
+所以 LLM infra 单层可以记为 **约 15-25%**；整体后端仍维持 **约 8-12%**，不要因为三片 SlideRule 对话能力已接真 LLM 就抬高整体比例。
+
+`agent-loop` 可以用于 NodeJS 到 Python 迁移，而且方向合适。但它的定位应该是：
+
+> NodeJS 到 Python 迁移的切片执行器、gate runner、自动修复工作单元。
+
+不要把它当成：
+
+> 一键把整个 Node 后端迁到 Python 的全自动迁移器。
+
+整体迁移任务太大，边界、测试、架构决策、数据兼容、部署策略都不够单一。如果直接给 AgentLoop “把整个 NodeJS 后端迁到 Python” 这种任务，自动循环很容易改到不该改的地方。
+
+### 适合交给 AgentLoop 的迁移单位
+
+- 一个 endpoint。
+- 一个 `capabilityId`。
+- 一个 Node 到 Python delegation 白名单扩展。
+- 一个 Python parity test。
+- 一个 live smoke gate。
+- 一个数据、密钥、运行产物清理任务。
+
+### 不适合交给 AgentLoop 的任务
+
+- 把整个 NodeJS 后端迁移到 Python。
+- 一次迁多个无关子系统。
+- 同时改业务逻辑、部署策略、密钥配置和 UI。
+- 没有明确 allowed files、gate、成功标准的开放式迁移。
+
+### 推荐迁移节奏
+
+1. 先跑 audit-only 基线。
+   - 不让它改代码。
+   - 只跑 gate，确认当前迁移切片是否健康。
+   - 用来检查 Python baseline、Node thin proxy、TypeScript、mojibake。
+
+2. 再按 capability 或 route 做小步迁移。
+   - 一次只迁一个 capability。
+   - 或者只迁一组强相关 capability。
+   - 每片都要有独立任务文件。
+
+3. 每个切片必须绑定 gate。
+   - Python pytest。
+   - Node vitest。
+   - TypeScript。
+   - 必要时加 live Node 到 Python smoke。
+   - 文档或中文报告改动加 mojibake 扫描。
+
+4. 每轮保留人工暂停点。
+   - `--pause-before-fix`
+   - `--pause-after-iteration`
+   - `--guard-tests`
+   - `--max-iterations 1` 或 `2`
+
+### 第一批任务建议
+
+| 顺序 | 任务 | 状态 | 原因 |
+|---|---|---|---|
+| 1 | 建立迁移切片模板 | 已完成 | 固定任务格式，避免每次任务描述漂移。 |
+| 2 | 建立 audit-only gate 任务 | 已完成 | 让 AgentLoop 先成为迁移体检工具。 |
+| 3 | 迁移 `intent.clarify` | 已完成 | 低风险对话类能力，适合先接 Python 真 LLM。 |
+| 4 | 迁移 `gap.ask` | 已完成 | 同属对话类能力，已验证 `python-llm`。 |
+| 5 | 迁移 `question.expand` | 已完成 | 同属对话类能力，沿用 markdown 输出策略。 |
+| 6 | 迁移 `critique.generate` | 已完成 | 审议族第一片。 |
+| 7 | 队列 batch-2（infra + 审议族 + 结构化） | 进行中 | 见 `agent-loop/scripts/migration-queue.json` 10 项。 |
+
+### 推荐 AgentLoop 命令形态
+
+示例以单个 SlideRule capability 迁移为单位：
+
+```powershell
+node agent-loop/src/loop.js `
+  --cwd C:\Users\wangchunji\Documents\cube-pets-office `
+  --fix-cwd C:\Users\wangchunji\Documents\cube-pets-office `
+  --task agent-loop/tasks/migrate-sliderule-question-expand.md `
+  --gate "cd tws-ai-slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py -q --tb=short" `
+  --gate "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.execute-capability.test.ts server/routes/__tests__/sliderule.live-delegation.test.ts --reporter=dot" `
+  --gate "pnpm exec tsc --noEmit --pretty false" `
+  --gate "node agent-loop/src/check-mojibake.js agent-loop/tasks tws-ai-slide-rule-python server/routes/__tests__" `
+  --pause-before-fix `
+  --pause-after-iteration `
+  --guard-tests `
+  --max-iterations 1 `
+  --auto-fix
+```
+
+这条命令的意图是：可以自动修，但每轮都要有 gate 和人工暂停点，不让它一路狂奔。
+
+## 下一步候选
+
+`question.expand` 已完成，`backend-python-llm-infra-audit` 已形成审计结论。下一片建议从 LLM infra 的 Phase 1 parity 开始，而不是直接冲 `orchestrate.plan` 这类结构化能力：
+
+| 顺序 | 建议任务 | 目标 |
+|---|---|---|
+| 1 | `backend-python-llm-config-parity.md` | 已完成第一片：Python 能读懂 router/fallback/model fallback/max context/chat thinking/pool wire 等 env 契约。 |
+| 2 | `backend-python-llm-client-parity.md` | 已建任务 + 红灯测试，在队列第 1 项。 |
+| 3 | `backend-python-llm-pool-parity.md` | 已建任务 + 红灯测试，在队列第 2 项。 |
+| 4 | `backend-python-llm-json-hardening.md` | 已建任务 + 红灯测试，在队列第 3 项。 |
+| 5 | `migrate-sliderule-synthesis-merge.md` 等 7 片 | 已建任务 + 红灯测试，在队列第 4–10 项。 |
+
+结构化 JSON 类能力不要直接套 `question.expand` 的散文策略。应先补 JSON hardening，再迁 `orchestrate.plan`、`report.write`、`structure.decompose` 等能力。
+
+## 提交前检查
+
+- [ ] 只暂存本次任务相关文件，绝不使用 `git add -A`。
+- [ ] 不暂存 `.agent-loop/`、`tmp/`、`probes/`、`.env`、日志、缓存、`tws-ai-slide-rule-python/data/`。
+- [ ] 不提交真实密钥、数据库密码、Qdrant key、Bearer token。
+- [ ] 如果只改文档，至少跑 `node agent-loop/src/check-mojibake.js agent-loop/tasks`。
+- [ ] 如果改代码，重新跑对应 Python、Node、TypeScript gate。

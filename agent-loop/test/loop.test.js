@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseLoopArgs } from '../src/loopArgs.js';
@@ -5,7 +8,7 @@ import { evaluateGate } from '../src/gates.js';
 import { decideNextState } from '../src/stateMachine.js';
 import { hasDiffChanged } from '../src/diff.js';
 import { buildGrokFixPrompt } from '../src/grokPrompt.js';
-import { getWorktreePath } from '../src/worktree.js';
+import { getWorktreePath, resetWorktreeWorkingTree, seedWorktreeFromRepo } from '../src/worktree.js';
 
 test('parseLoopArgs requires cwd, task, and at least one gate', () => {
   assert.deepEqual(
@@ -27,6 +30,10 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
       createWorktree: null,
       fixCwd: null,
       skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'grok',
+      scopedReview: null,
+      reviewMaxTurns: 2,
       timeoutMs: 120000,
       maxIterations: 3,
       grokMaxTurns: 4,
@@ -35,12 +42,69 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
       pauseBeforeFix: false,
       pauseAfterIteration: false,
       guardTests: false,
+      lang: 'en',
+      syncTaskStatus: true,
+      syncMigrationStatus: true,
       resume: null,
     }
   );
 
   assert.throws(() => parseLoopArgs(['--cwd', 'C:\\repo']), /--task is required/);
   assert.throws(() => parseLoopArgs(['--cwd', 'C:\\repo', '--task', 'task.md']), /at least one --gate is required/);
+});
+
+test('parseLoopArgs disables automatic task status sync when requested', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--no-sync-task-status',
+    '--no-sync-migration-status',
+  ]);
+
+  assert.equal(parsed.syncTaskStatus, false);
+  assert.equal(parsed.syncMigrationStatus, false);
+});
+
+test('parseLoopArgs supports configurable fix and review agents', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--fix-agent',
+    'codex',
+    '--review-agent',
+    'grok',
+    '--scoped-review',
+    'true',
+  ]);
+
+  assert.equal(parsed.fixAgent, 'codex');
+  assert.equal(parsed.reviewAgent, 'grok');
+  assert.equal(parsed.scopedReview, true);
+  assert.equal(parsed.skipReview, false);
+});
+
+test('parseLoopArgs treats review-agent none as skip-review', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--review-agent',
+    'none',
+  ]);
+
+  assert.equal(parsed.skipReview, true);
+  assert.equal(parsed.reviewAgent, null);
 });
 
 test('parseLoopArgs supports skip-review for gate-only runs', () => {
@@ -55,6 +119,34 @@ test('parseLoopArgs supports skip-review for gate-only runs', () => {
   ]);
 
   assert.equal(parsed.skipReview, true);
+});
+
+test('parseLoopArgs supports zh-CN loop reports', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--lang',
+    'zh-CN',
+  ]);
+
+  assert.equal(parsed.lang, 'zh-CN');
+  assert.throws(
+    () => parseLoopArgs([
+      '--cwd',
+      'C:\\repo',
+      '--task',
+      'task.md',
+      '--gate',
+      'npm test',
+      '--lang',
+      'fr',
+    ]),
+    /--lang must be one of: en, zh-CN/
+  );
 });
 
 test('parseLoopArgs supports pause and resume controls', () => {
@@ -252,6 +344,78 @@ test('parseLoopArgs allows auto-fix with create-worktree instead of fix-cwd', ()
   assert.equal(parsed.fixCwd, null);
 });
 
+test('seedWorktreeFromRepo applies HEAD binary diff and copies untracked files', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-seed-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'seed-test');
+  await fs.mkdir(path.join(repoRoot, 'pkg'), { recursive: true });
+  await fs.mkdir(path.join(worktreePath, 'pkg'), { recursive: true });
+  await fs.writeFile(path.join(repoRoot, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
+  await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'worktree-version\n', 'utf8');
+  await fs.writeFile(path.join(repoRoot, 'pkg', 'new.txt'), 'fresh\n', 'utf8');
+
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, options });
+    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD' && args[2] === '--binary') {
+      return { exitCode: 0, stdout: 'diff --git a/pkg/tracked.txt b/pkg/tracked.txt\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'ls-files') {
+      return { exitCode: 0, stdout: 'pkg/new.txt\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'apply') {
+      await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000 });
+
+  assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'utf8'), 'repo-version\n');
+  assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'new.txt'), 'utf8'), 'fresh\n');
+  assert.ok(calls.some((call) => call.command === 'git' && call.args.join(' ') === 'diff HEAD --binary'));
+  assert.equal(calls.filter((call) => call.command === 'git' && call.args[0] === 'apply').length, 1);
+});
+
+test('seedWorktreeFromRepo can reset and reseed the same worktree twice', async () => {
+  const repoRoot = path.join(os.tmpdir(), `agent-loop-reseed-${Date.now()}`);
+  const worktreePath = path.join(repoRoot, '.worktrees', 'reseed-test');
+  await fs.mkdir(path.join(repoRoot, 'pkg'), { recursive: true });
+  await fs.mkdir(path.join(worktreePath, 'pkg'), { recursive: true });
+  await fs.writeFile(path.join(repoRoot, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
+  await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'stale-grok-version\n', 'utf8');
+
+  let applyCount = 0;
+  const run = async (command, args, options = {}) => {
+    if (command === 'git' && args[0] === 'reset' && args[1] === '--hard') {
+      await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'clean-base\n', 'utf8');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'clean') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'diff' && args[1] === 'HEAD') {
+      return { exitCode: 0, stdout: 'diff --git a/pkg/tracked.txt b/pkg/tracked.txt\n', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'ls-files') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'git' && args[0] === 'apply') {
+      applyCount += 1;
+      await fs.writeFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'repo-version\n', 'utf8');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000, resetBeforeSeed: true });
+  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs: 1000, resetBeforeSeed: true });
+
+  assert.equal(applyCount, 2);
+  assert.equal(await fs.readFile(path.join(worktreePath, 'pkg', 'tracked.txt'), 'utf8'), 'repo-version\n');
+  await assert.doesNotReject(async () => resetWorktreeWorkingTree({ worktreePath, run, timeoutMs: 1000 }));
+});
+
 test('getWorktreePath creates project-local hidden worktree paths', () => {
   assert.equal(
     getWorktreePath({ repoRoot: 'C:\\repo', name: 'agentloop-fix-1' }),
@@ -345,4 +509,25 @@ test('buildGrokFixPrompt includes task, gate failure, and safety rules', () => {
   assert.match(prompt, /Do not bypass assertions/);
   assert.match(prompt, /不要提交/);
   assert.match(prompt, /只输出 JSON/);
+});
+
+test('buildGrokFixPrompt strips ANSI color codes from gate output', () => {
+  const prompt = buildGrokFixPrompt({
+    taskText: '修复 client parity',
+    gate: {
+      runs: [
+        {
+          label: 'pytest',
+          exitCode: 1,
+          timedOut: false,
+          stdout: '\u001b[31mF\u001b[0m\u001b[31mFAILED\u001b[0m tests/test_client_parity.py::test_x - ImportError',
+          stderr: '',
+        },
+      ],
+    },
+  });
+
+  assert.doesNotMatch(prompt, /\u001b\[/);
+  assert.match(prompt, /FAILED tests\/test_client_parity\.py::test_x - ImportError/);
+  assert.match(prompt, /FFAILED/);
 });

@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCodexReviewArgs, buildGrokJsonArgs } from '../src/commands.js';
+import { buildCodexExecArgs, buildCodexReviewArgs, buildGrokJsonArgs } from '../src/commands.js';
 import { parseProbeArgs } from '../src/indexArgs.js';
 
 test('codex review args use current working directory and uncommitted diff', () => {
   assert.deepEqual(buildCodexReviewArgs(), ['review', '--uncommitted']);
+  assert.deepEqual(buildCodexReviewArgs({ readPromptFromStdin: true }), ['review', '--uncommitted', '-']);
+});
+
+test('codex exec args target fix cwd and read prompt from stdin', () => {
+  assert.deepEqual(buildCodexExecArgs({ cwd: 'C:\\repo' }), [
+    'exec',
+    '--cd',
+    'C:\\repo',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '-',
+  ]);
 });
 
 test('grok json args request approved non-planning turns in the target cwd', () => {

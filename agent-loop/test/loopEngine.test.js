@@ -66,6 +66,43 @@ test('runLoop drives Grok through multiple gate rounds until green, then runs Co
   );
 });
 
+test('runLoop audit-only succeeds without agents when review is skipped and auto-fix is disabled', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, 'audit-only gate check', 'utf8');
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: false,
+      skipReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: null, grok: null }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async () => {
+        throw new Error('audit-only run should not spawn agents');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_GATE_ONLY');
+  assert.equal(result.iterations.length, 0);
+  assert.equal(result.grokFix, null);
+  assert.equal(result.codexReview, null);
+});
+
 test('runLoop halts no progress when a red post-fix gate has unchanged failure count', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
@@ -770,6 +807,96 @@ test('runLoop continues after max-turns when a changed red gate made progress', 
   assert.equal(result.iterations.length, 2);
   assert.equal(result.iterations[0].attempts[0].failure.kind, 'max_turns');
   assert.equal(grokCalls, 2);
+});
+
+test('runLoop writes review-request.md for grok review even when scoped review is disabled', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n', 'utf8');
+  const written = new Set();
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: false,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'grok',
+      scopedReview: false,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args) => {
+        if (command === 'grok.exe' && args.includes('--prompt-file')) {
+          const promptArgIndex = args.indexOf('--prompt-file');
+          const promptFile = args[promptArgIndex + 1];
+          assert.ok(promptFile.endsWith('review-request.md'));
+          return runOk(command, args, cwd, '{"verdict":"pass"}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: async (fileName, content, kind) => {
+        written.add(fileName);
+        return artifactWriter(cwd)(fileName, content, kind);
+      },
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(written.has('review-request.md'), true);
+});
+
+test('runLoop can use grok for scoped review after a green baseline gate', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n', 'utf8');
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'grok',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args) => {
+        if (command === 'grok.exe' && args.includes('--prompt-file')) {
+          return runOk(command, args, cwd, '{"verdict":"pass"}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(result.grokReview?.exitCode, 0);
+  assert.equal(result.codexReview, null);
 });
 
 function artifactWriter(cwd) {

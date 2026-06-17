@@ -1,3 +1,5 @@
+import { normalizeAgentId } from './agentRoles.js';
+
 export function parseLoopArgs(argv) {
   const parsed = {
     cwd: null,
@@ -7,6 +9,10 @@ export function parseLoopArgs(argv) {
     gates: [],
     autoFix: false,
     skipReview: false,
+    fixAgent: 'grok',
+    reviewAgent: 'grok',
+    scopedReview: null,
+    reviewMaxTurns: 2,
     timeoutMs: 120000,
     maxIterations: 3,
     grokMaxTurns: 4,
@@ -15,6 +21,9 @@ export function parseLoopArgs(argv) {
     pauseBeforeFix: false,
     pauseAfterIteration: false,
     guardTests: false,
+    lang: 'en',
+    syncTaskStatus: true,
+    syncMigrationStatus: true,
     resume: null,
   };
 
@@ -36,12 +45,38 @@ export function parseLoopArgs(argv) {
       parsed.autoFix = true;
     } else if (arg === '--skip-review') {
       parsed.skipReview = true;
+    } else if (arg === '--fix-agent') {
+      parsed.fixAgent = readAgentValue(argv, ++i, '--fix-agent');
+    } else if (arg === '--review-agent') {
+      const value = readValue(argv, ++i, '--review-agent');
+      if (value === 'none') {
+        parsed.skipReview = true;
+        parsed.reviewAgent = null;
+      } else {
+        parsed.reviewAgent = readAgentValue(argv, i, '--review-agent', value);
+      }
+    } else if (arg === '--scoped-review') {
+      parsed.scopedReview = readBooleanValue(argv, ++i, '--scoped-review');
+    } else if (arg === '--review-max-turns') {
+      parsed.reviewMaxTurns = Number.parseInt(readValue(argv, ++i, '--review-max-turns'), 10);
+      if (!Number.isFinite(parsed.reviewMaxTurns) || parsed.reviewMaxTurns <= 0) {
+        throw new Error('--review-max-turns must be a positive integer');
+      }
     } else if (arg === '--pause-before-fix') {
       parsed.pauseBeforeFix = true;
     } else if (arg === '--pause-after-iteration') {
       parsed.pauseAfterIteration = true;
     } else if (arg === '--guard-tests') {
       parsed.guardTests = true;
+    } else if (arg === '--lang') {
+      parsed.lang = readValue(argv, ++i, '--lang');
+      if (!['en', 'zh-CN'].includes(parsed.lang)) {
+        throw new Error('--lang must be one of: en, zh-CN');
+      }
+    } else if (arg === '--no-sync-task-status') {
+      parsed.syncTaskStatus = false;
+    } else if (arg === '--no-sync-migration-status') {
+      parsed.syncMigrationStatus = false;
     } else if (arg === '--timeout-ms') {
       parsed.timeoutMs = Number.parseInt(readValue(argv, ++i, '--timeout-ms'), 10);
       if (!Number.isFinite(parsed.timeoutMs) || parsed.timeoutMs <= 0) {
@@ -86,4 +121,16 @@ function readValue(argv, index, flag) {
   const value = argv[index];
   if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
   return value;
+}
+
+function readAgentValue(argv, index, flag, explicitValue) {
+  const value = explicitValue ?? readValue(argv, index, flag);
+  return normalizeAgentId(value, { field: flag, fallback: value });
+}
+
+function readBooleanValue(argv, index, flag) {
+  const value = readValue(argv, index, flag).toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${flag} must be true or false`);
 }

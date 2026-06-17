@@ -2,15 +2,23 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { evaluateGate as defaultEvaluateGate } from './gates.js';
 import { captureDiff as defaultCaptureDiff, hasDiffChanged } from './diff.js';
-import { buildGrokFixPrompt } from './grokPrompt.js';
+import {
+  fixStatusForAgent,
+  requiredAgentNames,
+  resolveAgentRoles,
+  reviewStatusForAgent,
+  useScopedReview,
+} from './agentRoles.js';
+import { buildAgentFixPrompt, buildAgentReviewPrompt } from './grokPrompt.js';
 import { ensureWorktree as defaultEnsureWorktree } from './worktree.js';
 import { resolveAgents as defaultResolveAgents } from './resolveAgents.js';
 import { runProcess as defaultRunProcess } from './runProcess.js';
-import { buildCodexReviewArgs, buildGrokJsonArgs } from './commands.js';
+import { buildCodexExecArgs, buildCodexReviewArgs, buildGrokJsonArgs } from './commands.js';
 import { madeGateProgress, summarizeGateProgress } from './gateProgress.js';
 import { classifyAgentFailure } from './agentFailure.js';
 import { analyzeDiffGuard } from './diffGuard.js';
 import { resolveAgentInvocation } from './agentProcess.js';
+import { createAgentStderrReporter } from './loopProgress.js';
 
 export async function runLoop({ options, runId = timestamp(), runDir, latestDir, resumeState = null, deps = {} }) {
   const {
@@ -22,6 +30,8 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     sleep = defaultSleep,
     onState = async () => {},
     writeArtifact = async () => {},
+    appendArtifact = null,
+    onProgress = async () => {},
   } = deps;
 
   const state = resumeState ? snapshotState(resumeState) : {
@@ -35,8 +45,11 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     baselineDiff: null,
     baselineDiffText: '',
     iterations: [],
+    agentFix: null,
+    agentReview: null,
     grokFix: null,
     codexReview: null,
+    grokReview: null,
     artifacts: {
       runDir,
       latestDir,
@@ -57,7 +70,8 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
 
   const agents = await resolveAgents();
   await transition('PROBED', { agents });
-  if (!agents.codex || !agents.grok) {
+  const requiredAgents = requiredAgentNames(options);
+  if (requiredAgents.some((name) => !agents[name])) {
     await transition('HALT_AGENT_NOT_FOUND');
     return snapshotState(state);
   }
@@ -111,13 +125,16 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       await transition('DONE_GATE_ONLY');
       return snapshotState(state);
     }
-    return await runFinalCodexReview({
+    return await runFinalReview({
       state,
       agents,
       fixCwd,
       options,
+      taskText,
       runProcess,
       writeArtifact,
+      appendArtifact,
+      onProgress,
       transition,
     });
   }
@@ -145,42 +162,55 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   let currentGate = lastIteration?.gateSnapshot ?? baselineGate;
   const startIteration = lastIteration ? lastIteration.iteration + 1 : 1;
 
+  const { fixAgent } = resolveAgentRoles(options);
+
   for (let iteration = startIteration; iteration <= maxIterations; iteration++) {
     await transition('BUDGET_LOOP_HEAD', { currentIteration: iteration });
 
-    const prompt = buildGrokFixPrompt({
+    const prompt = buildAgentFixPrompt({
       taskText,
       gate: currentGate,
+      workerAgent: fixAgent,
     });
-    await writeArtifact(`grok-request.${iteration}.md`, prompt, 'text');
-    await transition('GROK_FIX');
+    const requestFile = fixRequestArtifact(fixAgent, iteration);
+    await writeArtifact(requestFile, prompt, 'text');
+    if (fixAgent === 'grok') {
+      await writeArtifact(`grok-request.${iteration}.md`, prompt, 'text');
+    }
+    await transition(fixStatusForAgent(fixAgent));
 
     const attempts = [];
-    let grokFix = null;
+    let agentFix = null;
     let postFixDiff = null;
     let diffChanged = false;
     const maxRetries = options.grokMaxRetries ?? 1;
 
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-      grokFix = await runGrokAttempt({
+      agentFix = await runFixAttempt({
         agents,
+        agent: fixAgent,
         runProcess,
         writeArtifact,
+        appendArtifact,
+        onProgress,
         runDir,
         fixCwd,
         options,
         iteration,
         attempt,
+        requestFile,
       });
 
       postFixDiff = await captureDiff({ cwd: fixCwd, timeoutMs: options.timeoutMs });
       await writeArtifact(`diff.${iteration}.${attempt}.patch`, postFixDiff.text, 'text');
       if (attempt === 1) await writeArtifact(`diff.${iteration}.patch`, postFixDiff.text, 'text');
       diffChanged = hasDiffChanged(previousDiff, postFixDiff.text);
-      const failure = classifyAgentFailure(grokFix);
+      const failure = classifyAgentFailure(agentFix);
+      const summarizedFix = summarizeRun(agentFix);
       attempts.push({
         attempt,
-        grokFix: summarizeRun(grokFix),
+        agentFix: summarizedFix,
+        grokFix: fixAgent === 'grok' ? summarizedFix : null,
         failure,
         diff: summarizeDiff(postFixDiff.text),
         diffChanged,
@@ -190,25 +220,31 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       await sleep(options.retryBackoffMs ?? 1000);
     }
 
-    if (grokFix.timedOut || grokFix.spawnError) {
-      iterations.push({ iteration, attempts, grokFix: summarizeRun(grokFix), gate: null, diff: summarizeDiff(postFixDiff.text) });
-      await transition('HALT_HUMAN', { iterations, grokFix: summarizeRun(grokFix) });
-      return snapshotState(state);
+    const summarizedFix = summarizeRun(agentFix);
+    const legacyFixPatch = {
+      agentFix: summarizedFix,
+      grokFix: fixAgent === 'grok' ? summarizedFix : null,
+    };
+
+    if (agentFix.timedOut || agentFix.spawnError) {
+      iterations.push({ iteration, attempts, ...legacyFixPatch, gate: null, diff: summarizeDiff(postFixDiff.text) });
+      await transition('HALT_HUMAN', { iterations, ...legacyFixPatch });
+      return finalizeState(state, options);
     }
 
     if (!diffChanged) {
-      const failure = classifyAgentFailure(grokFix);
+      const failure = classifyAgentFailure(agentFix);
       iterations.push({
         iteration,
         attempts,
-        grokFix: summarizeRun(grokFix),
+        ...legacyFixPatch,
         failure,
         gate: null,
         diff: summarizeDiff(postFixDiff.text),
       });
       await transition(failure.agentUnstable ? 'HALT_HUMAN' : 'HALT_NO_CHANGES',
-        { iterations, grokFix: summarizeRun(grokFix) });
-      return snapshotState(state);
+        { iterations, ...legacyFixPatch });
+      return finalizeState(state, options);
     }
 
     const postFixGate = await evaluateGate({
@@ -222,7 +258,7 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     const iterationRecord = {
       iteration,
       attempts,
-      grokFix: summarizeRun(grokFix),
+      ...legacyFixPatch,
       gate: summarizeGate(postFixGate),
       gateSnapshot: postFixGate,
       gateProgress: summarizeGateProgress(postFixGate),
@@ -233,49 +269,52 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     iterations.push(iterationRecord);
     await transition('POST_FIX_GATE_RESULT', {
       iterations,
-      grokFix: summarizeRun(grokFix),
+      ...legacyFixPatch,
     });
 
     if (postFixGate.ok) {
       if (options.guardTests && iterationRecord.diffGuard.hasFindings) {
         await transition('HALT_HUMAN', {
           iterations,
-          grokFix: summarizeRun(grokFix),
+          ...legacyFixPatch,
           guardReason: 'POSSIBLE_TEST_TAMPER',
         });
-        return snapshotState(state);
+        return finalizeState(state, options);
       }
       if (options.skipReview) {
         await transition('DONE_FIXED', { iterations });
-        return snapshotState(state);
+        return finalizeState(state, options);
       }
-      return await runFinalCodexReview({
+      return await runFinalReview({
         state,
         agents,
         fixCwd,
         options,
+        taskText,
         runProcess,
         writeArtifact,
+        appendArtifact,
+        onProgress,
         transition,
         iterations,
       });
     }
 
-    const postGateFailure = classifyAgentFailure(grokFix);
+    const postGateFailure = classifyAgentFailure(agentFix);
     if (postGateFailure.agentUnstable) {
       // Unstable agent layer (rate limit / auth / network) + still-red gate → stop for human,
       // don't keep rolling. max_turns / nonzero_exit fall through to the progress judge below.
-      await transition('HALT_HUMAN', { iterations, grokFix: summarizeRun(grokFix) });
-      return snapshotState(state);
+      await transition('HALT_HUMAN', { iterations, ...legacyFixPatch });
+      return finalizeState(state, options);
     }
 
     if (options.guardTests && iterationRecord.diffGuard.hasFindings) {
       await transition('HALT_HUMAN', {
         iterations,
-        grokFix: summarizeRun(grokFix),
+        ...legacyFixPatch,
         guardReason: 'POSSIBLE_TEST_TAMPER',
       });
-      return snapshotState(state);
+      return finalizeState(state, options);
     }
 
     if (!madeGateProgress(currentGate, postFixGate)) {
@@ -296,36 +335,65 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   }
 
   await transition('HALT_BUDGET', { iterations });
-  return snapshotState(state);
+  return finalizeState(state, options);
 }
 
-async function runGrokAttempt({
+async function runFixAttempt({
   agents,
+  agent,
   runProcess,
   writeArtifact,
+  appendArtifact,
+  onProgress,
   runDir,
   fixCwd,
   options,
   iteration,
   attempt,
+  requestFile,
 }) {
-  const grokFix = await runAgentProcess(runProcess, agents.grok, buildGrokJsonArgs({
-    promptFile: artifactPath(runDir, `grok-request.${iteration}.md`),
-    cwd: fixCwd,
-    maxTurns: options.grokMaxTurns ?? 4,
-  }), {
-    cwd: fixCwd,
-    timeoutMs: options.timeoutMs,
+  const outputStem = fixOutputStem(agent, iteration, attempt);
+  const reporter = createAgentStderrReporter({
+    agent,
+    phase: `fix ${iteration}.${attempt}`,
+    appendArtifact,
+    clearArtifact: writeArtifact,
+    onProgress,
+    artifactName: `${outputStem}.stderr.log`,
   });
-  await writeArtifact(`grok-output.${iteration}.${attempt}.stdout.log`, grokFix.stdout || '', 'text');
-  await writeArtifact(`grok-output.${iteration}.${attempt}.stderr.log`, grokFix.stderr || '', 'text');
-  await writeArtifact(`grok-output.${iteration}.${attempt}.exit.json`, summarizeRun(grokFix), 'json');
-  if (attempt === 1) {
-    await writeArtifact(`grok-output.${iteration}.stdout.log`, grokFix.stdout || '', 'text');
-    await writeArtifact(`grok-output.${iteration}.stderr.log`, grokFix.stderr || '', 'text');
-    await writeArtifact(`grok-output.${iteration}.exit.json`, summarizeRun(grokFix), 'json');
+  await reporter.reset();
+
+  const promptPath = artifactPath(runDir, requestFile);
+  let agentFix;
+  if (agent === 'grok') {
+    agentFix = await runAgentProcess(runProcess, agents.grok, buildGrokJsonArgs({
+      promptFile: promptPath,
+      cwd: fixCwd,
+      maxTurns: options.grokMaxTurns ?? 4,
+    }), {
+      cwd: fixCwd,
+      timeoutMs: options.timeoutMs,
+      onStderr: reporter.onStderr,
+    });
+  } else {
+    const prompt = await fs.readFile(promptPath, 'utf8');
+    agentFix = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({ cwd: fixCwd }), {
+      cwd: fixCwd,
+      timeoutMs: options.timeoutMs,
+      input: prompt,
+      onStderr: reporter.onStderr,
+    });
   }
-  return grokFix;
+
+  await writeFixOutputArtifacts({
+    writeArtifact,
+    outputStem,
+    agent,
+    iteration,
+    attempt,
+    agentFix,
+  });
+  return agentFix;
 }
 
 async function writeGateArtifacts({ prefix, gate, writeArtifact }) {
@@ -337,41 +405,149 @@ async function writeGateArtifacts({ prefix, gate, writeArtifact }) {
   }
 }
 
-async function runFinalCodexReview({
+async function runFinalReview({
   state,
   agents,
   fixCwd,
   options,
+  taskText,
   runProcess,
   writeArtifact,
+  appendArtifact,
+  onProgress,
   transition,
   iterations = state.iterations,
 }) {
-  await transition('CODEX_REVIEW', { iterations });
-  const codexReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs(), {
-    cwd: fixCwd,
-    timeoutMs: options.timeoutMs,
-  });
-  await writeArtifact('codex-review.stdout.log', codexReview.stdout || '', 'text');
-  await writeArtifact('codex-review.stderr.log', codexReview.stderr || '', 'text');
-  await writeArtifact('codex-review.exit.json', summarizeRun(codexReview), 'json');
+  const { fixAgent, reviewAgent } = resolveAgentRoles(options);
+  const scoped = useScopedReview(options);
+  const reviewStem = reviewArtifactStem(reviewAgent);
+  await transition(reviewStatusForAgent(reviewAgent), { iterations });
 
-  if (codexReview.exitCode === 0 && !codexReview.timedOut && !codexReview.spawnError) {
+  const reporter = createAgentStderrReporter({
+    agent: reviewAgent,
+    phase: scoped ? 'scoped review' : 'review --uncommitted',
+    appendArtifact,
+    clearArtifact: writeArtifact,
+    onProgress,
+    artifactName: `${reviewStem}.stderr.log`,
+  });
+  await reporter.reset();
+
+  let promptInput = null;
+  if (scoped || reviewAgent === 'grok') {
+    const prompt = buildAgentReviewPrompt({ taskText, workerAgent: fixAgent });
+    await writeArtifact('review-request.md', prompt, 'text');
+    promptInput = prompt;
+  }
+
+  let agentReview;
+  if (reviewAgent === 'grok') {
+    agentReview = await runAgentProcess(runProcess, agents.grok, buildGrokJsonArgs({
+      promptFile: artifactPath(state.artifacts.runDir, 'review-request.md'),
+      cwd: fixCwd,
+      maxTurns: options.reviewMaxTurns ?? 2,
+    }), {
+      cwd: fixCwd,
+      timeoutMs: options.timeoutMs,
+      onStderr: reporter.onStderr,
+    });
+  } else if (scoped) {
+    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs({
+      uncommitted: true,
+      readPromptFromStdin: true,
+    }), {
+      cwd: fixCwd,
+      timeoutMs: options.timeoutMs,
+      input: promptInput,
+      onStderr: reporter.onStderr,
+    });
+  } else {
+    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs(), {
+      cwd: fixCwd,
+      timeoutMs: options.timeoutMs,
+      onStderr: reporter.onStderr,
+    });
+  }
+
+  await writeArtifact(`${reviewStem}.stdout.log`, agentReview.stdout || '', 'text');
+  if (!reporter.getBuffer()) {
+    await writeArtifact(`${reviewStem}.stderr.log`, agentReview.stderr || '', 'text');
+  }
+  await writeArtifact(`${reviewStem}.exit.json`, summarizeRun(agentReview), 'json');
+  if (reviewAgent === 'codex') {
+    await writeArtifact('codex-review.stdout.log', agentReview.stdout || '', 'text');
+    await writeArtifact('codex-review.stderr.log', agentReview.stderr || '', 'text');
+    await writeArtifact('codex-review.exit.json', summarizeRun(agentReview), 'json');
+  }
+
+  const summarizedReview = summarizeRun(agentReview);
+  const legacyReviewPatch = {
+    agentReview: summarizedReview,
+    codexReview: reviewAgent === 'codex' ? summarizedReview : null,
+    grokReview: reviewAgent === 'grok' ? summarizedReview : null,
+  };
+
+  if (agentReview.exitCode === 0 && !agentReview.timedOut && !agentReview.spawnError) {
     await transition('DONE_REVIEWED', {
       iterations,
-      codexReview: summarizeRun(codexReview),
+      ...legacyReviewPatch,
     });
   } else {
     await transition('HALT_HUMAN', {
       iterations,
-      codexReview: summarizeRun(codexReview),
+      ...legacyReviewPatch,
     });
   }
-  return snapshotState(state);
+  return finalizeState(state, options);
 }
 
 function artifactPath(runDir, fileName) {
   return runDir ? path.join(runDir, fileName) : fileName;
+}
+
+function fixRequestArtifact(agent, iteration) {
+  return `fix-request.${agent}.${iteration}.md`;
+}
+
+function fixOutputStem(agent, iteration, attempt) {
+  if (agent === 'grok') return `grok-output.${iteration}.${attempt}`;
+  return `fix-output.${agent}.${iteration}.${attempt}`;
+}
+
+function reviewArtifactStem(agent) {
+  if (agent === 'codex') return 'codex-review';
+  return `review-output.${agent}`;
+}
+
+async function writeFixOutputArtifacts({
+  writeArtifact,
+  outputStem,
+  agent,
+  iteration,
+  attempt,
+  agentFix,
+}) {
+  await writeArtifact(`${outputStem}.stdout.log`, agentFix.stdout || '', 'text');
+  await writeArtifact(`${outputStem}.stderr.log`, agentFix.stderr || '', 'text');
+  await writeArtifact(`${outputStem}.exit.json`, summarizeRun(agentFix), 'json');
+  if (attempt === 1) {
+    const baseStem = agent === 'grok'
+      ? `grok-output.${iteration}`
+      : `fix-output.${agent}.${iteration}`;
+    await writeArtifact(`${baseStem}.stdout.log`, agentFix.stdout || '', 'text');
+    await writeArtifact(`${baseStem}.stderr.log`, agentFix.stderr || '', 'text');
+    await writeArtifact(`${baseStem}.exit.json`, summarizeRun(agentFix), 'json');
+  }
+}
+
+function finalizeState(state, options) {
+  const { fixAgent, reviewAgent } = resolveAgentRoles(options);
+  state.agentFix = state.agentFix ?? state.grokFix ?? null;
+  state.agentReview = state.agentReview ?? state.codexReview ?? state.grokReview ?? null;
+  state.grokFix = fixAgent === 'grok' ? state.agentFix : null;
+  state.codexReview = reviewAgent === 'codex' ? state.agentReview : null;
+  state.grokReview = reviewAgent === 'grok' ? state.agentReview : null;
+  return snapshotState(state);
 }
 
 function runAgentProcess(runProcess, agent, args, options) {

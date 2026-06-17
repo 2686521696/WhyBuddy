@@ -1,7 +1,17 @@
-export function buildCodexReviewArgs({ uncommitted = true, prompt } = {}) {
+export function buildCodexReviewArgs({ uncommitted = true, prompt, readPromptFromStdin = false } = {}) {
   const args = ['review'];
   if (uncommitted) args.push('--uncommitted');
-  if (prompt) args.push(prompt);
+  if (readPromptFromStdin) {
+    args.push('-');
+  } else if (prompt) {
+    args.push(prompt);
+  }
+  return args;
+}
+
+export function buildCodexExecArgs({ cwd, readPromptFromStdin = true } = {}) {
+  const args = ['exec', '--cd', cwd, '--dangerously-bypass-approvals-and-sandbox'];
+  if (readPromptFromStdin) args.push('-');
   return args;
 }
 

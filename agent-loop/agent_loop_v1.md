@@ -1,10 +1,103 @@
+## 当前状态速读
+
+这份文档下面的大图包含 **当前实现** 和 **未来规划** 两层内容。为了避免误读，先看这一段：
+
+- 当前 AgentLoop 是一个 Node.js CLI 编排器，入口主要是 `src/loop.js`。
+- 当前已经能跑 gate、记录 `.agent-loop/runs/<runId>/state.json`、写 `final-report.md`。
+- 当前已经能在需要修复时 spawn Grok CLI，并把 `grok-request.*`、`grok-output.*`、`diff.*.patch` 落盘。
+- 当前已经能在需要审查时 spawn `codex review --uncommitted`。
+- 当前 `--skip-review` 时不会要求 Codex；`--auto-fix` 时才要求 Grok。
+- 当前 `codex review` 只按退出码判断成功或失败；还没有解析 Codex 的结构化 `verdict`。
+- 当前还没有实现 “Codex needs_changes -> 自动生成下一轮 Grok 修复 prompt” 的闭环。
+- 当前 VS Code 插件薄壳、完整 worktree 生命周期、Codex JSON verdict parser 属于设计规划或待补强部分，不要当成已经完整落地。
+
+## 常用命令
+
+从 `agent-loop/` 目录执行：
+
+```powershell
+npm test
+node src/check-mojibake.js src test scripts package.json agent_loop_v1.md
+
+npm run loop -- `
+  --cwd C:\Users\wangchunji\Documents\cube-pets-office `
+  --fix-cwd C:\Users\wangchunji\Documents\cube-pets-office `
+  --task agent-loop/tasks/example.md `
+  --gate "npm test" `
+  --auto-fix `
+  --skip-review `
+  --lang zh-CN `
+  --max-iterations 1
+
+npm run list-runs -- --cwd . --lang zh-CN --limit 10
+npm run list-runs -- --cwd . --json --mode grok-fix --status DONE_FIXED
+npm run list-runs -- --cwd . --json --task agent-loop/tasks/migrate-sliderule-gap-ask.md --limit 1
+npm run sync:task-status -- --task agent-loop/tasks/migrate-sliderule-gap-ask.md
+npm run sync:task-status -- --all --include-migration-status
+
+npm run run-queue
+npm run run-queue -- --queue scripts/migration-queue.json
+
+npm run smoke:stub
+npm run smoke:live -- --timeout-ms 180000
+```
+
+说明：
+
+- `smoke:stub` 用本地假 Grok，验证 AgentLoop 的 gate -> Grok -> diff -> gate 绿链路。
+- `smoke:live` 用真实 Grok CLI，只验证 Grok fix 链路；因为它走 `--skip-review`，所以不要求 Codex。
+- `list-runs --lang zh-CN` 给人看，第一列是本地时间。
+- `list-runs --json` 给脚本用，可配合 `--mode`、`--status`、`--task` 查最近运行。
+- `loop` 默认会在结束时自动回写当前 task 的 `## 执行状态`，并尝试同步迁移总表；可用 `--no-sync-task-status` / `--no-sync-migration-status` 关闭。
+- `sync:task-status` 默认 `--cwd` 指向 repo 根目录（与 `loop --cwd` 一致）；也可手动回写 `tasks/*.md`，加 `--include-migration-status` 时同步更新迁移总表。
+- `run-queue` 按 `scripts/migration-queue.json` 顺序跑迁移任务；默认 `--auto-fix --guard-tests --max-iterations 3`，某任务失败即停队列。队列配置在 `agent-loop/scripts/migration-queue.json`，不在 `tasks/` 下。
+- 自动回写失败只会 stderr warning，不会让已经成功的 `DONE_*` run 变成退出码 1。
+- `list-runs` 默认按 `Asia/Shanghai` 显示本地时间；也可用 `--time-zone` 或环境变量 `TZ` 覆盖。
+- `.agent-loop/runs/<runId>` 里的 `runId` 是机器安全的 UTC 路径名；人看的时间请用 `list-runs`。
+
+## runMode 对照表
+
+| runMode | 含义 | 关键证据 |
+|---|---|---|
+| `gate-only` | 基线 gate 已经通过，并且跳过 review | `status=DONE_GATE_ONLY`，无 Grok/Codex 产物 |
+| `grok-fix` | Grok 运行过，修复后 gate 通过，通常跳过 review | `grok-output.*`、`diff.*.patch`、`status=DONE_FIXED` |
+| `codex-review` | 没有 Grok 修复，只跑了 Codex review | `codex-review.exit.json`，无 Grok 轮次 |
+| `grok-fix+codex-review` | Grok 修复后又跑了 Codex review | 同时有 Grok 与 Codex 产物 |
+| `paused-before-fix` | 基线 gate 后、第一次 Grok 修复前暂停 | `status=PAUSED_BEFORE_FIX` |
+| `paused-after-iteration` | 某轮有进展但仍红，暂停等人工继续 | `status=PAUSED_AFTER_ITERATION` |
+| `grok-fix-timeout` | Grok 修复阶段超时 | `grokFix.timedOut=true` |
+| `halt-human-after-grok` | Grok 跑过，但需要人工接管 | `status=HALT_HUMAN` 且有 `grokFix` |
+| `halt-human-after-review` | Codex review 后需要人工接管 | `status=HALT_HUMAN` 且有 `codexReview` |
+| `halt-human` | 其它人工接管状态 | `status=HALT_HUMAN` |
+| `halt-budget` | 达到最大修复轮次 | `status=HALT_BUDGET` |
+| `halt-no-changes` | Grok 运行了但没有产生有效 diff | `status=HALT_NO_CHANGES` |
+| `halt-no-progress` | 修复后 gate 仍红且失败数没有改善 | `status=HALT_NO_PROGRESS` |
+| `agent-missing` | 必需 agent 缺失 | `status=HALT_AGENT_NOT_FOUND` |
+
+## 当前实现 vs 未来规划
+
+| 能力 | 当前状态 | 说明 |
+|---|---|---|
+| Gate runner | 已实现 | 支持一个或多个 `--gate`，保存 stdout/stderr/exit 信息 |
+| `--lang zh-CN` loop report | 已实现 | `final-report.md` 的标题、状态说明、迭代细节均中文化 |
+| `list-runs` 总览 | 已实现 | 支持表格、中文、本地时间、`--json`、`--mode`、`--status`、`--task`、`--time-zone` |
+| `sync:task-status` 回写 | 已实现 | `loop` 结束默认自动回写；也可手动从 `.agent-loop/runs` 回写 `tasks/*.md` |
+| Grok fix smoke | 已实现 | `smoke:stub` 和 `smoke:live` 可验证 Grok 修复链路 |
+| Codex review 调用 | 已实现基础版 | 调用 `codex review --uncommitted`，按 exit code 判定 |
+| Codex verdict parser | 未来规划 | 尚未实现 `pass / needs_changes / blocked` 结构化解析 |
+| Codex -> Grok 自动二次修复 | 未来规划 | 尚未实现 review findings 自动转 Grok prompt |
+| VS Code Extension Shell | 未来规划/外壳说明 | 当前核心能力在 CLI 内，插件薄壳不要当成已完整交付 |
+| 完整隔离 worktree 生命周期 | 部分实现/待补强 | 当前可用 `--fix-cwd` 或相关 worktree 参数，但还需要更多真实场景验证 |
+
+---
+
 ```mermaid
 flowchart TD
   User["User（用户）<br/>VS Code Command（VS Code 命令）<br/>AgentLoop: Run Headless Loop（运行无头闭环）"]
 
   subgraph VSCode["VS Code Extension Shell（VS Code 插件薄壳）"]
     Probe["Probe Installed Agents（探测已安装代理）<br/>Resolve codex.exe / grok.exe（解析可执行文件）"]
-    ProbeFail["HALT_AGENT_NOT_FOUND（代理未找到终止）<br/>codex.exe or grok.exe missing（Codex 或 Grok 不存在）"]
+    ProbeFail["HALT_AGENT_NOT_FOUND（代理未找到终止）<br/>required agent missing for this run（本次运行真正需要的 agent 缺失）"]
     Config["agent-loop.config.json（配置文件）<br/>gates / maxIterations / budget / autoContinue"]
     Output["OutputChannel（输出面板）<br/>progress / errors / final report（进度 / 错误 / 最终报告）"]
   end
@@ -52,7 +145,7 @@ flowchart TD
 
   subgraph External["External CLIs（外部 CLI）"]
     Grok["grok.exe<br/>--prompt-file<br/>--output-format json<br/>--cwd / --worktree<br/>--max-turns<br/>--always-approve"]
-    Codex["codex.exe<br/>codex review / codex exec"]
+    Codex["codex.exe<br/>codex review"]
   end
 
   subgraph Gate["Objective Gate Runner（客观门禁执行器）<br/>Hard Judge（硬裁判）"]
@@ -234,11 +327,11 @@ Codex 说还要改，就再让 Grok 改；
 它会检查：
 
 ```text
-codex.exe 是否存在
-grok.exe 是否存在
-codex review / codex exec 能不能跑
-grok --prompt-file --output-format json 能不能跑
-```
+按本次运行真正需要的 agent 检查：
+
+- 开了 `--auto-fix` 时，需要 `grok.exe`。
+- 没开 `--skip-review` 时，需要 `codex.exe`。
+- audit-only（`--skip-review` 且没开 `--auto-fix`）时，不要求任何 agent。
 
 如果这里失败，直接停止：
 
@@ -246,7 +339,7 @@ grok --prompt-file --output-format json 能不能跑
 HALT_AGENT_NOT_FOUND
 ```
 
-原因很简单：这两个 CLI 是整个系统的发动机。发动机没找到，后面不能继续。
+原因很简单：当前这次运行真正需要的 agent 没找到，后面不能继续。
 
 ---
 

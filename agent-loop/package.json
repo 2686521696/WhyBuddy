@@ -7,6 +7,11 @@
     "test": "node --test test/**/*.test.js",
     "probe": "node src/index.js",
     "loop": "node src/loop.js",
+    "list-runs": "node src/list-runs.js",
+    "sync:task-status": "node scripts/sync-task-status.mjs",
+    "run-queue": "node scripts/run-queue.mjs",
+    "smoke:stub": "node scripts/smoke-stub.mjs",
+    "smoke:live": "node scripts/smoke-live.mjs",
     "check:mojibake": "node src/check-mojibake.js"
   },
   "engines": {

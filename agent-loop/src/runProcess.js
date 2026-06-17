@@ -6,6 +6,8 @@ export function runProcess(command, args, options = {}) {
     timeoutMs = 120000,
     env = process.env,
     input,
+    onStdout,
+    onStderr,
   } = options;
 
   return new Promise((resolve) => {
@@ -27,10 +29,14 @@ export function runProcess(command, args, options = {}) {
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      onStdout?.(text);
     });
     child.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      onStderr?.(text);
     });
     child.on('error', (error) => {
       clearTimeout(timer);
