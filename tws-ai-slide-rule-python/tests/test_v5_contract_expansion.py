@@ -107,6 +107,9 @@ def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
         "synthesis.merge",
         "rebuttal.resolve",
         "counter.argue",
+        "structure.decompose",
+        "risk.analyze",
+        "evidence.search",
     ]:
         response = client.post(
             "/api/sliderule/execute-capability",

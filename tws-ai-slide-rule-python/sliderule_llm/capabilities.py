@@ -75,6 +75,28 @@ CAPABILITY_PROMPTS: dict[str, str] = {
         "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
         "Output markdown only: no JSON, no code fence, no preamble."
     ),
+    "structure.decompose": (
+        "You are SlideRule V5's structure-decomposition role. Given the user's goal and message, write a "
+        "concise **markdown** SPEC-tree decomposition with: (1) a root goal line, "
+        "(2) child branches for requirements, risks, and deliverables (nested bullets), "
+        "(3) evidenceRef notes on key branches. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
+    "risk.analyze": (
+        "You are SlideRule V5's risk-analysis role. Given the user's goal and message, write a "
+        "concise **markdown** risk scan with three short sections: (1) risk inventory, "
+        "(2) impact assessment, (3) mitigation paths. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
+    "evidence.search": (
+        "You are SlideRule V5's evidence-search role. Given the user's goal and message, write a "
+        "concise **markdown** evidence brief with three short sections: (1) grounding references, "
+        "(2) why each reference matters, (3) gaps that still need external retrieval. "
+        "Stay strictly grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
 }
 
 CAPABILITY_TITLES: dict[str, str] = {
@@ -85,6 +107,9 @@ CAPABILITY_TITLES: dict[str, str] = {
     "synthesis.merge": "Synthesis merge",
     "rebuttal.resolve": "Rebuttal resolution",
     "counter.argue": "Counter argument",
+    "structure.decompose": "Structure decomposition",
+    "risk.analyze": "Risk analysis",
+    "evidence.search": "Evidence search",
 }
 
 
@@ -129,6 +154,29 @@ def _first_line(text: str, limit: int = 120) -> str:
     return ""
 
 
+def _evidence_sources_from_content(content: str) -> list[dict[str, str]]:
+    """Honest python-llm citations derived from model prose (not fake RAG retrieval)."""
+    sources: list[dict[str, str]] = []
+    for line in content.splitlines():
+        snippet = line.strip().lstrip("-*#").strip()
+        if len(snippet) < 12:
+            continue
+        sources.append({
+            "title": snippet[:80],
+            "snippet": snippet[:240],
+            "provenance": "python-llm",
+        })
+        if len(sources) >= 4:
+            break
+    if not sources:
+        sources.append({
+            "title": "Grounded reasoning",
+            "snippet": content[:240],
+            "provenance": "python-llm",
+        })
+    return sources
+
+
 def execute_capability(
     body: dict[str, Any],
     *,
@@ -148,7 +196,7 @@ def execute_capability(
     content = _clean(result.content)
     if not content:
         raise LlmError("python backend produced empty capability content", transient=False)
-    return {
+    payload: dict[str, Any] = {
         "title": CAPABILITY_TITLES.get(capability_id, capability_id),
         "summary": _first_line(content),
         "content": content,
@@ -156,3 +204,6 @@ def execute_capability(
         "model": result.model,
         "usage": result.usage,
     }
+    if capability_id == "evidence.search":
+        payload["sources"] = _evidence_sources_from_content(content)
+    return payload

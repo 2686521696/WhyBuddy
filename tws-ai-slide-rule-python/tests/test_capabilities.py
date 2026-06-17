@@ -208,11 +208,79 @@ def test_question_expand_returns_v5_shape_with_python_llm_provenance():
     assert "turn my rough question" in joined
 
 
+def test_structure_decompose_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "structure.decompose",
+        "state": {"goal": {"text": "decompose a pet office product spec tree"}},
+        "userText": "split the goal into requirements, risks, and deliverables",
+        "roleId": "架构",
+        "turnId": "t-structure",
+    }
+
+    out = execute_capability(
+        body,
+        caller=lambda *a, **k: _fake_result(
+            "## Root goal\n- Pet office progression system\n"
+            "## Requirements branch\n- requirements branch for desk upgrades\n"
+            "## Risks branch\n- onboarding complexity\n"
+            "## Deliverables\n- MVP spec tree"
+        ),
+    )
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Structure decomposition"
+    assert "requirements branch" in out["content"]
+    assert "RBAC" not in out["content"]
+
+
+def test_risk_analyze_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "risk.analyze",
+        "state": {"goal": {"text": "analyze risks in a pet office progression system"}},
+        "userText": "scan risks before we ship the progression loop",
+        "roleId": "安全",
+        "turnId": "t-risk",
+    }
+
+    out = execute_capability(
+        body,
+        caller=lambda *a, **k: _fake_result(
+            "## Risk inventory\n- players may grind without meaningful choices\n"
+            "## Impact\n- retention drops if upgrades feel cosmetic\n"
+            "## Mitigation path\n- prototype one desk-upgrade loop"
+        ),
+    )
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Risk analysis"
+    assert "mitigation path" in out["content"].lower()
+    assert "data scoping" not in out["content"].lower()
+
+
+def test_evidence_search_returns_sources_with_python_llm_provenance():
+    body = {
+        "capabilityId": "evidence.search",
+        "state": {"goal": {"text": "find evidence for a pet office progression system"}},
+        "userText": "ground the roadmap with references",
+        "roleId": "接地",
+        "turnId": "t-evidence",
+    }
+
+    out = execute_capability(
+        body,
+        caller=lambda *a, **k: _fake_result(
+            "## Grounding references\n- grounding reference from prior desk-upgrade experiments\n"
+            "## Why they matter\n- validates progression pacing assumptions\n"
+            "## Gaps\n- no live retention benchmark yet"
+        ),
+    )
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Evidence search"
+    assert "grounding reference" in out["content"]
+    assert out.get("sources")
+    assert out["sources"][0]["provenance"] == "python-llm"
+
+
 PENDING_NATIVE_CAPABILITIES = (
     "report.write",
-    "structure.decompose",
-    "risk.analyze",
-    "evidence.search",
 )
 
 
@@ -247,6 +315,9 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("synthesis.merge") is True
     assert is_python_native_capability("rebuttal.resolve") is True
     assert is_python_native_capability("counter.argue") is True
+    assert is_python_native_capability("structure.decompose") is True
+    assert is_python_native_capability("risk.analyze") is True
+    assert is_python_native_capability("evidence.search") is True
     for cap in PENDING_NATIVE_CAPABILITIES:
         assert is_python_native_capability(cap) is False
         with pytest.raises(UnsupportedCapability):

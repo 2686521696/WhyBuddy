@@ -611,6 +611,121 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     );
   });
 
+  it('structure.decompose delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Structure decomposition',
+      summary: 'Root goal',
+      content: '## Root goal\n- requirements branch for the pet office spec tree',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 45 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'structure.decompose',
+        state: { sessionId: 't-structure.decompose', goal: { text: 'Decompose a pet office product spec tree' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '架构',
+        turnId: 't-structure.decompose',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('requirements branch');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+  });
+
+  it('risk.analyze delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Risk analysis',
+      summary: 'Risk inventory',
+      content: '## Risk inventory\n- mitigation path for progression grind',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 46 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'risk.analyze',
+        state: { sessionId: 't-risk.analyze', goal: { text: 'Analyze risks in a pet office progression system' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '安全',
+        turnId: 't-risk.analyze',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('mitigation path');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+  });
+
+  it('evidence.search delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Evidence search',
+      summary: 'Grounding references',
+      content: '## Grounding references\n- grounding reference for desk-upgrade pacing',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 47 },
+      sources: [{ title: 'Desk-upgrade pacing note', snippet: 'grounding reference', provenance: 'python-llm' }],
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'evidence.search',
+        state: { sessionId: 't-evidence.search', goal: { text: 'Find evidence for a pet office progression system' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '接地',
+        turnId: 't-evidence.search',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('grounding reference');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+  });
+
   const pendingPythonNativeCaps = [
     {
       capabilityId: 'report.write',
@@ -618,27 +733,6 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
       goal: 'Design a pet office feasibility report',
       snippet: 'evidence-backed conclusion',
       title: 'Feasibility report',
-    },
-    {
-      capabilityId: 'structure.decompose',
-      roleId: '架构',
-      goal: 'Decompose a pet office product spec tree',
-      snippet: 'requirements branch',
-      title: 'Structure decomposition',
-    },
-    {
-      capabilityId: 'risk.analyze',
-      roleId: '安全',
-      goal: 'Analyze risks in a pet office progression system',
-      snippet: 'mitigation path',
-      title: 'Risk analysis',
-    },
-    {
-      capabilityId: 'evidence.search',
-      roleId: '接地',
-      goal: 'Find evidence for a pet office progression system',
-      snippet: 'grounding reference',
-      title: 'Evidence search',
     },
   ] as const;
 
