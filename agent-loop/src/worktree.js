@@ -28,19 +28,26 @@ export async function ensureWorktree({
   }
 
   if (stat?.isDirectory()) {
-    const existing = { path: worktreePath, created: false };
-    await seedWorktreeFromRepo({
-      repoRoot,
-      worktreePath,
-      run,
-      timeoutMs,
-      resetBeforeSeed: true,
-      alignToRepoHead: true,
-    });
-    return existing;
-  }
-
-  if (stat) {
+    const registration = await inspectRegisteredWorktree({ repoRoot, worktreePath, run, timeoutMs });
+    if (!registration.worktree) {
+      await fs.rm(worktreePath, { recursive: true, force: true });
+    } else if (!registration.managed) {
+      throw new Error(
+        `registered non-agent-loop worktree exists at target path: ${worktreePath} (${registration.worktree.branch || 'detached'})`,
+      );
+    } else {
+      const existing = { path: worktreePath, created: false };
+      await seedWorktreeFromRepo({
+        repoRoot,
+        worktreePath,
+        run,
+        timeoutMs,
+        resetBeforeSeed: true,
+        alignToRepoHead: true,
+      });
+      return existing;
+    }
+  } else if (stat) {
     throw new Error(`worktree path exists but is not a directory: ${worktreePath}`);
   }
 
@@ -56,6 +63,21 @@ export async function ensureWorktree({
   const created = { path: worktreePath, created: true, branch };
   await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs, resetBeforeSeed: false });
   return created;
+}
+
+async function inspectRegisteredWorktree({
+  repoRoot,
+  worktreePath,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const worktrees = await listRegisteredWorktrees({ repoRoot, run, timeoutMs });
+  const target = path.resolve(worktreePath);
+  const worktree = worktrees.find((entry) => path.resolve(entry.path) === target) || null;
+  return {
+    worktree,
+    managed: Boolean(worktree && isAgentLoopManagedWorktree(worktree, repoRoot)),
+  };
 }
 
 export async function resetWorktreeWorkingTree({

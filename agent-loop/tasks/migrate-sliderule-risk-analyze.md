@@ -36,3 +36,11 @@
 ## 必跑 gate
 
 同 `migrate-sliderule-synthesis-merge.md` 四个 gate。
+
+## 成功标准
+
+- All four required gates from `migrate-sliderule-synthesis-merge.md` pass.
+- `risk.analyze` runs through the Python native LLM path and returns `provenance="python-llm"`.
+- The output is risk-analysis markdown grounded in the request context, not an old RBAC/data-scoping stub.
+- Node delegates `risk.analyze` to Python when `SLIDERULE_V5_BACKEND=python`; Node LLM and Node pool are not called for this capability.
+- The diff stays within the allowed files listed in this task.

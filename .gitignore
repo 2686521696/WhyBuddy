@@ -154,6 +154,8 @@ data/audit/
 # SlideRule V5 durable pilot runtime artifacts (explicitly ignored; smoke intentionally creates them)
 data/sliderule-sessions.json
 data/sliderule-sessions.json.tmp
+data/slide_rule_sessions.json
+data/slide_rule_sessions.json.tmp
 # legacy pre-rename runtime file kept for rollback during the migration window
 data/whybuddy-sessions.json
 data/whybuddy-sessions.json.tmp

@@ -904,6 +904,56 @@ test('runLoop can use grok for scoped review after a green baseline gate', async
   assert.equal(result.codexReview, null);
 });
 
+test('runLoop passes an absolute --cd path to scoped Codex review when worktree path is relative', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate green\n', 'utf8');
+
+  const relativeWorktree = path.join('.worktrees', 'review-target');
+  const codexCalls = [];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: null,
+      createWorktree: 'review-target',
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      ensureWorktree: async () => ({ path: relativeWorktree }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'codex.exe') {
+          codexCalls.push({ args, cwd: options.cwd });
+          return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(codexCalls.length, 1);
+  const cdIndex = codexCalls[0].args.indexOf('--cd');
+  assert.notEqual(cdIndex, -1);
+  assert.equal(codexCalls[0].args[cdIndex + 1], path.resolve(cwd, relativeWorktree));
+  assert.equal(codexCalls[0].cwd, path.resolve(cwd, relativeWorktree));
+});
+
 test('runLoop skips grok fix and completes when baseline gate is green but checklist is pending', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
@@ -986,6 +1036,7 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
     '{"verdict":"pass","summary":"looks good","findings":[]}',
   ];
   const transitions = [];
+  const codexProcessCalls = [];
   let codexCalls = 0;
   let grokCalls = 0;
 
@@ -1016,6 +1067,7 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
           return runOk(command, args, options.cwd, '{"verdict":"changed"}');
         }
         codexCalls++;
+        codexProcessCalls.push({ args, input: options.input });
         // exitCode 0 even on needs_changes: the verdict must win over the exit code.
         return runOk(command, args, options.cwd, reviewVerdicts.shift() ?? '{"verdict":"pass"}');
       },
@@ -1031,6 +1083,8 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
   assert.equal(result.reviewRounds[1].decision, 'pass');
   assert.equal(grokCalls, 2);
   assert.equal(codexCalls, 2);
+  assert.equal(codexProcessCalls.every((call) => call.args[0] === 'exec'), true);
+  assert.equal(codexProcessCalls.every((call) => call.input?.includes('"verdict"')), true);
   assert.equal(transitions.includes('REVIEW_NEEDS_CHANGES'), true);
 });
 

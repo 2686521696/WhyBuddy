@@ -120,7 +120,9 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       return snapshotState(state);
     }
   }
-  const fixCwd = options.fixCwd || state.worktree?.fixCwd || worktree?.path || options.cwd;
+  const repoCwd = path.resolve(options.cwd);
+  const rawFixCwd = options.fixCwd || state.worktree?.fixCwd || worktree?.path || options.cwd;
+  const fixCwd = path.isAbsolute(rawFixCwd) ? rawFixCwd : path.resolve(repoCwd, rawFixCwd);
   let baselineGate = state.baselineGateSnapshot;
   let baselineDiff = { text: state.baselineDiffText || '' };
   const resumeStatus = resumeState ? resumeState.status : null;
@@ -592,10 +594,7 @@ async function runReview({
       onStderr: reporter.onStderr,
     });
   } else if (scoped) {
-    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs({
-      uncommitted: true,
-      readPromptFromStdin: true,
-    }), {
+    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({ cwd: fixCwd }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
       input: promptInput,

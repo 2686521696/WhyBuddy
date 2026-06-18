@@ -81,6 +81,23 @@ test('resolveQueueGate substitutes taskFile for scoped mojibake gates', () => {
   );
 });
 
+test('resolveQueueGate uses repo-root node bins for worktree Node gates', () => {
+  const vitest = resolveQueueGate(
+    'pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot',
+    { repoRoot, pythonExe: 'tws-ai-slide-rule-python/.venv/Scripts/python.exe' },
+  );
+  const tsc = resolveQueueGate(
+    'pnpm exec tsc --noEmit --pretty false',
+    { repoRoot, pythonExe: 'tws-ai-slide-rule-python/.venv/Scripts/python.exe' },
+  );
+
+  const binExt = process.platform === 'win32' ? '.cmd' : '';
+  assert.match(vitest, new RegExp(`node_modules[\\\\/].bin[\\\\/]vitest${binExt.replace('.', '\\.')}`));
+  assert.match(tsc, new RegExp(`node_modules[\\\\/].bin[\\\\/]tsc${binExt.replace('.', '\\.')}`));
+  assert.doesNotMatch(vitest, /^pnpm exec/);
+  assert.doesNotMatch(tsc, /^pnpm exec/);
+});
+
 test('evaluateGate runs powershell call operator with resolved pythonExe', async (t) => {
   if (process.platform !== 'win32') {
     t.skip('powershell python gate is Windows-specific');

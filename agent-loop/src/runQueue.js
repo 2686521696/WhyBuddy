@@ -17,11 +17,22 @@ export function resolveQueueGate(gate, { repoRoot, pythonExe, taskFile }) {
   const resolved = resolvePythonExe(repoRoot, pythonExe);
   return String(gate)
     .replaceAll('{{pythonExe}}', resolved)
-    .replaceAll('{{taskFile}}', taskFile || '');
+    .replaceAll('{{taskFile}}', taskFile || '')
+    .replace(/^pnpm exec vitest\b/, quoteForPowershell(resolveNodeBin(repoRoot, 'vitest')))
+    .replace(/^pnpm exec tsc\b/, quoteForPowershell(resolveNodeBin(repoRoot, 'tsc')));
 }
 
 export function resolveQueueGates(gates, context) {
   return gates.map((gate) => resolveQueueGate(gate, context));
+}
+
+export function resolveNodeBin(repoRoot, command) {
+  const executable = process.platform === 'win32' ? `${command}.cmd` : command;
+  return path.join(repoRoot, 'node_modules', '.bin', executable);
+}
+
+function quoteForPowershell(value) {
+  return `& "${value}"`;
 }
 
 export function resolveEntryGates({ entry, gateSets, defaultGates, label }) {

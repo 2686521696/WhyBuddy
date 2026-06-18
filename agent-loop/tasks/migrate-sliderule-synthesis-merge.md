@@ -60,3 +60,11 @@ pnpm exec tsc --noEmit --pretty false
 ```powershell
 node agent-loop/src/check-mojibake.js tws-ai-slide-rule-python server/routes/__tests__/sliderule.execute-capability.test.ts
 ```
+
+## 成功标准
+
+- All required gates listed above pass.
+- `synthesis.merge` runs through the Python native LLM path and returns `provenance="python-llm"`.
+- Node delegates `synthesis.merge` to Python when `SLIDERULE_V5_BACKEND=python`; Node LLM and Node pool are not called for this capability.
+- The output remains markdown-oriented synthesis content, not a forced JSON schema response.
+- The diff stays within the allowed files listed in this task.

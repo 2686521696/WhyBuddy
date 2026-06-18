@@ -36,3 +36,11 @@
 ## 必跑 gate
 
 同 `migrate-sliderule-synthesis-merge.md` 四个 gate。
+
+## 成功标准
+
+- All four required gates from `migrate-sliderule-synthesis-merge.md` pass.
+- `evidence.search` runs through the Python native LLM path and returns honest `provenance`.
+- The response keeps the expected V5 evidence/source fields or an equivalent explicit source representation.
+- Node delegates `evidence.search` to Python when `SLIDERULE_V5_BACKEND=python`; Node LLM and Node pool are not called for this capability.
+- The diff stays within the allowed files listed in this task and does not reintroduce fake RAG/RBAC signatures.
