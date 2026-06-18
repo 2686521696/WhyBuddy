@@ -269,8 +269,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     expect(primarySpy).not.toHaveBeenCalled();
   });
 
-  it('report.write delegates to Python V5 backend when pool is configured but exhausted (migration path)', async () => {
-    // Explicitly python path: only assert delegation behavior, python-rag, helper called with correct endpoint/payload, no Node LLM/pool calls.
+  it('report.write delegates to Python V5 backend as native LLM when pool is configured but exhausted (migration path)', async () => {
+    // Explicitly python path: assert delegation behavior, python-llm, helper called with correct endpoint/payload, no Node LLM/pool calls.
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
     vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
     vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
@@ -283,11 +283,12 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     // Use the mocked delegation module. With dynamic import of router *after* vi.mock (see beforeAll),
     // the route's import of callPythonSlideRule receives this mock (no more real Python / "RAG generated report").
     pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
-      title: 'Report from Python RAG',
-      summary: '检索了外部证据',
+      title: 'Report from Python native LLM',
+      summary: 'Python native LLM wrote the report',
       content: '结论：权限系统采用 RBAC + 范围过滤，审计完整。',
-      provenance: 'python-rag',
-      sources: [{ id: 'rbac1', content: 'RBAC scoping', source: 'internal-policy' }]
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 42 },
     });
 
     const res = await fetch(`${base}/execute-capability`, {
@@ -303,8 +304,8 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.provenance).toBe('python-rag');
-    expect(body.summary).toContain('检索了外部证据');
+    expect(body.provenance).toBe('python-llm');
+    expect(body.summary).toContain('Python native LLM');
     expect(primarySpy).not.toHaveBeenCalled();  // delegation skips Node LLM path
     expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalled();
     // Thin proxy contract per audit request
