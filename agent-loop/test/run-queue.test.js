@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateGate } from '../src/gates.js';
+import { runProcess } from '../src/runProcess.js';
 import {
   buildLoopArgsForQueueEntry,
   buildQueueSummaryFromState,
@@ -20,6 +21,24 @@ import {
 const agentLoopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = 'C:\\repo';
 const workspaceRoot = path.resolve(agentLoopRoot, '..');
+
+test('runProcess kills the child when the abort signal fires', async () => {
+  const controller = new AbortController();
+  const script = [
+    'setInterval(() => {}, 1000);',
+  ].join('\n');
+
+  const promise = runProcess(process.execPath, ['-e', script], {
+    timeoutMs: 30000,
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort(), 100);
+  const result = await promise;
+
+  assert.equal(result.aborted, true);
+  assert.equal(result.timedOut, false);
+  assert.notEqual(result.signal, null);
+});
 
 test('resolveEntryGates throws for unknown gatesKey', () => {
   assert.throws(
@@ -202,6 +221,12 @@ test('classifyQueueOutcome separates crashed infra from task failures', () => {
     summary: { status: 'HALT_HUMAN', guardReason: 'POSSIBLE_TEST_TAMPER', iterations: 1, grokRan: true },
     exitCode: 1,
   }), 'quarantined');
+
+  // No success criteria → task-level failure (send back to spec), not an infra crash.
+  assert.equal(classifyQueueOutcome({
+    summary: { status: 'HALT_NO_SUCCESS_CRITERIA', iterations: 0, grokRan: false, codexRan: false },
+    exitCode: 1,
+  }), 'failed');
 });
 
 test('buildQueueSummaryFromState sets outcome from classifyQueueOutcome', () => {

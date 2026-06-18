@@ -27,6 +27,8 @@ export function classifyRunMode({
   if (normalizedStatus === 'HALT_NO_CHANGES') return 'halt-no-changes';
   if (normalizedStatus === 'HALT_NO_PROGRESS') return 'halt-no-progress';
   if (normalizedStatus === 'HALT_AGENT_NOT_FOUND') return 'agent-missing';
+  if (normalizedStatus === 'HALT_NO_SUCCESS_CRITERIA') return 'no-success-criteria';
+  if (normalizedStatus === 'HALT_STOPPED') return 'stopped';
   if (normalizedStatus === 'HALT_HUMAN') {
     if (reviewSummary) return `halt-human-after-${effectiveReviewAgent || 'agent'}-review`;
     if ((agentFix || grokFix)?.timedOut) return `${fixAgent}-fix-timeout`;

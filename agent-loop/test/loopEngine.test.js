@@ -8,7 +8,7 @@ import { runLoop } from '../src/loopEngine.js';
 test('runLoop drives Grok through multiple gate rounds until green, then runs Grok review', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 2, 'baseline failure'),
@@ -45,7 +45,11 @@ test('runLoop drives Grok through multiple gate rounds until green, then runs Gr
       runProcess: async (command, args, options) => {
         processCalls.push({ command, args, cwd: options.cwd });
         if (command === 'grok.exe') {
-          grokPrompts.push(await fs.readFile(args[1], 'utf8'));
+          const promptFile = args[1];
+          grokPrompts.push(await fs.readFile(promptFile, 'utf8'));
+          if (promptFile.includes('review-request')) {
+            return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+          }
           return runOk(command, args, options.cwd, '{"verdict":"changed"}');
         }
         return runOk(command, args, options.cwd, 'review markdown');
@@ -70,7 +74,7 @@ test('runLoop drives Grok through multiple gate rounds until green, then runs Gr
 test('runLoop audit-only succeeds without agents when review is skipped and auto-fix is disabled', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'audit-only gate check', 'utf8');
+  await fs.writeFile(taskPath, 'audit-only gate check\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const result = await runLoop({
     options: {
@@ -107,7 +111,7 @@ test('runLoop audit-only succeeds without agents when review is skipped and auto
 test('runLoop halts no progress when a red post-fix gate has unchanged failure count', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, 'same failure'),
@@ -149,7 +153,7 @@ test('runLoop halts no progress when a red post-fix gate has unchanged failure c
 test('runLoop continues when a single red gate reports fewer inner test failures', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, 'Tests: 50 failed, 10 passed'),
@@ -193,7 +197,7 @@ test('runLoop continues when a single red gate reports fewer inner test failures
 test('runLoop accepts a changed worktree when Grok exits non-zero but the post-fix gate is green', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, '1 failed'),
@@ -241,7 +245,7 @@ test('runLoop accepts a changed worktree when Grok exits non-zero but the post-f
 test('runLoop retries retryable Grok failures that exit non-zero without producing a diff', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, '1 failed'),
@@ -302,7 +306,7 @@ test('runLoop retries retryable Grok failures that exit non-zero without produci
 test('runLoop pauses before the first Grok fix when pauseBeforeFix is enabled', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
   const processCalls = [];
 
   const result = await runLoop({
@@ -341,7 +345,7 @@ test('runLoop pauses before the first Grok fix when pauseBeforeFix is enabled', 
 test('runLoop resumes a paused state without rerunning the baseline gate', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const baseline = gate(false, 1, '1 failed');
   const gateResults = [gate(true, 0, '')];
@@ -407,7 +411,7 @@ test('runLoop resumes a paused state without rerunning the baseline gate', async
 test('runLoop ignores pauseBeforeFix when resuming an already paused state', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const baseline = gate(false, 1, '1 failed');
   const gateResults = [gate(true, 0, '')];
@@ -470,7 +474,7 @@ test('runLoop ignores pauseBeforeFix when resuming an already paused state', asy
 test('runLoop pauses after a progressing red iteration and resumes from the next iteration', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const firstGateResults = [
     gate(false, 1, 'Tests: 5 failed, 10 passed'),
@@ -565,7 +569,7 @@ test('runLoop pauses after a progressing red iteration and resumes from the next
 test('runLoop records diff guard findings without halting by default', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, '1 failed'),
@@ -608,7 +612,7 @@ test('runLoop records diff guard findings without halting by default', async () 
 test('runLoop halts when guardTests sees protected test tampering', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, '1 failed'),
@@ -653,7 +657,7 @@ test('runLoop halts when guardTests sees protected test tampering', async () => 
 test('runLoop records a single iteration when a retryable Grok failure changes files and the gate remains red', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 2, '2 failed'),
@@ -701,7 +705,7 @@ test('runLoop records a single iteration when a retryable Grok failure changes f
 test('runLoop halts for human on an auth failure even though auth is non-retryable', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 2, '2 failed'),
@@ -755,7 +759,7 @@ test('runLoop halts for human on an auth failure even though auth is non-retryab
 test('runLoop continues after max-turns when a changed red gate made progress', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, 'fix gate to green', 'utf8');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const gateResults = [
     gate(false, 1, 'Tests: 5 failed, 10 passed'),
@@ -813,7 +817,7 @@ test('runLoop continues after max-turns when a changed red gate made progress', 
 test('runLoop writes review-request.md for grok review even when scoped review is disabled', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n', 'utf8');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
   const written = new Set();
 
   const result = await runLoop({
@@ -861,7 +865,7 @@ test('runLoop writes review-request.md for grok review even when scoped review i
 test('runLoop can use grok for scoped review after a green baseline gate', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
-  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n', 'utf8');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
 
   const result = await runLoop({
     options: {
@@ -914,6 +918,10 @@ test('runLoop skips grok fix and completes when baseline gate is green but check
     '',
     '- `src/client.py`',
     '',
+    '## 成功标准',
+    '',
+    '- gate 全绿且清单全部完成',
+    '',
   ].join('\n'), 'utf8');
 
   const transitions = [];
@@ -956,6 +964,446 @@ test('runLoop skips grok fix and completes when baseline gate is green but check
   assert.equal(transitions.includes('GROK_FIX'), false);
   assert.equal(grokPrompts.length, 0);
   assert.match(await fs.readFile(taskPath, 'utf8'), /- \[x\] provider fallback chain/);
+});
+
+test('runLoop loops Grok back when scoped Codex review returns needs_changes, then finishes on pass', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  const gateResults = [
+    gate(false, 1, '1 failed'),
+    gate(true, 0, ''),
+    gate(true, 0, ''),
+  ];
+  const diffs = [
+    '',
+    'diff --git a/a.js b/a.js\n+first fix\n',
+    'diff --git a/a.js b/a.js\n+first fix\n+review fix\n',
+  ];
+  const reviewVerdicts = [
+    '{"verdict":"needs_changes","summary":"add fallback","findings":[{"severity":"major","path":"src/a.py","message":"missing fallback"}]}',
+    '{"verdict":"pass","summary":"looks good","findings":[]}',
+  ];
+  const transitions = [];
+  let codexCalls = 0;
+  let grokCalls = 0;
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 4,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gateResults.shift(),
+      captureDiff: async () => ({ text: diffs.shift() ?? diffs.at(-1) }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') {
+          grokCalls++;
+          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        }
+        codexCalls++;
+        // exitCode 0 even on needs_changes: the verdict must win over the exit code.
+        return runOk(command, args, options.cwd, reviewVerdicts.shift() ?? '{"verdict":"pass"}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async (state) => transitions.push(state.status),
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(result.iterations.length, 2);
+  assert.equal(result.reviewRounds.length, 2);
+  assert.equal(result.reviewRounds[0].decision, 'needs_changes');
+  assert.equal(result.reviewRounds[1].decision, 'pass');
+  assert.equal(grokCalls, 2);
+  assert.equal(codexCalls, 2);
+  assert.equal(transitions.includes('REVIEW_NEEDS_CHANGES'), true);
+});
+
+test('runLoop lets the maxIterations budget stop an endless review tug-of-war', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  // Baseline already green; the reviewer never relents (always needs_changes),
+  // so the only thing that stops the loop is the shared iteration budget.
+  const stubborn = '{"verdict":"needs_changes","summary":"still wrong","findings":[{"severity":"major","path":"src/a.py","message":"missing fallback"}]}';
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 2,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: `diff --git a/a.js b/a.js\n+round ${Math.random()}\n` }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        return runOk(command, args, options.cwd, stubborn);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'HALT_BUDGET');
+  assert.equal(result.iterations.length, 2);
+  // 1 baseline review + 1 review per fix iteration.
+  assert.equal(result.reviewRounds.length, 3);
+});
+
+test('runLoop halts for human when the reviewer returns a blocked verdict', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        return runOk(command, args, options.cwd, '{"verdict":"blocked","summary":"cannot satisfy criteria","findings":[]}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'HALT_HUMAN');
+  assert.equal(result.reviewRounds.length, 1);
+  assert.equal(result.reviewRounds[0].decision, 'halt');
+});
+
+test('runLoop refuses a task with no success criteria before running anything', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '# task with no completion criteria\n\njust do something', 'utf8');
+  let gateCalls = 0;
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => {
+        gateCalls++;
+        return gate(true, 0, '');
+      },
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async () => {
+        throw new Error('an inadmissible task should never spawn an agent');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'HALT_NO_SUCCESS_CRITERIA');
+  assert.equal(result.admission.reason, 'NO_SUCCESS_CRITERIA');
+  assert.equal(gateCalls, 0);
+  assert.equal(result.iterations.length, 0);
+});
+
+test('runLoop enters the fix loop when a green baseline gets a needs_changes review', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  const gateResults = [
+    gate(true, 0, ''),
+    gate(true, 0, ''),
+  ];
+  const diffs = [
+    '',
+    'diff --git a/a.js b/a.js\n+review fix\n',
+  ];
+  const reviewVerdicts = [
+    '{"verdict":"needs_changes","summary":"tighten","findings":[{"severity":"minor","path":"src/a.py","message":"edge case"}]}',
+    '{"verdict":"pass","summary":"ok","findings":[]}',
+  ];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gateResults.shift(),
+      captureDiff: async () => ({ text: diffs.shift() ?? diffs.at(-1) }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        return runOk(command, args, options.cwd, reviewVerdicts.shift() ?? '{"verdict":"pass"}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(result.iterations.length, 1);
+  assert.equal(result.reviewRounds.length, 2);
+});
+
+test('runLoop resume preserves review-driven fix prompt after GROK_FIX is persisted', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  const reviewFinding = {
+    severity: 'minor',
+    path: 'src/a.py',
+    message: 'edge case',
+  };
+  const resumeState = {
+    runId: 'resume-review-fix',
+    status: 'GROK_FIX',
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    agents: { codex: 'codex.exe', grok: 'grok.exe' },
+    worktree: { targetCwd: cwd, fixCwd: cwd, details: null },
+    baselineGate: { ok: true, failureCount: 0 },
+    baselineGateSnapshot: gate(true, 0, ''),
+    baselineDiffText: '',
+    iterations: [],
+    reviewRounds: [{
+      round: 1,
+      verdict: 'needs_changes',
+      decision: 'needs_changes',
+      summary: 'tighten edge case',
+      findings: [reviewFinding],
+    }],
+    pendingReview: {
+      parsed: {
+        verdict: 'needs_changes',
+        summary: 'tighten edge case',
+        findings: [reviewFinding],
+      },
+      verdict: 'needs_changes',
+    },
+    artifacts: { runDir: cwd, latestDir: cwd },
+    currentIteration: 1,
+  };
+
+  const grokPrompts = [];
+
+  const result = await runLoop({
+    options: resumeState.options,
+    runDir: cwd,
+    latestDir: cwd,
+    resumeState,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: 'diff --git a/a.js b/a.js\n+review fix\n' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') {
+          const promptArgIndex = args.indexOf('--prompt-file');
+          grokPrompts.push(await fs.readFile(args[promptArgIndex + 1], 'utf8'));
+          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        }
+        return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(grokPrompts.length, 1);
+  assert.match(grokPrompts[0], /审查回修请求/);
+  assert.match(grokPrompts[0], /edge case/);
+  assert.equal(result.status, 'DONE_REVIEWED');
+});
+
+test('runLoop resume rebuilds review-driven fix context from reviewRounds when pendingReview is missing', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\ngate 全绿，并且 Python/Node 行为一致。\n', 'utf8');
+
+  const resumeState = {
+    runId: 'resume-review-round-fallback',
+    status: 'GROK_FIX',
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    agents: { codex: 'codex.exe', grok: 'grok.exe' },
+    worktree: { targetCwd: cwd, fixCwd: cwd, details: null },
+    baselineGate: { ok: true, failureCount: 0 },
+    baselineGateSnapshot: gate(true, 0, ''),
+    baselineDiffText: '',
+    iterations: [],
+    reviewRounds: [{
+      round: 1,
+      verdict: 'needs_changes',
+      decision: 'needs_changes',
+      summary: 'tighten fallback chain',
+      findings: [{ severity: 'major', path: 'src/a.py', message: 'missing fallback' }],
+    }],
+    pendingReview: null,
+    artifacts: { runDir: cwd, latestDir: cwd },
+    currentIteration: 1,
+  };
+
+  const grokPrompts = [];
+
+  const result = await runLoop({
+    options: resumeState.options,
+    runDir: cwd,
+    latestDir: cwd,
+    resumeState,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: 'diff --git a/a.js b/a.js\n+review fix\n' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') {
+          const promptArgIndex = args.indexOf('--prompt-file');
+          grokPrompts.push(await fs.readFile(args[promptArgIndex + 1], 'utf8'));
+          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        }
+        return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.match(grokPrompts[0], /missing fallback/);
+  assert.equal(result.status, 'DONE_REVIEWED');
+});
+
+test('runLoop halts when scoped review output is unparseable even with exit code 0', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, '## 允许修改的文件\n\n- `src/a.py`\n\n## 成功标准\n\n1. gate 全绿\n2. 不改测试\n', 'utf8');
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 3,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'grok.exe') {
+          throw new Error('grok should not run when baseline review output is unparseable');
+        }
+        return runOk(command, args, options.cwd, '我觉得这里还不太行，应该继续改……');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'HALT_HUMAN');
+  assert.equal(result.reviewRounds.length, 1);
+  assert.equal(result.reviewRounds[0].decision, 'halt');
+  assert.equal(result.iterations.length, 0);
 });
 
 function artifactWriter(cwd) {

@@ -9,9 +9,15 @@ import {
   reviewStatusForAgent,
   useScopedReview,
 } from './agentRoles.js';
-import { buildAgentChecklistFixPrompt, buildAgentFixPrompt, buildAgentReviewPrompt } from './grokPrompt.js';
-import { parseAgentReviewOutput, reviewVerdictAllowsDone } from './reviewParser.js';
+import {
+  buildAgentChecklistFixPrompt,
+  buildAgentFixPrompt,
+  buildAgentReviewFixPrompt,
+  buildAgentReviewPrompt,
+} from './grokPrompt.js';
+import { classifyReviewOutcome, parseAgentReviewOutput } from './reviewParser.js';
 import { markAllChecklistItemsDone, parseTaskChecklist, shouldRunDevFix } from './taskChecklist.js';
+import { checkTaskAdmission } from './taskContract.js';
 import { ensureWorktree as defaultEnsureWorktree } from './worktree.js';
 import { resolveAgents as defaultResolveAgents } from './resolveAgents.js';
 import { runProcess as defaultRunProcess } from './runProcess.js';
@@ -47,6 +53,8 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     baselineDiff: null,
     baselineDiffText: '',
     iterations: [],
+    reviewRounds: [],
+    pendingReview: null,
     agentFix: null,
     agentReview: null,
     grokFix: null,
@@ -57,6 +65,11 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       latestDir,
     },
   };
+
+  // Normalize fields that older resume states may lack so the review loop can
+  // read them unconditionally.
+  state.reviewRounds = state.reviewRounds || [];
+  if (state.pendingReview === undefined) state.pendingReview = null;
 
   async function transition(status, patch = {}) {
     Object.assign(state, patch, { status });
@@ -82,6 +95,16 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   let taskText = await fs.readFile(taskPath, 'utf8');
   if (!resumeState) await writeArtifact('task.md', taskText, 'text');
 
+  // Entry contract: a task with no spec-derived completion criteria does not
+  // enter the loop. No runtime guessing — kick it back to be specified.
+  if (!resumeState) {
+    const admission = checkTaskAdmission(taskText);
+    if (!admission.admissible) {
+      await transition('HALT_NO_SUCCESS_CRITERIA', { admission });
+      return snapshotState(state);
+    }
+  }
+
   let worktree = null;
   if (!resumeState && options.createWorktree) {
     try {
@@ -100,6 +123,8 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   const fixCwd = options.fixCwd || state.worktree?.fixCwd || worktree?.path || options.cwd;
   let baselineGate = state.baselineGateSnapshot;
   let baselineDiff = { text: state.baselineDiffText || '' };
+  const resumeStatus = resumeState ? resumeState.status : null;
+  let pendingReview = resolvePendingReview(state, resumeStatus);
 
   if (!resumeState) {
     await transition('WORKTREE_READY', {
@@ -142,7 +167,7 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       await transition('DONE_GATE_ONLY');
       return snapshotState(state);
     }
-    return await runFinalReview({
+    const review = await handleReview({
       state,
       agents,
       fixCwd,
@@ -153,7 +178,13 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       appendArtifact,
       onProgress,
       transition,
+      iterations: state.iterations,
+      currentGate: baselineGate,
     });
+    if (review.kind === 'terminal') return review.state;
+    // Review wants changes on an already-green baseline → fall through into the
+    // fix loop carrying the review findings as the next fix prompt.
+    pendingReview = review.pendingReview;
   }
 
   if (!options.autoFix) {
@@ -185,24 +216,38 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     await transition('BUDGET_LOOP_HEAD', { currentIteration: iteration });
 
     const checklist = parseTaskChecklist(taskText);
-    const useChecklistPrompt = checklist.hasPending && currentGate.ok;
-    const prompt = useChecklistPrompt
-      ? buildAgentChecklistFixPrompt({
+    const reviewDrivenFix = Boolean(pendingReview);
+    const useChecklistPrompt = !reviewDrivenFix && checklist.hasPending && currentGate.ok;
+    let prompt;
+    if (reviewDrivenFix) {
+      prompt = buildAgentReviewFixPrompt({
+        taskText,
+        review: pendingReview.parsed,
+        gate: currentGate,
+        diffText: previousDiff,
+        workerAgent: fixAgent,
+      });
+    } else if (useChecklistPrompt) {
+      prompt = buildAgentChecklistFixPrompt({
         taskText,
         pendingItems: checklist.pending,
         workerAgent: fixAgent,
-      })
-      : buildAgentFixPrompt({
+      });
+    } else {
+      prompt = buildAgentFixPrompt({
         taskText,
         gate: currentGate,
         workerAgent: fixAgent,
       });
+    }
     const requestFile = fixRequestArtifact(fixAgent, iteration);
     await writeArtifact(requestFile, prompt, 'text');
     if (fixAgent === 'grok') {
       await writeArtifact(`grok-request.${iteration}.md`, prompt, 'text');
     }
-    await transition(fixStatusForAgent(fixAgent));
+    // Keep pendingReview in state until this iteration is recorded so pause/resume
+    // mid-fix still has the review findings that shaped the request above.
+    await transition(fixStatusForAgent(fixAgent), { pendingReview });
 
     const attempts = [];
     let agentFix = null;
@@ -292,9 +337,11 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       diffGuard: analyzeDiffGuard(postFixDiff.text),
     };
     iterations.push(iterationRecord);
+    pendingReview = null;
     await transition('POST_FIX_GATE_RESULT', {
       iterations,
       ...legacyFixPatch,
+      pendingReview: null,
     });
 
     if (postFixGate.ok) {
@@ -311,7 +358,7 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
         await transition('DONE_FIXED', { iterations });
         return finalizeState(state, options);
       }
-      return await runFinalReview({
+      const review = await handleReview({
         state,
         agents,
         fixCwd,
@@ -323,7 +370,15 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
         onProgress,
         transition,
         iterations,
+        currentGate: postFixGate,
       });
+      if (review.kind === 'terminal') return review.state;
+      // Review asked for changes → spend the next budget slot on a review-driven
+      // fix instead of finalizing.
+      pendingReview = review.pendingReview;
+      previousDiff = postFixDiff.text;
+      currentGate = postFixGate;
+      continue;
     }
 
     const postGateFailure = classifyAgentFailure(agentFix);
@@ -431,7 +486,57 @@ async function writeGateArtifacts({ prefix, gate, writeArtifact }) {
   }
 }
 
-async function runFinalReview({
+// Run the review agent and act on its verdict. Returns either a terminal result
+// (pass/halt — caller should return state) or a continue result carrying the
+// findings for the next review-driven fix iteration.
+async function handleReview(args) {
+  const { state, options, transition, taskText, fixCwd, iterations = state.iterations } = args;
+  const review = await runReview(args);
+
+  state.reviewRounds.push({
+    round: state.reviewRounds.length + 1,
+    verdict: review.reviewVerdict,
+    decision: review.decision,
+    findings: Array.isArray(review.parsed?.findings) ? review.parsed.findings : [],
+    summary: review.parsed?.summary ?? null,
+  });
+
+  const reviewSnapshot = {
+    iterations,
+    reviewRounds: state.reviewRounds,
+    ...review.legacyReviewPatch,
+    reviewVerdict: review.reviewVerdict,
+  };
+
+  if (review.decision === 'pass') {
+    const completedTaskText = await completeTaskChecklistOnSuccess({ options, fixCwd, taskText });
+    args.taskText = completedTaskText;
+    await transition('DONE_REVIEWED', { ...reviewSnapshot, pendingReview: null });
+    return { kind: 'terminal', state: finalizeState(state, options) };
+  }
+
+  if (review.decision === 'halt') {
+    // 'blocked' is the reviewer's own call that the task can't be satisfied, or
+    // the agent failed/timed out — either way a human takes over.
+    await transition('HALT_HUMAN', reviewSnapshot);
+    return { kind: 'terminal', state: finalizeState(state, options) };
+  }
+
+  // decision === 'needs_changes' — feed the findings back to the fix worker for
+  // another round. The shared maxIterations budget is the backstop against an
+  // endless fix<->review tug-of-war (the reviewer can also short-circuit with
+  // 'blocked'); the engine does not second-guess with its own heuristic.
+  if (!options.autoFix) {
+    await transition('HALT_HUMAN', reviewSnapshot);
+    return { kind: 'terminal', state: finalizeState(state, options) };
+  }
+
+  const pendingReview = { parsed: review.parsed, verdict: review.reviewVerdict };
+  await transition('REVIEW_NEEDS_CHANGES', { ...reviewSnapshot, pendingReview });
+  return { kind: 'continue', pendingReview };
+}
+
+async function runReview({
   state,
   agents,
   fixCwd,
@@ -522,31 +627,30 @@ async function runFinalReview({
     grokReview: reviewAgent === 'grok' ? summarizedReview : null,
   };
 
-  const parsedReview = reviewAgent === 'grok' ? parseAgentReviewOutput(agentReview.stdout || '') : null;
-  const reviewPassed = (
-    !agentReview.timedOut
-    && !agentReview.spawnError
-    && (
-      agentReview.exitCode === 0
-      || reviewVerdictAllowsDone(parsedReview)
-    )
-  );
+  // Parse a structured verdict whenever the reviewer was given the JSON-verdict
+  // prompt (Grok review, or scoped Codex). Plain `codex review --uncommitted`
+  // emits a natural-language report, so it keeps exit-code semantics.
+  const requiresStructuredVerdict = scoped || reviewAgent === 'grok';
+  const parsedReview = requiresStructuredVerdict
+    ? parseAgentReviewOutput(agentReview.stdout || '')
+    : null;
+  const decision = classifyReviewOutcome({
+    parsed: parsedReview,
+    timedOut: agentReview.timedOut,
+    spawnError: agentReview.spawnError,
+    exitCode: agentReview.exitCode,
+    requiresStructuredVerdict,
+  });
+  const reviewVerdict = parsedReview?.verdict
+    ?? (decision === 'pass' ? 'pass' : decision === 'needs_changes' ? 'needs_changes' : null);
 
-  if (reviewPassed) {
-    taskText = await completeTaskChecklistOnSuccess({ options, fixCwd, taskText });
-    await transition('DONE_REVIEWED', {
-      iterations,
-      ...legacyReviewPatch,
-      reviewVerdict: parsedReview?.verdict ?? (agentReview.exitCode === 0 ? 'pass' : null),
-    });
-  } else {
-    await transition('HALT_HUMAN', {
-      iterations,
-      ...legacyReviewPatch,
-      reviewVerdict: parsedReview?.verdict ?? null,
-    });
-  }
-  return finalizeState(state, options);
+  return {
+    decision,
+    parsed: parsedReview,
+    reviewVerdict,
+    legacyReviewPatch,
+    agentReview,
+  };
 }
 
 function artifactPath(runDir, fileName) {
@@ -565,6 +669,41 @@ function fixOutputStem(agent, iteration, attempt) {
 function reviewArtifactStem(agent) {
   if (agent === 'codex') return 'codex-review';
   return `review-output.${agent}`;
+}
+
+// Restore review-driven fix context for resume. Prefer the persisted pendingReview
+// snapshot; fall back to the latest needs_changes review round when an older run
+// cleared pendingReview too early.
+//
+// IMPORTANT: the fallback is intentionally narrow. We only resurrect from reviewRounds
+// when the review-driven fix for that round has not yet been performed/recorded.
+// We skip for PAUSED_AFTER_ITERATION and POST_FIX_GATE_RESULT because a fix iteration
+// has already consumed the review (next work should be normal gate-driven, not stale review).
+function resolvePendingReview(state, resumeStatus = null) {
+  if (state.pendingReview?.parsed) return state.pendingReview;
+
+  const lastNeedsChanges = [...(state.reviewRounds || [])]
+    .reverse()
+    .find((round) => (
+      round.decision === 'needs_changes'
+      || round.verdict === 'needs_changes'
+    ));
+
+  if (!lastNeedsChanges) return null;
+
+  if (resumeStatus === 'PAUSED_AFTER_ITERATION' ||
+      resumeStatus === 'POST_FIX_GATE_RESULT') {
+    return null;
+  }
+
+  return {
+    parsed: {
+      verdict: 'needs_changes',
+      summary: lastNeedsChanges.summary ?? null,
+      findings: Array.isArray(lastNeedsChanges.findings) ? lastNeedsChanges.findings : [],
+    },
+    verdict: 'needs_changes',
+  };
 }
 
 async function writeFixOutputArtifacts({

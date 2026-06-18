@@ -52,6 +52,10 @@ export async function createSmokeRepo({ outputRoot, initialValue = 1, finalValue
     'Make npm test pass by changing value.js.',
     `Set the exported value to ${finalValue}.`,
     '',
+    '## 成功标准',
+    '',
+    '- npm test 全绿',
+    '',
   ].join('\n'), 'utf8');
   await runOk('git', ['init'], { cwd: repo });
   await runOk('git', ['config', 'user.email', 'agent-loop-smoke@example.test'], { cwd: repo });

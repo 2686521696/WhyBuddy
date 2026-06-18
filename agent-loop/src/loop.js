@@ -110,6 +110,7 @@ async function main() {
     codexReview: result.codexReview,
     grokReview: result.grokReview,
     iterations: result.iterations || [],
+    reviewRounds: result.reviewRounds || [],
     maxIterations: activeOptions.maxIterations,
     lang: activeOptions.lang,
     runMode: runSummary.runMode,

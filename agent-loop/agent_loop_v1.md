@@ -7,9 +7,13 @@
 - 当前已经能在需要修复时 spawn Grok CLI，并把 `grok-request.*`、`grok-output.*`、`diff.*.patch` 落盘。
 - 当前已经能在需要审查时 spawn `codex review --uncommitted`。
 - 当前 `--skip-review` 时不会要求 Codex；`--auto-fix` 时才要求 Grok。
-- 当前 `codex review` 只按退出码判断成功或失败；还没有解析 Codex 的结构化 `verdict`。
-- 当前还没有实现 “Codex needs_changes -> 自动生成下一轮 Grok 修复 prompt” 的闭环。
-- 当前 VS Code 插件薄壳、完整 worktree 生命周期、Codex JSON verdict parser 属于设计规划或待补强部分，不要当成已经完整落地。
+- 当前 scoped review（Grok review，或 `--scoped-review` 的 Codex）会解析结构化 `verdict`（`pass / needs_changes / blocked`，见 `src/reviewParser.js`）；裸 `codex review --uncommitted` 输出自然语言，仍按退出码判定。
+- 当前已实现 “review needs_changes -> 自动回喂修复工人进入下一轮” 的闭环：verdict 优先于退出码（exitCode 0 + needs_changes 不会误判成功）；review-driven fix 与 gate fix 共用 `--max-iterations` 预算，预算耗尽即 `HALT_BUDGET`。
+- 当前 **ship / no-ship 的决定权交给 reviewer 本身**：审查对照任务的 `## 成功标准` 判断，小瑕疵记进 summary 但仍 `pass`，只有真阻断才 `needs_changes`，做不出来则 `blocked`（交还人工）。引擎不再用「连续 findings 相同就 halt」这类自作聪明的启发式去二次猜测。
+- 当前是 **入口契约**：每个 task 必须有非空 `## 成功标准`（由 spec 派生）；缺失则 `HALT_NO_SUCCESS_CRITERIA`，**不入环**，直接退回补全——不在引擎里给「无标准」开运行时分支。
+- 当前 VS Code 插件薄壳、完整 worktree 生命周期属于设计规划或待补强部分，不要当成已经完整落地。
+
+> 文档/源码编码自检：`node src/check-mojibake.js src test scripts package.json agent_loop_v1.md`（`npm test` 也含 mojibake gate）。读出乱码多半是编辑器编码设置问题，不是文件损坏。
 
 ## 常用命令
 
@@ -83,9 +87,12 @@ npm run smoke:live -- --timeout-ms 180000
 | `list-runs` 总览 | 已实现 | 支持表格、中文、本地时间、`--json`、`--mode`、`--status`、`--task`、`--time-zone` |
 | `sync:task-status` 回写 | 已实现 | `loop` 结束默认自动回写；也可手动从 `.agent-loop/runs` 回写 `tasks/*.md` |
 | Grok fix smoke | 已实现 | `smoke:stub` 和 `smoke:live` 可验证 Grok 修复链路 |
-| Codex review 调用 | 已实现基础版 | 调用 `codex review --uncommitted`，按 exit code 判定 |
-| Codex verdict parser | 未来规划 | 尚未实现 `pass / needs_changes / blocked` 结构化解析 |
-| Codex -> Grok 自动二次修复 | 未来规划 | 尚未实现 review findings 自动转 Grok prompt |
+| Codex review 调用 | 已实现 | 裸 `codex review --uncommitted` 按 exit code 判定；scoped 模式走 JSON verdict |
+| 结构化 verdict parser | 已实现 | `src/reviewParser.js` 解析并归一化 `pass / needs_changes / blocked`，verdict 优先于退出码 |
+| review needs_changes -> 修复工人二次修复 | 已实现 | findings 经 `buildAgentReviewFixPrompt` 回喂；与 gate fix 共用 `--max-iterations` 预算，耗尽即 `HALT_BUDGET` |
+| reviewer 自主 ship/no-ship | 已实现 | 严重度与放行权交给 reviewer（对照 `## 成功标准`）；引擎只 honor `pass/needs_changes/blocked`，不做 findings 去重启发式 |
+| 入口契约：`## 成功标准` 必填 | 已实现 | 缺失即 `HALT_NO_SUCCESS_CRITERIA` 不入环（`src/taskContract.js`）；不给「无标准」开运行时例外 |
+| review-driven fix resume 上下文 | 已实现 | 延后清 `pendingReview` 到迭代记录后；`resolvePendingReview` 回退到 `reviewRounds` 最近 needs_changes；有 resume 重建上下文的专项测试 |
 | VS Code Extension Shell | 未来规划/外壳说明 | 当前核心能力在 CLI 内，插件薄壳不要当成已完整交付 |
 | 完整隔离 worktree 生命周期 | 部分实现/待补强 | 当前可用 `--fix-cwd` 或相关 worktree 参数，但还需要更多真实场景验证 |
 
@@ -123,8 +130,6 @@ flowchart TD
     EmptyDiff["EMPTY_DIFF_CHECK（空 Diff 检查）<br/>agent made no changes（代理没有产生修改）"]
 
     GateProgress["Gate Progress Detector（门禁进展探测）<br/>failure count down / diff changed（失败数下降 / diff 有变化）"]
-
-    ReviewProgress["Review Progress Detector（审查进展探测）<br/>findings reduced / not repeated（问题减少 / 未重复震荡）"]
 
     LatestDiff["Latest Diff Snapshot（最新 Diff 快照）<br/>reuse for Codex review（供 Codex 审查复用）"]
 
@@ -262,10 +267,7 @@ flowchart TD
   Parser -->|parse failed（解析失败）| HaltHuman
   Parser -->|verdict: blocked（结论：阻塞）| HaltHuman
   Parser -->|verdict: pass（结论：通过）| Done["DONE（完成）"]
-  Parser -->|verdict: needs_changes（结论：需要修改）| ReviewProgress
-
-  ReviewProgress -->|progress made（有进展）| Budget
-  ReviewProgress -->|repeated findings / no progress（问题重复 / 无进展）| HaltNoProgress
+  Parser -->|verdict: needs_changes（结论：需要修改，回喂修复工人）| Budget
 
   Done --> Cleanup
   HaltBudget --> Cleanup

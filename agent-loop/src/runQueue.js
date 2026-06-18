@@ -159,6 +159,10 @@ export function classifyQueueOutcome({ summary, exitCode = 0 }) {
 
   if (worktreeError) return 'crashed';
   if (status === 'HALT_AGENT_NOT_FOUND') return 'crashed';
+  // Inadmissible task (no spec-derived success criteria): a task-level failure to
+  // send back for specification, NOT an infra crash. The triage line carries the
+  // exact status so it's distinguishable from a fix that was tried and missed.
+  if (status === 'HALT_NO_SUCCESS_CRITERIA') return 'failed';
 
   const fixAttempted = grokRan || codexRan || iterations > 0;
   const infraStuck = !fixAttempted && !status.startsWith('DONE_');

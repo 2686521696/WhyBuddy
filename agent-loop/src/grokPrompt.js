@@ -97,6 +97,63 @@ export function buildAgentChecklistFixPrompt({ taskText, pendingItems = [], work
   ].join('\n');
 }
 
+export function buildAgentReviewFixPrompt({ taskText, review = {}, gate = null, diffText = '', workerAgent = 'grok' }) {
+  const findings = Array.isArray(review?.findings) ? review.findings : [];
+  const findingsBlock = findings.length
+    ? findings.map((finding, index) => [
+      `### Finding ${index + 1}（${finding?.severity || 'unspecified'}）`,
+      finding?.path ? `- 文件: ${finding.path}` : '',
+      finding?.message ? `- 问题: ${finding.message}` : '',
+    ].filter(Boolean).join('\n')).join('\n\n')
+    : '- 审查未给出结构化 findings，请依据下方 summary 判断需要修改的内容。';
+
+  const diffBlock = String(diffText || '').trim()
+    ? ['```diff', truncate(diffText, 12000), '```'].join('\n')
+    : '（当前没有未提交 diff。）';
+
+  return [
+    `# AgentLoop ${workerAgent} 审查回修请求`,
+    '',
+    '你是修复执行者。gate 已通过，但代码审查认为当前改动还不能合并，请根据审查意见继续修改。',
+    '',
+    '## 任务',
+    '',
+    taskText,
+    '',
+    '## 审查结论',
+    '',
+    `- verdict: ${review?.verdict || 'needs_changes'}`,
+    review?.summary ? `- summary: ${review.summary}` : '',
+    '',
+    '## 审查 findings',
+    '',
+    findingsBlock,
+    '',
+    '## Safety Guardrails',
+    '',
+    '- Do not delete, weaken, skip, or rewrite tests to make the gate pass.',
+    '- Do not change gate commands, test scripts, CI config, or test runner config unless the task explicitly asks for that.',
+    '- Do not bypass assertions, mark tests skipped/only, lower coverage, or replace checks with placeholders.',
+    '',
+    '## 当前未提交 diff',
+    '',
+    diffBlock,
+    '',
+    '## 规则',
+    '',
+    '- 只处理审查 findings 指出的问题，以及与任务目标直接相关的修改。',
+    '- 不要为了「绕过审查」而隐藏问题或伪造完成。',
+    '- 不要提交、不要 git add、不要改写历史。',
+    '- 不要做无关重构。',
+    '- 如果审查意见无法实现或你不认同，请输出 blocked 并说明，不要假装修好。',
+    '- 修改完成后，只输出 JSON，不要 markdown fence。',
+    '',
+    '## 输出格式',
+    '',
+    '{"verdict":"changed|blocked","summary":"简短说明","files":["相对路径"]}',
+  ].filter(Boolean).join('\n');
+}
+
 export function buildGrokFixPrompt(args) {
   return buildAgentFixPrompt(args);
 }
@@ -176,6 +233,13 @@ export function buildAgentReviewPrompt({
     '- 禁止调用 Shell / Read / 任何工具；只根据下方证据判断。',
     '- 你的回复必须且只能是 JSON verdict（见文末格式），不要 markdown fence，不要解释性前言。',
     '- gate 结果已由 AgentLoop 验证；未提交 diff 为空时，默认审查 HEAD 中允许文件的已实现内容。',
+    '',
+    '## 判断权（你说了算）',
+    '',
+    '- 对照任务的「## 成功标准」判断是否达标，达标即可放行；你拥有 ship / no-ship 的最终决定权。',
+    '- 只有**真正阻断达标**的问题才用 `needs_changes`；小瑕疵、风格、可选优化写进 `summary` 但仍判 `pass`，不要因为吹毛求疵让任务无谓回炉。',
+    '- 若你判断任务在当前约束下根本做不出来、或多轮仍无法满足成功标准，用 `blocked` 并在 summary 说明原因——这会交还给人。',
+    '- `findings[].severity` 由你定（blocker / major / minor）；只有 blocker / major 才应配 `needs_changes`。',
     '',
     `你是代码审查员。${workerAgent} 已完成修改，或 AgentLoop gate 已通过等待你审查。`,
     '请根据下方证据审查任务是否完成；不要依赖你自己重跑 gate。',

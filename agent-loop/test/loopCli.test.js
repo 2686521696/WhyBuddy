@@ -67,6 +67,10 @@ test('loop CLI auto-syncs execution status into task.md after completion', async
     '',
     'Make npm test pass by changing value.js.',
     '',
+    '## 成功标准',
+    '',
+    '- npm test 全绿',
+    '',
   ].join('\n'), 'utf8');
 
   const result = await runProcess(process.execPath, [
@@ -104,6 +108,10 @@ test('loop CLI resume preserves disabled task status sync from the paused run', 
     '## 目标',
     '',
     'Make npm test pass by changing value.js.',
+    '',
+    '## 成功标准',
+    '',
+    '- npm test 全绿',
     '',
   ].join('\n'), 'utf8');
 
@@ -205,7 +213,7 @@ async function createCliFixture({ initialValue, partialValue = null, finalValue 
     "console.log('Tests: 2 passed');",
     '',
   ].join('\n'), 'utf8');
-  await fs.writeFile(path.join(repo, 'task.md'), 'Make npm test pass by changing value.js.\n', 'utf8');
+  await fs.writeFile(path.join(repo, 'task.md'), 'Make npm test pass by changing value.js.\n\n## 成功标准\n\n- npm test 全绿\n', 'utf8');
   await fs.writeFile(grokStub, [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
