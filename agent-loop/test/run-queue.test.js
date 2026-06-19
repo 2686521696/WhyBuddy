@@ -7,8 +7,10 @@ import { evaluateGate } from '../src/gates.js';
 import { runProcess } from '../src/runProcess.js';
 import {
   buildLoopArgsForQueueEntry,
+  buildQueueCompletionMessage,
   buildQueueSummaryFromState,
   classifyQueueOutcome,
+  filterQueueTasks,
   resolveEntryGates,
   resolvePythonExe,
   resolveQueueGate,
@@ -93,6 +95,53 @@ test('resolveEntryGates accepts custom delivery gate sets', () => {
   });
 
   assert.deepEqual(gates, ['delivery-gate']);
+});
+
+test('filterQueueTasks can select one task by id', () => {
+  const tasks = filterQueueTasks([
+    { id: 'task-a', enabled: true },
+    { id: 'task-b', enabled: true },
+    { id: 'task-c', enabled: false },
+  ], { only: 'task-b' });
+
+  assert.deepEqual(tasks.map((task) => task.id), ['task-b']);
+});
+
+test('filterQueueTasks supports from and limit after disabled tasks are removed', () => {
+  const tasks = filterQueueTasks([
+    { id: 'task-a', enabled: true },
+    { id: 'task-disabled', enabled: false },
+    { id: 'task-b', enabled: true },
+    { id: 'task-c', enabled: true },
+  ], { from: 'task-b', limit: 1 });
+
+  assert.deepEqual(tasks.map((task) => task.id), ['task-b']);
+});
+
+test('filterQueueTasks rejects unknown selectors', () => {
+  assert.throws(
+    () => filterQueueTasks([{ id: 'task-a', enabled: true }], { only: 'missing' }),
+    /--only target not found: missing/,
+  );
+  assert.throws(
+    () => filterQueueTasks([{ id: 'task-a', enabled: true }], { from: 'missing' }),
+    /--from target not found: missing/,
+  );
+});
+
+test('buildQueueCompletionMessage says queue finished is not the same as all succeeded', () => {
+  const message = buildQueueCompletionMessage({
+    done: 2,
+    failed: 1,
+    crashed: 0,
+    quarantined: 1,
+    skipped: 0,
+    stopped: 0,
+    total: 4,
+  });
+
+  assert.match(message, /queue finished running; some tasks still need attention/);
+  assert.match(message, /2 done, 1 task-failed, 0 crashed, 1 quarantined/);
 });
 
 test('resolveQueueGate uses repo-root node bins for worktree Node gates', () => {

@@ -3,7 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readQueueOutcomes, recordQueueTaskOutcome, shouldSkipAutoDisabledTask } from '../src/queueOutcomes.js';
 import { runProcess } from '../src/runProcess.js';
-import { buildLoopArgsForQueueEntry, buildQueueSummaryFromState, sanitizeWorktreeName } from '../src/runQueue.js';
+import {
+  buildLoopArgsForQueueEntry,
+  buildQueueCompletionMessage,
+  buildQueueSummaryFromState,
+  filterQueueTasks,
+  sanitizeWorktreeName,
+} from '../src/runQueue.js';
 import {
   createLoopProgressWatcher,
   formatProgressLine,
@@ -27,6 +33,7 @@ async function main() {
   const argv = process.argv.slice(2);
   const follow = !argv.includes('--no-follow');
   const queuePath = resolveQueuePath(argv);
+  const selection = resolveQueueSelection(argv);
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const repoRoot = path.resolve(agentLoopRoot, queue.cwd || '..');
   const defaults = queue.defaults || {};
@@ -36,7 +43,7 @@ async function main() {
   const autoDisableOnNoChanges = defaults.autoDisableOnNoChanges ?? true;
   const cleanupWorktree = defaults.cleanupWorktree ?? true;
   const outcomes = await readQueueOutcomes(repoRoot);
-  const tasks = (queue.tasks || []).filter((entry) => entry.enabled !== false);
+  const tasks = filterQueueTasks(queue.tasks || [], selection);
 
   if (!tasks.length) {
     throw new Error('migration queue has no enabled tasks');
@@ -211,9 +218,15 @@ async function main() {
   const crashedCount = results.filter((r) => r.outcome === 'crashed').length;
   const quarantinedCount = results.filter((r) => r.outcome === 'quarantined').length;
   const stoppedCount = results.filter((r) => r.outcome === 'stopped').length;
-  process.stderr.write(
-    `\n[run-queue] queue complete: ${doneCount} done, ${failedCount} task-failed, ${crashedCount} crashed, ${quarantinedCount} quarantined, ${skippedCount} skipped, ${stoppedCount} stopped (of ${results.length})\n`,
-  );
+  process.stderr.write(`\n${buildQueueCompletionMessage({
+    done: doneCount,
+    failed: failedCount,
+    crashed: crashedCount,
+    quarantined: quarantinedCount,
+    skipped: skippedCount,
+    stopped: stoppedCount,
+    total: results.length,
+  })}\n`);
   for (const r of results) {
     if (r.outcome !== 'done' && r.outcome !== 'skipped') {
       process.stderr.write(`[run-queue]   - ${r.outcome.toUpperCase()} ${r.id}: ${r.status} exit=${r.exitCode}\n`);
@@ -248,6 +261,24 @@ function resolveQueuePath(argv) {
     return path.resolve(process.cwd(), value);
   }
   return defaultQueuePath;
+}
+
+function resolveQueueSelection(argv) {
+  const valueAfter = (flag) => {
+    const index = argv.indexOf(flag);
+    if (index < 0) return null;
+    const value = argv[index + 1];
+    if (!value || value.startsWith('--')) {
+      throw new Error(`${flag} requires a value`);
+    }
+    return value;
+  };
+
+  return {
+    only: valueAfter('--only'),
+    from: valueAfter('--from'),
+    limit: valueAfter('--limit'),
+  };
 }
 
 function collectGateSets(queue, defaultGates) {

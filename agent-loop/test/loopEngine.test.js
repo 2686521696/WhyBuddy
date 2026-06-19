@@ -1078,8 +1078,22 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
     'diff --git a/a.js b/a.js\n+first fix\n+review fix\n',
   ];
   const reviewVerdicts = [
-    '{"verdict":"needs_changes","summary":"add fallback","findings":[{"severity":"major","path":"src/a.py","message":"missing fallback"}]}',
-    '{"verdict":"pass","summary":"looks good","findings":[]}',
+    JSON.stringify({
+      verdict: 'needs_changes',
+      summary: 'add fallback',
+      riskLevel: 'medium',
+      applyRecommendation: 'hold',
+      verifiedBoundaries: ['allowed files', 'gate evidence'],
+      findings: [{ severity: 'major', path: 'src/a.py', message: 'missing fallback' }],
+    }),
+    JSON.stringify({
+      verdict: 'pass',
+      summary: 'looks good',
+      riskLevel: 'low',
+      applyRecommendation: 'apply',
+      verifiedBoundaries: ['allowed files', 'gate green'],
+      findings: [],
+    }),
   ];
   const transitions = [];
   const codexProcessCalls = [];
@@ -1127,6 +1141,12 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
   assert.equal(result.reviewRounds.length, 2);
   assert.equal(result.reviewRounds[0].decision, 'needs_changes');
   assert.equal(result.reviewRounds[1].decision, 'pass');
+  assert.equal(result.reviewRounds[0].riskLevel, 'medium');
+  assert.equal(result.reviewRounds[0].applyRecommendation, 'hold');
+  assert.deepEqual(result.reviewRounds[0].verifiedBoundaries, ['allowed files', 'gate evidence']);
+  assert.equal(result.reviewRounds[1].riskLevel, 'low');
+  assert.equal(result.reviewRounds[1].applyRecommendation, 'apply');
+  assert.deepEqual(result.reviewRounds[1].verifiedBoundaries, ['allowed files', 'gate green']);
   assert.equal(grokCalls, 2);
   assert.equal(codexCalls, 2);
   assert.equal(codexProcessCalls.every((call) => call.args[0] === 'exec'), true);

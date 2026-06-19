@@ -47,6 +47,13 @@ test('loop CLI pauses and resumes from the same run directory without real agent
   assert.equal(finalState.iterations.length, 1);
   assert.match(await fs.readFile(path.join(repo, 'value.js'), 'utf8'), /value = 2/);
   assert.match(await fs.readFile(path.join(repo, '.agent-loop', 'latest', 'final-report.md'), 'utf8'), /DONE_FIXED/);
+  const finalReportJson = JSON.parse(await fs.readFile(path.join(repo, '.agent-loop', 'latest', 'final-report.json'), 'utf8'));
+  assert.equal(finalReportJson.schemaVersion, 1);
+  assert.equal(finalReportJson.status, 'DONE_FIXED');
+  assert.equal(finalReportJson.task, 'task.md');
+  assert.equal(finalReportJson.agents.fixAgent, 'grok');
+  assert.equal(finalReportJson.agents.reviewAgent, null);
+  assert.equal(finalReportJson.iterations.length, 1);
 });
 
 test('loop CLI auto-syncs execution status into task.md after completion', async () => {

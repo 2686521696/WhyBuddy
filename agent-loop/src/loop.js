@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parseLoopArgs } from './loopArgs.js';
 import { runLoop } from './loopEngine.js';
-import { buildLoopReport } from './loopReport.js';
+import { buildLoopReport, buildLoopReportJson } from './loopReport.js';
 import { summarizeRunRecord } from './runSummary.js';
 import { tryAutoSyncTaskStatus } from './syncTaskStatusCore.js';
 import {
@@ -120,6 +120,26 @@ async function main() {
     runTimeUtc: runSummary.runTimeUtc,
   });
   await writeArtifact('final-report.md', report, 'text');
+  await writeArtifact('final-report.json', buildLoopReportJson({
+    runId,
+    cwd: activeOptions.cwd,
+    fixCwd: result.worktree?.fixCwd || activeOptions.fixCwd || activeOptions.cwd,
+    task: activeOptions.task,
+    gates: activeOptions.gates,
+    baselineGate: result.baselineGate,
+    finalState: result.status,
+    fixAgent: activeOptions.fixAgent,
+    reviewAgent: activeOptions.skipReview ? null : activeOptions.reviewAgent,
+    iterations: result.iterations || [],
+    reviewRounds: result.reviewRounds || [],
+    maxIterations: activeOptions.maxIterations,
+    lang: activeOptions.lang,
+    runMode: runSummary.runMode,
+    grokRan: runSummary.grokRan,
+    codexRan: runSummary.codexRan,
+    runTimeLocal: runSummary.runTimeLocal,
+    runTimeUtc: runSummary.runTimeUtc,
+  }), 'json');
 
   await tryAutoSyncTaskStatus(activeOptions, runSummary);
 

@@ -504,6 +504,11 @@ async function handleReview(args) {
     decision: review.decision,
     findings: Array.isArray(review.parsed?.findings) ? review.parsed.findings : [],
     summary: review.parsed?.summary ?? null,
+    riskLevel: review.parsed?.riskLevel ?? null,
+    applyRecommendation: review.parsed?.applyRecommendation ?? null,
+    verifiedBoundaries: Array.isArray(review.parsed?.verifiedBoundaries)
+      ? review.parsed.verifiedBoundaries
+      : [],
   });
 
   const reviewSnapshot = {
@@ -708,6 +713,11 @@ function resolvePendingReview(state, resumeStatus = null) {
       verdict: 'needs_changes',
       summary: lastNeedsChanges.summary ?? null,
       findings: Array.isArray(lastNeedsChanges.findings) ? lastNeedsChanges.findings : [],
+      riskLevel: lastNeedsChanges.riskLevel ?? null,
+      applyRecommendation: lastNeedsChanges.applyRecommendation ?? null,
+      verifiedBoundaries: Array.isArray(lastNeedsChanges.verifiedBoundaries)
+        ? lastNeedsChanges.verifiedBoundaries
+        : [],
     },
     verdict: 'needs_changes',
   };

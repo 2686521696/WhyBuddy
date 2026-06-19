@@ -10,6 +10,8 @@
     "list-runs": "node src/list-runs.js",
     "sync:task-status": "node scripts/sync-task-status.mjs",
     "run-queue": "node scripts/run-queue.mjs",
+    "loop-apply": "node scripts/loop-apply.mjs",
+    "secret-scan": "node scripts/secret-scan.mjs",
     "prune-worktrees": "node scripts/prune-worktrees.mjs",
     "smoke:stub": "node scripts/smoke-stub.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",

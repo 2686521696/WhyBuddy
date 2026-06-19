@@ -35,6 +35,46 @@ function quoteForPowershell(value) {
   return `& "${value}"`;
 }
 
+export function filterQueueTasks(tasks, { only = null, from = null, limit = null } = {}) {
+  let selected = (tasks || []).filter((entry) => entry.enabled !== false);
+
+  if (only) {
+    const match = selected.find((entry) => (entry.id || entry.task) === only || entry.task === only);
+    if (!match) throw new Error(`--only target not found: ${only}`);
+    selected = [match];
+  }
+
+  if (from) {
+    const index = selected.findIndex((entry) => (entry.id || entry.task) === from || entry.task === from);
+    if (index < 0) throw new Error(`--from target not found: ${from}`);
+    selected = selected.slice(index);
+  }
+
+  if (limit != null) {
+    const count = Number(limit);
+    if (!Number.isInteger(count) || count < 1) throw new Error('--limit requires a positive integer');
+    selected = selected.slice(0, count);
+  }
+
+  return selected;
+}
+
+export function buildQueueCompletionMessage({
+  done = 0,
+  failed = 0,
+  crashed = 0,
+  quarantined = 0,
+  skipped = 0,
+  stopped = 0,
+  total = 0,
+} = {}) {
+  const clean = failed === 0 && crashed === 0 && quarantined === 0 && stopped === 0;
+  const verdict = clean
+    ? 'all selected tasks succeeded or were skipped'
+    : 'queue finished running; some tasks still need attention';
+  return `[run-queue] queue finished: ${done} done, ${failed} task-failed, ${crashed} crashed, ${quarantined} quarantined, ${skipped} skipped, ${stopped} stopped (of ${total}) -- ${verdict}`;
+}
+
 export function resolveEntryGates({ entry, gateSets, defaultGates, label }) {
   if (Array.isArray(entry.gates) && entry.gates.length > 0) {
     return entry.gates;

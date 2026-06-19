@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildAgentNotFoundReport, buildProbeReport } from '../src/report.js';
-import { buildLoopReport } from '../src/loopReport.js';
+import { buildLoopReport, buildLoopReportJson } from '../src/loopReport.js';
 
 const sampleReportInput = {
   runId: '2026-06-16T08-24-33-531Z',
@@ -118,8 +118,63 @@ test('buildLoopReport marks run mode and localizes status notes', () => {
   assert.match(report, /^Grok 已运行: `false`$/m);
   assert.match(report, /^Codex 已运行: `false`$/m);
   assert.match(report, /^## 状态说明$/m);
-  assert.match(report, /`DONE_GATE_ONLY`：基线 gate 已通过，且跳过了 review。/);
+  assert.match(report, /`DONE_GATE_ONLY`：基线 gate 已通过，且跳过 review。/);
   assert.match(report, /最终审查成功/);
+});
+
+test('buildLoopReportJson exposes stable structured fields for dashboards', () => {
+  const report = buildLoopReportJson({
+    runId: 'run-json',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo\\.worktrees\\task-a',
+    task: 'agent-loop/tasks/task-a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: false, failureCount: 1, progress: { effectiveFailureCount: 1 } },
+    finalState: 'DONE_REVIEWED',
+    fixAgent: 'codex',
+    reviewAgent: 'codex',
+    iterations: [
+      {
+        iteration: 1,
+        diff: { bytes: 123 },
+        gate: { ok: true, failureCount: 0 },
+        diffGuard: { findings: [{ path: 'test/a.test.js', reason: 'protected_path_changed' }] },
+      },
+    ],
+    reviewRounds: [
+      {
+        round: 1,
+        verdict: 'pass',
+        decision: 'pass',
+        summary: '中文 summary stays utf8',
+        riskLevel: 'low',
+        applyRecommendation: 'apply',
+        verifiedBoundaries: ['gate green', 'allowed files'],
+        findings: [],
+      },
+    ],
+    maxIterations: 2,
+    lang: 'zh-CN',
+    runMode: 'codex-fix+codex-review',
+    grokRan: false,
+    codexRan: true,
+    runTimeLocal: '2026-06-20 05:00:00 (Asia/Shanghai)',
+    runTimeUtc: '2026-06-19 21:00:00 (UTC)',
+  });
+
+  assert.equal(report.schemaVersion, 1);
+  assert.equal(report.runId, 'run-json');
+  assert.equal(report.status, 'DONE_REVIEWED');
+  assert.equal(report.task, 'agent-loop/tasks/task-a.md');
+  assert.equal(report.runMode, 'codex-fix+codex-review');
+  assert.equal(report.agents.fixAgent, 'codex');
+  assert.equal(report.agents.reviewAgent, 'codex');
+  assert.equal(report.baselineGate.ok, false);
+  assert.equal(report.iterations[0].diffGuard.findings[0].path, 'test/a.test.js');
+  assert.equal(report.reviewRounds[0].summary, '中文 summary stays utf8');
+  assert.equal(report.reviewRounds[0].riskLevel, 'low');
+  assert.equal(report.reviewRounds[0].applyRecommendation, 'apply');
+  assert.deepEqual(report.reviewRounds[0].verifiedBoundaries, ['gate green', 'allowed files']);
 });
 
 test('buildLoopReport survives codex fix attempts without grokFix fields', () => {
