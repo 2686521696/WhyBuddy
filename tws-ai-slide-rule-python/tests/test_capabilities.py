@@ -257,6 +257,31 @@ def test_document_draft_returns_v5_shape_with_python_llm_provenance():
     assert "RBAC" not in out["content"]
 
 
+def test_traceability_matrix_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "traceability.matrix",
+        "state": {"goal": {"text": "map pet office progression requirements to evidence and risks"}},
+        "userText": "build a traceability matrix for the delivery handoff",
+        "roleId": "综合",
+        "turnId": "t-traceability",
+    }
+
+    out = execute_capability(
+        body,
+        caller=lambda *a, **k: _fake_result(
+            "| Requirement | Evidence | Risk | Decision | Next action |\n"
+            "|---|---|---|---|---|\n"
+            "| Desk unlock pacing | Playtest desk-upgrade notes | Players may grind | Prototype one milestone | Measure retention after first desk |"
+        ),
+    )
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Traceability matrix"
+    assert "Requirement" in out["content"]
+    assert "Evidence" in out["content"]
+    assert "Next action" in out["content"]
+    assert "RBAC" not in out["content"]
+
+
 def test_risk_analyze_returns_v5_shape_with_python_llm_provenance():
     body = {
         "capabilityId": "risk.analyze",
@@ -386,6 +411,7 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("counter.argue") is True
     assert is_python_native_capability("structure.decompose") is True
     assert is_python_native_capability("document.draft") is True
+    assert is_python_native_capability("traceability.matrix") is True
     assert is_python_native_capability("risk.analyze") is True
     assert is_python_native_capability("evidence.search") is True
     assert is_python_native_capability("report.write") is True

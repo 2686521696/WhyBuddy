@@ -701,6 +701,57 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     );
   });
 
+  it('traceability.matrix delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Traceability matrix',
+      summary: 'Requirement to evidence map',
+      content: '| Requirement | Evidence | Risk | Decision | Next action |\n|---|---|---|---|---|\n| Desk unlock pacing | Playtest notes | Grind risk | Prototype milestone | Measure retention |',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 50 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'traceability.matrix',
+        state: { sessionId: 't-traceability.matrix', goal: { text: 'Map pet office requirements to evidence and risks' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-traceability.matrix',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('Requirement');
+    expect(body.content).toContain('Next action');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'traceability.matrix',
+        inputArtifactIds: ['goal-1'],
+        roleId: '综合',
+        turnId: 't-traceability.matrix',
+        userText: 'Map pet office requirements to evidence and risks',
+      }),
+      expect.any(String),
+    );
+  });
+
   it('risk.analyze delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
     vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');

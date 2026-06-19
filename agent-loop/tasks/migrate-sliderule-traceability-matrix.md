@@ -2,18 +2,26 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成（AgentLoop 假完成后由人工接管补实现）
 - 目标 capability：`traceability.matrix`
 - 预期 provenance：`python-llm`
 - 前置：batch-2 migration queue 已完成 11/11 `DONE_REVIEWED`
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python native implementation（Python 原生实现）已落地
-- [ ] Node delegation（Node 委托）契约已验证
-- [ ] `deliveryGates` 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行 AgentLoop（真实运行得到 `DONE_REVIEWED`，但人工复核发现是 baseline gate 假完成）
+- [x] Python native implementation（Python 原生实现）已落地
+- [x] Node delegation（Node 委托）契约已验证
+- [x] `deliveryGates` 全绿
+- [x] 人工 review（审查）已确认 diff 干净
+
+## 最近执行记录
+
+- 最近执行：2026-06-19
+- AgentLoop run id：`2026-06-19T04-46-23-210Z`
+- AgentLoop 结果：`DONE_REVIEWED`（baseline gate 已绿、diff 为空；人工复核发现是假完成）
+- 人工补充结果：`DONE_GATE_ONLY`
+- gate 结果：Python 36 passed / Node vitest 47 passed / TypeScript OK / mojibake OK
 
 ## 目标
 

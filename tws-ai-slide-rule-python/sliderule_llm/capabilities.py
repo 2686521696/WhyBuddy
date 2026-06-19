@@ -91,6 +91,13 @@ CAPABILITY_PROMPTS: dict[str, str] = {
         "Do not return a generic template; every section must mention the actual goal or its domain. "
         "Output markdown only: no JSON, no code fence, no preamble."
     ),
+    "traceability.matrix": (
+        "You are SlideRule V5's traceability-matrix role. Given the user's goal, state, and message, write a "
+        "concise **markdown table** that maps requirement, evidence, risk, decision, and next action. "
+        "Use concrete rows grounded in the user's actual goal. Do not invent an unrelated domain. "
+        "Do not return a generic template; every row must connect the actual goal to evidence or action. "
+        "Output markdown only: no JSON, no code fence, no preamble."
+    ),
     "risk.analyze": (
         "You are SlideRule V5's risk-analysis role. Given the user's goal and message, write a "
         "concise **markdown** risk scan with three short sections: (1) risk inventory, "
@@ -117,6 +124,7 @@ CAPABILITY_TITLES: dict[str, str] = {
     "counter.argue": "Counter argument",
     "structure.decompose": "Structure decomposition",
     "document.draft": "SPEC document draft",
+    "traceability.matrix": "Traceability matrix",
     "risk.analyze": "Risk analysis",
     "evidence.search": "Evidence search",
     "report.write": "Feasibility report",

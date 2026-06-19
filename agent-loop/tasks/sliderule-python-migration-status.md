@@ -187,7 +187,7 @@ LLM config parity 任务文档：`agent-loop/tasks/backend-python-llm-config-par
 这批不提前打勾。每个任务都必须跑过 `deliveryGates` 后，才能把对应 capability（能力）标为迁移完成。
 
 - [x] `document.draft`：`agent-loop/tasks/migrate-sliderule-document-draft.md`（2026-06-19，人工接手完成，`deliveryGates` 全绿）
-- [ ] `traceability.matrix`：`agent-loop/tasks/migrate-sliderule-traceability-matrix.md`
+- [x] `traceability.matrix`：`agent-loop/tasks/migrate-sliderule-traceability-matrix.md`（2026-06-19，AgentLoop `DONE_REVIEWED` 为空 diff 假完成，人工接手完成，`deliveryGates` 全绿）
 - [ ] `task.write`：`agent-loop/tasks/migrate-sliderule-task-write.md`
 - [ ] `instruction.package`：`agent-loop/tasks/migrate-sliderule-instruction-package.md`
 - [ ] `outcome.visualize`：`agent-loop/tasks/migrate-sliderule-outcome-visualize.md`
