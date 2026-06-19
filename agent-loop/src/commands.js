@@ -1,5 +1,7 @@
-export function buildCodexReviewArgs({ uncommitted = true, prompt, readPromptFromStdin = false } = {}) {
-  const args = ['review'];
+export function buildCodexReviewArgs({ uncommitted = true, prompt, readPromptFromStdin = false, model = null } = {}) {
+  const args = [];
+  if (model) args.push('-m', model);
+  args.push('review');
   if (uncommitted) args.push('--uncommitted');
   if (readPromptFromStdin) {
     args.push('-');
@@ -9,8 +11,10 @@ export function buildCodexReviewArgs({ uncommitted = true, prompt, readPromptFro
   return args;
 }
 
-export function buildCodexExecArgs({ cwd, readPromptFromStdin = true } = {}) {
-  const args = ['exec', '--cd', cwd, '--dangerously-bypass-approvals-and-sandbox'];
+export function buildCodexExecArgs({ cwd, readPromptFromStdin = true, model = null } = {}) {
+  const args = ['exec'];
+  if (model) args.push('-m', model);
+  args.push('--cd', cwd, '--dangerously-bypass-approvals-and-sandbox');
   if (readPromptFromStdin) args.push('-');
   return args;
 }

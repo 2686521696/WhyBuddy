@@ -11,6 +11,8 @@ export function parseLoopArgs(argv) {
     skipReview: false,
     fixAgent: 'grok',
     reviewAgent: 'grok',
+    fixModel: null,
+    reviewModel: null,
     scopedReview: null,
     reviewMaxTurns: 2,
     timeoutMs: 120000,
@@ -47,6 +49,8 @@ export function parseLoopArgs(argv) {
       parsed.skipReview = true;
     } else if (arg === '--fix-agent') {
       parsed.fixAgent = readAgentValue(argv, ++i, '--fix-agent');
+    } else if (arg === '--fix-model') {
+      parsed.fixModel = readValue(argv, ++i, '--fix-model');
     } else if (arg === '--review-agent') {
       const value = readValue(argv, ++i, '--review-agent');
       if (value === 'none') {
@@ -55,6 +59,8 @@ export function parseLoopArgs(argv) {
       } else {
         parsed.reviewAgent = readAgentValue(argv, i, '--review-agent', value);
       }
+    } else if (arg === '--review-model') {
+      parsed.reviewModel = readValue(argv, ++i, '--review-model');
     } else if (arg === '--scoped-review') {
       parsed.scopedReview = readBooleanValue(argv, ++i, '--scoped-review');
     } else if (arg === '--review-max-turns') {

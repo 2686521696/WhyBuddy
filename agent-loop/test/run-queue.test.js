@@ -155,6 +155,8 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
       skipReview: false,
       fixAgent: 'grok',
       reviewAgent: 'codex',
+      fixModel: 'gpt-5.5',
+      reviewModel: 'gpt-5.5',
       guardTests: true,
       maxIterations: 3,
       timeoutMs: 600000,
@@ -179,6 +181,8 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
   assert.equal(args.includes('--skip-review'), false);
   assert.ok(args.includes('--fix-agent'));
   assert.ok(args.includes('--review-agent'));
+  assert.deepEqual(args.slice(args.indexOf('--fix-model'), args.indexOf('--fix-model') + 2), ['--fix-model', 'gpt-5.5']);
+  assert.deepEqual(args.slice(args.indexOf('--review-model'), args.indexOf('--review-model') + 2), ['--review-model', 'gpt-5.5']);
   assert.match(gateArg, /test_client_parity\.py/);
   assert.match(gateArg, /& "/);
   assert.match(gateArg, /tws-ai-slide-rule-python[\\/]\.venv[\\/]Scripts[\\/]python\.exe/);

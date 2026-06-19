@@ -8,9 +8,30 @@ test('codex review args use current working directory and uncommitted diff', () 
   assert.deepEqual(buildCodexReviewArgs({ readPromptFromStdin: true }), ['review', '--uncommitted', '-']);
 });
 
+test('codex review args allow model override', () => {
+  assert.deepEqual(buildCodexReviewArgs({ model: 'gpt-5.5' }), [
+    '-m',
+    'gpt-5.5',
+    'review',
+    '--uncommitted',
+  ]);
+});
+
 test('codex exec args target fix cwd and read prompt from stdin', () => {
   assert.deepEqual(buildCodexExecArgs({ cwd: 'C:\\repo' }), [
     'exec',
+    '--cd',
+    'C:\\repo',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '-',
+  ]);
+});
+
+test('codex exec args allow model override', () => {
+  assert.deepEqual(buildCodexExecArgs({ cwd: 'C:\\repo', model: 'gpt-5.5' }), [
+    'exec',
+    '-m',
+    'gpt-5.5',
     '--cd',
     'C:\\repo',
     '--dangerously-bypass-approvals-and-sandbox',

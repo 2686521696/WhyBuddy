@@ -39,6 +39,8 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
       skipReview: false,
       fixAgent: 'grok',
       reviewAgent: 'grok',
+      fixModel: null,
+      reviewModel: null,
       scopedReview: null,
       reviewMaxTurns: 2,
       timeoutMs: 120000,
@@ -96,6 +98,30 @@ test('parseLoopArgs supports configurable fix and review agents', () => {
   assert.equal(parsed.reviewAgent, 'grok');
   assert.equal(parsed.scopedReview, true);
   assert.equal(parsed.skipReview, false);
+});
+
+test('parseLoopArgs supports configurable fix and review models', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--fix-agent',
+    'codex',
+    '--fix-model',
+    'gpt-5.5',
+    '--review-agent',
+    'codex',
+    '--review-model',
+    'gpt-5.5',
+  ]);
+
+  assert.equal(parsed.fixAgent, 'codex');
+  assert.equal(parsed.reviewAgent, 'codex');
+  assert.equal(parsed.fixModel, 'gpt-5.5');
+  assert.equal(parsed.reviewModel, 'gpt-5.5');
 });
 
 test('parseLoopArgs treats review-agent none as skip-review', () => {

@@ -99,12 +99,17 @@ export function buildLoopArgsForQueueEntry({
   const fixAgent = entry.fixAgent ?? defaults.fixAgent;
   if (fixAgent) args.push('--fix-agent', fixAgent);
 
+  const fixModel = entry.fixModel ?? defaults.fixModel;
+  if (fixModel) args.push('--fix-model', fixModel);
+
   const skipReview = entry.skipReview ?? defaults.skipReview ?? true;
   if (skipReview) {
     args.push('--skip-review');
   } else {
     const reviewAgent = entry.reviewAgent ?? defaults.reviewAgent;
     if (reviewAgent) args.push('--review-agent', reviewAgent);
+    const reviewModel = entry.reviewModel ?? defaults.reviewModel;
+    if (reviewModel) args.push('--review-model', reviewModel);
   }
 
   const scopedReview = entry.scopedReview ?? defaults.scopedReview;

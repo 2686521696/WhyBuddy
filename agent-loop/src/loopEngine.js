@@ -460,7 +460,10 @@ async function runFixAttempt({
     });
   } else {
     const prompt = await fs.readFile(promptPath, 'utf8');
-    agentFix = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({ cwd: fixCwd }), {
+    agentFix = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({
+      cwd: fixCwd,
+      model: options.fixModel,
+    }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
       input: prompt,
@@ -594,14 +597,19 @@ async function runReview({
       onStderr: reporter.onStderr,
     });
   } else if (scoped) {
-    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({ cwd: fixCwd }), {
+    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({
+      cwd: fixCwd,
+      model: options.reviewModel,
+    }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
       input: promptInput,
       onStderr: reporter.onStderr,
     });
   } else {
-    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs(), {
+    agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs({
+      model: options.reviewModel,
+    }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
       onStderr: reporter.onStderr,
