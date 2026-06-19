@@ -2,18 +2,18 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成
 - 目标：给 Blueprint/spec-docs Python proxy 建立 smoke gate（冒烟门禁）
 - 前置：`backend-python-blueprint-spec-docs-proxy-contract.md` 已完成
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python service + Node proxy smoke 可跑
-- [ ] smoke 不依赖真实 LLM key
-- [ ] 失败原因能区分服务不可达、契约错误、代理错误
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行 AgentLoop
+- [x] Python service + Node proxy smoke 可跑
+- [x] smoke 不依赖真实 LLM key
+- [x] 失败原因能区分服务不可达、契约错误、代理错误
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
 
 ## 目标
 
