@@ -99,6 +99,43 @@ describe('mcp.call Node -> Python proxy contract', () => {
     expect(poolSpy).not.toHaveBeenCalled();
   });
 
+  it('passes through fake MCP runtime provenance without claiming production mcp:*', async () => {
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    const pythonPayload = {
+      title: 'mcp.call search',
+      summary: 'Fake MCP adapter returned a deterministic tool result',
+      content: 'fixture hit for migration boundaries',
+      provenance: 'python-fake-mcp',
+      degraded: false,
+      toolName: 'search',
+      serverId: 'fake-server',
+      arguments: { query: 'migration boundaries' },
+      toolResult: { hits: ['doc-runtime-1'], serverId: 'fake-server' },
+      sources: [],
+    };
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce(pythonPayload);
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mcpRequestBody),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual(pythonPayload);
+    expect(body.provenance).toBe('python-fake-mcp');
+    expect(body.provenance).not.toBe('python-rag');
+    expect(body.provenance).not.toMatch(/^mcp:/);
+    expect(body.toolResult).toEqual({
+      hits: ['doc-runtime-1'],
+      serverId: 'fake-server',
+    });
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+  });
+
   it('returns explicit degraded 502 when Python delegation fails', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     pythonDelegation.callPythonSlideRule.mockRejectedValueOnce(new Error('connection refused'));

@@ -7,7 +7,11 @@ No more LLM fallback or template for the ones that were degraded.
 
 from typing import Dict, Any, Callable, List
 from models.v5_state import V5SessionState
-from .slide_rule_executor import execute_capability  # main one
+from .slide_rule_executor import (  # main one
+    execute_capability,
+    execute_mcp_call_with_runtime,
+    get_mcp_runtime,
+)
 from .slide_rule_llm import call_stable_llm_for_capability
 from .rag_service import generate_with_rag, retrieve_evidence
 
@@ -60,7 +64,8 @@ def execute_report(state: V5SessionState, cap_id: str, role: str, turn: str, inp
     return {"title": "Report", "summary": "RAG generated report", "content": content, "provenance": "python-rag", "sources": evidence}
 
 def execute_mcp_or_skill(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
-    # Now always brings evidence via RAG - no degraded
+    if cap_id == "mcp.call" and get_mcp_runtime() is not None:
+        return execute_mcp_call_with_runtime(state, role, turn, inputs)
     return execute_capability(cap_id, state, inputs, role, turn).model_dump()
 
 def execute_evidence(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:

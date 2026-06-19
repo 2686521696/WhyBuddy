@@ -8,12 +8,12 @@
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python test 覆盖 fake MCP adapter 成功调用
-- [ ] Python test 覆盖 adapter 不可用和 tool 不存在
-- [ ] Node test 确认 runtime smoke 不会伪装成生产 MCP
-- [ ] gate 全绿
-- [ ] Codex review（审查）确认没有接生产 MCP server
+- [x] 已执行 AgentLoop
+- [x] Python test 覆盖 fake MCP adapter 成功调用
+- [x] Python test 覆盖 adapter 不可用和 tool 不存在
+- [x] Node test 确认 runtime smoke 不会伪装成生产 MCP
+- [x] gate 全绿
+- [x] Codex review（审查）确认没有接生产 MCP server
 
 ## 目标
 
