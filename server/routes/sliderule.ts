@@ -94,7 +94,10 @@ import {
   shouldSkipPrimaryLlmAfterPoolExhausted,
   type PoolJsonLlmResult,
 } from "../sliderule/pool-json-llm.js";
-import { callPythonSlideRule } from "../sliderule/python-delegation.js";
+import {
+  callPythonSlideRule,
+  resolvePythonSlideRuleRuntimeConfig,
+} from "../sliderule/python-delegation.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -625,8 +628,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       // This replaces the old Node LLM pool / primary path for these capabilities.
       // Use stable Python RAG for real external evidence (no more template/degraded).
       // Controlled by SLIDERULE_V5_BACKEND=python (default) | legacy .
-      const pythonBase = (process.env.PYTHON_SLIDE_RULE_BASE_URL || 'http://localhost:9700').replace(/\/$/, '');
-      const internalKey = process.env.PYTHON_SLIDE_RULE_INTERNAL_KEY || 'dev-slide-rule-internal';
+      const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
 
       const payload = {
         capabilityId,
@@ -641,7 +643,13 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         const endpoint = capabilityId === 'orchestrate.plan'
           ? '/api/sliderule/orchestrate-plan'
           : '/api/sliderule/execute-capability';
-        const data = await callPythonSlideRule(pythonBase, endpoint, payload, internalKey);
+        const data = await callPythonSlideRule(
+          pythonRuntime.baseUrl,
+          endpoint,
+          payload,
+          pythonRuntime.internalKey,
+          { timeoutMs: pythonRuntime.timeoutMs },
+        );
         return sendJson(data);
       } catch (e) {
         console.warn('[sliderule] python V5 delegation failed', e);

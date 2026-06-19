@@ -2,18 +2,18 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成
 - 目标：明确 Python service（Python 服务）运行配置、端口、代理、health check（健康检查）和 Node 调用边界
 - 前置：SlideRule Python proxy 和 Blueprint/spec-docs proxy 至少有一条 smoke gate
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python runtime env（运行环境变量）边界已文档化
-- [ ] Node 调 Python 的 base URL / timeout / proxy 规则已验证
-- [ ] health check（健康检查）和错误分类已覆盖
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行 AgentLoop
+- [x] Python runtime env（运行环境变量）边界已文档化
+- [x] Node 调 Python 的 base URL / timeout / proxy 规则已验证
+- [x] health check（健康检查）和错误分类已覆盖
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
 
 ## 目标
 
