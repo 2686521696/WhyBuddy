@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from .client import LlmError, LlmResult, call_llm, call_llm_json
+from .client import LlmError, LlmResult, build_llm_telemetry, call_llm, call_llm_json
 from .config import LlmConfig, PoolConfig, get_pool_config
 
 POOL_504_PENALTY_MS = 8000
@@ -94,7 +94,18 @@ def _active_key_states(states: list[PoolKeyState]) -> list[PoolKeyState]:
 def _annotate_pool_result(result: LlmResult, pool: PoolConfig, label: str) -> LlmResult:
     usage = dict(result.usage or {})
     usage["model"] = f"{pool.model}@{label}"
-    return replace(result, model=pool.model, usage=usage)
+    annotated = replace(result, model=pool.model, provider=pool.base_url, usage=usage)
+    return replace(
+        annotated,
+        telemetry=build_llm_telemetry(
+            annotated,
+            extra={
+                "pool_label": label,
+                "pool_model": pool.model,
+                "pool_key_count": len(pool.keys),
+            },
+        ),
+    )
 
 
 def _run_pool_attempts(

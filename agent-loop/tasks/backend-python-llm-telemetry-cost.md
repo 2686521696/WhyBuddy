@@ -2,19 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成 — chat / JSON / pool 统一 telemetry 已用本地测试锁住
 - 目标：补齐 Python LLM 调用的 usage / latency / cost telemetry（用量/耗时/费用统计）
 - 前置：`backend-python-llm-client-parity.md`、`backend-python-llm-pool-parity.md` 建议先完成
 - 注意：本任务只做本地可测 telemetry，不接真实计费系统。
 
+- 最近执行：2026-06-19
+- 最近确认：2026-06-19
+- 执行方式：Codex 直接小切片实现，未发 live LLM
+- gate 结果：`tests/test_telemetry_cost.py tests/test_client_parity.py tests/test_pool_parity.py` 全绿
+
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] chat / JSON / pool 调用都能产出统一 telemetry
-- [ ] usage token（用量 token）标准化
-- [ ] latency（耗时）和 model/provider metadata（模型/供应商元数据）保留
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行本地实现与验证
+- [x] chat / JSON / pool 调用都能产出统一 telemetry
+- [x] usage token（用量 token）标准化
+- [x] latency（耗时）和 model/provider metadata（模型/供应商元数据）保留
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
 
 ## 目标
 

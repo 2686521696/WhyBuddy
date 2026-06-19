@@ -36,6 +36,7 @@ class LlmResult:
     model: str
     latency_ms: int
     provider: str | None = None
+    telemetry: dict[str, Any] | None = None
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -196,8 +197,22 @@ def normalize_usage(usage: dict[str, Any] | None) -> dict[str, int]:
     }
 
 
+def build_llm_telemetry(result: LlmResult, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    telemetry: dict[str, Any] = {
+        "model": result.model,
+        "provider": result.provider,
+        "usage": normalize_usage(result.usage),
+        "latency_ms": result.latency_ms,
+        "finish_reason": normalize_finish_reason(result.finish_reason),
+        "estimated_cost_usd": None,
+    }
+    if extra:
+        telemetry.update(extra)
+    return telemetry
+
+
 def _finalize_result(result: LlmResult) -> LlmResult:
-    return LlmResult(
+    finalized = LlmResult(
         content=result.content,
         usage=normalize_usage(result.usage),
         finish_reason=normalize_finish_reason(result.finish_reason),
@@ -205,6 +220,8 @@ def _finalize_result(result: LlmResult) -> LlmResult:
         latency_ms=result.latency_ms,
         provider=result.provider,
     )
+    return replace(finalized, telemetry=build_llm_telemetry(finalized))
+
 
 
 def _call_llm_once(
