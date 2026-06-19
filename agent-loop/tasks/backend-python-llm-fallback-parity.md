@@ -2,19 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成 — fallback 链路和错误分流已用 mock provider 锁住
 - 目标：把 Python `sliderule_llm` 的 fallback（备用模型/备用 provider）从“能读配置”推进到“能真实参与调用链”
 - 前置：`backend-python-llm-client-parity.md` 已完成或保持全绿
 - 注意：本任务不发 live LLM；使用 mock caller / fake provider 验证链路。
 
+- 最近执行：2026-06-19
+- 最近确认：2026-06-19
+- 执行方式：Codex 直接小切片实现，未发 live LLM
+- gate 结果：`tests/test_fallback_parity.py tests/test_client_parity.py tests/test_config.py` 全绿
+
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] fallback provider（备用供应商）链路已接入 Python client
-- [ ] model fallback（模型备用）顺序和错误处理已验证
-- [ ] transient / permanent error（瞬时/永久错误）不会误切换
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行本地实现与验证
+- [x] fallback provider（备用供应商）链路已接入 Python client
+- [x] model fallback（模型备用）顺序和错误处理已验证
+- [x] transient / permanent error（瞬时/永久错误）不会误切换
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
 
 ## 目标
 

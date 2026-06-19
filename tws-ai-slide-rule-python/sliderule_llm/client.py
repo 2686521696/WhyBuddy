@@ -35,6 +35,7 @@ class LlmResult:
     finish_reason: str | None
     model: str
     latency_ms: int
+    provider: str | None = None
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -202,6 +203,7 @@ def _finalize_result(result: LlmResult) -> LlmResult:
         finish_reason=normalize_finish_reason(result.finish_reason),
         model=result.model,
         latency_ms=result.latency_ms,
+        provider=result.provider,
     )
 
 
@@ -255,6 +257,7 @@ def _call_llm_once(
         finish_reason=finish,
         model=str(data.get("model") or model),
         latency_ms=latency,
+        provider=cfg.provider_name,
     )
 
 
