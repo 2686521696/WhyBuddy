@@ -2,18 +2,18 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成
 - 目标：让 Grok 先做 `skill.invoke` 的边界审计，不直接迁技能运行时
 - 角色分工：Grok 负责产出审计文档；Codex 负责审查是否越界、是否夸大完成度
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] 已生成 `docs/backend-python-skill-invoke-boundary-audit.md`
-- [ ] 文档区分 real runtime（真实运行时）、fallback（回退）和 simulated/stub（模拟/桩）
-- [ ] 文档明确 `skill.invoke` 是否可计入 Python native LLM 完成数
-- [ ] gate 全绿
-- [ ] Codex review（审查）已确认 Grok 没有改业务代码、没有扩大迁移范围
+- [x] 已执行 AgentLoop
+- [x] 已生成 `docs/backend-python-skill-invoke-boundary-audit.md`
+- [x] 文档区分 real runtime（真实运行时）、fallback（回退）和 simulated/stub（模拟/桩）
+- [x] 文档明确 `skill.invoke` 是否可计入 Python native LLM 完成数
+- [x] gate 全绿
+- [x] Codex review（审查）已确认 Grok 没有改业务代码、没有扩大迁移范围
 
 ## 目标
 
