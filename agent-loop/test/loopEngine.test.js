@@ -108,6 +108,52 @@ test('runLoop audit-only succeeds without agents when review is skipped and auto
   assert.equal(result.codexReview, null);
 });
 
+test('runLoop passes an absolute Grok prompt file when fix cwd differs from run dir', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const fixCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-worktree-'));
+  const runDir = path.join(repo, '.agent-loop', 'runs', 'run-1');
+  await fs.mkdir(runDir, { recursive: true });
+  const taskPath = path.join(repo, 'task.md');
+  await fs.writeFile(taskPath, 'create audit doc\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  let capturedPromptFile = null;
+
+  const result = await runLoop({
+    options: {
+      cwd: repo,
+      fixCwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['test gate'],
+      autoFix: true,
+      skipReview: true,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir,
+    latestDir: runDir,
+    deps: {
+      resolveAgents: async () => ({ codex: null, grok: 'grok.exe' }),
+      evaluateGate: async () => gate(false, 1, 'missing doc'),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => {
+        assert.equal(command, 'grok.exe');
+        capturedPromptFile = args[args.indexOf('--prompt-file') + 1];
+        assert.equal(path.isAbsolute(capturedPromptFile), true);
+        assert.equal(capturedPromptFile.startsWith(runDir), true);
+        assert.equal(options.cwd, fixCwd);
+        await fs.access(capturedPromptFile);
+        return runOk(command, args, options.cwd, '{"verdict":"blocked"}');
+      },
+      writeArtifact: artifactWriter(runDir),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'HALT_NO_CHANGES');
+  assert.ok(capturedPromptFile);
+});
+
 test('runLoop halts no progress when a red post-fix gate has unchanged failure count', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');

@@ -653,7 +653,7 @@ async function runReview({
 }
 
 function artifactPath(runDir, fileName) {
-  return runDir ? path.join(runDir, fileName) : fileName;
+  return runDir ? path.resolve(runDir, fileName) : path.resolve(fileName);
 }
 
 function fixRequestArtifact(agent, iteration) {
