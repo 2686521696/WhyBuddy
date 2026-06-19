@@ -22,243 +22,366 @@
     "pythonExe": "tws-ai-slide-rule-python/.venv/Scripts/python.exe"
   },
   "gates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot",
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "realVectorRetrievalProductionGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_real_vector_retrieval_production_wiring.py tests/test_real_vector_retrieval_runtime.py tests/test_real_vector_retrieval_smoke.py tests/test_evidence_vector_contract.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/evidence.py tws-ai-slide-rule-python/sliderule_llm/vector.py tws-ai-slide-rule-python/sliderule_llm/config.py tws-ai-slide-rule-python/tests/test_real_vector_retrieval_production_wiring.py"
+  ],
+  "evidenceNodeRuntimeWiringGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_evidence_node_runtime_wiring.py tests/test_evidence_runtime_provenance.py tests/test_evidence_retrieval_parity.py tests/test_evidence_vector_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.evidence-python-runtime.test.ts server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js tws-ai-slide-rule-python server/routes/__tests__/sliderule.execute-capability.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} server/routes/__tests__/sliderule.evidence-python-runtime.test.ts tws-ai-slide-rule-python/tests/test_evidence_node_runtime_wiring.py"
   ],
-  "infraGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_client_parity.py tests/test_config.py tests/test_capabilities.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_client_parity.py"
+  "mcpCallRealRuntimeGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_mcp_call_real_runtime.py tests/test_mcp_call_runtime_smoke.py tests/test_mcp_call_contract.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/mcp_runtime.py tws-ai-slide-rule-python/services/slide_rule_executor.py tws-ai-slide-rule-python/tests/test_mcp_call_real_runtime.py"
   ],
-  "poolGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_pool_parity.py tests/test_pool.py tests/test_config.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_pool_parity.py"
+  "skillInvokeRealRuntimeGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_skill_invoke_real_runtime.py tests/test_skill_invoke_runtime_smoke.py tests/test_skill_invoke_contract.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/skill_runtime.py tws-ai-slide-rule-python/services/slide_rule_executor.py tws-ai-slide-rule-python/tests/test_skill_invoke_real_runtime.py"
   ],
-  "jsonGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_json_hardening.py tests/test_client_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_json_hardening.py"
-  ],
-  "fallbackGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_fallback_parity.py tests/test_client_parity.py tests/test_config.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/sliderule_llm/config.py tws-ai-slide-rule-python/tests/test_fallback_parity.py"
-  ],
-  "telemetryGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_telemetry_cost.py tests/test_client_parity.py tests/test_pool_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm tws-ai-slide-rule-python/tests/test_telemetry_cost.py"
-  ],
-  "uxPreviewGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/sliderule/__tests__/visual-exec-map.test.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot",
+  "orchestratePlanRuntimeRouteGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_runtime_route.py tests/test_orchestrate_plan_error_recovery.py tests/test_orchestrate_plan_contract.py tests/test_orchestrate_plan_golden_smoke.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-runtime.test.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts server/routes/__tests__/sliderule.orchestrate-plan.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python server/sliderule server/routes/__tests__/sliderule.execute-capability.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_orchestrate_plan_runtime_route.py server/routes/__tests__/sliderule.orchestrate-plan-python-runtime.test.ts"
   ],
-  "nativeAuditGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_capabilities.py tests/test_v5_contract_expansion.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot",
-    "if (!(Test-Path docs/sliderule-python-native-capability-audit.md)) { throw 'missing docs/sliderule-python-native-capability-audit.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/tasks/sliderule-python-migration-status.md docs/sliderule-python-native-capability-audit.md"
-  ],
-  "liveSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_v5_live_smoke.py tests/test_v5_smoke.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.live-delegation.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_v5_live_smoke.py server/routes/__tests__/sliderule.live-delegation.test.ts"
-  ],
-  "ragInventoryGates": [
-    "if (!(Test-Path docs/backend-python-rag-inventory.md)) { throw 'missing docs/backend-python-rag-inventory.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-rag-inventory.md"
-  ],
-  "vectorGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_vector_client_parity.py tests/test_config.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/vector.py tws-ai-slide-rule-python/tests/test_vector_client_parity.py"
-  ],
-  "evidenceRetrievalGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_evidence_retrieval_parity.py tests/test_capabilities.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/evidence.py tws-ai-slide-rule-python/tests/test_evidence_retrieval_parity.py"
-  ],
-  "blueprintInventoryGates": [
-    "if (!(Test-Path docs/backend-python-blueprint-spec-docs-inventory.md)) { throw 'missing docs/backend-python-blueprint-spec-docs-inventory.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-blueprint-spec-docs-inventory.md"
-  ],
-  "blueprintProxyGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_spec_docs_proxy.py tests/test_config.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.spec-docs-python-proxy.test.ts --reporter=dot",
+  "orchestratePlanStateProjectionGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_state_projection.py tests/test_orchestrate_plan_contract.py tests/test_orchestrate_plan_golden_smoke.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-state-projection.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/routes/blueprint_spec_docs.py server/routes/__tests__/blueprint.spec-docs-python-proxy.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_orchestrate_plan_state_projection.py shared/blueprint/sliderule-plan-validation.ts"
   ],
-  "blueprintSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_spec_docs_smoke.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.spec-docs-smoke.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_spec_docs_smoke.py server/routes/__tests__/blueprint.spec-docs-smoke.test.ts"
-  ],
-  "runtimeConfigGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_runtime_config_boundary.py tests/test_config.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/python-runtime-config-boundary.test.ts --reporter=dot",
+  "blueprintSpecDocsBatchProxyGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_spec_docs_batch_proxy.py tests/test_blueprint_spec_docs_proxy.py tests/test_blueprint_spec_docs_smoke.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.spec-docs-batch-python-proxy.test.ts server/routes/__tests__/blueprint.spec-docs-python-proxy.test.ts server/routes/__tests__/blueprint.spec-docs-smoke.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-runtime-config-boundary.md tws-ai-slide-rule-python/tests/test_runtime_config_boundary.py server/routes/__tests__/python-runtime-config-boundary.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_spec_docs_batch_proxy.py server/routes/__tests__/blueprint.spec-docs-batch-python-proxy.test.ts"
   ],
-  "deliveryGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_capabilities.py tests/test_config.py tests/test_v5_smoke.py tests/test_v5_contract_expansion.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts shared/blueprint/__tests__/sliderule-delivery-chain.test.ts server/sliderule/__tests__/delivery-exec-map.test.ts server/sliderule/__tests__/visual-exec-map.test.ts server/routes/__tests__/sliderule.execute-capability.test.ts --reporter=dot",
+  "blueprintArtifactMemoryProxyGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_artifact_memory_proxy.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/blueprint/artifact-memory/service.test.ts server/routes/__tests__/blueprint.artifact-memory-python-proxy.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python server/sliderule server/routes/__tests__/sliderule.execute-capability.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_artifact_memory_proxy.py server/routes/__tests__/blueprint.artifact-memory-python-proxy.test.ts"
   ],
-  "mcpBoundaryAuditGates": [
-    "if (!(Test-Path docs/backend-python-mcp-call-boundary-audit.md)) { throw 'missing docs/backend-python-mcp-call-boundary-audit.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-mcp-call-boundary-audit.md"
-  ],
-  "skillBoundaryAuditGates": [
-    "if (!(Test-Path docs/backend-python-skill-invoke-boundary-audit.md)) { throw 'missing docs/backend-python-skill-invoke-boundary-audit.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-skill-invoke-boundary-audit.md"
-  ],
-  "evidenceVectorContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_evidence_vector_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_evidence_vector_contract.py tws-ai-slide-rule-python/tests/test_evidence_retrieval_parity.py"
-  ],
-  "realVectorRetrievalSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_real_vector_retrieval_smoke.py tests/test_evidence_vector_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/evidence.py tws-ai-slide-rule-python/sliderule_llm/vector.py tws-ai-slide-rule-python/tests/test_real_vector_retrieval_smoke.py"
-  ],
-  "evidenceNodeProxyContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_evidence_retrieval_parity.py tests/test_evidence_vector_contract.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts --reporter=dot",
+  "blueprintReviewExportProxyGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_review_export_proxy.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.review-export-python-proxy.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts tws-ai-slide-rule-python/tests/test_evidence_retrieval_parity.py"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_review_export_proxy.py server/routes/__tests__/blueprint.review-export-python-proxy.test.ts"
   ],
-  "orchestratePlanContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_contract.py tests/test_config.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts server/routes/__tests__/sliderule.orchestrate-plan.test.ts --reporter=dot",
+  "authSessionContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_session_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-session-python-contract.test.ts server/tests/auth-session-middleware.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "if (!(Test-Path docs/backend-python-orchestrate-plan-contract.md)) { throw 'missing docs/backend-python-orchestrate-plan-contract.md' }; node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-orchestrate-plan-contract.md tws-ai-slide-rule-python/tests/test_orchestrate_plan_contract.py server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_auth_session_contract.py server/tests/auth-session-python-contract.test.ts"
   ],
-  "orchestratePlanGoldenSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_golden_smoke.py tests/test_orchestrate_plan_contract.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_orchestrate_plan_golden_smoke.py tws-ai-slide-rule-python/tests/fixtures/orchestrate_plan_golden.json docs/backend-python-orchestrate-plan-contract.md"
-  ],
-  "mcpCallContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_mcp_call_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.mcp-call-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-mcp-call-boundary-audit.md tws-ai-slide-rule-python/tests/test_mcp_call_contract.py server/routes/__tests__/sliderule.mcp-call-contract.test.ts"
-  ],
-  "skillInvokeContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_skill_invoke_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.skill-invoke-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-skill-invoke-boundary-audit.md tws-ai-slide-rule-python/tests/test_skill_invoke_contract.py server/routes/__tests__/sliderule.skill-invoke-contract.test.ts"
-  ],
-  "llmStreamContractGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_stream_contract.py tests/test_telemetry_cost.py tests/test_client_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_stream_contract.py"
-  ],
-  "llmPoolResilienceGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_pool_resilience.py tests/test_pool_parity.py tests/test_telemetry_cost.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_pool_resilience.py"
-  ],
-  "realVectorRetrievalRuntimeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_real_vector_retrieval_runtime.py tests/test_real_vector_retrieval_smoke.py tests/test_evidence_vector_contract.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/evidence.py tws-ai-slide-rule-python/sliderule_llm/vector.py tws-ai-slide-rule-python/tests/test_real_vector_retrieval_runtime.py"
-  ],
-  "evidenceRuntimeProvenanceGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_evidence_runtime_provenance.py tests/test_evidence_retrieval_parity.py tests/test_evidence_vector_contract.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/evidence.py tws-ai-slide-rule-python/tests/test_evidence_runtime_provenance.py server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts"
-  ],
-  "mcpCallRuntimeSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_mcp_call_runtime_smoke.py tests/test_mcp_call_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.mcp-call-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_mcp_call_runtime_smoke.py tws-ai-slide-rule-python/tests/test_mcp_call_contract.py server/routes/__tests__/sliderule.mcp-call-contract.test.ts"
-  ],
-  "skillInvokeRuntimeSmokeGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_skill_invoke_runtime_smoke.py tests/test_skill_invoke_contract.py tests/test_evidence_retrieval_parity.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.skill-invoke-contract.test.ts --reporter=dot",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_skill_invoke_runtime_smoke.py tws-ai-slide-rule-python/tests/test_skill_invoke_contract.py server/routes/__tests__/sliderule.skill-invoke-contract.test.ts"
-  ],
-  "orchestratePlanThinPlannerGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_thin_planner.py tests/test_orchestrate_plan_contract.py tests/test_orchestrate_plan_golden_smoke.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts --reporter=dot",
+  "permissionCheckContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_check_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/permission/check-engine-python-contract.test.ts server/permission/check-engine.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-orchestrate-plan-contract.md tws-ai-slide-rule-python/tests/test_orchestrate_plan_thin_planner.py server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_permission_check_contract.py server/permission/check-engine-python-contract.test.ts shared/permission/contracts.ts"
   ],
-  "orchestratePlanErrorRecoveryGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_orchestrate_plan_error_recovery.py tests/test_orchestrate_plan_contract.py -q --tb=short",
-    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts server/routes/__tests__/sliderule.orchestrate-plan.test.ts --reporter=dot",
+  "auditEventContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_audit_event_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/audit-event-python-contract.test.ts server/tests/audit-collector.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-orchestrate-plan-contract.md tws-ai-slide-rule-python/tests/test_orchestrate_plan_error_recovery.py server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_audit_event_contract.py server/tests/audit-event-python-contract.test.ts shared/audit/contracts.ts"
   ],
-  "llmStreamRuntimeAdapterGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_stream_runtime_adapter.py tests/test_stream_contract.py tests/test_client_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/tests/test_stream_runtime_adapter.py tws-ai-slide-rule-python/tests/test_stream_contract.py"
+  "taskExecutorProxyContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_executor_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/executor-client-python-proxy-contract.test.ts server/tests/executor-client-capabilities.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_task_executor_proxy_contract.py server/tests/executor-client-python-proxy-contract.test.ts shared/blueprint/jobs/types.ts"
   ],
-  "llmPoolObservabilityGates": [
-    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_pool_observability.py tests/test_pool_resilience.py tests/test_pool_parity.py -q --tb=short",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_pool_observability.py tws-ai-slide-rule-python/tests/test_pool_resilience.py"
+  "executorCallbackContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_executor_callback_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/executor-callback-python-contract.test.ts server/tests/executor-callback-routing.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_executor_callback_contract.py server/tests/executor-callback-python-contract.test.ts"
+  ],
+  "llmCostRuntimeAccountingGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_cost_runtime_accounting.py tests/test_telemetry_cost.py tests/test_client_parity.py tests/test_pool_observability.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_cost_runtime_accounting.py"
+  ],
+  "llmCircuitBreakerParityGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_pool_circuit_breaker.py tests/test_pool_resilience.py tests/test_pool_observability.py tests/test_pool_parity.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/pool.py tws-ai-slide-rule-python/tests/test_pool_circuit_breaker.py"
+  ],
+  "llmMultimodalContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_multimodal_contract.py tests/test_client_parity.py tests/test_json_hardening.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/sliderule_llm/client.py tws-ai-slide-rule-python/sliderule_llm/config.py tws-ai-slide-rule-python/tests/test_multimodal_contract.py"
+  ],
+  "knowledgeAdminProxyContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_knowledge_admin_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/knowledge-admin-python-proxy.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_knowledge_admin_proxy_contract.py server/routes/__tests__/knowledge-admin-python-proxy.test.ts"
+  ],
+  "sessionPersistenceContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_session_persistence_contract.py tests/test_v5_smoke.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.sessions-store.test.ts --reporter=dot",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/persistence.py tws-ai-slide-rule-python/tests/test_session_persistence_contract.py"
+  ],
+  "adminRouteContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_admin_route_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/admin-python-contract.test.ts server/tests/admin-routes.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_admin_route_contract.py server/tests/admin-python-contract.test.ts"
+  ],
+  "auditQueryProxyContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_audit_query_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/audit-query-python-proxy.test.ts server/tests/audit-query.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_audit_query_proxy_contract.py server/tests/audit-query-python-proxy.test.ts shared/audit/contracts.ts"
+  ],
+  "permissionRateLimitContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_rate_limit_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/permission/rate-limiter-python-contract.test.ts server/permission/rate-limiter.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_permission_rate_limit_contract.py server/permission/rate-limiter-python-contract.test.ts shared/permission/contracts.ts"
+  ],
+  "blueprintAgentCrewProxyContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_agent_crew_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/blueprint/agent-crew/service.test.ts server/routes/__tests__/blueprint.agent-crew-python-proxy.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_agent_crew_proxy_contract.py server/routes/__tests__/blueprint.agent-crew-python-proxy.test.ts shared/blueprint/agent-crew/types.ts"
+  ],
+  "blueprintBrainstormContractGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_brainstorm_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.brainstorm-python-contract.test.ts server/routes/blueprint/brainstorm/brainstorm-event-guard.property.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_blueprint_brainstorm_contract.py server/routes/__tests__/blueprint.brainstorm-python-contract.test.ts shared/blueprint/brainstorm-contracts.ts"
+  ],
+  "migrationStatusRefreshGates": [
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}}"
   ],
   "tasks": [
     {
-      "id": "backend-python-real-vector-retrieval-runtime",
-      "task": "agent-loop/tasks/backend-python-real-vector-retrieval-runtime.md",
-      "gatesKey": "realVectorRetrievalRuntimeGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 12,
-      "maxIterations": 2
-    },
-    {
-      "id": "backend-python-evidence-runtime-provenance",
-      "task": "agent-loop/tasks/backend-python-evidence-runtime-provenance.md",
-      "gatesKey": "evidenceRuntimeProvenanceGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 12,
-      "maxIterations": 2
-    },
-    {
-      "id": "backend-python-mcp-call-runtime-smoke",
-      "task": "agent-loop/tasks/backend-python-mcp-call-runtime-smoke.md",
-      "gatesKey": "mcpCallRuntimeSmokeGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 12,
-      "maxIterations": 2
-    },
-    {
-      "id": "backend-python-skill-invoke-runtime-smoke",
-      "task": "agent-loop/tasks/backend-python-skill-invoke-runtime-smoke.md",
-      "gatesKey": "skillInvokeRuntimeSmokeGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 12,
-      "maxIterations": 2
-    },
-    {
-      "id": "backend-python-orchestrate-plan-thin-planner",
-      "task": "agent-loop/tasks/backend-python-orchestrate-plan-thin-planner.md",
-      "gatesKey": "orchestratePlanThinPlannerGates",
+      "id": "backend-python-real-vector-retrieval-production-wiring",
+      "task": "agent-loop/tasks/backend-python-real-vector-retrieval-production-wiring.md",
+      "gatesKey": "realVectorRetrievalProductionGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 14,
-      "maxIterations": 2
+      "maxIterations": 3
     },
     {
-      "id": "backend-python-orchestrate-plan-error-recovery",
-      "task": "agent-loop/tasks/backend-python-orchestrate-plan-error-recovery.md",
-      "gatesKey": "orchestratePlanErrorRecoveryGates",
+      "id": "backend-python-evidence-node-runtime-wiring",
+      "task": "agent-loop/tasks/backend-python-evidence-node-runtime-wiring.md",
+      "gatesKey": "evidenceNodeRuntimeWiringGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 14,
-      "maxIterations": 2
+      "maxIterations": 3
     },
     {
-      "id": "backend-python-llm-stream-runtime-adapter",
-      "task": "agent-loop/tasks/backend-python-llm-stream-runtime-adapter.md",
-      "gatesKey": "llmStreamRuntimeAdapterGates",
+      "id": "backend-python-mcp-call-real-runtime",
+      "task": "agent-loop/tasks/backend-python-mcp-call-real-runtime.md",
+      "gatesKey": "mcpCallRealRuntimeGates",
       "enabled": true,
       "guardTests": false,
-      "grokMaxTurns": 12,
-      "maxIterations": 2
+      "grokMaxTurns": 14,
+      "maxIterations": 3
     },
     {
-      "id": "backend-python-llm-pool-observability",
-      "task": "agent-loop/tasks/backend-python-llm-pool-observability.md",
-      "gatesKey": "llmPoolObservabilityGates",
+      "id": "backend-python-skill-invoke-real-runtime",
+      "task": "agent-loop/tasks/backend-python-skill-invoke-real-runtime.md",
+      "gatesKey": "skillInvokeRealRuntimeGates",
       "enabled": true,
       "guardTests": false,
-      "grokMaxTurns": 12,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-orchestrate-plan-runtime-route",
+      "task": "agent-loop/tasks/backend-python-orchestrate-plan-runtime-route.md",
+      "gatesKey": "orchestratePlanRuntimeRouteGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-orchestrate-plan-state-projection",
+      "task": "agent-loop/tasks/backend-python-orchestrate-plan-state-projection.md",
+      "gatesKey": "orchestratePlanStateProjectionGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-blueprint-spec-docs-batch-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-spec-docs-batch-proxy.md",
+      "gatesKey": "blueprintSpecDocsBatchProxyGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-blueprint-artifact-memory-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-artifact-memory-proxy.md",
+      "gatesKey": "blueprintArtifactMemoryProxyGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-blueprint-review-export-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-review-export-proxy.md",
+      "gatesKey": "blueprintReviewExportProxyGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-auth-session-contract",
+      "task": "agent-loop/tasks/backend-python-auth-session-contract.md",
+      "gatesKey": "authSessionContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-permission-check-contract",
+      "task": "agent-loop/tasks/backend-python-permission-check-contract.md",
+      "gatesKey": "permissionCheckContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-audit-event-contract",
+      "task": "agent-loop/tasks/backend-python-audit-event-contract.md",
+      "gatesKey": "auditEventContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-task-executor-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-task-executor-proxy-contract.md",
+      "gatesKey": "taskExecutorProxyContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-executor-callback-contract",
+      "task": "agent-loop/tasks/backend-python-executor-callback-contract.md",
+      "gatesKey": "executorCallbackContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-llm-cost-runtime-accounting",
+      "task": "agent-loop/tasks/backend-python-llm-cost-runtime-accounting.md",
+      "gatesKey": "llmCostRuntimeAccountingGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-llm-circuit-breaker-parity",
+      "task": "agent-loop/tasks/backend-python-llm-circuit-breaker-parity.md",
+      "gatesKey": "llmCircuitBreakerParityGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-llm-multimodal-contract",
+      "task": "agent-loop/tasks/backend-python-llm-multimodal-contract.md",
+      "gatesKey": "llmMultimodalContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-knowledge-admin-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-knowledge-admin-proxy-contract.md",
+      "gatesKey": "knowledgeAdminProxyContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-session-persistence-contract",
+      "task": "agent-loop/tasks/backend-python-session-persistence-contract.md",
+      "gatesKey": "sessionPersistenceContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-admin-route-contract",
+      "task": "agent-loop/tasks/backend-python-admin-route-contract.md",
+      "gatesKey": "adminRouteContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-audit-query-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-audit-query-proxy-contract.md",
+      "gatesKey": "auditQueryProxyContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-permission-rate-limit-contract",
+      "task": "agent-loop/tasks/backend-python-permission-rate-limit-contract.md",
+      "gatesKey": "permissionRateLimitContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 14,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-blueprint-agent-crew-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-blueprint-agent-crew-proxy-contract.md",
+      "gatesKey": "blueprintAgentCrewProxyContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-blueprint-brainstorm-contract",
+      "task": "agent-loop/tasks/backend-python-blueprint-brainstorm-contract.md",
+      "gatesKey": "blueprintBrainstormContractGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-migration-status-refresh-45",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-45.md",
+      "gatesKey": "migrationStatusRefreshGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 8,
       "maxIterations": 2
     }
   ]
