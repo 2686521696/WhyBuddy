@@ -8,7 +8,12 @@ RAG-backed. Matches the Node delegation contract for V5 paths.
 See audit / FINAL_MIGRATION_STATUS.md for exact coverage vs. "all historical caps".
 """
 
+import asyncio
+import os
+
 from fastapi import APIRouter, HTTPException, Header
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, load_session, save_session, drive_reasoning_turn
@@ -24,10 +29,88 @@ from sliderule_llm.client import LlmError
 router = APIRouter(tags=["SlideRule V5 (Full Migration to Python)"])  # prefix handled at include time to avoid double /api/sliderule/api/sliderule/...
 
 _sessions: Dict[str, V5SessionState] = {}  # In prod, use DB like Python knowledge
+ORCHESTRATE_PLAN_TIMEOUT_MS_ENV = "SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS"
+DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS = 120_000
 
 def _auth(key: Optional[str]):
     if key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key - Python now owns V5")
+
+def _planner_timeout_seconds() -> float:
+    raw = os.getenv(ORCHESTRATE_PLAN_TIMEOUT_MS_ENV, str(DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS))
+    try:
+        timeout_ms = int(raw)
+    except (TypeError, ValueError):
+        timeout_ms = DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS
+    return max(timeout_ms, 1) / 1000
+
+def _bad_plan_request(message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "invalid_request",
+            "reason": "bad_input",
+            "message": message,
+        },
+    )
+
+def _is_config_missing_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return isinstance(error, LlmError) and (
+        "not configured" in message
+        or "no api_key" in message
+        or "no api key" in message
+        or "no provider chain" in message
+    )
+
+def _degraded_plan(error_code: str, reason: str, message: str) -> Dict[str, Any]:
+    return {
+        "selected": [],
+        "rationale": "Python orchestrate.plan could not produce a planner result.",
+        "source": "python-rag",
+        "converged": False,
+        "degraded": True,
+        "error": error_code,
+        "reason": reason,
+        "message": message[:300],
+        "fallbackAvailable": False,
+    }
+
+async def _run_orchestrate_plan(payload: Any):
+    if not isinstance(payload, dict):
+        return _bad_plan_request("request body must be an object")
+    if "state" not in payload:
+        return _bad_plan_request("state is required")
+    if not str(payload.get("turnId") or "").strip():
+        return _bad_plan_request("turnId is required")
+
+    try:
+        state = V5SessionState(**payload["state"])
+    except (TypeError, ValidationError, ValueError) as error:
+        return _bad_plan_request(f"state is invalid: {str(error).splitlines()[0]}")
+
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                orchestrate_plan,
+                state,
+                str(payload["turnId"]),
+                str(payload.get("userText", "")),
+            ),
+            timeout=_planner_timeout_seconds(),
+        )
+    except asyncio.TimeoutError:
+        return _degraded_plan(
+            "planner_timeout",
+            "timeout",
+            "Python orchestrate.plan timed out before producing a plan.",
+        )
+    except Exception as error:
+        if _is_config_missing_error(error):
+            return _degraded_plan("planner_config_missing", "config_missing", str(error))
+        return _degraded_plan("planner_error", "runtime_error", str(error))
+
+    return result.model_dump()
 
 @router.post("/sessions")
 async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
@@ -54,11 +137,7 @@ async def save_sess(sid: str, state: V5SessionState, x_internal_key: Optional[st
 @router.post("/orchestrate-plan")
 async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
-    state = V5SessionState(**payload["state"])
-    result = orchestrate_plan(state, payload["turnId"], payload.get("userText", ""))
-    # Reconcile GCOV
-    state = reconcile_coverage(state)
-    return result.model_dump()
+    return await _run_orchestrate_plan(payload)
 
 @router.post("/execute-capability")
 async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):

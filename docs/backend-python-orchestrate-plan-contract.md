@@ -56,6 +56,23 @@ If Python is unavailable, Node returns HTTP 502 with:
 
 This is a hard degraded shape, not a pseudo-successful plan.
 
+Python-side planner errors stay explicit at the `/api/sliderule/orchestrate-plan`
+boundary:
+
+- Bad request input returns HTTP 400 with `error: "invalid_request"` and
+  `reason: "bad_input"`.
+- Planner runtime exceptions return HTTP 200 with `degraded: true`,
+  `error: "planner_error"`, `reason: "runtime_error"`, `selected: []`, and
+  `fallbackAvailable: false`.
+- Missing planner/LLM configuration returns the same degraded envelope but uses
+  `error: "planner_config_missing"` and `reason: "config_missing"`.
+- Planner timeout returns the same degraded envelope but uses
+  `error: "planner_timeout"` and `reason: "timeout"`.
+
+Runtime planner errors must not be relabeled as `no_api_key`, and unavailable
+Python fallback must remain distinct from successful `heuristic_fallback`
+planner output.
+
 ## Out of scope
 
 - Rewriting `server/sliderule/orchestrate-plan.ts`.
@@ -68,6 +85,7 @@ This is a hard degraded shape, not a pseudo-successful plan.
 The migration gate locks the contract with:
 
 - `tws-ai-slide-rule-python/tests/test_orchestrate_plan_contract.py`
+- `tws-ai-slide-rule-python/tests/test_orchestrate_plan_error_recovery.py`
 - `tws-ai-slide-rule-python/tests/test_orchestrate_plan_thin_planner.py`
 - `server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts`
 - existing `server/routes/__tests__/sliderule.orchestrate-plan.test.ts`

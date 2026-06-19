@@ -142,6 +142,7 @@ describe("POST /api/sliderule/orchestrate-plan (R1-B2)", () => {
     const body = await res.json();
     expect(body.source).toBe("heuristic_fallback");
     expect(body.reason).toBe("llm_error");
+    expect(body.reason).not.toBe("no_api_key");
   });
 
   it("returns heuristic_fallback with reason invalid_proposal when LLM returns garbage", async () => {

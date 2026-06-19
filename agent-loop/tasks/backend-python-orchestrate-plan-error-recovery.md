@@ -8,12 +8,12 @@
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python test 覆盖 bad input、planner exception、timeout/degraded
-- [ ] Node test 覆盖 Python unavailable、bad JSON、planner error
-- [ ] 错误分类不再把 runtime LLM error 混成 no_api_key
-- [ ] gate 全绿
-- [ ] Codex review（审查）确认错误形状清楚且不吞异常
+- [x] 已执行 AgentLoop
+- [x] Python test 覆盖 bad input、planner exception、timeout/degraded
+- [x] Node test 覆盖 Python unavailable、bad JSON、planner error
+- [x] 错误分类不再把 runtime LLM error 混成 no_api_key
+- [x] gate 全绿
+- [x] Codex review（审查）确认错误形状清楚且不吞异常
 
 ## 目标
 

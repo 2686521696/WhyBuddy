@@ -182,6 +182,86 @@ describe('orchestrate.plan Node -> Python proxy contract', () => {
     warnSpy.mockRestore();
   });
 
+  it('classifies Python bad JSON as delegated failure without planner fallback', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    pythonDelegation.callPythonSlideRule.mockRejectedValueOnce(
+      new Error('python /api/sliderule/orchestrate-plan invalid json: Unexpected token <'),
+    );
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planRequestBody),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.degraded).toBe(true);
+    expect(body.provenance).toBe('python-delegated-failed');
+    expect(body.error).toBe('python_unavailable');
+    expect(body.reason).not.toBe('no_api_key');
+    expect(body.reason).not.toBe('fallback');
+    expect(body.selected).toBeUndefined();
+    warnSpy.mockRestore();
+  });
+
+  it('passes through Python planner runtime error classification', async () => {
+    const pythonPayload = {
+      selected: [],
+      rationale: 'Python orchestrate.plan could not produce a planner result.',
+      source: 'python-rag',
+      converged: false,
+      degraded: true,
+      error: 'planner_error',
+      reason: 'runtime_error',
+      message: 'planner exploded while ranking candidates',
+      fallbackAvailable: false,
+    };
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce(pythonPayload);
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planRequestBody),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual(pythonPayload);
+    expect(body.error).toBe('planner_error');
+    expect(body.reason).toBe('runtime_error');
+    expect(body.reason).not.toBe('no_api_key');
+    expect(body.fallbackAvailable).toBe(false);
+  });
+
+  it('passes through Python planner config-missing classification separately', async () => {
+    const pythonPayload = {
+      selected: [],
+      rationale: 'Python orchestrate.plan could not produce a planner result.',
+      source: 'python-rag',
+      converged: false,
+      degraded: true,
+      error: 'planner_config_missing',
+      reason: 'config_missing',
+      message: 'LLM not configured (no api_key)',
+      fallbackAvailable: false,
+    };
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce(pythonPayload);
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planRequestBody),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual(pythonPayload);
+    expect(body.error).toBe('planner_config_missing');
+    expect(body.reason).toBe('config_missing');
+    expect(body.fallbackAvailable).toBe(false);
+  });
+
   it('accepts the shared golden Python plan fixture shape', async () => {
     const pythonPayload = {
       selected: goldenFixture.expected.requiredCapabilityIds.map((capabilityId: string) => ({

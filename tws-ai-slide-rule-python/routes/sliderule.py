@@ -10,7 +10,12 @@ Primary mounted surface in app.py is sliderule_full.py which also uses the mappe
 This is the thin Python V5 baseline; full historical Node cap parity + real vector RAG still in progress.
 """
 
+import asyncio
+import os
+
 from fastapi import APIRouter, HTTPException, Header
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from typing import Dict, Any, Optional
 from models.v5_state import V5SessionState, ExecuteCapabilityResult, OrchestratePlanResult
 from services.slide_rule_orchestrator import orchestrate_plan
@@ -23,12 +28,90 @@ router = APIRouter()
 
 # In-memory session store (migrate to DB like original Python project)
 _sessions: Dict[str, V5SessionState] = {}
+ORCHESTRATE_PLAN_TIMEOUT_MS_ENV = "SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS"
+DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS = 120_000
 
 def _check_internal_key(key: Optional[str]):
     if settings.is_development:
         return
     if key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid internal key for SlideRule calls")
+
+def _planner_timeout_seconds() -> float:
+    raw = os.getenv(ORCHESTRATE_PLAN_TIMEOUT_MS_ENV, str(DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS))
+    try:
+        timeout_ms = int(raw)
+    except (TypeError, ValueError):
+        timeout_ms = DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS
+    return max(timeout_ms, 1) / 1000
+
+def _bad_plan_request(message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "invalid_request",
+            "reason": "bad_input",
+            "message": message,
+        },
+    )
+
+def _is_config_missing_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return isinstance(error, LlmError) and (
+        "not configured" in message
+        or "no api_key" in message
+        or "no api key" in message
+        or "no provider chain" in message
+    )
+
+def _degraded_plan(error_code: str, reason: str, message: str) -> Dict[str, Any]:
+    return {
+        "selected": [],
+        "rationale": "Python orchestrate.plan could not produce a planner result.",
+        "source": "python-rag",
+        "converged": False,
+        "degraded": True,
+        "error": error_code,
+        "reason": reason,
+        "message": message[:300],
+        "fallbackAvailable": False,
+    }
+
+async def _run_orchestrate_plan(payload: Any):
+    if not isinstance(payload, dict):
+        return _bad_plan_request("request body must be an object")
+    if "state" not in payload:
+        return _bad_plan_request("state is required")
+    if not str(payload.get("turnId") or "").strip():
+        return _bad_plan_request("turnId is required")
+
+    try:
+        state = V5SessionState(**payload["state"])
+    except (TypeError, ValidationError, ValueError) as error:
+        return _bad_plan_request(f"state is invalid: {str(error).splitlines()[0]}")
+
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                orchestrate_plan,
+                state,
+                str(payload["turnId"]),
+                str(payload.get("userText", "")),
+            ),
+            timeout=_planner_timeout_seconds(),
+        )
+    except asyncio.TimeoutError:
+        return _degraded_plan(
+            "planner_timeout",
+            "timeout",
+            "Python orchestrate.plan timed out before producing a plan.",
+        )
+    except Exception as error:
+        if _is_config_missing_error(error):
+            return _degraded_plan("planner_config_missing", "config_missing", str(error))
+        return _degraded_plan("planner_error", "runtime_error", str(error))
+
+    return result.model_dump()
 
 @router.post("/sessions")
 async def create_or_update_session(state: V5SessionState, x_internal_key: Optional[str] = Header(None)):
@@ -46,9 +129,7 @@ async def get_session(session_id: str, x_internal_key: Optional[str] = Header(No
 @router.post("/orchestrate-plan")
 async def do_orchestrate(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _check_internal_key(x_internal_key)
-    state = V5SessionState(**payload["state"])
-    result = orchestrate_plan(state, payload["turnId"], payload.get("userText", ""))
-    return result.model_dump()
+    return await _run_orchestrate_plan(payload)
 
 @router.post("/execute-capability")
 async def do_execute(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
