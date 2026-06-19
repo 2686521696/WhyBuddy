@@ -2,18 +2,18 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成
 - 目标：在 skill.invoke boundary audit（边界审计）之后，补 runtime contract（运行时契约），仍不直接接生产 skill registry
 - 角色分工：Grok 负责补契约测试；Codex 负责审查是否把 fake skill invoke 说成真实运行时
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] contract test 覆盖 skillId/input/provenance/error shape
-- [ ] fake skill registry 可证明成功与失败边界
-- [ ] 没有接生产 skill registry
-- [ ] gate 全绿
-- [ ] Codex review（审查）已确认没有把 fallback 当成真实 skill runtime
+- [x] 已执行 AgentLoop
+- [x] contract test 覆盖 skillName/provenance/error shape
+- [x] 明确当前 fallback 不是 fake/real skill registry
+- [x] 没有接生产 skill registry
+- [x] gate 全绿
+- [x] Codex review（审查）已确认没有把 fallback 当成真实 skill runtime
 
 ## 目标
 
