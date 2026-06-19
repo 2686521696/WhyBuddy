@@ -2,18 +2,18 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成
 - 目标：补 Python LLM stream（流式输出）最小契约，不直接迁所有 Node stream 调用
 - 角色分工：Grok 负责补 contract test（契约测试）；Codex 负责审查是否越界改业务能力
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python stream contract test 覆盖 chunk/done/error
-- [ ] 不依赖真实 LLM key
-- [ ] telemetry（观测信息）不丢失
-- [ ] gate 全绿
-- [ ] Codex review（审查）已确认没有把 stream contract 夸大成全后端 stream 迁移
+- [x] 已执行 AgentLoop
+- [x] Python stream contract test 覆盖 chunk/done/error
+- [x] 不依赖真实 LLM key
+- [x] telemetry（观测信息）不丢失
+- [x] gate 全绿
+- [x] Codex review（审查）已确认没有把 stream contract 夸大成全后端 stream 迁移
 
 ## 目标
 

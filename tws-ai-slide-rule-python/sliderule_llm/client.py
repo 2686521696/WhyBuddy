@@ -11,7 +11,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Callable, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -37,6 +37,21 @@ class LlmResult:
     latency_ms: int
     provider: str | None = None
     telemetry: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class LlmStreamEvent:
+    kind: Literal["chunk", "done", "error"]
+    delta: str = ""
+    result: LlmResult | None = None
+    error: LlmError | None = None
+    failure_kind: str | None = None
+
+
+@dataclass(frozen=True)
+class SSEEvent:
+    event: str | None
+    data: str
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -209,6 +224,118 @@ def build_llm_telemetry(result: LlmResult, *, extra: dict[str, Any] | None = Non
     if extra:
         telemetry.update(extra)
     return telemetry
+
+
+def parse_sse(raw: str) -> list[SSEEvent]:
+    normalized = raw.replace("\r\n", "\n")
+    events: list[SSEEvent] = []
+    for chunk in normalized.split("\n\n"):
+        lines = [line for line in chunk.split("\n") if line]
+        if not lines:
+            continue
+        event_name: str | None = None
+        data_lines: list[str] = []
+        for line in lines:
+            if line.startswith("event:"):
+                event_name = line[6:].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if data_lines:
+            events.append(SSEEvent(event=event_name, data="\n".join(data_lines)))
+    return events
+
+
+def _extract_stream_delta(payload: dict[str, Any], wire: str) -> str | None:
+    if wire == "responses":
+        if payload.get("type") == "response.output_text.delta":
+            delta = payload.get("delta")
+            return delta if isinstance(delta, str) else None
+        return None
+    choice = (payload.get("choices") or [{}])[0]
+    delta = (choice.get("delta") or {}).get("content")
+    return delta if isinstance(delta, str) else None
+
+
+def _stream_error_event(error: LlmError) -> LlmStreamEvent:
+    return LlmStreamEvent(
+        kind="error",
+        error=error,
+        failure_kind=classify_llm_failure_kind(error),
+    )
+
+
+def iter_stream_events_from_sse(
+    raw: str,
+    *,
+    wire: str,
+    model: str,
+    provider: str | None,
+    started: float,
+    now: Callable[[], float] = time.time,
+) -> list[LlmStreamEvent]:
+    content_parts: list[str] = []
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    resolved_model = model
+    events: list[LlmStreamEvent] = []
+
+    for event in parse_sse(raw):
+        if event.data == "[DONE]":
+            break
+        try:
+            payload = json.loads(event.data)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        if isinstance(payload.get("model"), str):
+            resolved_model = payload["model"]
+
+        delta = _extract_stream_delta(payload, wire)
+        if delta:
+            content_parts.append(delta)
+            events.append(LlmStreamEvent(kind="chunk", delta=delta))
+
+        if wire == "responses":
+            if payload.get("type") == "response.completed":
+                response = payload.get("response") or {}
+                if response.get("error"):
+                    error = LlmError(
+                        f"LLM response failed: {json.dumps(response['error'])}",
+                        transient=False,
+                    )
+                    events.append(_stream_error_event(error))
+                    return events
+                if response.get("usage"):
+                    usage = response["usage"]
+                if not content_parts:
+                    text, _, _ = _extract(response, wire)
+                    if text:
+                        content_parts.append(text)
+        else:
+            choice = (payload.get("choices") or [{}])[0]
+            reason = choice.get("finish_reason")
+            if isinstance(reason, str):
+                finish_reason = reason
+            if payload.get("usage"):
+                usage = payload["usage"]
+
+    content = "".join(content_parts)
+    if not content.strip():
+        events.append(_stream_error_event(LlmError("empty content from LLM stream", transient=False)))
+        return events
+
+    result = LlmResult(
+        content=content,
+        usage=usage,
+        finish_reason=finish_reason,
+        model=resolved_model,
+        latency_ms=int((now() - started) * 1000),
+        provider=provider,
+    )
+    events.append(LlmStreamEvent(kind="done", result=_finalize_result(result)))
+    return events
 
 
 def _finalize_result(result: LlmResult) -> LlmResult:
