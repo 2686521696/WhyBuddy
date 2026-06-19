@@ -1,8 +1,8 @@
-"""Smoke tests for the fake embedding + in-memory vector retrieval path.
+"""Runtime wiring tests for vector-backed evidence retrieval.
 
-These tests exercise the full retrieve() chain without real Qdrant, embedding
-keys, or LLM calls. They prove retrieved provenance only appears when the
-in-memory store returns hits.
+These tests prove evidence retrieval reaches vector search through an injected
+VectorRuntime entry point. Fakes stay outside production wiring; no real Qdrant,
+embedding keys, or LLM calls are used.
 """
 import os
 import sys
@@ -38,7 +38,7 @@ def _cosine_similarity(left, right):
 
 
 class InMemoryVectorClient:
-    """Test fake only: exercises the retrieval chain without network access."""
+    """Test fake only: exercises runtime wiring without network access."""
 
     def __init__(self, *, unavailable: bool = False):
         self._records = {}
@@ -82,12 +82,12 @@ def _seed_store(client: InMemoryVectorClient) -> None:
     client.upsert(
         [
             {
-                "id": "chunk-table-1",
+                "id": "chunk-runtime-1",
                 "vector": [1.0, 0.0, 0.0, 0.0],
-                "content": "table upgrade experiment evidence from smoke fixture",
+                "content": "runtime wiring fixture evidence for vector retrieval",
                 "metadata": {
-                    "sourceId": "doc-table-1",
-                    "title": "Table playtest notes",
+                    "sourceId": "doc-runtime-1",
+                    "title": "Runtime fixture notes",
                     "sourceType": "document",
                 },
             }
@@ -95,42 +95,42 @@ def _seed_store(client: InMemoryVectorClient) -> None:
     )
 
 
-def test_smoke_retrieved_path_uses_fake_embedding_and_in_memory_vector_store():
-    vector_client = InMemoryVectorClient()
-    _seed_store(vector_client)
-    embedding_provider = TrackingEmbeddingProvider([1.0, 0.0, 0.0, 0.0])
+def _retriever_from_runtime(vector_client, embedding_provider) -> EvidenceRetriever:
     runtime = create_vector_runtime(
         vector_client=vector_client,
         embedding_provider=embedding_provider,
     )
-    retriever = EvidenceRetriever.from_runtime(runtime)
+    return EvidenceRetriever.from_runtime(runtime)
 
-    result = retriever.retrieve("table progression evidence")
 
-    assert embedding_provider.calls == ["table progression evidence"]
+def test_runtime_injected_vector_store_returns_retrieved_provenance():
+    vector_client = InMemoryVectorClient()
+    _seed_store(vector_client)
+    embedding_provider = TrackingEmbeddingProvider([1.0, 0.0, 0.0, 0.0])
+    retriever = _retriever_from_runtime(vector_client, embedding_provider)
+
+    result = retriever.retrieve("runtime vector evidence")
+
+    assert embedding_provider.calls == ["runtime vector evidence"]
     assert result.provenance == "retrieved"
     assert result.fallback_reason is None
 
     source_dict = result.sources_as_dicts()[0]
     assert source_dict["provenance"] == "retrieved"
-    assert source_dict["sourceId"] == "doc-table-1"
+    assert source_dict["sourceId"] == "doc-runtime-1"
     assert source_dict["score"] > 0.99
-    assert "table upgrade experiment evidence" in source_dict["snippet"]
+    assert "runtime wiring fixture evidence" in source_dict["snippet"]
     assert "fallbackReason" not in source_dict
 
 
-def test_smoke_empty_in_memory_store_returns_honest_fallback():
+def test_runtime_empty_vector_store_returns_honest_fallback():
     vector_client = InMemoryVectorClient()
     embedding_provider = TrackingEmbeddingProvider([1.0, 0.0, 0.0, 0.0])
-    runtime = create_vector_runtime(
-        vector_client=vector_client,
-        embedding_provider=embedding_provider,
-    )
-    retriever = EvidenceRetriever.from_runtime(runtime)
+    retriever = _retriever_from_runtime(vector_client, embedding_provider)
 
-    result = retriever.retrieve("unknown evidence")
+    result = retriever.retrieve("unknown runtime evidence")
 
-    assert embedding_provider.calls == ["unknown evidence"]
+    assert embedding_provider.calls == ["unknown runtime evidence"]
     assert result.provenance == "fallback"
     assert result.fallback_reason == "no_retrieval_hits"
 
@@ -142,18 +142,14 @@ def test_smoke_empty_in_memory_store_returns_honest_fallback():
     assert "sourceId" not in source_dict
 
 
-def test_smoke_unavailable_in_memory_store_returns_honest_fallback():
+def test_runtime_unavailable_vector_store_returns_honest_fallback():
     vector_client = InMemoryVectorClient(unavailable=True)
     embedding_provider = TrackingEmbeddingProvider([1.0, 0.0, 0.0, 0.0])
-    runtime = create_vector_runtime(
-        vector_client=vector_client,
-        embedding_provider=embedding_provider,
-    )
-    retriever = EvidenceRetriever.from_runtime(runtime)
+    retriever = _retriever_from_runtime(vector_client, embedding_provider)
 
-    result = retriever.retrieve("table progression evidence")
+    result = retriever.retrieve("runtime vector evidence")
 
-    assert embedding_provider.calls == ["table progression evidence"]
+    assert embedding_provider.calls == ["runtime vector evidence"]
     assert result.provenance == "fallback"
     assert result.fallback_reason == "vector_unavailable:VectorClientUnavailable"
 

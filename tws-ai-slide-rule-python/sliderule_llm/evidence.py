@@ -8,7 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .vector import QdrantVectorClient, VectorClientError, VectorSearchHit
+from .vector import (
+    QdrantVectorClient,
+    VectorClientError,
+    VectorRuntime,
+    VectorSearchHit,
+)
 
 
 class EmbeddingProvider(Protocol):
@@ -62,6 +67,13 @@ class EvidenceRetriever:
     ) -> None:
         self.vector_client = vector_client
         self.embedding_provider = embedding_provider
+
+    @classmethod
+    def from_runtime(cls, runtime: VectorRuntime) -> EvidenceRetriever:
+        return cls(
+            vector_client=runtime.vector_client,
+            embedding_provider=runtime.embedding_provider,
+        )
 
     def retrieve(self, query: str, *, top_k: int = 4) -> EvidenceRetrievalResult:
         try:

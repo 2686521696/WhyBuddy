@@ -8,12 +8,12 @@
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python runtime test 覆盖 vector store 命中、无命中、不可用三条路径
-- [ ] evidence retrieval（证据检索）能注入 fake vector runtime，不依赖真实 Qdrant
-- [ ] fallback（回退）和 provenance（证据来源）标记诚实
-- [ ] gate 全绿
-- [ ] Codex review（审查）确认没有真实 key、真实网络依赖或运行产物
+- [x] 已执行 AgentLoop
+- [x] Python runtime test 覆盖 vector store 命中、无命中、不可用三条路径
+- [x] evidence retrieval（证据检索）能注入 fake vector runtime，不依赖真实 Qdrant
+- [x] fallback（回退）和 provenance（证据来源）标记诚实
+- [x] gate 全绿
+- [x] Codex review（审查）确认没有真实 key、真实网络依赖或运行产物
 
 ## 目标
 

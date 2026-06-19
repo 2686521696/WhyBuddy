@@ -11,7 +11,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
 JsonDict = dict[str, Any]
@@ -45,6 +45,51 @@ class VectorSearchHit:
     score: float
     content: str
     metadata: dict[str, Any]
+
+
+class VectorSearchClient(Protocol):
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 10,
+        min_score: float | None = None,
+        filter: Mapping[str, Any] | None = None,
+        collection: str | None = None,
+    ) -> list[VectorSearchHit]:
+        ...
+
+
+@dataclass(frozen=True)
+class VectorRuntime:
+    """Injectable vector retrieval dependencies for evidence wiring."""
+
+    vector_client: VectorSearchClient
+    embedding_provider: Any
+
+
+class VectorRuntimeError(VectorClientError):
+    """Raised when vector runtime wiring is incomplete."""
+
+
+def create_vector_runtime(
+    *,
+    vector_client: VectorSearchClient | None = None,
+    embedding_provider: Any | None = None,
+) -> VectorRuntime:
+    """Clear runtime entry for vector-backed evidence retrieval.
+
+    Tests inject fake or in-memory clients. Production callers pass explicit
+    dependencies; this helper does not substitute fake defaults.
+    """
+    if vector_client is None or embedding_provider is None:
+        raise VectorRuntimeError(
+            "vector runtime requires explicit vector_client and embedding_provider"
+        )
+    return VectorRuntime(
+        vector_client=vector_client,
+        embedding_provider=embedding_provider,
+    )
 
 
 def _pick(*names: str) -> str | None:
