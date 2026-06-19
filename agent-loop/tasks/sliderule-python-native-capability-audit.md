@@ -2,18 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成 — native capability 矩阵已落地到 docs
 - 目标：审计 SlideRule V5 当前 capability（能力）到底哪些是 Python native LLM，哪些仍是 fallback / mapped / 未审计
 - 前置：batch-3 delivery chain 已完成
 
+- 最近执行：2026-06-19
+- 最近确认：2026-06-19
+- 执行方式：Codex 直接审计，不发 live LLM，不迁新 capability
+- 审计报告：`docs/sliderule-python-native-capability-audit.md`
+- gate 结果：`nativeAuditGates` 全绿
+
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] capability registry（能力注册表）审计完成
-- [ ] Node delegation（Node 委托）白名单与 Python native 列表一致性已检查
-- [ ] 未迁/未审计能力清单已写入报告
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行本地审计
+- [x] capability registry（能力注册表）审计完成
+- [x] Node delegation（Node 委托）白名单与 Python native 列表一致性已检查
+- [x] 未迁/未审计能力清单已写入报告
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
 
 ## 目标
 

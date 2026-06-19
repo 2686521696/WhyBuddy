@@ -26,9 +26,9 @@
 - [x] `traceability.matrix`：已迁到 Python 真脑子，返回 `python-llm`。
 - [x] `task.write`：已迁到 Python 真脑子，返回 `python-llm`。
 - [x] `instruction.package`：已迁到 Python 真脑子，返回 `python-llm`。
-- [x] `outcome.visualize`：已迁到 Python 真脑子，返回 `python-llm`；`ux.preview` 未迁。
+- [x] `outcome.visualize`：已迁到 Python 真脑子，返回 `python-llm`。
+- [x] `ux.preview`：已迁到 Python 真脑子，返回 `python-llm`。
 - [x] `handoff.package`：已迁到 Python 真脑子，返回 `python-llm`。
-- [ ] `ux.preview`：仍按未迁处理，本轮明确没有顺手迁它。
 - [ ] 其它未建任务/未审计的 SlideRule V5 能力：不能按已迁移处理。
 
 ## 最近验证记录
@@ -80,11 +80,11 @@
 | 范围 | 当前判断 | 说明 |
 |---|---:|---|
 | 整体 NodeJS 后端迁 Python | 约 10-14% | 大分母仍是整个 NodeJS backend。SlideRule V5 能力覆盖明显前进，但 Blueprint/Autopilot、LLM infra、RAG/vector、auth/admin/audit/permission、executor/tasks 等大块仍在 Node。 |
-| SlideRule V5 子系统迁移 | 约 76-82% | 对话、审议、结构化报告、delivery chain（交付链）和主要 Node delegation（Node 委托）已成片通过 gate；剩余重点是 `ux.preview`、live/部署策略、RAG/vector 与边缘能力审计。 |
-| SlideRule V5 Node 到 Python 薄代理链路 | 约 92-95% | Python mode、delegation helper、contract smoke、delivery/visual/artifact capability 白名单已比较完整；仍需继续守住 live smoke、错误处理和未迁 capability 边界。 |
-| Python V5 可运行基线 | 约 78-83% | Python 服务、核心 smoke、contract expansion、native LLM capability 路径已稳定；RAG/vector、配置清理、部署策略、真实检索与运行观测仍要继续补。 |
-| LLM infra 迁移 | 约 20-30% | Python `sliderule_llm` 已支撑 chat、基础 JSON、基础 pool 和当前 SlideRule 能力，但 provider fallback、pool hardening、JSON hardening、telemetry/cost、并发/熔断等全后端底座仍未完全对齐 Node。 |
-| 能力覆盖 | 中到高 | 当前已记录的主要 SlideRule V5 `python-llm` 能力包括对话、审议、report、structure、risk/evidence、batch-3 delivery/visual/artifact；未迁和未审计能力仍不能自动视为完成。 |
+| SlideRule V5 子系统迁移 | 约 82-86% | 对话、审议、结构化报告、delivery chain（交付链）、`outcome.visualize` 和 `ux.preview` 已成片通过 gate；剩余重点是 live/部署策略、RAG/vector、`mcp.call`/`skill.invoke`/`orchestrate.plan` 边界审计。 |
+| SlideRule V5 Node 到 Python 薄代理链路 | 约 94-96% | Python mode、delegation helper、contract smoke、delivery/visual/artifact capability 白名单已比较完整；仍需继续守住 live smoke、错误处理和非 capability 编排边界。 |
+| Python V5 可运行基线 | 约 80-85% | Python 服务、核心 smoke、contract expansion、native LLM capability 路径已稳定；RAG/vector、配置清理、部署策略、真实检索与运行观测仍要继续补。 |
+| LLM infra 迁移 | 约 35-45% | Python `sliderule_llm` 已支撑 chat、JSON hardening、基础 pool、provider/model fallback、telemetry metadata 和当前 SlideRule 能力；并发/熔断、stream、多模态、真实成本计算等全后端底座仍未完全对齐 Node。 |
+| 能力覆盖 | 高 | 当前已记录的主要 SlideRule V5 `python-llm` 能力包括对话、审议、report、structure、risk/evidence、delivery chain、`outcome.visualize`、`ux.preview`；未审计边界仍不能自动视为完成。 |
 
 ## 整体迁移进度
 
@@ -112,23 +112,21 @@ LLM config parity 任务文档：`agent-loop/tasks/backend-python-llm-config-par
 2026-06-17 已完成 **LLM config parity 第一片**：
 
 - Python `LlmConfig` 已补 `router_model`、`model_fallbacks`、`max_context`、`max_concurrent`、`provider_name`、`chat_thinking_type`。
-- Python 已新增 `FallbackLlmConfig` / `get_fallback_llm_config()`，能读取 `FALLBACK_LLM_*`，但还没有接入真实 fallback provider 链。
+- Python 已新增 `FallbackLlmConfig` / `get_fallback_llm_config()`，并已接入 provider/model fallback 链路。
 - Python `PoolConfig` 已补 `wire_api`，并对齐 Blueprint pool 的 base/model/timeout 默认值和 gpt-5 pool wire 推断。
 - `pool.py` 已修复旧 `LlmConfig(...)` 构造路径，避免新增字段导致 pool 运行时报错。
 - AgentLoop run：`2026-06-17T02-51-25-969Z`，结果 `DONE_GATE_ONLY`，`20 passed, 1 skipped` + mojibake gate 通过。
 
 但它还不能作为整个后端的 Python LLM 底座。Node 侧仍有这些关键能力没有 Python 等价实现：
 
-- `FALLBACK_LLM_*` provider fallback。
-- `LLM_MODEL_FALLBACKS` 模型 fallback。
 - provider cooldown、global cooldown、retry/backoff、并发限制。
 - SSE / stream 解析、多模态 content parts、vision/fallback 配置。
-- usage/cost/telemetry 统计。
-- `SLIDERULE_JSON_LLM_MAX_TOKENS`、空 JSON shape retry、finish reason/length 处理。
+- 真实 cost 计算和更完整 telemetry 汇聚。
+- `SLIDERULE_JSON_LLM_MAX_TOKENS` 等 Node env 细节的完整对齐。
 - `BLUEPRINT_SPEC_DOCS_LLM_POOL_WIRE_API`、pool 504 penalty、pool metadata、spec-doc markdown 形状校验。
 - 代理环境下的 `NO_PROXY` / `LLM_PROXY_THROUGH` 等 Node 侧运行细节。
 
-所以 LLM infra 单层可以记为 **约 20-30%**；整体后端仍只按 **约 10-14%** 记录。不要因为 SlideRule V5 的 capability 覆盖提升，就把整个 Node backend 的迁移比例一起抬高。
+所以 LLM infra 单层可以记为 **约 35-45%**；整体后端仍只按 **约 10-14%** 记录。不要因为 SlideRule V5 的 capability 覆盖提升，就把整个 Node backend 的迁移比例一起抬高。
 
 `agent-loop` 可以用于 NodeJS 到 Python 迁移，而且方向合适。但它的定位应该是：
 
@@ -237,7 +235,7 @@ batch-3 delivery chain（交付链）已完成，`backend-python-llm-infra-audit
 | 2 | `backend-python-llm-client-parity.md` | 已建任务 + 红灯测试，在队列第 1 项。 |
 | 3 | `backend-python-llm-pool-parity.md` | 已建任务 + 红灯测试，在队列第 2 项。 |
 | 4 | `backend-python-llm-json-hardening.md` | 已建任务 + 红灯测试，在队列第 3 项。 |
-| 5 | `ux.preview` 审计/迁移任务 | 尚未建为本轮完成任务；`outcome.visualize` 已迁，但 `ux.preview` 明确未迁。 |
+| 5 | `ux.preview` 审计/迁移任务 | 已完成：Python native LLM + Node Python-mode delegation gate 全绿。 |
 | 6 | `orchestrate.plan` / 更大结构化编排能力 | 等 JSON hardening、pool/client parity 更稳后再切，不建议现在直接上。 |
 
 结构化 JSON 类能力不要直接套 `question.expand` 的散文策略。`report.write` 已先迁成 Python native JSON LLM，后续更大的 `orchestrate.plan` 仍应等 JSON hardening、pool/client parity、错误恢复都更稳后再动。
