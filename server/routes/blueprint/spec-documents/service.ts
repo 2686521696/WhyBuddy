@@ -164,6 +164,74 @@ export type SpecDocumentsLlmService = (
 
 // ─── Helpers（纯函数，无副作用） ─────────────────────────────────────────────
 
+const PYTHON_PROXY_ENABLED = "BLUEPRINT_SPEC_DOCS_PYTHON_PROXY";
+const PYTHON_PROXY_BASE_URL = "PYTHON_SLIDE_RULE_BASE_URL";
+const PYTHON_PROXY_INTERNAL_KEY = "PYTHON_SLIDE_RULE_INTERNAL_KEY";
+
+function isPythonSpecDocsProxyEnabled(): boolean {
+  return process.env[PYTHON_PROXY_ENABLED] === "true";
+}
+
+function resolvePythonSpecDocsBaseUrl(): string {
+  return (process.env[PYTHON_PROXY_BASE_URL] || "http://localhost:9700").replace(/\/+$/, "");
+}
+
+function resolvePythonSpecDocsInternalKey(): string {
+  return process.env[PYTHON_PROXY_INTERNAL_KEY] || "dev-slide-rule-internal";
+}
+
+function isSpecDocumentsLlmServiceOutput(value: unknown): value is SpecDocumentsLlmServiceOutput {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.generationSource !== "llm" &&
+    candidate.generationSource !== "llm_fallback" &&
+    candidate.generationSource !== "template"
+  ) {
+    return false;
+  }
+  if (candidate.generationSource === "llm") {
+    return (
+      typeof candidate.title === "string" &&
+      typeof candidate.summary === "string" &&
+      typeof candidate.content === "string"
+    );
+  }
+  return true;
+}
+
+async function callPythonSpecDocumentsProxy(
+  input: SpecDocumentsLlmServiceInput,
+): Promise<SpecDocumentsLlmServiceOutput> {
+  const response = await fetch(`${resolvePythonSpecDocsBaseUrl()}/api/blueprint/spec-documents/generate-one`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Key": resolvePythonSpecDocsInternalKey(),
+    },
+    body: JSON.stringify({
+      jobId: input.jobId,
+      targetDocumentType: input.targetDocumentType,
+      specTreeNode: input.specTreeNode,
+      request: input.request,
+      primaryRoute: input.primaryRoute,
+      clarificationSession: input.clarificationSession,
+      domainContext: input.domainContext,
+      upstreamEvidence: input.upstreamEvidence,
+      createdAt: input.createdAt,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`python spec-docs proxy failed: ${response.status} ${detail.slice(0, 200)}`);
+  }
+  const payload = await response.json();
+  if (!isSpecDocumentsLlmServiceOutput(payload)) {
+    throw new Error("python spec-docs proxy returned invalid shape");
+  }
+  return payload;
+}
+
 function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -254,6 +322,23 @@ export function createSpecDocumentsLlmService(
   return async function service(
     input: SpecDocumentsLlmServiceInput
   ): Promise<SpecDocumentsLlmServiceOutput> {
+    if (isPythonSpecDocsProxyEnabled()) {
+      try {
+        return await callPythonSpecDocumentsProxy(input);
+      } catch (error) {
+        const redacted = applySpecDocumentsRedaction(errorMessage(error), policy);
+        ctx.logger.warn("spec-documents python proxy failed, using fallback", {
+          nodeId: input.specTreeNode.id,
+          type: input.targetDocumentType,
+          error: redacted,
+        });
+        return {
+          generationSource: "llm_fallback",
+          error: `python proxy failed: ${redacted}`.slice(0, policy.maxErrorLength),
+        };
+      }
+    }
+
     // ---- 档位 1：未启用 → template（design §4.6 step 1） --------------------
     if (process.env[ENV_ENABLED] !== "true") {
       ctx.logger.debug(

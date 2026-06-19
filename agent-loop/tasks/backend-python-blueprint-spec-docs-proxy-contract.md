@@ -2,18 +2,26 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成 — Blueprint spec-docs Python proxy 契约已落地
 - 目标：建立 Blueprint/spec-docs（蓝图/规格文档）Node 到 Python thin proxy（薄代理）契约
 - 前置：`backend-python-blueprint-spec-docs-inventory.md` 已完成
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Node route/helper 能委托 Python spec-docs endpoint
-- [ ] Python endpoint 返回稳定 shape（形状）
-- [ ] Node LLM / pool 在 Python mode 下不参与该切片
-- [ ] gate 全绿
-- [ ] 人工 review（审查）已确认 diff 干净
+- [x] 已执行本地实现
+- [x] Node route/helper 能委托 Python spec-docs endpoint
+- [x] Python endpoint 返回稳定 shape（形状）
+- [x] Node LLM / pool 在 Python mode 下不参与该切片
+- [x] gate 全绿
+- [x] 人工 review（审查）已确认 diff 干净
+
+## 最近执行
+
+- 最近执行：2026-06-19
+- 执行方式：Codex 本地实现，不发真实外部 LLM 请求
+- Python endpoint：`/api/blueprint/spec-documents/generate-one`
+- Node 开关：`BLUEPRINT_SPEC_DOCS_PYTHON_PROXY=true`
+- gate 结果：`blueprintProxyGates` 通过
 
 ## 目标
 
