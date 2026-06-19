@@ -112,6 +112,13 @@ CAPABILITY_PROMPTS: dict[str, str] = {
         "acceptance or stopping check grounded in the actual goal. Do not write a generic prompt template. "
         "Output markdown only: no JSON, no code fence, no preamble."
     ),
+    "outcome.visualize": (
+        "You are SlideRule V5's outcome-visualization role. Given the user's goal, state, and message, write a "
+        "concise **markdown** architecture or flow preview. Include either a Mermaid diagram block or clear "
+        "flow states, plus evidence/provenance notes that explain what each visual element is grounded in. "
+        "Stay strictly grounded in the user's actual goal. Do not return a generic dashboard mockup. "
+        "Output markdown only: no JSON, no preamble."
+    ),
     "risk.analyze": (
         "You are SlideRule V5's risk-analysis role. Given the user's goal and message, write a "
         "concise **markdown** risk scan with three short sections: (1) risk inventory, "
@@ -141,6 +148,7 @@ CAPABILITY_TITLES: dict[str, str] = {
     "traceability.matrix": "Traceability matrix",
     "task.write": "Engineering task list",
     "instruction.package": "Instruction package",
+    "outcome.visualize": "Outcome visualization",
     "risk.analyze": "Risk analysis",
     "evidence.search": "Evidence search",
     "report.write": "Feasibility report",

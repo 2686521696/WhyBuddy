@@ -345,6 +345,39 @@ def test_instruction_package_returns_v5_shape_with_python_llm_provenance():
     assert "RBAC" not in out["content"]
 
 
+def test_outcome_visualize_returns_v5_shape_with_python_llm_provenance():
+    body = {
+        "capabilityId": "outcome.visualize",
+        "state": {"goal": {"text": "visualize pet office delivery flow and evidence states"}},
+        "userText": "create a Mermaid preview with provenance notes",
+        "roleId": "设计",
+        "turnId": "t-outcome-visualize",
+    }
+
+    out = execute_capability(
+        body,
+        caller=lambda *a, **k: _fake_result(
+            "## Mermaid preview\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "  Goal[Pet office goal] --> Spec[SPEC tree]\n"
+            "  Spec --> Gate[Delivery gate]\n"
+            "```\n"
+            "## Evidence / provenance\n"
+            "- Goal node is grounded in the current session goal.\n"
+            "- Gate node is grounded in deliveryGates evidence."
+        ),
+    )
+    assert out["provenance"] == "python-llm"
+    assert out["title"] == "Outcome visualization"
+    content = out["content"].lower()
+    assert "mermaid" in content
+    assert "flowchart" in content
+    assert "evidence" in content
+    assert "provenance" in content
+    assert "RBAC" not in out["content"]
+
+
 def test_risk_analyze_returns_v5_shape_with_python_llm_provenance():
     body = {
         "capabilityId": "risk.analyze",
@@ -477,6 +510,7 @@ def test_unsupported_capability_raises():
     assert is_python_native_capability("traceability.matrix") is True
     assert is_python_native_capability("task.write") is True
     assert is_python_native_capability("instruction.package") is True
+    assert is_python_native_capability("outcome.visualize") is True
     assert is_python_native_capability("risk.analyze") is True
     assert is_python_native_capability("evidence.search") is True
     assert is_python_native_capability("report.write") is True

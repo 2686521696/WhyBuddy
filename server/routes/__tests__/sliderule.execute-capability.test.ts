@@ -857,6 +857,57 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
     );
   });
 
+  it('outcome.visualize delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS', 'k1');
+    vi.stubEnv('BLUEPRINT_SPEC_DOCS_LLM_POOL_BASE_URL', 'https://example.test/v1');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Outcome visualization',
+      summary: 'Mermaid preview',
+      content: '## Mermaid preview\n```mermaid\nflowchart TD\n  Goal[Pet office goal] --> Gate[Delivery gate]\n```\n## Evidence / provenance\n- Goal is grounded in the session goal.\n- Gate is grounded in deliveryGates evidence.',
+      provenance: 'python-llm',
+      model: 'fake-python-model',
+      usage: { total_tokens: 53 },
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'outcome.visualize',
+        state: { sessionId: 't-outcome.visualize', goal: { text: 'Visualize pet office delivery flow' }, artifacts: [] },
+        inputArtifactIds: ['goal-1'],
+        roleId: '设计',
+        turnId: 't-outcome.visualize',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(body.content).toContain('mermaid');
+    expect(body.content).toContain('Evidence / provenance');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({
+        capabilityId: 'outcome.visualize',
+        inputArtifactIds: ['goal-1'],
+        roleId: '设计',
+        turnId: 't-outcome.visualize',
+        userText: 'Visualize pet office delivery flow',
+      }),
+      expect.any(String),
+    );
+  });
+
   it('risk.analyze delegates to Python V5 backend in python mode and skips Node LLM/pool', async () => {
     vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
     vi.stubEnv('SLIDERULE_CAPABILITY_POOL_ENABLED', 'true');
