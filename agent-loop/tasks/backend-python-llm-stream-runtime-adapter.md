@@ -8,12 +8,12 @@
 
 ### 状态清单
 
-- [ ] 已执行 AgentLoop
-- [ ] Python test 覆盖 fake SSE source 到 normalized stream events
-- [ ] 错误事件和 done 事件形状稳定
-- [ ] 不发真实网络请求
-- [ ] gate 全绿
-- [ ] Codex review（审查）确认没有迁 Node SSE/WebSocket 生产链路
+- [x] 已执行 AgentLoop
+- [x] Python test 覆盖 fake SSE source 到 normalized stream events
+- [x] 错误事件和 done 事件形状稳定
+- [x] 不发真实网络请求
+- [x] gate 全绿
+- [x] Codex review（审查）确认没有迁 Node SSE/WebSocket 生产链路
 
 ## 目标
 

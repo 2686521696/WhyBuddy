@@ -11,7 +11,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Iterable, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -245,6 +245,15 @@ def parse_sse(raw: str) -> list[SSEEvent]:
     return events
 
 
+def _event_to_sse_chunk(event: SSEEvent) -> str:
+    lines: list[str] = []
+    if event.event:
+        lines.append(f"event: {event.event}")
+    for data_line in event.data.split("\n"):
+        lines.append(f"data: {data_line}")
+    return "\n".join(lines)
+
+
 def _extract_stream_delta(payload: dict[str, Any], wire: str) -> str | None:
     if wire == "responses":
         if payload.get("type") == "response.output_text.delta":
@@ -261,6 +270,76 @@ def _stream_error_event(error: LlmError) -> LlmStreamEvent:
         kind="error",
         error=error,
         failure_kind=classify_llm_failure_kind(error),
+    )
+
+
+def _stream_error_from_payload(payload: dict[str, Any]) -> LlmStreamEvent | None:
+    raw_error = payload.get("error")
+    if raw_error is None:
+        return None
+    if isinstance(raw_error, dict):
+        message = raw_error.get("message") or raw_error.get("type") or json.dumps(raw_error)
+        status_value = raw_error.get("status") or raw_error.get("status_code") or raw_error.get("code")
+    else:
+        message = str(raw_error)
+        status_value = None
+
+    try:
+        status = int(status_value) if status_value is not None else None
+    except (TypeError, ValueError):
+        status = None
+    return _stream_error_event(LlmError(str(message), status=status, transient=False))
+
+
+def _iter_stream_events_from_parsed_sse(
+    source: Iterable[SSEEvent],
+    *,
+    wire: str,
+    model: str,
+    provider: str | None,
+    started: float,
+    now: Callable[[], float] = time.time,
+) -> list[LlmStreamEvent]:
+    raw_chunks: list[str] = []
+    for event in source:
+        if event.event == "error":
+            try:
+                payload = json.loads(event.data)
+            except json.JSONDecodeError:
+                return [_stream_error_event(LlmError(event.data, transient=False))]
+            if isinstance(payload, dict):
+                error = _stream_error_from_payload(payload)
+                if error is not None:
+                    return [error]
+            return [_stream_error_event(LlmError(event.data, transient=False))]
+        raw_chunks.append(_event_to_sse_chunk(event))
+
+    return iter_stream_events_from_sse(
+        "\n\n".join(raw_chunks),
+        wire=wire,
+        model=model,
+        provider=provider,
+        started=started,
+        now=now,
+    )
+
+
+def iter_stream_events_from_sse_source(
+    source: Iterable[SSEEvent],
+    *,
+    wire: str,
+    model: str,
+    provider: str | None,
+    started: float,
+    now: Callable[[], float] = time.time,
+) -> list[LlmStreamEvent]:
+    return _iter_stream_events_from_parsed_sse(
+        source,
+        wire=wire,
+        model=model,
+        provider=provider,
+        started=started,
+        now=now,
     )
 
 
@@ -288,6 +367,11 @@ def iter_stream_events_from_sse(
             continue
         if not isinstance(payload, dict):
             continue
+
+        error = _stream_error_from_payload(payload)
+        if error is not None:
+            events.append(error)
+            return events
 
         if isinstance(payload.get("model"), str):
             resolved_model = payload["model"]
