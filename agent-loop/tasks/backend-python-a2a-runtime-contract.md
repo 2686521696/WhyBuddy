@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract；reviewer 确认不启动真实外部 agent。
 
 ### 状态清单
-- [ ] Python 侧有 A2A runtime contract。
-- [ ] Node 侧测试覆盖 invoke/stream/cancel/list。
-- [ ] envelope/session/error 字段稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实 agent 副作用。
+- [x] Python 侧有 A2A runtime contract。
+- [x] Node 侧测试覆盖 invoke/stream/cancel/list。
+- [x] envelope/session/error 字段稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实 agent 副作用。
 
 ## 目标
 
