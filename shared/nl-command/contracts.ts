@@ -485,3 +485,359 @@ export interface OptimizationReport {
   recommendations: string[];
   generatedAt: number;
 }
+
+// ---------------------------------------------------------------------------
+// Python Contract Slice: NL Command Runtime
+// ---------------------------------------------------------------------------
+
+export const NL_COMMAND_PYTHON_RUNTIME_CONTRACT_VERSION =
+  "nl-command.runtime.v1" as const;
+
+export type NLCommandPythonRuntimeOperation =
+  | "analyze"
+  | "clarify"
+  | "plan"
+  | "approval"
+  | "report";
+
+export interface NLCommandPythonRuntimePermission {
+  allowed: boolean;
+  reason?: string;
+  auditId?: string;
+  [key: string]: unknown;
+}
+
+export interface NLCommandPythonRuntimeAudit {
+  eventId: string;
+  operationType: string;
+  actorId: string;
+  entityId: string;
+  entityType: string;
+  timestamp: number;
+  result: "success" | "failure";
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface NLCommandPythonRuntimePlan {
+  planId: string;
+  commandId: string;
+  status: "draft" | "pending_approval" | "approved";
+  summary: string;
+  steps: Array<{
+    stepId: string;
+    title: string;
+    kind: string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface NLCommandPythonRuntimeApproval {
+  requestId: string;
+  planId: string;
+  status: ApprovalStatus;
+  requiredApprovers: string[];
+  approvals: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+export interface NLCommandPythonRuntimeReport {
+  reportId: string;
+  planId: string;
+  summary: string;
+  sections: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface NLCommandPythonRuntimeError {
+  code: string;
+  message: string;
+}
+
+interface NLCommandPythonRuntimeBaseResult {
+  contractVersion: typeof NL_COMMAND_PYTHON_RUNTIME_CONTRACT_VERSION;
+  runtime: "python-contract";
+  operation: NLCommandPythonRuntimeOperation;
+  commandId: string;
+  planId?: string;
+  permission: NLCommandPythonRuntimePermission;
+  audit: NLCommandPythonRuntimeAudit;
+}
+
+export type NLCommandPythonRuntimeCompletedResult =
+  | (NLCommandPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "analyze";
+      analysis: CommandAnalysis;
+    })
+  | (NLCommandPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "clarify";
+      clarification: ClarificationDialog;
+    })
+  | (NLCommandPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "plan";
+      plan: NLCommandPythonRuntimePlan;
+    })
+  | (NLCommandPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "approval";
+      approval: NLCommandPythonRuntimeApproval;
+    })
+  | (NLCommandPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "report";
+      report: NLCommandPythonRuntimeReport;
+    });
+
+export type NLCommandPythonRuntimeDeniedResult =
+  NLCommandPythonRuntimeBaseResult & {
+    ok: false;
+    status: "permission_denied";
+    error: NLCommandPythonRuntimeError;
+  };
+
+export type NLCommandPythonRuntimeResult =
+  | NLCommandPythonRuntimeCompletedResult
+  | NLCommandPythonRuntimeDeniedResult;
+
+const NL_COMMAND_PYTHON_RUNTIME_OPERATIONS: readonly NLCommandPythonRuntimeOperation[] = [
+  "analyze",
+  "clarify",
+  "plan",
+  "approval",
+  "report",
+];
+
+export function isNLCommandPythonRuntimeResult(
+  value: unknown,
+): value is NLCommandPythonRuntimeResult {
+  const record = nlRuntimeAsRecord(value);
+  if (!record) return false;
+  if (record.contractVersion !== NL_COMMAND_PYTHON_RUNTIME_CONTRACT_VERSION) {
+    return false;
+  }
+  if (record.runtime !== "python-contract") return false;
+  if (!nlRuntimeOneOf(record.operation, NL_COMMAND_PYTHON_RUNTIME_OPERATIONS)) {
+    return false;
+  }
+  const operation = record.operation;
+  if (!nlRuntimeNonEmptyString(record.commandId)) return false;
+  if (record.planId !== undefined && !nlRuntimeNonEmptyString(record.planId)) {
+    return false;
+  }
+  const permission = nlRuntimeAsRecord(record.permission);
+  if (!isNLCommandRuntimePermission(permission)) return false;
+  const audit = nlRuntimeAsRecord(record.audit);
+  if (!isNLCommandRuntimeAudit(audit, operation)) return false;
+
+  if (record.status === "permission_denied") {
+    const error = nlRuntimeAsRecord(record.error);
+    return (
+      record.ok === false &&
+      permission.allowed === false &&
+      audit.result === "failure" &&
+      error !== null &&
+      nlRuntimeNonEmptyString(error.code) &&
+      nlRuntimeNonEmptyString(error.message) &&
+      !hasAnyNLCommandRuntimePayload(record)
+    );
+  }
+
+  if (record.status !== "completed" || record.ok !== true) return false;
+  if (permission.allowed !== true || audit.result !== "success") return false;
+  if (record.error !== undefined) return false;
+  if (!hasOnlyExpectedNLCommandRuntimePayload(record, operation)) return false;
+
+  if (operation === "analyze") return isNLCommandRuntimeAnalysis(record.analysis);
+  if (operation === "clarify") return isNLCommandRuntimeClarification(record.clarification);
+  if (operation === "plan") return isNLCommandRuntimePlan(record.plan, record.commandId);
+  if (operation === "approval") return isNLCommandRuntimeApproval(record.approval);
+  return isNLCommandRuntimeReport(record.report);
+}
+
+function isNLCommandRuntimePermission(
+  value: Record<string, unknown> | null,
+): value is Record<string, unknown> & NLCommandPythonRuntimePermission {
+  if (!value) return false;
+  if (typeof value.allowed !== "boolean") return false;
+  if (value.reason !== undefined && !nlRuntimeNonEmptyString(value.reason)) return false;
+  if (value.auditId !== undefined && !nlRuntimeNonEmptyString(value.auditId)) return false;
+  return true;
+}
+
+function isNLCommandRuntimeAudit(
+  value: Record<string, unknown> | null,
+  operation: NLCommandPythonRuntimeOperation,
+): value is Record<string, unknown> & NLCommandPythonRuntimeAudit {
+  if (!value) return false;
+  if (!nlRuntimeNonEmptyString(value.eventId)) return false;
+  if (value.operationType !== `nl_command_${operation}`) return false;
+  if (!nlRuntimeNonEmptyString(value.actorId)) return false;
+  if (!nlRuntimeNonEmptyString(value.entityId)) return false;
+  if (!nlRuntimeNonEmptyString(value.entityType)) return false;
+  if (typeof value.timestamp !== "number" || !Number.isFinite(value.timestamp)) return false;
+  if (value.result !== "success" && value.result !== "failure") return false;
+  if (value.metadata !== undefined && !nlRuntimeAsRecord(value.metadata)) return false;
+  return true;
+}
+
+function isNLCommandRuntimeAnalysis(value: unknown): value is CommandAnalysis {
+  const analysis = nlRuntimeAsRecord(value);
+  if (!analysis) return false;
+  if (!nlRuntimeNonEmptyString(analysis.intent)) return false;
+  if (!Array.isArray(analysis.entities)) return false;
+  if (!Array.isArray(analysis.constraints)) return false;
+  if (!Array.isArray(analysis.objectives)) return false;
+  if (!Array.isArray(analysis.risks)) return false;
+  if (!Array.isArray(analysis.assumptions)) return false;
+  if (!nlRuntimeUnitNumber(analysis.confidence)) return false;
+  if (typeof analysis.needsClarification !== "boolean") return false;
+  if (analysis.clarificationTopics !== undefined && !Array.isArray(analysis.clarificationTopics)) {
+    return false;
+  }
+  return true;
+}
+
+function isNLCommandRuntimeClarification(
+  value: unknown,
+): value is ClarificationDialog {
+  const dialog = nlRuntimeAsRecord(value);
+  if (!dialog) return false;
+  if (!nlRuntimeNonEmptyString(dialog.dialogId)) return false;
+  if (!nlRuntimeNonEmptyString(dialog.commandId)) return false;
+  if (!Array.isArray(dialog.questions)) return false;
+  if (!Array.isArray(dialog.answers)) return false;
+  if (typeof dialog.clarificationRounds !== "number" || dialog.clarificationRounds < 0) {
+    return false;
+  }
+  if (dialog.status !== "active" && dialog.status !== "completed") return false;
+  return dialog.questions.every(isNLCommandRuntimeQuestion);
+}
+
+function isNLCommandRuntimeQuestion(value: unknown): value is ClarificationQuestion {
+  const question = nlRuntimeAsRecord(value);
+  if (!question) return false;
+  if (!nlRuntimeNonEmptyString(question.questionId)) return false;
+  if (!nlRuntimeNonEmptyString(question.text)) return false;
+  if (
+    question.type !== "free_text" &&
+    question.type !== "single_choice" &&
+    question.type !== "multi_choice"
+  ) {
+    return false;
+  }
+  if (question.options !== undefined && !Array.isArray(question.options)) return false;
+  return true;
+}
+
+function isNLCommandRuntimePlan(
+  value: unknown,
+  commandId: unknown,
+): value is NLCommandPythonRuntimePlan {
+  const plan = nlRuntimeAsRecord(value);
+  if (!plan) return false;
+  if (!nlRuntimeNonEmptyString(plan.planId)) return false;
+  if (plan.commandId !== commandId) return false;
+  if (
+    plan.status !== "draft" &&
+    plan.status !== "pending_approval" &&
+    plan.status !== "approved"
+  ) {
+    return false;
+  }
+  if (!nlRuntimeNonEmptyString(plan.summary)) return false;
+  if (!Array.isArray(plan.steps)) return false;
+  return plan.steps.every(stepValue => {
+    const step = nlRuntimeAsRecord(stepValue);
+    return (
+      step !== null &&
+      nlRuntimeNonEmptyString(step.stepId) &&
+      nlRuntimeNonEmptyString(step.title) &&
+      nlRuntimeNonEmptyString(step.kind)
+    );
+  });
+}
+
+function isNLCommandRuntimeApproval(
+  value: unknown,
+): value is NLCommandPythonRuntimeApproval {
+  const approval = nlRuntimeAsRecord(value);
+  if (!approval) return false;
+  if (!nlRuntimeNonEmptyString(approval.requestId)) return false;
+  if (!nlRuntimeNonEmptyString(approval.planId)) return false;
+  if (
+    approval.status !== "pending" &&
+    approval.status !== "approved" &&
+    approval.status !== "rejected" &&
+    approval.status !== "revision_requested"
+  ) {
+    return false;
+  }
+  if (!Array.isArray(approval.requiredApprovers)) return false;
+  if (!Array.isArray(approval.approvals)) return false;
+  return true;
+}
+
+function isNLCommandRuntimeReport(
+  value: unknown,
+): value is NLCommandPythonRuntimeReport {
+  const report = nlRuntimeAsRecord(value);
+  if (!report) return false;
+  if (!nlRuntimeNonEmptyString(report.reportId)) return false;
+  if (!nlRuntimeNonEmptyString(report.planId)) return false;
+  if (!nlRuntimeNonEmptyString(report.summary)) return false;
+  const sections = nlRuntimeAsRecord(report.sections);
+  if (!sections) return false;
+  return Object.values(sections).every(section => typeof section === "string");
+}
+
+function hasAnyNLCommandRuntimePayload(record: Record<string, unknown>): boolean {
+  return ["analysis", "clarification", "plan", "approval", "report"].some(
+    field => record[field] !== undefined,
+  );
+}
+
+function hasOnlyExpectedNLCommandRuntimePayload(
+  record: Record<string, unknown>,
+  operation: NLCommandPythonRuntimeOperation,
+): boolean {
+  const expected = {
+    analyze: "analysis",
+    clarify: "clarification",
+    plan: "plan",
+    approval: "approval",
+    report: "report",
+  }[operation];
+  return ["analysis", "clarification", "plan", "approval", "report"].every(
+    field => (field === expected ? record[field] !== undefined : record[field] === undefined),
+  );
+}
+
+function nlRuntimeAsRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nlRuntimeNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function nlRuntimeUnitNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function nlRuntimeOneOf<T extends string>(
+  value: unknown,
+  options: readonly T[],
+): value is T {
+  return typeof value === "string" && options.includes(value as T);
+}

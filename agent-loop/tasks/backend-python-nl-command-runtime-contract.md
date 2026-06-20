@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract；reviewer 确认不迁完整任务执行系统。
 
 ### 状态清单
-- [ ] Python 侧有 NL command runtime contract。
-- [ ] Node 侧测试覆盖 analyze/clarify/plan/report。
-- [ ] permission guard 和 audit 字段不丢。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有执行真实命令。
+- [x] Python 侧有 NL command runtime contract。
+- [x] Node 侧测试覆盖 analyze/clarify/plan/report。
+- [x] permission guard 和 audit 字段不丢。
+- [x] gate 全绿。
+- [x] Codex review 确认没有执行真实命令。
 
 ## 目标
 
