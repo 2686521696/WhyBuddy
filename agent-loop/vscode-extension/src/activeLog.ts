@@ -186,15 +186,13 @@ export function formatAgentLogTail(raw: string, maxLines = 6): string {
     const outer = JSON.parse(trimmed) as { text?: unknown };
     if (typeof outer.text === 'string' && outer.text.trim()) {
       try {
-        const inner = JSON.parse(outer.text) as { verdict?: string; summary?: string };
-        const parts: string[] = [];
-        if (inner.verdict) parts.push(`verdict: ${inner.verdict}`);
-        if (inner.summary) parts.push(inner.summary);
-        if (parts.length) return parts.join('\n');
+        const inner = JSON.parse(outer.text) as unknown;
+        return JSON.stringify(inner, null, 2);
       } catch {
         return outer.text.trim();
       }
     }
+    return JSON.stringify(outer, null, 2);
   } catch {
     // fall through to plain-text tail
   }

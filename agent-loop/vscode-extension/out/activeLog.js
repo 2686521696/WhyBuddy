@@ -194,18 +194,13 @@ function formatAgentLogTail(raw, maxLines = 6) {
         if (typeof outer.text === 'string' && outer.text.trim()) {
             try {
                 const inner = JSON.parse(outer.text);
-                const parts = [];
-                if (inner.verdict)
-                    parts.push(`verdict: ${inner.verdict}`);
-                if (inner.summary)
-                    parts.push(inner.summary);
-                if (parts.length)
-                    return parts.join('\n');
+                return JSON.stringify(inner, null, 2);
             }
             catch {
                 return outer.text.trim();
             }
         }
+        return JSON.stringify(outer, null, 2);
     }
     catch {
         // fall through to plain-text tail

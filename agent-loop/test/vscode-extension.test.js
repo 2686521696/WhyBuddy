@@ -335,14 +335,29 @@ test('findLatestRunForTask maps a queue task to its newest run', async () => {
   assert.equal(path.basename(path.dirname(match.statePath)), 'newer');
 });
 
-test('formatAgentLogTail formats grok review json into readable lines', async () => {
+test('formatAgentLogTail pretty prints grok review json', async () => {
   const { formatAgentLogTail } = requireFromExtension('./out/activeLog.js');
   const tail = formatAgentLogTail(JSON.stringify({
     text: JSON.stringify({ verdict: 'pass', summary: 'gate 全绿，审查通过' }),
   }));
 
-  assert.match(tail, /verdict: pass/);
-  assert.match(tail, /gate 全绿，审查通过/);
+  assert.match(tail, /"verdict": "pass"/);
+  assert.match(tail, /"summary": "gate 全绿，审查通过"/);
+  assert.match(tail, /^\{\n/);
+});
+
+test('formatAgentLogTail pretty prints top-level review json', async () => {
+  const { formatAgentLogTail } = requireFromExtension('./out/activeLog.js');
+  const tail = formatAgentLogTail(JSON.stringify({
+    verdict: 'pass',
+    summary: 'admin contract gate passed',
+    findings: [],
+  }));
+
+  assert.match(tail, /"verdict": "pass"/);
+  assert.match(tail, /"summary": "admin contract gate passed"/);
+  assert.match(tail, /"findings": \[\]/);
+  assert.doesNotMatch(tail, /^\{"verdict":/);
 });
 
 test('buildQueueOverview merges queue membership with per-task outcomes', async () => {
@@ -432,10 +447,10 @@ test('dashboard view title command is contributed only once', async () => {
   assert.equal(dashboardMenus[0].when, 'view == agentLoop.currentRun');
 });
 
-test('extension package contributes clean Chinese labels for 0.1.8', async () => {
+test('extension package contributes clean Chinese labels for 0.1.9', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.8');
+  assert.equal(packageJson.version, '0.1.9');
   assert.deepEqual(
     packageJson.contributes.views['agent-loop'].map((view) => view.name),
     ['当前运行', '任务队列', '历史运行'],
@@ -563,10 +578,47 @@ test('dashboard media renders detail evidence and log sections', async () => {
   assert.match(html, /detail-hero/);
   assert.match(html, /timeline/);
   assert.match(html, /detail-main-grid/);
+  assert.match(html, /detail-side-column/);
+  assert.match(html, /detail-wide-column/);
+  assert.match(html, /detail-side-column[\s\S]*panel iterations/);
+  assert.match(html, /detail-wide-column[\s\S]*Review/);
   assert.match(html, /证据/);
   assert.match(html, /Review/);
   assert.match(html, /All gates passed/);
   assert.match(html, /abc1234/);
+});
+
+test('dashboard media renders syntax highlighted json agent output', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderDetail({
+    taskLabel: 'backend-python-blueprint-agent-crew-proxy-contract',
+    runId: '2026-06-20T19-20-27-078Z',
+    status: 'DONE_REVIEWED',
+    phaseLabel: '完成',
+    elapsedText: '1 分 00 秒',
+    gateText: '基线 Gate 绿',
+    gateOk: true,
+    agentText: 'codex + codex',
+    roleText: 'codex修 + codex审',
+    runMode: 'codex-review',
+    pipelineSteps: [{ key: 'INIT', label: '初始化' }, { key: 'DONE', label: '完成' }],
+    details: [],
+    iterations: [],
+    reviewRounds: [],
+    agentTail: JSON.stringify({
+      verdict: 'pass',
+      summary: 'Python contract tests passed',
+      findings: [],
+    }),
+    landing: { status: 'PENDING_APPLY' },
+  });
+
+  assert.match(html, /json-token key/);
+  assert.match(html, /log-json wrap/);
+  assert.match(html, /&quot;verdict&quot;/);
+  assert.match(html, /&quot;pass&quot;/);
+  assert.match(html, /Python contract tests passed/);
+  assert.doesNotMatch(html, /\{&quot;verdict&quot;:/);
 });
 
 async function loadDashboardRenderer() {

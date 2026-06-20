@@ -437,7 +437,7 @@ h2 {
 
 .detail-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(260px, 0.55fr) minmax(0, 1.45fr);
   gap: 12px;
   align-items: start;
 }
@@ -537,6 +537,28 @@ h2 {
   font-size: 12px;
   line-height: 1.45;
   background: var(--panel-2);
+}
+
+.log-json {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.json-token.key {
+  color: var(--vscode-symbolIcon-keywordForeground, #7a7a00);
+}
+
+.json-token.string {
+  color: var(--vscode-debugTokenExpression-string, #008b8b);
+}
+
+.json-token.number {
+  color: var(--vscode-debugTokenExpression-number, #b05a00);
+}
+
+.json-token.literal {
+  color: var(--vscode-debugTokenExpression-boolean, #9b4db4);
 }
 
 .links {

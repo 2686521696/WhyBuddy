@@ -234,7 +234,7 @@
       const guard = it.guard ? '<span class="tag err">护栏命中</span>' : '';
       return `<div class="evidence-row"><span class="idx">#${esc(it.iteration)}</span>${gate}<span class="tag">diff ${kb}</span><span class="tag">尝试 ${esc(it.attempts || 0)}</span>${guard}</div>`;
     }).join('');
-    return `<section class="panel"><div class="panel-head"><h2>修复迭代</h2></div>${rows || '<div class="empty">没有修复迭代。</div>'}</section>`;
+    return `<section class="panel iterations"><div class="panel-head"><h2>修复迭代</h2></div>${rows || '<div class="empty">没有修复迭代。</div>'}</section>`;
   }
 
   function verdictClass(decision, verdict) {
@@ -258,10 +258,38 @@
   }
 
   function renderAgentLog(payload) {
+    const log = formatAgentLog(payload.agentTail || '暂无输出');
+    const codeClass = log.language === 'json' ? ' log-json wrap' : '';
     return `<section class="panel log-panel">
       <div class="panel-head"><h2>Agent 最新输出</h2><span class="muted">${payload.agentLogKb ? `${payload.agentLogKb}KB` : ''}</span></div>
-      <pre class="log">${esc(payload.agentTail || '暂无输出')}</pre>
+      <pre class="log${codeClass}">${log.html}</pre>
     </section>`;
+  }
+
+  function formatAgentLog(raw) {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!text) return { language: 'text', html: '' };
+    try {
+      const parsed = JSON.parse(text);
+      return { language: 'json', html: highlightJson(JSON.stringify(parsed, null, 2)) };
+    } catch {
+      // Keep plain logs unchanged.
+    }
+    return { language: 'text', html: esc(text) };
+  }
+
+  function highlightJson(json) {
+    return json.replace(
+      /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+      (match, stringToken, colon, literal) => {
+        if (stringToken) {
+          const cls = colon ? 'key' : 'string';
+          return `<span class="json-token ${cls}">${esc(stringToken)}</span>${colon || ''}`;
+        }
+        if (literal) return `<span class="json-token literal">${esc(literal)}</span>`;
+        return `<span class="json-token number">${esc(match)}</span>`;
+      },
+    );
   }
 
   function renderLinks(payload) {
@@ -287,11 +315,11 @@
       ${renderHalt(payload)}
       ${renderStatusCards(payload)}
       <section class="detail-main-grid">
-        <div class="detail-column">
+        <div class="detail-column detail-side-column">
           ${renderEvidence(payload)}
           ${renderIterations(payload.iterations)}
         </div>
-        <div class="detail-column">
+        <div class="detail-column detail-wide-column">
           ${renderReviewRounds(payload.reviewRounds)}
         </div>
       </section>
