@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 proxy contract 和测试；reviewer 确认 Node 仍是主控，Python 只是受控 runtime。
 
 ### 状态清单
-- [ ] Python 侧有 job runtime contract endpoint 或 service。
-- [ ] Node 侧有 start/status/cancel/read 代理测试。
-- [ ] timeout/cancel/failed 形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有绕过 Node 主控。
+- [x] Python 侧有 job runtime contract endpoint 或 service。
+- [x] Node 侧有 start/status/cancel/read 代理测试。
+- [x] timeout/cancel/failed 形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有绕过 Node 主控。
 
 ## 目标
 

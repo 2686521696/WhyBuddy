@@ -42,7 +42,7 @@ function makeEvent(id: string, jobId: string): BlueprintGenerationEvent {
 }
 
 describe("createJobService (shell)", () => {
-  it("list / get / latest 对接 ctx.jobStore", () => {
+  it("list / get / latest delegates to ctx.jobStore", () => {
     const jobStore = createMemoryBlueprintJobStore([
       makeJob("job-1"),
       makeJob("job-2"),
@@ -78,7 +78,7 @@ describe("createJobService (shell)", () => {
     expect(service.getLatestJob()?.id).toBe("job-old");
   });
 
-  it("emitJobEvent 通过 ctx.eventBus 走同一条管线", () => {
+  it("emitJobEvent goes through ctx.eventBus", () => {
     const jobStore = createMemoryBlueprintJobStore([makeJob("job-1")]);
     const ctx = buildBlueprintServiceContext({ jobStore });
     const service = createJobService(ctx);
@@ -90,5 +90,24 @@ describe("createJobService (shell)", () => {
 
     expect(received).toEqual(["evt-1"]);
     expect(ctx.jobStore.get("job-1")?.events).toHaveLength(1);
+  });
+
+  it("local cancel records cancellation as a failed Node job instead of completed", async () => {
+    const jobStore = createMemoryBlueprintJobStore([makeJob("job-1", { status: "running" })]);
+    const ctx = buildBlueprintServiceContext({
+      jobStore,
+      now: () => new Date("2026-06-20T00:00:00.000Z"),
+    });
+    const service = createJobService(ctx);
+
+    const result = await service.cancelJob("job-1", {
+      reason: "user_cancelled",
+      now: "2026-06-20T00:01:00.000Z",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.job.status : null).toBe("cancelled");
+    expect(ctx.jobStore.get("job-1")?.status).toBe("failed");
+    expect(ctx.jobStore.get("job-1")?.error?.code).toBe("cancelled");
   });
 });
