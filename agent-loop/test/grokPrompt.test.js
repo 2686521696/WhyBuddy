@@ -22,6 +22,70 @@ test('buildAgentFixPrompt includes migration boundary guardrails for worker agen
   assert.match(prompt, /输出 blocked/);
 });
 
+test('buildAgentFixPrompt gives a direct fast path for missing gate files listed in task', () => {
+  const prompt = buildAgentFixPrompt({
+    taskText: [
+      '# Task',
+      '',
+      '## allowed files',
+      '',
+      '- `tws-ai-slide-rule-python/tests/test_missing_runtime.py`',
+      '',
+      '## success criteria',
+      '',
+      '- gate green',
+    ].join('\n'),
+    gate: {
+      runs: [
+        {
+          label: 'pytest tests/test_missing_runtime.py',
+          exitCode: 1,
+          timedOut: false,
+          stdout: '',
+          stderr: 'ERROR: file or directory not found: tests/test_missing_runtime.py\n',
+        },
+      ],
+    },
+    workerAgent: 'grok',
+  });
+
+  assert.match(prompt, /Missing gate file fast path/);
+  assert.match(prompt, /tests\/test_missing_runtime\.py/);
+  assert.match(prompt, /Create the missing gate file first/);
+  assert.match(prompt, /avoid broad repository exploration/);
+});
+
+test('buildAgentFixPrompt does not suggest creating missing files outside task scope', () => {
+  const prompt = buildAgentFixPrompt({
+    taskText: [
+      '# Task',
+      '',
+      '## allowed files',
+      '',
+      '- `src/allowed.py`',
+      '',
+      '## success criteria',
+      '',
+      '- gate green',
+    ].join('\n'),
+    gate: {
+      runs: [
+        {
+          label: 'pytest tests/test_out_of_scope.py',
+          exitCode: 1,
+          timedOut: false,
+          stdout: '',
+          stderr: 'ERROR: file or directory not found: tests/test_out_of_scope.py\n',
+        },
+      ],
+    },
+    workerAgent: 'grok',
+  });
+
+  assert.doesNotMatch(prompt, /Missing gate file fast path/);
+  assert.match(prompt, /tests\/test_out_of_scope\.py/);
+});
+
 test('buildAgentReviewFixPrompt keeps review-driven fixes inside migration boundaries', () => {
   const prompt = buildAgentReviewFixPrompt({
     taskText: '# Task',

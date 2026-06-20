@@ -44,6 +44,7 @@ export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
       ].filter(Boolean).join('\n');
     })
     .join('\n\n');
+  const missingGateFileBlock = buildMissingGateFileBlock({ taskText, gate });
 
   return [
     `# AgentLoop ${workerAgent} 修复请求`,
@@ -65,6 +66,7 @@ export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
     '## 失败信息',
     '',
     failureBlocks || '没有捕获到失败详情。',
+    missingGateFileBlock ? ['', missingGateFileBlock].join('\n') : '',
     '',
     '## 规则',
     '',
@@ -78,6 +80,49 @@ export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
     '',
     '{"verdict":"changed|blocked","summary":"简短说明","files":["相对路径"]}',
   ].join('\n');
+}
+
+function buildMissingGateFileBlock({ taskText, gate }) {
+  const missingFiles = extractMissingGateFiles(gate)
+    .filter((file) => taskAllowsPath(taskText, file));
+
+  if (!missingFiles.length) return '';
+
+  return [
+    '## Missing gate file fast path',
+    '',
+    'The failing gate is pointing at file(s) that do not exist yet and are listed in the task allowed files.',
+    'Create the missing gate file first, then add the smallest implementation needed for the gate; avoid broad repository exploration before creating these direct gate files.',
+    '',
+    ...missingFiles.map((file) => `- ${file}`),
+  ].join('\n');
+}
+
+function extractMissingGateFiles(gate) {
+  const files = [];
+  const pattern = /file or directory not found:\s*([^\r\n]+)/gi;
+  for (const run of gate?.runs || []) {
+    const output = [run.stdout || '', run.stderr || ''].join('\n');
+    for (const match of output.matchAll(pattern)) {
+      const file = normalizePromptPath(match[1]);
+      if (file) files.push(file);
+    }
+  }
+  return Array.from(new Set(files));
+}
+
+function taskAllowsPath(taskText, file) {
+  const task = normalizePromptPath(taskText);
+  const target = normalizePromptPath(file);
+  if (!task || !target) return false;
+  return task.includes(target) || task.includes(`/${target}`);
+}
+
+function normalizePromptPath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/\\/g, '/');
 }
 
 export function buildAgentChecklistFixPrompt({ taskText, pendingItems = [], workerAgent = 'grok' }) {
