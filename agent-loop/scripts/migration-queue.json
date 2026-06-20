@@ -160,180 +160,162 @@
   ],
   "tasks": [
     {
-      "id": "backend-python-real-vector-retrieval-production-wiring",
-      "task": "agent-loop/tasks/backend-python-real-vector-retrieval-production-wiring.md",
-      "gatesKey": "realVectorRetrievalProductionGates",
+      "id": "backend-python-task-executor-runtime-bridge",
+      "task": "agent-loop/tasks/backend-python-task-executor-runtime-bridge.md",
+      "gatesKey": "taskExecutorRuntimeBridgeGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-rag-ingestion-production-storage",
-      "task": "agent-loop/tasks/backend-python-rag-ingestion-production-storage.md",
-      "gatesKey": "ragIngestionProductionStorageGates",
+      "id": "backend-python-knowledge-admin-runtime-bridge",
+      "task": "agent-loop/tasks/backend-python-knowledge-admin-runtime-bridge.md",
+      "gatesKey": "knowledgeAdminRuntimeBridgeGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-web-aigc-search-runtime-bridge",
-      "task": "agent-loop/tasks/backend-python-web-aigc-search-runtime-bridge.md",
-      "gatesKey": "webAigcSearchRuntimeBridgeGates",
+      "id": "backend-python-blueprint-main-state-runtime-boundary",
+      "task": "agent-loop/tasks/backend-python-blueprint-main-state-runtime-boundary.md",
+      "gatesKey": "blueprintMainStateContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-web-aigc-file-runtime-bridge",
-      "task": "agent-loop/tasks/backend-python-web-aigc-file-runtime-bridge.md",
-      "gatesKey": "webAigcFileRuntimeBridgeGates",
+      "id": "backend-python-blueprint-job-runtime-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-job-runtime-proxy.md",
+      "gatesKey": "blueprintJobRuntimeProxyGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-web-aigc-vision-audio-runtime-bridge",
-      "task": "agent-loop/tasks/backend-python-web-aigc-vision-audio-runtime-bridge.md",
-      "gatesKey": "webAigcVisionAudioRuntimeBridgeGates",
+      "id": "backend-python-blueprint-stage-edit-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-blueprint-stage-edit-proxy-contract.md",
+      "gatesKey": "blueprintStageEditProxyGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-a2a-invoke-runtime-bridge",
-      "task": "agent-loop/tasks/backend-python-a2a-invoke-runtime-bridge.md",
-      "gatesKey": "a2aInvokeRuntimeBridgeGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 40,
-      "maxIterations": 3
-    },
-    {
-      "id": "backend-python-workflow-staged-execution-runtime",
-      "task": "agent-loop/tasks/backend-python-workflow-staged-execution-runtime.md",
-      "gatesKey": "workflowStagedExecutionRuntimeGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 18,
-      "maxIterations": 3
-    },
-    {
-      "id": "backend-python-telemetry-production-sink",
-      "task": "agent-loop/tasks/backend-python-telemetry-production-sink.md",
-      "gatesKey": "telemetryProductionSinkGates",
+      "id": "backend-python-role-runtime-proxy-contract",
+      "task": "agent-loop/tasks/backend-python-role-runtime-proxy-contract.md",
+      "gatesKey": "roleRuntimeProxyContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-auth-session-runtime-boundary",
-      "task": "agent-loop/tasks/backend-python-auth-session-runtime-boundary.md",
-      "gatesKey": "authSessionRuntimeBoundaryGates",
+      "id": "backend-python-session-persistence-runtime-boundary",
+      "task": "agent-loop/tasks/backend-python-session-persistence-runtime-boundary.md",
+      "gatesKey": "sessionPersistenceContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-permission-check-runtime-boundary",
-      "task": "agent-loop/tasks/backend-python-permission-check-runtime-boundary.md",
-      "gatesKey": "permissionCheckRuntimeBoundaryGates",
+      "id": "backend-python-nl-command-runtime-contract",
+      "task": "agent-loop/tasks/backend-python-nl-command-runtime-contract.md",
+      "gatesKey": "nlCommandRuntimeContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-permission-rate-limit-runtime-boundary",
-      "task": "agent-loop/tasks/backend-python-permission-rate-limit-runtime-boundary.md",
-      "gatesKey": "permissionRateLimitRuntimeBoundaryGates",
+      "id": "backend-python-workflow-runtime-contract",
+      "task": "agent-loop/tasks/backend-python-workflow-runtime-contract.md",
+      "gatesKey": "workflowRuntimeContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-audit-event-runtime-boundary",
-      "task": "agent-loop/tasks/backend-python-audit-event-runtime-boundary.md",
-      "gatesKey": "auditEventRuntimeBoundaryGates",
+      "id": "backend-python-rag-ingestion-runtime-contract",
+      "task": "agent-loop/tasks/backend-python-rag-ingestion-runtime-contract.md",
+      "gatesKey": "ragIngestionRuntimeContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-audit-query-proxy-boundary",
-      "task": "agent-loop/tasks/backend-python-audit-query-proxy-boundary.md",
-      "gatesKey": "auditQueryProxyBoundaryGates",
+      "id": "backend-python-telemetry-route-contract",
+      "task": "agent-loop/tasks/backend-python-telemetry-route-contract.md",
+      "gatesKey": "telemetryRouteContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-admin-route-contract",
-      "task": "agent-loop/tasks/backend-python-admin-route-contract.md",
-      "gatesKey": "adminRouteContractGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 14,
-      "maxIterations": 3
-    },
-    {
-      "id": "backend-python-task-executor-proxy-contract",
-      "task": "agent-loop/tasks/backend-python-task-executor-proxy-contract.md",
-      "gatesKey": "taskExecutorProxyContractGates",
+      "id": "backend-python-a2a-runtime-contract",
+      "task": "agent-loop/tasks/backend-python-a2a-runtime-contract.md",
+      "gatesKey": "a2aRuntimeContractGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-executor-callback-contract",
-      "task": "agent-loop/tasks/backend-python-executor-callback-contract.md",
-      "gatesKey": "executorCallbackContractGates",
+      "id": "backend-python-blueprint-artifact-memory-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-artifact-memory-proxy.md",
+      "gatesKey": "blueprintArtifactMemoryProxyGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-knowledge-admin-proxy-contract",
-      "task": "agent-loop/tasks/backend-python-knowledge-admin-proxy-contract.md",
-      "gatesKey": "knowledgeAdminProxyContractGates",
-      "enabled": true,
-      "guardTests": false,
-      "grokMaxTurns": 14,
-      "maxIterations": 3
-    },
-    {
-      "id": "backend-python-blueprint-agent-crew-proxy-contract",
-      "task": "agent-loop/tasks/backend-python-blueprint-agent-crew-proxy-contract.md",
-      "gatesKey": "blueprintAgentCrewProxyContractGates",
+      "id": "backend-python-blueprint-review-export-proxy",
+      "task": "agent-loop/tasks/backend-python-blueprint-review-export-proxy.md",
+      "gatesKey": "blueprintReviewExportProxyGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-blueprint-brainstorm-contract",
-      "task": "agent-loop/tasks/backend-python-blueprint-brainstorm-contract.md",
-      "gatesKey": "blueprintBrainstormContractGates",
+      "id": "backend-python-deployment-live-smoke-boundary",
+      "task": "agent-loop/tasks/backend-python-deployment-live-smoke-boundary.md",
+      "gatesKey": "deploymentLiveSmokeBoundaryGates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 16,
       "maxIterations": 3
     },
     {
-      "id": "backend-python-migration-status-refresh-60",
-      "task": "agent-loop/tasks/backend-python-migration-status-refresh-60.md",
-      "gatesKey": "migrationStatusRefreshGates",
+      "id": "backend-python-production-observability-rollup",
+      "task": "agent-loop/tasks/backend-python-production-observability-rollup.md",
+      "gatesKey": "productionObservabilityRollupGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-node-route-inventory-75",
+      "task": "agent-loop/tasks/backend-python-node-route-inventory-75.md",
+      "gatesKey": "nodeRouteInventory75Gates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 16,
+      "maxIterations": 3
+    },
+    {
+      "id": "backend-python-migration-status-refresh-75",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-75.md",
+      "gatesKey": "migrationStatusRefresh75Gates",
       "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 8,
@@ -492,5 +474,35 @@
     "pnpm exec vitest run --config vitest.config.server.ts server/tests/audit-query-python-boundary.test.ts server/tests/audit-query-python-proxy.test.ts server/tests/audit-query.test.ts --reporter=dot",
     "pnpm exec tsc --noEmit --pretty false",
     "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_audit_query_proxy_boundary.py server/tests/audit-query-python-boundary.test.ts shared/audit/contracts.ts"
+  ],
+  "taskExecutorRuntimeBridgeGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_executor_runtime_bridge.py tests/test_task_executor_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/executor-client-python-runtime.test.ts server/tests/executor-client-python-proxy-contract.test.ts server/tests/executor-client-capabilities.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_executor_runtime.py tws-ai-slide-rule-python/tests/test_task_executor_runtime_bridge.py server/tests/executor-client-python-runtime.test.ts"
+  ],
+  "knowledgeAdminRuntimeBridgeGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_knowledge_admin_runtime_bridge.py tests/test_knowledge_admin_proxy_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/knowledge-admin-python-runtime.test.ts server/routes/__tests__/knowledge-admin-python-proxy.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/knowledge_admin_runtime.py tws-ai-slide-rule-python/tests/test_knowledge_admin_runtime_bridge.py server/routes/__tests__/knowledge-admin-python-runtime.test.ts"
+  ],
+  "deploymentLiveSmokeBoundaryGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_deployment_live_smoke_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/python-deployment-live-smoke.test.ts server/tests/persistence-health-routes.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_deployment_live_smoke_boundary.py server/routes/__tests__/python-deployment-live-smoke.test.ts"
+  ],
+  "productionObservabilityRollupGates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_production_observability_rollup.py tests/test_telemetry_route_contract.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/python-observability-rollup.test.ts server/routes/__tests__/telemetry-python-route-contract.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/tests/test_production_observability_rollup.py server/routes/__tests__/python-observability-rollup.test.ts shared/telemetry/contracts.ts"
+  ],
+  "nodeRouteInventory75Gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}} docs/backend-python-node-route-inventory-75.md agent-loop/tasks/sliderule-python-migration-status.md"
+  ],
+  "migrationStatusRefresh75Gates": [
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}}"
   ]
 }
