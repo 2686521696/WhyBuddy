@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract；reviewer 确认不破坏 Node 的 staleness/invalidation 语义。
 
 ### 状态清单
-- [ ] Python 侧有 stage edit validate/preview contract。
-- [ ] Node 侧测试覆盖 patch accepted/rejected/conflict。
-- [ ] staleness/invalidation 字段不丢。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有直接改主状态机。
+- [x] Python 侧有 stage edit validate/preview contract。
+- [x] Node 侧测试覆盖 patch accepted/rejected/conflict。
+- [x] staleness/invalidation 字段不丢。
+- [x] gate 全绿。
+- [x] Codex review 确认没有直接改主状态机。
 
 ## 目标
 

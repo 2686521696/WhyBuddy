@@ -164,6 +164,17 @@ describe("createIntakePatchHandler", () => {
         staleArtifactIdsSnapshot: ["artifact-route", "artifact-spec"],
       },
     });
+    expect(result.savedJobs.at(-1)?.artifacts[1]).toMatchObject({
+      id: "artifact-route",
+      staleSince: "2026-05-23T02:00:00.000Z",
+      invalidatedBy: {
+        stage: "input",
+        artifactId: "artifact-input",
+        artifactType: "intake",
+        reason: "upstream_target_changed",
+        triggeredAt: "2026-05-23T02:00:00.000Z",
+      },
+    });
   });
 
   it("persists the updated intake payload into linked job artifacts", async () => {
