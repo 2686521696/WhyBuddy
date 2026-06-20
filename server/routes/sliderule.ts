@@ -542,6 +542,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
     inputArtifactIds = [],
     roleId,
     turnId,
+    userText,
     deliberationMaxRounds,
     targetRoleId,
   } = (req.body || {}) as {
@@ -550,6 +551,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
     inputArtifactIds?: string[];
     roleId?: string;
     turnId?: string;
+    userText?: string;
     deliberationMaxRounds?: number;
     targetRoleId?: string;
   };
@@ -636,7 +638,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
         inputArtifactIds: inputArtifactIds || [],
         roleId,
         turnId,
-        userText: state.goal?.text || '',
+        userText: String(userText ?? state.goal?.text ?? ''),
       };
 
       try {

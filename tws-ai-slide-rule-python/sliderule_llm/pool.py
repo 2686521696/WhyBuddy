@@ -27,8 +27,11 @@ from .client import (
 from .config import LlmConfig, PoolConfig, get_pool_config
 
 POOL_504_PENALTY_MS = 8000
+POOL_CIRCUIT_FAILURE_THRESHOLD = 2
+POOL_CIRCUIT_COOLDOWN_MS = 30000
 _recent_504_penalty_until: dict[str, float] = {}
 _recent_504_penalty_key_ids: dict[str, str] = {}
+_pool_circuit_states: dict[str, dict[str, Any]] = {}
 _last_pool_failures: list[dict[str, Any]] = []
 _last_pool_events: list[dict[str, Any]] = []
 _API_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
@@ -37,6 +40,7 @@ _API_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 def clear_pool_penalties() -> None:
     _recent_504_penalty_until.clear()
     _recent_504_penalty_key_ids.clear()
+    _pool_circuit_states.clear()
     _last_pool_failures.clear()
     _last_pool_events.clear()
 
@@ -123,6 +127,88 @@ def _record_504_penalty(state: "PoolKeyState") -> None:
     )
 
 
+def _circuit_state(state: "PoolKeyState") -> dict[str, Any]:
+    return _pool_circuit_states.setdefault(
+        state.label,
+        {
+            "state": "closed",
+            "failure_count": 0,
+            "opened_until": 0.0,
+            "pool_key_id": _safe_pool_key_id(state.key),
+        },
+    )
+
+
+def _open_circuit(state: "PoolKeyState", entry: dict[str, Any]) -> None:
+    until = time.time() + (POOL_CIRCUIT_COOLDOWN_MS / 1000.0)
+    entry["state"] = "open"
+    entry["failure_count"] = POOL_CIRCUIT_FAILURE_THRESHOLD
+    entry["opened_until"] = until
+    entry["pool_key_id"] = _safe_pool_key_id(state.key)
+    _record_pool_event(
+        "circuit_opened",
+        state,
+        extra={
+            "failure_count": entry["failure_count"],
+            "cooldown_ms": POOL_CIRCUIT_COOLDOWN_MS,
+            "opened_until": until,
+        },
+    )
+
+
+def _record_circuit_failure(state: "PoolKeyState") -> None:
+    entry = _circuit_state(state)
+    if entry.get("state") == "half_open":
+        _open_circuit(state, entry)
+        return
+
+    entry["failure_count"] = int(entry.get("failure_count") or 0) + 1
+    entry["pool_key_id"] = _safe_pool_key_id(state.key)
+    if entry["failure_count"] >= POOL_CIRCUIT_FAILURE_THRESHOLD:
+        _open_circuit(state, entry)
+
+
+def _record_circuit_success(state: "PoolKeyState") -> None:
+    entry = _circuit_state(state)
+    previous_state = entry.get("state")
+    if previous_state == "closed":
+        entry["failure_count"] = 0
+        entry["opened_until"] = 0.0
+        entry["pool_key_id"] = _safe_pool_key_id(state.key)
+        return
+
+    entry["state"] = "closed"
+    entry["failure_count"] = 0
+    entry["opened_until"] = 0.0
+    entry["pool_key_id"] = _safe_pool_key_id(state.key)
+    _record_pool_event(
+        "circuit_closed",
+        state,
+        extra={"previous_state": previous_state},
+    )
+
+
+def _circuit_skip_reason(state: "PoolKeyState") -> tuple[str, int] | None:
+    entry = _circuit_state(state)
+    if entry.get("state") != "open":
+        return None
+
+    now = time.time()
+    until = float(entry.get("opened_until") or 0.0)
+    if until > now:
+        return "circuit_open", max(0, int(round((until - now) * 1000)))
+
+    entry["state"] = "half_open"
+    entry["opened_until"] = 0.0
+    entry["pool_key_id"] = _safe_pool_key_id(state.key)
+    _record_pool_event(
+        "circuit_half_open",
+        state,
+        extra={"failure_count": int(entry.get("failure_count") or 0)},
+    )
+    return None
+
+
 def _is_label_penalized(label: str) -> bool:
     until = _recent_504_penalty_until.get(label, 0.0)
     if until and time.time() >= until:
@@ -192,6 +278,18 @@ def _active_key_states(states: list[PoolKeyState]) -> list[PoolKeyState]:
                 },
             )
             continue
+        circuit_skip = _circuit_skip_reason(state)
+        if circuit_skip is not None:
+            reason, remaining_ms = circuit_skip
+            _record_pool_event(
+                "skipped",
+                state,
+                extra={
+                    "reason": reason,
+                    "remaining_ms": remaining_ms,
+                },
+            )
+            continue
         active.append(state)
     return active
 
@@ -200,14 +298,27 @@ def _annotate_pool_result(result: LlmResult, pool: PoolConfig, state: PoolKeySta
     usage = dict(result.usage or {})
     usage["model"] = f"{pool.model}@{state.label}"
     annotated = replace(result, model=pool.model, provider=pool.base_url, usage=usage)
+    base_telemetry = build_llm_telemetry(annotated)
+    key_metadata = _pool_key_metadata(state)
+    pool_summary = {
+        "pool_model": pool.model,
+        "pool_key_count": len(pool.keys),
+        "selected_pool_label": key_metadata["pool_label"],
+        "selected_pool_key_id": key_metadata["pool_key_id"],
+        "usage": base_telemetry["usage"],
+        "estimated_cost_usd": base_telemetry["estimated_cost_usd"],
+        "cost_pricing_source": base_telemetry["cost"]["pricing_source"],
+        "cost_is_estimate": base_telemetry["cost"]["is_estimate"],
+    }
     return replace(
         annotated,
         telemetry=build_llm_telemetry(
             annotated,
             extra={
-                **_pool_key_metadata(state),
+                **key_metadata,
                 "pool_model": pool.model,
                 "pool_key_count": len(pool.keys),
+                "pool_summary": pool_summary,
             },
         ),
     )
@@ -227,10 +338,12 @@ def _run_pool_attempts(
         for state in active:
             try:
                 result = runner(state)
+                _record_circuit_success(state)
                 _record_pool_event("selected", state)
                 return result
             except LlmError as error:
                 state.mark_http_failure(error)
+                _record_circuit_failure(state)
                 _record_pool_failure(state, error)
                 continue
         return None
@@ -242,10 +355,12 @@ def _run_pool_attempts(
                 state = futures[fut]
                 try:
                     result = fut.result()
+                    _record_circuit_success(state)
                     _record_pool_event("selected", state)
                     return result
                 except LlmError as error:
                     state.mark_http_failure(error)
+                    _record_circuit_failure(state)
                     _record_pool_failure(state, error)
                     continue
         finally:

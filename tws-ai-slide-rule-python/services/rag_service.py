@@ -92,3 +92,105 @@ def ask_question(question: str, top_k: int = 6) -> Dict[str, Any]:
         "sources": sources,
         "provenance": "python-rag",
     }
+
+
+KNOWLEDGE_ADMIN_CONTRACT_PROVENANCE = "python-knowledge-admin-contract"
+KNOWLEDGE_ADMIN_PERMISSION = "knowledge.admin"
+KNOWLEDGE_ADMIN_OPERATIONS = {"list", "upsert", "delete"}
+
+
+def _knowledge_admin_status_error(
+    operation: str,
+    error: str,
+    reason: str,
+    message: str,
+    status_code: int,
+    permission_failure: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "operation": operation,
+        "error": error,
+        "reason": reason,
+        "message": message,
+        "permissionFailure": permission_failure,
+        "statusCode": status_code,
+        "provenance": KNOWLEDGE_ADMIN_CONTRACT_PROVENANCE,
+    }
+
+
+def _has_knowledge_admin_permission(payload: Dict[str, Any]) -> bool:
+    actor = payload.get("actor")
+    if not isinstance(actor, dict):
+        return False
+    permissions = actor.get("permissions")
+    if not isinstance(permissions, list):
+        return False
+    return KNOWLEDGE_ADMIN_PERMISSION in permissions
+
+
+def _clean_contract_item(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    clean: Dict[str, Any] = {}
+    for key in ("id", "title", "content", "projectId", "metadata"):
+        if key in value:
+            clean[key] = value[key]
+    return clean
+
+
+def knowledge_admin_proxy_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Stable knowledge admin proxy contract.
+
+    This intentionally does not migrate the real admin backend, permission
+    engine, or graph/vector storage. It only gives Node a Python-shaped contract
+    for list/upsert/delete/error handling.
+    """
+    operation = str(payload.get("operation") or "").strip()
+    if operation not in KNOWLEDGE_ADMIN_OPERATIONS:
+        return _knowledge_admin_status_error(
+            operation,
+            "invalid_operation",
+            "unsupported_operation",
+            "operation must be list, upsert, or delete",
+            400,
+        )
+
+    if not _has_knowledge_admin_permission(payload):
+        return _knowledge_admin_status_error(
+            operation,
+            "permission_denied",
+            "missing_knowledge_admin_permission",
+            "knowledge admin permission denied",
+            403,
+            permission_failure=True,
+        )
+
+    base = {
+        "ok": True,
+        "operation": operation,
+        "projectId": str(payload.get("projectId") or ""),
+        "storage": "contract-only",
+        "migratedStorage": False,
+        "provenance": KNOWLEDGE_ADMIN_CONTRACT_PROVENANCE,
+    }
+
+    if operation == "list":
+        return {
+            **base,
+            "items": [],
+        }
+
+    if operation == "upsert":
+        item = _clean_contract_item(payload.get("item"))
+        return {
+            **base,
+            "item": item,
+            "stored": False,
+        }
+
+    return {
+        **base,
+        "deletedId": str(payload.get("itemId") or payload.get("id") or ""),
+        "deleted": False,
+    }

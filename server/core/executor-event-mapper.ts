@@ -19,9 +19,17 @@ export type EventMappingResult =
   | { action: "log_stream" }
   | { action: "screenshot" }
   | { action: "waiting" }
+  | { action: "duplicate"; reason: "duplicate" | "out_of_order" }
   | { action: "unknown" };
 
 // ─── Input ──────────────────────────────────────────────────────────────────
+
+export interface ExecutorCallbackDelivery {
+  sequence?: number;
+  attempt?: number;
+  duplicate?: boolean;
+  outOfOrder?: boolean;
+}
 
 export interface EventMappingInput {
   type: ExecutorEventType | string;
@@ -32,6 +40,85 @@ export interface EventMappingInput {
   detail?: string;
   errorCode?: string;
   log?: { level: string; message: string };
+  delivery?: ExecutorCallbackDelivery;
+  callbackSource?: "node" | "python";
+}
+
+export interface NormalizedPythonExecutorCallbackEvent extends EventMappingInput {
+  version: string;
+  eventId: string;
+  missionId: string;
+  jobId: string;
+  executor: string;
+  type: ExecutorEventType | string;
+  status: string;
+  occurredAt: string;
+  message: string;
+  progress?: number;
+}
+
+function stringField(
+  value: unknown,
+  fieldName: string,
+): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Python executor callback event must include ${fieldName}`);
+  }
+  return value.trim();
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function normalizeCallbackDelivery(value: unknown): ExecutorCallbackDelivery | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    sequence: optionalNumber(record.sequence),
+    attempt: optionalNumber(record.attempt),
+    duplicate: record.duplicate === true,
+    outOfOrder: record.outOfOrder === true,
+  };
+}
+
+export function normalizePythonExecutorCallbackEvent(
+  value: Record<string, unknown>,
+): NormalizedPythonExecutorCallbackEvent {
+  return {
+    version: stringField(value.version, "version"),
+    eventId: stringField(value.eventId, "eventId"),
+    missionId: stringField(value.missionId, "missionId"),
+    jobId: stringField(value.jobId, "jobId"),
+    executor: stringField(value.executor, "executor"),
+    type: stringField(value.type, "type"),
+    status: stringField(value.status, "status"),
+    occurredAt: stringField(value.occurredAt, "occurredAt"),
+    message: typeof value.message === "string" ? value.message : "",
+    progress: optionalNumber(value.progress),
+    summary: optionalString(value.summary),
+    detail: optionalString(value.detail),
+    errorCode: optionalString(value.errorCode),
+    log:
+      value.log && typeof value.log === "object"
+        ? {
+            level: optionalString((value.log as Record<string, unknown>).level) || "info",
+            message: optionalString((value.log as Record<string, unknown>).message) || "",
+          }
+        : undefined,
+    delivery: normalizeCallbackDelivery(value.delivery),
+    callbackSource: "python",
+  };
 }
 
 // ─── Pure Mapping Function ──────────────────────────────────────────────────
@@ -57,6 +144,13 @@ export interface EventMappingInput {
 export function mapExecutorEventToAction(
   input: EventMappingInput,
 ): EventMappingResult {
+  if (input.delivery?.duplicate === true) {
+    return { action: "duplicate", reason: "duplicate" };
+  }
+  if (input.delivery?.outOfOrder === true) {
+    return { action: "duplicate", reason: "out_of_order" };
+  }
+
   const clampedProgress =
     typeof input.progress === "number"
       ? Math.max(0, Math.min(100, input.progress))

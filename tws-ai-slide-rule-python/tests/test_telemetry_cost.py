@@ -73,7 +73,16 @@ def test_chat_call_returns_normalized_telemetry(monkeypatch):
         },
         "latency_ms": 15,
         "finish_reason": "stop",
-        "estimated_cost_usd": None,
+        "estimated_cost_usd": 0.000016,
+        "cost": {
+            "estimated_usd": 0.000016,
+            "currency": "USD",
+            "is_estimate": True,
+            "pricing_source": "fallback",
+            "pricing_model": "default",
+            "pricing_unit": "usd_per_1k_tokens",
+            "billing_source": "static_pricing_table",
+        },
     }
 
 
@@ -144,6 +153,11 @@ def test_pool_call_adds_pool_telemetry(monkeypatch):
     assert result.telemetry["pool_model"] == "pool-model"
     assert result.telemetry["pool_key_count"] == 2
     assert result.telemetry["usage"]["total_tokens"] == 7
+    assert result.telemetry["estimated_cost_usd"] == 0
+    assert result.telemetry["cost"]["pricing_source"] == "fallback"
+    assert result.telemetry["pool_summary"]["selected_pool_label"] == "alpha"
+    assert result.telemetry["pool_summary"]["selected_pool_key_id"] == result.telemetry["pool_key_id"]
+    assert result.telemetry["pool_summary"]["estimated_cost_usd"] == 0
 
 
 def test_pool_json_call_adds_pool_telemetry(monkeypatch):
@@ -177,3 +191,5 @@ def test_pool_json_call_adds_pool_telemetry(monkeypatch):
         "prompt_tokens": 3,
         "completion_tokens": 4,
     }
+    assert result.telemetry["estimated_cost_usd"] == 0.000011
+    assert result.telemetry["cost"]["pricing_source"] == "fallback"

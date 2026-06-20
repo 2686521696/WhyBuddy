@@ -23,6 +23,7 @@ from services.capability_maps import execute_mapped_capability
 from config.settings import settings
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
+from sliderule_llm.evidence import execute_evidence_runtime
 
 router = APIRouter()
 
@@ -76,6 +77,18 @@ def _degraded_plan(error_code: str, reason: str, message: str) -> Dict[str, Any]
         "message": message[:300],
         "fallbackAvailable": False,
     }
+
+def _evidence_query(payload: Dict[str, Any]) -> str:
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+    goal = state.get("goal") if isinstance(state.get("goal"), dict) else {}
+    return "\n".join(
+        part
+        for part in (
+            str(goal.get("text") or "").strip(),
+            str(payload.get("userText") or "").strip(),
+        )
+        if part
+    )
 
 async def _run_orchestrate_plan(payload: Any):
     if not isinstance(payload, dict):
@@ -140,6 +153,14 @@ async def do_execute(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     # return canned/stub output for a cap that's supposed to be really migrated.
     if is_python_native_capability(cap_id):
         try:
+            if cap_id == "evidence.search":
+                evidence_result = execute_evidence_runtime(_evidence_query(payload))
+                result = execute_capability(
+                    payload,
+                    evidence_retriever=lambda _query: evidence_result,
+                )
+                result.update(evidence_result.to_payload_fields())
+                return result
             return execute_capability(payload)
         except LlmError as e:
             raise HTTPException(502, f"python LLM failed for {cap_id}: {e}")

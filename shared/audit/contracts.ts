@@ -31,6 +31,12 @@ export enum AuditEventType {
 export type AuditSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AuditCategory = "security" | "compliance" | "operational";
 
+export const AUDIT_ACTOR_TYPES = ["user", "agent", "system"] as const;
+export const AUDIT_RESULTS = ["success", "failure", "denied", "error"] as const;
+
+export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
+export type AuditResult = (typeof AUDIT_RESULTS)[number];
+
 // ─── 1.2 AuditEventTypeDefinition & 默认事件类型注册表 ─────────────────────
 
 export interface AuditEventTypeDefinition {
@@ -177,7 +183,7 @@ export interface AuditEvent {
   eventType: AuditEventType;
   timestamp: number;
   actor: {
-    type: "user" | "agent" | "system";
+    type: AuditActorType;
     id: string;
     name?: string;
   };
@@ -187,7 +193,7 @@ export interface AuditEvent {
     id: string;
     name?: string;
   };
-  result: "success" | "failure" | "denied" | "error";
+  result: AuditResult;
   context: {
     sessionId?: string;
     requestId?: string;
@@ -197,6 +203,181 @@ export interface AuditEvent {
   };
   metadata?: Record<string, unknown>;
   lineageId?: string;
+}
+
+export type AuditEventDraft = Omit<AuditEvent, "eventId" | "timestamp" | "context"> & {
+  context?: AuditEvent["context"];
+};
+
+export interface AuditEventValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+const AUDIT_EVENT_TYPES = Object.values(AuditEventType);
+const AUDIT_CONTEXT_KEYS = [
+  "sessionId",
+  "requestId",
+  "sourceIp",
+  "userAgent",
+  "organizationId",
+] as const;
+
+const AUDIT_ACTOR_KEYS = ["type", "id", "name"] as const;
+const AUDIT_RESOURCE_KEYS = ["type", "id", "name"] as const;
+
+export function validateAuditEventDraft(input: unknown): AuditEventValidationResult {
+  const errors: string[] = [];
+  validateAuditEventCore(input, { requireEnvelope: false, errors });
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateAuditEvent(input: unknown): AuditEventValidationResult {
+  const errors: string[] = [];
+  validateAuditEventCore(input, { requireEnvelope: true, errors });
+  return { valid: errors.length === 0, errors };
+}
+
+export function assertValidAuditEventDraft(input: unknown): asserts input is AuditEventDraft {
+  const result = validateAuditEventDraft(input);
+  if (!result.valid) {
+    throw new Error(`Invalid audit event: ${result.errors.join("; ")}`);
+  }
+}
+
+function validateAuditEventCore(
+  input: unknown,
+  options: { requireEnvelope: boolean; errors: string[] },
+): void {
+  const { requireEnvelope, errors } = options;
+  if (!isPlainRecord(input)) {
+    errors.push("event must be an object");
+    return;
+  }
+
+  if (requireEnvelope) {
+    if (!isNonEmptyString(input.eventId)) {
+      errors.push("eventId must be a non-empty string");
+    }
+    if (!isNonNegativeFiniteNumber(input.timestamp)) {
+      errors.push("timestamp must be a non-negative finite number");
+    }
+  }
+
+  if (!AUDIT_EVENT_TYPES.includes(input.eventType as AuditEventType)) {
+    errors.push("eventType must be a known AuditEventType");
+  }
+
+  validateActor(input.actor, errors);
+
+  if (!isNonEmptyString(input.action)) {
+    errors.push("action must be a non-empty string");
+  }
+
+  validateResource(input.resource, errors);
+
+  if (!AUDIT_RESULTS.includes(input.result as AuditResult)) {
+    errors.push("result must be one of success, failure, denied, error");
+  }
+
+  if (input.context === undefined) {
+    if (requireEnvelope) {
+      errors.push("context must be an object");
+    }
+  } else {
+    validateContext(input.context, errors);
+  }
+
+  if (input.metadata !== undefined && !isPlainRecord(input.metadata)) {
+    errors.push("metadata must be an object when provided");
+  }
+
+  if (input.lineageId !== undefined && typeof input.lineageId !== "string") {
+    errors.push("lineageId must be a string when provided");
+  }
+}
+
+function validateActor(actor: unknown, errors: string[]): void {
+  if (!isPlainRecord(actor)) {
+    errors.push("actor must be an object");
+    return;
+  }
+
+  rejectUnknownKeys(actor, AUDIT_ACTOR_KEYS, "actor", errors);
+
+  if (!AUDIT_ACTOR_TYPES.includes(actor.type as AuditActorType)) {
+    errors.push("actor.type must be one of user, agent, system");
+  }
+
+  if (!isNonEmptyString(actor.id)) {
+    errors.push("actor.id must be a non-empty string");
+  }
+
+  if (actor.name !== undefined && typeof actor.name !== "string") {
+    errors.push("actor.name must be a string when provided");
+  }
+}
+
+function validateResource(resource: unknown, errors: string[]): void {
+  if (!isPlainRecord(resource)) {
+    errors.push("resource must be an object");
+    return;
+  }
+
+  rejectUnknownKeys(resource, AUDIT_RESOURCE_KEYS, "resource", errors);
+
+  if (!isNonEmptyString(resource.type)) {
+    errors.push("resource.type must be a non-empty string");
+  }
+
+  if (!isNonEmptyString(resource.id)) {
+    errors.push("resource.id must be a non-empty string");
+  }
+
+  if (resource.name !== undefined && typeof resource.name !== "string") {
+    errors.push("resource.name must be a string when provided");
+  }
+}
+
+function validateContext(context: unknown, errors: string[]): void {
+  if (!isPlainRecord(context)) {
+    errors.push("context must be an object");
+    return;
+  }
+
+  rejectUnknownKeys(context, AUDIT_CONTEXT_KEYS, "context", errors);
+
+  for (const key of AUDIT_CONTEXT_KEYS) {
+    if (context[key] !== undefined && typeof context[key] !== "string") {
+      errors.push(`context.${key} must be a string when provided`);
+    }
+  }
+}
+
+function rejectUnknownKeys(
+  record: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  pathName: string,
+  errors: string[],
+): void {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) {
+      errors.push(`${pathName}.${key} is not part of the audit event contract`);
+    }
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 // ─── 1.4 AuditLogEntry 接口 ────────────────────────────────────────────────
@@ -268,6 +449,23 @@ export interface AuditQueryResult {
   page: PageOptions;
   chainValid?: boolean;
 }
+
+export interface AuditQueryProxySuccess extends AuditQueryResult {
+  status: "ok";
+}
+
+export type AuditQueryProxyErrorCode = "forbidden" | "audit_query_error";
+
+export interface AuditQueryProxyFailure {
+  status: "forbidden" | "error";
+  error: {
+    code: AuditQueryProxyErrorCode;
+    message: string;
+  };
+  page: PageOptions;
+}
+
+export type AuditQueryProxyResult = AuditQueryProxySuccess | AuditQueryProxyFailure;
 
 // ─── 1.7 RetentionPolicy & 默认保留策略 ────────────────────────────────────
 

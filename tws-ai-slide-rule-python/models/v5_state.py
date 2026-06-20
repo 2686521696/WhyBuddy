@@ -71,9 +71,55 @@ class ExecuteCapabilityResult(BaseModel):
     toolName: Optional[str] = None
     skillName: Optional[str] = None
 
+class PlanProjectionPhase(BaseModel):
+    id: str
+    label: str
+    status: Literal["pending", "active", "complete", "blocked"]
+    stepIds: List[str] = []
+
+class PlanProjectionStep(BaseModel):
+    id: str
+    capabilityId: str
+    roleId: str
+    status: Literal["pending", "running", "complete", "blocked"] = "pending"
+    phaseId: str
+    why: Optional[str] = None
+
+class PlanProjectionRisk(BaseModel):
+    id: str
+    severity: Literal["low", "medium", "high"]
+    summary: str
+    mitigation: str
+
+class PlanProjectionRecoveryPoint(BaseModel):
+    id: str
+    label: str
+    action: str
+    retryable: bool = True
+
+class PlanProjectionError(BaseModel):
+    code: str
+    reason: str
+    message: str
+
+class PlanStateProjection(BaseModel):
+    kind: Literal["orchestrate.plan.state_projection"] = "orchestrate.plan.state_projection"
+    schemaVersion: int = 1
+    stateAuthority: Literal["node"] = "node"
+    stateMutation: Literal["none"] = "none"
+    status: Literal["partial", "complete", "error"]
+    phase: str
+    partial: bool
+    phases: List[PlanProjectionPhase]
+    steps: List[PlanProjectionStep]
+    risks: List[PlanProjectionRisk]
+    recoveryPoints: List[PlanProjectionRecoveryPoint]
+    error: Optional[PlanProjectionError] = None
+
 class OrchestratePlanResult(BaseModel):
     selected: List[Dict[str, Any]]
     rationale: str
     source: str = "python-rag"
     converged: Optional[bool] = None
     usage: Optional[Dict[str, Any]] = None
+    planStateProjection: Optional[PlanStateProjection] = None

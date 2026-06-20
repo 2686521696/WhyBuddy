@@ -72,6 +72,47 @@ describe("SlideRule session store HTTP API", () => {
 
     const missing = await fetch(`${base}/sessions/${sid}`);
     expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found", sessionId: sid });
+  });
+
+  it("persists Node/Python compatible array entries", async () => {
+    const sid = `vitest-python-contract-${Date.now()}`;
+    const minimal = {
+      sessionId: sid,
+      goal: { text: "python contract", status: "needs_refinement" },
+      artifacts: [],
+      staleArtifactIds: [],
+      decisionLedger: [],
+      capabilityRuns: [],
+    };
+
+    const put = await fetch(`${base}/sessions/${sid}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(minimal),
+    });
+    expect(put.status).toBe(200);
+
+    const raw = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+    expect(Array.isArray(raw)).toBe(true);
+    expect(raw.some(([key, value]: [string, { sessionId?: string }]) => key === sid && value.sessionId === sid)).toBe(
+      true
+    );
+  });
+
+  it("treats corrupt durable store as empty and keeps missing shape stable", async () => {
+    fs.writeFileSync(dataFile, "{not-json", "utf8");
+    const reload = await fetch(`${base}/sessions/__reload`, { method: "POST" });
+    expect(reload.status).toBe(204);
+
+    const list = await fetch(`${base}/sessions`);
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual({ sessions: [] });
+
+    const sid = `vitest-corrupt-missing-${Date.now()}`;
+    const missing = await fetch(`${base}/sessions/${sid}`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found", sessionId: sid });
   });
 
   it("strips graph.nodes[].status on PUT (projection not durable)", async () => {

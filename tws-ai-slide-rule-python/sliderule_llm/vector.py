@@ -13,6 +13,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from .config import VectorStoreConfig, get_vector_store_config
+
 
 JsonDict = dict[str, Any]
 Transport = Callable[[str, str, JsonDict | None, Mapping[str, str], int], JsonDict]
@@ -92,6 +94,44 @@ def create_vector_runtime(
     )
 
 
+def create_vector_runtime_from_config(
+    config: VectorStoreConfig | None = None,
+    *,
+    embedding_provider: Any | None = None,
+    transport: Transport | None = None,
+) -> VectorRuntime | None:
+    """Build the configured vector runtime without inventing real credentials.
+
+    Disabled config returns None so callers can choose an explicit fallback.
+    Enabled Qdrant config still requires an injected embedding provider; tests may
+    inject a fake transport while production callers can rely on the default HTTP
+    transport.
+    """
+    resolved_config = config or get_vector_store_config()
+    if not resolved_config.enabled or resolved_config.runtime == "disabled":
+        return None
+    if resolved_config.runtime != "qdrant":
+        raise VectorRuntimeError(f"unsupported vector runtime: {resolved_config.runtime}")
+    if embedding_provider is None:
+        raise VectorRuntimeError(
+            "vector runtime requires explicit embedding_provider"
+        )
+    vector_client = QdrantVectorClient(
+        VectorConfig(
+            base_url=resolved_config.base_url,
+            collection=resolved_config.collection,
+            api_key=resolved_config.api_key,
+            timeout_ms=resolved_config.timeout_ms,
+            dimension=resolved_config.dimension,
+        ),
+        transport=transport,
+    )
+    return create_vector_runtime(
+        vector_client=vector_client,
+        embedding_provider=embedding_provider,
+    )
+
+
 def _pick(*names: str) -> str | None:
     for name in names:
         value = os.environ.get(name)
@@ -109,12 +149,13 @@ def _positive_int(value: str | None, default: int) -> int:
 
 
 def get_vector_config() -> VectorConfig:
+    store_config = get_vector_store_config()
     return VectorConfig(
-        base_url=(_pick("QDRANT_URL", "RAG_VECTOR_STORE_URL") or "http://localhost:6333").rstrip("/"),
-        collection=_pick("QDRANT_COLLECTION", "RAG_VECTOR_COLLECTION") or "knowledge_base",
-        api_key=_pick("QDRANT_API_KEY", "RAG_VECTOR_STORE_API_KEY") or "",
-        timeout_ms=_positive_int(_pick("QDRANT_TIMEOUT_MS", "RAG_VECTOR_TIMEOUT_MS"), 10_000),
-        dimension=_positive_int(_pick("QDRANT_DIMENSION", "RAG_EMBEDDING_DIMENSION"), 1536),
+        base_url=store_config.base_url,
+        collection=store_config.collection,
+        api_key=store_config.api_key,
+        timeout_ms=store_config.timeout_ms,
+        dimension=store_config.dimension,
     )
 
 

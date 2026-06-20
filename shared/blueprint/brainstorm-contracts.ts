@@ -1,3 +1,11 @@
+import type {
+  BrainstormReasoningEdgeType,
+  BrainstormReasoningGraph,
+  BrainstormReasoningGraphSource,
+  BrainstormReasoningNodeStatus,
+  BrainstormReasoningNodeType,
+} from "./brainstorm-reasoning-graph.js";
+
 /**
  * @description Shared type contracts for the Autopilot Multi-Agent Brainstorm system.
  * Defines all interfaces and type unions used across server, client, and shared layers
@@ -424,4 +432,227 @@ export interface BrainstormTopology {
   synthesizerRoleId: BrainstormRoleId;
   minRounds: number;
   maxRounds: number;
+}
+
+// ---------------------------------------------------------------------------
+// Python Contract Slice: Blueprint Brainstorm Reasoning Graph
+// ---------------------------------------------------------------------------
+
+export const BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION =
+  "blueprint.brainstorm.reasoning-graph.v1" as const;
+
+export interface BlueprintBrainstormPythonContractInput {
+  contractVersion: typeof BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION;
+  jobId: string;
+  stageId: string;
+  stageContext: string;
+  request?: Record<string, unknown>;
+  graph: BrainstormReasoningGraph;
+}
+
+export interface BlueprintBrainstormPythonContractMetadata {
+  source?: string;
+  promptId?: string;
+  promptFingerprint?: string;
+  responseDigest?: string;
+}
+
+export interface BlueprintBrainstormPythonCompletedOutput {
+  contractVersion: typeof BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION;
+  ok: true;
+  status: "completed";
+  graph: BrainstormReasoningGraph;
+  decision: string;
+  reasoning: string;
+  metadata?: BlueprintBrainstormPythonContractMetadata;
+}
+
+export interface BlueprintBrainstormPythonPartialOutput {
+  contractVersion: typeof BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION;
+  ok: false;
+  status: "partial";
+  graph: BrainstormReasoningGraph;
+  partialReason: string;
+  metadata?: BlueprintBrainstormPythonContractMetadata;
+}
+
+export interface BlueprintBrainstormPythonErrorOutput {
+  contractVersion: typeof BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION;
+  ok: false;
+  status: "error";
+  error: {
+    code: string;
+    message: string;
+    retryable: boolean;
+  };
+  metadata?: BlueprintBrainstormPythonContractMetadata;
+}
+
+export type BlueprintBrainstormPythonContractOutput =
+  | BlueprintBrainstormPythonCompletedOutput
+  | BlueprintBrainstormPythonPartialOutput
+  | BlueprintBrainstormPythonErrorOutput;
+
+const VALID_REASONING_GRAPH_SOURCES: readonly BrainstormReasoningGraphSource[] = [
+  "llm",
+  "runtime",
+  "fallback",
+];
+
+const VALID_REASONING_NODE_TYPES: readonly BrainstormReasoningNodeType[] = [
+  "question",
+  "clarification",
+  "hypothesis",
+  "evidence",
+  "constraint",
+  "risk",
+  "gap",
+  "decision",
+  "synthesis",
+  "critique",
+  "rebuttal",
+];
+
+const VALID_REASONING_NODE_STATUSES: readonly BrainstormReasoningNodeStatus[] = [
+  "open",
+  "active",
+  "supported",
+  "challenged",
+  "resolved",
+  "failed",
+];
+
+const VALID_REASONING_EDGE_TYPES: readonly BrainstormReasoningEdgeType[] = [
+  "supports",
+  "refines",
+  "conflicts",
+  "cites",
+  "questions",
+  "depends_on",
+  "synthesizes",
+];
+
+export function isBlueprintBrainstormPythonContractInput(
+  value: unknown,
+): value is BlueprintBrainstormPythonContractInput {
+  const record = asRecord(value);
+  if (!record) return false;
+  if (record.contractVersion !== BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION) {
+    return false;
+  }
+  if (!isNonEmptyString(record.jobId)) return false;
+  if (!isNonEmptyString(record.stageId)) return false;
+  if (!isNonEmptyString(record.stageContext)) return false;
+  if (record.request !== undefined && !asRecord(record.request)) return false;
+  if (!isBrainstormReasoningGraphContract(record.graph)) return false;
+
+  const graph = record.graph as BrainstormReasoningGraph;
+  return graph.jobId === record.jobId && graph.stage === record.stageId;
+}
+
+export function isBlueprintBrainstormPythonContractOutput(
+  value: unknown,
+): value is BlueprintBrainstormPythonContractOutput {
+  const record = asRecord(value);
+  if (!record) return false;
+  if (record.contractVersion !== BLUEPRINT_BRAINSTORM_PYTHON_CONTRACT_VERSION) {
+    return false;
+  }
+
+  if (record.status === "completed") {
+    return (
+      record.ok === true &&
+      isBrainstormReasoningGraphContract(record.graph) &&
+      isNonEmptyString(record.decision) &&
+      isNonEmptyString(record.reasoning) &&
+      record.error === undefined &&
+      record.partialReason === undefined
+    );
+  }
+
+  if (record.status === "partial") {
+    return (
+      record.ok === false &&
+      isBrainstormReasoningGraphContract(record.graph) &&
+      isNonEmptyString(record.partialReason) &&
+      record.decision === undefined &&
+      record.error === undefined
+    );
+  }
+
+  if (record.status === "error") {
+    const error = asRecord(record.error);
+    return (
+      record.ok === false &&
+      error !== null &&
+      isNonEmptyString(error.code) &&
+      isNonEmptyString(error.message) &&
+      typeof error.retryable === "boolean" &&
+      record.graph === undefined &&
+      record.decision === undefined &&
+      record.reasoning === undefined
+    );
+  }
+
+  return false;
+}
+
+export function isBrainstormReasoningGraphContract(
+  value: unknown,
+): value is BrainstormReasoningGraph {
+  const graph = asRecord(value);
+  if (!graph) return false;
+  if (!isNonEmptyString(graph.id)) return false;
+  if (!isNonEmptyString(graph.jobId)) return false;
+  if (!isNonEmptyString(graph.stage)) return false;
+  if (!oneOf(graph.source, VALID_REASONING_GRAPH_SOURCES)) return false;
+  if (!Array.isArray(graph.nodes) || graph.nodes.length === 0) return false;
+  if (!Array.isArray(graph.edges)) return false;
+
+  const nodeIds = new Set<string>();
+  for (const nodeValue of graph.nodes) {
+    const node = asRecord(nodeValue);
+    if (!node) return false;
+    if (!isNonEmptyString(node.id)) return false;
+    if (!oneOf(node.type, VALID_REASONING_NODE_TYPES)) return false;
+    if (!isNonEmptyString(node.title)) return false;
+    if (!oneOf(node.status, VALID_REASONING_NODE_STATUSES)) return false;
+    if (node.confidence !== undefined && !isUnitNumber(node.confidence)) return false;
+    if (node.sourceRefs !== undefined && !Array.isArray(node.sourceRefs)) return false;
+    if (node.derivedFrom !== undefined && !Array.isArray(node.derivedFrom)) return false;
+    nodeIds.add(node.id);
+  }
+
+  for (const edgeValue of graph.edges) {
+    const edge = asRecord(edgeValue);
+    if (!edge) return false;
+    if (!isNonEmptyString(edge.id)) return false;
+    if (!isNonEmptyString(edge.source) || !nodeIds.has(edge.source)) return false;
+    if (!isNonEmptyString(edge.target) || !nodeIds.has(edge.target)) return false;
+    if (!oneOf(edge.type, VALID_REASONING_EDGE_TYPES)) return false;
+    if (edge.sourceKind !== undefined && !oneOf(edge.sourceKind, VALID_REASONING_GRAPH_SOURCES)) {
+      return false;
+    }
+    if (edge.confidence !== undefined && !isUnitNumber(edge.confidence)) return false;
+  }
+
+  return true;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isUnitNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function oneOf<T extends string>(value: unknown, options: readonly T[]): value is T {
+  return typeof value === "string" && options.includes(value as T);
 }

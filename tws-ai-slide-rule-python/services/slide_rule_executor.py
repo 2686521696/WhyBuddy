@@ -8,183 +8,54 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
+from .mcp_runtime import (
+    FAKE_MCP_RUNTIME_PROVENANCE,
+    MCP_RUNTIME_NAME,
+    MCP_RUNTIME_PROVENANCE,
+    PERMISSION_PROVENANCE,
+    McpAdapterError,
+    McpAdapterUnavailable,
+    McpPermissionCheckError,
+    McpPermissionChecker,
+    McpPermissionDecision,
+    McpPermissionRequest,
+    McpRuntime,
+    McpToolAdapter,
+    McpToolInvokeRequest,
+    McpToolInvokeResult,
+    McpToolNotFoundError,
+    create_mcp_runtime,
+    execute_mcp_call_with_runtime,
+    get_mcp_runtime,
+    set_mcp_runtime,
+)
+from .skill_runtime import (
+    DEFAULT_FAKE_SKILL_RUNTIME_PROVENANCE,
+    DEFAULT_SKILL_RUNTIME,
+    SkillInvokeDeniedError,
+    SkillInvokeRequest,
+    SkillInvokeResult,
+    SkillInvalidArgumentsError,
+    SkillNotFoundError,
+    SkillRegistry,
+    SkillRuntime,
+    SkillRuntimeAdapter,
+    SkillRuntimeError,
+    SkillRuntimeUnavailable,
+    create_skill_runtime,
+    get_skill_runtime,
+    set_skill_runtime,
+)
 
-FAKE_MCP_RUNTIME_PROVENANCE = "python-fake-mcp"
-FAKE_SKILL_RUNTIME_PROVENANCE = "python-fake-skill"
-
-
-class McpAdapterUnavailable(Exception):
-    """Raised when the injectable MCP adapter is missing or down."""
-
-
-class McpToolNotFoundError(Exception):
-    """Raised when the adapter does not expose the requested tool."""
-
-
-class SkillRuntimeUnavailable(Exception):
-    """Raised when the injectable fake skill registry is missing or down."""
-
-
-class SkillNotFoundError(Exception):
-    """Raised when the fake registry does not expose the requested skill."""
-
-
-class SkillInvalidArgumentsError(Exception):
-    """Raised when the requested fake skill rejects the supplied arguments."""
-
-
-@dataclass(frozen=True)
-class McpToolInvokeRequest:
-    server_id: str
-    tool_name: str
-    arguments: Dict[str, Any]
-    input: str
-
-
-@dataclass(frozen=True)
-class McpToolInvokeResult:
-    output: str
-    response: Any = None
-
-
-@dataclass(frozen=True)
-class SkillInvokeRequest:
-    skill_id: str
-    arguments: Dict[str, Any]
-    input: str
+FAKE_SKILL_RUNTIME_PROVENANCE = DEFAULT_FAKE_SKILL_RUNTIME_PROVENANCE
 
 
-@dataclass(frozen=True)
-class SkillInvokeResult:
-    output: str
-    response: Any = None
-
-
-class McpToolAdapter(Protocol):
-    def invoke(self, request: McpToolInvokeRequest) -> McpToolInvokeResult:
-        ...
-
-
-class SkillRegistry(Protocol):
-    def invoke(self, request: SkillInvokeRequest) -> SkillInvokeResult:
-        ...
-
-
-@dataclass(frozen=True)
-class McpRuntime:
-    adapter: McpToolAdapter
-
-
-@dataclass(frozen=True)
-class SkillRuntime:
-    registry: SkillRegistry
-
-
-_mcp_runtime: Optional[McpRuntime] = None
-_skill_runtime: Optional[SkillRuntime] = None
-
-
-def set_mcp_runtime(runtime: Optional[McpRuntime]) -> None:
-    global _mcp_runtime
-    _mcp_runtime = runtime
-
-
-def get_mcp_runtime() -> Optional[McpRuntime]:
-    return _mcp_runtime
-
-
-def create_mcp_runtime(*, adapter: McpToolAdapter) -> McpRuntime:
-    return McpRuntime(adapter=adapter)
-
-
-def set_skill_runtime(runtime: Optional[SkillRuntime]) -> None:
-    global _skill_runtime
-    _skill_runtime = runtime
-
-
-def get_skill_runtime() -> Optional[SkillRuntime]:
-    return _skill_runtime
-
-
-def create_skill_runtime(*, registry: SkillRegistry) -> SkillRuntime:
-    return SkillRuntime(registry=registry)
-
-
-def _mcp_params_from_state(state: V5SessionState) -> tuple[str, str, Dict[str, Any]]:
-    goal = state.goal if isinstance(state.goal, dict) else {}
-    server_id = str(goal.get("mcpServerId") or goal.get("serverId") or "fake-server")
-    tool_name = str(goal.get("mcpToolName") or goal.get("toolName") or "mcp.call")
-    arguments = dict(goal.get("mcpArguments") or goal.get("arguments") or {})
-    return server_id, tool_name, arguments
-
-
-def _skill_params_from_state(state: V5SessionState) -> tuple[str, Dict[str, Any]]:
+def _skill_params_from_state(state: V5SessionState) -> tuple[str, str, Dict[str, Any]]:
     goal = state.goal if isinstance(state.goal, dict) else {}
     skill_id = str(goal.get("skillId") or goal.get("skillName") or "skill.invoke")
+    runtime = str(goal.get("skillRuntime") or goal.get("runtime") or DEFAULT_SKILL_RUNTIME)
     arguments = dict(goal.get("skillArguments") or goal.get("arguments") or {})
-    return skill_id, arguments
-
-
-def execute_mcp_call_with_runtime(
-    state: V5SessionState,
-    role_id: str,
-    turn_id: str,
-    input_artifact_ids: List[str],
-    *,
-    runtime: Optional[McpRuntime] = None,
-) -> Dict[str, Any]:
-    active = runtime or _mcp_runtime
-    if active is None:
-        raise RuntimeError("mcp runtime is not configured")
-
-    goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
-    server_id, tool_name, arguments = _mcp_params_from_state(state)
-
-    try:
-        result = active.adapter.invoke(
-            McpToolInvokeRequest(
-                server_id=server_id,
-                tool_name=tool_name,
-                arguments=arguments,
-                input=goal_text,
-            )
-        )
-    except McpAdapterUnavailable as exc:
-        return {
-            "title": "mcp.call unavailable",
-            "summary": "Fake MCP adapter is not available",
-            "content": str(exc),
-            "provenance": FAKE_MCP_RUNTIME_PROVENANCE,
-            "degraded": True,
-            "error": "mcp_adapter_unavailable",
-            "toolName": tool_name,
-            "serverId": server_id,
-        }
-    except McpToolNotFoundError as exc:
-        return {
-            "title": "mcp.call tool not found",
-            "summary": "Requested MCP tool is not registered on the fake adapter",
-            "content": str(exc),
-            "provenance": FAKE_MCP_RUNTIME_PROVENANCE,
-            "degraded": True,
-            "error": "mcp_tool_not_found",
-            "toolName": tool_name,
-            "serverId": server_id,
-            "arguments": arguments,
-        }
-
-    return {
-        "title": f"mcp.call {tool_name}",
-        "summary": "Fake MCP adapter returned a deterministic tool result",
-        "content": result.output,
-        "provenance": FAKE_MCP_RUNTIME_PROVENANCE,
-        "degraded": False,
-        "toolName": tool_name,
-        "serverId": server_id,
-        "arguments": arguments,
-        "toolResult": result.response if result.response is not None else {"output": result.output},
-        "sources": [],
-    }
+    return skill_id, runtime, arguments
 
 
 def execute_skill_invoke_with_runtime(
@@ -195,61 +66,81 @@ def execute_skill_invoke_with_runtime(
     *,
     runtime: Optional[SkillRuntime] = None,
 ) -> Dict[str, Any]:
-    active = runtime or _skill_runtime
+    active = runtime or get_skill_runtime()
     if active is None:
         raise RuntimeError("skill runtime is not configured")
 
     goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
-    skill_id, arguments = _skill_params_from_state(state)
+    skill_id, requested_runtime, arguments = _skill_params_from_state(state)
+    runtime_name = active.runtime or requested_runtime
+    provenance = active.provenance_for(runtime_name)
+
+    def error_payload(title: str, summary: str, error: str, exc: Exception) -> Dict[str, Any]:
+        return {
+            "title": title,
+            "summary": summary,
+            "content": str(exc),
+            "provenance": provenance,
+            "degraded": True,
+            "error": error,
+            "skillId": skill_id,
+            "runtime": runtime_name,
+            "arguments": arguments,
+        }
 
     try:
-        result = active.registry.invoke(
+        result = active.adapter.invoke(
             SkillInvokeRequest(
                 skill_id=skill_id,
+                runtime=runtime_name,
                 arguments=arguments,
                 input=goal_text,
             )
         )
     except SkillRuntimeUnavailable as exc:
-        return {
-            "title": "skill.invoke unavailable",
-            "summary": "Fake skill registry is not available",
-            "content": str(exc),
-            "provenance": FAKE_SKILL_RUNTIME_PROVENANCE,
-            "degraded": True,
-            "error": "skill_runtime_unavailable",
-            "skillId": skill_id,
-        }
+        return error_payload(
+            "skill.invoke unavailable",
+            "Skill runtime is not available",
+            "skill_runtime_unavailable",
+            exc,
+        )
     except SkillNotFoundError as exc:
-        return {
-            "title": "skill.invoke skill not found",
-            "summary": "Requested skill is not registered on the fake registry",
-            "content": str(exc),
-            "provenance": FAKE_SKILL_RUNTIME_PROVENANCE,
-            "degraded": True,
-            "error": "skill_not_found",
-            "skillId": skill_id,
-            "arguments": arguments,
-        }
+        return error_payload(
+            "skill.invoke skill not found",
+            "Requested skill is not registered on the runtime",
+            "skill_not_found",
+            exc,
+        )
+    except SkillInvokeDeniedError as exc:
+        return error_payload(
+            "skill.invoke denied",
+            "Requested skill invocation was denied by runtime policy",
+            "skill_invoke_denied",
+            exc,
+        )
     except SkillInvalidArgumentsError as exc:
-        return {
-            "title": "skill.invoke invalid arguments",
-            "summary": "Fake skill rejected the supplied arguments",
-            "content": str(exc),
-            "provenance": FAKE_SKILL_RUNTIME_PROVENANCE,
-            "degraded": True,
-            "error": "skill_invalid_arguments",
-            "skillId": skill_id,
-            "arguments": arguments,
-        }
+        return error_payload(
+            "skill.invoke invalid arguments",
+            "Skill runtime rejected the supplied arguments",
+            "skill_invalid_arguments",
+            exc,
+        )
+    except SkillRuntimeError as exc:
+        return error_payload(
+            "skill.invoke runtime error",
+            "Skill runtime failed while invoking the requested skill",
+            "skill_runtime_error",
+            exc,
+        )
 
     return {
         "title": f"skill.invoke {skill_id}",
-        "summary": "Fake skill registry returned a deterministic skill result",
+        "summary": "Skill runtime returned a deterministic skill result",
         "content": result.output,
-        "provenance": FAKE_SKILL_RUNTIME_PROVENANCE,
+        "provenance": result.provenance or provenance,
         "degraded": False,
         "skillId": skill_id,
+        "runtime": result.runtime or runtime_name,
         "arguments": arguments,
         "skillResult": result.response if result.response is not None else {"output": result.output},
         "sources": [],

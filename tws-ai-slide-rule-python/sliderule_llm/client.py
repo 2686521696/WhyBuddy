@@ -18,7 +18,18 @@ import httpx
 
 from .config import FallbackLlmConfig, LlmConfig, get_fallback_llm_config, get_llm_config
 
-Message = dict[str, str]
+ContentPart = dict[str, Any]
+MessageContent = str | list[ContentPart]
+Message = dict[str, Any]
+
+
+_MODEL_PRICING_USD_PER_1K_TOKENS: dict[str, dict[str, float]] = {
+    "glm-5-turbo": {"input": 0.001, "output": 0.002},
+    "glm-4.6": {"input": 0.002, "output": 0.004},
+    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-4o": {"input": 0.005, "output": 0.015},
+}
+_DEFAULT_PRICING_USD_PER_1K_TOKENS = {"input": 0.001, "output": 0.002}
 
 
 class LlmError(Exception):
@@ -79,6 +90,7 @@ def _fallback_to_llm_config(fallback: FallbackLlmConfig) -> LlmConfig:
         max_concurrent=9999,
         provider_name=_provider_name(fallback.base_url),
         chat_thinking_type=fallback.chat_thinking_type,
+        supports_image_content_parts=False,
     )
 
 
@@ -103,6 +115,8 @@ def build_provider_configs(explicit: LlmConfig | None = None) -> list[tuple[str,
 def should_try_next_provider(error: LlmError) -> bool:
     """Mirror Node shouldTryNextProvider for provider-chain failover."""
     message = str(error).lower()
+    if "does not support image content parts" in message:
+        return True
     if error.status == 404:
         return True
     patterns = (
@@ -141,6 +155,88 @@ def _normalize_error(status: int, body: str) -> LlmError:
 
 # ── payload builders ──────────────────────────────────────────────────────────
 
+def _is_content_part(value: Any) -> bool:
+    return isinstance(value, dict) and isinstance(value.get("type"), str)
+
+
+def _has_image_content_parts(messages: list[Message]) -> bool:
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+    return False
+
+
+def _validate_text_part(part: ContentPart) -> dict[str, str]:
+    text = part.get("text")
+    if not isinstance(text, str):
+        raise LlmError("invalid text content part: text must be a string", transient=False)
+    return {"type": "text", "text": text}
+
+
+def _validate_image_part(part: ContentPart) -> dict[str, Any]:
+    image_url = part.get("image_url")
+    if not isinstance(image_url, dict) or not isinstance(image_url.get("url"), str) or not image_url["url"]:
+        raise LlmError("invalid image content part: image_url.url must be a non-empty string", transient=False)
+    normalized = {"url": image_url["url"]}
+    detail = image_url.get("detail")
+    if detail is not None:
+        if detail not in ("auto", "low", "high"):
+            raise LlmError("invalid image content part: detail must be auto, low, or high", transient=False)
+        normalized["detail"] = detail
+    return {"type": "image_url", "image_url": normalized}
+
+
+def _normalize_content_parts(content: list[Any]) -> list[ContentPart]:
+    normalized: list[ContentPart] = []
+    for part in content:
+        if not _is_content_part(part):
+            raise LlmError("invalid multimodal content part", transient=False)
+        if part["type"] == "text":
+            normalized.append(_validate_text_part(part))
+        elif part["type"] == "image_url":
+            normalized.append(_validate_image_part(part))
+        else:
+            raise LlmError(f"unsupported content part type: {part['type']}", transient=False)
+    return normalized
+
+
+def _normalize_message(message: Message) -> Message:
+    role = message.get("role")
+    content = message.get("content")
+    if not isinstance(role, str):
+        raise LlmError("invalid LLM message: role must be a string", transient=False)
+    if isinstance(content, str):
+        return {"role": role, "content": content}
+    if isinstance(content, list):
+        return {"role": role, "content": _normalize_content_parts(content)}
+    raise LlmError("invalid LLM message: content must be a string or content part list", transient=False)
+
+
+def _normalize_messages(messages: list[Message]) -> list[Message]:
+    return [_normalize_message(message) for message in messages]
+
+
+def _content_to_text(content: MessageContent) -> str:
+    if isinstance(content, str):
+        return content
+    return "\n".join(part["text"] for part in content if part.get("type") == "text")
+
+
+def _responses_content_parts(content: MessageContent) -> list[dict[str, Any]]:
+    if isinstance(content, str):
+        return [{"type": "input_text", "text": content}]
+    parts: list[dict[str, Any]] = []
+    for part in content:
+        if part["type"] == "image_url":
+            parts.append({"type": "input_image", "image_url": part["image_url"]["url"]})
+        else:
+            parts.append({"type": "input_text", "text": part["text"]})
+    return parts
+
+
 def _chat_payload(messages, model, temperature, max_tokens, reasoning, stream) -> dict[str, Any]:
     p: dict[str, Any] = {
         "model": model,
@@ -155,9 +251,9 @@ def _chat_payload(messages, model, temperature, max_tokens, reasoning, stream) -
 
 
 def _responses_payload(messages, model, temperature, max_tokens, reasoning, stream) -> dict[str, Any]:
-    instructions = "\n".join(m["content"] for m in messages if m.get("role") == "system")
+    instructions = "\n\n".join(_content_to_text(m["content"]) for m in messages if m.get("role") == "system")
     input_items = [
-        {"role": m["role"], "content": [{"type": "input_text", "text": m["content"]}]}
+        {"role": m["role"], "content": _responses_content_parts(m["content"])}
         for m in messages
         if m.get("role") != "system"
     ]
@@ -212,14 +308,38 @@ def normalize_usage(usage: dict[str, Any] | None) -> dict[str, int]:
     }
 
 
+def build_cost_metadata(model: str, usage: dict[str, Any] | None) -> dict[str, Any]:
+    normalized_usage = normalize_usage(usage)
+    pricing = _MODEL_PRICING_USD_PER_1K_TOKENS.get(model)
+    pricing_source = "known" if pricing is not None else "fallback"
+    pricing_model = model if pricing is not None else "default"
+    effective_pricing = pricing or _DEFAULT_PRICING_USD_PER_1K_TOKENS
+    estimated = (
+        (normalized_usage["prompt_tokens"] / 1000) * effective_pricing["input"]
+        + (normalized_usage["completion_tokens"] / 1000) * effective_pricing["output"]
+    )
+    return {
+        "estimated_usd": round(estimated, 12),
+        "currency": "USD",
+        "is_estimate": True,
+        "pricing_source": pricing_source,
+        "pricing_model": pricing_model,
+        "pricing_unit": "usd_per_1k_tokens",
+        "billing_source": "static_pricing_table",
+    }
+
+
 def build_llm_telemetry(result: LlmResult, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    usage = normalize_usage(result.usage)
+    cost = build_cost_metadata(result.model, usage)
     telemetry: dict[str, Any] = {
         "model": result.model,
         "provider": result.provider,
-        "usage": normalize_usage(result.usage),
+        "usage": usage,
         "latency_ms": result.latency_ms,
         "finish_reason": normalize_finish_reason(result.finish_reason),
-        "estimated_cost_usd": None,
+        "estimated_cost_usd": cost["estimated_usd"],
+        "cost": cost,
     }
     if extra:
         telemetry.update(extra)
@@ -447,6 +567,12 @@ def _call_llm_once(
 ) -> LlmResult:
     if not cfg.api_key:
         raise LlmError("LLM not configured (no api_key)", transient=False)
+    messages = _normalize_messages(messages)
+    if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
+        raise LlmError(
+            f"provider {cfg.provider_name or cfg.base_url} does not support image content parts",
+            transient=False,
+        )
     model = model or cfg.model
     reasoning = reasoning_effort if reasoning_effort is not None else cfg.reasoning_effort
     timeout_s = (timeout_ms or cfg.timeout_ms) / 1000.0

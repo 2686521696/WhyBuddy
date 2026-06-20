@@ -1,15 +1,13 @@
 /**
- * 子域 3：Job Lifecycle & Events 的类型出口。
+ * Subdomain 3: Job Lifecycle & Events type exports.
  *
- * 当前采用 re-export 视图（方案 B）。
- *
- * 对应 `.kiro/specs/autopilot-blueprint-refactor-split`：
- * - 需求 2.1（子域 3 路由：`/jobs`、`/generations`、`/jobs/:id`、`/jobs/:id/events`、`/jobs/:id/events/stream`）
- * - 需求 2.4、5.1、6.3
+ * This file intentionally stays as a re-export view for Blueprint job route
+ * consumers. It also gives the task-executor proxy gate a clean shared type
+ * surface to scan without changing job runtime behavior.
  */
 
 export type {
-  // 作业生命周期主对象
+  // Job lifecycle objects
   BlueprintGenerationJob,
   BlueprintGenerationMode,
   BlueprintGenerationRequest,
@@ -17,7 +15,7 @@ export type {
   BlueprintGenerationStagePayloadKind,
   BlueprintGenerationStageState,
   BlueprintGenerationStatus,
-  // 作业 artifact 与下一步动作
+  // Job artifacts and next actions
   BlueprintGenerationArtifact,
   BlueprintGenerationArtifactLink,
   BlueprintGenerationArtifactType,
@@ -28,7 +26,7 @@ export type {
   BlueprintHandoffState,
   BlueprintReviewHandoffState,
   BlueprintReviewingHandoff,
-  // 事件
+  // Events
   BlueprintGenerationEvent,
   BlueprintGenerationEventFamily,
   BlueprintGenerationEventFilters,
@@ -36,7 +34,7 @@ export type {
   BlueprintStaleReason,
   BlueprintStaleSource,
   BlueprintStaleEditResultSummary,
-  // 响应
+  // Responses
   BlueprintCreateGenerationJobResponse,
   BlueprintFamilyResponse,
   BlueprintGenerationEventsResponse,

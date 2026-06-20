@@ -13,8 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.v5_state import V5SessionState  # noqa: E402
 from services.capability_maps import execute_mapped_capability  # noqa: E402
 from services.slide_rule_executor import (  # noqa: E402
-    FAKE_MCP_RUNTIME_PROVENANCE,
+    MCP_RUNTIME_NAME,
+    MCP_RUNTIME_PROVENANCE,
     McpAdapterUnavailable,
+    McpPermissionDecision,
     McpToolInvokeRequest,
     McpToolInvokeResult,
     McpToolNotFoundError,
@@ -47,6 +49,15 @@ class FakeMcpAdapter:
         return handler(request)
 
 
+class AllowMcpPermissionChecker:
+    def __init__(self):
+        self.calls = []
+
+    def check(self, request):
+        self.calls.append(request)
+        return McpPermissionDecision(allowed=True, reason="test fixture allow")
+
+
 @pytest.fixture(autouse=True)
 def _reset_mcp_runtime():
     set_mcp_runtime(None)
@@ -71,7 +82,13 @@ def _state(**goal_overrides) -> V5SessionState:
 
 def test_runtime_smoke_fake_adapter_returns_explicit_tool_result():
     adapter = FakeMcpAdapter()
-    set_mcp_runtime(create_mcp_runtime(adapter=adapter))
+    permission_checker = AllowMcpPermissionChecker()
+    set_mcp_runtime(
+        create_mcp_runtime(
+            adapter=adapter,
+            permission_checker=permission_checker,
+        )
+    )
 
     result = execute_mapped_capability(
         "mcp.call",
@@ -81,7 +98,9 @@ def test_runtime_smoke_fake_adapter_returns_explicit_tool_result():
         "turn-mcp-runtime",
     )
 
-    assert result["provenance"] == FAKE_MCP_RUNTIME_PROVENANCE
+    assert result["runtime"] == MCP_RUNTIME_NAME
+    assert result["runtimeProvenance"] == MCP_RUNTIME_PROVENANCE
+    assert result["provenance"] == MCP_RUNTIME_PROVENANCE
     assert not result["provenance"].startswith("mcp:")
     assert result["degraded"] is False
     assert result["toolName"] == "search"
@@ -92,13 +111,18 @@ def test_runtime_smoke_fake_adapter_returns_explicit_tool_result():
         "serverId": "fake-server",
     }
     assert result["content"] == "fixture hit for migration boundaries"
+    assert result["permission"]["allowed"] is True
     assert adapter.calls[0].tool_name == "search"
     assert adapter.calls[0].server_id == "fake-server"
+    assert permission_checker.calls[0].tool_name == "search"
 
 
 def test_runtime_smoke_adapter_unavailable_has_stable_degraded_shape():
     adapter = FakeMcpAdapter(unavailable=True)
-    runtime = create_mcp_runtime(adapter=adapter)
+    runtime = create_mcp_runtime(
+        adapter=adapter,
+        permission_checker=AllowMcpPermissionChecker(),
+    )
 
     result = execute_mcp_call_with_runtime(
         _state(),
@@ -108,10 +132,13 @@ def test_runtime_smoke_adapter_unavailable_has_stable_degraded_shape():
         runtime=runtime,
     )
 
-    assert result["provenance"] == FAKE_MCP_RUNTIME_PROVENANCE
+    assert result["runtime"] == MCP_RUNTIME_NAME
+    assert result["runtimeProvenance"] == MCP_RUNTIME_PROVENANCE
+    assert result["provenance"] == MCP_RUNTIME_PROVENANCE
     assert not result["provenance"].startswith("mcp:")
     assert result["degraded"] is True
     assert result["error"] == "mcp_adapter_unavailable"
+    assert result["errorType"] == "adapter_unavailable"
     assert result["toolName"] == "search"
     assert result["serverId"] == "fake-server"
     assert "toolResult" not in result
@@ -119,7 +146,10 @@ def test_runtime_smoke_adapter_unavailable_has_stable_degraded_shape():
 
 def test_runtime_smoke_unknown_tool_has_stable_degraded_shape():
     adapter = FakeMcpAdapter(tools={})
-    runtime = create_mcp_runtime(adapter=adapter)
+    runtime = create_mcp_runtime(
+        adapter=adapter,
+        permission_checker=AllowMcpPermissionChecker(),
+    )
 
     result = execute_mcp_call_with_runtime(
         _state(mcpToolName="missing-tool"),
@@ -129,10 +159,13 @@ def test_runtime_smoke_unknown_tool_has_stable_degraded_shape():
         runtime=runtime,
     )
 
-    assert result["provenance"] == FAKE_MCP_RUNTIME_PROVENANCE
+    assert result["runtime"] == MCP_RUNTIME_NAME
+    assert result["runtimeProvenance"] == MCP_RUNTIME_PROVENANCE
+    assert result["provenance"] == MCP_RUNTIME_PROVENANCE
     assert not result["provenance"].startswith("mcp:")
     assert result["degraded"] is True
     assert result["error"] == "mcp_tool_not_found"
+    assert result["errorType"] == "tool_not_found"
     assert result["toolName"] == "missing-tool"
     assert result["serverId"] == "fake-server"
     assert result["arguments"] == {"query": "migration boundaries"}

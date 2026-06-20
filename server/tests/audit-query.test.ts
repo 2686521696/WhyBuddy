@@ -219,6 +219,20 @@ describe("AuditQuery", () => {
       expect(result.page.pageNum).toBe(1);
       expect(result.entries).toHaveLength(1);
     });
+
+    it("should propagate read errors instead of returning an empty result", () => {
+      const brokenChain = {
+        getEntryCount: () => 1,
+        getEntries: () => {
+          throw new Error("audit chain unavailable");
+        },
+      } as unknown as AuditChain;
+      const brokenQuery = new AuditQuery(brokenChain, collector);
+
+      expect(() => brokenQuery.query({}, { pageSize: 50, pageNum: 1 })).toThrow(
+        "audit chain unavailable",
+      );
+    });
   });
 
   // ─── 7.2 search() — 全文搜索 ─────────────────────────────────────────────

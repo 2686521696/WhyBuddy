@@ -410,6 +410,236 @@ const SPEC_DOCUMENT_TYPES: BlueprintSpecDocumentType[] = [
   "design",
   "tasks",
 ];
+const PYTHON_SPEC_DOCS_PROXY_ENABLED = "BLUEPRINT_SPEC_DOCS_PYTHON_PROXY";
+const PYTHON_SPEC_DOCS_PROXY_BASE_URL = "PYTHON_SLIDE_RULE_BASE_URL";
+const PYTHON_SPEC_DOCS_PROXY_INTERNAL_KEY = "PYTHON_SLIDE_RULE_INTERNAL_KEY";
+const BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY =
+  "BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY";
+const PYTHON_REVIEW_EXPORT_PROXY_BASE_URL = "PYTHON_SLIDE_RULE_BASE_URL";
+const PYTHON_REVIEW_EXPORT_PROXY_INTERNAL_KEY =
+  "PYTHON_SLIDE_RULE_INTERNAL_KEY";
+
+interface BlueprintPythonExportArchive {
+  contentType: string;
+  filename: string;
+  body: string;
+  encoding?: "utf8" | "base64";
+}
+
+type BlueprintPythonExportProxyResult =
+  | { kind: "ok"; archive: BlueprintPythonExportArchive }
+  | { kind: "not_found"; message: string; details?: Record<string, unknown> }
+  | { kind: "invalid_request"; message: string };
+
+type BlueprintPythonProxyFailure = {
+  ok: false;
+  status: number;
+  error: string;
+  message: string;
+  details?: unknown;
+};
+
+function isBlueprintReviewExportPythonProxyEnabled(): boolean {
+  return process.env[BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY] === "true";
+}
+
+function resolvePythonReviewExportBaseUrl(): string {
+  return (
+    process.env[PYTHON_REVIEW_EXPORT_PROXY_BASE_URL] || "http://localhost:9700"
+  ).replace(/\/+$/, "");
+}
+
+function resolvePythonReviewExportInternalKey(): string {
+  return (
+    process.env[PYTHON_REVIEW_EXPORT_PROXY_INTERNAL_KEY] ||
+    "dev-slide-rule-internal"
+  );
+}
+
+function isPythonExportProxyResult(
+  value: unknown
+): value is BlueprintPythonExportProxyResult {
+  if (!isPlainRecord(value)) return false;
+  if (value.kind === "invalid_request") {
+    return typeof value.message === "string";
+  }
+  if (value.kind === "not_found") {
+    return (
+      typeof value.message === "string" &&
+      (value.details === undefined || isPlainRecord(value.details))
+    );
+  }
+  if (value.kind === "ok") {
+    const archive = value.archive;
+    return (
+      isPlainRecord(archive) &&
+      typeof archive.contentType === "string" &&
+      typeof archive.filename === "string" &&
+      typeof archive.body === "string" &&
+      (archive.encoding === undefined ||
+        archive.encoding === "utf8" ||
+        archive.encoding === "base64")
+    );
+  }
+  return false;
+}
+
+function isBlueprintReviewSpecDocumentResponse(
+  value: unknown
+): value is BlueprintReviewSpecDocumentResponse {
+  return (
+    isPlainRecord(value) &&
+    isPlainRecord(value.job) &&
+    isPlainRecord(value.specTree) &&
+    isPlainRecord(value.document)
+  );
+}
+
+function isPythonBusinessFailure(value: unknown): value is {
+  ok: false;
+  status?: number;
+  error?: string;
+  message?: string;
+  details?: unknown;
+} {
+  return isPlainRecord(value) && value.ok === false;
+}
+
+async function readPythonProxyFailure(
+  response: Awaited<ReturnType<typeof fetch>>
+): Promise<BlueprintPythonProxyFailure> {
+  const text = await response.text().catch(() => "");
+  let parsed: unknown;
+  try {
+    parsed = text ? JSON.parse(text) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+  const detail =
+    isPlainRecord(parsed) && parsed.detail !== undefined
+      ? parsed.detail
+      : undefined;
+  const message =
+    (isPlainRecord(parsed) &&
+      (readString(parsed.message) ?? readString(parsed.error))) ||
+    (typeof detail === "string" ? detail : undefined) ||
+    text.slice(0, 200) ||
+    response.statusText ||
+    `HTTP ${response.status}`;
+
+  return {
+    ok: false,
+    status: response.status,
+    error: "python review/export proxy failed",
+    message,
+    details: detail ?? parsed,
+  };
+}
+
+function pythonProxyShapeFailure(message: string): BlueprintPythonProxyFailure {
+  return {
+    ok: false,
+    status: 502,
+    error: "python review/export proxy failed",
+    message,
+  };
+}
+
+async function callPythonReviewProxy(input: {
+  job: BlueprintGenerationJob;
+  specTree: BlueprintSpecTree;
+  documentId: string;
+  request: BlueprintReviewSpecDocumentRequest;
+  now: string;
+}): Promise<
+  | { ok: true; response: BlueprintReviewSpecDocumentResponse }
+  | BlueprintPythonProxyFailure
+> {
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await fetch(
+      `${resolvePythonReviewExportBaseUrl()}/api/blueprint/spec-documents/review`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": resolvePythonReviewExportInternalKey(),
+        },
+        body: JSON.stringify(input),
+      }
+    );
+  } catch (error) {
+    return pythonProxyShapeFailure(
+      `python review proxy request failed: ${errorMessage(error)}`
+    );
+  }
+
+  if (!response.ok) {
+    return readPythonProxyFailure(response);
+  }
+
+  const payload = await response.json().catch(() => undefined);
+  if (isPythonBusinessFailure(payload)) {
+    return {
+      ok: false,
+      status:
+        typeof payload.status === "number" && Number.isInteger(payload.status)
+          ? payload.status
+          : 500,
+      error: payload.error ?? "python review/export proxy failed",
+      message: payload.message ?? "python review proxy returned an error",
+      details: payload.details,
+    };
+  }
+  if (!isBlueprintReviewSpecDocumentResponse(payload)) {
+    return pythonProxyShapeFailure("python review proxy returned invalid shape");
+  }
+  return { ok: true, response: payload };
+}
+
+async function callPythonExportProxy(input: {
+  job: BlueprintGenerationJob | null;
+  documents: BlueprintSpecDocument[];
+  request: {
+    jobId: string;
+    granularity?: string;
+    nodeId?: string;
+    type?: string;
+  };
+  now: string;
+}): Promise<
+  | { ok: true; result: BlueprintPythonExportProxyResult }
+  | BlueprintPythonProxyFailure
+> {
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await fetch(
+      `${resolvePythonReviewExportBaseUrl()}/api/blueprint/spec-documents/export`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": resolvePythonReviewExportInternalKey(),
+        },
+        body: JSON.stringify(input),
+      }
+    );
+  } catch (error) {
+    return pythonProxyShapeFailure(
+      `python export proxy request failed: ${errorMessage(error)}`
+    );
+  }
+
+  if (!response.ok) {
+    return readPythonProxyFailure(response);
+  }
+
+  const payload = await response.json().catch(() => undefined);
+  if (!isPythonExportProxyResult(payload)) {
+    return pythonProxyShapeFailure("python export proxy returned invalid shape");
+  }
+  return { ok: true, result: payload };
+}
 
 const PROMPT_TARGET_PLATFORMS: BlueprintImplementationPromptTargetPlatform[] = [
   "codex",
@@ -1922,18 +2152,65 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
   // - granularity=single → text/markdown
   // - granularity=node | tree → application/zip
   router.get("/jobs/:jobId/spec-documents/export", async (req, res) => {
+    const exportRequest = {
+      jobId: req.params.jobId,
+      granularity:
+        typeof req.query.granularity === "string"
+          ? req.query.granularity
+          : undefined,
+      nodeId:
+        typeof req.query.nodeId === "string" ? req.query.nodeId : undefined,
+      type:
+        typeof req.query.type === "string" ? req.query.type : undefined,
+    };
+
+    if (isBlueprintReviewExportPythonProxyEnabled()) {
+      const job = jobStore.get(req.params.jobId);
+      const delegated = await callPythonExportProxy({
+        job,
+        documents: job ? extractSpecDocuments(job) : [],
+        request: exportRequest,
+        now: (deps.now?.() ?? new Date()).toISOString(),
+      });
+
+      if (!delegated.ok) {
+        res.status(delegated.status).json({
+          error: delegated.error,
+          message: delegated.message,
+          ...(delegated.details !== undefined
+            ? { details: delegated.details }
+            : {}),
+        });
+        return;
+      }
+
+      const result = delegated.result;
+      if (result.kind === "invalid_request") {
+        res.status(400).json({ error: result.message });
+        return;
+      }
+      if (result.kind === "not_found") {
+        res
+          .status(404)
+          .json({ error: result.message, ...(result.details ?? {}) });
+        return;
+      }
+
+      res.setHeader("Content-Type", result.archive.contentType);
+      res.setHeader(
+        "Content-Disposition",
+        formatContentDisposition(result.archive.filename),
+      );
+      if (result.archive.encoding === "base64") {
+        res.send(Buffer.from(result.archive.body, "base64"));
+      } else {
+        res.send(result.archive.body);
+      }
+      return;
+    }
+
     const result = await buildSpecExportArchive(
-      {
-        jobId: req.params.jobId,
-        granularity:
-          typeof req.query.granularity === "string"
-            ? req.query.granularity
-            : undefined,
-        nodeId:
-          typeof req.query.nodeId === "string" ? req.query.nodeId : undefined,
-        type:
-          typeof req.query.type === "string" ? req.query.type : undefined,
-      },
+      exportRequest,
       {
         getJob: (jobId) => jobStore.get(jobId),
         listSpecDocuments: (jobId) => {
@@ -2606,7 +2883,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
 
   router.patch(
     "/jobs/:jobId/spec-documents/:documentId/review",
-    (req, res) => {
+    async (req, res) => {
       const job = jobStore.get(req.params.jobId);
       if (!job) {
         res.status(404).json({
@@ -2631,6 +2908,38 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           error: "Invalid blueprint SPEC document review request.",
           message: parsed.message,
         });
+        return;
+      }
+
+      if (isBlueprintReviewExportPythonProxyEnabled()) {
+        const reviewedAt = (deps.now?.() ?? new Date()).toISOString();
+        const delegated = await callPythonReviewProxy({
+          job,
+          specTree,
+          documentId: req.params.documentId,
+          request: parsed.request,
+          now: reviewedAt,
+        });
+
+        if (!delegated.ok) {
+          res.status(delegated.status).json({
+            error: delegated.error,
+            message: delegated.message,
+            ...(delegated.details !== undefined
+              ? { details: delegated.details }
+              : {}),
+          });
+          return;
+        }
+
+        jobStore.save(delegated.response.job);
+        blueprintServiceContext.agentCrewStageActivationDriver?.onStageTransition({
+          jobId: delegated.response.job.id,
+          stageId: "spec_docs",
+          transition: "stage_started",
+          job: delegated.response.job,
+        });
+        res.json(delegated.response);
         return;
       }
 
@@ -10390,6 +10699,7 @@ async function generateSpecDocuments(
   const batchStartTime = progressEmitter ? Date.now() : 0;
 
   let llmNodeOutputById: Map<string, SpecDocsLlmNodeOutput> | undefined;
+  let llmNodeOutputProgressCovered = false;
   if (
     specDocsLlmEnabled &&
     !isTestBuildTargetSpecDocs &&
@@ -10430,6 +10740,7 @@ async function generateSpecDocuments(
       for (const perNode of batchResult.perNode) {
         llmNodeOutputById.set(perNode.nodeId, perNode);
       }
+      llmNodeOutputProgressCovered = llmProgressBridge !== undefined;
       ctx?.logger?.debug(
         "[blueprint.spec_docs] LLM batch generation completed",
         {
@@ -10449,6 +10760,90 @@ async function generateSpecDocuments(
   // ─── Cancellable timeout helper for per-node 120s timeout (Req 6.5) ──
   // Returns a promise + cancel function. The timer is cleaned up on success
   // to avoid leaving dangling timers in the event loop.
+  if (
+    llmNodeOutputById === undefined &&
+    isPythonSpecDocsProxyEnabled() &&
+    targetNodes.length > 0 &&
+    targetTypes.length > 0
+  ) {
+    const items: PythonSpecDocsBatchItem[] = targetNodes.flatMap(node => {
+      const previousRoleFindings = collectReusableRoleFindings(job, {
+        stages: ["route_generation", "spec_tree", "runtime_capability"],
+        routeId: node.routeId ?? specTree.selectedRouteId,
+        nodeId: node.id,
+        limit: 8,
+      });
+      const reusableRoleFindings = previousRoleFindings.flatMap(entry => {
+        const findings = Array.isArray(
+          (entry as unknown as { findings?: unknown[] }).findings
+        )
+          ? ((entry as unknown as { findings: Array<Record<string, unknown>> })
+              .findings)
+          : [];
+        return findings.map(finding => ({
+          id: String((finding as Record<string, unknown>).id ?? ""),
+          label: String((finding as Record<string, unknown>).label ?? ""),
+          summary: String((finding as Record<string, unknown>).summary ?? ""),
+        }));
+      });
+      const primaryRoute = node.routeId
+        ? routeById.get(node.routeId)
+        : specTree.selectedRouteId
+          ? routeById.get(specTree.selectedRouteId)
+          : undefined;
+      return targetTypes.map(type => ({
+        jobId: job.id,
+        nodeId: node.id,
+        targetDocumentType: type,
+        specTreeNode: node,
+        request: job.request,
+        primaryRoute,
+        clarificationSession,
+        domainContext,
+        upstreamEvidence:
+          reusableRoleFindings.length > 0
+            ? { reusableRoleFindings }
+            : undefined,
+        createdAt,
+        locale: options.locale,
+      }));
+    });
+    try {
+      llmNodeOutputById = await callPythonSpecDocsBatchProxy({
+        jobId: job.id,
+        items,
+      });
+      ctx?.logger?.debug(
+        "[blueprint.spec_docs] Python batch proxy completed",
+        {
+          jobId: job.id,
+          itemCount: items.length,
+          nodeCount: llmNodeOutputById.size,
+        },
+      );
+    } catch (error) {
+      const fallbackReason = errorMessage(error).slice(0, 400);
+      ctx?.logger?.warn(
+        "[blueprint.spec_docs] Python batch proxy failed, using template fallback",
+        { jobId: job.id, error: fallbackReason },
+      );
+      llmNodeOutputById = new Map(
+        targetNodes.map(node => [
+          node.id,
+          {
+            nodeId: node.id,
+            generationSource: "template",
+            contextTier: "fallback",
+            fallbackReason,
+            fallbackReasonByType: Object.fromEntries(
+              targetTypes.map(type => [type, fallbackReason]),
+            ) as Partial<Record<BlueprintSpecDocumentType, string>>,
+          } satisfies PythonSpecDocsBatchNodeOutput,
+        ]),
+      );
+    }
+  }
+
   const TIMEOUT_SENTINEL: unique symbol = Symbol("timeout") as any;
   function createCancellableTimeout(ms: number) {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -10477,7 +10872,9 @@ async function generateSpecDocuments(
     // template-fallback nodes). It does NOT imply LLM markdown generation succeeded.
     // The fast-path predicate `isFastPath` is the correct signal for "LLM cache hit".
     const batchCoveredNodes = new Set<string>(
-      llmNodeOutputById ? Array.from(llmNodeOutputById.keys()) : [],
+      llmNodeOutputProgressCovered && llmNodeOutputById
+        ? Array.from(llmNodeOutputById.keys())
+        : [],
     );
 
     for (let i = 0; i < targetNodes.length; i++) {
@@ -10750,6 +11147,204 @@ type GenerateEffectPreviewsResult =
       response: BlueprintEffectPreviewsResponse;
     }
   | { ok: false; status: number; error: string; message: string };
+
+type PythonSpecDocsBatchNodeOutput = SpecDocsLlmNodeOutput & {
+  fallbackReasonByType?: Partial<Record<BlueprintSpecDocumentType, string>>;
+};
+
+interface PythonSpecDocsBatchItem {
+  jobId: string;
+  nodeId: string;
+  targetDocumentType: BlueprintSpecDocumentType;
+  specTreeNode: BlueprintSpecTreeNode;
+  request: BlueprintGenerationRequest;
+  primaryRoute?: BlueprintRouteCandidate;
+  clarificationSession?: BlueprintClarificationSession;
+  domainContext?: BlueprintProjectDomainContext;
+  upstreamEvidence?: {
+    reusableRoleFindings: Array<{ id: string; label: string; summary: string }>;
+  };
+  createdAt: string;
+  locale?: "zh-CN" | "en-US";
+}
+
+interface PythonSpecDocsBatchSuccessResult {
+  ok: true;
+  nodeId: string;
+  targetDocumentType: BlueprintSpecDocumentType;
+  document: {
+    generationSource: "llm";
+    title: string;
+    summary: string;
+    content: string;
+    status?: BlueprintSpecDocumentStatus;
+    promptId?: string;
+    model?: string;
+    promptFingerprint?: string;
+    responseDigest?: string;
+    structuredPayloadDigest?: string;
+  };
+}
+
+interface PythonSpecDocsBatchFailureResult {
+  ok: false;
+  nodeId: string;
+  targetDocumentType: BlueprintSpecDocumentType;
+  error: string;
+}
+
+type PythonSpecDocsBatchResult =
+  | PythonSpecDocsBatchSuccessResult
+  | PythonSpecDocsBatchFailureResult;
+
+interface PythonSpecDocsBatchResponse {
+  jobId?: string;
+  overallSource: "llm" | "partial" | "template";
+  results: PythonSpecDocsBatchResult[];
+}
+
+function isPythonSpecDocsProxyEnabled(): boolean {
+  return process.env[PYTHON_SPEC_DOCS_PROXY_ENABLED] === "true";
+}
+
+function resolvePythonSpecDocsBaseUrl(): string {
+  return (process.env[PYTHON_SPEC_DOCS_PROXY_BASE_URL] || "http://localhost:9700")
+    .replace(/\/+$/, "");
+}
+
+function resolvePythonSpecDocsInternalKey(): string {
+  return process.env[PYTHON_SPEC_DOCS_PROXY_INTERNAL_KEY] || "dev-slide-rule-internal";
+}
+
+function isPythonSpecDocsBatchDocument(
+  value: unknown,
+): value is PythonSpecDocsBatchSuccessResult["document"] {
+  if (!isPlainRecord(value)) return false;
+  return (
+    value.generationSource === "llm" &&
+    typeof value.title === "string" &&
+    typeof value.summary === "string" &&
+    typeof value.content === "string"
+  );
+}
+
+function isPythonSpecDocsBatchResult(
+  value: unknown,
+): value is PythonSpecDocsBatchResult {
+  if (!isPlainRecord(value)) return false;
+  if (!isSpecDocumentType(value.targetDocumentType)) return false;
+  if (typeof value.nodeId !== "string" || value.nodeId.trim().length === 0) {
+    return false;
+  }
+  if (value.ok === true) {
+    return isPythonSpecDocsBatchDocument(value.document);
+  }
+  if (value.ok === false) {
+    return typeof value.error === "string" && value.error.trim().length > 0;
+  }
+  return false;
+}
+
+function isPythonSpecDocsBatchResponse(
+  value: unknown,
+): value is PythonSpecDocsBatchResponse {
+  if (!isPlainRecord(value)) return false;
+  if (
+    value.overallSource !== "llm" &&
+    value.overallSource !== "partial" &&
+    value.overallSource !== "template"
+  ) {
+    return false;
+  }
+  return (
+    Array.isArray(value.results) &&
+    value.results.every(isPythonSpecDocsBatchResult)
+  );
+}
+
+function assignPythonSpecDocsMarkdown(
+  output: PythonSpecDocsBatchNodeOutput,
+  type: BlueprintSpecDocumentType,
+  content: string,
+): void {
+  if (type === "requirements") {
+    output.requirements = content;
+  } else if (type === "design") {
+    output.design = content;
+  } else {
+    output.tasks = content;
+  }
+}
+
+function mapPythonSpecDocsBatchResponseToNodeOutputs(
+  response: PythonSpecDocsBatchResponse,
+): Map<string, PythonSpecDocsBatchNodeOutput> {
+  const byNode = new Map<string, PythonSpecDocsBatchNodeOutput>();
+
+  for (const result of response.results) {
+    const existing = byNode.get(result.nodeId);
+    const output: PythonSpecDocsBatchNodeOutput = existing ?? {
+      nodeId: result.nodeId,
+      generationSource: "llm",
+      contextTier: "route-only",
+    };
+
+    if (result.ok) {
+      assignPythonSpecDocsMarkdown(
+        output,
+        result.targetDocumentType,
+        result.document.content,
+      );
+      output.promptId ??= result.document.promptId;
+      output.model ??= result.document.model;
+      output.promptFingerprint ??= result.document.promptFingerprint;
+      output.responseDigest ??= result.document.responseDigest;
+    } else {
+      output.fallbackReason = result.error.slice(0, 400);
+      output.fallbackReasonByType = {
+        ...(output.fallbackReasonByType ?? {}),
+        [result.targetDocumentType]: result.error.slice(0, 400),
+      };
+    }
+
+    byNode.set(result.nodeId, output);
+  }
+
+  for (const output of byNode.values()) {
+    if (!output.requirements && !output.design && !output.tasks) {
+      output.generationSource = "template";
+      output.contextTier = "fallback";
+    }
+  }
+
+  return byNode;
+}
+
+async function callPythonSpecDocsBatchProxy(input: {
+  jobId: string;
+  items: PythonSpecDocsBatchItem[];
+}): Promise<Map<string, PythonSpecDocsBatchNodeOutput>> {
+  const response = await fetch(
+    `${resolvePythonSpecDocsBaseUrl()}/api/blueprint/spec-documents/generate-batch`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Key": resolvePythonSpecDocsInternalKey(),
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`python spec-docs batch proxy failed: ${response.status} ${detail.slice(0, 200)}`);
+  }
+  const payload = await response.json();
+  if (!isPythonSpecDocsBatchResponse(payload)) {
+    throw new Error("python spec-docs batch proxy returned invalid shape");
+  }
+  return mapPythonSpecDocsBatchResponseToNodeOutputs(payload);
+}
 
 function extractBrainstormEvidenceResources(
   job: BlueprintGenerationJob,
@@ -15104,8 +15699,14 @@ async function buildSpecDocument(
   const batchTemplateOnly =
     input.llmNodeOutput !== undefined &&
     input.llmNodeOutput.generationSource !== "llm";
+  const pythonBatchFailureForType = (
+    input.llmNodeOutput as PythonSpecDocsBatchNodeOutput | undefined
+  )?.fallbackReasonByType?.[input.type];
 
-  const serviceResult = ctx?.specDocumentsLlmService && !batchTemplateOnly
+  const serviceResult =
+    ctx?.specDocumentsLlmService &&
+    !batchTemplateOnly &&
+    pythonBatchFailureForType === undefined
     ? await ctx.specDocumentsLlmService({
         jobId: input.job.id,
         job: input.job,
@@ -15158,11 +15759,13 @@ async function buildSpecDocument(
     summary = input.node.summary;
     content = buildSpecDocumentBody(input);
     provenanceExtras = {
-      generationSource: serviceResult?.generationSource ?? "template",
+      generationSource:
+        serviceResult?.generationSource ??
+        (pythonBatchFailureForType !== undefined ? "llm_fallback" : "template"),
       promptId: serviceResult?.promptId,
       model: serviceResult?.model,
       promptFingerprint: serviceResult?.promptFingerprint,
-      error: serviceResult?.error,
+      error: serviceResult?.error ?? pythonBatchFailureForType,
     };
   }
 

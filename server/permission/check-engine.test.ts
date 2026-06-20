@@ -20,7 +20,7 @@ import { RESOURCE_TYPES, ACTIONS } from "../../shared/permission/contracts.js";
 import { RoleStore } from "./role-store.js";
 import { PolicyStore } from "./policy-store.js";
 import { TokenService, signJwt } from "./token-service.js";
-import { PermissionCheckEngine, LRUCache } from "./check-engine.js";
+import { PermissionCheckEngine, LRUCache, toPermissionCheckContractResponse } from "./check-engine.js";
 import type { ResourceChecker } from "./checkers/filesystem-checker.js";
 import { AuditChain } from "../audit/audit-chain.js";
 import { AuditCollector as PlatformAuditCollector } from "../audit/audit-collector.js";
@@ -194,6 +194,39 @@ describe("PermissionCheckEngine", () => {
       const cap = tokenService.issueToken("agent-1");
       const result = engine.checkPermission("agent-1", "filesystem", "write", "/data/file.txt", cap.token);
       expect(result.allowed).toBe(false);
+    });
+
+    it("maps allow and deny results into the permission check contract", () => {
+      const { roleStore, policyStore, tokenService, engine } = setup();
+      seedAgent(roleStore, policyStore, "agent-1", [
+        { resourceType: "filesystem", action: "read", constraints: {}, effect: "allow" },
+      ]);
+      const cap = tokenService.issueToken("agent-1");
+
+      const allowed = toPermissionCheckContractResponse(
+        engine.checkPermission("agent-1", "filesystem", "read", "/data/file.txt", cap.token),
+      );
+      expect(allowed).toMatchObject({
+        source: "node",
+        allowed: true,
+        decision: "allow",
+        reason: null,
+        matchedRule: {
+          resourceType: "filesystem",
+          action: "read",
+          effect: "allow",
+        },
+      });
+
+      const denied = toPermissionCheckContractResponse(
+        engine.checkPermission("agent-1", "filesystem", "write", "/data/file.txt", cap.token),
+      );
+      expect(denied).toMatchObject({
+        source: "node",
+        allowed: false,
+        decision: "deny",
+        reason: "No allow rule found for filesystem:write",
+      });
     });
 
     it("denies access when deny rule matches even if allow exists", () => {

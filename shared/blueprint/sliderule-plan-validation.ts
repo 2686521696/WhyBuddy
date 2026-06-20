@@ -33,6 +33,68 @@ export type ValidateProposedPlanResult = {
   dropped: Array<{ capabilityId: string; reason: DropReason }>;
 };
 
+export type PlanProjectionStatus = "partial" | "complete" | "error";
+export type PlanProjectionPhaseStatus = "pending" | "active" | "complete" | "blocked";
+export type PlanProjectionStepStatus = "pending" | "running" | "complete" | "blocked";
+export type PlanProjectionRiskSeverity = "low" | "medium" | "high";
+
+export type PlanStateProjectionPhase = {
+  id: string;
+  label: string;
+  status: PlanProjectionPhaseStatus;
+  stepIds: string[];
+};
+
+export type PlanStateProjectionStep = {
+  id: string;
+  capabilityId: V5CapabilityId;
+  roleId: string;
+  status: PlanProjectionStepStatus;
+  phaseId: string;
+  why?: string;
+};
+
+export type PlanStateProjectionRisk = {
+  id: string;
+  severity: PlanProjectionRiskSeverity;
+  summary: string;
+  mitigation: string;
+};
+
+export type PlanStateProjectionRecoveryPoint = {
+  id: string;
+  label: string;
+  action: string;
+  retryable: boolean;
+};
+
+export type PlanStateProjectionError = {
+  code: string;
+  reason: string;
+  message: string;
+};
+
+export type PlanStateProjection = {
+  kind: "orchestrate.plan.state_projection";
+  schemaVersion: 1;
+  stateAuthority: "node";
+  stateMutation: "none";
+  status: PlanProjectionStatus;
+  phase: string;
+  partial: boolean;
+  phases: PlanStateProjectionPhase[];
+  steps: PlanStateProjectionStep[];
+  risks: PlanStateProjectionRisk[];
+  recoveryPoints: PlanStateProjectionRecoveryPoint[];
+  error: PlanStateProjectionError | null;
+};
+
+export type ValidatePlanStateProjectionResult = {
+  valid: boolean;
+  projection?: PlanStateProjection;
+  errors: string[];
+};
+
 const MIN_ITEMS = 1;
 const MAX_ITEMS = 4;
 
@@ -48,6 +110,23 @@ function asString(value: unknown): string {
 function normalizeItems(raw: unknown): ProposedPlanItem[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((x) => x != null && typeof x === "object") as ProposedPlanItem[];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizeRecordItems(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => item != null);
+}
+
+function isOneOf<T extends string>(value: string, allowed: readonly T[]): value is T {
+  return (allowed as readonly string[]).includes(value);
 }
 
 /** Extract capability id from common LLM field aliases (`capability`, `cap`, `id`). */
@@ -144,4 +223,225 @@ export function validateProposedPlan(
   }
 
   return { valid: true, selected, dropped };
+}
+
+export function validatePlanStateProjection(
+  input: unknown
+): ValidatePlanStateProjectionResult {
+  const errors: string[] = [];
+  const record = asRecord(input);
+  if (!record) {
+    return { valid: false, errors: ["projection must be an object"] };
+  }
+
+  if (record.kind !== "orchestrate.plan.state_projection") {
+    errors.push("kind must be orchestrate.plan.state_projection");
+  }
+  if (record.schemaVersion !== 1) {
+    errors.push("schemaVersion must be 1");
+  }
+  if (record.stateAuthority !== "node") {
+    errors.push("stateAuthority must be node");
+  }
+  if (record.stateMutation !== "none") {
+    errors.push("stateMutation must be none");
+  }
+  if ("state" in record || "artifacts" in record || "capabilityRuns" in record || "coverageGate" in record) {
+    errors.push("projection must not contain Node-owned state fields");
+  }
+
+  const statusRaw = asString(record.status);
+  if (!isOneOf(statusRaw, ["partial", "complete", "error"] as const)) {
+    errors.push("status must be partial, complete, or error");
+  }
+  const phase = asString(record.phase);
+  if (!phase) {
+    errors.push("phase is required");
+  }
+  if (typeof record.partial !== "boolean") {
+    errors.push("partial must be boolean");
+  }
+
+  const phases = normalizeRecordItems(record.phases);
+  const steps = normalizeRecordItems(record.steps);
+  const risks = normalizeRecordItems(record.risks);
+  const recoveryPoints = normalizeRecordItems(record.recoveryPoints);
+
+  if (!Array.isArray(record.phases) || phases.length === 0) {
+    errors.push("phases must be a non-empty array");
+  }
+  if (!Array.isArray(record.steps)) {
+    errors.push("steps must be an array");
+  }
+  if (!Array.isArray(record.risks) || risks.length === 0) {
+    errors.push("risks must be a non-empty array");
+  }
+  if (!Array.isArray(record.recoveryPoints) || recoveryPoints.length === 0) {
+    errors.push("recoveryPoints must be a non-empty array");
+  }
+
+  const normalizedPhases: PlanStateProjectionPhase[] = [];
+  const phaseIds = new Set<string>();
+  for (const [index, item] of phases.entries()) {
+    const id = asString(item.id);
+    const label = asString(item.label);
+    const status = asString(item.status);
+    const stepIds = Array.isArray(item.stepIds)
+      ? item.stepIds.map(asString).filter(Boolean)
+      : [];
+    if (!id) errors.push(`phases[${index}].id is required`);
+    if (!label) errors.push(`phases[${index}].label is required`);
+    if (!isOneOf(status, ["pending", "active", "complete", "blocked"] as const)) {
+      errors.push(`phases[${index}].status is invalid`);
+    }
+    if (id) phaseIds.add(id);
+    normalizedPhases.push({
+      id,
+      label,
+      status: isOneOf(status, ["pending", "active", "complete", "blocked"] as const)
+        ? status
+        : "pending",
+      stepIds,
+    });
+  }
+
+  const normalizedSteps: PlanStateProjectionStep[] = [];
+  for (const [index, item] of steps.entries()) {
+    const id = asString(item.id);
+    const capabilityRaw = asString(item.capabilityId);
+    const capabilityId = resolveCapabilityId(capabilityRaw);
+    const roleId = asString(item.roleId);
+    const status = asString(item.status);
+    const phaseId = asString(item.phaseId);
+    const why = asString(item.why);
+
+    if (!id) errors.push(`steps[${index}].id is required`);
+    if (!capabilityId) errors.push(`steps[${index}].capabilityId is invalid`);
+    if (!roleId) errors.push(`steps[${index}].roleId is required`);
+    if (!isOneOf(status, ["pending", "running", "complete", "blocked"] as const)) {
+      errors.push(`steps[${index}].status is invalid`);
+    }
+    if (!phaseId || !phaseIds.has(phaseId)) {
+      errors.push(`steps[${index}].phaseId must reference a phase`);
+    }
+
+    normalizedSteps.push({
+      id,
+      capabilityId: capabilityId ?? "evidence.search",
+      roleId,
+      status: isOneOf(status, ["pending", "running", "complete", "blocked"] as const)
+        ? status
+        : "pending",
+      phaseId,
+      ...(why ? { why } : {}),
+    });
+  }
+
+  const stepIds = new Set(normalizedSteps.map((step) => step.id).filter(Boolean));
+  for (const [index, phaseItem] of normalizedPhases.entries()) {
+    for (const stepId of phaseItem.stepIds) {
+      if (!stepIds.has(stepId)) {
+        errors.push(`phases[${index}].stepIds contains unknown step ${stepId}`);
+      }
+    }
+  }
+
+  const normalizedRisks: PlanStateProjectionRisk[] = [];
+  for (const [index, item] of risks.entries()) {
+    const id = asString(item.id);
+    const severity = asString(item.severity);
+    const summary = asString(item.summary);
+    const mitigation = asString(item.mitigation);
+    if (!id) errors.push(`risks[${index}].id is required`);
+    if (!isOneOf(severity, ["low", "medium", "high"] as const)) {
+      errors.push(`risks[${index}].severity is invalid`);
+    }
+    if (!summary) errors.push(`risks[${index}].summary is required`);
+    if (!mitigation) errors.push(`risks[${index}].mitigation is required`);
+    normalizedRisks.push({
+      id,
+      severity: isOneOf(severity, ["low", "medium", "high"] as const) ? severity : "medium",
+      summary,
+      mitigation,
+    });
+  }
+
+  const normalizedRecoveryPoints: PlanStateProjectionRecoveryPoint[] = [];
+  for (const [index, item] of recoveryPoints.entries()) {
+    const id = asString(item.id);
+    const label = asString(item.label);
+    const action = asString(item.action);
+    if (!id) errors.push(`recoveryPoints[${index}].id is required`);
+    if (!label) errors.push(`recoveryPoints[${index}].label is required`);
+    if (!action) errors.push(`recoveryPoints[${index}].action is required`);
+    if (typeof item.retryable !== "boolean") {
+      errors.push(`recoveryPoints[${index}].retryable must be boolean`);
+    }
+    normalizedRecoveryPoints.push({
+      id,
+      label,
+      action,
+      retryable: item.retryable === true,
+    });
+  }
+
+  const errorRecord = record.error === null || record.error === undefined
+    ? null
+    : asRecord(record.error);
+  let normalizedError: PlanStateProjectionError | null = null;
+  if (statusRaw === "error") {
+    if (!errorRecord) {
+      errors.push("error projection must include error details");
+    } else {
+      const code = asString(errorRecord.code);
+      const reason = asString(errorRecord.reason);
+      const message = asString(errorRecord.message);
+      if (!code) errors.push("error.code is required");
+      if (!reason) errors.push("error.reason is required");
+      if (!message) errors.push("error.message is required");
+      normalizedError = { code, reason, message };
+    }
+    if (record.partial !== false) {
+      errors.push("error projection must not be partial");
+    }
+    if (steps.length > 0) {
+      errors.push("error projection must not include executable steps");
+    }
+  } else {
+    if (errorRecord) {
+      errors.push("non-error projection must not include error details");
+    }
+    if (statusRaw === "complete" && record.partial !== false) {
+      errors.push("complete projection must not be partial");
+    }
+    if (statusRaw === "partial" && record.partial !== true) {
+      errors.push("partial projection must set partial true");
+    }
+  }
+  if (statusRaw === "complete" && steps.length > 0) {
+    errors.push("complete projection must not include pending steps");
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+
+  return {
+    valid: true,
+    errors: [],
+    projection: {
+      kind: "orchestrate.plan.state_projection",
+      schemaVersion: 1,
+      stateAuthority: "node",
+      stateMutation: "none",
+      status: statusRaw as PlanProjectionStatus,
+      phase,
+      partial: record.partial as boolean,
+      phases: normalizedPhases,
+      steps: normalizedSteps,
+      risks: normalizedRisks,
+      recoveryPoints: normalizedRecoveryPoints,
+      error: normalizedError,
+    },
+  };
 }

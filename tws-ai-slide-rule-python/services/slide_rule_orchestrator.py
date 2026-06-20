@@ -7,9 +7,9 @@ handoff/report goals, and converges when the current state already has the
 required outputs.
 """
 
-from typing import List
+from typing import Dict, List, Optional
 
-from models.v5_state import V5SessionState, OrchestratePlanResult
+from models.v5_state import PlanStateProjection, V5SessionState, OrchestratePlanResult
 from .rag_service import generate_with_rag, retrieve_evidence
 
 
@@ -54,6 +54,187 @@ def _goal_requires_structure(goal: str, user_text: str) -> bool:
     return any(keyword in text for keyword in ["structure", "decompose", "tree", "spec", "结构", "拆解", "需求树"])
 
 
+PHASE_BY_CAPABILITY: Dict[str, Dict[str, str]] = {
+    "evidence.search": {"id": "phase-grounding", "label": "Grounding"},
+    "mcp.call": {"id": "phase-grounding", "label": "Grounding"},
+    "skill.invoke": {"id": "phase-grounding", "label": "Grounding"},
+    "risk.analyze": {"id": "phase-risk", "label": "Risk review"},
+    "counter.argue": {"id": "phase-risk", "label": "Risk review"},
+    "critique.generate": {"id": "phase-risk", "label": "Risk review"},
+    "rebuttal.resolve": {"id": "phase-risk", "label": "Risk review"},
+    "synthesis.merge": {"id": "phase-synthesis", "label": "Synthesis"},
+    "structure.decompose": {"id": "phase-structure", "label": "Structure"},
+    "document.draft": {"id": "phase-delivery", "label": "Delivery"},
+    "traceability.matrix": {"id": "phase-delivery", "label": "Delivery"},
+    "task.write": {"id": "phase-delivery", "label": "Delivery"},
+    "instruction.package": {"id": "phase-delivery", "label": "Delivery"},
+    "outcome.visualize": {"id": "phase-delivery", "label": "Delivery"},
+    "handoff.package": {"id": "phase-delivery", "label": "Delivery"},
+    "report.write": {"id": "phase-report", "label": "Report"},
+}
+
+
+def _phase_for_capability(capability_id: str) -> Dict[str, str]:
+    return PHASE_BY_CAPABILITY.get(
+        capability_id,
+        {"id": "phase-planning", "label": "Planning"},
+    )
+
+
+def _default_recovery_points(status: str) -> List[dict]:
+    if status == "error":
+        return [
+            {
+                "id": "recovery-retry-planner",
+                "label": "Retry planner",
+                "action": "Retry orchestrate.plan after resolving the planner error.",
+                "retryable": True,
+            },
+            {
+                "id": "recovery-node-fallback",
+                "label": "Use Node boundary",
+                "action": "Keep Node-owned state unchanged and choose the next action from existing state.",
+                "retryable": False,
+            },
+        ]
+    if status == "complete":
+        return [
+            {
+                "id": "recovery-replan-if-state-changes",
+                "label": "Replan if state changes",
+                "action": "Rerun orchestrate.plan only after Node records new artifacts or user intent.",
+                "retryable": True,
+            }
+        ]
+    return [
+        {
+            "id": "recovery-replan-from-node-state",
+            "label": "Replan from Node state",
+            "action": "Node can rerun orchestrate.plan with unchanged durable state if execution stalls.",
+            "retryable": True,
+        },
+        {
+            "id": "recovery-skip-blocked-step",
+            "label": "Skip blocked step",
+            "action": "Node can drop a blocked projected step and ask Python for a fresh projection.",
+            "retryable": True,
+        },
+    ]
+
+
+def build_plan_state_projection(
+    selected: List[dict],
+    converged: bool,
+    error: Optional[dict] = None,
+) -> PlanStateProjection:
+    """Build a read-side planner projection; Node remains state authority."""
+    if error:
+        return PlanStateProjection(
+            status="error",
+            phase="error",
+            partial=False,
+            phases=[
+                {
+                    "id": "phase-error",
+                    "label": "Planner error",
+                    "status": "blocked",
+                    "stepIds": [],
+                }
+            ],
+            steps=[],
+            risks=[
+                {
+                    "id": "risk-planner-error",
+                    "severity": "high",
+                    "summary": "Planner failed before producing executable steps.",
+                    "mitigation": "Do not treat this response as a complete plan; retry or fall back to Node-owned state.",
+                },
+                {
+                    "id": "risk-projection-boundary",
+                    "severity": "medium",
+                    "summary": "Projection must not mutate Node-owned session state.",
+                    "mitigation": "Keep projection read-only and additive.",
+                },
+            ],
+            recoveryPoints=_default_recovery_points("error"),
+            error=error,
+        )
+
+    status = "complete" if converged else "partial"
+    steps = []
+    phase_order: List[str] = []
+    phase_map: Dict[str, dict] = {}
+
+    for index, item in enumerate(selected, start=1):
+        capability_id = str(item.get("capabilityId", "")).strip()
+        role_id = str(item.get("roleId", "")).strip()
+        phase = _phase_for_capability(capability_id)
+        phase_id = phase["id"]
+        step_id = f"step-{index}-{capability_id.replace('.', '-') or 'unknown'}"
+
+        if phase_id not in phase_map:
+            phase_order.append(phase_id)
+            phase_map[phase_id] = {
+                "id": phase_id,
+                "label": phase["label"],
+                "status": "pending",
+                "stepIds": [],
+            }
+        if index == 1:
+            phase_map[phase_id]["status"] = "active"
+
+        phase_map[phase_id]["stepIds"].append(step_id)
+        step = {
+            "id": step_id,
+            "capabilityId": capability_id,
+            "roleId": role_id,
+            "status": "pending",
+            "phaseId": phase_id,
+        }
+        why = str(item.get("why", "")).strip()
+        if why:
+            step["why"] = why
+        steps.append(step)
+
+    if status == "complete":
+        phases = [
+            {
+                "id": "phase-complete",
+                "label": "Plan complete",
+                "status": "complete",
+                "stepIds": [],
+            }
+        ]
+        phase = "complete"
+    else:
+        phases = [phase_map[phase_id] for phase_id in phase_order]
+        phase = "planning"
+
+    return PlanStateProjection(
+        status=status,
+        phase=phase,
+        partial=status == "partial",
+        phases=phases,
+        steps=steps,
+        risks=[
+            {
+                "id": "risk-projection-boundary",
+                "severity": "medium",
+                "summary": "Projection must not mutate Node-owned session state.",
+                "mitigation": "Keep projection read-only and let Node own durable state transitions.",
+            },
+            {
+                "id": "risk-partial-plan",
+                "severity": "medium" if status == "partial" else "low",
+                "summary": "Projected steps are advisory until Node executes and records outputs.",
+                "mitigation": "Treat non-converged projections as partial and rerun after each committed capability output.",
+            },
+        ],
+        recoveryPoints=_default_recovery_points(status),
+        error=None,
+    )
+
+
 def orchestrate_plan(state: V5SessionState, turn_id: str, user_text: str) -> OrchestratePlanResult:
     goal = _goal_text(state)
     evidence = retrieve_evidence(goal, top_k=4)
@@ -96,4 +277,5 @@ def orchestrate_plan(state: V5SessionState, turn_id: str, user_text: str) -> Orc
         rationale=rationale,
         source="python-rag",
         converged=converged,
+        planStateProjection=build_plan_state_projection(selected, converged),
     )

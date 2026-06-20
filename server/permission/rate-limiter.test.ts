@@ -122,6 +122,39 @@ describe("SlidingWindowRateLimiter", () => {
     limiter.reset();
     expect(limiter.getCount("k")).toBe(0);
   });
+
+  it("reports retryAfter details without recording denied checks", () => {
+    let time = 0;
+    const limiter = new SlidingWindowRateLimiter(() => time);
+
+    expect(limiter.checkDetailed("k", 2)).toEqual({
+      allowed: true,
+      limit: 2,
+      remaining: 2,
+      retryAfterMs: 0,
+      resetAtMs: null,
+      reason: "allowed",
+    });
+
+    limiter.record("k");
+    limiter.record("k");
+
+    expect(limiter.checkDetailed("k", 2)).toEqual({
+      allowed: false,
+      limit: 2,
+      remaining: 0,
+      retryAfterMs: 60_000,
+      resetAtMs: 60_000,
+      reason: "rate_limit_exceeded",
+    });
+    expect(limiter.getCount("k")).toBe(2);
+
+    time = 59_999;
+    expect(limiter.checkDetailed("k", 2).retryAfterMs).toBe(1);
+
+    time = 60_000;
+    expect(limiter.checkDetailed("k", 2).allowed).toBe(true);
+  });
 });
 
 

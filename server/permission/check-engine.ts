@@ -15,10 +15,12 @@
 import type {
   Action,
   GovernanceDecision,
+  PermissionCheckContractResponse,
   PermissionCheckResult,
   PermissionMatrixEntry,
   ResourceType,
 } from "../../shared/permission/contracts.js";
+import { normalizePermissionCheckContractResponse } from "../../shared/permission/contracts.js";
 import type { ResourceChecker } from "./checkers/filesystem-checker.js";
 import type { TokenService } from "./token-service.js";
 import { InvalidTokenError, TokenExpiredError } from "./token-service.js";
@@ -365,4 +367,21 @@ export class PermissionCheckEngine {
       // Audit failures must not block permission checks
     }
   }
+}
+
+export function toPermissionCheckContractResponse(
+  result: PermissionCheckResult,
+): PermissionCheckContractResponse {
+  return normalizePermissionCheckContractResponse(
+    {
+      source: "node",
+      allowed: result.allowed,
+      decision: result.allowed ? "allow" : "deny",
+      reason: result.reason ?? null,
+      suggestion: result.suggestion,
+      matchedRule: result.matchedRule,
+      governance: result.governance,
+    },
+    "node",
+  );
 }

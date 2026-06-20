@@ -8,27 +8,18 @@ from typing import Dict, Any, Optional
 from models.v5_state import Artifact, CapabilityRun, V5SessionState
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
-import json
-import os
+from .persistence import load_all, load_session_record, save_all, save_session_record
 from datetime import datetime
-
-# Simple file-based store for durability, like Node's durable pilot.
-SESSION_FILE = "data/slide_rule_sessions.json"
-os.makedirs("data", exist_ok=True)
 
 _sessions: Dict[str, V5SessionState] = {}
 
 def _load_sessions():
     global _sessions
-    if os.path.exists(SESSION_FILE):
-        with open(SESSION_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            _sessions = {k: V5SessionState(**v) for k, v in data.items()}
+    _sessions = load_all()
     return _sessions
 
 def _save_sessions():
-    with open(SESSION_FILE, 'w', encoding='utf-8') as f:
-        json.dump({k: v.model_dump() for k, v in _sessions.items()}, f, ensure_ascii=False, indent=2)
+    save_all(_sessions)
 
 def create_session(goal_text: str, session_id: Optional[str] = None) -> V5SessionState:
     if not session_id:
@@ -48,11 +39,19 @@ def create_session(goal_text: str, session_id: Optional[str] = None) -> V5Sessio
 def load_session(session_id: str) -> Optional[V5SessionState]:
     if not _sessions:
         _load_sessions()
-    return _sessions.get(session_id)
+    cached = _sessions.get(session_id)
+    if cached is not None:
+        return cached
+    result = load_session_record(session_id)
+    if result.get("ok"):
+        state = result["session"]
+        _sessions[session_id] = state
+        return state
+    return None
 
 def save_session(state: V5SessionState):
     _sessions[state.sessionId] = state
-    _save_sessions()
+    save_session_record(state)
 
 def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) -> V5SessionState:
     """Main loop: orchestrate + execute caps using Python RAG for stable evidence."""

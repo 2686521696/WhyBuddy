@@ -9,6 +9,8 @@
 import type {
   AuditLogEntry,
   AuditQueryFilters,
+  AuditQueryProxyFailure,
+  AuditQueryProxyResult,
   AuditQueryResult,
   PageOptions,
 } from "../../shared/audit/contracts.js";
@@ -26,6 +28,44 @@ import { auditCollector } from "./audit-collector.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+
+function normalizePage(page: PageOptions): PageOptions {
+  const pageSize = Math.min(Math.max(page.pageSize || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+  const pageNum = Math.max(page.pageNum || 1, 1);
+  return { pageSize, pageNum };
+}
+
+export function toAuditQueryProxySuccess(result: AuditQueryResult): AuditQueryProxyResult {
+  return {
+    status: "ok",
+    entries: result.entries,
+    total: result.total,
+    page: normalizePage(result.page),
+    ...(result.chainValid === undefined ? {} : { chainValid: result.chainValid }),
+  };
+}
+
+export function toAuditQueryProxyForbidden(page: PageOptions): AuditQueryProxyFailure {
+  return {
+    status: "forbidden",
+    error: {
+      code: "forbidden",
+      message: "Audit query forbidden",
+    },
+    page: normalizePage(page),
+  };
+}
+
+export function toAuditQueryProxyError(page: PageOptions): AuditQueryProxyFailure {
+  return {
+    status: "error",
+    error: {
+      code: "audit_query_error",
+      message: "Audit query failed",
+    },
+    page: normalizePage(page),
+  };
+}
 
 // ─── AuditQuery 类 ─────────────────────────────────────────────────────────
 
@@ -274,8 +314,7 @@ export class AuditQuery {
 
   /** 分页 */
   private paginate(entries: AuditLogEntry[], page: PageOptions): AuditQueryResult {
-    const pageSize = Math.min(Math.max(page.pageSize || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
-    const pageNum = Math.max(page.pageNum || 1, 1);
+    const { pageSize, pageNum } = normalizePage(page);
     const total = entries.length;
     const start = (pageNum - 1) * pageSize;
     const paged = entries.slice(start, start + pageSize);

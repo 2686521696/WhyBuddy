@@ -18,7 +18,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AuditEvent, AuditLogEntry } from "../../shared/audit/contracts.js";
-import { DEFAULT_EVENT_TYPE_REGISTRY } from "../../shared/audit/contracts.js";
+import {
+  assertValidAuditEventDraft,
+  DEFAULT_EVENT_TYPE_REGISTRY,
+  validateAuditEvent,
+} from "../../shared/audit/contracts.js";
 import type { AuditChain } from "./audit-chain.js";
 import { auditChain } from "./audit-chain.js";
 import type { TimestampProvider } from "./timestamp-provider.js";
@@ -74,6 +78,8 @@ export class AuditCollector {
    * - 否则启动/重置 100ms 刷新定时器
    */
   record(input: AuditEventInput): void {
+    assertValidAuditEventDraft(input);
+
     // Auto-detect CRITICAL events and route to sync write
     const def = DEFAULT_EVENT_TYPE_REGISTRY[input.eventType];
     if (def && def.severity === "CRITICAL") {
@@ -99,6 +105,7 @@ export class AuditCollector {
    * 将 AuditEventInput 转换为 AuditEvent，直接调用 chain.append()。
    */
   recordSync(input: AuditEventInput): AuditLogEntry {
+    assertValidAuditEventDraft(input);
     const event = this.toAuditEvent(input);
     return this.chain.append(event);
   }
@@ -228,7 +235,7 @@ export class AuditCollector {
   /** 将 AuditEventInput 转换为 AuditEvent */
   private toAuditEvent(input: AuditEventInput): AuditEvent {
     const ts = this.timestampProvider.now();
-    return {
+    const event: AuditEvent = {
       eventId: `ae_${ts.system}_${crypto.randomBytes(4).toString("hex")}`,
       eventType: input.eventType,
       timestamp: ts.system,
@@ -240,6 +247,11 @@ export class AuditCollector {
       metadata: input.metadata,
       lineageId: input.lineageId,
     };
+    const result = validateAuditEvent(event);
+    if (!result.valid) {
+      throw new Error(`Invalid audit event: ${result.errors.join("; ")}`);
+    }
+    return event;
   }
 
   /** 清除刷新定时器 */

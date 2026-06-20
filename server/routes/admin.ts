@@ -1,4 +1,4 @@
-import express, { type NextFunction, type RequestHandler } from "express";
+import express, { type ErrorRequestHandler, type NextFunction, type RequestHandler } from "express";
 
 import type { ProjectRecord, UserRecord } from "../persistence/repositories.js";
 
@@ -21,9 +21,67 @@ export interface AdminRouterDeps {
 
 type PublicUserRecord = Omit<UserRecord, "passwordHash">;
 
+type JsonObject = Record<string, unknown>;
+
+export type AdminPythonRouteContract =
+  | {
+      outcome: "success";
+      statusCode?: 200;
+      body: JsonObject & { success: true };
+    }
+  | {
+      outcome: "forbidden";
+      statusCode?: number;
+      body?: unknown;
+      error?: unknown;
+    }
+  | {
+      outcome: "error";
+      statusCode?: number;
+      body?: unknown;
+      error?: unknown;
+    };
+
+export interface AdminRouteContractResponse {
+  statusCode: number;
+  body: JsonObject & { success: boolean };
+}
+
+const ADMIN_FORBIDDEN_ERROR = "Admin privileges required";
+const ADMIN_ROUTE_FAILED_ERROR = "Admin route failed";
+
 function publicUser(user: UserRecord): PublicUserRecord {
   const { passwordHash: _passwordHash, ...safeUser } = user;
   return safeUser;
+}
+
+export function mapAdminPythonRouteContract(
+  contract: AdminPythonRouteContract,
+): AdminRouteContractResponse {
+  if (contract.outcome === "success") {
+    return {
+      statusCode: 200,
+      body: contract.body,
+    };
+  }
+
+  if (contract.outcome === "forbidden") {
+    return {
+      statusCode: 403,
+      body: {
+        success: false,
+        error: ADMIN_FORBIDDEN_ERROR,
+      },
+    };
+  }
+
+  return {
+    statusCode: 500,
+    body: {
+      success: false,
+      error: ADMIN_ROUTE_FAILED_ERROR,
+    },
+  };
 }
 
 function asyncRoute(handler: RequestHandler): RequestHandler {
@@ -31,6 +89,16 @@ function asyncRoute(handler: RequestHandler): RequestHandler {
     Promise.resolve(handler(request, response, next)).catch(next);
   };
 }
+
+const adminErrorHandler: ErrorRequestHandler = (_error, _request, response, next) => {
+  if (response.headersSent) {
+    next(_error);
+    return;
+  }
+
+  const mapped = mapAdminPythonRouteContract({ outcome: "error" });
+  response.status(mapped.statusCode).json(mapped.body);
+};
 
 export function createAdminRouter(deps: AdminRouterDeps) {
   const router = express.Router();
@@ -111,6 +179,8 @@ export function createAdminRouter(deps: AdminRouterDeps) {
   router.get("/audit", (_request, response) => {
     response.json({ success: true, items: [] });
   });
+
+  router.use(adminErrorHandler);
 
   return router;
 }

@@ -4,7 +4,11 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 
 import { createAuthMiddleware } from "../auth/middleware.js";
-import type { SessionLookupResult, SessionService } from "../auth/session-service.js";
+import {
+  toPythonAuthSessionContract,
+  type SessionLookupResult,
+  type SessionService,
+} from "../auth/session-service.js";
 
 async function withServer(
   service: Pick<SessionService, "readSessionToken" | "resolveCurrentUser" | "clearCookie">,
@@ -53,6 +57,7 @@ describe("auth middleware", () => {
     await withServer(service(null), async (baseUrl) => {
       const response = await fetch(`${baseUrl}/required`);
       expect(response.status).toBe(401);
+      expect(toPythonAuthSessionContract(null)).toMatchObject({ valid: false, error: "missing", status: 401 });
     });
   });
 
@@ -74,6 +79,11 @@ describe("auth middleware", () => {
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.user.id).toBe("user-1");
+        expect(toPythonAuthSessionContract({ sessionId: "session-1", user: body.user })).toMatchObject({
+          valid: true,
+          sessionId: "session-1",
+          user: expect.objectContaining({ id: "user-1" }),
+        });
       },
     );
   });

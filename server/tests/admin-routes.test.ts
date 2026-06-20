@@ -148,7 +148,9 @@ async function withServer(
 
 describe("admin routes", () => {
   it("returns 403 for regular users", async () => {
-    await withServer(createDeps(regularUser), async baseUrl => {
+    const deps = createDeps(regularUser);
+
+    await withServer(deps, async baseUrl => {
       const response = await fetch(`${baseUrl}/api/admin/summary`);
 
       expect(response.status).toBe(403);
@@ -156,6 +158,8 @@ describe("admin routes", () => {
         success: false,
         error: "Admin privileges required",
       });
+      expect(deps.users.list).not.toHaveBeenCalled();
+      expect(deps.projects.list).not.toHaveBeenCalled();
     });
   });
 
@@ -210,6 +214,26 @@ describe("admin routes", () => {
         "project-owned-by-other-user",
         "project-owned-by-admin",
       ]);
+    });
+  });
+
+  it("returns sanitized error contract when an admin reader fails", async () => {
+    const deps = createDeps(adminUser);
+    deps.users.list = vi.fn(async () => {
+      throw new Error("database passwordHash query failed");
+    });
+
+    await withServer(deps, async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/admin/users`);
+      const body = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(body).toEqual({
+        success: false,
+        error: "Admin route failed",
+      });
+      expect(JSON.stringify(body)).not.toContain("passwordHash");
+      expect(JSON.stringify(body)).not.toContain("database");
     });
   });
 });

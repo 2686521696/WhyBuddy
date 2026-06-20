@@ -124,6 +124,19 @@ class EvidenceRetriever:
         )
 
 
+def retrieve_evidence(
+    query: str,
+    *,
+    vector_runtime: VectorRuntime | None = None,
+    top_k: int = 4,
+    fallback_reason: str = "vector_runtime_unavailable",
+) -> EvidenceRetrievalResult:
+    """Select configured vector retrieval or an explicit safe fallback."""
+    if vector_runtime is None:
+        return fallback_evidence(query, reason=fallback_reason)
+    return EvidenceRetriever.from_runtime(vector_runtime).retrieve(query, top_k=top_k)
+
+
 def source_from_vector_hit(hit: VectorSearchHit) -> EvidenceSource:
     title = str(hit.metadata.get("title") or hit.metadata.get("sourceId") or hit.id)
     return EvidenceSource(
@@ -197,3 +210,14 @@ def degraded_evidence(query: str, *, error: str, reason: str | None = None) -> E
         fallback_reason=detail,
         error=error,
     )
+
+
+def execute_evidence_runtime(query: str) -> EvidenceRetrievalResult:
+    """Minimal Node-facing evidence runtime boundary.
+
+    This slice intentionally does not connect a production vector store. Until
+    real retrieval dependencies are injected by a later slice, the runtime
+    returns an explicit fallback provenance instead of pretending retrieval
+    succeeded.
+    """
+    return fallback_evidence(query, reason="vector_runtime_not_configured")

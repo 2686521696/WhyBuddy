@@ -78,9 +78,211 @@ function collectAllRelations(graphStore: GraphStore): Relation[] {
 // ---------------------------------------------------------------------------
 
 const PREFIX = "/api/admin/knowledge";
+const PYTHON_PROXY_ENABLED = "KNOWLEDGE_ADMIN_PYTHON_PROXY";
+const PYTHON_PROXY_BASE_URL = "PYTHON_SLIDE_RULE_BASE_URL";
+const PYTHON_PROXY_INTERNAL_KEY = "PYTHON_SLIDE_RULE_INTERNAL_KEY";
+const DEFAULT_PYTHON_BASE_URL = "http://localhost:9700";
+const DEFAULT_INTERNAL_KEY = "dev-slide-rule-internal";
+const KNOWLEDGE_ADMIN_PERMISSION = "knowledge.admin";
+
+type KnowledgeAdminProxyOperation = "list" | "upsert" | "delete";
+
+interface KnowledgeAdminProxyBody {
+  operation?: unknown;
+  projectId?: unknown;
+  actor?: unknown;
+  item?: unknown;
+  itemId?: unknown;
+  id?: unknown;
+}
 
 function stripPrefix(route: string): string {
   return route.startsWith(PREFIX) ? route.slice(PREFIX.length) || "/" : route;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function isPythonKnowledgeAdminProxyEnabled(): boolean {
+  return process.env[PYTHON_PROXY_ENABLED] === "true";
+}
+
+function resolvePythonKnowledgeAdminBaseUrl(): string {
+  return trimTrailingSlashes(
+    (process.env[PYTHON_PROXY_BASE_URL] || DEFAULT_PYTHON_BASE_URL).trim() ||
+      DEFAULT_PYTHON_BASE_URL,
+  );
+}
+
+function resolvePythonKnowledgeAdminInternalKey(): string {
+  return process.env[PYTHON_PROXY_INTERNAL_KEY] || DEFAULT_INTERNAL_KEY;
+}
+
+function normalizeProxyOperation(operation: unknown): string {
+  return typeof operation === "string" ? operation.trim() : "";
+}
+
+function isSupportedProxyOperation(
+  operation: string,
+): operation is KnowledgeAdminProxyOperation {
+  return operation === "list" || operation === "upsert" || operation === "delete";
+}
+
+function hasKnowledgeAdminPermission(body: KnowledgeAdminProxyBody): boolean {
+  if (!isRecord(body.actor)) return false;
+  const permissions = body.actor.permissions;
+  return Array.isArray(permissions) && permissions.includes(KNOWLEDGE_ADMIN_PERMISSION);
+}
+
+function cleanProxyItem(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  const item: Record<string, unknown> = {};
+  for (const key of ["id", "title", "content", "projectId", "metadata"]) {
+    if (key in value) {
+      item[key] = value[key];
+    }
+  }
+  return item;
+}
+
+function buildNodeKnowledgeAdminPermissionFailure(operation: string) {
+  return {
+    ok: false,
+    operation,
+    error: "permission_denied",
+    reason: "missing_knowledge_admin_permission",
+    message: "knowledge admin permission denied",
+    permissionFailure: true,
+    statusCode: 403,
+    provenance: "node-knowledge-admin-fallback-contract",
+  };
+}
+
+function buildNodeKnowledgeAdminContractFallback(
+  body: KnowledgeAdminProxyBody,
+  fallbackReason?: string,
+) {
+  const operation = normalizeProxyOperation(body.operation);
+  if (!isSupportedProxyOperation(operation)) {
+    return {
+      ok: false,
+      operation,
+      error: "invalid_operation",
+      reason: "unsupported_operation",
+      message: "operation must be list, upsert, or delete",
+      permissionFailure: false,
+      statusCode: 400,
+      provenance: "node-knowledge-admin-fallback-contract",
+      ...(fallbackReason ? { fallbackReason } : {}),
+    };
+  }
+
+  if (!hasKnowledgeAdminPermission(body)) {
+    return {
+      ...buildNodeKnowledgeAdminPermissionFailure(operation),
+      ...(fallbackReason ? { fallbackReason } : {}),
+    };
+  }
+
+  const base = {
+    ok: true,
+    operation,
+    projectId: typeof body.projectId === "string" ? body.projectId : "",
+    storage: "node-fallback-contract",
+    migratedStorage: false,
+    provenance: "node-knowledge-admin-fallback-contract",
+    ...(fallbackReason ? { fallbackReason } : {}),
+  };
+
+  if (operation === "list") {
+    return {
+      ...base,
+      items: [],
+    };
+  }
+
+  if (operation === "upsert") {
+    return {
+      ...base,
+      item: cleanProxyItem(body.item),
+      stored: false,
+    };
+  }
+
+  return {
+    ...base,
+    deletedId:
+      typeof body.itemId === "string"
+        ? body.itemId
+        : typeof body.id === "string"
+          ? body.id
+          : "",
+    deleted: false,
+  };
+}
+
+function proxyStatusCode(payload: unknown, fallback = 200): number {
+  if (!isRecord(payload)) return fallback;
+  if (typeof payload.statusCode === "number" && Number.isInteger(payload.statusCode)) {
+    return payload.statusCode;
+  }
+  return payload.ok === false ? 500 : fallback;
+}
+
+function isPermissionFailurePayload(payload: unknown): boolean {
+  return (
+    isRecord(payload) &&
+    (payload.permissionFailure === true || payload.error === "permission_denied")
+  );
+}
+
+async function readResponseJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`python knowledge admin proxy returned invalid json: ${text.slice(0, 200)}`);
+  }
+}
+
+async function callPythonKnowledgeAdminProxy(body: KnowledgeAdminProxyBody) {
+  const response = await fetch(
+    `${resolvePythonKnowledgeAdminBaseUrl()}/api/admin/knowledge/proxy`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Key": resolvePythonKnowledgeAdminInternalKey(),
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  const payload = await readResponseJson(response);
+  if (!response.ok && !isPermissionFailurePayload(payload)) {
+    throw new Error(
+      `python knowledge admin proxy failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`,
+    );
+  }
+  return {
+    payload,
+    statusCode: proxyStatusCode(payload, response.status),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +296,26 @@ export function createKnowledgeAdminRouter(deps: {
 }): Router {
   const { graphStore, ontologyRegistry } = deps;
   const router = Router();
+
+  router.post("/proxy", async (req, res) => {
+    const body: KnowledgeAdminProxyBody = isRecord(req.body) ? req.body : {};
+
+    if (isPythonKnowledgeAdminProxyEnabled()) {
+      try {
+        const delegated = await callPythonKnowledgeAdminProxy(body);
+        return res.status(delegated.statusCode).json(delegated.payload);
+      } catch (error) {
+        const fallback = buildNodeKnowledgeAdminContractFallback(
+          body,
+          `python proxy failed: ${errorMessage(error)}`,
+        );
+        return res.status(proxyStatusCode(fallback)).json(fallback);
+      }
+    }
+
+    const fallback = buildNodeKnowledgeAdminContractFallback(body);
+    return res.status(proxyStatusCode(fallback)).json(fallback);
+  });
 
   // -----------------------------------------------------------------------
   // GET /api/admin/knowledge/stats — Req 8.2

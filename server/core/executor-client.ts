@@ -1,5 +1,7 @@
 import {
   EXECUTOR_API_ROUTES,
+  type CancelExecutorJobRequest,
+  type CancelExecutorJobResponse,
   EXECUTOR_CALLBACK_HEADERS,
   type CreateExecutorJobResponse,
   type ExecutorCapabilitiesResponse,
@@ -360,6 +362,73 @@ export class ExecutorClient {
     return (parsedBody as ExecutorJobDetailResponse).job;
   }
 
+  async cancelJob(
+    jobId: string,
+    request: CancelExecutorJobRequest = {},
+  ): Promise<CancelExecutorJobResponse> {
+    const encodedJobId = encodeURIComponent(jobId);
+    const path = EXECUTOR_API_ROUTES.cancelJob.replace(":id", encodedJobId);
+    const url = joinUrl(this.options.baseUrl, path);
+
+    let response: Response;
+    try {
+      response = await this.request(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+    } catch (error) {
+      throw new ExecutorClientError(
+        `Executor cancel-job request failed for ${url}.`,
+        "unavailable",
+        undefined,
+        { cause: error },
+      );
+    }
+
+    const rawBody = await response.text();
+    let parsedBody: unknown;
+    try {
+      parsedBody = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      throw new ExecutorClientError(
+        `Executor returned a non-JSON response while cancelling a job at ${url}.`,
+        "protocol",
+        response.status,
+      );
+    }
+
+    if (!response.ok) {
+      const errorMessage =
+        typeof parsedBody === "object" &&
+        parsedBody !== null &&
+        "error" in parsedBody &&
+        typeof parsedBody.error === "string"
+          ? parsedBody.error
+          : `HTTP ${response.status}`;
+      const details = parseExecutorErrorDetails(parsedBody);
+
+      throw new ExecutorClientError(
+        `Executor cancel-job request was rejected: ${errorMessage}${formatExecutorErrorDetails(details)}`,
+        "rejected",
+        response.status,
+        { details },
+      );
+    }
+
+    if (!isCancelExecutorJobResponse(parsedBody)) {
+      throw new ExecutorClientError(
+        "Executor cancel-job response is missing required fields.",
+        "protocol",
+        response.status,
+      );
+    }
+
+    return parsedBody;
+  }
+
   async validatePlanCapabilities(
     plan: ExecutionPlan,
     capabilities?: ExecutorCapabilities,
@@ -534,5 +603,20 @@ function isExecutorJobDetail(value: unknown): value is ExecutorJobDetail {
     Array.isArray(record.events) &&
     typeof record.dataDirectory === "string" &&
     typeof record.logFile === "string"
+  );
+}
+
+function isCancelExecutorJobResponse(value: unknown): value is CancelExecutorJobResponse {
+  if (!value || typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.ok === true &&
+    record.accepted === true &&
+    (record.alreadyFinal === undefined || typeof record.alreadyFinal === "boolean") &&
+    (record.cancelRequested === undefined || typeof record.cancelRequested === "boolean") &&
+    typeof record.missionId === "string" &&
+    typeof record.jobId === "string" &&
+    typeof record.status === "string" &&
+    typeof record.message === "string"
   );
 }

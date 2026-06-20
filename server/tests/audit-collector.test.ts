@@ -135,6 +135,18 @@ describe("AuditCollector", () => {
       expect(e2.previousHash).toBe(e1.currentHash);
       expect(e2.sequenceNumber).toBe(1);
     });
+
+    it("should reject invalid successful events before appending to the audit chain", () => {
+      const appendSpy = vi.spyOn(chain, "append");
+      const invalid = makeCriticalInput({
+        actor: { type: "agent", id: "" },
+        result: "success",
+      });
+
+      expect(() => collector.recordSync(invalid)).toThrow(/actor\.id/);
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(chain.getEntryCount()).toBe(0);
+    });
   });
 
   // ─── 5.3 缓冲策略 ────────────────────────────────────────────────────
@@ -315,6 +327,20 @@ describe("AuditCollector", () => {
       expect(content.split("\n")).toHaveLength(2);
 
       appendSpy.mockRestore();
+    });
+
+    it("should reject invalid buffered events without writing success or fallback records", () => {
+      const appendSpy = vi.spyOn(chain, "append");
+      const invalid = makeInput({
+        actor: { type: "agent", id: "" },
+        result: "success",
+      });
+
+      expect(() => collector.record(invalid)).toThrow(/actor\.id/);
+      expect(collector.getBufferSize()).toBe(0);
+      expect(chain.getEntryCount()).toBe(0);
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(fs.existsSync(fallbackPath)).toBe(false);
     });
   });
 

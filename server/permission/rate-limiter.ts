@@ -5,7 +5,9 @@
  * Uses a sliding window of 60 seconds (1 minute) to enforce maxPerMinute limits.
  */
 
-const WINDOW_MS = 60_000; // 60 seconds
+import type { PermissionRateLimitDecision } from "../../shared/permission/contracts.js";
+
+export const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export class SlidingWindowRateLimiter {
   /** key → sorted array of timestamps (ms) */
@@ -24,21 +26,66 @@ export class SlidingWindowRateLimiter {
    * @returns true if under limit, false if exceeded
    */
   check(key: string, maxPerMinute: number): boolean {
-    const now = this.now();
-    const timestamps = this.windows.get(key);
-    if (!timestamps) return true;
+    return this.checkDetailed(key, maxPerMinute).allowed;
+  }
 
-    const cutoff = now - WINDOW_MS;
+  checkDetailed(key: string, maxPerMinute: number): PermissionRateLimitDecision {
+    const now = this.now();
+    if (!Number.isFinite(maxPerMinute) || maxPerMinute <= 0) {
+      return {
+        allowed: false,
+        limit: maxPerMinute,
+        remaining: 0,
+        retryAfterMs: RATE_LIMIT_WINDOW_MS,
+        resetAtMs: now + RATE_LIMIT_WINDOW_MS,
+        reason: "invalid_limit",
+      };
+    }
+
+    const timestamps = this.windows.get(key);
+    if (!timestamps) {
+      return {
+        allowed: true,
+        limit: maxPerMinute,
+        remaining: maxPerMinute,
+        retryAfterMs: 0,
+        resetAtMs: null,
+        reason: "allowed",
+      };
+    }
+
+    const cutoff = now - RATE_LIMIT_WINDOW_MS;
     // Count timestamps within the window
     let count = 0;
+    let oldestActive: number | null = null;
     for (let i = timestamps.length - 1; i >= 0; i--) {
       if (timestamps[i] > cutoff) {
         count++;
+        oldestActive = timestamps[i];
       } else {
         break; // sorted ascending, so everything before is also expired
       }
     }
-    return count < maxPerMinute;
+    if (count < maxPerMinute) {
+      return {
+        allowed: true,
+        limit: maxPerMinute,
+        remaining: maxPerMinute - count,
+        retryAfterMs: 0,
+        resetAtMs: null,
+        reason: "allowed",
+      };
+    }
+
+    const resetAtMs = (oldestActive ?? now) + RATE_LIMIT_WINDOW_MS;
+    return {
+      allowed: false,
+      limit: maxPerMinute,
+      remaining: 0,
+      retryAfterMs: Math.max(0, resetAtMs - now),
+      resetAtMs,
+      reason: "rate_limit_exceeded",
+    };
   }
 
   /** Record a request timestamp for the given key. */
@@ -54,7 +101,7 @@ export class SlidingWindowRateLimiter {
 
   /** Remove expired timestamps (older than 60s) from all keys. */
   cleanup(): void {
-    const cutoff = this.now() - WINDOW_MS;
+    const cutoff = this.now() - RATE_LIMIT_WINDOW_MS;
     this.windows.forEach((timestamps, key) => {
       // Find first index within the window
       let firstValid = timestamps.length;
@@ -77,7 +124,7 @@ export class SlidingWindowRateLimiter {
     const now = this.now();
     const timestamps = this.windows.get(key);
     if (!timestamps) return 0;
-    const cutoff = now - WINDOW_MS;
+    const cutoff = now - RATE_LIMIT_WINDOW_MS;
     let count = 0;
     for (let i = timestamps.length - 1; i >= 0; i--) {
       if (timestamps[i] > cutoff) {

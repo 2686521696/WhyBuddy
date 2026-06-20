@@ -9,6 +9,23 @@ export interface SessionLookupResult {
   user: CurrentUser;
 }
 
+export type PythonAuthSessionError = "missing" | "expired" | "invalid";
+
+export interface PythonAuthSessionValidContract {
+  valid: true;
+  sessionId: string;
+  user: CurrentUser;
+}
+
+export interface PythonAuthSessionErrorContract {
+  valid: false;
+  error: PythonAuthSessionError;
+  status: 401;
+  message: string;
+}
+
+export type PythonAuthSessionContract = PythonAuthSessionValidContract | PythonAuthSessionErrorContract;
+
 export interface SessionRepositories {
   sessions: {
     create(input: {
@@ -56,6 +73,97 @@ export function toCurrentUser(user: UserRecord): CurrentUser {
     emailVerified: Boolean(user.emailVerifiedAt),
     createdAt: user.createdAt.toISOString(),
   };
+}
+
+const pythonAuthSessionMessages: Record<PythonAuthSessionError, string> = {
+  missing: "Authentication required",
+  expired: "Session expired",
+  invalid: "Invalid session",
+};
+
+function pythonAuthSessionError(error: PythonAuthSessionError): PythonAuthSessionErrorContract {
+  return {
+    valid: false,
+    error,
+    status: 401,
+    message: pythonAuthSessionMessages[error],
+  };
+}
+
+function containsSecretKey(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretKey(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const normalized = key.toLowerCase();
+    return (
+      normalized.includes("token") ||
+      normalized.includes("cookie") ||
+      normalized.includes("password") ||
+      normalized.includes("secret") ||
+      containsSecretKey(child)
+    );
+  });
+}
+
+function isCurrentUser(value: unknown): value is CurrentUser {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const user = value as Partial<CurrentUser>;
+  return (
+    typeof user.id === "string" &&
+    typeof user.email === "string" &&
+    typeof user.role === "string" &&
+    typeof user.status === "string" &&
+    typeof user.emailVerified === "boolean" &&
+    typeof user.createdAt === "string"
+  );
+}
+
+export function validatePythonAuthSessionContract(payload: unknown): PythonAuthSessionContract {
+  if (!payload) {
+    return pythonAuthSessionError("missing");
+  }
+  if (typeof payload !== "object") {
+    return pythonAuthSessionError("invalid");
+  }
+
+  const candidate = payload as Partial<PythonAuthSessionContract> & {
+    sessionId?: unknown;
+    user?: unknown;
+    error?: unknown;
+  };
+  if (candidate.error === "missing" || candidate.error === "expired" || candidate.error === "invalid") {
+    return pythonAuthSessionError(candidate.error);
+  }
+  if (containsSecretKey(payload)) {
+    return pythonAuthSessionError("invalid");
+  }
+  if (candidate.valid === true && typeof candidate.sessionId === "string" && isCurrentUser(candidate.user)) {
+    return {
+      valid: true,
+      sessionId: candidate.sessionId,
+      user: candidate.user,
+    };
+  }
+  return pythonAuthSessionError("invalid");
+}
+
+export function toPythonAuthSessionContract(
+  result: SessionLookupResult | null | undefined,
+): PythonAuthSessionContract {
+  if (!result) {
+    return pythonAuthSessionError("missing");
+  }
+  return validatePythonAuthSessionContract({
+    valid: true,
+    sessionId: result.sessionId,
+    user: result.user,
+  });
 }
 
 export function createSessionService(options: {

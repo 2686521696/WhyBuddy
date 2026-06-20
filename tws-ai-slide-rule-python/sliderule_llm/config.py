@@ -107,6 +107,7 @@ class LlmConfig:
     max_concurrent: int
     provider_name: str
     chat_thinking_type: str | None
+    supports_image_content_parts: bool = False
 
 
 def get_llm_config() -> LlmConfig:
@@ -130,6 +131,7 @@ def get_llm_config() -> LlmConfig:
         max_concurrent=max(1, _int(_pick("LLM_MAX_CONCURRENT"), 9999)),
         provider_name=_provider_name(base),
         chat_thinking_type=_pick("LLM_CHAT_THINKING_TYPE", "OPENAI_CHAT_THINKING_TYPE"),
+        supports_image_content_parts=_bool(_pick("LLM_SUPPORTS_IMAGE_CONTENT_PARTS"), False),
     )
 
 
@@ -219,4 +221,51 @@ def get_pool_config() -> PoolConfig:
         wire_api=wire_api,
         race_mode=_resolve_race_mode(),
         enabled=_bool(_pick("SLIDERULE_CAPABILITY_POOL_ENABLED"), False),
+    )
+
+
+@dataclass(frozen=True)
+class VectorStoreConfig:
+    """Runtime config contract for vector-backed evidence retrieval."""
+
+    runtime: str
+    enabled: bool
+    base_url: str
+    collection: str
+    api_key: str
+    timeout_ms: int
+    dimension: int
+
+
+def _normalize_vector_runtime(raw_runtime: str | None, enabled: bool) -> tuple[str, bool]:
+    runtime = (raw_runtime or "").strip().lower()
+    if runtime in ("qdrant", "real", "vector"):
+        return "qdrant", True
+    if runtime in ("disabled", "off", "none", "fallback"):
+        return "disabled", False
+    if enabled:
+        return "qdrant", True
+    return "disabled", False
+
+
+def get_vector_store_config() -> VectorStoreConfig:
+    enabled = _bool(
+        _pick(
+            "SLIDERULE_REAL_VECTOR_RETRIEVAL_ENABLED",
+            "RAG_VECTOR_RETRIEVAL_ENABLED",
+        ),
+        False,
+    )
+    runtime, enabled = _normalize_vector_runtime(
+        _pick("SLIDERULE_VECTOR_RUNTIME", "RAG_VECTOR_RUNTIME"),
+        enabled,
+    )
+    return VectorStoreConfig(
+        runtime=runtime,
+        enabled=enabled,
+        base_url=(_pick("QDRANT_URL", "RAG_VECTOR_STORE_URL") or "http://localhost:6333").rstrip("/"),
+        collection=_pick("QDRANT_COLLECTION", "RAG_VECTOR_COLLECTION") or "knowledge_base",
+        api_key=_pick("QDRANT_API_KEY", "RAG_VECTOR_STORE_API_KEY") or "",
+        timeout_ms=_positive_int(_pick("QDRANT_TIMEOUT_MS", "RAG_VECTOR_TIMEOUT_MS"), 10_000),
+        dimension=_positive_int(_pick("QDRANT_DIMENSION", "RAG_EMBEDDING_DIMENSION"), 1536),
     )
