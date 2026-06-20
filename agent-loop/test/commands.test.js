@@ -69,6 +69,23 @@ test('grok json args allow overriding max turns', () => {
   ]);
 });
 
+test('grok json args allow model override', () => {
+  assert.deepEqual(buildGrokJsonArgs({ promptFile: 'prompt.md', cwd: 'repo', model: 'grok-build' }), [
+    '-m',
+    'grok-build',
+    '--prompt-file',
+    'prompt.md',
+    '--output-format',
+    'json',
+    '--cwd',
+    'repo',
+    '--max-turns',
+    '4',
+    '--no-plan',
+    '--always-approve',
+  ]);
+});
+
 test('parseProbeArgs defaults to English and accepts zh-CN', () => {
   assert.deepEqual(parseProbeArgs([]), { lang: 'en' });
   assert.deepEqual(parseProbeArgs(['--lang', 'zh-CN']), { lang: 'zh-CN' });

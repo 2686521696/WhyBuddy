@@ -19,10 +19,12 @@ export function buildCodexExecArgs({ cwd, readPromptFromStdin = true, model = nu
   return args;
 }
 
-export function buildGrokJsonArgs({ promptFile, cwd, maxTurns = 4 } = {}) {
+export function buildGrokJsonArgs({ promptFile, cwd, maxTurns = 4, model = null } = {}) {
   if (!promptFile) throw new Error('promptFile is required');
   if (!cwd) throw new Error('cwd is required');
-  return [
+  const args = [];
+  if (model) args.push('-m', model);
+  args.push(
     '--prompt-file',
     promptFile,
     '--output-format',
@@ -33,5 +35,6 @@ export function buildGrokJsonArgs({ promptFile, cwd, maxTurns = 4 } = {}) {
     String(maxTurns),
     '--no-plan',
     '--always-approve',
-  ];
+  );
+  return args;
 }

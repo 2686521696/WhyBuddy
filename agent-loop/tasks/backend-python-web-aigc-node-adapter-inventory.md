@@ -1,7 +1,7 @@
 # 后端 NodeJS 到 Python 迁移：web-aigc node adapter inventory
 
 ## 执行状态
-- 状态：待执行
+- 状态：人工接管完成
 - 目标：盘点 `server/routes/node-adapters` 和 `shared/web-aigc-*`，拆出下一批可迁 Python adapters。
 - 角色分工：worker 只盘点；reviewer 确认任务粒度足够小。
 
@@ -10,7 +10,7 @@
 - [x] 按 search/file/vision-audio/navigation/report 分组。
 - [x] 标出每组迁移风险和建议 gate。
 - [x] mojibake gate 通过。
-- [x] Codex review 确认没有改业务代码。
+- [x] 文档 diff 确认没有改业务代码。
 
 ## 目标
 

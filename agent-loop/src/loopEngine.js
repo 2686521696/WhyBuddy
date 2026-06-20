@@ -455,6 +455,7 @@ async function runFixAttempt({
       promptFile: promptPath,
       cwd: fixCwd,
       maxTurns: options.grokMaxTurns ?? 4,
+      model: options.fixModel,
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
@@ -598,6 +599,7 @@ async function runReview({
       promptFile: artifactPath(state.artifacts.runDir, 'review-request.md'),
       cwd: fixCwd,
       maxTurns: options.reviewMaxTurns ?? 2,
+      model: options.reviewModel,
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
