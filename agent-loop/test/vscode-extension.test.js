@@ -529,6 +529,8 @@ test('dashboard media renders console overview with stale current run', async ()
   assert.match(html, /AgentLoop 控制台/);
   assert.match(html, /运行中断/);
   assert.match(html, /backend-python-blueprint-brainstorm-contract/);
+  assert.match(html, /workbench-split/);
+  assert.match(html, /overview-inspector/);
   assert.match(html, /queue-table/);
   assert.match(html, /data-state="stale"/);
 });
@@ -558,6 +560,9 @@ test('dashboard media renders detail evidence and log sections', async () => {
   });
 
   assert.match(html, /run-detail/);
+  assert.match(html, /detail-hero/);
+  assert.match(html, /timeline/);
+  assert.match(html, /detail-main-grid/);
   assert.match(html, /证据/);
   assert.match(html, /Review/);
   assert.match(html, /All gates passed/);

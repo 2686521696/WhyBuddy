@@ -108,6 +108,28 @@
     </section>`;
   }
 
+  function renderOverviewInspector(current, tasks) {
+    const selected = current || {};
+    const stale = Boolean(selected.staleRun);
+    const activeTask = (tasks || []).find((task) => task.running || task.stale) || (tasks || [])[0] || null;
+    const title = selected.taskLabel || activeTask?.taskLabel || activeTask?.task || '等待选择任务';
+    const state = stale ? '运行中断' : (selected.phaseLabel || activeTask?.statusLabel || '暂无活动运行');
+    const badge = stale ? 'stale' : (activeTask?.badge || 'pending');
+    const meta = metaFor(badge);
+    return `<aside class="overview-inspector">
+      <section class="panel inspector-card">
+        <div class="panel-head"><h2>任务快照</h2><span class="status-pill ${meta.cls}">${meta.icon}</span></div>
+        <div class="inspector-title">${esc(title)}</div>
+        <div class="inspector-state ${stale ? 'stale' : ''}">${esc(state)}</div>
+        <dl class="inspector-list">
+          <div><dt>耗时</dt><dd>${esc(selected.elapsedText || '-')}</dd></div>
+          <div><dt>最近结果</dt><dd>${esc(activeTask?.statusLabel || meta.label)}</dd></div>
+          <div><dt>队列状态</dt><dd>${stale ? '旧 run 未更新' : '等待操作'}</dd></div>
+        </dl>
+      </section>
+    </aside>`;
+  }
+
   function renderOverview(payload) {
     const counts = payload.counts || { total: 0 };
     return `<main class="dashboard console-overview">
@@ -115,7 +137,10 @@
       ${renderQueueStats(counts)}
       ${renderProgress(counts)}
       ${renderCurrentRunBanner(payload.current)}
-      ${renderTaskTable(payload.tasks || [])}
+      <section class="workbench-split">
+        ${renderTaskTable(payload.tasks || [])}
+        ${renderOverviewInspector(payload.current, payload.tasks || [])}
+      </section>
     </main>`;
   }
 
@@ -134,13 +159,14 @@
     const terminal = (status || '').startsWith('DONE_') || (status || '').startsWith('HALT_') || status === 'STALE_INTERRUPTED';
     const activeIndex = resolveActiveIndex(status, list);
     const items = list.map((step, index) => {
-      let cls = 'step';
+      let cls = 'timeline-step';
       if (terminal && step.key === 'DONE') cls += ' active done';
       else if (activeIndex === index) cls += ' active';
       else if (activeIndex > index) cls += ' done';
-      return `<span class="${cls}">${esc(step.label)}</span>`;
-    }).join('<span class="arrow">→</span>');
-    return `<section class="pipeline">${items}</section>`;
+      const marker = cls.includes('done') ? '✓' : '';
+      return `<span class="${cls}"><span class="timeline-dot">${marker}</span><span class="timeline-label">${esc(step.label)}</span></span>`;
+    }).join('');
+    return `<section class="timeline">${items}</section>`;
   }
 
   function gateClass(ok) {
@@ -254,13 +280,21 @@
   function renderDetail(payload) {
     const subtitle = `${payload.runId || '等待运行'} / ${payload.runMode || '-'} / ${payload.roleText || ''}`;
     return `<main class="dashboard run-detail">
-      ${renderConsoleHeader(payload.taskLabel || '-', subtitle, false, true)}
+      <section class="detail-hero">
+        ${renderConsoleHeader(payload.taskLabel || '-', subtitle, false, true)}
+      </section>
       ${renderPipeline(payload.status, payload.pipelineSteps)}
       ${renderHalt(payload)}
       ${renderStatusCards(payload)}
-      ${renderEvidence(payload)}
-      ${renderIterations(payload.iterations)}
-      ${renderReviewRounds(payload.reviewRounds)}
+      <section class="detail-main-grid">
+        <div class="detail-column">
+          ${renderEvidence(payload)}
+          ${renderIterations(payload.iterations)}
+        </div>
+        <div class="detail-column">
+          ${renderReviewRounds(payload.reviewRounds)}
+        </div>
+      </section>
       ${renderAgentLog(payload)}
       ${renderLinks(payload)}
     </main>`;
