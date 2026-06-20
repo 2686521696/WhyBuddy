@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildAgentChecklistFixPrompt,
   buildAgentFixPrompt,
   buildAgentReviewFixPrompt,
   buildAgentReviewPrompt,
@@ -55,6 +56,24 @@ test('buildAgentFixPrompt gives a direct fast path for missing gate files listed
   assert.match(prompt, /avoid broad repository exploration/);
 });
 
+test('buildAgentFixPrompt requires structured diagnosis before edits', () => {
+  const prompt = buildAgentFixPrompt({
+    taskText: '# Task\n\n## success criteria\n\n- gate green\n',
+    gate: { runs: [] },
+    workerAgent: 'codex',
+  });
+
+  assert.match(prompt, /Pre-edit diagnosis/);
+  assert.match(prompt, /failureKind/);
+  assert.match(prompt, /rootCause/);
+  assert.match(prompt, /editNeeded/);
+  assert.match(prompt, /intendedFiles/);
+  assert.match(prompt, /gatesToRun/);
+  assert.match(prompt, /If editNeeded is false/);
+  assert.match(prompt, /Do not create a cosmetic diff/);
+  assert.match(prompt, /diagnosis/);
+});
+
 test('buildAgentFixPrompt does not suggest creating missing files outside task scope', () => {
   const prompt = buildAgentFixPrompt({
     taskText: [
@@ -101,6 +120,37 @@ test('buildAgentReviewFixPrompt keeps review-driven fixes inside migration bound
   assert.match(prompt, /Migration Boundary Guardrails/);
   assert.match(prompt, /proxy contract、smoke gate、generated\/fallback evidence/);
   assert.match(prompt, /如果任务没有明确 allowed files、gate、成功标准/);
+});
+
+test('buildAgentChecklistFixPrompt requires diagnosis and no fake checklist diffs', () => {
+  const prompt = buildAgentChecklistFixPrompt({
+    taskText: '# Task\n\n### status\n- [ ] Implement runtime\n',
+    pendingItems: ['Implement runtime'],
+    workerAgent: 'codex',
+  });
+
+  assert.match(prompt, /Pre-edit diagnosis/);
+  assert.match(prompt, /checklist_pending/);
+  assert.match(prompt, /Do not mark checklist items done unless/);
+  assert.match(prompt, /diagnosis/);
+});
+
+test('buildAgentReviewFixPrompt requires diagnosis scoped to review findings', () => {
+  const prompt = buildAgentReviewFixPrompt({
+    taskText: '# Task',
+    review: {
+      verdict: 'needs_changes',
+      summary: 'tighten boundary',
+      findings: [{ severity: 'major', path: 'src/a.js', message: 'scope expanded' }],
+    },
+    diffText: 'diff --git a/src/a.js b/src/a.js\n+change\n',
+    workerAgent: 'codex',
+  });
+
+  assert.match(prompt, /Pre-edit diagnosis/);
+  assert.match(prompt, /review_needs_changes/);
+  assert.match(prompt, /Only edit files needed to resolve the listed review findings/);
+  assert.match(prompt, /diagnosis/);
 });
 
 test('buildAgentReviewPrompt includes gate evidence and head-review guidance when diff is empty', () => {

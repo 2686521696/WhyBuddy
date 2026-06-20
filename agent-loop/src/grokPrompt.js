@@ -21,6 +21,38 @@ const REVIEW_BOUNDARY_CHECKLIST = [
   '- 小的文案或风格问题不要阻断；边界错、证据不足、任务越界、进度夸大才是 blocker/major。',
 ].join('\n');
 
+const PRE_EDIT_DIAGNOSIS_FIELDS = [
+  '- failureKind: one of gate_failed | checklist_pending | review_needs_changes | no_changes | agent_error | timeout | unknown',
+  '- rootCause: one short sentence naming why this run is blocked',
+  '- editNeeded: true only when a real task-scoped file change is required',
+  '- intendedFiles: relative paths you expect to edit; keep this inside allowed files/task scope',
+  '- gatesToRun: gate commands or checks that should prove the change',
+].join('\n');
+
+function buildPreEditDiagnosisBlock({ failureKind = 'unknown', extraRules = [] } = {}) {
+  return [
+    '## Pre-edit diagnosis',
+    '',
+    'Before editing files, reason about the failure first. Do not skip this step just because turn budget is low.',
+    '',
+    PRE_EDIT_DIAGNOSIS_FIELDS,
+    '',
+    `- Suggested failureKind for this prompt: ${failureKind}`,
+    '- If editNeeded is false, output `blocked` with diagnosis and do not edit files.',
+    '- Do not create a cosmetic diff just to avoid HALT_NO_CHANGES.',
+    '- Do not widen scope because a previous run ran out of turns; shrink the task, explain the blocker, or return blocked.',
+    ...extraRules,
+  ].join('\n');
+}
+
+function inferFailureKind(gate) {
+  const runs = gate?.runs || [];
+  if (runs.some((run) => run.timedOut)) return 'timeout';
+  if (runs.some((run) => run.spawnError)) return 'agent_error';
+  if (runs.some((run) => run.exitCode !== 0)) return 'gate_failed';
+  return 'unknown';
+}
+
 export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
   const failureBlocks = gate.runs
     .filter((run) => run.exitCode !== 0 || run.timedOut || run.spawnError)
@@ -60,6 +92,8 @@ export function buildAgentFixPrompt({ taskText, gate, workerAgent = 'grok' }) {
     '- Do not delete, weaken, skip, or rewrite tests to make the gate pass.',
     '- Do not change gate commands, test scripts, CI config, or test runner config unless the task explicitly asks for that.',
     '- Do not bypass assertions, mark tests skipped/only, lower coverage, or replace checks with placeholders.',
+    '',
+    buildPreEditDiagnosisBlock({ failureKind: inferFailureKind(gate) }),
     '',
     MIGRATION_BOUNDARY_GUARDRAILS,
     '',
@@ -149,6 +183,13 @@ export function buildAgentChecklistFixPrompt({ taskText, pendingItems = [], work
     '- Do not change gate commands, test scripts, CI config, or test runner config unless the task explicitly asks for that.',
     '- Do not bypass assertions, mark tests skipped/only, lower coverage, or replace checks with placeholders.',
     '',
+    buildPreEditDiagnosisBlock({
+      failureKind: 'checklist_pending',
+      extraRules: [
+        '- Do not mark checklist items done unless the implementation and evidence already satisfy them.',
+      ],
+    }),
+    '',
     MIGRATION_BOUNDARY_GUARDRAILS,
     '',
     '## 规则',
@@ -204,6 +245,13 @@ export function buildAgentReviewFixPrompt({ taskText, review = {}, gate = null, 
     '- Do not delete, weaken, skip, or rewrite tests to make the gate pass.',
     '- Do not change gate commands, test scripts, CI config, or test runner config unless the task explicitly asks for that.',
     '- Do not bypass assertions, mark tests skipped/only, lower coverage, or replace checks with placeholders.',
+    '',
+    buildPreEditDiagnosisBlock({
+      failureKind: 'review_needs_changes',
+      extraRules: [
+        '- Only edit files needed to resolve the listed review findings.',
+      ],
+    }),
     '',
     MIGRATION_BOUNDARY_GUARDRAILS,
     '',
