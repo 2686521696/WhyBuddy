@@ -7,6 +7,7 @@ import {
   buildLoopArgsForQueueEntry,
   buildQueueCompletionMessage,
   buildQueueSummaryFromState,
+  applyDoneSummaryToMain,
   filterQueueTasks,
   sanitizeWorktreeName,
 } from '../src/runQueue.js';
@@ -15,6 +16,7 @@ import {
   formatProgressLine,
   readLatestState,
 } from '../src/runQueueProgress.js';
+import { applyLatestDiffToMain } from '../src/loopApply.js';
 import { removeWorktree } from '../src/worktree.js';
 
 const agentLoopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,11 +165,30 @@ async function main() {
     }
 
     const state = await readLatestState(repoRoot);
-    const summary = buildQueueSummaryFromState({
+    let summary = buildQueueSummaryFromState({
       entry,
       state,
       exitCode: run.exitCode,
     });
+
+    const useWorktree = entry.useWorktree ?? defaults.useWorktree ?? false;
+    const applyResult = await applyDoneSummaryToMain({
+      summary,
+      entry,
+      state,
+      repoRoot,
+      defaults,
+      applyLatestDiffToMain,
+      runner: runProcess,
+    });
+    summary = applyResult.summary;
+    const appliedToMain = applyResult.appliedToMain;
+    if (applyResult.landing) {
+      process.stderr.write(`[run-queue] applied ${label} diff to main: ${applyResult.landing.patchPath}\n`);
+    }
+    if (summary.applyError) {
+      process.stderr.write(`[run-queue] apply failed ${label}: ${summary.applyError}\n`);
+    }
     results.push(summary);
 
     process.stderr.write(`[run-queue] finished ${label}: status=${summary.status} exit=${summary.exitCode} grokRan=${summary.grokRan} codexRan=${summary.codexRan} mode=${summary.runMode}\n`);
@@ -201,8 +222,11 @@ async function main() {
       process.stderr.write(`[run-queue] ✗ TASK-FAILED ${label}: ${summary.status} exit=${run.exitCode} — 记录后继续下一条\n`);
     }
 
-    const useWorktree = entry.useWorktree ?? defaults.useWorktree ?? false;
-    if (cleanupWorktree && useWorktree) {
+    const shouldCleanupWorktree = cleanupWorktree
+      && useWorktree
+      && !summary.applyError
+      && (summary.outcome !== 'done' || appliedToMain);
+    if (shouldCleanupWorktree) {
       const worktreeName = sanitizeWorktreeName(entry.worktreeName || entry.id || `task-${index + 1}`);
       try {
         await removeWorktree({ repoRoot, name: worktreeName });

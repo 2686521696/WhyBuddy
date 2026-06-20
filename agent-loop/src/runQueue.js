@@ -201,6 +201,51 @@ export function buildQueueSummaryFromState({ entry, state, exitCode = 0 }) {
   return summary;
 }
 
+export async function applyDoneSummaryToMain({
+  summary,
+  entry,
+  state,
+  repoRoot,
+  defaults = {},
+  applyLatestDiffToMain,
+  runner,
+} = {}) {
+  const useWorktree = entry?.useWorktree ?? defaults.useWorktree ?? false;
+  if (summary?.outcome !== 'done' || !useWorktree) {
+    return { summary, appliedToMain: false };
+  }
+
+  try {
+    const landing = await applyLatestDiffToMain({
+      repoRoot,
+      run: state?.runId || 'latest',
+      runner,
+      timeoutMs: entry?.timeoutMs || defaults.timeoutMs || 1800000,
+    });
+    return {
+      summary: {
+        ...summary,
+        appliedToMain: true,
+        landingStatus: landing.landing.status,
+      },
+      appliedToMain: true,
+      landing,
+    };
+  } catch (error) {
+    return {
+      summary: {
+        ...summary,
+        status: 'HALT_APPLY_FAILED',
+        outcome: 'crashed',
+        appliedToMain: false,
+        applyError: error instanceof Error ? error.message : String(error),
+      },
+      appliedToMain: false,
+      applyError: error,
+    };
+  }
+}
+
 /**
  * Queue-level outcome for 24/7 triage:
  * - done: gate green / reviewed

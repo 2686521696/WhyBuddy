@@ -10,6 +10,7 @@ import {
   buildQueueCompletionMessage,
   buildQueueSummaryFromState,
   classifyQueueOutcome,
+  applyDoneSummaryToMain,
   filterQueueTasks,
   resolveEntryGates,
   resolvePythonExe,
@@ -371,6 +372,49 @@ test('buildQueueSummaryFromState sets outcome from classifyQueueOutcome', () => 
 
   assert.equal(summary.outcome, 'failed');
   assert.equal(summary.grokRan, true);
+});
+
+test('applyDoneSummaryToMain applies done worktree summaries before cleanup', async () => {
+  const summary = { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' };
+  const calls = [];
+  const result = await applyDoneSummaryToMain({
+    summary,
+    entry: { id: 'task-a', useWorktree: true },
+    state: { runId: 'run-a' },
+    repoRoot: 'C:\\repo',
+    defaults: { timeoutMs: 1234 },
+    runner: async () => ({ exitCode: 0 }),
+    applyLatestDiffToMain: async (args) => {
+      calls.push(args);
+      return { landing: { status: 'APPLIED_TO_MAIN' }, patchPath: 'diff.1.patch' };
+    },
+  });
+
+  assert.equal(result.appliedToMain, true);
+  assert.equal(result.summary.outcome, 'done');
+  assert.equal(result.summary.appliedToMain, true);
+  assert.equal(result.summary.landingStatus, 'APPLIED_TO_MAIN');
+  assert.equal(calls[0].run, 'run-a');
+  assert.equal(calls[0].timeoutMs, 1234);
+});
+
+test('applyDoneSummaryToMain converts apply failures into crashed queue outcomes', async () => {
+  const result = await applyDoneSummaryToMain({
+    summary: { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' },
+    entry: { id: 'task-a', useWorktree: true },
+    state: { runId: 'run-a' },
+    repoRoot: 'C:\\repo',
+    defaults: {},
+    runner: async () => ({ exitCode: 0 }),
+    applyLatestDiffToMain: async () => {
+      throw new Error('patch does not apply');
+    },
+  });
+
+  assert.equal(result.appliedToMain, false);
+  assert.equal(result.summary.status, 'HALT_APPLY_FAILED');
+  assert.equal(result.summary.outcome, 'crashed');
+  assert.match(result.summary.applyError, /patch does not apply/);
 });
 
 test('buildLoopArgsForQueueEntry passes --no-sync-task-status from defaults', () => {

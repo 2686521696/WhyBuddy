@@ -37,6 +37,66 @@ export async function buildLoopApplyPlan({
   };
 }
 
+export async function applyLatestDiffToMain({
+  repoRoot,
+  run = 'latest',
+  excludeTaskDoc = true,
+  extraExcludes = [],
+  runner,
+  timeoutMs = 120000,
+} = {}) {
+  if (!runner) throw new Error('runner is required');
+  const plan = await buildLoopApplyPlan({
+    repoRoot,
+    run,
+    excludeTaskDoc,
+    extraExcludes,
+  });
+  const applyArgs = buildGitApplyArgs({
+    patchPath: plan.patchPath,
+    excludes: plan.excludes,
+    check: false,
+  });
+  const checkArgs = buildGitApplyArgs({
+    patchPath: plan.patchPath,
+    excludes: plan.excludes,
+    check: true,
+  });
+
+  const check = await runner('git', applyArgsToGitArgv(checkArgs), {
+    cwd: repoRoot,
+    timeoutMs,
+  });
+  if (check.exitCode !== 0) {
+    throw new Error(`git apply --check failed: ${check.stderr || check.stdout || check.exitCode}`);
+  }
+
+  const applied = await runner('git', applyArgsToGitArgv(applyArgs), {
+    cwd: repoRoot,
+    timeoutMs,
+  });
+  if (applied.exitCode !== 0) {
+    throw new Error(`git apply failed: ${applied.stderr || applied.stdout || applied.exitCode}`);
+  }
+
+  const landing = await markLandingStatus({
+    repoRoot,
+    run,
+    status: 'APPLIED_TO_MAIN',
+    details: {
+      patchPath: plan.patchPath,
+      excludes: plan.excludes,
+    },
+  });
+
+  return {
+    ...plan,
+    check,
+    applied,
+    landing: landing.landing,
+  };
+}
+
 function defaultLandingStatus() {
   return {
     status: 'PENDING_APPLY',
@@ -111,13 +171,23 @@ async function readJsonIfExists(filePath) {
 }
 
 export function buildGitApplyCommand({ patchPath, excludes = [], check = false }) {
-  const parts = ['git apply'];
+  const parts = ['git', ...buildGitApplyArgs({ patchPath, excludes, check })]
+    .map((part) => quoteShellArg(part));
+  return parts.join(' ');
+}
+
+function buildGitApplyArgs({ patchPath, excludes = [], check = false }) {
+  const parts = ['apply'];
   if (check) parts.push('--check');
   for (const exclude of excludes) {
-    parts.push(`--exclude=${quoteShellArg(exclude)}`);
+    parts.push(`--exclude=${exclude}`);
   }
-  parts.push(quoteShellArg(patchPath));
-  return parts.join(' ');
+  parts.push(patchPath);
+  return parts;
+}
+
+function applyArgsToGitArgv(args) {
+  return args;
 }
 
 function quoteShellArg(value) {
