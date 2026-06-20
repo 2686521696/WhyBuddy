@@ -385,3 +385,27 @@ export function toPermissionCheckContractResponse(
     "node",
   );
 }
+
+export function toPermissionCheckResultFromContractResponse(
+  value: unknown,
+): PermissionCheckResult {
+  const response = normalizePermissionCheckContractResponse(value, "python_runtime");
+  const result: PermissionCheckResult = {
+    allowed: response.allowed,
+  };
+
+  if (response.reason !== null) {
+    result.reason = response.reason;
+  }
+  if (response.suggestion) {
+    result.suggestion = response.suggestion;
+  }
+  if (response.matchedRule) {
+    result.matchedRule = response.matchedRule;
+  }
+  if (response.governance) {
+    result.governance = response.governance;
+  }
+
+  return result;
+}

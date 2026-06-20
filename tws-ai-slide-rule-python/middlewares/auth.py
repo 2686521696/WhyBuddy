@@ -96,6 +96,7 @@ async def verify_internal_key(x_internal_key: str = Header(None)):
 
 PERMISSION_CHECK_CONTRACT_VERSION = "permission-check.v1"
 PERMISSION_CHECK_CONTRACT_SOURCE = "python_contract"
+PERMISSION_CHECK_RUNTIME_SOURCE = "python_runtime"
 
 _VALID_RESOURCE_TYPES = {"filesystem", "network", "api", "database", "mcp_tool"}
 _VALID_ACTIONS = {
@@ -168,6 +169,19 @@ def evaluate_permission_check_contract(request):
     return _deny("no_allow", f"No allow rule found for {resource_type}:{action}")
 
 
+def evaluate_permission_check_runtime_boundary(request):
+    """Runtime boundary for Node-facing permission checks.
+
+    This intentionally uses the same deny-first policy evaluator as the contract
+    boundary. Production enforcement remains owned by the Node permission engine
+    until the migration reviewer approves a broader cutover.
+    """
+    return _with_permission_check_source(
+        evaluate_permission_check_contract(request),
+        PERMISSION_CHECK_RUNTIME_SOURCE,
+    )
+
+
 def _deny(code, reason, matched_rule=None):
     response = {
         "contractVersion": PERMISSION_CHECK_CONTRACT_VERSION,
@@ -182,6 +196,12 @@ def _deny(code, reason, matched_rule=None):
     }
     if matched_rule is not None:
         response["matchedRule"] = matched_rule
+    return response
+
+
+def _with_permission_check_source(response, source):
+    if isinstance(response, dict):
+        return {**response, "source": source}
     return response
 
 

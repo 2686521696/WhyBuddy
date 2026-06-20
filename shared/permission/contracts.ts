@@ -128,7 +128,7 @@ export interface PermissionCheckResult {
 export const PERMISSION_CHECK_CONTRACT_VERSION = "permission-check.v1" as const;
 
 export type PermissionCheckContractDecision = "allow" | "deny";
-export type PermissionCheckContractSource = "node" | "python_contract";
+export type PermissionCheckContractSource = "node" | "python_contract" | "python_runtime";
 export type PermissionCheckContractErrorCode =
   | "agent_mismatch"
   | "constraint_failed"
@@ -185,7 +185,9 @@ function asPermissionCheckContractSource(
   source: unknown,
   fallback: PermissionCheckContractSource,
 ): PermissionCheckContractSource {
-  return source === "node" || source === "python_contract" ? source : fallback;
+  return source === "node" || source === "python_contract" || source === "python_runtime"
+    ? source
+    : fallback;
 }
 
 function asOptionalString(value: unknown): string | undefined {
