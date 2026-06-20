@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不启动真实任务、不改变生产 executor。
 
 ### 状态清单
-- [x] Python 有 task executor proxy contract。
-- [x] Node executor client 测试可验证 start/status/cancel/error 形状。
-- [x] timeout/cancel 不伪装成成功。
-- [x] gate 全绿。
-- [x] Codex review 确认没有真实任务副作用。
+- [ ] Python 有 task executor proxy contract。
+- [ ] Node executor client 测试可验证 start/status/cancel/error 形状。
+- [ ] timeout/cancel 不伪装成成功。
+- [ ] gate 全绿。
+- [ ] Codex review 确认没有真实任务副作用。
 
 ## 目标
 

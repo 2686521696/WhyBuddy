@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不改真实权限和数据存储。
 
 ### 状态清单
-- [x] Python 有 knowledge admin contract。
-- [x] Node route 测试覆盖 list/upsert/delete/error。
-- [x] permission failure（权限失败）形状稳定。
-- [x] gate 全绿。
-- [x] Codex review 确认不改真实知识库数据。
+- [ ] Python 有 knowledge admin contract。
+- [ ] Node route 测试覆盖 list/upsert/delete/error。
+- [ ] permission failure（权限失败）形状稳定。
+- [ ] gate 全绿。
+- [ ] Codex review 确认不改真实知识库数据。
 
 ## 目标
 

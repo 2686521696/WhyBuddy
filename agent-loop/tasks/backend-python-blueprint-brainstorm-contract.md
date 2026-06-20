@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不迁完整 brainstorm runtime。
 
 ### 状态清单
-- [x] Python 有 brainstorm contract。
-- [x] Node brainstorm 测试能映射 graph/input/output/error。
-- [x] reasoning graph（推理图）字段不丢。
-- [x] gate 全绿。
-- [x] Codex review 确认不改主状态机。
+- [ ] Python 有 brainstorm contract。
+- [ ] Node brainstorm 测试能映射 graph/input/output/error。
+- [ ] reasoning graph（推理图）字段不丢。
+- [ ] gate 全绿。
+- [ ] Codex review 确认不改主状态机。
 
 ## 目标
 
