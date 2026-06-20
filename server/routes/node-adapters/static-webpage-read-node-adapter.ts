@@ -11,6 +11,21 @@ export interface StaticWebpageReadNodeAdapterDeps {
   fetchHtml?: (url: string) => Promise<string>;
 }
 
+interface SearchAdapterProvenance {
+  provider: string;
+  source: string;
+  query: string;
+  auditId?: string;
+  permission?: Record<string, unknown>;
+}
+
+type StaticWebpageReadContractResult = StaticWebpageReadNodeExecutionResult & {
+  output: StaticWebpageReadNodeExecutionResult["output"] & {
+    query?: string;
+    provenance?: SearchAdapterProvenance;
+  };
+};
+
 const DEFAULT_TITLE = "Static Webpage Read Result";
 const DEFAULT_FALLBACK_CONTENT =
   "网页抓取暂不可用，请稍后重试，或改用搜索摘要/知识兜底链路。";
@@ -102,6 +117,31 @@ function normalizeContext(value: unknown): Record<string, unknown> {
   return { ...(value as Record<string, unknown>) };
 }
 
+function normalizeProvenance(
+  value: unknown,
+  query: string | undefined,
+): SearchAdapterProvenance | undefined {
+  const record = normalizeContext(value);
+  const provider = normalizeString(record.provider);
+  const source = normalizeString(record.source);
+  const provenanceQuery = normalizeString(record.query) || query;
+
+  if (!provider || !source || !provenanceQuery) {
+    return undefined;
+  }
+
+  const auditId = normalizeString(record.auditId);
+  const permission = normalizeContext(record.permission);
+
+  return {
+    provider,
+    source,
+    query: provenanceQuery,
+    ...(auditId ? { auditId } : {}),
+    ...(Object.keys(permission).length > 0 ? { permission } : {}),
+  };
+}
+
 function ensureInput(input: StaticWebpageReadNodeInput | undefined): {
   url?: string;
   html?: string;
@@ -113,6 +153,8 @@ function ensureInput(input: StaticWebpageReadNodeInput | undefined): {
   fallbackContent?: string;
   fallbackSnippet?: string;
   context: Record<string, unknown>;
+  query?: string;
+  provenance?: SearchAdapterProvenance;
 } {
   const url = normalizeString(input?.url);
   const html = normalizeString(input?.html);
@@ -123,6 +165,8 @@ function ensureInput(input: StaticWebpageReadNodeInput | undefined): {
   const fallbackTitle = normalizeString(input?.fallback?.title);
   const fallbackContent = normalizeString(input?.fallback?.content);
   const fallbackSnippet = normalizeString(input?.fallback?.snippet);
+  const context = normalizeContext(input?.context);
+  const query = url || titleHint;
 
   if (!url && !html) {
     throw new Error("Static webpage read requires url or html.");
@@ -138,7 +182,9 @@ function ensureInput(input: StaticWebpageReadNodeInput | undefined): {
     fallbackTitle,
     fallbackContent,
     fallbackSnippet,
-    context: normalizeContext(input?.context),
+    context,
+    query,
+    provenance: normalizeProvenance(context.provenance, query),
   };
 }
 
@@ -150,7 +196,9 @@ function buildCompletedResult(input: {
   contentSource: "inline_html" | "fetched_html";
   context: Record<string, unknown>;
   warnings: string[];
-}): StaticWebpageReadNodeExecutionResult {
+  query?: string;
+  provenance?: SearchAdapterProvenance;
+}): StaticWebpageReadContractResult {
   const snippet = buildSnippet(input.content);
   return {
     ok: true,
@@ -183,6 +231,8 @@ function buildCompletedResult(input: {
       },
       context: input.context,
       warnings: input.warnings,
+      ...(input.query ? { query: input.query } : {}),
+      ...(input.provenance ? { provenance: input.provenance } : {}),
       observability: {
         eventKey: "external.static_webpage_read",
         nodeType: "static_webpage_read",
@@ -203,7 +253,9 @@ function buildFallbackResult(input: {
   snippet?: string;
   context: Record<string, unknown>;
   warnings: string[];
-}): StaticWebpageReadNodeExecutionResult {
+  query?: string;
+  provenance?: SearchAdapterProvenance;
+}): StaticWebpageReadContractResult {
   const snippet = normalizeString(input.snippet) ?? buildSnippet(input.content);
   return {
     ok: true,
@@ -236,6 +288,8 @@ function buildFallbackResult(input: {
       },
       context: input.context,
       warnings: input.warnings,
+      ...(input.query ? { query: input.query } : {}),
+      ...(input.provenance ? { provenance: input.provenance } : {}),
       observability: {
         eventKey: "external.static_webpage_read",
         nodeType: "static_webpage_read",
@@ -258,7 +312,7 @@ export function isStaticWebpageReadNodeType(
 export async function executeStaticWebpageReadNode(
   request: StaticWebpageReadNodeExecutionRequest,
   deps: StaticWebpageReadNodeAdapterDeps = {},
-): Promise<StaticWebpageReadNodeExecutionResult> {
+): Promise<StaticWebpageReadContractResult> {
   if (!isStaticWebpageReadNodeType(request.nodeType)) {
     throw new Error("Unsupported static_webpage_read node type.");
   }
@@ -297,6 +351,8 @@ export async function executeStaticWebpageReadNode(
         snippet: normalized.fallbackSnippet,
         context: normalized.context,
         warnings,
+        query: normalized.query,
+        provenance: normalized.provenance,
       });
     }
   }
@@ -322,5 +378,7 @@ export async function executeStaticWebpageReadNode(
     contentSource,
     context: normalized.context,
     warnings,
+    query: normalized.query,
+    provenance: normalized.provenance,
   });
 }

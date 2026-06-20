@@ -17,6 +17,26 @@ export const WEB_AIGC_IMAGE_SEARCH_MODES = [
 export type WebAigcImageSearchMode =
   (typeof WEB_AIGC_IMAGE_SEARCH_MODES)[number];
 
+export type WebAigcSearchStatus =
+  | "completed"
+  | "degraded"
+  | "empty"
+  | "error"
+  | "permission_denied";
+
+export interface WebAigcSearchProvenance {
+  provider: "fake" | string;
+  source: string;
+  query: string;
+  auditId?: string;
+  permission?: Record<string, unknown>;
+}
+
+export interface WebAigcSearchError {
+  code: string;
+  message: string;
+}
+
 export const WEB_AIGC_IMAGE_AVAILABILITY = [
   "available",
   "preview_only",
@@ -70,9 +90,11 @@ export interface WebAigcImageSearchResultItem {
   availability: WebAigcImageAvailability;
   score: number;
   matchedBy: Array<"query" | "tags" | "reference">;
+  provenance?: WebAigcSearchProvenance;
 }
 
 export interface WebAigcImageSearchResponse {
+  ok?: boolean;
   query: string;
   normalized: {
     textQuery?: string;
@@ -86,13 +108,16 @@ export interface WebAigcImageSearchResponse {
   fallbackReason?: string;
   warnings: string[];
   mode: WebAigcImageSearchMode;
+  status?: WebAigcSearchStatus;
+  error?: WebAigcSearchError;
+  provenance?: WebAigcSearchProvenance;
 }
 
 export interface ImageSearchNodeExecutionResult {
-  ok: true;
+  ok: boolean;
   nodeType: ImageSearchNodeType;
   output: WebAigcImageSearchResponse & {
-    status: "completed" | "degraded";
+    status: WebAigcSearchStatus;
     result: WebAigcImageSearchResponse;
     previews: string[];
     sourceDomains: string[];

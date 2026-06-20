@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认没有发真实外部搜索请求。
 
 ### 状态清单
-- [ ] Python 侧有 search adapter contract。
-- [ ] Node 侧测试覆盖 success/empty/error/permission denied。
-- [ ] provenance（来源）和 query 字段稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实外部网络依赖。
+- [x] Python 侧有 search adapter contract。
+- [x] Node 侧测试覆盖 success/empty/error/permission denied。
+- [x] provenance（来源）和 query 字段稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实外部网络依赖。
 
 ## 目标
 

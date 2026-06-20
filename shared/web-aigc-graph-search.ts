@@ -21,6 +21,14 @@ export const WEB_AIGC_GRAPH_SEARCH_MODES = [
 export type WebAigcGraphSearchMode =
   (typeof WEB_AIGC_GRAPH_SEARCH_MODES)[number];
 
+export interface WebAigcSearchProvenance {
+  provider: "fake" | string;
+  source: string;
+  query: string;
+  auditId?: string;
+  permission?: Record<string, unknown>;
+}
+
 export interface GraphSearchNodeInput {
   projectId?: string;
   query?: string;
@@ -83,6 +91,8 @@ export interface GraphSearchNodeExecutionResult {
   nodeType: GraphSearchNodeType;
   output: {
     status: "completed";
+    query?: string;
+    provenance?: WebAigcSearchProvenance;
     mode: WebAigcGraphSearchMode;
     graph: {
       nodes: WebAigcGraphNode[];

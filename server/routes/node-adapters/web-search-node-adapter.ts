@@ -1,8 +1,10 @@
 import type {
   WebSearchMode,
+  WebSearchProvenance,
   WebSearchRequest,
   WebSearchResponse,
   WebSearchResultItem,
+  WebSearchStatus,
 } from "../../../shared/web-search.js";
 
 export type WebSearchNodeType = "web_search";
@@ -21,7 +23,7 @@ export interface WebSearchNodeExecutionRequest {
 }
 
 export interface WebSearchNodeExecutionResult {
-  ok: true;
+  ok: boolean;
   nodeType: WebSearchNodeType;
   output: WebSearchResponse & {
     result: WebSearchResponse;
@@ -92,6 +94,49 @@ function normalizeTopK(value: unknown): number | undefined {
   return Math.max(1, Math.min(10, Math.floor(value)));
 }
 
+function normalizeStatus(
+  result: WebSearchContractResponse,
+  normalizedResults: WebSearchResultItem[],
+): WebSearchStatus {
+  if (
+    result.status === "completed" ||
+    result.status === "empty" ||
+    result.status === "error" ||
+    result.status === "permission_denied"
+  ) {
+    return result.status;
+  }
+
+  if (result.ok === false && result.error?.code === "permission_denied") {
+    return "permission_denied";
+  }
+
+  if (result.ok === false || result.error) {
+    return "error";
+  }
+
+  return normalizedResults.length === 0 ? "empty" : "completed";
+}
+
+function buildDefaultProvenance(
+  request: WebSearchRequest,
+  status: WebSearchStatus,
+): WebSearchProvenance | undefined {
+  if (status !== "completed" && status !== "empty") {
+    return undefined;
+  }
+
+  return {
+    provider: "fake",
+    source: "fake-web-search",
+    query: request.query,
+  };
+}
+
+type WebSearchContractResponse = WebSearchResponse & {
+  status?: WebSearchStatus;
+};
+
 function buildWebSearchRequest(input: WebSearchNodeInput | undefined): WebSearchRequest {
   const query = normalizeString(input?.query);
   if (!query) {
@@ -113,7 +158,7 @@ function buildWebSearchRequest(input: WebSearchNodeInput | undefined): WebSearch
 function buildMockWebSearchResponse(
   request: WebSearchRequest,
   latencyMs: number,
-): WebSearchResponse {
+): WebSearchContractResponse {
   const topK = request.options?.topK ?? 3;
   const loweredQuery = request.query.toLowerCase();
   const matched = DEFAULT_WEB_SEARCH_RESULTS.filter((result) => {
@@ -132,6 +177,12 @@ function buildMockWebSearchResponse(
     totalCandidates: ranked.length,
     latencyMs,
     mode: request.options?.mode ?? "mock",
+    status: ranked.length === 0 ? "empty" : "completed",
+    provenance: {
+      provider: "fake",
+      source: "fake-web-search",
+      query: request.query,
+    },
   };
 }
 
@@ -161,7 +212,7 @@ export async function executeWebSearchNode(
   const now = deps.now ?? Date.now;
   const startedAt = now();
 
-  let result: WebSearchResponse;
+  let result: WebSearchContractResponse;
   try {
     if (deps.executeWebSearch) {
       result = await deps.executeWebSearch(normalizedRequest);
@@ -179,24 +230,31 @@ export async function executeWebSearchNode(
       ? result.latencyMs
       : Math.max(0, now() - startedAt);
   const normalizedMode = normalizeMode(result.mode) ?? normalizedRequest.options?.mode ?? "mock";
-  const normalizedResult: WebSearchResponse = {
+  const normalizedResults = Array.isArray(result.results) ? result.results : [];
+  const status = normalizeStatus(result, normalizedResults);
+  const provenance =
+    result.provenance ?? buildDefaultProvenance(normalizedRequest, status);
+  const normalizedResult: WebSearchContractResponse = {
     ...result,
     query: result.query || normalizedRequest.query,
     latencyMs,
     mode: normalizedMode,
-    results: Array.isArray(result.results) ? result.results : [],
+    results: normalizedResults,
     totalCandidates:
       typeof result.totalCandidates === "number" && Number.isFinite(result.totalCandidates)
         ? result.totalCandidates
         : Array.isArray(result.results)
           ? result.results.length
           : 0,
+    status,
+    ...(result.error ? { error: result.error } : {}),
+    ...(provenance ? { provenance } : {}),
   };
   const citations = buildCitations(normalizedResult.results);
   const summaries = buildSummaries(normalizedResult.results);
 
   return {
-    ok: true,
+    ok: status !== "error" && status !== "permission_denied",
     nodeType: "web_search",
     output: {
       ...normalizedResult,

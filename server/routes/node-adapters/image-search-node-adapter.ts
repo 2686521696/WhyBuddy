@@ -8,6 +8,8 @@ import type {
   WebAigcImageSearchResponse,
   WebAigcImageSearchResultItem,
   WebAigcReferenceImageInput,
+  WebAigcSearchProvenance,
+  WebAigcSearchStatus,
 } from "../../../shared/web-aigc-image-search.js";
 
 export interface ImageSearchNodeAdapterDeps {
@@ -120,6 +122,49 @@ function normalizeMinScore(value: unknown): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function normalizeStatus(
+  response: WebAigcImageSearchResponse,
+  results: WebAigcImageSearchResultItem[],
+): WebAigcSearchStatus {
+  if (
+    response.status === "completed" ||
+    response.status === "degraded" ||
+    response.status === "empty" ||
+    response.status === "error" ||
+    response.status === "permission_denied"
+  ) {
+    return response.status;
+  }
+
+  if (response.ok === false && response.error?.code === "permission_denied") {
+    return "permission_denied";
+  }
+
+  if (response.ok === false || response.error) {
+    return "error";
+  }
+
+  if (results.length === 0) {
+    return "empty";
+  }
+
+  return response.degraded ? "degraded" : "completed";
+}
+
+function buildDefaultProvenance(
+  response: WebAigcImageSearchResponse,
+): WebAigcSearchProvenance | undefined {
+  if (!response.query) {
+    return undefined;
+  }
+
+  return {
+    provider: "fake",
+    source: "fake-image-search",
+    query: response.query,
+  };
+}
+
 function normalizeReferenceImage(value: unknown): WebAigcReferenceImageInput | undefined {
   const record = normalizeObject(value);
   const description = normalizeString(record.description);
@@ -206,19 +251,19 @@ function scoreCandidate(
   const matchedBy: Array<"query" | "tags" | "reference"> = [];
   let score = 0;
 
-  const queryHits = queryTokens.filter((token) => haystack.includes(token)).length;
+  const queryHits = queryTokens.filter((term) => haystack.includes(term)).length;
   if (queryHits > 0) {
     matchedBy.push("query");
     score += queryHits / Math.max(queryTokens.length, 1) * 0.55;
   }
 
-  const tagHits = tagTokens.filter((token) => candidate.tags.includes(token)).length;
+  const tagHits = tagTokens.filter((term) => candidate.tags.includes(term)).length;
   if (tagHits > 0) {
     matchedBy.push("tags");
     score += tagHits / Math.max(tagTokens.length, 1) * 0.3;
   }
 
-  const referenceHits = referenceTokens.filter((token) => haystack.includes(token)).length;
+  const referenceHits = referenceTokens.filter((term) => haystack.includes(term)).length;
   if (referenceHits > 0) {
     matchedBy.push("reference");
     score += referenceHits / Math.max(referenceTokens.length, 1) * 0.25;
@@ -282,6 +327,12 @@ function buildMockImageSearchResponse(
     ...(fallbackReason ? { fallbackReason } : {}),
     warnings,
     mode: request.options?.mode ?? "mock",
+    status: selected.length === 0 ? "empty" : degraded ? "degraded" : "completed",
+    provenance: {
+      provider: "fake",
+      source: "fake-image-search",
+      query: buildSearchQuery(request),
+    },
   };
 }
 
@@ -338,9 +389,12 @@ export async function executeImageSearchNode(
     };
   }
 
+  const results = Array.isArray(response.results) ? response.results : [];
+  const status = normalizeStatus(response, results);
+  const provenance = response.provenance ?? buildDefaultProvenance(response);
   const result = {
     ...response,
-    results: Array.isArray(response.results) ? response.results : [],
+    results,
     totalCandidates:
       typeof response.totalCandidates === "number" && Number.isFinite(response.totalCandidates)
         ? response.totalCandidates
@@ -349,14 +403,16 @@ export async function executeImageSearchNode(
           : 0,
     warnings: Array.isArray(response.warnings) ? response.warnings : [],
     mode: normalizeMode(response.mode),
+    status,
+    ...(response.error ? { error: response.error } : {}),
+    ...(provenance ? { provenance } : {}),
   };
 
   return {
-    ok: true,
+    ok: status !== "error" && status !== "permission_denied",
     nodeType: "image_search",
     output: {
       ...result,
-      status: result.degraded ? "degraded" : "completed",
       result,
       previews: result.results.map((item) => item.previewUrl),
       sourceDomains: buildSourceDomains(result.results),

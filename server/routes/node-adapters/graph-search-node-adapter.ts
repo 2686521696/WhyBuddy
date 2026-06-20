@@ -10,6 +10,7 @@ import {
   type WebAigcGraphAnswerDraft,
   type WebAigcGraphPathStep,
   type WebAigcGraphSearchMode,
+  type WebAigcSearchProvenance,
 } from "../../../shared/web-aigc-graph-search.js";
 
 export interface GraphSearchNodeAdapterDeps {
@@ -41,6 +42,28 @@ function normalizeRecord(value: unknown): Record<string, unknown> {
   }
 
   return { ...(value as Record<string, unknown>) };
+}
+
+function normalizeProvenance(value: unknown, query: string | undefined): WebAigcSearchProvenance | undefined {
+  const record = normalizeRecord(value);
+  const provider = normalizeString(record.provider);
+  const source = normalizeString(record.source);
+  const provenanceQuery = normalizeString(record.query) || query;
+
+  if (!provider || !source || !provenanceQuery) {
+    return undefined;
+  }
+
+  const auditId = normalizeString(record.auditId);
+  const permission = normalizeRecord(record.permission);
+
+  return {
+    provider,
+    source,
+    query: provenanceQuery,
+    ...(auditId ? { auditId } : {}),
+    ...(Object.keys(permission).length > 0 ? { permission } : {}),
+  };
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -318,12 +341,16 @@ export async function executeGraphSearchNode(
   const nodes = rawResult.entities.map(projectEntityToGraphNode);
   const edges = rawResult.relations.map(projectRelationToGraphEdge);
   const path = buildPath(mode, input, rawResult);
+  const query = resolveQuestionForAnswerDraft(input);
+  const provenance = normalizeProvenance(input.context?.provenance, query);
 
   return {
     ok: true,
     nodeType: "graph_search",
     output: {
       status: "completed",
+      ...(query ? { query } : {}),
+      ...(provenance ? { provenance } : {}),
       mode,
       graph: {
         nodes,
