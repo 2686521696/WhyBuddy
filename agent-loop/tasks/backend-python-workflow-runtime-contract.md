@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract；reviewer 确认不迁完整工作流执行器。
 
 ### 状态清单
-- [ ] Python 侧有 workflow runtime contract。
-- [ ] Node 侧测试覆盖 graph validation、run start、node result、failure。
-- [ ] workflow id、node id、edge、status 字段稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实执行节点副作用。
+- [x] Python 侧有 workflow runtime contract。
+- [x] Node 侧测试覆盖 graph validation、run start、node result、failure。
+- [x] workflow id、node id、edge、status 字段稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实执行节点副作用。
 
 ## 目标
 
