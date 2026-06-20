@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python runtime boundary 和测试；reviewer 确认不泄露 cookie/token、不改变生产认证行为。
 
 ### 状态清单
-- [ ] Python session runtime boundary 覆盖 valid、expired、missing、invalid。
-- [ ] Node middleware test 可映射 Python session result。
-- [ ] deny/invalid 不 fallback 成 authenticated。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实 token 泄露。
+- [x] Python session runtime boundary 覆盖 valid、expired、missing、invalid。
+- [x] Node middleware test 可映射 Python session result。
+- [x] deny/invalid 不 fallback 成 authenticated。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实 token 泄露。
 
 ## 目标
 

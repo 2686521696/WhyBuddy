@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 sink adapter 和测试；reviewer 确认不伪造 actual cost（真实成本）。
 
 ### 状态清单
-- [ ] Python telemetry sink 支持 synthetic、estimated、actual 三类来源。
-- [ ] actual 只能由明确 actual source 写入。
-- [ ] Node route test 覆盖 sink unavailable 和 estimated fallback。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 estimated 伪装成 actual。
+- [x] Python telemetry sink 支持 synthetic、estimated、actual 三类来源。
+- [x] actual 只能由明确 actual source 写入。
+- [x] Node route test 覆盖 sink unavailable 和 estimated fallback。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 estimated 伪装成 actual。
 
 ## 目标
 
