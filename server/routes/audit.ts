@@ -21,6 +21,10 @@ import {
 } from "../../shared/web-aigc-observability.js";
 import type { AuditQueryFilters, PageOptions, AuditEventType, AuditSeverity, AuditCategory, ComplianceFramework } from "../../shared/audit/contracts.js";
 import type { AuditChain } from "../audit/audit-chain.js";
+import {
+  toAuditQueryProxyError,
+  toAuditQueryProxySuccess,
+} from "../audit/audit-query.js";
 import type { AuditQuery } from "../audit/audit-query.js";
 import type { AuditVerifier } from "../audit/audit-verifier.js";
 import type { AnomalyDetector } from "../audit/anomaly-detector.js";
@@ -72,15 +76,13 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
   // =====================================================================
 
   router.get(stripPrefix(AUDIT_API.searchEvents), (req, res) => {
+    const page = buildPage(req.query);
     try {
       const keyword = (req.query.q as string) ?? "";
-      const pageSize = parseInt(req.query.pageSize as string, 10) || 50;
-      const pageNum = parseInt(req.query.pageNum as string, 10) || 1;
-      const page: PageOptions = { pageSize, pageNum };
       const result = query.search(keyword, page);
-      res.json({ ok: true, ...result });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: errorMessage(err) });
+      res.json(toAuditQueryProxySuccess(result));
+    } catch {
+      res.status(500).json(toAuditQueryProxyError(page));
     }
   });
 
@@ -105,15 +107,13 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
   // =====================================================================
 
   router.get(stripPrefix(AUDIT_API.listEvents), (req, res) => {
+    const page = buildPage(req.query);
     try {
       const filters = buildFilters(req.query);
-      const pageSize = parseInt(req.query.pageSize as string, 10) || 50;
-      const pageNum = parseInt(req.query.pageNum as string, 10) || 1;
-      const page: PageOptions = { pageSize, pageNum };
       const result = query.query(filters, page);
-      res.json({ ok: true, ...result });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: errorMessage(err) });
+      res.json(toAuditQueryProxySuccess(result));
+    } catch {
+      res.status(500).json(toAuditQueryProxyError(page));
     }
   });
 
@@ -398,6 +398,12 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Unknown error";
+}
+
+function buildPage(query: Record<string, unknown>): PageOptions {
+  const pageSize = parseInt(query.pageSize as string, 10) || 50;
+  const pageNum = parseInt(query.pageNum as string, 10) || 1;
+  return { pageSize, pageNum };
 }
 
 /** Build AuditQueryFilters from query params */
