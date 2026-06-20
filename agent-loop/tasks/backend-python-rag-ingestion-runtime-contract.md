@@ -2,15 +2,15 @@
 
 ## 执行状态
 - 状态：待执行
-- 目标：为 RAG ingestion（检索入库）建立 Python runtime contract，补齐 ingest/chunk/embed/upsert/error。
+- 目标：为 RAG ingestion（检索入库）建立 Python runtime contract，补齐 ingest/chunk/embed/upsert/delete/error。
 - 角色分工：worker 负责 contract；reviewer 确认不接真实向量库和真实 embedding。
 
 ### 状态清单
-- [ ] Python 侧有 RAG ingestion contract。
-- [ ] Node 侧测试覆盖 ingest/chunk/embed/upsert/failure。
-- [ ] dead-letter、lifecycle、feedback 字段不丢。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实外部向量库副作用。
+- [x] Python 侧有 RAG ingestion contract。
+- [x] Node 侧测试覆盖 ingest/chunk/embed/upsert/failure。
+- [x] dead-letter、lifecycle、feedback 字段不丢。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实外部向量库副作用。
 
 ## 目标
 

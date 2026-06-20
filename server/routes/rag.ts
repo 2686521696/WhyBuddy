@@ -6,7 +6,10 @@
 
 import { Router } from 'express';
 import { AuditEventType } from '../../shared/audit/contracts.js';
-import type { IngestionPayload } from '../../shared/rag/contracts.js';
+import {
+  isRAGIngestionPythonRuntimeResult,
+  type IngestionPayload,
+} from '../../shared/rag/contracts.js';
 import type { IngestionPipeline } from '../rag/ingestion/ingestion-pipeline.js';
 import type { RAGRetriever } from '../rag/retrieval/rag-retriever.js';
 import type { RAGPipeline } from '../rag/augmentation/rag-pipeline.js';
@@ -61,9 +64,10 @@ function resolveWebAigcSearchIdentity(
       : typeof body?.scope?.agentId === 'string' && body.scope.agentId.trim()
         ? body.scope.agentId.trim()
         : '';
+  const tokenValue = candidate?.["token"];
   const token =
-    typeof candidate?.token === 'string' && candidate.token.trim()
-      ? candidate.token.trim()
+    typeof tokenValue === 'string' && tokenValue.trim()
+      ? tokenValue.trim()
       : '';
 
   if (!agentId || !token) {
@@ -197,6 +201,10 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
       }
       const result = await deps.ingestionPipeline.ingest(payload);
+      if (isRAGIngestionPythonRuntimeResult(result) && !result.ok) {
+        const statusCode = result.status === 'unavailable' ? 503 : 500;
+        return res.status(statusCode).json(result);
+      }
       return res.json(result);
     } catch (err) {
       return res.status(500).json({ success: false, error: String(err) });

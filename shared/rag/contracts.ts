@@ -306,3 +306,404 @@ export interface LifecycleLog {
   durationMs: number;
   details?: Record<string, any>;
 }
+
+// ---------------------------------------------------------------------------
+// Python Contract Slice: RAG Ingestion Runtime
+// ---------------------------------------------------------------------------
+
+export const RAG_INGESTION_PYTHON_RUNTIME_CONTRACT_VERSION =
+  "rag-ingestion.runtime.v1" as const;
+
+export type RAGIngestionPythonRuntimeOperation =
+  | "ingest"
+  | "chunk"
+  | "embed"
+  | "upsert"
+  | "delete";
+
+export type RAGIngestionPythonRuntimeStatus =
+  | "completed"
+  | "failed"
+  | "unavailable";
+
+export interface RAGIngestionPythonRuntimeError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  field?: string;
+}
+
+export interface RAGIngestionPythonRuntimeProvenance {
+  provider: string;
+  source: string;
+  auditId?: string;
+  [key: string]: unknown;
+}
+
+export interface RAGIngestionPythonRuntimeLifecycle {
+  state: string;
+  archiveAfterDays?: number;
+  deleteAfterDays?: number;
+  [key: string]: unknown;
+}
+
+export interface RAGIngestionPythonRuntimeFeedback {
+  helpfulChunkIds: string[];
+  irrelevantChunkIds: string[];
+  missingContext?: string;
+  [key: string]: unknown;
+}
+
+export interface RAGIngestionPythonRuntimeDeadLetter {
+  entryId: string;
+  retryCount: number;
+  stage: DeadLetterEntry["stage"];
+  error: string;
+  [key: string]: unknown;
+}
+
+export interface RAGIngestionPythonRuntimeIngest {
+  accepted: boolean;
+  chunkCount: number;
+  deduplicated: boolean;
+  contentHash: string;
+}
+
+export interface RAGIngestionPythonRuntimeEmbedding {
+  chunkId: string;
+  provider: "fake-contract-embedding";
+  model: "fake-rag-ingestion-v1";
+  dimension: number;
+  vector: number[];
+}
+
+export interface RAGIngestionPythonRuntimeUpsert {
+  collection: string;
+  attempted: boolean;
+  stored: false;
+  upsertedCount: 0;
+  recordIds: string[];
+}
+
+export interface RAGIngestionPythonRuntimeDelete {
+  collection: string;
+  attempted: boolean;
+  deleted: false;
+  deletedCount: 0;
+  targetIds: string[];
+}
+
+interface RAGIngestionPythonRuntimeBaseResult {
+  contractVersion: typeof RAG_INGESTION_PYTHON_RUNTIME_CONTRACT_VERSION;
+  runtime: "python-contract";
+  operation: RAGIngestionPythonRuntimeOperation;
+  ok: boolean;
+  status: RAGIngestionPythonRuntimeStatus;
+  ingestionId: string;
+  projectId: string;
+  sourceType: SourceType;
+  sourceId: string;
+  storage: "contract-only";
+  migratedStorage: false;
+  provenance: RAGIngestionPythonRuntimeProvenance;
+  lifecycle: RAGIngestionPythonRuntimeLifecycle;
+  feedback: RAGIngestionPythonRuntimeFeedback;
+  deadLetter?: RAGIngestionPythonRuntimeDeadLetter;
+}
+
+export type RAGIngestionPythonRuntimeCompletedResult =
+  | (RAGIngestionPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "ingest";
+      ingest: RAGIngestionPythonRuntimeIngest;
+    })
+  | (RAGIngestionPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "chunk";
+      chunks: ChunkRecord[];
+    })
+  | (RAGIngestionPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "embed";
+      embeddings: RAGIngestionPythonRuntimeEmbedding[];
+    })
+  | (RAGIngestionPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "upsert";
+      upsert: RAGIngestionPythonRuntimeUpsert;
+    })
+  | (RAGIngestionPythonRuntimeBaseResult & {
+      ok: true;
+      status: "completed";
+      operation: "delete";
+      delete: RAGIngestionPythonRuntimeDelete;
+    });
+
+export type RAGIngestionPythonRuntimeFailureResult =
+  RAGIngestionPythonRuntimeBaseResult & {
+    ok: false;
+    status: "failed" | "unavailable";
+    error: RAGIngestionPythonRuntimeError;
+  };
+
+export type RAGIngestionPythonRuntimeResult =
+  | RAGIngestionPythonRuntimeCompletedResult
+  | RAGIngestionPythonRuntimeFailureResult;
+
+const RAG_INGESTION_PYTHON_RUNTIME_OPERATIONS: readonly RAGIngestionPythonRuntimeOperation[] = [
+  "ingest",
+  "chunk",
+  "embed",
+  "upsert",
+  "delete",
+];
+
+const RAG_INGESTION_PYTHON_RUNTIME_STATUSES: readonly RAGIngestionPythonRuntimeStatus[] = [
+  "completed",
+  "failed",
+  "unavailable",
+];
+
+export function isRAGIngestionPythonRuntimeResult(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeResult {
+  const record = ragIngestionAsRecord(value);
+  if (!record) return false;
+  if (record.contractVersion !== RAG_INGESTION_PYTHON_RUNTIME_CONTRACT_VERSION) return false;
+  if (record.runtime !== "python-contract") return false;
+  if (!ragIngestionOneOf(record.operation, RAG_INGESTION_PYTHON_RUNTIME_OPERATIONS)) {
+    return false;
+  }
+  if (!ragIngestionOneOf(record.status, RAG_INGESTION_PYTHON_RUNTIME_STATUSES)) {
+    return false;
+  }
+  if (!ragIngestionNonEmptyString(record.ingestionId)) return false;
+  if (!ragIngestionNonEmptyString(record.projectId)) return false;
+  if (!ragIngestionOneOf(record.sourceType, SOURCE_TYPES)) return false;
+  if (!ragIngestionNonEmptyString(record.sourceId)) return false;
+  if (record.storage !== "contract-only" || record.migratedStorage !== false) return false;
+  if (!isRAGIngestionRuntimeProvenance(record.provenance)) return false;
+  if (!isRAGIngestionRuntimeLifecycle(record.lifecycle)) return false;
+  if (!isRAGIngestionRuntimeFeedback(record.feedback)) return false;
+  if (record.deadLetter !== undefined && !isRAGIngestionRuntimeDeadLetter(record.deadLetter)) {
+    return false;
+  }
+
+  if (record.status === "failed" || record.status === "unavailable") {
+    return (
+      record.ok === false &&
+      isRAGIngestionRuntimeError(record.error) &&
+      !hasAnyRAGIngestionRuntimePayload(record)
+    );
+  }
+
+  if (record.ok !== true || record.error !== undefined) return false;
+  if (!hasOnlyExpectedRAGIngestionRuntimePayload(record, record.operation)) return false;
+
+  if (record.operation === "ingest") return isRAGIngestionRuntimeIngest(record.ingest);
+  if (record.operation === "chunk") {
+    return Array.isArray(record.chunks) && record.chunks.every(isRAGIngestionRuntimeChunk);
+  }
+  if (record.operation === "embed") {
+    return (
+      Array.isArray(record.embeddings) &&
+      record.embeddings.every(isRAGIngestionRuntimeEmbedding)
+    );
+  }
+  if (record.operation === "upsert") return isRAGIngestionRuntimeUpsert(record.upsert);
+  return isRAGIngestionRuntimeDelete(record.delete);
+}
+
+function isRAGIngestionRuntimeProvenance(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeProvenance {
+  const provenance = ragIngestionAsRecord(value);
+  return (
+    provenance !== null &&
+    ragIngestionNonEmptyString(provenance.provider) &&
+    ragIngestionNonEmptyString(provenance.source) &&
+    (provenance.auditId === undefined || ragIngestionNonEmptyString(provenance.auditId))
+  );
+}
+
+function isRAGIngestionRuntimeLifecycle(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeLifecycle {
+  const lifecycle = ragIngestionAsRecord(value);
+  if (!lifecycle || !ragIngestionNonEmptyString(lifecycle.state)) return false;
+  if (lifecycle.archiveAfterDays !== undefined && !ragIngestionNonNegativeNumber(lifecycle.archiveAfterDays)) {
+    return false;
+  }
+  if (lifecycle.deleteAfterDays !== undefined && !ragIngestionNonNegativeNumber(lifecycle.deleteAfterDays)) {
+    return false;
+  }
+  return true;
+}
+
+function isRAGIngestionRuntimeFeedback(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeFeedback {
+  const feedback = ragIngestionAsRecord(value);
+  if (!feedback) return false;
+  if (!ragIngestionStringArray(feedback.helpfulChunkIds)) return false;
+  if (!ragIngestionStringArray(feedback.irrelevantChunkIds)) return false;
+  if (feedback.missingContext !== undefined && !ragIngestionNonEmptyString(feedback.missingContext)) {
+    return false;
+  }
+  return true;
+}
+
+function isRAGIngestionRuntimeDeadLetter(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeDeadLetter {
+  const deadLetter = ragIngestionAsRecord(value);
+  return (
+    deadLetter !== null &&
+    ragIngestionNonEmptyString(deadLetter.entryId) &&
+    ragIngestionNonNegativeNumber(deadLetter.retryCount) &&
+    ragIngestionOneOf(deadLetter.stage, ["clean", "chunk", "embed", "store", "metadata"] as const) &&
+    ragIngestionNonEmptyString(deadLetter.error)
+  );
+}
+
+function isRAGIngestionRuntimeError(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeError {
+  const error = ragIngestionAsRecord(value);
+  return (
+    error !== null &&
+    ragIngestionNonEmptyString(error.code) &&
+    ragIngestionNonEmptyString(error.message) &&
+    typeof error.retryable === "boolean" &&
+    (error.field === undefined || ragIngestionNonEmptyString(error.field))
+  );
+}
+
+function isRAGIngestionRuntimeIngest(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeIngest {
+  const ingest = ragIngestionAsRecord(value);
+  return (
+    ingest !== null &&
+    typeof ingest.accepted === "boolean" &&
+    ragIngestionNonNegativeNumber(ingest.chunkCount) &&
+    typeof ingest.deduplicated === "boolean" &&
+    ragIngestionNonEmptyString(ingest.contentHash)
+  );
+}
+
+function isRAGIngestionRuntimeChunk(value: unknown): value is ChunkRecord {
+  const chunk = ragIngestionAsRecord(value);
+  if (!chunk) return false;
+  if (!ragIngestionNonEmptyString(chunk.chunkId)) return false;
+  if (!ragIngestionOneOf(chunk.sourceType, SOURCE_TYPES)) return false;
+  if (!ragIngestionNonEmptyString(chunk.sourceId)) return false;
+  if (!ragIngestionNonEmptyString(chunk.projectId)) return false;
+  if (!ragIngestionNonNegativeNumber(chunk.chunkIndex)) return false;
+  if (!ragIngestionNonEmptyString(chunk.content)) return false;
+  if (!ragIngestionNonNegativeNumber(chunk.tokenCount)) return false;
+  const metadata = ragIngestionAsRecord(chunk.metadata);
+  return (
+    metadata !== null &&
+    ragIngestionNonEmptyString(metadata.ingestedAt) &&
+    ragIngestionNonEmptyString(metadata.lastAccessedAt) &&
+    ragIngestionNonEmptyString(metadata.contentHash)
+  );
+}
+
+function isRAGIngestionRuntimeEmbedding(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeEmbedding {
+  const embedding = ragIngestionAsRecord(value);
+  if (!embedding) return false;
+  if (!ragIngestionNonEmptyString(embedding.chunkId)) return false;
+  if (embedding.provider !== "fake-contract-embedding") return false;
+  if (embedding.model !== "fake-rag-ingestion-v1") return false;
+  if (!ragIngestionPositiveNumber(embedding.dimension)) return false;
+  if (!Array.isArray(embedding.vector)) return false;
+  if (embedding.vector.length !== embedding.dimension) return false;
+  return embedding.vector.every((entry) => typeof entry === "number" && Number.isFinite(entry));
+}
+
+function isRAGIngestionRuntimeUpsert(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeUpsert {
+  const upsert = ragIngestionAsRecord(value);
+  return (
+    upsert !== null &&
+    ragIngestionNonEmptyString(upsert.collection) &&
+    typeof upsert.attempted === "boolean" &&
+    upsert.stored === false &&
+    upsert.upsertedCount === 0 &&
+    ragIngestionStringArray(upsert.recordIds)
+  );
+}
+
+function isRAGIngestionRuntimeDelete(
+  value: unknown,
+): value is RAGIngestionPythonRuntimeDelete {
+  const deleted = ragIngestionAsRecord(value);
+  return (
+    deleted !== null &&
+    ragIngestionNonEmptyString(deleted.collection) &&
+    typeof deleted.attempted === "boolean" &&
+    deleted.deleted === false &&
+    deleted.deletedCount === 0 &&
+    ragIngestionStringArray(deleted.targetIds)
+  );
+}
+
+function hasAnyRAGIngestionRuntimePayload(record: Record<string, unknown>): boolean {
+  return ["ingest", "chunks", "embeddings", "upsert", "delete"].some(
+    (field) => record[field] !== undefined,
+  );
+}
+
+function hasOnlyExpectedRAGIngestionRuntimePayload(
+  record: Record<string, unknown>,
+  operation: RAGIngestionPythonRuntimeOperation,
+): boolean {
+  const expected = {
+    ingest: "ingest",
+    chunk: "chunks",
+    embed: "embeddings",
+    upsert: "upsert",
+    delete: "delete",
+  }[operation];
+  return ["ingest", "chunks", "embeddings", "upsert", "delete"].every(
+    (field) => (field === expected ? record[field] !== undefined : record[field] === undefined),
+  );
+}
+
+function ragIngestionAsRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function ragIngestionNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function ragIngestionStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(ragIngestionNonEmptyString);
+}
+
+function ragIngestionNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function ragIngestionPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function ragIngestionOneOf<T extends string>(
+  value: unknown,
+  options: readonly T[],
+): value is T {
+  return typeof value === "string" && options.includes(value as T);
+}
