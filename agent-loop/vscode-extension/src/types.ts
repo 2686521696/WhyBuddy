@@ -97,6 +97,7 @@ export interface QueueOverviewItem {
   lastRunId: string | null;
   autoDisabled: boolean;
   running: boolean;
+  stale?: boolean;
 }
 
 export interface QueueOverview {
@@ -168,6 +169,13 @@ export interface RunSnapshot {
   agentLogBytes: number;
   taskLabel: string;
   phaseLabel: string;
+  displayStatus: string | null;
+  staleRun: {
+    status: string;
+    reason: string;
+    stateAgeMs: number;
+    timeoutMs: number;
+  } | null;
   details: string[];
   elapsedMs: number;
   phaseElapsedMs: number;

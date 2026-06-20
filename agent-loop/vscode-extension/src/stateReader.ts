@@ -19,6 +19,8 @@ interface QueueOutcomesFile {
 
 const ANSI_ESCAPE_RE = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 const TERMINAL_STATUS_RE = /^(DONE_|HALT_|PAUSED_)/;
+const ACTIVE_STATUS_RE = /^(CODEX_FIX|GROK_FIX|CODEX_REVIEW|GROK_REVIEW|BUDGET_LOOP_HEAD|REVIEW_NEEDS_CHANGES)$/;
+const STALE_BUFFER_MS = 60_000;
 
 export interface BuildSnapshotOptions {
   statePath?: string;
@@ -79,10 +81,15 @@ export async function buildRunSnapshotFromStatePath(
   const now = options.now?.() ?? Date.now();
   const runStartedAt = options.runStartedAt ?? inferRunStartedAt(state, now);
   const terminalEndedAt = await inferTerminalEndedAt(state, statePath);
-  const elapsedAt = terminalEndedAt ?? now;
+  const staleRun = await detectStaleRun(state, statePath, now);
+  const displayStatus = staleRun ? 'STALE_INTERRUPTED' : (state?.status ?? null);
+  const elapsedAt = terminalEndedAt ?? (staleRun ? now - staleRun.stateAgeMs : now);
   const displayGate = resolveDisplayGate(state);
   const landing = await readRunArtifact<LandingStatus>(state, repoRoot, 'landing.json');
   const finalReport = await readRunArtifact<FinalReportJson>(state, repoRoot, 'final-report.json');
+  const detailsWithStale = staleRun
+    ? [`运行中断: ${staleRun.status} 超过 ${formatElapsed(staleRun.timeoutMs)} 未更新`, ...details]
+    : details;
 
   return {
     state,
@@ -91,8 +98,10 @@ export async function buildRunSnapshotFromStatePath(
     agentTail: activeLog.tail,
     agentLogBytes: activeLog.bytes,
     taskLabel,
-    phaseLabel: phaseLabel(state?.status),
-    details,
+    phaseLabel: phaseLabel(displayStatus ?? state?.status),
+    displayStatus,
+    staleRun,
+    details: detailsWithStale,
     elapsedMs: Math.max(0, elapsedAt - runStartedAt),
     phaseElapsedMs: Math.max(0, now - (options.phaseStartedAt ?? runStartedAt)),
     updatedAt: now,
@@ -193,7 +202,12 @@ export async function readQueueOutcomes(repoRoot: string): Promise<QueueOutcomes
 // the currently-running task, into the model the overview view renders.
 export async function buildQueueOverview(
   repoRoot: string,
-  options: { queueFilePath?: string; runningTaskPath?: string | null; queueRunning?: boolean } = {},
+  options: {
+    queueFilePath?: string;
+    runningTaskPath?: string | null;
+    queueRunning?: boolean;
+    currentRunStale?: boolean;
+  } = {},
 ): Promise<QueueOverview> {
   const queue = await readJsonFile<QueueFile>(options.queueFilePath || defaultQueuePath(repoRoot));
   const outcomes = await readQueueOutcomes(repoRoot);
@@ -203,6 +217,7 @@ export async function buildQueueOverview(
     const id = task.id || task.task;
     const record = outcomes.tasks?.[id];
     const running = Boolean(options.queueRunning)
+      && !options.currentRunStale
       && runningTask !== null
       && normalizeTaskPath(task.task) === runningTask;
     return {
@@ -214,6 +229,9 @@ export async function buildQueueOverview(
       lastRunId: record?.lastRunId ?? null,
       autoDisabled: Boolean(record?.autoDisabled),
       running,
+      stale: Boolean(options.currentRunStale)
+        && runningTask !== null
+        && normalizeTaskPath(task.task) === runningTask,
     };
   });
 
@@ -246,7 +264,7 @@ export async function buildQueueOverview(
 }
 
 export function snapshotStatusLine(snapshot: RunSnapshot): string {
-  const status = snapshot.state?.status || 'IDLE';
+  const status = snapshot.displayStatus || snapshot.state?.status || 'IDLE';
   const parts = [
     `${phaseLabel(status)}`,
     `总耗时 ${formatElapsed(snapshot.elapsedMs)}`,
@@ -293,6 +311,33 @@ async function inferTerminalEndedAt(state: LoopState | null, statePath: string):
   } catch {
     return null;
   }
+}
+
+async function detectStaleRun(
+  state: LoopState | null,
+  statePath: string,
+  now: number,
+): Promise<RunSnapshot['staleRun']> {
+  const status = state?.status || '';
+  if (!ACTIVE_STATUS_RE.test(status)) return null;
+
+  let stateAgeMs = 0;
+  try {
+    const stat = await fs.stat(statePath);
+    stateAgeMs = Math.max(0, now - stat.mtimeMs);
+  } catch {
+    return null;
+  }
+
+  const timeoutMs = state?.options?.timeoutMs ?? 30 * 60 * 1000;
+  if (stateAgeMs <= timeoutMs + STALE_BUFFER_MS) return null;
+
+  return {
+    status,
+    reason: 'active-state-stale',
+    stateAgeMs,
+    timeoutMs,
+  };
 }
 
 function collectEndedAtValues(state: LoopState | null): string[] {

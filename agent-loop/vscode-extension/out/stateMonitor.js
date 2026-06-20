@@ -113,6 +113,7 @@ class StateMonitor {
             queueFilePath: (0, paths_1.queuePath)(this.repoRoot),
             runningTaskPath: this.latestSnapshot?.state?.options?.task ?? null,
             queueRunning: this.isQueueRunning(),
+            currentRunStale: Boolean(this.latestSnapshot?.staleRun),
         });
         dashboardPanel_1.DashboardPanel.current.showOverview(overview, this.latestSnapshot);
     }
@@ -126,7 +127,7 @@ class StateMonitor {
     }
     async refresh() {
         const snapshot = this.enrichSnapshot(await (0, stateReader_1.buildRunSnapshot)(this.repoRoot, this.phaseStartedAt, this.runStartedAt, { queueFilePath: (0, paths_1.queuePath)(this.repoRoot) }));
-        const status = snapshot.state?.status;
+        const status = snapshot.displayStatus ?? snapshot.state?.status;
         if (status && status !== this.lastStatus) {
             this.lastStatus = status;
             this.phaseStartedAt = Date.now();
@@ -140,7 +141,7 @@ class StateMonitor {
         return snapshot;
     }
     updateChrome(snapshot) {
-        const status = snapshot.state?.status;
+        const status = snapshot.displayStatus ?? snapshot.state?.status;
         const icon = (0, phaseLabels_1.statusIcon)(status);
         const text = status
             ? `${icon} AgentLoop: ${(0, phaseLabels_1.phaseLabel)(status)} (${(0, phaseLabels_1.formatElapsed)(snapshot.elapsedMs)})`

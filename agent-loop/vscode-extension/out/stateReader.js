@@ -57,6 +57,8 @@ Object.defineProperty(exports, "resolveActiveLogPath", { enumerable: true, get: 
 Object.defineProperty(exports, "resolveLogRoot", { enumerable: true, get: function () { return activeLog_2.resolveLogRoot; } });
 const ANSI_ESCAPE_RE = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 const TERMINAL_STATUS_RE = /^(DONE_|HALT_|PAUSED_)/;
+const ACTIVE_STATUS_RE = /^(CODEX_FIX|GROK_FIX|CODEX_REVIEW|GROK_REVIEW|BUDGET_LOOP_HEAD|REVIEW_NEEDS_CHANGES)$/;
+const STALE_BUFFER_MS = 60_000;
 async function readJsonFile(filePath) {
     try {
         const raw = await fs.readFile(filePath, 'utf8');
@@ -100,10 +102,15 @@ async function buildRunSnapshotFromStatePath(repoRoot, statePath, options = {}) 
     const now = options.now?.() ?? Date.now();
     const runStartedAt = options.runStartedAt ?? inferRunStartedAt(state, now);
     const terminalEndedAt = await inferTerminalEndedAt(state, statePath);
-    const elapsedAt = terminalEndedAt ?? now;
+    const staleRun = await detectStaleRun(state, statePath, now);
+    const displayStatus = staleRun ? 'STALE_INTERRUPTED' : (state?.status ?? null);
+    const elapsedAt = terminalEndedAt ?? (staleRun ? now - staleRun.stateAgeMs : now);
     const displayGate = (0, gateSummary_1.resolveDisplayGate)(state);
     const landing = await readRunArtifact(state, repoRoot, 'landing.json');
     const finalReport = await readRunArtifact(state, repoRoot, 'final-report.json');
+    const detailsWithStale = staleRun
+        ? [`运行中断: ${staleRun.status} 超过 ${(0, phaseLabels_1.formatElapsed)(staleRun.timeoutMs)} 未更新`, ...details]
+        : details;
     return {
         state,
         statePath,
@@ -111,8 +118,10 @@ async function buildRunSnapshotFromStatePath(repoRoot, statePath, options = {}) 
         agentTail: activeLog.tail,
         agentLogBytes: activeLog.bytes,
         taskLabel,
-        phaseLabel: (0, phaseLabels_1.phaseLabel)(state?.status),
-        details,
+        phaseLabel: (0, phaseLabels_1.phaseLabel)(displayStatus ?? state?.status),
+        displayStatus,
+        staleRun,
+        details: detailsWithStale,
         elapsedMs: Math.max(0, elapsedAt - runStartedAt),
         phaseElapsedMs: Math.max(0, now - (options.phaseStartedAt ?? runStartedAt)),
         updatedAt: now,
@@ -212,6 +221,7 @@ async function buildQueueOverview(repoRoot, options = {}) {
         const id = task.id || task.task;
         const record = outcomes.tasks?.[id];
         const running = Boolean(options.queueRunning)
+            && !options.currentRunStale
             && runningTask !== null
             && normalizeTaskPath(task.task) === runningTask;
         return {
@@ -223,6 +233,9 @@ async function buildQueueOverview(repoRoot, options = {}) {
             lastRunId: record?.lastRunId ?? null,
             autoDisabled: Boolean(record?.autoDisabled),
             running,
+            stale: Boolean(options.currentRunStale)
+                && runningTask !== null
+                && normalizeTaskPath(task.task) === runningTask,
         };
     });
     const counts = {
@@ -257,7 +270,7 @@ async function buildQueueOverview(repoRoot, options = {}) {
     return { tasks, counts, queueRunning: Boolean(options.queueRunning) };
 }
 function snapshotStatusLine(snapshot) {
-    const status = snapshot.state?.status || 'IDLE';
+    const status = snapshot.displayStatus || snapshot.state?.status || 'IDLE';
     const parts = [
         `${(0, phaseLabels_1.phaseLabel)(status)}`,
         `总耗时 ${(0, phaseLabels_1.formatElapsed)(snapshot.elapsedMs)}`,
@@ -300,6 +313,28 @@ async function inferTerminalEndedAt(state, statePath) {
     catch {
         return null;
     }
+}
+async function detectStaleRun(state, statePath, now) {
+    const status = state?.status || '';
+    if (!ACTIVE_STATUS_RE.test(status))
+        return null;
+    let stateAgeMs = 0;
+    try {
+        const stat = await fs.stat(statePath);
+        stateAgeMs = Math.max(0, now - stat.mtimeMs);
+    }
+    catch {
+        return null;
+    }
+    const timeoutMs = state?.options?.timeoutMs ?? 30 * 60 * 1000;
+    if (stateAgeMs <= timeoutMs + STALE_BUFFER_MS)
+        return null;
+    return {
+        status,
+        reason: 'active-state-stale',
+        stateAgeMs,
+        timeoutMs,
+    };
 }
 function collectEndedAtValues(state) {
     const values = [];

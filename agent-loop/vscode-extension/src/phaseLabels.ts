@@ -93,6 +93,7 @@ export function activeAgentLabel(
 
 export function phaseLabel(status: string | undefined): string {
   if (!status) return '等待运行';
+  if (status === 'STALE_INTERRUPTED') return '运行中断';
   if (status.startsWith('DONE_')) return PHASE_LABELS_ZH[status] || '完成';
   if (status.startsWith('HALT_')) return PHASE_LABELS_ZH[status] || '已停止';
   return PHASE_LABELS_ZH[status] || status;
@@ -108,6 +109,7 @@ export function formatElapsed(ms: number): string {
 
 export function statusIcon(status: string | undefined): string {
   if (!status) return '$(circle-outline)';
+  if (status === 'STALE_INTERRUPTED') return '$(debug-disconnect)';
   if (status.startsWith('DONE_')) return '$(check)';
   if (status === 'CODEX_REVIEW' || status === 'GROK_REVIEW') return '$(eye)';
   if (status === 'GROK_FIX' || status === 'CODEX_FIX') return '$(tools)';

@@ -49,7 +49,7 @@ class BaseNode extends vscode.TreeItem {
 }
 class CurrentRunNode extends BaseNode {
     constructor(snapshot) {
-        const status = snapshot?.state?.status;
+        const status = snapshot?.displayStatus ?? snapshot?.state?.status;
         const label = status ? `${(0, phaseLabels_1.phaseLabel)(status)} / ${snapshot?.taskLabel}` : '暂无活动运行';
         super('current-run', label, vscode.TreeItemCollapsibleState.None);
         this.iconPath = new vscode.ThemeIcon((0, phaseLabels_1.statusIcon)(status).replace(/^\$\((.+)\)$/, '$1'));

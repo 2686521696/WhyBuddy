@@ -85,6 +85,7 @@ export class StateMonitor implements vscode.Disposable {
       queueFilePath: queuePath(this.repoRoot),
       runningTaskPath: this.latestSnapshot?.state?.options?.task ?? null,
       queueRunning: this.isQueueRunning(),
+      currentRunStale: Boolean(this.latestSnapshot?.staleRun),
     });
     DashboardPanel.current.showOverview(overview, this.latestSnapshot);
   }
@@ -110,7 +111,7 @@ export class StateMonitor implements vscode.Disposable {
       this.runStartedAt,
       { queueFilePath: queuePath(this.repoRoot) },
     ));
-    const status = snapshot.state?.status;
+    const status = snapshot.displayStatus ?? snapshot.state?.status;
 
     if (status && status !== this.lastStatus) {
       this.lastStatus = status;
@@ -126,7 +127,7 @@ export class StateMonitor implements vscode.Disposable {
   }
 
   private updateChrome(snapshot: RunSnapshot): void {
-    const status = snapshot.state?.status;
+    const status = snapshot.displayStatus ?? snapshot.state?.status;
     const icon = statusIcon(status);
     const text = status
       ? `${icon} AgentLoop: ${phaseLabel(status)} (${formatElapsed(snapshot.elapsedMs)})`

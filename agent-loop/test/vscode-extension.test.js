@@ -238,6 +238,40 @@ test('buildRunSnapshot can read a historical run and freeze terminal elapsed', a
   assert.equal(snapshot.elapsedMs, 82448);
 });
 
+test('buildRunSnapshot marks stale active runs as interrupted and freezes elapsed', async () => {
+  const { buildRunSnapshotFromStatePath } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-stale-snapshot-'));
+  const runId = '2026-06-20T19-21-08-121Z';
+  const runDir = path.join(repo, '.agent-loop', 'runs', runId);
+  await fs.mkdir(runDir, { recursive: true });
+  const statePath = path.join(runDir, 'state.json');
+  await fs.writeFile(statePath, JSON.stringify({
+    runId,
+    status: 'CODEX_FIX',
+    options: {
+      task: 'agent-loop/tasks/backend-python-blueprint-brainstorm-contract.md',
+      timeoutMs: 1800000,
+      fixAgent: 'codex',
+      reviewAgent: 'codex',
+    },
+    artifacts: { runDir },
+    iterations: [],
+  }), 'utf8');
+  const staleTime = new Date('2026-06-20T19:21:48.000Z');
+  await fs.utimes(statePath, staleTime, staleTime);
+
+  const snapshot = await buildRunSnapshotFromStatePath(repo, statePath, {
+    now: () => Date.parse('2026-06-20T20:10:00.000Z'),
+  });
+
+  assert.equal(snapshot.state.status, 'CODEX_FIX');
+  assert.equal(snapshot.displayStatus, 'STALE_INTERRUPTED');
+  assert.equal(snapshot.phaseLabel, '运行中断');
+  assert.equal(snapshot.staleRun.status, 'CODEX_FIX');
+  assert.equal(snapshot.elapsedMs, staleTime.getTime() - Date.parse('2026-06-20T19:21:08.121Z'));
+  assert.ok(snapshot.details.some((line) => line.includes('运行中断')));
+});
+
 test('buildRunSnapshot reads landing status and structured final report', async () => {
   const { buildRunSnapshotFromStatePath } = requireFromExtension('./out/stateReader.js');
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-snapshot-report-'));
@@ -356,6 +390,26 @@ test('buildQueueOverview flags the running task from the live run', async () => 
   assert.equal(overview.tasks[1].running, true);
   assert.equal(overview.tasks[0].running, false);
   assert.equal(overview.counts.running, 1);
+});
+
+test('buildQueueOverview does not count a stale active snapshot as running', async () => {
+  const { buildQueueOverview } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-overview-stale-'));
+  const queueFilePath = path.join(repo, 'queue.json');
+  await fs.writeFile(queueFilePath, JSON.stringify({
+    tasks: [{ id: 'a', task: 'agent-loop/tasks/a.md' }, { id: 'b', task: 'agent-loop/tasks/b.md' }],
+  }), 'utf8');
+
+  const overview = await buildQueueOverview(repo, {
+    queueFilePath,
+    queueRunning: true,
+    runningTaskPath: 'agent-loop/tasks/b.md',
+    currentRunStale: true,
+  });
+
+  assert.equal(overview.tasks[1].running, false);
+  assert.equal(overview.counts.running, 0);
+  assert.equal(overview.counts.pending, 2);
 });
 
 test('extension phase labels render clean Chinese status text', async () => {

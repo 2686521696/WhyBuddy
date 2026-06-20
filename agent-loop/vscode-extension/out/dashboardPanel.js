@@ -105,9 +105,10 @@ class DashboardPanel {
                 current: current?.state
                     ? {
                         taskLabel: current.taskLabel,
-                        status: current.state.status ?? null,
+                        status: current.displayStatus ?? current.state.status ?? null,
                         phaseLabel: current.phaseLabel,
                         elapsedText: (0, phaseLabels_1.formatElapsed)(current.elapsedMs),
+                        staleRun: current.staleRun,
                     }
                     : null,
             },
@@ -116,7 +117,8 @@ class DashboardPanel {
     update(snapshot) {
         this.view = 'detail';
         const state = snapshot.state;
-        const agentText = (0, phaseLabels_1.activeAgentLabel)(state?.status, state, {
+        const displayStatus = snapshot.displayStatus ?? state?.status ?? null;
+        const agentText = (0, phaseLabels_1.activeAgentLabel)(displayStatus ?? undefined, state, {
             fixAgent: snapshot.fixAgent,
             reviewAgent: snapshot.reviewAgent,
         });
@@ -126,7 +128,8 @@ class DashboardPanel {
             payload: {
                 taskLabel: snapshot.taskLabel,
                 runId: state?.runId ?? null,
-                status: state?.status ?? null,
+                status: displayStatus,
+                rawStatus: state?.status ?? null,
                 phaseLabel: snapshot.phaseLabel,
                 elapsedText: (0, phaseLabels_1.formatElapsed)(snapshot.elapsedMs),
                 gateText: snapshot.displayGate.text,
@@ -138,6 +141,7 @@ class DashboardPanel {
                 pipelineSteps: snapshot.pipelineSteps,
                 agentTail: snapshot.agentTail,
                 details: snapshot.details,
+                staleRun: snapshot.staleRun,
                 iterations: summarizeIterations(state),
                 reviewRounds: (state?.reviewRounds ?? []).map((round) => ({
                     round: round.round ?? null,
