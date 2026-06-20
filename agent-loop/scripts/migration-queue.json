@@ -13,6 +13,7 @@
     "reviewMaxTurns": 6,
     "guardTests": true,
     "maxIterations": 3,
+    "agentIdleTimeoutMs": 300000,
     "noSyncTaskStatus": true,
     "cleanupWorktree": true,
     "autoDisableOnNoChanges": true,

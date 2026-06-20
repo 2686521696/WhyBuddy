@@ -5,6 +5,7 @@
 // max_turns / nonzero_exit / none are agent-stable: the gate stays the judge (progress + budget).
 export function classifyAgentFailure(result) {
   if (result?.spawnError) return { kind: 'spawn_error', retryable: false, agentUnstable: true };
+  if (result?.idleTimedOut) return { kind: 'idle_timeout', retryable: false, agentUnstable: true };
   if (result?.timedOut) return { kind: 'timeout', retryable: false, agentUnstable: true };
   if (result?.exitCode === 0) return { kind: 'none', retryable: false, agentUnstable: false };
 

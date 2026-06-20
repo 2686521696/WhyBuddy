@@ -42,6 +42,24 @@ test('runProcess kills the child when the abort signal fires', async () => {
   assert.notEqual(result.signal, null);
 });
 
+test('runProcess kills an idle child before the total timeout', async () => {
+  const script = [
+    'setTimeout(() => {}, 30000);',
+  ].join('\n');
+
+  const startedAt = Date.now();
+  const result = await runProcess(process.execPath, ['-e', script], {
+    timeoutMs: 30000,
+    idleTimeoutMs: 100,
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.idleTimedOut, true);
+  assert.equal(result.timedOut, false);
+  assert.ok(elapsedMs < 5000, `expected idle timeout quickly, elapsed ${elapsedMs}ms`);
+  assert.notEqual(result.signal, null);
+});
+
 test('resolveEntryGates throws for unknown gatesKey', () => {
   assert.throws(
     () => resolveEntryGates({
@@ -209,6 +227,7 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
       guardTests: true,
       maxIterations: 3,
       timeoutMs: 600000,
+      agentIdleTimeoutMs: 120000,
       lang: 'zh-CN',
       pythonExe: 'tws-ai-slide-rule-python/.venv/Scripts/python.exe',
     },
@@ -232,6 +251,7 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
   assert.ok(args.includes('--review-agent'));
   assert.deepEqual(args.slice(args.indexOf('--fix-model'), args.indexOf('--fix-model') + 2), ['--fix-model', 'gpt-5.5']);
   assert.deepEqual(args.slice(args.indexOf('--review-model'), args.indexOf('--review-model') + 2), ['--review-model', 'gpt-5.5']);
+  assert.deepEqual(args.slice(args.indexOf('--agent-idle-timeout-ms'), args.indexOf('--agent-idle-timeout-ms') + 2), ['--agent-idle-timeout-ms', '120000']);
   assert.match(gateArg, /test_client_parity\.py/);
   assert.match(gateArg, /& "/);
   assert.match(gateArg, /tws-ai-slide-rule-python[\\/]\.venv[\\/]Scripts[\\/]python\.exe/);

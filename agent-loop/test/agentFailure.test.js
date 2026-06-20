@@ -67,6 +67,11 @@ test('classifyAgentFailure treats spawn errors and process timeouts as hard fail
     retryable: false,
     agentUnstable: true,
   });
+  assert.deepEqual(classifyAgentFailure(run({ idleTimedOut: true })), {
+    kind: 'idle_timeout',
+    retryable: false,
+    agentUnstable: true,
+  });
 });
 
 function run(overrides = {}) {

@@ -160,6 +160,8 @@ export function buildLoopArgsForQueueEntry({
 
   const reviewMaxTurns = entry.reviewMaxTurns ?? defaults.reviewMaxTurns;
   if (reviewMaxTurns != null) args.push('--review-max-turns', String(reviewMaxTurns));
+  const agentIdleTimeoutMs = entry.agentIdleTimeoutMs ?? defaults.agentIdleTimeoutMs;
+  if (agentIdleTimeoutMs != null) args.push('--agent-idle-timeout-ms', String(agentIdleTimeoutMs));
   if (entry.guardTests ?? defaults.guardTests ?? true) args.push('--guard-tests');
   const guardPolicy = entry.guardPolicy ?? defaults.guardPolicy;
   if (guardPolicy) args.push('--guard-policy', guardPolicy);

@@ -9,6 +9,7 @@ export function runProcess(command, args, options = {}) {
     onStdout,
     onStderr,
     signal,
+    idleTimeoutMs = null,
   } = options;
 
   return new Promise((resolve) => {
@@ -23,6 +24,7 @@ export function runProcess(command, args, options = {}) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let idleTimedOut = false;
     let aborted = false;
     let settled = false;
 
@@ -30,6 +32,16 @@ export function runProcess(command, args, options = {}) {
       timedOut = true;
       child.kill('SIGTERM');
     }, timeoutMs);
+    let idleTimer = null;
+    const resetIdleTimer = () => {
+      if (!idleTimeoutMs) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true;
+        child.kill('SIGTERM');
+      }, idleTimeoutMs);
+    };
+    resetIdleTimer();
 
     const abort = () => {
       aborted = true;
@@ -47,6 +59,7 @@ export function runProcess(command, args, options = {}) {
     const cleanup = () => {
       settled = true;
       clearTimeout(timer);
+      if (idleTimer) clearTimeout(idleTimer);
       signal?.removeEventListener('abort', abort);
     };
 
@@ -54,11 +67,13 @@ export function runProcess(command, args, options = {}) {
       const text = chunk.toString();
       stdout += text;
       onStdout?.(text);
+      resetIdleTimer();
     });
     child.stderr?.on('data', (chunk) => {
       const text = chunk.toString();
       stderr += text;
       onStderr?.(text);
+      resetIdleTimer();
     });
     child.on('error', (error) => {
       cleanup();
@@ -71,6 +86,7 @@ export function runProcess(command, args, options = {}) {
         exitCode: null,
         signal: null,
         timedOut,
+        idleTimedOut,
         aborted,
         spawnError: error.message,
         stdout,
@@ -88,6 +104,7 @@ export function runProcess(command, args, options = {}) {
         exitCode,
         signal,
         timedOut,
+        idleTimedOut,
         aborted,
         stdout,
         stderr,

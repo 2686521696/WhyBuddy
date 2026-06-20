@@ -300,7 +300,7 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       grokFix: fixAgent === 'grok' ? summarizedFix : null,
     };
 
-    if (agentFix.timedOut || agentFix.spawnError) {
+    if (agentFix.timedOut || agentFix.idleTimedOut || agentFix.spawnError) {
       iterations.push({ iteration, attempts, ...legacyFixPatch, gate: null, diff: summarizeDiff(postFixDiff.text) });
       await transition('HALT_HUMAN', { iterations, ...legacyFixPatch });
       return finalizeState(state, options);
@@ -459,6 +459,7 @@ async function runFixAttempt({
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
+      idleTimeoutMs: options.agentIdleTimeoutMs,
       onStderr: reporter.onStderr,
     });
   } else {
@@ -469,6 +470,7 @@ async function runFixAttempt({
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
+      idleTimeoutMs: options.agentIdleTimeoutMs,
       input: prompt,
       onStderr: reporter.onStderr,
     });
@@ -603,6 +605,7 @@ async function runReview({
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
+      idleTimeoutMs: options.agentIdleTimeoutMs,
       onStderr: reporter.onStderr,
     });
   } else if (scoped) {
@@ -612,6 +615,7 @@ async function runReview({
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
+      idleTimeoutMs: options.agentIdleTimeoutMs,
       input: promptInput,
       onStderr: reporter.onStderr,
     });
@@ -621,6 +625,7 @@ async function runReview({
     }), {
       cwd: fixCwd,
       timeoutMs: options.timeoutMs,
+      idleTimeoutMs: options.agentIdleTimeoutMs,
       onStderr: reporter.onStderr,
     });
   }
@@ -808,6 +813,7 @@ export function summarizeRun(result) {
     exitCode: result.exitCode,
     signal: result.signal,
     timedOut: result.timedOut,
+    idleTimedOut: result.idleTimedOut ?? false,
     spawnError: result.spawnError ?? null,
     startedAt: result.startedAt,
     endedAt: result.endedAt,

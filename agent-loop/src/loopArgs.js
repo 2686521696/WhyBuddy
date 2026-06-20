@@ -16,6 +16,7 @@ export function parseLoopArgs(argv) {
     scopedReview: null,
     reviewMaxTurns: 2,
     timeoutMs: 120000,
+    agentIdleTimeoutMs: null,
     maxIterations: 3,
     grokMaxTurns: 4,
     grokMaxRetries: 1,
@@ -90,6 +91,11 @@ export function parseLoopArgs(argv) {
       parsed.timeoutMs = Number.parseInt(readValue(argv, ++i, '--timeout-ms'), 10);
       if (!Number.isFinite(parsed.timeoutMs) || parsed.timeoutMs <= 0) {
         throw new Error('--timeout-ms must be a positive integer');
+      }
+    } else if (arg === '--agent-idle-timeout-ms') {
+      parsed.agentIdleTimeoutMs = Number.parseInt(readValue(argv, ++i, '--agent-idle-timeout-ms'), 10);
+      if (!Number.isFinite(parsed.agentIdleTimeoutMs) || parsed.agentIdleTimeoutMs <= 0) {
+        throw new Error('--agent-idle-timeout-ms must be a positive integer');
       }
     } else if (arg === '--max-iterations') {
       parsed.maxIterations = Number.parseInt(readValue(argv, ++i, '--max-iterations'), 10);
