@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python 投影结构和测试；reviewer 确认不篡改 Node 主状态机边界。
 
 ### 状态清单
-- [ ] Python 输出包含稳定 plan state projection。
-- [ ] Node contract 测试能读懂 projection。
-- [ ] 错误和 partial plan（部分计划）有明确形状。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 projection 当成完整主状态机迁移。
+- [x] Python 输出包含稳定 plan state projection。
+- [x] Node contract 测试能读懂 projection。
+- [x] 错误和 partial plan（部分计划）有明确形状。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 projection 当成完整主状态机迁移。
 
 ## 目标
 

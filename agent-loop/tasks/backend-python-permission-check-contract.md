@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不绕过 Node 权限引擎。
 
 ### 状态清单
-- [ ] Python 有 permission check contract。
-- [ ] Node permission 测试能映射 allow/deny/reason。
-- [ ] deny 不能被 fallback 成 allow。
-- [ ] gate 全绿。
-- [ ] Codex review 确认生产权限仍由 Node 承担。
+- [x] Python 有 permission check contract。
+- [x] Node permission 测试能映射 allow/deny/reason。
+- [x] deny 不能被 fallback 成 allow。
+- [x] gate 全绿。
+- [x] Codex review 确认生产权限仍由 Node 承担。
 
 ## 目标
 

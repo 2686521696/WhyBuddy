@@ -6,11 +6,11 @@
 - 角色分工：worker 负责实现和测试；reviewer 负责确认没有真实 key、真实外部服务依赖或虚假 provenance（证据来源）。
 
 ### 状态清单
-- [ ] Python vector store config（向量库配置）有明确运行时入口。
-- [ ] evidence retrieval（证据检索）可以选择真实 vector runtime（向量运行时）或安全 fallback（回退）。
-- [ ] 测试覆盖 hit、miss、runtime unavailable（运行时不可用）三条路径。
-- [ ] gate 全绿。
-- [ ] Codex review（审查）确认没有把 smoke 冒充 production RAG（生产级检索增强生成）。
+- [x] Python vector store config（向量库配置）有明确运行时入口。
+- [x] evidence retrieval（证据检索）可以选择真实 vector runtime（向量运行时）或安全 fallback（回退）。
+- [x] 测试覆盖 hit、miss、runtime unavailable（运行时不可用）三条路径。
+- [x] gate 全绿。
+- [x] Codex review（审查）确认没有把 smoke 冒充 production RAG（生产级检索增强生成）。
 
 ## 目标
 

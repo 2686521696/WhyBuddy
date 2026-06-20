@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不破坏 Node callback routing（回调路由）。
 
 ### 状态清单
-- [ ] Python 有 callback event contract。
-- [ ] Node callback routing 测试能映射 Python event。
-- [ ] duplicate/out-of-order（重复/乱序）形状明确。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不吞事件、不伪造完成。
+- [x] Python 有 callback event contract。
+- [x] Node callback routing 测试能映射 Python event。
+- [x] duplicate/out-of-order（重复/乱序）形状明确。
+- [x] gate 全绿。
+- [x] Codex review 确认不吞事件、不伪造完成。
 
 ## 目标
 

@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不破坏审计权限和分页语义。
 
 ### 状态清单
-- [ ] Python 有 audit query contract。
-- [ ] Node audit query 测试覆盖 filter/page/error。
-- [ ] 权限失败和空结果形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不导出真实审计数据。
+- [x] Python 有 audit query contract。
+- [x] Node audit query 测试覆盖 filter/page/error。
+- [x] 权限失败和空结果形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认不导出真实审计数据。
 
 ## 目标
 

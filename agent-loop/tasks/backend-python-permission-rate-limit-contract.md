@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不削弱现有限流。
 
 ### 状态清单
-- [ ] Python 有 rate limit contract。
-- [ ] Node rate limiter 测试覆盖 allow/deny/reset。
-- [ ] deny 不能被 fallback 成 allow。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不削弱安全边界。
+- [x] Python 有 rate limit contract。
+- [x] Node rate limiter 测试覆盖 allow/deny/reset。
+- [x] deny 不能被 fallback 成 allow。
+- [x] gate 全绿。
+- [x] Codex review 确认不削弱安全边界。
 
 ## 目标
 

@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python runtime adapter（运行时适配器）和测试；reviewer 确认没有真实外部 MCP 调用和权限绕过。
 
 ### 状态清单
-- [ ] Python 有 `mcp.call` runtime adapter 接口。
-- [ ] fake adapter（假适配器）只用于测试，生产入口可替换。
-- [ ] 权限/失败/provenance 形状清楚。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 fake adapter 宣传成真实 MCP。
+- [x] Python 有 `mcp.call` runtime adapter 接口。
+- [x] fake adapter（假适配器）只用于测试，生产入口可替换。
+- [x] 权限/失败/provenance 形状清楚。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 fake adapter 宣传成真实 MCP。
 
 ## 目标
 

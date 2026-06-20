@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python runtime adapter 和测试；reviewer 确认没有执行任意本地命令或绕过权限。
 
 ### 状态清单
-- [ ] Python 有 skill runtime adapter（技能运行时适配器）接口。
-- [ ] 测试覆盖 success、not found、denied、runtime error。
-- [ ] 结果保留 skill id、runtime、provenance 和错误分类。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有任意命令执行风险。
+- [x] Python 有 skill runtime adapter（技能运行时适配器）接口。
+- [x] 测试覆盖 success、not found、denied、runtime error。
+- [x] 结果保留 skill id、runtime、provenance 和错误分类。
+- [x] gate 全绿。
+- [x] Codex review 确认没有任意命令执行风险。
 
 ## 目标
 

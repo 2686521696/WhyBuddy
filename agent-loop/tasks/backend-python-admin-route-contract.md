@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不改变真实 admin 权限。
 
 ### 状态清单
-- [ ] Python 有 admin contract。
-- [ ] Node admin route 测试能映射 success/forbidden/error。
-- [ ] forbidden 不能 fallback 成 success。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不泄露管理数据。
+- [x] Python 有 admin contract。
+- [x] Node admin route 测试能映射 success/forbidden/error。
+- [x] forbidden 不能 fallback 成 success。
+- [x] gate 全绿。
+- [x] Codex review 确认不泄露管理数据。
 
 ## 目标
 

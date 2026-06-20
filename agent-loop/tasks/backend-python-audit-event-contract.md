@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不迁真实 audit store，不破坏审计链。
 
 ### 状态清单
-- [ ] Python 有 audit event schema/validator。
-- [ ] Node audit 测试能映射 event、actor、resource、result。
-- [ ] invalid event 不会被写成成功审计。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有绕过 audit chain。
+- [x] Python 有 audit event schema/validator。
+- [x] Node audit 测试能映射 event、actor、resource、result。
+- [x] invalid event 不会被写成成功审计。
+- [x] gate 全绿。
+- [x] Codex review 确认没有绕过 audit chain。
 
 ## 目标
 

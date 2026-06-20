@@ -6,11 +6,11 @@
 - 角色分工：worker 负责最小契约和测试；reviewer 确认不迁 UI、不改变导出权限。
 
 ### 状态清单
-- [ ] Python 有 review/export contract。
-- [ ] Node 侧有开关式 proxy 测试。
-- [ ] 权限、错误、空结果形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有越权导出。
+- [x] Python 有 review/export contract。
+- [x] Node 侧有开关式 proxy 测试。
+- [x] 权限、错误、空结果形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有越权导出。
 
 ## 目标
 

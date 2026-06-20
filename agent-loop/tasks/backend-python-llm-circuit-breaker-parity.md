@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 pool 熔断行为和测试；reviewer 确认不改变已有 penalty（惩罚）语义。
 
 ### 状态清单
-- [ ] 连续失败能进入 circuit open（熔断打开）。
-- [ ] cooldown（冷却）后可 half-open（半开）试探。
-- [ ] 成功后可恢复。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不泄露 key。
+- [x] 连续失败能进入 circuit open（熔断打开）。
+- [x] cooldown（冷却）后可 half-open（半开）试探。
+- [x] 成功后可恢复。
+- [x] gate 全绿。
+- [x] Codex review 确认不泄露 key。
 
 ## 目标
 

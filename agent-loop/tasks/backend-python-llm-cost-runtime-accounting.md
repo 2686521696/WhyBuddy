@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python cost metadata 和测试；reviewer 确认不记录真实 key、不夸大真实账单准确性。
 
 ### 状态清单
-- [ ] Python LLM 响应包含 token/cost metadata。
-- [ ] unknown pricing（未知价格）有安全 fallback。
-- [ ] pool/client telemetry 能汇总安全字段。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不泄露 key 或真实账单数据。
+- [x] Python LLM 响应包含 token/cost metadata。
+- [x] unknown pricing（未知价格）有安全 fallback。
+- [x] pool/client telemetry 能汇总安全字段。
+- [x] gate 全绿。
+- [x] Codex review 确认不泄露 key 或真实账单数据。
 
 ## 目标
 

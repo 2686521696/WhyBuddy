@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python batch endpoint 和 Node proxy 测试；reviewer 确认没有吞掉 artifact/store 边界。
 
 ### 状态清单
-- [ ] Python 支持批量 spec-docs 请求。
-- [ ] Node proxy 可按开关走 Python batch endpoint。
-- [ ] partial failure（部分失败）形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不是完整 Blueprint 状态机迁移。
+- [x] Python 支持批量 spec-docs 请求。
+- [x] Node proxy 可按开关走 Python batch endpoint。
+- [x] partial failure（部分失败）形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认不是完整 Blueprint 状态机迁移。
 
 ## 目标
 

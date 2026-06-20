@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 contract 和测试；reviewer 确认不发真实图片/vision 网络请求。
 
 ### 状态清单
-- [ ] Python client 能接收 text/image content parts。
-- [ ] 不支持的 provider 有明确错误或降级。
-- [ ] JSON hardening 不退化。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实外部请求。
+- [x] Python client 能接收 text/image content parts。
+- [x] 不支持的 provider 有明确错误或降级。
+- [x] JSON hardening 不退化。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实外部请求。
 
 ## 目标
 

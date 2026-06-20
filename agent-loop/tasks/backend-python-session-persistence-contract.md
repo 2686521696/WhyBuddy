@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python persistence contract 和测试；reviewer 确认不迁真实生产数据。
 
 ### 状态清单
-- [ ] Python session persistence 支持 save/load/list/error contract。
-- [ ] Node session store 测试能映射 Python contract。
-- [ ] corrupt/missing session 形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不提交真实 session 数据。
+- [x] Python session persistence 支持 save/load/list/error contract。
+- [x] Node session store 测试能映射 Python contract。
+- [x] corrupt/missing session 形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认不提交真实 session 数据。
 
 ## 目标
 

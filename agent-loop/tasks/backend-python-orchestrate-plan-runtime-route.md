@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 route 接线和测试；reviewer 确认没有吞掉 Node 侧错误恢复语义。
 
 ### 状态清单
-- [ ] Node Python mode 下 `orchestrate.plan` 能调用 Python endpoint。
-- [ ] Python route 返回 contract 兼容结构。
-- [ ] 错误恢复不退化。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不是只测 fake JSON。
+- [x] Node Python mode 下 `orchestrate.plan` 能调用 Python endpoint。
+- [x] Python route 返回 contract 兼容结构。
+- [x] 错误恢复不退化。
+- [x] gate 全绿。
+- [x] Codex review 确认不是只测 fake JSON。
 
 ## 目标
 

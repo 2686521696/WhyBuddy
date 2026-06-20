@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不迁真实 store、不破坏 Node artifact memory。
 
 ### 状态清单
-- [ ] Python 侧有 artifact memory contract endpoint 或 service。
-- [ ] Node 侧可通过开关调用 Python proxy。
-- [ ] read/write/list/error 形状稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有迁移真实持久化存储。
+- [x] Python 侧有 artifact memory contract endpoint 或 service。
+- [x] Node 侧可通过开关调用 Python proxy。
+- [x] read/write/list/error 形状稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有迁移真实持久化存储。
 
 ## 目标
 

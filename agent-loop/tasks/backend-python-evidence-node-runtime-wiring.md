@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Node/Python 接线和测试；reviewer 确认错误形状、provenance 和 fallback 诚实。
 
 ### 状态清单
-- [ ] Node 侧 evidence route 可以在 Python mode 下调用 Python evidence runtime。
-- [ ] Python 成功、fallback、错误三种响应形状被 Node 测试锁住。
-- [ ] Node 不吞掉 provenance（证据来源）字段。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有绕回旧 Node-only fake path。
+- [x] Node 侧 evidence route 可以在 Python mode 下调用 Python evidence runtime。
+- [x] Python 成功、fallback、错误三种响应形状被 Node 测试锁住。
+- [x] Node 不吞掉 provenance（证据来源）字段。
+- [x] gate 全绿。
+- [x] Codex review 确认没有绕回旧 Node-only fake path。
 
 ## 目标
 

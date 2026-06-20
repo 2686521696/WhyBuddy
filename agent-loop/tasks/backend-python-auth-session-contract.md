@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不泄露 cookie/token、不改变生产认证行为。
 
 ### 状态清单
-- [ ] Python 侧有 session validate contract。
-- [ ] Node auth 测试可验证 Python contract 兼容形状。
-- [ ] expired、missing、invalid 三类错误稳定。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实 token 泄露。
+- [x] Python 侧有 session validate contract。
+- [x] Node auth 测试可验证 Python contract 兼容形状。
+- [x] expired、missing、invalid 三类错误稳定。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实 token 泄露。
 
 ## 目标
 

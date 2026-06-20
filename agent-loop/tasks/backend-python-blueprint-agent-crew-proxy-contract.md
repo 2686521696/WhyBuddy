@@ -6,11 +6,11 @@
 - 角色分工：worker 负责契约和测试；reviewer 确认不迁完整 Agent Crew runtime。
 
 ### 状态清单
-- [ ] Python 有 agent crew contract。
-- [ ] Node service 测试能映射 plan/assign/result/error。
-- [ ] budget（预算）和 role（角色）字段不丢。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不改真实 agent 调度。
+- [x] Python 有 agent crew contract。
+- [x] Node service 测试能映射 plan/assign/result/error。
+- [x] budget（预算）和 role（角色）字段不丢。
+- [x] gate 全绿。
+- [x] Codex review 确认不改真实 agent 调度。
 
 ## 目标
 
