@@ -6,11 +6,11 @@
 - 角色分工：worker 只盘点；reviewer 确认任务粒度足够小。
 
 ### 状态清单
-- [ ] 列出 node-adapters 下所有 adapter。
-- [ ] 按 search/file/vision-audio/navigation/report 分组。
-- [ ] 标出每组迁移风险和建议 gate。
-- [ ] mojibake gate 通过。
-- [ ] Codex review 确认没有改业务代码。
+- [x] 列出 node-adapters 下所有 adapter。
+- [x] 按 search/file/vision-audio/navigation/report 分组。
+- [x] 标出每组迁移风险和建议 gate。
+- [x] mojibake gate 通过。
+- [x] Codex review 确认没有改业务代码。
 
 ## 目标
 
