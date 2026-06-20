@@ -6,11 +6,11 @@
 - 角色分工：worker 只做盘点和文档，不改业务代码；reviewer 确认没有把 `tws-ai-ask-python` 当迁移目标。
 
 ### 状态清单
-- [ ] 列出 NodeJS 源头大块：Blueprint/Autopilot、role runtime、web-aigc adapters、NL command、workflow、RAG、telemetry。
-- [ ] 给每块标出源文件、目标 Python 位置、建议 gate。
-- [ ] 明确 `tws-ai-ask-python` 只能作为 Python 结构参考。
-- [ ] mojibake gate 通过。
-- [ ] Codex review 确认没有改业务代码。
+- [x] 列出 NodeJS 源头大块：Blueprint/Autopilot、role runtime、web-aigc adapters、NL command、workflow、RAG、telemetry。
+- [x] 给每块标出源文件、目标 Python 位置、建议 gate。
+- [x] 明确 `tws-ai-ask-python` 只能作为 Python 结构参考。
+- [x] mojibake gate 通过。
+- [x] Codex review 确认没有改业务代码。
 
 ## 目标
 
