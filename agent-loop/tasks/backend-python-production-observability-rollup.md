@@ -1,16 +1,16 @@
 # 后端 NodeJS 到 Python 迁移：Production observability rollup
 
 ## 执行状态
-- 状态：待执行
+- 状态：已完成
 - 目标：把 Python runtime 的 telemetry、cost、health、error envelope 汇总成生产观测 rollup，不做完整 APM。
 - 角色分工：worker 负责 Python/Node observability contract 和测试；reviewer 确认没有伪造生产级指标或引入外部 sink。
 
 ### 状态清单
-- [ ] Python rollup 暴露 runtime health、error、cost/telemetry 摘要。
-- [ ] Node route/client 能读取 rollup 并保留 degraded 状态。
-- [ ] unknown/missing metric 不伪装成 healthy。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有接真实外部观测平台。
+- [x] Python rollup 暴露 runtime health、error、cost/telemetry 摘要。
+- [x] Node route/client 能读取 rollup 并保留 degraded 状态。
+- [x] unknown/missing metric 不伪装成 healthy。
+- [x] gate 全绿。
+- [x] Codex review 确认没有接真实外部观测平台。
 
 ## 目标
 

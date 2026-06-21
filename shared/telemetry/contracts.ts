@@ -515,3 +515,253 @@ function telemetryRouteOneOf<T extends string>(
 ): value is T {
   return typeof value === "string" && options.includes(value as T);
 }
+
+// ---------------------------------------------------------------------------
+// Python Contract Slice: Production Observability Rollup
+// ---------------------------------------------------------------------------
+
+export const PYTHON_OBSERVABILITY_ROLLUP_CONTRACT_VERSION =
+  "python-observability-rollup.runtime.v1" as const;
+
+export type PythonObservabilityRollupStatus =
+  | "healthy"
+  | "degraded"
+  | "unhealthy"
+  | "unknown";
+
+export type PythonObservabilityMetricState = "present" | "missing" | "unknown";
+
+export interface PythonObservabilityRollupProvenance {
+  source: string;
+  synthetic: boolean;
+  externalMonitoringRequest: false;
+  externalSink: false;
+  [key: string]: unknown;
+}
+
+export interface PythonObservabilityRollupHealth {
+  status: PythonObservabilityRollupStatus;
+  runtimeReachable: boolean;
+  checkedAt: string;
+  detail?: string;
+}
+
+export interface PythonObservabilityRollupTelemetry {
+  state: PythonObservabilityMetricState;
+  totalCalls: number | null;
+  errorCount: number | null;
+  eventCount: number | null;
+  latencyMs: TelemetryRoutePythonMetrics["latencyMs"] | null;
+  tokens: TelemetryRoutePythonTokens | null;
+  updatedAt: number | null;
+}
+
+export interface PythonObservabilityRollupCost {
+  state: PythonObservabilityMetricState;
+  amountUsd: number | null;
+  estimatedUsd: number | null;
+  actualUsd: number | null;
+  source: TelemetryRoutePythonSource;
+  billingSource: string;
+  isEstimate: boolean;
+  tokens: TelemetryRoutePythonTokens | null;
+}
+
+export interface PythonObservabilityRollupError {
+  state: PythonObservabilityMetricState;
+  count: number | null;
+  lastError: TelemetryRoutePythonError | null;
+  envelopeStatus: "failed" | "completed" | "unknown";
+}
+
+export interface PythonObservabilityRollup {
+  contractVersion: typeof PYTHON_OBSERVABILITY_ROLLUP_CONTRACT_VERSION;
+  runtime: "python-observability-rollup";
+  status: PythonObservabilityRollupStatus;
+  generatedAt: string;
+  provenance: PythonObservabilityRollupProvenance;
+  health: PythonObservabilityRollupHealth;
+  telemetry: PythonObservabilityRollupTelemetry;
+  cost: PythonObservabilityRollupCost;
+  error: PythonObservabilityRollupError;
+  degradedReasons: string[];
+}
+
+const PYTHON_OBSERVABILITY_ROLLUP_STATUSES: readonly PythonObservabilityRollupStatus[] = [
+  "healthy",
+  "degraded",
+  "unhealthy",
+  "unknown",
+];
+
+const PYTHON_OBSERVABILITY_METRIC_STATES: readonly PythonObservabilityMetricState[] = [
+  "present",
+  "missing",
+  "unknown",
+];
+
+export function isPythonObservabilityRollup(
+  value: unknown,
+): value is PythonObservabilityRollup {
+  const rollup = telemetryRouteAsRecord(value);
+  if (!rollup) return false;
+  if (rollup.contractVersion !== PYTHON_OBSERVABILITY_ROLLUP_CONTRACT_VERSION) {
+    return false;
+  }
+  if (rollup.runtime !== "python-observability-rollup") return false;
+  if (!telemetryRouteOneOf(rollup.status, PYTHON_OBSERVABILITY_ROLLUP_STATUSES)) {
+    return false;
+  }
+  if (!telemetryRouteNonEmptyString(rollup.generatedAt)) return false;
+  if (!isPythonObservabilityRollupProvenance(rollup.provenance)) return false;
+  if (!isPythonObservabilityRollupHealth(rollup.health)) return false;
+  if (!isPythonObservabilityRollupTelemetry(rollup.telemetry, rollup.provenance)) {
+    return false;
+  }
+  if (!isPythonObservabilityRollupCost(rollup.cost, rollup.provenance)) return false;
+  if (!isPythonObservabilityRollupError(rollup.error)) return false;
+  if (
+    !Array.isArray(rollup.degradedReasons) ||
+    !rollup.degradedReasons.every(telemetryRouteNonEmptyString)
+  ) {
+    return false;
+  }
+
+  if (rollup.status === "healthy") {
+    return (
+      rollup.health.status === "healthy" &&
+      rollup.telemetry.state === "present" &&
+      rollup.cost.state === "present" &&
+      rollup.error.state === "present" &&
+      rollup.degradedReasons.length === 0
+    );
+  }
+
+  return true;
+}
+
+function isPythonObservabilityRollupProvenance(
+  value: unknown,
+): value is PythonObservabilityRollupProvenance {
+  const provenance = telemetryRouteAsRecord(value);
+  return (
+    provenance !== null &&
+    telemetryRouteNonEmptyString(provenance.source) &&
+    typeof provenance.synthetic === "boolean" &&
+    provenance.externalMonitoringRequest === false &&
+    provenance.externalSink === false
+  );
+}
+
+function isPythonObservabilityRollupHealth(
+  value: unknown,
+): value is PythonObservabilityRollupHealth {
+  const health = telemetryRouteAsRecord(value);
+  return (
+    health !== null &&
+    telemetryRouteOneOf(health.status, PYTHON_OBSERVABILITY_ROLLUP_STATUSES) &&
+    typeof health.runtimeReachable === "boolean" &&
+    telemetryRouteNonEmptyString(health.checkedAt) &&
+    (health.detail === undefined || telemetryRouteNonEmptyString(health.detail))
+  );
+}
+
+function isPythonObservabilityRollupTelemetry(
+  value: unknown,
+  provenance: PythonObservabilityRollupProvenance,
+): value is PythonObservabilityRollupTelemetry {
+  const telemetry = telemetryRouteAsRecord(value);
+  if (!telemetry) return false;
+  if (!telemetryRouteOneOf(telemetry.state, PYTHON_OBSERVABILITY_METRIC_STATES)) {
+    return false;
+  }
+
+  if (telemetry.state !== "present") {
+    return (
+      telemetry.totalCalls === null &&
+      telemetry.errorCount === null &&
+      telemetry.eventCount === null &&
+      telemetry.latencyMs === null &&
+      telemetry.tokens === null &&
+      telemetry.updatedAt === null
+    );
+  }
+
+  const latency = telemetryRouteAsRecord(telemetry.latencyMs);
+  return (
+    telemetryRouteNonNegativeNumber(telemetry.totalCalls) &&
+    telemetryRouteNonNegativeNumber(telemetry.errorCount) &&
+    telemetryRouteNonNegativeNumber(telemetry.eventCount) &&
+    latency !== null &&
+    telemetryRouteNonNegativeNumber(latency.average) &&
+    telemetryRouteNonNegativeNumber(latency.p95) &&
+    isTelemetryRoutePythonTokens(telemetry.tokens, provenance) &&
+    telemetryRouteNonNegativeNumber(telemetry.updatedAt)
+  );
+}
+
+function isPythonObservabilityRollupCost(
+  value: unknown,
+  provenance: PythonObservabilityRollupProvenance,
+): value is PythonObservabilityRollupCost {
+  const cost = telemetryRouteAsRecord(value);
+  if (!cost) return false;
+  if (!telemetryRouteOneOf(cost.state, PYTHON_OBSERVABILITY_METRIC_STATES)) {
+    return false;
+  }
+  if (!telemetryRouteOneOf(cost.source, TELEMETRY_ROUTE_PYTHON_SOURCES)) return false;
+  if (!telemetryRouteNonEmptyString(cost.billingSource)) return false;
+  if (typeof cost.isEstimate !== "boolean") return false;
+
+  if (cost.state !== "present") {
+    return (
+      cost.amountUsd === null &&
+      cost.estimatedUsd === null &&
+      cost.actualUsd === null &&
+      cost.tokens === null &&
+      cost.source !== "actual" &&
+      cost.isEstimate === true
+    );
+  }
+
+  if (!telemetryRouteNonNegativeNumber(cost.amountUsd)) return false;
+  if (cost.estimatedUsd !== null && !telemetryRouteNonNegativeNumber(cost.estimatedUsd)) {
+    return false;
+  }
+  if (cost.actualUsd !== null && !telemetryRouteNonNegativeNumber(cost.actualUsd)) {
+    return false;
+  }
+  if (!isTelemetryRoutePythonTokens(cost.tokens, provenance)) return false;
+
+  if (provenance.synthetic && cost.source === "actual") return false;
+  if (cost.source === "actual") {
+    return cost.actualUsd !== null && cost.estimatedUsd === null && cost.isEstimate === false;
+  }
+  return cost.actualUsd === null && cost.estimatedUsd !== null && cost.isEstimate === true;
+}
+
+function isPythonObservabilityRollupError(
+  value: unknown,
+): value is PythonObservabilityRollupError {
+  const error = telemetryRouteAsRecord(value);
+  if (!error) return false;
+  if (!telemetryRouteOneOf(error.state, PYTHON_OBSERVABILITY_METRIC_STATES)) {
+    return false;
+  }
+  if (
+    error.envelopeStatus !== "failed" &&
+    error.envelopeStatus !== "completed" &&
+    error.envelopeStatus !== "unknown"
+  ) {
+    return false;
+  }
+
+  if (error.state !== "present") {
+    return error.count === null && error.lastError === null;
+  }
+
+  return (
+    telemetryRouteNonNegativeNumber(error.count) &&
+    (error.lastError === null || isTelemetryRoutePythonError(error.lastError))
+  );
+}
