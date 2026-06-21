@@ -138,6 +138,29 @@ describe("persistence health checks", () => {
     expect(JSON.stringify(health)).not.toContain("secret");
   });
 
+  it("marks non-MySQL persistence config as unhealthy and redacts secrets", async () => {
+    const health = await checkMysqlHealth({
+      provider: "memory",
+      mysql: {
+        host: "db.local",
+        port: 3306,
+        database: "sliderule",
+        user: "cube_user",
+        password: "secret",
+        pool: {
+          connectionLimit: 10,
+          waitForConnections: true,
+          queueLimit: 0,
+          connectTimeoutMs: 1000,
+        },
+      },
+    });
+
+    expect(health.status).toBe("unhealthy");
+    expect(health.error).toContain("DATABASE_PROVIDER=memory");
+    expect(JSON.stringify(health)).not.toContain("secret");
+  });
+
   it("treats disabled Redis as an accepted MySQL-only mode", async () => {
     const health = await checkRedisHealth({
       enabled: false,

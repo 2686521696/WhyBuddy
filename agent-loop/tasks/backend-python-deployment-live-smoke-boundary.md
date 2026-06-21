@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 live smoke contract 和测试；reviewer 确认测试不依赖真实外部服务或本机偶然状态。
 
 ### 状态清单
-- [ ] Python health/live smoke 覆盖必要 runtime config。
-- [ ] Node route/client 能区分 healthy、unhealthy、timeout、misconfigured。
-- [ ] smoke 不触发真实 LLM/外部 agent。
-- [ ] gate 全绿。
-- [ ] Codex review 确认部署边界可用于后续生产检查。
+- [x] Python health/live smoke 覆盖必要 runtime config。
+- [x] Node route/client 能区分 healthy、unhealthy、timeout、misconfigured。
+- [x] smoke 不触发真实 LLM/外部 agent。
+- [x] gate 全绿。
+- [x] Codex review 确认部署边界可用于后续生产检查。
 
 ## 目标
 

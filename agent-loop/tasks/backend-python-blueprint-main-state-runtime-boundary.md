@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python contract/runtime boundary 和 Node contract 测试；reviewer 确认没有把完整主状态机一次性迁走。
 
 ### 状态清单
-- [ ] Python 侧定义 main state 输入输出 contract。
-- [ ] Node 侧测试 Python mode 下的状态投影/错误恢复边界。
-- [ ] legacy Node owner 与 Python owner 分界写清楚。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有扩大到完整 Blueprint 编排。
+- [x] Python 侧定义 main state 输入输出 contract。
+- [x] Node 侧测试 Python mode 下的状态投影/错误恢复边界。
+- [x] legacy Node owner 与 Python owner 分界写清楚。
+- [x] gate 全绿。
+- [x] Codex review 确认没有扩大到完整 Blueprint 编排。
 
 ## 目标
 
