@@ -190,7 +190,7 @@ export function buildQueueSummaryFromState({ entry, state, exitCode = 0 }) {
   const label = entry.id || entry.task;
   const runRecord = summarizeRunRecord({
     runId: state?.runId || null,
-    status: state?.status || null,
+    status: normalizeQueueStatusFromState(state?.status || null, state),
     task: entry.task,
     iterations: state?.iterations || [],
     grokFix: state?.grokFix || null,
@@ -208,10 +208,27 @@ export function buildQueueSummaryFromState({ entry, state, exitCode = 0 }) {
     exitCode,
     guardReason: state?.guardReason || null,
     worktreeError: state?.worktreeError || null,
+    applyStatus: null,
+    applyErrorKind: null,
     ...runRecord,
   };
+  if (summary.status === 'DONE_REVIEWED_NO_DIFF') {
+    summary.applyStatus = 'DONE_REVIEWED_NO_DIFF';
+    summary.applyErrorKind = 'NO_DIFF_BASELINE_GREEN';
+  }
   summary.outcome = classifyQueueOutcome({ summary, exitCode });
   return summary;
+}
+
+function normalizeQueueStatusFromState(status, state = {}) {
+  if (
+    status === 'HALT_NO_CHANGES'
+    && state?.baselineGate?.ok === true
+    && Number(state?.baselineDiff?.bytes || 0) === 0
+  ) {
+    return 'DONE_REVIEWED_NO_DIFF';
+  }
+  return status;
 }
 
 export async function applyDoneSummaryToMain({
@@ -310,6 +327,7 @@ export function classifyQueueOutcome({ summary, exitCode = 0 }) {
   const worktreeError = summary?.worktreeError || null;
 
   if (status.startsWith('DONE_') && exitCode === 0) return 'done';
+  if (status === 'DONE_REVIEWED_NO_DIFF') return 'done';
   if (guardReason === 'POSSIBLE_TEST_TAMPER') return 'quarantined';
 
   if (worktreeError) return 'crashed';

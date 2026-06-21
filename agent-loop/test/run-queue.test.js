@@ -415,6 +415,28 @@ test('buildQueueSummaryFromState sets outcome from classifyQueueOutcome', () => 
   assert.equal(summary.grokRan, true);
 });
 
+test('buildQueueSummaryFromState maps baseline-green no-diff tasks to reviewed no-diff', () => {
+  const summary = buildQueueSummaryFromState({
+    entry: { id: 'task-a', task: 'agent-loop/tasks/task-a.md' },
+    state: {
+      status: 'HALT_NO_CHANGES',
+      baselineGate: { ok: true, failureCount: 0 },
+      baselineDiff: { bytes: 0 },
+      iterations: [{ iteration: 1 }],
+      agentFix: { exitCode: 0 },
+      agentReview: { exitCode: 0 },
+      options: { fixAgent: 'codex', reviewAgent: 'codex' },
+    },
+    exitCode: 1,
+  });
+
+  assert.equal(summary.status, 'DONE_REVIEWED_NO_DIFF');
+  assert.equal(summary.outcome, 'done');
+  assert.equal(summary.applyStatus, 'DONE_REVIEWED_NO_DIFF');
+  assert.equal(summary.applyErrorKind, 'NO_DIFF_BASELINE_GREEN');
+  assert.equal(summary.runMode, 'reviewed-no-diff');
+});
+
 test('applyDoneSummaryToMain applies done worktree summaries before cleanup', async () => {
   const summary = { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' };
   const calls = [];
