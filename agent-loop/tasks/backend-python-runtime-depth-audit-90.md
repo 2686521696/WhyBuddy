@@ -6,11 +6,11 @@
 - 角色分工：worker 负责分层审计和证据表；reviewer 确认 90% 口径没有膨胀。
 
 ### 状态清单
-- [ ] 对 Blueprint、role、NL command、workflow、RAG、telemetry、A2A 等切片做深度分层。
-- [ ] 每项标注 `contract-only`、`proxy-only`、`runtime-bridge`、`production-wiring`。
-- [ ] 给出能计入 90% 的项和不能计入的项。
-- [ ] gate 全绿。
-- [ ] Codex review 确认证据和分类一致。
+- [x] 对 Blueprint、role、NL command、workflow、RAG、telemetry、A2A 等切片做深度分层。
+- [x] 每项标注 `contract-only`、`proxy-only`、`runtime-bridge`、`production-wiring`。
+- [x] 给出能计入 90% 的项和不能计入的项。
+- [x] gate 全绿。
+- [x] Codex review 确认证据和分类一致。
 
 ## 目标
 
