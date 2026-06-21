@@ -7,129 +7,91 @@
 | 关键词 | 中文含义 | 计入口径 |
 |---|---|---|
 | `DONE_REVIEWED` | 已审查完成 | 只有能对应当前仓库代码、测试或 commit（提交）证据时，才计入完成。 |
-| `HALT_NO_CHANGES` | 停止：无有效新增改动 | baseline gate（基线门禁）可能已绿，但本轮没有新 diff（差异补丁），不能按新增迁移切片计入。 |
-| `HALT_APPLY_FAILED` | 停止：应用补丁失败 | run（运行）本身可能已 review（审查）通过，但 worktree（隔离工作树）diff 没有成功落回主仓库，不能计入完成。 |
-| `HALT_HUMAN` | 停止：需要人工接管 | agent（代理）超时、审查 blocked（阻塞）或证据不足，需要人工判断。 |
-| `DONE_REVIEWED_NO_DIFF` | 已审查完成但无新 diff | 建议中的更细状态；用于区分“已有能力复核通过”和“本轮新增交付”。 |
-| `APPLY_CONFLICT` | 应用冲突 | 建议中的更细状态；用于区分 patch（补丁）冲突和业务代码失败。 |
-| `gate` | 门禁测试 | 包括 Python pytest、Node/Vitest、TypeScript、mojibake（乱码）扫描等必跑检查。 |
-| `queue outcomes` | 队列结果汇总 | 比单个 final report（最终报告）更接近批量队列最终状态。 |
-| `worktree` | 隔离工作树 | AgentLoop 每个任务的临时改代码目录；通过后还要把 diff 应用回主仓库。 |
-| `contract` | 契约 | 输入输出、错误语义和 envelope（信封结构）稳定，不等于真实生产运行。 |
-| `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python。 |
-| `proxy` | 代理 | Node 仍保留路由/入口，只把部分能力转发给 Python。 |
-| `production wiring` | 生产接线 | 接入稳定存储、真实服务、观测、fallback（回退）和部署边界。 |
+| `DONE_REVIEWED_NO_DIFF` | 已审查完成但无新 diff | 只说明已有能力复核或 baseline gate（基线门禁）已绿；除非后续任务补了真实 diff 或明确接受既有证据，否则不按新增迁移切片计入。 |
+| `HALT_NO_CHANGES` | 停止：无有效新增改动 | 本轮没有新 diff（差异补丁），不能按新增迁移切片计入。 |
+| `HALT_APPLY_FAILED` | 停止：应用补丁失败 | run（运行）或 review（审查）可能通过，但 worktree（隔离工作树）diff 没有落回主仓库，不能计入实现完成。 |
+| `HALT_HUMAN` | 停止：需要人工接管 | agent（代理）超时、审查 blocked（阻塞）或证据不足；必须由后续任务、commit 或人工审计来判断是否已被覆盖。 |
+| `contract` | 契约 | 输入输出、错误语义和 envelope（信封结构）稳定；不等于真实 runtime（运行时）或 production wiring（生产接线）。 |
+| `proxy` | 代理 | Node 仍保留路由/入口，只把部分能力转发给 Python；不等于 Python 已拥有完整业务运行时。 |
+| `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python，并且错误/超时/取消语义有测试覆盖。 |
+| `production wiring` | 生产接线 | 接入存储、真实服务边界、观测、fallback（回退）或部署健康检查；smoke（冒烟）通过仍不等于真实外部服务长跑可用。 |
+
+## 90 阶段刷新结论
+
+本次刷新读取了主仓库 `.agent-loop/queue-outcomes.json`（2026-06-22 03:59 左右更新）、90 阶段审计文档、当前 `git log --oneline` 和 HEAD 中可见的代码/测试路径。结论是：**整体 NodeJS 后端迁 Python 不应写成 90%；当前更稳妥的工作数字是约 82%，可描述为 80-84% 区间。**
+
+选择 80-84% 的原因：
+
+- 队列总量已经明显推进：当前 87 个 `backend-python-*` 任务中，66 个 `DONE_REVIEWED`、1 个 `DONE_REVIEWED_NO_DIFF`、16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`。
+- 90 阶段证据任务中，HALT audit、route inventory、runtime depth audit、session persistence runtime diff、production wiring smoke 都已经有可审查文档或 commit 证据。
+- `session-persistence-runtime-boundary` 仍在旧队列里显示 `DONE_REVIEWED_NO_DIFF`，但后续 `backend-python-session-persistence-runtime-diff-90` 已落地 `6285a5d0`，可按“已补 runtime evidence（运行时证据）”处理。
+- `backend-python-production-wiring-smoke-90` 已落地 `6a1f8560`，补了 Web AIGC file、vision/audio、telemetry production sink 和相关 safe-failure/provenance 测试；这些可计入 production wiring maturity（生产接线成熟度），但不是全量生产服务迁移。
+- `docs/backend-python-runtime-depth-audit-90.md` 明确指出 75 候选里的许多 `DONE_REVIEWED` 只是 `contract-only` 或 `proxy-only`，不能直接换算成 runtime completion（运行时完成）。
+- HEAD 中仍可见大量 `node-only` route shell（路由壳）、Blueprint 状态机/job/event bus、task lifecycle、auth persistence、audit retention/export、Web AIGC 其他 adapters 等未迁完分母。
+- 当前 queue outcomes 中仍保留 16 个 `HALT_HUMAN`。其中一部分已被 HALT audit 判定为 superseded（已覆盖）或 docs-only（仅文档），但旧红灯本身不能直接当完成；必须由后续 landed commit 或审计证据逐项接管。
 
 ## 分层进度口径
 
-这些比例只用于把范围说清楚，不要把它们混成一个总数。尤其不能把 SlideRule 某条链路的高进度，误报成整个 NodeJS 后端的迁移进度。
+这些比例只用于把范围说清楚，不要把它们混成一个总数。尤其不能把 SlideRule 某条链路的高进度，误报成整个 NodeJS 后端迁移进度。
 
 | 范围 | 当前判断 | 进度条 | 说明 |
 |---|---:|---|---|
-| 整体 NodeJS 后端迁 Python | 约 70-74% 候选区间，75% 接近但尚未坐实 | `[███████░░░]` | 大分母仍是整个 NodeJS backend（后端）。当前 `.agent-loop/queue-outcomes.json` 里 `backend-python-*` 共 79 项，其中 59 项 outcome（结果）为 `done`（完成），58 项 status（状态）为 `DONE_REVIEWED`（已审查完成），比上一版 50-56% 明显推进。但仍有 16 项 `HALT_HUMAN`（需人工接管）、3 项 `HALT_NO_CHANGES`（无有效新增改动）、1 项 `HALT_APPLY_FAILED`（补丁落地失败），且部分 `DONE_REVIEWED` 是 contract/proxy（契约/代理）或 maturity（成熟度）支撑，不等于所有业务 runtime（运行时）完成，所以还不能写死 75%。 |
-| SlideRule V5 子系统迁移 | 约 94-96% | `[█████████░]` | 对话、审议、结构化报告、delivery chain（交付链）、`outcome.visualize`、`ux.preview`、evidence provenance（证据来源）、runtime config（运行配置）、real vector retrieval（真实向量检索）、RAG ingestion（RAG 摄取）、telemetry（观测）、A2A、task executor、knowledge admin 等切片已经成片通过 gate；剩余主要是生产级真实外部依赖、完整 `orchestrate.plan` 主编排、部署观测和长跑稳定性。 |
-| SlideRule V5 Node 到 Python 薄代理链路 | 约 97-99% | `[██████████]` | Python mode、delegation helper、timeout（超时）、health check（健康检查）、contract smoke、delivery/visual/artifact capability 白名单、Blueprint proxy 和多条 runtime contract 已比较完整；这只是 SlideRule 薄代理链路，不能当成整体 NodeJS 后端迁移百分比。 |
-| Python V5 可运行基线 | 约 93-95% | `[█████████░]` | Python 服务、核心 smoke、contract expansion、native LLM capability、vector client、evidence provenance、runtime config、real vector retrieval、RAG ingestion、NL command、workflow、telemetry、A2A contract runtime、task executor runtime bridge、knowledge admin runtime bridge 都已有测试支撑；真实生产依赖、运行观测落地和部署策略仍要继续补。 |
-| LLM infra 迁移 | 约 58-65% | `[██████░░░░]` | Python `sliderule_llm` 已支撑 chat、JSON hardening、基础 pool、provider/model fallback、telemetry metadata、vector client、stream contract、pool resilience、cost runtime accounting、circuit breaker（熔断）和 multimodal contract（多模态契约）；完整并发、真实生产计费、跨后端观测和 Node 全量 env 细节仍未完全对齐。 |
-| 能力覆盖 | 高 | `[█████████░]` | 当前已记录的主要 SlideRule V5 `python-llm` 能力包括对话、审议、report、structure、risk/evidence、delivery chain、`outcome.visualize`、`ux.preview`、task executor、knowledge admin；未审计或只完成 contract 的边界不能自动视为完整 runtime 迁移。 |
+| 整体 NodeJS 后端迁 Python | 约 80-84%，工作数字 82% | `[████████░░]` | 90 阶段把 route inventory（路由盘点）、runtime depth（运行时深度）、session persistence（会话持久化）和 production wiring smoke（生产接线冒烟）补上了一层证据，但 route shell、Blueprint 主流程、task lifecycle、auth/audit 生产持久化和部分 Web AIGC adapter 仍是 Node-owned 或 mixed（混合）。 |
+| SlideRule V5 子系统迁移 | 约 94-96% | `[█████████░]` | 对话、审议、结构化报告、delivery chain（交付链）、`outcome.visualize`、`ux.preview`、evidence provenance（证据来源）、runtime config（运行配置）、real vector/RAG、A2A invoke、task executor、knowledge admin 等切片已有成片 gate 证据；剩余主要是完整 `orchestrate.plan` 主编排、真实外部服务长跑、部署观测和生产稳定性。 |
+| SlideRule V5 Node 到 Python 薄代理链路 | 约 97-99% | `[██████████]` | Python mode、delegation helper、timeout（超时）、health check（健康检查）、contract smoke、delivery/visual/artifact capability 白名单和多条 runtime/proxy contract 已比较完整；这只是 SlideRule 薄代理链路，不是整体 NodeJS 后端百分比。 |
+| Python V5 可运行基线 | 约 93-95% | `[█████████░]` | Python 服务、核心 smoke、native LLM capability、vector client、evidence provenance、runtime config、RAG、session persistence、task executor、knowledge admin 和 production wiring smoke 都有测试支撑；真实生产依赖、外部服务凭据、长跑观测仍需继续补。 |
+| 90 阶段 route/runtime 深度 | 约 76-82% | `[████████░░]` | 盘点显示 `/api/sliderule`、RAG/vector、MCP/skill、部分 workflow/NL/A2A、task executor 和 knowledge admin 有 contract/proxy/runtime 证据；但 `/api/blueprint` 大路由、auth persistence、permission route management、audit retention/export、task route lifecycle 和大量 Web AIGC 路径仍是 Node-led。 |
+| production wiring maturity | 约 80-85% | `[████████░░]` | RAG/vector、deployment live smoke、observability rollup、Web AIGC file/vision/audio 和 telemetry sink 有 smoke 或 degraded/safe-failure 证据；不代表真实 Qdrant/embedding/search/telemetry/APM 外部服务已经生产长跑。 |
+| LLM infra 迁移 | 约 60-68% | `[██████░░░░]` | Python `sliderule_llm` 已支撑 chat、JSON hardening、pool、fallback、telemetry metadata、vector client、stream contract、cost accounting、circuit breaker 和 multimodal contract；完整并发、真实生产计费、跨后端观测和 Node env 细节仍未完全对齐。 |
 
-## 最新大白话结论
+## 90 阶段证据对照
 
-最新队列复核后，不能再沿用“整体只有 50-56%”的旧判断。更准确的说法是：**整体 NodeJS 后端迁 Python 已经进入约 70-74% 候选区间，正在接近 75%，但 75% 还需要补齐剩余红灯、无新增 diff 和落地证据后再写死**。
-
-这次最有价值的不是把数字写好看，而是把几类硬边界继续往前推了：
-
-- A2A invoke/list/cancel runtime bridge（运行时桥）已经落到 Python + Node proxy，并且不把 failed/cancelled 伪装成 completed。
-- RAG ingestion production storage（RAG 生产存储）和 real vector retrieval（真实向量检索）比之前更接近真实运行链路。
-- Web AIGC search runtime bridge（搜索运行时桥）从 adapter contract 往 runtime bridge 走了一步。
-- auth/session、permission、audit、admin、Blueprint agent crew/brainstorm 等后端大块开始被切成可审查、可测试的小片。
-- `task-executor-runtime-bridge`（任务执行器运行时桥）有 `DONE_REVIEWED`（已审查完成）和 `8d465116` commit（提交）证据，可以按新增 runtime bridge（运行时桥）计入。
-- `knowledge-admin-runtime-bridge`（知识库管理运行时桥）有 `DONE_REVIEWED`（已审查完成）和 `744e119e` commit（提交）证据，可以按新增 runtime bridge（运行时桥）计入。
-- `production-observability-rollup`（生产观测汇总）有 `DONE_REVIEWED`（已审查完成）和 `923bd432` commit（提交）证据，按 production maturity（生产成熟度）支撑计入，但不等同于业务迁移分母完成。
-- `deployment-live-smoke-boundary`（部署在线冒烟边界）有 `DONE_REVIEWED`（已审查完成）和 `9164c86f` commit（提交）证据，按部署成熟度支撑计入，但不等同于所有业务 runtime（运行时）完成。
-- Blueprint main state、job、stage edit、role、NL command、workflow、RAG runtime、telemetry route、A2A runtime 等 75 候选切片在队列结果里已经从红灯转为 `DONE_REVIEWED`（已审查完成），但其中不少仍是 contract/proxy（契约/代理）边界，不能按生产全量完成来膨胀百分比。
-- `session-persistence-runtime-boundary`（会话持久化运行时边界）是 `DONE_REVIEWED_NO_DIFF`（已审查但无新 diff），只能当作已有能力复核，不按新增迁移切片计入。
-- `backend-python-node-route-inventory-75` 仍是 `HALT_APPLY_FAILED`（补丁落地失败），只作为 route inventory（路由盘点）证据，不作为迁移实现完成。
-
-## 75% 候选复核结果
-
-本轮复核读取的证据包括主仓库 `.agent-loop/queue-outcomes.json`、对应 `.agent-loop/runs/*/final-report.*`、当前 `git log --oneline`、最新后端 commit（提交）和 `docs/backend-python-node-route-inventory-75.md`。工作树当前无未提交改动，`.agent-loop` 运行产物仍不作为提交对象。
-
-| 证据层 | 当前结果 | 是否计入 75% 完成度 |
+| 证据层 | 当前结果 | 计入口径 |
 |---|---|---|
-| queue outcomes（队列结果汇总） | 当前共 87 项任务；其中 `backend-python-*` 共 79 项，59 项 outcome（结果）为 `done`（完成），58 项 status（状态）为 `DONE_REVIEWED`（已审查完成），1 项为 `DONE_REVIEWED_NO_DIFF`（已审查但无新 diff），仍有 16 项 `HALT_HUMAN`、3 项 `HALT_NO_CHANGES`、1 项 `HALT_APPLY_FAILED`。 | 明确 `DONE_REVIEWED` 且能对应当前仓库代码/测试/commit 的切片可计入；`NO_DIFF`、`HALT_*` 不按新增完成计入。 |
-| final reports（最终报告） | task executor runtime bridge、knowledge admin runtime bridge、production observability rollup、deployment live smoke、Blueprint/A2A/telemetry/workflow 等多条 75 候选 final report 中可见 review pass（审查通过）。 | 与 commit（提交）或主仓库 diff 能对上的按对应层级计入；只有 report 绿但没有落地证据的按候选证据处理。 |
-| commits（提交） | 当前可见新增迁移 commit 包括 `8d465116 feat(backend-python): add task executor runtime bridge`、`923bd432 feat(backend-python): add observability rollup contract`、`744e119e feat(backend-python): add knowledge admin runtime bridge`、`9164c86f feat(backend-python): land deployment live smoke boundary`；`6463e85d` 及后续 AgentLoop commit 是工具链修复，不计入后端迁移完成度。 | task executor、knowledge admin 可计入新增 runtime bridge；observability rollup 和 deployment live smoke 计入生产成熟度支撑；AgentLoop 工具链不计入。 |
-| route inventory（路由盘点） | `docs/backend-python-node-route-inventory-75.md` 明确 inventory（盘点）是 75 候选支撑文档，不证明整体 NodeJS backend（后端）已达 75%。 | 作为分母/边界证据，不作为迁移实现完成。 |
+| queue outcomes（队列结果） | 当前 95 个队列任务，其中 `backend-python-*` 87 个：66 个 `DONE_REVIEWED`、1 个 `DONE_REVIEWED_NO_DIFF`、16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`；按 outcome 看，67 个 `done`、14 个 `crashed`、6 个 `failed`。 | 只能作为批量状态面板。是否计入整体百分比还要看 commit、测试路径、审计分类和是否只是 docs-only。 |
+| HALT superseded audit 90 | `docs/backend-python-halt-superseded-audit-90.md` 已落地，分类为 14 个 `superseded`、6 个 `still-open`、2 个 `split-needed`、4 个 `docs-only`。 | 可用于清算旧红灯；旧 `HALT_*` 不能直接当完成。 |
+| Node route inventory 90 | `docs/backend-python-node-route-inventory-90.md` 已落地，按 `node-only`、`contract`、`proxy`、`runtime`、`production-wiring` 分层。 | 作为真实分母和缺口表；不把路由盘点本身计入实现完成。 |
+| Runtime depth audit 90 | `docs/backend-python-runtime-depth-audit-90.md` 已落地。它把 15 个 75 候选 `DONE_REVIEWED` 切片分为 `runtime-bridge`、`production-wiring`、`contract-only`、`proxy-only`，其中只有 task executor、knowledge admin、deployment live smoke、observability rollup 可按 bounded runtime/prod evidence 计入。 | 这是压低百分比的核心证据：contract/proxy 绿不等于 runtime/prod 完成。 |
+| Session persistence diff 90 | `6285a5d0 test(sliderule): cover python session persistence runtime` 已落地，补了 Python mode session store 相关测试证据。 | 可把旧 `DONE_REVIEWED_NO_DIFF` 悬项收口为 runtime evidence，但仍不代表 auth/session 全链路迁移。 |
+| Production wiring smoke 90 | `6a1f8560 feat(backend-python): add production wiring smoke coverage` 已落地，补了 Web AIGC file、vision/audio、telemetry production sink、safe failure 和 provenance 相关测试/服务文件。 | 计入 production wiring maturity；不等同真实外部服务已生产接好。 |
+| Auth/permission/audit runtime 90 与 A2A stream 90 | queue outcomes 显示 `DONE_REVIEWED`，任务文档清单已勾选；但当前 HEAD 下部分 gate 中点名的 runtime 测试路径不可见。 | 不能据此把整块 auth/permission/audit 或 A2A stream 写成已生产迁移。需要 reviewer 复核对应 diff 是否真正落地，或后续补齐可见代码证据。 |
+| migration status refresh 90 | 之前队列结果是 `HALT_HUMAN`/`failed`，审查指出状态文档仍停在 75 口径。 | 本文件就是本轮回修；它只刷新状态，不计入业务迁移分母。 |
 
-75 候选的主要缺口已经从“大量切片红灯”变成“少数红灯 + no-diff + contract/proxy 到 production runtime 的最后分层确认”。下一步要把 16 个 `HALT_HUMAN` 里仍有价值的旧切片判定为 superseded（已被后续任务覆盖）或重新开小任务修复，同时确认 `DONE_REVIEWED` 的 contract/proxy 切片哪些已经具备 runtime/production wiring 证据。
+## 计入与不计入清单
 
-## 本轮 75% 候选队列结果
-
-| 任务 | 队列状态 | 计入口径 |
+| 类型 | 可以计入整体迁移推进的证据 | 不能按完成计入的证据 |
 |---|---|---|
-| `backend-python-task-executor-runtime-bridge` | `DONE_REVIEWED` | 有 `8d465116` commit，可按新增 runtime bridge（运行时桥）计入。 |
-| `backend-python-knowledge-admin-runtime-bridge` | `DONE_REVIEWED` | 有 `744e119e` commit，可按新增 runtime bridge（运行时桥）计入。 |
-| `backend-python-production-observability-rollup` | `DONE_REVIEWED` | 有 `923bd432` commit，计入 production maturity（生产成熟度）支撑。 |
-| `backend-python-deployment-live-smoke-boundary` | `DONE_REVIEWED` | 有 `9164c86f` commit，计入 deployment/live smoke（部署在线冒烟）支撑。 |
-| `backend-python-blueprint-main-state-runtime-boundary` | `DONE_REVIEWED` | 已从红灯转绿；计入候选完成，但仍需按 runtime boundary（运行时边界）确认生产覆盖。 |
-| `backend-python-blueprint-job-runtime-proxy` | `DONE_REVIEWED` | 已从 no-diff/失败观感转为已审查完成；按 proxy/runtime proxy（代理/运行时代理）候选计入。 |
-| `backend-python-blueprint-stage-edit-proxy-contract` | `DONE_REVIEWED` | 按 contract/proxy（契约/代理）候选计入，不等同生产全量 runtime。 |
-| `backend-python-role-runtime-proxy-contract` | `DONE_REVIEWED` | 按 runtime proxy contract（运行时代理契约）候选计入。 |
-| `backend-python-nl-command-runtime-contract` | `DONE_REVIEWED` | 按 runtime contract（运行时契约）候选计入。 |
-| `backend-python-workflow-runtime-contract` | `DONE_REVIEWED` | 按 runtime contract（运行时契约）候选计入。 |
-| `backend-python-rag-ingestion-runtime-contract` | `DONE_REVIEWED` | 按 runtime contract（运行时契约）候选计入；production storage（生产存储）仍按更高层级另算。 |
-| `backend-python-telemetry-route-contract` | `DONE_REVIEWED` | 按 route contract（路由契约）候选计入；生产 sink（生产写入端）仍是更高层级。 |
-| `backend-python-a2a-runtime-contract` | `DONE_REVIEWED` | 按 A2A runtime contract（运行时契约）候选计入；stream 长链路仍不算完成。 |
-| `backend-python-blueprint-artifact-memory-proxy` | `DONE_REVIEWED` | 按 artifact/memory proxy（产物/记忆代理）候选计入。 |
-| `backend-python-blueprint-review-export-proxy` | `DONE_REVIEWED` | 按 review/export proxy（审查/导出代理）候选计入。 |
-| `backend-python-session-persistence-runtime-boundary` | `DONE_REVIEWED_NO_DIFF` | 已复核但无新增 diff；不按新增迁移切片计入。 |
-| `backend-python-node-route-inventory-75` | `HALT_APPLY_FAILED` | 作为 inventory（盘点）证据，不作为实现完成计入。 |
-| `backend-python-migration-status-refresh-75` | `DONE_REVIEWED` | 文档刷新任务，不计入后端业务迁移分母。 |
+| bounded runtime bridge | `task-executor-runtime-bridge`、`knowledge-admin-runtime-bridge`、A2A invoke runtime、Web AIGC search runtime、session persistence runtime diff 等有 commit/测试路径的最小运行时桥。 | 只有 proxy shape（代理形状）或 contract envelope（契约信封）的切片。 |
+| production wiring maturity | RAG/vector production boundary、deployment live smoke、observability rollup、production wiring smoke 90 中的 Web AIGC file/vision/audio 和 telemetry sink smoke。 | 真实外部服务、真实密钥、外部 APM、长跑稳定性和生产部署策略未验证时，不能称为完整生产迁移。 |
+| docs/audit support | HALT audit、route inventory、runtime depth audit 可提升口径可信度，帮助识别真缺口。 | docs-only、status refresh、inventory 本身不迁业务 runtime。 |
+| no-diff / HALT | 后续任务补了真实 diff 或明确接受已有证据后，可以按后续任务计入。 | `DONE_REVIEWED_NO_DIFF`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED`、`HALT_HUMAN` 本身不计入新增完成。 |
+| SlideRule V5 子系统 | 可用于 SlideRule V5 子系统百分比。 | 不能外推为整个 NodeJS backend 已完成同等比例。 |
 
-## 历史 60% 候选队列结果
+## 90 阶段当前缺口
 
-| 任务 | 结果 | 说明 |
+| 缺口 | 为什么仍阻碍 88/90% |
+|---|---|
+| Blueprint 主路由和状态机 | `/api/blueprint` 大路由、job store、event bus、diagnostics、ledger、preview、prompt package、replan/staleness/traceability 等仍是 Node-owned 或 mixed。 |
+| Auth/session 生产链路 | 当前可见证据主要覆盖 contract 或 session persistence boundary；用户注册/登录、repository、email code、refresh/logout 和生产持久化仍未整体迁移。 |
+| Permission/audit 生产链路 | permission route management、rate-limit runtime、audit retention/export/anomaly/compliance、permission audit hooks 仍需更清楚的 Python runtime 或 production sink 证据。 |
+| A2A stream 长链路 | invoke/list/cancel 已有运行时桥或 contract 证据，但 stream runtime、外部 agent safe failure 和 session/registry 生产语义仍未完全坐实。 |
+| Task route lifecycle | executor client runtime bridge 可计入；`/api/tasks`、mission store、project/resource auth 和完整 task lifecycle 仍是 Node-owned。 |
+| Web AIGC 长尾 adapters | search/file/vision/audio 进展明显；web-qa、image/graph search、static webpage、OCR、dynamic chart、AI PPT、transaction-flow 等仍需逐片审计。 |
+| 真实生产外部依赖 | smoke 覆盖 missing config、timeout、degraded 或 safe failure；真实 Qdrant/embedding/search/telemetry/APM 长跑和密钥部署不在本轮完成范围内。 |
+| 队列状态清理 | queue outcomes 仍保留旧 `HALT_*` 和本状态刷新旧失败记录；状态文档不能用这些旧行伪装完成。 |
+
+## 下一步建议
+
+如果下一阶段要把整体进度从 80-84% 推到可坐实的 85%/88%，建议优先做这些小切片：
+
+| 顺序 | 建议任务 | 目标 |
 |---|---|---|
-| `backend-python-a2a-invoke-runtime-bridge` | 完成 | A2A invoke/list/cancel bridge 已落地，stream 长链路仍未迁。 |
-| `backend-python-rag-ingestion-production-storage` | 完成 | RAG ingestion 从 contract/fake 继续推进到 production storage boundary。 |
-| `backend-python-web-aigc-search-runtime-bridge` | 完成 | Web AIGC search adapter 从 contract 推进到 runtime bridge。 |
-| `backend-python-auth-session-runtime-boundary` | 完成 | auth/session runtime boundary 已复核并标记 reviewed。 |
-| `backend-python-permission-check-runtime-boundary` | 完成 | permission check runtime boundary 已落地。 |
-| `backend-python-audit-query-proxy-boundary` | 完成 | audit query proxy boundary 已落地。 |
-| `backend-python-admin-route-contract` | 完成 | admin route contract 队列结果为 `DONE_REVIEWED`，任务文档已标记。 |
-| `backend-python-task-executor-proxy-contract` | 未按新增交付计入 | 队列结果为 `HALT_NO_CHANGES`，baseline gate 绿但本轮无新 diff。 |
-| `backend-python-executor-callback-contract` | 完成 | executor callback contract 队列结果为 `DONE_REVIEWED`，任务文档已标记。 |
-| `backend-python-knowledge-admin-proxy-contract` | 未按新增交付计入 | 队列结果为 `HALT_NO_CHANGES`，baseline gate 绿但本轮无新 diff。 |
-| `backend-python-blueprint-agent-crew-proxy-contract` | 完成 | Blueprint agent crew proxy contract 队列结果为 `DONE_REVIEWED`，任务文档已标记。 |
-| `backend-python-blueprint-brainstorm-contract` | 完成 | 自动 review 中途卡过一次，已人工应用有效 diff、重跑 gate，并单独提交。 |
-| `backend-python-migration-status-refresh-60` | 历史刷新任务 | 当时只刷新真实进度，不把候选目标写成已完成事实。 |
-
-## 本轮提交记录
-
-这些 commit 是已经落到主仓库的可审查切片：
-
-- `7e34c2a9 feat(backend-python): add a2a invoke runtime bridge`
-- `36a6a4c5 feat(backend-python): add rag ingestion production storage boundary`
-- `3a7791c9 feat(backend-python): add web aigc search runtime bridge`
-- `eed3e73b feat(agent-loop): guide grok on missing gate files`
-- `be1fcf0a chore(agent-loop): use codex for migration queue fixes`
-- `68088d21 docs(agent-loop): mark auth and telemetry runtime tasks reviewed`
-- `61097ed0 feat(backend-python): add permission check runtime boundary`
-- `f43a65ee docs(agent-loop): mark permission and audit runtime tasks reviewed`
-- `8bb89e91 feat(backend-python): add audit query proxy boundary`
-- `b8f21ec6 docs(agent-loop): mark admin executor and agent crew tasks reviewed`
-- `314bdfc2 feat(backend-python): harden blueprint brainstorm contract fields`
-- `83970d23 docs(agent-loop): mark blueprint brainstorm contract reviewed`
-
-## 已知边界
-
-- contract（契约）完成不等于 runtime（运行时）全量完成。
-- runtime bridge（运行时桥）完成不等于 production wiring（生产接线）完成。
-- fake runtime（假运行时）完成不等于真实外部依赖已经接好。
-- safe failure（安全失败）完成不等于业务成功路径已经完全迁移。
-- `HALT_NO_CHANGES`（停止：无有效新增改动）只能说明本轮没有有效新增 diff（差异补丁），不能自动算作一个新迁移切片完成。
-- `tws-ai-ask-python` 只是参考项目，不是迁移目标；迁移目标仍然是本仓库 NodeJS backend 到 Python 侧实现和 Node proxy/contract 表面。
+| 1 | 复核 auth/permission/audit runtime 90 与 A2A stream 90 的落地证据 | 让 queue `DONE_REVIEWED`、task checklist、HEAD 中可见代码/测试路径三者一致；缺文件则补真实 diff 或下调计入口径。 |
+| 2 | Blueprint runtime 深水区拆片 | 先迁 selected state/job/stage edit/role runtime 的真实运行时行为，不一次迁完整 Blueprint 大路由。 |
+| 3 | Task lifecycle runtime bridge | 在 executor client bridge 之外，补 `/api/tasks`、mission store、event replay、cancel/error 的 Python runtime 或 production boundary。 |
+| 4 | Auth/audit production persistence | 不改 schema 的前提下，补 auth session repository、audit sink/export/retention 的 Python production wiring 或明确降级语义。 |
+| 5 | Web AIGC adapter 长尾盘点与 runtime bridge | 按 route inventory 中的 node-only path 逐片补 contract、proxy、runtime，再进入 production wiring。 |
+| 6 | 生产外部服务长跑 smoke | 在不提交密钥的前提下，补可配置、可跳过、可诊断的外部依赖 smoke 和 observability evidence。 |
 
 ## 当前迁移原则
 
@@ -156,27 +118,6 @@
 - 一次迁多个无关子系统。
 - 同时改业务逻辑、部署策略、密钥配置和 UI。
 - 没有明确 allowed files、gate、成功标准的开放式迁移。
-
-## 下一步建议
-
-如果下一阶段继续把整体进度从 70-74% 候选区间推进到可坐实的 75%/80%，建议优先补这几类“真分母”：
-
-| 顺序 | 建议任务 | 目标 |
-|---|---|---|
-| 1 | HALT 清算 / superseded 判定 | 把 16 个 `HALT_HUMAN` 逐项判断为仍需修复、已被后续任务覆盖，或应拆成更小任务。 |
-| 2 | contract/proxy 到 runtime 分层复核 | 对 Blueprint、role、NL command、workflow、telemetry、A2A 等 `DONE_REVIEWED` 切片确认到底是 contract、proxy 还是 runtime。 |
-| 3 | session persistence runtime | 当前是 `DONE_REVIEWED_NO_DIFF`，需要决定是接受为已有能力复核，还是补一个真实新增 diff。 |
-| 4 | route inventory 落地 | `backend-python-node-route-inventory-75` 仍是 `HALT_APPLY_FAILED`，需要重新生成或人工整理 route inventory。 |
-| 5 | production external service wiring | 把 vector/RAG/A2A/Web AIGC 的真实外部服务、fallback、provenance 和观测串起来。 |
-| 6 | deployment/live smoke 扩展 | 已有 live smoke 边界，下一步把 Python 服务部署配置、健康检查、超时、回退和长跑稳定性纳入更强 gate。 |
-
-## 状态规则
-
-- `[x]`：已经实现并通过当前记录的 gate 或 live 验证。
-- `[ ]`：还没有迁移，或没有足够验证证据。
-- `provenance="python-llm"`：Python 真 LLM 输出，不是旧 RAG 罐头。
-- `provenance="python-contract"`：Python contract/fake runtime 输出，不等于生产真实 runtime。
-- `provenance="python-rag"`：仍走旧 Python mapped/RAG 路径，后续需要按能力逐片替换。
 
 ## 提交前检查
 
