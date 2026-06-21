@@ -3,7 +3,7 @@ import { DashboardPanel } from './dashboardPanel';
 import { getRepoRoot, latestReportPath, latestStatePath } from './paths';
 import { RunController } from './runController';
 import { StateMonitor } from './stateMonitor';
-import { findLatestRunForTask } from './stateReader';
+import { clearAutoDisable, findLatestRunForTask } from './stateReader';
 import { CurrentRunTreeProvider, QueueTreeProvider, RunsTreeProvider } from './treeProviders';
 
 let monitor: StateMonitor | undefined;
@@ -104,6 +104,18 @@ export function activate(context: vscode.ExtensionContext): void {
       void monitor?.refresh();
       queueTree.refresh();
       runsTree.refresh();
+    }),
+    vscode.commands.registerCommand('agentLoop.reEnableTask', async (arg: { taskId?: string } | string | undefined) => {
+      const label = typeof arg === 'string' ? arg : arg?.taskId;
+      if (!label) return;
+      const result = await clearAutoDisable(repoRoot, label);
+      if (result.changed) {
+        vscode.window.showInformationMessage(`AgentLoop: 已重开「${label}」，清除了自动禁用，下次队列会重新尝试。`);
+      } else {
+        vscode.window.showWarningMessage(`AgentLoop:「${label}」没有自动禁用记录，无需重开。`);
+      }
+      queueTree.refresh();
+      await monitor?.pushOverview();
     }),
   );
 }

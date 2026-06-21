@@ -145,11 +145,17 @@
       conflictFiles ? `<span class="task-extra">${esc(conflictFiles)}</span>` : '',
       applyError ? `<span class="task-extra error">${esc(applyError)}</span>` : '',
     ].join('');
-    return `<button class="queue-row${active}${disabled}" data-act="openTask" data-task="${esc(task.task)}" data-state="${esc(badge || 'pending')}">
+    const reEnable = task.autoDisabled
+      ? `<button class="row-action" data-act="reEnable" data-id="${esc(task.id || task.task)}" title="清除自动禁用，下次队列重试">重开</button>`
+      : '';
+    return `<div class="queue-row${active}${disabled}" role="button" tabindex="0" data-act="openTask" data-task="${esc(task.task)}" data-state="${esc(badge || 'pending')}">
       <span class="status-pill ${meta.cls}">${meta.icon}</span>
       <span class="task-name">${esc(task.taskLabel || task.task)}</span>
-      <span class="task-status">${esc(status)}${extra}</span>
-    </button>`;
+      <span class="task-end">
+        <span class="task-status">${esc(status)}${extra}</span>
+        ${reEnable}
+      </span>
+    </div>`;
   }
 
   function renderGroupSection(cat, tasks) {
@@ -481,6 +487,8 @@
     const act = target.getAttribute('data-act');
     if (act === 'openTask') {
       vscode.postMessage({ type: 'openTask', taskPath: target.getAttribute('data-task') });
+    } else if (act === 'reEnable') {
+      vscode.postMessage({ type: 'reEnable', taskId: target.getAttribute('data-id') });
     } else if (act === 'openReport') {
       vscode.postMessage({ type: 'openReport', reportPath: target.getAttribute('data-path') });
     } else if (act === 'openState') {

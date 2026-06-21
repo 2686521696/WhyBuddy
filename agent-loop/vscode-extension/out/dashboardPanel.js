@@ -67,6 +67,11 @@ class DashboardPanel {
                         void vscode.commands.executeCommand('agentLoop.openQueueTask', { taskPath: message.taskPath });
                     }
                     return;
+                case 'reEnable':
+                    if (message.taskId) {
+                        void vscode.commands.executeCommand('agentLoop.reEnableTask', { taskId: message.taskId });
+                    }
+                    return;
                 case 'openReport':
                     void vscode.commands.executeCommand('agentLoop.openFile', message.reportPath);
                     return;

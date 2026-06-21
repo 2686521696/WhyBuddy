@@ -120,6 +120,19 @@ function activate(context) {
         void monitor?.refresh();
         queueTree.refresh();
         runsTree.refresh();
+    }), vscode.commands.registerCommand('agentLoop.reEnableTask', async (arg) => {
+        const label = typeof arg === 'string' ? arg : arg?.taskId;
+        if (!label)
+            return;
+        const result = await (0, stateReader_1.clearAutoDisable)(repoRoot, label);
+        if (result.changed) {
+            vscode.window.showInformationMessage(`AgentLoop: 已重开「${label}」，清除了自动禁用，下次队列会重新尝试。`);
+        }
+        else {
+            vscode.window.showWarningMessage(`AgentLoop:「${label}」没有自动禁用记录，无需重开。`);
+        }
+        queueTree.refresh();
+        await monitor?.pushOverview();
     }));
 }
 function deactivate() {

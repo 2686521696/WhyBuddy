@@ -637,6 +637,38 @@ test('dashboard media renders the run event stream', async () => {
   assert.match(html, /ev-dot ok/);
 });
 
+test('clearAutoDisable resets an auto-disabled task and is idempotent', async () => {
+  const { clearAutoDisable, readQueueOutcomes } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-reenable-'));
+  await fs.mkdir(path.join(repo, '.agent-loop'), { recursive: true });
+  await fs.writeFile(path.join(repo, '.agent-loop', 'queue-outcomes.json'), JSON.stringify({
+    tasks: { a: { autoDisabled: true, consecutiveNoChanges: 3, lastStatus: 'HALT_NO_CHANGES' } },
+  }), 'utf8');
+
+  assert.equal((await clearAutoDisable(repo, 'a')).changed, true);
+  const after = await readQueueOutcomes(repo);
+  assert.equal(after.tasks.a.autoDisabled, false);
+  assert.equal(after.tasks.a.consecutiveNoChanges, 0);
+
+  assert.equal((await clearAutoDisable(repo, 'a')).changed, false);
+  assert.equal((await clearAutoDisable(repo, 'missing')).changed, false);
+});
+
+test('dashboard overview shows a re-enable action on auto-disabled tasks', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderOverview({
+    counts: { total: 1 },
+    queueRunning: false,
+    current: null,
+    tasks: [
+      { task: 'agent-loop/tasks/a.md', id: 'a', taskLabel: 'a', badge: 'disabled', category: 'attention', autoDisabled: true, enabled: true, statusLabel: '自动禁用' },
+    ],
+  });
+  assert.match(html, /data-act="reEnable"/);
+  assert.match(html, /data-id="a"/);
+  assert.match(html, /重开/);
+});
+
 test('dashboard view title command is contributed only once', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
   const viewTitleMenus = packageJson.contributes.menus['view/title'];

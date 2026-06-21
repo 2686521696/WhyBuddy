@@ -14,6 +14,9 @@ interface QueueOutcomesFile {
     lastOutcome?: string;
     lastRunId?: string;
     autoDisabled?: boolean;
+    autoDisabledAt?: string | null;
+    consecutiveNoChanges?: number;
+    lastUpdatedAt?: string;
     applyStatus?: string;
     applyErrorKind?: string;
     applyErrorFiles?: string[];
@@ -236,6 +239,25 @@ export async function readQueueOutcomes(repoRoot: string): Promise<QueueOutcomes
     path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'),
   );
   return file ?? { tasks: {} };
+}
+
+// Re-enable an auto-disabled task: clear the autoDisabled flag and reset the
+// consecutive-no-change streak so the next queue run picks it up again. Reversible
+// config edit (queue-outcomes.json), never touches git/main.
+export async function clearAutoDisable(repoRoot: string, label: string): Promise<{ changed: boolean }> {
+  const outcomes = await readQueueOutcomes(repoRoot);
+  const record = outcomes.tasks?.[label];
+  if (!record || !record.autoDisabled) return { changed: false };
+  record.autoDisabled = false;
+  record.autoDisabledAt = null;
+  record.consecutiveNoChanges = 0;
+  record.lastUpdatedAt = new Date().toISOString();
+  await fs.writeFile(
+    path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'),
+    `${JSON.stringify(outcomes, null, 2)}\n`,
+    'utf8',
+  );
+  return { changed: true };
 }
 
 // Merge the queue definition (membership/order) with per-task queue outcomes and

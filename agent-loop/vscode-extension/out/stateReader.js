@@ -42,6 +42,7 @@ exports.readRunEvents = readRunEvents;
 exports.listRecentRuns = listRecentRuns;
 exports.findLatestRunForTask = findLatestRunForTask;
 exports.readQueueOutcomes = readQueueOutcomes;
+exports.clearAutoDisable = clearAutoDisable;
 exports.buildQueueOverview = buildQueueOverview;
 exports.classifyTriageCategory = classifyTriageCategory;
 exports.extractRunEvidence = extractRunEvidence;
@@ -244,6 +245,21 @@ async function findLatestRunForTask(repoRoot, taskPath) {
 async function readQueueOutcomes(repoRoot) {
     const file = await readJsonFile(path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'));
     return file ?? { tasks: {} };
+}
+// Re-enable an auto-disabled task: clear the autoDisabled flag and reset the
+// consecutive-no-change streak so the next queue run picks it up again. Reversible
+// config edit (queue-outcomes.json), never touches git/main.
+async function clearAutoDisable(repoRoot, label) {
+    const outcomes = await readQueueOutcomes(repoRoot);
+    const record = outcomes.tasks?.[label];
+    if (!record || !record.autoDisabled)
+        return { changed: false };
+    record.autoDisabled = false;
+    record.autoDisabledAt = null;
+    record.consecutiveNoChanges = 0;
+    record.lastUpdatedAt = new Date().toISOString();
+    await fs.writeFile(path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'), `${JSON.stringify(outcomes, null, 2)}\n`, 'utf8');
+    return { changed: true };
 }
 // Merge the queue definition (membership/order) with per-task queue outcomes and
 // the currently-running task, into the model the overview view renders.
