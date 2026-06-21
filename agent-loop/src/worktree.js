@@ -150,16 +150,40 @@ export async function ensureWorktree({
 
   await fs.mkdir(path.dirname(worktreePath), { recursive: true });
   const branch = `agent-loop/${name}`;
-  const result = await run('git', ['worktree', 'add', '-b', branch, worktreePath], {
+  let result = await run('git', ['worktree', 'add', '-b', branch, worktreePath], {
     cwd: repoRoot,
     timeoutMs,
   });
+  let reusedBranch = false;
+  if (isExistingBranchWorktreeAddError(result, branch)) {
+    result = await run('git', ['worktree', 'add', worktreePath, branch], {
+      cwd: repoRoot,
+      timeoutMs,
+    });
+    reusedBranch = true;
+  }
   if (result.exitCode !== 0 || result.timedOut || result.spawnError) {
     throw new Error(`git worktree add failed: ${result.stderr || result.spawnError || result.exitCode}`);
   }
-  const created = { path: worktreePath, created: true, branch };
-  await seedWorktreeFromRepo({ repoRoot, worktreePath, run, timeoutMs, resetBeforeSeed: false });
+  const created = { path: worktreePath, created: true, branch, reusedBranch };
+  await seedWorktreeFromRepo({
+    repoRoot,
+    worktreePath,
+    run,
+    timeoutMs,
+    resetBeforeSeed: reusedBranch,
+    alignToRepoHead: reusedBranch,
+  });
   return created;
+}
+
+function isExistingBranchWorktreeAddError(result, branch) {
+  if (!result || result.exitCode === 0 || result.timedOut || result.spawnError) return false;
+  const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+  return text.includes(`a branch named '${branch}' already exists`)
+    || text.includes(`a branch named "${branch}" already exists`)
+    || text.includes(`fatal: '${branch}' is already a branch`)
+    || text.includes(`fatal: '${branch}' is already checked out`);
 }
 
 async function inspectRegisteredWorktree({

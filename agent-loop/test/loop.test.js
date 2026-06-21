@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseLoopArgs } from '../src/loopArgs.js';
 import { evaluateGate } from '../src/gates.js';
+import { runProcess } from '../src/runProcess.js';
 import { decideNextState } from '../src/stateMachine.js';
 import { hasDiffChanged } from '../src/diff.js';
 import { buildGrokFixPrompt } from '../src/grokPrompt.js';
@@ -707,6 +708,41 @@ test('ensureWorktree removes orphan directory before creating a registered workt
   ));
   await assert.rejects(() => fs.access(path.join(worktreePath, 'stale.txt')));
   assert.equal(await fs.readFile(path.join(worktreePath, 'fresh.txt'), 'utf8'), 'fresh\n');
+});
+
+test('ensureWorktree reuses an existing agent-loop branch when the worktree directory is missing', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-existing-branch-'));
+  await runProcess('git', ['init'], { cwd: repoRoot, timeoutMs: 30000 });
+  await runProcess('git', ['config', 'user.email', 'agent-loop@example.local'], { cwd: repoRoot, timeoutMs: 30000 });
+  await runProcess('git', ['config', 'user.name', 'AgentLoop Test'], { cwd: repoRoot, timeoutMs: 30000 });
+  await fs.writeFile(path.join(repoRoot, 'README.md'), 'base\n', 'utf8');
+  await fs.writeFile(path.join(repoRoot, '.gitignore'), '.worktrees/\n', 'utf8');
+  await runProcess('git', ['add', 'README.md', '.gitignore'], { cwd: repoRoot, timeoutMs: 30000 });
+  await runProcess('git', ['commit', '-m', 'initial'], { cwd: repoRoot, timeoutMs: 30000 });
+  await runProcess('git', ['branch', 'agent-loop/existing-branch'], { cwd: repoRoot, timeoutMs: 30000 });
+  await fs.writeFile(path.join(repoRoot, 'README.md'), 'base\nmain advanced\n', 'utf8');
+  await runProcess('git', ['add', 'README.md'], { cwd: repoRoot, timeoutMs: 30000 });
+  await runProcess('git', ['commit', '-m', 'advance main'], { cwd: repoRoot, timeoutMs: 30000 });
+  const repoHead = await runProcess('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, timeoutMs: 30000 });
+
+  const result = await ensureWorktree({
+    repoRoot,
+    name: 'existing-branch',
+    run: runProcess,
+    timeoutMs: 30000,
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.branch, 'agent-loop/existing-branch');
+  const worktreeHead = await runProcess('git', ['rev-parse', 'HEAD'], {
+    cwd: result.path,
+    timeoutMs: 30000,
+  });
+  assert.equal(worktreeHead.stdout.trim(), repoHead.stdout.trim());
+  assert.equal(
+    (await fs.readFile(path.join(result.path, 'README.md'), 'utf8')).replace(/\r\n/g, '\n'),
+    'base\nmain advanced\n',
+  );
 });
 
 test('ensureWorktree refuses a registered non-agent-loop worktree at the target path', async () => {

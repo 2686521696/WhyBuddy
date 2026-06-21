@@ -220,6 +220,26 @@ export function buildQueueSummaryFromState({ entry, state, exitCode = 0 }) {
   return summary;
 }
 
+export function buildQueueRestoreFailedSummary({ entry, error } = {}) {
+  const label = entry?.id || entry?.task || '__queue_restore__';
+  return {
+    id: label,
+    task: entry?.task ?? null,
+    exitCode: 1,
+    status: 'HALT_QUEUE_RESTORE_FAILED',
+    outcome: 'crashed',
+    runId: null,
+    runTimeLocal: '',
+    runTimeUtc: '',
+    runMode: 'halt-queue-restore-failed',
+    grokRan: false,
+    codexRan: false,
+    reviewAgentRan: false,
+    iterations: 0,
+    worktreeError: error instanceof Error ? error.message : String(error),
+  };
+}
+
 function normalizeQueueStatusFromState(status, state = {}) {
   if (
     status === 'HALT_NO_CHANGES'

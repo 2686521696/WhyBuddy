@@ -10,6 +10,7 @@ import {
   buildQueueCompletionMessage,
   buildQueueSummaryFromState,
   classifyQueueOutcome,
+  buildQueueRestoreFailedSummary,
   applyDoneSummaryToMain,
   filterQueueTasks,
   resolveWorktreeScope,
@@ -435,6 +436,20 @@ test('buildQueueSummaryFromState maps baseline-green no-diff tasks to reviewed n
   assert.equal(summary.applyStatus, 'DONE_REVIEWED_NO_DIFF');
   assert.equal(summary.applyErrorKind, 'NO_DIFF_BASELINE_GREEN');
   assert.equal(summary.runMode, 'reviewed-no-diff');
+});
+
+test('buildQueueRestoreFailedSummary turns failed checkpoint restore into a queue-stopping crash', () => {
+  const summary = buildQueueRestoreFailedSummary({
+    entry: { id: 'task-a', task: 'agent-loop/tasks/task-a.md' },
+    error: new Error('reset --hard failed'),
+  });
+
+  assert.equal(summary.id, 'task-a');
+  assert.equal(summary.task, 'agent-loop/tasks/task-a.md');
+  assert.equal(summary.status, 'HALT_QUEUE_RESTORE_FAILED');
+  assert.equal(summary.outcome, 'crashed');
+  assert.equal(summary.runMode, 'halt-queue-restore-failed');
+  assert.match(summary.worktreeError, /reset --hard failed/);
 });
 
 test('applyDoneSummaryToMain applies done worktree summaries before cleanup', async () => {

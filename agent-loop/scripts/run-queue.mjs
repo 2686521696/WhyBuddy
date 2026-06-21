@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readQueueOutcomes, recordQueueTaskOutcome, shouldSkipAutoDisabledTask } from '../src/queueOutcomes.js';
 import { runProcess } from '../src/runProcess.js';
 import {
+  buildQueueRestoreFailedSummary,
   buildLoopArgsForQueueEntry,
   buildQueueCompletionMessage,
   buildQueueSummaryFromState,
@@ -75,6 +76,7 @@ async function main() {
   let queueWorktree = null;
   let queueBaseCheckpoint = null;
   let queueCurrentCheckpoint = null;
+  let queueRestoreFailed = false;
   if (queueScopeEnabled) {
     try {
       await assertMainWorktreeClean({ repoRoot, run: runProcess, timeoutMs: defaults.timeoutMs || 1800000 });
@@ -322,7 +324,11 @@ async function main() {
         });
         process.stderr.write(`[run-queue] queue worktree restored after ${label}: ${checkpoint.ref}\n`);
       } catch (error) {
-        process.stderr.write(`[run-queue] queue worktree restore warning (${label}): ${error.message}\n`);
+        const restoreSummary = buildQueueRestoreFailedSummary({ entry, error });
+        results.push(restoreSummary);
+        queueRestoreFailed = true;
+        process.stderr.write(`[run-queue] queue worktree restore failed (${label}): ${restoreSummary.worktreeError}\n`);
+        break;
       }
     }
 
@@ -343,7 +349,7 @@ async function main() {
   }
 
   let queueLanding = null;
-  if (queueWorktree) {
+  if (queueWorktree && !queueRestoreFailed) {
     try {
       queueLanding = await writeQueueLandingSummary({
         repoRoot,
