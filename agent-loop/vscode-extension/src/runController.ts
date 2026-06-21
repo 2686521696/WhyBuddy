@@ -63,6 +63,34 @@ export class RunController implements vscode.Disposable {
     });
   }
 
+  // Run a one-shot helper script (e.g. landing) to completion and resolve its exit
+  // code. Refuses while a queue run is active; does not set the queue-running flag.
+  async runScript(scriptFileName: string, args: string[] = []): Promise<number> {
+    if (this.child) {
+      vscode.window.showWarningMessage('AgentLoop 有运行正在进行，请先等待它结束。');
+      return -1;
+    }
+    const agentLoopRoot = getAgentLoopRoot(this.repoRoot);
+    const scriptPath = path.join(agentLoopRoot, 'scripts', scriptFileName);
+    this.output.show(true);
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] 运行: node ${[scriptPath, ...args].join(' ')}`);
+    return await new Promise<number>((resolve) => {
+      const child = spawn(process.execPath, [scriptPath, ...args], {
+        cwd: agentLoopRoot,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      child.stdout?.on('data', (chunk: Buffer) => this.output.append(chunk.toString()));
+      child.stderr?.on('data', (chunk: Buffer) => this.output.append(chunk.toString()));
+      child.on('close', (code) => resolve(code ?? -1));
+      child.on('error', (error) => {
+        this.output.appendLine(`运行失败: ${error.message}`);
+        resolve(-1);
+      });
+    });
+  }
+
   stop(): void {
     if (!this.child) {
       vscode.window.showInformationMessage('AgentLoop 当前没有运行中的任务队列。');

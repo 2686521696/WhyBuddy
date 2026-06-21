@@ -120,6 +120,26 @@ function activate(context) {
         void monitor?.refresh();
         queueTree.refresh();
         runsTree.refresh();
+    }), vscode.commands.registerCommand('agentLoop.previewLanding', async () => {
+        const code = await runController?.runScript('land-queue.mjs', ['--repo', repoRoot, '--check']);
+        if (code === 0) {
+            vscode.window.showInformationMessage('AgentLoop: 预演通过，队列改动可以干净落地到 main。');
+        }
+        else {
+            vscode.window.showWarningMessage('AgentLoop: 预演发现冲突或无可落地内容，详见 AgentLoop 输出面板。');
+        }
+    }), vscode.commands.registerCommand('agentLoop.applyLanding', async () => {
+        const choice = await vscode.window.showWarningMessage('落地到 main？会把队列合并 diff 应用到当前 main 工作树（不自动 commit，落地后请自行检查并提交）。', { modal: true }, '落地到 main');
+        if (choice !== '落地到 main')
+            return;
+        const code = await runController?.runScript('land-queue.mjs', ['--repo', repoRoot]);
+        if (code === 0) {
+            vscode.window.showInformationMessage('AgentLoop: 已落地到 main，请检查 git 改动后再 commit。');
+            await monitor?.pushOverview();
+        }
+        else {
+            vscode.window.showErrorMessage('AgentLoop: 落地失败（可能有冲突），main 未改动，详见输出面板。');
+        }
     }), vscode.commands.registerCommand('agentLoop.runTask', async (arg) => {
         const target = typeof arg === 'string' ? arg : arg?.task;
         if (!target)

@@ -109,8 +109,19 @@ export interface QueueOverviewItem {
   worktreeErrorFiles?: string[];
 }
 
+export interface QueueLanding {
+  status?: string;
+  appliedToMain?: boolean;
+  diffPath?: string;
+  diffBytes?: number;
+  queueWorktreePath?: string;
+  appliedAt?: string;
+  tasks?: Array<{ id?: string; task?: string | null; outcome?: string | null }>;
+}
+
 export interface QueueOverview {
   tasks: QueueOverviewItem[];
+  landing?: QueueLanding | null;
   counts: {
     total: number;
     done: number;

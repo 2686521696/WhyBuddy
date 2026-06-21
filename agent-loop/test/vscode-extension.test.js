@@ -681,6 +681,27 @@ test('dashboard detail shows a single-run action for the task', async () => {
   assert.match(html, /单跑此任务/);
 });
 
+test('dashboard overview shows a pending landing workbench with actions', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderOverview({
+    counts: { total: 2 }, queueRunning: false, current: null, tasks: [],
+    landing: { status: 'PENDING_QUEUE_LANDING', appliedToMain: false, diffBytes: 4096, tasks: [{ id: 'a' }, { id: 'b' }] },
+  });
+  assert.match(html, /待落地到 main/);
+  assert.match(html, /data-act="previewLanding"/);
+  assert.match(html, /data-act="applyLanding"/);
+});
+
+test('dashboard overview shows an applied landing without apply action', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderOverview({
+    counts: { total: 1 }, queueRunning: false, current: null, tasks: [],
+    landing: { status: 'APPLIED_TO_MAIN', appliedToMain: true, diffBytes: 1024, tasks: [{ id: 'a' }] },
+  });
+  assert.match(html, /已落地到 main/);
+  assert.doesNotMatch(html, /data-act="applyLanding"/);
+});
+
 test('dashboard view title command is contributed only once', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
   const viewTitleMenus = packageJson.contributes.menus['view/title'];

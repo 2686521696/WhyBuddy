@@ -752,6 +752,28 @@ h2 {
 .attention-banner b { color: var(--err); font-weight: 600; }
 .attention-banner span { color: var(--muted); font-size: 0.82rem; }
 
+.landing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+.landing.done {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--border));
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 7%, var(--panel));
+}
+.landing-info b { color: var(--accent); font-weight: 600; }
+.landing.done .landing-info b { color: var(--ok); }
+.landing-info span { color: var(--muted); font-size: 0.82rem; margin-left: 8px; }
+.landing-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
 .task-group { border-bottom: 1px solid var(--border-soft); }
 .task-group:last-child { border-bottom: 0; }
 

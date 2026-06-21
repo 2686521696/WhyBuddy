@@ -117,6 +117,68 @@ export async function applyLatestDiffToMain({
   };
 }
 
+// Land the combined queue worktree diff (.agent-loop/queue.diff.patch) onto main.
+// Always git-apply --check first; only when check passes (and check===false) does it
+// actually apply and flip queue-landing.json to APPLIED_TO_MAIN. A conflict throws a
+// LoopApplyError with the offending files and never mutates the working tree.
+export async function applyQueueLandingToMain({
+  repoRoot,
+  runner,
+  check = false,
+  timeoutMs = 120000,
+} = {}) {
+  if (!repoRoot) throw new Error('repoRoot is required');
+  if (!runner) throw new Error('runner is required');
+
+  const landingPath = path.join(repoRoot, '.agent-loop', 'queue-landing.json');
+  const landing = await readJsonIfExists(landingPath);
+  if (!landing) {
+    throw new LoopApplyError({ kind: 'NO_QUEUE_LANDING', message: 'no queue-landing.json to apply' });
+  }
+  if (landing.appliedToMain) {
+    throw new LoopApplyError({ kind: 'ALREADY_APPLIED', message: 'queue landing already applied to main' });
+  }
+  const patchPath = landing.diffPath || path.join(repoRoot, '.agent-loop', 'queue.diff.patch');
+
+  const checkResult = await runner('git', buildGitApplyArgs({ patchPath, excludes: [], check: true }), {
+    cwd: repoRoot,
+    timeoutMs,
+  });
+  if (checkResult.exitCode !== 0) {
+    const output = checkResult.stderr || checkResult.stdout || String(checkResult.exitCode);
+    throw new LoopApplyError({
+      kind: classifyGitApplyErrorKind(output),
+      message: `git apply --check failed: ${output}`,
+      files: extractGitApplyErrorFiles(output),
+    });
+  }
+  if (check) {
+    return { checked: true, applied: false, patchPath };
+  }
+
+  const applyResult = await runner('git', buildGitApplyArgs({ patchPath, excludes: [], check: false }), {
+    cwd: repoRoot,
+    timeoutMs,
+  });
+  if (applyResult.exitCode !== 0) {
+    const output = applyResult.stderr || applyResult.stdout || String(applyResult.exitCode);
+    throw new LoopApplyError({
+      kind: classifyGitApplyErrorKind(output),
+      message: `git apply failed: ${output}`,
+      files: extractGitApplyErrorFiles(output),
+    });
+  }
+
+  const updated = {
+    ...landing,
+    status: 'APPLIED_TO_MAIN',
+    appliedToMain: true,
+    appliedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(landingPath, `${JSON.stringify(updated, null, 2)}\n`, 'utf8');
+  return { checked: true, applied: true, patchPath, landing: updated };
+}
+
 export async function writeQueueLandingSummary({
   repoRoot,
   queueWorktreePath,

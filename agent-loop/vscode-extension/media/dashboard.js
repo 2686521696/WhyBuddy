@@ -202,12 +202,31 @@
     </aside>`;
   }
 
+  function renderLanding(landing) {
+    if (!landing || (landing.status !== 'PENDING_QUEUE_LANDING' && !landing.appliedToMain)) return '';
+    const kb = landing.diffBytes ? `${Math.max(1, Math.round(landing.diffBytes / 1024))}KB` : '0';
+    const taskCount = Array.isArray(landing.tasks) ? landing.tasks.length : 0;
+    if (landing.appliedToMain) {
+      return `<section class="landing done">
+        <div class="landing-info"><b>已落地到 main</b><span>${taskCount} 个任务 · ${kb}</span></div>
+      </section>`;
+    }
+    return `<section class="landing pending">
+      <div class="landing-info"><b>待落地到 main</b><span>${taskCount} 个任务的合并改动 · ${kb} diff</span></div>
+      <div class="landing-actions">
+        <button class="btn ghost" data-act="previewLanding" title="git apply --check 预演">预演</button>
+        <button class="btn primary" data-act="applyLanding" title="确认后 git apply 到 main">落地到 main</button>
+      </div>
+    </section>`;
+  }
+
   function renderOverview(payload) {
     const counts = payload.counts || { total: 0 };
     const groups = groupTasks(payload.tasks || []);
     return `<main class="dashboard console-overview">
       ${renderConsoleHeader('AgentLoop 控制台', `${counts.total || 0} 个任务 / queue health`, payload.queueRunning, false)}
       ${renderAttentionBanner(groups)}
+      ${renderLanding(payload.landing)}
       ${renderTriageFilters(groups)}
       ${renderProgress(counts)}
       ${renderCurrentRunBanner(payload.current)}

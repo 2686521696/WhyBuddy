@@ -41,6 +41,7 @@ exports.buildRunSnapshotFromStatePath = buildRunSnapshotFromStatePath;
 exports.readRunEvents = readRunEvents;
 exports.listRecentRuns = listRecentRuns;
 exports.findLatestRunForTask = findLatestRunForTask;
+exports.readQueueLanding = readQueueLanding;
 exports.readQueueOutcomes = readQueueOutcomes;
 exports.clearAutoDisable = clearAutoDisable;
 exports.buildQueueOverview = buildQueueOverview;
@@ -242,6 +243,9 @@ async function findLatestRunForTask(repoRoot, taskPath) {
     }
     return best ? { runId: best.runId, statePath: best.statePath } : null;
 }
+async function readQueueLanding(repoRoot) {
+    return readJsonFile(path.join(repoRoot, '.agent-loop', 'queue-landing.json'));
+}
 async function readQueueOutcomes(repoRoot) {
     const file = await readJsonFile(path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'));
     return file ?? { tasks: {} };
@@ -266,6 +270,7 @@ async function clearAutoDisable(repoRoot, label) {
 async function buildQueueOverview(repoRoot, options = {}) {
     const queue = await readJsonFile(options.queueFilePath || defaultQueuePath(repoRoot));
     const outcomes = await readQueueOutcomes(repoRoot);
+    const landing = await readQueueLanding(repoRoot);
     const runningTask = options.runningTaskPath ? normalizeTaskPath(options.runningTaskPath) : null;
     const tasks = (queue?.tasks || []).map((task) => {
         const id = task.id || task.task;
@@ -345,7 +350,7 @@ async function buildQueueOverview(repoRoot, options = {}) {
             counts.pending += 1;
         }
     }
-    return { tasks, counts, queueRunning: Boolean(options.queueRunning) };
+    return { tasks, landing, counts, queueRunning: Boolean(options.queueRunning) };
 }
 // Collapse the granular outcome into the five triage lanes the overview groups by:
 // attention (needs a human), running, landed (settled-good), pending, disabled.

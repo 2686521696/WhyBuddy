@@ -46,6 +46,12 @@ export class DashboardPanel {
             void vscode.commands.executeCommand('agentLoop.runTask', { task: message.task });
           }
           return;
+        case 'previewLanding':
+          void vscode.commands.executeCommand('agentLoop.previewLanding');
+          return;
+        case 'applyLanding':
+          void vscode.commands.executeCommand('agentLoop.applyLanding');
+          return;
         case 'openReport':
           void vscode.commands.executeCommand('agentLoop.openFile', message.reportPath);
           return;
@@ -85,6 +91,7 @@ export class DashboardPanel {
       payload: {
         counts: overview.counts,
         queueRunning: overview.queueRunning,
+        landing: overview.landing ?? null,
         tasks: overview.tasks.map((task) => ({
           ...task,
           taskLabel: shortTaskLabel(task.task),

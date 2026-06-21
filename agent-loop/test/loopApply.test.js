@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyLatestDiffToMain,
+  applyQueueLandingToMain,
   buildLoopApplyPlan,
   findLatestDiffPatch,
   LoopApplyError,
@@ -13,6 +14,83 @@ import {
   writeQueueLandingSummary,
 } from '../src/loopApply.js';
 import { runProcess } from '../src/runProcess.js';
+
+async function writeQueueLanding(repo, extra = {}) {
+  const dir = path.join(repo, '.agent-loop');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'queue.diff.patch'), 'diff --git a/a b/a\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'queue-landing.json'), JSON.stringify({
+    status: 'PENDING_QUEUE_LANDING',
+    appliedToMain: false,
+    diffPath: path.join(dir, 'queue.diff.patch'),
+    diffBytes: 20,
+    tasks: [{ id: 'a' }],
+    ...extra,
+  }), 'utf8');
+  return path.join(dir, 'queue-landing.json');
+}
+
+test('applyQueueLandingToMain checks, applies, and flips landing status', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-land-'));
+  const landingPath = await writeQueueLanding(repo);
+  const calls = [];
+  const runner = async (command, args) => {
+    calls.push(args.join(' '));
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+
+  const result = await applyQueueLandingToMain({ repoRoot: repo, runner });
+  assert.equal(result.applied, true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], /apply --check/);
+  const landing = JSON.parse(await fs.readFile(landingPath, 'utf8'));
+  assert.equal(landing.status, 'APPLIED_TO_MAIN');
+  assert.equal(landing.appliedToMain, true);
+});
+
+test('applyQueueLandingToMain --check never applies', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-land-'));
+  await writeQueueLanding(repo);
+  const calls = [];
+  const runner = async (command, args) => {
+    calls.push(args.join(' '));
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+  const result = await applyQueueLandingToMain({ repoRoot: repo, runner, check: true });
+  assert.equal(result.applied, false);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /apply --check/);
+});
+
+test('applyQueueLandingToMain surfaces a conflict and leaves main untouched', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-land-'));
+  const landingPath = await writeQueueLanding(repo);
+  const runner = async () => ({
+    exitCode: 1,
+    stdout: '',
+    stderr: 'error: patch failed: a:1\nerror: a: patch does not apply',
+  });
+  await assert.rejects(
+    () => applyQueueLandingToMain({ repoRoot: repo, runner }),
+    (error) => {
+      assert.equal(error instanceof LoopApplyError, true);
+      assert.equal(error.kind, 'PATCH_CONFLICT');
+      assert.deepEqual(error.files, ['a']);
+      return true;
+    },
+  );
+  const landing = JSON.parse(await fs.readFile(landingPath, 'utf8'));
+  assert.equal(landing.appliedToMain, false);
+});
+
+test('applyQueueLandingToMain refuses an already-applied landing', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-land-'));
+  await writeQueueLanding(repo, { appliedToMain: true, status: 'APPLIED_TO_MAIN' });
+  await assert.rejects(
+    () => applyQueueLandingToMain({ repoRoot: repo, runner: async () => ({ exitCode: 0 }) }),
+    /already applied/,
+  );
+});
 
 test('resolveRunDir supports latest and explicit run ids', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-apply-'));

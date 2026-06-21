@@ -6,7 +6,7 @@ import { activeAgentLabel, buildPipelineSteps, describeSnapshot, formatElapsed, 
 import { parseRunIdDate, summarizeStateRun } from './runSummary';
 
 export { findNewestFixLog, formatAgentLogTail, resolveActiveLogCandidates, resolveActiveLogPath, resolveLogRoot } from './activeLog';
-import type { FinalReportJson, GateSnapshot, LandingStatus, LoopState, QueueFile, QueueOverview, QueueOverviewItem, RunSnapshot, RunSummaryItem } from './types';
+import type { FinalReportJson, GateSnapshot, LandingStatus, LoopState, QueueFile, QueueLanding, QueueOverview, QueueOverviewItem, RunSnapshot, RunSummaryItem } from './types';
 
 interface QueueOutcomesFile {
   tasks?: Record<string, {
@@ -234,6 +234,10 @@ export async function findLatestRunForTask(
   return best ? { runId: best.runId, statePath: best.statePath } : null;
 }
 
+export async function readQueueLanding(repoRoot: string): Promise<QueueLanding | null> {
+  return readJsonFile<QueueLanding>(path.join(repoRoot, '.agent-loop', 'queue-landing.json'));
+}
+
 export async function readQueueOutcomes(repoRoot: string): Promise<QueueOutcomesFile> {
   const file = await readJsonFile<QueueOutcomesFile>(
     path.join(repoRoot, '.agent-loop', 'queue-outcomes.json'),
@@ -273,6 +277,7 @@ export async function buildQueueOverview(
 ): Promise<QueueOverview> {
   const queue = await readJsonFile<QueueFile>(options.queueFilePath || defaultQueuePath(repoRoot));
   const outcomes = await readQueueOutcomes(repoRoot);
+  const landing = await readQueueLanding(repoRoot);
   const runningTask = options.runningTaskPath ? normalizeTaskPath(options.runningTaskPath) : null;
 
   const tasks: QueueOverviewItem[] = (queue?.tasks || []).map((task) => {
@@ -345,7 +350,7 @@ export async function buildQueueOverview(
     }
   }
 
-  return { tasks, counts, queueRunning: Boolean(options.queueRunning) };
+  return { tasks, landing, counts, queueRunning: Boolean(options.queueRunning) };
 }
 
 // Collapse the granular outcome into the five triage lanes the overview groups by:
