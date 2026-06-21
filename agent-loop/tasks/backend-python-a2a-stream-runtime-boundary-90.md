@@ -1,22 +1,69 @@
-# 后端 NodeJS 到 Python 迁移：A2A stream runtime boundary 90
+# Backend NodeJS to Python migration: A2A stream runtime boundary 90
 
-## 执行状态
-- 状态：待执行
-- 目标：为 A2A stream（流式）长链路补 runtime boundary，不启动真实外部 agent。
-- 角色分工：worker 负责 stream 状态、cancel/error/envelope 语义和测试；reviewer 确认没有真实 agent 副作用。
+## Execution Status
 
-### 状态清单
-- [x] Python A2A runtime 支持最小 stream boundary 或明确 stream fallback。
-- [x] Node route/client 能区分 streaming、completed、failed、cancelled。
-- [x] stream error/cancel 不伪装成 completed。
-- [x] gate 全绿。
-- [x] Codex review 确认没有启动真实 CrewAI、LangGraph、Claude 或外部 agent。
+- Status: reviewed by queue, reconciled by runtime evidence reconcile 88.
+- Original goal: add minimal A2A stream runtime-boundary evidence without
+  starting real external agents.
+- Reconcile result: current `HEAD` supports A2A stream contract projection, not
+  an independently visible stream runtime bridge.
 
-## 目标
+### Reconciled Checklist
 
-之前 A2A invoke/list/cancel 已经推进，但 stream 长链路刻意没迁。90% 阶段至少要把 stream boundary（流式边界）的状态语义固定下来。
+- [x] Queue outcome read:
+  `backend-python-a2a-stream-runtime-boundary-90` is `DONE_REVIEWED`/`done` in
+  `../../.agent-loop/queue-outcomes.json`.
+- [x] Current `HEAD` file evidence checked.
+- [x] Python A2A service projection is visible.
+- [x] Python and Node A2A contract tests are visible.
+- [x] Gate-named Python stream runtime test is missing in current `HEAD`.
+- [x] Gate-named Node stream runtime test is missing in current `HEAD`.
+- [x] Count posture corrected: A2A stream is `contract-only`, not runtime or
+  production stream migration.
+- [x] Gate from `runtimeEvidenceReconcile88Gates` passes after this reconcile.
 
-## 允许修改的文件
+## Current `HEAD` Evidence
+
+Current `HEAD`:
+
+- `66677676b941a0a923ea422bd22792d1d4f28cf6`
+- `66677676 chore(agent-loop): plan backend python 88 queue`
+
+Visible contract/service projection evidence:
+
+- `tws-ai-slide-rule-python/services/a2a_runtime.py`
+- `tws-ai-slide-rule-python/tests/test_a2a_runtime_contract.py`
+- `server/routes/__tests__/a2a-python-runtime-contract.test.ts`
+- `shared/a2a-protocol.ts`
+- Commit evidence:
+  - `3eca0bd4 feat(backend-python): add a2a runtime contract`
+  - `7e34c2a9 feat(backend-python): add a2a invoke runtime bridge`
+
+Visible Node-owned stream transport files:
+
+- `server/routes/a2a.ts`
+- `server/core/a2a-client.ts`
+- `server/core/a2a-server.ts`
+
+Missing stream runtime-boundary paths in current `HEAD`:
+
+- `tws-ai-slide-rule-python/tests/test_a2a_stream_runtime_boundary.py`
+- `server/routes/__tests__/a2a-python-stream-runtime.test.ts`
+
+## Counting Posture
+
+| Slice | Count posture |
+|---|---|
+| A2A stream contract projection | `contract-only`; not a stream runtime bridge. |
+| A2A invoke/list/cancel projection | Covered by existing contract/service evidence; not proof of stream production migration. |
+| Node stream transport | Node-owned behavior; not Python runtime/production evidence. |
+
+This task must not be used to claim real CrewAI, LangGraph, Claude, external
+agent execution, stream orchestration, registry persistence, or production A2A
+stream migration.
+
+## Allowed Files
+
 - `tws-ai-slide-rule-python/services/a2a_runtime.py`
 - `tws-ai-slide-rule-python/tests/test_a2a_stream_runtime_boundary.py`
 - `tws-ai-slide-rule-python/tests/test_a2a_runtime_contract.py`
@@ -28,19 +75,25 @@
 - `shared/a2a-protocol.ts`
 - `agent-loop/tasks/backend-python-a2a-stream-runtime-boundary-90.md`
 
-## 禁止扩大范围
-- 不启动真实 CrewAI、LangGraph、Claude agent 或外部 agent。
-- 不迁完整生产 stream 编排。
-- 不改 agent registry 持久化。
-- 不提交 `.agent-loop` 运行产物。
+## Boundaries
 
-## 必跑 gate
+- No real CrewAI, LangGraph, Claude, or external agent startup.
+- No full production stream orchestration migration.
+- No agent registry persistence changes.
+- No `.agent-loop` runtime artifacts committed.
 
-使用 `agent-loop/scripts/migration-queue.json` 里的 `a2aStreamRuntimeBoundary90Gates`。
+## Original Gate
 
-## 成功标准
+The original 90 gate key is `a2aStreamRuntimeBoundary90Gates`, but this
+reconcile does not rerun it as proof because the stream runtime test paths are
+absent in current `HEAD`.
 
-- Python 测试覆盖 stream started/chunk/error/cancel 或等价最小状态。
-- Node 测试确认 cancelled/error 不伪装成 completed。
-- envelope/session/error 字段稳定。
-- 所有 gate 通过。
+The active gate for this repair is `runtimeEvidenceReconcile88Gates`.
+
+## Success Criteria
+
+- [x] Stream status/envelope contract evidence is listed only as
+  `contract-only`.
+- [x] Cancelled/error semantics are not promoted into completed status.
+- [x] Missing runtime paths are explicitly marked.
+- [x] No real external agent behavior is claimed.

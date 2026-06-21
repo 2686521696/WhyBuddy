@@ -25,7 +25,7 @@
 - 队列总量已经明显推进：当前 87 个 `backend-python-*` 任务中，66 个 `DONE_REVIEWED`、1 个 `DONE_REVIEWED_NO_DIFF`、16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`。
 - 90 阶段证据任务中，HALT audit、route inventory、runtime depth audit、session persistence runtime diff、production wiring smoke 都已经有可审查文档或 commit 证据。
 - `session-persistence-runtime-boundary` 仍在旧队列里显示 `DONE_REVIEWED_NO_DIFF`，但后续 `backend-python-session-persistence-runtime-diff-90` 已落地 `6285a5d0`，可按“已补 runtime evidence（运行时证据）”处理。
-- `backend-python-production-wiring-smoke-90` 已落地 `6a1f8560`，补了 Web AIGC file、vision/audio、telemetry production sink 和相关 safe-failure/provenance 测试；这些可计入 production wiring maturity（生产接线成熟度），但不是全量生产服务迁移。
+- `backend-python-production-wiring-smoke-90` 已落地 Web AIGC search/file/vision/audio runtime bridge、telemetry production sink 和相关 safe-failure/provenance 测试；这些只可计入 bounded runtime / synthetic production wiring maturity（生产接线成熟度），不代表真实外部 search、OCR、vision、audio、APM 或 billing 服务已经由 Python 生产接管。
 - `docs/backend-python-runtime-depth-audit-90.md` 明确指出 75 候选里的许多 `DONE_REVIEWED` 只是 `contract-only` 或 `proxy-only`，不能直接换算成 runtime completion（运行时完成）。
 - HEAD 中仍可见大量 `node-only` route shell（路由壳）、Blueprint 状态机/job/event bus、task lifecycle、auth persistence、audit retention/export、Web AIGC 其他 adapters 等未迁完分母。
 - 当前 queue outcomes 中仍保留 16 个 `HALT_HUMAN`。其中一部分已被 HALT audit 判定为 superseded（已覆盖）或 docs-only（仅文档），但旧红灯本身不能直接当完成；必须由后续 landed commit 或审计证据逐项接管。
@@ -41,7 +41,7 @@
 | SlideRule V5 Node 到 Python 薄代理链路 | 约 97-99% | `[██████████]` | Python mode、delegation helper、timeout（超时）、health check（健康检查）、contract smoke、delivery/visual/artifact capability 白名单和多条 runtime/proxy contract 已比较完整；这只是 SlideRule 薄代理链路，不是整体 NodeJS 后端百分比。 |
 | Python V5 可运行基线 | 约 93-95% | `[█████████░]` | Python 服务、核心 smoke、native LLM capability、vector client、evidence provenance、runtime config、RAG、session persistence、task executor、knowledge admin 和 production wiring smoke 都有测试支撑；真实生产依赖、外部服务凭据、长跑观测仍需继续补。 |
 | 90 阶段 route/runtime 深度 | 约 76-82% | `[████████░░]` | 盘点显示 `/api/sliderule`、RAG/vector、MCP/skill、部分 workflow/NL/A2A、task executor 和 knowledge admin 有 contract/proxy/runtime 证据；但 `/api/blueprint` 大路由、auth persistence、permission route management、audit retention/export、task route lifecycle 和大量 Web AIGC 路径仍是 Node-led。 |
-| production wiring maturity | 约 80-85% | `[████████░░]` | RAG/vector、deployment live smoke、observability rollup、Web AIGC file/vision/audio 和 telemetry sink 有 smoke 或 degraded/safe-failure 证据；不代表真实 Qdrant/embedding/search/telemetry/APM 外部服务已经生产长跑。 |
+| production wiring maturity | 约 80-85% | `[████████░░]` | RAG/vector、deployment live smoke、observability rollup、Web AIGC search/file/vision/audio 和 telemetry sink 有 fake/synthetic smoke 或 degraded/safe-failure 证据；不代表真实 Qdrant/embedding/search/OCR/vision/audio/telemetry/APM 外部服务已经生产长跑。 |
 | LLM infra 迁移 | 约 60-68% | `[██████░░░░]` | Python `sliderule_llm` 已支撑 chat、JSON hardening、pool、fallback、telemetry metadata、vector client、stream contract、cost accounting、circuit breaker 和 multimodal contract；完整并发、真实生产计费、跨后端观测和 Node env 细节仍未完全对齐。 |
 
 ## 90 阶段证据对照
@@ -53,7 +53,7 @@
 | Node route inventory 90 | `docs/backend-python-node-route-inventory-90.md` 已落地，按 `node-only`、`contract`、`proxy`、`runtime`、`production-wiring` 分层。 | 作为真实分母和缺口表；不把路由盘点本身计入实现完成。 |
 | Runtime depth audit 90 | `docs/backend-python-runtime-depth-audit-90.md` 已落地。它把 15 个 75 候选 `DONE_REVIEWED` 切片分为 `runtime-bridge`、`production-wiring`、`contract-only`、`proxy-only`，其中只有 task executor、knowledge admin、deployment live smoke、observability rollup 可按 bounded runtime/prod evidence 计入。 | 这是压低百分比的核心证据：contract/proxy 绿不等于 runtime/prod 完成。 |
 | Session persistence diff 90 | `6285a5d0 test(sliderule): cover python session persistence runtime` 已落地，补了 Python mode session store 相关测试证据。 | 可把旧 `DONE_REVIEWED_NO_DIFF` 悬项收口为 runtime evidence，但仍不代表 auth/session 全链路迁移。 |
-| Production wiring smoke 90 | `6a1f8560 feat(backend-python): add production wiring smoke coverage` 已落地，补了 Web AIGC file、vision/audio、telemetry production sink、safe failure 和 provenance 相关测试/服务文件。 | 计入 production wiring maturity；不等同真实外部服务已生产接好。 |
+| Production wiring smoke 90 | 当前 `HEAD` 可见 Web AIGC search/file/vision/audio runtime bridge、telemetry production sink、safe failure 和 provenance 相关测试/服务文件；详见 `docs/backend-python-web-aigc-runtime-evidence-reconcile-88.md`。 | 只计入 bounded runtime / synthetic production wiring maturity；不等同真实外部服务已生产接好。 |
 | Auth/permission/audit runtime 90 与 A2A stream 90 | queue outcomes 显示 `DONE_REVIEWED`，任务文档清单已勾选；但当前 HEAD 下部分 gate 中点名的 runtime 测试路径不可见。 | 不能据此把整块 auth/permission/audit 或 A2A stream 写成已生产迁移。需要 reviewer 复核对应 diff 是否真正落地，或后续补齐可见代码证据。 |
 | migration status refresh 90 | 之前队列结果是 `HALT_HUMAN`/`failed`，审查指出状态文档仍停在 75 口径。 | 本文件就是本轮回修；它只刷新状态，不计入业务迁移分母。 |
 
@@ -62,7 +62,7 @@
 | 类型 | 可以计入整体迁移推进的证据 | 不能按完成计入的证据 |
 |---|---|---|
 | bounded runtime bridge | `task-executor-runtime-bridge`、`knowledge-admin-runtime-bridge`、A2A invoke runtime、Web AIGC search runtime、session persistence runtime diff 等有 commit/测试路径的最小运行时桥。 | 只有 proxy shape（代理形状）或 contract envelope（契约信封）的切片。 |
-| production wiring maturity | RAG/vector production boundary、deployment live smoke、observability rollup、production wiring smoke 90 中的 Web AIGC file/vision/audio 和 telemetry sink smoke。 | 真实外部服务、真实密钥、外部 APM、长跑稳定性和生产部署策略未验证时，不能称为完整生产迁移。 |
+| production wiring maturity | RAG/vector production boundary、deployment live smoke、observability rollup、production wiring smoke 90 中的 Web AIGC search/file/vision/audio fake-runtime bridge 和 telemetry synthetic sink smoke。 | 真实外部服务、真实密钥、外部 APM、长跑稳定性和生产部署策略未验证时，不能称为完整生产迁移。 |
 | docs/audit support | HALT audit、route inventory、runtime depth audit 可提升口径可信度，帮助识别真缺口。 | docs-only、status refresh、inventory 本身不迁业务 runtime。 |
 | no-diff / HALT | 后续任务补了真实 diff 或明确接受已有证据后，可以按后续任务计入。 | `DONE_REVIEWED_NO_DIFF`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED`、`HALT_HUMAN` 本身不计入新增完成。 |
 | SlideRule V5 子系统 | 可用于 SlideRule V5 子系统百分比。 | 不能外推为整个 NodeJS backend 已完成同等比例。 |
@@ -126,3 +126,75 @@
 - [ ] 不提交真实密钥、数据库密码、Qdrant key、Bearer token。
 - [ ] 如果只改文档，至少跑 `node agent-loop/src/check-mojibake.js agent-loop/tasks/...`。
 - [ ] 如果改代码，重新跑对应 Python、Node、TypeScript gate。
+
+## Auth/A2A runtime evidence reconcile 88 addendum
+
+This addendum corrects the reviewed 90-stage runtime posture against current
+`HEAD`. It is intentionally limited to evidence alignment and does not raise
+the overall backend migration percentage to 90%.
+
+Current `HEAD` used by the reconcile:
+
+- `66677676b941a0a923ea422bd22792d1d4f28cf6`
+- `66677676 chore(agent-loop): plan backend python 88 queue`
+
+Queue outcomes from `../../.agent-loop/queue-outcomes.json` show:
+
+| Task | Queue status | Updated at | Current count posture |
+|---|---|---|---|
+| `backend-python-auth-permission-audit-runtime-90` | `DONE_REVIEWED` / `done` | `2026-06-21T17:55:58.608Z` | Mixed. Count only permission check as bounded `runtime-boundary`; auth/session, permission rate-limit, and audit event stay `contract-only` with runtime `evidence-missing`. |
+| `backend-python-a2a-stream-runtime-boundary-90` | `DONE_REVIEWED` / `done` | `2026-06-21T18:06:43.872Z` | `contract-only` for stream. Current `HEAD` lacks the gate-named stream runtime test paths. |
+
+HEAD evidence details:
+
+| Slice | Visible evidence | Missing paths | Posture |
+|---|---|---|---|
+| Auth/session | `tws-ai-slide-rule-python/tests/test_auth_session_contract.py`, `server/tests/auth-session-python-contract.test.ts`; Node auth remains in `server/routes/auth.ts` and `server/auth/middleware.ts`. | `tws-ai-slide-rule-python/tests/test_auth_session_runtime_boundary.py`, `server/tests/auth-session-runtime-boundary.test.ts` | `contract-only`; runtime `evidence-missing`. |
+| Permission check | `tws-ai-slide-rule-python/tests/test_permission_check_runtime_boundary.py`, `server/permission/check-engine-python-runtime.test.ts`, `shared/permission/contracts.ts`, `tws-ai-slide-rule-python/middlewares/auth.py`; commit `61097ed0 feat(backend-python): add permission check runtime boundary`. | None among the gate-named permission-check runtime paths. | Bounded `runtime-boundary`; not full permission production migration. |
+| Permission rate limit | `tws-ai-slide-rule-python/tests/test_permission_rate_limit_contract.py`, `server/permission/rate-limiter-python-contract.test.ts`, `server/permission/rate-limiter.ts`. | `tws-ai-slide-rule-python/tests/test_permission_rate_limit_runtime_boundary.py`, `server/permission/rate-limiter-python-runtime.test.ts` | `contract-only`; runtime `evidence-missing`. |
+| Audit event | `tws-ai-slide-rule-python/tests/test_audit_event_contract.py`, `server/tests/audit-event-python-contract.test.ts`, `shared/audit/contracts.ts`; Node audit remains under `server/audit/*` and `server/routes/audit.ts`. | `tws-ai-slide-rule-python/tests/test_audit_event_runtime_boundary.py`, `server/tests/audit-event-python-runtime.test.ts` | `contract-only`; runtime `evidence-missing`. |
+| A2A stream | `tws-ai-slide-rule-python/services/a2a_runtime.py`, `tws-ai-slide-rule-python/tests/test_a2a_runtime_contract.py`, `server/routes/__tests__/a2a-python-runtime-contract.test.ts`, `shared/a2a-protocol.ts`; commits `3eca0bd4` and `7e34c2a9`. Node stream transport remains in `server/routes/a2a.ts`, `server/core/a2a-client.ts`, and `server/core/a2a-server.ts`. | `tws-ai-slide-rule-python/tests/test_a2a_stream_runtime_boundary.py`, `server/routes/__tests__/a2a-python-stream-runtime.test.ts` | `contract-only` for stream; Node transport is not Python runtime/production evidence. |
+
+Auth/A2A detailed report: `docs/backend-python-runtime-evidence-reconcile-88.md`.
+
+## Web AIGC runtime evidence reconcile 88 addendum
+
+This addendum reconciles Web AIGC runtime and telemetry sink evidence against
+current `HEAD`. It is limited to the Web AIGC search/file/vision/audio and
+telemetry sink paths named by this task and does not update the overall backend
+migration percentage.
+
+Current `HEAD` used by the Web AIGC reconcile:
+
+- `80ba0cc7c88d3c2ac13f6c469980d709dd8387a1`
+- `80ba0cc7 agent-loop queue checkpoint: backend-python-runtime-evidence-reconcile-88`
+
+HEAD evidence details:
+
+| Slice | Current classification | Current `HEAD` evidence | Remaining gap |
+|---|---|---|---|
+| Web AIGC search | `runtime` | `server/routes/__tests__/web-aigc.search-python-runtime.test.ts`, `tws-ai-slide-rule-python/tests/test_web_aigc_search_runtime_bridge.py`, `tws-ai-slide-rule-python/services/web_aigc_search_adapter.py`. | Fake-provider runtime only; real web/image/graph/page-fetch providers remain production gaps. |
+| Web AIGC file | `runtime` | `server/routes/__tests__/web-aigc.file-python-runtime.test.ts`, `tws-ai-slide-rule-python/tests/test_web_aigc_file_runtime_bridge.py`, `tws-ai-slide-rule-python/services/web_aigc_file_adapter.py`. | Memory-backed fake runtime only; real file persistence, translators, user path IO, and production storage remain gaps. |
+| Web AIGC vision/audio | `runtime` | `server/routes/__tests__/web-aigc.vision-audio-python-runtime.test.ts`, `tws-ai-slide-rule-python/tests/test_web_aigc_vision_audio_runtime_bridge.py`, `tws-ai-slide-rule-python/services/web_aigc_vision_audio_adapter.py`, `tws-ai-slide-rule-python/services/web_aigc_media_adapter.py`. | Fake runtime only; real OCR, vision, STT, TTS, audio, and multimodal services remain production gaps. |
+| Telemetry sink | `production-wiring` smoke | `server/routes/__tests__/telemetry-python-production-sink.test.ts`, `tws-ai-slide-rule-python/tests/test_telemetry_production_sink.py`, `tws-ai-slide-rule-python/services/telemetry.py`, `shared/telemetry/contracts.ts`. | Synthetic sink only; real external APM/OTLP/Datadog/billing emission remains a production gap. |
+
+Counting rule after this Web AIGC reconcile:
+
+- Do not count adapter contracts as runtime unless the current `HEAD` runtime
+  test/service paths exist.
+- Do not count fake runtime bridges as real external production service
+  ownership.
+- Do not count telemetry synthetic sink smoke as real external APM or billing
+  emission.
+- Keep long-tail Web AIGC routes without Python evidence as `node-only`.
+
+Detailed report: `docs/backend-python-web-aigc-runtime-evidence-reconcile-88.md`.
+
+Counting rule after this reconcile:
+
+- `DONE_REVIEWED` in queue outcomes is a review signal only.
+- Mojibake green is not runtime or production evidence.
+- Contract/proxy tests are not counted as runtime or production wiring unless
+  current `HEAD` has concrete runtime-boundary or production paths.
+- The overall backend migration remains in the previously documented 80-84%
+  working band, not 90%.

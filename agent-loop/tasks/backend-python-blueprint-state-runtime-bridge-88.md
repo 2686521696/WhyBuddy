@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 selected state read/project/update boundary 和测试；reviewer 确认 event bus/job store/ledger/prompt package 没被纳入。
 
 ### 状态清单
-- [ ] Python runtime 支持最小 state projection/read/update envelope。
-- [ ] Node bridge 测试覆盖 Python mode、fallback 和错误语义。
-- [ ] Node 仍拥有 route shell、event bus、job store。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 Blueprint 子切片写成完整迁移。
+- [x] Python runtime 支持最小 state projection/read/update envelope。
+- [x] Node bridge 测试覆盖 Python mode、fallback 和错误语义。
+- [x] Node 仍拥有 route shell、event bus、job store。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 Blueprint 子切片写成完整迁移。
 
 ## 目标
 

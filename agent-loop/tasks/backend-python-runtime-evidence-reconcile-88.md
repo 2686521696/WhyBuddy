@@ -6,12 +6,12 @@
 - 角色分工：worker 负责比对 task checklist、queue outcomes、HEAD 文件和 gate 路径；reviewer 确认可见证据不足时没有强行算 runtime/production。
 
 ### 状态清单
-- [ ] 读取 `queue-outcomes.json` 中 auth/permission/audit runtime 90 与 A2A stream 90 的最新状态。
-- [ ] 对照当前 HEAD 中的 Node/Python 测试和服务文件。
-- [ ] 生成证据对齐报告。
-- [ ] 必要时修正 task checklist 或状态口径，不新增业务实现。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 contract/proxy 误写成 runtime/production。
+- [x] 读取 `queue-outcomes.json` 中 auth/permission/audit runtime 90 与 A2A stream 90 的最新状态。
+- [x] 对照当前 HEAD 中的 Node/Python 测试和服务文件。
+- [x] 生成证据对齐报告。
+- [x] 必要时修正 task checklist 或状态口径，不新增业务实现。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 contract/proxy 误写成 runtime/production。
 
 ## 目标
 

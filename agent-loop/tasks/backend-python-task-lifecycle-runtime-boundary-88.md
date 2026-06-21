@@ -6,11 +6,11 @@
 - 角色分工：worker 负责最小 runtime bridge 和测试；reviewer 确认没有迁完整任务系统或 mission store。
 
 ### 状态清单
-- [ ] Python runtime 支持最小 task lifecycle envelope。
-- [ ] Node 测试覆盖 Python mode 下 start/status/cancel/error 映射。
-- [ ] mission store、project/resource auth 仍保持 Node 边界。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 executor client bridge 夸大成完整 `/api/tasks` 迁移。
+- [x] Python runtime 支持最小 task lifecycle envelope。
+- [x] Node 测试覆盖 Python mode 下 start/status/cancel/error 映射。
+- [x] mission store、project/resource auth 仍保持 Node 边界。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 executor client bridge 夸大成完整 `/api/tasks` 迁移。
 
 ## 目标
 

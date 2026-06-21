@@ -6,12 +6,12 @@
 - 角色分工：worker 负责盘点当前 HEAD 的服务/测试路径并生成报告；reviewer 确认没有把 contract 当 runtime。
 
 ### 状态清单
-- [ ] 对照 Web AIGC route inventory 与当前 HEAD 文件。
-- [ ] 识别 file runtime、vision/audio runtime、telemetry sink 的真实服务/测试路径。
-- [ ] 生成 Web AIGC runtime 证据对齐报告。
-- [ ] 修正状态文档中的路径漂移和缺口描述。
-- [ ] gate 全绿。
-- [ ] Codex review 确认不调用真实外部服务。
+- [x] 对照 Web AIGC route inventory 与当前 HEAD 文件。
+- [x] 识别 file runtime、vision/audio runtime、telemetry sink 的真实服务/测试路径。
+- [x] 生成 Web AIGC runtime 证据对齐报告。
+- [x] 修正状态文档中的路径漂移和缺口描述。
+- [x] gate 全绿。
+- [x] Codex review 确认不调用真实外部服务。
 
 ## 目标
 

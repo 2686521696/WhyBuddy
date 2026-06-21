@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 BLUEPRINT_MAIN_STATE_CONTRACT_VERSION = "blueprint.main.state.v1"
+BLUEPRINT_MAIN_STATE_RUNTIME_CONTRACT_VERSION = "blueprint.main-state.runtime.v1"
 
 BlueprintGenerationStage = Literal[
     "input",
@@ -211,3 +212,92 @@ def parse_blueprint_main_state_projection(payload: Dict[str, Any]) -> BlueprintM
         return BlueprintMainStateProjection(**payload)
     except ValidationError:
         raise
+
+
+class BlueprintMainStateRuntimeBoundary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: Literal["python"] = "python"
+    mode: Literal["runtime_bridge"] = "runtime_bridge"
+    stateAuthority: Literal["node"] = "node"
+    stateMutation: Literal["none"] = "none"
+    jobStoreOwner: Literal["node"] = "node"
+    eventBusOwner: Literal["node"] = "node"
+    ledgerOwner: Literal["node"] = "node"
+    previewOwner: Literal["node"] = "node"
+    promptPackageOwner: Literal["node"] = "node"
+
+
+class BlueprintMainStateReadEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["node-job-snapshot"] = "node-job-snapshot"
+    projectedAt: str
+
+    @field_validator("projectedAt")
+    @classmethod
+    def _validate_non_empty(cls, value: str) -> str:
+        return _non_empty(value)
+
+
+class BlueprintMainStateUpdateEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: Literal[False] = False
+    reason: Literal["node_state_owner"] = "node_state_owner"
+    message: str
+    requestedPatch: Optional[Dict[str, Any]] = None
+
+    @field_validator("message")
+    @classmethod
+    def _validate_non_empty(cls, value: str) -> str:
+        return _non_empty(value)
+
+
+class BlueprintMainStateRuntimeSuccess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: Literal[True] = True
+    operation: Literal["read", "project", "update"]
+    contractVersion: Literal[BLUEPRINT_MAIN_STATE_RUNTIME_CONTRACT_VERSION] = (
+        BLUEPRINT_MAIN_STATE_RUNTIME_CONTRACT_VERSION
+    )
+    runtime: BlueprintMainStateRuntimeBoundary
+    jobId: str
+    projection: BlueprintMainStateProjection
+    read: BlueprintMainStateReadEnvelope
+    update: BlueprintMainStateUpdateEnvelope
+    provenance: Literal["python-blueprint-state-runtime"] = "python-blueprint-state-runtime"
+
+    @field_validator("jobId")
+    @classmethod
+    def _validate_non_empty(cls, value: str) -> str:
+        return _non_empty(value)
+
+
+class BlueprintMainStateRuntimeError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: Literal[False] = False
+    operation: str
+    contractVersion: Literal[BLUEPRINT_MAIN_STATE_RUNTIME_CONTRACT_VERSION] = (
+        BLUEPRINT_MAIN_STATE_RUNTIME_CONTRACT_VERSION
+    )
+    error: Literal[
+        "invalid_operation",
+        "validation_error",
+        "not_found",
+        "projection_error",
+        "boundary_violation",
+    ]
+    reason: str
+    message: str
+    statusCode: int
+    jobId: Optional[str] = None
+    retryable: bool = False
+    provenance: Literal["python-blueprint-state-runtime"] = "python-blueprint-state-runtime"
+
+    @field_validator("operation", "reason", "message")
+    @classmethod
+    def _validate_non_empty(cls, value: str) -> str:
+        return _non_empty(value)
