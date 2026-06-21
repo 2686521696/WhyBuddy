@@ -9,6 +9,7 @@ import {
   buildQueueSummaryFromState,
   applyDoneSummaryToMain,
   filterQueueTasks,
+  resolveWorktreeScope,
   sanitizeWorktreeName,
 } from '../src/runQueue.js';
 import {
@@ -16,8 +17,15 @@ import {
   formatProgressLine,
   readLatestState,
 } from '../src/runQueueProgress.js';
-import { applyLatestDiffToMain } from '../src/loopApply.js';
-import { removeWorktree } from '../src/worktree.js';
+import { applyLatestDiffToMain, writeQueueLandingSummary } from '../src/loopApply.js';
+import {
+  assertMainWorktreeClean,
+  createWorktreeCheckpoint,
+  ensureWorktree,
+  removeWorktree,
+  restoreWorktreeCheckpoint,
+  WorktreeStateError,
+} from '../src/worktree.js';
 
 const agentLoopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const defaultQueuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
@@ -59,6 +67,56 @@ async function main() {
     process.stderr.write('[run-queue] tip: open .agent-loop/latest/state.json in another terminal for full detail\n');
   }
 
+  const queueScopeEnabled = tasks.some((entry) => (
+    (entry.useWorktree ?? defaults.useWorktree ?? false)
+    && resolveWorktreeScope({ entry, defaults }) === 'queue'
+  ));
+  let queueWorktree = null;
+  if (queueScopeEnabled) {
+    try {
+      await assertMainWorktreeClean({ repoRoot, run: runProcess, timeoutMs: defaults.timeoutMs || 1800000 });
+      const queueWorktreeName = sanitizeWorktreeName(defaults.queueWorktreeName || `queue-${Date.now()}`);
+      queueWorktree = await ensureWorktree({
+        repoRoot,
+        name: queueWorktreeName,
+        timeoutMs: defaults.timeoutMs || 1800000,
+      });
+      process.stderr.write(`[run-queue] queue worktree ready: ${queueWorktree.path}\n`);
+    } catch (error) {
+      const status = error instanceof WorktreeStateError ? error.code : 'HALT_WORKTREE_SETUP_FAILED';
+      const summary = {
+        id: '__queue_preflight__',
+        task: null,
+        exitCode: 1,
+        status,
+        outcome: 'crashed',
+        runId: null,
+        runTimeLocal: '',
+        runTimeUtc: '',
+        runMode: status.toLowerCase().replace(/_/g, '-'),
+        grokRan: false,
+        codexRan: false,
+        reviewAgentRan: false,
+        iterations: 0,
+        worktreeError: error instanceof Error ? error.message : String(error),
+        worktreeErrorFiles: error instanceof WorktreeStateError ? error.files : [],
+      };
+      process.stderr.write(`[run-queue] queue worktree preflight failed: ${summary.worktreeError}\n`);
+      process.stdout.write(`${JSON.stringify({
+        stopped: true,
+        stoppedByUser: false,
+        done: 0,
+        failed: 0,
+        crashed: 1,
+        quarantined: 0,
+        skipped: 0,
+        results: [summary],
+      }, null, 2)}\n`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const results = [];
   let skippedCount = 0;
   for (const [index, entry] of tasks.entries()) {
@@ -88,6 +146,16 @@ async function main() {
     }
 
     process.stderr.write(`\n[run-queue] ${index + 1}/${tasks.length} starting ${label}\n`);
+    const worktreeScope = resolveWorktreeScope({ entry, defaults });
+    let checkpoint = null;
+    if ((entry.useWorktree ?? defaults.useWorktree ?? false) && worktreeScope === 'queue' && queueWorktree) {
+      checkpoint = await createWorktreeCheckpoint({
+        worktreePath: queueWorktree.path,
+        taskId: label,
+        run: runProcess,
+        timeoutMs: entry.timeoutMs || defaults.timeoutMs || 1800000,
+      });
+    }
 
     const args = buildLoopArgsForQueueEntry({
       agentLoopRoot,
@@ -95,6 +163,7 @@ async function main() {
       entry,
       defaults,
       index,
+      queueWorktreePath: queueWorktree?.path || null,
       gateSets,
       defaultGates,
     });
@@ -222,8 +291,23 @@ async function main() {
       process.stderr.write(`[run-queue] ✗ TASK-FAILED ${label}: ${summary.status} exit=${run.exitCode} — 记录后继续下一条\n`);
     }
 
+    if (checkpoint && summary.outcome !== 'done') {
+      try {
+        await restoreWorktreeCheckpoint({
+          worktreePath: queueWorktree.path,
+          checkpoint,
+          run: runProcess,
+          timeoutMs: entry.timeoutMs || defaults.timeoutMs || 1800000,
+        });
+        process.stderr.write(`[run-queue] queue worktree restored after ${label}: ${checkpoint.ref}\n`);
+      } catch (error) {
+        process.stderr.write(`[run-queue] queue worktree restore warning (${label}): ${error.message}\n`);
+      }
+    }
+
     const shouldCleanupWorktree = cleanupWorktree
       && useWorktree
+      && worktreeScope !== 'queue'
       && !summary.applyError
       && (summary.outcome !== 'done' || appliedToMain);
     if (shouldCleanupWorktree) {
@@ -234,6 +318,39 @@ async function main() {
       } catch (error) {
         process.stderr.write(`[run-queue] worktree remove warning (${worktreeName}): ${error.message}\n`);
       }
+    }
+  }
+
+  let queueLanding = null;
+  if (queueWorktree) {
+    try {
+      queueLanding = await writeQueueLandingSummary({
+        repoRoot,
+        queueWorktreePath: queueWorktree.path,
+        tasks: results,
+        run: runProcess,
+        timeoutMs: defaults.timeoutMs || 1800000,
+      });
+      process.stderr.write(`[run-queue] queue landing summary: ${queueLanding.diffPath}\n`);
+    } catch (error) {
+      const summary = {
+        id: '__queue_landing__',
+        task: null,
+        exitCode: 1,
+        status: 'HALT_QUEUE_LANDING_FAILED',
+        outcome: 'crashed',
+        runId: null,
+        runTimeLocal: '',
+        runTimeUtc: '',
+        runMode: 'halt-queue-landing-failed',
+        grokRan: false,
+        codexRan: false,
+        reviewAgentRan: false,
+        iterations: 0,
+        applyError: error instanceof Error ? error.message : String(error),
+      };
+      results.push(summary);
+      process.stderr.write(`[run-queue] queue landing failed: ${summary.applyError}\n`);
     }
   }
 
@@ -265,6 +382,7 @@ async function main() {
     crashed: crashedCount,
     quarantined: quarantinedCount,
     skipped: skippedCount,
+    queueLanding,
     results,
   }, null, 2)}\n`);
 

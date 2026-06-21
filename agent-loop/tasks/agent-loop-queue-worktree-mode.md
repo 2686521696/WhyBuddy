@@ -6,13 +6,13 @@
 - 角色分工：worker（执行工人）负责 queue worktree（队列工作树）、checkpoint（检查点）和回滚逻辑；reviewer（审查者）确认不会把失败任务的 diff（差异补丁）混入最终落地。
 
 ### 状态清单
-- [ ] `migration-queue.json`（迁移队列配置）支持 `worktreeScope: "task" | "queue"`。
-- [ ] `worktreeScope: "queue"` 时，整条队列只创建一个 queue worktree（队列级隔离工作树）。
-- [ ] 每个 task（任务）运行前创建 checkpoint（检查点），成功后保留改动，失败后回滚到上一个 checkpoint。
-- [ ] 队列结束后生成 queue patch（队列补丁）或 landing summary（落地摘要），不再对每个 task 单独 `git apply`。
-- [ ] main（主仓库）有未提交 diff（差异）时，队列启动前进入 `DIRTY_MAIN_NEEDS_COMMIT`（主仓库有未提交改动，需要先提交），不继续跑。
-- [ ] gate（门禁测试）全绿。
-- [ ] Codex review（Codex 审查）确认 task 失败不会污染后续 task。
+- [x] `migration-queue.json`（迁移队列配置）支持 `worktreeScope: "task" | "queue"`。
+- [x] `worktreeScope: "queue"` 时，整条队列只创建一个 queue worktree（队列级隔离工作树）。
+- [x] 每个 task（任务）运行前创建 checkpoint（检查点），成功后保留改动，失败后回滚到上一个 checkpoint。
+- [x] 队列结束后生成 queue patch（队列补丁）或 landing summary（落地摘要），不再对每个 task 单独 `git apply`。
+- [x] main（主仓库）有未提交 diff（差异）时，队列启动前进入 `DIRTY_MAIN_NEEDS_COMMIT`（主仓库有未提交改动，需要先提交），不继续跑。
+- [x] gate（门禁测试）全绿。
+- [x] Codex review（Codex 审查）确认 task 失败不会污染后续 task。
 
 ## 背景
 

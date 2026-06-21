@@ -2,6 +2,8 @@
   "cwd": "..",
   "defaults": {
     "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "migration-queue",
     "autoFix": true,
     "skipReview": false,
     "fixAgent": "codex",

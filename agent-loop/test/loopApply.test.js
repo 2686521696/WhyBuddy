@@ -10,6 +10,7 @@ import {
   LoopApplyError,
   markLandingStatus,
   resolveRunDir,
+  writeQueueLandingSummary,
 } from '../src/loopApply.js';
 import { runProcess } from '../src/runProcess.js';
 
@@ -196,4 +197,35 @@ test('applyLatestDiffToMain classifies git apply check conflicts with files', as
       return true;
     },
   );
+});
+
+test('writeQueueLandingSummary records queue patch without applying it', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-queue-landing-'));
+  const patchText = 'diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-old\n+new\n';
+
+  const summary = await writeQueueLandingSummary({
+    repoRoot: repo,
+    queueWorktreePath: path.join(repo, '.worktrees', 'migration-queue'),
+    tasks: [
+      { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' },
+      { id: 'task-b', status: 'APPLY_CONFLICT', outcome: 'failed' },
+    ],
+    run: async (command, args) => {
+      assert.equal(command, 'git');
+      assert.deepEqual(args, ['diff', '--binary']);
+      return { exitCode: 0, stdout: patchText, stderr: '' };
+    },
+  });
+
+  assert.equal(summary.status, 'PENDING_QUEUE_LANDING');
+  assert.equal(summary.appliedToMain, false);
+  assert.equal(summary.diffBytes, Buffer.byteLength(patchText, 'utf8'));
+  assert.deepEqual(summary.tasks.map((task) => task.id), ['task-a', 'task-b']);
+  assert.equal(
+    await fs.readFile(path.join(repo, '.agent-loop', 'queue.diff.patch'), 'utf8'),
+    patchText,
+  );
+  const saved = JSON.parse(await fs.readFile(path.join(repo, '.agent-loop', 'queue-landing.json'), 'utf8'));
+  assert.equal(saved.status, 'PENDING_QUEUE_LANDING');
+  assert.equal(saved.diffPath, path.join(repo, '.agent-loop', 'queue.diff.patch'));
 });

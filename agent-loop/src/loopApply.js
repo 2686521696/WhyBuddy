@@ -117,6 +117,48 @@ export async function applyLatestDiffToMain({
   };
 }
 
+export async function writeQueueLandingSummary({
+  repoRoot,
+  queueWorktreePath,
+  tasks = [],
+  run,
+  timeoutMs = 120000,
+} = {}) {
+  if (!repoRoot) throw new Error('repoRoot is required');
+  if (!queueWorktreePath) throw new Error('queueWorktreePath is required');
+  if (!run) throw new Error('runner is required');
+
+  const result = await run('git', ['diff', '--binary'], { cwd: queueWorktreePath, timeoutMs });
+  if (result.exitCode !== 0 || result.timedOut || result.spawnError) {
+    throw new Error(`queue worktree diff failed: ${result.stderr || result.spawnError || result.exitCode}`);
+  }
+
+  const agentLoopDir = path.join(repoRoot, '.agent-loop');
+  await fs.mkdir(agentLoopDir, { recursive: true });
+  const diffPath = path.join(agentLoopDir, 'queue.diff.patch');
+  const landingPath = path.join(agentLoopDir, 'queue-landing.json');
+  const diffText = result.stdout || '';
+  await fs.writeFile(diffPath, diffText, 'utf8');
+
+  const summary = {
+    status: 'PENDING_QUEUE_LANDING',
+    appliedToMain: false,
+    diffPath,
+    queueWorktreePath,
+    diffBytes: Buffer.byteLength(diffText, 'utf8'),
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      task: task.task ?? null,
+      status: task.status ?? null,
+      outcome: task.outcome ?? null,
+      runId: task.runId ?? null,
+    })),
+    updatedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(landingPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+  return summary;
+}
+
 function defaultLandingStatus() {
   return {
     status: 'PENDING_APPLY',

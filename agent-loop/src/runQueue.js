@@ -99,18 +99,27 @@ export function sanitizeWorktreeName(name) {
   return safe.slice(0, 80);
 }
 
+export function resolveWorktreeScope({ entry = {}, defaults = {} } = {}) {
+  const scope = entry.worktreeScope ?? defaults.worktreeScope ?? 'task';
+  if (scope === 'task' || scope === 'queue') return scope;
+  const label = entry.id || entry.task || 'queue entry';
+  throw new Error(`invalid worktreeScope for ${label}: ${scope}`);
+}
+
 export function buildLoopArgsForQueueEntry({
   agentLoopRoot,
   repoRoot,
   entry,
   defaults = {},
   index = 0,
+  queueWorktreePath = null,
   gateSets = {},
   defaultGates = [],
   loopScript = path.join(agentLoopRoot, 'src', 'loop.js'),
 }) {
   const label = entry.id || entry.task;
   const useWorktree = entry.useWorktree ?? defaults.useWorktree ?? false;
+  const worktreeScope = resolveWorktreeScope({ entry, defaults });
   const worktreeName = sanitizeWorktreeName(entry.worktreeName || entry.id || `task-${index + 1}`);
   const rawGates = resolveEntryGates({ entry, gateSets, defaultGates, label });
   const pythonExe = entry.pythonExe ?? defaults.pythonExe;
@@ -129,7 +138,10 @@ export function buildLoopArgsForQueueEntry({
     args.push('--gate', gate);
   }
 
-  if (useWorktree) {
+  if (useWorktree && worktreeScope === 'queue') {
+    if (!queueWorktreePath) throw new Error(`queue worktree path is required for ${label}`);
+    args.push('--fix-cwd', queueWorktreePath);
+  } else if (useWorktree) {
     args.push('--create-worktree', worktreeName);
   } else {
     args.push('--fix-cwd', resolveFixCwd(repoRoot, entry.fixCwd ?? defaults.fixCwd ?? '.'));
@@ -212,7 +224,8 @@ export async function applyDoneSummaryToMain({
   runner,
 } = {}) {
   const useWorktree = entry?.useWorktree ?? defaults.useWorktree ?? false;
-  if (summary?.outcome !== 'done' || !useWorktree) {
+  const worktreeScope = resolveWorktreeScope({ entry, defaults });
+  if (summary?.outcome !== 'done' || !useWorktree || worktreeScope === 'queue') {
     return { summary, appliedToMain: false };
   }
 

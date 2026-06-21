@@ -2,11 +2,64 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runProcess } from './runProcess.js';
 
+export class WorktreeStateError extends Error {
+  constructor({ code, message, files = [] } = {}) {
+    super(message || code || 'worktree state error');
+    this.name = 'WorktreeStateError';
+    this.code = code || 'WORKTREE_STATE_ERROR';
+    this.files = Array.isArray(files) ? files : [];
+  }
+}
+
 export function getWorktreePath({ repoRoot, name }) {
   if (!/^[A-Za-z0-9._-]+$/.test(name || '')) {
     throw new Error('invalid worktree name');
   }
   return path.join(repoRoot, '.worktrees', name);
+}
+
+export async function assertMainWorktreeClean({
+  repoRoot,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const result = await run('git', ['status', '--porcelain'], { cwd: repoRoot, timeoutMs });
+  if (result.exitCode !== 0 || result.timedOut || result.spawnError) {
+    throw new Error(`git status --porcelain failed: ${result.stderr || result.spawnError || result.exitCode}`);
+  }
+  const files = parseStatusPorcelainFiles(result.stdout);
+  if (files.length > 0) {
+    throw new WorktreeStateError({
+      code: 'DIRTY_MAIN_NEEDS_COMMIT',
+      message: `main worktree has uncommitted changes: ${files.join(', ')}`,
+      files,
+    });
+  }
+  return { clean: true };
+}
+
+export async function createWorktreeCheckpoint({
+  worktreePath,
+  taskId,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const result = await run('git', ['rev-parse', 'HEAD'], { cwd: worktreePath, timeoutMs });
+  if (result.exitCode !== 0 || result.timedOut || result.spawnError || !result.stdout?.trim()) {
+    throw new Error(`create worktree checkpoint failed: ${result.stderr || result.spawnError || result.exitCode}`);
+  }
+  return { taskId, ref: result.stdout.trim() };
+}
+
+export async function restoreWorktreeCheckpoint({
+  worktreePath,
+  checkpoint,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  if (!checkpoint?.ref) throw new Error('checkpoint ref is required');
+  await resetWorktreeWorkingTree({ worktreePath, run, timeoutMs, resetRef: checkpoint.ref });
+  return { restored: true, checkpoint };
 }
 
 export async function ensureWorktree({
@@ -178,6 +231,22 @@ export function parseNameStatusLines(stdout) {
     entries.push({ code, path: rest });
   }
   return entries;
+}
+
+export function parseStatusPorcelainFiles(stdout) {
+  const files = [];
+  for (const line of String(stdout ?? '').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const payload = line.length > 3 ? line.slice(3) : line.trim();
+    if (!payload) continue;
+    if (/^R/.test(line) || /^C/.test(line)) {
+      const parts = payload.split(' -> ');
+      files.push(parts.at(-1));
+    } else {
+      files.push(payload);
+    }
+  }
+  return files;
 }
 
 export async function syncAgentLoopTaskDocsFromRepo({ repoRoot, worktreePath }) {

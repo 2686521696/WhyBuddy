@@ -12,6 +12,7 @@ import {
   classifyQueueOutcome,
   applyDoneSummaryToMain,
   filterQueueTasks,
+  resolveWorktreeScope,
   resolveEntryGates,
   resolvePythonExe,
   resolveQueueGate,
@@ -285,6 +286,43 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
   assert.match(gateArg, /tws-ai-slide-rule-python[\\/]\.venv[\\/]Scripts[\\/]python\.exe/);
 });
 
+test('buildLoopArgsForQueueEntry uses queue worktree fix cwd in queue scope', () => {
+  const queueWorktreePath = 'C:\\repo\\.worktrees\\queue-migration';
+  const args = buildLoopArgsForQueueEntry({
+    agentLoopRoot,
+    repoRoot,
+    queueWorktreePath,
+    entry: {
+      id: 'task-a',
+      task: 'agent-loop/tasks/task-a.md',
+      worktreeScope: 'queue',
+    },
+    defaults: {
+      useWorktree: true,
+      autoFix: true,
+      maxIterations: 1,
+      timeoutMs: 600000,
+    },
+    index: 0,
+    gateSets: { gates: ['node --test agent-loop/test/run-queue.test.js'] },
+    defaultGates: ['node --test agent-loop/test/run-queue.test.js'],
+  });
+
+  assert.equal(args.includes('--create-worktree'), false);
+  assert.ok(args.includes('--fix-cwd'));
+  assert.deepEqual(args.slice(args.indexOf('--fix-cwd'), args.indexOf('--fix-cwd') + 2), ['--fix-cwd', queueWorktreePath]);
+});
+
+test('resolveWorktreeScope validates task and queue scopes', () => {
+  assert.equal(resolveWorktreeScope({ entry: {}, defaults: {} }), 'task');
+  assert.equal(resolveWorktreeScope({ entry: {}, defaults: { worktreeScope: 'queue' } }), 'queue');
+  assert.equal(resolveWorktreeScope({ entry: { worktreeScope: 'task' }, defaults: { worktreeScope: 'queue' } }), 'task');
+  assert.throws(
+    () => resolveWorktreeScope({ entry: { id: 'task-a', worktreeScope: 'repo' }, defaults: {} }),
+    /invalid worktreeScope for task-a: repo/,
+  );
+});
+
 test('buildQueueSummaryFromState exposes grokRan codexRan and runMode', () => {
   const summary = buildQueueSummaryFromState({
     entry: { id: 'task-a', task: 'agent-loop/tasks/task-a.md' },
@@ -399,6 +437,27 @@ test('applyDoneSummaryToMain applies done worktree summaries before cleanup', as
   assert.equal(result.summary.landingStatus, 'APPLIED_TO_MAIN');
   assert.equal(calls[0].run, 'run-a');
   assert.equal(calls[0].timeoutMs, 1234);
+});
+
+test('applyDoneSummaryToMain skips per-task apply in queue worktree scope', async () => {
+  let called = false;
+  const summary = { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' };
+  const result = await applyDoneSummaryToMain({
+    summary,
+    entry: { id: 'task-a', useWorktree: true, worktreeScope: 'queue' },
+    state: { runId: 'run-a' },
+    repoRoot: 'C:\\repo',
+    defaults: { useWorktree: true },
+    runner: async () => ({ exitCode: 0 }),
+    applyLatestDiffToMain: async () => {
+      called = true;
+      return { landing: { status: 'APPLIED_TO_MAIN' }, patchPath: 'diff.1.patch' };
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(result.appliedToMain, false);
+  assert.equal(result.summary, summary);
 });
 
 test('applyDoneSummaryToMain maps missing diff patch to reviewed no-diff outcome', async () => {
