@@ -271,6 +271,171 @@ export function normalizePermissionCheckContractResponse(
 
 // ─── 审计日志 ───────────────────────────────────────────────────────────────
 
+export const PERMISSION_MANAGEMENT_CONTRACT_VERSION = "permission-management.v1" as const;
+
+export type PermissionManagementBoundaryOperation =
+  | "role.list"
+  | "role.get"
+  | "role.create"
+  | "role.update"
+  | "policy.get"
+  | "policy.assign"
+  | "policy.update"
+  | "token.issue"
+  | "token.verify";
+
+export type PermissionManagementBoundaryDomain = "role" | "policy" | "token" | "unknown";
+export type PermissionManagementBoundarySource = "node" | "python_boundary";
+export type PermissionManagementBoundaryStatus =
+  | "supported"
+  | "unsupported"
+  | "conflict"
+  | "error";
+export type PermissionManagementBoundaryErrorCode =
+  | "conflict"
+  | "invalid_operation"
+  | "invalid_request"
+  | "invalid_response"
+  | "node_owned"
+  | "unsupported";
+
+export interface PermissionManagementBoundaryRequest {
+  operation: PermissionManagementBoundaryOperation;
+  payload?: Record<string, unknown>;
+}
+
+export interface PermissionManagementBoundaryError {
+  code: PermissionManagementBoundaryErrorCode;
+  message: string;
+}
+
+export interface PermissionManagementBoundaryResponse {
+  contractVersion: typeof PERMISSION_MANAGEMENT_CONTRACT_VERSION;
+  source: PermissionManagementBoundarySource;
+  operation: PermissionManagementBoundaryOperation | string | null;
+  domain: PermissionManagementBoundaryDomain;
+  ok: boolean;
+  status: PermissionManagementBoundaryStatus;
+  reason: string;
+  error?: PermissionManagementBoundaryError;
+}
+
+function asPermissionManagementBoundarySource(
+  source: unknown,
+  fallback: PermissionManagementBoundarySource,
+): PermissionManagementBoundarySource {
+  return source === "node" || source === "python_boundary" ? source : fallback;
+}
+
+function asPermissionManagementBoundaryDomain(
+  domain: unknown,
+): PermissionManagementBoundaryDomain {
+  return domain === "role" || domain === "policy" || domain === "token" || domain === "unknown"
+    ? domain
+    : "unknown";
+}
+
+function asPermissionManagementBoundaryStatus(
+  status: unknown,
+): PermissionManagementBoundaryStatus | undefined {
+  return status === "supported" ||
+    status === "unsupported" ||
+    status === "conflict" ||
+    status === "error"
+    ? status
+    : undefined;
+}
+
+function failedPermissionManagementBoundaryResponse(
+  reason: string,
+  code: PermissionManagementBoundaryErrorCode,
+  source: PermissionManagementBoundarySource,
+  operation: string | null = null,
+  domain: PermissionManagementBoundaryDomain = "unknown",
+): PermissionManagementBoundaryResponse {
+  return {
+    contractVersion: PERMISSION_MANAGEMENT_CONTRACT_VERSION,
+    source,
+    operation,
+    domain,
+    ok: false,
+    status: code === "conflict" ? "conflict" : "error",
+    reason,
+    error: {
+      code,
+      message: reason,
+    },
+  };
+}
+
+export function normalizePermissionManagementBoundaryResponse(
+  value: unknown,
+  fallbackSource: PermissionManagementBoundarySource = "python_boundary",
+): PermissionManagementBoundaryResponse {
+  if (!isRecord(value)) {
+    return failedPermissionManagementBoundaryResponse(
+      "Invalid permission management boundary response",
+      "invalid_response",
+      fallbackSource,
+    );
+  }
+
+  const source = asPermissionManagementBoundarySource(value.source, fallbackSource);
+  const operation = typeof value.operation === "string" ? value.operation : null;
+  const domain = asPermissionManagementBoundaryDomain(value.domain);
+  const status = asPermissionManagementBoundaryStatus(value.status);
+  const reason = asOptionalString(value.reason);
+
+  if (!status || !reason) {
+    return failedPermissionManagementBoundaryResponse(
+      "Invalid permission management boundary response",
+      "invalid_response",
+      source,
+      operation,
+      domain,
+    );
+  }
+
+  const ok = value.ok === true && status === "supported";
+  if (value.ok === true && status !== "supported") {
+    return failedPermissionManagementBoundaryResponse(
+      "Invalid permission management boundary response",
+      "invalid_response",
+      source,
+      operation,
+      domain,
+    );
+  }
+
+  const response: PermissionManagementBoundaryResponse = {
+    contractVersion: PERMISSION_MANAGEMENT_CONTRACT_VERSION,
+    source,
+    operation,
+    domain,
+    ok,
+    status: ok ? "supported" : status,
+    reason,
+  };
+
+  if (!ok) {
+    if (isRecord(value.error)) {
+      const code =
+        typeof value.error.code === "string"
+          ? (value.error.code as PermissionManagementBoundaryErrorCode)
+          : "invalid_response";
+      const message = asOptionalString(value.error.message) ?? reason;
+      response.error = { code, message };
+    } else {
+      response.error = {
+        code: status === "unsupported" ? "unsupported" : status === "conflict" ? "conflict" : "invalid_response",
+        message: reason,
+      };
+    }
+  }
+
+  return response;
+}
+
 export interface PermissionAuditEntry {
   id: string;
   timestamp: string;

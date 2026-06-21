@@ -56,6 +56,9 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
   } = deps;
   const router = Router();
 
+  // Route management remains Node-owned in this Python migration boundary.
+  // Python permission check runtime evidence is not route management coverage.
+
   // =====================================================================
   // 10.1 角色管理路由 (GET/POST/PUT /api/permissions/roles)
   // =====================================================================

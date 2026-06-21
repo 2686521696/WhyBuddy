@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 role/policy/token management 的最小边界与测试；reviewer 确认没有放宽权限语义。
 
 ### 状态清单
-- [ ] 明确 permission check engine 与 permission route management 的边界。
-- [ ] Python boundary 覆盖 role/policy/token 的最小读写或明确 no-op/unsupported 语义。
-- [ ] Node 测试确认 deny/conflict/error 不变。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有绕过权限检查。
+- [x] 明确 permission check engine 与 permission route management 的边界。
+- [x] Python boundary 覆盖 role/policy/token 的最小读写或明确 no-op/unsupported 语义。
+- [x] Node 测试确认 deny/conflict/error 不变。
+- [x] gate 全绿。
+- [x] Codex review 确认没有绕过权限检查。
 
 ## 目标
 
