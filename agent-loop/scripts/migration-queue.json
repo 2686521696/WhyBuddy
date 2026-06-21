@@ -545,67 +545,70 @@
       "id": "backend-python-blueprint-stage-edit-runtime-bridge-88",
       "task": "agent-loop/tasks/backend-python-blueprint-stage-edit-runtime-bridge-88.md",
       "gatesKey": "blueprintStageEditRuntimeBridge88Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 32,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9dfeac5c"
     },
     {
       "id": "backend-python-auth-session-production-persistence-88",
       "task": "agent-loop/tasks/backend-python-auth-session-production-persistence-88.md",
       "gatesKey": "authSessionProductionPersistence88Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 32,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 5596c78e"
     },
     {
       "id": "backend-python-audit-production-sink-88",
       "task": "agent-loop/tasks/backend-python-audit-production-sink-88.md",
       "gatesKey": "auditProductionSink88Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 32,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 657b0b9f"
     },
     {
       "id": "backend-python-permission-route-management-boundary-88",
       "task": "agent-loop/tasks/backend-python-permission-route-management-boundary-88.md",
       "gatesKey": "permissionRouteManagementBoundary88Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 32,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: d56b2064"
     },
     {
       "id": "backend-python-migration-status-refresh-88",
       "task": "agent-loop/tasks/backend-python-migration-status-refresh-88.md",
       "gatesKey": "migrationStatusRefresh88Gates",
-      "enabled": false,
+      "enabled": true,
       "guardTests": false,
       "grokMaxTurns": 12,
       "maxIterations": 2,
       "reviewMaxTurns": 8,
       "agentTimeoutMs": 1200000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 2400000,
-      "disabledReason": "final refresh pending 88 runtime tasks"
+      "timeoutMs": 2400000
     }
   ],
   "nodeRouteInventory50Gates": [
