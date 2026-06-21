@@ -120,15 +120,22 @@ export async function applyLatestDiffToMain({
 export async function writeQueueLandingSummary({
   repoRoot,
   queueWorktreePath,
+  baseRef = null,
   tasks = [],
   run,
   timeoutMs = 120000,
+  includeUntracked = true,
 } = {}) {
   if (!repoRoot) throw new Error('repoRoot is required');
   if (!queueWorktreePath) throw new Error('queueWorktreePath is required');
   if (!run) throw new Error('runner is required');
 
-  const result = await run('git', ['diff', '--binary'], { cwd: queueWorktreePath, timeoutMs });
+  const untrackedFiles = includeUntracked
+    ? await stageIntentToAddUntrackedFiles({ queueWorktreePath, run, timeoutMs })
+    : [];
+  const diffArgs = ['diff', '--binary'];
+  if (baseRef) diffArgs.push(baseRef);
+  const result = await run('git', diffArgs, { cwd: queueWorktreePath, timeoutMs });
   if (result.exitCode !== 0 || result.timedOut || result.spawnError) {
     throw new Error(`queue worktree diff failed: ${result.stderr || result.spawnError || result.exitCode}`);
   }
@@ -145,7 +152,9 @@ export async function writeQueueLandingSummary({
     appliedToMain: false,
     diffPath,
     queueWorktreePath,
+    baseRef,
     diffBytes: Buffer.byteLength(diffText, 'utf8'),
+    untrackedFiles,
     tasks: tasks.map((task) => ({
       id: task.id,
       task: task.task ?? null,
@@ -157,6 +166,31 @@ export async function writeQueueLandingSummary({
   };
   await fs.writeFile(landingPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
   return summary;
+}
+
+async function stageIntentToAddUntrackedFiles({
+  queueWorktreePath,
+  run,
+  timeoutMs,
+}) {
+  const listed = await run('git', ['ls-files', '--others', '--exclude-standard'], {
+    cwd: queueWorktreePath,
+    timeoutMs,
+  });
+  if (listed.exitCode !== 0 || listed.timedOut || listed.spawnError) {
+    throw new Error(`queue worktree untracked file listing failed: ${listed.stderr || listed.spawnError || listed.exitCode}`);
+  }
+  const files = String(listed.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!files.length) return [];
+
+  const add = await run('git', ['add', '--intent-to-add', '--', ...files], {
+    cwd: queueWorktreePath,
+    timeoutMs,
+  });
+  if (add.exitCode !== 0 || add.timedOut || add.spawnError) {
+    throw new Error(`queue worktree untracked intent-to-add failed: ${add.stderr || add.spawnError || add.exitCode}`);
+  }
+  return files;
 }
 
 function defaultLandingStatus() {

@@ -199,26 +199,34 @@ test('applyLatestDiffToMain classifies git apply check conflicts with files', as
   );
 });
 
-test('writeQueueLandingSummary records queue patch without applying it', async () => {
+test('writeQueueLandingSummary records queue patch from base ref without applying it', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-queue-landing-'));
+  const queue = path.join(repo, '.worktrees', 'migration-queue');
   const patchText = 'diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-old\n+new\n';
 
   const summary = await writeQueueLandingSummary({
     repoRoot: repo,
-    queueWorktreePath: path.join(repo, '.worktrees', 'migration-queue'),
+    queueWorktreePath: queue,
+    baseRef: 'main-head',
     tasks: [
       { id: 'task-a', status: 'DONE_REVIEWED', outcome: 'done' },
       { id: 'task-b', status: 'APPLY_CONFLICT', outcome: 'failed' },
     ],
-    run: async (command, args) => {
+    run: async (command, args, options = {}) => {
       assert.equal(command, 'git');
-      assert.deepEqual(args, ['diff', '--binary']);
+      assert.equal(options.cwd, queue);
+      if (args[0] === 'ls-files') {
+        assert.deepEqual(args, ['ls-files', '--others', '--exclude-standard']);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      assert.deepEqual(args, ['diff', '--binary', 'main-head']);
       return { exitCode: 0, stdout: patchText, stderr: '' };
     },
   });
 
   assert.equal(summary.status, 'PENDING_QUEUE_LANDING');
   assert.equal(summary.appliedToMain, false);
+  assert.equal(summary.baseRef, 'main-head');
   assert.equal(summary.diffBytes, Buffer.byteLength(patchText, 'utf8'));
   assert.deepEqual(summary.tasks.map((task) => task.id), ['task-a', 'task-b']);
   assert.equal(
@@ -228,4 +236,36 @@ test('writeQueueLandingSummary records queue patch without applying it', async (
   const saved = JSON.parse(await fs.readFile(path.join(repo, '.agent-loop', 'queue-landing.json'), 'utf8'));
   assert.equal(saved.status, 'PENDING_QUEUE_LANDING');
   assert.equal(saved.diffPath, path.join(repo, '.agent-loop', 'queue.diff.patch'));
+});
+
+test('writeQueueLandingSummary can include untracked queue worktree files', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-queue-landing-'));
+  const queue = path.join(repo, '.worktrees', 'migration-queue');
+  const patchText = 'diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-old\n+new\n';
+
+  const summary = await writeQueueLandingSummary({
+    repoRoot: repo,
+    queueWorktreePath: queue,
+    baseRef: 'main-head',
+    includeUntracked: true,
+    tasks: [],
+    run: async (command, args) => {
+      assert.equal(command, 'git');
+      if (args[0] === 'diff') {
+        assert.deepEqual(args, ['diff', '--binary', 'main-head']);
+        return { exitCode: 0, stdout: patchText, stderr: '' };
+      }
+      if (args[0] === 'ls-files') {
+        assert.deepEqual(args, ['ls-files', '--others', '--exclude-standard']);
+        return { exitCode: 0, stdout: 'created.txt\n', stderr: '' };
+      }
+      if (args[0] === 'add') {
+        assert.deepEqual(args, ['add', '--intent-to-add', '--', 'created.txt']);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      throw new Error(`unexpected git args: ${args.join(' ')}`);
+    },
+  });
+
+  assert.deepEqual(summary.untrackedFiles, ['created.txt']);
 });

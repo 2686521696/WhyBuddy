@@ -51,6 +51,50 @@ export async function createWorktreeCheckpoint({
   return { taskId, ref: result.stdout.trim() };
 }
 
+export async function createQueueWorktreeCommit({
+  worktreePath,
+  taskId,
+  run = runProcess,
+  timeoutMs = 120000,
+}) {
+  const status = await run('git', ['status', '--porcelain'], { cwd: worktreePath, timeoutMs });
+  if (status.exitCode !== 0 || status.timedOut || status.spawnError) {
+    throw new Error(`queue worktree status failed: ${status.stderr || status.spawnError || status.exitCode}`);
+  }
+  const untrackedFiles = parseStatusPorcelainFiles(status.stdout)
+    .filter((file) => String(status.stdout || '').includes(`?? ${file}`));
+  const meaningfulTrackedDiff = await hasMeaningfulTrackedDiff({ worktreePath, run, timeoutMs });
+  if (!meaningfulTrackedDiff && untrackedFiles.length === 0) {
+    const checkpoint = await createWorktreeCheckpoint({ worktreePath, taskId, run, timeoutMs });
+    return { ...checkpoint, committed: false };
+  }
+
+  const add = await run('git', ['add', '-A'], { cwd: worktreePath, timeoutMs });
+  if (add.exitCode !== 0 || add.timedOut || add.spawnError) {
+    throw new Error(`queue worktree add failed: ${add.stderr || add.spawnError || add.exitCode}`);
+  }
+
+  const message = `agent-loop queue checkpoint: ${taskId || 'task'}`;
+  const commit = await run('git', ['commit', '-m', message], { cwd: worktreePath, timeoutMs });
+  if (commit.exitCode !== 0 || commit.timedOut || commit.spawnError) {
+    throw new Error(`queue worktree commit failed: ${commit.stderr || commit.spawnError || commit.exitCode}`);
+  }
+
+  const checkpoint = await createWorktreeCheckpoint({ worktreePath, taskId, run, timeoutMs });
+  return { ...checkpoint, committed: true };
+}
+
+async function hasMeaningfulTrackedDiff({
+  worktreePath,
+  run,
+  timeoutMs,
+}) {
+  const diff = await run('git', ['diff', '--quiet', '--ignore-space-at-eol'], { cwd: worktreePath, timeoutMs });
+  if (diff.exitCode === 0) return false;
+  if (diff.exitCode === 1) return true;
+  throw new Error(`queue worktree diff check failed: ${diff.stderr || diff.spawnError || diff.exitCode}`);
+}
+
 export async function restoreWorktreeCheckpoint({
   worktreePath,
   checkpoint,
@@ -265,8 +309,38 @@ export async function syncAgentLoopTaskDocsFromRepo({ repoRoot, worktreePath }) 
     const source = path.join(repoRoot, relPath);
     const target = path.join(worktreePath, relPath);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.copyFile(source, target);
+    await copyFileIfDifferentBeyondLineEndings(source, target);
   }
+}
+
+async function copyFileIfDifferentBeyondLineEndings(source, target) {
+  const sourceBuffer = await fs.readFile(source);
+  let targetBuffer = null;
+  try {
+    targetBuffer = await fs.readFile(target);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  if (
+    targetBuffer
+    && sourceBuffer.equals(targetBuffer)
+  ) {
+    return;
+  }
+
+  if (
+    targetBuffer
+    && normalizeLineEndings(sourceBuffer.toString('utf8')) === normalizeLineEndings(targetBuffer.toString('utf8'))
+  ) {
+    return;
+  }
+
+  await fs.writeFile(target, sourceBuffer);
+}
+
+function normalizeLineEndings(text) {
+  return String(text).replace(/\r\n/g, '\n');
 }
 
 async function applyWorkingTreeEntry({ repoRoot, worktreePath, entry }) {

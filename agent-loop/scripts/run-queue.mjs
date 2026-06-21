@@ -20,6 +20,7 @@ import {
 import { applyLatestDiffToMain, writeQueueLandingSummary } from '../src/loopApply.js';
 import {
   assertMainWorktreeClean,
+  createQueueWorktreeCommit,
   createWorktreeCheckpoint,
   ensureWorktree,
   removeWorktree,
@@ -72,6 +73,8 @@ async function main() {
     && resolveWorktreeScope({ entry, defaults }) === 'queue'
   ));
   let queueWorktree = null;
+  let queueBaseCheckpoint = null;
+  let queueCurrentCheckpoint = null;
   if (queueScopeEnabled) {
     try {
       await assertMainWorktreeClean({ repoRoot, run: runProcess, timeoutMs: defaults.timeoutMs || 1800000 });
@@ -81,6 +84,13 @@ async function main() {
         name: queueWorktreeName,
         timeoutMs: defaults.timeoutMs || 1800000,
       });
+      queueBaseCheckpoint = await createWorktreeCheckpoint({
+        worktreePath: queueWorktree.path,
+        taskId: '__queue_base__',
+        run: runProcess,
+        timeoutMs: defaults.timeoutMs || 1800000,
+      });
+      queueCurrentCheckpoint = queueBaseCheckpoint;
       process.stderr.write(`[run-queue] queue worktree ready: ${queueWorktree.path}\n`);
     } catch (error) {
       const status = error instanceof WorktreeStateError ? error.code : 'HALT_WORKTREE_SETUP_FAILED';
@@ -149,12 +159,7 @@ async function main() {
     const worktreeScope = resolveWorktreeScope({ entry, defaults });
     let checkpoint = null;
     if ((entry.useWorktree ?? defaults.useWorktree ?? false) && worktreeScope === 'queue' && queueWorktree) {
-      checkpoint = await createWorktreeCheckpoint({
-        worktreePath: queueWorktree.path,
-        taskId: label,
-        run: runProcess,
-        timeoutMs: entry.timeoutMs || defaults.timeoutMs || 1800000,
-      });
+      checkpoint = queueCurrentCheckpoint;
     }
 
     const args = buildLoopArgsForQueueEntry({
@@ -258,6 +263,22 @@ async function main() {
     if (summary.applyError) {
       process.stderr.write(`[run-queue] apply failed ${label}: ${summary.applyError}\n`);
     }
+    if (checkpoint && summary.outcome === 'done') {
+      try {
+        queueCurrentCheckpoint = await createQueueWorktreeCommit({
+          worktreePath: queueWorktree.path,
+          taskId: label,
+          run: runProcess,
+          timeoutMs: entry.timeoutMs || defaults.timeoutMs || 1800000,
+        });
+        process.stderr.write(`[run-queue] queue worktree checkpoint after ${label}: ${queueCurrentCheckpoint.ref}\n`);
+      } catch (error) {
+        summary.status = 'HALT_QUEUE_CHECKPOINT_FAILED';
+        summary.outcome = 'crashed';
+        summary.worktreeError = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`[run-queue] queue worktree checkpoint failed after ${label}: ${summary.worktreeError}\n`);
+      }
+    }
     results.push(summary);
 
     process.stderr.write(`[run-queue] finished ${label}: status=${summary.status} exit=${summary.exitCode} grokRan=${summary.grokRan} codexRan=${summary.codexRan} mode=${summary.runMode}\n`);
@@ -327,6 +348,7 @@ async function main() {
       queueLanding = await writeQueueLandingSummary({
         repoRoot,
         queueWorktreePath: queueWorktree.path,
+        baseRef: queueBaseCheckpoint?.ref || null,
         tasks: results,
         run: runProcess,
         timeoutMs: defaults.timeoutMs || 1800000,
