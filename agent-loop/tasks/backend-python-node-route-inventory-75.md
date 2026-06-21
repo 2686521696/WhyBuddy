@@ -6,11 +6,11 @@
 - 角色分工：worker 负责盘点文档和证据链接；reviewer 确认没有把参考项目 `tws-ai-ask-python` 当成迁移目标。
 
 ### 状态清单
-- [ ] 盘点 `server/routes`、`server/core`、`server/tasks`、`server/auth`、`server/permission`、`server/audit`。
-- [ ] 明确已迁、proxy、contract、runtime、仍在 Node 的分类。
-- [ ] 写入 `docs/backend-python-node-route-inventory-75.md`。
-- [ ] gate 全绿。
-- [ ] Codex review 确认盘点证据来自当前 repo。
+- [x] 盘点 `server/routes`、`server/core`、`server/tasks`、`server/auth`、`server/permission`、`server/audit`。
+- [x] 明确已迁、proxy、contract、runtime、仍在 Node 的分类。
+- [x] 写入 `docs/backend-python-node-route-inventory-75.md`。
+- [x] gate 全绿。
+- [x] Codex review 确认盘点证据来自当前 repo。
 
 ## 目标
 
