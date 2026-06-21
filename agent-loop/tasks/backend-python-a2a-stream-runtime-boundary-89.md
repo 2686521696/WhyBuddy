@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 stream chunk/session/error envelope 和 Node Python-mode 测试；reviewer 确认没有迁完整 stream transport 或 registry。
 
 ### 状态清单
-- [ ] Python runtime boundary 支持 stream chunk running/completed、failed、cancelled 语义。
-- [ ] Node 测试覆盖 Python mode 下 stream envelope 映射。
-- [ ] failed/cancelled/partial stream 不伪装成 completed。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有启动真实 CrewAI、LangGraph、Claude 或外部 agent。
+- [x] Python runtime boundary 支持 stream chunk running/completed、failed、cancelled 语义。
+- [x] Node 测试覆盖 Python mode 下 stream envelope 映射。
+- [x] failed/cancelled/partial stream 不伪装成 completed。
+- [x] gate 全绿。
+- [x] Codex review 确认没有启动真实 CrewAI、LangGraph、Claude 或外部 agent。
 
 ## 目标
 
