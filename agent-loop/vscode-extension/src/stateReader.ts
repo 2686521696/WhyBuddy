@@ -14,6 +14,11 @@ interface QueueOutcomesFile {
     lastOutcome?: string;
     lastRunId?: string;
     autoDisabled?: boolean;
+    applyStatus?: string;
+    applyErrorKind?: string;
+    applyErrorFiles?: string[];
+    applyError?: string;
+    worktreeErrorFiles?: string[];
   }>;
 }
 
@@ -225,9 +230,15 @@ export async function buildQueueOverview(
       task: task.task,
       enabled: task.enabled !== false,
       outcome: record?.lastOutcome ?? null,
+      outcomeGroup: classifyOutcomeGroup(record?.lastOutcome ?? null, record?.lastStatus ?? null),
       status: record?.lastStatus ?? null,
       lastRunId: record?.lastRunId ?? null,
       autoDisabled: Boolean(record?.autoDisabled),
+      applyStatus: record?.applyStatus ?? null,
+      applyErrorKind: record?.applyErrorKind ?? null,
+      applyErrorFiles: Array.isArray(record?.applyErrorFiles) ? record.applyErrorFiles : [],
+      applyError: record?.applyError ?? null,
+      worktreeErrorFiles: Array.isArray(record?.worktreeErrorFiles) ? record.worktreeErrorFiles : [],
       running,
       stale: Boolean(options.currentRunStale)
         && runningTask !== null
@@ -238,29 +249,59 @@ export async function buildQueueOverview(
   const counts = {
     total: tasks.length,
     done: 0,
+    applied: 0,
+    reviewed: 0,
+    noDiff: 0,
+    applyConflict: 0,
+    human: 0,
     failed: 0,
     crashed: 0,
     quarantined: 0,
+    stopped: 0,
     running: 0,
     pending: 0,
   };
   for (const item of tasks) {
     if (item.running) {
       counts.running += 1;
-    } else if (item.outcome === 'done') {
+    } else if (item.outcomeGroup === 'applied') {
+      counts.applied += 1;
       counts.done += 1;
-    } else if (item.outcome === 'failed') {
+    } else if (item.outcomeGroup === 'reviewed') {
+      counts.reviewed += 1;
+      counts.done += 1;
+    } else if (item.outcomeGroup === 'noDiff') {
+      counts.noDiff += 1;
+    } else if (item.outcomeGroup === 'applyConflict') {
+      counts.applyConflict += 1;
+    } else if (item.outcomeGroup === 'human') {
+      counts.human += 1;
+    } else if (item.outcomeGroup === 'failed') {
       counts.failed += 1;
-    } else if (item.outcome === 'crashed') {
+    } else if (item.outcomeGroup === 'crashed') {
       counts.crashed += 1;
-    } else if (item.outcome === 'quarantined') {
+    } else if (item.outcomeGroup === 'quarantined') {
       counts.quarantined += 1;
+    } else if (item.outcomeGroup === 'stopped') {
+      counts.stopped += 1;
     } else {
       counts.pending += 1;
     }
   }
 
   return { tasks, counts, queueRunning: Boolean(options.queueRunning) };
+}
+
+function classifyOutcomeGroup(outcome: string | null, status: string | null): string | null {
+  if (status === 'DONE_REVIEWED_NO_DIFF') return 'noDiff';
+  if (status === 'APPLY_CONFLICT') return 'applyConflict';
+  if (status === 'DIRTY_MAIN_NEEDS_COMMIT' || status === 'HALT_STOPPED') return 'stopped';
+  if (status === 'HALT_HUMAN') return 'human';
+  if (outcome === 'done') {
+    if (status === 'DONE_REVIEWED') return 'reviewed';
+    return 'applied';
+  }
+  return outcome;
 }
 
 export function snapshotStatusLine(snapshot: RunSnapshot): string {

@@ -93,11 +93,17 @@ export interface QueueOverviewItem {
   task: string;
   enabled: boolean;
   outcome: string | null;
+  outcomeGroup?: string | null;
   status: string | null;
   lastRunId: string | null;
   autoDisabled: boolean;
   running: boolean;
   stale?: boolean;
+  applyStatus?: string | null;
+  applyErrorKind?: string | null;
+  applyErrorFiles?: string[];
+  applyError?: string | null;
+  worktreeErrorFiles?: string[];
 }
 
 export interface QueueOverview {
@@ -105,9 +111,15 @@ export interface QueueOverview {
   counts: {
     total: number;
     done: number;
+    applied?: number;
+    reviewed?: number;
+    noDiff?: number;
+    applyConflict?: number;
+    human?: number;
     failed: number;
     crashed: number;
     quarantined: number;
+    stopped?: number;
     running: number;
     pending: number;
   };

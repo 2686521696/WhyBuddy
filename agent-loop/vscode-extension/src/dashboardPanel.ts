@@ -79,6 +79,10 @@ export class DashboardPanel {
           taskLabel: shortTaskLabel(task.task),
           statusLabel: task.status ? phaseLabel(task.status) : null,
           badge: badgeFor(task),
+          applyErrorFiles: task.applyErrorFiles ?? [],
+          applyErrorKind: task.applyErrorKind ?? null,
+          applyError: task.applyError ?? null,
+          worktreeErrorFiles: task.worktreeErrorFiles ?? [],
         })),
         current: current?.state
           ? {
@@ -208,10 +212,17 @@ function shortTaskLabel(taskPath: string): string {
   return (taskPath.split('/').pop() || taskPath).replace(/\.md$/, '');
 }
 
-function badgeFor(task: { running: boolean; outcome: string | null; enabled: boolean; autoDisabled: boolean }): string {
+function badgeFor(task: {
+  running: boolean;
+  outcome: string | null;
+  outcomeGroup?: string | null;
+  enabled: boolean;
+  autoDisabled: boolean;
+}): string {
   if (task.running) return 'running';
   if (!task.enabled) return 'disabled';
   if (task.autoDisabled) return 'disabled';
+  if (task.outcomeGroup) return task.outcomeGroup;
   if (task.outcome) return task.outcome;
   return 'pending';
 }

@@ -405,10 +405,65 @@ test('buildQueueOverview merges queue membership with per-task outcomes', async 
 
   assert.equal(overview.counts.total, 3);
   assert.equal(overview.counts.done, 1);
-  assert.equal(overview.counts.failed, 1);
+  assert.equal(overview.counts.failed, 0);
+  assert.equal(overview.counts.human, 1);
   assert.equal(overview.counts.pending, 1);
   assert.equal(overview.tasks[0].outcome, 'done');
   assert.equal(overview.tasks[2].enabled, false);
+});
+
+test('buildQueueOverview groups no-diff reviewed and apply conflicts separately', async () => {
+  const { buildQueueOverview } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-overview-groups-'));
+  const queueFilePath = path.join(repo, 'queue.json');
+  await fs.writeFile(queueFilePath, JSON.stringify({
+    tasks: [
+      { id: 'no-diff', task: 'agent-loop/tasks/no-diff.md' },
+      { id: 'conflict', task: 'agent-loop/tasks/conflict.md' },
+      { id: 'human', task: 'agent-loop/tasks/human.md' },
+      { id: 'dirty', task: 'agent-loop/tasks/dirty.md' },
+    ],
+  }), 'utf8');
+  await fs.mkdir(path.join(repo, '.agent-loop'), { recursive: true });
+  await fs.writeFile(path.join(repo, '.agent-loop', 'queue-outcomes.json'), JSON.stringify({
+    tasks: {
+      'no-diff': {
+        lastOutcome: 'done',
+        lastStatus: 'DONE_REVIEWED_NO_DIFF',
+        lastRunId: 'run-no-diff',
+        applyStatus: 'DONE_REVIEWED_NO_DIFF',
+        applyErrorKind: 'NO_DIFF_PATCH',
+      },
+      conflict: {
+        lastOutcome: 'failed',
+        lastStatus: 'APPLY_CONFLICT',
+        lastRunId: 'run-conflict',
+        applyStatus: 'APPLY_CONFLICT',
+        applyErrorKind: 'PATCH_CONFLICT',
+        applyErrorFiles: ['server/routes/a2a.ts'],
+      },
+      human: { lastOutcome: 'failed', lastStatus: 'HALT_HUMAN', lastRunId: 'run-human' },
+      dirty: {
+        lastOutcome: 'crashed',
+        lastStatus: 'DIRTY_MAIN_NEEDS_COMMIT',
+        lastRunId: null,
+        worktreeErrorFiles: ['agent-loop/src/runQueue.js'],
+      },
+    },
+  }), 'utf8');
+
+  const overview = await buildQueueOverview(repo, { queueFilePath, queueRunning: false });
+
+  assert.equal(overview.counts.done, 0);
+  assert.equal(overview.counts.noDiff, 1);
+  assert.equal(overview.counts.applyConflict, 1);
+  assert.equal(overview.counts.human, 1);
+  assert.equal(overview.counts.crashed, 0);
+  assert.equal(overview.counts.stopped, 1);
+  assert.equal(overview.tasks[0].outcomeGroup, 'noDiff');
+  assert.equal(overview.tasks[1].outcomeGroup, 'applyConflict');
+  assert.deepEqual(overview.tasks[1].applyErrorFiles, ['server/routes/a2a.ts']);
+  assert.equal(overview.tasks[3].outcomeGroup, 'stopped');
 });
 
 test('buildQueueOverview flags the running task from the live run', async () => {
@@ -570,6 +625,68 @@ test('dashboard media renders console overview with stale current run', async ()
   assert.match(html, /overview-inspector/);
   assert.match(html, /queue-table/);
   assert.match(html, /data-state="stale"/);
+});
+
+test('dashboard media renders outcome groups and conflict files', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderOverview({
+    counts: {
+      total: 4,
+      applied: 0,
+      reviewed: 0,
+      noDiff: 1,
+      applyConflict: 1,
+      human: 1,
+      failed: 0,
+      crashed: 0,
+      stopped: 1,
+      running: 0,
+      pending: 0,
+    },
+    queueRunning: false,
+    current: null,
+    tasks: [
+      {
+        task: 'agent-loop/tasks/no-diff.md',
+        taskLabel: 'no-diff',
+        badge: 'noDiff',
+        statusLabel: '已审查无新增差异',
+        running: false,
+      },
+      {
+        task: 'agent-loop/tasks/conflict.md',
+        taskLabel: 'conflict',
+        badge: 'applyConflict',
+        statusLabel: '应用冲突',
+        applyErrorFiles: ['server/routes/a2a.ts'],
+        applyError: 'patch does not apply',
+        running: false,
+      },
+      {
+        task: 'agent-loop/tasks/human.md',
+        taskLabel: 'human',
+        badge: 'human',
+        statusLabel: '人工接管',
+        running: false,
+      },
+      {
+        task: 'agent-loop/tasks/dirty.md',
+        taskLabel: 'dirty',
+        badge: 'stopped',
+        statusLabel: '主仓库有未提交改动',
+        running: false,
+      },
+    ],
+  });
+
+  assert.match(html, /NO_DIFF/);
+  assert.match(html, /APPLY/);
+  assert.match(html, /HUMAN/);
+  assert.match(html, /STOP/);
+  assert.match(html, /server\/routes\/a2a\.ts/);
+  assert.match(html, /patch does not apply/);
+  assert.match(html, /data-state="applyConflict"/);
+  assert.match(html, /data-state="noDiff"/);
 });
 
 test('dashboard media renders detail evidence and log sections', async () => {

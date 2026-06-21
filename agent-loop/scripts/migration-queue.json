@@ -566,6 +566,6 @@
     "cd agent-loop/vscode-extension; npm run compile",
     "cd agent-loop/vscode-extension; npm test",
     "cd agent-loop/vscode-extension; npm run package",
-    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/stateReader.ts agent-loop/vscode-extension/src/runSummary.ts agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/queueProvider.ts agent-loop/vscode-extension/media/dashboard.js agent-loop/vscode-extension/media/dashboard.css agent-loop/test/vscode-extension.test.js"
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/stateReader.ts agent-loop/vscode-extension/src/runSummary.ts agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/media/dashboard.js agent-loop/vscode-extension/media/dashboard.css agent-loop/test/vscode-extension.test.js"
   ]
 }

@@ -101,6 +101,10 @@ class DashboardPanel {
                     taskLabel: shortTaskLabel(task.task),
                     statusLabel: task.status ? (0, phaseLabels_1.phaseLabel)(task.status) : null,
                     badge: badgeFor(task),
+                    applyErrorFiles: task.applyErrorFiles ?? [],
+                    applyErrorKind: task.applyErrorKind ?? null,
+                    applyError: task.applyError ?? null,
+                    worktreeErrorFiles: task.worktreeErrorFiles ?? [],
                 })),
                 current: current?.state
                     ? {
@@ -226,6 +230,8 @@ function badgeFor(task) {
         return 'disabled';
     if (task.autoDisabled)
         return 'disabled';
+    if (task.outcomeGroup)
+        return task.outcomeGroup;
     if (task.outcome)
         return task.outcome;
     return 'pending';

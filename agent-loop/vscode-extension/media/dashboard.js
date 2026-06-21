@@ -1,9 +1,15 @@
 (function () {
   const OUTCOME_META = {
     done: { icon: 'OK', label: '完成', cls: 'ok' },
+    applied: { icon: 'OK', label: '已落地', cls: 'ok' },
+    reviewed: { icon: 'REV', label: '已审查', cls: 'ok' },
+    noDiff: { icon: 'NO_DIFF', label: '无新增差异', cls: 'neutral' },
+    applyConflict: { icon: 'APPLY', label: '应用冲突', cls: 'warn' },
+    human: { icon: 'HUMAN', label: '人工接管', cls: 'warn' },
     failed: { icon: 'FAIL', label: '失败', cls: 'err' },
     crashed: { icon: 'ERR', label: '崩溃', cls: 'err' },
     quarantined: { icon: 'HOLD', label: '隔离', cls: 'warn' },
+    stopped: { icon: 'STOP', label: '已停止', cls: 'warn' },
     running: { icon: 'RUN', label: '运行中', cls: 'run' },
     stale: { icon: 'STALE', label: '运行中断', cls: 'stale' },
     pending: { icon: 'WAIT', label: '待跑', cls: 'idle' },
@@ -54,7 +60,7 @@
   }
 
   function renderQueueStats(counts) {
-    const order = ['done', 'failed', 'crashed', 'quarantined', 'running', 'pending'];
+    const order = ['applied', 'reviewed', 'noDiff', 'applyConflict', 'human', 'failed', 'crashed', 'stopped', 'running', 'pending'];
     return `<div class="stat-grid">${order.map((key) => {
       const meta = metaFor(key);
       return `<div class="stat ${meta.cls}" data-state="${key}">
@@ -79,7 +85,15 @@
 
   function renderProgress(counts) {
     const total = countValue(counts, 'total');
-    const settled = countValue(counts, 'done') + countValue(counts, 'failed') + countValue(counts, 'crashed') + countValue(counts, 'quarantined');
+    const settled = countValue(counts, 'applied')
+      + countValue(counts, 'reviewed')
+      + countValue(counts, 'noDiff')
+      + countValue(counts, 'applyConflict')
+      + countValue(counts, 'human')
+      + countValue(counts, 'failed')
+      + countValue(counts, 'crashed')
+      + countValue(counts, 'quarantined')
+      + countValue(counts, 'stopped');
     const pct = total ? Math.round((settled / total) * 100) : 0;
     return `<div class="progress-row">
       <div class="progress-meta"><span>已有结果</span><b>${settled}/${total}</b></div>
@@ -94,10 +108,16 @@
       const active = task.running ? ' active' : '';
       const enabled = task.enabled === false ? ' disabled' : '';
       const status = task.statusLabel || meta.label;
+      const conflictFiles = (task.applyErrorFiles || task.worktreeErrorFiles || []).slice(0, 2).join(', ');
+      const applyError = task.applyError || task.applyErrorKind || '';
+      const extra = [
+        conflictFiles ? `<span class="task-extra">${esc(conflictFiles)}</span>` : '',
+        applyError ? `<span class="task-extra error">${esc(applyError)}</span>` : '',
+      ].join('');
       return `<button class="queue-row${active}${enabled}" data-act="openTask" data-task="${esc(task.task)}" data-state="${esc(badge || 'pending')}">
         <span class="status-pill ${meta.cls}">${meta.icon}</span>
         <span class="task-name">${esc(task.taskLabel || task.task)}</span>
-        <span class="task-status">${esc(status)}</span>
+        <span class="task-status">${esc(status)}${extra}</span>
       </button>`;
     }).join('');
 
