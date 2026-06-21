@@ -6,11 +6,11 @@
 - 角色分工：worker 负责盘点文档和证据链接；reviewer 确认没有把参考项目 `tws-ai-ask-python` 当成迁移目标。
 
 ### 状态清单
-- [ ] 盘点 Node route/core/task/auth/permission/audit/Blueprint/Web AIGC/A2A。
-- [ ] 每条路径标注 `node-only`、`contract`、`proxy`、`runtime`、`production-wiring`。
-- [ ] 标出仍阻碍 90% 的 route 缺口。
-- [ ] gate 全绿。
-- [ ] Codex review 确认盘点证据来自当前 repo。
+- [x] 盘点 Node route/core/task/auth/permission/audit/Blueprint/Web AIGC/A2A。
+- [x] 每条路径标注 `node-only`、`contract`、`proxy`、`runtime`、`production-wiring`。
+- [x] 标出仍阻碍 90% 的 route 缺口。
+- [x] gate 全绿。
+- [x] Codex review 确认盘点证据来自当前 repo。
 
 ## 目标
 
