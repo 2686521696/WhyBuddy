@@ -232,6 +232,15 @@ export async function writeQueueLandingSummary({
   const diffText = result.stdout || '';
   await fs.writeFile(diffPath, diffText, 'utf8');
 
+  const normalizedTasks = tasks.map((task) => ({
+    id: task.id,
+    task: task.task ?? null,
+    status: task.status ?? null,
+    outcome: task.outcome ?? null,
+    runId: task.runId ?? null,
+  }));
+  const patchTasks = normalizedTasks.filter((task) => task.outcome === 'done');
+  const taskCounts = countQueueLandingTasks(normalizedTasks);
   const summary = {
     status: 'PENDING_QUEUE_LANDING',
     appliedToMain: false,
@@ -240,17 +249,35 @@ export async function writeQueueLandingSummary({
     baseRef,
     diffBytes: Buffer.byteLength(diffText, 'utf8'),
     untrackedFiles,
-    tasks: tasks.map((task) => ({
-      id: task.id,
-      task: task.task ?? null,
-      status: task.status ?? null,
-      outcome: task.outcome ?? null,
-      runId: task.runId ?? null,
-    })),
+    tasks: normalizedTasks,
+    patchTasks,
+    taskCounts,
     updatedAt: new Date().toISOString(),
   };
   await fs.writeFile(landingPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
   return summary;
+}
+
+function countQueueLandingTasks(tasks) {
+  const counts = {
+    total: tasks.length,
+    patch: 0,
+    done: 0,
+    failed: 0,
+    crashed: 0,
+    quarantined: 0,
+    skipped: 0,
+  };
+  for (const task of tasks) {
+    const outcome = task.outcome || 'unknown';
+    if (outcome === 'done') {
+      counts.done += 1;
+      counts.patch += 1;
+    } else if (Object.hasOwn(counts, outcome)) {
+      counts[outcome] += 1;
+    }
+  }
+  return counts;
 }
 
 async function stageIntentToAddUntrackedFiles({

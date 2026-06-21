@@ -172,11 +172,22 @@ test('buildAgentReviewPrompt includes gate evidence and head-review guidance whe
       },
       diffText: '',
       hadFixIterations: false,
+      fileSnapshots: [
+        {
+          path: 'src/client.py',
+          exists: true,
+          content: 'def client():\n    return "python-runtime"\n',
+          truncated: false,
+        },
+      ],
     },
   });
 
   assert.match(prompt, /AgentLoop gate 结果/);
   assert.match(prompt, /16 passed in 0\.25s/);
+  assert.match(prompt, /HEAD file snapshots/);
+  assert.match(prompt, /src\/client\.py/);
+  assert.match(prompt, /python-runtime/);
   assert.match(prompt, /HEAD 提交/);
   assert.match(prompt, /勿重跑/);
   assert.match(prompt, /禁止调用 Shell/);
@@ -200,4 +211,28 @@ test('buildAgentReviewPrompt prioritizes uncommitted diff when present', () => {
   assert.match(prompt, /未提交改动/);
   assert.match(prompt, /\+fallback/);
   assert.doesNotMatch(prompt, /HEAD 提交/);
+});
+
+test('buildAgentReviewPrompt includes file snapshots when diff is truncated', () => {
+  const prompt = buildAgentReviewPrompt({
+    taskText: '# Task\n\n## allowed files\n\n- `docs/audit.md`\n',
+    reviewContext: {
+      gateSnapshot: { ok: true, failureCount: 0, runs: [] },
+      diffText: `diff --git a/docs/audit.md b/docs/audit.md\n${'+x\n'.repeat(8000)}`,
+      hadFixIterations: true,
+      fileSnapshots: [
+        {
+          path: 'docs/audit.md',
+          exists: true,
+          content: 'FULL COVERAGE MATRIX\n- backend-python-a\n- backend-python-b\n',
+          truncated: false,
+        },
+      ],
+    },
+  });
+
+  assert.match(prompt, /<truncated>/);
+  assert.match(prompt, /HEAD file snapshots/);
+  assert.match(prompt, /FULL COVERAGE MATRIX/);
+  assert.match(prompt, /backend-python-b/);
 });

@@ -412,6 +412,10 @@ test('writeQueueLandingSummary records queue patch from base ref without applyin
   assert.equal(summary.baseRef, 'main-head');
   assert.equal(summary.diffBytes, Buffer.byteLength(patchText, 'utf8'));
   assert.deepEqual(summary.tasks.map((task) => task.id), ['task-a', 'task-b']);
+  assert.deepEqual(summary.patchTasks.map((task) => task.id), ['task-a']);
+  assert.equal(summary.taskCounts.total, 2);
+  assert.equal(summary.taskCounts.patch, 1);
+  assert.equal(summary.taskCounts.failed, 1);
   assert.equal(
     await fs.readFile(path.join(repo, '.agent-loop', 'queue.diff.patch'), 'utf8'),
     patchText,
@@ -419,6 +423,7 @@ test('writeQueueLandingSummary records queue patch from base ref without applyin
   const saved = JSON.parse(await fs.readFile(path.join(repo, '.agent-loop', 'queue-landing.json'), 'utf8'));
   assert.equal(saved.status, 'PENDING_QUEUE_LANDING');
   assert.equal(saved.diffPath, path.join(repo, '.agent-loop', 'queue.diff.patch'));
+  assert.deepEqual(saved.patchTasks.map((task) => task.id), ['task-a']);
 });
 
 test('writeQueueLandingSummary can include untracked queue worktree files', async () => {

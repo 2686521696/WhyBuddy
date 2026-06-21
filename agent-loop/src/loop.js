@@ -103,6 +103,7 @@ async function main() {
     fixAgent: activeOptions.fixAgent,
     reviewAgent: activeOptions.skipReview ? null : activeOptions.reviewAgent,
   });
+  const turnBudget = buildTurnBudget(activeOptions);
   const report = buildLoopReport({
     runId,
     cwd: activeOptions.cwd,
@@ -127,6 +128,7 @@ async function main() {
     codexRan: runSummary.codexRan,
     runTimeLocal: runSummary.runTimeLocal,
     runTimeUtc: runSummary.runTimeUtc,
+    turnBudget,
   });
   await writeArtifact('final-report.md', report, 'text');
   await writeArtifact('final-report.json', buildLoopReportJson({
@@ -149,6 +151,7 @@ async function main() {
     codexRan: runSummary.codexRan,
     runTimeLocal: runSummary.runTimeLocal,
     runTimeUtc: runSummary.runTimeUtc,
+    turnBudget,
   }), 'json');
 
   await tryAutoSyncTaskStatus(activeOptions, runSummary);
@@ -171,6 +174,16 @@ async function appendTextBoth(runDir, latestDir, fileName, content) {
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function buildTurnBudget(options) {
+  return {
+    workerMaxTurns: options.grokMaxTurns ?? null,
+    reviewMaxTurns: options.reviewMaxTurns ?? null,
+    agentTimeoutMs: options.agentTimeoutMs ?? null,
+    agentIdleTimeoutMs: options.agentIdleTimeoutMs ?? null,
+    taskTimeoutMs: options.timeoutMs ?? null,
+  };
 }
 
 function resolveResumeSyncOption({ flag, resumeStateValue }) {

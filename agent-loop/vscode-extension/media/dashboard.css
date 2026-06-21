@@ -772,6 +772,7 @@ h2 {
 .landing-info b { color: var(--accent); font-weight: 600; }
 .landing.done .landing-info b { color: var(--ok); }
 .landing-info span { color: var(--muted); font-size: 0.82rem; margin-left: 8px; }
+.landing-info .landing-note { display: block; margin-left: 0; margin-top: 3px; }
 .landing-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .task-group { border-bottom: 1px solid var(--border-soft); }

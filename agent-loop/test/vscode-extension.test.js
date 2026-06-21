@@ -684,10 +684,20 @@ test('dashboard detail shows a single-run action for the task', async () => {
 test('dashboard overview shows a pending landing workbench with actions', async () => {
   const renderer = await loadDashboardRenderer();
   const html = renderer.renderOverview({
-    counts: { total: 2 }, queueRunning: false, current: null, tasks: [],
-    landing: { status: 'PENDING_QUEUE_LANDING', appliedToMain: false, diffBytes: 4096, tasks: [{ id: 'a' }, { id: 'b' }] },
+    counts: { total: 8 }, queueRunning: false, current: null, tasks: [],
+    landing: {
+      status: 'PENDING_QUEUE_LANDING',
+      appliedToMain: false,
+      diffBytes: 4096,
+      tasks: [{ id: 'a' }, { id: 'b' }, { id: 'c', outcome: 'failed' }],
+      patchTasks: [{ id: 'a' }, { id: 'b' }],
+      taskCounts: { total: 8, patch: 2, failed: 6 },
+    },
   });
   assert.match(html, /待落地到 main/);
+  assert.match(html, /2 个成功任务的合并改动/);
+  assert.match(html, /6 个需关注任务未包含在补丁中/);
+  assert.doesNotMatch(html, /8 个任务的合并改动/);
   assert.match(html, /data-act="previewLanding"/);
   assert.match(html, /data-act="applyLanding"/);
 });

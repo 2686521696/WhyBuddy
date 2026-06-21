@@ -28,6 +28,9 @@ import { analyzeDiffGuard } from './diffGuard.js';
 import { resolveAgentInvocation } from './agentProcess.js';
 import { createAgentStderrReporter } from './loopProgress.js';
 
+const MAX_REVIEW_FILE_SNAPSHOT_BYTES = 24000;
+const MAX_REVIEW_FILE_SNAPSHOTS = 12;
+
 export async function runLoop({ options, runId = timestamp(), runDir, latestDir, resumeState = null, deps = {} }) {
   const {
     resolveAgents = defaultResolveAgents,
@@ -584,6 +587,7 @@ async function runReview({
   let promptInput = null;
   if (scoped || reviewAgent === 'grok') {
     const lastIteration = iterations.at(-1);
+    const fileSnapshots = await collectReviewFileSnapshots({ fixCwd, taskText });
     const prompt = buildAgentReviewPrompt({
       taskText,
       workerAgent: fixAgent,
@@ -591,8 +595,10 @@ async function runReview({
         gateSnapshot: lastIteration?.gateSnapshot ?? state.baselineGateSnapshot,
         diffText: lastIteration?.diffText ?? state.baselineDiffText ?? '',
         hadFixIterations: iterations.length > 0,
+        fileSnapshots,
       },
     });
+    await writeArtifact('review-file-snapshots.json', fileSnapshots, 'json');
     await writeArtifact('review-request.md', prompt, 'text');
     promptInput = prompt;
   }
@@ -695,6 +701,77 @@ function fixOutputStem(agent, iteration, attempt) {
 function reviewArtifactStem(agent) {
   if (agent === 'codex') return 'codex-review';
   return `review-output.${agent}`;
+}
+
+async function collectReviewFileSnapshots({ fixCwd, taskText }) {
+  const files = extractAllowedFilePaths(taskText);
+  const snapshots = [];
+  for (const relPath of files) {
+    const absolutePath = path.resolve(fixCwd, relPath);
+    if (!isInsideDirectory(fixCwd, absolutePath)) continue;
+    try {
+      const buffer = await fs.readFile(absolutePath);
+      const truncated = buffer.length > MAX_REVIEW_FILE_SNAPSHOT_BYTES;
+      snapshots.push({
+        path: relPath,
+        exists: true,
+        content: buffer.subarray(0, MAX_REVIEW_FILE_SNAPSHOT_BYTES).toString('utf8'),
+        truncated,
+      });
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        snapshots.push({
+          path: relPath,
+          exists: false,
+          content: '',
+          truncated: false,
+        });
+      } else {
+        snapshots.push({
+          path: relPath,
+          exists: null,
+          content: `Unable to read file snapshot: ${error?.message || error}`,
+          truncated: false,
+        });
+      }
+    }
+  }
+  return snapshots;
+}
+
+function extractAllowedFilePaths(taskText) {
+  const lines = String(taskText || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => /^##\s+(允许修改的文件|allowed files)\s*$/i.test(line.trim()));
+  if (start < 0) return [];
+  const paths = [];
+  for (let index = start + 1; index < lines.length; index++) {
+    const line = lines[index];
+    if (/^##\s+/.test(line.trim())) break;
+    const codeSpans = [...line.matchAll(/`([^`]+)`/g)];
+    if (codeSpans.length) {
+      paths.push(...codeSpans.map((match) => match[1]));
+      continue;
+    }
+    const bullet = line.trim().match(/^[-*]\s+(.+\S)\s*$/);
+    if (bullet) paths.push(bullet[1]);
+  }
+  return [...new Set(paths.map(normalizeAllowedPath).filter(Boolean))]
+    .slice(0, MAX_REVIEW_FILE_SNAPSHOTS);
+}
+
+function normalizeAllowedPath(value) {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/\\/g, '/');
+  if (!cleaned || cleaned.includes('*') || cleaned.endsWith('/')) return null;
+  if (path.isAbsolute(cleaned) || cleaned.split('/').includes('..')) return null;
+  return cleaned;
+}
+
+function isInsideDirectory(root, candidate) {
+  const relative = path.relative(path.resolve(root), candidate);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 // Restore review-driven fix context for resume. Prefer the persisted pendingReview

@@ -1309,6 +1309,63 @@ test('runLoop loops Grok back when scoped Codex review returns needs_changes, th
   assert.equal(transitions.includes('REVIEW_NEEDS_CHANGES'), true);
 });
 
+test('runLoop includes allowed-file HEAD snapshots in scoped review prompts', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  await fs.mkdir(path.join(cwd, 'src'), { recursive: true });
+  await fs.writeFile(path.join(cwd, 'src', 'a.py'), 'def current():\n    return "HEAD implementation"\n', 'utf8');
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, [
+    '## allowed files',
+    '',
+    '- `src/a.py`',
+    '',
+    '## 成功标准',
+    '',
+    '- gate 全绿',
+  ].join('\n'), 'utf8');
+
+  const codexInputs = [];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => {
+        if (command === 'codex.exe') {
+          codexInputs.push(options.input || '');
+          return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(codexInputs.length, 1);
+  assert.match(codexInputs[0], /HEAD file snapshots/);
+  assert.match(codexInputs[0], /src\/a\.py/);
+  assert.match(codexInputs[0], /HEAD implementation/);
+});
+
 test('runLoop lets the maxIterations budget stop an endless review tug-of-war', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');

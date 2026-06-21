@@ -22,6 +22,7 @@ export function buildLoopReport({
   codexRan = Boolean(codexReview),
   runTimeLocal = '',
   runTimeUtc = '',
+  turnBudget = null,
 }) {
   const labels = getLabels(lang, { fixAgent, reviewAgent });
   const effectiveReview = agentReview ?? codexReview ?? grokReview;
@@ -39,6 +40,7 @@ export function buildLoopReport({
   lines.push(`${labels.taskFile}: \`${task}\``);
   lines.push(`${labels.finalState}: \`${finalState}\``);
   lines.push(`${labels.maxIterations}: \`${maxIterations}\``);
+  pushTurnBudgetLines(lines, labels, turnBudget);
   lines.push('');
 
   lines.push(`## ${labels.baselineGate}`);
@@ -170,6 +172,7 @@ export function buildLoopReportJson({
   codexRan = false,
   runTimeLocal = '',
   runTimeUtc = '',
+  turnBudget = null,
 }) {
   return {
     schemaVersion: 1,
@@ -184,6 +187,7 @@ export function buildLoopReportJson({
     runTimeLocal,
     runTimeUtc,
     maxIterations,
+    turnBudget: turnBudget || null,
     guardPolicy,
     agents: {
       fixAgent,
@@ -235,6 +239,25 @@ function reviewArtifactNames(reviewAgent) {
   return 'codex-review.stdout.log, codex-review.stderr.log, codex-review.exit.json';
 }
 
+function pushTurnBudgetLines(lines, labels, turnBudget) {
+  if (!turnBudget) return;
+  if (turnBudget.workerMaxTurns != null) {
+    lines.push(`${labels.workerMaxTurns}: \`${turnBudget.workerMaxTurns}\``);
+  }
+  if (turnBudget.reviewMaxTurns != null) {
+    lines.push(`${labels.reviewMaxTurns}: \`${turnBudget.reviewMaxTurns}\``);
+  }
+  if (turnBudget.agentTimeoutMs != null) {
+    lines.push(`${labels.agentTimeout}: \`${turnBudget.agentTimeoutMs}ms\``);
+  }
+  if (turnBudget.agentIdleTimeoutMs != null) {
+    lines.push(`${labels.agentIdleTimeout}: \`${turnBudget.agentIdleTimeoutMs}ms\``);
+  }
+  if (turnBudget.taskTimeoutMs != null) {
+    lines.push(`${labels.taskTimeout}: \`${turnBudget.taskTimeoutMs}ms\``);
+  }
+}
+
 function localizeDiffGuardReason(reason, labels) {
   return labels.diffGuardReasons?.[reason] || reason;
 }
@@ -256,7 +279,12 @@ function getLabels(lang, { fixAgent = 'grok', reviewAgent = 'grok' } = {}) {
     fixCwd: 'Fix cwd',
     taskFile: 'Task file',
     finalState: 'Final state',
-    maxIterations: 'Max iterations',
+    maxIterations: 'Fix/review iteration budget',
+    workerMaxTurns: 'Worker max turns',
+    reviewMaxTurns: 'Review max turns',
+    agentTimeout: 'Agent timeout',
+    agentIdleTimeout: 'Agent idle timeout',
+    taskTimeout: 'Task timeout',
     baselineGate: 'Baseline Gate',
     result: 'Result',
     failureCount: 'Failure count',
@@ -307,7 +335,7 @@ function getLabels(lang, { fixAgent = 'grok', reviewAgent = 'grok' } = {}) {
       '`HALT_NO_CHANGES`: fix worker ran but produced no new diff.',
       '`HALT_NO_PROGRESS`: post-fix gate stayed red and effective failure count did not drop.',
       '`HALT_NO_SUCCESS_CRITERIA`: the task lacks a non-empty `## 成功标准`, so it never enters the loop; send it back to define completion criteria.',
-      '`HALT_BUDGET`: max fix iterations reached.',
+      '`HALT_BUDGET`: fix/review iteration budget reached; this is separate from worker max turns.',
       '`HALT_HUMAN`: agent call failed, timed out, or human takeover is required.',
       '`POSSIBLE_TEST_TAMPER`: `--guard-tests` detected protected test/config changes in the diff.',
       '`HALT_AGENT_NOT_FOUND`: a required agent for this run was not found (depends on `--auto-fix` / `--skip-review`).',
@@ -331,7 +359,12 @@ function getChineseLabels({ fixAgentLabel, reviewAgentLabel }) {
     fixCwd: '修复目录',
     taskFile: '任务文件',
     finalState: '最终状态',
-    maxIterations: '最大轮次',
+    maxIterations: '修复/审查循环预算',
+    workerMaxTurns: '工人最大回合数',
+    reviewMaxTurns: '审查最大回合数',
+    agentTimeout: 'Agent 总超时',
+    agentIdleTimeout: 'Agent 空闲超时',
+    taskTimeout: '任务总超时',
     baselineGate: '基线 Gate',
     result: '结果',
     failureCount: '失败数',
@@ -382,7 +415,7 @@ function getChineseLabels({ fixAgentLabel, reviewAgentLabel }) {
       '`HALT_NO_CHANGES`：修复 agent 运行了，但没有产生新 diff。',
       '`HALT_NO_PROGRESS`：修复后 gate 仍红，且有效失败数没有下降。',
       '`HALT_NO_SUCCESS_CRITERIA`：任务缺少非空 `## 成功标准`，不入环，退回补全完成判定标准。',
-      '`HALT_BUDGET`：达到最大修复轮次。',
+      '`HALT_BUDGET`：达到修复/审查循环预算；这和 worker 最大回合数不是同一个概念。',
       '`HALT_HUMAN`：agent 调用失败、超时，或需要人工接管。',
       '`POSSIBLE_TEST_TAMPER`：`--guard-tests` 发现测试/配置等受保护路径被改动。',
       '`HALT_AGENT_NOT_FOUND`：缺少本次运行真正需要的 agent（由 `--auto-fix` / `--skip-review` 决定）。',

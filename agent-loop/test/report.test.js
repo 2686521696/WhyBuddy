@@ -154,6 +154,13 @@ test('buildLoopReportJson exposes stable structured fields for dashboards', () =
       },
     ],
     maxIterations: 2,
+    turnBudget: {
+      workerMaxTurns: 32,
+      reviewMaxTurns: 10,
+      agentTimeoutMs: 1800000,
+      agentIdleTimeoutMs: 600000,
+      taskTimeoutMs: 3600000,
+    },
     lang: 'zh-CN',
     runMode: 'codex-fix+codex-review',
     guardPolicy: { protectedGlobs: ['src/generated/**'], protectTaskDocs: true },
@@ -177,6 +184,42 @@ test('buildLoopReportJson exposes stable structured fields for dashboards', () =
   assert.equal(report.reviewRounds[0].applyRecommendation, 'apply');
   assert.deepEqual(report.reviewRounds[0].verifiedBoundaries, ['gate green', 'allowed files']);
   assert.deepEqual(report.guardPolicy, { protectedGlobs: ['src/generated/**'], protectTaskDocs: true });
+  assert.deepEqual(report.turnBudget, {
+    workerMaxTurns: 32,
+    reviewMaxTurns: 10,
+    agentTimeoutMs: 1800000,
+    agentIdleTimeoutMs: 600000,
+    taskTimeoutMs: 3600000,
+  });
+});
+
+test('buildLoopReport separates iteration budget from agent turn budgets', () => {
+  const report = buildLoopReport({
+    runId: 'run-budget',
+    cwd: 'C:\\repo',
+    fixCwd: 'C:\\repo',
+    task: 'tasks/a.md',
+    gates: ['npm test'],
+    baselineGate: { ok: true, failureCount: 0 },
+    finalState: 'HALT_BUDGET',
+    iterations: [],
+    maxIterations: 3,
+    turnBudget: {
+      workerMaxTurns: 32,
+      reviewMaxTurns: 10,
+      agentTimeoutMs: 1800000,
+      agentIdleTimeoutMs: 600000,
+      taskTimeoutMs: 3600000,
+    },
+    lang: 'en',
+    runMode: 'halt-budget',
+  });
+
+  assert.match(report, /Fix\/review iteration budget: `3`/);
+  assert.match(report, /Worker max turns: `32`/);
+  assert.match(report, /Review max turns: `10`/);
+  assert.match(report, /Agent timeout: `1800000ms`/);
+  assert.doesNotMatch(report, /^Max iterations: `3`$/m);
 });
 
 test('buildLoopReport survives codex fix attempts without grokFix fields', () => {

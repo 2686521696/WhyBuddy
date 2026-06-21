@@ -340,10 +340,12 @@ export function buildAgentReviewPrompt({
     gateSnapshot = null,
     diffText = '',
     hadFixIterations = false,
+    fileSnapshots = [],
   } = reviewContext;
   const diffBlock = String(diffText || '').trim()
     ? ['```diff', truncate(diffText, 12000), '```'].join('\n')
     : '（无未提交 diff，或 diff 为空。）';
+  const fileSnapshotBlock = formatFileSnapshots(fileSnapshots);
 
   return [
     '# AgentLoop 审查请求',
@@ -384,6 +386,8 @@ export function buildAgentReviewPrompt({
     '',
     formatGateEvidence(gateSnapshot),
     '',
+    fileSnapshotBlock,
+    '',
     '## 未提交 diff',
     '',
     diffBlock,
@@ -394,6 +398,40 @@ export function buildAgentReviewPrompt({
     '',
     '{"verdict":"pass|needs_changes|blocked","summary":"简短结论","findings":[{"severity":"blocker|major|minor","path":"相对路径","message":"说明"}]}',
   ].filter(Boolean).join('\n');
+}
+
+function formatFileSnapshots(fileSnapshots = []) {
+  const snapshots = Array.isArray(fileSnapshots) ? fileSnapshots : [];
+  const body = snapshots.length
+    ? snapshots.map((snapshot) => formatFileSnapshot(snapshot)).join('\n\n')
+    : '（未附带 HEAD file snapshots；如果 diff 为空，审查证据可能不足。）';
+  return [
+    '## HEAD file snapshots',
+    '',
+    body,
+  ].join('\n');
+}
+
+function formatFileSnapshot(snapshot = {}) {
+  const filePath = snapshot.path || '(unknown)';
+  if (snapshot.exists === false) {
+    return [
+      `### ${filePath}`,
+      '',
+      '- exists: false',
+    ].join('\n');
+  }
+  return [
+    `### ${filePath}`,
+    '',
+    `- exists: ${snapshot.exists !== false}`,
+    `- truncated: ${snapshot.truncated === true}`,
+    '',
+    '```text',
+    snapshot.content ?? '',
+    snapshot.truncated === true ? '...<truncated file snapshot>' : '',
+    '```',
+  ].filter((line) => line !== '').join('\n');
 }
 
 function truncate(value, maxLength) {
