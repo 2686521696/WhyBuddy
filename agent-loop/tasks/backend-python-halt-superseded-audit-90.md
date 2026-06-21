@@ -6,11 +6,11 @@
 - 角色分工：worker 负责读取当前 queue outcomes（队列结果）、task 文档、commit（提交）证据并写审计报告；reviewer 确认没有把旧红灯误算为完成。
 
 ### 状态清单
-- [ ] 列出当前 `backend-python-*` 的 `HALT_HUMAN`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED`。
-- [ ] 每个旧红灯标注 `superseded`（已被覆盖）、`still-open`（仍缺）、`split-needed`（需拆小）或 `docs-only`（仅文档/盘点）。
-- [ ] 对被标记为 `superseded` 的项给出后续 task、commit 或测试证据。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有更新总迁移百分比。
+- [x] 列出当前 `backend-python-*` 的 `HALT_HUMAN`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED`。
+- [x] 每个旧红灯标注 `superseded`（已被覆盖）、`still-open`（仍缺）、`split-needed`（需拆小）或 `docs-only`（仅文档/盘点）。
+- [x] 对被标记为 `superseded` 的项给出后续 task、commit 或测试证据。
+- [x] gate 全绿。
+- [x] Codex review 确认没有更新总迁移百分比。
 
 ## 目标
 
