@@ -162,166 +162,211 @@
   ],
   "tasks": [
     {
+      "id": "agent-loop-apply-status-taxonomy",
+      "task": "agent-loop/tasks/agent-loop-apply-status-taxonomy.md",
+      "gatesKey": "agentLoopApplyStatusTaxonomyGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 8,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-queue-worktree-mode",
+      "task": "agent-loop/tasks/agent-loop-queue-worktree-mode.md",
+      "gatesKey": "agentLoopQueueWorktreeModeGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 12,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-dashboard-outcome-groups",
+      "task": "agent-loop/tasks/agent-loop-dashboard-outcome-groups.md",
+      "gatesKey": "agentLoopDashboardOutcomeGroupsGates",
+      "enabled": true,
+      "guardTests": false,
+      "grokMaxTurns": 8,
+      "maxIterations": 3
+    },
+    {
       "id": "backend-python-task-executor-runtime-bridge",
       "task": "agent-loop/tasks/backend-python-task-executor-runtime-bridge.md",
       "gatesKey": "taskExecutorRuntimeBridgeGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-knowledge-admin-runtime-bridge",
       "task": "agent-loop/tasks/backend-python-knowledge-admin-runtime-bridge.md",
       "gatesKey": "knowledgeAdminRuntimeBridgeGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-blueprint-main-state-runtime-boundary",
       "task": "agent-loop/tasks/backend-python-blueprint-main-state-runtime-boundary.md",
       "gatesKey": "blueprintMainStateContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-blueprint-job-runtime-proxy",
       "task": "agent-loop/tasks/backend-python-blueprint-job-runtime-proxy.md",
       "gatesKey": "blueprintJobRuntimeProxyGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-blueprint-stage-edit-proxy-contract",
       "task": "agent-loop/tasks/backend-python-blueprint-stage-edit-proxy-contract.md",
       "gatesKey": "blueprintStageEditProxyGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-role-runtime-proxy-contract",
       "task": "agent-loop/tasks/backend-python-role-runtime-proxy-contract.md",
       "gatesKey": "roleRuntimeProxyContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-session-persistence-runtime-boundary",
       "task": "agent-loop/tasks/backend-python-session-persistence-runtime-boundary.md",
       "gatesKey": "sessionPersistenceContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-nl-command-runtime-contract",
       "task": "agent-loop/tasks/backend-python-nl-command-runtime-contract.md",
       "gatesKey": "nlCommandRuntimeContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-workflow-runtime-contract",
       "task": "agent-loop/tasks/backend-python-workflow-runtime-contract.md",
       "gatesKey": "workflowRuntimeContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-rag-ingestion-runtime-contract",
       "task": "agent-loop/tasks/backend-python-rag-ingestion-runtime-contract.md",
       "gatesKey": "ragIngestionRuntimeContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-telemetry-route-contract",
       "task": "agent-loop/tasks/backend-python-telemetry-route-contract.md",
       "gatesKey": "telemetryRouteContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-a2a-runtime-contract",
       "task": "agent-loop/tasks/backend-python-a2a-runtime-contract.md",
       "gatesKey": "a2aRuntimeContractGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-blueprint-artifact-memory-proxy",
       "task": "agent-loop/tasks/backend-python-blueprint-artifact-memory-proxy.md",
       "gatesKey": "blueprintArtifactMemoryProxyGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-blueprint-review-export-proxy",
       "task": "agent-loop/tasks/backend-python-blueprint-review-export-proxy.md",
       "gatesKey": "blueprintReviewExportProxyGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-deployment-live-smoke-boundary",
       "task": "agent-loop/tasks/backend-python-deployment-live-smoke-boundary.md",
       "gatesKey": "deploymentLiveSmokeBoundaryGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-production-observability-rollup",
       "task": "agent-loop/tasks/backend-python-production-observability-rollup.md",
       "gatesKey": "productionObservabilityRollupGates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-node-route-inventory-75",
       "task": "agent-loop/tasks/backend-python-node-route-inventory-75.md",
       "gatesKey": "nodeRouteInventory75Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 16,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     },
     {
       "id": "backend-python-migration-status-refresh-75",
       "task": "agent-loop/tasks/backend-python-migration-status-refresh-75.md",
       "gatesKey": "migrationStatusRefresh75Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "grokMaxTurns": 8,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "paused while AgentLoop queue/apply infrastructure is repaired"
     }
   ],
   "nodeRouteInventory50Gates": [
@@ -506,5 +551,19 @@
   ],
   "migrationStatusRefresh75Gates": [
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}}"
+  ],
+  "agentLoopApplyStatusTaxonomyGates": [
+    "node --test agent-loop/test/loopApply.test.js agent-loop/test/run-queue.test.js agent-loop/test/runSummary.test.js agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/src/loopApply.js agent-loop/src/runQueue.js agent-loop/src/runSummary.js agent-loop/src/queueOutcomes.js agent-loop/test/loopApply.test.js agent-loop/test/run-queue.test.js agent-loop/test/runSummary.test.js agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopQueueWorktreeModeGates": [
+    "node --test agent-loop/test/run-queue.test.js agent-loop/test/worktree.test.js agent-loop/test/loopApply.test.js agent-loop/test/runQueueProgress.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/scripts/run-queue.mjs agent-loop/src/runQueue.js agent-loop/src/worktree.js agent-loop/src/loopApply.js agent-loop/src/queueOutcomes.js agent-loop/src/runQueueProgress.js agent-loop/test/run-queue.test.js agent-loop/test/worktree.test.js agent-loop/test/loopApply.test.js agent-loop/test/runQueueProgress.test.js"
+  ],
+  "agentLoopDashboardOutcomeGroupsGates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm test",
+    "cd agent-loop/vscode-extension; npm run package",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/stateReader.ts agent-loop/vscode-extension/src/runSummary.ts agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/queueProvider.ts agent-loop/vscode-extension/media/dashboard.js agent-loop/vscode-extension/media/dashboard.css agent-loop/test/vscode-extension.test.js"
   ]
 }
