@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python review/export service、Node bridge 映射和测试；reviewer 确认没有迁完整 UI 导出、归档系统或 Blueprint 主流程。
 
 ### 状态清单
-- [ ] Python runtime boundary 能生成 review summary 和 export manifest。
-- [ ] Node review/export bridge 能保留权限、trace、error 和 degraded 字段。
-- [ ] failed/denied/degraded 不伪装成 exported。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有引入真实外部归档或 UI 副作用。
+- [x] Python runtime boundary 能生成 review summary 和 export manifest。
+- [x] Node review/export bridge 能保留权限、trace、error 和 degraded 字段。
+- [x] failed/denied/degraded 不伪装成 exported。
+- [x] gate 全绿。
+- [x] Codex review 确认没有引入真实外部归档或 UI 副作用。
 
 ## 目标
 
