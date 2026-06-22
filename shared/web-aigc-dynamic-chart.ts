@@ -32,6 +32,17 @@ export const WEB_AIGC_DYNAMIC_CHART_DATASET_KINDS = [
 export type WebAigcDynamicChartDatasetKind =
   (typeof WEB_AIGC_DYNAMIC_CHART_DATASET_KINDS)[number];
 
+export type WebAigcDynamicChartPythonStatus =
+  | "chart_ready"
+  | "invalid"
+  | "degraded"
+  | "error";
+
+export type DynamicChartNodeOutputStatus =
+  | "completed"
+  | "degraded"
+  | "failed";
+
 export interface WebAigcDynamicChartTableDatasetInput {
   kind?: "table";
   sheetName?: string;
@@ -76,6 +87,7 @@ export interface DynamicChartNodeInput {
   dataset?: WebAigcDynamicChartDatasetInput;
   artifact?: WebAigcDynamicChartArtifactInput;
   context?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface DynamicChartNodeExecutionRequest {
@@ -121,6 +133,7 @@ export interface WebAigcDynamicChartArtifactPayload {
   name: string;
   mimeType: "application/json";
   description: string;
+  persisted?: boolean;
   content: {
     chartType: WebAigcDynamicChartType;
     title: string;
@@ -129,27 +142,67 @@ export interface WebAigcDynamicChartArtifactPayload {
   };
 }
 
-export interface DynamicChartNodeExecutionResult {
-  ok: true;
-  nodeType: DynamicChartNodeType;
-  output: {
-    status: "completed";
+export interface WebAigcDynamicChartSpec {
+  chartType: WebAigcDynamicChartType;
+  title: string;
+  description?: string;
+  dataset: WebAigcDynamicChartDatasetSummary;
+  ui: WebAigcDynamicChartUiPayload;
+}
+
+export interface WebAigcDynamicChartRuntimeMetadata {
+  backend: "python" | string;
+  provider: "fake" | string;
+  source: string;
+  externalCalls: boolean;
+  rendered?: boolean;
+  persisted?: boolean;
+}
+
+export interface WebAigcDynamicChartError {
+  code: string;
+  message: string;
+}
+
+export interface WebAigcDynamicChartPythonRuntimeResponse {
+  contractVersion?: string;
+  ok: boolean;
+  status: WebAigcDynamicChartPythonStatus;
+  chartSpec?: WebAigcDynamicChartSpec | null;
+  artifact?: WebAigcDynamicChartArtifactPayload;
+  warnings?: string[];
+  error?: WebAigcDynamicChartError;
+  runtime?: WebAigcDynamicChartRuntimeMetadata;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DynamicChartNodeOutput {
+  status: DynamicChartNodeOutputStatus;
+  pythonStatus?: WebAigcDynamicChartPythonStatus;
+  chartType?: WebAigcDynamicChartType;
+  title?: string;
+  description?: string;
+  dataset?: WebAigcDynamicChartDatasetSummary;
+  ui?: WebAigcDynamicChartUiPayload;
+  artifact?: WebAigcDynamicChartArtifactPayload;
+  context: Record<string, unknown>;
+  warnings: string[];
+  error?: WebAigcDynamicChartError;
+  runtime?: WebAigcDynamicChartRuntimeMetadata;
+  metadata?: Record<string, unknown>;
+  observability?: {
+    eventKey: "ui.dynamic_chart";
+    nodeType: DynamicChartNodeType;
     chartType: WebAigcDynamicChartType;
-    title: string;
-    description?: string;
-    dataset: WebAigcDynamicChartDatasetSummary;
-    ui: WebAigcDynamicChartUiPayload;
-    artifact?: WebAigcDynamicChartArtifactPayload;
-    context: Record<string, unknown>;
-    warnings: string[];
-    observability: {
-      eventKey: "ui.dynamic_chart";
-      nodeType: DynamicChartNodeType;
-      chartType: WebAigcDynamicChartType;
-      datasetKind: WebAigcDynamicChartDatasetKind;
-      rowCount: number;
-      seriesCount: number;
-      artifactEnabled: boolean;
-    };
+    datasetKind: WebAigcDynamicChartDatasetKind;
+    rowCount: number;
+    seriesCount: number;
+    artifactEnabled: boolean;
   };
+}
+
+export interface DynamicChartNodeExecutionResult {
+  ok: boolean;
+  nodeType: DynamicChartNodeType;
+  output: DynamicChartNodeOutput;
 }

@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python dynamic chart adapter、Node adapter/route 映射和测试；reviewer 确认没有接真实图表渲染服务或扩大到全部 Web AIGC。
 
 ### 状态清单
-- [ ] Python runtime 支持 chart spec、data validation、warning/error envelope。
-- [ ] Node dynamic-chart adapter/route 能映射 Python chart_ready/invalid/degraded/error。
-- [ ] invalid/degraded/error 不伪装成 chart_ready。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有迁真实可视化渲染、外部图表平台或其它 Web AIGC 路由。
+- [x] Python runtime 支持 chart spec、data validation、warning/error envelope。
+- [x] Node dynamic-chart adapter/route 能映射 Python chart_ready/invalid/degraded/error。
+- [x] invalid/degraded/error 不伪装成 chart_ready。
+- [x] gate 全绿。
+- [x] Codex review 确认没有迁真实可视化渲染、外部图表平台或其它 Web AIGC 路由。
 
 ## 目标
 

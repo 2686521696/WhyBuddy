@@ -4,9 +4,14 @@ import {
   DynamicChartNodeError,
   executeDynamicChartNode,
   isDynamicChartNodeType,
+  type DynamicChartNodeAdapterDeps,
 } from "./node-adapters/dynamic-chart-node-adapter.js";
 
-export function createDynamicChartRouter(): Router {
+export interface DynamicChartRouterDeps extends DynamicChartNodeAdapterDeps {}
+
+export function createDynamicChartRouter(
+  deps: DynamicChartRouterDeps = {},
+): Router {
   const router = Router();
 
   router.post("/nodes/execute", async (req, res) => {
@@ -19,7 +24,7 @@ export function createDynamicChartRouter(): Router {
       const result = await executeDynamicChartNode({
         nodeType,
         input: req.body?.input,
-      });
+      }, deps);
 
       return res.status(200).json(result);
     } catch (error) {

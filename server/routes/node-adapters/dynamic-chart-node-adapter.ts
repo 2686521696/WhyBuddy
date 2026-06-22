@@ -6,10 +6,14 @@ import type {
   WebAigcDynamicChartArtifactPayload,
   WebAigcDynamicChartDatasetInput,
   WebAigcDynamicChartDatasetSummary,
+  WebAigcDynamicChartError,
+  WebAigcDynamicChartPythonRuntimeResponse,
   WebAigcDynamicChartRequestedType,
+  WebAigcDynamicChartRuntimeMetadata,
   WebAigcDynamicChartSeriesDatasetInput,
   WebAigcDynamicChartSeriesDefinition,
   WebAigcDynamicChartSeriesItemInput,
+  WebAigcDynamicChartSpec,
   WebAigcDynamicChartSummaryDatasetInput,
   WebAigcDynamicChartTableDatasetInput,
   WebAigcDynamicChartType,
@@ -29,6 +33,12 @@ type NormalizedDataset = {
   series: WebAigcDynamicChartSeriesDefinition[];
   warnings: string[];
 };
+
+export interface DynamicChartNodeAdapterDeps {
+  executePythonRuntime?: (
+    input: DynamicChartNodeInput,
+  ) => Promise<WebAigcDynamicChartPythonRuntimeResponse>;
+}
 
 export class DynamicChartNodeError extends Error {
   readonly status: number;
@@ -54,11 +64,7 @@ function normalizeString(value: unknown): string | undefined {
 }
 
 function normalizeObject(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  return { ...value };
+  return isRecord(value) ? { ...value } : {};
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
@@ -107,7 +113,7 @@ function toNumericValue(value: unknown): number | undefined {
 function sanitizeKey(value: string, fallback: string): string {
   const normalized = value
     .trim()
-    .replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]+/g, "_")
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return normalized || fallback;
 }
@@ -116,13 +122,24 @@ function colorAt(index: number): string {
   return COLOR_PALETTE[index % COLOR_PALETTE.length];
 }
 
-function normalizeRequestedChartType(value: unknown): WebAigcDynamicChartRequestedType {
-  return value === "bar" ||
+function readRequestedChartType(value: unknown): WebAigcDynamicChartRequestedType {
+  if (value === undefined || value === null || value === "auto") {
+    return "auto";
+  }
+
+  if (
+    value === "bar" ||
     value === "line" ||
     value === "area" ||
     value === "pie"
-    ? value
-    : "auto";
+  ) {
+    return value;
+  }
+
+  throw new DynamicChartNodeError(
+    400,
+    "dynamic_chart chartType must be auto, bar, line, area, or pie.",
+  );
 }
 
 function isSummaryDataset(
@@ -149,7 +166,10 @@ function normalizeTableRows(
 
   const explicitHeaders = Array.isArray(input.headers)
     ? input.headers.map((header, index) =>
-        sanitizeKey(normalizeString(header) || `col_${index + 1}`, `col_${index + 1}`),
+        sanitizeKey(
+          normalizeString(header) || `col_${index + 1}`,
+          `col_${index + 1}`,
+        ),
       )
     : undefined;
 
@@ -166,13 +186,12 @@ function normalizeTableRows(
     }
 
     if (isRecord(row)) {
-      const record = explicitHeaders
+      return explicitHeaders
         ? explicitHeaders.reduce<Record<string, unknown>>((accumulator, key) => {
             accumulator[key] = row[key];
             return accumulator;
           }, {})
         : { ...row };
-      return record;
     }
 
     throw new DynamicChartNodeError(
@@ -192,15 +211,18 @@ function inferColumns(
 
   const columns = new Set<string>();
   for (const row of rows) {
-    Object.keys(row).forEach(key => columns.add(key));
+    Object.keys(row).forEach((key) => columns.add(key));
   }
 
   return [...columns];
 }
 
-function inferLabelKey(columns: string[], rows: Array<Record<string, unknown>>): string {
-  const preferred = columns.find(column =>
-    rows.some(row => toNumericValue(row[column]) === undefined),
+function inferLabelKey(
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+): string {
+  const preferred = columns.find((column) =>
+    rows.some((row) => toNumericValue(row[column]) === undefined),
   );
 
   return preferred || columns[0];
@@ -211,12 +233,12 @@ function inferValueKeys(
   rows: Array<Record<string, unknown>>,
   labelKey: string,
 ): string[] {
-  return columns.filter(column => {
+  return columns.filter((column) => {
     if (column === labelKey) {
       return false;
     }
 
-    return rows.some(row => toNumericValue(row[column]) !== undefined);
+    return rows.some((row) => toNumericValue(row[column]) !== undefined);
   });
 }
 
@@ -224,31 +246,33 @@ function normalizeTableDataset(
   input: WebAigcDynamicChartTableDatasetInput,
 ): NormalizedDataset {
   const rows = normalizeTableRows(input);
-  const columns = inferColumns(
-    rows,
-    Array.isArray(input.headers)
-      ? input.headers.map((header, index) =>
-          sanitizeKey(normalizeString(header) || `col_${index + 1}`, `col_${index + 1}`),
-        )
-      : undefined,
-  );
+  const headers = Array.isArray(input.headers)
+    ? input.headers.map((header, index) =>
+        sanitizeKey(
+          normalizeString(header) || `col_${index + 1}`,
+          `col_${index + 1}`,
+        ),
+      )
+    : undefined;
+  const columns = inferColumns(rows, headers);
 
   if (columns.length === 0) {
     throw new DynamicChartNodeError(400, "dynamic_chart table dataset has no columns.");
   }
 
+  const requestedLabelKey = normalizeString(input.labelKey);
   const labelKey =
-    normalizeString(input.labelKey) && columns.includes(normalizeString(input.labelKey)!)
-      ? normalizeString(input.labelKey)!
+    requestedLabelKey && columns.includes(requestedLabelKey)
+      ? requestedLabelKey
       : inferLabelKey(columns, rows);
   const requestedValueKeys = Array.isArray(input.valueKeys)
     ? input.valueKeys
-        .map(valueKey => normalizeString(valueKey))
+        .map((valueKey) => normalizeString(valueKey))
         .filter((valueKey): valueKey is string => Boolean(valueKey))
     : undefined;
   const valueKeys =
     requestedValueKeys && requestedValueKeys.length > 0
-      ? requestedValueKeys.filter(valueKey => columns.includes(valueKey))
+      ? requestedValueKeys.filter((valueKey) => columns.includes(valueKey))
       : inferValueKeys(columns, rows, labelKey);
 
   if (valueKeys.length === 0) {
@@ -258,7 +282,7 @@ function normalizeTableDataset(
     );
   }
 
-  const normalizedRows = rows.map(row => {
+  const normalizedRows = rows.map((row) => {
     const normalized: Record<string, string | number | null> = {
       [labelKey]: toDisplayLabel(row[labelKey]),
     };
@@ -274,11 +298,13 @@ function normalizeTableDataset(
   return {
     summary: {
       kind: "table",
-      ...(normalizeString(input.sheetName) ? { sheetName: normalizeString(input.sheetName) } : {}),
+      ...(normalizeString(input.sheetName)
+        ? { sheetName: normalizeString(input.sheetName) }
+        : {}),
       labelKey,
       valueKeys,
       rowCount: normalizedRows.length,
-      categories: normalizedRows.map(row => toDisplayLabel(row[labelKey])),
+      categories: normalizedRows.map((row) => toDisplayLabel(row[labelKey])),
       rows: normalizedRows,
     },
     series: valueKeys.map((valueKey, index) => ({
@@ -293,7 +319,7 @@ function normalizeTableDataset(
 function normalizeSummaryDataset(
   input: WebAigcDynamicChartSummaryDatasetInput,
 ): NormalizedDataset {
-  const entries = Object.entries(input.values)
+  const entries = Object.entries(input.values ?? {})
     .map(([label, value]) => ({
       label: normalizeString(label) || label,
       value: toNumericValue(value),
@@ -319,13 +345,13 @@ function normalizeSummaryDataset(
       labelKey: "label",
       valueKeys: ["value"],
       rowCount: rows.length,
-      categories: rows.map(row => row.label),
+      categories: rows.map((row) => row.label),
       rows,
     },
     series: [
       {
         key: "value",
-        label: "值",
+        label: "value",
         color: colorAt(0),
       },
     ],
@@ -413,7 +439,7 @@ function normalizeSeriesDataset(
     summary: {
       kind: "series",
       labelKey: "category",
-      valueKeys: series.map(seriesItem => seriesItem.key),
+      valueKeys: series.map((seriesItem) => seriesItem.key),
       rowCount: rows.length,
       categories,
       rows,
@@ -431,10 +457,7 @@ function normalizeDataset(
   dataset: WebAigcDynamicChartDatasetInput | undefined,
 ): NormalizedDataset {
   if (!dataset || !isRecord(dataset)) {
-    throw new DynamicChartNodeError(
-      400,
-      "dynamic_chart input requires dataset.",
-    );
+    throw new DynamicChartNodeError(400, "dynamic_chart input requires dataset.");
   }
 
   if (isSummaryDataset(dataset)) {
@@ -489,8 +512,6 @@ function ensureChartTypeCompatibility(
   chartType: WebAigcDynamicChartType,
   dataset: WebAigcDynamicChartDatasetSummary,
 ): string[] {
-  const warnings: string[] = [];
-
   if (chartType === "pie" && dataset.valueKeys.length > 1) {
     throw new DynamicChartNodeError(
       400,
@@ -499,10 +520,10 @@ function ensureChartTypeCompatibility(
   }
 
   if (dataset.kind === "summary" && chartType !== "pie") {
-    warnings.push("summary 数据集默认更适合饼图；当前已按请求输出其他图表类型。");
+    return ["summary datasets are usually best represented as pie charts."];
   }
 
-  return warnings;
+  return [];
 }
 
 function defaultTitle(
@@ -510,18 +531,18 @@ function defaultTitle(
   dataset: WebAigcDynamicChartDatasetSummary,
 ): string {
   if (dataset.kind === "table" && dataset.sheetName) {
-    return `${dataset.sheetName} ${chartType} 图表`;
+    return `${dataset.sheetName} ${chartType} chart`;
   }
 
   if (dataset.kind === "summary") {
-    return "统计汇总图表";
+    return "summary chart";
   }
 
   if (dataset.kind === "series") {
-    return "趋势图表";
+    return "trend chart";
   }
 
-  return `${chartType} 图表`;
+  return `${chartType} chart`;
 }
 
 function buildUiPayload(input: {
@@ -549,15 +570,13 @@ function buildUiPayload(input: {
   };
 }
 
-function buildArtifact(
-  input: {
-    fileName?: string;
-    chartType: WebAigcDynamicChartType;
-    title: string;
-    dataset: WebAigcDynamicChartDatasetSummary;
-    ui: WebAigcDynamicChartUiPayload;
-  },
-): WebAigcDynamicChartArtifactPayload {
+function buildArtifact(input: {
+  fileName?: string;
+  chartType: WebAigcDynamicChartType;
+  title: string;
+  dataset: WebAigcDynamicChartDatasetSummary;
+  ui: WebAigcDynamicChartUiPayload;
+}): WebAigcDynamicChartArtifactPayload {
   const baseName = sanitizeKey(
     normalizeString(input.fileName) || `${input.title}-${input.chartType}`,
     "dynamic-chart",
@@ -577,11 +596,12 @@ function buildArtifact(
   };
 }
 
-function buildContext(
+function buildCompletedContext(
   input: DynamicChartNodeInput,
   dataset: WebAigcDynamicChartDatasetSummary,
   ui: WebAigcDynamicChartUiPayload,
   artifact: WebAigcDynamicChartArtifactPayload | undefined,
+  runtime?: WebAigcDynamicChartRuntimeMetadata,
 ): Record<string, unknown> {
   const baseContext = normalizeObject(input.context);
 
@@ -593,29 +613,32 @@ function buildContext(
       dataset,
       ui,
       ...(artifact ? { artifact } : {}),
+      ...(runtime ? { runtime } : {}),
     },
   };
 }
 
-export function isDynamicChartNodeType(
-  value: unknown,
-): value is DynamicChartNodeType {
-  return value === "dynamic_chart";
+function buildFailureContext(input: {
+  pythonStatus: WebAigcDynamicChartPythonRuntimeResponse["status"];
+  error?: WebAigcDynamicChartError;
+  runtime?: WebAigcDynamicChartRuntimeMetadata;
+  metadata?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    dynamicChart: {
+      pythonStatus: input.pythonStatus,
+      ...(input.error ? { error: input.error } : {}),
+      ...(input.runtime ? { runtime: input.runtime } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    },
+  };
 }
 
-export async function executeDynamicChartNode(
-  request: DynamicChartNodeExecutionRequest,
-): Promise<DynamicChartNodeExecutionResult> {
-  if (!isDynamicChartNodeType(request.nodeType)) {
-    throw new DynamicChartNodeError(
-      400,
-      "Unsupported dynamic_chart node type.",
-    );
-  }
-
-  const input = request.input ?? {};
+function buildLocalChartReadyResponse(
+  input: DynamicChartNodeInput,
+): DynamicChartNodeExecutionResult {
   const datasetResult = normalizeDataset(input.dataset);
-  const requestedType = normalizeRequestedChartType(input.chartType);
+  const requestedType = readRequestedChartType(input.chartType);
   const chartType = resolveChartType(requestedType, datasetResult.summary);
   const warnings = [
     ...datasetResult.warnings,
@@ -653,7 +676,7 @@ export async function executeDynamicChartNode(
       dataset: datasetResult.summary,
       ui,
       ...(artifact ? { artifact } : {}),
-      context: buildContext(input, datasetResult.summary, ui, artifact),
+      context: buildCompletedContext(input, datasetResult.summary, ui, artifact),
       warnings,
       observability: {
         eventKey: "ui.dynamic_chart",
@@ -666,4 +689,125 @@ export async function executeDynamicChartNode(
       },
     },
   };
+}
+
+function validatePythonChartReadySpec(
+  response: WebAigcDynamicChartPythonRuntimeResponse,
+): WebAigcDynamicChartSpec | undefined {
+  if (!response.chartSpec) {
+    return undefined;
+  }
+
+  return response.chartSpec;
+}
+
+export function mapPythonDynamicChartRuntimeResponse(
+  response: WebAigcDynamicChartPythonRuntimeResponse,
+  input: DynamicChartNodeInput = {},
+): DynamicChartNodeExecutionResult {
+  const warnings = Array.isArray(response.warnings) ? response.warnings : [];
+  const metadata = normalizeObject(response.metadata);
+
+  if (response.status === "chart_ready" && response.ok === true) {
+    const chartSpec = validatePythonChartReadySpec(response);
+    if (!chartSpec) {
+      return mapPythonDynamicChartRuntimeResponse(
+        {
+          ok: false,
+          status: "error",
+          error: {
+            code: "invalid_python_chart_spec",
+            message: "Python dynamic chart runtime returned chart_ready without chartSpec.",
+          },
+          warnings,
+          runtime: response.runtime,
+          metadata,
+        },
+        input,
+      );
+    }
+
+    const artifact = response.artifact;
+    return {
+      ok: true,
+      nodeType: "dynamic_chart",
+      output: {
+        status: "completed",
+        pythonStatus: "chart_ready",
+        chartType: chartSpec.chartType,
+        title: chartSpec.title,
+        ...(chartSpec.description ? { description: chartSpec.description } : {}),
+        dataset: chartSpec.dataset,
+        ui: chartSpec.ui,
+        ...(artifact ? { artifact } : {}),
+        context: buildCompletedContext(
+          input,
+          chartSpec.dataset,
+          chartSpec.ui,
+          artifact,
+          response.runtime,
+        ),
+        warnings,
+        ...(response.runtime ? { runtime: response.runtime } : {}),
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+        observability: {
+          eventKey: "ui.dynamic_chart",
+          nodeType: "dynamic_chart",
+          chartType: chartSpec.chartType,
+          datasetKind: chartSpec.dataset.kind,
+          rowCount: chartSpec.dataset.rowCount,
+          seriesCount: chartSpec.ui.series.length,
+          artifactEnabled: Boolean(artifact),
+        },
+      },
+    };
+  }
+
+  const error = response.error ?? {
+    code: response.status === "invalid" ? "invalid_data" : "runtime_error",
+    message: "Python dynamic chart runtime did not return chart_ready.",
+  };
+  const status = response.status === "degraded" ? "degraded" : "failed";
+
+  return {
+    ok: false,
+    nodeType: "dynamic_chart",
+    output: {
+      status,
+      pythonStatus: response.status,
+      context: buildFailureContext({
+        pythonStatus: response.status,
+        error,
+        runtime: response.runtime,
+        metadata,
+      }),
+      warnings,
+      error,
+      ...(response.runtime ? { runtime: response.runtime } : {}),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+    },
+  };
+}
+
+export function isDynamicChartNodeType(
+  value: unknown,
+): value is DynamicChartNodeType {
+  return value === "dynamic_chart";
+}
+
+export async function executeDynamicChartNode(
+  request: DynamicChartNodeExecutionRequest,
+  deps: DynamicChartNodeAdapterDeps = {},
+): Promise<DynamicChartNodeExecutionResult> {
+  if (!isDynamicChartNodeType(request.nodeType)) {
+    throw new DynamicChartNodeError(400, "Unsupported dynamic_chart node type.");
+  }
+
+  const input = request.input ?? {};
+  if (deps.executePythonRuntime) {
+    const response = await deps.executePythonRuntime(input);
+    return mapPythonDynamicChartRuntimeResponse(response, input);
+  }
+
+  return buildLocalChartReadyResponse(input);
 }
