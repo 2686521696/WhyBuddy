@@ -16,6 +16,36 @@
 | `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python，并且错误/超时/取消语义有测试覆盖。 |
 | `production wiring` | 生产接线 | 接入存储、真实服务边界、观测、fallback（回退）或部署健康检查；smoke（冒烟）通过仍不等于真实外部服务长跑可用。 |
 
+## 96 阶段 runtime 代码落地刷新
+
+本轮 96 code queue 不再只是审计或勾 checklist，而是已经有一组真实 runtime 代码切片落到 `main`。当前用于本节判断的 `HEAD` 是：
+
+- `66da5046 feat(backend-python): add transaction flow runtime bridge`
+
+本轮可计入的真实代码提交：
+
+| commit | 切片 | 计入口径 |
+|---|---|---|
+| `54e1b789` | Blueprint review/export runtime boundary | Python service、Node runtime bridge、shared contract 和 Node/Python 测试均已落地；计入 Blueprint-adjacent runtime，不等于完整 `/api/blueprint` 主流程迁移。 |
+| `2bab1031` | Task route lifecycle runtime bridge | `/api/tasks` 相关生命周期继续加深，Python task lifecycle runtime 和 Node route 测试已落地；计入 task lifecycle bounded runtime，不等于 mission store、event replay、project/resource auth 全链路完成。 |
+| `31bcce62` | Auth refresh/logout + Blueprint artifact memory runtime | Auth session refresh/logout runtime 与 Blueprint artifact memory runtime/store 同批落地；计入 auth/session 小切片和 Blueprint artifact memory 小切片，不等于完整登录注册、邮件码、生产 session repository 或完整 Blueprint durable store。 |
+| `0da4b74a` | Audit retention/export runtime | Python audit retention/export service、Node sink bridge、shared contracts 和测试已落地；计入 audit production-persistence 方向的小切片，不等于 anomaly/compliance、外部 audit platform 或长跑 retention policy 完成。 |
+| `43386fee` | Web AIGC dynamic chart runtime bridge | Dynamic chart Python adapter、Node adapter/route 和 Node/Python 测试已落地；计入 Web AIGC long-tail runtime。 |
+| `66da5046` | Web AIGC transaction flow runtime bridge | Transaction flow Python adapter、Node adapter/route 和 Node/Python 测试已落地；计入 Web AIGC long-tail runtime。 |
+
+本轮代码落地后的整体口径：**整体 NodeJS 后端迁 Python 可以从 95 阶段的约 80-85% / 工作数字 84%，上调到约 88-90% / 工作数字 89%。仍不建议写成整体 95%，因为 Blueprint 主系统、真实生产外部依赖、完整 auth/audit/task 生命周期和 Web AIGC 剩余长尾还没有全部闭合。**
+
+## 96 阶段分层进度口径
+
+| 范围 | 96 阶段判断 | 进度条 | 计入口径 |
+|---|---:|---|---|
+| 整体 NodeJS 后端迁 Python | 约 88-90%，工作数字 89% | `[█████████░]` | 本轮真实 runtime 代码切片补上 Blueprint review/export、Blueprint artifact memory、task lifecycle、auth refresh/logout、audit retention/export、dynamic chart、transaction flow。仍不能写 95%，因为多个大分母仍是 Node-owned、mixed 或 fake/synthetic。 |
+| SlideRule V5 子系统迁移 | 可审计 95%，写作 94-96% 区间 | `[█████████░]` | 95 阶段 SlideRule V5 审计结论继续成立；96 阶段主要推进整体 backend 周边 runtime，不把 SlideRule 子系统百分比外推成整体百分比。 |
+| Blueprint-adjacent runtime support | 约 78-84% | `[████████░░]` | Review/export 和 artifact memory runtime/store 已新增代码证据；但 Blueprint 主路由、状态机、job store、event bus、diagnostics、ledger、preview、prompt package 仍未整体迁到 Python。 |
+| Auth/Audit runtime support | 约 78-84% | `[████████░░]` | Auth refresh/logout、session persistence、audit retention/export 与 audit sink 方向有更多 runtime 证据；登录注册、邮件码、permission audit hooks、anomaly/compliance、外部 audit platform 和生产长跑仍是缺口。 |
+| Task lifecycle support | 约 82-88% | `[████████░░]` | Executor bridge、selected job lifecycle 和 task route lifecycle runtime 已有代码/测试；mission store、event replay、cancel/error、project/resource auth 仍需继续拆片。 |
+| Web AIGC long-tail runtime | 约 78-85% | `[████████░░]` | Search/file/vision/audio、dynamic chart、transaction flow 已有 bounded runtime；Web QA、image/graph search、static webpage、OCR、AI PPT 和真实外部 provider 仍未完全接管。 |
+
 ## 95 阶段刷新结论
 
 本次刷新读取了三份 95 阶段审计报告、主仓库 `../../.agent-loop/queue-outcomes.json`、当前 `HEAD` 提交和 89/90 阶段基线文档。结论是：**SlideRule V5 子系统可以进入有边界、可追溯的 95% 审计姿态；SlideRule V5 Node -> Python delegation chain 继续保持 97-99% 高成熟度；整体 NodeJS 后端迁 Python 仍不能写成 95%，继续保持约 84% 工作数字和 80-85% 区间。**
@@ -51,16 +81,16 @@
 | 95 阶段 queue outcomes | 三个 95 审计任务均为 `DONE_REVIEWED` / `done`，更新时间分别为 2026-06-22T06:22:08.675Z、2026-06-22T06:29:30.326Z、2026-06-22T06:39:27.843Z。 | 证明三份审计/status 任务落地并通过 review；不把审计任务本身计入业务 runtime 分子。 |
 | 89/90 基线文档 | `docs/backend-python-runtime-evidence-reconcile-89.md`、`docs/backend-python-runtime-depth-audit-90.md`、`docs/backend-python-node-route-inventory-90.md` 继续作为整体后端分母和缺口基线。 | 用于压低整体后端百分比：contract-only、proxy-only、docs-only 和 inventory 仍不能等同 runtime/prod completion。 |
 
-## 95 阶段当前缺口
+## 95 阶段当时缺口
 
 | 缺口 | 为什么仍阻碍整体 95% |
 |---|---|
-| Blueprint 主系统 | 95 阶段只证明 plan projection 和若干 spec-docs/review/export adjacent proxy；大路由、状态机、job store、event bus、diagnostics、ledger、preview、prompt package 仍不是 Python 运行时所有权。 |
-| Auth/audit 生产链路 | 89/90 阶段已有 contract、bounded runtime 或 synthetic sink 证据，但用户注册/登录、refresh/logout、durable audit retention/export/anomaly/compliance 和 permission audit hooks 仍未完整生产迁移。 |
-| Task lifecycle | executor bridge 和 selected job lifecycle 有小切片证据；`/api/tasks`、mission store、project/resource auth、event replay、cancel/error 全链路仍不能写成 Python 完成。 |
-| Web AIGC long-tail | search/file/vision/audio 有 fake-provider runtime，89 阶段 long-tail 仍主要是 inventory；Web QA、image/graph search、static webpage、OCR、dynamic chart、AI PPT、transaction-flow 等仍需逐片 contract/runtime。 |
+| Blueprint 主系统 | 96 阶段新增 review/export 和 artifact memory runtime/store，但大路由、状态机、job store、event bus、diagnostics、ledger、preview、prompt package 仍不是 Python 运行时所有权。 |
+| Auth/audit 生产链路 | 96 阶段新增 auth refresh/logout 与 audit retention/export runtime 证据，但用户注册/登录、邮件码、生产 session repository、audit anomaly/compliance、permission audit hooks 和外部 audit platform 仍未完整生产迁移。 |
+| Task lifecycle | executor bridge、selected job lifecycle 和 task route lifecycle 已有小切片证据；mission store、project/resource auth、event replay、cancel/error 全链路仍不能写成 Python 完成。 |
+| Web AIGC long-tail | search/file/vision/audio、dynamic chart、transaction flow 有 bounded runtime；Web QA、image/graph search、static webpage、OCR、AI PPT 和真实 provider 接管仍需逐片 contract/runtime。 |
 | 真实生产外部依赖 | 95 production-wiring 报告明确没有调用真实 Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 或部署环境；safe failure 和 local smoke 不能替代生产长跑。 |
-| 旧队列红灯 | 当前 backend queue outcomes 仍有 16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`；即使部分已被后续任务覆盖，也必须按后续 commit/test/audit 逐项接管，不能用状态刷新直接清零。 |
+| 旧队列红灯 | 95 阶段 backend queue outcomes 仍有 16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`；即使部分已被后续任务覆盖，也必须按后续 commit/test/audit 逐项接管，不能用状态刷新直接清零。 |
 
 ## 90 阶段刷新结论
 
@@ -134,10 +164,10 @@
 
 | 顺序 | 建议任务 | 目标 |
 |---|---|---|
-| 1 | Blueprint runtime 深水区继续拆片 | 从 artifact memory durable store、review/export production boundary、selected state transitions、job lifecycle/event stream、preview/prompt package 中选小切片，补 Python-owned runtime 或明确 Node-owned 边界；不一次迁完整 Blueprint 大路由。 |
-| 2 | Auth/audit production persistence 深化 | 在不改 schema 的前提下，补 auth session repository、refresh/logout、audit retention/export/sink health、permission audit hooks 的 Python production wiring 或明确降级语义。 |
-| 3 | Task lifecycle runtime bridge | 在 executor client bridge 和 selected job lifecycle 之外，补 `/api/tasks`、mission store、event replay、cancel/error、project/resource auth 的 Python runtime 或 production boundary。 |
-| 4 | Web AIGC adapter 长尾 contract/runtime | 按 `docs/backend-python-web-aigc-longtail-inventory-89.md` 的优先级，从 Web QA、image/graph search、static webpage、OCR、dynamic-chart、AI PPT、transaction-flow 等逐片补 contract、proxy、runtime。 |
+| 1 | Blueprint runtime 深水区继续拆片 | 在 review/export 和 artifact memory 之后，继续拆 selected state transitions、job lifecycle/event stream、preview/prompt package，补 Python-owned runtime 或明确 Node-owned 边界；不一次迁完整 Blueprint 大路由。 |
+| 2 | Auth/audit production persistence 深化 | 在 refresh/logout 和 retention/export 之后，继续补 auth session repository、用户注册/登录、邮件码、audit anomaly/compliance、permission audit hooks 的 Python production wiring 或明确降级语义。 |
+| 3 | Task lifecycle runtime bridge | 在 executor client、selected job lifecycle 和 task route lifecycle 之外，补 mission store、event replay、cancel/error、project/resource auth 的 Python runtime 或 production boundary。 |
+| 4 | Web AIGC adapter 长尾 contract/runtime | 按 `docs/backend-python-web-aigc-longtail-inventory-89.md` 的优先级，在 dynamic-chart、transaction-flow 之后继续补 Web QA、image/graph search、static webpage、OCR、AI PPT 等切片。 |
 | 5 | 真实生产外部依赖可跳过长跑 smoke | 在不提交密钥的前提下，为 Qdrant、embedding、search、OCR、vision、audio、APM/billing、audit platform 和 deployed Python service 补可配置、可跳过、可诊断的 live smoke 与 observability evidence。 |
 | 6 | 旧队列红灯逐项清算 | 对仍在 outcomes 中的 `HALT_HUMAN`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED` 逐项绑定后续 commit/test/audit 证据；不能用状态刷新直接清零。 |
 

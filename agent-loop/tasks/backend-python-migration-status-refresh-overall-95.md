@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取本轮 queue outcomes、commit diff、gate 结果和状态文档；reviewer 确认百分比没有虚高。
 
 ### 状态清单
-- [ ] 读取本轮 96 code queue 的每个任务结果、diff 和 gate。
-- [ ] 区分 runtime/proxy/contract/docs-only/no-diff/apply-failed。
-- [ ] 更新 `sliderule-python-migration-status.md` 的整体进度和 remaining gap。
-- [ ] 如果证据不足，保持保守百分比并解释缺口。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 docs-only 或 failed/no-diff 计入业务迁移。
+- [x] 读取本轮 96 code queue 的每个任务结果、diff 和 gate。
+- [x] 区分 runtime/proxy/contract/docs-only/no-diff/apply-failed。
+- [x] 更新 `sliderule-python-migration-status.md` 的整体进度和 remaining gap。
+- [x] 如果证据不足，保持保守百分比并解释缺口。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 docs-only 或 failed/no-diff 计入业务迁移。
 
 ## 目标
 
