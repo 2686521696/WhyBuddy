@@ -124,6 +124,7 @@ export interface QueueOverview {
   landing?: QueueLanding | null;
   counts: {
     total: number;
+    queueTotal?: number;
     done: number;
     applied?: number;
     reviewed?: number;

@@ -300,6 +300,7 @@ async function buildQueueOverview(repoRoot, options = {}) {
     });
     const counts = {
         total: tasks.length,
+        queueTotal: tasks.filter((item) => item.enabled).length,
         done: 0,
         applied: 0,
         reviewed: 0,

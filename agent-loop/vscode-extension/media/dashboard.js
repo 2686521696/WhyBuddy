@@ -26,7 +26,7 @@
   const CATEGORY_ORDER = ['attention', 'running', 'landed', 'pending', 'disabled'];
 
   let lastOverviewPayload = null;
-  let activeFilter = 'all';
+  let activeFilter = 'queue';
 
   const HALT_GUIDANCE = {
     HALT_NO_SUCCESS_CRITERIA: '任务缺少非空的成功标准。补齐判定标准后再入队。',
@@ -80,10 +80,22 @@
     return groups;
   }
 
-  function renderTriageFilters(groups) {
-    const total = CATEGORY_ORDER.reduce((sum, cat) => sum + groups[cat].length, 0);
+  function queueTasks(tasks) {
+    return (tasks || []).filter((task) => task.enabled !== false);
+  }
+
+  function groupTotal(groups) {
+    return CATEGORY_ORDER.reduce((sum, cat) => sum + groups[cat].length, 0);
+  }
+
+  function renderTriageFilters(groups, allTasks, queueItems) {
+    const total = groupTotal(groups);
+    const queueTotal = queueItems.length;
+    const queue = `<button class="filter-card queue${activeFilter === 'queue' ? ' active' : ''}" data-filter="queue">
+      <span class="stat-value">${queueTotal}</span><span class="stat-label">任务队列</span>
+    </button>`;
     const all = `<button class="filter-card all${activeFilter === 'all' ? ' active' : ''}" data-filter="all">
-      <span class="stat-value">${total}</span><span class="stat-label">任务队列</span>
+      <span class="stat-value">${total}</span><span class="stat-label">全部</span>
     </button>`;
     const cards = CATEGORY_ORDER.map((cat) => {
       const meta = CATEGORY_META[cat];
@@ -91,7 +103,7 @@
         <span class="stat-value">${groups[cat].length}</span><span class="stat-label">${meta.label}</span>
       </button>`;
     }).join('');
-    return `<div class="filter-grid">${all}${cards}</div>`;
+    return `<div class="filter-grid">${queue}${all}${cards}</div>`;
   }
 
   function renderAttentionBanner(groups) {
@@ -167,7 +179,16 @@
     </section>`;
   }
 
-  function renderTaskList(groups) {
+  function renderQueueSections(tasks) {
+    const queueGroups = groupTasks(queueTasks(tasks));
+    const sections = CATEGORY_ORDER.map((cat) => renderGroupSection(cat, queueGroups[cat])).filter(Boolean).join('');
+    return `<section class="panel queue-table">${sections || '<div class="empty">本次任务队列为空，请检查 enabled 任务。</div>'}</section>`;
+  }
+
+  function renderTaskList(groups, tasks) {
+    if (activeFilter === 'queue') {
+      return renderQueueSections(tasks);
+    }
     if (activeFilter !== 'all') {
       const tasks = groups[activeFilter] || [];
       const meta = CATEGORY_META[activeFilter];
@@ -246,15 +267,18 @@
 
   function renderOverview(payload) {
     const counts = payload.counts || { total: 0 };
-    const groups = groupTasks(payload.tasks || []);
+    const tasks = payload.tasks || [];
+    const groups = groupTasks(tasks);
+    const queued = queueTasks(tasks);
+    const queueTotal = Number.isFinite(Number(counts.queueTotal)) ? Number(counts.queueTotal) : queued.length;
     return `<main class="dashboard console-overview">
-      ${renderConsoleHeader('AgentLoop 控制台', `${counts.total || 0} 个任务 / queue health`, payload.queueRunning, false)}
+      ${renderConsoleHeader('AgentLoop 控制台', `${queueTotal} 个队列任务 / ${counts.total || 0} 个全部任务`, payload.queueRunning, false)}
       ${renderAttentionBanner(groups)}
       ${renderLanding(payload.landing)}
-      ${renderTriageFilters(groups)}
+      ${renderTriageFilters(groups, tasks, queued)}
       ${renderProgress(counts)}
       ${renderCurrentRunBanner(payload.current)}
-      ${renderTaskList(groups)}
+      ${renderTaskList(groups, tasks)}
     </main>`;
   }
 
@@ -620,7 +644,7 @@
     const filterEl = event.target.closest('[data-filter]');
     if (filterEl) {
       const next = filterEl.getAttribute('data-filter');
-      activeFilter = (activeFilter === next && next !== 'all') ? 'all' : next;
+      activeFilter = (activeFilter === next && next !== 'queue') ? 'queue' : next;
       rerenderOverview();
       return;
     }

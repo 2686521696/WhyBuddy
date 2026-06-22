@@ -835,20 +835,45 @@ test('dashboard media renders console overview with stale current run', async ()
   assert.match(html, /data-state="stale"/);
 });
 
-test('dashboard overview defaults to the task queue tab instead of all', async () => {
+test('buildQueueOverview separates enabled queue size from all task size', async () => {
+  const { buildQueueOverview } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-overview-queue-size-'));
+  const queueFilePath = path.join(repo, 'queue.json');
+  await fs.writeFile(queueFilePath, JSON.stringify({
+    tasks: [
+      { id: 'a', task: 'agent-loop/tasks/a.md' },
+      { id: 'b', task: 'agent-loop/tasks/b.md' },
+      { id: 'c', task: 'agent-loop/tasks/c.md', enabled: false },
+      { id: 'd', task: 'agent-loop/tasks/d.md', enabled: false },
+    ],
+  }), 'utf8');
+
+  const overview = await buildQueueOverview(repo, { queueFilePath, queueRunning: false });
+
+  assert.equal(overview.counts.total, 4);
+  assert.equal(overview.counts.queueTotal, 2);
+});
+
+test('dashboard overview defaults to current task queue while keeping all tasks separate', async () => {
   const renderer = await loadDashboardRenderer();
   const html = renderer.renderOverview({
-    counts: { total: 2, running: 0, pending: 1, disabled: 1 },
+    counts: { total: 4, queueTotal: 2, running: 0, pending: 2, disabled: 2 },
     queueRunning: false,
     current: null,
     tasks: [
-      { task: 'agent-loop/tasks/a.md', taskLabel: 'a', badge: 'pending', statusLabel: null, running: false },
-      { task: 'agent-loop/tasks/b.md', taskLabel: 'b', badge: 'disabled', statusLabel: '已禁用', enabled: false, running: false },
+      { task: 'agent-loop/tasks/a.md', taskLabel: 'queue-a', badge: 'pending', statusLabel: null, enabled: true, running: false },
+      { task: 'agent-loop/tasks/b.md', taskLabel: 'queue-b', badge: 'pending', statusLabel: null, enabled: true, running: false },
+      { task: 'agent-loop/tasks/c.md', taskLabel: 'old-c', badge: 'disabled', statusLabel: '已禁用', enabled: false, running: false },
+      { task: 'agent-loop/tasks/d.md', taskLabel: 'old-d', badge: 'disabled', statusLabel: '已禁用', enabled: false, running: false },
     ],
   });
 
-  assert.match(html, /filter-card all active[\s\S]*<span class="stat-label">任务队列<\/span>/);
-  assert.doesNotMatch(html, /<span class="stat-label">全部<\/span>/);
+  assert.match(html, /filter-card queue active[\s\S]*<span class="stat-value">2<\/span><span class="stat-label">任务队列<\/span>/);
+  assert.match(html, /filter-card all[\s\S]*<span class="stat-value">4<\/span><span class="stat-label">全部<\/span>/);
+  assert.match(html, /queue-a/);
+  assert.match(html, /queue-b/);
+  assert.doesNotMatch(html, /old-c/);
+  assert.doesNotMatch(html, /old-d/);
 });
 
 test('dashboard media renders outcome groups and conflict files', async () => {
