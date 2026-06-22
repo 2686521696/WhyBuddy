@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取当前 HEAD 的 vector/RAG/Web AIGC/telemetry/audit/deployment 证据并产出分层报告；reviewer 确认 degraded、unknown、missing config 没有被写成 healthy。
 
 ### 状态清单
-- [ ] 读取 real vector、RAG ingestion、Web AIGC、telemetry/audit sink、deployment smoke 和 observability 证据。
-- [ ] 生成 `docs/backend-python-production-wiring-reality-95.md`。
-- [ ] 标出 fake/synthetic smoke、missing config、timeout/degraded、安全失败和真实接线的区别。
-- [ ] 给出哪些证据可支撑 SlideRule V5 95%，哪些只能支撑整体后端成熟度但不能算生产完成。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实外部服务副作用。
+- [x] 读取 real vector、RAG ingestion、Web AIGC、telemetry/audit sink、deployment smoke 和 observability 证据。
+- [x] 生成 `docs/backend-python-production-wiring-reality-95.md`。
+- [x] 标出 fake/synthetic smoke、missing config、timeout/degraded、安全失败和真实接线的区别。
+- [x] 给出哪些证据可支撑 SlideRule V5 95%，哪些只能支撑整体后端成熟度但不能算生产完成。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实外部服务副作用。
 
 ## 目标
 

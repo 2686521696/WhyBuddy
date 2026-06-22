@@ -16,6 +16,52 @@
 | `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python，并且错误/超时/取消语义有测试覆盖。 |
 | `production wiring` | 生产接线 | 接入存储、真实服务边界、观测、fallback（回退）或部署健康检查；smoke（冒烟）通过仍不等于真实外部服务长跑可用。 |
 
+## 95 阶段刷新结论
+
+本次刷新读取了三份 95 阶段审计报告、主仓库 `../../.agent-loop/queue-outcomes.json`、当前 `HEAD` 提交和 89/90 阶段基线文档。结论是：**SlideRule V5 子系统可以进入有边界、可追溯的 95% 审计姿态；SlideRule V5 Node -> Python delegation chain 继续保持 97-99% 高成熟度；整体 NodeJS 后端迁 Python 仍不能写成 95%，继续保持约 84% 工作数字和 80-85% 区间。**
+
+95 阶段只刷新状态口径，不新增业务迁移分子。三份审计报告的共同边界是：可以计入 named runtime surfaces（点名运行时面）的 bounded runtime 或 production-wiring smoke；不能把 docs-only、inventory、fake/synthetic smoke、memory storage、fake transport、disabled fallback 或 local fake service 写成真实生产外部依赖接管。
+
+当前 `HEAD` 用于本次状态刷新：
+
+- `93a89122 agent-loop queue checkpoint: backend-python-production-wiring-reality-check-95`
+- 95 阶段三项队列任务均为 `DONE_REVIEWED` / `done`：`backend-python-sliderule-v5-runtime-closure-audit-95`、`backend-python-blueprint-v5-adjacent-runtime-closure-95`、`backend-python-production-wiring-reality-check-95`。
+- 当前 queue outcomes 共 113 个任务，其中 `backend-python-*` 105 个：84 个 `DONE_REVIEWED`、1 个 `DONE_REVIEWED_NO_DIFF`、16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`；按 outcome 看，85 个 `done`、14 个 `crashed`、6 个 `failed`。这些只能作为状态背景，不能绕过 commit、测试路径和审计分类直接计入整体百分比。
+
+## 95 阶段分层进度口径
+
+这些比例仍然是分层口径，不要合并成一个总数。尤其不能把 SlideRule V5 子系统的 95% 审计姿态外推成整体 NodeJS 后端 95%。
+
+| 范围 | 95 阶段判断 | 进度条 | 计入口径 |
+|---|---:|---|---|
+| SlideRule V5 子系统迁移 | 可审计 95%，写作 94-96% 区间 | `[█████████░]` | `docs/backend-python-sliderule-v5-runtime-closure-95.md` 支持 `mcp.call`、`skill.invoke`、`orchestrate.plan` route delegation、state projection、evidence/vector retrieval smoke、RAG storage smoke 和 LLM guard support。只能按点名能力计入，不等于真实 MCP、skill registry、Qdrant、embedding、RAG storage、billing 或 telemetry 生产接管。 |
+| SlideRule V5 Node -> Python delegation chain | 约 97-99% | `[██████████]` | Node Python mode、delegation helper、timeout、health check、contract smoke、delivery/visual/artifact capability whitelist 和 95 阶段 route delegation 证据继续闭合。它是 SlideRule V5 delegation chain，不是整体后端迁移百分比。 |
+| Python V5 可运行基线 | 约 93-95% | `[█████████░]` | Python service、core smoke、native LLM capability、vector/RAG、session persistence、task executor、knowledge admin、cost/circuit breaker、deployment live smoke 和 production-wiring smoke 有测试支撑；真实外部服务凭据、长跑观测、生产 billing/APM 仍未在本阶段证明。 |
+| 整体 NodeJS 后端迁 Python | 约 80-85%，工作数字 84% | `[████████░░]` | 保守保持 89/90 阶段工作数字。95 阶段是审计/status refresh，不把三份报告、route inventory、docs-only 或 fake/synthetic smoke 计入业务迁移分子。Blueprint 大路由、auth/audit、task lifecycle、Web AIGC long-tail 和真实生产外部依赖仍约束整体百分比。 |
+| production wiring maturity | 约 80-85%，真实外部接管未证明 | `[████████░░]` | `docs/backend-python-production-wiring-reality-95.md` 支持 bounded production wiring 和 safe-failure semantics：vector/RAG/deployment boundary、Web AIGC fake runtimes、telemetry synthetic sink、observability rollup。它们是 smoke/degraded/local evidence，不是 real Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 或 deployed Python service 的生产接管。 |
+| Blueprint-adjacent V5 support | 约 70-78% 支撑 SlideRule closure，不计作 Blueprint 完迁 | `[███████░░░]` | `docs/backend-python-blueprint-v5-adjacent-runtime-95.md` 支持 plan state projection、spec docs batch proxy、review/export proxy 和 artifact memory contract/proxy。它只支持 SlideRule V5 周边闭合；`/api/blueprint` route shell、state machine、job store、event bus、diagnostics、ledger、preview、prompt package 仍不能写成 Python 完成。 |
+
+## 95 阶段证据对照
+
+| 95 阶段证据 | 当前结果 | 计入口径 |
+|---|---|---|
+| `docs/backend-python-sliderule-v5-runtime-closure-95.md` | 审计结论允许 SlideRule V5 main runtime chain 以 bounded wording 进入 95-stage audit posture。可见证据包括 `mcp.call`、`skill.invoke`、`orchestrate.plan` runtime route、state projection、vector/RAG production-wiring smoke 和 LLM guard support。 | 计入 SlideRule V5 子系统 95% 审计姿态。只计 named runtime surfaces，不计真实外部 MCP、skill、Qdrant、embedding、RAG storage、LLM billing 或 telemetry 生产接管。 |
+| `docs/backend-python-blueprint-v5-adjacent-runtime-95.md` | Blueprint spec docs batch、artifact memory、review/export 和 plan state projection 有 adjacent contract/proxy/runtime 证据；报告明确不是完整 `/api/blueprint` 迁移。 | 只作为 SlideRule V5 closure 周边支撑。artifact memory persistence、Blueprint state machine、job store、event bus、diagnostics、ledger、preview、prompt package 仍不能计入整体 Blueprint 完成。 |
+| `docs/backend-python-production-wiring-reality-95.md` | production wiring reality 被拆成 real wiring shape、degradable wiring、fake/synthetic smoke、missing config 和 external production gap。Vector/RAG/deployment boundary 有 smoke；Web AIGC、telemetry、observability、audit 多数仍是 fake/synthetic/degraded/local-only。 | 支持 production wiring maturity，但不能写成 real external service takeover。缺少真实 Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 和部署环境长跑验证。 |
+| 95 阶段 queue outcomes | 三个 95 审计任务均为 `DONE_REVIEWED` / `done`，更新时间分别为 2026-06-22T06:22:08.675Z、2026-06-22T06:29:30.326Z、2026-06-22T06:39:27.843Z。 | 证明三份审计/status 任务落地并通过 review；不把审计任务本身计入业务 runtime 分子。 |
+| 89/90 基线文档 | `docs/backend-python-runtime-evidence-reconcile-89.md`、`docs/backend-python-runtime-depth-audit-90.md`、`docs/backend-python-node-route-inventory-90.md` 继续作为整体后端分母和缺口基线。 | 用于压低整体后端百分比：contract-only、proxy-only、docs-only 和 inventory 仍不能等同 runtime/prod completion。 |
+
+## 95 阶段当前缺口
+
+| 缺口 | 为什么仍阻碍整体 95% |
+|---|---|
+| Blueprint 主系统 | 95 阶段只证明 plan projection 和若干 spec-docs/review/export adjacent proxy；大路由、状态机、job store、event bus、diagnostics、ledger、preview、prompt package 仍不是 Python 运行时所有权。 |
+| Auth/audit 生产链路 | 89/90 阶段已有 contract、bounded runtime 或 synthetic sink 证据，但用户注册/登录、refresh/logout、durable audit retention/export/anomaly/compliance 和 permission audit hooks 仍未完整生产迁移。 |
+| Task lifecycle | executor bridge 和 selected job lifecycle 有小切片证据；`/api/tasks`、mission store、project/resource auth、event replay、cancel/error 全链路仍不能写成 Python 完成。 |
+| Web AIGC long-tail | search/file/vision/audio 有 fake-provider runtime，89 阶段 long-tail 仍主要是 inventory；Web QA、image/graph search、static webpage、OCR、dynamic chart、AI PPT、transaction-flow 等仍需逐片 contract/runtime。 |
+| 真实生产外部依赖 | 95 production-wiring 报告明确没有调用真实 Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 或部署环境；safe failure 和 local smoke 不能替代生产长跑。 |
+| 旧队列红灯 | 当前 backend queue outcomes 仍有 16 个 `HALT_HUMAN`、3 个 `HALT_NO_CHANGES`、1 个 `HALT_APPLY_FAILED`；即使部分已被后续任务覆盖，也必须按后续 commit/test/audit 逐项接管，不能用状态刷新直接清零。 |
+
 ## 90 阶段刷新结论
 
 本次刷新读取了主仓库 `.agent-loop/queue-outcomes.json`、90 阶段审计文档、89 阶段落地补丁、当前 `git log --oneline` 和 HEAD 中可见的代码/测试路径。结论是：**整体 NodeJS 后端迁 Python 仍不应写成 90%；89 阶段补齐了几个 bounded runtime（有边界运行时）缺口后，当前更稳妥的工作数字是约 84%，仍可描述为 80-85% 区间。**
@@ -84,16 +130,16 @@
 
 ## 下一步建议
 
-如果下一阶段要把整体进度从 80-85% 推到可坐实的 85%/88%，建议优先做这些小切片：
+95 阶段之后，下一步不要再用 SlideRule V5 的 95% 去推整体后端百分比。若要把整体 NodeJS 后端迁移从当前 80-85% 区间继续推进，必须优先补能改变整体分母的业务 runtime 或 production evidence，而不是继续增加 docs-only、inventory 或 fake/synthetic smoke。
 
 | 顺序 | 建议任务 | 目标 |
 |---|---|---|
-| 1 | Blueprint runtime 深水区继续拆片 | selected state/job/stage edit 已补 bounded runtime；下一步优先 role runtime、artifact memory、review export 或 job event stream，不一次迁完整 Blueprint 大路由。 |
-| 2 | Auth/audit production persistence 深化 | 在不改 schema 的前提下，补 auth session repository、audit retention/export/sink health 的 Python production wiring 或明确降级语义。 |
-| 3 | Task lifecycle runtime bridge | 在 executor client bridge 之外，补 `/api/tasks`、mission store、event replay、cancel/error 的 Python runtime 或 production boundary。 |
-| 4 | Web AIGC adapter 长尾 contract/runtime | 按 `docs/backend-python-web-aigc-longtail-inventory-89.md` 里的优先级，从 location/device、dynamic-chart、open-*、Web QA 等逐片补 contract、proxy、runtime。 |
-| 5 | A2A production stream hardening | 在不启动真实外部 agent 的前提下，补可诊断 safe-failure、registry/session 边界和 stream transport 降级语义。 |
-| 6 | 生产外部服务长跑 smoke | 在不提交密钥的前提下，补可配置、可跳过、可诊断的外部依赖 smoke 和 observability evidence。 |
+| 1 | Blueprint runtime 深水区继续拆片 | 从 artifact memory durable store、review/export production boundary、selected state transitions、job lifecycle/event stream、preview/prompt package 中选小切片，补 Python-owned runtime 或明确 Node-owned 边界；不一次迁完整 Blueprint 大路由。 |
+| 2 | Auth/audit production persistence 深化 | 在不改 schema 的前提下，补 auth session repository、refresh/logout、audit retention/export/sink health、permission audit hooks 的 Python production wiring 或明确降级语义。 |
+| 3 | Task lifecycle runtime bridge | 在 executor client bridge 和 selected job lifecycle 之外，补 `/api/tasks`、mission store、event replay、cancel/error、project/resource auth 的 Python runtime 或 production boundary。 |
+| 4 | Web AIGC adapter 长尾 contract/runtime | 按 `docs/backend-python-web-aigc-longtail-inventory-89.md` 的优先级，从 Web QA、image/graph search、static webpage、OCR、dynamic-chart、AI PPT、transaction-flow 等逐片补 contract、proxy、runtime。 |
+| 5 | 真实生产外部依赖可跳过长跑 smoke | 在不提交密钥的前提下，为 Qdrant、embedding、search、OCR、vision、audio、APM/billing、audit platform 和 deployed Python service 补可配置、可跳过、可诊断的 live smoke 与 observability evidence。 |
+| 6 | 旧队列红灯逐项清算 | 对仍在 outcomes 中的 `HALT_HUMAN`、`HALT_NO_CHANGES`、`HALT_APPLY_FAILED` 逐项绑定后续 commit/test/audit 证据；不能用状态刷新直接清零。 |
 
 ## 当前迁移原则
 

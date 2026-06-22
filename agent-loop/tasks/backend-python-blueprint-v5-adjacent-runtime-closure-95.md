@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取当前 HEAD 的 Blueprint 邻接证据并生成审计表；reviewer 确认没有把整个 Blueprint 大路由、状态机或 event bus 写成已迁完。
 
 ### 状态清单
-- [ ] 读取 `orchestrate.plan`、state projection、spec docs batch、artifact memory、review export 的当前测试和服务路径。
-- [ ] 生成 `docs/backend-python-blueprint-v5-adjacent-runtime-95.md`。
-- [ ] 区分可计入 SlideRule V5 95% 的邻接能力和仍属于 Blueprint 大系统缺口的能力。
-- [ ] 标出后续若要推进整体后端比例时必须拆出的 Blueprint 小切片。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把 proxy-only 证据误写成完整 runtime。
+- [x] 读取 `orchestrate.plan`、state projection、spec docs batch、artifact memory、review export 的当前测试和服务路径。
+- [x] 生成 `docs/backend-python-blueprint-v5-adjacent-runtime-95.md`。
+- [x] 区分可计入 SlideRule V5 95% 的邻接能力和仍属于 Blueprint 大系统缺口的能力。
+- [x] 标出后续若要推进整体后端比例时必须拆出的 Blueprint 小切片。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把 proxy-only 证据误写成完整 runtime。
 
 ## 目标
 

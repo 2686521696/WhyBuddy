@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取 95 阶段 docs、queue outcomes、commit 和 gate 证据并更新状态文档；reviewer 确认百分比没有膨胀。
 
 ### 状态清单
-- [ ] 读取 95 阶段三份审计报告和当前 queue outcomes。
-- [ ] 对照当前 HEAD 的 runtime / production-wiring / docs-only 证据。
-- [ ] 更新 `sliderule-python-migration-status.md` 的分层百分比、95 阶段证据表和下一步计划。
-- [ ] 明确整体 NodeJS 后端迁移仍不能写成 95%。
-- [ ] gate 全绿。
-- [ ] Codex review 确认口径保守、可追溯。
+- [x] 读取 95 阶段三份审计报告和当前 queue outcomes。
+- [x] 对照当前 HEAD 的 runtime / production-wiring / docs-only 证据。
+- [x] 更新 `sliderule-python-migration-status.md` 的分层百分比、95 阶段证据表和下一步计划。
+- [x] 明确整体 NodeJS 后端迁移仍不能写成 95%。
+- [x] gate 全绿。
+- [x] Codex review 确认口径保守、可追溯。
 
 ## 目标
 

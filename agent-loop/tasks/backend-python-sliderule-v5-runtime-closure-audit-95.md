@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取当前 HEAD、queue outcomes、gate-named 测试和现有 docs；reviewer 确认没有把 contract/proxy/docs-only 证据误写成 runtime 或 production 完成。
 
 ### 状态清单
-- [ ] 读取当前 `queue-outcomes.json`、最新 commit、89/90 阶段状态文档和相关 gate。
-- [ ] 复核 `mcp.call`、`skill.invoke`、`orchestrate.plan`、evidence/vector、RAG、LLM guard 的当前 HEAD 证据。
-- [ ] 生成 `docs/backend-python-sliderule-v5-runtime-closure-95.md`。
-- [ ] 明确哪些证据可计入 SlideRule V5 子系统 95%，哪些只能计入整体后端成熟度支撑。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有把整个 NodeJS 后端迁移写成 95%。
+- [x] 读取当前 `queue-outcomes.json`、最新 commit、89/90 阶段状态文档和相关 gate。
+- [x] 复核 `mcp.call`、`skill.invoke`、`orchestrate.plan`、evidence/vector、RAG、LLM guard 的当前 HEAD 证据。
+- [x] 生成 `docs/backend-python-sliderule-v5-runtime-closure-95.md`。
+- [x] 明确哪些证据可计入 SlideRule V5 子系统 95%，哪些只能计入整体后端成熟度支撑。
+- [x] gate 全绿。
+- [x] Codex review 确认没有把整个 NodeJS 后端迁移写成 95%。
 
 ## 目标
 
