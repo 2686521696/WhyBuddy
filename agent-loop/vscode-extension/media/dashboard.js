@@ -83,7 +83,7 @@
   function renderTriageFilters(groups) {
     const total = CATEGORY_ORDER.reduce((sum, cat) => sum + groups[cat].length, 0);
     const all = `<button class="filter-card all${activeFilter === 'all' ? ' active' : ''}" data-filter="all">
-      <span class="stat-value">${total}</span><span class="stat-label">全部</span>
+      <span class="stat-value">${total}</span><span class="stat-label">任务队列</span>
     </button>`;
     const cards = CATEGORY_ORDER.map((cat) => {
       const meta = CATEGORY_META[cat];
@@ -528,9 +528,62 @@
     }
   }
 
+  function createRenderScheduler(options) {
+    const renderNow = options.renderNow;
+    const now = options.now || (() => Date.now());
+    const idleMs = options.idleMs || 350;
+    const setTimer = options.setTimeoutFn || ((fn, delay) => setTimeout(fn, delay));
+    const clearTimer = options.clearTimeoutFn || ((timer) => clearTimeout(timer));
+    let lastUserScrollAt = -Infinity;
+    let pendingHtml = null;
+    let pendingTimer = null;
+
+    function clearPendingTimer() {
+      if (pendingTimer != null) {
+        clearTimer(pendingTimer);
+        pendingTimer = null;
+      }
+    }
+
+    function flushPending() {
+      pendingTimer = null;
+      if (pendingHtml == null) return;
+      const html = pendingHtml;
+      pendingHtml = null;
+      renderNow(html);
+    }
+
+    function armPendingTimer(delay) {
+      clearPendingTimer();
+      pendingTimer = setTimer(flushPending, Math.max(0, delay));
+    }
+
+    function markUserScroll() {
+      lastUserScrollAt = now();
+      if (pendingHtml != null) armPendingTimer(idleMs);
+    }
+
+    function schedule(html, opts) {
+      const force = Boolean(opts && opts.force);
+      const elapsed = now() - lastUserScrollAt;
+      const activeScroll = Number.isFinite(elapsed) && elapsed < idleMs;
+      if (force || !activeScroll) {
+        pendingHtml = null;
+        clearPendingTimer();
+        renderNow(html);
+        return 'rendered';
+      }
+      pendingHtml = html;
+      armPendingTimer(idleMs - elapsed);
+      return 'deferred';
+    }
+
+    return { markUserScroll, schedule, flushPending };
+  }
+
   const renderer = { renderOverview, renderDetail };
   window.AgentLoopDashboardRenderer = renderer;
-  window.AgentLoopDashboardInternals = { captureScrollPositions, restoreScrollPositions };
+  window.AgentLoopDashboardInternals = { captureScrollPositions, restoreScrollPositions, createRenderScheduler };
 
   const app = typeof document !== 'undefined' ? document.getElementById('app') : null;
   const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage: () => {} };
@@ -542,9 +595,26 @@
     restoreScrollPositions(app, scrollPositions, document);
   }
 
-  function rerenderOverview() {
-    if (lastOverviewPayload) setAppHtml(renderOverview(lastOverviewPayload));
+  const renderScheduler = createRenderScheduler({ renderNow: setAppHtml });
+  let currentViewType = null;
+
+  function scheduleAppHtml(html, viewType, force) {
+    const changedView = currentViewType !== viewType;
+    currentViewType = viewType;
+    renderScheduler.schedule(html, { force: Boolean(force || changedView) });
   }
+
+  function rerenderOverview() {
+    if (lastOverviewPayload) scheduleAppHtml(renderOverview(lastOverviewPayload), 'overview', true);
+  }
+
+  function markUserScroll() {
+    renderScheduler.markUserScroll();
+  }
+
+  app.addEventListener('wheel', markUserScroll, { passive: true });
+  app.addEventListener('touchmove', markUserScroll, { passive: true });
+  app.addEventListener('scroll', markUserScroll, true);
 
   app.addEventListener('click', (event) => {
     const filterEl = event.target.closest('[data-filter]');
@@ -576,10 +646,10 @@
     const message = event.data;
     if (message?.type === 'overview') {
       lastOverviewPayload = message.payload || {};
-      setAppHtml(renderOverview(lastOverviewPayload));
+      scheduleAppHtml(renderOverview(lastOverviewPayload), 'overview', false);
     } else if (message?.type === 'detail') {
       lastOverviewPayload = null;
-      setAppHtml(renderDetail(message.payload || {}));
+      scheduleAppHtml(renderDetail(message.payload || {}), 'detail', false);
     }
   });
 

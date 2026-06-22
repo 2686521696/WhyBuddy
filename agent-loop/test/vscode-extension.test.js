@@ -835,6 +835,22 @@ test('dashboard media renders console overview with stale current run', async ()
   assert.match(html, /data-state="stale"/);
 });
 
+test('dashboard overview defaults to the task queue tab instead of all', async () => {
+  const renderer = await loadDashboardRenderer();
+  const html = renderer.renderOverview({
+    counts: { total: 2, running: 0, pending: 1, disabled: 1 },
+    queueRunning: false,
+    current: null,
+    tasks: [
+      { task: 'agent-loop/tasks/a.md', taskLabel: 'a', badge: 'pending', statusLabel: null, running: false },
+      { task: 'agent-loop/tasks/b.md', taskLabel: 'b', badge: 'disabled', statusLabel: '已禁用', enabled: false, running: false },
+    ],
+  });
+
+  assert.match(html, /filter-card all active[\s\S]*<span class="stat-label">任务队列<\/span>/);
+  assert.doesNotMatch(html, /<span class="stat-label">全部<\/span>/);
+});
+
 test('dashboard media renders outcome groups and conflict files', async () => {
   const renderer = await loadDashboardRenderer();
   const html = renderer.renderOverview({
@@ -992,6 +1008,40 @@ test('dashboard preserves internal diff and agent log scroll positions across re
   assert.equal(after[0].scrollTop, 320);
   assert.equal(after[1].scrollTop, 880);
   assert.equal(after[2].scrollTop, 120);
+});
+
+test('dashboard defers html refresh while the user is actively scrolling', async () => {
+  const win = await loadDashboardWindow();
+  const { createRenderScheduler } = win.AgentLoopDashboardInternals;
+  const rendered = [];
+  let now = 1000;
+  let scheduled = null;
+  let timerId = 0;
+  const scheduler = createRenderScheduler({
+    renderNow: (html) => rendered.push(html),
+    now: () => now,
+    idleMs: 300,
+    setTimeoutFn: (fn, delay) => {
+      scheduled = { id: ++timerId, fn, delay };
+      return scheduled.id;
+    },
+    clearTimeoutFn: () => {
+      scheduled = null;
+    },
+  });
+
+  scheduler.markUserScroll();
+  assert.equal(scheduler.schedule('<main>first</main>'), 'deferred');
+  assert.deepEqual(rendered, []);
+  assert.equal(scheduled.delay, 300);
+
+  now += 100;
+  assert.equal(scheduler.schedule('<main>latest</main>'), 'deferred');
+  assert.deepEqual(rendered, []);
+  assert.equal(scheduled.delay, 200);
+
+  scheduled.fn();
+  assert.deepEqual(rendered, ['<main>latest</main>']);
 });
 
 test('dashboard marks diff and agent log panels with stable scroll keys', async () => {
