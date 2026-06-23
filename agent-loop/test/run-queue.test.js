@@ -316,19 +316,19 @@ test('migration queue task entries use worker max-turn fields instead of grok le
   );
 });
 
-test('migration queue worker max turns defaults and task overrides are 64', async () => {
+test('migration queue worker max turns defaults and task overrides are 128', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
 
-  assert.equal(queue.defaults?.workerMaxTurns, 64);
-  assert.equal(queue.defaults?.grokMaxTurns, 64);
+  assert.equal(queue.defaults?.workerMaxTurns, 128);
+  assert.equal(queue.defaults?.grokMaxTurns, 128);
 
-  const non64Tasks = (queue.tasks || []).filter((task) => task.workerMaxTurns !== 64);
+  const non128Tasks = (queue.tasks || []).filter((task) => task.workerMaxTurns !== 128);
 
   assert.deepEqual(
-    non64Tasks.map((task) => task.id || task.task),
+    non128Tasks.map((task) => task.id || task.task),
     [],
-    'all queue task entries should run with workerMaxTurns: 64',
+    'all queue task entries should run with workerMaxTurns: 128',
   );
 });
 
