@@ -758,84 +758,118 @@
       "id": "backend-python-blueprint-artifact-memory-runtime-store-96",
       "task": "agent-loop/tasks/backend-python-blueprint-artifact-memory-runtime-store-96.md",
       "gatesKey": "blueprintArtifactMemoryRuntimeStore96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-blueprint-review-export-runtime-boundary-96",
       "task": "agent-loop/tasks/backend-python-blueprint-review-export-runtime-boundary-96.md",
       "gatesKey": "blueprintReviewExportRuntimeBoundary96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-task-route-lifecycle-runtime-96",
       "task": "agent-loop/tasks/backend-python-task-route-lifecycle-runtime-96.md",
       "gatesKey": "taskRouteLifecycleRuntime96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-auth-session-refresh-logout-runtime-96",
       "task": "agent-loop/tasks/backend-python-auth-session-refresh-logout-runtime-96.md",
       "gatesKey": "authSessionRefreshLogoutRuntime96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-audit-retention-export-runtime-96",
       "task": "agent-loop/tasks/backend-python-audit-retention-export-runtime-96.md",
       "gatesKey": "auditRetentionExportRuntime96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-web-aigc-dynamic-chart-runtime-96",
       "task": "agent-loop/tasks/backend-python-web-aigc-dynamic-chart-runtime-96.md",
       "gatesKey": "webAigcDynamicChartRuntime96Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 64,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
     },
     {
       "id": "backend-python-web-aigc-transaction-flow-runtime-96",
       "task": "agent-loop/tasks/backend-python-web-aigc-transaction-flow-runtime-96.md",
       "gatesKey": "webAigcTransactionFlowRuntime96Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
+    },
+    {
+      "id": "backend-python-migration-status-refresh-overall-95",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-overall-95.md",
+      "gatesKey": "migrationStatusRefreshOverall95Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 2,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed by 96 runtime code queue; superseded by 97 overall-95 push"
+    },
+    {
+      "id": "backend-python-blueprint-job-event-stream-runtime-97",
+      "task": "agent-loop/tasks/backend-python-blueprint-job-event-stream-runtime-97.md",
+      "gatesKey": "blueprintJobEventStreamRuntime97Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 64,
@@ -846,9 +880,100 @@
       "timeoutMs": 3600000
     },
     {
-      "id": "backend-python-migration-status-refresh-overall-95",
-      "task": "agent-loop/tasks/backend-python-migration-status-refresh-overall-95.md",
-      "gatesKey": "migrationStatusRefreshOverall95Gates",
+      "id": "backend-python-blueprint-prompt-preview-runtime-97",
+      "task": "agent-loop/tasks/backend-python-blueprint-prompt-preview-runtime-97.md",
+      "gatesKey": "blueprintPromptPreviewRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-login-register-runtime-97",
+      "task": "agent-loop/tasks/backend-python-auth-login-register-runtime-97.md",
+      "gatesKey": "authLoginRegisterRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-permission-audit-hooks-runtime-97",
+      "task": "agent-loop/tasks/backend-python-permission-audit-hooks-runtime-97.md",
+      "gatesKey": "permissionAuditHooksRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-mission-event-replay-runtime-97",
+      "task": "agent-loop/tasks/backend-python-task-mission-event-replay-runtime-97.md",
+      "gatesKey": "taskMissionEventReplayRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-web-aigc-ocr-static-runtime-97",
+      "task": "agent-loop/tasks/backend-python-web-aigc-ocr-static-runtime-97.md",
+      "gatesKey": "webAigcOcrStaticRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-web-aigc-ai-ppt-runtime-97",
+      "task": "agent-loop/tasks/backend-python-web-aigc-ai-ppt-runtime-97.md",
+      "gatesKey": "webAigcAiPptRuntime97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-production-external-live-smoke-97",
+      "task": "agent-loop/tasks/backend-python-production-external-live-smoke-97.md",
+      "gatesKey": "productionExternalLiveSmoke97Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 64,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-migration-status-refresh-97",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-97.md",
+      "gatesKey": "migrationStatusRefresh97Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 64,
@@ -1233,5 +1358,57 @@
   "migrationStatusRefreshOverall95Gates": [
     "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['整体 NodeJS 后端','95','Blueprint','Auth','Audit','Task lifecycle','Web AIGC']) { if(!status.includes(needle)) throw new Error('migration status missing overall-95 evidence wording: '+needle); }\"",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} docs/backend-python-node-route-inventory-90.md docs/backend-python-runtime-depth-audit-90.md docs/backend-python-production-wiring-reality-95.md"
+  ],
+  "blueprintJobEventStreamRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_job_event_stream_runtime.py tests/test_blueprint_job_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.job-event-stream-python-runtime.test.ts server/routes/__tests__/blueprint.job-runtime-python-boundary.test.ts server/routes/blueprint/jobs/service.test.ts server/routes/blueprint/event-bus.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_job_event_stream.py tws-ai-slide-rule-python/services/blueprint_job_runtime.py tws-ai-slide-rule-python/tests/test_blueprint_job_event_stream_runtime.py server/routes/__tests__/blueprint.job-event-stream-python-runtime.test.ts server/routes/blueprint/jobs/service.ts server/routes/blueprint/event-bus.ts shared/blueprint/jobs/types.ts shared/blueprint/agent-events.ts"
+  ],
+  "blueprintPromptPreviewRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_prompt_preview_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.prompt-preview-python-runtime.test.ts server/routes/blueprint/prompt-package/service.test.ts server/routes/blueprint/effect-preview/service.test.ts server/routes/blueprint/preview-audit/service.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_prompt_preview.py tws-ai-slide-rule-python/tests/test_blueprint_prompt_preview_runtime.py server/routes/__tests__/blueprint.prompt-preview-python-runtime.test.ts server/routes/blueprint/prompt-package/service.ts server/routes/blueprint/effect-preview/service.ts server/routes/blueprint/preview-audit/service.ts shared/blueprint/preview-audit/types.ts"
+  ],
+  "authLoginRegisterRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_login_register_runtime.py tests/test_auth_session_refresh_logout_runtime.py tests/test_auth_session_production_persistence.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-login-register-python-runtime.test.ts server/tests/auth-session-refresh-logout-python-runtime.test.ts server/tests/auth-session-production-persistence.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_identity_runtime.py tws-ai-slide-rule-python/services/auth_session_persistence.py tws-ai-slide-rule-python/tests/test_auth_login_register_runtime.py server/tests/auth-login-register-python-runtime.test.ts server/routes/auth.ts server/auth/session-service.ts server/auth/email-code-service.ts shared/auth.ts"
+  ],
+  "permissionAuditHooksRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_audit_hooks_runtime.py tests/test_permission_check_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/permission-audit-hooks-python-runtime.test.ts server/tests/permission-governance-audit-routes.test.ts server/tests/permission-mcp-checker-wiring.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/permission_audit_hooks.py tws-ai-slide-rule-python/services/permission_management.py tws-ai-slide-rule-python/tests/test_permission_audit_hooks_runtime.py server/tests/permission-audit-hooks-python-runtime.test.ts server/permission/check-engine.ts server/permission/audit-logger.ts server/audit/audit-hooks.ts shared/permission/contracts.ts shared/audit/contracts.ts"
+  ],
+  "taskMissionEventReplayRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_mission_event_replay_runtime.py tests/test_task_lifecycle_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-mission-event-replay-python-runtime.test.ts server/tests/task-lifecycle-python-runtime.test.ts server/tests/mission-store.test.ts server/tests/mission-routes.test.ts server/tests/mission-cancel.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/mission_event_replay.py tws-ai-slide-rule-python/services/task_lifecycle_runtime.py tws-ai-slide-rule-python/tests/test_task_mission_event_replay_runtime.py server/tests/task-mission-event-replay-python-runtime.test.ts server/tasks/mission-store.ts server/tasks/mission-runtime.ts server/tasks/mission-projection.ts shared/mission/contracts.ts shared/mission/projection.ts"
+  ],
+  "webAigcOcrStaticRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_web_aigc_ocr_static_runtime.py tests/test_web_aigc_vision_audio_runtime_bridge.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/ocr-static-python-runtime.test.ts server/tests/ocr-recognition-routes.test.ts server/tests/static-webpage-read-routes.test.ts server/tests/ocr-recognition-node-adapter.test.ts server/tests/static-webpage-read-node-adapter.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/web_aigc_ocr_static_adapter.py tws-ai-slide-rule-python/services/web_aigc_media_adapter.py tws-ai-slide-rule-python/tests/test_web_aigc_ocr_static_runtime.py server/tests/ocr-static-python-runtime.test.ts server/routes/ocr-recognition.ts server/routes/static-webpage-read.ts server/routes/node-adapters/ocr-recognition-node-adapter.ts server/routes/node-adapters/static-webpage-read-node-adapter.ts shared/web-aigc-ocr-recognition.ts shared/static-webpage-read.ts"
+  ],
+  "webAigcAiPptRuntime97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_web_aigc_ai_ppt_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/ai-ppt-python-runtime.test.ts server/tests/ai-ppt-routes.test.ts server/tests/ai-ppt-node-adapter.test.ts server/tests/ai-ppt-generation-provider.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/web_aigc_ai_ppt_adapter.py tws-ai-slide-rule-python/tests/test_web_aigc_ai_ppt_runtime.py server/tests/ai-ppt-python-runtime.test.ts server/routes/ai-ppt.ts server/routes/node-adapters/ai-ppt-node-adapter.ts server/core/ai-ppt-generation-provider.ts shared/web-aigc-ai-ppt.ts"
+  ],
+  "productionExternalLiveSmoke97Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_external_dependency_live_smoke_97.py tests/test_deployment_live_smoke_boundary.py tests/test_real_vector_retrieval_production_wiring.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/python-external-dependency-live-smoke.test.ts server/routes/__tests__/python-deployment-live-smoke.test.ts server/routes/__tests__/python-observability-rollup.test.ts server/tests/qdrant-adapter.test.ts server/tests/embedding-provider.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/external_dependency_live_smoke.py tws-ai-slide-rule-python/tests/test_external_dependency_live_smoke_97.py server/routes/__tests__/python-external-dependency-live-smoke.test.ts server/rag/store/qdrant-adapter.ts server/rag/embedding/embedding-provider.ts server/core/web-aigc-runtime-observability.ts shared/telemetry/contracts.ts"
+  ],
+  "migrationStatusRefresh97Gates": [
+    "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['整体 NodeJS 后端','97','Blueprint','Auth','Audit','Task lifecycle','Web AIGC','production wiring']) { if(!status.includes(needle)) throw new Error('migration status missing 97 evidence wording: '+needle); }\"",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-job-event-stream-runtime-97.md agent-loop/tasks/backend-python-blueprint-prompt-preview-runtime-97.md agent-loop/tasks/backend-python-auth-login-register-runtime-97.md agent-loop/tasks/backend-python-permission-audit-hooks-runtime-97.md agent-loop/tasks/backend-python-task-mission-event-replay-runtime-97.md agent-loop/tasks/backend-python-web-aigc-ocr-static-runtime-97.md agent-loop/tasks/backend-python-web-aigc-ai-ppt-runtime-97.md agent-loop/tasks/backend-python-production-external-live-smoke-97.md"
   ]
 }
