@@ -13,6 +13,12 @@
     "scopedReview": true,
     "workerMaxTurns": 128,
     "workerMaxRetries": 1,
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    },
     "grokMaxTurns": 128,
     "grokMaxRetries": 1,
     "reviewMaxTurns": 6,

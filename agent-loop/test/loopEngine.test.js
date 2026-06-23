@@ -1146,6 +1146,77 @@ test('runLoop can use grok for scoped review after a green baseline gate', async
   assert.equal(result.codexReview, null);
 });
 
+test('runLoop injects worker env into agent processes and redacts raw values from state', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, 'fix gate to green\n\n## 成功标准\n\n- gate 全绿\n', 'utf8');
+
+  const gateResults = [
+    gate(false, 1, 'baseline failure'),
+    gate(true, 0, ''),
+  ];
+  const diffs = [
+    '',
+    'diff --git a/src/a.py b/src/a.py\n+fixed\n',
+  ];
+  const processCalls = [];
+  const states = [];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      fixAgent: 'grok',
+      reviewAgent: 'codex',
+      scopedReview: true,
+      workerEnv: {
+        HTTPS_PROXY: 'http://127.0.0.1:7890',
+        NO_PROXY: 'localhost,127.0.0.1,::1',
+      },
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gateResults.shift(),
+      captureDiff: async () => ({ text: diffs.shift() ?? diffs.at(-1) }),
+      runProcess: async (command, args, options) => {
+        processCalls.push({ command, args, options });
+        if (command === 'grok.exe') {
+          return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+        }
+        if (command === 'codex.exe') {
+          return runOk(command, args, options.cwd, '{"verdict":"pass","summary":"ok","findings":[]}');
+        }
+        throw new Error(`unexpected agent call: ${command} ${args.join(' ')}`);
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async (state) => states.push(state),
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(processCalls.length, 2);
+  assert.equal(processCalls[0].options.env.HTTPS_PROXY, 'http://127.0.0.1:7890');
+  assert.equal(processCalls[0].options.env.NO_PROXY, 'localhost,127.0.0.1,::1');
+  assert.equal(processCalls[1].options.env.HTTPS_PROXY, 'http://127.0.0.1:7890');
+  assert.equal(processCalls[1].options.env.NO_PROXY, 'localhost,127.0.0.1,::1');
+
+  for (const state of states) {
+    assert.equal(state.options.workerEnv, undefined);
+    assert.deepEqual(state.options.workerEnvKeys, ['HTTPS_PROXY', 'NO_PROXY']);
+  }
+  assert.equal(result.options.workerEnv, undefined);
+  assert.deepEqual(result.options.workerEnvKeys, ['HTTPS_PROXY', 'NO_PROXY']);
+});
+
 test('runLoop passes an absolute --cd path to scoped Codex review when worktree path is relative', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');

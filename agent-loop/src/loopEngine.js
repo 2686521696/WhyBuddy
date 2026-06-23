@@ -45,10 +45,12 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     onProgress = async () => {},
   } = deps;
 
+  const runtimeOptions = options;
+  const publicOptions = sanitizeOptionsForState(runtimeOptions);
   const state = resumeState ? snapshotState(resumeState) : {
     runId,
     status: 'INIT',
-    options,
+    options: publicOptions,
     agents: null,
     worktree: null,
     baselineGate: null,
@@ -73,16 +75,17 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   // read them unconditionally.
   state.reviewRounds = state.reviewRounds || [];
   if (state.pendingReview === undefined) state.pendingReview = null;
-  const guardPolicy = await loadGuardPolicy(options);
+  const guardPolicy = await loadGuardPolicy(runtimeOptions);
   state.guardPolicy = guardPolicy;
 
   async function transition(status, patch = {}) {
+    state.options = sanitizeOptionsForState(runtimeOptions);
     Object.assign(state, patch, { status });
     await onState(snapshotState(state));
   }
 
   if (resumeState) {
-    state.options = options;
+    state.options = publicOptions;
     await transition('RESUMED');
   } else {
     await transition('INIT');
@@ -90,13 +93,13 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
 
   const agents = await resolveAgents();
   await transition('PROBED', { agents });
-  const requiredAgents = requiredAgentNames(options);
+  const requiredAgents = requiredAgentNames(runtimeOptions);
   if (requiredAgents.some((name) => !agents[name])) {
     await transition('HALT_AGENT_NOT_FOUND');
     return snapshotState(state);
   }
 
-  const taskPath = path.resolve(options.cwd, options.task);
+  const taskPath = path.resolve(runtimeOptions.cwd, runtimeOptions.task);
   let taskText = await fs.readFile(taskPath, 'utf8');
   if (!resumeState) await writeArtifact('task.md', taskText, 'text');
 
@@ -111,12 +114,12 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
   }
 
   let worktree = null;
-  if (!resumeState && options.createWorktree) {
+  if (!resumeState && runtimeOptions.createWorktree) {
     try {
       worktree = await ensureWorktree({
-        repoRoot: options.cwd,
-        name: options.createWorktree,
-        timeoutMs: options.timeoutMs,
+        repoRoot: runtimeOptions.cwd,
+        name: runtimeOptions.createWorktree,
+        timeoutMs: runtimeOptions.timeoutMs,
       });
     } catch (error) {
       await transition('HALT_HUMAN', {
@@ -125,8 +128,8 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
       return snapshotState(state);
     }
   }
-  const repoCwd = path.resolve(options.cwd);
-  const rawFixCwd = options.fixCwd || state.worktree?.fixCwd || worktree?.path || options.cwd;
+  const repoCwd = path.resolve(runtimeOptions.cwd);
+  const rawFixCwd = runtimeOptions.fixCwd || state.worktree?.fixCwd || worktree?.path || runtimeOptions.cwd;
   const fixCwd = path.isAbsolute(rawFixCwd) ? rawFixCwd : path.resolve(repoCwd, rawFixCwd);
   let baselineGate = state.baselineGateSnapshot;
   let baselineDiff = { text: state.baselineDiffText || '' };
@@ -465,7 +468,7 @@ async function runFixAttempt({
       idleTimeoutMs: options.agentIdleTimeoutMs,
       agentTimeoutMs: options.agentTimeoutMs,
       onStderr: reporter.onStderr,
-    });
+    }, options);
   } else {
     const prompt = await fs.readFile(promptPath, 'utf8');
     agentFix = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({
@@ -478,7 +481,7 @@ async function runFixAttempt({
       agentTimeoutMs: options.agentTimeoutMs,
       input: prompt,
       onStderr: reporter.onStderr,
-    });
+    }, options);
   }
 
   await writeFixOutputArtifacts({
@@ -616,7 +619,7 @@ async function runReview({
       idleTimeoutMs: options.agentIdleTimeoutMs,
       agentTimeoutMs: options.agentTimeoutMs,
       onStderr: reporter.onStderr,
-    });
+    }, options);
   } else if (scoped) {
     agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexExecArgs({
       cwd: fixCwd,
@@ -628,7 +631,7 @@ async function runReview({
       agentTimeoutMs: options.agentTimeoutMs,
       input: promptInput,
       onStderr: reporter.onStderr,
-    });
+    }, options);
   } else {
     agentReview = await runAgentProcess(runProcess, agents.codex, buildCodexReviewArgs({
       model: options.reviewModel,
@@ -638,7 +641,7 @@ async function runReview({
       idleTimeoutMs: options.agentIdleTimeoutMs,
       agentTimeoutMs: options.agentTimeoutMs,
       onStderr: reporter.onStderr,
-    });
+    }, options);
   }
 
   await writeArtifact(`${reviewStem}.stdout.log`, agentReview.stdout || '', 'text');
@@ -852,6 +855,7 @@ async function completeTaskChecklistOnSuccess({ options, fixCwd, taskText }) {
 
 function finalizeState(state, options) {
   const { fixAgent, reviewAgent } = resolveAgentRoles(options);
+  state.options = sanitizeOptionsForState(options);
   state.agentFix = state.agentFix ?? state.grokFix ?? null;
   state.agentReview = state.agentReview ?? state.codexReview ?? state.grokReview ?? null;
   state.grokFix = fixAgent === 'grok' ? state.agentFix : null;
@@ -860,9 +864,38 @@ function finalizeState(state, options) {
   return snapshotState(state);
 }
 
-function runAgentProcess(runProcess, agent, args, options) {
+function runAgentProcess(runProcess, agent, args, processOptions, loopOptions = {}) {
   const invocation = resolveAgentInvocation(agent, args);
-  return runProcess(invocation.command, invocation.args, options);
+  return runProcess(invocation.command, invocation.args, {
+    ...processOptions,
+    env: buildWorkerProcessEnv(loopOptions.workerEnv, processOptions.env),
+  });
+}
+
+function buildWorkerProcessEnv(workerEnv = {}, baseEnv = process.env) {
+  const cleanWorkerEnv = {};
+  if (workerEnv && typeof workerEnv === 'object' && !Array.isArray(workerEnv)) {
+    for (const [name, value] of Object.entries(workerEnv)) {
+      if (value == null) continue;
+      cleanWorkerEnv[name] = String(value);
+    }
+  }
+  return {
+    ...baseEnv,
+    ...cleanWorkerEnv,
+  };
+}
+
+function sanitizeOptionsForState(options) {
+  const sanitized = { ...options };
+  const workerEnv = options?.workerEnv;
+  delete sanitized.workerEnv;
+  if (workerEnv && typeof workerEnv === 'object' && !Array.isArray(workerEnv)) {
+    sanitized.workerEnvKeys = Object.keys(workerEnv).filter((name) => workerEnv[name] != null).sort();
+  } else {
+    sanitized.workerEnvKeys = [];
+  }
+  return sanitized;
 }
 
 function summarizeGate(gate) {

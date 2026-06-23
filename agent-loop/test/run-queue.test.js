@@ -300,6 +300,46 @@ test('buildLoopArgsForQueueEntry uses worktree and omits fix-cwd', () => {
   assert.match(gateArg, /tws-ai-slide-rule-python[\\/]\.venv[\\/]Scripts[\\/]python\.exe/);
 });
 
+test('buildLoopArgsForQueueEntry passes merged worker env from defaults and entry', () => {
+  const args = buildLoopArgsForQueueEntry({
+    agentLoopRoot,
+    repoRoot,
+    entry: {
+      id: 'backend-python-network-worker',
+      task: 'agent-loop/tasks/backend-python-network-worker.md',
+      gatesKey: 'gates',
+      workerEnv: {
+        HTTPS_PROXY: 'http://127.0.0.1:7891',
+        NO_PROXY: 'localhost,127.0.0.1,::1',
+        EMPTY_IGNORED: '',
+      },
+    },
+    defaults: {
+      useWorktree: false,
+      autoFix: true,
+      skipReview: true,
+      workerEnv: {
+        HTTP_PROXY: 'http://127.0.0.1:7890',
+        HTTPS_PROXY: 'http://127.0.0.1:7890',
+      },
+    },
+    gateSets: {
+      gates: ['node --version'],
+    },
+    defaultGates: ['node --version'],
+  });
+
+  const workerEnvPairs = args
+    .map((arg, index) => (arg === '--worker-env' ? args[index + 1] : null))
+    .filter(Boolean);
+
+  assert.deepEqual(workerEnvPairs, [
+    'HTTP_PROXY=http://127.0.0.1:7890',
+    'HTTPS_PROXY=http://127.0.0.1:7891',
+    'NO_PROXY=localhost,127.0.0.1,::1',
+  ]);
+});
+
 test('migration queue task entries use worker max-turn fields instead of grok legacy names', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
@@ -340,6 +380,18 @@ test('migration queue defaults use grok as the fix worker', async () => {
   assert.equal(queue.defaults?.fixModel, 'grok-build');
   assert.equal(queue.defaults?.reviewAgent, 'codex');
   assert.equal(queue.defaults?.reviewModel, 'gpt-5.5');
+});
+
+test('migration queue defaults configure local proxy env for worker agents', async () => {
+  const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
+  const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
+
+  assert.deepEqual(queue.defaults?.workerEnv, {
+    HTTP_PROXY: 'http://127.0.0.1:7890',
+    HTTPS_PROXY: 'http://127.0.0.1:7890',
+    ALL_PROXY: 'http://127.0.0.1:7890',
+    NO_PROXY: 'localhost,127.0.0.1,::1',
+  });
 });
 
 test('migration queue enables 101 final-gap wave and disables superseded 100 wave', async () => {

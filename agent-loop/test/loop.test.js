@@ -50,6 +50,7 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
       maxIterations: 3,
       workerMaxTurns: null,
       workerMaxRetries: null,
+      workerEnv: {},
       grokMaxTurns: 4,
       grokMaxRetries: 1,
       retryBackoffMs: 1000,
@@ -66,6 +67,56 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
 
   assert.throws(() => parseLoopArgs(['--cwd', 'C:\\repo']), /--task is required/);
   assert.throws(() => parseLoopArgs(['--cwd', 'C:\\repo', '--task', 'task.md']), /at least one --gate is required/);
+});
+
+test('parseLoopArgs supports repeatable worker env values without requiring shell env inheritance', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--worker-env',
+    'HTTPS_PROXY=http://127.0.0.1:7890',
+    '--worker-env',
+    'NO_PROXY=localhost,127.0.0.1,::1',
+  ]);
+
+  assert.deepEqual(parsed.workerEnv, {
+    HTTPS_PROXY: 'http://127.0.0.1:7890',
+    NO_PROXY: 'localhost,127.0.0.1,::1',
+  });
+});
+
+test('parseLoopArgs rejects malformed worker env assignments', () => {
+  assert.throws(
+    () => parseLoopArgs([
+      '--cwd',
+      'C:\\repo',
+      '--task',
+      'task.md',
+      '--gate',
+      'npm test',
+      '--worker-env',
+      '=http://127.0.0.1:7890',
+    ]),
+    /--worker-env must be NAME=VALUE with a valid environment variable name/,
+  );
+
+  assert.throws(
+    () => parseLoopArgs([
+      '--cwd',
+      'C:\\repo',
+      '--task',
+      'task.md',
+      '--gate',
+      'npm test',
+      '--worker-env',
+      'HTTPS-PROXY=http://127.0.0.1:7890',
+    ]),
+    /--worker-env must be NAME=VALUE with a valid environment variable name/,
+  );
 });
 
 test('parseLoopArgs disables automatic task status sync when requested', () => {

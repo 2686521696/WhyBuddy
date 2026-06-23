@@ -178,6 +178,10 @@ export function buildLoopArgsForQueueEntry({
   const workerMaxRetries = entry.workerMaxRetries ?? entry.grokMaxRetries ?? defaults.workerMaxRetries ?? defaults.grokMaxRetries;
   if (workerMaxRetries != null) args.push('--worker-max-retries', String(workerMaxRetries));
 
+  for (const assignment of resolveWorkerEnvAssignments({ entry, defaults })) {
+    args.push('--worker-env', assignment);
+  }
+
   const reviewMaxTurns = entry.reviewMaxTurns ?? defaults.reviewMaxTurns;
   if (reviewMaxTurns != null) args.push('--review-max-turns', String(reviewMaxTurns));
   const agentIdleTimeoutMs = entry.agentIdleTimeoutMs ?? defaults.agentIdleTimeoutMs;
@@ -231,6 +235,26 @@ export function buildQueueSummaryFromState({ entry, state, exitCode = 0 }) {
     summary.rescuePatchAvailable = true;
   }
   return summary;
+}
+
+function resolveWorkerEnvAssignments({ entry = {}, defaults = {} } = {}) {
+  const merged = {
+    ...(isPlainObject(defaults.workerEnv) ? defaults.workerEnv : {}),
+    ...(isPlainObject(entry.workerEnv) ? entry.workerEnv : {}),
+  };
+  const assignments = [];
+  for (const [name, value] of Object.entries(merged)) {
+    if (value == null || value === '') continue;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(`workerEnv has invalid environment variable name: ${name}`);
+    }
+    assignments.push(`${name}=${String(value)}`);
+  }
+  return assignments;
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function buildQueueRestoreFailedSummary({ entry, error } = {}) {

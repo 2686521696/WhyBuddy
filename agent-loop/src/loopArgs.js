@@ -21,6 +21,7 @@ export function parseLoopArgs(argv) {
     maxIterations: 3,
     workerMaxTurns: null,
     workerMaxRetries: null,
+    workerEnv: {},
     grokMaxTurns: 4,
     grokMaxRetries: 1,
     retryBackoffMs: 1000,
@@ -120,6 +121,9 @@ export function parseLoopArgs(argv) {
       if (!Number.isFinite(parsed.workerMaxRetries) || parsed.workerMaxRetries < 0) {
         throw new Error('--worker-max-retries must be a non-negative integer');
       }
+    } else if (arg === '--worker-env') {
+      const { name, value } = parseWorkerEnvAssignment(readValue(argv, ++i, '--worker-env'));
+      parsed.workerEnv[name] = value;
     } else if (arg === '--grok-max-turns') {
       const v = Number.parseInt(readValue(argv, ++i, '--grok-max-turns'), 10);
       if (!Number.isFinite(v) || v <= 0) {
@@ -170,4 +174,15 @@ function readBooleanValue(argv, index, flag) {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`${flag} must be true or false`);
+}
+
+function parseWorkerEnvAssignment(raw) {
+  const text = String(raw ?? '');
+  const equalsIndex = text.indexOf('=');
+  const name = equalsIndex >= 0 ? text.slice(0, equalsIndex) : '';
+  const value = equalsIndex >= 0 ? text.slice(equalsIndex + 1) : '';
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error('--worker-env must be NAME=VALUE with a valid environment variable name');
+  }
+  return { name, value };
 }
