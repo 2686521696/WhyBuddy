@@ -1,54 +1,160 @@
-/* AgentLoop dashboard — operations-console theme.
-   Fixed palette (not derived from the VS Code theme): light surface, green as the
-   primary/success accent, blue for running/selected, red/amber for problems, and a
-   dark code block for agent output. A dark palette kicks in under .vscode-dark. */
+/* AgentLoop dashboard — VS Code theme-aware console (V2.2 high-contrast bridge).
+
+   Core approach (low-risk, following review):
+   - Bridge to real VS Code theme variables (--vscode-*) with graceful fallbacks.
+   - High Contrast now prioritizes semantic variables:
+       --vscode-editor-background, --vscode-foreground, --vscode-contrastBorder,
+       --vscode-focusBorder, --vscode-errorForeground, --vscode-warningForeground etc.
+     Hardcoded values are only last-resort fallbacks.
+   - --al-panel prefers --vscode-editorWidget-background (better for WebviewPanel) over pure sidebar.
+   - Keep SlideRule brand green as --al-accent (visible in HC via focusBorder fallback).
+   - Legacy variables remain aliases to --al-* → no breakage to existing rules.
+   - --al-* design token namespace ready for further convergence.
+
+   This directly addresses the main remaining "not native enough in high contrast" feedback from V2.1.
+*/
+
 :root {
   color-scheme: light dark;
-  --bg: #f7f6f1;
-  --panel: #ffffff;
-  --panel-2: #f2f1eb;
-  --ink: #1e2421;
-  --ink-fg: #e9ece8;
-  --fg: #23211c;
-  --muted: #76746b;
-  --border: #e6e3d9;
-  --border-soft: #efece4;
-  --accent: #2f7d4f;
-  --accent-fg: #ffffff;
-  --blue: #2f6fb0;
-  --ok: #2f7d4f;
-  --warn: #bd7e16;
-  --err: #c0392b;
-  --row-hover: #f2f1ea;
-  --row-active: #eaf1fb;
-  --shadow: 0 1px 2px rgba(30, 30, 20, 0.05);
-  --shadow-soft: 0 1px 3px rgba(30, 30, 20, 0.06);
-  --radius: 10px;
-  --radius-sm: 7px;
-  --font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --mono: var(--vscode-editor-font-family, "Cascadia Code", Consolas, "Courier New", monospace);
+
+  /* === Theme bridges (prefer VS Code, fallback to previous look) === */
+  --al-bg: var(--vscode-editor-background, #f7f6f1);
+  /* Dashboard is a WebviewPanel, prefer editorWidget / panel background over pure sidebar for better visual weight */
+  --al-panel: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #ffffff));
+  --al-panel-2: var(--vscode-sideBarSectionHeader-background, #f2f1eb);
+
+  /* "ink" is used for code/log blocks — bridge where possible */
+  --al-ink: var(--vscode-editor-background, #1e2421);
+  --al-ink-fg: var(--vscode-foreground, #e9ece8);
+  --al-fg: var(--vscode-foreground, #23211c);
+  --al-muted: var(--vscode-descriptionForeground, #76746b);
+  --al-border: var(--vscode-panel-border, #e6e3d9);
+  --al-border-soft: var(--vscode-editorWidget-border, #efece4);
+
+  /* Brand accent kept (SlideRule green) */
+  --al-accent: #2f7d4f;
+  --al-accent-fg: #ffffff;
+
+  --al-blue: #2f6fb0;
+  --al-ok: #2f7d4f;
+  --al-warn: #bd7e16;
+  --al-err: #c0392b;
+
+  /* Derived surfaces */
+  --al-row-hover: #f2f1ea;
+  --al-row-active: #eaf1fb;
+
+  /* Effects & metrics */
+  --al-shadow: 0 1px 2px rgba(30, 30, 20, 0.05);
+  --al-shadow-soft: 0 1px 3px rgba(30, 30, 20, 0.06);
+
+  /* Spacing & radius (new tokens) */
+  --al-space-1: 4px;
+  --al-space-2: 8px;
+  --al-space-3: 12px;
+  --al-radius-sm: 7px;
+  --al-radius-md: 10px;
+  --al-radius-pill: 999px;
+
+  /* Typography */
+  --al-font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --al-mono: var(--vscode-editor-font-family, "Cascadia Code", Consolas, "Courier New", monospace);
+
+  /* === Legacy aliases (so existing rules continue to work unchanged) === */
+  --bg: var(--al-bg);
+  --panel: var(--al-panel);
+  --panel-2: var(--al-panel-2);
+  --ink: var(--al-ink);
+  --ink-fg: var(--al-ink-fg);
+  --fg: var(--al-fg);
+  --muted: var(--al-muted);
+  --border: var(--al-border);
+  --border-soft: var(--al-border-soft);
+  --accent: var(--al-accent);
+  --accent-fg: var(--al-accent-fg);
+  --blue: var(--al-blue);
+  --ok: var(--al-ok);
+  --warn: var(--al-warn);
+  --err: var(--al-err);
+  --row-hover: var(--al-row-hover);
+  --row-active: var(--al-row-active);
+  --shadow: var(--al-shadow);
+  --shadow-soft: var(--al-shadow-soft);
+  --radius: var(--al-radius-md);
+  --radius-sm: var(--al-radius-sm);
+  --radius-pill: var(--al-radius-pill);
+  --font: var(--al-font);
+  --mono: var(--al-mono);
 }
 
+/* Dark theme via VS Code class */
 body.vscode-dark {
-  --bg: #1e1f1b;
-  --panel: #262722;
-  --panel-2: #1b1c18;
-  --ink: #15160f;
-  --ink-fg: #e4e7df;
-  --fg: #e9e7df;
-  --muted: #9d9a8e;
-  --border: #34352f;
-  --border-soft: #2c2d27;
-  --accent: #56a472;
-  --accent-fg: #15160f;
-  --blue: #5e94d0;
-  --ok: #56a472;
-  --warn: #cf9a3f;
-  --err: #d4685a;
-  --row-hover: #2f302a;
-  --row-active: #28333f;
-  --shadow: none;
-  --shadow-soft: none;
+  --al-bg: var(--vscode-editor-background, #1e1f1b);
+  --al-panel: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #262722));
+  --al-panel-2: var(--vscode-sideBarSectionHeader-background, #1b1c18);
+
+  /* Some ink colors are more "code block" and can stay opinionated but bridged */
+  --al-ink: var(--vscode-editor-background, #15160f);
+  --al-ink-fg: var(--vscode-foreground, #e4e7df);
+
+  --al-fg: var(--vscode-foreground, #e9e7df);
+  --al-muted: var(--vscode-descriptionForeground, #9d9a8e);
+  --al-border: var(--vscode-panel-border, #34352f);
+  --al-border-soft: var(--vscode-editorWidget-border, #2c2d27);
+
+  /* Brand green kept for accent even in dark */
+  --al-accent: #56a472;
+  --al-accent-fg: #15160f;
+
+  --al-blue: #5e94d0;
+  --al-ok: #56a472;
+  --al-warn: #cf9a3f;
+  --al-err: #d4685a;
+
+  --al-row-hover: var(--vscode-list-hoverBackground, #2f302a);
+  --al-row-active: var(--vscode-list-activeSelectionBackground, #28333f);
+
+  --al-shadow: none;
+  --al-shadow-soft: none;
+}
+
+/* High Contrast support (very important for VS Code extensions).
+   Prioritize VS Code high-contrast semantic variables.
+   Hardcoded extremes are only final fallbacks.
+   This makes the dashboard respect user's high-contrast theme settings (colors, borders, focus) as much as possible
+   while still keeping the SlideRule brand green visible where safe.
+*/
+body.vscode-high-contrast,
+body.vscode-high-contrast-dark,
+body.vscode-high-contrast-light,
+html[data-vscode-theme-kind*="high-contrast"] {
+  --al-bg: var(--vscode-editor-background, #000000);
+  --al-panel: var(--vscode-panel-background, var(--vscode-editorWidget-background, #000000));
+  --al-panel-2: var(--vscode-editorWidget-background, #000000);
+
+  --al-fg: var(--vscode-foreground, #ffffff);
+  --al-muted: var(--vscode-foreground, #ffffff); /* In HC, muted often same as fg for max contrast */
+
+  --al-border: var(--vscode-contrastBorder, #ffffff);
+  --al-border-soft: var(--vscode-contrastBorder, #ffffff);
+
+  /* Brand accent: prefer focus border for visibility, strong lime as fallback */
+  --al-accent: var(--vscode-focusBorder, #00ff00);
+  --al-accent-fg: var(--vscode-editor-background, #000000);
+
+  --al-blue: var(--vscode-focusBorder, #00aaff);
+
+  /* Status colors prefer semantic foregrounds */
+  --al-ok: var(--vscode-testing-iconPassed, var(--vscode-foreground, #00ff00));
+  --al-warn: var(--vscode-warningForeground, #ffff00);
+  --al-err: var(--vscode-errorForeground, #ff0000);
+
+  /* Hover/active in HC are usually driven by list colors or very high contrast */
+  --al-row-hover: var(--vscode-list-hoverBackground, #111111);
+  --al-row-active: var(--vscode-list-activeSelectionBackground, #1a1a1a);
+
+  --al-shadow: none;
+  --al-shadow-soft: none;
 }
 
 * { box-sizing: border-box; }
@@ -276,7 +382,7 @@ h2 {
 .progress {
   height: 7px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   overflow: hidden;
   background: color-mix(in srgb, var(--ok) 16%, var(--panel-2));
 }
@@ -284,7 +390,7 @@ h2 {
 .bar {
   height: 100%;
   background: var(--ok);
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   transition: width 0.4s ease;
 }
 
@@ -401,7 +507,7 @@ h2 {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   padding: 2px 10px;
   font-size: 0.72rem;
   cursor: pointer;
@@ -471,7 +577,7 @@ h2 {
   min-height: 20px;
   padding: 2px 9px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 12%, transparent);
   font-family: var(--mono);
@@ -1179,7 +1285,7 @@ h2 {
   right: 52px;
   top: 21px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   background: color-mix(in srgb, var(--ok) 58%, var(--border));
 }
 
@@ -1259,7 +1365,7 @@ h2 {
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--al-radius-md, 8px);
   background: var(--panel);
   box-shadow: var(--shadow);
 }
@@ -1357,7 +1463,7 @@ h2 {
   height: 30px;
   padding: 5px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--al-radius-sm, 6px);
   background: var(--panel);
   color: var(--fg);
   font: inherit;
@@ -1376,7 +1482,7 @@ h2 {
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--al-radius-pill, 999px);
   background: var(--panel);
   color: var(--muted);
   font: inherit;
@@ -1483,7 +1589,7 @@ h2 {
 
 .workbench-pane .log {
   max-height: min(58vh, 520px);
-  border-radius: 7px;
+  border-radius: var(--al-radius-sm, 7px);
 }
 
 .attention-box {

@@ -205,6 +205,10 @@ export class DashboardPanel {
   <div id="app"></div>
   <script nonce="${nonce}">window.__AGENT_LOOP_ASSETS__ = { brandLogo: ${JSON.stringify(String(brandUri))} };</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
+  <!-- Theme sync for robust --vscode-* variable bridging.
+       VS Code updates body classes on theme change, so main CSS rules (body.vscode-*) react automatically.
+       The data attr is a small helper for attribute-based rules. A full MutationObserver is overkill for now. -->
+  <script nonce="${nonce}">(function(){try{var k=document.body.className.match(/vscode-(light|dark|high-contrast)/);if(k)document.documentElement.setAttribute('data-vscode-theme-kind',k[0]);}catch(e){}})();</script>
 </body>
 </html>`;
   }
