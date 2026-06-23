@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python auth runtime 与 Node bridge；reviewer 必须确认没有把 mock mailer、内存 session 或 synthetic token 写成真实生产接管。
 
 ### 状态清单
-- [ ] Python 能输出 token/mailer/session cutover readiness。
-- [ ] Node bridge 能消费 readiness，并保留真实 session store、邮件发送、密码策略的边界。
-- [ ] login/register、refresh/logout、session persistence 的既有测试继续通过。
-- [ ] gate 全绿。
-- [ ] review 确认没有绕过安全策略。
+- [x] Python 能输出 token/mailer/session cutover readiness。
+- [x] Node bridge 能消费 readiness，并保留真实 session store、邮件发送、密码策略的边界。
+- [x] login/register、refresh/logout、session persistence 的既有测试继续通过。
+- [x] gate 全绿。
+- [x] review 确认没有绕过安全策略。
 
 ## 背景
 

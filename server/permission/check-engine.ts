@@ -444,3 +444,81 @@ export function toPermissionAuditFromPythonHook(
     metadata: { pythonSource: value.source, policy: value.policy, risk: value.risk },
   };
 }
+
+// ─── Permission/Audit Policy Store Cutover 101 (thin Node bridge, advisory only) ─────────────────
+// Python supplies decision envelope. Node owns durable policy store, audit store,
+// external audit platform, route auth, retention, enforcement. Never promotes memory to durable.
+
+export type PermissionAuditPolicyStoreCutoverDecision =
+  | "ready"
+  | "blocked"
+  | "degraded"
+  | "unsupported"
+  | "diagnostic-only";
+
+export interface PermissionAuditPolicyStoreCutoverResult {
+  decision: PermissionAuditPolicyStoreCutoverDecision;
+  decisions: { policyStore: string; auditStore: string; externalAudit: string };
+  canParticipate: { policyStore: boolean; auditStore: boolean; externalAudit: boolean };
+  contractVersion?: string;
+  provenance?: string;
+  area?: string;
+  boundaries?: Record<string, string>;
+  runtime?: { owner: string; mode: string; [k: string]: string };
+  ok?: boolean;
+  blocked?: boolean;
+  productionTakeover?: boolean;
+  diagnostics?: Record<string, unknown>;
+  error?: { code: string; message: string };
+}
+
+export function validatePermissionAuditPolicyStoreCutover(
+  payload: unknown,
+): PermissionAuditPolicyStoreCutoverResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      decision: "unsupported",
+      decisions: { policyStore: "unsupported", auditStore: "unsupported", externalAudit: "unsupported" },
+      canParticipate: { policyStore: false, auditStore: false, externalAudit: false },
+      contractVersion: "permission-audit-policy-store-cutover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      error: { code: "invalid", message: "Invalid cutover payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const rawDecision = (p.decision as string) || "unsupported";
+  const normalized: PermissionAuditPolicyStoreCutoverDecision =
+    rawDecision === "ready" ||
+    rawDecision === "blocked" ||
+    rawDecision === "degraded" ||
+    rawDecision === "unsupported" ||
+    rawDecision === "diagnostic-only"
+      ? (rawDecision as PermissionAuditPolicyStoreCutoverDecision)
+      : "unsupported";
+  const decisions = (p.decisions as any) || {
+    policyStore: "unsupported",
+    auditStore: "unsupported",
+    externalAudit: "unsupported",
+  };
+  const canParticipate = (p.canParticipate as any) || {
+    policyStore: false,
+    auditStore: false,
+    externalAudit: false,
+  };
+  return {
+    decision: normalized,
+    decisions,
+    canParticipate,
+    contractVersion: typeof p.contractVersion === "string" ? p.contractVersion : "permission-audit-policy-store-cutover.v1",
+    provenance: typeof p.provenance === "string" ? p.provenance : "python-permission-audit-policy-store-cutover",
+    area: typeof p.area === "string" ? p.area : undefined,
+    boundaries: (p.boundaries as Record<string, string>) || undefined,
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    ok: p.ok === true || normalized === "ready",
+    ...(p.blocked ? { blocked: true } : {}),
+    ...(p.productionTakeover !== undefined ? { productionTakeover: !!p.productionTakeover } : { productionTakeover: false }),
+    ...(p.diagnostics ? { diagnostics: p.diagnostics as Record<string, unknown> } : {}),
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+  };
+}

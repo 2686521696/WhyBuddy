@@ -98,6 +98,8 @@ import type {
   WebAigcDocumentSearchResponse,
   WebAigcSearchRequest,
 } from "../../shared/rag/web-aigc-search.js";
+import type { WebAigcRealProviderReadinessMatrix } from "../../shared/telemetry/contracts.js";
+import { recordWebAigcProviderReadiness } from "./web-aigc-runtime-observability.js";
 import type { TransactionFlowAction } from "../../shared/web-aigc-transaction-flow.js";
 import type {
   WebAigcOrchestrationRecognitionJumpCandidate,
@@ -1643,6 +1645,16 @@ class SimilarityMatchRuntimeAdapter implements WorkflowNodeAdapter {
       output: toWorkflowOutput(result.output),
     };
   }
+}
+
+// Web AIGC real provider readiness 101: Node bridge for python matrix.
+// consume distinguishes ready/skipped-live/blocked/degraded/unsupported.
+// skipped-live never counts as real external provider takeover.
+export function consumeWebAigcRealProviderReadinessMatrix(
+  matrix: Partial<WebAigcRealProviderReadinessMatrix> | undefined,
+) {
+  // delegates to observability record (which uses summarize for full classification)
+  return recordWebAigcProviderReadiness(matrix);
 }
 
 export function installWebAigcRuntimeExtraAdapters(

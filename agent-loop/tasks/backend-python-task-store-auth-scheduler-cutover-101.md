@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python runtime、Node bridge 和任务生命周期测试；reviewer 必须确认没有把单次 replay 或 fake scheduler 写成完整生产接管。
 
 ### 状态清单
-- [ ] Python 能表达 mission store decision、project/resource auth decision、scheduler decision。
-- [ ] Node bridge 能消费 Python decision，并保留当前 Node durable store 和路由权限边界。
-- [ ] scheduler、cancel、error、replay 的分类能被测试锁住。
-- [ ] gate 全绿。
-- [ ] review 确认不是 docs-only，也不是只更新任务勾选。
+- [x] Python 能表达 mission store decision、project/resource auth decision、scheduler decision。
+- [x] Node bridge 能消费 Python decision，并保留当前 Node durable store 和路由权限边界。
+- [x] scheduler、cancel、error、replay 的分类能被测试锁住。
+- [x] gate 全绿。
+- [x] review 确认不是 docs-only，也不是只更新任务勾选。
 
 ## 背景
 

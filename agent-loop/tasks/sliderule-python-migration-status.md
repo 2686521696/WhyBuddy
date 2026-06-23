@@ -16,6 +16,65 @@
 | `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python，并且错误/超时/取消语义有测试覆盖。 |
 | `production wiring` | 生产接线 | 接入存储、真实服务边界、观测、fallback（回退）或部署健康检查；smoke（冒烟）通过仍不等于真实外部服务长跑可用。 |
 
+## 101 阶段 final-gap 队列状态刷新
+
+本轮是 101 final-gap 队列的状态刷新任务（backend-python-migration-status-refresh-101）。只刷新状态，不新增业务迁移分子。基于 101 code queue 任务结果、gate、review 证据和 `docs/backend-python-node-route-cutover-audit-100.md` 延续结论更新口径。101 队列 6 个 cutover/readiness 任务均为边界收紧和 readiness 分类补强，不改变主要 node-owned-gap 的所有权结论。**本 status refresh 本身不计入任何迁移分子**。
+
+### 101 队列任务证据
+
+101 final-gap 队列（来自 `agent-loop/scripts/migration-queue.json`）共 6 个 code 任务 + 本刷新：
+
+- `backend-python-blueprint-shell-state-cutover-101`：cutover readiness / decision envelope for shell/state/job/event handoff。thin-proxy / compat cutover boundary。计入 readiness classification，不等于完整 `/api/blueprint` 迁移或 production-owned 变更。
+- `backend-python-task-store-auth-scheduler-cutover-101`：cutover readiness for mission store/project/resource auth/scheduler/cancel/error。readiness-only。计入 bounded decision，不等于完整 task lifecycle 生产接管。
+- `backend-python-auth-token-mailer-session-cutover-101`：token/mailer/session cutover readiness。readiness classification。Node 保留真实 session store、邮件发送、密码策略。
+- `backend-python-permission-audit-policy-store-cutover-101`：policy-store / audit durable cutover readiness。readiness-only，不等于完整 policy management/enforcement 或外部 audit platform 生产接管。
+- `backend-python-web-aigc-real-provider-readiness-101`：real provider readiness matrix（ready/skipped-live/blocked/degraded/unsupported）。readiness diagnostics。**不把 skipped-live、mock、synthetic 计入真实 external provider 迁移**。
+- `backend-python-a2a-core-route-cutover-101`：core route cutover decision for registry/session/stream/cancel/chat/report。thin cutover。A2A 完整 surfaces 仍 node-owned-gap。
+- `backend-python-migration-status-refresh-101`：本刷新任务，**不计入业务迁移分子**。
+
+所有 101 任务都明确要求区分 readiness-only / thin cutover / compat shell，禁止把它们写成 production takeover 或完整迁移。
+
+### 101 阶段计入与不计入清单
+
+| 类型 | 本轮 101 成功计入 | 本轮不能计入 |
+|---|---|---|
+| runtime / production cutover (full takeover) | — | 所有 6 个 101 任务均为 readiness / cutover decision / thin boundary，不产生 ownership takeover |
+| readiness / cutover classification / thin proxy | — | blueprint-shell-state-cutover、task-store-auth-scheduler-cutover、auth-token-mailer-session-cutover、permission-audit-policy-store-cutover、web-aigc-real-provider-readiness、a2a-core-route-cutover 仅补 decision envelope 和 matrix 分类，不计入迁移完成分子 |
+| audit / route cutover | — | 延续 100 audit 结论；101 未消除 node-owned-gaps |
+| status / docs / inventory / refresh | — | backend-python-migration-status-refresh-101 本身；任何 inventory/audit 文档 |
+| proxy / compat-shell / thin-proxy | 历史保留 | 101 强化了部分描述，但不能升级为完成或 100% |
+| failed / no-diff / HALT / skipped-live / rescue-only | — | 按规则不计；101 任务成功标准中 skipped-live 明确不计真实接管 |
+| SlideRule V5 | — | 101 未针对主链路新增 |
+
+### 101 阶段 整体工程进度
+
+**整体 NodeJS 后端迁 Python 约 98-99%，工作数字 98%。** 100 阶段约 97-98% 基础上，101 final-gap 队列提供了 6 个 cutover/readiness 边界证据和分类补强（shell/state、task store、auth token/mailer、perm/audit policy、web-aigc provider matrix、a2a core），使得可工作路径和诊断边界更清晰。但 `docs/backend-python-node-route-cutover-audit-100.md` 结论仍成立：Blueprint 主流程、完整 auth/audit/task/Web AIGC 和真实外部 provider 等大分母 node-owned-gap 仍存在。**未满足整体 100% 条件，不能写整体 100%**。使用保守口径。
+
+| 范围 | 101 阶段判断 | 进度条 | 计入口径 |
+|---|---:|---|---|
+| 整体 NodeJS 后端迁 Python | 约 98-99%，工作数字 98% | `[█████████░]` | 100 阶段 5 个 bounded + 101 6 个 readiness/cutover decision 强化了 thin-proxy / compat / readiness 分类；route audit 确认主要 node-owned-gap 仍存。不能写 100%。 |
+| SlideRule V5 子系统迁移 | 仍 95-97% 审计区间 | `[█████████░]` | 101 未新增 V5 主链路；保持审计姿态。 |
+| Blueprint-adjacent runtime support | 约 88-93% | `[█████████░]` | 101 补 shell/state cutover decision；主 state/job/event bus/ledger/prompt package 仍 Node-owned。 |
+| Auth/Audit runtime support | 约 89-93% | `[█████████░]` | 101 补 token/mailer/session/policy/audit readiness；生产 persistence/email/policy/external audit 仍是 node-owned-gap。 |
+| Task lifecycle support | 约 88-92% | `[█████████░]` | 101 补 store/auth/scheduler decision；mission store / project auth / full scheduler 仍是 node-owned-gap。 |
+| Web AIGC long-tail runtime | 约 85-91% | `[████████░░]` | 101 补 provider readiness matrix（含 skipped-live）；长尾大部分 + real external providers 仍是 node-owned-gap。 |
+| production wiring maturity / cutover readiness | 约 90-94% | `[█████████░]` | 101 强化了多处 readiness diagnostics 和分类；真实外部服务长跑接管仍未证明。 |
+
+### 101 阶段 剩余短板成熟度
+
+剩余短板成熟度表只看还没完全从 Node 拿下来的最后短板（node-owned-gap 大分母）。局部百分比明显低于整体是正常的，因为 101 只做了 decision 边界和 readiness matrix，并未把 durable store、真实 external provider、完整 policy/audit platform 迁走。解释见下。
+
+| 短板 | 成熟度 | 为什么局部仍 85-93%（101 后） |
+|---|---|---|
+| Blueprint 主系统 | 85-90% | 101 补了 shell/state/job handoff cutover decision 并保留 project/job/stage/actor 字段，但 `/api/blueprint` route shell + state machine + job store + event bus + diagnostics + ledger + replan + prompt package + preview 全链路仍为 production-owned / node-owned-gap。仅 decision，不等于主系统迁移。 |
+| Task lifecycle | 86-91% | 101 补了 mission store decision、project/resource auth decision、scheduler decision；但 mission store 持久化、完整 event replay、cancel/error 处理、project/resource auth、调度器仍 Node 为主。仅 bounded decision。 |
+| Auth 生产链路 | 88-93% | 101 补了 token/mailer/session cutover readiness；真实 user 库、email-mailer、password policy、session repository、token issuance 仍 node-owned-gap。仅 readiness 分类。 |
+| Permission / Audit | 85-91% | 101 补了 policy-store / audit durable cutover decision；完整 policy 管理、enforcement、durable store、anomaly/compliance、外部 audit platform 仍 node-owned-gap。仅 hooks + decision。 |
+| Web AIGC 长尾 + 真实 provider | 84-89% | 101 补了 provider readiness matrix（区分 ready/skipped-live/blocked/degraded）；大部分 node-adapters、web-qa、image/graph search + real Qdrant/search/OCR/vision/audio/APM/billing 仍 node-owned-gap。skipped-live 明确不计真实接管。 |
+| A2A / 核心其他 | 87-92% | 101 补了 core route cutover decision；registry/sessions/stream/cancel + chat/reports/analytics 等大多仍 node-owned-gap 或 production-owned。 |
+
+**关键区分**：整体工程进度看已迁移的大盘和可工作 thin-proxy/compat 路径（98-99%）；剩余短板成熟度只看最后几个 Node 仍主导的大分母（85-93% 正常偏低）。
+
 ## 100 阶段候选队列状态刷新
 
 本轮是 100% 候选队列的最终状态刷新任务（backend-python-migration-status-refresh-100）。只刷新状态，不新增业务迁移分子。基于 `.agent-loop/queue-outcomes.json`、100 候选任务结果/diff/gate/commit、 `docs/backend-python-node-route-cutover-audit-100.md` 结论更新口径。只有当 route cutover audit 支持且所有关键路线均为 thin proxy / compat shell / production-owned、无 node-owned-gap、100% 候选全部 DONE_REVIEWED 落地时，才允许写整体 100%。

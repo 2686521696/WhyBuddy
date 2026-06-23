@@ -1013,3 +1013,73 @@ export function summarizeExternalLiveSmoke(
   const canClaimProduction = ready > 0 && skipped === 0 && configMissing === 0 && failedOrTimeout === 0;
   return { ready, skipped, configMissing, failedOrTimeout, canClaimProduction };
 }
+
+// ---------------------------------------------------------------------------
+// Web AIGC real provider readiness (101): matrix contract for python -> node
+// Statuses: ready | skipped-live | blocked | degraded | unsupported
+// skipped-live / synthetic MUST NOT be treated as real external provider ready.
+// Used by web-aigc-runtime-observability and extra-adapters.
+// ---------------------------------------------------------------------------
+
+export type WebAigcRealProviderReadinessStatus =
+  | "ready"
+  | "skipped-live"
+  | "blocked"
+  | "degraded"
+  | "unsupported";
+
+export interface WebAigcRealProviderReadinessEntry {
+  kind: string;
+  status: WebAigcRealProviderReadinessStatus;
+  category: string;
+  reason: string;
+  backend: "python" | "node";
+  externalCalls: false;
+  synthetic?: boolean;
+}
+
+export interface WebAigcRealProviderReadinessMatrix {
+  contractVersion: string;
+  provenance: string;
+  ok: boolean;
+  total: number;
+  counts: {
+    ready: number;
+    skippedLive: number;
+    blocked: number;
+    degraded: number;
+    unsupported: number;
+  };
+  providers: Record<string, WebAigcRealProviderReadinessEntry>;
+  matrix: Record<string, string[]>;
+  runtime: { owner: "python"; mode: string; externalCalls: false };
+  note: string;
+}
+
+export function summarizeWebAigcProviderReadiness(
+  providers: Record<string, { status: WebAigcRealProviderReadinessStatus } | WebAigcRealProviderReadinessEntry>,
+): {
+  ready: number;
+  skippedLive: number;
+  blocked: number;
+  degraded: number;
+  unsupported: number;
+  canClaimRealExternal: boolean;
+} {
+  const entries = Object.values(providers || {});
+  const ready = entries.filter((e) => e.status === "ready").length;
+  const skippedLive = entries.filter((e) => e.status === "skipped-live").length;
+  const blocked = entries.filter((e) => e.status === "blocked").length;
+  const degraded = entries.filter((e) => e.status === "degraded").length;
+  const unsupported = entries.filter((e) => e.status === "unsupported").length;
+  // real external claim only if ready>0 and ZERO skipped-live/blocked/degraded/unsupported.
+  // Per contract: this 101 matrix's ready = synthetic/python-internal (externalCalls:false, synthetic:true for readies).
+  // Incorporate synthetic/externalCalls/provenance signals: never allow real external takeover claim for synthetic readiness.
+  // This ensures a fully "ready" synthetic/mock matrix never sets canClaimRealExternal=true.
+  const hasRealExternalSignal = entries.some(
+    (e: any) => e && (e.externalCalls === true || (e.synthetic === false && e.status === "ready" && e.backend !== "python")),
+  );
+  const canClaimRealExternal =
+    ready > 0 && skippedLive === 0 && blocked === 0 && degraded === 0 && unsupported === 0 && hasRealExternalSignal;
+  return { ready, skippedLive, blocked, degraded, unsupported, canClaimRealExternal };
+}

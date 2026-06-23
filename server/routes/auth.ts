@@ -23,6 +23,7 @@ import {
   toCurrentUser,
   validatePythonAuthIdentityResult,
   validateAuthAuditProductionClosure,
+  validateAuthTokenMailerSessionCutover,
 } from "../auth/session-service.js";
 import type {
   EmailLoginTokenPurpose,
@@ -93,6 +94,10 @@ export interface AuthRouterDeps {
   pythonAuthAuditClosure?: {
     execute(payload: Record<string, unknown>): any | Promise<any>;
   };
+  // thin python token/mailer/session cutover readiness (101 advisory; node keeps real issuance/mailer/store/policy)
+  pythonTokenMailerSessionCutover?: {
+    execute(payload: Record<string, unknown>): any | Promise<any>;
+  };
 }
 
 function jsonError(error: string): AuthErrorResponse {
@@ -161,6 +166,24 @@ async function runPythonAuthAuditClosure(deps: AuthRouterDeps, payload: Record<s
       runtime: { owner: "node", mode: "local_fallback" },
       closureSummary: { status: "failed", components: {}, metadata: {} },
       error: { code: "bridge_error", message: "Auth audit closure fetch failed" },
+    };
+  }
+}
+
+async function runPythonTokenMailerSessionCutover(deps: AuthRouterDeps, payload: Record<string, unknown>): Promise<any | null> {
+  if (!deps.pythonTokenMailerSessionCutover) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonTokenMailerSessionCutover.execute(payload));
+    return validateAuthTokenMailerSessionCutover(raw);
+  } catch {
+    return {
+      status: "skipped-live",
+      contractVersion: "auth-token-mailer-session-cutover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      cutoverSummary: { status: "skipped-live", components: {}, metadata: {} },
+      error: { code: "bridge_error", message: "Auth token/mailer/session cutover fetch failed" },
     };
   }
 }
@@ -489,6 +512,28 @@ export function createAuthRouter(deps: AuthRouterDeps) {
         ok: false,
         runtime: { owner: "node", mode: "local_fallback" },
         closureSummary: { status: "config_missing", components: {}, metadata: { note: "python not wired" } },
+      }),
+    });
+  });
+
+  // thin consumption of python token/mailer/session cutover readiness (101)
+  // Node retains real token issuance, email delivery, session repo, password policy
+  router.get("/__internal/auth-token-mailer-session-cutover", async (request, response) => {
+    const cutover = await runPythonTokenMailerSessionCutover(deps, { metadata: { source: "node-consume" } });
+    if (cutover) {
+      response.json({ success: true, cutover });
+      return;
+    }
+    // fallback explicit non-ready
+    response.json({
+      success: true,
+      cutover: validateAuthTokenMailerSessionCutover({
+        status: "skipped-live",
+        contractVersion: "auth-token-mailer-session-cutover.v1",
+        provenance: "node-fallback",
+        ok: false,
+        runtime: { owner: "node", mode: "local_fallback" },
+        cutoverSummary: { status: "skipped-live", components: { tokenIssuance: "node", emailCodeMailer: "node", sessionRepository: "node" }, metadata: { note: "python not wired" } },
       }),
     });
   });

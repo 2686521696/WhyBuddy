@@ -64,6 +64,7 @@ export interface TaskRouterOptions {
   executorBaseUrl?: string;
   taskLifecycleRuntimeBaseUrl?: string;
   taskLifecycleProductionClosureBaseUrl?: string;
+  taskStoreAuthSchedulerCutoverBaseUrl?: string;
   workflowRetry?: WorkflowRetryDependencies;
   requireAuth?: RequestHandler;
   projects?: {
@@ -228,6 +229,15 @@ function resolveTaskLifecycleProductionClosureBaseUrl(
   const configured =
     options.taskLifecycleProductionClosureBaseUrl?.trim() ||
     process.env.TASK_LIFECYCLE_PRODUCTION_CLOSURE_BASE_URL?.trim();
+  return configured ? configured.replace(/\/+$/, '') : undefined;
+}
+
+function resolveTaskStoreAuthSchedulerCutoverBaseUrl(
+  options: TaskRouterOptions,
+): string | undefined {
+  const configured =
+    options.taskStoreAuthSchedulerCutoverBaseUrl?.trim() ||
+    process.env.TASK_STORE_AUTH_SCHEDULER_CUTOVER_BASE_URL?.trim();
   return configured ? configured.replace(/\/+$/, '') : undefined;
 }
 
@@ -721,6 +731,69 @@ async function callTaskLifecycleProductionClosureSafely(
       code: 'TASK_LIFECYCLE_CLOSURE_UNAVAILABLE',
       message: error instanceof Error ? error.message : 'Task lifecycle production closure unavailable.',
     };
+  }
+}
+
+interface TaskStoreAuthSchedulerCutoverDecision {
+  decision: string;
+  decisions: { missionStore: string; projectResourceAuth: string; scheduler: string };
+  canParticipate: { missionStore: boolean; projectResourceAuth: boolean; scheduler: boolean };
+  contractVersion?: string;
+  provenance?: string;
+  missionId?: string;
+  boundaries?: Record<string, string>;
+  schedulerClassification?: { cancel: string; error: string; replay: string; state: string };
+  runtime?: { owner: string; mode: string };
+  ok?: boolean;
+  blocked?: boolean;
+}
+
+async function callTaskStoreAuthSchedulerCutover(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskStoreAuthSchedulerCutoverDecision | undefined> {
+  if (!options.baseUrl) {
+    return undefined;
+  }
+  const url = `${options.baseUrl}/api/tasks/cutover/decision`;
+  const res = await options.fetchImpl(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    return {
+      decision: 'unsupported',
+      decisions: { missionStore: 'unsupported', projectResourceAuth: 'unsupported', scheduler: 'unsupported' },
+      canParticipate: { missionStore: false, projectResourceAuth: false, scheduler: false },
+      ok: false,
+    };
+  }
+  const parsed = await res.json().catch(() => ({}));
+  if (parsed && typeof parsed === 'object' && 'decision' in parsed) {
+    return parsed as TaskStoreAuthSchedulerCutoverDecision;
+  }
+  return {
+    decision: 'ready',
+    decisions: { missionStore: 'ready', projectResourceAuth: 'ready', scheduler: 'ready' },
+    canParticipate: { missionStore: true, projectResourceAuth: true, scheduler: true },
+  };
+}
+
+async function callTaskStoreAuthSchedulerCutoverSafely(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskStoreAuthSchedulerCutoverDecision | undefined> {
+  try {
+    return await callTaskStoreAuthSchedulerCutover(payload, options);
+  } catch {
+    return undefined;
   }
 }
 
@@ -1295,6 +1368,23 @@ export function createTaskRouter(
       );
     }
 
+    // Consume Python task store/auth/scheduler cutover decision (advisory only; Node owns store/auth/scheduler)
+    const taskStoreAuthSchedulerCutoverBaseUrl = resolveTaskStoreAuthSchedulerCutoverBaseUrl(options);
+    let cutoverDecision: TaskStoreAuthSchedulerCutoverDecision | undefined;
+    if (taskStoreAuthSchedulerCutoverBaseUrl) {
+      cutoverDecision = await callTaskStoreAuthSchedulerCutoverSafely(
+        {
+          missionId: task.id,
+          projectId: ownedProjectId,
+          resourceId: task.id,
+          actor,
+          metadata: lifecycleMetadata,
+          area: 'all',
+        },
+        { baseUrl: taskStoreAuthSchedulerCutoverBaseUrl, fetchImpl },
+      );
+    }
+
     let dispatchAccepted: boolean | undefined;
     let dispatchError: string | undefined;
     if (!lifecycleError && shouldAutoDispatchMission(task, body.autoDispatch)) {
@@ -1329,6 +1419,7 @@ export function createTaskRouter(
           }
         : {}),
       ...(closureSummary ? { closure: closureSummary } : {}),
+      ...(cutoverDecision ? { cutoverDecision } : {}),
       ...(dispatchAccepted === undefined
         ? {}
         : {

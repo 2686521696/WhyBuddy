@@ -29,6 +29,7 @@ export function createEmailCodeService(options: {
   pepper?: string;
   now?: () => Date;
 }): EmailCodeService {
+  // node-owned real mailer boundary retained for token-mailer-session cutover 101
   const ttlSeconds = Math.max(60, Math.floor(options.ttlSeconds ?? 10 * 60));
   const pepper = options.pepper ?? process.env.EMAIL_CODE_PEPPER ?? "";
   const now = options.now ?? (() => new Date());

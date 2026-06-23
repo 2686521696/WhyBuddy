@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python A2A route cutover runtime、Node bridge 和测试；reviewer 必须确认没有把 stream/invoke 两个薄桥接夸大成 A2A 全量接管。
 
 ### 状态清单
-- [ ] Python 能输出 A2A core route cutover decision。
-- [ ] Node bridge 能消费 registry/session/stream/cancel/chat/report readiness。
-- [ ] 既有 A2A invoke、stream、contract 测试继续通过。
-- [ ] gate 全绿。
-- [ ] review 确认未破坏协议兼容。
+- [x] Python 能输出 A2A core route cutover decision。
+- [x] Node bridge 能消费 registry/session/stream/cancel/chat/report readiness。
+- [x] 既有 A2A invoke、stream、contract 测试继续通过。
+- [x] gate 全绿。
+- [x] review 确认未破坏协议兼容。
 
 ## 背景
 

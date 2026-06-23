@@ -65,3 +65,6 @@ export function isAdminRole(role: UserRole | null | undefined): boolean {
 
 // Python runtime boundary envelope types (auth login/register) for migration contract.
 export type PythonAuthIdentityEnvelope = { ok: boolean; operation?: string; error?: string } & Record<string, unknown>;
+
+// Token/mailer/session cutover types for 101 (advisory envelopes; node owns real issuance/mailer/policy)
+export type PythonAuthTokenMailerSessionCutoverEnvelope = { status: string; ok?: boolean } & Record<string, unknown>;

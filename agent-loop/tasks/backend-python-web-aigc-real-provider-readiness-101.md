@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python readiness runtime、Node bridge 和测试；reviewer 必须确认 synthetic provider、mock smoke、skipped live 不会被写成真实生产接管。
 
 ### 状态清单
-- [ ] Python 能输出 search/file/vision/audio/OCR/static/AI PPT/chart/transaction 等 provider readiness matrix。
-- [ ] Node bridge 能消费 matrix，并清楚区分 ready、skipped-live、blocked、degraded。
-- [ ] Web AIGC 既有 runtime adapter 测试继续通过。
-- [ ] gate 全绿。
-- [ ] review 确认进度文案不会虚高。
+- [x] Python 能输出 search/file/vision/audio/OCR/static/AI PPT/chart/transaction 等 provider readiness matrix。
+- [x] Node bridge 能消费 matrix，并清楚区分 ready、skipped-live、blocked、degraded。
+- [x] Web AIGC 既有 runtime adapter 测试继续通过。
+- [x] gate 全绿。
+- [x] review 确认进度文案不会虚高。
 
 ## 背景
 

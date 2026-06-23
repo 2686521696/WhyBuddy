@@ -561,3 +561,79 @@ export function validateAuthAuditProductionClosure(payload: unknown): AuthAuditP
     ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
   };
 }
+
+// Token/mailer/session cutover readiness (101) - advisory only
+export type AuthTokenMailerSessionCutoverStatus = "ready" | "blocked" | "degraded" | "skipped-live";
+
+export interface AuthTokenMailerSessionCutoverResult {
+  status: AuthTokenMailerSessionCutoverStatus;
+  contractVersion: string;
+  provenance: string;
+  ok: boolean;
+  runtime: { owner: "python" | "node"; mode: string };
+  cutoverSummary?: { status: string; components: Record<string, string>; metadata: Record<string, unknown> };
+  error?: { code: string; message: string };
+}
+
+function containsSecretForCutover(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretForCutover(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const n = key.toLowerCase();
+    // allow structural component names like tokenIssuance, but block real secret fields
+    if (n === "token" || n === "cookie" || n === "password" || n === "secret" || n === "hash" || n === "bearer" || n === "accesstoken" || n === "refreshtoken") {
+      return true;
+    }
+    if ((n.includes("token") || n.includes("cookie") || n.includes("password") || n.includes("secret") || n.includes("hash") || n.includes("bearer")) && typeof child === "string" && child.length > 20) {
+      return true;
+    }
+    return containsSecretForCutover(child);
+  });
+}
+
+export function validateAuthTokenMailerSessionCutover(payload: unknown): AuthTokenMailerSessionCutoverResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      status: "skipped-live",
+      contractVersion: "auth-token-mailer-session-cutover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid cutover payload" },
+    };
+  }
+  if (containsSecretForCutover(payload)) {
+    return {
+      status: "skipped-live",
+      contractVersion: "auth-token-mailer-session-cutover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid cutover payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const rawStatus = (p.status as string) || "skipped-live";
+  const normalizedStatus: AuthTokenMailerSessionCutoverStatus =
+    rawStatus === "ready" || rawStatus === "blocked" || rawStatus === "degraded" || rawStatus === "skipped-live"
+      ? (rawStatus as AuthTokenMailerSessionCutoverStatus)
+      : "skipped-live";
+  const cs = (p.cutoverSummary as any) || { status: normalizedStatus, components: {}, metadata: {} };
+  return {
+    status: normalizedStatus,
+    contractVersion: typeof p.contractVersion === "string" ? p.contractVersion : "auth-token-mailer-session-cutover.v1",
+    provenance: typeof p.provenance === "string" ? p.provenance : "python-auth-token-mailer-session-cutover",
+    ok: normalizedStatus === "ready",
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    cutoverSummary: {
+      status: (cs.status as string) || normalizedStatus,
+      components: (cs.components as Record<string, string>) || {},
+      metadata: (cs.metadata as Record<string, unknown>) || {},
+    },
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+  };
+}

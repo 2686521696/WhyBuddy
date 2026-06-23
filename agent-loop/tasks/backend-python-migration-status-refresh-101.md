@@ -6,12 +6,12 @@
 - 角色分工：worker 负责读取 queue outcomes、commits、gate、任务文档和 diff 证据；reviewer 必须确认没有把 docs-only、no-diff、skipped-live、HALT 或 rescue-only 任务计入业务迁移完成。
 
 ### 状态清单
-- [ ] 读取 101 队列每个任务的 outcome、diff、gate、review 证据。
-- [ ] 区分 real runtime、thin proxy、compat shell、readiness-only、docs-only、no-diff、failed、manual rescue。
-- [ ] 更新整体工程进度表，避免把短板成熟度和总进度混成一个数字。
-- [ ] 更新剩余短板成熟度表，解释为什么局部仍可能是 85-93%。
-- [ ] gate 全绿。
-- [ ] review 确认没有虚高整体 NodeJS 后端迁移进度。
+- [x] 读取 101 队列每个任务的 outcome、diff、gate、review 证据。
+- [x] 区分 real runtime、thin proxy、compat shell、readiness-only、docs-only、no-diff、failed、manual rescue。
+- [x] 更新整体工程进度表，避免把短板成熟度和总进度混成一个数字。
+- [x] 更新剩余短板成熟度表，解释为什么局部仍可能是 85-93%。
+- [x] gate 全绿。
+- [x] review 确认没有虚高整体 NodeJS 后端迁移进度。
 
 ## 背景
 

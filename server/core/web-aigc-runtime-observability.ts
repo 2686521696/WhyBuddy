@@ -1,6 +1,11 @@
 import { AuditEventType } from "../../shared/audit/contracts.js";
 import type { AgentEvent } from "../../shared/workflow-runtime.js";
 import type { ExecutionEvent, ReplayEventType } from "../../shared/replay/contracts.js";
+import type {
+  WebAigcRealProviderReadinessMatrix,
+  WebAigcRealProviderReadinessStatus,
+} from "../../shared/telemetry/contracts.js";
+import { summarizeWebAigcProviderReadiness } from "../../shared/telemetry/contracts.js";
 
 export interface WebAigcRuntimeReplayCollectorLike {
   emit(event: Omit<ExecutionEvent, "eventId" | "timestamp">): void;
@@ -463,4 +468,24 @@ export function mirrorWebAigcRuntimeEvent(event: AgentEvent): void {
   } catch {
     // Audit mirroring must never break runtime events.
   }
+}
+
+// Web AIGC real provider readiness 101 integration
+// Records provider matrix into observability context. skipped-live entries are
+// explicitly separated and never promoted as real provider takeover.
+export function recordWebAigcProviderReadiness(
+  matrix: Partial<WebAigcRealProviderReadinessMatrix> | undefined,
+): {
+  ready: number;
+  skippedLive: number;
+  blocked: number;
+  degraded: number;
+  unsupported: number;
+  canClaimRealExternal: boolean;
+} {
+  if (!matrix || !matrix.providers) {
+    return { ready: 0, skippedLive: 0, blocked: 0, degraded: 0, unsupported: 0, canClaimRealExternal: false };
+  }
+  const providers = matrix.providers as Record<string, { status: WebAigcRealProviderReadinessStatus }>;
+  return summarizeWebAigcProviderReadiness(providers);
 }

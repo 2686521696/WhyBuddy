@@ -6,11 +6,11 @@
 - 角色分工：worker 负责 Python policy/audit runtime、Node bridge 和测试；reviewer 必须确认不会把内存审计或只写 hook 当成生产审计接管。
 
 ### 状态清单
-- [ ] Python 能输出 policy-store cutover decision。
-- [ ] Node bridge 能消费 decision，并保留 durable store、external audit、route auth 的边界。
-- [ ] permission check、rate limit、audit event/query/retention/export 的关键测试继续通过。
-- [ ] gate 全绿。
-- [ ] review 确认没有绕过权限或弱化审计链。
+- [x] Python 能输出 policy-store cutover decision。
+- [x] Node bridge 能消费 decision，并保留 durable store、external audit、route auth 的边界。
+- [x] permission check、rate limit、audit event/query/retention/export 的关键测试继续通过。
+- [x] gate 全绿。
+- [x] review 确认没有绕过权限或弱化审计链。
 
 ## 背景
 
