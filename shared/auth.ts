@@ -62,3 +62,6 @@ export function normalizeAuthEmail(email: string): string {
 export function isAdminRole(role: UserRole | null | undefined): boolean {
   return role === "admin" || role === "super_admin";
 }
+
+// Python runtime boundary envelope types (auth login/register) for migration contract.
+export type PythonAuthIdentityEnvelope = { ok: boolean; operation?: string; error?: string } & Record<string, unknown>;

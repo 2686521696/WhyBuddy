@@ -365,3 +365,100 @@ export function createSessionService(options: {
     },
   };
 }
+
+export type PythonAuthIdentityOperation = "register" | "login" | "verify_email_code";
+export type PythonAuthIdentityState = "registered" | "authenticated" | "expired";
+export type PythonAuthIdentityErrorCode = "invalid_credentials" | "expired_code" | "invalid";
+
+export interface PythonAuthIdentitySuccessContract {
+  ok: true;
+  operation: PythonAuthIdentityOperation;
+  state: "registered" | "authenticated";
+  user: CurrentUser;
+  sessionIssued?: boolean;
+}
+
+export interface PythonAuthIdentityErrorContract {
+  ok?: false;
+  error: PythonAuthIdentityErrorCode;
+  status: 401 | 503;
+  message: string;
+  state?: "expired";
+}
+
+export type PythonAuthIdentityResult =
+  | PythonAuthIdentitySuccessContract
+  | PythonAuthIdentityErrorContract;
+
+function isCurrentUserForIdentity(value: unknown): value is CurrentUser {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const u = value as Partial<CurrentUser>;
+  return (
+    typeof u.id === "string" &&
+    typeof u.email === "string" &&
+    typeof u.role === "string" &&
+    typeof u.status === "string" &&
+    typeof u.emailVerified === "boolean" &&
+    typeof u.createdAt === "string"
+  );
+}
+
+function containsSecretForIdentity(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretForIdentity(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const n = key.toLowerCase();
+    if (
+      n.includes("token") ||
+      n.includes("cookie") ||
+      n.includes("password") ||
+      n.includes("secret") ||
+      n.includes("hash")
+    ) {
+      return true;
+    }
+    return containsSecretForIdentity(child);
+  });
+}
+
+export function validatePythonAuthIdentityResult(payload: unknown): PythonAuthIdentityResult {
+  if (!payload || typeof payload !== "object") {
+    return { ok: false, error: "invalid", status: 401, message: "Invalid request" };
+  }
+  if (containsSecretForIdentity(payload)) {
+    return { ok: false, error: "invalid", status: 401, message: "Invalid request" };
+  }
+  const p = payload as Record<string, unknown>;
+  const error = p.error as PythonAuthIdentityErrorCode | undefined;
+  if (error === "invalid_credentials" || error === "expired_code" || error === "invalid") {
+    const state = p.state === "expired" ? "expired" : undefined;
+    return {
+      ok: false,
+      error,
+      status: (p.status as 401) || 401,
+      message: typeof p.message === "string" ? p.message : "Authentication failed",
+      ...(state ? { state } : {}),
+    };
+  }
+  if (p.ok === true && p.operation && isCurrentUserForIdentity(p.user)) {
+    const op = p.operation as PythonAuthIdentityOperation;
+    if (op === "register" || op === "login" || op === "verify_email_code") {
+      const state = (p.state as any) === "registered" ? "registered" : "authenticated";
+      return {
+        ok: true,
+        operation: op,
+        state,
+        user: p.user,
+        ...(typeof p.sessionIssued === "boolean" ? { sessionIssued: p.sessionIssued } : {}),
+      };
+    }
+  }
+  // treat non-matching as denied invalid
+  return { ok: false, error: "invalid", status: 401, message: "Invalid request" };
+}

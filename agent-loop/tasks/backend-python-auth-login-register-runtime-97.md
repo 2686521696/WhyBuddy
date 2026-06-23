@@ -8,11 +8,11 @@
 
 ### 状态清单
 
-- [ ] Python runtime 支持 register/login/email-code verify/session-issued/denied/error envelope。
-- [ ] Node auth route 能调用 Python runtime，并保留现有 password/email/session metadata。
-- [ ] denied/invalid/expired 不伪装成 authenticated。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有引入真实邮件、真实用户库或不安全 token 签发。
+- [x] Python runtime 支持 register/login/email-code verify/session-issued/denied/error envelope。
+- [x] Node auth route 能调用 Python runtime，并保留现有 password/email/session metadata。
+- [x] denied/invalid/expired 不伪装成 authenticated。
+- [x] gate 全绿。
+- [x] Codex review 确认没有引入真实邮件、真实用户库或不安全 token 签发。
 
 ## 目标
 

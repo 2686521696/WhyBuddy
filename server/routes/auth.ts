@@ -14,8 +14,15 @@ import { createAuthMiddleware } from "../auth/middleware.js";
 import type { AuthenticatedRequest } from "../auth/types.js";
 import type { EmailCodeService } from "../auth/email-code-service.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import type { PythonAuthSessionMutationContract, SessionService } from "../auth/session-service.js";
-import { toCurrentUser } from "../auth/session-service.js";
+import type {
+  PythonAuthIdentityResult,
+  PythonAuthSessionMutationContract,
+  SessionService,
+} from "../auth/session-service.js";
+import {
+  toCurrentUser,
+  validatePythonAuthIdentityResult,
+} from "../auth/session-service.js";
 import type {
   EmailLoginTokenPurpose,
   SessionRecord,
@@ -77,6 +84,10 @@ export interface AuthRouterDeps {
   sessionService: SessionService;
   emailLoginTokens?: AuthEmailLoginTokensRepository;
   emailCodeService?: EmailCodeService;
+  // thin python runtime bridge for auth identity (login/register/email-code) without changing prod user system
+  pythonIdentityRuntime?: {
+    execute(payload: Record<string, unknown>): PythonAuthIdentityResult | Promise<PythonAuthIdentityResult>;
+  };
 }
 
 function jsonError(error: string): AuthErrorResponse {
@@ -109,6 +120,26 @@ function maybeRejectAuthMutation(
   }
   response.status(authMutationStatus(result.status)).json(jsonError(authMutationMessage(result)));
   return true;
+}
+
+function mapPythonIdentityError(result: PythonAuthIdentityResult): { status: number; error: string } {
+  const r = result as any;
+  const msg = r.message || (r.error === "invalid_credentials" ? "邮箱或密码错误" : "Email or code is invalid.");
+  const status = r.status || 401;
+  return { status, error: msg };
+}
+
+async function runPythonIdentity(
+  deps: AuthRouterDeps,
+  payload: Record<string, unknown>,
+): Promise<PythonAuthIdentityResult | null> {
+  if (!deps.pythonIdentityRuntime) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonIdentityRuntime.execute(payload));
+    return validatePythonAuthIdentityResult(raw);
+  } catch {
+    return { ok: false, error: "invalid", status: 401, message: "Authentication failed" } as any;
+  }
 }
 
 function isDuplicateEmailError(error: unknown): boolean {
@@ -160,6 +191,25 @@ export function createAuthRouter(deps: AuthRouterDeps) {
       return;
     }
 
+    // python identity runtime bridge (thin)
+    const pyReg = await runPythonIdentity(deps, { operation: "register", email, password, displayName: body.displayName });
+    if (pyReg) {
+      if (!pyReg.ok) {
+        const mapped = mapPythonIdentityError(pyReg);
+        response.status(mapped.status).json(jsonError(mapped.error));
+        return;
+      }
+      const pyUser = (pyReg as any).user;
+      const { token } = await deps.sessionService.createSession({
+        userId: pyUser.id,
+        ip: getClientIp(request),
+        userAgent: getUserAgent(request),
+      });
+      deps.sessionService.writeSessionCookie(response, token);
+      response.status(201).json({ success: true, user: pyUser } satisfies AuthJson);
+      return;
+    }
+
     const existing = await deps.users.findByEmail(email);
     if (existing) {
       response.status(409).json(jsonError("邮箱已注册"));
@@ -198,6 +248,26 @@ export function createAuthRouter(deps: AuthRouterDeps) {
 
     if (!email || !password) {
       response.status(401).json(loginError);
+      return;
+    }
+
+    // python identity runtime bridge (thin): if provided, delegate decision envelope
+    const pyLogin = await runPythonIdentity(deps, { operation: "login", email, password });
+    if (pyLogin) {
+      if (!pyLogin.ok) {
+        const mapped = mapPythonIdentityError(pyLogin);
+        response.status(mapped.status).json(jsonError(mapped.error));
+        return;
+      }
+      // success from python: issue session using provided user (retains metadata path)
+      const pyUser = (pyLogin as any).user;
+      const { token } = await deps.sessionService.createSession({
+        userId: pyUser.id,
+        ip: getClientIp(request),
+        userAgent: getUserAgent(request),
+      });
+      deps.sessionService.writeSessionCookie(response, token);
+      response.json({ success: true, user: pyUser } satisfies AuthJson);
       return;
     }
 
@@ -290,6 +360,25 @@ export function createAuthRouter(deps: AuthRouterDeps) {
 
     if (!email || !code) {
       response.status(401).json(loginError);
+      return;
+    }
+
+    // python identity runtime bridge (thin) for email code
+    const pyVerify = await runPythonIdentity(deps, { operation: "verify_email_code", email, code });
+    if (pyVerify) {
+      if (!pyVerify.ok) {
+        const mapped = mapPythonIdentityError(pyVerify);
+        response.status(mapped.status).json(jsonError(mapped.error));
+        return;
+      }
+      const pyUser = (pyVerify as any).user;
+      const { token: sessionToken } = await deps.sessionService.createSession({
+        userId: pyUser.id,
+        ip: getClientIp(request),
+        userAgent: getUserAgent(request),
+      });
+      deps.sessionService.writeSessionCookie(response, sessionToken);
+      response.json({ success: true, user: pyUser } satisfies AuthJson);
       return;
     }
 
