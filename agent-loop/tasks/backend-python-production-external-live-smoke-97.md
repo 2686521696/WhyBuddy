@@ -8,11 +8,11 @@
 
 ### 状态清单
 
-- [ ] Python live smoke 能区分 ready/skipped/config_missing/failed，并输出 provider、reason、duration metadata。
-- [ ] Node live smoke 能映射 Python diagnostics，并保留 Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 的分类。
-- [ ] 缺少 env/config 时必须 skip，不得失败或伪装 healthy。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有真实密钥或外部服务副作用。
+- [x] Python live smoke 能区分 ready/skipped/config_missing/failed，并输出 provider、reason、duration metadata。
+- [x] Node live smoke 能映射 Python diagnostics，并保留 Qdrant、embedding、search、OCR、vision、audio、APM、billing、audit platform 的分类。
+- [x] 缺少 env/config 时必须 skip，不得失败或伪装 healthy。
+- [x] gate 全绿。
+- [x] Codex review 确认没有真实密钥或外部服务副作用。
 
 ## 目标
 

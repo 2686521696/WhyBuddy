@@ -247,13 +247,22 @@ export class QdrantAdapter implements VectorStoreAdapter {
         connected: true,
         backend: 'qdrant',
         latencyMs: Date.now() - start,
-      };
+        // 97 live smoke enrichment (non-breaking): expose diagnostic status for external dep smoke mapping
+        status: "ready",
+        provider: "qdrant",
+        reason: "",
+        durationMs: Date.now() - start,
+      } as HealthStatus;
     } catch {
       return {
         connected: false,
         backend: 'qdrant',
         latencyMs: Date.now() - start,
-      };
+        status: "failed",
+        provider: "qdrant",
+        reason: "healthz unavailable",
+        durationMs: Date.now() - start,
+      } as HealthStatus;
     }
   }
 

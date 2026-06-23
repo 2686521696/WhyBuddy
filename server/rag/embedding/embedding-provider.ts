@@ -137,3 +137,40 @@ export function createEmbeddingProviderFromConfig(): EmbeddingProvider {
     dimension: embedding.dimension,
   });
 }
+
+// ---------------------------------------------------------------------------
+// 97 external live smoke support: config diagnostic without side-effect calls
+// ---------------------------------------------------------------------------
+
+export interface EmbeddingLiveSmokeDiagnostic {
+  provider: "embedding";
+  status: "ready" | "skipped" | "config_missing" | "failed" | "timeout";
+  reason?: string;
+  durationMs: number;
+  metadata?: Record<string, unknown>;
+}
+
+export function checkEmbeddingLiveSmoke(options?: {
+  apiKey?: string;
+  model?: string;
+}): EmbeddingLiveSmokeDiagnostic {
+  const start = Date.now();
+  const apiKey = options?.apiKey ?? getRAGConfig().embedding?.apiKey;
+  const model = options?.model ?? getRAGConfig().embedding?.model;
+  if (!apiKey) {
+    return {
+      provider: "embedding",
+      status: "config_missing",
+      reason: "embedding apiKey not configured",
+      durationMs: Date.now() - start,
+      metadata: {},
+    };
+  }
+  return {
+    provider: "embedding",
+    status: "ready",
+    reason: "",
+    durationMs: Date.now() - start,
+    metadata: { model },
+  };
+}

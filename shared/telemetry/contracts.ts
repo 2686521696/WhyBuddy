@@ -959,3 +959,57 @@ function isPythonObservabilityRollupError(
     (error.lastError === null || isTelemetryRoutePythonError(error.lastError))
   );
 }
+
+// ---------------------------------------------------------------------------
+// Live Smoke diagnostics (97): Python -> Node mapping contract
+// Used by python-external-dependency-live-smoke and status/dashboard layers.
+// ---------------------------------------------------------------------------
+
+export type LiveSmokeStatus = "ready" | "skipped" | "config_missing" | "failed" | "timeout";
+
+export interface LiveSmokeDiagnostic {
+  provider: string;
+  status: LiveSmokeStatus;
+  reason?: string;
+  durationMs?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExternalDependencyLiveSmokeResult {
+  overall: string;
+  checks: LiveSmokeDiagnostic[];
+  durationMs: number;
+  note?: string;
+  counts?: {
+    ready: number;
+    skipped: number;
+    config_missing: number;
+    failed_or_timeout: number;
+  };
+}
+
+/**
+ * Summarize live smoke results.
+ * skipped and config_missing MUST NOT be treated as production external wiring.
+ * canClaimProduction only true when there are explicit ready entries and zero skipped/config_missing/failed.
+ */
+export function summarizeExternalLiveSmoke(
+  checks: LiveSmokeDiagnostic[],
+): {
+  ready: number;
+  skipped: number;
+  configMissing: number;
+  failedOrTimeout: number;
+  canClaimProduction: boolean;
+} {
+  if (!Array.isArray(checks) || checks.length === 0) {
+    return { ready: 0, skipped: 0, configMissing: 0, failedOrTimeout: 0, canClaimProduction: false };
+  }
+  const ready = checks.filter((c) => c.status === "ready").length;
+  const skipped = checks.filter((c) => c.status === "skipped").length;
+  const configMissing = checks.filter((c) => c.status === "config_missing").length;
+  const failedOrTimeout = checks.filter((c) => c.status === "failed" || c.status === "timeout").length;
+  // production claim requires at least one ready and absolutely no skipped/missing/failed for the set
+  const canClaimProduction = ready > 0 && skipped === 0 && configMissing === 0 && failedOrTimeout === 0;
+  return { ready, skipped, configMissing, failedOrTimeout, canClaimProduction };
+}
