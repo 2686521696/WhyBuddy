@@ -996,84 +996,182 @@
       "id": "backend-python-blueprint-main-runtime-closure-100",
       "task": "agent-loop/tasks/backend-python-blueprint-main-runtime-closure-100.md",
       "gatesKey": "blueprintMainRuntimeClosure100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-auth-audit-production-closure-100",
       "task": "agent-loop/tasks/backend-python-auth-audit-production-closure-100.md",
       "gatesKey": "authAuditProductionClosure100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-task-lifecycle-production-closure-100",
       "task": "agent-loop/tasks/backend-python-task-lifecycle-production-closure-100.md",
       "gatesKey": "taskLifecycleProductionClosure100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-web-aigc-provider-closure-100",
       "task": "agent-loop/tasks/backend-python-web-aigc-provider-closure-100.md",
       "gatesKey": "webAigcProviderClosure100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-external-provider-cutover-100",
       "task": "agent-loop/tasks/backend-python-external-provider-cutover-100.md",
       "gatesKey": "externalProviderCutover100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-node-route-cutover-audit-100",
       "task": "agent-loop/tasks/backend-python-node-route-cutover-audit-100.md",
       "gatesKey": "nodeRouteCutoverAudit100Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 2,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
     },
     {
       "id": "backend-python-migration-status-refresh-100",
       "task": "agent-loop/tasks/backend-python-migration-status-refresh-100.md",
       "gatesKey": "migrationStatusRefresh100Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "superseded by backend-python 101 final-gap queue"
+    },
+    {
+      "id": "backend-python-blueprint-shell-state-cutover-101",
+      "task": "agent-loop/tasks/backend-python-blueprint-shell-state-cutover-101.md",
+      "gatesKey": "blueprintShellStateCutover101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-store-auth-scheduler-cutover-101",
+      "task": "agent-loop/tasks/backend-python-task-store-auth-scheduler-cutover-101.md",
+      "gatesKey": "taskStoreAuthSchedulerCutover101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-token-mailer-session-cutover-101",
+      "task": "agent-loop/tasks/backend-python-auth-token-mailer-session-cutover-101.md",
+      "gatesKey": "authTokenMailerSessionCutover101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-permission-audit-policy-store-cutover-101",
+      "task": "agent-loop/tasks/backend-python-permission-audit-policy-store-cutover-101.md",
+      "gatesKey": "permissionAuditPolicyStoreCutover101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-web-aigc-real-provider-readiness-101",
+      "task": "agent-loop/tasks/backend-python-web-aigc-real-provider-readiness-101.md",
+      "gatesKey": "webAigcRealProviderReadiness101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-a2a-core-route-cutover-101",
+      "task": "agent-loop/tasks/backend-python-a2a-core-route-cutover-101.md",
+      "gatesKey": "a2aCoreRouteCutover101Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-migration-status-refresh-101",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-101.md",
+      "gatesKey": "migrationStatusRefresh101Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -1548,5 +1646,45 @@
   "migrationStatusRefresh100Gates": [
     "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','Blueprint','Auth','Audit','Task lifecycle','Web AIGC']) { if(!status.includes(needle)) throw new Error('migration status missing 100-stage evidence wording: '+needle); } if(!/(100|99|98|97)/.test(status)) throw new Error('migration status missing refreshed percentage'); if(!/(production cutover|cutover|blocker|blocked|remaining|100% candidate)/i.test(status)) throw new Error('migration status missing cutover or blocker wording');\"",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} docs/backend-python-node-route-cutover-audit-100.md agent-loop/tasks/backend-python-blueprint-main-runtime-closure-100.md agent-loop/tasks/backend-python-auth-audit-production-closure-100.md agent-loop/tasks/backend-python-task-lifecycle-production-closure-100.md agent-loop/tasks/backend-python-web-aigc-provider-closure-100.md agent-loop/tasks/backend-python-external-provider-cutover-100.md agent-loop/tasks/backend-python-node-route-cutover-audit-100.md"
+  ],
+  "blueprintShellStateCutover101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_shell_state_cutover_101.py tests/test_blueprint_main_runtime_closure_100.py tests/test_blueprint_state_runtime_bridge.py tests/test_blueprint_job_runtime_boundary.py tests/test_blueprint_job_event_stream_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.shell-state-cutover-101.test.ts server/routes/__tests__/blueprint.main-runtime-closure-100.test.ts server/routes/__tests__/blueprint.state-python-runtime.test.ts server/routes/__tests__/blueprint.job-runtime-python-boundary.test.ts server/routes/__tests__/blueprint.job-event-stream-python-runtime.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_shell_state_cutover.py tws-ai-slide-rule-python/tests/test_blueprint_shell_state_cutover_101.py server/routes/blueprint/shell-state-cutover-python.ts server/routes/__tests__/blueprint.shell-state-cutover-101.test.ts"
+  ],
+  "taskStoreAuthSchedulerCutover101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_store_auth_scheduler_cutover_101.py tests/test_task_lifecycle_production_closure_100.py tests/test_task_lifecycle_runtime_boundary.py tests/test_task_mission_event_replay_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-store-auth-scheduler-cutover-101.test.ts server/tests/task-lifecycle-production-closure-100.test.ts server/tests/task-lifecycle-python-runtime.test.ts server/tests/task-mission-event-replay-python-runtime.test.ts server/tests/mission-store.test.ts server/tests/mission-routes.test.ts server/tests/mission-cancel.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_store_auth_scheduler_cutover.py tws-ai-slide-rule-python/tests/test_task_store_auth_scheduler_cutover_101.py server/tests/task-store-auth-scheduler-cutover-101.test.ts server/tasks/mission-store.ts server/tasks/mission-runtime.ts server/routes/tasks.ts"
+  ],
+  "authTokenMailerSessionCutover101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_token_mailer_session_cutover_101.py tests/test_auth_audit_production_closure_100.py tests/test_auth_login_register_runtime.py tests/test_auth_session_refresh_logout_runtime.py tests/test_auth_session_production_persistence.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-token-mailer-session-cutover-101.test.ts server/tests/auth-audit-production-closure-100.test.ts server/tests/auth-login-register-python-runtime.test.ts server/tests/auth-session-refresh-logout-python-runtime.test.ts server/tests/auth-session-production-persistence.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_token_mailer_session_cutover.py tws-ai-slide-rule-python/tests/test_auth_token_mailer_session_cutover_101.py server/tests/auth-token-mailer-session-cutover-101.test.ts server/routes/auth.ts server/auth/session-service.ts server/auth/email-code-service.ts shared/auth.ts"
+  ],
+  "permissionAuditPolicyStoreCutover101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_audit_policy_store_cutover_101.py tests/test_permission_audit_hooks_runtime.py tests/test_permission_check_runtime_boundary.py tests/test_audit_retention_export_runtime.py tests/test_audit_production_sink.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/permission-audit-policy-store-cutover-101.test.ts server/tests/permission-audit-hooks-python-runtime.test.ts server/tests/permission-governance-audit-routes.test.ts server/tests/audit-retention-export-python-runtime.test.ts server/tests/audit-production-sink.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/permission_audit_policy_store_cutover.py tws-ai-slide-rule-python/tests/test_permission_audit_policy_store_cutover_101.py server/tests/permission-audit-policy-store-cutover-101.test.ts server/permission/check-engine.ts server/permission/audit-logger.ts server/audit/audit-hooks.ts shared/permission/contracts.ts shared/audit/contracts.ts"
+  ],
+  "webAigcRealProviderReadiness101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_web_aigc_real_provider_readiness_101.py tests/test_web_aigc_provider_closure_100.py tests/test_web_aigc_search_runtime_bridge.py tests/test_web_aigc_file_runtime_bridge.py tests/test_web_aigc_vision_audio_runtime_bridge.py tests/test_web_aigc_ocr_static_runtime.py tests/test_web_aigc_ai_ppt_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/web-aigc-real-provider-readiness-101.test.ts server/tests/web-aigc-provider-closure-100.test.ts server/routes/__tests__/web-aigc.search-python-runtime.test.ts server/routes/__tests__/web-aigc.file-python-runtime.test.ts server/routes/__tests__/web-aigc.vision-audio-python-runtime.test.ts server/tests/ocr-static-python-runtime.test.ts server/tests/ai-ppt-python-runtime.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/web_aigc_real_provider_readiness.py tws-ai-slide-rule-python/tests/test_web_aigc_real_provider_readiness_101.py server/tests/web-aigc-real-provider-readiness-101.test.ts server/core/web-aigc-runtime-extra-adapters.ts server/core/web-aigc-runtime-observability.ts shared/telemetry/contracts.ts"
+  ],
+  "a2aCoreRouteCutover101Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_a2a_core_route_cutover_101.py tests/test_a2a_runtime_contract.py tests/test_a2a_invoke_runtime_bridge.py tests/test_a2a_stream_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/a2a-core-route-cutover-101.test.ts server/routes/__tests__/a2a-python-runtime-contract.test.ts server/routes/__tests__/a2a-python-invoke-runtime.test.ts server/routes/__tests__/a2a-python-stream-runtime.test.ts server/tests/a2a-routes.test.ts server/tests/a2a-protocol.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/a2a_core_route_cutover.py tws-ai-slide-rule-python/tests/test_a2a_core_route_cutover_101.py server/routes/__tests__/a2a-core-route-cutover-101.test.ts server/routes/a2a-python-runtime.ts shared/a2a/contracts.ts"
+  ],
+  "migrationStatusRefresh101Gates": [
+    "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','整体工程进度','剩余短板成熟度','Blueprint','Auth','Audit','Task lifecycle','Web AIGC']) { if(!status.includes(needle)) throw new Error('migration status missing 101-stage wording: '+needle); } if(!/(101|100|99|98|97)/.test(status)) throw new Error('migration status missing refreshed percentage');\"",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-shell-state-cutover-101.md agent-loop/tasks/backend-python-task-store-auth-scheduler-cutover-101.md agent-loop/tasks/backend-python-auth-token-mailer-session-cutover-101.md agent-loop/tasks/backend-python-permission-audit-policy-store-cutover-101.md agent-loop/tasks/backend-python-web-aigc-real-provider-readiness-101.md agent-loop/tasks/backend-python-a2a-core-route-cutover-101.md"
   ]
 }

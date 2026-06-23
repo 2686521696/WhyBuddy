@@ -342,6 +342,32 @@ test('migration queue defaults use grok as the fix worker', async () => {
   assert.equal(queue.defaults?.reviewModel, 'gpt-5.5');
 });
 
+test('migration queue enables 101 final-gap wave and disables superseded 100 wave', async () => {
+  const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
+  const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
+  const tasks = queue.tasks || [];
+
+  const enabledIds = tasks.filter((task) => task.enabled).map((task) => task.id).sort();
+  const expected101Ids = [
+    'backend-python-a2a-core-route-cutover-101',
+    'backend-python-auth-token-mailer-session-cutover-101',
+    'backend-python-blueprint-shell-state-cutover-101',
+    'backend-python-migration-status-refresh-101',
+    'backend-python-permission-audit-policy-store-cutover-101',
+    'backend-python-task-store-auth-scheduler-cutover-101',
+    'backend-python-web-aigc-real-provider-readiness-101',
+  ].sort();
+
+  assert.deepEqual(enabledIds, expected101Ids);
+
+  const stillEnabled100 = tasks.filter((task) => task.id?.endsWith('-100') && task.enabled);
+  assert.deepEqual(
+    stillEnabled100.map((task) => task.id),
+    [],
+    '100-stage tasks should stay disabled once the 101 final-gap wave is active',
+  );
+});
+
 test('buildLoopArgsForQueueEntry uses queue worktree fix cwd in queue scope', () => {
   const queueWorktreePath = 'C:\\repo\\.worktrees\\queue-migration';
   const args = buildLoopArgsForQueueEntry({
