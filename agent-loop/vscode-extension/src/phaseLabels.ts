@@ -15,6 +15,7 @@ export const PHASE_LABELS_ZH: Record<string, string> = {
   DONE_REVIEWED: '完成（已 review）',
   DONE_FIXED: '完成（已修复）',
   DONE_GATE_ONLY: '完成（仅 gate）',
+  MANUAL_RESCUE_LANDED: '人工救回',
   HALT_HUMAN: '需人工接管',
   HALT_NO_CHANGES: '修复无有效 diff',
   HALT_NO_PROGRESS: 'gate 无进展',
@@ -94,6 +95,7 @@ export function activeAgentLabel(
 export function phaseLabel(status: string | undefined): string {
   if (!status) return '等待运行';
   if (status === 'STALE_INTERRUPTED') return '运行中断';
+  if (status === 'MANUAL_RESCUE_LANDED') return PHASE_LABELS_ZH[status];
   if (status.startsWith('DONE_')) return PHASE_LABELS_ZH[status] || '完成';
   if (status.startsWith('HALT_')) return PHASE_LABELS_ZH[status] || '已停止';
   return PHASE_LABELS_ZH[status] || status;

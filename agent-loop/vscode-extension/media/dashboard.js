@@ -5,6 +5,7 @@
     applied: { icon: 'OK', label: '已落地', cls: 'ok' },
     reviewed: { icon: 'REV', label: '已审查', cls: 'ok' },
     noDiff: { icon: 'NO_DIFF', label: '无新增差异', cls: 'neutral' },
+    manualRescueLanded: { icon: 'RESCUE', label: '人工救回', cls: 'ok' },
     applyConflict: { icon: 'APPLY', label: '应用冲突', cls: 'warn' },
     human: { icon: 'HUMAN', label: '人工接管', cls: 'warn' },
     failed: { icon: 'FAIL', label: '失败', cls: 'err' },
@@ -122,6 +123,7 @@
       landed: countValue(counts, 'applied')
         + countValue(counts, 'reviewed')
         + countValue(counts, 'noDiff')
+        + countValue(counts, 'manualRescueLanded')
         || groups.landed.length,
       pending: countValue(counts, 'pending') || groups.pending.length,
       disabled: countValue(counts, 'disabled') || groups.disabled.length,
@@ -166,6 +168,7 @@
     return countValue(counts, 'applied')
       + countValue(counts, 'reviewed')
       + countValue(counts, 'noDiff')
+      + countValue(counts, 'manualRescueLanded')
       + countValue(counts, 'applyConflict')
       + countValue(counts, 'human')
       + countValue(counts, 'failed')
@@ -192,7 +195,7 @@
     const bytes = Number(task.diffBytes || task.diffSize || 0);
     if (bytes) return formatBytes(bytes);
     if (task.hasDiff || task.applyStatus) return '有 diff';
-    if (task.outcomeGroup === 'reviewed' || task.outcomeGroup === 'applied' || task.badge === 'reviewed' || task.badge === 'applied') return '有 diff';
+    if (task.outcomeGroup === 'reviewed' || task.outcomeGroup === 'applied' || task.outcomeGroup === 'manualRescueLanded' || task.badge === 'reviewed' || task.badge === 'applied' || task.badge === 'manualRescueLanded') return '有 diff';
     return '-';
   }
 
@@ -347,7 +350,7 @@
   function renderQueueSummary(groups, counts, queueTotal) {
     const total = countValue(counts, 'total') || groupTotal(groups);
     const settled = settledCount(counts);
-    const landed = countValue(counts, 'applied') + countValue(counts, 'reviewed') + countValue(counts, 'noDiff') || groups.landed.length;
+    const landed = countValue(counts, 'applied') + countValue(counts, 'reviewed') + countValue(counts, 'noDiff') + countValue(counts, 'manualRescueLanded') || groups.landed.length;
     const attention = countValue(counts, 'human')
       + countValue(counts, 'failed')
       + countValue(counts, 'crashed')

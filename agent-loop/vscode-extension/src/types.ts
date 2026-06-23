@@ -97,13 +97,16 @@ export interface QueueOverviewItem {
   outcome: string | null;
   outcomeGroup?: string | null;
   status: string | null;
+  rawStatus?: string | null;
   lastRunId: string | null;
   autoDisabled: boolean;
   running: boolean;
   stale?: boolean;
   category?: string;
   applyStatus?: string | null;
+  rawApplyStatus?: string | null;
   applyErrorKind?: string | null;
+  rawApplyErrorKind?: string | null;
   applyErrorFiles?: string[];
   applyError?: string | null;
   rescuePatchAvailable?: boolean;
@@ -133,6 +136,7 @@ export interface QueueOverview {
     applied?: number;
     reviewed?: number;
     noDiff?: number;
+    manualRescueLanded?: number;
     applyConflict?: number;
     rescuePatch?: number;
     human?: number;

@@ -483,6 +483,73 @@ test('buildQueueOverview groups no-diff reviewed and apply conflicts separately'
   assert.equal(overview.tasks[4].outcomeGroup, 'stopped');
 });
 
+test('buildQueueOverview promotes explicit manual rescue evidence out of attention', async () => {
+  const { buildQueueOverview } = requireFromExtension('./out/stateReader.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-overview-manual-rescue-'));
+  const queueFilePath = path.join(repo, 'queue.json');
+  await fs.writeFile(queueFilePath, JSON.stringify({
+    tasks: [
+      { id: 'rescued', task: 'agent-loop/tasks/rescued.md' },
+      { id: 'still-needs-rescue', task: 'agent-loop/tasks/still-needs-rescue.md' },
+    ],
+  }), 'utf8');
+  await fs.mkdir(path.join(repo, '.agent-loop'), { recursive: true });
+  await fs.mkdir(path.join(repo, 'agent-loop', 'tasks'), { recursive: true });
+  await fs.writeFile(path.join(repo, 'agent-loop', 'tasks', 'rescued.md'), [
+    '# rescued',
+    '',
+    '- 状态：已完成（人工 rescue 后门禁已绿）',
+    '',
+    '### 救回验证',
+    '- Python gate passed',
+    '- Node gate passed',
+  ].join('\n'), 'utf8');
+  await fs.writeFile(path.join(repo, 'agent-loop', 'tasks', 'still-needs-rescue.md'), [
+    '# still-needs-rescue',
+    '',
+    '- 状态：需人工接管',
+  ].join('\n'), 'utf8');
+  await fs.writeFile(path.join(repo, '.agent-loop', 'queue-outcomes.json'), JSON.stringify({
+    tasks: {
+      rescued: {
+        lastOutcome: 'failed',
+        lastStatus: 'HALT_NO_PROGRESS',
+        lastRunId: 'run-rescued',
+        applyStatus: 'RESCUE_PATCH_AVAILABLE',
+        applyErrorKind: 'PARTIAL_DIFF_GATE_RED',
+        rescuePatchAvailable: true,
+        diffBytes: 4096,
+      },
+      'still-needs-rescue': {
+        lastOutcome: 'failed',
+        lastStatus: 'HALT_NO_PROGRESS',
+        lastRunId: 'run-still-needs-rescue',
+        applyStatus: 'RESCUE_PATCH_AVAILABLE',
+        applyErrorKind: 'PARTIAL_DIFF_GATE_RED',
+        rescuePatchAvailable: true,
+        diffBytes: 2048,
+      },
+    },
+  }), 'utf8');
+
+  const overview = await buildQueueOverview(repo, { queueFilePath, queueRunning: false });
+
+  assert.equal(overview.counts.done, 1);
+  assert.equal(overview.counts.manualRescueLanded, 1);
+  assert.equal(overview.counts.rescuePatch, 1);
+  assert.equal(overview.counts.failed, 1);
+  assert.equal(overview.tasks[0].outcomeGroup, 'manualRescueLanded');
+  assert.equal(overview.tasks[0].category, 'landed');
+  assert.equal(overview.tasks[0].status, 'MANUAL_RESCUE_LANDED');
+  assert.equal(overview.tasks[0].applyStatus, 'MANUAL_RESCUE_LANDED');
+  assert.equal(overview.tasks[0].rawStatus, 'HALT_NO_PROGRESS');
+  assert.equal(overview.tasks[0].rawApplyStatus, 'RESCUE_PATCH_AVAILABLE');
+  assert.equal(overview.tasks[1].outcomeGroup, 'rescuePatch');
+  assert.equal(overview.tasks[1].category, 'attention');
+  assert.equal(overview.tasks[1].status, 'HALT_NO_PROGRESS');
+  assert.equal(overview.tasks[1].applyStatus, 'RESCUE_PATCH_AVAILABLE');
+});
+
 test('buildQueueOverview flags the running task from the live run', async () => {
   const { buildQueueOverview } = requireFromExtension('./out/stateReader.js');
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-overview-run-'));

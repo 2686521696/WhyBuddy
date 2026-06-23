@@ -249,6 +249,14 @@ export async function readQueueOutcomes(repoRoot: string): Promise<QueueOutcomes
   return file ?? { tasks: {} };
 }
 
+async function readOptionalTextFile(filePath: string): Promise<string> {
+  try {
+    return await fs.readFile(filePath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 // Re-enable an auto-disabled task: clear the autoDisabled flag and reset the
 // consecutive-no-change streak so the next queue run picks it up again. Reversible
 // config edit (queue-outcomes.json), never touches git/main.
@@ -284,25 +292,33 @@ export async function buildQueueOverview(
   const landing = await readQueueLanding(repoRoot);
   const runningTask = options.runningTaskPath ? normalizeTaskPath(options.runningTaskPath) : null;
 
-  const tasks: QueueOverviewItem[] = (queue?.tasks || []).map((task) => {
+  const tasks: QueueOverviewItem[] = await Promise.all((queue?.tasks || []).map(async (task) => {
     const id = task.id || task.task;
     const record = outcomes.tasks?.[id];
     const sameAsRunning = runningTask !== null && normalizeTaskPath(task.task) === runningTask;
     const running = Boolean(options.queueRunning) && !options.currentRunStale && sameAsRunning;
     const stale = Boolean(options.currentRunStale) && sameAsRunning;
+    const taskText = await readOptionalTextFile(path.join(repoRoot, task.task));
+    const manualRescueLanded = detectManualRescueLanded(taskText, record);
+    const outcomeGroup = manualRescueLanded
+      ? 'manualRescueLanded'
+      : classifyOutcomeGroup(record?.lastOutcome ?? null, record?.lastStatus ?? null, record);
     const item: QueueOverviewItem = {
       id,
       task: task.task,
       enabled: task.enabled !== false,
       outcome: record?.lastOutcome ?? null,
-      outcomeGroup: classifyOutcomeGroup(record?.lastOutcome ?? null, record?.lastStatus ?? null, record),
-      status: record?.lastStatus ?? null,
+      outcomeGroup,
+      status: manualRescueLanded ? 'MANUAL_RESCUE_LANDED' : (record?.lastStatus ?? null),
+      rawStatus: record?.lastStatus ?? null,
       lastRunId: record?.lastRunId ?? null,
       autoDisabled: Boolean(record?.autoDisabled),
-      applyStatus: record?.applyStatus ?? null,
-      applyErrorKind: record?.applyErrorKind ?? null,
-      applyErrorFiles: Array.isArray(record?.applyErrorFiles) ? record.applyErrorFiles : [],
-      applyError: record?.applyError ?? null,
+      applyStatus: manualRescueLanded ? 'MANUAL_RESCUE_LANDED' : (record?.applyStatus ?? null),
+      rawApplyStatus: record?.applyStatus ?? null,
+      applyErrorKind: manualRescueLanded ? null : (record?.applyErrorKind ?? null),
+      rawApplyErrorKind: record?.applyErrorKind ?? null,
+      applyErrorFiles: manualRescueLanded ? [] : (Array.isArray(record?.applyErrorFiles) ? record.applyErrorFiles : []),
+      applyError: manualRescueLanded ? null : (record?.applyError ?? null),
       rescuePatchAvailable: Boolean(record?.rescuePatchAvailable),
       diffBytes: Number(record?.diffBytes || 0),
       worktreeErrorFiles: Array.isArray(record?.worktreeErrorFiles) ? record.worktreeErrorFiles : [],
@@ -311,7 +327,7 @@ export async function buildQueueOverview(
     };
     item.category = classifyTriageCategory(item);
     return item;
-  });
+  }));
 
   const counts = {
     total: tasks.length,
@@ -320,6 +336,7 @@ export async function buildQueueOverview(
     applied: 0,
     reviewed: 0,
     noDiff: 0,
+    manualRescueLanded: 0,
     applyConflict: 0,
     rescuePatch: 0,
     human: 0,
@@ -341,6 +358,9 @@ export async function buildQueueOverview(
       counts.done += 1;
     } else if (item.outcomeGroup === 'noDiff') {
       counts.noDiff += 1;
+    } else if (item.outcomeGroup === 'manualRescueLanded') {
+      counts.manualRescueLanded += 1;
+      counts.done += 1;
     } else if (item.outcomeGroup === 'applyConflict') {
       counts.applyConflict += 1;
     } else if (item.outcomeGroup === 'rescuePatch') {
@@ -367,7 +387,7 @@ export async function buildQueueOverview(
 // Collapse the granular outcome into the five triage lanes the overview groups by:
 // attention (needs a human), running, landed (settled-good), pending, disabled.
 const ATTENTION_GROUPS = new Set(['applyConflict', 'rescuePatch', 'human', 'failed', 'crashed', 'quarantined', 'stopped']);
-const LANDED_GROUPS = new Set(['applied', 'reviewed', 'noDiff']);
+const LANDED_GROUPS = new Set(['applied', 'reviewed', 'noDiff', 'manualRescueLanded']);
 
 export function classifyTriageCategory(item: QueueOverviewItem): string {
   if (item.running) return 'running';
@@ -389,6 +409,15 @@ function classifyOutcomeGroup(outcome: string | null, status: string | null, rec
     return 'applied';
   }
   return outcome;
+}
+
+function detectManualRescueLanded(taskText: string, record: QueueOutcomeRecord | undefined): boolean {
+  if (!(record?.applyStatus === 'RESCUE_PATCH_AVAILABLE' || record?.rescuePatchAvailable)) return false;
+  const text = String(taskText || '');
+  if (!text) return false;
+  const hasManualRescue = /人工\s*rescue|人工救回|救回验证/.test(text);
+  const hasDoneEvidence = /状态：已完成|门禁已绿|gate(?:\s|\S){0,24}(?:绿|passed|pass)|passed/i.test(text);
+  return hasManualRescue && hasDoneEvidence;
 }
 
 export interface RunEvidence {
