@@ -62,6 +62,7 @@ export interface WebQaNodeInput {
   missionId?: string;
   agentId?: string;
   stage?: string;
+  context?: Record<string, unknown>;
 }
 
 export interface WebQaSourceLink {
@@ -114,6 +115,7 @@ export interface WebQaNodeExecutionResult {
       sourceCount: number;
       searchQuery?: string;
       searchResultCount?: number;
+      providerClosure?: Record<string, unknown>;
       downstreamConsumers: Array<"end" | "file_generation">;
     };
     observability?: Record<string, unknown>;

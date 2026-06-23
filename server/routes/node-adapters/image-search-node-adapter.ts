@@ -165,6 +165,17 @@ function buildDefaultProvenance(
   };
 }
 
+function resolveProviderAuditId(context: Record<string, unknown>): string | undefined {
+  const provenance = normalizeObject(context.provenance);
+  const providerClosure = normalizeObject(context.providerClosure);
+  const providerClosureMetadata = normalizeObject(providerClosure.metadata);
+
+  return (
+    normalizeString(provenance.auditId) ||
+    normalizeString(providerClosureMetadata.auditId)
+  );
+}
+
 function normalizeReferenceImage(value: unknown): WebAigcReferenceImageInput | undefined {
   const record = normalizeObject(value);
   const description = normalizeString(record.description);
@@ -365,7 +376,13 @@ export async function executeImageSearchNode(
   }
 
   const normalizedRequest = normalizeRequest(request.input);
-  const context = normalizeObject(request.input?.context);
+  const inputContext = normalizeObject(request.input?.context);
+  // consume python provider closure summary (if present) to decide posture and preserve metadata
+  const providerClosure = (inputContext as Record<string, unknown>).providerClosure;
+  const context: Record<string, unknown> = {
+    ...inputContext,
+    ...(providerClosure ? { providerClosure } : {}),
+  };
   let response: WebAigcImageSearchResponse;
 
   try {
@@ -391,7 +408,14 @@ export async function executeImageSearchNode(
 
   const results = Array.isArray(response.results) ? response.results : [];
   const status = normalizeStatus(response, results);
-  const provenance = response.provenance ?? buildDefaultProvenance(response);
+  const baseProvenance = response.provenance ?? buildDefaultProvenance(response);
+  const providerAuditId = resolveProviderAuditId(context);
+  const provenance = baseProvenance
+    ? {
+      ...baseProvenance,
+      ...(providerAuditId ? { auditId: providerAuditId } : {}),
+    }
+    : undefined;
   const result = {
     ...response,
     results,

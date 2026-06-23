@@ -22,6 +22,7 @@ import type {
 import {
   toCurrentUser,
   validatePythonAuthIdentityResult,
+  validateAuthAuditProductionClosure,
 } from "../auth/session-service.js";
 import type {
   EmailLoginTokenPurpose,
@@ -88,6 +89,10 @@ export interface AuthRouterDeps {
   pythonIdentityRuntime?: {
     execute(payload: Record<string, unknown>): PythonAuthIdentityResult | Promise<PythonAuthIdentityResult>;
   };
+  // python auth/audit/permission production closure summary (thin, Node consumes for posture; no secrets or external side effects)
+  pythonAuthAuditClosure?: {
+    execute(payload: Record<string, unknown>): any | Promise<any>;
+  };
 }
 
 function jsonError(error: string): AuthErrorResponse {
@@ -139,6 +144,24 @@ async function runPythonIdentity(
     return validatePythonAuthIdentityResult(raw);
   } catch {
     return { ok: false, error: "invalid", status: 401, message: "Authentication failed" } as any;
+  }
+}
+
+async function runPythonAuthAuditClosure(deps: AuthRouterDeps, payload: Record<string, unknown>): Promise<any | null> {
+  if (!deps.pythonAuthAuditClosure) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonAuthAuditClosure.execute(payload));
+    return validateAuthAuditProductionClosure(raw);
+  } catch {
+    return {
+      status: "failed",
+      contractVersion: "auth-audit-production-closure.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      closureSummary: { status: "failed", components: {}, metadata: {} },
+      error: { code: "bridge_error", message: "Auth audit closure fetch failed" },
+    };
   }
 }
 
@@ -446,6 +469,28 @@ export function createAuthRouter(deps: AuthRouterDeps) {
     }
     deps.sessionService.clearCookie(response);
     response.json({ success: true });
+  });
+
+  // thin consumption of python auth/audit production closure summary (for migration evidence only)
+  // Node retains password/email/session/policy/risk/audit metadata boundaries
+  router.get("/__internal/auth-audit-closure", async (request, response) => {
+    const closure = await runPythonAuthAuditClosure(deps, { metadata: { source: "node-consume" } });
+    if (closure) {
+      response.json({ success: true, closure });
+      return;
+    }
+    // fallback when no python provided - explicit non-healthy
+    response.json({
+      success: true,
+      closure: validateAuthAuditProductionClosure({
+        status: "config_missing",
+        contractVersion: "auth-audit-production-closure.v1",
+        provenance: "node-fallback",
+        ok: false,
+        runtime: { owner: "node", mode: "local_fallback" },
+        closureSummary: { status: "config_missing", components: {}, metadata: { note: "python not wired" } },
+      }),
+    });
   });
 
   return router;

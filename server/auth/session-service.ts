@@ -462,3 +462,102 @@ export function validatePythonAuthIdentityResult(payload: unknown): PythonAuthId
   // treat non-matching as denied invalid
   return { ok: false, error: "invalid", status: 401, message: "Invalid request" };
 }
+
+export type AuthAuditProductionClosureStatus =
+  | "ready"
+  | "config_missing"
+  | "degraded"
+  | "denied"
+  | "external_missing"
+  | "failed";
+
+export interface AuthAuditProductionClosureSummary {
+  status: AuthAuditProductionClosureStatus;
+  components: Record<string, boolean>;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuthAuditProductionClosureResult {
+  status: AuthAuditProductionClosureStatus;
+  contractVersion: string;
+  provenance: string;
+  ok: boolean;
+  runtime: { owner: "python" | "node"; mode: string };
+  closureSummary: AuthAuditProductionClosureSummary;
+  subEnvelopes?: Record<string, unknown>;
+  error?: { code: string; message: string };
+}
+
+function containsSecretForClosure(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretForClosure(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const n = key.toLowerCase();
+    if (
+      n.includes("token") ||
+      n.includes("cookie") ||
+      n.includes("password") ||
+      n.includes("secret") ||
+      n.includes("hash") ||
+      n.includes("bearer")
+    ) {
+      return true;
+    }
+    return containsSecretForClosure(child);
+  });
+}
+
+export function validateAuthAuditProductionClosure(payload: unknown): AuthAuditProductionClosureResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      status: "failed",
+      contractVersion: "auth-audit-production-closure.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      closureSummary: { status: "failed", components: {}, metadata: {} },
+      error: { code: "invalid", message: "Invalid closure payload" },
+    };
+  }
+  if (containsSecretForClosure(payload)) {
+    return {
+      status: "failed",
+      contractVersion: "auth-audit-production-closure.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      closureSummary: { status: "failed", components: {}, metadata: {} },
+      error: { code: "invalid", message: "Invalid closure payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const status = (p.status as AuthAuditProductionClosureStatus) || "failed";
+  const cs = (p.closureSummary as any) || { status, components: {}, metadata: {} };
+  const normalizedStatus: AuthAuditProductionClosureStatus =
+    status === "ready" ||
+    status === "config_missing" ||
+    status === "degraded" ||
+    status === "denied" ||
+    status === "external_missing" ||
+    status === "failed"
+      ? status
+      : "failed";
+  return {
+    status: normalizedStatus,
+    contractVersion: typeof p.contractVersion === "string" ? p.contractVersion : "auth-audit-production-closure.v1",
+    provenance: typeof p.provenance === "string" ? p.provenance : "node-fallback",
+    ok: normalizedStatus === "ready",
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    closureSummary: {
+      status: normalizedStatus,
+      components: (cs.components as Record<string, boolean>) || {},
+      metadata: (cs.metadata as Record<string, unknown>) || {},
+    },
+    ...(p.subEnvelopes ? { subEnvelopes: p.subEnvelopes as Record<string, unknown> } : {}),
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+  };
+}

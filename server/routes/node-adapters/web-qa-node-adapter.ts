@@ -501,6 +501,7 @@ function buildCompletedResult(input: {
   projectId?: string;
   searchQuery?: string;
   searchResultCount?: number;
+  providerClosure?: Record<string, unknown>;
   observability?: Record<string, unknown>;
 }): WebQaNodeExecutionResult {
   const status = input.fallbackUsed ? "fallback" : "completed";
@@ -550,6 +551,7 @@ function buildCompletedResult(input: {
         ...(typeof input.searchResultCount === "number"
           ? { searchResultCount: input.searchResultCount }
           : {}),
+        ...(input.providerClosure ? { providerClosure: input.providerClosure } : {}),
         downstreamConsumers: [...DOWNSTREAM_CONSUMERS],
       },
       observability,
@@ -561,6 +563,7 @@ function buildFailedResult(
   question: string,
   error: string,
   projectId?: string,
+  providerClosure?: Record<string, unknown>,
 ): WebQaNodeExecutionResult {
   return {
     ok: false,
@@ -583,7 +586,14 @@ function buildFailedResult(
         question,
         pageCount: 0,
         sourceCount: 0,
+        ...(providerClosure ? { providerClosure } : {}),
         downstreamConsumers: [...DOWNSTREAM_CONSUMERS],
+      },
+      observability: {
+        eventKey: "external.web_qa",
+        nodeType: "web_qa",
+        status: "failed",
+        ...(providerClosure ? { providerClosure } : {}),
       },
     },
   };
@@ -598,6 +608,9 @@ export async function executeWebQaNode(
   }
 
   const input = request.input ?? {};
+  const inputContext = normalizeObject(input.context);
+  // consume python provider closure summary for web-qa (explicit config_missing until full python cutover)
+  const providerClosure = normalizeObject(inputContext?.providerClosure);
   const question = normalizeQuestion(input);
   const pages = normalizePages(input.pages);
   const pageContexts = await prepareInlinePages(pages, deps);
@@ -661,10 +674,12 @@ export async function executeWebQaNode(
       projectId: searchContext?.projectId,
       searchQuery: searchContext?.searchQuery,
       searchResultCount: searchContext?.resultCount,
+      providerClosure,
       observability: {
         pageCount: pageContexts.length,
         searchUsed: Boolean(searchContext),
         searchError: searchError?.message,
+        ...(providerClosure ? { providerClosure } : {}),
       },
     });
   }
@@ -699,10 +714,12 @@ export async function executeWebQaNode(
       projectId,
       searchQuery: searchInput?.query,
       searchResultCount: searchContext?.resultCount ?? 0,
+      providerClosure,
       observability: {
         pageCount: pageContexts.length,
         searchUsed: Boolean(searchInput),
         searchError: searchError?.message,
+        ...(providerClosure ? { providerClosure } : {}),
       },
     });
   }
@@ -711,5 +728,6 @@ export async function executeWebQaNode(
     question,
     searchError?.message || "No page context or search results available for web_qa.",
     normalizeString(searchInput?.scope?.projectId),
+    providerClosure,
   );
 }

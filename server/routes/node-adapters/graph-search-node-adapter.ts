@@ -336,6 +336,13 @@ export async function executeGraphSearchNode(
   }
 
   const input = request.input ?? {};
+  const inputContext = normalizeRecord(input.context);
+  // consume python web aigc provider closure summary (explicit node_owned for graph)
+  const providerClosure = (inputContext as Record<string, unknown>).providerClosure;
+  const context = {
+    ...inputContext,
+    ...(providerClosure ? { providerClosure } : {}),
+  };
   const { mode, rawResult } = await executeGraphQueryByMode(input, deps);
   const answerDraft = await maybeBuildAnswerDraft(input, deps);
   const nodes = rawResult.entities.map(projectEntityToGraphNode);
@@ -369,7 +376,7 @@ export async function executeGraphSearchNode(
         edgeCount: edges.length,
         pathLength: path.length,
       },
-      context: normalizeRecord(input.context),
+      context,
       rawResult,
     },
   };

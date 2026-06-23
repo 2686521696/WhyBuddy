@@ -2,17 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成（人工 rescue 后门禁已绿）
 - 目标：把 `/api/tasks`、mission store、event replay、cancel/error、project/resource auth 的最后 lifecycle（生命周期）闭环补成 Python runtime/production boundary。
 - 角色分工：worker 负责 Python lifecycle closure、Node bridge 和测试；reviewer 确认没有重写完整调度器或误报所有任务系统已经 Python-owned。
 
 ### 状态清单
 
-- [ ] Python closure runtime 覆盖 mission create、append、replay、project、cancel、error、auth-denied。
-- [ ] Node route/service 能消费 Python closure summary，并保留 missionId、projectId、resourceId、actor、event sequence、projection metadata。
-- [ ] cancel/error/replay 不能丢事件、不能把 denied 写成 completed。
-- [ ] gate 全绿。
-- [ ] Codex review 确认这是真实 lifecycle closure 代码，不是 inventory 或文档刷新。
+- [x] Python closure runtime 覆盖 mission create、append、replay、project、cancel、error、auth-denied。
+- [x] Node route/service 能消费 Python closure summary，并保留 missionId、projectId、resourceId、actor、event sequence、projection metadata。
+- [x] cancel/error/replay 不能丢事件、不能把 denied 写成 completed。
+- [x] gate 全绿。
+- [x] Codex review 确认这是真实 lifecycle closure 代码，不是 inventory 或文档刷新。
+
+### 救回验证
+
+- 原队列结果：`HALT_BUDGET` / rescue patch。
+- 人工修复：cancel closure 结果保留输入事件序列，并在 `closureSummary.events/eventCount` 中可审计。
+- Python gate：`26 passed`。
+- Node/Vitest gate：`6 passed` test files / `46 passed` tests。
 
 ## 目标
 

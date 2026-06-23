@@ -63,6 +63,7 @@ export interface TaskRouterOptions {
   fetchImpl?: typeof fetch;
   executorBaseUrl?: string;
   taskLifecycleRuntimeBaseUrl?: string;
+  taskLifecycleProductionClosureBaseUrl?: string;
   workflowRetry?: WorkflowRetryDependencies;
   requireAuth?: RequestHandler;
   projects?: {
@@ -221,6 +222,15 @@ function resolveTaskLifecycleRuntimeBaseUrl(
   return configured ? configured.replace(/\/+$/, '') : undefined;
 }
 
+function resolveTaskLifecycleProductionClosureBaseUrl(
+  options: TaskRouterOptions,
+): string | undefined {
+  const configured =
+    options.taskLifecycleProductionClosureBaseUrl?.trim() ||
+    process.env.TASK_LIFECYCLE_PRODUCTION_CLOSURE_BASE_URL?.trim();
+  return configured ? configured.replace(/\/+$/, '') : undefined;
+}
+
 function buildTaskLifecycleRuntimeUrl(baseUrl: string, action: string): string {
   return new URL(
     `/api/tasks/runtime/${action}`,
@@ -373,6 +383,33 @@ interface TaskLifecycleRuntimeCallInput {
   events?: MissionEvent[];
   limit?: number;
   reason?: string;
+}
+
+interface TaskLifecycleProductionClosureEnvelope {
+  ok: boolean;
+  status?: string;
+  action?: string;
+  contractVersion?: string;
+  provenance?: string;
+  missionId?: string;
+  projectId?: string;
+  resourceId?: string;
+  error?: string;
+  code?: string;
+  message?: string;
+  runtime?: Record<string, unknown>;
+  closureSummary?: {
+    missionId?: string;
+    projectId?: string;
+    resourceId?: string;
+    actor?: unknown;
+    decision?: string;
+    projection?: Record<string, unknown>;
+    replay?: unknown;
+    cancel?: unknown;
+    taskProjection?: unknown;
+  };
+  metadata?: Record<string, unknown>;
 }
 
 function buildServerBaseUrl(request: Request): string {
@@ -628,6 +665,61 @@ async function callTaskLifecycleRuntimeSafely(
           ? error.message
           : 'Task lifecycle runtime is unavailable.',
       retryable: true,
+    };
+  }
+}
+
+async function callTaskLifecycleProductionClosure(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskLifecycleProductionClosureEnvelope | undefined> {
+  if (!options.baseUrl) {
+    return undefined;
+  }
+  const url = new URL(
+    '/api/tasks/runtime/closure',
+    options.baseUrl.endsWith('/') ? options.baseUrl : `${options.baseUrl}/`,
+  ).toString();
+  const response = await options.fetchImpl(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, now: new Date().toISOString() }),
+  });
+  const text = await response.text();
+  try {
+    const parsed = text ? JSON.parse(text) : {};
+    if (parsed && typeof parsed === 'object') {
+      return parsed as TaskLifecycleProductionClosureEnvelope;
+    }
+  } catch {
+    // fallthrough
+  }
+  return {
+    ok: false,
+    error: 'runtime_error',
+    code: 'TASK_LIFECYCLE_CLOSURE_PROTOCOL_ERROR',
+    message: response.ok ? 'Closure response missing fields.' : `Closure failed ${response.status}`,
+  };
+}
+
+async function callTaskLifecycleProductionClosureSafely(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskLifecycleProductionClosureEnvelope | undefined> {
+  try {
+    return await callTaskLifecycleProductionClosure(payload, options);
+  } catch (error) {
+    return {
+      ok: false,
+      error: 'runtime_error',
+      code: 'TASK_LIFECYCLE_CLOSURE_UNAVAILABLE',
+      message: error instanceof Error ? error.message : 'Task lifecycle production closure unavailable.',
     };
   }
 }
@@ -1080,6 +1172,17 @@ export function createTaskRouter(
 
       const userId = (req as AuthenticatedRequest).user?.id;
       if (!userId) {
+        const authDeniedClosureBaseUrl = resolveTaskLifecycleProductionClosureBaseUrl(options);
+        if (authDeniedClosureBaseUrl) {
+          await callTaskLifecycleProductionClosureSafely(
+            {
+              action: 'auth-denied',
+              projectId: requestedProjectId,
+              reason: 'Authentication required',
+            },
+            { baseUrl: authDeniedClosureBaseUrl, fetchImpl },
+          );
+        }
         return res.status(401).json({ error: 'Authentication required' });
       }
 
@@ -1088,10 +1191,31 @@ export function createTaskRouter(
         userId,
       );
       if (!project) {
+        const currentUserForDenied = (req as unknown as AuthenticatedRequest).user;
+        const deniedActor = currentUserForDenied
+          ? { id: currentUserForDenied.id, email: currentUserForDenied.email, role: currentUserForDenied.role }
+          : undefined;
+        const authDeniedClosureBaseUrl = resolveTaskLifecycleProductionClosureBaseUrl(options);
+        if (authDeniedClosureBaseUrl) {
+          await callTaskLifecycleProductionClosureSafely(
+            {
+              action: 'auth-denied',
+              projectId: requestedProjectId,
+              actor: deniedActor,
+              reason: 'Project or resource authorization denied.',
+            },
+            { baseUrl: authDeniedClosureBaseUrl, fetchImpl },
+          );
+        }
         return res.status(404).json({ error: 'Project not found.' });
       }
       ownedProjectId = project.id;
     }
+
+    const currentUserForClosure = (req as unknown as AuthenticatedRequest).user;
+    const actor = currentUserForClosure
+      ? { id: currentUserForClosure.id, email: currentUserForClosure.email, role: currentUserForClosure.role }
+      : undefined;
 
     let task = runtime.createTask({
       kind: typeof body.kind === 'string' && body.kind.trim() ? body.kind.trim() : 'chat',
@@ -1142,6 +1266,35 @@ export function createTaskRouter(
       task = failMissionFromLifecycleRuntime(runtime, task, lifecycle, 'mission-core');
     }
 
+    // Consume Python production closure summary (preserves Node store boundary)
+    const taskLifecycleProductionClosureBaseUrl = resolveTaskLifecycleProductionClosureBaseUrl(options);
+    let closureSummary: TaskLifecycleProductionClosureEnvelope | undefined;
+    if (taskLifecycleProductionClosureBaseUrl) {
+      const closureAction = (lifecycle?.ok === false || lifecycleError) ? 'error' : 'create';
+      const closurePayload: Record<string, unknown> = {
+        action: closureAction,
+        missionId: task.id,
+        projectId: ownedProjectId,
+        task,
+        metadata: lifecycleMetadata,
+        events: runtime.listTaskEvents(task.id, 10),
+      };
+      if (actor) {
+        closurePayload.actor = actor;
+      }
+      if (closureAction === 'error') {
+        const failEnv = lifecycle as TaskLifecycleRuntimeFailure | undefined;
+        closurePayload.error = {
+          code: failEnv?.code || 'TASK_LIFECYCLE_ERROR',
+          message: lifecycleError || failEnv?.message || 'lifecycle error from production closure path',
+        };
+      }
+      closureSummary = await callTaskLifecycleProductionClosureSafely(
+        closurePayload,
+        { baseUrl: taskLifecycleProductionClosureBaseUrl, fetchImpl },
+      );
+    }
+
     let dispatchAccepted: boolean | undefined;
     let dispatchError: string | undefined;
     if (!lifecycleError && shouldAutoDispatchMission(task, body.autoDispatch)) {
@@ -1175,6 +1328,7 @@ export function createTaskRouter(
             ...(lifecycleError ? { lifecycleError } : {}),
           }
         : {}),
+      ...(closureSummary ? { closure: closureSummary } : {}),
       ...(dispatchAccepted === undefined
         ? {}
         : {
@@ -1252,6 +1406,10 @@ export function createTaskRouter(
 
     const limit = parseLimit(req.query.limit);
     const events = runtime.listTaskEvents(task.id, limit);
+
+    const replayUser = (req as unknown as AuthenticatedRequest).user;
+    const replayActor = replayUser ? { id: replayUser.id, email: replayUser.email, role: replayUser.role } : undefined;
+
     const lifecycle = await callTaskLifecycleRuntimeSafely(
       {
         action: 'replay',
@@ -1265,6 +1423,29 @@ export function createTaskRouter(
         fetchImpl,
       },
     );
+
+    // Consume Python production closure for replay (preserves event sequence at boundary)
+    let replayClosureSummary: TaskLifecycleProductionClosureEnvelope | undefined;
+    const replayClosureBaseUrl = resolveTaskLifecycleProductionClosureBaseUrl(options);
+    if (replayClosureBaseUrl) {
+      replayClosureSummary = await callTaskLifecycleProductionClosureSafely(
+        {
+          action: 'replay',
+          missionId: task.id,
+          projectId:
+            task.projection && typeof task.projection === 'object' && !Array.isArray(task.projection)
+              ? (task.projection as Record<string, unknown>).projectId as string | undefined
+              : undefined,
+          task,
+          actor: replayActor,
+          events,
+          limit,
+          metadata: buildTaskLifecycleMetadata(task),
+        },
+        { baseUrl: replayClosureBaseUrl, fetchImpl },
+      );
+    }
+
     res.json({
       ok: true,
       missionId: task.id,
@@ -1273,6 +1454,7 @@ export function createTaskRouter(
       ...(lifecycle?.ok === false
         ? { lifecycleError: formatTaskLifecycleError(lifecycle) }
         : {}),
+      ...(replayClosureSummary ? { closure: replayClosureSummary } : {}),
     });
   });
 
@@ -1316,6 +1498,19 @@ export function createTaskRouter(
         ? req.body.requestedBy.trim()
         : undefined;
     const source = normalizeCancelSource(req.body?.source);
+
+    const cancelUser = (req as unknown as AuthenticatedRequest).user;
+    const cancelActor = cancelUser
+      ? { id: cancelUser.id, email: cancelUser.email, role: cancelUser.role }
+      : requestedBy
+      ? { id: requestedBy }
+      : undefined;
+
+    const cancelProjectId =
+      task.projection && typeof task.projection === 'object' && !Array.isArray(task.projection)
+        ? (task.projection as Record<string, unknown>).projectId as string | undefined
+        : undefined;
+
     const lifecycle = await callTaskLifecycleRuntimeSafely(
       {
         action: 'cancel',
@@ -1410,12 +1605,32 @@ export function createTaskRouter(
       source,
     });
 
+    // Consume Python production closure for cancel (mission service/route boundary)
+    let cancelClosureSummary: TaskLifecycleProductionClosureEnvelope | undefined;
+    const cancelClosureBaseUrl = resolveTaskLifecycleProductionClosureBaseUrl(options);
+    if (cancelClosureBaseUrl) {
+      cancelClosureSummary = await callTaskLifecycleProductionClosureSafely(
+        {
+          action: 'cancel',
+          missionId: task.id,
+          projectId: cancelProjectId,
+          task: cancelled ?? task,
+          reason,
+          actor: cancelActor,
+          events: runtime.listTaskEvents(task.id, 10),
+          metadata: buildTaskLifecycleMetadata(task),
+        },
+        { baseUrl: cancelClosureBaseUrl, fetchImpl },
+      );
+    }
+
     return res.json({
       ok: true,
       alreadyFinal: false,
       executorForwarded,
       task: cancelled,
       ...(lifecycle?.ok === true ? { lifecycle } : {}),
+      ...(cancelClosureSummary ? { closure: cancelClosureSummary } : {}),
     });
   });
 

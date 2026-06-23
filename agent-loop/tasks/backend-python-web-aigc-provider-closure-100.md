@@ -2,17 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成（人工 rescue 后门禁已绿）
 - 目标：把 Web AIGC 长尾 provider（提供方）剩余闭环补成 Python provider closure runtime，覆盖 search/file/vision/audio/OCR/static/AI PPT/dynamic/transaction/image/graph 等路线的统一生产姿态。
 - 角色分工：worker 负责 Python provider closure、Node adapter bridge 和测试；reviewer 确认没有调用真实外部 provider、没有提交用户文件、没有把 fake runtime 写成真实生产接管。
 
 ### 状态清单
 
-- [ ] Python closure runtime 覆盖 Web AIGC provider readiness、capability map、degraded/error、config_missing。
-- [ ] Node adapters 能消费 Python provider closure summary，并保留 provenance、permission、audit、usage metadata。
-- [ ] image/graph/web-qa 等未完全接管的路线必须给出明确 node-owned 或 config_missing，不得假绿。
-- [ ] gate 全绿。
-- [ ] Codex review 确认 Web AIGC 100% 候选口径没有虚高。
+- [x] Python closure runtime 覆盖 Web AIGC provider readiness、capability map、degraded/error、config_missing。
+- [x] Node adapters 能消费 Python provider closure summary，并保留 provenance、permission、audit、usage metadata。
+- [x] image/graph/web-qa 等未完全接管的路线必须给出明确 node-owned 或 config_missing，不得假绿。
+- [x] gate 全绿。
+- [x] Codex review 确认 Web AIGC 100% 候选口径没有虚高。
+
+### 救回验证
+
+- 原队列结果：`HALT_NO_PROGRESS` / rescue patch。
+- 人工修复：Python provider closure 从 `permission.auditId` 保留审计号；Node image/graph/web-qa adapters 保留 provider closure 姿态，不把 node-owned/config_missing 假写成 ready。
+- Python gate：`66 passed`。
+- Node/Vitest gate：`8 passed` test files / `40 passed` tests。
 
 ## 目标
 

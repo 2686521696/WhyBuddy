@@ -27,11 +27,11 @@
 - `backend-python-blueprint-main-runtime-closure-100`：`DONE_REVIEWED` / `done`（diff ~32k bytes）。Python 产出 Blueprint main closure summary（state/job/event/prompt/review/artifact）；Node 保留 job store / event bus / ledger / diagnostics 所有权。计入 Blueprint-adjacent bounded runtime，不等于完整 `/api/blueprint` 迁移。
 - `backend-python-external-provider-cutover-100`：`DONE_REVIEWED` / `done`（diff ~19k）。Python/Node cutover readiness 覆盖 Qdrant/embedding/search/OCR/vision/audio/APM/billing/audit platform/deployed Python service 的 ready/config_missing/skipped/failed/timeout/degraded 分类。计入 production wiring diagnostics/cutover readiness，不等于真实外部服务生产接管。
 - `backend-python-node-route-cutover-audit-100`：`DONE_REVIEWED` / `done`（diff ~14k）。纯审计报告，**不计入业务迁移分子**。
-- `backend-python-auth-audit-production-closure-100`：`HALT_NO_PROGRESS` / `failed`（rescue patch available）。未落地完成，不计入。
-- `backend-python-task-lifecycle-production-closure-100`：`HALT_BUDGET` / `failed`（rescue patch）。未落地完成，不计入。
-- `backend-python-web-aigc-provider-closure-100`：`HALT_NO_PROGRESS` / `failed`（rescue patch）。未落地完成，不计入。
+- `backend-python-auth-audit-production-closure-100`：原队列 `HALT_NO_PROGRESS` / rescue patch；已人工救回并通过 Python/Node gate。计入 Auth/Audit bounded production-closure 证据，不等于真实用户库、邮件服务、完整 policy/audit platform 生产接管。
+- `backend-python-task-lifecycle-production-closure-100`：原队列 `HALT_BUDGET` / rescue patch；已人工救回并通过 Python/Node gate。计入 Task lifecycle bounded closure 证据，不等于完整 scheduler、mission store、project/resource auth 全量迁移。
+- `backend-python-web-aigc-provider-closure-100`：原队列 `HALT_NO_PROGRESS` / rescue patch；已人工救回并通过 Python/Node gate。计入 Web AIGC provider posture closure 证据，不等于真实 image/graph/web-qa/external provider 生产接管。
 
-当前刷新基于 queue outcomes（2026-06-23 更新）和 audit 报告。**本 status refresh 本身不计入任何迁移分子**。
+当前刷新基于 queue outcomes（2026-06-23 更新）、后续人工 rescue gate 和 route cutover audit 报告。**本 status refresh 本身不计入任何迁移分子**。
 
 ### route cutover audit 100 结论映射
 
@@ -49,17 +49,17 @@
 
 ### 100 阶段刷新结论
 
-**整体 NodeJS 后端迁 Python 约 96-98%，工作数字 97%。** 97 阶段 92-94% 基础上，100 队列成功落地 2 个有界 runtime/cutover 证据（blueprint closure、external readiness），但 3 个 HALT + route cutover 审计 blocker 确认仍不能达 100%。分层口径见下；不能把 SlideRule V5 子系统审计姿态外推为整体 backend 100%。
+**整体 NodeJS 后端迁 Python 约 97-98%，工作数字 98%。** 97 阶段 92-94% 基础上，100 队列先落地 2 个有界 runtime/cutover 证据（blueprint closure、external readiness），随后人工救回 3 个 rescue closure 切片（auth/audit、task lifecycle、web-aigc provider）。但 route cutover audit 仍确认 Blueprint 主流程、完整 auth/audit/task/Web AIGC 和真实外部 provider 等大分母缺口存在，所以仍不能宣布整体 100%。分层口径见下；不能把 SlideRule V5 子系统审计姿态外推为整体 backend 100%。
 
 ### 100 阶段计入与不计入清单
 
 | 类型 | 本轮 100 成功计入 | 本轮不能计入 |
 |---|---|---|
-| runtime / production cutover (bounded) | 2 个：blueprint-main-runtime-closure-100（Python closure summary + Node thin bridge）、external-provider-cutover-100（cutover readiness diagnostics 分层） | 3 个 HALT 任务（auth-audit、task-lifecycle、web-aigc-provider）及其 rescue patch |
+| runtime / production cutover (bounded) | 5 个：blueprint-main-runtime-closure-100、external-provider-cutover-100，以及已人工救回的 auth-audit、task-lifecycle、web-aigc-provider closure 切片 | 真实用户库/邮件服务/完整 scheduler/完整 Blueprint 主流程/真实 Web AIGC external providers 仍不计入 |
 | audit / route cutover | — | node-route-cutover-audit-100（仅文档审计，不计入分子） |
 | status / docs / inventory | — | backend-python-migration-status-refresh-100 本身；任何 inventory/audit 文档 |
 | proxy / compat-shell / thin-proxy | 历史保留；部分 100 证据强化了 bounded 描述 | 不能把 compat shell 写成完整生产迁移或 100% takeover |
-| failed / no-diff / HALT / skipped | — | HALT_NO_PROGRESS / HALT_BUDGET / rescue / fake/synthetic smoke / config_missing 诊断均不计完成 |
+| failed / no-diff / HALT / skipped | 仅当后续人工 rescue 有代码、gate 和提交证据时，按后续证据计入有界切片 | 未救回的 HALT_NO_PROGRESS / HALT_BUDGET / fake/synthetic smoke / config_missing 诊断本身仍不计完成 |
 | SlideRule V5 | — | 100 队列未针对主链路新增；不外推 |
 
 ### 100 阶段 final blockers（剩余缺口）
@@ -78,7 +78,7 @@
 
 | 范围 | 100 阶段判断 | 进度条 | 计入口径 |
 |---|---:|---|---|
-| 整体 NodeJS 后端迁 Python | 约 96-98%，工作数字 97% | `[█████████░]` | 100 队列新增 2 个 bounded runtime/cutover（blueprint main closure、external provider readiness）；97 阶段已补多个 slices。但 Blueprint/Task/Auth/Perm/Audit/Web 大分母仍是 node-owned-gap（audit 确认）。不能写 100%。 |
+| 整体 NodeJS 后端迁 Python | 约 97-98%，工作数字 98% | `[█████████░]` | 100 阶段新增 5 个 bounded runtime/cutover/closure 证据（blueprint main closure、external provider readiness、auth-audit closure、task lifecycle closure、web-aigc provider closure）；97 阶段已补多个 slices。但 Blueprint/Task/Auth/Perm/Audit/Web 大分母仍有 node-owned-gap（audit 确认）。不能写 100%。 |
 | SlideRule V5 子系统迁移 | 仍 95-97% 审计区间 | `[█████████░]` | 100 阶段未新增 V5 主链路；保持 95 阶段有边界审计姿态；delegation 仍高成熟但不外推整体百分比。 |
 | Blueprint-adjacent runtime support | 约 85-92% | `[█████████░]` | 100 补 main runtime closure；主 state/job/event bus/ledger/prompt package 仍 Node-owned。 |
 | Auth/Audit runtime support | 约 88-93% | `[█████████░]` | 97 login/register + hooks + 100 尝试 closure；生产 persistence/email/policy/external audit 仍是 node-owned-gap。 |

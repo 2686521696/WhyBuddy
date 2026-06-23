@@ -2,17 +2,24 @@
 
 ## 执行状态
 
-- 状态：待执行
+- 状态：已完成（人工 rescue 后门禁已绿）
 - 目标：把 Auth（认证）、Permission（权限）和 Audit（审计）的最后生产闭环补成 Python 可审计 runtime/production boundary（生产边界），为整体 100% 候选收口提供证据。
 - 角色分工：worker 负责 Python closure runtime、Node bridge 和测试；reviewer 重点检查是否误报真实邮件服务、真实用户库、外部审计平台已经全部迁完。
 
 ### 状态清单
 
-- [ ] Python closure runtime 覆盖 register、login、email code、session issue/refresh/logout、permission decision、audit hook、retention/export 的组合摘要。
-- [ ] Node auth/audit/permission 层能消费 Python closure summary，并保留 password、email、session、policy、risk、audit metadata。
-- [ ] config missing、external platform missing、degraded 必须清楚区分，不能写成 healthy。
-- [ ] gate 全绿。
-- [ ] Codex review 确认没有提交密钥、没有真实外部副作用、没有虚高生产成熟度。
+- [x] Python closure runtime 覆盖 register、login、email code、session issue/refresh/logout、permission decision、audit hook、retention/export 的组合摘要。
+- [x] Node auth/audit/permission 层能消费 Python closure summary，并保留 password、email、session、policy、risk、audit metadata。
+- [x] config missing、external platform missing、degraded 必须清楚区分，不能写成 healthy。
+- [x] gate 全绿。
+- [x] Codex review 确认没有提交密钥、没有真实外部副作用、没有虚高生产成熟度。
+
+### 救回验证
+
+- 原队列结果：`HALT_NO_PROGRESS` / rescue patch。
+- 人工修复：ready 路径显式传入临时 session store，避免把缺少配置误判成 closure 失败；保留 `subEnvelopes`。
+- Python gate：`34 passed, 1 warning`。
+- Node/Vitest gate：`6 passed` test files / `26 passed` tests。
 
 ## 目标
 
