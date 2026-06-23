@@ -1198,71 +1198,104 @@
       "id": "backend-python-blueprint-production-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-blueprint-production-ownership-closure-102.md",
       "gatesKey": "blueprintProductionOwnershipClosure102Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
     },
     {
       "id": "backend-python-task-lifecycle-durable-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-task-lifecycle-durable-ownership-closure-102.md",
       "gatesKey": "taskLifecycleDurableOwnershipClosure102Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
     },
     {
       "id": "backend-python-auth-production-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-auth-production-ownership-closure-102.md",
       "gatesKey": "authProductionOwnershipClosure102Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
     },
     {
       "id": "backend-python-permission-audit-production-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-permission-audit-production-ownership-closure-102.md",
       "gatesKey": "permissionAuditProductionOwnershipClosure102Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
     },
     {
       "id": "backend-python-web-aigc-external-provider-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-web-aigc-external-provider-ownership-closure-102.md",
       "gatesKey": "webAigcExternalProviderOwnershipClosure102Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
     },
     {
       "id": "backend-python-a2a-production-transport-ownership-closure-102",
       "task": "agent-loop/tasks/backend-python-a2a-production-transport-ownership-closure-102.md",
       "gatesKey": "a2aProductionTransportOwnershipClosure102Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
+    },
+    {
+      "id": "backend-python-migration-status-refresh-102",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-102.md",
+      "gatesKey": "migrationStatusRefresh102Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: 9249b35e; superseded by backend-python 103 scope/runtime queue"
+    },
+    {
+      "id": "backend-python-blueprint-job-store-scope-decision-103",
+      "task": "agent-loop/tasks/backend-python-blueprint-job-store-scope-decision-103.md",
+      "gatesKey": "blueprintJobStoreScopeDecision103Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -1273,9 +1306,74 @@
       "timeoutMs": 3600000
     },
     {
-      "id": "backend-python-migration-status-refresh-102",
-      "task": "agent-loop/tasks/backend-python-migration-status-refresh-102.md",
-      "gatesKey": "migrationStatusRefresh102Gates",
+      "id": "backend-python-task-mission-store-runtime-slice-103",
+      "task": "agent-loop/tasks/backend-python-task-mission-store-runtime-slice-103.md",
+      "gatesKey": "taskMissionStoreRuntimeSlice103Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-session-token-boundary-103",
+      "task": "agent-loop/tasks/backend-python-auth-session-token-boundary-103.md",
+      "gatesKey": "authSessionTokenBoundary103Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-permission-audit-durable-store-boundary-103",
+      "task": "agent-loop/tasks/backend-python-permission-audit-durable-store-boundary-103.md",
+      "gatesKey": "permissionAuditDurableStoreBoundary103Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-web-aigc-real-provider-live-contract-103",
+      "task": "agent-loop/tasks/backend-python-web-aigc-real-provider-live-contract-103.md",
+      "gatesKey": "webAigcRealProviderLiveContract103Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-a2a-session-stream-runtime-slice-103",
+      "task": "agent-loop/tasks/backend-python-a2a-session-stream-runtime-slice-103.md",
+      "gatesKey": "a2aSessionStreamRuntimeSlice103Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-migration-scope-reconciliation-103",
+      "task": "agent-loop/tasks/backend-python-migration-scope-reconciliation-103.md",
+      "gatesKey": "migrationScopeReconciliation103Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -1830,5 +1928,45 @@
   "migrationStatusRefresh102Gates": [
     "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','102','??????','???????','Blueprint','Auth','Audit','Task lifecycle','Web AIGC','A2A']) { if(!status.includes(needle)) throw new Error('migration status missing 102-stage wording: '+needle); } if(!/(102|101|100|99|98)/.test(status)) throw new Error('migration status missing refreshed percentage');\"",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-production-ownership-closure-102.md agent-loop/tasks/backend-python-task-lifecycle-durable-ownership-closure-102.md agent-loop/tasks/backend-python-auth-production-ownership-closure-102.md agent-loop/tasks/backend-python-permission-audit-production-ownership-closure-102.md agent-loop/tasks/backend-python-web-aigc-external-provider-ownership-closure-102.md agent-loop/tasks/backend-python-a2a-production-transport-ownership-closure-102.md"
+  ],
+  "blueprintJobStoreScopeDecision103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_job_store_scope_decision_103.py tests/test_blueprint_production_ownership_closure_102.py tests/test_blueprint_shell_state_cutover_101.py tests/test_blueprint_job_runtime_boundary.py tests/test_blueprint_job_event_stream_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts server/routes/__tests__/blueprint.production-ownership-closure-102.test.ts server/routes/__tests__/blueprint.shell-state-cutover-101.test.ts server/routes/__tests__/blueprint.job-runtime-python-boundary.test.ts server/routes/__tests__/blueprint.job-event-stream-python-runtime.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_job_store_scope_decision.py tws-ai-slide-rule-python/tests/test_blueprint_job_store_scope_decision_103.py server/routes/blueprint/job-store-scope-decision-python.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts server/routes/blueprint/jobs/service.ts server/routes/blueprint/event-bus.ts shared/blueprint/jobs/types.ts shared/blueprint/agent-events.ts"
+  ],
+  "taskMissionStoreRuntimeSlice103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_mission_store_runtime_slice_103.py tests/test_task_lifecycle_durable_ownership_closure_102.py tests/test_task_store_auth_scheduler_cutover_101.py tests/test_task_mission_event_replay_runtime.py tests/test_task_lifecycle_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-mission-store-runtime-slice-103.test.ts server/tests/task-lifecycle-durable-ownership-closure-102.test.ts server/tests/task-store-auth-scheduler-cutover-101.test.ts server/tests/task-mission-event-replay-python-runtime.test.ts server/tests/task-lifecycle-python-runtime.test.ts server/tests/mission-store.test.ts server/tests/mission-routes.test.ts server/tests/mission-cancel.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_mission_store_runtime_slice.py tws-ai-slide-rule-python/tests/test_task_mission_store_runtime_slice_103.py server/tests/task-mission-store-runtime-slice-103.test.ts server/tasks/mission-store.ts server/tasks/mission-runtime.ts server/tasks/mission-projection.ts server/routes/tasks.ts shared/mission/contracts.ts shared/mission/projection.ts"
+  ],
+  "authSessionTokenBoundary103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_session_token_boundary_103.py tests/test_auth_production_ownership_closure_102.py tests/test_auth_token_mailer_session_cutover_101.py tests/test_auth_login_register_runtime.py tests/test_auth_session_refresh_logout_runtime.py tests/test_auth_session_production_persistence.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-session-token-boundary-103.test.ts server/tests/auth-production-ownership-closure-102.test.ts server/tests/auth-token-mailer-session-cutover-101.test.ts server/tests/auth-login-register-python-runtime.test.ts server/tests/auth-session-refresh-logout-python-runtime.test.ts server/tests/auth-session-production-persistence.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_session_token_boundary.py tws-ai-slide-rule-python/tests/test_auth_session_token_boundary_103.py server/tests/auth-session-token-boundary-103.test.ts server/routes/auth.ts server/auth/session-service.ts server/auth/email-code-service.ts server/auth/email-mailer.ts server/auth/password.ts shared/auth.ts"
+  ],
+  "permissionAuditDurableStoreBoundary103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_audit_durable_store_boundary_103.py tests/test_permission_audit_production_ownership_closure_102.py tests/test_permission_audit_policy_store_cutover_101.py tests/test_permission_audit_hooks_runtime.py tests/test_audit_retention_export_runtime.py tests/test_audit_production_sink.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/permission-audit-durable-store-boundary-103.test.ts server/tests/permission-audit-production-ownership-closure-102.test.ts server/tests/permission-audit-policy-store-cutover-101.test.ts server/tests/permission-audit-hooks-python-runtime.test.ts server/tests/permission-governance-audit-routes.test.ts server/tests/audit-retention-export-python-runtime.test.ts server/tests/audit-production-sink.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/permission_audit_durable_store_boundary.py tws-ai-slide-rule-python/tests/test_permission_audit_durable_store_boundary_103.py server/tests/permission-audit-durable-store-boundary-103.test.ts server/permission/check-engine.ts server/permission/policy-store.ts server/permission/audit-logger.ts server/audit/audit-store.ts server/audit/audit-retention.ts server/audit/audit-hooks.ts server/routes/audit.ts shared/permission/contracts.ts shared/audit/contracts.ts"
+  ],
+  "webAigcRealProviderLiveContract103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_web_aigc_real_provider_live_contract_103.py tests/test_web_aigc_external_provider_ownership_closure_102.py tests/test_web_aigc_real_provider_readiness_101.py tests/test_web_aigc_provider_closure_100.py tests/test_web_aigc_search_runtime_bridge.py tests/test_web_aigc_vision_audio_runtime_bridge.py tests/test_web_aigc_ocr_static_runtime.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/web-aigc-real-provider-live-contract-103.test.ts server/tests/web-aigc-external-provider-ownership-closure-102.test.ts server/tests/web-aigc-real-provider-readiness-101.test.ts server/tests/web-aigc-provider-closure-100.test.ts server/routes/__tests__/web-aigc.search-python-runtime.test.ts server/routes/__tests__/web-aigc.vision-audio-python-runtime.test.ts server/tests/ocr-static-python-runtime.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/web_aigc_real_provider_live_contract.py tws-ai-slide-rule-python/tests/test_web_aigc_real_provider_live_contract_103.py server/tests/web-aigc-real-provider-live-contract-103.test.ts server/core/web-aigc-runtime-extra-adapters.ts server/core/web-aigc-runtime-observability.ts server/rag/web-aigc-search-adapter.ts server/routes/ocr-recognition.ts server/routes/static-webpage-read.ts shared/rag/web-aigc-search.ts shared/web-qa/contracts.ts shared/telemetry/contracts.ts"
+  ],
+  "a2aSessionStreamRuntimeSlice103Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_a2a_session_stream_runtime_slice_103.py tests/test_a2a_production_transport_ownership_closure_102.py tests/test_a2a_core_route_cutover_101.py tests/test_a2a_runtime_contract.py tests/test_a2a_stream_runtime_boundary.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/a2a-session-stream-runtime-slice-103.test.ts server/routes/__tests__/a2a-production-transport-ownership-closure-102.test.ts server/routes/__tests__/a2a-core-route-cutover-101.test.ts server/routes/__tests__/a2a-python-runtime-contract.test.ts server/routes/__tests__/a2a-python-stream-runtime.test.ts server/tests/a2a-routes.test.ts server/tests/a2a-protocol.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/a2a_session_stream_runtime_slice.py tws-ai-slide-rule-python/tests/test_a2a_session_stream_runtime_slice_103.py server/routes/__tests__/a2a-session-stream-runtime-slice-103.test.ts server/routes/a2a-python-runtime.ts server/core/a2a-client.ts server/core/a2a-server.ts shared/a2a/contracts.ts shared/a2a-protocol.ts"
+  ],
+  "migrationScopeReconciliation103Gates": [
+    "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','Blueprint','Auth','Audit','Task lifecycle','Web AIGC','A2A']) { if(!status.includes(needle)) throw new Error('migration status missing 103 scope wording: '+needle); } if(!/(103|102|101|100|99|98)/.test(status)) throw new Error('migration status missing refreshed 103 percentage context'); if(!/(python-owned|node-retained|external-owned|out-of-scope|blocked|skipped-live)/i.test(status)) throw new Error('migration status missing ownership/scope wording');\"",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-job-store-scope-decision-103.md agent-loop/tasks/backend-python-task-mission-store-runtime-slice-103.md agent-loop/tasks/backend-python-auth-session-token-boundary-103.md agent-loop/tasks/backend-python-permission-audit-durable-store-boundary-103.md agent-loop/tasks/backend-python-web-aigc-real-provider-live-contract-103.md agent-loop/tasks/backend-python-a2a-session-stream-runtime-slice-103.md"
   ]
 }
