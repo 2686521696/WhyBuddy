@@ -5,6 +5,14 @@
  * - CRUD 操作
  * - 有效权限解析（角色权限 + 自定义权限 - 拒绝权限）
  * - 策略版本控制与回滚
+ *
+ * 104: policy store ownership retained in Node.
+ * Retained responsibilities (named):
+ *  - durable CRUD + persistence
+ *  - version history + rollback
+ *  - role/permission merge + effective resolution
+ *  - org scoping + delete by org
+ * Python provides only bounded decision/read slice (advisory, no durable).
  */
 import type db from "../db/index.js";
 import type {

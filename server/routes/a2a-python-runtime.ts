@@ -19,6 +19,10 @@ import {
   validateA2AProductionTransportOwnership,
   type A2AProductionTransportOwnershipResult,
   A2A_PRODUCTION_TRANSPORT_OWNERSHIP_CONTRACT_VERSION,
+  type ProviderSummary,
+  type A2aSummary,
+  type MigrationDenom,
+  type FinalProviderA2aScopeReconciliation,
 } from "../../shared/a2a/contracts.js";
 
 // Re-export for test and route consumption convenience
@@ -191,3 +195,128 @@ export async function runA2AProductionTransportOwnership(
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// 104: Final provider A2A scope reconciliation (Node mirror)
+// This lives in production Node file (thin runtime contract layer) so that
+// Node runtime can return the denominator summary.
+// Mirrors Python decide_final_provider_a2a_scope_reconciliation shape + counts.
+// Does NOT fake live readiness; skipped/synthetic/external-owned/external-agent-required
+// excluded from completion math. Real takeover only with explicit python-owned evidence.
+// ---------------------------------------------------------------------------
+
+const PROVIDER_BASE: ProviderSummary = {
+  total: 19,
+  liveReady: 0,
+  skippedLive: 8,
+  synthetic: 10,
+  externalOwned: 1,
+  realPythonTakeover: 0,
+};
+
+const A2A_SCOPE_BASE: Record<string, string> = {
+  registry: 'node-retained',
+  sessionStreamSliceDecision: 'python-owned',
+  realStreamTransport: 'node-retained',
+  externalAgentInvoke: 'external-agent-required',
+  chatReporting: 'node-retained',
+};
+
+export function computeFinalProviderA2aScopeReconciliation(
+  input?: { area?: string; simulate?: Record<string, any> }
+): FinalProviderA2aScopeReconciliation {
+  const areaReq = (input?.area as string) || (input as any)?.surface || 'all';
+  const sim = (input?.simulate || {}) as Record<string, any>;
+
+  // providers from 103 contract baseline (no live python owned real)
+  let ps: ProviderSummary = { ...PROVIDER_BASE };
+  if (sim.forceProviderCounts) {
+    const fc = sim.forceProviderCounts;
+    ps = {
+      total: (fc.liveReady || 0) + (fc.skippedLive || 0) + (fc.synthetic || 0) + (fc.externalOwned || 0),
+      liveReady: fc.liveReady || 0,
+      skippedLive: fc.skippedLive || 8,
+      synthetic: fc.synthetic || 10,
+      externalOwned: fc.externalOwned || 1,
+      realPythonTakeover: 0,
+    };
+  }
+  if (sim.liveReadyPython) {
+    // external simulate never grants python takeover per rules
+    ps.realPythonTakeover = 0;
+    ps.liveReady = 0;
+  }
+
+  // a2a surfaces
+  let a2aBase: Record<string, string> = { ...A2A_SCOPE_BASE };
+  if (sim.blockA2a || sim.block) {
+    for (const k of ['registry', 'realStreamTransport', 'externalAgentInvoke', 'chatReporting']) {
+      if (k in a2aBase) a2aBase[k] = 'blocked';
+    }
+  }
+
+  const a2aPy = Object.values(a2aBase).filter((v) => v === 'python-owned').length;
+  const a2aNode = Object.values(a2aBase).filter((v) => v === 'node-retained').length;
+  const a2aExt = Object.values(a2aBase).filter((v) => v === 'external-agent-required').length;
+  const a2aBlk = Object.values(a2aBase).filter((v) => v === 'blocked').length;
+
+  const a2aS: A2aSummary = {
+    total: Object.keys(a2aBase).length,
+    pythonOwned: a2aPy,
+    nodeRetained: a2aNode,
+    externalAgentRequired: a2aExt,
+    blocked: a2aBlk,
+    productionTakeover: false,
+  };
+
+  let denom: MigrationDenom;
+  if (areaReq === 'all' || !areaReq) {
+    const tot = ps.total + a2aS.total;
+    denom = {
+      totalSurfaces: tot,
+      pythonOwned: ps.realPythonTakeover + a2aPy,
+      nodeRetained: a2aNode + ps.externalOwned,
+      externalOwnedOrSkipped: ps.skippedLive + ps.synthetic,
+      externalAgentOrBlocked: a2aExt + a2aBlk,
+      canClaimCompletion: false,
+    };
+  } else if (areaReq === 'providers' || areaReq === 'provider') {
+    denom = {
+      totalSurfaces: ps.total,
+      pythonOwned: ps.realPythonTakeover,
+      nodeRetained: ps.externalOwned,
+      externalOwnedOrSkipped: ps.skippedLive + ps.synthetic,
+      canClaimCompletion: false,
+    };
+  } else if (areaReq === 'a2a' || areaReq === 'a2aScope') {
+    denom = {
+      totalSurfaces: a2aS.total,
+      pythonOwned: a2aPy,
+      nodeRetained: a2aNode,
+      externalAgentOrBlocked: a2aExt + a2aBlk,
+      canClaimCompletion: false,
+    };
+  } else {
+    denom = { totalSurfaces: 0, pythonOwned: 0, nodeRetained: 0, externalOwnedOrSkipped: 0, canClaimCompletion: false };
+  }
+
+  return {
+    area: areaReq === 'all' ? 'all' : areaReq,
+    ok: true,
+    productionTakeover: false,
+    providerSummary: ps,
+    a2aSummary: a2aS,
+    migrationDenominator: denom,
+    excludedFromNumerator: ['skipped-live', 'synthetic', 'external-owned', 'external-agent-required', 'node-retained'],
+    blockers: Object.keys(a2aBase).filter((k) => ['node-retained', 'external-agent-required', 'blocked'].includes(a2aBase[k])),
+    note: 'skipped-live, synthetic, external-owned, and external-agent-required stay excluded from completion math. Real live-ready claim possible only with explicit live-ready ownership and takeover evidence (python-owned only).',
+  };
+}
+
+// Re-export types for consumers
+export type {
+  ProviderSummary,
+  A2aSummary,
+  MigrationDenom,
+  FinalProviderA2aScopeReconciliation,
+};

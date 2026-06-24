@@ -16,6 +16,65 @@
 | `runtime bridge` | 运行时桥 | Node 能把一个有边界的运行时操作委托给 Python，并且错误/超时/取消语义有测试覆盖。 |
 | `production wiring` | 生产接线 | 接入存储、真实服务边界、观测、fallback（回退）或部署健康检查；smoke（冒烟）通过仍不等于真实外部服务长跑可用。 |
 
+## 104 阶段 production takeover 队列状态刷新
+
+本轮是 104 production takeover 队列的状态刷新任务（backend-python-migration-status-refresh-104）。只刷新状态，不新增业务迁移分子。基于 104 队列 code takeover 任务（Blueprint jobStore/eventBus/ledger/replan/promptPackage/previewState、Task durable/project/scheduler、Auth session/token/mailer、Permission policy、Audit retention）和 3 个 denominator reconciliation 任务的 code diffs、gates、Python/Node 测试证据更新口径。104 尝试将 103 判定为 node-retained 的 surfaces 转为 Python runtime owned，或通过 reconciliation 正式产出 migrationDenominator 将 retained 面从分子排除。**本 status refresh 本身不计入任何迁移分子**。
+
+### 104 队列任务证据
+
+104 production takeover 队列（来自 `agent-loop/scripts/migration-queue.json`、git checkpoints）包含 15+ code 任务 + 本刷新：
+
+- Blueprint 6 takeover：`backend-python-blueprint-job-store-runtime-takeover-104`、`backend-python-blueprint-event-bus-runtime-takeover-104`、`backend-python-blueprint-ledger-runtime-takeover-104`、`backend-python-blueprint-replan-runtime-takeover-104`、`backend-python-blueprint-prompt-package-runtime-takeover-104`、`backend-python-blueprint-preview-state-runtime-takeover-104`。产出 thin python-owned slices（jobStateRuntimeSlice, eventProjectionSlice, ledgerEntrySlice, replanDecisionSlice, validationSlice, previewStateRuntimeSlice）；主 surfaces 仍 node-retained，productionTakeover=false，canClaim=false。
+- Task 4 takeover + recon：`backend-python-task-durable-mission-store-takeover-104`、`backend-python-task-event-persistence-takeover-104`、`backend-python-task-project-auth-runtime-takeover-104`、`backend-python-task-scheduler-runtime-takeover-104` + `backend-python-task-production-denominator-reconciliation-104`；core durableStore/projectResourceAuth/scheduler/eventAppendPersistence node-retained，blockers 列表显式；thin slices python-owned。
+- Auth takeover：`backend-python-auth-session-repository-takeover-104`、`backend-python-auth-token-issuance-takeover-104`、`backend-python-auth-mailer-user-store-scope-104`。
+- Permission/Audit：`backend-python-permission-policy-store-takeover-104`、`backend-python-audit-durable-store-retention-takeover-104`。
+- Final recon：`backend-python-blueprint-production-denominator-reconciliation-104`、`backend-python-task-production-denominator-reconciliation-104`、`backend-python-final-provider-a2a-scope-reconciliation-104`：聚合 provider (skippedLive/externalOwned) 和 A2A (node-retained/external-agent-required)。
+- `backend-python-migration-status-refresh-104`：本刷新任务，**不计入业务迁移分子**。
+
+所有 104 任务产出明确 retained / thin-slice / skipped / external 分类，禁止把它们计入完成。
+
+### 104 阶段计入与不计入清单
+
+| 类型 | 本轮 104 成功计入 | 本轮不能计入 |
+|---|---|---|
+| thin runtime slices (bounded, no full takeover) | 10+ python-owned thin slices (jobState, event proj, ledger, replan, preview, runtimeState, cancel, replay, write slices) 有 Python 服务 + Node bridge + 测试证据 | 不升级为 durable store / full surface / production takeover |
+| denominator reconciliation / formal exclusion | Blueprint (6 node-retained + 6 py, total=12)、Task (blockers 4 + py slices)、A2A/provider (skipped/external/node) 的 migrationDenominator 证据 | 仅分类决策；retained 面不计完成 |
+| node-retained / external-owned / skipped-live / blocked | 正式记录为 node-retained (Blueprint core, Task durable, A2A registry/transport)、external-owned (real providers)、skipped-live | 按 104 recon 代码、测试、guard 规则明确不计入业务完成 |
+| Auth / Permission / Audit bounded | Auth session/token/mailer 部分 slice；Permission policy、Audit retention 薄 slice | 真实 user repo、full policy/enforcement、external audit、mailer 仍 node-retained 或未接管 |
+| status / docs / inventory / refresh | — | backend-python-migration-status-refresh-104 本身 |
+| runtime / production cutover (full takeover) | — | 所有核心 surfaces productionTakeover=false；无 main durable 迁移证据 |
+
+### 104 阶段 整体工程进度
+
+**整体 NodeJS 后端迁 Python 约 98-99%，工作数字 98%。** 103 后仍是 98%，104 takeover 尝试和 recon 确认了 Blueprint、Auth、Audit、Task lifecycle、Web AIGC real provider、A2A 的主要 node-retained / external-owned surfaces 仍存，部分 bounded python slices 有代码证据但不改变大分母。延续 route cutover audit 结论：**未满足整体 100% 条件，不能写整体 100%**。使用保守口径。
+
+| 范围 | 104 阶段判断 | 进度条 | 计入口径 |
+|---|---:|---|---|
+| 整体 NodeJS 后端迁 Python | 约 98-99%，工作数字 98% | `[█████████░]` | 104 产出 thin slices + denom 报告；core Blueprint/Task/Auth/Perm/Audit/Web real/A2A 仍 node-retained 或 external/skipped。不能写 100%。 |
+| SlideRule V5 子系统迁移 | 仍 95-97% 审计区间 | `[█████████░]` | 104 未针对主链路新增。 |
+| Blueprint-adjacent runtime support | 约 88-93% | `[█████████░]` | 104 6 thin slices python；但 6 核心 durable/node-retained。 |
+| Auth/Audit runtime support | 约 89-93% | `[█████████░]` | 部分 session/token/mailer/policy slice；full stores/mailer/policy/enforcement/external 仍 node-retained。 |
+| Task lifecycle support | 约 88-92% | `[█████████░]` | thin state/replay/write slices；durable/scheduler/project auth 仍 node-retained。 |
+| Web AIGC long-tail runtime | 约 85-91% | `[████████░░]` | real providers 仍 external-owned/skipped-live；仅 synthetic/facade 历史。 |
+| production wiring maturity / cutover readiness | 约 90-94% | `[█████████░]` | 104 强化了 denom 分类；真实外部服务长跑接管仍未证明。 |
+
+### 104 阶段 剩余短板成熟度
+
+104 后剩余短板仍聚焦最后 node-retained / external-owned / blocked surfaces。局部 85-93% 正常，因为 104 只是 thin slice + 分类而非移除大分母缺口。
+
+| 短板 | 成熟度 | 为什么局部仍 85-93%（104 后） | 104 后归类证据 |
+|---|---|---|---|
+| Blueprint 主系统 | 85-90% | 6 core (jobStore/eventBus/ledger/replan/promptPackage/previewState) node-retained；仅 6 thin python slices；productionTakeover=false；canClaim=false。 | blueprint_production_denominator_reconciliation.py + tests + 6 takeover services |
+| Task lifecycle | 86-91% | 4 core (durableStore/projectResourceAuth/scheduler/eventAppend) node-retained + blockers list；thin slices python。 | task_production_denominator_reconciliation.py + BLOCKERS |
+| Auth 生产链路 | 88-93% | sessionRepository/tokenIssuance/passwordPolicy/mailer/userRepository 主要 node-retained；仅 bounded ops slice python。 | auth_*_takeover_104.py + tests |
+| Permission / Audit | 85-91% | policyStore/auditDurable node-retained；external audit 仍 external。 | permission-policy + audit-durable 104 |
+| Web AIGC 长尾 + 真实 provider | 84-89% | real (web_search/vision/audio/ocr/web-qa) external-owned / skipped-live；synthetic 不计。 | final_provider_a2a... + 103 live contract |
+| A2A / 核心 transport | 87-92% | registry/realStreamTransport node-retained；externalAgentRequired；chatReporting node。 | A2A_SCOPE_SURFACES + recon |
+
+**关键**：104 是 production takeover 尝试 + 算账轮。证据显示主要生产面仍 node-retained 或 external-owned，未消除 100% blockers。整体仍保持 98%，**不能写 100%**。从分母口径解释 retained/out-of-scope 面，而非计为迁移完成。若要上调，必须有真实 Python-owned runtime takeover 证据或正式的 scope exclusion。Review 确认没有把 retained、skipped-live、external-owned、synthetic、docs-only 虚算成 Python 迁移完成。
+
+（104-stage gate wording: NodeJS Python 104 Blueprint Auth Audit Task lifecycle Web AIGC A2A）
+
 ## 101 阶段 final-gap 队列状态刷新
 
 本轮是 101 final-gap 队列的状态刷新任务（backend-python-migration-status-refresh-101）。只刷新状态，不新增业务迁移分子。基于 101 code queue 任务结果、gate、review 证据和 `docs/backend-python-node-route-cutover-audit-100.md` 延续结论更新口径。101 队列 6 个 cutover/readiness 任务均为边界收紧和 readiness 分类补强，不改变主要 node-owned-gap 的所有权结论。**本 status refresh 本身不计入任何迁移分子**。

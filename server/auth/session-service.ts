@@ -760,3 +760,186 @@ export function validateAuthProductionOwnershipClosure(payload: unknown): AuthPr
     ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
   };
 }
+
+// Auth session repository takeover 104: bounded repo op decision/evidence
+export type AuthSessionRepositoryTakeoverStatus =
+  | "ready"
+  | "node-retained"
+  | "python-owned"
+  | "out-of-scope"
+  | "skipped-live"
+  | "blocked";
+
+export interface AuthSessionRepositoryTakeoverResult {
+  status: AuthSessionRepositoryTakeoverStatus;
+  contractVersion: string;
+  provenance: string;
+  ok: boolean;
+  runtime: { owner: "python" | "node"; mode: string };
+  ownership?: Record<string, string>;
+  productionTakeover?: boolean;
+  metadata?: Record<string, unknown>;
+  operationResult?: Record<string, unknown>;
+  error?: { code: string; message: string };
+}
+
+function containsSecretForRepoTakeover(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretForRepoTakeover(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const n = key.toLowerCase();
+    if (n === "token" || n === "cookie" || n === "password" || n === "secret" || n === "hash" || n === "bearer") {
+      return true;
+    }
+    if (
+      (n.includes("token") || n.includes("cookie") || n.includes("password") || n.includes("secret") || n.includes("hash")) &&
+      typeof child === "string" &&
+      child.length > 20
+    ) {
+      return true;
+    }
+    return containsSecretForRepoTakeover(child);
+  });
+}
+
+export function validateAuthSessionRepositoryTakeover(payload: unknown): AuthSessionRepositoryTakeoverResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-session-repository-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid repository takeover payload" },
+    };
+  }
+  if (containsSecretForRepoTakeover(payload)) {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-session-repository-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid repository takeover payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const rawStatus = (p.status as string) || "node-retained";
+  const normalizedStatus: AuthSessionRepositoryTakeoverStatus = [
+    "ready",
+    "node-retained",
+    "python-owned",
+    "out-of-scope",
+    "skipped-live",
+    "blocked",
+  ].includes(rawStatus)
+    ? (rawStatus as AuthSessionRepositoryTakeoverStatus)
+    : "node-retained";
+  const own = (p.ownership as Record<string, string>) || {};
+  const prodTake = p.productionTakeover === true ? true : false;
+  return {
+    status: normalizedStatus,
+    contractVersion:
+      typeof p.contractVersion === "string" ? p.contractVersion : "auth-session-repository-takeover.v1",
+    provenance:
+      typeof p.provenance === "string" ? p.provenance : "python-auth-session-repository-takeover-104",
+    ok: normalizedStatus === "python-owned" || normalizedStatus === "ready",
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    ownership: own,
+    productionTakeover: prodTake,
+    ...(p.operationResult ? { operationResult: p.operationResult as Record<string, unknown> } : {}),
+    metadata: (p.metadata as Record<string, unknown>) || {},
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+  };
+}
+
+// Auth token issuance takeover 104: python-owned decision for bounded token issue/refresh/revoke slice
+// (safe decision metadata only; actual token generation/issuance retained by Node)
+export type AuthTokenIssuanceTakeoverStatus =
+  | "ready"
+  | "node-retained"
+  | "python-owned"
+  | "out-of-scope"
+  | "skipped-live"
+  | "blocked";
+
+export interface AuthTokenIssuanceTakeoverResult {
+  status: AuthTokenIssuanceTakeoverStatus;
+  contractVersion: string;
+  provenance: string;
+  ok: boolean;
+  runtime: { owner: "python" | "node"; mode: string };
+  ownership?: Record<string, string>;
+  productionTakeover?: boolean;
+  metadata?: Record<string, unknown>;
+  error?: { code: string; message: string };
+}
+
+function containsSecretForTokenIssuance(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecretForTokenIssuance(item));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const n = key.toLowerCase();
+    if (n === "token" || n === "cookie" || n === "password" || n === "secret" || n === "hash" || n === "bearer") {
+      return true;
+    }
+    if (
+      (n.includes("token") || n.includes("cookie") || n.includes("password") || n.includes("secret") || n.includes("hash")) &&
+      typeof child === "string" &&
+      child.length > 20
+    ) {
+      return true;
+    }
+    return containsSecretForTokenIssuance(child);
+  });
+}
+
+export function validateAuthTokenIssuanceTakeover(payload: unknown): AuthTokenIssuanceTakeoverResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-token-issuance-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid token issuance takeover payload" },
+    };
+  }
+  if (containsSecretForTokenIssuance(payload)) {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-token-issuance-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      error: { code: "invalid", message: "Invalid token issuance takeover payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const rawStatus = (p.status as string) || "node-retained";
+  const normalizedStatus: AuthTokenIssuanceTakeoverStatus =
+    ["ready", "node-retained", "python-owned", "out-of-scope", "skipped-live", "blocked"].includes(rawStatus)
+      ? (rawStatus as AuthTokenIssuanceTakeoverStatus)
+      : "node-retained";
+  const own = (p.ownership as Record<string, string>) || {};
+  const prodTake = p.productionTakeover === true ? true : false;
+  return {
+    status: normalizedStatus,
+    contractVersion: typeof p.contractVersion === "string" ? p.contractVersion : "auth-token-issuance-takeover.v1",
+    provenance: typeof p.provenance === "string" ? p.provenance : "python-auth-token-issuance-takeover-104",
+    ok: normalizedStatus === "python-owned" || normalizedStatus === "ready",
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    ownership: own,
+    productionTakeover: prodTake,
+    metadata: (p.metadata as Record<string, unknown>) || {},
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+  };
+}

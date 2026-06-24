@@ -158,3 +158,53 @@ export function validateA2AProductionTransportOwnership(payload: unknown): A2APr
     area: p.area,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 104: Final provider + A2A scope reconciliation types (for parity contract)
+// Python decide_final_provider_a2a_scope_reconciliation and Node mirror
+// must agree on these shapes. skipped-live/synthetic/external-owned/external-agent-required
+// excluded from numerator; real live-ready only with explicit python-owned evidence.
+// ---------------------------------------------------------------------------
+
+export interface ProviderSummary {
+  total: number;
+  liveReady: number;
+  skippedLive: number;
+  synthetic: number;
+  externalOwned: number;
+  realPythonTakeover: number;
+}
+
+export interface A2aSummary {
+  total: number;
+  pythonOwned: number;
+  nodeRetained: number;
+  externalAgentRequired: number;
+  blocked: number;
+  productionTakeover: boolean;
+}
+
+export interface MigrationDenom {
+  totalSurfaces: number;
+  pythonOwned: number;
+  nodeRetained: number;
+  externalOwnedOrSkipped?: number;
+  externalAgentOrBlocked?: number;
+  canClaimCompletion: boolean;
+}
+
+export interface FinalProviderA2aScopeReconciliation {
+  area: string;
+  ok: boolean;
+  productionTakeover: boolean;
+  providerSummary: ProviderSummary;
+  a2aSummary: A2aSummary;
+  migrationDenominator: MigrationDenom;
+  excludedFromNumerator: string[];
+  blockers: string[];
+  note?: string;
+  contractVersion?: string;
+  provenance?: string;
+  reason?: string;
+  surfaces?: Record<string, unknown>;
+}

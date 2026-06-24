@@ -148,3 +148,45 @@ export interface BlueprintJobStoreScopeDecision {
   ok: boolean;
   areas?: Record<string, BlueprintJobStoreScopeOwnership>;
 }
+
+/**
+ * 104: Blueprint job store runtime takeover decision types.
+ * Surface classification for runtime read/write slice vs retained durable store.
+ * Mirrors scope but focuses on runtime behavior envelope + fallback.
+ * Does not imply durable store migration.
+ */
+export type BlueprintJobStoreRuntimeTakeoverSurface =
+  | "jobStore"
+  | "eventBus"
+  | "ledger"
+  | "replan"
+  | "promptPackage"
+  | "previewState"
+  | "jobStateRuntimeSlice"
+  | "all";
+
+export type BlueprintJobStoreRuntimeTakeoverOwnership =
+  | "python-owned"
+  | "node-retained"
+  | "external-owned"
+  | "out-of-scope";
+
+export interface BlueprintJobStoreRuntimeTakeover {
+  surface: BlueprintJobStoreRuntimeTakeoverSurface | string;
+  ownership: BlueprintJobStoreRuntimeTakeoverOwnership | Record<string, BlueprintJobStoreRuntimeTakeoverOwnership>;
+  productionTakeover: boolean;
+  migrationDenominator: {
+    total: number;
+    pythonOwned: number;
+    nodeRetained: number;
+    externalOwned?: number;
+    outOfScope?: number;
+  };
+  evidence: Record<string, unknown>;
+  fallback: string;
+  reason?: string;
+  contractVersion: "blueprint.job-store-runtime-takeover.v1";
+  provenance: string;
+  ok: boolean;
+  surfaces?: Record<string, BlueprintJobStoreRuntimeTakeoverOwnership>;
+}

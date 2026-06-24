@@ -655,3 +655,83 @@ export function validatePermissionAuditProductionOwnershipClosure(
     ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
   };
 }
+
+// ─── Permission Policy Store Takeover 104 (thin Node bridge, advisory only) ─────────────────
+// Python supplies policy ownership classification and one deterministic policy decision/read slice.
+// policyStore (durable CRUD, versioning, history, retention) remains node-retained.
+// Only bounded decision/read slice advisory from python; never durable store ownership.
+// Retained policy store responsibilities remain explicitly named in envelopes.
+
+export type PermissionPolicyStoreTakeoverStatus =
+  | "ready"
+  | "python-owned"
+  | "node-retained"
+  | "external-owned"
+  | "out-of-scope"
+  | "blocked"
+  | "skipped-live";
+
+export interface PermissionPolicyStoreTakeoverResult {
+  status: PermissionPolicyStoreTakeoverStatus;
+  contractVersion?: string;
+  provenance?: string;
+  ok?: boolean;
+  productionTakeover?: boolean;
+  ownership?: Record<string, string>;
+  boundaries?: Record<string, string>;
+  runtime?: { owner: string; mode: string; [k: string]: unknown };
+  error?: { code: string; message: string };
+  retainedResponsibilities?: string[];
+  area?: string;
+  reason?: string;
+  fallback?: string;
+}
+
+export function validatePermissionPolicyStoreTakeover(
+  payload: unknown,
+): PermissionPolicyStoreTakeoverResult {
+  if (!payload || typeof payload !== "object") {
+    return {
+      status: "blocked",
+      contractVersion: "permission-policy-store-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      productionTakeover: false,
+      ownership: {
+        policyStore: "node-retained",
+        policyDecisionSlice: "node-retained",
+        durablePolicyRead: "node-retained",
+      },
+      error: { code: "invalid", message: "Invalid policy store takeover payload" },
+    };
+  }
+  const p = payload as Record<string, unknown>;
+  const rawStatus = (p.status as string) || "ready";
+  const status = (
+    ["ready", "python-owned", "node-retained", "external-owned", "out-of-scope", "blocked", "skipped-live"].includes(rawStatus)
+      ? rawStatus
+      : "blocked"
+  ) as PermissionPolicyStoreTakeoverStatus;
+
+  const ownership = (p.ownership as Record<string, string>) || {
+    policyStore: "node-retained",
+    policyDecisionSlice: status === "python-owned" ? "python-owned" : "node-retained",
+    durablePolicyRead: "node-retained",
+  };
+
+  return {
+    status,
+    contractVersion: typeof p.contractVersion === "string" ? p.contractVersion : "permission-policy-store-takeover.v1",
+    provenance: typeof p.provenance === "string" ? p.provenance : "python-permission-policy-store-takeover-104",
+    ok: p.ok === true || status === "python-owned" || status === "ready",
+    productionTakeover: p.productionTakeover === true ? true : false,
+    ownership,
+    boundaries: (p.boundaries as Record<string, string>) || undefined,
+    runtime: (p.runtime as any) || { owner: "node", mode: "local_fallback" },
+    ...(p.error ? { error: p.error as { code: string; message: string } } : {}),
+    ...(p.retainedResponsibilities ? { retainedResponsibilities: p.retainedResponsibilities as string[] } : {}),
+    ...(typeof p.area === "string" ? { area: p.area } : {}),
+    ...(typeof p.reason === "string" ? { reason: p.reason } : {}),
+    ...(typeof p.fallback === "string" ? { fallback: p.fallback } : {}),
+  };
+}

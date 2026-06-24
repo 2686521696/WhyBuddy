@@ -26,6 +26,8 @@ import {
   validateAuthTokenMailerSessionCutover,
   validateAuthSessionTokenBoundary,
   validateAuthProductionOwnershipClosure,
+  validateAuthSessionRepositoryTakeover,
+  validateAuthTokenIssuanceTakeover,
 } from "../auth/session-service.js";
 import type {
   EmailLoginTokenPurpose,
@@ -106,6 +108,21 @@ export interface AuthRouterDeps {
   };
   // python auth production ownership closure (102); explicit retained decisions
   pythonAuthProductionOwnershipClosure?: {
+    execute(payload: Record<string, unknown>): any | Promise<any>;
+  };
+  // python auth session repository takeover 104; bounded deterministic create/read/revoke ops slice;
+  // takeover flag only for proven slice; node retains prod repo responsibility otherwise
+  pythonAuthSessionRepositoryTakeover?: {
+    execute(payload: Record<string, unknown>): any | Promise<any>;
+  };
+  // python auth token issuance takeover 104; bounded decision for issue/refresh/revoke slice only
+  // (python returns lifecycle decision with safe metadata; node retains actual token issuance)
+  pythonAuthTokenIssuanceTakeover?: {
+    execute(payload: Record<string, unknown>): any | Promise<any>;
+  };
+  // python auth mailer and user store scope 104: formal node-retained classification for emailCodeMailer/userRepository
+  // (intentionally retained; python only thin scope decision evidence; no prod email or user store claim)
+  pythonAuthMailerUserStoreScope?: {
     execute(payload: Record<string, unknown>): any | Promise<any>;
   };
 }
@@ -231,6 +248,63 @@ async function runPythonAuthProductionOwnershipClosure(deps: AuthRouterDeps, pay
       runtime: { owner: "node", mode: "local_fallback" },
       ownership: { sessionRepository: "node-retained" },
       error: { code: "bridge_error", message: "Auth production ownership fetch failed" },
+    };
+  }
+}
+
+async function runPythonAuthSessionRepositoryTakeover(deps: AuthRouterDeps, payload: Record<string, unknown>): Promise<any | null> {
+  if (!deps.pythonAuthSessionRepositoryTakeover) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonAuthSessionRepositoryTakeover.execute(payload));
+    return validateAuthSessionRepositoryTakeover(raw);
+  } catch {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-session-repository-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      ownership: { sessionRepository: "node-retained" },
+      productionTakeover: false,
+      error: { code: "bridge_error", message: "Auth session repository takeover fetch failed" },
+    };
+  }
+}
+
+async function runPythonAuthTokenIssuanceTakeover(deps: AuthRouterDeps, payload: Record<string, unknown>): Promise<any | null> {
+  if (!deps.pythonAuthTokenIssuanceTakeover) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonAuthTokenIssuanceTakeover.execute(payload));
+    return validateAuthTokenIssuanceTakeover(raw);
+  } catch {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-token-issuance-takeover.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      ownership: { tokenIssuance: "node-retained" },
+      productionTakeover: false,
+      error: { code: "bridge_error", message: "Auth token issuance takeover fetch failed" },
+    };
+  }
+}
+
+async function runPythonAuthMailerUserStoreScope(deps: AuthRouterDeps, payload: Record<string, unknown>): Promise<any | null> {
+  if (!deps.pythonAuthMailerUserStoreScope) return null;
+  try {
+    const raw = await Promise.resolve(deps.pythonAuthMailerUserStoreScope.execute(payload));
+    return raw;
+  } catch {
+    return {
+      status: "node-retained",
+      contractVersion: "auth-mailer-user-store-scope.v1",
+      provenance: "node-fallback",
+      ok: false,
+      runtime: { owner: "node", mode: "local_fallback" },
+      ownership: { emailCodeMailer: "node-retained", userRepository: "node-retained" },
+      productionTakeover: false,
+      metadata: { note: "python not wired" },
     };
   }
 }
@@ -634,6 +708,80 @@ export function createAuthRouter(deps: AuthRouterDeps) {
         ownership: { sessionRepository: "node-retained", tokenIssuance: "node-retained" },
         metadata: { note: "python not wired" },
       }),
+    });
+  });
+
+  // thin consumption of python auth session repository takeover 104
+  // bounded create/read/revoke evidence; takeover flag only for proven slice; retained otherwise
+  router.get("/__internal/auth-session-repository-takeover", async (request, response) => {
+    const takeover = await runPythonAuthSessionRepositoryTakeover(deps, { metadata: { source: "node-consume" } });
+    if (takeover) {
+      response.json({ success: true, takeover });
+      return;
+    }
+    response.json({
+      success: true,
+      takeover: validateAuthSessionRepositoryTakeover({
+        status: "node-retained",
+        contractVersion: "auth-session-repository-takeover.v1",
+        provenance: "node-fallback",
+        ok: false,
+        runtime: { owner: "node", mode: "local_fallback" },
+        ownership: { sessionRepository: "node-retained" },
+        productionTakeover: false,
+        metadata: { note: "python not wired" },
+      }),
+    });
+  });
+
+  // thin consumption of python auth token issuance takeover 104
+  // decision for issue/refresh/revoke slice; node retains real token issuance
+  router.get("/__internal/auth-token-issuance-takeover", async (request, response) => {
+    const takeover = await runPythonAuthTokenIssuanceTakeover(deps, { metadata: { source: "node-consume" } });
+    if (takeover) {
+      response.json({ success: true, takeover });
+      return;
+    }
+    response.json({
+      success: true,
+      takeover: validateAuthTokenIssuanceTakeover({
+        status: "node-retained",
+        contractVersion: "auth-token-issuance-takeover.v1",
+        provenance: "node-fallback",
+        ok: false,
+        runtime: { owner: "node", mode: "local_fallback" },
+        ownership: { tokenIssuance: "node-retained" },
+        productionTakeover: false,
+        metadata: { note: "python not wired" },
+      }),
+    });
+  });
+
+  // thin consumption of python auth mailer user store scope 104
+  // classifies emailCodeMailer/userRepository as node-retained (retained surfaces + reason/denom)
+  router.get("/__internal/auth-mailer-user-store-scope", async (request, response) => {
+    const scope = await runPythonAuthMailerUserStoreScope(deps, { metadata: { source: "node-consume" } });
+    if (scope) {
+      response.json({ success: true, scope });
+      return;
+    }
+    // fallback explicit retained (no validate call for new scope to keep scope minimal)
+    response.json({
+      success: true,
+      scope: {
+        status: "node-retained",
+        contractVersion: "auth-mailer-user-store-scope.v1",
+        provenance: "node-fallback",
+        ok: false,
+        runtime: { owner: "node", mode: "local_fallback" },
+        ownership: {
+          emailCodeMailer: "node-retained",
+          userRepository: "node-retained",
+          mailerUserStoreScopeDecision: "node-retained",
+        },
+        productionTakeover: false,
+        metadata: { note: "python not wired" },
+      },
     });
   });
 

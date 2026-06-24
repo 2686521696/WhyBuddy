@@ -66,6 +66,8 @@ export interface TaskRouterOptions {
   taskLifecycleProductionClosureBaseUrl?: string;
   taskStoreAuthSchedulerCutoverBaseUrl?: string;
   taskMissionStoreRuntimeSliceBaseUrl?: string;
+  taskProjectAuthRuntimeTakeoverBaseUrl?: string;
+  taskSchedulerRuntimeTakeoverBaseUrl?: string;
   workflowRetry?: WorkflowRetryDependencies;
   requireAuth?: RequestHandler;
   projects?: {
@@ -248,6 +250,24 @@ function resolveTaskMissionStoreRuntimeSliceBaseUrl(
   const configured =
     options.taskMissionStoreRuntimeSliceBaseUrl?.trim() ||
     process.env.TASK_MISSION_STORE_RUNTIME_SLICE_BASE_URL?.trim();
+  return configured ? configured.replace(/\/+$/, '') : undefined;
+}
+
+function resolveTaskProjectAuthRuntimeTakeoverBaseUrl(
+  options: TaskRouterOptions,
+): string | undefined {
+  const configured =
+    options.taskProjectAuthRuntimeTakeoverBaseUrl?.trim() ||
+    process.env.TASK_PROJECT_AUTH_RUNTIME_TAKEOVER_BASE_URL?.trim();
+  return configured ? configured.replace(/\/+$/, '') : undefined;
+}
+
+function resolveTaskSchedulerRuntimeTakeoverBaseUrl(
+  options: TaskRouterOptions,
+): string | undefined {
+  const configured =
+    options.taskSchedulerRuntimeTakeoverBaseUrl?.trim() ||
+    process.env.TASK_SCHEDULER_RUNTIME_TAKEOVER_BASE_URL?.trim();
   return configured ? configured.replace(/\/+$/, '') : undefined;
 }
 
@@ -866,6 +886,133 @@ async function callTaskMissionStoreRuntimeSliceSafely(
   }
 }
 
+interface TaskProjectAuthRuntimeTakeoverDecision {
+  ok?: boolean;
+  decision?: string;
+  classification?: "allow" | "deny" | "degraded";
+  contractVersion?: string;
+  provenance?: string;
+  missionId?: string;
+  projectId?: string;
+  resourceId?: string;
+  ownership?: { projectResourceAuth?: string };
+  runtime?: { owner?: string; mode?: string; authEnforcementOwner?: string };
+  fallback?: string;
+  denied?: boolean;
+  degraded?: boolean;
+}
+
+async function callTaskProjectAuthRuntimeTakeover(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskProjectAuthRuntimeTakeoverDecision | undefined> {
+  if (!options.baseUrl) {
+    return undefined;
+  }
+  const url = `${options.baseUrl}/api/tasks/project-auth/runtime-takeover`;
+  try {
+    const res = await options.fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      return { decision: "unsupported", classification: "degraded", ok: false, fallback: "node" };
+    }
+    const parsed = await res.json().catch(() => ({}));
+    if (parsed && typeof parsed === "object" && ("decision" in parsed || "classification" in parsed)) {
+      return parsed as TaskProjectAuthRuntimeTakeoverDecision;
+    }
+    return { decision: "allow", classification: "allow", ok: true, fallback: "node" };
+  } catch {
+    return undefined;
+  }
+}
+
+async function callTaskProjectAuthRuntimeTakeoverSafely(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskProjectAuthRuntimeTakeoverDecision | undefined> {
+  try {
+    return await callTaskProjectAuthRuntimeTakeover(payload, options);
+  } catch {
+    return undefined;
+  }
+}
+
+interface TaskSchedulerRuntimeTakeoverDecision {
+  decision?: string;
+  action?: string;
+  owner?: string;
+  note?: string;
+  denominator?: string;
+  retries?: number;
+  ok?: boolean;
+  schedulerOwnership?: string;
+  runtime?: { owner?: string };
+}
+
+async function callTaskSchedulerRuntimeTakeover(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskSchedulerRuntimeTakeoverDecision | undefined> {
+  if (!options.baseUrl) {
+    return undefined;
+  }
+  const url = `${options.baseUrl}/api/tasks/scheduler/runtime-takeover`;
+  try {
+    const res = await options.fetchImpl(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      return {
+        decision: 'unsupported',
+        ok: false,
+        schedulerOwnership: 'node-retained',
+        denominator: 'decision-slice-only',
+      };
+    }
+    const parsed = await res.json().catch(() => ({}));
+    if (parsed && typeof parsed === 'object' && ('decision' in parsed || 'owner' in parsed)) {
+      return parsed as TaskSchedulerRuntimeTakeoverDecision;
+    }
+    return {
+      decision: 'continue',
+      ok: true,
+      owner: 'python-slice',
+      schedulerOwnership: 'node-retained',
+      denominator: 'decision-slice-only',
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function callTaskSchedulerRuntimeTakeoverSafely(
+  payload: Record<string, unknown>,
+  options: {
+    baseUrl?: string;
+    fetchImpl: typeof fetch;
+  },
+): Promise<TaskSchedulerRuntimeTakeoverDecision | undefined> {
+  try {
+    return await callTaskSchedulerRuntimeTakeover(payload, options);
+  } catch {
+    return undefined;
+  }
+}
+
 function applyLifecycleRuntimeTaskEnvelope(
   runtime: MissionRuntime,
   current: MissionRecord,
@@ -1200,6 +1347,7 @@ export function createTaskRouter(
     process.env.LOBSTER_EXECUTOR_BASE_URL?.trim() ||
     DEFAULT_EXECUTOR_BASE_URL;
   const taskLifecycleRuntimeBaseUrl = resolveTaskLifecycleRuntimeBaseUrl(options);
+  const taskSchedulerRuntimeTakeoverBaseUrl = resolveTaskSchedulerRuntimeTakeoverBaseUrl(options);
   const operatorService = createMissionOperatorService(runtime, {
     fetchImpl,
     executorBaseUrl: defaultExecutorBaseUrl,
@@ -1471,6 +1619,44 @@ export function createTaskRouter(
       );
     }
 
+    // Call Python project auth runtime takeover 104 (classification envelope only; Node owns enforcement)
+    const taskProjectAuthRuntimeTakeoverBaseUrl = resolveTaskProjectAuthRuntimeTakeoverBaseUrl(options);
+    let projectAuthRuntimeTakeover: TaskProjectAuthRuntimeTakeoverDecision | undefined;
+    if (taskProjectAuthRuntimeTakeoverBaseUrl) {
+      projectAuthRuntimeTakeover = await callTaskProjectAuthRuntimeTakeoverSafely(
+        {
+          missionId: task.id,
+          projectId: ownedProjectId,
+          resourceId: task.id,
+          resourceType: "mission",
+          action: "create",
+          metadata: lifecycleMetadata,
+        },
+        { baseUrl: taskProjectAuthRuntimeTakeoverBaseUrl, fetchImpl },
+      );
+    }
+
+    // Python scheduler runtime takeover 104 decision slice (cancel/retry/replay); Node retains full scheduler
+    // Retained: full queue lifecycle, master scheduler loop, distributed locking, replay/persistence engine, cancel semantics, retry orchestration
+    let schedulerRuntimeTakeover: TaskSchedulerRuntimeTakeoverDecision | undefined;
+    if (taskSchedulerRuntimeTakeoverBaseUrl) {
+      schedulerRuntimeTakeover = await callTaskSchedulerRuntimeTakeoverSafely(
+        {
+          missionId: task.id,
+          action: 'create',
+          area: 'schedulerDecision',
+          missionState: {
+            id: task.id,
+            status: task.status,
+            retries: (task as any).retries ?? 0,
+            max_retries: 3,
+            cancelled: task.status === 'cancelled',
+          },
+        },
+        { baseUrl: taskSchedulerRuntimeTakeoverBaseUrl, fetchImpl },
+      );
+    }
+
     let dispatchAccepted: boolean | undefined;
     let dispatchError: string | undefined;
     if (!lifecycleError && shouldAutoDispatchMission(task, body.autoDispatch)) {
@@ -1507,6 +1693,8 @@ export function createTaskRouter(
       ...(closureSummary ? { closure: closureSummary } : {}),
       ...(cutoverDecision ? { cutoverDecision } : {}),
       ...(missionStoreRuntimeSlice ? { missionStoreRuntimeSlice } : {}),
+      ...(projectAuthRuntimeTakeover ? { projectAuthRuntimeTakeover } : {}),
+      ...(schedulerRuntimeTakeover ? { schedulerRuntimeTakeover } : {}),
       ...(dispatchAccepted === undefined
         ? {}
         : {
@@ -1708,6 +1896,7 @@ export function createTaskRouter(
     }
 
     // 103 slice: mission store runtime slice for cancel state (advisory; durable node retained)
+    // Scheduler: Python decision slice only; retained in Node: queue loop, locking, replay engine, cancel enforcement, retry orchestration
     const sliceBaseForCancel = resolveTaskMissionStoreRuntimeSliceBaseUrl(options);
     const cancelSlice = sliceBaseForCancel
       ? await callTaskMissionStoreRuntimeSliceSafely(
@@ -1720,6 +1909,20 @@ export function createTaskRouter(
             reason,
           },
           { baseUrl: sliceBaseForCancel, fetchImpl },
+        )
+      : undefined;
+
+    // Consult Python scheduler decision slice for cancel path (advisory; Node enforces cancel)
+    const schedulerBaseForCancel = resolveTaskSchedulerRuntimeTakeoverBaseUrl(options);
+    const schedulerDecision = schedulerBaseForCancel
+      ? await callTaskSchedulerRuntimeTakeoverSafely(
+          {
+            missionId: task.id,
+            action: 'cancel',
+            area: 'schedulerDecision',
+            missionState: { id: task.id, status: task.status, cancelled: true, retries: (task as any).retries ?? 0 },
+          },
+          { baseUrl: schedulerBaseForCancel, fetchImpl },
         )
       : undefined;
 
@@ -1826,6 +2029,7 @@ export function createTaskRouter(
       ...(lifecycle?.ok === true ? { lifecycle } : {}),
       ...(cancelClosureSummary ? { closure: cancelClosureSummary } : {}),
       ...(cancelSlice ? { missionStoreRuntimeSlice: cancelSlice } : {}),
+      ...(schedulerDecision ? { schedulerRuntimeTakeover: schedulerDecision } : {}),
     });
   });
 
@@ -1837,6 +2041,20 @@ export function createTaskRouter(
       let dispatchAccepted: boolean | undefined;
       let dispatchError: string | undefined;
 
+      if (input.action === 'retry') {
+        // Consult Python scheduler decision slice for retry (advisory; Node owns retry orchestration)
+        if (taskSchedulerRuntimeTakeoverBaseUrl) {
+          await callTaskSchedulerRuntimeTakeoverSafely(
+            {
+              missionId: task.id,
+              action: 'retry',
+              area: 'schedulerDecision',
+              missionState: { id: task.id, status: task.status, retries: (task as any).retries ?? 0 },
+            },
+            { baseUrl: taskSchedulerRuntimeTakeoverBaseUrl, fetchImpl },
+          );
+        }
+      }
       if (input.action === 'retry' && shouldRestartWorkflowMission(task)) {
         const restarted = await restartMissionWorkflow(
           runtime,
