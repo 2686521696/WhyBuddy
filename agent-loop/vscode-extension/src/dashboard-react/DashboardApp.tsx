@@ -9,6 +9,7 @@ import {
   RightOutlined,
   RobotOutlined,
   SnippetsOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { Graph } from '@antv/g6';
 import {
@@ -19,12 +20,14 @@ import {
   Col,
   ConfigProvider,
   Descriptions,
+  Empty,
   Form,
   Input,
   InputNumber,
   Layout,
   List,
   Menu,
+  Modal,
   Progress,
   Row,
   Select,
@@ -36,6 +39,7 @@ import {
   Tabs,
   Tag,
   Typography,
+  Upload,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -446,12 +450,14 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
   const [view, setView] = useState<ViewKey>('workbench');
   const [settingsData, setSettingsData] = useState<any>(null);
   const [providerTests, setProviderTests] = useState<any[]>([]);
+  const [workerCliTests, setWorkerCliTests] = useState<any[]>([]);
   const [queueDefaultsData, setQueueDefaultsData] = useState<any>(null);
   const [queuePreview, setQueuePreview] = useState<any>(null);
   const [queueApply, setQueueApply] = useState<any>(null);
   const [exportedSettings, setExportedSettings] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
+  const [profilesData, setProfilesData] = useState<any>(null);
 
   const tasks = payload.tasks || [];
   const visibleTasks = useMemo(() => filterTasks(tasks, filter, query), [tasks, filter, query]);
@@ -466,6 +472,7 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
       postCommand('getSettings');
       postCommand('getQueueDefaults');
       postCommand('getDiagnostics');
+      postCommand('listProfiles');
     }
   }, [view]);
 
@@ -482,6 +489,12 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
       if (msg?.type === 'providerHealth' && msg.payload) {
         setProviderTests((prev) => {
           const filtered = prev.filter((p: any) => p.provider !== msg.payload.provider);
+          return [...filtered, msg.payload];
+        });
+      }
+      if (msg?.type === 'workerCliHealth' && msg.payload) {
+        setWorkerCliTests((prev) => {
+          const filtered = prev.filter((p: any) => p.worker !== msg.payload.worker);
           return [...filtered, msg.payload];
         });
       }
@@ -505,6 +518,12 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
       }
       if (msg?.type === 'diagnostics' && msg.payload) {
         setDiagnosticsData(msg.payload);
+      }
+      if (msg?.type === 'profiles' && msg.payload) {
+        setProfilesData(msg.payload);
+      }
+      if (msg?.type === 'profileError' && msg.payload) {
+        message.error(msg.payload.error || 'profile op failed');
       }
     };
     window.addEventListener('message', handler);
@@ -544,6 +563,30 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
     postCommand('importSettings', parsed);
   };
 
+  const handleListProfiles = () => {
+    postCommand('listProfiles');
+  };
+
+  const handleCreateProfile = (name: string, values?: Record<string, unknown>) => {
+    postCommand('createProfile', { name, values: values || {} });
+  };
+
+  const handleRenameProfile = (oldName: string, newName: string) => {
+    postCommand('renameProfile', { oldName, newName });
+  };
+
+  const handleDuplicateProfile = (name: string, newName: string) => {
+    postCommand('duplicateProfile', { name, newName });
+  };
+
+  const handleDeleteProfile = (name: string) => {
+    postCommand('deleteProfile', { name });
+  };
+
+  const handleSelectProfile = (name: string) => {
+    postCommand('selectProfile', { name });
+  };
+
   const workbenchContent = (
     <Space direction="vertical" size="middle" className="native-stack">
       <OverviewHeader payload={payload} />
@@ -581,7 +624,7 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
             <Breadcrumb items={[{ title: 'AgentLoop' }, { title: view === 'settings' ? '设置' : '工作台' }]} />
           </Header>
           <Content className="native-content">
-            {view === 'workbench' ? workbenchContent : <SettingsView data={settingsData} onSave={handleSaveSettings} providerTests={providerTests} onTestProvider={(provider) => postCommand('testProvider', { provider })} queueDefaultsData={queueDefaultsData} queuePreview={queuePreview} onPreviewQueue={handlePreviewQueueDefaults} queueApply={queueApply} onApplyQueue={handleApplyQueueDefaults} exportedSettings={exportedSettings} importResult={importResult} onExportSettings={handleExportSettings} onImportSettings={handleImportSettings} diagnosticsData={diagnosticsData} onRefreshDiagnostics={() => postCommand('getDiagnostics')} />}
+            {view === 'workbench' ? workbenchContent : <SettingsView data={settingsData} onSave={handleSaveSettings} providerTests={providerTests} onTestProvider={(provider) => postCommand('testProvider', { provider })} workerCliTests={workerCliTests} onTestWorkerCli={(w) => postCommand('testWorkerCli', { worker: w })} queueDefaultsData={queueDefaultsData} queuePreview={queuePreview} onPreviewQueue={handlePreviewQueueDefaults} queueApply={queueApply} onApplyQueue={handleApplyQueueDefaults} exportedSettings={exportedSettings} importResult={importResult} onExportSettings={handleExportSettings} onImportSettings={handleImportSettings} diagnosticsData={diagnosticsData} onRefreshDiagnostics={() => postCommand('getDiagnostics')} profilesData={profilesData} onListProfiles={handleListProfiles} onCreateProfile={handleCreateProfile} onRenameProfile={handleRenameProfile} onDuplicateProfile={handleDuplicateProfile} onDeleteProfile={handleDeleteProfile} onSelectProfile={handleSelectProfile} />}
           </Content>
         </Layout>
       </Layout>
@@ -607,6 +650,7 @@ type SettingsData = {
   injectToWorker?: boolean;
   queueRunning?: boolean;
   activeProfile?: string | null;
+  profiles?: Record<string, any>;
   queueDefaults?: {
     defaults?: Record<string, unknown>;
     supportedKeys?: string[];
@@ -617,6 +661,7 @@ type SettingsData = {
 function CliConfigForm({ initial, onSave, queueRunning, activeProfile }: { initial: SettingsData['nonSensitive']; onSave: (v: any) => void; queueRunning?: boolean; activeProfile?: string | null }) {
   const [form] = Form.useForm();
   const isRunning = Boolean(queueRunning);
+  const runtimeLocked = (f: string) => isRunning && ['fixAgent', 'reviewAgent', 'queuePath', 'worktreeScope'].includes(f);
 
   useEffect(() => {
     if (initial) {
@@ -632,8 +677,9 @@ function CliConfigForm({ initial, onSave, queueRunning, activeProfile }: { initi
   }, [initial, form]);
 
   const handleFinish = (values: any) => {
-    if (isRunning) {
-      message.warning('队列运行中，profile 切换已禁用');
+    // client-side guard; backend also enforces with structured result
+    if (runtimeLocked('fixAgent') || runtimeLocked('reviewAgent') || runtimeLocked('queuePath') || runtimeLocked('worktreeScope')) {
+      message.warning('队列运行中，运行时 profile 字段已禁用');
       return;
     }
     onSave(values);
@@ -643,17 +689,17 @@ function CliConfigForm({ initial, onSave, queueRunning, activeProfile }: { initi
   return (
     <Form form={form} layout="vertical" onFinish={handleFinish} style={{ maxWidth: 520 }}>
       {isRunning ? (
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`队列运行中 (激活 Profile: ${activeProfile || '未知'})，禁止修改 CLI profile 配置。`} />
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`队列运行中 (激活 Profile: ${activeProfile || '未知'})，运行时字段已锁定`} description="已锁定: fixAgent, reviewAgent, queuePath, worktreeScope（影响运行 profile/worker 配置）。workerMaxTurns / workerMaxRetries 为安全非运行时字段，可正常编辑。" />
       ) : null}
       <Form.Item label="默认修复 Worker" name="fixAgent">
-        <Select disabled={isRunning}>
+        <Select disabled={runtimeLocked('fixAgent')}>
           <Select.Option value="grok">Grok</Select.Option>
           <Select.Option value="codex">Codex</Select.Option>
         </Select>
       </Form.Item>
 
       <Form.Item label="默认 Review Worker" name="reviewAgent">
-        <Select disabled={isRunning}>
+        <Select disabled={runtimeLocked('reviewAgent')}>
           <Select.Option value="codex">Codex</Select.Option>
           <Select.Option value="grok">Grok</Select.Option>
           <Select.Option value="none">None（跳过审查）</Select.Option>
@@ -661,33 +707,35 @@ function CliConfigForm({ initial, onSave, queueRunning, activeProfile }: { initi
       </Form.Item>
 
       <Form.Item label="最大执行轮次" name="workerMaxTurns">
-        <InputNumber min={1} style={{ width: '100%' }} disabled={isRunning} />
+        <InputNumber min={1} style={{ width: '100%' }} disabled={false} />
       </Form.Item>
 
       <Form.Item label="最大重试次数" name="workerMaxRetries">
-        <InputNumber min={0} style={{ width: '100%' }} disabled={isRunning} />
+        <InputNumber min={0} style={{ width: '100%' }} disabled={false} />
       </Form.Item>
 
       <Form.Item label="队列文件路径" name="queuePath">
-        <Input placeholder="agent-loop/scripts/migration-queue.json" disabled={isRunning} />
+        <Input placeholder="agent-loop/scripts/migration-queue.json" disabled={runtimeLocked('queuePath')} />
       </Form.Item>
 
       <Form.Item label="工作树模式" name="worktreeScope">
-        <Select disabled={isRunning}>
+        <Select disabled={runtimeLocked('worktreeScope')}>
           <Select.Option value="queue">queue</Select.Option>
           <Select.Option value="task">task</Select.Option>
         </Select>
       </Form.Item>
 
       <Form.Item>
-        <Button type="primary" htmlType="submit" disabled={isRunning}>保存 CLI 配置</Button>
+        <Button type="primary" htmlType="submit" disabled={runtimeLocked('fixAgent') || runtimeLocked('reviewAgent')}>保存 CLI 配置</Button>
       </Form.Item>
     </Form>
   );
 }
 
-function LlmKeyForm({ initial, onSave, providerTests, onTestProvider }: { initial: SettingsData; onSave: (v: any) => void; providerTests?: any[]; onTestProvider?: (p: string) => void }) {
+function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliTests, onTestWorkerCli, queueRunning }: { initial: SettingsData; onSave: (v: any) => void; providerTests?: any[]; onTestProvider?: (p: string) => void; workerCliTests?: any[]; onTestWorkerCli?: (w: string) => void; queueRunning?: boolean; }) {
   const [form] = Form.useForm();
+  const isRunning = Boolean(queueRunning);
+  const baseUrlLocked = isRunning; // baseUrl is runtime-locked per guard
 
   useEffect(() => {
     if (initial) {
@@ -737,10 +785,12 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider }: { initia
     const r = getTestResult(provider);
     if (!r) return null;
     const tone = r.status === 'ok' ? 'success' : r.status === 'skipped' ? 'default' : 'error';
+    let timeStr = '';
+    try { if (r.checkedAt) timeStr = ' ' + new Date(r.checkedAt).toLocaleTimeString(); } catch {}
     return (
       <div style={{ marginTop: 4, fontSize: 12 }}>
         <Tag color={tone}>{r.status}</Tag>
-        <span>{r.durationMs}ms · {r.reason}</span>
+        <span>{r.durationMs}ms · {r.reason}{timeStr} (cached)</span>
       </div>
     );
   };
@@ -783,8 +833,26 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider }: { initia
         {renderResult('anthropic')}
       </Form.Item>
 
+      <Form.Item label="Worker CLI 健康 (本地 grok/codex 命令探针)">
+        <Space>
+          <Button size="small" onClick={() => onTestWorkerCli && onTestWorkerCli('grok')}>Probe grok</Button>
+          <Button size="small" onClick={() => onTestWorkerCli && onTestWorkerCli('codex')}>Probe codex</Button>
+        </Space>
+        {(() => {
+          const gr = (workerCliTests || []).find((r: any) => r.worker === 'grok');
+          const cr = (workerCliTests || []).find((r: any) => r.worker === 'codex');
+          const tone = (st: string) => st === 'ok' ? 'success' : (st === 'skipped' ? 'default' : (st === 'timeout' ? 'warning' : 'error'));
+          return (
+            <div style={{ marginTop: 4, fontSize: 12 }}>
+              {gr && <div><Tag color={tone(gr.status)}>{gr.worker}</Tag> {gr.status} {gr.durationMs}ms · {gr.reason}</div>}
+              {cr && <div><Tag color={tone(cr.status)}>{cr.worker}</Tag> {cr.status} {cr.durationMs}ms · {cr.reason}</div>}
+            </div>
+          );
+        })()}
+      </Form.Item>
+
       <Form.Item label="代理地址 / Base URL" name="baseUrl">
-        <Input placeholder="https://api.example.com/v1" />
+        <Input placeholder="https://api.example.com/v1" disabled={baseUrlLocked} />
       </Form.Item>
 
       <Form.Item label="将 Keys 注入到 Worker 环境" name="injectToWorker" valuePropName="checked">
@@ -808,10 +876,10 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider }: { initia
 
       {(providerTests && providerTests.length > 0) && (
         <div style={{ marginTop: 12, padding: 8, background: '#fafafa', border: '1px solid #eee' }}>
-          <Text strong style={{ fontSize: 12 }}>最近 Provider 健康检查</Text>
+          <Text strong style={{ fontSize: 12 }}>最近 Provider 健康检查 (会话缓存)</Text>
           {providerTests.map((r: any, idx: number) => (
             <div key={idx} style={{ fontSize: 12, marginTop: 2 }}>
-              {r.provider} · {r.status} · {r.durationMs}ms · {r.reason}
+              {r.provider} · {r.status} · {r.durationMs}ms · {r.reason} {r.checkedAt ? ('@' + new Date(r.checkedAt).toLocaleTimeString()) : ''} (cached)
             </div>
           ))}
         </div>
@@ -820,10 +888,17 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider }: { initia
   );
 }
 
-function SettingsView({ data, onSave, providerTests, onTestProvider, queueDefaultsData, queuePreview, onPreviewQueue, queueApply, onApplyQueue, exportedSettings, importResult, onExportSettings, onImportSettings, diagnosticsData, onRefreshDiagnostics }: { data: SettingsData | null; onSave: (v: any) => void; providerTests?: any[]; onTestProvider?: (p: string) => void; queueDefaultsData?: any; queuePreview?: any; onPreviewQueue?: (p: any) => void; queueApply?: any; onApplyQueue?: (p: any) => void; exportedSettings?: any; importResult?: any; onExportSettings?: () => void; onImportSettings?: (text: string) => void; diagnosticsData?: any; onRefreshDiagnostics?: () => void; }) {
+function SettingsView({ data, onSave, providerTests, onTestProvider, workerCliTests, onTestWorkerCli, queueDefaultsData, queuePreview, onPreviewQueue, queueApply, onApplyQueue, exportedSettings, importResult, onExportSettings, onImportSettings, diagnosticsData, onRefreshDiagnostics, profilesData, onListProfiles, onCreateProfile, onRenameProfile, onDuplicateProfile, onDeleteProfile, onSelectProfile }: { data: SettingsData | null; onSave: (v: any) => void; providerTests?: any[]; onTestProvider?: (p: string) => void; workerCliTests?: any[]; onTestWorkerCli?: (w: string) => void; queueDefaultsData?: any; queuePreview?: any; onPreviewQueue?: (p: any) => void; queueApply?: any; onApplyQueue?: (p: any) => void; exportedSettings?: any; importResult?: any; onExportSettings?: () => void; onImportSettings?: (text: string) => void; diagnosticsData?: any; onRefreshDiagnostics?: () => void; profilesData?: any; onListProfiles?: () => void; onCreateProfile?: (n: string, v?: any) => void; onRenameProfile?: (o: string, n: string) => void; onDuplicateProfile?: (n: string, nn: string) => void; onDeleteProfile?: (n: string) => void; onSelectProfile?: (n: string) => void; }) {
   return (
-    <div style={{ padding: '8px 4px' }}>
-      <Title level={4} style={{ marginBottom: 16 }}>AgentLoop 设置中心</Title>
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Title level={4} style={{ marginBottom: 0 }}>AgentLoop 设置中心</Title>
+      {data && (
+        <Descriptions size="small" column={2}>
+          <Descriptions.Item label="活跃 Profile">{(data as any)?.activeProfile || 'local'}</Descriptions.Item>
+          <Descriptions.Item label="Fix Agent">{data.nonSensitive?.fixAgent || '-'}</Descriptions.Item>
+          <Descriptions.Item label="Review Agent">{data.nonSensitive?.reviewAgent || '-'}</Descriptions.Item>
+        </Descriptions>
+      )}
       <Tabs
         defaultActiveKey="cli"
         items={[
@@ -835,17 +910,32 @@ function SettingsView({ data, onSave, providerTests, onTestProvider, queueDefaul
           {
             key: 'keys',
             label: 'LLM Keys',
-            children: <LlmKeyForm initial={data || {}} onSave={onSave} providerTests={providerTests} onTestProvider={onTestProvider} />,
+            children: <LlmKeyForm initial={data || {}} onSave={onSave} providerTests={providerTests} onTestProvider={onTestProvider} workerCliTests={workerCliTests} onTestWorkerCli={onTestWorkerCli} queueRunning={(data as any)?.queueRunning} />,
           },
           {
             key: 'queue',
             label: '队列默认值',
-            children: <QueueDefaultsView data={queueDefaultsData} preview={queuePreview} onPreview={onPreviewQueue || (() => {})} applyResult={queueApply} onApply={onApplyQueue || (() => {})} />,
+            children: <QueueDefaultsView data={queueDefaultsData} preview={queuePreview} onPreview={onPreviewQueue || (() => {})} applyResult={queueApply} onApply={onApplyQueue || (() => {})} settingsData={data} />,
           },
           {
             key: 'diagnostics',
             label: 'Diagnostics',
             children: <DiagnosticsView data={diagnosticsData} onRefresh={onRefreshDiagnostics || (() => {})} />,
+          },
+          {
+            key: 'profiles',
+            label: 'Profiles',
+            children: <ProfileCrudView
+              data={profilesData}
+              queueRunning={(data as any)?.queueRunning}
+              activeProfile={(data as any)?.activeProfile}
+              onList={onListProfiles || (() => {})}
+              onCreate={onCreateProfile || (() => {})}
+              onRename={onRenameProfile || (() => {})}
+              onDuplicate={onDuplicateProfile || (() => {})}
+              onDelete={onDeleteProfile || (() => {})}
+              onSelect={onSelectProfile || (() => {})}
+            />,
           },
         ]}
       />
@@ -853,22 +943,50 @@ function SettingsView({ data, onSave, providerTests, onTestProvider, queueDefaul
         非敏感配置保存在 VS Code 工作区设置，敏感 Key 保存在 SecretStorage。队列 defaults 支持预览后确认 apply 写入；仅 owned 支持键；secrets 拒绝；写后 JSON + tasks 校验。
       </div>
 
-      {/* Settings import/export redaction UI (schema v1, profiles + non-secret + key status only; secrets never exported or imported raw) */}
+      {/* Settings import/export redaction UI (schema v1, activeProfile + non-secret + key status only; secrets never exported or imported raw). Uses AntD Upload + download buttons for file-like controls (107). */}
       <div style={{ marginTop: 20, paddingTop: 12, borderTop: '1px solid #eee' }}>
         <Title level={5}>设置导入/导出（redacted）</Title>
         <Space>
-          <Button icon={<DownloadOutlined />} onClick={() => onExportSettings && onExportSettings()}>导出设置（仅 profiles、非敏感、key 状态）</Button>
-          <Button onClick={() => {
-            const txt = prompt('粘贴要导入的 redacted 设置 JSON（schemaVersion 必须为 1；拒绝 secret 值）：') || '';
-            if (txt) onImportSettings && onImportSettings(txt);
-          }}>导入设置（粘贴 JSON）</Button>
+          <Button icon={<DownloadOutlined />} onClick={() => onExportSettings && onExportSettings()}>导出设置（仅 activeProfile、非敏感、key 状态）</Button>
+          <Upload
+            accept=".json,application/json"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const txt = (e.target && (e.target as any).result) || '';
+                if (txt) onImportSettings && onImportSettings(String(txt));
+              };
+              reader.readAsText(file);
+              return false;
+            }}
+          >
+            <Button icon={<UploadOutlined />}>导入设置（文件上传）</Button>
+          </Upload>
         </Space>
         {exportedSettings && (
           <div style={{ marginTop: 8 }}>
             <Text strong>导出内容（secret 字段为状态，非明文）:</Text>
             <pre style={{ background: '#fafafa', padding: 8, fontSize: 12, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(exportedSettings, null, 2)}</pre>
-            <Button size="small" onClick={() => { try { navigator.clipboard?.writeText(JSON.stringify(exportedSettings, null, 2)); message.success('已复制 redacted export'); } catch {} }}>复制导出</Button>
-            <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>schemaVersion: {exportedSettings.schemaVersion}；keys 只含 configured/'' 状态</Text>
+            <Space size={8}>
+              <Button size="small" onClick={() => { try { navigator.clipboard?.writeText(JSON.stringify(exportedSettings, null, 2)); message.success('已复制 redacted export'); } catch {} }}>复制导出</Button>
+              <Button size="small" icon={<DownloadOutlined />} onClick={() => {
+                try {
+                  const dataStr = JSON.stringify(exportedSettings, null, 2);
+                  const blob = new Blob([dataStr], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'agentloop-settings-redacted.json';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                  message.success('已下载 redacted payload');
+                } catch {}
+              }}>下载文件</Button>
+            </Space>
+            <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>schemaVersion: {exportedSettings.schemaVersion}；activeProfile + keys 只含 configured/'' 状态</Text>
           </div>
         )}
         {importResult && (
@@ -881,11 +999,11 @@ function SettingsView({ data, onSave, providerTests, onTestProvider, queueDefaul
           </div>
         )}
       </div>
-    </div>
+    </Space>
   );
 }
 
-function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply }: { data: any; preview: any; onPreview: (proposed: Record<string, unknown>) => void; applyResult?: any; onApply?: (proposed: Record<string, unknown>) => void }) {
+function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply, settingsData }: { data: any; preview: any; onPreview: (proposed: Record<string, unknown>) => void; applyResult?: any; onApply?: (proposed: Record<string, unknown>) => void; settingsData?: any }) {
   const [proposedText, setProposedText] = useState('{\n  "workerMaxTurns": 256\n}');
   const current = (data && data.defaults) || {};
   const supported = (data && data.supportedKeys) || [];
@@ -916,8 +1034,35 @@ function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply }: {
     }
   };
 
+  const doSyncFromSettings = () => {
+    const ns = (settingsData && (settingsData.nonSensitive || settingsData)) || {};
+    const prop: Record<string, unknown> = {};
+    const sup = new Set(supported);
+    for (const [k, v] of Object.entries(ns)) {
+      if (sup.has(k) && k !== 'workerEnv') {
+        prop[k] = v;
+      }
+    }
+    if (Object.keys(prop).length === 0) {
+      // fallback common supported keys from settings shape
+      if (ns.fixAgent !== undefined) prop.fixAgent = ns.fixAgent;
+      if (ns.reviewAgent !== undefined) prop.reviewAgent = ns.reviewAgent;
+      if (ns.workerMaxTurns !== undefined) prop.workerMaxTurns = ns.workerMaxTurns;
+      if (ns.workerMaxRetries !== undefined) prop.workerMaxRetries = ns.workerMaxRetries;
+      if (ns.worktreeScope !== undefined) prop.worktreeScope = ns.worktreeScope;
+    }
+    const json = JSON.stringify(prop, null, 2) || '{}';
+    setProposedText(json);
+    try {
+      const parsed = JSON.parse(json);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        onPreview(parsed);
+      }
+    } catch {}
+  };
+
   return (
-    <div style={{ padding: '4px 0', maxWidth: 620 }}>
+    <div style={{ maxWidth: 620 }}>
       <Title level={5}>队列 defaults（仅支持键，当前值）</Title>
       <pre style={{ background: '#fafafa', padding: 8, fontSize: 12, maxHeight: 240, overflow: 'auto' }}>
         {JSON.stringify(current, null, 2)}
@@ -933,6 +1078,7 @@ function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply }: {
           style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6 }}
         />
         <Space style={{ marginTop: 8 }}>
+          <Button onClick={doSyncFromSettings}>从 Settings 同步并预览 diff</Button>
           <Button onClick={doPreview}>预览 structured diff（不写入）</Button>
           {preview && preview.ok && onApply && (
             <Button type="primary" onClick={doApply}>确认应用（写入队列文件）</Button>
@@ -946,9 +1092,24 @@ function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply }: {
             <Alert type="error" showIcon message={preview.error || 'redacted error'} />
           ) : (
             <>
-              <Text strong>Preview result (structured diff only for supported keys):</Text>
-              <pre style={{ fontSize: 12, marginTop: 4 }}>{JSON.stringify(preview.diff || [], null, 2)}</pre>
-              <div style={{ fontSize: 12 }}>before keys: {Object.keys(preview.before || {}).join(', ')}</div>
+              <Text strong>Preview result (before/after diff for supported keys):</Text>
+              {Array.isArray(preview.diff) && preview.diff.length > 0 ? (
+                <Table
+                  size="small"
+                  style={{ marginTop: 4 }}
+                  columns={[
+                    { title: 'Key', dataIndex: 'key', key: 'key' },
+                    { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => JSON.stringify(v) },
+                    { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => JSON.stringify(v) },
+                  ]}
+                  dataSource={(preview.diff || []).map((d: any, i: number) => ({ ...d, key: d.key || String(i) }))}
+                  pagination={false}
+                  rowKey="key"
+                />
+              ) : (
+                <div style={{ fontSize: 12 }}>no diff (values match)</div>
+              )}
+              <div style={{ fontSize: 12, marginTop: 4 }}>before keys: {Object.keys(preview.before || {}).join(', ')}</div>
               <div style={{ fontSize: 12 }}>after keys: {Object.keys(preview.after || {}).join(', ')}</div>
             </>
           )}
@@ -962,8 +1123,23 @@ function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply }: {
           ) : (
             <>
               <Text strong>Apply result (written + validated):</Text>
-              <pre style={{ fontSize: 12, marginTop: 4 }}>{JSON.stringify(applyResult.diff || [], null, 2)}</pre>
-              <div style={{ fontSize: 12 }}>applied: {JSON.stringify(applyResult.applied || {})}</div>
+              {Array.isArray(applyResult.diff) && applyResult.diff.length > 0 ? (
+                <Table
+                  size="small"
+                  style={{ marginTop: 4 }}
+                  columns={[
+                    { title: 'Key', dataIndex: 'key', key: 'key' },
+                    { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => JSON.stringify(v) },
+                    { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => JSON.stringify(v) },
+                  ]}
+                  dataSource={(applyResult.diff || []).map((d: any, i: number) => ({ ...d, key: d.key || String(i) }))}
+                  pagination={false}
+                  rowKey="key"
+                />
+              ) : (
+                <div style={{ fontSize: 12 }}>no diff</div>
+              )}
+              <div style={{ fontSize: 12, marginTop: 4 }}>applied: {JSON.stringify(applyResult.applied || {})}</div>
               <div style={{ fontSize: 12 }}>after keys: {Object.keys(applyResult.after || {}).join(', ')}</div>
             </>
           )}
@@ -984,11 +1160,28 @@ function DiagnosticsView({ data, onRefresh }: { data: any; onRefresh: () => void
   const keys = d.keys || {};
   const warns: Array<{ category: string; message: string }> = Array.isArray(d.warnings) ? d.warnings : [];
   const catColor = (c: string) => (c === 'ready' ? 'success' : c === 'failed' ? 'error' : c === 'skipped' ? 'default' : 'warning');
+  const handleCopy = () => {
+    try {
+      const text = JSON.stringify(d, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          message.success('已复制红acted diagnostics artifact JSON');
+        }).catch(() => {
+          message.info('复制到剪贴板（手动）');
+        });
+      } else {
+        message.info('复制到剪贴板（手动）');
+      }
+    } catch {
+      message.info('复制到剪贴板（手动）');
+    }
+  };
   return (
-    <div style={{ padding: '4px 0', maxWidth: 720 }}>
+    <div style={{ maxWidth: 720 }}>
       <Space style={{ marginBottom: 8 }}>
         <Title level={5} style={{ margin: 0 }}>Diagnostics（只读）</Title>
         <Button size="small" onClick={onRefresh}>刷新</Button>
+        <Button size="small" onClick={handleCopy}>Copy JSON</Button>
       </Space>
       <div style={{ marginBottom: 12 }}>
         <Text strong>Repo root:</Text> <Text code>{d.repoRoot || '-'}</Text>
@@ -1017,7 +1210,7 @@ function DiagnosticsView({ data, onRefresh }: { data: any; onRefresh: () => void
       <div>
         <Text strong>Warnings (categorized):</Text>
         {warns.length === 0 ? (
-          <Text type="secondary">（无）</Text>
+          <Empty description="无警告" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <div style={{ marginTop: 4 }}>
             {warns.map((w, i) => (
@@ -1032,6 +1225,179 @@ function DiagnosticsView({ data, onRefresh }: { data: any; onRefresh: () => void
       <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 12 }}>
         所有数据已通过 redaction helper；不执行网络检查；只读。
       </Text>
+    </div>
+  );
+}
+
+function ProfileCrudView({ data, queueRunning, activeProfile, onList, onCreate, onRename, onDuplicate, onDelete, onSelect }: { data?: any; queueRunning?: boolean; activeProfile?: string | null; onList: () => void; onCreate: (n: string, v?: any) => void; onRename: (o: string, n: string) => void; onDuplicate: (n: string, nn: string) => void; onDelete: (n: string) => void; onSelect: (n: string) => void; }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState('');
+  const [dupOpen, setDupOpen] = useState(false);
+  const [dupTarget, setDupTarget] = useState('');
+  const [form] = Form.useForm();
+  const [renameForm] = Form.useForm();
+  const [dupForm] = Form.useForm();
+
+  const profiles: Record<string, any> = (data && data.profiles) || {};
+  const active = (data && data.activeProfile) || activeProfile || 'local';
+  const isRunning = Boolean(queueRunning);
+  const entries = Object.keys(profiles).sort();
+
+  const openCreate = () => {
+    form.resetFields();
+    form.setFieldsValue({ name: '', fixAgent: 'grok', reviewAgent: 'codex', workerMaxTurns: 128, workerMaxRetries: 2, worktreeScope: 'queue' });
+    setCreateOpen(true);
+  };
+
+  const submitCreate = () => {
+    const vals = form.getFieldsValue();
+    const n = (vals.name || '').trim();
+    if (!n) {
+      message.error('profile name required');
+      return;
+    }
+    const v: any = {};
+    ['fixAgent', 'reviewAgent', 'workerMaxTurns', 'workerMaxRetries', 'worktreeScope', 'baseUrl', 'queuePath'].forEach(k => { if (vals[k] !== undefined) v[k] = vals[k]; });
+    if (vals.injectKeysToWorker !== undefined) v.injectKeysToWorker = vals.injectKeysToWorker;
+    onCreate(n, v);
+    setCreateOpen(false);
+  };
+
+  const openRename = (n: string) => {
+    setRenameTarget(n);
+    renameForm.resetFields();
+    renameForm.setFieldsValue({ newName: n });
+    setRenameOpen(true);
+  };
+
+  const submitRename = () => {
+    const vals = renameForm.getFieldsValue();
+    const nn = (vals.newName || '').trim();
+    if (!nn || nn === renameTarget) {
+      setRenameOpen(false);
+      return;
+    }
+    onRename(renameTarget, nn);
+    setRenameOpen(false);
+  };
+
+  const openDup = (n: string) => {
+    setDupTarget(n);
+    dupForm.resetFields();
+    dupForm.setFieldsValue({ newName: n + '-copy' });
+    setDupOpen(true);
+  };
+
+  const submitDup = () => {
+    const vals = dupForm.getFieldsValue();
+    const nn = (vals.newName || '').trim();
+    if (!nn) {
+      message.error('new name required');
+      return;
+    }
+    onDuplicate(dupTarget, nn);
+    setDupOpen(false);
+  };
+
+  const doDelete = (n: string) => {
+    if (entries.length <= 1) {
+      message.error('cannot delete last profile');
+      return;
+    }
+    if (n === active) {
+      // still allow delete, handler will switch
+    }
+    onDelete(n);
+  };
+
+  const doSelect = (n: string) => {
+    if (n === active) return;
+    if (isRunning) {
+      message.warning('队列运行中，禁止切换 profile');
+      return;
+    }
+    onSelect(n);
+  };
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <Space style={{ marginBottom: 12 }}>
+        <Title level={5} style={{ margin: 0 }}>Settings Profiles</Title>
+        <Button size="small" onClick={onList}>刷新</Button>
+        <Button size="small" type="primary" onClick={openCreate} disabled={isRunning}>创建</Button>
+      </Space>
+
+      {isRunning ? (
+        <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={`队列运行中 (激活 Profile: ${active || '未知'})，禁止切换/删除 profile。`} />
+      ) : null}
+
+      <List
+        bordered
+        dataSource={entries}
+        renderItem={(name: string) => {
+          const p = profiles[name] || {};
+          const isActive = name === active;
+          const summary = [p.fixAgent, p.reviewAgent].filter(Boolean).join(' / ') || '-';
+          return (
+            <List.Item
+              actions={[
+                !isActive ? <Button key="sel" size="small" onClick={() => doSelect(name)} disabled={isRunning}>选择</Button> : <Tag key="act" color="blue">当前</Tag>,
+                <Button key="ren" size="small" onClick={() => openRename(name)} disabled={isRunning}>重命名</Button>,
+                <Button key="dup" size="small" onClick={() => openDup(name)}>复制</Button>,
+                <Button key="del" size="small" danger disabled={isRunning || entries.length <= 1} onClick={() => doDelete(name)}>删除</Button>,
+              ]}
+            >
+              <Space>
+                <Text strong>{name}</Text>
+                {isActive ? <Tag color="success">active</Tag> : null}
+                <Tag>{summary}</Tag>
+                {p.baseUrl ? <Tag>{p.baseUrl}</Tag> : null}
+              </Space>
+            </List.Item>
+          );
+        }}
+      />
+
+      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8 }}>
+        仅非敏感配置；不可删除最后一个 profile；运行中禁止切换与删除。
+      </Text>
+
+      <Modal title="创建 Profile" open={createOpen} onOk={submitCreate} onCancel={() => setCreateOpen(false)} okText="创建" cancelText="取消">
+        <Form form={form} layout="vertical">
+          <Form.Item label="名称" name="name" rules={[{ required: true, message: 'name required' }, { pattern: /^[a-zA-Z0-9_-]+$/, message: 'invalid chars (use a-z0-9_-)'} ]}>
+            <Input placeholder="my-profile" />
+          </Form.Item>
+          <Form.Item label="Fix Agent" name="fixAgent">
+            <Select><Select.Option value="grok">grok</Select.Option><Select.Option value="codex">codex</Select.Option></Select>
+          </Form.Item>
+          <Form.Item label="Review Agent" name="reviewAgent">
+            <Select><Select.Option value="codex">codex</Select.Option><Select.Option value="grok">grok</Select.Option><Select.Option value="none">none</Select.Option></Select>
+          </Form.Item>
+          <Form.Item label="Max Turns" name="workerMaxTurns"><InputNumber min={1} /></Form.Item>
+          <Form.Item label="Max Retries" name="workerMaxRetries"><InputNumber min={0} /></Form.Item>
+          <Form.Item label="Worktree Scope" name="worktreeScope">
+            <Select><Select.Option value="queue">queue</Select.Option><Select.Option value="task">task</Select.Option></Select>
+          </Form.Item>
+          <Form.Item label="Base URL" name="baseUrl"><Input /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={`重命名 ${renameTarget}`} open={renameOpen} onOk={submitRename} onCancel={() => setRenameOpen(false)} okText="重命名" cancelText="取消">
+        <Form form={renameForm} layout="vertical">
+          <Form.Item label="新名称" name="newName" rules={[{ required: true }, { pattern: /^[a-zA-Z0-9_-]+$/, message: 'invalid profile name' }]}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={`复制 ${dupTarget}`} open={dupOpen} onOk={submitDup} onCancel={() => setDupOpen(false)} okText="复制" cancelText="取消">
+        <Form form={dupForm} layout="vertical">
+          <Form.Item label="新名称" name="newName" rules={[{ required: true }, { pattern: /^[a-zA-Z0-9_-]+$/, message: 'invalid profile name' }]}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
