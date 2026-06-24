@@ -2583,6 +2583,39 @@ test('settings send logic never includes raw keys (SecretStorage safety)', async
   assert.ok(payload.keys.grokApiKey === 'configured');
 });
 
+test('settings save message normalization accepts top-level and payload shapes', () => {
+  const { normalizeSaveSettingsPayload } = requireFromExtension('./out/settingsMessages.js');
+
+  assert.deepEqual(
+    normalizeSaveSettingsPayload({ type: 'saveSettings', fixAgent: 'grok', workerMaxTurns: 128 }),
+    { fixAgent: 'grok', workerMaxTurns: 128 },
+  );
+  assert.deepEqual(
+    normalizeSaveSettingsPayload({ type: 'saveSettings', payload: { reviewAgent: 'codex', grokApiKey: 'secret' } }),
+    { reviewAgent: 'codex', grokApiKey: 'secret' },
+  );
+  assert.deepEqual(normalizeSaveSettingsPayload(null), {});
+});
+
+test('settings preview log redaction removes raw api keys', () => {
+  const { redactSettingsMessageForLog } = requireFromExtension('./out/settingsMessages.js');
+
+  const redacted = redactSettingsMessageForLog({
+    type: 'saveSettings',
+    grokApiKey: 'sk-grok-secret',
+    payload: {
+      openaiApiKey: 'sk-openai-secret',
+      queuePath: 'agent-loop/scripts/migration-queue.json',
+    },
+  });
+
+  const serialized = JSON.stringify(redacted);
+  assert.ok(!serialized.includes('sk-grok-secret'));
+  assert.ok(!serialized.includes('sk-openai-secret'));
+  assert.match(serialized, /configured|redacted/i);
+  assert.match(serialized, /migration-queue\.json/);
+});
+
 test('getAgentLoopConfig shape includes new CLI and key related fields', () => {
   // We can't easily mock vscode here without setup, but ensure the module exports and basic defaults
   const { getAgentLoopConfig } = requireFromExtension('./out/paths.js');

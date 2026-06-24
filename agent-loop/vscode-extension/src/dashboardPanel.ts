@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { activeAgentLabel, formatElapsed, phaseLabel } from './phaseLabels';
+import { normalizeSaveSettingsPayload } from './settingsMessages';
 import { extractRunEvidence } from './stateReader';
 import type { QueueOverview, RunSnapshot } from './types';
 
@@ -70,7 +71,7 @@ export class DashboardPanel {
           void this.sendSettings();
           return;
         case 'saveSettings':
-          void this.handleSaveSettings(message.payload || {});
+          void this.handleSaveSettings(normalizeSaveSettingsPayload(message));
           return;
         default:
       }

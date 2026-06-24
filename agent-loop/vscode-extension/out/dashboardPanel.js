@@ -37,6 +37,7 @@ exports.DashboardPanel = void 0;
 const path = __importStar(require("node:path"));
 const vscode = __importStar(require("vscode"));
 const phaseLabels_1 = require("./phaseLabels");
+const settingsMessages_1 = require("./settingsMessages");
 const stateReader_1 = require("./stateReader");
 class DashboardPanel {
     static current;
@@ -100,7 +101,7 @@ class DashboardPanel {
                     void this.sendSettings();
                     return;
                 case 'saveSettings':
-                    void this.handleSaveSettings(message.payload || {});
+                    void this.handleSaveSettings((0, settingsMessages_1.normalizeSaveSettingsPayload)(message));
                     return;
                 default:
             }

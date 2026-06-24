@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { DashboardApp, DashboardDetailApp } from './DashboardApp';
 import './dashboard-react.css';
 import { previewDetailPayload, previewOverviewPayload } from './devPayload';
+import { normalizeSaveSettingsPayload, redactSettingsMessageForLog } from '../settingsMessages';
 
 type PreviewMode = 'detail' | 'overview';
 
@@ -26,7 +27,7 @@ let mockSettings: any = {
 
 window.__AGENT_LOOP_VSCODE_API__ = {
   postMessage(message: any) {
-    console.info('[AgentLoop preview command]', message);
+    console.info('[AgentLoop preview command]', redactSettingsMessageForLog(message));
     if (message?.type === 'getSettings') {
       // Simulate response
       setTimeout(() => {
@@ -34,21 +35,30 @@ window.__AGENT_LOOP_VSCODE_API__ = {
       }, 10);
     }
     if (message?.type === 'saveSettings') {
-      console.info('[AgentLoop preview] saveSettings (mock)', message);
+      const data = normalizeSaveSettingsPayload(message);
       const newKeys = { ...mockSettings.keys };
-      if (typeof message.grokApiKey === 'string') {
-        newKeys.grokApiKey = message.grokApiKey ? 'configured' : '';
+      if (typeof data.grokApiKey === 'string') {
+        newKeys.grokApiKey = data.grokApiKey ? 'configured' : '';
       }
-      if (typeof message.openaiApiKey === 'string') {
-        newKeys.openaiApiKey = message.openaiApiKey ? 'configured' : '';
+      if (typeof data.openaiApiKey === 'string') {
+        newKeys.openaiApiKey = data.openaiApiKey ? 'configured' : '';
       }
-      if (typeof message.anthropicApiKey === 'string') {
-        newKeys.anthropicApiKey = message.anthropicApiKey ? 'configured' : '';
+      if (typeof data.anthropicApiKey === 'string') {
+        newKeys.anthropicApiKey = data.anthropicApiKey ? 'configured' : '';
+      }
+      const nonSensitiveUpdate: Record<string, unknown> = {};
+      const nonSecretKeys = ['fixAgent', 'reviewAgent', 'workerMaxTurns', 'workerMaxRetries', 'queuePath', 'worktreeScope', 'baseUrl', 'injectToWorker'] as const;
+      for (const key of nonSecretKeys) {
+        if (key in data) {
+          nonSensitiveUpdate[key] = data[key];
+        }
       }
       mockSettings = {
         ...mockSettings,
-        nonSensitive: { ...mockSettings.nonSensitive, ...message },
+        nonSensitive: { ...mockSettings.nonSensitive, ...nonSensitiveUpdate },
         keys: newKeys,
+        baseUrl: typeof data.baseUrl === 'string' ? data.baseUrl : mockSettings.baseUrl,
+        injectToWorker: typeof data.injectToWorker === 'boolean' ? data.injectToWorker : mockSettings.injectToWorker,
       };
       // respond with updated
       setTimeout(() => {
