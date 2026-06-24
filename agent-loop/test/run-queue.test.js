@@ -394,48 +394,53 @@ test('migration queue defaults configure local proxy env for worker agents', asy
   });
 });
 
-test('migration queue enables 106 settings rescue wave and disables superseded 100-105 waves', async () => {
+test('migration queue enables 107 settings full wave and disables superseded 100-106 waves', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const tasks = queue.tasks || [];
 
   const enabledIds = tasks.filter((task) => task.enabled).map((task) => task.id).sort();
-  const expected106Ids = [
-    'agent-loop-settings-contract-schema-106',
-    'agent-loop-settings-message-secret-contract-106',
-    'agent-loop-settings-test-harness-vscode-shim-106',
-    'agent-loop-settings-runtime-config-reader-106',
-    'agent-loop-settings-worker-env-injection-106',
-    'agent-loop-settings-cli-worker-routing-106',
-    'agent-loop-settings-provider-health-cli-106',
-    'agent-loop-settings-provider-health-llm-106',
-    'agent-loop-settings-profile-crud-106',
-    'agent-loop-settings-profile-run-guard-106',
-    'agent-loop-settings-queue-defaults-preview-106',
-    'agent-loop-settings-queue-defaults-apply-106',
-    'agent-loop-settings-import-export-redaction-106',
-    'agent-loop-settings-diagnostics-view-106',
-    'agent-loop-settings-ui-product-polish-106',
-    'agent-loop-settings-release-readiness-106',
+  const expected107Ids = [
+    'agent-loop-settings-schema-config-surface-107',
+    'agent-loop-settings-effective-config-runtime-107',
+    'agent-loop-settings-worker-env-secret-injection-107',
+    'agent-loop-settings-cli-worker-routing-107',
+    'agent-loop-settings-provider-health-cli-107',
+    'agent-loop-settings-provider-health-cache-107',
+    'agent-loop-settings-profile-storage-schema-107',
+    'agent-loop-settings-profile-crud-ui-107',
+    'agent-loop-settings-profile-run-guard-107',
+    'agent-loop-settings-queue-defaults-sync-107',
+    'agent-loop-settings-import-export-files-107',
+    'agent-loop-settings-diagnostics-artifacts-107',
+    'agent-loop-settings-ui-product-polish-107',
+    'agent-loop-settings-dev-preview-mocks-107',
+    'agent-loop-settings-test-harness-coverage-107',
+    'agent-loop-settings-docs-operator-runbook-107',
+    'agent-loop-settings-release-readiness-vsix-107',
+    'agent-loop-settings-security-redaction-audit-107',
+    'agent-loop-settings-workspace-trust-107',
+    'agent-loop-settings-runner-task-generation-107',
   ].sort();
 
-  assert.deepEqual(enabledIds, expected106Ids);
+  assert.deepEqual(enabledIds, expected107Ids);
 
   const stillEnabledSuperseded = tasks.filter(
     (task) => (
-      /-(100|101|102|103|104|105)$/.test(task.id || '')
+      /^agent-loop-settings-.*-(100|101|102|103|104|105|106)$/.test(task.id || '')
     ) && task.enabled,
   );
   assert.deepEqual(
     stillEnabledSuperseded.map((task) => task.id),
     [],
-    '100-105-stage tasks should stay disabled once the 106 settings rescue wave is active',
+    '100-106-stage settings tasks should stay disabled once the 107 settings full wave is active',
   );
 
   const missingTaskFiles = [];
   const missingGates = [];
   const guardEnabled = [];
-  for (const entry of tasks.filter((task) => task.id?.endsWith('-106'))) {
+  const gatesWithoutMarkers = [];
+  for (const entry of tasks.filter((task) => task.id?.endsWith('-107'))) {
     const taskPath = path.join(workspaceRoot, entry.task);
     try {
       await fs.access(taskPath);
@@ -443,11 +448,15 @@ test('migration queue enables 106 settings rescue wave and disables superseded 1
       missingTaskFiles.push(entry.task);
     }
     if (!Array.isArray(queue[entry.gatesKey])) missingGates.push(entry.gatesKey);
+    if (!JSON.stringify(queue[entry.gatesKey] || []).includes('missing Settings 107 marker')) {
+      gatesWithoutMarkers.push(entry.gatesKey);
+    }
     if (entry.guardTests) guardEnabled.push(entry.id);
   }
 
   assert.deepEqual(missingTaskFiles, []);
   assert.deepEqual(missingGates, []);
+  assert.deepEqual(gatesWithoutMarkers, []);
   assert.deepEqual(guardEnabled, []);
 });
 

@@ -173,6 +173,186 @@
   ],
   "tasks": [
     {
+      "id": "agent-loop-settings-schema-config-surface-107",
+      "task": "agent-loop/tasks/agent-loop-settings-schema-config-surface-107.md",
+      "gatesKey": "agentLoopSettingsSchemaConfigSurface107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-effective-config-runtime-107",
+      "task": "agent-loop/tasks/agent-loop-settings-effective-config-runtime-107.md",
+      "gatesKey": "agentLoopSettingsEffectiveConfigRuntime107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-worker-env-secret-injection-107",
+      "task": "agent-loop/tasks/agent-loop-settings-worker-env-secret-injection-107.md",
+      "gatesKey": "agentLoopSettingsWorkerEnvSecretInjection107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-cli-worker-routing-107",
+      "task": "agent-loop/tasks/agent-loop-settings-cli-worker-routing-107.md",
+      "gatesKey": "agentLoopSettingsCliWorkerRouting107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-provider-health-cli-107",
+      "task": "agent-loop/tasks/agent-loop-settings-provider-health-cli-107.md",
+      "gatesKey": "agentLoopSettingsProviderHealthCli107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-provider-health-cache-107",
+      "task": "agent-loop/tasks/agent-loop-settings-provider-health-cache-107.md",
+      "gatesKey": "agentLoopSettingsProviderHealthCache107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-profile-storage-schema-107",
+      "task": "agent-loop/tasks/agent-loop-settings-profile-storage-schema-107.md",
+      "gatesKey": "agentLoopSettingsProfileStorageSchema107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-profile-crud-ui-107",
+      "task": "agent-loop/tasks/agent-loop-settings-profile-crud-ui-107.md",
+      "gatesKey": "agentLoopSettingsProfileCrudUi107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-profile-run-guard-107",
+      "task": "agent-loop/tasks/agent-loop-settings-profile-run-guard-107.md",
+      "gatesKey": "agentLoopSettingsProfileRunGuard107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-queue-defaults-sync-107",
+      "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-sync-107.md",
+      "gatesKey": "agentLoopSettingsQueueDefaultsSync107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-import-export-files-107",
+      "task": "agent-loop/tasks/agent-loop-settings-import-export-files-107.md",
+      "gatesKey": "agentLoopSettingsImportExportFiles107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-diagnostics-artifacts-107",
+      "task": "agent-loop/tasks/agent-loop-settings-diagnostics-artifacts-107.md",
+      "gatesKey": "agentLoopSettingsDiagnosticsArtifacts107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-ui-product-polish-107",
+      "task": "agent-loop/tasks/agent-loop-settings-ui-product-polish-107.md",
+      "gatesKey": "agentLoopSettingsUiProductPolish107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-dev-preview-mocks-107",
+      "task": "agent-loop/tasks/agent-loop-settings-dev-preview-mocks-107.md",
+      "gatesKey": "agentLoopSettingsDevPreviewMocks107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-test-harness-coverage-107",
+      "task": "agent-loop/tasks/agent-loop-settings-test-harness-coverage-107.md",
+      "gatesKey": "agentLoopSettingsTestHarnessCoverage107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-docs-operator-runbook-107",
+      "task": "agent-loop/tasks/agent-loop-settings-docs-operator-runbook-107.md",
+      "gatesKey": "agentLoopSettingsDocsOperatorRunbook107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-release-readiness-vsix-107",
+      "task": "agent-loop/tasks/agent-loop-settings-release-readiness-vsix-107.md",
+      "gatesKey": "agentLoopSettingsReleaseReadinessVsix107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-security-redaction-audit-107",
+      "task": "agent-loop/tasks/agent-loop-settings-security-redaction-audit-107.md",
+      "gatesKey": "agentLoopSettingsSecurityRedactionAudit107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-workspace-trust-107",
+      "task": "agent-loop/tasks/agent-loop-settings-workspace-trust-107.md",
+      "gatesKey": "agentLoopSettingsWorkspaceTrust107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "agent-loop-settings-runner-task-generation-107",
+      "task": "agent-loop/tasks/agent-loop-settings-runner-task-generation-107.md",
+      "gatesKey": "agentLoopSettingsRunnerTaskGeneration107Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
       "id": "agent-loop-apply-status-taxonomy",
       "task": "agent-loop/tasks/agent-loop-apply-status-taxonomy.md",
       "gatesKey": "agentLoopApplyStatusTaxonomyGates",
@@ -1664,7 +1844,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-secret-storage-105",
@@ -1674,7 +1854,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-worker-env-injection-105",
@@ -1684,7 +1864,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-provider-health-check-105",
@@ -1694,7 +1874,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-cli-worker-routing-105",
@@ -1704,7 +1884,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-profile-management-105",
@@ -1714,7 +1894,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-queue-defaults-editor-105",
@@ -1724,7 +1904,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-import-export-redaction-105",
@@ -1734,7 +1914,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-diagnostics-view-105",
@@ -1744,7 +1924,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-test-harness-105",
@@ -1754,7 +1934,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-ui-polish-105",
@@ -1764,7 +1944,7 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-release-readiness-105",
@@ -1774,151 +1954,167 @@
       "guardTests": true,
       "workerMaxTurns": 128,
       "maxIterations": 3,
-      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-contract-schema-106",
       "task": "agent-loop/tasks/agent-loop-settings-contract-schema-106.md",
       "gatesKey": "agentLoopSettingsContractSchema106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-message-secret-contract-106",
       "task": "agent-loop/tasks/agent-loop-settings-message-secret-contract-106.md",
       "gatesKey": "agentLoopSettingsMessageSecretContract106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-test-harness-vscode-shim-106",
       "task": "agent-loop/tasks/agent-loop-settings-test-harness-vscode-shim-106.md",
       "gatesKey": "agentLoopSettingsTestHarnessVscodeShim106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-runtime-config-reader-106",
       "task": "agent-loop/tasks/agent-loop-settings-runtime-config-reader-106.md",
       "gatesKey": "agentLoopSettingsRuntimeConfigReader106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-worker-env-injection-106",
       "task": "agent-loop/tasks/agent-loop-settings-worker-env-injection-106.md",
       "gatesKey": "agentLoopSettingsWorkerEnvInjection106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-cli-worker-routing-106",
       "task": "agent-loop/tasks/agent-loop-settings-cli-worker-routing-106.md",
       "gatesKey": "agentLoopSettingsCliWorkerRouting106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-provider-health-cli-106",
       "task": "agent-loop/tasks/agent-loop-settings-provider-health-cli-106.md",
       "gatesKey": "agentLoopSettingsProviderHealthCli106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-provider-health-llm-106",
       "task": "agent-loop/tasks/agent-loop-settings-provider-health-llm-106.md",
       "gatesKey": "agentLoopSettingsProviderHealthLlm106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-profile-crud-106",
       "task": "agent-loop/tasks/agent-loop-settings-profile-crud-106.md",
       "gatesKey": "agentLoopSettingsProfileCrud106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-profile-run-guard-106",
       "task": "agent-loop/tasks/agent-loop-settings-profile-run-guard-106.md",
       "gatesKey": "agentLoopSettingsProfileRunGuard106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-queue-defaults-preview-106",
       "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-preview-106.md",
       "gatesKey": "agentLoopSettingsQueueDefaultsPreview106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-queue-defaults-apply-106",
       "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-apply-106.md",
       "gatesKey": "agentLoopSettingsQueueDefaultsApply106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-import-export-redaction-106",
       "task": "agent-loop/tasks/agent-loop-settings-import-export-redaction-106.md",
       "gatesKey": "agentLoopSettingsImportExportRedaction106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-diagnostics-view-106",
       "task": "agent-loop/tasks/agent-loop-settings-diagnostics-view-106.md",
       "gatesKey": "agentLoopSettingsDiagnosticsView106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-ui-product-polish-106",
       "task": "agent-loop/tasks/agent-loop-settings-ui-product-polish-106.md",
       "gatesKey": "agentLoopSettingsUiProductPolish106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     },
     {
       "id": "agent-loop-settings-release-readiness-106",
       "task": "agent-loop/tasks/agent-loop-settings-release-readiness-106.md",
       "gatesKey": "agentLoopSettingsReleaseReadiness106Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 2
+      "maxIterations": 2,
+      "disabledReason": "superseded by AgentLoop Settings 107 full settings wave"
     }
   ],
   "nodeRouteInventory50Gates": [
@@ -2774,5 +2970,131 @@
     "cd agent-loop/vscode-extension; npm run package",
     "node -e \"const fs=require('fs'); const bad=['agent-loop/vscode-extension/tsc-errors.txt']; for (const p of bad) if(fs.existsSync(p)) throw new Error('temporary artifact must not exist: '+p);\"",
     "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/package.json agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsSchemaConfigSurface107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpzZXR0aW5ncyBzY2hlbWEgMTA3IGRlY2xhcmVzIGFsbCBub24tc2VjcmV0IHNldHRpbmcga2V5cw==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings schema 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsEffectiveConfigRuntime107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwplZmZlY3RpdmUgY29uZmlnIDEwNyBtZXJnZXMgcGFja2FnZSBkZWZhdWx0cyB3b3Jrc3BhY2UgdmFsdWVzIGFuZCBwcm9maWxlIG92ZXJyaWRlcw==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"effective config 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsWorkerEnvSecretInjection107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwp3b3JrZXIgZW52IDEwNyBpbmplY3RzIGVuYWJsZWQgc2VjcmV0IGtleXMgaW50byBydW5RdWV1ZSBzcGF3bg==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"worker env 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsCliWorkerRouting107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpDTEkgd29ya2VyIHJvdXRpbmcgMTA3IGZvcndhcmRzIHNldHRpbmdzIHRvIHJ1biBxdWV1ZSBhcmdz','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"CLI worker routing 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProviderHealthCli107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpwcm92aWRlciBoZWFsdGggQ0xJIDEwNyByZXBvcnRzIGF2YWlsYWJsZSB3b3JrZXIgY29tbWFuZA==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"provider health CLI 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProviderHealthCache107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpwcm92aWRlciBoZWFsdGggY2FjaGUgMTA3IGtlZXBzIGxhc3QgcmVkYWN0ZWQgcmVzdWx0','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"provider health cache 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProfileStorageSchema107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpwcm9maWxlIHN0b3JhZ2UgMTA3IHZhbGlkYXRlcyBub24tc2VjcmV0IHByb2ZpbGUgc2NoZW1h','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"profile storage 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProfileCrudUi107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpwcm9maWxlIENSVUQgVUkgMTA3IHJlbmRlcnMgcHJvZmlsZSBhY3Rpb25z','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"profile CRUD UI 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProfileRunGuard107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpwcm9maWxlIHJ1biBndWFyZCAxMDcgYmxvY2tzIHJ1bnRpbWUgZmllbGRzIGR1cmluZyBhY3RpdmUgcnVu','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"profile run guard 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsQueueDefaultsSync107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpxdWV1ZSBkZWZhdWx0cyBzeW5jIDEwNyBwcmV2aWV3cyBzZXR0aW5ncyB0byBkZWZhdWx0cyBkaWZm','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"queue defaults sync 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsImportExportFiles107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpzZXR0aW5ncyBpbXBvcnQgZXhwb3J0IGZpbGVzIDEwNyBkb3dubG9hZHMgcmVkYWN0ZWQgcGF5bG9hZA==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings import export files 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsDiagnosticsArtifacts107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpzZXR0aW5ncyBkaWFnbm9zdGljcyBhcnRpZmFjdHMgMTA3IHJlZGFjdHMgYWxsIHNlY3JldCBzdXJmYWNlcw==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings diagnostics artifacts 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsUiProductPolish107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpTZXR0aW5ncyBVSSBwb2xpc2ggMTA3IHVzZXMgQW50RCB0YWJzIGRlc2NyaXB0aW9ucyBhbmQgYWxlcnRz','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"Settings UI polish 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsDevPreviewMocks107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpkZXYgcHJldmlldyBtb2NrcyAxMDcgY292ZXJzIHNldHRpbmdzIGNvbW1hbmRz','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"dev preview mocks 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsTestHarnessCoverage107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwp2c2NvZGUgc2hpbSAxMDcgaXNvbGF0ZXMgd29ya3NwYWNlIGNvbmZpZyBwZXIgdGVzdA==','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"vscode shim 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsDocsOperatorRunbook107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpzZXR0aW5ncyBkb2NzIDEwNyBkb2N1bWVudHMgU2VjcmV0U3RvcmFnZSBhbmQgcXVldWUgZGVmYXVsdHM=','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings docs 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/README.md agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsReleaseReadinessVsix107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpyZWxlYXNlIHJlYWRpbmVzcyAxMDcgcGFja2FnZSB2ZXJzaW9uIG1hdGNoZXMgbGF0ZXN0IHZzaXg=','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "cd agent-loop/vscode-extension; npm run package",
+    "node --test --test-name-pattern \"release readiness 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsSecurityRedactionAudit107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwpzZWN1cml0eSByZWRhY3Rpb24gYXVkaXQgMTA3IHJlZGFjdHMgY29tbWFuZCByZXNwb25zZXM=','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"security redaction audit 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsWorkspaceTrust107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3ZzY29kZS1leHRlbnNpb24udGVzdC5qcwp3b3Jrc3BhY2UgdHJ1c3QgMTA3IHJlamVjdHMgcXVldWUgcGF0aHMgb3V0c2lkZSB3b3Jrc3BhY2U=','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"workspace trust 107\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsRunnerTaskGeneration107Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3J1bi1xdWV1ZS50ZXN0LmpzCm1pZ3JhdGlvbiBxdWV1ZSAxMDcgc2V0dGluZ3Mgd2F2ZSBoYXMgdGFzayBzcGVjaWZpYyByZWQgZ2F0ZXM=','base64').toString('utf8').split('\\n'); if(!fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing Settings 107 marker: '+m);\"",
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"migration queue 107 settings wave\" agent-loop/test/run-queue.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/scripts/migration-queue.json agent-loop/test/run-queue.test.js"
   ]
 }
