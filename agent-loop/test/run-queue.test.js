@@ -394,53 +394,48 @@ test('migration queue defaults configure local proxy env for worker agents', asy
   });
 });
 
-test('migration queue enables 104 production takeover wave and disables superseded 100/101/102/103 waves', async () => {
+test('migration queue enables 106 settings rescue wave and disables superseded 100-105 waves', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const tasks = queue.tasks || [];
 
   const enabledIds = tasks.filter((task) => task.enabled).map((task) => task.id).sort();
-  const expected104Ids = [
-    'backend-python-blueprint-job-store-runtime-takeover-104',
-    'backend-python-blueprint-event-bus-runtime-takeover-104',
-    'backend-python-blueprint-ledger-runtime-takeover-104',
-    'backend-python-blueprint-replan-runtime-takeover-104',
-    'backend-python-blueprint-prompt-package-runtime-takeover-104',
-    'backend-python-blueprint-preview-state-runtime-takeover-104',
-    'backend-python-blueprint-production-denominator-reconciliation-104',
-    'backend-python-task-durable-mission-store-takeover-104',
-    'backend-python-task-project-auth-runtime-takeover-104',
-    'backend-python-task-scheduler-runtime-takeover-104',
-    'backend-python-task-event-persistence-takeover-104',
-    'backend-python-task-production-denominator-reconciliation-104',
-    'backend-python-auth-session-repository-takeover-104',
-    'backend-python-auth-token-issuance-takeover-104',
-    'backend-python-auth-mailer-user-store-scope-104',
-    'backend-python-permission-policy-store-takeover-104',
-    'backend-python-audit-durable-store-retention-takeover-104',
-    'backend-python-final-provider-a2a-scope-reconciliation-104',
-    'backend-python-migration-status-refresh-104',
+  const expected106Ids = [
+    'agent-loop-settings-contract-schema-106',
+    'agent-loop-settings-message-secret-contract-106',
+    'agent-loop-settings-test-harness-vscode-shim-106',
+    'agent-loop-settings-runtime-config-reader-106',
+    'agent-loop-settings-worker-env-injection-106',
+    'agent-loop-settings-cli-worker-routing-106',
+    'agent-loop-settings-provider-health-cli-106',
+    'agent-loop-settings-provider-health-llm-106',
+    'agent-loop-settings-profile-crud-106',
+    'agent-loop-settings-profile-run-guard-106',
+    'agent-loop-settings-queue-defaults-preview-106',
+    'agent-loop-settings-queue-defaults-apply-106',
+    'agent-loop-settings-import-export-redaction-106',
+    'agent-loop-settings-diagnostics-view-106',
+    'agent-loop-settings-ui-product-polish-106',
+    'agent-loop-settings-release-readiness-106',
   ].sort();
 
-  assert.deepEqual(enabledIds, expected104Ids);
+  assert.deepEqual(enabledIds, expected106Ids);
 
   const stillEnabledSuperseded = tasks.filter(
     (task) => (
-      task.id?.endsWith('-100')
-      || task.id?.endsWith('-101')
-      || task.id?.endsWith('-102')
-      || task.id?.endsWith('-103')
+      /-(100|101|102|103|104|105)$/.test(task.id || '')
     ) && task.enabled,
   );
   assert.deepEqual(
     stillEnabledSuperseded.map((task) => task.id),
     [],
-    '100/101/102/103-stage tasks should stay disabled once the 104 production takeover wave is active',
+    '100-105-stage tasks should stay disabled once the 106 settings rescue wave is active',
   );
 
   const missingTaskFiles = [];
   const missingGates = [];
-  for (const entry of tasks.filter((task) => task.id?.endsWith('-104'))) {
+  const guardEnabled = [];
+  for (const entry of tasks.filter((task) => task.id?.endsWith('-106'))) {
     const taskPath = path.join(workspaceRoot, entry.task);
     try {
       await fs.access(taskPath);
@@ -448,10 +443,12 @@ test('migration queue enables 104 production takeover wave and disables supersed
       missingTaskFiles.push(entry.task);
     }
     if (!Array.isArray(queue[entry.gatesKey])) missingGates.push(entry.gatesKey);
+    if (entry.guardTests) guardEnabled.push(entry.id);
   }
 
   assert.deepEqual(missingTaskFiles, []);
   assert.deepEqual(missingGates, []);
+  assert.deepEqual(guardEnabled, []);
 });
 
 test('buildLoopArgsForQueueEntry uses queue worktree fix cwd in queue scope', () => {

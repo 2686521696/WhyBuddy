@@ -1660,109 +1660,265 @@
       "id": "agent-loop-settings-schema-runtime-105",
       "task": "agent-loop/tasks/agent-loop-settings-schema-runtime-105.md",
       "gatesKey": "agentLoopSettingsSchemaRuntime105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-secret-storage-105",
       "task": "agent-loop/tasks/agent-loop-settings-secret-storage-105.md",
       "gatesKey": "agentLoopSettingsSecretStorage105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-worker-env-injection-105",
       "task": "agent-loop/tasks/agent-loop-settings-worker-env-injection-105.md",
       "gatesKey": "agentLoopSettingsWorkerEnvInjection105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-provider-health-check-105",
       "task": "agent-loop/tasks/agent-loop-settings-provider-health-check-105.md",
       "gatesKey": "agentLoopSettingsProviderHealthCheck105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-cli-worker-routing-105",
       "task": "agent-loop/tasks/agent-loop-settings-cli-worker-routing-105.md",
       "gatesKey": "agentLoopSettingsCliWorkerRouting105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-profile-management-105",
       "task": "agent-loop/tasks/agent-loop-settings-profile-management-105.md",
       "gatesKey": "agentLoopSettingsProfileManagement105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-queue-defaults-editor-105",
       "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-editor-105.md",
       "gatesKey": "agentLoopSettingsQueueDefaultsEditor105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-import-export-redaction-105",
       "task": "agent-loop/tasks/agent-loop-settings-import-export-redaction-105.md",
       "gatesKey": "agentLoopSettingsImportExportRedaction105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-diagnostics-view-105",
       "task": "agent-loop/tasks/agent-loop-settings-diagnostics-view-105.md",
       "gatesKey": "agentLoopSettingsDiagnosticsView105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-test-harness-105",
       "task": "agent-loop/tasks/agent-loop-settings-test-harness-105.md",
       "gatesKey": "agentLoopSettingsTestHarness105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-ui-polish-105",
       "task": "agent-loop/tasks/agent-loop-settings-ui-polish-105.md",
       "gatesKey": "agentLoopSettingsUiPolish105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
     },
     {
       "id": "agent-loop-settings-release-readiness-105",
       "task": "agent-loop/tasks/agent-loop-settings-release-readiness-105.md",
       "gatesKey": "agentLoopSettingsReleaseReadiness105Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": true,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by focused AgentLoop Settings 106 rescue wave"
+    },
+    {
+      "id": "agent-loop-settings-contract-schema-106",
+      "task": "agent-loop/tasks/agent-loop-settings-contract-schema-106.md",
+      "gatesKey": "agentLoopSettingsContractSchema106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-message-secret-contract-106",
+      "task": "agent-loop/tasks/agent-loop-settings-message-secret-contract-106.md",
+      "gatesKey": "agentLoopSettingsMessageSecretContract106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-test-harness-vscode-shim-106",
+      "task": "agent-loop/tasks/agent-loop-settings-test-harness-vscode-shim-106.md",
+      "gatesKey": "agentLoopSettingsTestHarnessVscodeShim106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-runtime-config-reader-106",
+      "task": "agent-loop/tasks/agent-loop-settings-runtime-config-reader-106.md",
+      "gatesKey": "agentLoopSettingsRuntimeConfigReader106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-worker-env-injection-106",
+      "task": "agent-loop/tasks/agent-loop-settings-worker-env-injection-106.md",
+      "gatesKey": "agentLoopSettingsWorkerEnvInjection106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-cli-worker-routing-106",
+      "task": "agent-loop/tasks/agent-loop-settings-cli-worker-routing-106.md",
+      "gatesKey": "agentLoopSettingsCliWorkerRouting106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-provider-health-cli-106",
+      "task": "agent-loop/tasks/agent-loop-settings-provider-health-cli-106.md",
+      "gatesKey": "agentLoopSettingsProviderHealthCli106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-provider-health-llm-106",
+      "task": "agent-loop/tasks/agent-loop-settings-provider-health-llm-106.md",
+      "gatesKey": "agentLoopSettingsProviderHealthLlm106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-profile-crud-106",
+      "task": "agent-loop/tasks/agent-loop-settings-profile-crud-106.md",
+      "gatesKey": "agentLoopSettingsProfileCrud106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-profile-run-guard-106",
+      "task": "agent-loop/tasks/agent-loop-settings-profile-run-guard-106.md",
+      "gatesKey": "agentLoopSettingsProfileRunGuard106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-queue-defaults-preview-106",
+      "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-preview-106.md",
+      "gatesKey": "agentLoopSettingsQueueDefaultsPreview106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-queue-defaults-apply-106",
+      "task": "agent-loop/tasks/agent-loop-settings-queue-defaults-apply-106.md",
+      "gatesKey": "agentLoopSettingsQueueDefaultsApply106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-import-export-redaction-106",
+      "task": "agent-loop/tasks/agent-loop-settings-import-export-redaction-106.md",
+      "gatesKey": "agentLoopSettingsImportExportRedaction106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-diagnostics-view-106",
+      "task": "agent-loop/tasks/agent-loop-settings-diagnostics-view-106.md",
+      "gatesKey": "agentLoopSettingsDiagnosticsView106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-ui-product-polish-106",
+      "task": "agent-loop/tasks/agent-loop-settings-ui-product-polish-106.md",
+      "gatesKey": "agentLoopSettingsUiProductPolish106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
+    },
+    {
+      "id": "agent-loop-settings-release-readiness-106",
+      "task": "agent-loop/tasks/agent-loop-settings-release-readiness-106.md",
+      "gatesKey": "agentLoopSettingsReleaseReadiness106Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2
     }
   ],
   "nodeRouteInventory50Gates": [
@@ -2529,5 +2685,94 @@
     "cd agent-loop/vscode-extension; npm run package",
     "node -e \"const fs=require('fs'); const p='agent-loop/vscode-extension/tsc-errors.txt'; if(fs.existsSync(p)) throw new Error('temporary tsc-errors.txt must not exist before release');\"",
     "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsContractSchema106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings schema|AgentLoopConfig|settings defaults|unsupported setting\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsMessageSecretContract106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"settings save message normalization|settings preview log redaction|SecretStorage|clear.*key|clear.*all\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsTestHarnessVscodeShim106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"vscode shim|settings|AgentLoopConfig|dashboard panel loads|active log\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/test/vscode-extension.test.js agent-loop/vscode-extension/src/paths.ts agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts"
+  ],
+  "agentLoopSettingsRuntimeConfigReader106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"effective config|AgentLoopConfig|reviewAgent|phase|stateReader\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsWorkerEnvInjection106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"worker env|inject|SecretStorage|base url|redact\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsCliWorkerRouting106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"CLI worker routing|workerMaxTurns|workerMaxRetries|reviewAgent|runController\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProviderHealthCli106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"provider health CLI|testCli|timeout|redact\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProviderHealthLlm106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"provider health LLM|testProvider|missing key|redact\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProfileCrud106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"profile CRUD|active profile|settings profile\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsProfileRunGuard106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"profile run guard|running profile|active profile\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsQueueDefaultsPreview106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"queue defaults preview|dry run|migration-queue|settings\" agent-loop/test/vscode-extension.test.js agent-loop/test/run-queue.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsQueueDefaultsApply106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "node --test --test-name-pattern \"queue defaults apply|migration-queue|task-array preservation|secret rejection\" agent-loop/test/vscode-extension.test.js agent-loop/test/run-queue.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsImportExportRedaction106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"settings import|settings export|redact|schema version\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsDiagnosticsView106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"settings diagnostics|effective config|redact|queue path\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/runController.ts agent-loop/vscode-extension/src/settingsConfig.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsUiProductPolish106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "node --test --test-name-pattern \"Settings|Ant Design|Descriptions|padding|scroll|dashboard\" agent-loop/test/vscode-extension.test.js",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboard-react/dashboard-react.css agent-loop/vscode-extension/src/dashboard-react/dev.tsx agent-loop/test/vscode-extension.test.js"
+  ],
+  "agentLoopSettingsReleaseReadiness106Gates": [
+    "cd agent-loop/vscode-extension; npm run compile",
+    "cd agent-loop/vscode-extension; npm run build:dashboard",
+    "cd agent-loop/vscode-extension; npm run package",
+    "node -e \"const fs=require('fs'); const bad=['agent-loop/vscode-extension/tsc-errors.txt']; for (const p of bad) if(fs.existsSync(p)) throw new Error('temporary artifact must not exist: '+p);\"",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} agent-loop/vscode-extension/package.json agent-loop/vscode-extension/src/dashboard-react/DashboardApp.tsx agent-loop/vscode-extension/src/dashboardPanel.ts agent-loop/vscode-extension/src/settingsMessages.ts agent-loop/test/vscode-extension.test.js"
   ]
 }
