@@ -1296,71 +1296,104 @@
       "id": "backend-python-blueprint-job-store-scope-decision-103",
       "task": "agent-loop/tasks/backend-python-blueprint-job-store-scope-decision-103.md",
       "gatesKey": "blueprintJobStoreScopeDecision103Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
     },
     {
       "id": "backend-python-task-mission-store-runtime-slice-103",
       "task": "agent-loop/tasks/backend-python-task-mission-store-runtime-slice-103.md",
       "gatesKey": "taskMissionStoreRuntimeSlice103Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
     },
     {
       "id": "backend-python-auth-session-token-boundary-103",
       "task": "agent-loop/tasks/backend-python-auth-session-token-boundary-103.md",
       "gatesKey": "authSessionTokenBoundary103Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
     },
     {
       "id": "backend-python-permission-audit-durable-store-boundary-103",
       "task": "agent-loop/tasks/backend-python-permission-audit-durable-store-boundary-103.md",
       "gatesKey": "permissionAuditDurableStoreBoundary103Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
     },
     {
       "id": "backend-python-web-aigc-real-provider-live-contract-103",
       "task": "agent-loop/tasks/backend-python-web-aigc-real-provider-live-contract-103.md",
       "gatesKey": "webAigcRealProviderLiveContract103Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3,
       "reviewMaxTurns": 10,
       "agentTimeoutMs": 1800000,
       "agentIdleTimeoutMs": 600000,
-      "timeoutMs": 3600000
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
     },
     {
       "id": "backend-python-a2a-session-stream-runtime-slice-103",
       "task": "agent-loop/tasks/backend-python-a2a-session-stream-runtime-slice-103.md",
       "gatesKey": "a2aSessionStreamRuntimeSlice103Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
+    },
+    {
+      "id": "backend-python-migration-scope-reconciliation-103",
+      "task": "agent-loop/tasks/backend-python-migration-scope-reconciliation-103.md",
+      "gatesKey": "migrationScopeReconciliation103Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 2,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000,
+      "disabledReason": "completed in main: e7a3543d; superseded by backend-python 104 production takeover queue"
+    },
+    {
+      "id": "backend-python-blueprint-job-store-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-job-store-runtime-takeover-104.md",
+      "gatesKey": "blueprintJobStoreRuntimeTakeover104Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -1371,9 +1404,230 @@
       "timeoutMs": 3600000
     },
     {
-      "id": "backend-python-migration-scope-reconciliation-103",
-      "task": "agent-loop/tasks/backend-python-migration-scope-reconciliation-103.md",
-      "gatesKey": "migrationScopeReconciliation103Gates",
+      "id": "backend-python-blueprint-event-bus-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-event-bus-runtime-takeover-104.md",
+      "gatesKey": "blueprintEventBusRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-blueprint-ledger-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-ledger-runtime-takeover-104.md",
+      "gatesKey": "blueprintLedgerRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-blueprint-replan-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-replan-runtime-takeover-104.md",
+      "gatesKey": "blueprintReplanRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-blueprint-prompt-package-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-prompt-package-runtime-takeover-104.md",
+      "gatesKey": "blueprintPromptPackageRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-blueprint-preview-state-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-preview-state-runtime-takeover-104.md",
+      "gatesKey": "blueprintPreviewStateRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-blueprint-production-denominator-reconciliation-104",
+      "task": "agent-loop/tasks/backend-python-blueprint-production-denominator-reconciliation-104.md",
+      "gatesKey": "blueprintProductionDenominatorReconciliation104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-durable-mission-store-takeover-104",
+      "task": "agent-loop/tasks/backend-python-task-durable-mission-store-takeover-104.md",
+      "gatesKey": "taskDurableMissionStoreTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-project-auth-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-task-project-auth-runtime-takeover-104.md",
+      "gatesKey": "taskProjectAuthRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-scheduler-runtime-takeover-104",
+      "task": "agent-loop/tasks/backend-python-task-scheduler-runtime-takeover-104.md",
+      "gatesKey": "taskSchedulerRuntimeTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-event-persistence-takeover-104",
+      "task": "agent-loop/tasks/backend-python-task-event-persistence-takeover-104.md",
+      "gatesKey": "taskEventPersistenceTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-task-production-denominator-reconciliation-104",
+      "task": "agent-loop/tasks/backend-python-task-production-denominator-reconciliation-104.md",
+      "gatesKey": "taskProductionDenominatorReconciliation104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-session-repository-takeover-104",
+      "task": "agent-loop/tasks/backend-python-auth-session-repository-takeover-104.md",
+      "gatesKey": "authSessionRepositoryTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-token-issuance-takeover-104",
+      "task": "agent-loop/tasks/backend-python-auth-token-issuance-takeover-104.md",
+      "gatesKey": "authTokenIssuanceTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-auth-mailer-user-store-scope-104",
+      "task": "agent-loop/tasks/backend-python-auth-mailer-user-store-scope-104.md",
+      "gatesKey": "authMailerUserStoreScope104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-permission-policy-store-takeover-104",
+      "task": "agent-loop/tasks/backend-python-permission-policy-store-takeover-104.md",
+      "gatesKey": "permissionPolicyStoreTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-audit-durable-store-retention-takeover-104",
+      "task": "agent-loop/tasks/backend-python-audit-durable-store-retention-takeover-104.md",
+      "gatesKey": "auditDurableStoreRetentionTakeover104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-final-provider-a2a-scope-reconciliation-104",
+      "task": "agent-loop/tasks/backend-python-final-provider-a2a-scope-reconciliation-104.md",
+      "gatesKey": "finalProviderA2aScopeReconciliation104Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "reviewMaxTurns": 10,
+      "agentTimeoutMs": 1800000,
+      "agentIdleTimeoutMs": 600000,
+      "timeoutMs": 3600000
+    },
+    {
+      "id": "backend-python-migration-status-refresh-104",
+      "task": "agent-loop/tasks/backend-python-migration-status-refresh-104.md",
+      "gatesKey": "migrationStatusRefresh104Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -1968,5 +2222,117 @@
   "migrationScopeReconciliation103Gates": [
     "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','Blueprint','Auth','Audit','Task lifecycle','Web AIGC','A2A']) { if(!status.includes(needle)) throw new Error('migration status missing 103 scope wording: '+needle); } if(!/(103|102|101|100|99|98)/.test(status)) throw new Error('migration status missing refreshed 103 percentage context'); if(!/(python-owned|node-retained|external-owned|out-of-scope|blocked|skipped-live)/i.test(status)) throw new Error('migration status missing ownership/scope wording');\"",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-job-store-scope-decision-103.md agent-loop/tasks/backend-python-task-mission-store-runtime-slice-103.md agent-loop/tasks/backend-python-auth-session-token-boundary-103.md agent-loop/tasks/backend-python-permission-audit-durable-store-boundary-103.md agent-loop/tasks/backend-python-web-aigc-real-provider-live-contract-103.md agent-loop/tasks/backend-python-a2a-session-stream-runtime-slice-103.md"
+  ],
+  "blueprintJobStoreRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_job_store_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.job-store-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_job_store_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_job_store_runtime_takeover_104.py server/routes/blueprint/job-store-runtime-takeover-python.ts server/routes/__tests__/blueprint.job-store-runtime-takeover-104.test.ts"
+  ],
+  "blueprintEventBusRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_event_bus_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.event-bus-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_event_bus_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_event_bus_runtime_takeover_104.py server/routes/blueprint/event-bus-runtime-takeover-python.ts server/routes/__tests__/blueprint.event-bus-runtime-takeover-104.test.ts"
+  ],
+  "blueprintLedgerRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_ledger_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.ledger-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_ledger_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_ledger_runtime_takeover_104.py server/routes/blueprint/ledger-runtime-takeover-python.ts server/routes/__tests__/blueprint.ledger-runtime-takeover-104.test.ts"
+  ],
+  "blueprintReplanRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_replan_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.replan-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_replan_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_replan_runtime_takeover_104.py server/routes/blueprint/replan-runtime-takeover-python.ts server/routes/__tests__/blueprint.replan-runtime-takeover-104.test.ts"
+  ],
+  "blueprintPromptPackageRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_prompt_package_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.prompt-package-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_prompt_package_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_prompt_package_runtime_takeover_104.py server/routes/blueprint/prompt-package-runtime-takeover-python.ts server/routes/__tests__/blueprint.prompt-package-runtime-takeover-104.test.ts"
+  ],
+  "blueprintPreviewStateRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_preview_state_runtime_takeover_104.py tests/test_blueprint_job_store_scope_decision_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.preview-state-runtime-takeover-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_preview_state_runtime_takeover.py tws-ai-slide-rule-python/tests/test_blueprint_preview_state_runtime_takeover_104.py server/routes/blueprint/preview-state-runtime-takeover-python.ts server/routes/__tests__/blueprint.preview-state-runtime-takeover-104.test.ts"
+  ],
+  "blueprintProductionDenominatorReconciliation104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_blueprint_production_denominator_reconciliation_104.py tests/test_blueprint_job_store_scope_decision_103.py tests/test_blueprint_production_ownership_closure_102.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/routes/__tests__/blueprint.production-denominator-reconciliation-104.test.ts server/routes/__tests__/blueprint.job-store-scope-decision-103.test.ts server/routes/__tests__/blueprint.production-ownership-closure-102.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/blueprint_production_denominator_reconciliation.py tws-ai-slide-rule-python/tests/test_blueprint_production_denominator_reconciliation_104.py server/routes/blueprint/production-denominator-reconciliation-python.ts server/routes/__tests__/blueprint.production-denominator-reconciliation-104.test.ts"
+  ],
+  "taskDurableMissionStoreTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_durable_mission_store_takeover_104.py tests/test_task_mission_store_runtime_slice_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-durable-mission-store-takeover-104.test.ts server/tests/task-mission-store-runtime-slice-103.test.ts server/tests/mission-store.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_durable_mission_store_takeover.py tws-ai-slide-rule-python/tests/test_task_durable_mission_store_takeover_104.py server/tests/task-durable-mission-store-takeover-104.test.ts server/tasks/mission-store.ts"
+  ],
+  "taskProjectAuthRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_project_auth_runtime_takeover_104.py tests/test_task_mission_store_runtime_slice_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-project-auth-runtime-takeover-104.test.ts server/tests/task-store-auth-scheduler-cutover-101.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_project_auth_runtime_takeover.py tws-ai-slide-rule-python/tests/test_task_project_auth_runtime_takeover_104.py server/tests/task-project-auth-runtime-takeover-104.test.ts server/routes/tasks.ts"
+  ],
+  "taskSchedulerRuntimeTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_scheduler_runtime_takeover_104.py tests/test_task_mission_store_runtime_slice_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-scheduler-runtime-takeover-104.test.ts server/tests/mission-cancel.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_scheduler_runtime_takeover.py tws-ai-slide-rule-python/tests/test_task_scheduler_runtime_takeover_104.py server/tests/task-scheduler-runtime-takeover-104.test.ts server/tasks/mission-runtime.ts"
+  ],
+  "taskEventPersistenceTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_event_persistence_takeover_104.py tests/test_task_mission_store_runtime_slice_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-event-persistence-takeover-104.test.ts server/tests/task-mission-store-runtime-slice-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_event_persistence_takeover.py tws-ai-slide-rule-python/tests/test_task_event_persistence_takeover_104.py server/tests/task-event-persistence-takeover-104.test.ts server/tasks/mission-projection.ts"
+  ],
+  "taskProductionDenominatorReconciliation104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_task_production_denominator_reconciliation_104.py tests/test_task_mission_store_runtime_slice_103.py tests/test_task_lifecycle_durable_ownership_closure_102.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/task-production-denominator-reconciliation-104.test.ts server/tests/task-mission-store-runtime-slice-103.test.ts server/tests/task-lifecycle-durable-ownership-closure-102.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/task_production_denominator_reconciliation.py tws-ai-slide-rule-python/tests/test_task_production_denominator_reconciliation_104.py server/tests/task-production-denominator-reconciliation-104.test.ts"
+  ],
+  "authSessionRepositoryTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_session_repository_takeover_104.py tests/test_auth_session_token_boundary_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-session-repository-takeover-104.test.ts server/tests/auth-session-token-boundary-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_session_repository_takeover.py tws-ai-slide-rule-python/tests/test_auth_session_repository_takeover_104.py server/tests/auth-session-repository-takeover-104.test.ts server/auth/session-service.ts"
+  ],
+  "authTokenIssuanceTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_token_issuance_takeover_104.py tests/test_auth_session_token_boundary_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-token-issuance-takeover-104.test.ts server/tests/auth-session-token-boundary-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_token_issuance_takeover.py tws-ai-slide-rule-python/tests/test_auth_token_issuance_takeover_104.py server/tests/auth-token-issuance-takeover-104.test.ts server/auth/session-service.ts"
+  ],
+  "authMailerUserStoreScope104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_auth_mailer_user_store_scope_104.py tests/test_auth_session_token_boundary_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/auth-mailer-user-store-scope-104.test.ts server/tests/auth-session-token-boundary-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/auth_mailer_user_store_scope.py tws-ai-slide-rule-python/tests/test_auth_mailer_user_store_scope_104.py server/tests/auth-mailer-user-store-scope-104.test.ts server/auth/email-code-service.ts server/auth/email-mailer.ts"
+  ],
+  "permissionPolicyStoreTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_permission_policy_store_takeover_104.py tests/test_permission_audit_durable_store_boundary_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/permission-policy-store-takeover-104.test.ts server/tests/permission-audit-durable-store-boundary-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/permission_policy_store_takeover.py tws-ai-slide-rule-python/tests/test_permission_policy_store_takeover_104.py server/tests/permission-policy-store-takeover-104.test.ts server/permission/policy-store.ts server/permission/check-engine.ts"
+  ],
+  "auditDurableStoreRetentionTakeover104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_audit_durable_store_retention_takeover_104.py tests/test_permission_audit_durable_store_boundary_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/audit-durable-store-retention-takeover-104.test.ts server/tests/permission-audit-durable-store-boundary-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/audit_durable_store_retention_takeover.py tws-ai-slide-rule-python/tests/test_audit_durable_store_retention_takeover_104.py server/tests/audit-durable-store-retention-takeover-104.test.ts server/audit/audit-store.ts server/audit/audit-retention.ts"
+  ],
+  "finalProviderA2aScopeReconciliation104Gates": [
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_final_provider_a2a_scope_reconciliation_104.py tests/test_web_aigc_real_provider_live_contract_103.py tests/test_a2a_session_stream_runtime_slice_103.py -q --tb=short",
+    "pnpm exec vitest run --config vitest.config.server.ts server/tests/final-provider-a2a-scope-reconciliation-104.test.ts server/tests/web-aigc-real-provider-live-contract-103.test.ts server/routes/__tests__/a2a-session-stream-runtime-slice-103.test.ts --reporter=dot",
+    "pnpm exec tsc --noEmit --pretty false",
+    "node agent-loop/src/check-mojibake.js {{taskFile}} tws-ai-slide-rule-python/services/final_provider_a2a_scope_reconciliation.py tws-ai-slide-rule-python/tests/test_final_provider_a2a_scope_reconciliation_104.py server/tests/final-provider-a2a-scope-reconciliation-104.test.ts shared/telemetry/contracts.ts shared/a2a/contracts.ts"
+  ],
+  "migrationStatusRefresh104Gates": [
+    "node -e \"const fs=require('fs'); const status=fs.readFileSync('agent-loop/tasks/sliderule-python-migration-status.md','utf8'); for (const needle of ['NodeJS','Python','104','Blueprint','Auth','Audit','Task lifecycle','Web AIGC','A2A']) { if(!status.includes(needle)) throw new Error('migration status missing 104 wording: '+needle); } if(!/(104|103|102|101|100|99|98)/.test(status)) throw new Error('migration status missing refreshed 104 percentage context');\"",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-python-migration-status.md {{taskFile}} agent-loop/tasks/backend-python-blueprint-production-denominator-reconciliation-104.md agent-loop/tasks/backend-python-task-production-denominator-reconciliation-104.md agent-loop/tasks/backend-python-final-provider-a2a-scope-reconciliation-104.md"
   ]
 }
