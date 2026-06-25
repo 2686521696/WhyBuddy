@@ -6,7 +6,9 @@ Does not write Node events.
 """
 
 import json
-from typing import Any, Dict, Generator, Iterable, Optional
+from typing import Any, Dict, Generator, Iterable, List, Optional
+
+from .agent_loop_state_reducer import reduce_run_events
 
 
 def build_event_snapshot(
@@ -67,3 +69,18 @@ def iter_agent_loop_sse_frames(
         else:
             snap = build_event_snapshot(st if isinstance(st, dict) else {})
         yield format_sse_frame(event_name, snap)
+
+
+def iter_agent_loop_v2_sse_frames(
+    events: Iterable[Dict[str, Any]],
+) -> Generator[str, None, None]:
+    """Yield SSE frames replaying each normalized v2 event (as 'event') then a final 'snapshot' from reducer.
+
+    Stable event names, compact JSON via format_sse_frame. Finite generator only.
+    """
+    evs: List[Dict[str, Any]] = list(events) if events is not None else []
+    for e in evs:
+        if isinstance(e, dict):
+            yield format_sse_frame("event", e)
+    snap = reduce_run_events(evs)
+    yield format_sse_frame("snapshot", snap)

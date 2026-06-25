@@ -171,9 +171,52 @@ def resolve_artifact_path(
     return resolve_safe_path(run_dir, artifact)
 
 
+def _get_default_events_root() -> str:
+    """Documented default for append-only event JSONL root (per SSOT for v2)."""
+    return os.environ.get("AGENT_LOOP_EVENTS_DIR") or ".agent-loop/events"
+
+
+def get_agent_loop_events_root(events_root: Optional[str] = None) -> Path:
+    """Return the (resolved) documented events root for runtime event store.
+
+    Root is trusted (env or default), not from arbitrary user input.
+    """
+    if events_root is None:
+        events_root = _get_default_events_root()
+    try:
+        return Path(events_root).resolve(strict=False)
+    except Exception:
+        return Path(events_root).absolute()
+
+
+def resolve_event_log_path(
+    run_id: str, events_root: Optional[str] = None
+) -> Optional[Path]:
+    """Safely resolve the append-only events JSONL path under documented event root only.
+
+    Layout: <event-root>/<runId>.jsonl
+    Rejects absolute user paths, traversal, drive prefixes, bad chars on run_id.
+    Uses the same safe resolution as runs.
+    """
+    if not run_id or not isinstance(run_id, str):
+        return None
+    if any(c in run_id for c in ("/", "\\", "\0")):
+        return None
+    if _is_absolute_like(run_id) or _has_traversal(run_id):
+        return None
+    root = get_agent_loop_events_root(events_root)
+    # events file is flat <runId>.jsonl under the root (no subdir from run_id)
+    log_name = f"{run_id}.jsonl"
+    if _is_absolute_like(log_name) or _has_traversal(log_name):
+        return None
+    return resolve_safe_path(root, log_name)
+
+
 __all__ = [
     "get_agent_loop_runs_root",
     "resolve_safe_path",
     "resolve_run_dir",
     "resolve_artifact_path",
+    "get_agent_loop_events_root",
+    "resolve_event_log_path",
 ]

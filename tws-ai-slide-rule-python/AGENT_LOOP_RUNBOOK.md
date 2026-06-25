@@ -115,6 +115,14 @@ Useful for pre-run checks before queue execution.
 
 Inspect via API or the served dashboard. Artifacts use relative safe names only.
 
+## v2 SSOT Replay Path (110 readiness)
+The v2 SSOT replay path uses the append-only runtime event log as the single source of truth. See AGENT_LOOP_V2_RUNTIME_SSOT.md.
+Read APIs: GET /api/agent-loop/runs/{run_id}/events (initial replay) and /events/stream (SSE incremental).
+Fallback to legacy artifact adapter is used for 108/109 runs to emit synthetic v2 events.
+Web route verification: the /api/agent-loop/runs/* endpoints support replay-driven UI without polling raw artifacts as primary.
+This keeps the Node runner bridge caveat: the Node runner remains the execution owner for queue, workers, and mutation; Python control plane adds replay, projections, and read APIs.
+108/109 compatibility is retained.
+
 ## Security
 
 - No raw secret storage or documentation of writing keys via runbook/APIs.

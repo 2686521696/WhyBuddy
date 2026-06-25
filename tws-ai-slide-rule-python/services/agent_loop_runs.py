@@ -36,6 +36,12 @@ from services.agent_loop_paths import (
     resolve_artifact_path,
 )
 
+# 110: central stable artifact index (event refs + size + no-mtime active selection)
+try:
+    from services.agent_loop_artifacts import list_agent_loop_artifacts
+except Exception:
+    from agent_loop_artifacts import list_agent_loop_artifacts  # type: ignore
+
 # 109: reuse central redaction helper
 try:
     from services.agent_loop_redaction import redact_sensitive as _central_redact_sensitive
@@ -444,61 +450,35 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
     events_p = resolve_artifact_path(run_id, "events.jsonl", runs_root)
     events = _read_events_tail(events_p, 60)
 
-    # artifacts: only relative safe ids
+    # 110: delegate to central artifact index for stable ids, kind, safe name (title), size, eventRef
+    # (no mtime selection; explicit event refs preferred for active logs)
     artifacts: List[AgentLoopArtifact] = []
-
-    # core state always
-    artifacts.append(
-        AgentLoopArtifact(id="state.json", kind="state", title="state.json", path="state.json")
-    )
-
-    # report files (bounded content for json/md if small)
-    for fname in ("final-report.json", "final-report.md", "landing.json"):
-        fp = resolve_artifact_path(run_id, fname, runs_root)
-        if fp and fp.exists() and fp.is_file():
+    try:
+        base_arts = list_agent_loop_artifacts(run_id, runs_root) or []
+        for ba in base_arts:
+            fname = ba.id
+            fp = resolve_artifact_path(run_id, fname, runs_root)
+            content = None
+            if fp and fp.exists() and fp.is_file():
+                if fname.endswith((".json", ".md")):
+                    content = _read_text_tail(fp, 50, 2000)
+                elif ba.kind == "log":
+                    content = _read_text_tail(fp, 20, 2000)
+            meta = dict(getattr(ba, "metadata", {}) or {})
             art = AgentLoopArtifact(
-                id=fname,
-                kind="report" if "report" in fname else "landing",
-                title=fname,
-                path=fname,
+                id=ba.id,
+                kind=ba.kind,
+                title=ba.title or ba.id,
+                path=ba.id,
+                content=content,
+                metadata=meta,
             )
-            if fname.endswith((".json", ".md")):
-                art.content = _read_text_tail(fp, 50, 2000)  # bounded + redacted, char limit
             artifacts.append(art)
-
-    # log files: bounded tails only (never full); use helper on discovered names (109)
-    try:
-        for entry in run_dir.iterdir():
-            name = entry.name
-            lname = name.lower()
-            if lname.endswith(".log") or "output" in lname or "log" in lname:
-                safe_p = resolve_artifact_path(run_id, name, runs_root)
-                if safe_p and safe_p.exists() and safe_p.is_file():
-                    tail = _read_text_tail(safe_p, 20, 2000)
-                    artifacts.append(
-                        AgentLoopArtifact(
-                            id=name,
-                            kind="log",
-                            title=name,
-                            path=name,
-                            content=tail or None,
-                        )
-                    )
     except Exception:
-        pass
-
-    # diff patches as safe relative; use helper on discovered names (109)
-    try:
-        for entry in run_dir.iterdir():
-            name = entry.name
-            if name.startswith("diff.") and name.endswith(".patch"):
-                safe_p = resolve_artifact_path(run_id, name, runs_root)
-                if safe_p and safe_p.exists() and safe_p.is_file():
-                    artifacts.append(
-                        AgentLoopArtifact(id=name, kind="diff", title=name, path=name)
-                    )
-    except Exception:
-        pass
+        # fallback ensures detail never breaks
+        artifacts.append(
+            AgentLoopArtifact(id="state.json", kind="state", title="state.json", path="state.json")
+        )
 
     detail = AgentLoopRunDetail(
         runId=run_id,

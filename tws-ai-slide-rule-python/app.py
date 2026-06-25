@@ -66,6 +66,31 @@ app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-docum
 # AgentLoop control plane (Python owned, bridge mode for workers)
 app.include_router(agent_loop_router, prefix="/api/agent-loop")
 
+# SlideRule AgentLoop 110: first-class /AgentLoop and /agent-loop web route shell
+# Served by python app; reuses dashboard statics; /api/agent-loop/dashboard remains for compat.
+from fastapi.responses import HTMLResponse, FileResponse
+from routes.agent_loop import _get_dashboard_index_path
+
+@app.get("/AgentLoop", response_class=HTMLResponse)
+async def serve_agentloop_top():
+    """First-class /AgentLoop route serving the AgentLoop shell (110)."""
+    index_path = _get_dashboard_index_path()
+    if index_path.exists():
+        try:
+            return FileResponse(str(index_path), media_type="text/html")
+        except Exception:
+            html = index_path.read_text(encoding="utf-8")
+            return HTMLResponse(content=html)
+    fallback = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>AgentLoop</title></head><body><h1>AgentLoop</h1><div id="runs"></div><script src="/api/agent-loop/agent-loop-dashboard.js"></script></body></html>"""
+    return HTMLResponse(content=fallback)
+
+
+@app.get("/agent-loop", response_class=HTMLResponse)
+async def serve_agentloop_alias():
+    """Lowercase /agent-loop alias for the shell."""
+    return await serve_agentloop_top()
+
+
 @app.get("/health")
 async def health():
     return {

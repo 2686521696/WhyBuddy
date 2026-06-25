@@ -180,7 +180,7 @@ The dashboard may keep a low-frequency fallback refresh for offline or legacy ru
 
 ## Compatibility Model
 
-Existing 108 and 109 runs may not have v2 events. The compatibility adapter reads:
+Existing 108 and 109 runs may not have v2 events. The compatibility adapter (fallback to legacy artifact adapter) reads:
 
 - `state.json`
 - `events.jsonl`
@@ -251,6 +251,7 @@ The 110 queue should implement the DAG in this order:
 
 Wave 110 is complete when:
 
+- Release readiness 110 covers rollback guidance, Web route verification, and safe operation of v2 replay beside Node runner.
 - Web `/AgentLoop` can render current and legacy runs from one event replay path.
 - Flow updates use stable node and edge ids.
 - Done state is driven by `RUN_FINALIZED`.

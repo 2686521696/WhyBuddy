@@ -1,5 +1,6 @@
 // AgentLoop Dashboard JS (python owned shell, no CDN, no external webview APIs)
 // Fetches documented overview endpoint. Renders empty and error states.
+// 110: prefers Python event replay path /runs/{id}/snapshot (or /events) as state source for detail.
 // Navigation shell 109: active view state via URL hash (location.hash) or documented local state.
 // Menu labels (Workbench, Runs, Settings, SlideRule) are stable text for later React/AntD replacement.
 
@@ -64,6 +65,16 @@
     var detView = document.getElementById('detail');
     if (detView) detView.classList.add('active');
 
+    try {
+      // 110: prefer python event replay snapshot as state source (reducer over events)
+      var snapRes = await fetch('/api/agent-loop/runs/' + encodeURIComponent(runId) + '/snapshot');
+      if (snapRes.ok) {
+        var snapData = await snapRes.json();
+        if (detStatus) detStatus.textContent = '';
+        renderDetail(snapData);
+        return;
+      }
+    } catch (e) {}
     try {
       var res = await fetch('/api/agent-loop/runs/' + encodeURIComponent(runId));
       if (!res.ok) {

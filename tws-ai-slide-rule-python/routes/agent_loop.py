@@ -17,7 +17,11 @@ from services.agent_loop_events import (
     build_event_snapshot,
     format_sse_frame,
     iter_agent_loop_sse_frames,
+    iter_agent_loop_v2_sse_frames,
 )
+from services.agent_loop_event_store import read_events
+from services.agent_loop_state_reducer import reduce_run_events
+from services.agent_loop_legacy_adapter import read_legacy_events
 from services.agent_loop_bridge import build_agent_loop_command, execute_agent_loop_command
 from services.agent_loop_settings import (
     load_agent_loop_settings,
@@ -169,6 +173,26 @@ async def run_events_stream(run_id: str):
     return StreamingResponse(_finite_gen(), media_type="text/event-stream")
 
 
+@router.get("/runs/{run_id}/events/stream/v2")
+async def run_events_stream_v2(run_id: str):
+    """SSE v2 stream: incremental normalized events (replayed) followed by final reducer snapshot frame.
+
+    Deterministic finite generator. Does not affect the v1 /events/stream snapshot route.
+    """
+    if not isinstance(run_id, str) or not run_id or len(run_id) < 3:
+        evs = []
+    else:
+        evs = read_events(run_id, limit=1000)
+        if not evs:
+            evs = read_legacy_events(run_id, limit=1000)
+
+    def _finite_gen():
+        for frame in iter_agent_loop_v2_sse_frames(evs):
+            yield frame
+
+    return StreamingResponse(_finite_gen(), media_type="text/event-stream")
+
+
 @router.post("/queue/run")
 async def start_queue_run(req: CommandRequest):
     """Start a queue run via bridge. Validates task id, queue path, mode.
@@ -310,12 +334,10 @@ def _get_dashboard_js_path():
     return _DASHBOARD_STATIC / "agent-loop-dashboard.js"
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def serve_agent_loop_dashboard():
-    """Serve the initial python-owned AgentLoop dashboard shell."""
+def _serve_agent_loop_shell():
+    """Reusable shell server for dashboard and first-class routes (110)."""
     index_path = _get_dashboard_index_path()
     if index_path.exists():
-        # Use FileResponse to preserve any future headers; fall back to content for robustness in test env
         try:
             return FileResponse(str(index_path), media_type="text/html")
         except Exception:
@@ -324,6 +346,18 @@ async def serve_agent_loop_dashboard():
     # Fallback minimal shell (still no vscode, still fetches overview, never blocks empty)
     fallback = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>AgentLoop</title></head><body><h1>AgentLoop Dashboard</h1><div id="runs"></div><script src="/api/agent-loop/agent-loop-dashboard.js"></script></body></html>"""
     return HTMLResponse(content=fallback)
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def serve_agent_loop_dashboard():
+    """Serve the initial python-owned AgentLoop dashboard shell."""
+    return _serve_agent_loop_shell()
+
+
+@router.get("/", response_class=HTMLResponse)
+async def serve_agent_loop_root():
+    """Serve AgentLoop shell at /api/agent-loop (110 route support)."""
+    return _serve_agent_loop_shell()
 
 
 @router.get("/agent-loop-dashboard.js")
@@ -347,3 +381,44 @@ async def runs_list_alias():
     """Alias to documented overview for convenience (shell may use either)."""
     summaries = list_agent_loop_run_summaries()
     return [s.model_dump(mode="json") for s in summaries]
+
+
+# --- Event read API (SlideRule AgentLoop 110) ---
+# Replay and derived snapshot. Prefer native v2 events; fall back to legacy adapter for 108/109 runs.
+# All responses redacted (store/adapter) and bounded (limit + reducer determinism).
+# Do not remove existing 108/109 run detail endpoints.
+
+@router.get("/runs/{run_id}/events")
+async def run_replay_events(run_id: str, limit: Optional[int] = 1000):
+    """Replay endpoint for run events.
+
+    - Native .agent-loop/events/<runId>.jsonl when present (redacted by store).
+    - Legacy runs served through the compatibility adapter (synthetic v2 events).
+    - Responses bounded; limit respected (hard max 1000).
+    - Unknown run -> [] (graceful for UI replay).
+    """
+    if not isinstance(run_id, str) or not run_id or len(run_id) < 3:
+        return []
+    lim = 1000
+    if isinstance(limit, int) and limit >= 0:
+        lim = min(limit, 1000)
+    evs = read_events(run_id, limit=lim)
+    if not evs:
+        evs = read_legacy_events(run_id, limit=lim)
+    return evs
+
+
+@router.get("/runs/{run_id}/snapshot")
+async def run_snapshot(run_id: str):
+    """Snapshot endpoint using the reducer over replay events (or legacy adapted).
+
+    Deterministic: same events list yields identical snapshot.
+    Includes flowNodes/edges, gate, reviewVerdict, finalized etc from reducer.
+    """
+    if not isinstance(run_id, str) or not run_id:
+        return {"runId": None, "status": "PENDING", "finalized": False, "gate": None, "reviewVerdict": None}
+    evs = read_events(run_id, limit=1000)
+    if not evs:
+        evs = read_legacy_events(run_id, limit=1000)
+    snap = reduce_run_events(evs)
+    return snap

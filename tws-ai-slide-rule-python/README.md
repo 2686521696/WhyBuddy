@@ -37,6 +37,8 @@ python -m uvicorn app:app --port 9700 --reload
 
 See [AGENT_LOOP_RUNBOOK.md](AGENT_LOOP_RUNBOOK.md) for operator startup commands, API routes, queue execution, settings, provider health, run inspection, security, and rollback in the SlideRule + AgentLoop bridge rescue phase (Node runner still present).
 
+For AgentLoop 110 replay release readiness: v2 SSOT replay path documented in AGENT_LOOP_V2_RUNTIME_SSOT.md. Documentation explains fallback to legacy artifact adapter for prior runs. Release readiness covers rollback and Web route verification. Node runner bridge remains.
+
 All Node V5 instability (degraded mcp/skill, report template, proxy 504s on pool, loose GCOV) resolved by using this project's mature RAG + knowledge + LLM.
 
 ## Migration status
