@@ -13,7 +13,6 @@ Supports:
 """
 
 import os
-import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +20,20 @@ from typing import Any, Dict, List, Optional
 
 from config.settings import get_settings
 from models.agent_loop import AgentLoopCommandRequest, AgentLoopCommandReceipt
+
+# 109: centralized redaction (reused)
+try:
+    from services.agent_loop_redaction import (
+        redact_sensitive as _redact_sensitive_text,
+        redact_env_dict,
+        redact_command_receipt,
+    )
+except Exception:
+    from agent_loop_redaction import (  # type: ignore
+        redact_sensitive as _redact_sensitive_text,
+        redact_env_dict,
+        redact_command_receipt,
+    )
 
 
 def _resolve_repo_root() -> Path:
@@ -43,35 +56,13 @@ def _resolve_agent_loop_dir(s: Any) -> Path:
     return root.resolve()
 
 
-def _redact_arg(arg: str) -> str:
-    """Redact credential-like values in args while keeping the key name."""
-    if not isinstance(arg, str) or not arg:
-        return arg
-    # Match patterns like KEY=val , --foo=sk-xxx , VAR:secret etc for known secret names
-    if re.search(r'(?i)(?:api[_-]?key|secret|token|password|auth|credential|private[_-]?key|access[_-]?key)[=:]', arg):
-        if "=" in arg:
-            left, _right = arg.split("=", 1)
-            return left + "=***REDACTED***"
-        if ":" in arg:
-            left, _right = arg.split(":", 1)
-            return left + ":***REDACTED***"
-    # also catch bare --worker-env KEY=val forms (split already in caller sometimes)
-    if arg.startswith("--worker-env") or "=" in arg:
-        # conservative: if value after = looks secret-ish
-        if "=" in arg:
-            k, v = arg.split("=", 1)
-            if re.search(r'(?i)^(sk-|ghp_|xoxb-|AIza|AKIA|secret|token)', v) or len(v) > 12:
-                # but only if key name hints secret
-                if re.search(r'(?i)(key|secret|token|pass|auth|cred)', k):
-                    return k + "=***REDACTED***"
-    return arg
-
-
 def _redact_command(req: AgentLoopCommandRequest) -> str:
+    """Build redacted command string using central redaction helper (109)."""
     parts: List[str] = [req.command or ""]
     for a in (req.args or []):
-        parts.append(_redact_arg(a))
-    return " ".join(p for p in parts if p)
+        parts.append(_redact_sensitive_text(a) if a else a)
+    joined = " ".join(p for p in parts if p)
+    return _redact_sensitive_text(joined)
 
 
 def build_agent_loop_command(
@@ -151,16 +142,18 @@ def execute_agent_loop_command(
     redacted = _redact_command(req)
 
     if dry_run or getattr(get_settings(), "AGENT_LOOP_BRIDGE_DRY_RUN", False):
-        return AgentLoopCommandReceipt(
-            command=redacted,
-            exitCode=None,
-            stdout=None,
-            stderr=None,
-            timedOut=False,
-            startedAt=now,
-            endedAt=now,
-            metadata={"dryRun": True, "wouldExecute": False},
-        )
+        rec = {
+            "command": redacted,
+            "exitCode": None,
+            "stdout": None,
+            "stderr": None,
+            "timedOut": False,
+            "startedAt": now,
+            "endedAt": now,
+            "metadata": {"dryRun": True, "wouldExecute": False},
+        }
+        red_rec = redact_command_receipt(rec)
+        return AgentLoopCommandReceipt(**red_rec)
 
     # real execution path (caller must ensure node exists)
     try:
@@ -184,55 +177,45 @@ def execute_agent_loop_command(
             timeout=timeout_sec,
         )
         ended = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        return AgentLoopCommandReceipt(
-            command=redacted,
-            exitCode=result.returncode,
-            stdout=_redact_sensitive_text(result.stdout or ""),
-            stderr=_redact_sensitive_text(result.stderr or ""),
-            timedOut=False,
-            startedAt=now,
-            endedAt=ended,
-            metadata={},
-        )
+        rec = {
+            "command": redacted,
+            "exitCode": result.returncode,
+            "stdout": _redact_sensitive_text(result.stdout or ""),
+            "stderr": _redact_sensitive_text(result.stderr or ""),
+            "timedOut": False,
+            "startedAt": now,
+            "endedAt": ended,
+            "metadata": {},
+        }
+        red_rec = redact_command_receipt(rec)
+        return AgentLoopCommandReceipt(**red_rec)
     except subprocess.TimeoutExpired as te:
         ended = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        return AgentLoopCommandReceipt(
-            command=redacted,
-            exitCode=None,
-            stdout=_redact_sensitive_text((te.stdout or "") if isinstance(getattr(te, "stdout", None), str) else "") if isinstance(getattr(te, "stdout", None), str) else None,
-            stderr=_redact_sensitive_text((te.stderr or "") if isinstance(getattr(te, "stderr", None), str) else ""),
-            timedOut=True,
-            startedAt=now,
-            endedAt=ended,
-            metadata={"reason": "timeout"},
-        )
+        stdout_val = _redact_sensitive_text((te.stdout or "") if isinstance(getattr(te, "stdout", None), str) else "") if isinstance(getattr(te, "stdout", None), str) else None
+        stderr_val = _redact_sensitive_text((te.stderr or "") if isinstance(getattr(te, "stderr", None), str) else "")
+        rec = {
+            "command": redacted,
+            "exitCode": None,
+            "stdout": stdout_val,
+            "stderr": stderr_val,
+            "timedOut": True,
+            "startedAt": now,
+            "endedAt": ended,
+            "metadata": {"reason": "timeout"},
+        }
+        red_rec = redact_command_receipt(rec)
+        return AgentLoopCommandReceipt(**red_rec)
     except Exception as exc:
         ended = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        return AgentLoopCommandReceipt(
-            command=redacted,
-            exitCode=1,
-            stdout=None,
-            stderr=_redact_sensitive_text(str(exc)),
-            timedOut=False,
-            startedAt=now,
-            endedAt=ended,
-            metadata={"error": "spawn_failed"},
-        )
-
-
-def _redact_sensitive_text(text: str) -> str:
-    """Lightweight redaction mirroring runs service for stderr/err."""
-    if not text:
-        return text
-    red = text
-    red = re.sub(
-        r'(?i)(?P<key>\b(?:api[_-]?key|secret|token|password|auth[_-]?token|private[_-]?key|credential)[^\s:=]*)\s*[:=]\s*["\']?[^"\'\s,}\]\n]+',
-        r'\g<key>=***REDACTED***',
-        red,
-    )
-    red = re.sub(
-        r'(?i)\b(export\s+|set\s+)?(?P<key>[A-Z_]*(?:KEY|SECRET|TOKEN|PASS|AUTH|CREDS?)[A-Z_]*)\s*=\s*[^\s;"\']+',
-        r'\1\g<key>=***REDACTED***',
-        red,
-    )
-    return red
+        rec = {
+            "command": redacted,
+            "exitCode": 1,
+            "stdout": None,
+            "stderr": _redact_sensitive_text(str(exc)),
+            "timedOut": False,
+            "startedAt": now,
+            "endedAt": ended,
+            "metadata": {"error": "spawn_failed"},
+        }
+        red_rec = redact_command_receipt(rec)
+        return AgentLoopCommandReceipt(**red_rec)

@@ -1,0 +1,7 @@
+{
+  "id": "final-report.json",
+  "kind": "report",
+  "title": "final-report.json",
+  "path": "final-report.json",
+  "content": "{\"status\": \"ok\", \"summary\": \"gates passed\"}"
+}

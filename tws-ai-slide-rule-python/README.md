@@ -35,6 +35,8 @@ python -m uvicorn app:app --port 9700 --reload
 - Node client/fullpath now proxies V5 calls here (or direct).
 - Replaces Node's su8/pool, capability-llm-fallback, pool-json-llm, etc.
 
+See [AGENT_LOOP_RUNBOOK.md](AGENT_LOOP_RUNBOOK.md) for operator startup commands, API routes, queue execution, settings, provider health, run inspection, security, and rollback in the SlideRule + AgentLoop bridge rescue phase (Node runner still present).
+
 All Node V5 instability (degraded mcp/skill, report template, proxy 504s on pool, loose GCOV) resolved by using this project's mature RAG + knowledge + LLM.
 
 ## Migration status

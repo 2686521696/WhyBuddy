@@ -24,6 +24,24 @@ from models.agent_loop import (
     AgentLoopTaskEntry,
 )
 
+# Use centralized path helper for all run/artifact resolution (109 path security)
+import sys
+from pathlib import Path as _P
+_pkg_root = _P(__file__).resolve().parent.parent
+if str(_pkg_root) not in sys.path:
+    sys.path.insert(0, str(_pkg_root))
+from services.agent_loop_paths import (
+    get_agent_loop_runs_root,
+    resolve_run_dir,
+    resolve_artifact_path,
+)
+
+# 109: reuse central redaction helper
+try:
+    from services.agent_loop_redaction import redact_sensitive as _central_redact_sensitive
+except Exception:
+    from agent_loop_redaction import redact_sensitive as _central_redact_sensitive  # type: ignore
+
 
 def _parse_run_id_date(run_id: str) -> Optional[datetime]:
     """Parse AgentLoop runId like 2026-06-25T14-00-00-000Z into UTC datetime."""
@@ -179,22 +197,21 @@ def list_agent_loop_run_summaries(runs_root: Optional[str] = None) -> List[Agent
     - For any dir where state.json missing, unreadable or unparsable: emit degraded summary (do not raise)
     - Always sort newest first (by runId date, fallback lexical desc)
     """
-    if runs_root is None:
-        runs_root = os.environ.get("AGENT_LOOP_RUNS_DIR") or ".agent-loop/runs"
-    root = Path(runs_root)
-    if not root.exists() or not root.is_dir():
+    root_path = get_agent_loop_runs_root(runs_root)
+    if not root_path.exists() or not root_path.is_dir():
         return []
 
     items: List[AgentLoopRunSummary] = []
-    for entry in root.iterdir():
+    for entry in root_path.iterdir():
         if not entry.is_dir():
             continue
         run_id = entry.name
-        state_path = entry / "state.json"
+        # readers must use path helper (no open-coded join on run_id)
+        state_path = resolve_artifact_path(run_id, "state.json", runs_root)
         state: Optional[Dict[str, Any]] = None
         degrade_reason: Optional[str] = None
 
-        if not state_path.exists():
+        if state_path is None or not state_path.exists():
             degrade_reason = "missing state.json"
         else:
             try:
@@ -263,44 +280,8 @@ def _safe_read_json(p: Path) -> Optional[Dict[str, Any]]:
 
 
 def _redact_sensitive(text: str) -> str:
-    """Redact potential raw env vars, API keys, tokens, passwords, auth from artifact text tails.
-
-    Applied to report and log contents before return. Conservative pattern replacement.
-    Required to satisfy "Do not leak raw environment variables or keys from artifacts".
-    """
-    if not text:
-        return text
-    redacted = text
-    # key=val / key:val for secret-like names (covers env dumps, cli, json-ish)
-    redacted = re.sub(
-        r'(?i)(?P<key>\b(?:api[_-]?key|secret|token|password|auth[_-]?token|private[_-]?key|credential|access[_-]?key)[^\s:=]*)\s*[:=]\s*["\']?[^"\'\s,}\]\n]+',
-        r'\g<key>=***REDACTED***',
-        redacted,
-    )
-    # export VAR_SECRET=... or SET FOO_KEY=...
-    redacted = re.sub(
-        r'(?i)\b(export\s+|set\s+)?(?P<key>[A-Z_]*(?:KEY|SECRET|TOKEN|PASS|AUTH|CREDS?)[A-Z_]*)\s*=\s*[^\s;"\']+',
-        r'\1\g<key>=***REDACTED***',
-        redacted,
-    )
-    # Authorization: Bearer xxx , Bearer yyy
-    redacted = re.sub(
-        r'(?i)\b(Authorization|Bearer)\s+[\w\.\-_]+',
-        r'\1 ***REDACTED***',
-        redacted,
-    )
-    # json "apiKey": "val" or 'secret': 'val' in reports
-    redacted = re.sub(
-        r'(?i)(?P<key>"[^"]*(?:api[_-]?key|secret|token|password|auth|credential)[^"]*")\s*:\s*"[^"]*"',
-        r'\g<key>: "***REDACTED***"',
-        redacted,
-    )
-    redacted = re.sub(
-        r"(?i)(?P<key>'[^']*(?:api[_-]?key|secret|token|password|auth|credential)[^']*')\s*:\s*'[^']*'",
-        r"\g<key>: '***REDACTED***'",
-        redacted,
-    )
-    return redacted
+    """Delegate to central redaction helper (109 reuse by run readers)."""
+    return _central_redact_sensitive(text)
 
 
 def _read_text_tail(p: Path, max_lines: int = 20, max_chars: int = 2000) -> str:
@@ -434,16 +415,13 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
     - Text content (logs, reports) are bounded tails (line+char limited + redacted).
     - No raw env/keys leaked: _redact_sensitive applied to all report/log .content .
     """
-    if not run_id or ".." in run_id or "/" in run_id or "\\" in run_id:
-        return None
-    if runs_root is None:
-        runs_root = os.environ.get("AGENT_LOOP_RUNS_DIR") or ".agent-loop/runs"
-    root = Path(runs_root)
-    run_dir = root / run_id
-    if not run_dir.is_dir():
+    # 109: delegate to path helper (replaces previous open-coded check and join)
+    run_dir = resolve_run_dir(run_id, runs_root)
+    if run_dir is None or not run_dir.is_dir():
         return None
 
-    state = _safe_read_json(run_dir / "state.json")
+    state_p = resolve_artifact_path(run_id, "state.json", runs_root)
+    state = _safe_read_json(state_p) if state_p else None
     if state is None or not isinstance(state, dict):
         return None
 
@@ -463,7 +441,8 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
         iterations = []
 
     # events bounded
-    events = _read_events_tail(run_dir / "events.jsonl", 60)
+    events_p = resolve_artifact_path(run_id, "events.jsonl", runs_root)
+    events = _read_events_tail(events_p, 60)
 
     # artifacts: only relative safe ids
     artifacts: List[AgentLoopArtifact] = []
@@ -475,8 +454,8 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
 
     # report files (bounded content for json/md if small)
     for fname in ("final-report.json", "final-report.md", "landing.json"):
-        fp = run_dir / fname
-        if fp.exists() and fp.is_file():
+        fp = resolve_artifact_path(run_id, fname, runs_root)
+        if fp and fp.exists() and fp.is_file():
             art = AgentLoopArtifact(
                 id=fname,
                 kind="report" if "report" in fname else "landing",
@@ -487,32 +466,37 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
                 art.content = _read_text_tail(fp, 50, 2000)  # bounded + redacted, char limit
             artifacts.append(art)
 
-    # log files: bounded tails only (never full)
+    # log files: bounded tails only (never full); use helper on discovered names (109)
     try:
         for entry in run_dir.iterdir():
-            if entry.is_file() and (entry.suffix.lower() == ".log" or "output" in entry.name.lower() or "log" in entry.name.lower()):
-                rel = entry.name
-                tail = _read_text_tail(entry, 20, 2000)
-                artifacts.append(
-                    AgentLoopArtifact(
-                        id=rel,
-                        kind="log",
-                        title=rel,
-                        path=rel,
-                        content=tail or None,
+            name = entry.name
+            lname = name.lower()
+            if lname.endswith(".log") or "output" in lname or "log" in lname:
+                safe_p = resolve_artifact_path(run_id, name, runs_root)
+                if safe_p and safe_p.exists() and safe_p.is_file():
+                    tail = _read_text_tail(safe_p, 20, 2000)
+                    artifacts.append(
+                        AgentLoopArtifact(
+                            id=name,
+                            kind="log",
+                            title=name,
+                            path=name,
+                            content=tail or None,
+                        )
                     )
-                )
     except Exception:
         pass
 
-    # diff patches as safe relative
+    # diff patches as safe relative; use helper on discovered names (109)
     try:
         for entry in run_dir.iterdir():
-            if entry.is_file() and entry.name.startswith("diff.") and entry.suffix == ".patch":
-                rel = entry.name
-                artifacts.append(
-                    AgentLoopArtifact(id=rel, kind="diff", title=rel, path=rel)
-                )
+            name = entry.name
+            if name.startswith("diff.") and name.endswith(".patch"):
+                safe_p = resolve_artifact_path(run_id, name, runs_root)
+                if safe_p and safe_p.exists() and safe_p.is_file():
+                    artifacts.append(
+                        AgentLoopArtifact(id=name, kind="diff", title=name, path=name)
+                    )
     except Exception:
         pass
 

@@ -25,6 +25,13 @@ except Exception:
     # fallback direct when run in isolated test path
     from agent_loop_settings import get_secret_status  # type: ignore
 
+# 109: reuse central redaction for health output (proxy creds, env etc)
+try:
+    from services.agent_loop_redaction import redact_health_output
+except Exception:
+    from agent_loop_redaction import redact_health_output  # type: ignore
+
+
 
 # in-memory cache (per process; cleared between test cases)
 _health_cache: Dict[str, Any] = {}
@@ -171,7 +178,7 @@ def get_provider_health(force: bool = False) -> Dict[str, Any]:
         if now - entry.get("_cachedAt", 0) <= _CACHE_TTL:
             out = dict(entry)
             out.pop("_cachedAt", None)
-            return out
+            return redact_health_output(out)
 
     # Build
     providers_list = ["grok", "openai", "anthropic"]
@@ -210,7 +217,8 @@ def get_provider_health(force: bool = False) -> Dict[str, Any]:
     to_store["_cachedAt"] = now
     _health_cache[cache_key] = to_store
 
-    return result
+    # 109: apply redaction helper to health output before return
+    return redact_health_output(result)
 
 
 # allow tests to force a skipped provider result (for coverage of all states)
