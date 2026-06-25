@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentLoop Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f8f9fa; color: #111; }
+    h1 { margin-bottom: 0.5rem; }
+    #status { margin: 0.5rem 0; font-size: 0.9rem; }
+    #runs ul { list-style: none; padding: 0; }
+    #runs li { padding: 0.4rem 0.6rem; margin: 0.25rem 0; background: white; border: 1px solid #ddd; border-radius: 4px; }
+    .empty { color: #666; font-style: italic; }
+    .error { color: #c00; padding: 0.5rem; border: 1px solid #fcc; background: #fff0f0; }
+    button { padding: 0.3rem 0.6rem; }
+  </style>
+</head>
+<body>
+  <h1>AgentLoop Dashboard</h1>
+  <p>Python-served shell (initial port)</p>
+  <!-- shell fetches /api/agent-loop/runs/overview (documented overview endpoint) -->
+  <button onclick="loadRuns()">Refresh</button>
+  <div id="status"></div>
+  <div id="runs"></div>
+
+  <script src="/api/agent-loop/agent-loop-dashboard.js"></script>
+</body>
+</html>

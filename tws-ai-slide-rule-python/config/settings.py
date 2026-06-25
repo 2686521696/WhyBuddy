@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # Internal key for SlideRule delegation (from Node)
     SLIDE_RULE_INTERNAL_KEY: str = "dev-slide-rule-internal"
 
+    # AgentLoop worker bridge (108): builds commands for existing Node queue runner.
+    # Node remains execution owner; Python owns command construction + receipts.
+    # Safe defaults; do not assume node present in dry-run.
+    AGENT_LOOP_ROOT: str = "agent-loop"
+    AGENT_LOOP_RUN_QUEUE: str = "scripts/run-queue.mjs"
+    AGENT_LOOP_LOOP_SCRIPT: str = "src/loop.js"
+    AGENT_LOOP_NODE_COMMAND: str = "node"
+    AGENT_LOOP_DEFAULT_TIMEOUT_MS: int = 1800000
+    AGENT_LOOP_BRIDGE_DRY_RUN: bool = False
+
     @property
     def DATABASE_URL(self) -> str:
         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"

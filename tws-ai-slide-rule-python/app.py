@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config.settings import settings
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
+from routes.agent_loop import router as agent_loop_router
 from services.persistence import load_all, save_all
 from services.v5_full_driver import drive_full_v5_session
 from models.v5_state import V5SessionState
@@ -61,6 +62,9 @@ app.add_middleware(
 # Full V5 API - this is the takeover
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
+
+# AgentLoop control plane (Python owned, bridge mode for workers)
+app.include_router(agent_loop_router, prefix="/api/agent-loop")
 
 @app.get("/health")
 async def health():
