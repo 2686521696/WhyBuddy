@@ -1,7 +1,7 @@
 # SlideRule AgentLoop 111: secret settings semantics rescue
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED
 - Goal: remove the false-success secret save behavior in the main-project AgentLoop settings page so LLM key actions match real backend semantics.
 - Required gate: `slideruleAgentLoopSecretSettingsSemantics111Gates`
 

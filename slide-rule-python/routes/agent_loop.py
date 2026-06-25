@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 
 from services.agent_loop_runs import get_agent_loop_run_detail, list_agent_loop_run_summaries
+from services.agent_loop_paths import resolve_artifact_path
 from services.agent_loop_events import (
     build_event_snapshot,
     format_sse_frame,
@@ -422,3 +423,50 @@ async def run_snapshot(run_id: str):
         evs = read_legacy_events(run_id, limit=1000)
     snap = reduce_run_events(evs)
     return snap
+
+
+@router.get("/runs/{run_id}/artifacts/{artifact_name}")
+async def run_artifact(run_id: str, artifact_name: str):
+    """Safe explicit artifact subroute for truth routing (111).
+
+    - Derives from artifact index truth in run detail (no placeholder collapse).
+    - Uses resolve_artifact_path: rejects traversal, abs paths, leaks no FS.
+    - Serves only existing files; 404 for missing (clean degrade).
+    - Only semantic resources for this task (report/landing/state) are served; other artifacts (logs/patch) are rejected as 404.
+    - Size bound: >2MiB refused (413) to satisfy "Do not fetch unbounded artifact contents".
+    - Distinct names yield distinct routes (final-report.md vs final-report.json vs landing.json vs state.json).
+    """
+    if not isinstance(run_id, str) or not run_id or not isinstance(artifact_name, str) or not artifact_name:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    p = resolve_artifact_path(run_id, artifact_name)
+    if p is None or not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    # Restrict to task semantic resources only (report, landing, state); reject logs/diffs etc to avoid unbounded.
+    lname = artifact_name.lower()
+    is_semantic = (
+        "final-report" in lname or
+        (lname.endswith((".md", ".json")) and "report" in lname) or
+        "landing" in lname or
+        lname == "state.json" or (lname.startswith("state") and lname.endswith(".json"))
+    )
+    if not is_semantic:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    # Enforce bounded fetch (hard cap); refuse large even for semantic.
+    try:
+        size = p.stat().st_size
+        if size > 2 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="artifact too large")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    lower = artifact_name.lower()
+    if lower.endswith(".json"):
+        media = "application/json"
+    elif lower.endswith(".md"):
+        media = "text/markdown"
+    elif lower.endswith((".log", ".patch", ".txt")):
+        media = "text/plain"
+    else:
+        media = "application/octet-stream"
+    return FileResponse(str(p), media_type=media)

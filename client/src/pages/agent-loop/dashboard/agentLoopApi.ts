@@ -135,6 +135,7 @@ type RawState = {
   updatedAt?: string | null;
   commit?: string | null;
   landing?: Record<string, unknown> | null;
+  artifacts?: Array<{ id?: string; kind?: string; title?: string | null; path?: string | null }> | null;
 };
 
 function taskPathOf(state: RawState): string | null {
@@ -190,12 +191,31 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
   }));
 
   const encId = encodeURIComponent(state.runId ?? runId);
-  // Populate the fields the Dashboard detail chrome + rail rely on (report/landing/state).
-  // Use existing stable endpoints. Artifacts (final-report.*, landing.json) are carried in
-  // the /runs/{id} response; for open we route to detail/snapshot which are always present.
-  const reportP = `${BASE}/runs/${encId}`;
-  const landingP = `${BASE}/runs/${encId}/snapshot`;
-  const stateP = `${BASE}/runs/${encId}/snapshot`;
+
+  // Derive report/landing/state paths from artifact truth (111).
+  // Use explicit /artifacts/{name} subroutes (distinct per semantic resource).
+  // Fall back only if no artifact index entry (missing degrades cleanly, no crash, no lie).
+  // Never collapse distinct artifacts onto identical generic routes.
+  const arts = (state.artifacts || []) as Array<{ id?: string; kind?: string; title?: string | null; path?: string | null }>;
+  function pickArt(cands: string[], kindHint?: string): string | null {
+    for (const c of cands) {
+      if (arts.some((a) => a && (a.id === c || a.path === c || (a.title || "") === c))) return c;
+    }
+    if (kindHint) {
+      const m = arts.find((a) => a && ((a.kind || "").includes(kindHint) || (a.id || "").includes(kindHint)));
+      if (m && m.id) return m.id;
+    }
+    return null;
+  }
+  const reportMd = pickArt(["final-report.md", "report.md", "final-report"], "report");
+  const reportJson = pickArt(["final-report.json", "report.json"], "report");
+  const landingArt = pickArt(["landing.json", "landing"], "landing");
+  const stateArt = pickArt(["state.json"], "state");
+
+  const reportP = reportMd ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportMd)}` : `${BASE}/runs/${encId}`;
+  const reportJsonP = reportJson ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(reportJson)}` : (reportP !== `${BASE}/runs/${encId}` ? reportP : `${BASE}/runs/${encId}`);
+  const landingP = landingArt ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(landingArt)}` : `${BASE}/runs/${encId}/snapshot`;
+  const stateP = stateArt ? `${BASE}/runs/${encId}/artifacts/${encodeURIComponent(stateArt)}` : `${BASE}/runs/${encId}/snapshot`;
 
   return {
     taskLabel: shortTaskLabel(taskPathOf(state)),
@@ -215,7 +235,7 @@ export async function fetchDetail(runId: string): Promise<DetailPayload> {
     events,
     landing: state.landing ?? null,
     reportPath: reportP,
-    reportJsonPath: reportP,
+    reportJsonPath: reportJsonP,
     landingPath: landingP,
     statePath: stateP,
   };
@@ -228,13 +248,35 @@ export async function fetchSettings(): Promise<any> {
 }
 
 export async function saveSettings(values: Record<string, unknown>): Promise<any> {
+  // Strip secret fields: /settings backend is non-secret only; never forward or claim persistence for LLM keys
+  const SECRET_KEYS = ['grokApiKey', 'openaiApiKey', 'anthropicApiKey'];
+  const clean: Record<string, unknown> = {};
+  let hadSecret = false;
+  for (const [k, v] of Object.entries(values || {})) {
+    if (SECRET_KEYS.includes(k)) {
+      hadSecret = true;
+      continue;
+    }
+    clean[k] = v;
+  }
+  if (Object.keys(clean).length === 0) {
+    if (hadSecret) {
+      // explicitly do not report success for secret save/clear against nonsecret backend
+      return { ok: false, secretsIgnored: true };
+    }
+    return { ok: true };
+  }
   const res = await fetch(`${BASE}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values || {}),
+    body: JSON.stringify(clean),
   });
   if (!res.ok) throw new Error(`POST /settings → HTTP ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  if (hadSecret) {
+    return { ...(json && typeof json === 'object' ? json : {}), secretsIgnored: true };
+  }
+  return json;
 }
 
 export async function fetchProviderHealth(): Promise<any> {

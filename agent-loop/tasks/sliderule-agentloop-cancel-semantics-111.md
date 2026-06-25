@@ -1,7 +1,7 @@
 # SlideRule AgentLoop 111: cancel semantics rescue
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED
 - Goal: align the main-project AgentLoop cancel action with the real Python bridge semantics instead of pretending a run was stopped.
 - Required gate: `slideruleAgentLoopCancelSemantics111Gates`
 

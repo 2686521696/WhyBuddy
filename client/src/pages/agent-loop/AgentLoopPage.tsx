@@ -152,7 +152,10 @@ export default function AgentLoopPage() {
         case "stopRun": {
           void (async () => {
             try {
-              await cancelCurrent(extra);
+              const result = await cancelCurrent(extra);
+              // Inspect status/message so queued-cancel placeholder is distinguished from future real stop;
+              // dispatch for UI copy; always refresh to preserve overview/detail behavior.
+              dispatchMessage("cancelResult", result);
               if (viewRef.current === "detail" && detailRunIdRef.current) {
                 void openDetail(detailRunIdRef.current);
               } else {
@@ -160,6 +163,7 @@ export default function AgentLoopPage() {
               }
             } catch (e: any) {
               // cancel in bridge is best-effort placeholder; do not hard fail UI
+              dispatchMessage("cancelResult", { status: "error", message: e?.message || String(e) });
               void loadOverview();
             }
           })();
@@ -191,27 +195,30 @@ export default function AgentLoopPage() {
           return;
         }
         case "getQueueDefaults": {
-          // Not yet modeled in Python control plane; return usable stub so UI renders
+          // Honest: no dedicated queueDefaults persistence in this slice; do not emit synthetic success
           dispatchMessage("queueDefaults", {
+            unsupported: true,
             defaults: {},
-            supportedKeys: ["fixAgent", "reviewAgent", "workerMaxTurns", "queuePath"],
-            queuePath: "agent-loop/scripts/migration-queue.json",
+            supportedKeys: [],
+            note: "queue defaults not supported as separate persistence; use non-secret settings load/save or direct queue file",
           });
           return;
         }
         case "previewQueueDefaults":
         case "applyQueueDefaults": {
-          // Stub success; real apply would be handled by runner side for now
-          dispatchMessage("queuePreview", { ok: true, proposed: extra });
-          dispatchMessage("queueApply", { ok: true, proposed: extra });
+          // Stop synthetic success that implies persistence/apply; return explicit unsupported
+          dispatchMessage("queuePreview", { ok: false, unsupported: true, error: "queue defaults preview/apply unsupported in runtime (no dedicated backend contract)" });
+          dispatchMessage("queueApply", { ok: false, unsupported: true, error: "queue defaults apply unsupported" });
           return;
         }
         case "getDiagnostics": {
-          dispatchMessage("diagnostics", { ok: true, source: "web", note: "provider-health available separately" });
+          // Honest unsupported instead of synthetic ok
+          dispatchMessage("diagnostics", { unsupported: true, note: "diagnostics not implemented; provider-health and /settings provide runtime state" });
           return;
         }
         case "listProfiles": {
-          dispatchMessage("profiles", { profiles: ["local"], active: "local" });
+          // No real multi-profile store beyond activeProfile; emit no fake list success
+          dispatchMessage("profiles", { profiles: {}, active: null, unsupported: true });
           return;
         }
         case "createProfile":
@@ -219,16 +226,8 @@ export default function AgentLoopPage() {
         case "duplicateProfile":
         case "deleteProfile":
         case "selectProfile": {
-          // Minimal ack; profile mgmt not modeled yet beyond activeProfile in settings
-          dispatchMessage("profiles", { profiles: ["local"], active: (extra as any)?.newName || (extra as any)?.name || "local" });
-          dispatchMessage("profileError", null); // clear
-          // after change, refresh settings too
-          void (async () => {
-            try {
-              const raw = await fetchSettings();
-              dispatchMessage("settings", adaptSettings(raw));
-            } catch {}
-          })();
+          // Do not emit synthetic success for unimplemented profile persistence
+          dispatchMessage("profileError", { error: "profile CRUD unsupported; only activeProfile via non-secret settings is persisted" });
           return;
         }
         case "exportSettings": {

@@ -234,3 +234,78 @@ def test_agentloop_run_detail_110_exposes_legacy_synthetic_v2_events(tmp_path):
             os.environ.pop("AGENT_LOOP_RUNS_DIR", None)
         else:
             os.environ["AGENT_LOOP_RUNS_DIR"] = orig
+
+
+def test_agentloop_artifact_route_truth_111_semantic_only_bounded_404_and_size(tmp_path):
+    """Covers safe subroute for artifact truth (111): semantic-only (report/landing/state),
+    404 for missing and non-semantic, 413 for oversized, clean 404 degrade.
+    """
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_id = "2026-06-25T16-00-00-111Z"
+    run_dir = runs_dir / run_id
+    run_dir.mkdir()
+
+    # semantic artifacts
+    (run_dir / "final-report.md").write_text("# report\nok\n", encoding="utf-8")
+    (run_dir / "final-report.json").write_text(json.dumps({"ok": True}), encoding="utf-8")
+    (run_dir / "landing.json").write_text(json.dumps({"applied": True}), encoding="utf-8")
+    (run_dir / "state.json").write_text(json.dumps({"runId": run_id, "status": "DONE"}), encoding="utf-8")
+
+    # non-semantic that resolve would allow (logs, patch) must be rejected by route
+    (run_dir / "grok-output.0.stderr.log").write_text("log line\n" * 5, encoding="utf-8")
+    (run_dir / "diff.0.patch").write_text("diff --git a/x b/x\n", encoding="utf-8")
+
+    # oversized semantic (to prove bound reject)
+    large_p = run_dir / "big-report.md"
+    # name matches report so would be semantic, but >2MiB triggers 413
+    with open(large_p, "wb") as f:
+        # write >2MB without keeping giant string in mem for whole test
+        chunk = b"x" * (256 * 1024)
+        for _ in range(9):  # ~2.25 MiB
+            f.write(chunk)
+
+    orig = os.environ.get("AGENT_LOOP_RUNS_DIR")
+    os.environ["AGENT_LOOP_RUNS_DIR"] = str(runs_dir)
+    try:
+        # 200 + content for semantic report/landing/state (distinct resources)
+        rmd = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/final-report.md")
+        assert rmd.status_code == 200, rmd.text
+        assert "report" in rmd.text or rmd.text.strip() == "# report\nok"
+        assert "text/markdown" in (rmd.headers.get("content-type") or "")
+
+        rjson = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/final-report.json")
+        assert rjson.status_code == 200
+        assert rjson.json() == {"ok": True}
+        assert "application/json" in (rjson.headers.get("content-type") or "")
+
+        rland = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/landing.json")
+        assert rland.status_code == 200
+        assert rland.json().get("applied") is True
+
+        rstate = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/state.json")
+        assert rstate.status_code == 200
+        assert rstate.json().get("runId") == run_id
+
+        # 404 missing artifact (clean degrade, no crash)
+        rmiss = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/no-such.md")
+        assert rmiss.status_code == 404
+
+        # 404 for unknown run
+        rbad = client.get(f"/api/agent-loop/runs/does-not-exist-999Z/artifacts/state.json")
+        assert rbad.status_code == 404
+
+        # 404 for non-semantic (even when file exists) -- prevents unbounded log/patch via route
+        rlog = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/grok-output.0.stderr.log")
+        assert rlog.status_code == 404
+        rpatch = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/diff.0.patch")
+        assert rpatch.status_code == 404
+
+        # oversized semantic is rejected (bounded contents)
+        rbig = client.get(f"/api/agent-loop/runs/{run_id}/artifacts/big-report.md")
+        assert rbig.status_code == 413, rbig.text
+    finally:
+        if orig is None:
+            os.environ.pop("AGENT_LOOP_RUNS_DIR", None)
+        else:
+            os.environ["AGENT_LOOP_RUNS_DIR"] = orig

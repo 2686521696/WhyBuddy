@@ -1,7 +1,7 @@
 # SlideRule AgentLoop 111: artifact route truth rescue
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED
 - Goal: replace fake detail-derived report and landing URLs with artifact-truth routing so the main-project AgentLoop detail actions open the intended resources.
 - Required gate: `slideruleAgentLoopArtifactRouteTruth111Gates`
 

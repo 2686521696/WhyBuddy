@@ -525,6 +525,16 @@ export function DashboardApp({ payload }: { payload: OverviewPayload }) {
       if (msg?.type === 'profileError' && msg.payload) {
         message.error(msg.payload.error || 'profile op failed');
       }
+      if (msg?.type === 'cancelResult' && msg.payload) {
+        const r = msg.payload;
+        if (r && r.status === 'queued-cancel') {
+          // Explicit UI copy: queued/advisory cancel from bridge is not a real process kill.
+          message.warning(r.message || '取消为 queued-cancel 占位（bridge 不支持进程终止，非真实停止）');
+        } else if (r && r.status === 'error') {
+          message.error(r.message || '取消请求失败');
+        }
+        // Other/future real cancel statuses: forward-compatible, no misleading stop-success UI.
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -749,23 +759,30 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliT
   const getKeyStatus = (key?: string) => key === 'configured' ? <Tag color="success">已配置 (redacted)</Tag> : <Tag>未配置</Tag>;
 
   const handleFinish = (values: any) => {
-    // Only send non-empty key values to avoid overwriting with empty
+    // Never include secret key values: /settings only persists non-secrets; UI must not report false success for keys
     const payload: any = {
       baseUrl: values.baseUrl,
       injectToWorker: values.injectToWorker,
     };
-
-    if (values.grokApiKey) payload.grokApiKey = values.grokApiKey;
-    if (values.openaiApiKey) payload.openaiApiKey = values.openaiApiKey;
-    if (values.anthropicApiKey) payload.anthropicApiKey = values.anthropicApiKey;
+    const hadKeyAttempt = !!(values.grokApiKey || values.openaiApiKey || values.anthropicApiKey);
 
     onSave(payload);
-    message.success('LLM Keys 配置已保存（敏感信息使用 SecretStorage）');
+    if (hadKeyAttempt) {
+      message.warning('LLM key 值未持久化（此 web 切片仅 /settings 非秘密后端）；不报告保存成功。');
+    } else {
+      message.success('配置已保存');
+    }
     // clear password fields after save for security feel
     form.setFieldsValue({ grokApiKey: '', openaiApiKey: '', anthropicApiKey: '' });
   };
 
   const handleClear = (keyName: string) => {
+    // Block secret clear/save: do not forward to nonsecret backend; do not report persisted success/cleared
+    if (['grokApiKey', 'openaiApiKey', 'anthropicApiKey'].includes(keyName)) {
+      message.warning('LLM key 清除在此 web 切片中不支持（无持久化）；仅显示 configured 状态。');
+      form.setFieldsValue({ [keyName]: '' });
+      return;
+    }
     const payload: any = { [keyName]: '' };
     onSave(payload);
     message.success('已清除');
@@ -797,14 +814,15 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliT
 
   return (
     <Form form={form} layout="vertical" onFinish={handleFinish} style={{ maxWidth: 620 }}>
+      <Alert type="warning" showIcon message="LLM Keys 保存/清除在此 web 切片不支持（/settings 为 non-secret 后端）；仅显示状态，持久化操作被阻断。" style={{ marginBottom: 12 }} />
       <Form.Item label="Grok API Key / Token">
         <Space>
           {getKeyStatus(initial?.keys?.grokApiKey)}
-          <Button size="small" danger onClick={() => handleClear('grokApiKey')}>清除</Button>
+          <Button size="small" danger disabled title="LLM key 持久化/清除在此 web 切片不支持">清除</Button>
           <Button size="small" onClick={() => handleTest('grok')}>测试</Button>
         </Space>
         <Form.Item name="grokApiKey" noStyle>
-          <Input.Password placeholder="输入新的 Grok Key（留空则不修改）" />
+          <Input.Password placeholder="（此 web 切片不支持输入保存）" disabled />
         </Form.Item>
         {renderResult('grok')}
       </Form.Item>
@@ -812,11 +830,11 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliT
       <Form.Item label="OpenAI API Key">
         <Space>
           {getKeyStatus(initial?.keys?.openaiApiKey)}
-          <Button size="small" danger onClick={() => handleClear('openaiApiKey')}>清除</Button>
+          <Button size="small" danger disabled title="LLM key 持久化/清除在此 web 切片不支持">清除</Button>
           <Button size="small" onClick={() => handleTest('openai')}>测试</Button>
         </Space>
         <Form.Item name="openaiApiKey" noStyle>
-          <Input.Password placeholder="输入新的 OpenAI Key（留空则不修改）" />
+          <Input.Password placeholder="（此 web 切片不支持输入保存）" disabled />
         </Form.Item>
         {renderResult('openai')}
       </Form.Item>
@@ -824,11 +842,11 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliT
       <Form.Item label="Anthropic API Key">
         <Space>
           {getKeyStatus(initial?.keys?.anthropicApiKey)}
-          <Button size="small" danger onClick={() => handleClear('anthropicApiKey')}>清除</Button>
+          <Button size="small" danger disabled title="LLM key 持久化/清除在此 web 切片不支持">清除</Button>
           <Button size="small" onClick={() => handleTest('anthropic')}>测试</Button>
         </Space>
         <Form.Item name="anthropicApiKey" noStyle>
-          <Input.Password placeholder="输入新的 Anthropic Key（留空则不修改）" />
+          <Input.Password placeholder="（此 web 切片不支持输入保存）" disabled />
         </Form.Item>
         {renderResult('anthropic')}
       </Form.Item>
@@ -861,17 +879,18 @@ function LlmKeyForm({ initial, onSave, providerTests, onTestProvider, workerCliT
 
       <Form.Item>
         <Space>
-          <Button type="primary" htmlType="submit">保存 Keys 配置</Button>
+          <Button type="primary" htmlType="submit">保存非秘密设置</Button>
           <Button danger onClick={async () => {
-            await onSave({ grokApiKey: '', openaiApiKey: '', anthropicApiKey: '' });
-            message.success('已清除全部 Keys');
+            // Do not pass key empties (would be stripped anyway); do not report secret clear success
+            await onSave({ baseUrl: form.getFieldValue('baseUrl'), injectToWorker: form.getFieldValue('injectToWorker') });
+            message.warning('LLM keys 清除不支持（web /settings 切片无秘密持久化能力）；仅状态显示。');
             form.setFieldsValue({ grokApiKey: '', openaiApiKey: '', anthropicApiKey: '' });
           }}>清除全部 Keys</Button>
         </Space>
       </Form.Item>
 
       <Text type="secondary" style={{ fontSize: 12 }}>
-        敏感 Key 使用 VS Code SecretStorage 安全存储，不会写入项目文件。点击“测试”触发显式 provider health check（不自动执行）。
+        此 web 切片仅显示 LLM key configured 状态（来自 /settings）；保存/清除持久化不受支持。点击“测试”触发 provider health check。
       </Text>
 
       {(providerTests && providerTests.length > 0) && (
@@ -940,7 +959,7 @@ function SettingsView({ data, onSave, providerTests, onTestProvider, workerCliTe
         ]}
       />
       <div style={{ marginTop: 24, color: '#888', fontSize: 12 }}>
-        非敏感配置保存在 VS Code 工作区设置，敏感 Key 保存在 SecretStorage。队列 defaults 支持预览后确认 apply 写入；仅 owned 支持键；secrets 拒绝；写后 JSON + tasks 校验。
+        非敏感配置通过 /api/agent-loop/settings 持久化；LLM key 仅暴露 configured 状态（此 web 切片不支持秘密保存/清除）。队列 defaults 支持预览后确认 apply 写入；仅 owned 支持键；secrets 拒绝；写后 JSON + tasks 校验。
       </div>
 
       {/* Settings import/export redaction UI (schema v1, activeProfile + non-secret + key status only; secrets never exported or imported raw). Uses AntD Upload + download buttons for file-like controls (107). */}
