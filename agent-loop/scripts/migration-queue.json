@@ -2300,7 +2300,7 @@
       "id": "sliderule-agentloop-navigation-shell-109",
       "task": "agent-loop/tasks/sliderule-agentloop-navigation-shell-109.md",
       "gatesKey": "slideruleAgentLoopNavigationShell109Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
@@ -2309,7 +2309,7 @@
       "id": "sliderule-agentloop-task-detail-view-109",
       "task": "agent-loop/tasks/sliderule-agentloop-task-detail-view-109.md",
       "gatesKey": "slideruleAgentLoopTaskDetailView109Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
@@ -2318,7 +2318,7 @@
       "id": "sliderule-agentloop-path-security-109",
       "task": "agent-loop/tasks/sliderule-agentloop-path-security-109.md",
       "gatesKey": "slideruleAgentLoopPathSecurity109Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
@@ -2327,7 +2327,7 @@
       "id": "sliderule-agentloop-secret-redaction-109",
       "task": "agent-loop/tasks/sliderule-agentloop-secret-redaction-109.md",
       "gatesKey": "slideruleAgentLoopSecretRedaction109Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
@@ -2336,7 +2336,7 @@
       "id": "sliderule-agentloop-python-tests-109",
       "task": "agent-loop/tasks/sliderule-agentloop-python-tests-109.md",
       "gatesKey": "slideruleAgentLoopPythonTests109Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
@@ -2345,6 +2345,114 @@
       "id": "sliderule-agentloop-release-runbook-109",
       "task": "agent-loop/tasks/sliderule-agentloop-release-runbook-109.md",
       "gatesKey": "slideruleAgentLoopReleaseRunbook109Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-event-envelope-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-event-envelope-110.md",
+      "gatesKey": "slideruleAgentLoopEventEnvelope110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-event-store-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-event-store-110.md",
+      "gatesKey": "slideruleAgentLoopEventStore110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-state-reducer-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-state-reducer-110.md",
+      "gatesKey": "slideruleAgentLoopStateReducer110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-legacy-event-adapter-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-legacy-event-adapter-110.md",
+      "gatesKey": "slideruleAgentLoopLegacyEventAdapter110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-event-read-api-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-event-read-api-110.md",
+      "gatesKey": "slideruleAgentLoopEventReadApi110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-sse-stream-v2-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-sse-stream-v2-110.md",
+      "gatesKey": "slideruleAgentLoopSseStreamV2110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-web-route-shell-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-web-route-shell-110.md",
+      "gatesKey": "slideruleAgentLoopWebRouteShell110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-flow-event-projection-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-flow-event-projection-110.md",
+      "gatesKey": "slideruleAgentLoopFlowEventProjection110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-node-event-adapter-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-node-event-adapter-110.md",
+      "gatesKey": "slideruleAgentLoopNodeEventAdapter110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-python-worker-adapter-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-python-worker-adapter-110.md",
+      "gatesKey": "slideruleAgentLoopPythonWorkerAdapter110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-artifact-index-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-artifact-index-110.md",
+      "gatesKey": "slideruleAgentLoopArtifactIndex110Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-replay-release-readiness-110",
+      "task": "agent-loop/tasks/sliderule-agentloop-replay-release-readiness-110.md",
+      "gatesKey": "slideruleAgentLoopReplayReleaseReadiness110Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -3451,5 +3559,65 @@
     "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9yZWxlYXNlX3J1bmJvb2sucHkKYWdlbnRsb29wIHJlbGVhc2UgcnVuYm9vayAxMDkgZG9jdW1lbnRzIHN0YXJ0dXAgcXVldWUgc2V0dGluZ3Mgc2VjdXJpdHkgYW5kIHJvbGxiYWNr','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
     "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_release_runbook.py -q --tb=short",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-release-runbook-109.md tws-ai-slide-rule-python/AGENT_LOOP_RUNBOOK.md tws-ai-slide-rule-python/README.md tws-ai-slide-rule-python/tests/test_agent_loop_release_runbook.py"
+  ],
+  "slideruleAgentLoopEventEnvelope110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9ldmVudF9lbnZlbG9wZS5weQphZ2VudGxvb3AgZXZlbnQgZW52ZWxvcGUgMTEwIGRlZmluZXMgbm9ybWFsaXplZCBydW50aW1lIGV2ZW50cw==','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_event_envelope.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-event-envelope-110.md tws-ai-slide-rule-python/AGENT_LOOP_V2_RUNTIME_SSOT.md tws-ai-slide-rule-python/services/agent_loop_event_schema.py tws-ai-slide-rule-python/tests/test_agent_loop_event_envelope.py"
+  ],
+  "slideruleAgentLoopEventStore110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9ldmVudF9zdG9yZS5weQphZ2VudGxvb3AgZXZlbnQgc3RvcmUgMTEwIGFwcGVuZHMgcmVkYWN0ZWQganNvbmwgZXZlbnRz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_event_store.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-event-store-110.md tws-ai-slide-rule-python/services/agent_loop_event_schema.py tws-ai-slide-rule-python/services/agent_loop_event_store.py tws-ai-slide-rule-python/services/agent_loop_paths.py tws-ai-slide-rule-python/services/agent_loop_redaction.py tws-ai-slide-rule-python/tests/test_agent_loop_event_store.py"
+  ],
+  "slideruleAgentLoopStateReducer110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9zdGF0ZV9yZWR1Y2VyLnB5CmFnZW50bG9vcCBzdGF0ZSByZWR1Y2VyIDExMCBkZXJpdmVzIGRldGVybWluaXN0aWMgcnVuIHNuYXBzaG90cw==','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_state_reducer.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-state-reducer-110.md tws-ai-slide-rule-python/services/agent_loop_event_schema.py tws-ai-slide-rule-python/services/agent_loop_state_reducer.py tws-ai-slide-rule-python/tests/test_agent_loop_state_reducer.py"
+  ],
+  "slideruleAgentLoopLegacyEventAdapter110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9sZWdhY3lfZXZlbnRfYWRhcHRlci5weQphZ2VudGxvb3AgbGVnYWN5IGV2ZW50IGFkYXB0ZXIgMTEwIGNvbnZlcnRzIDEwOCBhbmQgMTA5IGFydGlmYWN0cyB0byB2MiBldmVudHM=','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_legacy_event_adapter.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-legacy-event-adapter-110.md tws-ai-slide-rule-python/services/agent_loop_legacy_adapter.py tws-ai-slide-rule-python/services/agent_loop_runs.py tws-ai-slide-rule-python/services/agent_loop_event_schema.py tws-ai-slide-rule-python/tests/test_agent_loop_legacy_event_adapter.py"
+  ],
+  "slideruleAgentLoopEventReadApi110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9ldmVudF9yZWFkX2FwaS5weQphZ2VudGxvb3AgZXZlbnQgcmVhZCBhcGkgMTEwIGV4cG9zZXMgcmVwbGF5IGV2ZW50cyBhbmQgc25hcHNob3Rz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_event_read_api.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-event-read-api-110.md tws-ai-slide-rule-python/routes/agent_loop.py tws-ai-slide-rule-python/services/agent_loop_event_store.py tws-ai-slide-rule-python/services/agent_loop_legacy_adapter.py tws-ai-slide-rule-python/services/agent_loop_state_reducer.py tws-ai-slide-rule-python/tests/test_agent_loop_event_read_api.py"
+  ],
+  "slideruleAgentLoopSseStreamV2110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9zc2Vfc3RyZWFtX3YyLnB5CmFnZW50bG9vcCBzc2Ugc3RyZWFtIHYyIDExMCBzdHJlYW1zIGluY3JlbWVudGFsIG5vcm1hbGl6ZWQgZXZlbnRz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_sse_stream_v2.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-sse-stream-v2-110.md tws-ai-slide-rule-python/routes/agent_loop.py tws-ai-slide-rule-python/services/agent_loop_events.py tws-ai-slide-rule-python/services/agent_loop_event_store.py tws-ai-slide-rule-python/services/agent_loop_state_reducer.py tws-ai-slide-rule-python/tests/test_agent_loop_sse_stream_v2.py"
+  ],
+  "slideruleAgentLoopWebRouteShell110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF93ZWJfcm91dGVfc2hlbGwucHkKYWdlbnRsb29wIHdlYiByb3V0ZSBzaGVsbCAxMTAgZXhwb3NlcyBhZ2VudGxvb3Agcm91dGUgZnJvbSBweXRob24gZGFzaGJvYXJk','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_web_route_shell.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-web-route-shell-110.md tws-ai-slide-rule-python/routes/agent_loop.py tws-ai-slide-rule-python/static/agent-loop/index.html tws-ai-slide-rule-python/static/agent-loop/agent-loop-dashboard.js tws-ai-slide-rule-python/tests/test_agent_loop_web_route_shell.py"
+  ],
+  "slideruleAgentLoopFlowEventProjection110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9mbG93X2V2ZW50X3Byb2plY3Rpb24ucHkKYWdlbnRsb29wIGZsb3cgZXZlbnQgcHJvamVjdGlvbiAxMTAgcmVuZGVycyBzdGFibGUgbm9kZXMgYW5kIGVkZ2VzIGZyb20gZXZlbnRz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_flow_event_projection.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-flow-event-projection-110.md tws-ai-slide-rule-python/static/agent-loop/index.html tws-ai-slide-rule-python/static/agent-loop/agent-loop-dashboard.js tws-ai-slide-rule-python/services/agent_loop_state_reducer.py tws-ai-slide-rule-python/tests/test_agent_loop_flow_event_projection.py"
+  ],
+  "slideruleAgentLoopNodeEventAdapter110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('YWdlbnQtbG9vcC90ZXN0L3J1bnRpbWUtZXZlbnQtYWRhcHRlci50ZXN0LmpzCmFnZW50bG9vcCBub2RlIGV2ZW50IGFkYXB0ZXIgMTEwIGVtaXRzIHYyIGV2ZW50cyBmcm9tIHJ1bm5lciBsaWZlY3ljbGU=','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "node --test agent-loop/test/runtime-event-adapter.test.js",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-node-event-adapter-110.md agent-loop/src/runtimeEvents.js agent-loop/src/runQueue.js agent-loop/src/loop.js agent-loop/test/runtime-event-adapter.test.js"
+  ],
+  "slideruleAgentLoopPythonWorkerAdapter110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9weXRob25fd29ya2VyX2FkYXB0ZXIucHkKYWdlbnRsb29wIHB5dGhvbiB3b3JrZXIgYWRhcHRlciAxMTAgbm9ybWFsaXplcyBweXRob24gZXhlY3V0aW9uIHJlc3VsdHM=','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_python_worker_adapter.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-python-worker-adapter-110.md tws-ai-slide-rule-python/services/agent_loop_python_worker.py tws-ai-slide-rule-python/services/agent_loop_event_schema.py tws-ai-slide-rule-python/tests/test_agent_loop_python_worker_adapter.py"
+  ],
+  "slideruleAgentLoopArtifactIndex110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9hcnRpZmFjdF9pbmRleC5weQphZ2VudGxvb3AgYXJ0aWZhY3QgaW5kZXggMTEwIGV4cG9zZXMgc3RhYmxlIGV2ZW50IHJlZmVyZW5jZWQgYXJ0aWZhY3Rz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_artifact_index.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-artifact-index-110.md tws-ai-slide-rule-python/services/agent_loop_artifacts.py tws-ai-slide-rule-python/services/agent_loop_runs.py tws-ai-slide-rule-python/services/agent_loop_paths.py tws-ai-slide-rule-python/services/agent_loop_redaction.py tws-ai-slide-rule-python/tests/test_agent_loop_artifact_index.py"
+  ],
+  "slideruleAgentLoopReplayReleaseReadiness110Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9yZXBsYXlfcmVsZWFzZV9yZWFkaW5lc3MucHkKYWdlbnRsb29wIHJlcGxheSByZWxlYXNlIHJlYWRpbmVzcyAxMTAgdmVyaWZpZXMgdjIgc3NvdCByb2xsb3V0IGFuZCByb2xsYmFjaw==','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 110 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_replay_release_readiness.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-replay-release-readiness-110.md tws-ai-slide-rule-python/AGENT_LOOP_V2_RUNTIME_SSOT.md tws-ai-slide-rule-python/AGENT_LOOP_RUNBOOK.md tws-ai-slide-rule-python/README.md tws-ai-slide-rule-python/tests/test_agent_loop_replay_release_readiness.py"
   ]
 }
