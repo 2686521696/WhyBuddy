@@ -218,6 +218,10 @@ export default defineConfig(() => {
         deny: ["**/.*"],
       },
       proxy: {
+        "/api/agent-loop": {
+          target: process.env.AGENT_LOOP_API_TARGET || "http://localhost:9700",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://localhost:3001",
           changeOrigin: true,

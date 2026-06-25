@@ -14,6 +14,7 @@ import {
 } from "@/components/navigation-config";
 import { ReplayPage } from "@/components/replay/ReplayPage";
 import DebugPage from "@/pages/debug/DebugPage";
+import AgentLoopPage from "@/pages/agent-loop/AgentLoopPage";
 import LegacyCommandCenterPage from "@/pages/nl-command/LegacyCommandCenterPage";
 import LineagePage from "@/pages/lineage/LineagePage";
 
@@ -51,6 +52,7 @@ const routerBase =
   import.meta.env.BASE_URL === "/"
     ? ""
     : import.meta.env.BASE_URL.replace(/\/$/, "");
+const AGENT_LOOP_PATH = "/AgentLoop";
 
 function Router() {
   return (
@@ -139,6 +141,7 @@ function Router() {
       <Route path={"/debug/:section"} component={DebugPage} />
       <Route path={`${SLIDERULE_PATH}/dev`} component={SlideRuleDevPage} />
       <Route path={SLIDERULE_PATH} component={SlideRulePage} />
+      <Route path={AGENT_LOOP_PATH} component={AgentLoopPage} />
       {/* V5 chrome-free workspace: SlideRule is deliberately isolated from the old stage sequencer / AppShell chrome.
           All guards, sidebar, mobile tab, config panel, and project-workspace auth checks are skipped for this route
           (see isChromeFree / isSlideRuleLocation / isProjectWorkspaceLocation above). This keeps the V5 demo clean.
@@ -279,6 +282,7 @@ function AuthBootstrap() {
     // Skip fetchMe here to eliminate the unconditional 401 console noise on the demo route
     // (the route already skips RecoveryGuard, AuthRouteGuard, sidebar, etc. via isChromeFree).
     if (isSlideRuleLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
+    if (isAgentLoopLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
     void fetchMe();
   }, [fetchMe]);
 
@@ -293,6 +297,7 @@ function AuthProjectOwnerBridge() {
     if (IS_GITHUB_PAGES) return;
     // Same isolation: no owner bridging for the standalone V5 sliderule workspace.
     if (isSlideRuleLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
+    if (isAgentLoopLocation(typeof window !== 'undefined' ? window.location.pathname : '')) return;
     setActiveOwner(currentUserId);
   }, [currentUserId, setActiveOwner]);
 
@@ -319,10 +324,16 @@ function isSlideRuleLocation(location: string) {
   return pathname === SLIDERULE_PATH || pathname.startsWith(`${SLIDERULE_PATH}/`);
 }
 
+function isAgentLoopLocation(location: string) {
+  const [pathname] = location.trim().split(/[?#]/, 1);
+  return pathname === AGENT_LOOP_PATH || pathname.startsWith(`${AGENT_LOOP_PATH}/`);
+}
+
 export function isProjectWorkspaceLocation(location: string) {
   const [pathname] = location.trim().split(/[?#]/, 1);
   if (pathname === "" || pathname === "/") return true;
   if (isSlideRuleLocation(location)) return false; // V5 SlideRule is independent chrome-free workspace
+  if (isAgentLoopLocation(location)) return false; // AgentLoop is a Python-backed runtime console outside project auth chrome.
   return (
     pathname.startsWith(PROJECTS_PATH) ||
     pathname === AUTOPILOT_PATH ||
@@ -366,7 +377,8 @@ export function AppShell() {
   const isHome = isHomeLocation(location);
   const isAuth = isAuthLocation(location);
   const isSlideRule = isSlideRuleLocation(location);
-  const isChromeFree = isHome || isAuth || isSlideRule;
+  const isAgentLoop = isAgentLoopLocation(location);
+  const isChromeFree = isHome || isAuth || isSlideRule || isAgentLoop;
 
   return (
     <>

@@ -60,6 +60,7 @@ vi.mock("wouter", () => ({
       (path === "/debug/:section" &&
         current.startsWith("/debug/") &&
         current !== "/debug/autopilot-spec-documents-workbench") ||
+      (path === "/AgentLoop" && current === "/AgentLoop") ||
       (!path && current === "/404");
 
     if (!matches) return null;
@@ -167,6 +168,10 @@ vi.mock("./pages/nl-command/LegacyCommandCenterPage", () => ({
 
 vi.mock("./pages/lineage/LineagePage", () => ({
   default: () => <main data-testid="lineage-page" />,
+}));
+
+vi.mock("./pages/agent-loop/AgentLoopPage", () => ({
+  default: () => <main data-testid="agent-loop-page" />,
 }));
 
 vi.mock("./pages/NotFound", () => ({
@@ -293,6 +298,22 @@ describe("AppShell fixed sidebar layout", () => {
     expect(isProjectWorkspaceLocation("/login")).toBe(false);
     expect(isProjectWorkspaceLocation("/admin")).toBe(false);
     expect(isProjectWorkspaceLocation("/debug")).toBe(false);
+    expect(isProjectWorkspaceLocation("/AgentLoop")).toBe(false);
+  });
+
+  it("mounts AgentLoop as a chrome-free first-class route", () => {
+    signInForShell();
+    locationState.current = "/AgentLoop";
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    const markup = renderToStaticMarkup(<AppShell />);
+    const shell = markup.match(/<div class="min-h-screen[^>]*>/)?.[0] ?? "";
+
+    expect(markup).toContain('data-testid="agent-loop-page"');
+    expect(markup).not.toContain('data-testid="app-sidebar"');
+    expect(shell).toContain("--sidebar-width:0px");
+    expect(shell).toContain("padding-left:0");
   });
 
   it("mounts the direct spec documents workbench fixture route before debug sections", () => {
