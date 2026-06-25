@@ -184,3 +184,53 @@ def test_agentloop_run_detail_108_returns_bounded_state_report_logs_and_artifact
             os.environ.pop("AGENT_LOOP_RUNS_DIR", None)
         else:
             os.environ["AGENT_LOOP_RUNS_DIR"] = orig
+
+
+def test_agentloop_run_detail_110_exposes_legacy_synthetic_v2_events(tmp_path):
+    """agentloop run detail 110 exposes legacy synthetic v2 events.
+
+    Legacy 108/109 runs may not have native events.jsonl. Detail must still
+    expose full synthetic v2 envelopes so the web replay path can keep
+    payload.synthetic, legacySource, artifacts, and redaction metadata.
+    """
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_id = "2026-06-25T15-00-00-110Z"
+    run_dir = runs_dir / run_id
+    run_dir.mkdir()
+
+    (run_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "runId": run_id,
+                "status": "DONE_GATE_ONLY",
+                "options": {"task": "agent-loop/tasks/legacy.md"},
+                "baselineGate": {"ok": False, "summary": "legacy gate failed"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    orig = os.environ.get("AGENT_LOOP_RUNS_DIR")
+    os.environ["AGENT_LOOP_RUNS_DIR"] = str(runs_dir)
+    try:
+        resp = client.get(f"/api/agent-loop/runs/{run_id}")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        events = data.get("events") or []
+        assert events, "legacy detail must expose synthetic v2 events when native events.jsonl is absent"
+        assert any(e.get("version") == "agentloop.event.v2" for e in events)
+        synthetic = [e for e in events if (e.get("payload") or {}).get("synthetic") is True]
+        assert synthetic, events
+        assert any((e.get("payload") or {}).get("legacySource") == "state.json" for e in synthetic)
+        for e in synthetic:
+            assert "phase" in e
+            assert "type" in e
+            assert "source" in e
+            assert isinstance(e.get("artifacts"), list)
+            assert (e.get("redaction") or {}).get("applied") is True
+    finally:
+        if orig is None:
+            os.environ.pop("AGENT_LOOP_RUNS_DIR", None)
+        else:
+            os.environ["AGENT_LOOP_RUNS_DIR"] = orig

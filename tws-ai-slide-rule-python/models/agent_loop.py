@@ -54,10 +54,26 @@ class AgentLoopArtifact(AgentLoopBase):
 
 
 class AgentLoopEvent(AgentLoopBase):
+    """Timeline event shape.
+
+    Supports both the older status-only detail timeline entries and normalized
+    v2 runtime envelopes used by AgentLoop SSOT replay.
+    """
+
     ts: Optional[str] = None
-    status: str
+    status: Optional[str] = None
     iteration: Optional[int] = None
     message: Optional[str] = None
+    version: Optional[str] = None
+    runId: Optional[str] = None
+    seq: Optional[int] = None
+    source: Optional[str] = None
+    phase: Optional[str] = None
+    type: Optional[str] = None
+    task: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    artifacts: List[Any] = Field(default_factory=list)
+    redaction: Optional[Dict[str, Any]] = None
 
 
 class AgentLoopRunSummary(AgentLoopBase):

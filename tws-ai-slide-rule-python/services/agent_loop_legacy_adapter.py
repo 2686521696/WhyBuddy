@@ -10,6 +10,7 @@ Converts 108/109 run artifacts (state.json + bounded reports) into synthetic v2 
 """
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from .agent_loop_paths import resolve_run_dir, resolve_artifact_path
@@ -17,9 +18,17 @@ from .agent_loop_event_schema import validate_event_envelope
 from .agent_loop_redaction import redact_sensitive
 
 
+MAX_JSON_BYTES = 65536
+MAX_TEXT_BYTES = 8192
+MAX_TEXT_CHARS = 4096
+MAX_TEXT_LINES = 40
+
+
 def _safe_read_json(p: Optional[Any]) -> Optional[Dict[str, Any]]:
     try:
         if p and hasattr(p, "exists") and p.exists():
+            if hasattr(p, "stat") and p.stat().st_size > MAX_JSON_BYTES:
+                return None
             raw = p.read_text(encoding="utf-8", errors="replace")
             data = json.loads(raw)
             if isinstance(data, dict):
@@ -27,6 +36,54 @@ def _safe_read_json(p: Optional[Any]) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
     return None
+
+
+def _looks_like_abs_path(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    if re.match(r"^[a-zA-Z]:[\\/]", text):
+        return True
+    if text.startswith("\\\\") or text.startswith("//"):
+        return True
+    if text.startswith("/") and len(text) > 1:
+        return True
+    return ":\\" in text or ":/" in text
+
+
+def _sanitize_string(value: Any) -> str:
+    text = redact_sensitive(str(value))
+    if _looks_like_abs_path(text):
+        return "[redacted-path]"
+    text = re.sub(r"[a-zA-Z]:[\\/][^\s\"'<>|]+", "[redacted-path]", text)
+    text = re.sub(r"\\\\[^\s\"'<>|]+", "[redacted-path]", text)
+    text = re.sub(r"(?<!\w)/(?:Users|home|var|tmp|etc|opt)/[^\s\"'<>|]+", "[redacted-path]", text)
+    return text
+
+
+def _safe_read_text_tail(p: Optional[Any], *, max_bytes: int = MAX_TEXT_BYTES, max_chars: int = MAX_TEXT_CHARS, max_lines: int = MAX_TEXT_LINES) -> str:
+    """Read a bounded suffix from text artifacts without loading the full file."""
+    try:
+        if not p or not hasattr(p, "exists") or not p.exists() or not p.is_file():
+            return ""
+        with open(p, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            to_read = min(size, max_bytes)
+            fh.seek(size - to_read if size > to_read else 0)
+            chunk = fh.read(to_read)
+        raw = chunk.decode("utf-8", errors="replace")
+        if size > to_read and "\n" in raw:
+            raw = raw.split("\n", 1)[1]
+        lines = raw.splitlines()[-max_lines:]
+        text = "\n".join(lines)
+        if len(text) > max_chars:
+            text = text[-max_chars:]
+        return _sanitize_string(text)
+    except Exception:
+        return ""
 
 
 def _redact_payload(p: Any) -> Dict[str, Any]:
@@ -48,7 +105,7 @@ def _redact_payload(p: Any) -> Dict[str, Any]:
             return any(h in kl for h in secret_hints)
         def _walk(o: Any) -> Any:
             if isinstance(o, str):
-                return redact_sensitive(o)
+                return _sanitize_string(o)
             if isinstance(o, dict):
                 return {
                     k: ("***REDACTED***" if _is_sensitive_key(k) else _walk(v))
@@ -60,6 +117,72 @@ def _redact_payload(p: Any) -> Dict[str, Any]:
         return _walk(dict(p))
     except Exception:
         return {}
+
+
+def _artifact_kind(name: str) -> str:
+    lower = name.lower()
+    if "review" in lower:
+        return "review"
+    if "report" in lower:
+        return "report"
+    if lower.endswith(".patch") or lower.startswith("diff."):
+        return "diff"
+    if lower.endswith(".log") or "output" in lower or "log" in lower:
+        return "log"
+    if lower.endswith(".json"):
+        return "json"
+    return "file"
+
+
+def _iter_legacy_artifact_names(run_dir: Any) -> List[str]:
+    try:
+        names: List[str] = []
+        for entry in sorted(run_dir.iterdir(), key=lambda e: e.name):
+            if not entry.is_file():
+                continue
+            name = entry.name
+            lower = name.lower()
+            if name == "state.json":
+                continue
+            if (
+                "report" in lower
+                or "review" in lower
+                or lower.endswith(".patch")
+                or lower.startswith("diff.")
+                or lower.endswith(".log")
+                or "output" in lower
+                or "log" in lower
+            ):
+                names.append(name)
+        return names
+    except Exception:
+        return []
+
+
+def _artifact_payload(name: str, path: Any) -> Dict[str, Any]:
+    kind = _artifact_kind(name)
+    payload: Dict[str, Any] = {
+        "id": name,
+        "kind": kind,
+        "title": name,
+        "path": name,
+    }
+    try:
+        payload["size"] = int(path.stat().st_size)
+    except Exception:
+        payload["size"] = 0
+
+    if kind in ("report", "review", "json") and str(name).lower().endswith(".json"):
+        data = _safe_read_json(path)
+        if data is None:
+            payload["error"] = "corrupt-or-too-large"
+        else:
+            payload["content"] = data
+    else:
+        payload["content"] = _safe_read_text_tail(path)
+        if kind == "log":
+            payload["tail"] = payload["content"]
+    return payload
 
 
 def _synthetic_event(
@@ -127,9 +250,9 @@ def read_legacy_events(
     if state:
         opts = state.get("options") or {}
         raw_task = state.get("task") or opts.get("task")
-        task = redact_sensitive(raw_task) if isinstance(raw_task, str) else raw_task
+        task = _sanitize_string(raw_task) if isinstance(raw_task, str) else raw_task
         raw_status = state.get("status")
-        status = redact_sensitive(raw_status) if isinstance(raw_status, str) else raw_status
+        status = _sanitize_string(raw_status) if isinstance(raw_status, str) else raw_status
 
     # Always emit a start for legacy runs we can read
     ev0 = _synthetic_event(run_id, seq, "RUN_STARTED", "queue", {"status": "RUNNING"}, "system", task, "state.json")
@@ -152,10 +275,10 @@ def read_legacy_events(
         if isinstance(gate_info, dict):
             okv = gate_info.get("ok")
             raw_summ = gate_info.get("summary") or gate_info.get("message")
-            summ = redact_sensitive(raw_summ) if isinstance(raw_summ, str) else raw_summ
+            summ = _sanitize_string(raw_summ) if isinstance(raw_summ, str) else raw_summ
         elif isinstance(gate_info, bool):
             okv = gate_info
-        summary_val = summ if summ is not None else (redact_sensitive(str(gate_info)) if gate_info is not None else None)
+        summary_val = summ if summ is not None else (_sanitize_string(str(gate_info)) if gate_info is not None else None)
         evg = _synthetic_event(
             run_id, seq, "GATE_RESULT", "gate", {"ok": okv, "summary": summary_val},
             "system", task, "state.json"
@@ -173,6 +296,43 @@ def read_legacy_events(
         if evr:
             out.append(evr)
             seq += 1
+
+    # Legacy reports/reviews/diffs/logs become synthetic artifacts and log events.
+    for name in _iter_legacy_artifact_names(run_dir):
+        artifact_path = resolve_artifact_path(run_id, name, runs_root)
+        if artifact_path is None:
+            continue
+        payload = _artifact_payload(name, artifact_path)
+        eva = _synthetic_event(
+            run_id,
+            seq,
+            "ARTIFACT_INDEXED",
+            "fix",
+            payload,
+            "system",
+            task,
+            name,
+        )
+        if eva:
+            out.append(eva)
+            seq += 1
+        if payload.get("kind") == "log":
+            evl = _synthetic_event(
+                run_id,
+                seq,
+                "AGENT_LOG",
+                "fix",
+                {
+                    "logFile": name,
+                    "message": payload.get("tail") or "",
+                },
+                "system",
+                task,
+                name,
+            )
+            if evl:
+                out.append(evl)
+                seq += 1
 
     # Finalized only when status indicates terminal
     if state and isinstance(status, str):

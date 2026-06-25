@@ -42,6 +42,12 @@ try:
 except Exception:
     from agent_loop_artifacts import list_agent_loop_artifacts  # type: ignore
 
+# 110: legacy 108/109 runs are projected to synthetic v2 events for replay/detail.
+try:
+    from services.agent_loop_legacy_adapter import read_legacy_events
+except Exception:
+    from agent_loop_legacy_adapter import read_legacy_events  # type: ignore
+
 # 109: reuse central redaction helper
 try:
     from services.agent_loop_redaction import redact_sensitive as _central_redact_sensitive
@@ -356,6 +362,31 @@ def _read_events_tail(p: Path, max_events: int = 60) -> List[AgentLoopEvent]:
     return events[-max_events:]
 
 
+def _read_detail_events(run_id: str, events_path: Optional[Path], runs_root: Optional[str], max_events: int = 60) -> List[AgentLoopEvent]:
+    """Read detail events, preserving synthetic v2 envelopes for legacy runs.
+
+    Native run-directory events.jsonl keeps the historical status-only detail
+    timeline shape. Legacy runs without native events fallback to the v2 adapter
+    so web replay/detail can see payload.synthetic and legacySource.
+    """
+    if events_path and events_path.exists() and events_path.is_file():
+        return _read_events_tail(events_path, max_events)
+
+    try:
+        legacy_events = read_legacy_events(run_id, runs_root=runs_root, limit=max_events)
+    except Exception:
+        legacy_events = []
+
+    out: List[AgentLoopEvent] = []
+    for raw in legacy_events[-max_events:]:
+        try:
+            if isinstance(raw, dict):
+                out.append(AgentLoopEvent.model_validate(raw))
+        except Exception:
+            continue
+    return out
+
+
 def _looks_like_abs_path(s: Any) -> bool:
     """Detect strings that are absolute local FS paths (windows/unix) to enforce no-abs-path in responses."""
     if not isinstance(s, str):
@@ -448,7 +479,7 @@ def get_agent_loop_run_detail(run_id: str, runs_root: Optional[str] = None) -> O
 
     # events bounded
     events_p = resolve_artifact_path(run_id, "events.jsonl", runs_root)
-    events = _read_events_tail(events_p, 60)
+    events = _read_detail_events(run_id, events_p, runs_root, 60)
 
     # 110: delegate to central artifact index for stable ids, kind, safe name (title), size, eventRef
     # (no mtime selection; explicit event refs preferred for active logs)
