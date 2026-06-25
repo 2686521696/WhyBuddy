@@ -2120,159 +2120,231 @@
       "id": "sliderule-agentloop-integration-inventory-108",
       "task": "agent-loop/tasks/sliderule-agentloop-integration-inventory-108.md",
       "gatesKey": "slideruleAgentLoopIntegrationInventory108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-runtime-boundary-design-108",
       "task": "agent-loop/tasks/sliderule-agentloop-runtime-boundary-design-108.md",
       "gatesKey": "slideruleAgentLoopRuntimeBoundaryDesign108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-data-model-alignment-108",
       "task": "agent-loop/tasks/sliderule-agentloop-data-model-alignment-108.md",
       "gatesKey": "slideruleAgentLoopDataModelAlignment108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-runs-api-bootstrap-108",
       "task": "agent-loop/tasks/sliderule-agentloop-runs-api-bootstrap-108.md",
       "gatesKey": "slideruleAgentLoopRunsApiBootstrap108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-runs-overview-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-runs-overview-api-108.md",
       "gatesKey": "slideruleAgentLoopRunsOverviewApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-run-detail-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-run-detail-api-108.md",
       "gatesKey": "slideruleAgentLoopRunDetailApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-event-stream-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-event-stream-api-108.md",
       "gatesKey": "slideruleAgentLoopEventStreamApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-worker-bridge-108",
       "task": "agent-loop/tasks/sliderule-agentloop-worker-bridge-108.md",
       "gatesKey": "slideruleAgentLoopWorkerBridge108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-command-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-command-api-108.md",
       "gatesKey": "slideruleAgentLoopCommandApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-settings-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-settings-api-108.md",
       "gatesKey": "slideruleAgentLoopSettingsApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-provider-health-api-108",
       "task": "agent-loop/tasks/sliderule-agentloop-provider-health-api-108.md",
       "gatesKey": "slideruleAgentLoopProviderHealthApi108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-dashboard-port-108",
       "task": "agent-loop/tasks/sliderule-agentloop-dashboard-port-108.md",
       "gatesKey": "slideruleAgentLoopDashboardPort108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-navigation-shell-108",
       "task": "agent-loop/tasks/sliderule-agentloop-navigation-shell-108.md",
       "gatesKey": "slideruleAgentLoopNavigationShell108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-task-detail-view-108",
       "task": "agent-loop/tasks/sliderule-agentloop-task-detail-view-108.md",
       "gatesKey": "slideruleAgentLoopTaskDetailView108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-path-security-108",
       "task": "agent-loop/tasks/sliderule-agentloop-path-security-108.md",
       "gatesKey": "slideruleAgentLoopPathSecurity108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-secret-redaction-108",
       "task": "agent-loop/tasks/sliderule-agentloop-secret-redaction-108.md",
       "gatesKey": "slideruleAgentLoopSecretRedaction108Gates",
-      "enabled": true,
+      "enabled": false,
       "guardTests": false,
       "workerMaxTurns": 128,
-      "maxIterations": 3
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
     },
     {
       "id": "sliderule-agentloop-python-tests-108",
       "task": "agent-loop/tasks/sliderule-agentloop-python-tests-108.md",
       "gatesKey": "slideruleAgentLoopPythonTests108Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
+    },
+    {
+      "id": "sliderule-agentloop-release-runbook-108",
+      "task": "agent-loop/tasks/sliderule-agentloop-release-runbook-108.md",
+      "gatesKey": "slideruleAgentLoopReleaseRunbook108Gates",
+      "enabled": false,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3,
+      "disabledReason": "superseded by SlideRule AgentLoop 109 rescue wave after Grok 403/auth halt"
+    },
+    {
+      "id": "sliderule-agentloop-navigation-shell-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-navigation-shell-109.md",
+      "gatesKey": "slideruleAgentLoopNavigationShell109Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
       "maxIterations": 3
     },
     {
-      "id": "sliderule-agentloop-release-runbook-108",
-      "task": "agent-loop/tasks/sliderule-agentloop-release-runbook-108.md",
-      "gatesKey": "slideruleAgentLoopReleaseRunbook108Gates",
+      "id": "sliderule-agentloop-task-detail-view-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-task-detail-view-109.md",
+      "gatesKey": "slideruleAgentLoopTaskDetailView109Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-path-security-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-path-security-109.md",
+      "gatesKey": "slideruleAgentLoopPathSecurity109Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-secret-redaction-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-secret-redaction-109.md",
+      "gatesKey": "slideruleAgentLoopSecretRedaction109Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-python-tests-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-python-tests-109.md",
+      "gatesKey": "slideruleAgentLoopPythonTests109Gates",
+      "enabled": true,
+      "guardTests": false,
+      "workerMaxTurns": 128,
+      "maxIterations": 3
+    },
+    {
+      "id": "sliderule-agentloop-release-runbook-109",
+      "task": "agent-loop/tasks/sliderule-agentloop-release-runbook-109.md",
+      "gatesKey": "slideruleAgentLoopReleaseRunbook109Gates",
       "enabled": true,
       "guardTests": false,
       "workerMaxTurns": 128,
@@ -3349,5 +3421,35 @@
     "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9yZWxlYXNlX3J1bmJvb2sucHkKYWdlbnRsb29wIHJlbGVhc2UgcnVuYm9vayAxMDggZG9jdW1lbnRzIHN0YXJ0dXAgcXVldWUgc2V0dGluZ3Mgc2VjdXJpdHkgYW5kIHJvbGxiYWNr','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 108 marker: '+m);\"",
     "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_release_runbook.py -q --tb=short",
     "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-release-runbook-108.md tws-ai-slide-rule-python/AGENT_LOOP_RUNBOOK.md tws-ai-slide-rule-python/README.md tws-ai-slide-rule-python/tests/test_agent_loop_release_runbook.py"
+  ],
+  "slideruleAgentLoopNavigationShell109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9uYXZpZ2F0aW9uX3NoZWxsLnB5CmFnZW50bG9vcCBuYXZpZ2F0aW9uIHNoZWxsIDEwOSBleHBvc2VzIHdvcmtiZW5jaCBydW5zIHNldHRpbmdzIGFuZCBzbGlkZXJ1bGUgbGlua3M=','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_navigation_shell.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-navigation-shell-109.md tws-ai-slide-rule-python/static/agent-loop/index.html tws-ai-slide-rule-python/static/agent-loop/agent-loop-dashboard.js tws-ai-slide-rule-python/tests/test_agent_loop_navigation_shell.py"
+  ],
+  "slideruleAgentLoopTaskDetailView109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF90YXNrX2RldGFpbF92aWV3LnB5CmFnZW50bG9vcCB0YXNrIGRldGFpbCB2aWV3IDEwOSByZW5kZXJzIGZsb3cgdGltZWxpbmUgcmV2aWV3IGRpZmYgb3V0cHV0IGFuZCBhcnRpZmFjdHM=','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_task_detail_view.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-task-detail-view-109.md tws-ai-slide-rule-python/static/agent-loop/index.html tws-ai-slide-rule-python/static/agent-loop/agent-loop-dashboard.js tws-ai-slide-rule-python/tests/test_agent_loop_task_detail_view.py"
+  ],
+  "slideruleAgentLoopPathSecurity109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9wYXRoX3NlY3VyaXR5LnB5CmFnZW50bG9vcCBwYXRoIHNlY3VyaXR5IDEwOSByZWplY3RzIHRyYXZlcnNhbCBhbmQgYWJzb2x1dGUgZXNjYXBlcw==','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_path_security.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-path-security-109.md tws-ai-slide-rule-python/services/agent_loop_paths.py tws-ai-slide-rule-python/services/agent_loop_runs.py tws-ai-slide-rule-python/tests/test_agent_loop_path_security.py"
+  ],
+  "slideruleAgentLoopSecretRedaction109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9zZWNyZXRfcmVkYWN0aW9uLnB5CmFnZW50bG9vcCBzZWNyZXQgcmVkYWN0aW9uIDEwOSBtYXNrcyBrZXlzIHRva2VucyBwcm94eSBjcmVkZW50aWFscyBhbmQgZW52IG91dHB1dA==','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_secret_redaction.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-secret-redaction-109.md tws-ai-slide-rule-python/services/agent_loop_redaction.py tws-ai-slide-rule-python/services/agent_loop_runs.py tws-ai-slide-rule-python/services/agent_loop_bridge.py tws-ai-slide-rule-python/services/agent_loop_provider_health.py tws-ai-slide-rule-python/tests/test_agent_loop_secret_redaction.py"
+  ],
+  "slideruleAgentLoopPythonTests109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9weXRob25faGFybmVzcy5weQphZ2VudGxvb3AgcHl0aG9uIGhhcm5lc3MgMTA5IHByb3ZpZGVzIGRldGVybWluaXN0aWMgcnVuIGZpeHR1cmVz','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_python_harness.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-python-tests-109.md tws-ai-slide-rule-python/tests/test_agent_loop_python_harness.py tws-ai-slide-rule-python/tests/fixtures/agent_loop_run"
+  ],
+  "slideruleAgentLoopReleaseRunbook109Gates": [
+    "node -e \"const fs=require('fs'); const [p,m]=Buffer.from('dHdzLWFpLXNsaWRlLXJ1bGUtcHl0aG9uL3Rlc3RzL3Rlc3RfYWdlbnRfbG9vcF9yZWxlYXNlX3J1bmJvb2sucHkKYWdlbnRsb29wIHJlbGVhc2UgcnVuYm9vayAxMDkgZG9jdW1lbnRzIHN0YXJ0dXAgcXVldWUgc2V0dGluZ3Mgc2VjdXJpdHkgYW5kIHJvbGxiYWNr','base64').toString('utf8').split('\\n'); if(!fs.existsSync(p) || !fs.readFileSync(p,'utf8').includes(m)) throw new Error('missing SlideRule AgentLoop 109 marker: '+m);\"",
+    "cd tws-ai-slide-rule-python; & \"{{pythonExe}}\" -m pytest tests/test_agent_loop_release_runbook.py -q --tb=short",
+    "node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-agentloop-release-runbook-109.md tws-ai-slide-rule-python/AGENT_LOOP_RUNBOOK.md tws-ai-slide-rule-python/README.md tws-ai-slide-rule-python/tests/test_agent_loop_release_runbook.py"
   ]
 }

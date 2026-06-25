@@ -484,52 +484,43 @@ test('migration queue 107 settings wave keeps task specific red gates for single
   assert.deepEqual(enabledOld, [], '100-106 settings must be disabled while 107 active');
 });
 
-test('migration queue enables 108 SlideRule AgentLoop integration wave and disables superseded waves', async () => {
+test('migration queue enables 109 SlideRule AgentLoop rescue wave and disables superseded waves', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const tasks = queue.tasks || [];
 
   const enabledIds = tasks.filter((task) => task.enabled).map((task) => task.id).sort();
-  const expected108Ids = [
-    'sliderule-agentloop-integration-inventory-108',
-    'sliderule-agentloop-runtime-boundary-design-108',
-    'sliderule-agentloop-data-model-alignment-108',
-    'sliderule-agentloop-runs-api-bootstrap-108',
-    'sliderule-agentloop-runs-overview-api-108',
-    'sliderule-agentloop-run-detail-api-108',
-    'sliderule-agentloop-event-stream-api-108',
-    'sliderule-agentloop-worker-bridge-108',
-    'sliderule-agentloop-command-api-108',
-    'sliderule-agentloop-settings-api-108',
-    'sliderule-agentloop-provider-health-api-108',
-    'sliderule-agentloop-dashboard-port-108',
-    'sliderule-agentloop-navigation-shell-108',
-    'sliderule-agentloop-task-detail-view-108',
-    'sliderule-agentloop-path-security-108',
-    'sliderule-agentloop-secret-redaction-108',
-    'sliderule-agentloop-python-tests-108',
-    'sliderule-agentloop-release-runbook-108',
+  const expected109Ids = [
+    'sliderule-agentloop-navigation-shell-109',
+    'sliderule-agentloop-task-detail-view-109',
+    'sliderule-agentloop-path-security-109',
+    'sliderule-agentloop-secret-redaction-109',
+    'sliderule-agentloop-python-tests-109',
+    'sliderule-agentloop-release-runbook-109',
   ].sort();
 
-  assert.deepEqual(enabledIds, expected108Ids);
+  assert.deepEqual(enabledIds, expected109Ids);
 
   const enabledSuperseded = tasks.filter(
-    (task) => task.enabled && !expected108Ids.includes(task.id),
+    (task) => task.enabled && !expected109Ids.includes(task.id),
   );
   assert.deepEqual(
     enabledSuperseded.map((task) => task.id),
     [],
-    'only the 108 SlideRule AgentLoop integration wave should be enabled by default',
+    'only the 109 SlideRule AgentLoop rescue wave should be enabled by default',
   );
+
+  const enabled108Ids = tasks.filter((task) => task.enabled && /^sliderule-agentloop-.*-108$/.test(task.id || '')).map((task) => task.id);
+  assert.deepEqual(enabled108Ids, [], '108 integration tasks should stay present for --only reruns but disabled once 109 rescue is active');
 });
 
-test('migration queue 108 SlideRule AgentLoop wave has task specific red gates', async () => {
+test('migration queue 109 SlideRule AgentLoop rescue wave has task specific red gates', async () => {
   const queuePath = path.join(agentLoopRoot, 'scripts', 'migration-queue.json');
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const tasks = queue.tasks || [];
 
-  const enabled108 = tasks.filter((task) => task.enabled && /^sliderule-agentloop-.*-108$/.test(task.id || ''));
-  assert.equal(enabled108.length, 18, '108 integration wave should have exactly 18 enabled tasks');
+  const enabled109 = tasks.filter((task) => task.enabled && /^sliderule-agentloop-.*-109$/.test(task.id || ''));
+  assert.equal(enabled109.length, 6, '109 rescue wave should have exactly 6 enabled tasks');
 
   const missingTaskFiles = [];
   const missingGates = [];
@@ -539,7 +530,7 @@ test('migration queue 108 SlideRule AgentLoop wave has task specific red gates',
   const guardEnabled = [];
   const non128Tasks = [];
 
-  for (const entry of enabled108) {
+  for (const entry of enabled109) {
     const taskPath = path.join(workspaceRoot, entry.task);
     try {
       await fs.access(taskPath);
@@ -549,7 +540,7 @@ test('migration queue 108 SlideRule AgentLoop wave has task specific red gates',
 
     const gates = queue[entry.gatesKey] || [];
     if (!Array.isArray(gates) || gates.length === 0) missingGates.push(entry.gatesKey);
-    if (!String(gates[0] || '').includes('missing SlideRule AgentLoop 108 marker')) {
+    if (!String(gates[0] || '').includes('missing SlideRule AgentLoop 109 marker')) {
       gatesWithoutMarkers.push(entry.gatesKey);
     }
     if (!gates.some((gate) => typeof gate === 'string' && gate.includes('-m pytest'))) {
