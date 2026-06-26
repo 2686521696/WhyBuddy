@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { leaveApprovalRbac, rbacSkill } from "./rbacSkill";
-import type { RbacModel, PolicyContext } from "./rbacModel";
+import { decideRbacPolicy, leaveApprovalRbac, rbacSkill } from "./rbacSkill";
+import type { PolicyContext, PolicyDecision, RbacModel } from "./rbacModel";
 
 // Deep clone so each test can mutate a fresh copy without leaking.
 const clone = (m: RbacModel): RbacModel => structuredClone(m);
@@ -138,5 +138,125 @@ describe("rbac model — V2 PDP extensions (113.02)", () => {
     // existing sample remains valid (optional field)
     const report = rbacSkill.validate(leaveApprovalRbac);
     expect(report.ok).toBe(true);
+  });
+});
+
+// V2 PDP gate tests (113.03): inheritance cycles, SoD, fail-closed decisions. Do not weaken.
+describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () => {
+  it("CATCHES inheritance cycle and emits RBAC_ROLE_INHERITANCE_CYCLE", () => {
+    const broken = clone(leaveApprovalRbac);
+    // cycle: employee <-> manager
+    broken.roles.find(r => r.id === "employee")!.inheritsRoleIds = ["manager"];
+    broken.roles.find(r => r.id === "manager")!.inheritsRoleIds = ["employee"];
+    const report = rbacSkill.validate(broken);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_ROLE_INHERITANCE_CYCLE")).toBe(true);
+  });
+
+  it("CATCHES mutually exclusive roles (direct) and emits RBAC_SOD_VIOLATION", () => {
+    const m: RbacModel = {
+      ...clone(leaveApprovalRbac),
+      sodRules: [
+        {
+          id: "sod_emp_mgr",
+          name: "员工与主管互斥",
+          exclusiveRoleIds: ["employee", "manager"],
+          severity: "error",
+        },
+      ],
+    };
+    m.users[0].roleIds = ["employee", "manager"];
+    const report = rbacSkill.validate(m);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_SOD_VIOLATION")).toBe(true);
+  });
+
+  it("CATCHES SoD via inherited roles and emits RBAC_SOD_VIOLATION", () => {
+    const m: RbacModel = {
+      ...clone(leaveApprovalRbac),
+      sodRules: [
+        {
+          id: "sod_emp_mgr",
+          name: "员工与主管互斥",
+          exclusiveRoleIds: ["employee", "manager"],
+          severity: "error",
+        },
+      ],
+    };
+    // manager inherits employee => assigning manager alone triggers via expand
+    m.roles.find(r => r.id === "manager")!.inheritsRoleIds = ["employee"];
+    m.users[0].roleIds = ["manager"];
+    const report = rbacSkill.validate(m);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_SOD_VIOLATION")).toBe(true);
+  });
+
+  it("decideRbacPolicy allows when permission is granted directly or via inheritance", () => {
+    const m = clone(leaveApprovalRbac);
+    m.roles.find(r => r.id === "manager")!.inheritsRoleIds = ["employee"];
+    const d1 = decideRbacPolicy(m, {
+      subject: { roleIds: ["employee"] },
+      action: "create",
+      resourceType: "leave_request",
+    });
+    expect(d1.allow).toBe(true);
+    expect(d1.code).toBe("RBAC_DECISION_ALLOW");
+
+    const d2 = decideRbacPolicy(m, {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+    });
+    expect(d2.allow).toBe(true);
+    expect(d2.code).toBe("RBAC_DECISION_ALLOW");
+    expect(d2.expandedRoles).toContain("employee");
+  });
+
+  it("decideRbacPolicy denies unknown role and uses RBAC_DECISION_FAIL_CLOSED", () => {
+    const dec = decideRbacPolicy(leaveApprovalRbac, {
+      subject: { roleIds: ["ghost_role"] },
+      action: "approve",
+      resourceType: "leave_request",
+    });
+    expect(dec.allow).toBe(false);
+    expect(dec.code).toBe("RBAC_DECISION_FAIL_CLOSED");
+  });
+
+  it("decideRbacPolicy denies missing policy inputs and uses RBAC_DECISION_FAIL_CLOSED", () => {
+    const dec1 = decideRbacPolicy(leaveApprovalRbac, {
+      subject: { roleIds: [] },
+      action: "approve",
+      resourceType: "leave_request",
+    });
+    expect(dec1.allow).toBe(false);
+    expect(dec1.code).toBe("RBAC_DECISION_FAIL_CLOSED");
+
+    const dec2 = decideRbacPolicy(leaveApprovalRbac, {
+      subject: { roleIds: ["employee"] },
+      action: "",
+      resourceType: "leave_request",
+    } as PolicyContext);
+    expect(dec2.allow).toBe(false);
+    expect(dec2.code).toBe("RBAC_DECISION_FAIL_CLOSED");
+  });
+
+  it("decideRbacPolicy denies unknown permission request and uses RBAC_DECISION_FAIL_CLOSED", () => {
+    const dec = decideRbacPolicy(leaveApprovalRbac, {
+      subject: { roleIds: ["employee"] },
+      action: "delete",
+      resourceType: "leave_request",
+    });
+    expect(dec.allow).toBe(false);
+    expect(dec.code).toBe("RBAC_DECISION_FAIL_CLOSED");
+  });
+
+  it("decideRbacPolicy denies when role lacks the permission (no allow leak)", () => {
+    const dec = decideRbacPolicy(leaveApprovalRbac, {
+      subject: { roleIds: ["employee"] },
+      action: "approve",
+      resourceType: "leave_request",
+    });
+    expect(dec.allow).toBe(false);
+    expect(dec.code).toBe("RBAC_DECISION_FAIL_CLOSED");
   });
 });

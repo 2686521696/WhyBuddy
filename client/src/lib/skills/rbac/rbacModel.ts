@@ -99,6 +99,15 @@ export interface PolicyContext {
   scope?: string;
 }
 
+/** PDP decision result. Default is deny (fail-closed) when proof of allow is absent. */
+export interface PolicyDecision {
+  allow: boolean;
+  code: string; // RBAC_DECISION_ALLOW | RBAC_DECISION_FAIL_CLOSED
+  reason: string;
+  expandedRoles?: string[];
+  matchedPermission?: string;
+}
+
 export interface RbacModel {
   roles: Role[];
   permissions: Permission[];

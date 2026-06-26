@@ -8,7 +8,7 @@ import {
   type Skill,
   type ValidateContext,
 } from "../skill";
-import type { RbacModel } from "./rbacModel";
+import type { PolicyContext, PolicyDecision, RbacModel } from "./rbacModel";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,6 +52,70 @@ function treeFaults(
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
+}
+
+// ---------------------------------------------------------------------------
+// PDP helpers: inheritance expansion, cycle detection, SoD, decisions
+// ---------------------------------------------------------------------------
+
+/** Detect cycles in role inheritsRoleIds graph (supports multi-inherit). Returns offending role ids. */
+function roleInheritanceCycles(roles: Array<{ id: string; inheritsRoleIds?: string[] }>): string[] {
+  const byId = new Map(roles.map(r => [r.id, r]));
+  const cycles: string[] = [];
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+
+  function visit(id: string): void {
+    if (!byId.has(id)) return;
+    if (stack.has(id)) {
+      cycles.push(id);
+      return;
+    }
+    if (visited.has(id)) return;
+    visited.add(id);
+    stack.add(id);
+    const r = byId.get(id)!;
+    (r.inheritsRoleIds ?? []).forEach(p => visit(p));
+    stack.delete(id);
+  }
+
+  roles.forEach(r => visit(r.id));
+  return [...new Set(cycles)];
+}
+
+/** Expand direct roles to all transitively inherited (deduped). Breaks on cycles to remain safe. */
+function expandEffectiveRoles(
+  roles: Array<{ id: string; inheritsRoleIds?: string[] }>,
+  direct: string[],
+): string[] {
+  const byId = new Map(roles.map(r => [r.id, r]));
+  const result = new Set<string>();
+  const visiting = new Set<string>();
+
+  function dfs(id: string) {
+    if (!byId.has(id) || result.has(id)) return;
+    if (visiting.has(id)) return; // cycle guard
+    visiting.add(id);
+    result.add(id);
+    const r = byId.get(id)!;
+    (r.inheritsRoleIds ?? []).forEach(dfs);
+    visiting.delete(id);
+  }
+
+  direct.forEach(dfs);
+  return [...result];
+}
+
+/** Collect union of permissionCodes from a role set after inheritance expansion. */
+function getEffectivePermissionCodes(model: RbacModel, directRoleIds: string[]): string[] {
+  const effRoles = expandEffectiveRoles(model.roles, directRoleIds);
+  const permSet = new Set<string>();
+  const roleMap = new Map(model.roles.map(r => [r.id, r]));
+  for (const rid of effRoles) {
+    const r = roleMap.get(rid);
+    if (r) r.permissionCodes.forEach(pc => permSet.add(pc));
+  }
+  return [...permSet];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +192,15 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
             severity: "error",
             path: `roles[${role.id}].menuIds[${i}]`,
             message: `角色「${role.name}」引用了不存在的菜单：${mid}`,
+          });
+      });
+      (role.inheritsRoleIds ?? []).forEach((rid, i) => {
+        if (!roleIds.has(rid))
+          f.push({
+            code: "RBAC_REF_MISSING_ROLE",
+            severity: "error",
+            path: `roles[${role.id}].inheritsRoleIds[${i}]`,
+            message: `角色「${role.name}」继承了不存在的角色：${rid}`,
           });
       });
       if (role.permissionCodes.length === 0 && role.menuIds.length === 0)
@@ -211,11 +284,37 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
         });
     });
 
-    // 2b) Separation of Duties (PDP kernel ◆ SoD) -------------------------
+    // sodRules role refs
+    (model.sodRules ?? []).forEach(rule => {
+      rule.exclusiveRoleIds.forEach((rid, i) => {
+        if (!roleIds.has(rid))
+          f.push({
+            code: "RBAC_REF_MISSING_ROLE",
+            severity: "error",
+            path: `sodRules[${rule.id}].exclusiveRoleIds[${i}]`,
+            message: `SoD规则「${rule.name}」引用了不存在的角色：${rid}`,
+          });
+      });
+    });
+
+    // 2b) Separation of Duties (PDP kernel ◆ SoD) + role inheritance cycles --
+    // Role inheritance cycle detection (must fail closed, no downgrade)
+    const inheritanceCycles = roleInheritanceCycles(model.roles);
+    inheritanceCycles.forEach(id =>
+      f.push({
+        code: "RBAC_ROLE_INHERITANCE_CYCLE",
+        severity: "error",
+        path: `roles[${id}].inheritsRoleIds`,
+        message: `角色继承存在环：${id}`,
+      }),
+    );
+
+    // perm-based SoD now checks direct + inherited permissions
     for (const sod of model.sodConstraints ?? []) {
       const exclusive = new Set(sod.mutuallyExclusive);
       for (const role of model.roles) {
-        const held = role.permissionCodes.filter(pc => exclusive.has(pc));
+        const effPerms = getEffectivePermissionCodes(model, [role.id]);
+        const held = effPerms.filter(pc => exclusive.has(pc));
         if (held.length > 1)
           f.push({
             code: "RBAC_SOD_VIOLATION",
@@ -224,6 +323,37 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
             message: `职责分离冲突「${sod.name}」：角色「${role.name}」同时持有互斥权限 [${held.join(", ")}]`,
           });
       }
+    }
+
+    // role-based SoD (sodRules) against direct + inherited roles
+    for (const rule of model.sodRules ?? []) {
+      const exclusive = new Set(rule.exclusiveRoleIds);
+      // positions
+      model.positions.forEach(pos => {
+        const eff = expandEffectiveRoles(model.roles, pos.roleIds);
+        const held = eff.filter(rid => exclusive.has(rid));
+        if (held.length > 1) {
+          f.push({
+            code: "RBAC_SOD_VIOLATION",
+            severity: "error",
+            path: `positions[${pos.id}].roleIds`,
+            message: `职责分离冲突「${rule.name}」：岗位同时持有互斥角色 [${held.join(", ")}]`,
+          });
+        }
+      });
+      // users
+      model.users.forEach(user => {
+        const eff = expandEffectiveRoles(model.roles, user.roleIds);
+        const held = eff.filter(rid => exclusive.has(rid));
+        if (held.length > 1) {
+          f.push({
+            code: "RBAC_SOD_VIOLATION",
+            severity: "error",
+            path: `users[${user.id}].roleIds`,
+            message: `职责分离冲突「${rule.name}」：用户同时持有互斥角色 [${held.join(", ")}]`,
+          });
+        }
+      });
     }
 
     // 3) Tree integrity (menus + departments) ------------------------------
@@ -342,6 +472,75 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     throw new Error(`rbacSkill.generate: 需要接入推演引擎来为意图生成模型：「${intent}」`);
   },
 };
+
+/** Pure PDP decision: returns allow only when RBAC can prove the subject has a matching permission
+ * via direct or inherited roles. Missing role/perm/resource => deny + RBAC_DECISION_FAIL_CLOSED.
+ * Objective, no browser/user coupling.
+ */
+export function decideRbacPolicy(model: RbacModel, request: PolicyContext): PolicyDecision {
+  if (!request || !request.subject || !Array.isArray(request.subject.roleIds)) {
+    return { allow: false, code: "RBAC_DECISION_FAIL_CLOSED", reason: "missing or invalid subject" };
+  }
+  const reqRoles = request.subject.roleIds;
+  if (reqRoles.length === 0 || !request.action || !request.resourceType) {
+    return { allow: false, code: "RBAC_DECISION_FAIL_CLOSED", reason: "missing policy inputs (roles/action/resource)" };
+  }
+
+  const roleMap = new Map(model.roles.map(r => [r.id, r]));
+  const permMap = new Map(model.permissions.map(p => [p.code, p]));
+
+  // deny if any requested role missing
+  const missingRole = reqRoles.find(rid => !roleMap.has(rid));
+  if (missingRole != null) {
+    return { allow: false, code: "RBAC_DECISION_FAIL_CLOSED", reason: `role missing: ${missingRole}` };
+  }
+
+  // expand (inheritance)
+  const effectiveRoleIds = expandEffectiveRoles(model.roles, reqRoles);
+
+  // collect granted perms (only those defined)
+  const effectivePerms: string[] = [];
+  const granted = new Set<string>();
+  for (const rid of effectiveRoleIds) {
+    const r = roleMap.get(rid);
+    if (r) {
+      r.permissionCodes.forEach(pc => {
+        if (permMap.has(pc) && !granted.has(pc)) {
+          granted.add(pc);
+          effectivePerms.push(pc);
+        }
+      });
+    }
+  }
+
+  // look for match on action + resourceType (resource field in perm)
+  let matchedPermission: string | undefined;
+  for (const pc of effectivePerms) {
+    const p = permMap.get(pc);
+    if (p && p.action === request.action && p.resource === request.resourceType) {
+      matchedPermission = pc;
+      break;
+    }
+  }
+
+  if (matchedPermission) {
+    return {
+      allow: true,
+      code: "RBAC_DECISION_ALLOW",
+      reason: `granted by ${matchedPermission}`,
+      expandedRoles: effectiveRoleIds,
+      matchedPermission,
+    };
+  }
+
+  // unknown permission request or not granted => fail closed, never allow
+  return {
+    allow: false,
+    code: "RBAC_DECISION_FAIL_CLOSED",
+    reason: "no matching permission for the requested action/resource",
+    expandedRoles: effectiveRoleIds,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Worked example — a "请假审批" platform's RBAC slice (a coherent, valid instance)
