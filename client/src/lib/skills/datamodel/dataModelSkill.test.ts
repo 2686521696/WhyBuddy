@@ -134,10 +134,113 @@ describe("dataModelSkill — the gate", () => {
         fields: [
           { key: "id", name: "ID", type: "string", fieldId: "fx1", version: 1, lifecycle: "active", storageRole: "ssot" },
           { key: "old", name: "Old", type: "string", fieldId: "fx2", version: 2, lifecycle: "deprecated", storageRole: "ssot" },
-          { key: "removed", name: "Removed", type: "string", fieldId: "fx3", version: 3, lifecycle: "removed", storageRole: "ssot" },
         ],
       }],
     };
     expect(dataModelSkill.validate(m).ok).toBe(true);
+  });
+
+  it("CATCHES duplicate field IDs", () => {
+    const dup: DataModelModel = {
+      entities: [
+        {
+          id: "e",
+          name: "E",
+          fields: [
+            { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "name", name: "Name", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          ],
+        },
+      ],
+    };
+    const report = dataModelSkill.validate(dup);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_DUP_FIELD_ID")).toBe(true);
+  });
+
+  it("CATCHES duplicate entity-field pairs (by fieldId)", () => {
+    const dupPair: DataModelModel = {
+      entities: [
+        {
+          id: "e",
+          name: "E",
+          fields: [
+            { key: "a", name: "A", type: "string", fieldId: "fa", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "b", name: "B", type: "string", fieldId: "fa", version: 1, lifecycle: "active", storageRole: "ssot" },
+          ],
+        },
+      ],
+    };
+    const report = dataModelSkill.validate(dupPair);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_DUP_ENTITY_FIELD" || e.code === "DM_DUP_FIELD_ID")).toBe(true);
+  });
+
+  it("CATCHES version mismatch expecting DM_FIELD_VERSION_MISMATCH", () => {
+    const mismatch: DataModelModel = {
+      entities: [
+        {
+          id: "e",
+          name: "E",
+          fields: [
+            { key: "id", name: "ID", type: "string", fieldId: "fv", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "v2", name: "V2", type: "string", fieldId: "fv", version: 2, lifecycle: "active", storageRole: "ssot" },
+          ],
+        },
+      ],
+    };
+    const report = dataModelSkill.validate(mismatch);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_FIELD_VERSION_MISMATCH")).toBe(true);
+  });
+
+  it("flags deprecated fields with DM_FIELD_DEPRECATED warning", () => {
+    const dep: DataModelModel = {
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "old", name: "Old", type: "string", fieldId: "f2", version: 1, lifecycle: "deprecated", storageRole: "ssot" },
+        ],
+      }],
+    };
+    const report = dataModelSkill.validate(dep);
+    expect(report.ok).toBe(true);
+    expect(report.warnings.some(e => e.code === "DM_FIELD_DEPRECATED")).toBe(true);
+  });
+
+  it("flags removed fields with DM_FIELD_REMOVED error", () => {
+    const rem: DataModelModel = {
+      entities: [{
+        id: "e",
+        name: "E",
+        fields: [
+          { key: "id", name: "ID", type: "string", fieldId: "f1", version: 1, lifecycle: "active", storageRole: "ssot" },
+          { key: "gone", name: "Gone", type: "string", fieldId: "f3", version: 1, lifecycle: "removed", storageRole: "ssot" },
+        ],
+      }],
+    };
+    const report = dataModelSkill.validate(rem);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_FIELD_REMOVED")).toBe(true);
+  });
+
+  it("CATCHES OLAP projection misuse expecting DM_OLAP_NOT_SSOT", () => {
+    const olapMisuse: DataModelModel = {
+      entities: [
+        {
+          id: "leave_request",
+          name: "请假单",
+          fields: [
+            { key: "id", name: "单号", type: "string", fieldId: "f_leave_id_v1", version: 1, lifecycle: "active", storageRole: "ssot" },
+            { key: "olapview", name: "OLAP视图", type: "string", fieldId: "f_leave_id_v1", version: 1, lifecycle: "active", storageRole: "olap_projection" },
+          ],
+        },
+      ],
+    };
+    const report = dataModelSkill.validate(olapMisuse);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "DM_OLAP_NOT_SSOT")).toBe(true);
   });
 });

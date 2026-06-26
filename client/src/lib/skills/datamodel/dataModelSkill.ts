@@ -63,6 +63,47 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
     for (const dup of findDuplicates(model.entities.map(e => e.id)))
       f.push({ code: "DM_DUP_ENTITY_ID", severity: "error", path: `entity=${dup}`, message: `重复的实体 id：${dup}` });
 
+    // -- SSOT field identity / lifecycle / version / OLAP checks -------------
+    const fieldIdUsages: Record<string, Array<{entityId: string; fieldKey: string; version?: number; lifecycle?: string; storageRole?: string; index: number}>> = {};
+    model.entities.forEach((entity, ei) => {
+      entity.fields.forEach((fl, fi) => {
+        if (fl.fieldId) {
+          if (!fieldIdUsages[fl.fieldId]) fieldIdUsages[fl.fieldId] = [];
+          fieldIdUsages[fl.fieldId].push({
+            entityId: entity.id,
+            fieldKey: fl.key,
+            version: fl.version,
+            lifecycle: fl.lifecycle,
+            storageRole: fl.storageRole,
+            index: fi,
+          });
+        }
+      });
+    });
+
+    for (const [fid, usages] of Object.entries(fieldIdUsages)) {
+      if (usages.length > 1) {
+        f.push({ code: "DM_DUP_FIELD_ID", severity: "error", path: `fieldId=${fid}`, message: `字段 ID 重复：${fid}` });
+      }
+      const vers = new Set(usages.map(u => u.version).filter(v => v != null));
+      if (vers.size > 1) {
+        f.push({ code: "DM_FIELD_VERSION_MISMATCH", severity: "error", path: `fieldId=${fid}`, message: `字段 ID ${fid} 版本不一致` });
+      }
+      const hasOlap = usages.some(u => u.storageRole === "olap_projection");
+      const hasSsot = usages.some(u => u.storageRole !== "olap_projection");
+      if (hasOlap && hasSsot) {
+        f.push({ code: "DM_OLAP_NOT_SSOT", severity: "error", path: `fieldId=${fid}`, message: `OLAP 投影字段不能冒充 SSOT：${fid}` });
+      }
+    }
+
+    // duplicate entity-field (by fieldId) pairs
+    for (const [fid, usages] of Object.entries(fieldIdUsages)) {
+      const pairKeys = usages.map(u => `${u.entityId}:${fid}`);
+      for (const dup of findDuplicates(pairKeys)) {
+        f.push({ code: "DM_DUP_ENTITY_FIELD", severity: "error", path: `entity-field=${dup}`, message: `实体-字段 ID 对重复：${dup}` });
+      }
+    }
+
     model.entities.forEach(entity => {
       if (entity.fields.length === 0)
         f.push({ code: "DM_EMPTY_ENTITY", severity: "warning", path: `entities[${entity.id}]`, message: `实体「${entity.name}」没有任何字段` });
@@ -81,6 +122,12 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
             f.push({ code: "DM_REF_NO_TARGET", severity: "error", path: `entities[${entity.id}].fields[${i}]`, message: `关联字段「${fl.name}」没有指定目标实体` });
           else if (!entityIds.has(fl.refEntity))
             f.push({ code: "DM_REF_MISSING_ENTITY", severity: "error", path: `entities[${entity.id}].fields[${i}].refEntity`, message: `关联字段「${fl.name}」指向不存在的实体：${fl.refEntity}` });
+        }
+        // lifecycle checks (SSOT)
+        if (fl.lifecycle === "deprecated") {
+          f.push({ code: "DM_FIELD_DEPRECATED", severity: "warning", path: `entities[${entity.id}].fields[${i}]`, message: `字段「${fl.name}」已弃用` });
+        } else if (fl.lifecycle === "removed") {
+          f.push({ code: "DM_FIELD_REMOVED", severity: "error", path: `entities[${entity.id}].fields[${i}]`, message: `字段「${fl.name}」已移除` });
         }
       });
     });
