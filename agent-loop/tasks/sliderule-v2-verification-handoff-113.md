@@ -1,7 +1,7 @@
 # SlideRule V2 Skills 113.16: verification and handoff
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED - committed 2ad39aba
 - Goal: perform the final V2 Skill verification pass, update the runtime-less Skill README/status notes, and leave a clean handoff for the next AgentLoop queue or human review.
 - Required gate: `slideruleV2VerificationHandoff113Gates`
 
@@ -23,18 +23,24 @@ After tasks 113.01-113.15, the runtime-less Skill layer should express the V2 pr
 - Do not claim success without command output evidence.
 
 ## Implementation steps
-- [ ] Run the full Skill test suite and capture the exact command and result.
-- [ ] Run TypeScript check and capture whether failures are Skill-related or repo baseline.
-- [ ] Run mojibake checker on touched Skill docs/tests.
-- [ ] Update `client/src/lib/skills/README.md` with the final V2 state, supported gates, and known non-goals.
-- [ ] Create or update `docs/intent-to-app/skill-v2-migration-status.md` with a concise table of 16 tasks, status, and evidence.
-- [ ] Confirm `git diff --name-only` only includes intended Skill/task/docs files for this wave.
+- [x] Run the full Skill test suite and capture the exact command and result.
+- [x] Run TypeScript check and capture whether failures are Skill-related or repo baseline.
+- [x] Run mojibake checker on touched Skill docs/tests.
+- [x] Update `client/src/lib/skills/README.md` with the final V2 state, supported gates, and known non-goals.
+- [x] Create or update `docs/intent-to-app/skill-v2-migration-status.md` with a concise table of 16 tasks, status, and evidence.
+- [x] Confirm `git diff --name-only` only includes intended Skill/task/docs files for this wave.
 
 ## Required validation
 - `pnpm exec vitest run client/src/lib/skills --reporter=dot`
 - `pnpm exec tsc --noEmit --pretty false`
 - `node agent-loop/src/check-mojibake.js client/src/lib/skills/README.md docs/intent-to-app/skill-v2-migration-status.md`
 - `git diff --name-only`
+
+## Review evidence
+- `pnpm exec vitest run client/src/lib/skills --reporter=dot`: 9 files, 115 tests passed.
+- `pnpm exec tsc --noEmit --pretty false`: exit 0.
+- `node agent-loop/src/check-mojibake.js client/src/lib/skills/README.md docs/intent-to-app/skill-v2-migration-status.md`: No mojibake findings.
+- `git diff --name-only`: only tracked README before task status update; `git status --short` showed only README and new `docs/intent-to-app/`.
 
 ## Acceptance criteria
 - Skill test suite passes, or any remaining failures are documented with exact failing tests and owner tasks.
