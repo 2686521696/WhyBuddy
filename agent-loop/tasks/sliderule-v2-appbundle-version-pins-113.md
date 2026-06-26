@@ -1,7 +1,7 @@
 # SlideRule V2 Skills 113.12: AppBundle version pins and runtime snapshot
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED - committed 21609919
 - Goal: upgrade AppBundle into Kernel 6 assembly root with version pins, publish manifest, and runtime snapshot semantics.
 - Required gate: `slideruleV2AppBundleVersionPins113Gates`
 
@@ -22,11 +22,11 @@ AppBundle represents the application center. It assembles RBAC, DataModel, Workf
 - Do not change RBAC/DataModel/Workflow/Page models unless a shared type compile fix is unavoidable.
 
 ## Implementation steps
-- [ ] Add `versionPins` for each assembled Skill surface: RBAC, DataModel, Workflow, Page, and AppBundle itself.
-- [ ] Add a `publishManifest` model with app id, version, created time placeholder, included refs, and gate status.
-- [ ] Add a `runtimeSnapshot` model that points to pinned refs instead of live mutable refs.
-- [ ] Update AppBundle sample to pin all included surfaces.
-- [ ] Add tests that the sample exposes version pins and snapshot refs without running publish gate yet.
+- [x] Add `versionPins` for each assembled Skill surface: RBAC, DataModel, Workflow, Page, and AppBundle itself.
+- [x] Add a `publishManifest` model with app id, version, created time placeholder, included refs, and gate status.
+- [x] Add a `runtimeSnapshot` model that points to pinned refs instead of live mutable refs.
+- [x] Update AppBundle sample to pin all included surfaces.
+- [x] Add tests that the sample exposes version pins and snapshot refs without running publish gate yet.
 
 ## Required validation
 - `pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot`
