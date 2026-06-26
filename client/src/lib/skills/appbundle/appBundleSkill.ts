@@ -332,6 +332,7 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
   },
 
   async generate(intent: string): Promise<AppBundleModel> {
+    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalAppBundle;
     if (/请假|leave|审批/i.test(intent)) return leaveApprovalAppBundle;
     throw new Error(`appBundleSkill.generate: needs the reasoning engine to package an app bundle for intent: "${intent}"`);
   },
@@ -432,5 +433,68 @@ export const leaveApprovalAppBundle: AppBundleModel = {
   },
   menuEntries: [
     { id: "menu_leave_request", label: "请假申请", pageRef: "page_leave_request", roleRefs: ["employee", "manager"] },
+  ],
+};
+
+export const purchaseApprovalAppBundle: AppBundleModel = {
+  id: "app_purchase_approval",
+  name: "Purchase Approval Platform",
+  description: "A runtime-less application package for purchase requests, finance approval, and procurement fulfillment.",
+  entityRefs: ["employee", "department", "vendor", "purchase_request"],
+  roleRefs: ["requester", "department_manager", "finance", "procurement"],
+  workflowRefs: ["wf_purchase_approval"],
+  pageRefs: ["page_purchase_request"],
+  pageBindings: [{ pageRef: "page_purchase_request", workflowRef: "wf_purchase_approval", mode: "approve" }],
+  versionPins: [
+    { skillId: "datamodel", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "datamodel", ref: "department", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "datamodel", ref: "vendor", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "datamodel", ref: "purchase_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "requester", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "department_manager", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "finance", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "procurement", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "workflow", ref: "wf_purchase_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "page", ref: "page_purchase_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "appbundle", ref: "app_purchase_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+  ],
+  publishManifest: {
+    appId: "app_purchase_approval",
+    appVersion: "1.0.0",
+    createdAt: "PUBLISH_TIME",
+    gateStatus: "not_run",
+    includedRefs: {
+      entities: ["employee", "department", "vendor", "purchase_request"],
+      roles: ["requester", "department_manager", "finance", "procurement"],
+      workflows: ["wf_purchase_approval"],
+      pages: ["page_purchase_request"],
+      app: ["app_purchase_approval"],
+    },
+  },
+  runtimeSnapshot: {
+    appId: "app_purchase_approval",
+    appVersion: "1.0.0",
+    refMode: "pinned",
+    pinnedRefs: [
+      "datamodel:employee@1.0.0",
+      "datamodel:department@1.0.0",
+      "datamodel:vendor@1.0.0",
+      "datamodel:purchase_request@1.0.0",
+      "rbac:requester@1.0.0",
+      "rbac:department_manager@1.0.0",
+      "rbac:finance@1.0.0",
+      "rbac:procurement@1.0.0",
+      "workflow:wf_purchase_approval@1.0.0",
+      "page:page_purchase_request@1.0.0",
+      "appbundle:app_purchase_approval@1.0.0",
+    ],
+  },
+  menuEntries: [
+    {
+      id: "menu_purchase_request",
+      label: "Purchase Request",
+      pageRef: "page_purchase_request",
+      roleRefs: ["requester", "department_manager", "finance", "procurement"],
+    },
   ],
 };

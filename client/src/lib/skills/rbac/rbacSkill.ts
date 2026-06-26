@@ -508,6 +508,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     // In production this prompts the reasoning engine to emit a RbacModel for `intent`,
     // constrained by the metamodel above. For the sample we return the worked example
     // when the intent is about leave approval, else throw so callers don't get a fake.
+    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalRbac;
     if (/请假|leave/i.test(intent)) return leaveApprovalRbac;
     throw new Error(`rbacSkill.generate: 需要接入推演引擎来为意图生成模型：「${intent}」`);
   },
@@ -627,5 +628,73 @@ export const leaveApprovalRbac: RbacModel = {
   dataRules: [
     { id: "dr_self", name: "员工只看自己的请假", modelRef: "leave_request", scope: "self", roleIds: ["employee"] },
     { id: "dr_dept", name: "主管看本部门请假", modelRef: "leave_request", scope: "dept", roleIds: ["manager"] },
+  ],
+};
+
+export const purchaseApprovalRbac: RbacModel = {
+  failClosed: true,
+  permissions: [
+    { code: "purchase:create", name: "Create purchase request", resource: "purchase_request", action: "create" },
+    { code: "purchase:view", name: "View purchase request", resource: "purchase_request", action: "view" },
+    { code: "purchase:manager_approve", name: "Manager approve purchase", resource: "purchase_request", action: "manager_approve" },
+    { code: "purchase:finance_approve", name: "Finance approve purchase", resource: "purchase_request", action: "finance_approve" },
+    { code: "purchase:fulfill", name: "Procurement fulfill purchase", resource: "purchase_request", action: "fulfill" },
+  ],
+  menus: [
+    { id: "m_purchase", parentId: null, name: "Purchase Center", type: "directory" },
+    { id: "m_purchase_request", parentId: "m_purchase", name: "New Purchase Request", type: "menu", permissionCode: "purchase:create" },
+    { id: "m_purchase_manager", parentId: "m_purchase", name: "Manager Approvals", type: "menu", permissionCode: "purchase:manager_approve" },
+    { id: "m_purchase_finance", parentId: "m_purchase", name: "Finance Approvals", type: "menu", permissionCode: "purchase:finance_approve" },
+    { id: "m_purchase_procurement", parentId: "m_purchase", name: "Procurement Fulfillment", type: "menu", permissionCode: "purchase:fulfill" },
+    { id: "b_purchase_finance", parentId: "m_purchase_finance", name: "Finance Approve", type: "button", permissionCode: "purchase:finance_approve" },
+  ],
+  roles: [
+    {
+      id: "requester",
+      name: "Requester",
+      code: "requester",
+      permissionCodes: ["purchase:create", "purchase:view"],
+      menuIds: ["m_purchase", "m_purchase_request"],
+    },
+    {
+      id: "department_manager",
+      name: "Department Manager",
+      code: "dept_mgr",
+      permissionCodes: ["purchase:view", "purchase:manager_approve"],
+      menuIds: ["m_purchase", "m_purchase_manager"],
+    },
+    {
+      id: "finance",
+      name: "Finance",
+      code: "finance",
+      permissionCodes: ["purchase:view", "purchase:finance_approve"],
+      menuIds: ["m_purchase", "m_purchase_finance", "b_purchase_finance"],
+    },
+    {
+      id: "procurement",
+      name: "Procurement",
+      code: "procurement",
+      permissionCodes: ["purchase:view", "purchase:fulfill"],
+      menuIds: ["m_purchase", "m_purchase_procurement"],
+    },
+  ],
+  departments: [{ id: "d_ops", name: "Operations", parentId: null, leaderUserId: "u_manager" }],
+  positions: [
+    { id: "p_requester", name: "Requester", roleIds: ["requester"] },
+    { id: "p_manager", name: "Department Manager", roleIds: ["department_manager"] },
+    { id: "p_finance", name: "Finance Analyst", roleIds: ["finance"] },
+    { id: "p_procurement", name: "Procurement Specialist", roleIds: ["procurement"] },
+  ],
+  users: [
+    { id: "u_requester", name: "Rita Requester", roleIds: ["requester"], departmentId: "d_ops", positionId: "p_requester" },
+    { id: "u_manager", name: "Maya Manager", roleIds: ["department_manager"], departmentId: "d_ops", positionId: "p_manager" },
+    { id: "u_finance", name: "Finn Finance", roleIds: ["finance"], departmentId: "d_ops", positionId: "p_finance" },
+    { id: "u_procurement", name: "Paula Procurement", roleIds: ["procurement"], departmentId: "d_ops", positionId: "p_procurement" },
+  ],
+  dataRules: [
+    { id: "dr_purchase_self", name: "Requester sees own purchase requests", modelRef: "purchase_request", scope: "self", roleIds: ["requester"] },
+    { id: "dr_purchase_dept", name: "Manager sees department purchase requests", modelRef: "purchase_request", scope: "dept", roleIds: ["department_manager"] },
+    { id: "dr_purchase_finance", name: "Finance sees all purchase requests", modelRef: "purchase_request", scope: "all", roleIds: ["finance"] },
+    { id: "dr_purchase_procurement", name: "Procurement sees all purchase requests", modelRef: "purchase_request", scope: "all", roleIds: ["procurement"] },
   ],
 };

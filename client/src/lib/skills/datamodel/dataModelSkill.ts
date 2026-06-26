@@ -209,6 +209,7 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
   },
 
   async generate(intent: string): Promise<DataModelModel> {
+    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalDataModel;
     if (/请假|leave|审批/i.test(intent)) return leaveRequestDataModel;
     throw new Error(`dataModelSkill.generate: 需要接入推演引擎来为意图生成数据模型：「${intent}」`);
   },
@@ -239,6 +240,58 @@ export const leaveRequestDataModel: DataModelModel = withSsotMetadata({
         { key: "days", name: "天数", type: "number", required: true },
         { key: "reason", name: "事由", type: "string" },
         { key: "approved", name: "是否通过", type: "boolean" },
+      ],
+    },
+  ],
+});
+
+export const purchaseApprovalDataModel: DataModelModel = withSsotMetadata({
+  entities: [
+    {
+      id: "employee",
+      name: "Employee",
+      namespace: "procurement",
+      fields: [
+        { key: "id", name: "Employee ID", type: "string", required: true },
+        { key: "name", name: "Name", type: "string", required: true },
+        { key: "department", name: "Department", type: "ref", refEntity: "department" },
+      ],
+    },
+    {
+      id: "department",
+      name: "Department",
+      namespace: "procurement",
+      fields: [
+        { key: "id", name: "Department ID", type: "string", required: true },
+        { key: "name", name: "Department Name", type: "string", required: true },
+        { key: "budgetOwner", name: "Budget Owner", type: "ref", refEntity: "employee" },
+      ],
+    },
+    {
+      id: "vendor",
+      name: "Vendor",
+      namespace: "procurement",
+      fields: [
+        { key: "id", name: "Vendor ID", type: "string", required: true },
+        { key: "name", name: "Vendor Name", type: "string", required: true },
+        { key: "status", name: "Vendor Status", type: "enum", enumValues: ["active", "blocked"] },
+      ],
+    },
+    {
+      id: "purchase_request",
+      name: "Purchase Request",
+      namespace: "procurement",
+      fields: [
+        { key: "id", name: "Request ID", type: "string", required: true },
+        { key: "requester", name: "Requester", type: "ref", refEntity: "employee", required: true },
+        { key: "department", name: "Department", type: "ref", refEntity: "department", required: true },
+        { key: "vendor", name: "Vendor", type: "ref", refEntity: "vendor", required: true },
+        { key: "amount", name: "Amount", type: "number", required: true },
+        { key: "status", name: "Approval Status", type: "enum", enumValues: ["draft", "approved", "rejected", "fulfilled"] },
+        { key: "budgetChecked", name: "Budget Check", type: "boolean" },
+        { key: "managerApproved", name: "Manager Approved", type: "boolean" },
+        { key: "financeApproved", name: "Finance Approved", type: "boolean" },
+        { key: "procurementFulfilled", name: "Procurement Fulfilled", type: "boolean" },
       ],
     },
   ],

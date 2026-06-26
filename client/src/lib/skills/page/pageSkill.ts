@@ -390,6 +390,7 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
   },
 
   async generate(intent: string): Promise<PageModel> {
+    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalPage;
     if (/请假|leave|审批/i.test(intent)) return leaveApprovalPage;
     throw new Error(`pageSkill.generate: needs the reasoning engine to generate a page model for intent: "${intent}"`);
   },
@@ -435,6 +436,60 @@ for (const component of leaveApprovalPage.components) {
   }
   if (component.id === "approve") {
     component.permissionRender = { roleRefs: ["manager"], permissionRefs: ["leave:approve"] };
+  }
+  component.componentVersion = "1.0.0";
+}
+
+export const purchaseApprovalPage: PageModel = {
+  id: "page_purchase_request",
+  name: "Purchase Request Page",
+  entity: "purchase_request",
+  components: [
+    { id: "requester", type: "select", label: "Requester", field: "purchase_request.requester", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "department", type: "select", label: "Department", field: "purchase_request.department", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "vendor", type: "select", label: "Vendor", field: "purchase_request.vendor", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "amount", type: "number", label: "Amount", field: "purchase_request.amount", visibleToRoles: ["requester", "department_manager", "finance"] },
+    { id: "status", type: "select", label: "Approval Status", field: "purchase_request.status", visibleToRoles: ["requester", "department_manager", "finance", "procurement"] },
+    { id: "budgetCheck", type: "switch", label: "Budget Check", field: "purchase_request.budgetChecked", visibleToRoles: ["department_manager", "finance"] },
+    { id: "submit", type: "button", label: "Submit Purchase", visibleToRoles: ["requester"] },
+    { id: "managerApprove", type: "button", label: "Manager Approve", field: "purchase_request.managerApproved", visibleToRoles: ["department_manager"] },
+    { id: "financeApprove", type: "button", label: "Finance Approve", field: "purchase_request.financeApproved", visibleToRoles: ["finance"] },
+    { id: "procurementFulfill", type: "button", label: "Procurement Fulfill", field: "purchase_request.procurementFulfilled", visibleToRoles: ["procurement"] },
+  ],
+  linkageRules: [
+    {
+      id: "lk_amount_budget",
+      source: { component: "amount", event: "onChange" },
+      target: { component: "budgetCheck", action: "setVisible" },
+    },
+    {
+      id: "lk_finance_status",
+      source: { component: "financeApprove", event: "onClick" },
+      target: { component: "status", action: "setValue" },
+    },
+  ],
+};
+
+purchaseApprovalPage.traceSpan = "page.purchase.request.v2";
+purchaseApprovalPage.componentVersion = "1.0.0";
+for (const component of purchaseApprovalPage.components) {
+  if (component.field) {
+    component.bindingSchema = { entity: purchaseApprovalPage.entity, field: component.field };
+  }
+  if (component.visibleToRoles?.length) {
+    component.permissionRender = { roleRefs: [...component.visibleToRoles] };
+  }
+  if (component.id === "submit") {
+    component.permissionRender = { roleRefs: ["requester"], permissionRefs: ["purchase:create"] };
+  }
+  if (component.id === "managerApprove") {
+    component.permissionRender = { roleRefs: ["department_manager"], permissionRefs: ["purchase:manager_approve"] };
+  }
+  if (component.id === "financeApprove") {
+    component.permissionRender = { roleRefs: ["finance"], permissionRefs: ["purchase:finance_approve"] };
+  }
+  if (component.id === "procurementFulfill") {
+    component.permissionRender = { roleRefs: ["procurement"], permissionRefs: ["purchase:fulfill"] };
   }
   component.componentVersion = "1.0.0";
 }

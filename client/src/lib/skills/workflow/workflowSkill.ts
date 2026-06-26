@@ -319,6 +319,7 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
   },
 
   async generate(intent: string): Promise<WorkflowModel> {
+    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalWorkflow;
     if (/请假|leave|审批/i.test(intent)) return leaveApprovalWorkflow;
     throw new Error(`workflowSkill.generate: 需要接入推演引擎来为意图生成流程：「${intent}」`);
   },
@@ -350,5 +351,83 @@ export const leaveApprovalWorkflow: WorkflowModel = {
     { id: "t2", from: "a_mgr", to: "b" },
     { id: "t3", from: "b", to: "e_ok", when: { op: "==", value: true } },
     { id: "t4", from: "b", to: "e_no", isDefault: true },
+  ],
+};
+
+export const purchaseApprovalWorkflow: WorkflowModel = {
+  id: "wf_purchase_approval",
+  name: "Purchase Approval Workflow",
+  pep: "pep",
+  actorRoleRef: "requester",
+  policyCheckRefs: [
+    "purchase:create",
+    "purchase:manager_approve",
+    "purchase:finance_approve",
+    "purchase:fulfill",
+  ],
+  fieldRefs: [
+    "purchase_request.amount",
+    "purchase_request.budgetChecked",
+    "purchase_request.managerApproved",
+    "purchase_request.financeApproved",
+    "purchase_request.procurementFulfilled",
+  ],
+  traceSpan: "wf.purchase.approval",
+  fields: [
+    { key: "amount", type: "number" },
+    { key: "budgetChecked", type: "boolean" },
+    { key: "managerApproved", type: "boolean" },
+    { key: "financeApproved", type: "boolean" },
+    { key: "procurementFulfilled", type: "boolean" },
+  ],
+  nodes: [
+    { id: "submit", type: "start", name: "Submit purchase request" },
+    {
+      id: "manager",
+      type: "approval",
+      name: "Department manager approval",
+      assigneeRole: "department_manager",
+      assigneeRoleRef: "department_manager",
+      approvalMode: "any",
+    },
+    { id: "budget", type: "branch", name: "Budget check", field: "budgetChecked", fieldRef: "purchase_request.budgetChecked" },
+    {
+      id: "finance",
+      type: "approval",
+      name: "Finance approval",
+      assigneeRole: "finance",
+      assigneeRoleRef: "finance",
+      approvalMode: "any",
+    },
+    { id: "finance_result", type: "branch", name: "Finance result", field: "financeApproved", fieldRef: "purchase_request.financeApproved" },
+    {
+      id: "procurement",
+      type: "approval",
+      name: "Procurement fulfillment",
+      assigneeRole: "procurement",
+      assigneeRoleRef: "procurement",
+      approvalMode: "any",
+    },
+    {
+      id: "fulfillment",
+      type: "branch",
+      name: "Fulfillment result",
+      field: "procurementFulfilled",
+      fieldRef: "purchase_request.procurementFulfilled",
+    },
+    { id: "approved", type: "end", name: "Approved" },
+    { id: "rejected", type: "end", name: "Rejected" },
+  ],
+  edges: [
+    { id: "p1", from: "submit", to: "manager" },
+    { id: "p2", from: "manager", to: "budget" },
+    { id: "p3", from: "budget", to: "finance", when: { op: "==", value: true } },
+    { id: "p4", from: "budget", to: "rejected", isDefault: true },
+    { id: "p5", from: "finance", to: "finance_result" },
+    { id: "p6", from: "finance_result", to: "procurement", when: { op: "==", value: true } },
+    { id: "p7", from: "finance_result", to: "rejected", isDefault: true },
+    { id: "p8", from: "procurement", to: "fulfillment" },
+    { id: "p9", from: "fulfillment", to: "approved", when: { op: "==", value: true } },
+    { id: "p10", from: "fulfillment", to: "rejected", isDefault: true },
   ],
 };
