@@ -17,6 +17,10 @@ import type {
   Skill,
   ValidationReport,
 } from "./skill";
+import { analyzeImpact, buildDependencyGraph as buildImpactDependencyGraph } from "./impact";
+import type { DependencyGraph, ImpactReport, ResourceRef } from "./impact";
+
+export type { DependencyGraph, ImpactPath, ImpactedArtifact, ImpactReport, ResourceRef } from "./impact";
 
 // A registry entry erases the model type but keeps the typed skill internally. Every method
 // is only ever called with the model produced by that same skill, so the casts are sound.
@@ -83,38 +87,6 @@ function shapeNode(id: string, label: string, kind: string): string {
   if (kind === "start" || kind === "end") return `${id}(["${safe}"])`;
   if (kind === "branch") return `${id}{"${safe}"}`;
   return `${id}["${safe}"]`;
-}
-
-/** A resource another skill may reference, e.g. { skill:"rbac", kind:"role", value:"manager" }. */
-export interface ResourceRef {
-  skill: string;
-  kind: string;
-  value: string;
-}
-
-/** One artifact that would break if a resource is changed/removed. */
-export interface ImpactedArtifact {
-  skill: string;
-  skillTitle: string;
-  /** projection node id of the dependent artifact */
-  node: string;
-  /** human label of the dependent artifact */
-  label: string;
-  /** the reference kind that links it to the target, e.g. "审批人" / "数据" */
-  via: string;
-  /** hops from the changed resource (1 = direct dependent) */
-  depth: number;
-}
-
-export interface ImpactReport {
-  target: ResourceRef;
-  /** true iff nothing depends on the target — safe to change/remove */
-  safe: boolean;
-  impacted: ImpactedArtifact[];
-}
-
-function refKey(r: ResourceRef): string {
-  return `${r.skill}::${r.kind}::${r.value}`;
 }
 
 export class Orchestrator {
@@ -209,76 +181,13 @@ export class Orchestrator {
     return { publishable: blockers.length === 0, blockers, result };
   }
 
-  /**
-   * Cross-system impact analysis — the executable version of the "global invalidation /
-   * dependency graph" the reference architectures are MISSING (review finding P0-2).
-   *
-   * Given a resource (e.g. rbac role "manager"), reverse-traverse every skill's declared
-   * cross-references to find every downstream artifact that would break if it is changed or
-   * removed — across system boundaries, transitively. This is what a role rename in RBAC
-   * needs in order to invalidate the workflow node and page that reference it.
-   */
-  impact(models: Record<string, unknown>, target: ResourceRef): ImpactReport {
+  buildDependencyGraph(models: Record<string, unknown>): DependencyGraph {
     const active = this.skills.filter(s => s.id in models);
+    return buildImpactDependencyGraph(active, models);
+  }
 
-    // 1) projections give human labels for nodes
-    const projById = new Map(active.map(s => [s.id, s.project(models[s.id])]));
-    const labelOf = (skillId: string, node: string): string =>
-      projById.get(skillId)?.nodes.find(n => n.id === node)?.label ?? node;
-
-    // 2) addressable map: which (skill, node) IS itself a referenceable resource, so impact
-    //    can continue transitively (a broken artifact may be depended on by yet another).
-    const nodeToResource = new Map<string, ResourceRef>(); // key `${skill}::${node}` -> resource
-    for (const skill of active) {
-      const surface = skill.resolve(models[skill.id]);
-      for (const [kind, values] of Object.entries(surface)) {
-        for (const value of values) {
-          const node = skill.refNodeId(kind, value);
-          if (node) nodeToResource.set(`${skill.id}::${node}`, { skill: skill.id, kind, value });
-        }
-      }
-    }
-
-    // 3) reverse index: resource -> the artifacts that reference it
-    const dependents = new Map<string, Array<{ skill: string; node: string; via: string }>>();
-    for (const skill of active) {
-      for (const ref of skill.crossRefs(models[skill.id])) {
-        const key = refKey({ skill: ref.toSkill, kind: ref.toKind, value: ref.toValue });
-        const list = dependents.get(key) ?? [];
-        list.push({ skill: skill.id, node: ref.fromNode, via: ref.label ?? "" });
-        dependents.set(key, list);
-      }
-    }
-
-    // 4) BFS over the reverse index
-    const impacted: ImpactedArtifact[] = [];
-    const seen = new Set<string>();
-    let frontier: Array<{ ref: ResourceRef; depth: number }> = [{ ref: target, depth: 0 }];
-    while (frontier.length) {
-      const next: Array<{ ref: ResourceRef; depth: number }> = [];
-      for (const { ref, depth } of frontier) {
-        for (const dep of dependents.get(refKey(ref)) ?? []) {
-          const nodeKey = `${dep.skill}::${dep.node}`;
-          if (seen.has(nodeKey)) continue;
-          seen.add(nodeKey);
-          const skillTitle = active.find(s => s.id === dep.skill)?.title ?? dep.skill;
-          impacted.push({
-            skill: dep.skill,
-            skillTitle,
-            node: dep.node,
-            label: labelOf(dep.skill, dep.node),
-            via: dep.via,
-            depth: depth + 1,
-          });
-          // if this broken artifact is itself a referenceable resource, cascade
-          const asResource = nodeToResource.get(nodeKey);
-          if (asResource) next.push({ ref: asResource, depth: depth + 1 });
-        }
-      }
-      frontier = next;
-    }
-
-    return { target, safe: impacted.length === 0, impacted };
+  impact(models: Record<string, unknown>, target: ResourceRef): ImpactReport {
+    return analyzeImpact(this.buildDependencyGraph(models), target);
   }
 
   private combineDiagram(

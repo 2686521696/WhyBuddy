@@ -161,6 +161,15 @@ export interface ImpactReport {
     via: string;
     depth: number;
   }>;
+  paths?: Array<{
+    steps: Array<{
+      skill: string;
+      node: string;
+      label: string;
+      via?: string;
+      depth: number;
+    }>;
+  }>;
   affectedSkills?: string[];
   impactGraph?: Projection;
   summary?: string;
