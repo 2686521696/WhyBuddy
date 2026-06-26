@@ -34,6 +34,8 @@ export interface Role {
   isSystem?: boolean;
   permissionCodes: string[];
   menuIds: string[];
+  /** V2 PDP role inheritance: permissions are the union of own + inherited. */
+  inheritsRoleIds?: string[];
 }
 
 export interface Department {
@@ -74,6 +76,29 @@ export interface SodConstraint {
   mutuallyExclusive: string[];
 }
 
+/** V2 SoD rule (role-based separation-of-duty for PDP). */
+export interface SoDRule {
+  id: string;
+  name: string;
+  /** roles that are mutually exclusive for the same subject (no single principal holds >1) */
+  exclusiveRoleIds: string[];
+  severity: "error" | "warning";
+}
+
+/** Typed policy request/context for PDP decisions (V2). */
+export interface PolicyContext {
+  /** subject role refs (and optional finer subject) */
+  subject: {
+    roleIds: string[];
+    userId?: string;
+  };
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  tenantId?: string;
+  scope?: string;
+}
+
 export interface RbacModel {
   roles: Role[];
   permissions: Permission[];
@@ -84,4 +109,8 @@ export interface RbacModel {
   dataRules: DataRule[];
   /** optional design-time SoD constraints enforced by the validator. */
   sodConstraints?: SodConstraint[];
+  /** V2 PDP SoD rules (role based). */
+  sodRules?: SoDRule[];
+  /** fail-closed policy posture: true means default-deny for unauthenticated or unruled decisions. */
+  failClosed?: boolean;
 }

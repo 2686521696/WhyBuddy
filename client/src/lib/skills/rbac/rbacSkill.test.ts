@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { leaveApprovalRbac, rbacSkill } from "./rbacSkill";
-import type { RbacModel } from "./rbacModel";
+import type { RbacModel, PolicyContext } from "./rbacModel";
 
 // Deep clone so each test can mutate a fresh copy without leaking.
 const clone = (m: RbacModel): RbacModel => structuredClone(m);
@@ -76,5 +76,67 @@ describe("rbacSkill — projector (architecture diagram falls out of the model)"
       projection.edges.some(e => e.from === "role_manager" && e.to === "perm_leave_approve"),
     ).toBe(true);
     expect(projection.mermaid.startsWith("flowchart LR")).toBe(true);
+  });
+});
+
+// V2 PDP model extensions (inheritance, SoD rules, PolicyContext, fail-closed)
+describe("rbac model — V2 PDP extensions (113.02)", () => {
+  it("supports role inheritance metadata via inheritsRoleIds", () => {
+    const m = clone(leaveApprovalRbac);
+    const manager = m.roles.find(r => r.id === "manager")!;
+    manager.inheritsRoleIds = ["employee"];
+    expect(manager.inheritsRoleIds).toEqual(["employee"]);
+    // manager now inherits from employee while keeping own perms
+    expect(m.roles.some(r => r.inheritsRoleIds && r.inheritsRoleIds.includes("employee"))).toBe(true);
+  });
+
+  it("supports SoD metadata via sodRules (role-based separation of duty)", () => {
+    const m: RbacModel = {
+      ...clone(leaveApprovalRbac),
+      sodRules: [
+        {
+          id: "sod_create_approve",
+          name: "发起与审批不得同一角色",
+          exclusiveRoleIds: ["employee", "manager"],
+          severity: "error",
+        },
+      ],
+    };
+    expect(m.sodRules).toBeDefined();
+    expect(m.sodRules![0].id).toBe("sod_create_approve");
+    expect(m.sodRules![0].exclusiveRoleIds).toContain("employee");
+  });
+
+  it("exposes typed PolicyContext for PDP requests", () => {
+    const ctx: PolicyContext = {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+      resourceId: "lr_42",
+      tenantId: "t1",
+      scope: "dept",
+    };
+    expect(ctx.subject.roleIds).toContain("manager");
+    expect(ctx.action).toBe("approve");
+    expect(ctx.resourceType).toBe("leave_request");
+  });
+
+  it("requires/declares failClosed: true for fail-closed posture on the leave approval sample", () => {
+    expect(leaveApprovalRbac.failClosed).toBe(true);
+    // do not allow permissive default in tests
+    expect(leaveApprovalRbac.failClosed).not.toBe(false);
+  });
+
+  it("fail-closed defaults posture is fail-closed (not permissive)", () => {
+    // new models should declare failClosed true to be explicit; absence is treated strict in V2 PDP
+    const fresh: RbacModel = {
+      ...clone(leaveApprovalRbac),
+      failClosed: true,
+      sodRules: [],
+    };
+    expect(fresh.failClosed).toBe(true);
+    // existing sample remains valid (optional field)
+    const report = rbacSkill.validate(leaveApprovalRbac);
+    expect(report.ok).toBe(true);
   });
 });

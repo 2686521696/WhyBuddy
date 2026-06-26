@@ -348,6 +348,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
 // ---------------------------------------------------------------------------
 
 export const leaveApprovalRbac: RbacModel = {
+  failClosed: true,
   permissions: [
     { code: "leave:create", name: "发起请假", resource: "leave_request", action: "create" },
     { code: "leave:approve", name: "审批请假", resource: "leave_request", action: "approve" },
