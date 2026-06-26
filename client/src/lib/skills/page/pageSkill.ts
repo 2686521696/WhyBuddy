@@ -266,3 +266,21 @@ export const leaveApprovalPage: PageModel = {
     },
   ],
 };
+
+leaveApprovalPage.traceSpan = "page.leave.request.v2";
+leaveApprovalPage.componentVersion = "1.0.0";
+for (const component of leaveApprovalPage.components) {
+  if (component.field) {
+    component.bindingSchema = { entity: leaveApprovalPage.entity, field: component.field };
+  }
+  if (component.visibleToRoles?.length) {
+    component.permissionRender = { roleRefs: [...component.visibleToRoles] };
+  }
+  if (component.id === "submit") {
+    component.permissionRender = { roleRefs: ["employee"], permissionRefs: ["leave:create"] };
+  }
+  if (component.id === "approve") {
+    component.permissionRender = { roleRefs: ["manager"], permissionRefs: ["leave:approve"] };
+  }
+  component.componentVersion = "1.0.0";
+}
