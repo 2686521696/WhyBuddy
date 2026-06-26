@@ -82,3 +82,39 @@ describe("workflowSkill — projector", () => {
     expect(projection.mermaid).toContain("默认"); // the else edge label
   });
 });
+
+describe("workflowSkill — V2 PEP model delegation (without changing execution semantics)", () => {
+  it("Workflow model expresses PEP via actorRoleRef/policyCheckRefs/fieldRefs/traceSpan and pep marker", () => {
+    expect(leaveApprovalWorkflow.pep).toBe("pep");
+    expect(leaveApprovalWorkflow.actorRoleRef).toBe("employee");
+    expect(leaveApprovalWorkflow.policyCheckRefs).toContain("leave:approve");
+    expect(leaveApprovalWorkflow.fieldRefs).toContain("leave_request.approved");
+    expect(leaveApprovalWorkflow.traceSpan).toBe("wf.leave.approval");
+  });
+
+  it("approval node mirrors assignee into assigneeRoleRef for RBAC PDP while keeping assigneeRole", () => {
+    const mgr = leaveApprovalWorkflow.nodes.find(n => n.id === "a_mgr")!;
+    expect(mgr.assigneeRole).toBe("manager");
+    expect(mgr.assigneeRoleRef).toBe("manager");
+  });
+
+  it("branch node uses fieldRef as DataModel SSOT ref (local field kept for reachability)", () => {
+    const branch = leaveApprovalWorkflow.nodes.find(n => n.id === "b")!;
+    expect(branch.field).toBe("approved");
+    expect(branch.fieldRef).toBe("leave_request.approved");
+  });
+
+  it("PEP refs can be set on model and validate/reachability/termination unchanged", () => {
+    const pepClone = clone(leaveApprovalWorkflow);
+    // PEP delegation fields do not affect graph
+    pepClone.actorRoleRef = "employee";
+    pepClone.policyCheckRefs = ["leave:approve", "leave:view"];
+    pepClone.fieldRefs = ["leave_request.approved"];
+    pepClone.traceSpan = "trace-113";
+    const report = workflowSkill.validate(pepClone, { external: rbacSurface });
+    expect(report.ok).toBe(true);
+    expect(report.errors).toHaveLength(0);
+    // reachability preserved: would have failed the original unreachable/non-term tests if broken
+    expect(pepClone.nodes.length).toBeGreaterThan(3);
+  });
+});

@@ -264,11 +264,16 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
 export const leaveApprovalWorkflow: WorkflowModel = {
   id: "wf_leave_approval",
   name: "请假审批流程",
+  pep: "pep",
+  actorRoleRef: "employee",
+  policyCheckRefs: ["leave:approve"],
+  fieldRefs: ["leave_request.approved"],
+  traceSpan: "wf.leave.approval",
   fields: [{ key: "approved", type: "boolean" }],
   nodes: [
     { id: "s", type: "start", name: "发起请假" },
-    { id: "a_mgr", type: "approval", name: "主管审批", assigneeRole: "manager", approvalMode: "any" },
-    { id: "b", type: "branch", name: "审批结果", field: "approved" },
+    { id: "a_mgr", type: "approval", name: "主管审批", assigneeRole: "manager", assigneeRoleRef: "manager", approvalMode: "any" },
+    { id: "b", type: "branch", name: "审批结果", field: "approved", fieldRef: "leave_request.approved" },
     { id: "e_ok", type: "end", name: "通过" },
     { id: "e_no", type: "end", name: "驳回" },
   ],
