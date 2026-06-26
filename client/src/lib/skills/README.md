@@ -38,3 +38,12 @@ Not included yet:
 
 - Real LLM-backed generation.
 - Materialization into the heavy low-code platform or AgentLoop-generated code.
+
+## V2 Kernel Vocabulary (short glossary)
+
+- **PDP (Policy Decision Point)**: RBAC acts as Kernel 1, the central host for policy decisions.
+- **PEP (Policy Enforcement Point)**: Workflow and Page are execution points that delegate to PDP and bind to SSOT.
+- **SSOT (Single Source of Truth)**: DataModel is Kernel 2, the authoritative host for entities, fields, and relations.
+- **AppBundle**: Kernel 6, the assembly root that checks cross-skill closure and pins versions.
+- **publish gate**: The orchestrator gate that aggregates skill validations and dangling cross-refs to decide publishability.
+- **impact graph**: The derived projection showing how a change in one skill affects others (via resolve + project surfaces).

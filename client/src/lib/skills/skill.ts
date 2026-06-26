@@ -96,3 +96,82 @@ export function finalizeReport(findings: Finding[]): ValidationReport {
   const warnings = findings.filter(f => f.severity === "warning");
   return { ok: errors.length === 0, errors, warnings };
 }
+
+/** V2 shared kernel vocabulary for runtime-less Skills (contract only; no impl). */
+
+/** Kernel role labels for the five-Skill product simulation kernel. */
+export type KernelRole =
+  | "pdp-host"      // RBAC is Kernel 1, the PDP host
+  | "ssot-host"     // DataModel is Kernel 2, the SSOT host
+  | "pep"           // Workflow and Page are PEP execution points
+  | "assembly-root"; // AppBundle is Kernel 6, the assembly root
+
+/** Distinguishes kernel vs execution vs assembly roles at runtime surface. */
+export type SkillRuntimeRole = "kernel" | "pep-execution" | "assembly";
+
+/** Outgoing or incoming reference to another skill's surface. */
+export interface DependencyRef {
+  to: string;
+  kind: string;
+  ref: string;
+  label?: string;
+}
+
+/** Pins a dependency skill to an exact version for closure. */
+export interface VersionPin {
+  skillId: string;
+  version: string;
+  pinnedAt?: string;
+}
+
+/** A policy decision surface (PDP output). */
+export interface PolicyDecision {
+  decision: "allow" | "deny";
+  reason?: string;
+  ruleId?: string;
+  subject?: string;
+  action?: string;
+  resource?: string;
+}
+
+/** Report from publish gate (cross-skill closure + version pins). */
+export interface PublishGateReport {
+  publishable: boolean;
+  blockers: Finding[];
+  unresolvedRefs?: CrossRefEdge[];
+}
+
+/** Report of change impact across the skill graph. */
+export interface ImpactReport {
+  affectedSkills: string[];
+  impactGraph?: Projection;
+  summary: string;
+}
+
+/** Typed surface a V2 Skill can publish for orchestrator and other skills. */
+export interface SkillCapabilitySurface {
+  kernelRole?: KernelRole;
+  runtimeRole?: SkillRuntimeRole;
+  provides?: string[];
+  delegatesTo?: DependencyRef[];
+  bindsTo?: DependencyRef[];
+  versionPins?: VersionPin[];
+  policyDecisions?: PolicyDecision[];
+  publishGates?: PublishGateReport[];
+  impacts?: ImpactReport[];
+}
+
+/** SkillDefinition carries optional V2 metadata block (additive, source-compatible). */
+export interface SkillDefinition<TModel = any> {
+  id: string;
+  title: string;
+  /** Optional link to the Skill impl surface. */
+  skill?: Skill<TModel>;
+  /** V2 kernel metadata (optional, additive). */
+  runtimeRole?: SkillRuntimeRole;
+  kernelRole?: KernelRole;
+  provides?: string[];
+  delegatesTo?: DependencyRef[];
+  bindsTo?: DependencyRef[];
+  capability?: SkillCapabilitySurface;
+}

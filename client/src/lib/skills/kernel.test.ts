@@ -5,6 +5,17 @@ import { leaveApprovalRbac, rbacSkill } from "./rbac/rbacSkill";
 import { leaveApprovalWorkflow } from "./workflow/workflowSkill";
 import { leaveRequestDataModel } from "./datamodel/dataModelSkill";
 import type { RbacModel } from "./rbac/rbacModel";
+import type {
+  KernelRole,
+  SkillRuntimeRole,
+  DependencyRef,
+  VersionPin,
+  PolicyDecision,
+  PublishGateReport,
+  ImpactReport,
+  SkillCapabilitySurface,
+  SkillDefinition,
+} from "./skill";
 
 const models = {
   datamodel: leaveRequestDataModel,
@@ -52,5 +63,67 @@ describe("kernel ⑥ — publish gate (cross-system closure)", () => {
     // no datamodel registered in this set → rbac dataRule -> datamodel entity cannot resolve
     expect(gate.publishable).toBe(false);
     expect(gate.blockers.some(b => b.code === "PUBLISH_DANGLING_CROSSREF")).toBe(true);
+  });
+});
+
+describe("V2 shared contract — kernel vocabulary (PDP/SSOT/PEP/assembly)", () => {
+  it("V2 Skill can declare PDP, SSOT, PEP, and assembly-root semantics", () => {
+    const pdpRole: KernelRole = "pdp-host";
+    const ssotRole: KernelRole = "ssot-host";
+    const pepRole: KernelRole = "pep";
+    const assemblyRole: KernelRole = "assembly-root";
+
+    const runtime: SkillRuntimeRole = "kernel";
+
+    const dep: DependencyRef = { to: "datamodel", kind: "entity", ref: "leaveRequest" };
+    const pin: VersionPin = { skillId: "rbac", version: "1.0.0" };
+    const decision: PolicyDecision = { decision: "allow", ruleId: "rbac:1" };
+
+    const publish: PublishGateReport = { publishable: true, blockers: [] };
+    const impact: ImpactReport = { affectedSkills: ["workflow"], summary: "minor" };
+
+    const surface: SkillCapabilitySurface = {
+      kernelRole: pdpRole,
+      runtimeRole: runtime,
+      provides: ["role", "permission"],
+      delegatesTo: [],
+      bindsTo: [dep],
+      versionPins: [pin],
+      policyDecisions: [decision],
+      publishGates: [publish],
+      impacts: [impact],
+    };
+
+    const def: SkillDefinition = {
+      id: "rbac",
+      title: "RBAC",
+      kernelRole: "pdp-host",
+      runtimeRole: "kernel",
+      provides: ["role"],
+      delegatesTo: [],
+      bindsTo: [],
+      capability: surface,
+    };
+
+    expect(pdpRole).toBe("pdp-host");
+    expect(ssotRole).toBe("ssot-host");
+    expect(pepRole).toBe("pep");
+    expect(assemblyRole).toBe("assembly-root");
+    expect(def.kernelRole).toBe("pdp-host");
+    expect(def.capability?.provides).toContain("role");
+  });
+
+  it("does not break existing validate/project/resolve/generate usage", () => {
+    // existing paths must continue to work
+    expect(rbacSkill.validate(leaveApprovalRbac).ok).toBe(true);
+    const proj = rbacSkill.project(leaveApprovalRbac);
+    expect(proj.nodes.length).toBeGreaterThan(0);
+    const res = rbacSkill.resolve(leaveApprovalRbac);
+    expect(res).toBeDefined();
+    // generate is optional and may be absent in some
+    if (rbacSkill.generate) {
+      // do not actually invoke without setup
+      expect(typeof rbacSkill.generate).toBe("function");
+    }
   });
 });
