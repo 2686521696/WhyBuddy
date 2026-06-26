@@ -27,9 +27,19 @@ export type OverviewTask = {
   lastRunId?: string | null;
 };
 
+export type AvailableQueue = {
+  path: string;
+  taskCount?: number | null;
+  mtime?: number | string | null;
+};
+
 export type OverviewPayload = {
   counts?: Record<string, number | undefined>;
   queueRunning?: boolean;
+  queuePath?: string | null;
+  latestQueuePath?: string | null;
+  queueStale?: boolean;
+  availableQueues?: AvailableQueue[];
   landing?: unknown;
   current?: {
     taskLabel?: string | null;

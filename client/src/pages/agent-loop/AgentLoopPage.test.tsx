@@ -908,6 +908,46 @@ it("agentloop setting visual readiness 112 covers five reference tabs", () => {
   expect(html).not.toContain("grokApiKey");
 });
 
+it("agentloop overview surfaces stale queue path and latest queue candidate", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <DashboardApp
+        payload={{
+          counts: { total: 16, queueTotal: 16 },
+          queuePath: "agent-loop/scripts/sliderule-v2-skills-113-queue.json",
+          latestQueuePath: "agent-loop/scripts/sliderule-v2-hardening-115-queue.json",
+          queueStale: true,
+          tasks: [
+            {
+              id: "sliderule-v2-skill-contract-113",
+              task: "agent-loop/tasks/sliderule-v2-skill-contract-113.md",
+              enabled: true,
+            },
+          ],
+        }}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("当前队列");
+  expect(html).toContain("sliderule-v2-skills-113-queue.json");
+  expect(html).toContain("检测到更新队列");
+  expect(html).toContain("sliderule-v2-hardening-115-queue.json");
+});
+
 it("agentloop setting center visual shell matches SlideRule reference", () => {
   const origWindow = (globalThis as any).window;
   (globalThis as any).window = {

@@ -166,6 +166,11 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${Math.round(value / 1024)} KB`;
 }
 
+function queueName(path: string | null | undefined): string {
+  if (!path) return '';
+  return String(path).split(/[\\/]/).pop() || String(path);
+}
+
 function formatAgentPair(task: OverviewTask): string {
   const parts = [task.fixAgent, task.reviewAgent]
     .filter(Boolean)
@@ -254,6 +259,10 @@ function OverviewHeader({ payload, settings }: { payload: OverviewPayload; setti
   const ap = settings?.activeProfile || (eff as any).activeProfile || '';
   const f = settings?.fixAgent || (eff as any).fixAgent || '';
   const r = settings?.reviewAgent || (eff as any).reviewAgent || '';
+  const activeQueuePath = payload.queuePath || settings?.queuePath || (eff as any).queuePath || '';
+  const latestQueuePath = payload.latestQueuePath || '';
+  const hasQueuePath = Boolean(activeQueuePath);
+  const queueStale = Boolean(payload.queueStale && latestQueuePath && activeQueuePath && latestQueuePath !== activeQueuePath);
   const rtOpts = {
     ...(f ? { fixAgent: f } : {}),
     ...(r ? { reviewAgent: r } : {}),
@@ -290,6 +299,34 @@ function OverviewHeader({ payload, settings }: { payload: OverviewPayload; setti
           </Space>
         </Col>
       </Row>
+      {hasQueuePath ? (
+        <div style={{ marginTop: 12 }}>
+          <Space wrap size={[8, 8]}>
+            <Tag color={queueStale ? 'warning' : 'default'}>当前队列</Tag>
+            <Text code>{queueName(activeQueuePath)}</Text>
+            <Text type="secondary" className="native-task-path" ellipsis={{ tooltip: activeQueuePath }}>
+              {activeQueuePath}
+            </Text>
+          </Space>
+        </div>
+      ) : null}
+      {queueStale ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 12 }}
+          message="检测到更新队列"
+          description={
+            <Space direction="vertical" size={2}>
+              <Text>当前页面仍在读取 {queueName(activeQueuePath)}</Text>
+              <Text>最新队列是 {queueName(latestQueuePath)}</Text>
+              <Text type="secondary" className="native-task-path" ellipsis={{ tooltip: latestQueuePath }}>
+                {latestQueuePath}
+              </Text>
+            </Space>
+          }
+        />
+      ) : null}
     </Card>
   );
 }

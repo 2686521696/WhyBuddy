@@ -111,6 +111,10 @@ export async function fetchOverview(): Promise<OverviewPayload> {
     const counts = overview?.counts && typeof overview.counts === "object" ? overview.counts : {};
     return {
       queueRunning: Boolean(overview?.queueRunning),
+      queuePath: overview?.queuePath ?? null,
+      latestQueuePath: overview?.latestQueuePath ?? null,
+      queueStale: Boolean(overview?.queueStale),
+      availableQueues: Array.isArray(overview?.availableQueues) ? overview.availableQueues : [],
       counts,
       tasks,
       current: overview?.current ?? null,

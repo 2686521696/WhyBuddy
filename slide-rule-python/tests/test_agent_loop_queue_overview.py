@@ -126,3 +126,59 @@ def test_agentloop_queue_overview_reads_queue_and_outcomes(tmp_path, monkeypatch
     assert data["counts"]["pending"] == 0
     assert data["current"]["taskLabel"] == "task-a"
     assert data["current"]["profileName"] == "grok / codex"
+
+
+def test_agentloop_queue_overview_reports_stale_active_queue_when_newer_queue_exists(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    scripts_dir = repo_root / "agent-loop" / "scripts"
+    tasks_dir = repo_root / "agent-loop" / "tasks"
+    scripts_dir.mkdir(parents=True)
+    tasks_dir.mkdir(parents=True)
+    (repo_root / ".agent-loop").mkdir(parents=True)
+
+    old_queue = scripts_dir / "sliderule-v2-skills-113-queue.json"
+    old_queue.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "old-113-task", "task": "agent-loop/tasks/old-113-task.md", "enabled": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    new_queue = scripts_dir / "sliderule-v2-hardening-115-queue.json"
+    new_queue.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "new-115-task-a", "task": "agent-loop/tasks/new-115-task-a.md", "enabled": True},
+                    {"id": "new-115-task-b", "task": "agent-loop/tasks/new-115-task-b.md", "enabled": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tasks_dir / "old-113-task.md").write_text("# old", encoding="utf-8")
+    (tasks_dir / "new-115-task-a.md").write_text("# new a", encoding="utf-8")
+    (tasks_dir / "new-115-task-b.md").write_text("# new b", encoding="utf-8")
+
+    settings_file = repo_root / "data" / "agent-loop-settings.json"
+    settings_file.parent.mkdir(parents=True)
+    settings_file.write_text(
+        json.dumps({"queuePath": "agent-loop/scripts/sliderule-v2-skills-113-queue.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_LOOP_SETTINGS_FILE", str(settings_file))
+    monkeypatch.setattr(agent_loop_runs, "_get_repo_root", lambda: repo_root)
+
+    data = agent_loop_runs.get_agent_loop_queue_overview(str(repo_root))
+
+    assert data["queuePath"] == "agent-loop/scripts/sliderule-v2-skills-113-queue.json"
+    assert data["latestQueuePath"] == "agent-loop/scripts/sliderule-v2-hardening-115-queue.json"
+    assert data["queueStale"] is True
+    assert [q["path"] for q in data["availableQueues"]] == [
+        "agent-loop/scripts/sliderule-v2-hardening-115-queue.json",
+        "agent-loop/scripts/sliderule-v2-skills-113-queue.json",
+    ]
+    assert data["tasks"][0]["id"] == "old-113-task"

@@ -266,6 +266,50 @@ def _resolve_queue_file_path(repo: Path) -> Path:
     return _default_queue_file_path(repo)
 
 
+def _repo_relative_path(repo: Path, path_obj: Path) -> str:
+    try:
+        return path_obj.resolve(strict=False).relative_to(repo.resolve(strict=False)).as_posix()
+    except Exception:
+        return path_obj.name
+
+
+def _queue_sequence(path_obj: Path) -> int:
+    match = re.search(r"-(\d+)-queue\.json$", path_obj.name)
+    return int(match.group(1)) if match else -1
+
+
+def _discover_queue_files(repo: Path) -> List[Dict[str, Any]]:
+    scripts_dir = repo / "agent-loop" / "scripts"
+    if not scripts_dir.exists() or not scripts_dir.is_dir():
+        return []
+
+    queues: List[Dict[str, Any]] = []
+    for path_obj in scripts_dir.glob("*queue*.json"):
+        queue = _safe_read_json(path_obj) or {}
+        tasks = queue.get("tasks")
+        if not isinstance(tasks, list):
+            continue
+        try:
+            mtime = path_obj.stat().st_mtime
+        except Exception:
+            mtime = 0.0
+        queues.append(
+            {
+                "path": _repo_relative_path(repo, path_obj),
+                "taskCount": len(tasks),
+                "mtime": mtime,
+                "_sequence": _queue_sequence(path_obj),
+                "_name": path_obj.name,
+            }
+        )
+
+    queues.sort(key=lambda item: (int(item.get("_sequence") or -1), float(item.get("mtime") or 0), str(item.get("_name") or "")), reverse=True)
+    for item in queues:
+        item.pop("_sequence", None)
+        item.pop("_name", None)
+    return queues
+
+
 def _is_active_status(status: Optional[str]) -> bool:
     text = str(status or "").strip().upper()
     return text in {"CODEX_FIX", "GROK_FIX", "CODEX_REVIEW", "GROK_REVIEW", "BUDGET_LOOP_HEAD", "REVIEW_NEEDS_CHANGES"}
@@ -355,6 +399,11 @@ def _phase_label(status: Optional[str]) -> str:
 def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any]:
     repo = Path(repo_root) if repo_root else _get_repo_root()
     queue_file = _resolve_queue_file_path(repo)
+    queue_path = _repo_relative_path(repo, queue_file)
+    available_queues = _discover_queue_files(repo)
+    latest_queue = available_queues[0] if available_queues else None
+    latest_queue_path = latest_queue.get("path") if isinstance(latest_queue, dict) else None
+    queue_stale = bool(latest_queue_path and latest_queue_path != queue_path)
     outcomes_file = _default_queue_outcomes_path(repo)
     landing_file = _default_queue_landing_path(repo)
     latest_state = _read_latest_state(repo)
@@ -516,7 +565,17 @@ def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any
                 "profileName": latest_profile,
             }
 
-    return {"tasks": items, "landing": landing, "counts": counts, "queueRunning": bool(queue_running), "current": current}
+    return {
+        "tasks": items,
+        "landing": landing,
+        "counts": counts,
+        "queueRunning": bool(queue_running),
+        "current": current,
+        "queuePath": queue_path,
+        "latestQueuePath": latest_queue_path,
+        "queueStale": queue_stale,
+        "availableQueues": available_queues,
+    }
 
 
 def get_agent_loop_queue_overview(repo_root: Optional[str] = None) -> Dict[str, Any]:
