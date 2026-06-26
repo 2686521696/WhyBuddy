@@ -1,7 +1,7 @@
 # SlideRule V2 Skills 113.15: purchase approval E2E scenario
 
 ## Execution status
-- Status: pending
+- Status: DONE_REVIEWED - committed 21aa44cd
 - Goal: add a second end-to-end scenario, purchase approval, to prove the Skill system is not hardcoded to leave approval and can assemble all five V2 surfaces.
 - Required gate: `slideruleV2E2ePurchaseApproval113Gates`
 
@@ -27,19 +27,25 @@ The current sample line is leave approval. V2 needs a second scenario that exerc
 - Do not introduce LLM calls; use deterministic sample generation in this task.
 
 ## Implementation steps
-- [ ] Create a purchase-approval sample with at least requester, department manager, finance, and procurement roles.
-- [ ] Add DataModel entities and fields for purchase request, amount, department, vendor, approval status, and budget check.
-- [ ] Add Workflow nodes for submit, manager approval, finance approval, procurement fulfillment, approved, and rejected.
-- [ ] Add Page model for request form and approval/detail view with SSOT bindings and PDP render checks.
-- [ ] Add AppBundle model with all surfaces pinned.
-- [ ] Add E2E tests that run orchestrator, publish gate, and impact analysis for purchase approval.
-- [ ] Assert the final report has no ghost refs and no publish-blocking errors.
+- [x] Create a purchase-approval sample with at least requester, department manager, finance, and procurement roles.
+- [x] Add DataModel entities and fields for purchase request, amount, department, vendor, approval status, and budget check.
+- [x] Add Workflow nodes for submit, manager approval, finance approval, procurement fulfillment, approved, and rejected.
+- [x] Add Page model for request form and approval/detail view with SSOT bindings and PDP render checks.
+- [x] Add AppBundle model with all surfaces pinned.
+- [x] Add E2E tests that run orchestrator, publish gate, and impact analysis for purchase approval.
+- [x] Assert the final report has no ghost refs and no publish-blocking errors.
 
 ## Required validation
 - `pnpm exec vitest run client/src/lib/skills/purchaseApproval.test.ts client/src/lib/skills/orchestrator.test.ts --reporter=dot`
 - `pnpm exec vitest run client/src/lib/skills --reporter=dot`
 - `pnpm exec tsc --noEmit --pretty false`
 - `node agent-loop/src/check-mojibake.js client/src/lib/skills/purchaseApproval.test.ts client/src/lib/skills/slideRule.ts`
+
+## Review evidence
+- `pnpm exec vitest run client/src/lib/skills/purchaseApproval.test.ts client/src/lib/skills/orchestrator.test.ts --reporter=dot`: 2 files, 10 tests passed.
+- `pnpm exec vitest run client/src/lib/skills --reporter=dot`: 9 files, 115 tests passed.
+- `pnpm exec tsc --noEmit --pretty false`: exit 0.
+- `node agent-loop/src/check-mojibake.js client/src/lib/skills/purchaseApproval.test.ts client/src/lib/skills/slideRule.ts`: No mojibake findings.
 
 ## Acceptance criteria
 - Purchase approval assembles RBAC, DataModel, Workflow, Page, and AppBundle.
