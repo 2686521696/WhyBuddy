@@ -112,3 +112,46 @@ describe("appBundleSkill - surface, projector, and cross-skill refs", () => {
     expect(refs.some(r => r.toSkill === "page" && r.toKind === "page" && r.toValue === "page_leave_request")).toBe(true);
   });
 });
+
+describe("appBundleSkill - V2 version pins and runtime snapshot", () => {
+  it("pins every assembled Skill surface plus AppBundle itself", () => {
+    const app = leaveApprovalAppBundle as any;
+    const pinnedSkills = [...new Set(app.versionPins.map((pin: any) => pin.skillId))].sort();
+
+    expect(pinnedSkills).toEqual(["appbundle", "datamodel", "page", "rbac", "workflow"]);
+    expect(app.versionPins.every((pin: any) => pin.version === "1.0.0")).toBe(true);
+    expect(app.versionPins.every((pin: any) => pin.ref)).toBe(true);
+  });
+
+  it("carries a publish manifest without running the publish gate yet", () => {
+    const app = leaveApprovalAppBundle as any;
+
+    expect(app.publishManifest).toMatchObject({
+      appId: "app_leave_approval",
+      appVersion: "1.0.0",
+      createdAt: "PUBLISH_TIME",
+      gateStatus: "not_run",
+    });
+    expect(app.publishManifest.includedRefs).toEqual({
+      entities: ["employee", "leave_request"],
+      roles: ["employee", "manager"],
+      workflows: ["wf_leave_approval"],
+      pages: ["page_leave_request"],
+      app: ["app_leave_approval"],
+    });
+  });
+
+  it("keeps runtime snapshot refs pinned and separate from mutable design-time refs", () => {
+    const app = leaveApprovalAppBundle as any;
+
+    expect(app.runtimeSnapshot.appId).toBe("app_leave_approval");
+    expect(app.runtimeSnapshot.appVersion).toBe("1.0.0");
+    expect(app.runtimeSnapshot.refMode).toBe("pinned");
+    expect(app.runtimeSnapshot.pinnedRefs).toContain("rbac:employee@1.0.0");
+    expect(app.runtimeSnapshot.pinnedRefs).toContain("datamodel:leave_request@1.0.0");
+    expect(app.runtimeSnapshot.pinnedRefs).toContain("workflow:wf_leave_approval@1.0.0");
+    expect(app.runtimeSnapshot.pinnedRefs).toContain("page:page_leave_request@1.0.0");
+    expect(app.runtimeSnapshot.pinnedRefs).toContain("appbundle:app_leave_approval@1.0.0");
+    expect(app.runtimeSnapshot.liveRefs).toBeUndefined();
+  });
+});

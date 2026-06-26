@@ -8,7 +8,7 @@ import {
   type Skill,
   type ValidateContext,
 } from "../skill";
-import type { AppBundleModel, AppMenuEntry } from "./appBundleModel";
+import type { AppBundleModel, AppBundleSkillId, AppMenuEntry } from "./appBundleModel";
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -66,6 +66,12 @@ function pushMissingSurfaceFindings(
 
 function menuRoleRefs(menuEntries: AppMenuEntry[]): string[] {
   return menuEntries.flatMap(entry => entry.roleRefs);
+}
+
+const REQUIRED_PIN_SKILLS: AppBundleSkillId[] = ["datamodel", "rbac", "workflow", "page", "appbundle"];
+
+function pinnedRef(skillId: AppBundleSkillId, ref: string, version: string): string {
+  return `${skillId}:${ref}@${version}`;
 }
 
 export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> = {
@@ -144,6 +150,52 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
         severity: "error",
         path: `menuEntries.${dup}`,
         message: `Duplicate app menu entry id: ${dup}`,
+      });
+    }
+
+    if (model.versionPins) {
+      for (const skillId of REQUIRED_PIN_SKILLS) {
+        if (!model.versionPins.some(pin => pin.skillId === skillId)) {
+          f.push({
+            code: "APPBUNDLE_VERSION_PIN_MISSING",
+            severity: "error",
+            path: "versionPins",
+            message: `AppBundle publish snapshot is missing a version pin for ${skillId}.`,
+          });
+        }
+      }
+      model.versionPins.forEach((pin, pinIndex) => {
+        if (!pin.ref || !pin.version || !pin.pinnedAt) {
+          f.push({
+            code: "APPBUNDLE_VERSION_PIN_INCOMPLETE",
+            severity: "error",
+            path: `versionPins[${pinIndex}]`,
+            message: `AppBundle version pin for ${pin.skillId} must include ref, version, and pinnedAt.`,
+          });
+        }
+      });
+    }
+
+    if (model.publishManifest && model.publishManifest.appId !== model.id) {
+      f.push({
+        code: "APPBUNDLE_MANIFEST_APP_MISMATCH",
+        severity: "error",
+        path: "publishManifest.appId",
+        message: `Publish manifest app id ${model.publishManifest.appId} does not match bundle id ${model.id}.`,
+      });
+    }
+
+    if (model.runtimeSnapshot) {
+      const pinnedRefs = new Set(model.versionPins?.map(pin => pinnedRef(pin.skillId, pin.ref, pin.version)) ?? []);
+      model.runtimeSnapshot.pinnedRefs.forEach((ref, refIndex) => {
+        if (!pinnedRefs.has(ref)) {
+          f.push({
+            code: "APPBUNDLE_SNAPSHOT_REF_NOT_PINNED",
+            severity: "error",
+            path: `runtimeSnapshot.pinnedRefs[${refIndex}]`,
+            message: `Runtime snapshot ref is not backed by a version pin: ${ref}`,
+          });
+        }
       });
     }
 
@@ -241,6 +293,42 @@ export const leaveApprovalAppBundle: AppBundleModel = {
   workflowRefs: ["wf_leave_approval"],
   pageRefs: ["page_leave_request"],
   pageBindings: [{ pageRef: "page_leave_request", workflowRef: "wf_leave_approval", mode: "approve" }],
+  versionPins: [
+    { skillId: "datamodel", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "datamodel", ref: "leave_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "rbac", ref: "manager", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "workflow", ref: "wf_leave_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "page", ref: "page_leave_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    { skillId: "appbundle", ref: "app_leave_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+  ],
+  publishManifest: {
+    appId: "app_leave_approval",
+    appVersion: "1.0.0",
+    createdAt: "PUBLISH_TIME",
+    gateStatus: "not_run",
+    includedRefs: {
+      entities: ["employee", "leave_request"],
+      roles: ["employee", "manager"],
+      workflows: ["wf_leave_approval"],
+      pages: ["page_leave_request"],
+      app: ["app_leave_approval"],
+    },
+  },
+  runtimeSnapshot: {
+    appId: "app_leave_approval",
+    appVersion: "1.0.0",
+    refMode: "pinned",
+    pinnedRefs: [
+      "datamodel:employee@1.0.0",
+      "datamodel:leave_request@1.0.0",
+      "rbac:employee@1.0.0",
+      "rbac:manager@1.0.0",
+      "workflow:wf_leave_approval@1.0.0",
+      "page:page_leave_request@1.0.0",
+      "appbundle:app_leave_approval@1.0.0",
+    ],
+  },
   menuEntries: [
     { id: "menu_leave_request", label: "请假申请", pageRef: "page_leave_request", roleRefs: ["employee", "manager"] },
   ],
