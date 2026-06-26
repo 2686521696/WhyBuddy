@@ -85,6 +85,38 @@ function shapeNode(id: string, label: string, kind: string): string {
   return `${id}["${safe}"]`;
 }
 
+/** A resource another skill may reference, e.g. { skill:"rbac", kind:"role", value:"manager" }. */
+export interface ResourceRef {
+  skill: string;
+  kind: string;
+  value: string;
+}
+
+/** One artifact that would break if a resource is changed/removed. */
+export interface ImpactedArtifact {
+  skill: string;
+  skillTitle: string;
+  /** projection node id of the dependent artifact */
+  node: string;
+  /** human label of the dependent artifact */
+  label: string;
+  /** the reference kind that links it to the target, e.g. "审批人" / "数据" */
+  via: string;
+  /** hops from the changed resource (1 = direct dependent) */
+  depth: number;
+}
+
+export interface ImpactReport {
+  target: ResourceRef;
+  /** true iff nothing depends on the target — safe to change/remove */
+  safe: boolean;
+  impacted: ImpactedArtifact[];
+}
+
+function refKey(r: ResourceRef): string {
+  return `${r.skill}::${r.kind}::${r.value}`;
+}
+
 export class Orchestrator {
   private readonly skills: RegisteredSkill[] = [];
 
@@ -140,6 +172,113 @@ export class Orchestrator {
       runs,
       mermaid,
     };
+  }
+
+  /**
+   * Publish gate — the executable version of the App-Center composition root (kernel ⑥,
+   * review finding P1-5). An application is publishable iff:
+   *   (a) every skill's own gate passes (no errors), AND
+   *   (b) the cross-system reference closure is complete — every declared cross-ref
+   *       resolves to a real resource in some registered skill (no "未接入" dangling deps).
+   */
+  publishGate(models: Record<string, unknown>): {
+    publishable: boolean;
+    blockers: Finding[];
+    result: OrchestratorResult;
+  } {
+    const result = this.assemble("(publish)", models);
+    const blockers: Finding[] = result.runs.flatMap(r => r.report.errors);
+
+    // closure check: resolve every cross-ref against the full set of registered surfaces
+    const active = this.skills.filter(s => s.id in models);
+    const surfaces = new Map(active.map(s => [s.id, s.resolve(models[s.id])]));
+    for (const skill of active) {
+      for (const ref of skill.crossRefs(models[skill.id])) {
+        const targetSurface = surfaces.get(ref.toSkill);
+        const resolved = targetSurface?.[ref.toKind]?.includes(ref.toValue) ?? false;
+        if (!resolved)
+          blockers.push({
+            code: "PUBLISH_DANGLING_CROSSREF",
+            severity: "error",
+            path: `${skill.id}:${ref.fromNode}`,
+            message: `跨系统引用未闭合：${skill.id} 经「${ref.label ?? ""}」引用 ${ref.toSkill}.${ref.toKind}="${ref.toValue}"，但目标不存在/未接入`,
+          });
+      }
+    }
+
+    return { publishable: blockers.length === 0, blockers, result };
+  }
+
+  /**
+   * Cross-system impact analysis — the executable version of the "global invalidation /
+   * dependency graph" the reference architectures are MISSING (review finding P0-2).
+   *
+   * Given a resource (e.g. rbac role "manager"), reverse-traverse every skill's declared
+   * cross-references to find every downstream artifact that would break if it is changed or
+   * removed — across system boundaries, transitively. This is what a role rename in RBAC
+   * needs in order to invalidate the workflow node and page that reference it.
+   */
+  impact(models: Record<string, unknown>, target: ResourceRef): ImpactReport {
+    const active = this.skills.filter(s => s.id in models);
+
+    // 1) projections give human labels for nodes
+    const projById = new Map(active.map(s => [s.id, s.project(models[s.id])]));
+    const labelOf = (skillId: string, node: string): string =>
+      projById.get(skillId)?.nodes.find(n => n.id === node)?.label ?? node;
+
+    // 2) addressable map: which (skill, node) IS itself a referenceable resource, so impact
+    //    can continue transitively (a broken artifact may be depended on by yet another).
+    const nodeToResource = new Map<string, ResourceRef>(); // key `${skill}::${node}` -> resource
+    for (const skill of active) {
+      const surface = skill.resolve(models[skill.id]);
+      for (const [kind, values] of Object.entries(surface)) {
+        for (const value of values) {
+          const node = skill.refNodeId(kind, value);
+          if (node) nodeToResource.set(`${skill.id}::${node}`, { skill: skill.id, kind, value });
+        }
+      }
+    }
+
+    // 3) reverse index: resource -> the artifacts that reference it
+    const dependents = new Map<string, Array<{ skill: string; node: string; via: string }>>();
+    for (const skill of active) {
+      for (const ref of skill.crossRefs(models[skill.id])) {
+        const key = refKey({ skill: ref.toSkill, kind: ref.toKind, value: ref.toValue });
+        const list = dependents.get(key) ?? [];
+        list.push({ skill: skill.id, node: ref.fromNode, via: ref.label ?? "" });
+        dependents.set(key, list);
+      }
+    }
+
+    // 4) BFS over the reverse index
+    const impacted: ImpactedArtifact[] = [];
+    const seen = new Set<string>();
+    let frontier: Array<{ ref: ResourceRef; depth: number }> = [{ ref: target, depth: 0 }];
+    while (frontier.length) {
+      const next: Array<{ ref: ResourceRef; depth: number }> = [];
+      for (const { ref, depth } of frontier) {
+        for (const dep of dependents.get(refKey(ref)) ?? []) {
+          const nodeKey = `${dep.skill}::${dep.node}`;
+          if (seen.has(nodeKey)) continue;
+          seen.add(nodeKey);
+          const skillTitle = active.find(s => s.id === dep.skill)?.title ?? dep.skill;
+          impacted.push({
+            skill: dep.skill,
+            skillTitle,
+            node: dep.node,
+            label: labelOf(dep.skill, dep.node),
+            via: dep.via,
+            depth: depth + 1,
+          });
+          // if this broken artifact is itself a referenceable resource, cascade
+          const asResource = nodeToResource.get(nodeKey);
+          if (asResource) next.push({ ref: asResource, depth: depth + 1 });
+        }
+      }
+      frontier = next;
+    }
+
+    return { target, safe: impacted.length === 0, impacted };
   }
 
   private combineDiagram(

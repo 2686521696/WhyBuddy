@@ -1,249 +1,255 @@
-import { useState } from 'react';
-import { Alert, Button, Input, message, Space, Table, Typography } from 'antd';
+import { useMemo, useState } from 'react';
+import { Alert, Button, message, Table, Typography } from 'antd';
+import { CopyOutlined, DeploymentUnitOutlined, DiffOutlined, SyncOutlined } from '@ant-design/icons';
 import { filterSupportedQueuePatch } from '../agentLoopApi';
 import type { QueueDefaultsPanelProps } from './types';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
+
+type DiffRow = {
+  key: string;
+  before: unknown;
+  after: unknown;
+};
+
+function copyToClipboard(text: string, label: string) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => message.success(`${label} 已复制`));
+    } else {
+      message.info(`${label}（请手动复制）`);
+    }
+  } catch {
+    message.info(`${label}（请手动复制）`);
+  }
+}
+
+function computeClientDryRun(current: Record<string, unknown>, proposedPatch: Record<string, unknown>) {
+  const before: Record<string, unknown> = { ...current };
+  const after: Record<string, unknown> = { ...current, ...proposedPatch };
+  const diffKeys = Object.keys({ ...before, ...after }).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+  return {
+    before,
+    after,
+    diff: diffKeys.map((key) => ({ key, before: before[key], after: after[key] })),
+    ok: true,
+  };
+}
+
+function jsonToLines(value: Record<string, unknown>) {
+  return JSON.stringify(value || {}, null, 2).split('\n');
+}
+
+function renderJsonLine(line: string) {
+  const keyMatch = line.match(/^(\s*)"([^"]+)":\s*(.*?)(,?)$/);
+  if (keyMatch) {
+    const [, indent, key, rawValue, comma] = keyMatch;
+    return (
+      <>
+        {indent}<span className="native-json-key">"{key}"</span>: <JsonValue value={rawValue} />{comma}
+      </>
+    );
+  }
+  return <>{line || ' '}</>;
+}
+
+function JsonValue({ value }: { value: string }) {
+  const clean = value.trim();
+  if (/^"/.test(clean)) return <span className="native-json-string">{value}</span>;
+  if (/^(true|false)$/.test(clean)) return <span className="native-json-boolean">{value}</span>;
+  if (/^-?\d+(\.\d+)?$/.test(clean)) return <span className="native-json-number">{value}</span>;
+  if (/^null$/.test(clean)) return <span className="native-json-null">{value}</span>;
+  return <>{value}</>;
+}
+
+function CodePreview({
+  title,
+  json,
+  className,
+  copyLabel,
+}: {
+  title: string;
+  json: Record<string, unknown>;
+  className: string;
+  copyLabel: string;
+}) {
+  const text = JSON.stringify(json || {}, null, 2);
+  const lines = jsonToLines(json || {});
+  return (
+    <section className={`native-queue-code-card ${className}`.trim()}>
+      <div className="native-queue-code-title">
+        <Text strong>{title}</Text>
+        <Button
+          aria-label={`复制${title}`}
+          icon={<CopyOutlined />}
+          onClick={() => copyToClipboard(text, copyLabel)}
+        />
+      </div>
+      <div className="native-queue-code">
+        {lines.map((line, index) => (
+          <div className="native-queue-code-line" key={`${index}-${line}`}>
+            <span className="native-queue-code-no">{index + 1}</span>
+            <code>{renderJsonLine(line)}</code>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DiffTable({ rows }: { rows: DiffRow[] }) {
+  if (!rows.length) {
+    return <Text type="secondary" className="native-queue-empty-diff">no diff（与当前一致或空 patch）</Text>;
+  }
+  return (
+    <Table
+      size="small"
+      className="native-queue-diff-table"
+      columns={[
+        { title: 'Key', dataIndex: 'key', key: 'key' },
+        { title: 'Before', dataIndex: 'before', key: 'before', render: (value: unknown) => JSON.stringify(value) },
+        { title: 'After', dataIndex: 'after', key: 'after', render: (value: unknown) => JSON.stringify(value) },
+      ]}
+      dataSource={rows.map((row, index) => ({ ...row, rowKey: row.key || String(index) }))}
+      pagination={false}
+      rowKey="rowKey"
+    />
+  );
+}
 
 // QueueDefaultsView name kept for test contract and direct <QueueDefaultsView ... />
 export function QueueDefaultsView({ data, preview, onPreview, applyResult, onApply, settingsData }: QueueDefaultsPanelProps) {
-  const [proposedText, setProposedText] = useState('{\n  "workerMaxTurns": 256\n}');
-  const [lastRejected, setLastRejected] = useState<string[]>([]);
   const current = (data && data.defaults) || {};
   const supported = (data && data.supportedKeys) || [];
-  const isUnsupported = !!(data && (data.unsupported || (supported.length === 0 && !data.defaults)));
+  const isUnsupported = Boolean(data && (data.unsupported || (supported.length === 0 && !data.defaults)));
+  const safeSupported = supported.length ? supported : ['fixAgent', 'reviewAgent', 'workerMaxTurns', 'workerMaxRetries', 'worktreeScope', 'queuePath'];
 
-  const copyToClipboard = (text: string, label: string) => {
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => message.success(`${label} 已复制`));
-      } else {
-        message.info(`${label}（请手动复制）`);
-      }
-    } catch {
-      message.info(`${label}（请手动复制）`);
-    }
-  };
+  const [proposedPatch, setProposedPatch] = useState<Record<string, unknown>>({ workerMaxTurns: 256 });
+  const [lastRejected, setLastRejected] = useState<string[]>([]);
 
-  const renderLineNumbered = (obj: Record<string, unknown>) => {
-    const json = JSON.stringify(obj || {}, null, 2);
-    const lines = json.split('\n');
-    return (
-      <div className="native-code-shell" style={{ position: 'relative', maxHeight: 240 }}>
-        <button
-          type="button"
-          className="native-code-copy"
-          onClick={() => copyToClipboard(json, '当前 defaults')}
-          aria-label="复制当前 defaults JSON"
-        >
-          复制
-        </button>
-        <div className="native-code" style={{ padding: '12px 16px', fontSize: 12 }}>
-          {lines.map((line, idx) => (
-            <div className="native-code-line" key={idx} style={{ gridTemplateColumns: '32px 1fr' }}>
-              <span className="native-code-no" style={{ fontSize: 11 }}>{idx + 1}</span>
-              <span className="native-code-text" style={{ fontSize: 12 }}>{line || ' '}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  const localDry = useMemo(() => computeClientDryRun(current, proposedPatch), [current, proposedPatch]);
 
-  const computeClientDryRun = (proposedPatch: Record<string, unknown>) => {
-    const before: Record<string, unknown> = { ...current };
-    const after: Record<string, unknown> = { ...current, ...proposedPatch };
-    const diffKeys = Object.keys({ ...before, ...after }).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
-    const diff = diffKeys.map((k) => ({ key: k, before: before[k], after: after[k] }));
-    return { before, after, diff, ok: true };
-  };
-
-  const doPreview = () => {
-    try {
-      const parsed = JSON.parse(proposedText || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const { patch, rejected } = filterSupportedQueuePatch(parsed, supported.length ? supported : null);
-        setLastRejected(rejected);
-        setProposedText(JSON.stringify(patch, null, 2));
-        onPreview(patch);
-      } else {
-        message.error('proposed 必须是对象');
-      }
-    } catch {
-      message.error('proposed JSON 无效');
-    }
-  };
-
-  const doApply = () => {
-    try {
-      const parsed = JSON.parse(proposedText || '{}');
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const { patch } = filterSupportedQueuePatch(parsed, supported.length ? supported : null);
-        onApply && onApply(patch);
-      } else {
-        message.error('proposed 必须是对象');
-      }
-    } catch {
-      message.error('proposed JSON 无效');
-    }
-  };
-
-  const doSyncFromSettings = () => {
-    const ns = (settingsData && (settingsData.nonSensitive || settingsData)) || {};
-    const prop: Record<string, unknown> = {};
-    const sup = new Set(supported);
-    for (const [k, v] of Object.entries(ns)) {
-      if ((sup.size === 0 || sup.has(k)) && k !== 'workerEnv') {
-        prop[k] = v;
-      }
-    }
-    if (Object.keys(prop).length === 0) {
-      const nsa: any = ns || {};
-      if (nsa.fixAgent !== undefined) prop.fixAgent = nsa.fixAgent;
-      if (nsa.reviewAgent !== undefined) prop.reviewAgent = nsa.reviewAgent;
-      if (nsa.workerMaxTurns !== undefined) prop.workerMaxTurns = nsa.workerMaxTurns;
-      if (nsa.workerMaxRetries !== undefined) prop.workerMaxRetries = nsa.workerMaxRetries;
-      if (nsa.worktreeScope !== undefined) prop.worktreeScope = nsa.worktreeScope;
-      if (nsa.queuePath !== undefined) prop.queuePath = nsa.queuePath;
-    }
-    const { patch, rejected } = filterSupportedQueuePatch(prop, supported.length ? supported : null);
+  const previewPatch = (patchSource: Record<string, unknown>) => {
+    const { patch, rejected } = filterSupportedQueuePatch(patchSource, safeSupported);
     setLastRejected(rejected);
-    const json = JSON.stringify(patch, null, 2) || '{}';
-    setProposedText(json);
+    setProposedPatch(patch);
     onPreview(patch);
   };
 
-  const localDry = (() => {
-    try {
-      const p = JSON.parse(proposedText || '{}');
-      return computeClientDryRun(filterSupportedQueuePatch(p, supported.length ? supported : null).patch);
-    } catch {
-      return { before: current, after: current, diff: [], ok: false };
+  const doSyncFromSettings = () => {
+    const source = (settingsData && (settingsData.nonSensitive || settingsData)) || {};
+    const proposal: Record<string, unknown> = {};
+    const supportedSet = new Set(safeSupported);
+    for (const [key, value] of Object.entries(source)) {
+      if (supportedSet.has(key)) proposal[key] = value;
     }
-  })();
+    previewPatch(proposal);
+  };
+
+  const doPreview = () => previewPatch(proposedPatch);
+
+  const doApply = () => {
+    const { patch, rejected } = filterSupportedQueuePatch(proposedPatch, safeSupported);
+    setLastRejected(rejected);
+    setProposedPatch(patch);
+    onApply?.(patch);
+  };
+
+  const supportedLabel = safeSupported.join(', ');
 
   return (
-    <div style={{ maxWidth: 620 }}>
-      <Title level={5}>队列 defaults（仅支持键，当前值）</Title>
-      {isUnsupported && (
-        <Alert type="info" showIcon style={{ marginBottom: 8 }} message="后端此切片为只读/不支持完整 queue defaults 持久化（honest state）" description="仅支持键预览与 patch 过滤可用；真实写入由后端 queue 文件处理。" />
-      )}
-      {renderLineNumbered(current)}
-      <Space size={8} style={{ marginTop: 4 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>supported: {supported.length ? supported.join(', ') : '(后端未提供，使用已知安全键)'}</Text>
-        <Button size="small" onClick={() => copyToClipboard(JSON.stringify(current, null, 2), '当前 defaults')}>复制当前</Button>
-      </Space>
-
-      <div style={{ marginTop: 16 }}>
-        <Text strong>预览 patch（dry-run，仅支持键；secrets / workerEnv 自动剔除）</Text>
-        <Input.TextArea
-          rows={5}
-          value={proposedText}
-          onChange={(e) => setProposedText(e.target.value)}
-          style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6 }}
+    <div className="native-queue-defaults-panel">
+      {isUnsupported ? (
+        <Alert
+          type="info"
+          showIcon
+          className="native-queue-alert"
+          message="后端此切片为只读/不支持完整 queue defaults 持久化（honest state）"
+          description="仅支持键预览与 patch 过滤可用；真实写入由后端 queue 文件处理。"
         />
-        <Space style={{ marginTop: 8 }}>
-          <Button onClick={doSyncFromSettings}>从 Settings 同步并预览 diff</Button>
-          <Button onClick={doPreview}>预览 structured diff（不写入）</Button>
-          <Button type="primary" onClick={doApply}>确认应用（调用 bridge）</Button>
-        </Space>
-      </div>
+      ) : null}
 
-      {lastRejected.length > 0 && (
+      <CodePreview
+        title="队列 defaults（仅支持键，当前值）"
+        json={current}
+        className="native-queue-code-current"
+        copyLabel="当前 defaults"
+      />
+      <Text type="secondary" className="native-queue-supported">
+        supported: {supportedLabel}
+      </Text>
+
+      <section className="native-queue-patch-card">
+        <CodePreview
+          title="预览 patch（dry-run，仅支持键；不含 workerEnv）"
+          json={proposedPatch}
+          className="native-queue-code-patch"
+          copyLabel="预览 patch"
+        />
+        <div className="native-queue-actions">
+          <Button icon={<SyncOutlined />} onClick={doSyncFromSettings}>从 Settings 同步并预览 diff</Button>
+          <Button icon={<DiffOutlined />} onClick={doPreview}>预览 structured diff（不写入）</Button>
+          <Button type="primary" icon={<DeploymentUnitOutlined />} onClick={doApply}>确认应用（调用 bridge）</Button>
+        </div>
+        <Text type="secondary" className="native-queue-apply-note">
+          预览确认后 apply 仅写入 owned 支持键；workerEnv/secrets 拒绝；写后强制 JSON 校验 + tasks 数组保留；失败时回滚。
+        </Text>
+      </section>
+
+      {lastRejected.length > 0 ? (
         <Alert
           type="warning"
           showIcon
-          style={{ marginTop: 8 }}
+          className="native-queue-alert"
           message="已剔除不支持或危险键"
-          description={`以下键被拒绝/省略（workerEnv、secrets、unsupported 不会进入 patch）：${lastRejected.join(', ')}。仅 supported keys 可预览/apply。`}
+          description={`以下键被拒绝/省略：${lastRejected.join(', ')}。仅 supported keys 可预览/apply。`}
         />
-      )}
+      ) : null}
 
-      <div style={{ marginTop: 12, padding: 8, background: '#f0f7ff', border: '1px solid #d6e4ff', borderRadius: 4 }}>
-        <Text strong>Proposed（过滤后，仅支持键）:</Text>
-        <pre style={{ background: '#fff', padding: 6, fontSize: 12, marginTop: 4, maxHeight: 120, overflow: 'auto' }}>{proposedText}</pre>
-        <Text strong style={{ display: 'block', marginTop: 6 }}>Dry-run diff（客户端计算，支持键 before/after）:</Text>
-        {localDry.diff.length > 0 ? (
-          <Table
-            size="small"
-            style={{ marginTop: 4 }}
-            columns={[
-              { title: 'Key', dataIndex: 'key', key: 'key' },
-              { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => JSON.stringify(v) },
-              { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => JSON.stringify(v) },
-            ]}
-            dataSource={localDry.diff.map((d: any, i: number) => ({ ...d, key: d.key || String(i) }))}
-            pagination={false}
-            rowKey="key"
-          />
-        ) : (
-          <div style={{ fontSize: 12 }}>no diff（与当前一致或空 patch）</div>
-        )}
-      </div>
+      <section className="native-queue-diff-card">
+        <div className="native-queue-diff-head">
+          <Text strong>Dry-run diff（客户端计算，支持键 before/after）</Text>
+          <Text type="secondary">Proposed（过滤后，仅支持键）</Text>
+        </div>
+        <DiffTable rows={localDry.diff as DiffRow[]} />
+      </section>
 
-      {preview && (
-        <div style={{ marginTop: 12, padding: 8, background: preview.ok ? '#f6ffed' : '#fff1f0', border: '1px solid #eee' }}>
+      {preview ? (
+        <section className={`native-queue-result-card ${preview.ok === false || preview.unsupported ? 'native-queue-result-muted' : ''}`}>
           {preview.ok === false || preview.unsupported ? (
-            <Alert type="info" showIcon message={preview.error || preview.note || 'unsupported / read-only (bridge 返回 honest 状态)'} description="调用了 preview bridge；实际应用受后端 queue 能力限制，未伪造成功。" />
+            <Alert
+              type="info"
+              showIcon
+              message={preview.error || preview.note || 'unsupported / read-only (bridge 返回 honest 状态)'}
+              description="调用了 preview bridge；实际应用受后端 queue 能力限制，未伪造成功。"
+            />
           ) : (
             <>
-              <Text strong>Preview result (before/after diff for supported keys):</Text>
-              {Array.isArray(preview.diff) && preview.diff.length > 0 ? (
-                <Table
-                  size="small"
-                  style={{ marginTop: 4 }}
-                  columns={[
-                    { title: 'Key', dataIndex: 'key', key: 'key' },
-                    { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => JSON.stringify(v) },
-                    { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => JSON.stringify(v) },
-                  ]}
-                  dataSource={(preview.diff || []).map((d: any, i: number) => ({ ...d, key: d.key || String(i) }))}
-                  pagination={false}
-                  rowKey="key"
-                />
-              ) : (
-                <div style={{ fontSize: 12 }}>no diff (values match)</div>
-              )}
-              <div style={{ fontSize: 12, marginTop: 4 }}>before keys: {Object.keys(preview.before || {}).join(', ')}</div>
-              <div style={{ fontSize: 12 }}>after keys: {Object.keys(preview.after || {}).join(', ')}</div>
+              <Text strong>Preview result（bridge 返回）</Text>
+              <DiffTable rows={(preview.diff || []) as DiffRow[]} />
             </>
           )}
-        </div>
-      )}
+        </section>
+      ) : null}
 
-      {applyResult && (
-        <div style={{ marginTop: 12, padding: 8, background: applyResult.ok ? '#f6ffed' : '#fff1f0', border: '1px solid #eee' }}>
+      {applyResult ? (
+        <section className={`native-queue-result-card ${applyResult.ok === false || applyResult.unsupported ? 'native-queue-result-muted' : ''}`}>
           {applyResult.ok === false || applyResult.unsupported ? (
-            <Alert type="info" showIcon message={(applyResult.rolledBack ? 'rolled back: ' : '') + (applyResult.error || 'unsupported / read-only')} description="已调用 apply bridge，未发明成功；请检查后端或直接编辑 queue 文件（受支持键限制）。" />
+            <Alert
+              type="info"
+              showIcon
+              message={(applyResult.rolledBack ? 'rolled back: ' : '') + (applyResult.error || 'unsupported / read-only')}
+              description="已调用 apply bridge，未发明成功；请检查后端或直接编辑 queue 文件（受支持键限制）。"
+            />
           ) : (
             <>
-              <Text strong>Apply result (written + validated):</Text>
-              {Array.isArray(applyResult.diff) && applyResult.diff.length > 0 ? (
-                <Table
-                  size="small"
-                  style={{ marginTop: 4 }}
-                  columns={[
-                    { title: 'Key', dataIndex: 'key', key: 'key' },
-                    { title: 'Before', dataIndex: 'before', key: 'before', render: (v: unknown) => JSON.stringify(v) },
-                    { title: 'After', dataIndex: 'after', key: 'after', render: (v: unknown) => JSON.stringify(v) },
-                  ]}
-                  dataSource={(applyResult.diff || []).map((d: any, i: number) => ({ ...d, key: d.key || String(i) }))}
-                  pagination={false}
-                  rowKey="key"
-                />
-              ) : (
-                <div style={{ fontSize: 12 }}>no diff</div>
-              )}
-              <div style={{ fontSize: 12, marginTop: 4 }}>applied: {JSON.stringify(applyResult.applied || {})}</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>after keys: {Object.keys(applyResult.after || {}).join(', ')}</div>
+              <Text strong>Apply result（written + validated）</Text>
+              <DiffTable rows={(applyResult.diff || []) as DiffRow[]} />
+              <Text type="secondary" className="native-queue-apply-note">applied: {JSON.stringify(applyResult.applied || {})}</Text>
             </>
           )}
-        </div>
-      )}
-
-      <Text type="secondary" style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
-        仅支持键通过 preview/apply 桥；workerEnv/secrets 及未列出键被显式拒绝并解释。调用 bridge 后以其返回为准（不支持时 honest 展示）。写入后建议校验队列 JSON。
-      </Text>
+        </section>
+      ) : null}
     </div>
   );
 }

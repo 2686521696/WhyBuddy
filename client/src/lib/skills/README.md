@@ -38,3 +38,16 @@ Not included yet:
 
 - Real LLM-backed generation.
 - Materialization into the heavy low-code platform or AgentLoop-generated code.
+
+## V2 Kernel Vocabulary (shared contract)
+
+The five Skills behave as a lightweight product kernel (no DB, no HTTP, no runtime services):
+
+- **PDP** (Policy Decision Point): RBAC is Kernel 1. It is the single host for policy decisions. Other skills delegate decisions here (fail-closed posture).
+- **PEP** (Policy Enforcement Point): Workflow and Page are execution points. They delegate policy checks to the PDP and bind data references to the SSOT.
+- **SSOT** (Single Source of Truth): DataModel is Kernel 2. All entity/field/relation definitions live here; other skills reference it for referential integrity.
+- **AppBundle**: Kernel 6, the assembly root. It checks cross-skill closure (publish gate) and pins versions for reproducible snapshots.
+- **publish gate**: The top-level gate (owned by AppBundle semantics) that passes only when every skill's validate succeeds AND all cross-skill references resolve (no dangling refs).
+- **impact graph**: Reverse dependency traversal. Changing a resource (e.g. an RBAC role) reports every downstream artifact (workflow nodes, pages) that would break, across skill boundaries.
+
+All V2 declarations live in one place (`skill.ts`): `KernelRole`, `SkillRuntimeRole`, `DependencyRef`, `VersionPin`, `PolicyDecision`, `PublishGateReport`, `ImpactReport`, `SkillCapabilitySurface`, and `SkillDefinition` (with optional V2 metadata block). Individual skills import and declare using these. The contract accepts both compact labels (`pdp`, `ssot`, `skill/value`) and V2 diagram labels (`pdp-host`, `ssot-host`, `to/ref`) so existing tasks and future diagram-driven tasks can share the same surface.

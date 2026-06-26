@@ -4,6 +4,8 @@ import * as bridge from "./dashboard/bridge";
 import * as api from "./dashboard/agentLoopApi";
 import AgentLoopPage from "./AgentLoopPage";
 import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView } from "./dashboard/DashboardApp";
+import { LlmKeyForm } from "./dashboard/settings/LlmKeysPanel";
+import { DiagnosticsView } from "./dashboard/settings/DiagnosticsPanel";
 
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
@@ -453,7 +455,7 @@ it("agentloop setting layout 112 renders summary cards and five tabs", () => {
   expect(html).toContain("Profiles");
 
   // import/export redacted footer is present (shared, not duplicated per tab)
-  expect(html).toContain("设置导入/导出");
+  expect(html).toContain("设置导入 / 导出");
   expect(html).toContain("导出设置");
   expect(html).toContain("导入设置");
 });
@@ -486,7 +488,7 @@ it("agentloop setting cli config 112 renders two column worker form", () => {
   expect(html).toContain("最大执行轮次");
   expect(html).toContain("最大重试次数");
   expect(html).toContain("队列文件路径");
-  expect(html).toContain("工作树模式");
+  expect(html).toContain("工作模式");
 
   // two-column on desktop + responsive one-col on narrow (Row/Col xs/md pattern)
   expect(html).toMatch(/ant-row|gutter/i);
@@ -588,7 +590,7 @@ it("agentloop setting queue defaults 112 previews supported patch only", () => {
   }
   // copy control for current json (button or aria) + line numbered styling classes
   expect(qdHtml).toMatch(/复制|copy|Copy/i);
-  expect(qdHtml).toMatch(/native-code|native-code-shell|native-code-line|native-code-no/i);
+  expect(qdHtml).toMatch(/native-queue-code|native-queue-code-card|native-queue-code-line|native-queue-code-no/i);
   // preview section mentions patch / dry-run / supported
   expect(qdHtml).toMatch(/预览|preview|patch|dry-run|supported|支持|Proposed|Dry-run/i);
 });
@@ -682,6 +684,71 @@ it("agentloop setting profiles 112 renders active profile table truthfully", () 
   expect(singleHtml).toMatch(/删\s*除/);
 });
 
+it("agentloop setting profiles visual shell matches reference", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <ProfileCrudView
+        data={{
+          profiles: {
+            ci: { fixAgent: "codex", reviewAgent: "none" },
+            local: { fixAgent: "grok", reviewAgent: "codex" },
+            proxy: { fixAgent: "grok", reviewAgent: "grok", baseUrl: "http://127.0.0.1:8080" },
+          },
+          activeProfile: "local",
+        }}
+        queueRunning={false}
+        activeProfile="local"
+        onList={() => {}}
+        onCreate={() => {}}
+        onRename={() => {}}
+        onDuplicate={() => {}}
+        onDelete={() => {}}
+        onSelect={() => {}}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("native-profiles-panel");
+  expect(html).toContain("native-profiles-toolbar");
+  expect(html).toContain("native-profiles-table");
+  expect(html).toContain("Settings Profiles");
+  expect(html).toContain("刷新");
+  expect(html).toContain("创建");
+  expect(html).toContain("名称");
+  expect(html).toContain("状态 / Agents / 代理");
+  expect(html).toContain("代理地址");
+  expect(html).toContain("操作");
+  expect(html).toContain("ci");
+  expect(html).toContain("local");
+  expect(html).toContain("proxy");
+  expect(html).toContain("active");
+  expect(html).toContain("codex / none");
+  expect(html).toContain("grok / codex");
+  expect(html).toContain("grok / grok");
+  expect(html).toContain("当前");
+  expect(html).toContain("http://127.0.0.1:8080");
+  expect(html).toContain("选择");
+  expect(html).toContain("重命名");
+  expect(html).toContain("复制");
+  expect(html).toContain("删除");
+  expect(html).toContain("仅非敏感配置；不可删除最后一个 profile；运行中禁止切换与删除。");
+  expect(html).not.toContain("max-width:720");
+  expect(html).not.toContain("turns /");
+});
+
 it("agentloop setting component split 112 preserves settings render contract", () => {
   // TDD: added BEFORE any production split changes per acceptance criteria and suggested notes.
   // Verifies: after extraction, DashboardApp still renders identical settings UI contract via delegation;
@@ -712,7 +779,7 @@ it("agentloop setting component split 112 preserves settings render contract", (
     expect(html).toContain("队列默认值");
     expect(html).toContain("Diagnostics");
     expect(html).toContain("Profiles");
-    expect(html).toContain("设置导入/导出");
+    expect(html).toContain("设置导入 / 导出");
     expect(html).toContain("保存 CLI 配置");
 
     // verify split modules exist (importable boundary)
@@ -839,4 +906,278 @@ it("agentloop setting visual readiness 112 covers five reference tabs", () => {
   // no raw secrets in markup
   expect(html).not.toMatch(/sk-[a-z0-9]/i);
   expect(html).not.toContain("grokApiKey");
+});
+
+it("agentloop setting center visual shell matches SlideRule reference", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("native-agent-shell");
+  expect(html).toContain("native-agent-sidebar");
+  expect(html).toContain("native-settings-shell");
+  expect(html).toContain("native-settings-summary-card");
+  expect(html).toContain("native-settings-panel");
+  expect(html).toContain("native-cli-form");
+
+  expect(html).toContain("工作台");
+  expect(html).toContain("设置");
+  expect(html).toContain("帮助文档");
+  expect(html).toContain("AgentLoop 设置中心");
+  expect(html).toContain("CLI 基础配置");
+  expect(html).toContain("设置导入 / 导出");
+
+  expect(html).not.toContain("max-width:620");
+  expect(html).not.toContain("max-width:720");
+  expect(html).not.toContain("max-width:800");
+});
+
+it("agentloop setting llm keys visual shell matches reference", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <LlmKeyForm
+        initial={{
+          baseUrl: "https://api.example.com/v1",
+          injectToWorker: true,
+          keys: {
+            grokApiKey: "",
+            openaiApiKey: "configured",
+            anthropicApiKey: "",
+          },
+        }}
+        onSave={() => {}}
+        providerTests={[
+          { provider: "openai", status: "ready", durationMs: 42, reason: "cached", checkedAt: "2026-06-25T00:00:00.000Z" },
+        ]}
+        workerCliTests={[
+          { worker: "grok", status: "ok", durationMs: 18, reason: "found" },
+        ]}
+        onTestProvider={() => {}}
+        onTestWorkerCli={() => {}}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("native-llm-panel");
+  expect(html).toContain("native-provider-grid");
+  expect(html).toContain("native-provider-card");
+  expect(html).toContain("native-worker-health-card");
+  expect(html).toContain("native-llm-runtime-grid");
+  expect(html).toContain("Grok API Key / Token");
+  expect(html).toContain("OpenAI API Key");
+  expect(html).toContain("Anthropic API Key");
+  expect(html).toContain("Worker CLI 健康");
+  expect(html).toContain("Probe grok");
+  expect(html).toContain("Probe codex");
+  expect(html).toContain("代理地址 / Base URL");
+  expect(html).toContain("将 Keys 注入到 Worker 环境");
+  expect(html).toContain("保存 Keys 配置");
+  expect(html).toContain("清除全部 Keys");
+  expect(html).toContain("未配置");
+  expect(html).toContain("已配置");
+  expect(html).toContain("Provider Health");
+  expect(html).toContain("敏感 Key 使用安全存储");
+  expect(html).not.toContain("max-width:620");
+  expect(html).not.toMatch(/sk-[a-z0-9]|RAW_SECRET|apiKey.*secret/i);
+});
+
+it("agentloop setting queue defaults visual shell matches reference", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <QueueDefaultsView
+        data={{
+          defaults: {
+            fixAgent: "grok",
+            reviewAgent: "codex",
+            workerMaxTurns: 128,
+            workerMaxRetries: 2,
+            skipReview: false,
+            useWorktree: true,
+            worktreeScope: "queue",
+            maxIterations: 3,
+          },
+          supportedKeys: [
+            "fixAgent",
+            "reviewAgent",
+            "workerMaxTurns",
+            "workerMaxRetries",
+            "skipReview",
+            "useWorktree",
+            "worktreeScope",
+            "maxIterations",
+          ],
+        }}
+        preview={null}
+        onPreview={() => {}}
+        applyResult={null}
+        onApply={() => {}}
+        settingsData={{
+          nonSensitive: {
+            fixAgent: "grok",
+            reviewAgent: "codex",
+            workerMaxTurns: 256,
+          },
+        }}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("native-queue-defaults-panel");
+  expect(html).toContain("native-queue-code-card");
+  expect(html).toContain("native-queue-code-current");
+  expect(html).toContain("native-queue-code-patch");
+  expect(html).toContain("native-queue-actions");
+  expect(html).toContain("队列 defaults（仅支持键，当前值）");
+  expect(html).toContain("预览 patch（dry-run，仅支持键；不含 workerEnv）");
+  expect(html).toContain("从 Settings 同步并预览 diff");
+  expect(html).toContain("预览 structured diff（不写入）");
+  expect(html).toContain("supported: fixAgent, reviewAgent, workerMaxTurns");
+  expect(html).toContain("workerEnv/secrets 拒绝");
+  expect(html).toContain("native-json-key");
+  expect(html).toContain("native-json-number");
+  expect(html).toContain("native-json-boolean");
+  expect(html).not.toContain("max-width:620");
+  expect(html).not.toContain("&quot;workerEnv&quot;");
+  expect(html).not.toMatch(/RAW_SECRET|sk-[a-z0-9]|&quot;apiKey&quot;|apiKey:\s/i);
+});
+
+it("agentloop setting diagnostics visual shell matches reference", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <DiagnosticsView
+        data={{
+          repoRoot: "/workspace/repo",
+          queuePath: "agent-loop/scripts/migration-queue.json",
+          activeProfile: "local",
+          keys: {
+            grokApiKey: "configured",
+            openaiApiKey: "",
+            anthropicApiKey: "",
+          },
+          effectiveConfig: {
+            fixAgent: "grok",
+            reviewAgent: "codex",
+            workerMaxTurns: 128,
+            workerMaxRetries: 2,
+            queuePath: "agent-loop/scripts/migration-queue.json",
+            worktreeScope: "queue",
+            baseUrl: "https://api.example.com/v1",
+            injectToWorker: true,
+          },
+          configSources: {
+            fixAgent: "default",
+            reviewAgent: "default",
+            workerMaxTurns: "workspace",
+            workerMaxRetries: "workspace",
+          },
+          lastRunState: {
+            runId: "2026-06-24T12",
+            status: "DONE_REVIEWED",
+            task: "agent-loop/tasks/demo.md",
+          },
+          warnings: [
+            { category: "ready", message: "provider key(s) configured" },
+            { category: "skipped", message: "sample skipped warning" },
+            { category: "failed", message: "sample failed (demo)" },
+            { category: "unknown", message: "sample unknown" },
+          ],
+        }}
+        onRefresh={() => {}}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("native-diagnostics-panel");
+  expect(html).toContain("Diagnostics（只读）");
+  expect(html).toContain("刷新");
+  expect(html).toContain("Copy JSON");
+  expect(html).toContain("Repo root");
+  expect(html).toContain("Queue path");
+  expect(html).toContain("Key status");
+  expect(html).toContain("Effective config");
+  expect(html).toContain("Config sources");
+  expect(html).toContain("Last run state");
+  expect(html).toContain("Warnings（分类）");
+  expect(html).toContain("native-diagnostics-summary");
+  expect(html).toContain("native-diagnostics-grid");
+  expect(html).toContain("native-diagnostics-code-card");
+  expect(html).toContain("native-diagnostics-warnings");
+  expect(html).toContain("native-diagnostics-footer-note");
+  expect(html).toContain("ready");
+  expect(html).toContain("skipped");
+  expect(html).toContain("failed");
+  expect(html).toContain("unknown");
+  expect(html).toContain("native-json-key");
+  expect(html).toContain("native-json-string");
+  expect(html).toContain("native-json-number");
+  expect(html).not.toContain("Card size");
+  expect(html).not.toContain("max-width:620");
+  expect(html).not.toMatch(/RAW_SECRET|sk-[a-z0-9]/i);
+});
+
+it("agentloop dashboard shell constrains content to an internal scroll area", () => {
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "dashboard", "dashboard.css"),
+    "utf8",
+  );
+
+  expect(css).toMatch(/\.native-dashboard\s*\{[\s\S]*?height:\s*100%/);
+  expect(css).toMatch(/\.native-agent-shell\s*\{[\s\S]*?height:\s*100%/);
+  expect(css).toMatch(/\.native-agent-main\s*\{[\s\S]*?height:\s*100%/);
+  expect(css).toMatch(/\.native-content\s*\{[\s\S]*?overflow:\s*auto/);
+  expect(css).toMatch(/\.native-content\s*\{[\s\S]*?min-height:\s*0/);
 });

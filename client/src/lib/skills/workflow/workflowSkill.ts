@@ -72,16 +72,46 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
 
   // -- CROSS-SKILL declarations --------------------------------------------
   crossRefs(model: WorkflowModel): CrossRefEdge[] {
-    // every approval node points OUT at an RBAC role (workflow ←→ rbac).
-    return model.nodes
+    const refs: CrossRefEdge[] = [];
+    // every approval node points OUT at an RBAC role (workflow ←→ rbac) — cross uses assigneeRole for compatibility with existing ref tests
+    model.nodes
       .filter(n => n.type === "approval" && n.assigneeRole)
-      .map(n => ({
-        fromNode: `wf_${sanitizeId(n.id)}`,
-        toSkill: "rbac",
-        toKind: "role",
-        toValue: n.assigneeRole!,
-        label: "审批人",
-      }));
+      .forEach(n => {
+        refs.push({
+          fromNode: `wf_${sanitizeId(n.id)}`,
+          toSkill: "rbac",
+          toKind: "role",
+          toValue: n.assigneeRole!,
+          label: "审批人",
+        });
+      });
+    // branch/form nodes bind fields to DataModel SSOT (PEP delegation)
+    model.nodes
+      .filter(n => n.type === "branch" && n.fieldRef)
+      .forEach(n => {
+        refs.push({
+          fromNode: `wf_${sanitizeId(n.id)}`,
+          toSkill: "datamodel",
+          toKind: "field",
+          toValue: n.fieldRef!,
+          label: "字段",
+        });
+      });
+    // model-level fieldRefs also declare DataModel SSOT binding for PEP
+    (model.fieldRefs || []).forEach(fr => {
+      const wfRoot = `wf_${sanitizeId(model.id)}`;
+      const alreadyFromBranch = refs.some(r => r.toSkill === "datamodel" && r.toValue === fr);
+      if (!alreadyFromBranch) {
+        refs.push({
+          fromNode: wfRoot,
+          toSkill: "datamodel",
+          toKind: "field",
+          toValue: fr,
+          label: "SSOT字段",
+        });
+      }
+    });
+    return refs;
   },
   refNodeId(kind: string, value: string): string | null {
     if (kind === "workflow") return `wf_${sanitizeId(value)}`;
@@ -194,6 +224,37 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
       }
     });
 
+    // 5) PEP delegation guard: Workflow is PEP only; approvals/policy must delegate to RBAC PDP (never local auth)
+    const hasApprovals = model.nodes.some(n => n.type === "approval");
+    if (hasApprovals) {
+      if (!model.pep) {
+        f.push({ code: "WF_PEP_BYPASS", severity: "error", path: "pep", message: "工作流包含审批节点但未声明 pep 委托标记，会导致本地授权而绕过 PDP" });
+      }
+      if (!model.actorRoleRef) {
+        f.push({ code: "WF_PEP_BYPASS", severity: "error", path: "actorRoleRef", message: "工作流包含审批节点但未声明 actorRoleRef 委托给 RBAC PDP" });
+      }
+      if (!model.policyCheckRefs || model.policyCheckRefs.length === 0) {
+        f.push({ code: "WF_PEP_BYPASS", severity: "error", path: "policyCheckRefs", message: "工作流包含审批节点但未声明 policyCheckRefs，会在本地而非 PDP 执行权限检查" });
+      }
+    }
+
+    // 6) DataModel SSOT bindings for declared fieldRefs (branch/form fields); do not silently accept when refs declared
+    const dmFields = ctx?.external?.datamodel?.field;
+    (model.fieldRefs || []).forEach((fr, i) => {
+      if (dmFields === undefined) {
+        f.push({ code: "WF_FIELD_UNRESOLVED", severity: "warning", path: `fieldRefs[${i}]`, message: `Workflow fieldRef「${fr}」未接入 DataModel 能力面,无法校验` });
+      } else if (!dmFields.includes(fr)) {
+        f.push({ code: "WF_SSOT_MISSING_FIELD", severity: "error", path: `fieldRefs[${i}]`, message: `Workflow fieldRef 引用了 DataModel 中不存在的 SSOT 字段：${fr}` });
+      }
+    });
+    model.nodes.filter(n => n.type === "branch" && n.fieldRef).forEach(node => {
+      if (dmFields === undefined) {
+        f.push({ code: "WF_FIELD_UNRESOLVED", severity: "warning", path: `nodes[${node.id}].fieldRef`, message: `分支「${node.name}」的 fieldRef 未接入 DataModel 能力面,无法校验` });
+      } else if (!dmFields.includes(node.fieldRef!)) {
+        f.push({ code: "WF_SSOT_MISSING_FIELD", severity: "error", path: `nodes[${node.id}].fieldRef`, message: `分支「${node.name}」引用了不存在的 DataModel SSOT 字段：${node.fieldRef}` });
+      }
+    });
+
     void byId; // (kept for future per-node lookups)
     return finalizeReport(f);
   },
@@ -202,7 +263,14 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
   project(model: WorkflowModel): Projection {
     const shape = (n: WorkflowNode): [string, string] => {
       const id = `wf_${sanitizeId(n.id)}`;
-      const label = n.type === "approval" && n.assigneeRole ? `${n.name}<br/>@${n.assigneeRole}` : n.name;
+      let label = n.name;
+      if (n.type === "approval") {
+        const role = n.assigneeRoleRef || n.assigneeRole;
+        if (role) label = `${n.name}<br/>@${role}`;
+      } else if (n.type === "branch") {
+        const fref = n.fieldRef || n.field;
+        if (fref) label = `${n.name}<br/>${fref}`;
+      }
       switch (n.type) {
         case "start":
         case "end":
@@ -264,11 +332,16 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
 export const leaveApprovalWorkflow: WorkflowModel = {
   id: "wf_leave_approval",
   name: "请假审批流程",
+  pep: "pep",
+  actorRoleRef: "employee",
+  policyCheckRefs: ["leave:approve"],
+  fieldRefs: ["leave_request.approved"],
+  traceSpan: "wf.leave.approval",
   fields: [{ key: "approved", type: "boolean" }],
   nodes: [
     { id: "s", type: "start", name: "发起请假" },
-    { id: "a_mgr", type: "approval", name: "主管审批", assigneeRole: "manager", approvalMode: "any" },
-    { id: "b", type: "branch", name: "审批结果", field: "approved" },
+    { id: "a_mgr", type: "approval", name: "主管审批", assigneeRole: "manager", assigneeRoleRef: "manager", approvalMode: "any" },
+    { id: "b", type: "branch", name: "审批结果", field: "approved", fieldRef: "leave_request.approved" },
     { id: "e_ok", type: "end", name: "通过" },
     { id: "e_no", type: "end", name: "驳回" },
   ],

@@ -3,11 +3,14 @@ import {
   ClockCircleOutlined,
   DownloadOutlined,
   FileDoneOutlined,
+  AppstoreOutlined,
   LeftOutlined,
   PlayCircleFilled,
+  QuestionCircleOutlined,
   ReloadOutlined,
   RightOutlined,
   RobotOutlined,
+  SettingOutlined,
   SnippetsOutlined,
   UploadOutlined,
   UserOutlined,
@@ -30,7 +33,6 @@ import {
   Modal,
   Progress,
   Row,
-  Segmented,
   Select,
   Space,
   Statistic,
@@ -440,6 +442,53 @@ function SidePanel({ payload, settings }: { payload: OverviewPayload; settings?:
   );
 }
 
+function AgentLoopSidebar({ view, onViewChange }: { view: ViewKey; onViewChange: (next: ViewKey) => void }) {
+  const brandLogo = typeof window !== 'undefined' ? window.__AGENT_LOOP_ASSETS__?.brandLogo : undefined;
+  const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
+    { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
+    { key: 'settings', label: '设置', icon: <SettingOutlined /> },
+  ];
+
+  return (
+    <aside className="native-agent-sidebar">
+      <div className="native-agent-brand">
+        {brandLogo ? <img src={brandLogo} alt="SlideRule.ai" /> : <span className="native-agent-brand-mark">S</span>}
+      </div>
+      <nav className="native-agent-nav" aria-label="AgentLoop">
+        {navItems.map((item) => (
+          <button
+            type="button"
+            className={`native-agent-nav-item${view === item.key ? ' native-agent-nav-item-active' : ''}`}
+            onClick={() => onViewChange(item.key)}
+            key={item.key}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+      <button type="button" className="native-agent-help">
+        <QuestionCircleOutlined />
+        <span>帮助文档</span>
+        <RightOutlined />
+      </button>
+    </aside>
+  );
+}
+
+function AgentLoopTopbar({ view }: { view: ViewKey }) {
+  return (
+    <Header className="native-header native-agent-topbar">
+      <Breadcrumb items={[{ title: 'AgentLoop' }, { title: view === 'settings' ? '设置' : '工作台' }]} />
+      <Space size="small" className="native-agent-topbar-actions">
+        <Tag color="blue">本地 Web 控制台</Tag>
+        <Button icon={<ReloadOutlined />} onClick={() => postCommand('refresh')}>刷新预览</Button>
+        <Text type="secondary">Python API + AgentLoop runtime</Text>
+      </Space>
+    </Header>
+  );
+}
+
 export function DashboardApp({ payload, initialView = 'workbench' as ViewKey }: { payload: OverviewPayload; initialView?: ViewKey }) {
   const [filter, setFilter] = useState<FilterKey>('queue');
   const [query, setQuery] = useState('');
@@ -629,24 +678,11 @@ export function DashboardApp({ payload, initialView = 'workbench' as ViewKey }: 
       prefixCls="agent-ant"
       csp={typeof window !== 'undefined' && window.__AGENT_LOOP_CSP_NONCE__ ? { nonce: window.__AGENT_LOOP_CSP_NONCE__ } : undefined}
     >
-      <Layout className="native-dashboard">
-        <Layout className="native-main">
-          <Header className="native-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
-              <Breadcrumb items={[{ title: 'AgentLoop' }, { title: view === 'settings' ? '设置' : '工作台' }]} />
-              <div style={{ marginLeft: 'auto' }}>
-                <Segmented
-                  options={[
-                    { label: '工作台', value: 'workbench' as const },
-                    { label: '设置', value: 'settings' as const },
-                  ]}
-                  value={view}
-                  onChange={(v) => setView(v as ViewKey)}
-                />
-              </div>
-            </div>
-          </Header>
-          <Content className="native-content">
+      <Layout className="native-dashboard native-agent-shell">
+        <AgentLoopSidebar view={view} onViewChange={setView} />
+        <Layout className="native-main native-agent-main">
+          <AgentLoopTopbar view={view} />
+          <Content className={`native-content ${view === 'settings' ? 'native-settings-content' : 'native-workbench-content'}`}>
             {view === 'workbench' ? workbenchContent : <SettingsView data={settingsData} onSave={handleSaveSettings} providerTests={providerTests} onTestProvider={(provider) => postCommand('testProvider', { provider })} workerCliTests={workerCliTests} onTestWorkerCli={(w) => postCommand('testWorkerCli', { worker: w })} queueDefaultsData={queueDefaultsData} queuePreview={queuePreview} onPreviewQueue={handlePreviewQueueDefaults} queueApply={queueApply} onApplyQueue={handleApplyQueueDefaults} exportedSettings={exportedSettings} importResult={importResult} onExportSettings={handleExportSettings} onImportSettings={handleImportSettings} diagnosticsData={diagnosticsData} onRefreshDiagnostics={() => postCommand('getDiagnostics')} profilesData={profilesData} onListProfiles={handleListProfiles} onCreateProfile={handleCreateProfile} onRenameProfile={handleRenameProfile} onDuplicateProfile={handleDuplicateProfile} onDeleteProfile={handleDeleteProfile} onSelectProfile={handleSelectProfile} />}
           </Content>
         </Layout>

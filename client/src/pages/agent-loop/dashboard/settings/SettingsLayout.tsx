@@ -1,5 +1,5 @@
-import { Card, Col, Row, Space, Typography } from 'antd';
-import { UserOutlined, RobotOutlined } from '@ant-design/icons';
+import { FileTextOutlined, SafetyCertificateOutlined, ToolOutlined } from '@ant-design/icons';
+import { Typography } from 'antd';
 import type { ReactNode } from 'react';
 
 const { Text, Title } = Typography;
@@ -10,38 +10,74 @@ export type SettingsSummary = {
   reviewAgent?: string | null;
 };
 
+type SummaryCard = {
+  key: string;
+  label: string;
+  value: string;
+  icon: ReactNode;
+  testId: string;
+};
+
 export function SettingsSummaryCards({ summary }: { summary: SettingsSummary }) {
   const { activeProfile = 'local', fixAgent = '-', reviewAgent = '-' } = summary || {};
+  const cards: SummaryCard[] = [
+    {
+      key: 'profile',
+      label: '活跃 Profile',
+      value: activeProfile || 'local',
+      icon: <FileTextOutlined />,
+      testId: 'summary-active-profile',
+    },
+    {
+      key: 'review',
+      label: 'Review Agent',
+      value: reviewAgent || '-',
+      icon: <SafetyCertificateOutlined />,
+      testId: 'summary-review-agent',
+    },
+    {
+      key: 'fix',
+      label: 'Fix Agent',
+      value: fixAgent || '-',
+      icon: <ToolOutlined />,
+      testId: 'summary-fix-agent',
+    },
+  ];
+
   return (
-    <Row gutter={12}>
-      <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center' }} className="summary-card">
-          <Space direction="vertical" size={2}>
-            <UserOutlined style={{ fontSize: 18, color: '#1677ff' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>活跃 Profile</Text>
-            <Text strong data-testid="summary-active-profile">{activeProfile}</Text>
-          </Space>
-        </Card>
-      </Col>
-      <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center' }} className="summary-card">
-          <Space direction="vertical" size={2}>
-            <RobotOutlined style={{ fontSize: 18, color: '#1677ff' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>Review Agent</Text>
-            <Text strong data-testid="summary-review-agent">{reviewAgent}</Text>
-          </Space>
-        </Card>
-      </Col>
-      <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center' }} className="summary-card">
-          <Space direction="vertical" size={2}>
-            <RobotOutlined style={{ fontSize: 18, color: '#1677ff' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>Fix Agent</Text>
-            <Text strong data-testid="summary-fix-agent">{fixAgent}</Text>
-          </Space>
-        </Card>
-      </Col>
-    </Row>
+    <div className="native-settings-summary-grid">
+      {cards.map((card) => (
+        <div className="native-settings-summary-card summary-card" key={card.key}>
+          <span className="native-settings-summary-icon">{card.icon}</span>
+          <span className="native-settings-summary-copy">
+            <Text type="secondary">{card.label}</Text>
+            <Text strong data-testid={card.testId}>{card.value}</Text>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SettingsPanel({
+  title,
+  description,
+  children,
+  className = '',
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`native-settings-panel ${className}`.trim()}>
+      <div className="native-settings-panel-head">
+        <Title level={5}>{title}</Title>
+        {description ? <Text type="secondary">{description}</Text> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -53,16 +89,18 @@ export function SettingsLayout({
 }: {
   title?: string;
   summary?: SettingsSummary;
-  tabs: ReactNode; // Tabs items or prebuilt <Tabs />
+  tabs: ReactNode;
   footer?: ReactNode;
 }) {
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Title level={4} style={{ marginBottom: 0 }}>{title}</Title>
+    <section className="native-settings-shell">
+      <div className="native-settings-title">
+        <Title level={3}>{title}</Title>
+      </div>
       {summary && <SettingsSummaryCards summary={summary} />}
-      {tabs}
+      <div className="native-settings-tabs-wrap">{tabs}</div>
       {footer}
-    </Space>
+    </section>
   );
 }
 
