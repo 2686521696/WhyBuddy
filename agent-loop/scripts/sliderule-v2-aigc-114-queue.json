@@ -1,0 +1,49 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": false,
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "codex",
+    "reviewModel": "gpt-5.5",
+    "scopedReview": true,
+    "workerMaxTurns": 128,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 128,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 6,
+    "guardTests": false,
+    "maxIterations": 3,
+    "agentIdleTimeoutMs": 300000,
+    "agentTimeoutMs": 600000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "timeoutMs": 1800000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    }
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-aigc-arch-normalize-114",
+      "task": "agent-loop/tasks/sliderule-v2-aigc-arch-normalize-114.md",
+      "gates": [
+        "$p='docs/rbac-skill/AIGC 中台 · V2标准详图（样板）.md'; $lines=Get-Content -LiteralPath $p -Encoding UTF8; $fences=($lines | Select-String -Pattern '^```').Count; $subs=($lines | Select-String -Pattern '^\\s*subgraph\\b').Count; $ends=($lines | Select-String -Pattern '^\\s*end\\s*$').Count; if($fences -ne 2 -or $subs -ne $ends){ throw \"bad mermaid balance fences=$fences subgraphs=$subs ends=$ends\" }",
+        "$p='docs/rbac-skill/AIGC 中台 · V2标准详图（样板）.md'; foreach($m in 'Model Datasource / Field Binding','Output Schema','Provider KeyRef / SecretRef','Retrieval Policy','Citation Policy','Trace Evidence','AigcCapability','FLOW_PUBLISH_GATE -.④'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} docs/rbac-skill/AIGC 中台 · V2标准详图（样板）.md",
+        "git diff --name-only"
+      ],
+      "enabled": true
+    }
+  ]
+}
