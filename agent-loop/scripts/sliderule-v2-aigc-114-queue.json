@@ -1,7 +1,9 @@
 {
   "cwd": "..",
   "defaults": {
-    "useWorktree": false,
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-aigc-114-run",
     "autoFix": true,
     "skipReview": false,
     "fixAgent": "grok",
