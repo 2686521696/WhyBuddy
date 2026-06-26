@@ -37,6 +37,15 @@ describe("SlideRule orchestrator — end-to-end (一句话 → 架构 + gate)", 
     expect(wf.warnings.some(w => w.code === "WF_ASSIGNEE_UNRESOLVED")).toBe(false);
   });
 
+  it("threads DataModel surfaces into Workflow so fieldRef/SSOT cross-refs resolve (no unresolved for DataModel)", async () => {
+    const result = await deriveApplication("请假审批");
+    const wf = result.report.bySkill.find(s => s.skillId === "workflow")!;
+    // DataModel surface makes WF field SSOT refs resolve (no dangling)
+    expect(wf.warnings.some(w => w.code === "WF_FIELD_UNRESOLVED")).toBe(false);
+    // diagram cross edges are real (not ghost)
+    expect(result.mermaid).toContain("wf_b -.->|字段| dm_leave_request_approved");
+  });
+
   it("the combined diagram now has 5 subgraphs, the cross-skill edges resolve to REAL nodes, ghost gone", async () => {
     const result = await deriveApplication("请假审批");
     expect(result.mermaid).toContain('subgraph datamodel["数据中台"]');
@@ -50,6 +59,8 @@ describe("SlideRule orchestrator — end-to-end (一句话 → 架构 + gate)", 
     expect(result.mermaid).toMatch(/app_app_leave_approval -\.->\|.*\| wf_wf_leave_approval/);
     // workflow approval node -.-> rbac role node
     expect(result.mermaid).toContain("wf_a_mgr -.->|审批人| role_manager");
+    // workflow branch/form to DataModel SSOT (cross-refs resolve through DataModel surface)
+    expect(result.mermaid).toContain("wf_b -.->|字段| dm_leave_request_approved");
     // RBAC data rule now points at the REAL datamodel entity node, not a ghost
     expect(result.mermaid).toContain("-.->|数据| dm_leave_request");
     expect(result.mermaid).not.toContain("(未接入)");
