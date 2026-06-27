@@ -24,6 +24,12 @@ vi.mock("react", async () => {
   };
 });
 
+vi.mock("@/pages/SlideRule", () => ({
+  default: ({ embedded }: { embedded?: boolean }) => (
+    <main data-embedded={embedded ? "true" : "false"} data-testid="sliderule-page" />
+  ),
+}));
+
 describe("AgentLoopPage", () => {
   it("mounts the ported AgentLoop dashboard shell (overview workbench)", () => {
     const html = renderToStaticMarkup(<AgentLoopPage />);
@@ -73,6 +79,46 @@ describe("AgentLoopPage", () => {
 
     expect(html).toContain('href="/agent-loop/sliderule"');
     expect(html).toContain("推演");
+  });
+
+  it("renders SlideRule inside the AgentLoop workbench shell instead of fullscreen", () => {
+    const html = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="sliderule"
+        onViewChange={vi.fn()}
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
+    );
+
+    expect(html).toContain("native-agent-shell");
+    expect(html).toContain("native-workbench-content");
+    expect(html).toContain("native-sliderule-content");
+    expect(html).toContain("native-sliderule-shell");
+    expect(html).toContain('data-testid="sliderule-page"');
+    expect(html).toContain('data-embedded="true"');
+    expect(html).not.toContain("native-settings-shell");
+  });
+
+  it("hides duplicate chrome from the embedded SlideRule view only", () => {
+    const slideruleHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="sliderule"
+        onViewChange={vi.fn()}
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
+    );
+    const workbenchHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="workbench"
+        onViewChange={vi.fn()}
+      />,
+    );
+
+    expect(slideruleHtml).not.toContain("native-agent-topbar-actions");
+    expect(workbenchHtml).toContain("native-agent-topbar-actions");
   });
 
   it("renders task detail entries as first-class run route links", () => {
@@ -129,6 +175,27 @@ describe("AgentLoopPage", () => {
     expect(html).toContain('href="/agent-loop/runs/2026-06-26T22-10-29-045Z"');
     expect(html).toContain("sliderule-v2-hardening-115-queue.json");
     expect(html).toContain("sliderule-v2-hardening-scope-115");
+  });
+
+  it("keeps the workbench main grid gutter aligned with metric cards", () => {
+    const html = renderToStaticMarkup(
+      <DashboardApp
+        payload={{
+          counts: {
+            queueTotal: 56,
+            total: 56,
+          },
+          tasks: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("native-workbench-grid");
+    expect(html).toContain("row-gap:12px");
+    expect(html).toContain("margin-left:-6px");
+    expect(html).toContain("margin-right:-6px");
+    expect(html).not.toContain("margin-left:-2px");
+    expect(html).not.toContain("margin-right:-2px");
   });
 
   it("does not double count reviewed tasks in the landed metric", () => {
@@ -1360,4 +1427,15 @@ it("agentloop dashboard shell constrains content to an internal scroll area", ()
   expect(css).toMatch(/\.native-agent-main\s*\{[\s\S]*?height:\s*100%/);
   expect(css).toMatch(/\.native-content\s*\{[\s\S]*?overflow:\s*auto/);
   expect(css).toMatch(/\.native-content\s*\{[\s\S]*?min-height:\s*0/);
+});
+
+it("agentloop workbench cards stretch to their grid columns", () => {
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "dashboard", "dashboard.css"),
+    "utf8",
+  );
+
+  expect(css).toMatch(
+    /\.native-task-table-card,\s*[\r\n]+\.native-task-inspector\s*\{[^}]*width:\s*100%/,
+  );
 });

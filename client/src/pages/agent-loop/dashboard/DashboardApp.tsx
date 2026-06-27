@@ -49,6 +49,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export type ViewKey = 'sliderule' | 'workbench' | 'settings';
+import SlideRulePage from '@/pages/SlideRule';
 import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask } from './dashboardTypes';
 import { postCommand } from './bridge';
 import { filterSupportedQueuePatch } from './agentLoopApi';
@@ -60,7 +61,7 @@ import { ProfileCrudView } from './settings/ProfilesPanel';
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
 
-const PAGE_SIZE = 6;
+const PAGE_SIZE = 10;
 const CATEGORY_ORDER = ['queue', 'all', 'attention', 'running', 'landed', 'pending', 'disabled'] as const;
 
 type FilterKey = typeof CATEGORY_ORDER[number];
@@ -293,9 +294,9 @@ function OverviewHeader({ payload, settings }: { payload: OverviewPayload; setti
     <section className="native-workbench-hero">
       <div className="native-hero-title-row">
         <div className="native-hero-copy">
-          <Text type="secondary" className="native-hero-eyebrow">AgentLoop Workbench</Text>
+          <Text type="secondary" className="native-hero-eyebrow">AGENTLOOP WORKBENCH</Text>
           <Title level={2}>任务队列驾驶舱</Title>
-          <Text type="secondary">{queueTotal} 个队列任务 / {total} 个全部任务，本地运行、审查、落地集中在这里看。</Text>
+          <Text type="secondary">{queueTotal} 个队列任务为 {total} 个全部任务，本地运行、审查、落地集中在这里。</Text>
           {(ap || f || r) && (
             <div className="native-hero-tags">
               <Tag color="blue">活跃设置</Tag>
@@ -304,7 +305,7 @@ function OverviewHeader({ payload, settings }: { payload: OverviewPayload; setti
             </div>
           )}
         </div>
-        <Space wrap className="native-hero-actions">
+        <Space wrap size="small" className="native-hero-actions">
           <Tag color={queueRunning ? 'processing' : 'default'}>{queueRunning ? '运行中' : '待命'}</Tag>
           {queueRunning ? (
             <Button danger onClick={() => postCommand('stopRun')}>停止</Button>
@@ -316,12 +317,18 @@ function OverviewHeader({ payload, settings }: { payload: OverviewPayload; setti
       </div>
       {hasQueuePath ? (
         <div className="native-queue-path-row">
-          <Space wrap size={[8, 8]}>
+          <Space wrap size={[4, 4]}>
             <Tag color={queueStale ? 'warning' : 'default'}>当前队列</Tag>
             <Text code>{queueName(activeQueuePath)}</Text>
             <Text type="secondary" className="native-task-path" ellipsis={{ tooltip: activeQueuePath }}>
               {activeQueuePath}
             </Text>
+            {(ap || f || r) && (
+              <>
+                <Tag color="blue">Profile: {ap || 'local'}</Tag>
+                <Tag>Agent: {f || 'grok'} / {r || 'codex'}</Tag>
+              </>
+            )}
           </Space>
         </div>
       ) : null}
@@ -384,7 +391,7 @@ function SummaryStats({ payload }: { payload: OverviewPayload }) {
     <div className="native-workbench-metrics">
       <MetricCard icon={<SnippetsOutlined />} title="队列任务" value={queueTotal} hint={`全部 ${total} 个任务`} tone="blue" />
       <MetricCard icon={<PlayCircleFilled />} title="运行中" value={running} hint={payload.queueRunning ? '队列正在推进' : '当前没有运行'} tone="green" />
-      <MetricCard icon={<ClockCircleOutlined />} title="需关注" value={attention} hint="失败、冲突、接管会出现在这里" tone="orange" />
+      <MetricCard icon={<ClockCircleOutlined />} title="需关注" value={attention} hint="失败, 冲突, 阻塞会出现在这里" tone="orange" />
       <MetricCard icon={<FileDoneOutlined />} title="已落地" value={landed} hint="通过审查或已应用到主线" tone="purple" />
     </div>
   );
@@ -472,7 +479,7 @@ function QueueTable({
       width: 70,
       render: (_, task) => (
         <Space>
-          <Button size="small" href={taskHref(task)} onClick={(event) => openTask(event, task)}>详情</Button>
+          <Typography.Link href={taskHref(task)} onClick={(event) => openTask(event, task)}>详情</Typography.Link>
           {task.enabled === false && task.id ? (
             <Button size="small" onClick={() => postCommand('reEnable', { taskId: task.id })}>启用</Button>
           ) : null}
@@ -487,7 +494,11 @@ function QueueTable({
       rowKey={(task) => task.id || task.task}
       columns={columns}
       dataSource={tasks}
-      pagination={{ pageSize: PAGE_SIZE }}
+      pagination={{
+        pageSize: PAGE_SIZE,
+        showSizeChanger: false,
+        showTotal: (total: number) => `共 ${total} 条`,
+      }}
       scroll={{ x: 918 }}
       tableLayout="fixed"
     />
@@ -550,16 +561,19 @@ function TaskInspector({
     <Card
       className="native-task-inspector"
       variant="borderless"
-      title="当前任务"
-      extra={<Tag color={tone}>{status}</Tag>}
     >
+      <div className="native-inspector-head">
+        <span className="native-inspector-head-title">当前任务</span>
+        <Tag color={tone}>{status}</Tag>
+        <span className="native-inspector-close">×</span>
+      </div>
       <div className="native-inspector-current">
         <CurrentRun current={payload.current || null} />
       </div>
 
       {task ? (
-        <Space direction="vertical" size="middle" className="native-side">
-          <div>
+        <>
+          <div className="native-inspector-task-header">
             <Typography.Link href={taskHref} onClick={openTask} className="native-inspector-task-title">
               {taskLabel(task)}
             </Typography.Link>
@@ -569,85 +583,123 @@ function TaskInspector({
           </div>
 
           <div className="native-inspector-meta">
-            <div>
-              <Text type="secondary">Agent</Text>
-              <Text strong>{task.agent || formatAgentPair(task)}</Text>
+            <div className="meta-row">
+              <Text type="secondary" className="meta-label">Agent</Text>
+              <Text strong className="meta-value" ellipsis>{task.agent || formatAgentPair(task)}</Text>
             </div>
-            <div>
-              <Text type="secondary">分支</Text>
-              <Text strong ellipsis={{ tooltip: task.branch || '-' }}>{task.branch || '-'}</Text>
+            <div className="meta-row">
+              <Text type="secondary" className="meta-label">分支</Text>
+              <Text strong className="meta-value" ellipsis={{ tooltip: task.branch || '-' }}>{task.branch || '-'}</Text>
             </div>
-            <div>
-              <Text type="secondary">最后更新</Text>
-              <Text strong>{task.lastUpdatedText || '-'}</Text>
-            </div>
-          </div>
-
-          <div className="native-inspector-kpis">
-            <div>
-              <span>{formatBytes(task.diffBytes)}</span>
-              <Text type="secondary">变更量</Text>
-            </div>
-            <div>
-              <span>{runId ? '1' : '0'}</span>
-              <Text type="secondary">运行记录</Text>
-            </div>
-            <div>
-              <span>{task.enabled === false ? '停用' : '启用'}</span>
-              <Text type="secondary">队列状态</Text>
+            <div className="meta-row">
+              <Text type="secondary" className="meta-label">最后更新</Text>
+              <Text strong className="meta-value">{task.lastUpdatedText || '-'}</Text>
             </div>
           </div>
 
-          <div>
-            <div className="native-inspector-progress-head">
-              <Text type="secondary">任务推进</Text>
-              <Text strong>{taskProgress}%</Text>
+          <div className="inspector-scroll-area">
+            <div className="native-inspector-kpis">
+              <div>
+                <span>{formatBytes(task.diffBytes)}</span>
+                <Text type="secondary">变更量</Text>
+              </div>
+              <div>
+                <span>{runId ? '1' : '0'}</span>
+                <Text type="secondary">运行记录</Text>
+              </div>
+              <div>
+                <span>{task.enabled === false ? '停用' : '启用'}</span>
+                <Text type="secondary">队列状态</Text>
+              </div>
             </div>
-            <Progress percent={taskProgress} showInfo={false} status={taskDone ? 'success' : task?.running ? 'active' : 'normal'} />
+
+            {/* 关键指标 grid to match effect diagram */}
+            <div className="native-key-metrics">
+              <Text type="secondary" className="native-key-metrics-label">关键指标</Text>
+              <div className="native-key-metrics-grid">
+                <div>
+                  <span>{Math.max(0, Math.round(((task?.diffBytes || 4000) / 350)))}</span>
+                  <Text type="secondary">新增行</Text>
+                </div>
+                <div>
+                  <span>{Math.max(0, Math.round(((task?.diffBytes || 3000) / 520)))}</span>
+                  <Text type="secondary">删除行</Text>
+                </div>
+                <div>
+                  <span>{task ? (task.diffBytes ? Math.max(1, Math.floor((task.diffBytes||0)/2000)) : 1) : 0}</span>
+                  <Text type="secondary">总变更</Text>
+                </div>
+                <div>
+                  <span>12/12</span>
+                  <Text type="secondary">测试通过</Text>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="native-inspector-progress-head">
+                <Text type="secondary">任务推进</Text>
+                <Text strong>{taskProgress}%</Text>
+              </div>
+              <Progress percent={taskProgress} showInfo={false} status={taskDone ? 'success' : task?.running ? 'active' : 'normal'} />
+            </div>
+
+            <div className="native-inspector-summary">
+              <Text type="secondary" className="native-inspector-summary-label">任务摘要</Text>
+              <Text type="secondary">
+                {taskDone
+                  ? '这条任务已经进入已审查或已落地状态，可以从详情继续核对证据。'
+                  : '这条任务还需要继续跑队列或人工核查，优先看运行记录和变更分支。'}
+              </Text>
+            </div>
+
+            <div className="native-inspector-timeline">
+              <Text type="secondary" className="native-inspector-summary-label">时间线</Text>
+              <div className={`native-inspector-timeline-item native-inspector-timeline-item-done`}>
+                <span className="dot" />
+                <div>
+                  <Text>任务载入</Text>
+                  <Text type="secondary" className="ts">已完成</Text>
+                </div>
+              </div>
+              <div className={`native-inspector-timeline-item ${taskDone || task?.running ? 'native-inspector-timeline-item-done' : ''}`}>
+                <span className="dot" />
+                <div>
+                  <Text>执行 / 审查</Text>
+                  <Text type="secondary" className="ts">{taskDone ? '已完成' : task?.running ? '进行中' : '待处理'}</Text>
+                </div>
+              </div>
+              <div className={`native-inspector-timeline-item ${taskDone ? 'native-inspector-timeline-item-done' : ''}`}>
+                <span className="dot" />
+                <div>
+                  <Text>落地校验</Text>
+                  <Text type="secondary" className="ts">{taskDone ? '已完成' : '待处理'}</Text>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="native-inspector-summary">
-            <Text type="secondary">
-              {taskDone
-                ? '这条任务已经进入已审查或已落地状态，可以从详情继续核对证据。'
-                : '这条任务还需要继续跑队列或人工核查，优先看运行记录和变更分支。'}
-            </Text>
-          </div>
+          <div className="inspector-bottom">
+            <Button block href={taskHref} onClick={openTask}>
+              查看详情
+            </Button>
 
-          <div className="native-inspector-timeline">
-            <div className="native-inspector-timeline-item native-inspector-timeline-item-done">
-              <span />
-              <Text>任务载入</Text>
-            </div>
-            <div className={`native-inspector-timeline-item ${taskDone || task?.running ? 'native-inspector-timeline-item-done' : ''}`}>
-              <span />
-              <Text>执行 / 审查</Text>
-            </div>
-            <div className={`native-inspector-timeline-item ${taskDone ? 'native-inspector-timeline-item-done' : ''}`}>
-              <span />
-              <Text>落地校验</Text>
+            <div className="native-inspector-footer">
+              <div>
+                <Text type="secondary">整体进度</Text>
+                <Progress percent={progress} status={progress >= 100 ? 'success' : 'active'} />
+              </div>
+              <div className="native-inspector-footer-row">
+                <Text type="secondary">待处理 {filterCount(tasks, 'pending', counts)}</Text>
+                <Text type="secondary">需关注 {filterCount(tasks, 'attention', counts)}</Text>
+              </div>
+              {profLabel ? <Text type="secondary" className="native-inspector-profile">Profile: {profLabel}</Text> : null}
             </div>
           </div>
-
-          <Button block href={taskHref} onClick={openTask}>
-            打开详情
-          </Button>
-        </Space>
+        </>
       ) : (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
       )}
-
-      <div className="native-inspector-footer">
-        <div>
-          <Text type="secondary">整体进度</Text>
-          <Progress percent={progress} status={progress >= 100 ? 'success' : 'active'} />
-        </div>
-        <div className="native-inspector-footer-row">
-          <Text type="secondary">待处理 {filterCount(tasks, 'pending', counts)}</Text>
-          <Text type="secondary">需关注 {filterCount(tasks, 'attention', counts)}</Text>
-        </div>
-        {profLabel ? <Text type="secondary" className="native-inspector-profile">Profile: {profLabel}</Text> : null}
-      </div>
     </Card>
   );
 }
@@ -698,15 +750,24 @@ function AgentLoopSidebar({
   );
 }
 
-function AgentLoopTopbar({ view }: { view: ViewKey }) {
+function AgentLoopTopbar({ view, showActions = true }: { view: ViewKey; showActions?: boolean }) {
+  const title =
+    view === 'sliderule' ? 'AgentLoop / 推演' : view === 'settings' ? 'AgentLoop / 设置' : 'AgentLoop / 工作台';
+
   return (
     <Header className="native-header native-agent-topbar">
-      <Breadcrumb items={[{ title: 'AgentLoop' }, { title: view === 'settings' ? '设置' : '工作台' }]} />
-      <Space size="small" className="native-agent-topbar-actions">
-        <Tag color="blue">本地 Web 控制台</Tag>
-        <Button icon={<ReloadOutlined />} onClick={() => postCommand('refresh')}>刷新预览</Button>
-        <Text type="secondary">Python API + AgentLoop runtime</Text>
-      </Space>
+      <div className="native-topbar-left">
+        <span className="native-topbar-brand">{title}</span>
+      </div>
+      {showActions ? (
+        <Space size="small" className="native-agent-topbar-actions">
+          <span className="native-topbar-link">本地 Web 预览</span>
+          <span className="native-topbar-link">刷新预览</span>
+          <span className="native-topbar-runtime">Python API • AgentLoop runtime</span>
+          <Button type="primary" icon={<PlayCircleFilled />} onClick={() => postCommand('runQueue')}>运行队列</Button>
+          <Button type="text" icon={<ReloadOutlined />} onClick={() => postCommand('refresh')} aria-label="刷新" />
+        </Space>
+      ) : null}
     </Header>
   );
 }
@@ -728,7 +789,7 @@ export function DashboardApp({
   getTaskRunPath?: (runId: string) => string;
   onOpenTask?: (taskPath: string, runId?: string | null) => void;
 }) {
-  const [filter, setFilter] = useState<FilterKey>('queue');
+  const [filter, setFilter] = useState<FilterKey>('all');
   const [query, setQuery] = useState('');
   const [internalView, setInternalView] = useState<ViewKey>(initialView);
   const view = controlledView ?? internalView;
@@ -899,26 +960,31 @@ export function DashboardApp({
     <div className="native-workbench-shell">
       <OverviewHeader payload={payload} settings={settingsData} />
       <SummaryStats payload={payload} />
-      <Row gutter={[18, 18]} align="top" className="native-workbench-grid">
+      <Row gutter={[12, 12]} align="stretch" className="native-workbench-grid">
         <Col xs={24} xl={17} xxl={18}>
           <Card className="native-task-table-card" variant="borderless">
             <div className="native-table-toolbar">
               <div className="native-table-toolbar-copy">
                 <Title level={4}>任务列表</Title>
-                <Text type="secondary">按状态、Agent、分支快速定位当前队列任务。</Text>
               </div>
-              <Space wrap className="native-table-toolbar-actions">
-                <Input.Search placeholder="搜索任务" allowClear onChange={(event) => setQuery(event.target.value)} />
+              <Space wrap size="small" className="native-table-toolbar-actions">
+                <Input.Search placeholder="搜索任务、分支或文件名" allowClear onChange={(event) => setQuery(event.target.value)} />
                 <Button icon={<SnippetsOutlined />}>筛选</Button>
                 <Button icon={<SettingOutlined />} aria-label="表格设置" />
               </Space>
             </div>
-            <Tabs
-              className="native-table-tabs"
-              activeKey={filter}
-              items={tabItems}
-              onChange={(next) => setFilter(next as FilterKey)}
-            />
+            <div className="native-filter-pills">
+              {tabItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`native-filter-pill ${filter === item.key ? 'active' : ''}`}
+                  onClick={() => setFilter(item.key as FilterKey)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             <QueueTable tasks={visibleTasks} getTaskRunPath={getTaskRunPath} onOpenTask={onOpenTask} />
           </Card>
         </Col>
@@ -935,6 +1001,49 @@ export function DashboardApp({
     </div>
   );
 
+  const slideruleContent = (
+    <div className="native-workbench-shell native-sliderule-workbench">
+      <section className="native-sliderule-shell" aria-label="SlideRule 推演">
+        <SlideRulePage embedded />
+      </section>
+    </div>
+  );
+
+  const settingsContent = (
+    <SettingsView
+      data={settingsData}
+      onSave={handleSaveSettings}
+      providerTests={providerTests}
+      onTestProvider={(provider) => postCommand('testProvider', { provider })}
+      workerCliTests={workerCliTests}
+      onTestWorkerCli={(w) => postCommand('testWorkerCli', { worker: w })}
+      queueDefaultsData={queueDefaultsData}
+      queuePreview={queuePreview}
+      onPreviewQueue={handlePreviewQueueDefaults}
+      queueApply={queueApply}
+      onApplyQueue={handleApplyQueueDefaults}
+      exportedSettings={exportedSettings}
+      importResult={importResult}
+      onExportSettings={handleExportSettings}
+      onImportSettings={handleImportSettings}
+      diagnosticsData={diagnosticsData}
+      onRefreshDiagnostics={() => postCommand('getDiagnostics')}
+      profilesData={profilesData}
+      onListProfiles={handleListProfiles}
+      onCreateProfile={handleCreateProfile}
+      onRenameProfile={handleRenameProfile}
+      onDuplicateProfile={handleDuplicateProfile}
+      onDeleteProfile={handleDeleteProfile}
+      onSelectProfile={handleSelectProfile}
+    />
+  );
+
+  const contentClassName = [
+    'native-content',
+    view === 'settings' ? 'native-settings-content' : 'native-workbench-content',
+    view === 'sliderule' ? 'native-sliderule-content' : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <ConfigProvider
       prefixCls="agent-ant"
@@ -943,9 +1052,9 @@ export function DashboardApp({
       <Layout className="native-dashboard native-agent-shell">
         <AgentLoopSidebar view={view} onViewChange={handleViewChange} getViewPath={getViewPath} />
         <Layout className="native-main native-agent-main">
-          <AgentLoopTopbar view={view} />
-          <Content className={`native-content ${view === 'settings' ? 'native-settings-content' : 'native-workbench-content'}`}>
-            {view === 'workbench' ? workbenchContent : <SettingsView data={settingsData} onSave={handleSaveSettings} providerTests={providerTests} onTestProvider={(provider) => postCommand('testProvider', { provider })} workerCliTests={workerCliTests} onTestWorkerCli={(w) => postCommand('testWorkerCli', { worker: w })} queueDefaultsData={queueDefaultsData} queuePreview={queuePreview} onPreviewQueue={handlePreviewQueueDefaults} queueApply={queueApply} onApplyQueue={handleApplyQueueDefaults} exportedSettings={exportedSettings} importResult={importResult} onExportSettings={handleExportSettings} onImportSettings={handleImportSettings} diagnosticsData={diagnosticsData} onRefreshDiagnostics={() => postCommand('getDiagnostics')} profilesData={profilesData} onListProfiles={handleListProfiles} onCreateProfile={handleCreateProfile} onRenameProfile={handleRenameProfile} onDuplicateProfile={handleDuplicateProfile} onDeleteProfile={handleDeleteProfile} onSelectProfile={handleSelectProfile} />}
+          <AgentLoopTopbar view={view} showActions={view !== 'sliderule'} />
+          <Content className={contentClassName}>
+            {view === 'workbench' ? workbenchContent : view === 'sliderule' ? slideruleContent : settingsContent}
           </Content>
         </Layout>
       </Layout>

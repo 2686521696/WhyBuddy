@@ -47,7 +47,6 @@ import AuthPage from "./pages/auth/AuthPage";
 import SpecCenterPage from "./pages/specs/SpecCenterPage";
 import { TaskDetailPage, TasksPage } from "./pages/tasks";
 import AutopilotSpecDocumentsWorkbenchFixturePage from "./pages/autopilot/right-rail/streaming-doc/workbench/WorkbenchFixturePage";
-import SlideRulePage from "./pages/SlideRule";
 import SlideRuleDevPage from "./pages/SlideRuleDev";
 
 const routerBase =
@@ -152,16 +151,12 @@ function Router() {
       <Route path={"/AgentLoop/"}>
         {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
       </Route>
-      <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={SlideRulePage} />
+      <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
-      <Route path={AGENT_LOOP_PATH} component={SlideRulePage} />
-      {/* V5 chrome-free workspace: SlideRule is deliberately isolated from the old stage sequencer / AppShell chrome.
-          All guards, sidebar, mobile tab, config panel, and project-workspace auth checks are skipped for this route
-          (see isChromeFree / isSlideRuleLocation / isProjectWorkspaceLocation above). This keeps the V5 demo clean.
-          V5 session state is managed via the runtime's per-sessionId store (loadOrCreate / save by sessionId)
-          — completely independent of project/auth/recovery stores. */}
+      <Route path={AGENT_LOOP_PATH} component={AgentLoopPage} />
+      {/* Direct /sliderule redirects above; AgentLoop hosts the embedded 推演 surface. */}
       <Route path={"/command-center/legacy"}>
         {() => <LegacyCommandCenterPage />}
       </Route>

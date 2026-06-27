@@ -23,6 +23,7 @@ export function SlideRuleTopHud({
   onResetSession,
   onOpenSettings,
   onOpenDeliverables,
+  embedded = false,
 }: {
   state: V5SessionState;
   goal: string;
@@ -38,6 +39,7 @@ export function SlideRuleTopHud({
   onResetSession?: () => void;
   onOpenSettings?: () => void;
   onOpenDeliverables?: () => void;
+  embedded?: boolean;
 }) {
   const facts = deriveStatusBarFacts(state, {
     turnCount,
@@ -57,12 +59,14 @@ export function SlideRuleTopHud({
         <div
           className={`${autopilotTheme.overlayBar} min-w-0 flex-1 pr-4`}
         >
-          <img
-            src="/assets/sliderule_logo_wordmark_transparent.png"
-            alt="SlideRule"
-            className="mr-3 h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
-            title="SlideRule"
-          />
+          {embedded ? null : (
+            <img
+              src="/assets/sliderule_logo_wordmark_transparent.png"
+              alt="SlideRule"
+              className="mr-3 h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
+              title="SlideRule"
+            />
+          )}
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             STATUS
           </span>

@@ -222,6 +222,7 @@ function SlideRuleImmersion({
   deliverablesOpen,
   setDeliverablesOpen,
   openDeliverables,
+  embedded = false,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -265,6 +266,7 @@ function SlideRuleImmersion({
   deliverablesOpen: boolean;
   setDeliverablesOpen: (open: boolean) => void;
   openDeliverables: () => void;
+  embedded?: boolean;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -332,6 +334,7 @@ function SlideRuleImmersion({
           onResetSession={resetSession}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDeliverables={openDeliverables}
+          embedded={embedded}
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
           <ArchitectureProcessPanel
@@ -772,7 +775,7 @@ function SlideRuleSplitEngineering({
   );
 }
 
-export default function SlideRule() {
+export default function SlideRule({ embedded = false }: { embedded?: boolean } = {}) {
   const {
     goal,
     uiTurns,
@@ -996,6 +999,7 @@ export default function SlideRule() {
     deliverablesOpen,
     setDeliverablesOpen,
     openDeliverables,
+    embedded,
   };
 
   if (isImmersion) {

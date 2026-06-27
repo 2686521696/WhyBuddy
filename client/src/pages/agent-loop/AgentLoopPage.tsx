@@ -438,7 +438,8 @@ export default function AgentLoopPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dashboardView: DashboardRouteView = route.kind === "settings" ? "settings" : "workbench";
+  const dashboardView: DashboardRouteView =
+    route.kind === "settings" ? "settings" : route.kind === "sliderule" ? "sliderule" : "workbench";
 
   return (
     <main data-testid="agent-loop-page" className="agent-loop-root">

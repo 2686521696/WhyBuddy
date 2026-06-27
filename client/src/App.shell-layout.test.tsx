@@ -331,19 +331,20 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
-  it("mounts SlideRule under AgentLoop and redirects the legacy SlideRule URL", () => {
+  it("mounts the AgentLoop shell for SlideRule routes and redirects the legacy SlideRule URL", () => {
     signInForShell();
     viewportState.isMobile = false;
     viewportState.isTablet = false;
 
     locationState.current = "/agent-loop";
     let markup = renderToStaticMarkup(<AppShell />);
-    expect(markup).toContain('data-testid="sliderule-page"');
-    expect(markup).not.toContain('data-testid="agent-loop-page"');
+    expect(markup).toContain('data-testid="agent-loop-page"');
+    expect(markup).not.toContain('data-testid="sliderule-page"');
 
     locationState.current = "/agent-loop/sliderule";
     markup = renderToStaticMarkup(<AppShell />);
-    expect(markup).toContain('data-testid="sliderule-page"');
+    expect(markup).toContain('data-testid="agent-loop-page"');
+    expect(markup).not.toContain('data-testid="sliderule-page"');
     expect(markup).not.toContain('data-testid="app-sidebar"');
 
     locationState.current = "/sliderule";
