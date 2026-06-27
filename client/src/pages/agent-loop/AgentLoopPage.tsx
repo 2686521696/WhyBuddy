@@ -81,6 +81,9 @@ export function resolveAgentLoopLiveEventRunId(
   route: AgentLoopRouteState,
 ): string | null {
   if (route.kind === "sliderule" || route.kind === "settings") return null;
+  const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
+  const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
+  if (!runtimeActive) return route.kind === "detail" ? route.runId : null;
   const backgroundRunId = (overview?.current as any)?.backgroundRunId;
   if (backgroundRunId) return String(backgroundRunId);
   return route.kind === "detail" ? route.runId : null;
@@ -96,7 +99,10 @@ export function shouldPollAgentLoopOverview(
   currentRunId: string | null,
 ): boolean {
   if (route.kind !== "workbench" && route.kind !== "detail") return false;
-  return Boolean(overview?.queueRunning || (overview?.current as any)?.staleRun === false || currentRunId);
+  const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
+  const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
+  if (!runtimeActive) return false;
+  return Boolean(overview?.queueRunning || (runtimeActive && (overview?.current as any)?.staleRun === false) || currentRunId);
 }
 
 export function createAgentLoopLiveEventHandlers(refreshCurrentView: () => void): RunEventSubscriptionHandlers {

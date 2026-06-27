@@ -116,6 +116,22 @@ describe("AgentLoopPage", () => {
     expect(shouldRequestSettingsForView("settings")).toBe(true);
   });
 
+  it("stops overview fallback polling once the background queue runtime is stopped", () => {
+    const stoppedOverview = {
+      queueRunning: false,
+      current: {
+        backgroundRunId: "bridge-run",
+        runtimeStatus: "stopped",
+        staleRun: false,
+      },
+      tasks: [],
+      counts: {},
+    };
+
+    expect(resolveAgentLoopLiveEventRunId(stoppedOverview, { kind: "workbench" })).toBeNull();
+    expect(shouldPollAgentLoopOverview(stoppedOverview, { kind: "workbench" }, "bridge-run")).toBe(false);
+  });
+
   it("allows the shell router to control DashboardApp settings view", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
