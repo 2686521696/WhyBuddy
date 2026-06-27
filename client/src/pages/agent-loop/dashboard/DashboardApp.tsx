@@ -4,6 +4,7 @@ import {
   DownloadOutlined,
   FileDoneOutlined,
   AppstoreOutlined,
+  BulbOutlined,
   LeftOutlined,
   PlayCircleFilled,
   QuestionCircleOutlined,
@@ -48,7 +49,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-export type ViewKey = 'workbench' | 'settings';
+export type ViewKey = 'sliderule' | 'workbench' | 'settings';
 import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask } from './dashboardTypes';
 import { postCommand } from './bridge';
 import { filterSupportedQueuePatch } from './agentLoopApi';
@@ -504,9 +505,18 @@ function SidePanel({ payload, settings }: { payload: OverviewPayload; settings?:
   );
 }
 
-function AgentLoopSidebar({ view, onViewChange }: { view: ViewKey; onViewChange: (next: ViewKey) => void }) {
+function AgentLoopSidebar({
+  view,
+  onViewChange,
+  getViewPath,
+}: {
+  view: ViewKey;
+  onViewChange: (next: ViewKey) => void;
+  getViewPath?: (next: ViewKey) => string | undefined;
+}) {
   const brandLogo = typeof window !== 'undefined' ? window.__AGENT_LOOP_ASSETS__?.brandLogo : undefined;
   const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
+    { key: 'sliderule', label: '推演', icon: <BulbOutlined /> },
     { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
     { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   ];
@@ -518,15 +528,18 @@ function AgentLoopSidebar({ view, onViewChange }: { view: ViewKey; onViewChange:
       </div>
       <nav className="native-agent-nav" aria-label="AgentLoop">
         {navItems.map((item) => (
-          <button
-            type="button"
+          <a
+            href={getViewPath?.(item.key)}
             className={`native-agent-nav-item${view === item.key ? ' native-agent-nav-item-active' : ''}`}
-            onClick={() => onViewChange(item.key)}
+            onClick={(event) => {
+              if (getViewPath?.(item.key)) event.preventDefault();
+              onViewChange(item.key);
+            }}
             key={item.key}
           >
             {item.icon}
             <span>{item.label}</span>
-          </button>
+          </a>
         ))}
       </nav>
       <button type="button" className="native-agent-help">
@@ -556,6 +569,7 @@ export function DashboardApp({
   initialView = 'workbench' as ViewKey,
   view: controlledView,
   onViewChange,
+  getViewPath,
   getTaskRunPath,
   onOpenTask,
 }: {
@@ -563,6 +577,7 @@ export function DashboardApp({
   initialView?: ViewKey;
   view?: ViewKey;
   onViewChange?: (next: ViewKey) => void;
+  getViewPath?: (next: ViewKey) => string | undefined;
   getTaskRunPath?: (runId: string) => string;
   onOpenTask?: (taskPath: string, runId?: string | null) => void;
 }) {
@@ -763,7 +778,7 @@ export function DashboardApp({
       csp={typeof window !== 'undefined' && window.__AGENT_LOOP_CSP_NONCE__ ? { nonce: window.__AGENT_LOOP_CSP_NONCE__ } : undefined}
     >
       <Layout className="native-dashboard native-agent-shell">
-        <AgentLoopSidebar view={view} onViewChange={handleViewChange} />
+        <AgentLoopSidebar view={view} onViewChange={handleViewChange} getViewPath={getViewPath} />
         <Layout className="native-main native-agent-main">
           <AgentLoopTopbar view={view} />
           <Content className={`native-content ${view === 'settings' ? 'native-settings-content' : 'native-workbench-content'}`}>

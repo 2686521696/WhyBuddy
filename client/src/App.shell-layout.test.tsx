@@ -60,10 +60,12 @@ vi.mock("wouter", () => ({
       (path === "/debug/:section" &&
         current.startsWith("/debug/") &&
         current !== "/debug/autopilot-spec-documents-workbench") ||
+      (path === "/agent-loop/sliderule" && current === "/agent-loop/sliderule") ||
       (path === "/agent-loop/workbench" && current === "/agent-loop/workbench") ||
       (path === "/agent-loop/settings" && current === "/agent-loop/settings") ||
       (path === "/agent-loop/runs/:runId" && current.startsWith("/agent-loop/runs/")) ||
       (path === "/agent-loop" && current === "/agent-loop") ||
+      (path === "/sliderule" && current === "/sliderule") ||
       (path === "/AgentLoop" && current === "/AgentLoop") ||
       (path === "/AgentLoop/" && current === "/AgentLoop/") ||
       (!path && current === "/404");
@@ -177,7 +179,12 @@ vi.mock("./pages/lineage/LineagePage", () => ({
 
 vi.mock("./pages/agent-loop/AgentLoopPage", () => ({
   default: () => <main data-testid="agent-loop-page" />,
+  getAgentLoopSliderulePath: () => "/agent-loop/sliderule",
   getAgentLoopWorkbenchPath: () => "/agent-loop/workbench",
+}));
+
+vi.mock("./pages/SlideRule", () => ({
+  default: () => <main data-testid="sliderule-page" />,
 }));
 
 vi.mock("./pages/NotFound", () => ({
@@ -324,9 +331,31 @@ describe("AppShell fixed sidebar layout", () => {
     expect(shell).toContain("padding-left:0");
   });
 
+  it("mounts SlideRule under AgentLoop and redirects the legacy SlideRule URL", () => {
+    signInForShell();
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    locationState.current = "/agent-loop";
+    let markup = renderToStaticMarkup(<AppShell />);
+    expect(markup).toContain('data-testid="sliderule-page"');
+    expect(markup).not.toContain('data-testid="agent-loop-page"');
+
+    locationState.current = "/agent-loop/sliderule";
+    markup = renderToStaticMarkup(<AppShell />);
+    expect(markup).toContain('data-testid="sliderule-page"');
+    expect(markup).not.toContain('data-testid="app-sidebar"');
+
+    locationState.current = "/sliderule";
+    markup = renderToStaticMarkup(<AppShell />);
+    expect(markup).not.toContain('data-testid="sliderule-page"');
+    expect(markup).not.toContain('data-testid="agent-loop-page"');
+  });
+
   it("chrome-free logic + isAgentLoopLocation is case and slash tolerant", () => {
     // even if user visits /AgentLoop or /agent-loop/ the main sidebar must be suppressed
     expect(isAgentLoopLocation("/agent-loop")).toBe(true);
+    expect(isAgentLoopLocation("/agent-loop/sliderule")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/workbench")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/settings")).toBe(true);
     expect(isAgentLoopLocation("/agent-loop/runs/2026-06-27T01-02-03-004Z")).toBe(true);

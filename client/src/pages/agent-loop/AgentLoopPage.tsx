@@ -24,12 +24,17 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "workbench" | "settings";
+type DashboardRouteView = "sliderule" | "workbench" | "settings";
 
 export type AgentLoopRouteState =
+  | { kind: "sliderule" }
   | { kind: "workbench" }
   | { kind: "settings" }
   | { kind: "detail"; runId: string };
+
+export function getAgentLoopSliderulePath(): string {
+  return "/agent-loop/sliderule";
+}
 
 export function getAgentLoopWorkbenchPath(): string {
   return "/agent-loop/workbench";
@@ -48,7 +53,10 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
   const normalized = path.toLowerCase();
 
-  if (normalized === "/agent-loop" || normalized === "/agent-loop/workbench") {
+  if (normalized === "/agent-loop" || normalized === "/agent-loop/sliderule") {
+    return { kind: "sliderule" };
+  }
+  if (normalized === "/agent-loop/workbench") {
     return { kind: "workbench" };
   }
   if (normalized === "/agent-loop/settings") {
@@ -63,7 +71,7 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
     }
   }
 
-  return { kind: "workbench" };
+  return { kind: "sliderule" };
 }
 
 function useSafeLocation(): [string, (next: string) => void] {
@@ -131,7 +139,11 @@ export default function AgentLoopPage() {
   function showDashboardView(next: DashboardRouteView) {
     detailRunIdRef.current = null;
     setDetail(null);
-    setLocation(next === "settings" ? getAgentLoopSettingsPath() : getAgentLoopWorkbenchPath());
+    if (next === "sliderule") {
+      setLocation(getAgentLoopSliderulePath());
+    } else {
+      setLocation(next === "settings" ? getAgentLoopSettingsPath() : getAgentLoopWorkbenchPath());
+    }
   }
 
   function openTaskRoute(taskPath: string, runId?: string | null) {
@@ -446,6 +458,13 @@ export default function AgentLoopPage() {
           payload={overview ?? { tasks: [], counts: {} }}
           view={dashboardView}
           onViewChange={showDashboardView}
+          getViewPath={(next) => (
+            next === "sliderule"
+              ? getAgentLoopSliderulePath()
+              : next === "settings"
+                ? getAgentLoopSettingsPath()
+                : getAgentLoopWorkbenchPath()
+          )}
           getTaskRunPath={getAgentLoopRunPath}
           onOpenTask={openTaskRoute}
         />

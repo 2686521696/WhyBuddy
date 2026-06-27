@@ -14,7 +14,9 @@ import {
 } from "@/components/navigation-config";
 import { ReplayPage } from "@/components/replay/ReplayPage";
 import DebugPage from "@/pages/debug/DebugPage";
-import AgentLoopPage, { getAgentLoopWorkbenchPath } from "@/pages/agent-loop/AgentLoopPage";
+import AgentLoopPage, {
+  getAgentLoopSliderulePath,
+} from "@/pages/agent-loop/AgentLoopPage";
 import LegacyCommandCenterPage from "@/pages/nl-command/LegacyCommandCenterPage";
 import LineagePage from "@/pages/lineage/LineagePage";
 
@@ -59,7 +61,7 @@ function Router() {
     <Switch>
       <Route path={"/"}>
         {() => (
-          <RedirectRoute to={SLIDERULE_PATH} />
+          <RedirectRoute to={getAgentLoopSliderulePath()} />
         )}
       </Route>
       <Route path={PROJECTS_PATH}>{() => <ProjectCockpitHome />}</Route>
@@ -140,20 +142,21 @@ function Router() {
       <Route path={"/debug"} component={DebugPage} />
       <Route path={"/debug/:section"} component={DebugPage} />
       <Route path={`${SLIDERULE_PATH}/dev`} component={SlideRuleDevPage} />
-      <Route path={SLIDERULE_PATH} component={SlideRulePage} />
+      <Route path={SLIDERULE_PATH}>
+        {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
+      </Route>
       {/* Legacy support for old /AgentLoop casing (case-insensitive web habit); redirect to canonical lowercase. */}
       <Route path={"/AgentLoop"}>
-        {() => <RedirectRoute to={getAgentLoopWorkbenchPath()} />}
+        {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
       </Route>
       <Route path={"/AgentLoop/"}>
-        {() => <RedirectRoute to={getAgentLoopWorkbenchPath()} />}
+        {() => <RedirectRoute to={getAgentLoopSliderulePath()} />}
       </Route>
+      <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={SlideRulePage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
-      <Route path={AGENT_LOOP_PATH}>
-        {() => <RedirectRoute to={getAgentLoopWorkbenchPath()} />}
-      </Route>
+      <Route path={AGENT_LOOP_PATH} component={SlideRulePage} />
       {/* V5 chrome-free workspace: SlideRule is deliberately isolated from the old stage sequencer / AppShell chrome.
           All guards, sidebar, mobile tab, config panel, and project-workspace auth checks are skipped for this route
           (see isChromeFree / isSlideRuleLocation / isProjectWorkspaceLocation above). This keeps the V5 demo clean.

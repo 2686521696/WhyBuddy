@@ -5,6 +5,7 @@ import * as api from "./dashboard/agentLoopApi";
 import AgentLoopPage, {
   getAgentLoopRunPath,
   getAgentLoopSettingsPath,
+  getAgentLoopSliderulePath,
   getAgentLoopWorkbenchPath,
   parseAgentLoopLocation,
 } from "./AgentLoopPage";
@@ -34,13 +35,15 @@ describe("AgentLoopPage", () => {
     expect(html).toContain("AgentLoop 控制台加载中");
   });
   it("maps AgentLoop workbench, settings, and run detail to first-class URL routes", () => {
+    expect(getAgentLoopSliderulePath()).toBe("/agent-loop/sliderule");
     expect(getAgentLoopWorkbenchPath()).toBe("/agent-loop/workbench");
     expect(getAgentLoopSettingsPath()).toBe("/agent-loop/settings");
     expect(getAgentLoopRunPath("2026-06-27T01-02-03-004Z")).toBe(
       "/agent-loop/runs/2026-06-27T01-02-03-004Z",
     );
 
-    expect(parseAgentLoopLocation("/agent-loop")).toEqual({ kind: "workbench" });
+    expect(parseAgentLoopLocation("/agent-loop")).toEqual({ kind: "sliderule" });
+    expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({ kind: "sliderule" });
     expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
@@ -56,6 +59,20 @@ describe("AgentLoopPage", () => {
     );
 
     expect(html).toContain("native-settings-content");
+  });
+
+  it("renders a first-class SlideRule navigation entry inside the AgentLoop shell", () => {
+    const html = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="workbench"
+        onViewChange={vi.fn()}
+        getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
+      />,
+    );
+
+    expect(html).toContain('href="/agent-loop/sliderule"');
+    expect(html).toContain("推演");
   });
 
   it("renders task detail entries as first-class run route links", () => {
