@@ -26,6 +26,11 @@ except Exception as e:
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def isolate_agent_loop_control_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_LOOP_CONTROL_DIR", str(tmp_path / ".agent-loop" / "control"))
+
+
 def test_agentloop_queue_overview_reads_queue_and_outcomes(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     agent_loop_dir = repo_root / "agent-loop" / "scripts"
@@ -289,6 +294,153 @@ def test_agentloop_queue_overview_prefers_queue_containing_active_latest_task(tm
     assert data["tasks"][2]["inQueue"] is False
     assert data["current"]["taskLabel"] == "backend-python-blueprint-event-bus-stream-takeover-105"
     assert data["current"]["staleRun"] is True
+
+
+def test_agentloop_queue_overview_prefers_newer_queue_worktree_artifacts(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    scripts_dir = repo_root / "agent-loop" / "scripts"
+    tasks_dir = repo_root / "agent-loop" / "tasks"
+    root_loop_dir = repo_root / ".agent-loop"
+    worktree_loop_dir = repo_root / ".worktrees" / "backend-python-total-cutover-105" / ".agent-loop"
+    scripts_dir.mkdir(parents=True)
+    tasks_dir.mkdir(parents=True)
+    root_loop_dir.mkdir(parents=True)
+    (worktree_loop_dir / "latest").mkdir(parents=True)
+
+    configured_queue = scripts_dir / "sliderule-v2-hardening-115-queue.json"
+    configured_queue.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "old-115-task", "task": "agent-loop/tasks/old-115-task.md", "enabled": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    active_queue = scripts_dir / "backend-python-total-cutover-105-queue.json"
+    active_queue.write_text(
+        json.dumps(
+            {
+                "defaults": {
+                    "useWorktree": True,
+                    "worktreeScope": "queue",
+                    "queueWorktreeName": "backend-python-total-cutover-105",
+                    "fixAgent": "grok",
+                    "reviewAgent": "codex",
+                },
+                "tasks": [
+                    {
+                        "id": "backend-python-auth-user-repository-takeover-105",
+                        "task": "agent-loop/tasks/backend-python-auth-user-repository-takeover-105.md",
+                        "enabled": True,
+                    },
+                    {
+                        "id": "backend-python-auth-session-repository-production-takeover-105",
+                        "task": "agent-loop/tasks/backend-python-auth-session-repository-production-takeover-105.md",
+                        "enabled": True,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tasks_dir / "old-115-task.md").write_text("# old", encoding="utf-8")
+    (tasks_dir / "backend-python-auth-user-repository-takeover-105.md").write_text("# user", encoding="utf-8")
+    (tasks_dir / "backend-python-auth-session-repository-production-takeover-105.md").write_text("# session", encoding="utf-8")
+
+    (root_loop_dir / "queue-outcomes.json").write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "old-115-task": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastRunId": "2026-06-27T00-00-00-000Z",
+                        "lastUpdatedAt": "2026-06-27T00:00:00.000Z",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (worktree_loop_dir / "queue-outcomes.json").write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "backend-python-auth-user-repository-takeover-105": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastRunId": "2026-06-28T18-16-22-850Z",
+                        "lastUpdatedAt": "2026-06-28T18:33:31.233Z",
+                        "diffBytes": 41943,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (worktree_loop_dir / "queue-landing.json").write_text(
+        json.dumps(
+            {
+                "status": "PENDING_QUEUE_LANDING",
+                "updatedAt": "2026-06-28T18:33:31.332Z",
+                "tasks": [
+                    {
+                        "id": "backend-python-auth-user-repository-takeover-105",
+                        "status": "DONE_REVIEWED",
+                        "outcome": "done",
+                        "runId": "2026-06-28T18-16-22-850Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (worktree_loop_dir / "latest" / "state.json").write_text(
+        json.dumps(
+            {
+                "runId": "2026-06-28T18-16-22-850Z",
+                "status": "DONE_REVIEWED",
+                "options": {
+                    "task": "agent-loop/tasks/backend-python-auth-user-repository-takeover-105.md",
+                    "fixAgent": "grok",
+                    "reviewAgent": "codex",
+                },
+                "reviewVerdict": "pass",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    os.utime(root_loop_dir / "queue-outcomes.json", (1000, 1000))
+    os.utime(worktree_loop_dir / "queue-outcomes.json", (2000, 2000))
+    os.utime(worktree_loop_dir / "queue-landing.json", (2000, 2000))
+    os.utime(worktree_loop_dir / "latest" / "state.json", (2000, 2000))
+
+    settings_file = repo_root / "data" / "agent-loop-settings.json"
+    settings_file.parent.mkdir(parents=True)
+    settings_file.write_text(
+        json.dumps({"queuePath": "agent-loop/scripts/sliderule-v2-hardening-115-queue.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_LOOP_SETTINGS_FILE", str(settings_file))
+    monkeypatch.setattr(agent_loop_runs, "_get_repo_root", lambda: repo_root)
+
+    data = agent_loop_runs.get_agent_loop_queue_overview(str(repo_root))
+
+    assert data["queuePath"] == "agent-loop/scripts/backend-python-total-cutover-105-queue.json"
+    assert data["latestQueuePath"] == "agent-loop/scripts/backend-python-total-cutover-105-queue.json"
+    assert data["queueStale"] is False
+    assert data["landing"]["status"] == "PENDING_QUEUE_LANDING"
+    assert data["counts"]["queueTotal"] == 2
+    assert [task["id"] for task in data["tasks"][:2]] == [
+        "backend-python-auth-user-repository-takeover-105",
+        "backend-python-auth-session-repository-production-takeover-105",
+    ]
+    assert data["tasks"][0]["status"] == "DONE_REVIEWED"
+    assert data["tasks"][0]["outcomeGroup"] == "reviewed"
+    assert data["tasks"][0]["category"] == "landed"
 
 
 def test_agentloop_queue_overview_includes_all_task_files_not_only_queue_entries(tmp_path, monkeypatch):

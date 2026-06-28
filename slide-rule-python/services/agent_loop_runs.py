@@ -245,6 +245,22 @@ def _default_latest_state_path(repo: Optional[Path] = None) -> Path:
     return root / ".agent-loop" / "latest" / "state.json"
 
 
+def _agent_loop_artifact_root(repo: Path) -> Path:
+    return repo / ".agent-loop"
+
+
+def _artifact_queue_outcomes_path(artifact_root: Path) -> Path:
+    return artifact_root / "queue-outcomes.json"
+
+
+def _artifact_queue_landing_path(artifact_root: Path) -> Path:
+    return artifact_root / "queue-landing.json"
+
+
+def _artifact_latest_state_path(artifact_root: Path) -> Path:
+    return artifact_root / "latest" / "state.json"
+
+
 def _normalize_task_path(value: Optional[str]) -> str:
     return str(value or "").replace("\\", "/").replace("./", "").removeprefix("agent-loop/")
 
@@ -252,6 +268,10 @@ def _normalize_task_path(value: Optional[str]) -> str:
 def _read_latest_state(repo: Path) -> Optional[Dict[str, Any]]:
     latest_path = _default_latest_state_path(repo)
     return _safe_read_json(latest_path)
+
+
+def _read_latest_state_from_artifacts(artifact_root: Path) -> Optional[Dict[str, Any]]:
+    return _safe_read_json(_artifact_latest_state_path(artifact_root))
 
 
 def _resolve_queue_file_path(repo: Path) -> Path:
@@ -337,6 +357,101 @@ def _find_queue_file_containing_task(repo: Path, available_queues: List[Dict[str
         if resolved is not None and _queue_file_contains_task(repo, resolved, normalized_task_path):
             return resolved
     return None
+
+
+def _queue_artifact_worktree_root(repo: Path, queue_path: Path) -> Optional[Path]:
+    queue = _safe_read_json(queue_path) or {}
+    defaults = queue.get("defaults") if isinstance(queue.get("defaults"), dict) else {}
+    use_worktree = defaults.get("useWorktree")
+    scope = str(defaults.get("worktreeScope") or "queue").strip().lower()
+    raw_name = str(defaults.get("queueWorktreeName") or "").strip()
+    if not use_worktree or scope != "queue" or not raw_name:
+        return None
+    clean_name = _sanitize_overview_worktree_name(raw_name)
+    if not clean_name:
+        return None
+    candidate = repo / ".worktrees" / clean_name / ".agent-loop"
+    return candidate if candidate.exists() and candidate.is_dir() else None
+
+
+def _artifact_root_mtime(artifact_root: Path) -> float:
+    candidates = [
+        _artifact_queue_outcomes_path(artifact_root),
+        _artifact_queue_landing_path(artifact_root),
+        _artifact_latest_state_path(artifact_root),
+    ]
+    mtimes: List[float] = []
+    for path_obj in candidates:
+        try:
+            if path_obj.exists():
+                mtimes.append(path_obj.stat().st_mtime)
+        except Exception:
+            continue
+    return max(mtimes) if mtimes else 0.0
+
+
+def _artifact_task_ids(artifact_root: Path) -> set:
+    outcomes = _safe_read_json(_artifact_queue_outcomes_path(artifact_root)) or {}
+    tasks = outcomes.get("tasks")
+    if not isinstance(tasks, dict):
+        return set()
+    return {str(task_id) for task_id in tasks.keys() if str(task_id).strip()}
+
+
+def _queue_task_ids(queue_path: Path) -> set:
+    queue = _safe_read_json(queue_path) or {}
+    tasks = queue.get("tasks")
+    if not isinstance(tasks, list):
+        return set()
+    ids = set()
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        task_id = str(task.get("id") or task.get("task") or "").strip()
+        if task_id:
+            ids.add(task_id)
+    return ids
+
+
+def _select_queue_artifacts(
+    repo: Path,
+    queue_file: Path,
+    available_queues: List[Dict[str, Any]],
+) -> tuple[Path, Path]:
+    """Return (queue_file, artifact_root) for queue overview.
+
+    The main workbench runs in the repo root, but queue execution can happen in a
+    queue-scoped worktree. Prefer the freshest matching queue worktree artifacts so
+    the web overview follows the real queue checkpoint instead of stale root files.
+    """
+    root_artifacts = _agent_loop_artifact_root(repo)
+    selected_queue = queue_file
+    selected_artifacts = root_artifacts
+    selected_mtime = _artifact_root_mtime(root_artifacts)
+
+    for queue_info in available_queues:
+        rel_path = str(queue_info.get("path") or "").strip()
+        if not rel_path:
+            continue
+        candidate_queue = resolve_safe_path(repo, rel_path)
+        if candidate_queue is None:
+            continue
+        artifact_root = _queue_artifact_worktree_root(repo, candidate_queue)
+        if artifact_root is None:
+            continue
+        artifact_mtime = _artifact_root_mtime(artifact_root)
+        if artifact_mtime <= 0:
+            continue
+        artifact_task_ids = _artifact_task_ids(artifact_root)
+        queue_task_ids = _queue_task_ids(candidate_queue)
+        if artifact_task_ids and queue_task_ids and not artifact_task_ids.intersection(queue_task_ids):
+            continue
+        if artifact_mtime > selected_mtime:
+            selected_queue = candidate_queue
+            selected_artifacts = artifact_root
+            selected_mtime = artifact_mtime
+
+    return selected_queue, selected_artifacts
 
 
 def _task_id_from_path(task_path: str) -> str:
@@ -447,9 +562,10 @@ def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any
     repo = Path(repo_root) if repo_root else _get_repo_root()
     queue_file = _resolve_queue_file_path(repo)
     available_queues = _discover_queue_files(repo)
-    outcomes_file = _default_queue_outcomes_path(repo)
-    landing_file = _default_queue_landing_path(repo)
-    latest_state = _read_latest_state(repo)
+    queue_file, artifact_root = _select_queue_artifacts(repo, queue_file, available_queues)
+    outcomes_file = _artifact_queue_outcomes_path(artifact_root)
+    landing_file = _artifact_queue_landing_path(artifact_root)
+    latest_state = _read_latest_state_from_artifacts(artifact_root)
     latest_state_active = _is_active_status(latest_state.get("status") if isinstance(latest_state, dict) else None)
     background_runtime = get_background_runtime_status()
     has_background_runtime = bool(background_runtime.get("record"))
@@ -462,11 +578,18 @@ def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any
     active_queue_file = _find_queue_file_containing_task(repo, available_queues, running_task_path) if latest_state_active else None
     if active_queue_file is not None:
         queue_file = active_queue_file
+        active_artifact_root = _queue_artifact_worktree_root(repo, active_queue_file)
+        if active_artifact_root is not None and _artifact_root_mtime(active_artifact_root) > 0:
+            artifact_root = active_artifact_root
+            outcomes_file = _artifact_queue_outcomes_path(artifact_root)
+            landing_file = _artifact_queue_landing_path(artifact_root)
+            latest_state = _read_latest_state_from_artifacts(artifact_root)
 
     queue_path = _repo_relative_path(repo, queue_file)
     discovered_latest_queue = available_queues[0] if available_queues else None
     discovered_latest_queue_path = discovered_latest_queue.get("path") if isinstance(discovered_latest_queue, dict) else None
-    latest_queue_path = queue_path if active_queue_file is not None else discovered_latest_queue_path
+    using_queue_worktree_artifacts = artifact_root.resolve(strict=False) != _agent_loop_artifact_root(repo).resolve(strict=False)
+    latest_queue_path = queue_path if active_queue_file is not None or using_queue_worktree_artifacts else discovered_latest_queue_path
     queue_stale = bool(latest_queue_path and latest_queue_path != queue_path)
 
     queue = _safe_read_json(queue_file) or {}
