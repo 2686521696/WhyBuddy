@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { LoopApplyError } from './loopApply.js';
+import { normalizeReviewVerdict } from './reviewParser.js';
 import { summarizeRunRecord } from './runSummary.js';
 
 export function defaultPythonExe(repoRoot) {
@@ -282,10 +283,25 @@ function normalizeQueueStatusFromState(status, state = {}) {
     status === 'HALT_NO_CHANGES'
     && state?.baselineGate?.ok === true
     && Number(state?.baselineDiff?.bytes || 0) === 0
+    && !reviewVerdictRequiresChanges(state)
   ) {
     return 'DONE_REVIEWED_NO_DIFF';
   }
   return status;
+}
+
+function reviewVerdictRequiresChanges(state = {}) {
+  const candidates = [
+    state?.reviewVerdict,
+    state?.agentReview?.parsed?.verdict,
+    state?.codexReview?.parsed?.verdict,
+    state?.grokReview?.parsed?.verdict,
+    ...(Array.isArray(state?.reviewRounds) ? state.reviewRounds.map((round) => round?.verdict ?? round?.decision) : []),
+  ];
+  return candidates.some((value) => {
+    const verdict = normalizeReviewVerdict(value);
+    return verdict === 'needs_changes' || verdict === 'blocked';
+  });
 }
 
 export async function applyDoneSummaryToMain({

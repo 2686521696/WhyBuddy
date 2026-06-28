@@ -786,6 +786,29 @@ test('buildQueueSummaryFromState maps baseline-green no-diff tasks to reviewed n
   assert.equal(summary.runMode, 'reviewed-no-diff');
 });
 
+test('buildQueueSummaryFromState does not mark review needs_changes no-diff as done', () => {
+  const summary = buildQueueSummaryFromState({
+    entry: { id: 'task-a', task: 'agent-loop/tasks/task-a.md' },
+    state: {
+      status: 'HALT_NO_CHANGES',
+      baselineGate: { ok: true, failureCount: 0 },
+      baselineDiff: { bytes: 0 },
+      reviewVerdict: 'needs_changes',
+      iterations: [{ iteration: 1, diff: { bytes: 100 } }],
+      agentFix: { exitCode: 0 },
+      agentReview: { exitCode: 0, parsed: { verdict: 'needs_changes' } },
+      options: { fixAgent: 'codex', reviewAgent: 'codex' },
+    },
+    exitCode: 1,
+  });
+
+  assert.equal(summary.status, 'HALT_NO_CHANGES');
+  assert.equal(summary.outcome, 'failed');
+  assert.equal(summary.applyStatus, null);
+  assert.equal(summary.applyErrorKind, null);
+  assert.equal(summary.runMode, 'halt-no-changes');
+});
+
 test('buildQueueRestoreFailedSummary turns failed checkpoint restore into a queue-stopping crash', () => {
   const summary = buildQueueRestoreFailedSummary({
     entry: { id: 'task-a', task: 'agent-loop/tasks/task-a.md' },
