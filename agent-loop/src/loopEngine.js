@@ -397,7 +397,11 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
         deferPassFinalize: true,
       });
       if (review.kind === 'pass') {
-        if (options.guardTests && shouldHaltForGuardTests(iterationRecord.diffGuard, { allowAdvisory: true })) {
+        if (
+          options.guardTests
+          && !review.guardFindingsReviewed
+          && shouldHaltForGuardTests(iterationRecord.diffGuard, { allowAdvisory: true })
+        ) {
           await transition('HALT_HUMAN', {
             ...review.reviewSnapshot,
             iterations,
@@ -605,8 +609,9 @@ async function handleReview(args) {
   };
 
   if (review.decision === 'pass') {
+    const guardFindingsReviewed = Boolean(review.parsed?.verdict);
     if (deferPassFinalize) {
-      return { kind: 'pass', reviewSnapshot };
+      return { kind: 'pass', reviewSnapshot, guardFindingsReviewed };
     }
     const completedTaskText = await completeTaskChecklistOnSuccess({ options, fixCwd, taskText });
     args.taskText = completedTaskText;

@@ -918,7 +918,7 @@ test('runLoop allows reviewed protected test additions without guardTests quaran
   );
 });
 
-test('runLoop still quarantines reviewed protected test net deletions', async () => {
+test('runLoop trusts structured review pass for protected test net deletions', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const taskPath = path.join(cwd, 'task.md');
   await fs.writeFile(taskPath, 'fix gate to green\n\n## Acceptance criteria\n\n- gate green\n', 'utf8');
@@ -966,15 +966,15 @@ test('runLoop still quarantines reviewed protected test net deletions', async ()
     },
   });
 
-  assert.equal(result.status, 'HALT_HUMAN');
-  assert.equal(result.guardReason, 'POSSIBLE_TEST_TAMPER');
+  assert.equal(result.status, 'DONE_REVIEWED');
+  assert.equal(result.guardReason, undefined);
   assert.equal(codexCalls, 1);
   assert.equal(result.reviewRounds.length, 1);
   assert.equal(result.reviewRounds[0].decision, 'pass');
   assert.equal(result.iterations[0].diffGuard.hasBlockingFindings, true);
   assert.deepEqual(
-    transitions.filter((status) => status === 'POST_FIX_GATE_RESULT' || status === 'CODEX_REVIEW' || status === 'HALT_HUMAN'),
-    ['POST_FIX_GATE_RESULT', 'CODEX_REVIEW', 'HALT_HUMAN']
+    transitions.filter((status) => status === 'POST_FIX_GATE_RESULT' || status === 'CODEX_REVIEW' || status === 'DONE_REVIEWED'),
+    ['POST_FIX_GATE_RESULT', 'CODEX_REVIEW', 'DONE_REVIEWED']
   );
 });
 
