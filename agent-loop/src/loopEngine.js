@@ -29,7 +29,7 @@ import { resolveAgentInvocation } from './agentProcess.js';
 import { createAgentStderrReporter } from './loopProgress.js';
 
 const MAX_REVIEW_FILE_SNAPSHOT_BYTES = 24000;
-const MAX_REVIEW_FILE_SNAPSHOTS = 12;
+const MAX_REVIEW_FILE_SNAPSHOTS = 24;
 const WORKER_CONTEXT_DIR = '.agent-loop-context/current-run';
 
 export async function runLoop({ options, runId = timestamp(), runDir, latestDir, resumeState = null, deps = {} }) {
@@ -930,14 +930,19 @@ async function collectReviewFileSnapshots({ fixCwd, taskText }) {
     const absolutePath = path.resolve(fixCwd, relPath);
     if (!isInsideDirectory(fixCwd, absolutePath)) continue;
     try {
-      const buffer = await fs.readFile(absolutePath);
-      const truncated = buffer.length > MAX_REVIEW_FILE_SNAPSHOT_BYTES;
-      snapshots.push({
-        path: relPath,
-        exists: true,
-        content: buffer.subarray(0, MAX_REVIEW_FILE_SNAPSHOT_BYTES).toString('utf8'),
-        truncated,
-      });
+      const stat = await fs.stat(absolutePath);
+      if (stat.isDirectory()) {
+        const nestedFiles = await listReviewSnapshotFiles({
+          root: absolutePath,
+          relRoot: relPath,
+          remaining: MAX_REVIEW_FILE_SNAPSHOTS - snapshots.length,
+        });
+        for (const nestedFile of nestedFiles) {
+          snapshots.push(await readReviewSnapshotFile({ fixCwd, relPath: nestedFile }));
+        }
+      } else if (stat.isFile()) {
+        snapshots.push(await readReviewSnapshotFile({ fixCwd, relPath }));
+      }
     } catch (error) {
       if (error?.code === 'ENOENT') {
         snapshots.push({
@@ -955,8 +960,56 @@ async function collectReviewFileSnapshots({ fixCwd, taskText }) {
         });
       }
     }
+    if (snapshots.length >= MAX_REVIEW_FILE_SNAPSHOTS) break;
   }
   return snapshots;
+}
+
+async function readReviewSnapshotFile({ fixCwd, relPath }) {
+  const absolutePath = path.resolve(fixCwd, relPath);
+  const buffer = await fs.readFile(absolutePath);
+  const truncated = buffer.length > MAX_REVIEW_FILE_SNAPSHOT_BYTES;
+  return {
+    path: relPath.replaceAll('\\', '/'),
+    exists: true,
+    content: buffer.subarray(0, MAX_REVIEW_FILE_SNAPSHOT_BYTES).toString('utf8'),
+    truncated,
+  };
+}
+
+async function listReviewSnapshotFiles({ root, relRoot, remaining }) {
+  if (remaining <= 0) return [];
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (files.length >= remaining) break;
+    const entryPath = path.join(root, entry.name);
+    const relPath = path.join(relRoot, entry.name).replaceAll('\\', '/');
+    if (entry.isDirectory()) {
+      const nested = await listReviewSnapshotFiles({
+        root: entryPath,
+        relRoot: relPath,
+        remaining: remaining - files.length,
+      });
+      files.push(...nested);
+    } else if (entry.isFile() && shouldSnapshotReviewFile(relPath)) {
+      files.push(relPath);
+    }
+  }
+  return files;
+}
+
+function shouldSnapshotReviewFile(relPath) {
+  const ext = path.extname(relPath).toLowerCase();
+  return [
+    '.js',
+    '.jsx',
+    '.ts',
+    '.tsx',
+    '.py',
+    '.md',
+    '.json',
+  ].includes(ext);
 }
 
 function extractAllowedFilePaths(taskText) {
@@ -984,9 +1037,11 @@ function normalizeAllowedPath(value) {
     .trim()
     .replace(/^['"`]+|['"`]+$/g, '')
     .replace(/\\/g, '/');
-  if (!cleaned || cleaned.includes('*') || cleaned.endsWith('/')) return null;
-  if (path.isAbsolute(cleaned) || cleaned.split('/').includes('..')) return null;
-  return cleaned;
+  if (!cleaned || cleaned.includes('*')) return null;
+  const withoutTrailingSlash = cleaned.replace(/\/+$/g, '');
+  if (!withoutTrailingSlash) return null;
+  if (path.isAbsolute(withoutTrailingSlash) || withoutTrailingSlash.split('/').includes('..')) return null;
+  return withoutTrailingSlash;
 }
 
 function isInsideDirectory(root, candidate) {

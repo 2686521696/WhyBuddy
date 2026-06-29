@@ -236,3 +236,34 @@ test('buildAgentReviewPrompt includes file snapshots when diff is truncated', ()
   assert.match(prompt, /FULL COVERAGE MATRIX/);
   assert.match(prompt, /backend-python-b/);
 });
+
+test('buildAgentReviewPrompt preserves late-file evidence when raw diff is large', () => {
+  const largeEarlyDiff = [
+    'diff --git a/server/routes/node-adapters/web-qa-node-adapter.ts b/server/routes/node-adapters/web-qa-node-adapter.ts',
+    '--- a/server/routes/node-adapters/web-qa-node-adapter.ts',
+    '+++ b/server/routes/node-adapters/web-qa-node-adapter.ts',
+    '@@ -1,1 +1,4000 @@',
+    ...Array.from({ length: 4000 }, (_value, index) => `+const nodeStubLine${index} = true;`),
+    'diff --git a/slide-rule-python/services/web_aigc_web_qa_adapter.py b/slide-rule-python/services/web_aigc_web_qa_adapter.py',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/slide-rule-python/services/web_aigc_web_qa_adapter.py',
+    '@@ -0,0 +1,5 @@',
+    '+def execute_web_qa_facade(payload):',
+    '+    return {"runtime": {"backend": "python"}, "source": "python-web-qa-facade"}',
+  ].join('\n');
+
+  const prompt = buildAgentReviewPrompt({
+    taskText: '# Task',
+    reviewContext: {
+      gateSnapshot: { ok: true, failureCount: 0, runs: [] },
+      diffText: largeEarlyDiff,
+      hadFixIterations: true,
+    },
+  });
+
+  assert.match(prompt, /Diff file evidence/);
+  assert.match(prompt, /slide-rule-python\/services\/web_aigc_web_qa_adapter\.py/);
+  assert.match(prompt, /execute_web_qa_facade/);
+  assert.match(prompt, /python-web-qa-facade/);
+});

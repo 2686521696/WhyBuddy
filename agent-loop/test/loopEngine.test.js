@@ -2102,6 +2102,65 @@ test('runLoop publishes the active fix log pointer before the worker runs', asyn
   assert.equal(result.status, 'DONE_FIXED');
 });
 
+test('runLoop expands allowed directory snapshots for scoped review evidence', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  await fs.mkdir(path.join(cwd, 'slide-rule-python', 'services'), { recursive: true });
+  await fs.writeFile(
+    path.join(cwd, 'slide-rule-python', 'services', 'web_aigc_web_qa_adapter.py'),
+    'def execute_web_qa_facade(payload):\n    return {"runtime": {"backend": "python"}}\n',
+    'utf8'
+  );
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, [
+    'review directory evidence',
+    '',
+    '## allowed files',
+    '',
+    '- `slide-rule-python/services`',
+    '',
+    '## 成功标准',
+    '',
+    '- python facade visible to review',
+  ].join('\n'), 'utf8');
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      skipReview: false,
+      reviewAgent: 'codex',
+      scopedReview: true,
+      timeoutMs: 1000,
+      maxIterations: 1,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gate(true, 0, ''),
+      captureDiff: async () => ({ text: '' }),
+      runProcess: async (command, args, options) => runOk(
+        command,
+        args,
+        options.cwd,
+        '{"verdict":"pass","summary":"ok","findings":[]}'
+      ),
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_REVIEWED');
+  const request = await fs.readFile(path.join(cwd, 'review-request.md'), 'utf8');
+  assert.match(request, /slide-rule-python\/services\/web_aigc_web_qa_adapter\.py/);
+  assert.match(request, /execute_web_qa_facade/);
+  assert.match(request, /backend/);
+});
+
 function artifactWriter(cwd) {
   return async (fileName, content, kind) => {
     await fs.writeFile(

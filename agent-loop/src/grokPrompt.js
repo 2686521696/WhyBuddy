@@ -366,6 +366,10 @@ function buildReviewFocusBlock({ diffText, gateSnapshot, hadFixIterations }) {
   ].join('\n');
 }
 
+const MAX_DIFF_EVIDENCE_FILES = 32;
+const MAX_DIFF_EVIDENCE_PER_FILE_CHARS = 2200;
+const MAX_DIFF_EVIDENCE_TOTAL_CHARS = 20000;
+
 export function buildAgentReviewPrompt({
   taskText,
   workerAgent = 'grok',
@@ -380,6 +384,7 @@ export function buildAgentReviewPrompt({
   const diffBlock = String(diffText || '').trim()
     ? ['```diff', truncate(diffText, 12000), '```'].join('\n')
     : '（无未提交 diff，或 diff 为空。）';
+  const diffEvidenceBlock = formatDiffFileEvidence(diffText);
   const fileSnapshotBlock = formatFileSnapshots(fileSnapshots);
 
   return [
@@ -421,6 +426,8 @@ export function buildAgentReviewPrompt({
     '',
     formatGateEvidence(gateSnapshot),
     '',
+    diffEvidenceBlock,
+    '',
     fileSnapshotBlock,
     '',
     '## 未提交 diff',
@@ -445,6 +452,107 @@ function formatFileSnapshots(fileSnapshots = []) {
     '',
     body,
   ].join('\n');
+}
+
+function formatDiffFileEvidence(diffText = '') {
+  const files = extractDiffFileEvidence(diffText);
+  if (!files.length) return '';
+
+  let used = 0;
+  const rendered = [];
+  for (const file of files) {
+    if (rendered.length >= MAX_DIFF_EVIDENCE_FILES) break;
+    const block = formatDiffFileEvidenceEntry(file);
+    if (used + block.length > MAX_DIFF_EVIDENCE_TOTAL_CHARS) break;
+    used += block.length;
+    rendered.push(block);
+  }
+
+  return [
+    '## Diff file evidence',
+    '',
+    'These file-level snippets are extracted from the full diff before raw diff truncation, so late new files remain reviewable.',
+    '',
+    rendered.join('\n\n'),
+    files.length > rendered.length ? `\n\n...<${files.length - rendered.length} more diff files omitted>` : '',
+  ].join('\n');
+}
+
+function formatDiffFileEvidenceEntry(file) {
+  const flags = [
+    file.newFile ? 'new file' : '',
+    file.deletedFile ? 'deleted file' : '',
+    file.binary ? 'binary' : '',
+  ].filter(Boolean);
+  return [
+    `### ${file.path}`,
+    '',
+    flags.length ? `- flags: ${flags.join(', ')}` : '- flags: modified',
+    file.preview ? ['```diff', file.preview, '```'].join('\n') : '```diff\n(no textual hunk preview)\n```',
+  ].join('\n');
+}
+
+function extractDiffFileEvidence(diffText = '') {
+  const text = String(diffText || '');
+  if (!text.trim()) return [];
+
+  return text
+    .split(/(?=^diff --git a\/.+ b\/.+$)/gm)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map(parseDiffFileBlock)
+    .filter(Boolean)
+    .sort(prioritizeDiffEvidence);
+}
+
+function parseDiffFileBlock(block) {
+  const header = block.match(/^diff --git a\/(.+?) b\/(.+)$/m);
+  if (!header) return null;
+  const filePath = header[2] || header[1];
+  const lines = block.split(/\r?\n/);
+  const newFile = lines.some((line) => line.startsWith('new file mode '));
+  const deletedFile = lines.some((line) => line.startsWith('deleted file mode '));
+  const binary = lines.some((line) => line.startsWith('Binary files '));
+  const previewLines = [];
+
+  for (const line of lines) {
+    if (
+      line.startsWith('diff --git ') ||
+      line.startsWith('new file mode ') ||
+      line.startsWith('deleted file mode ') ||
+      line.startsWith('index ') ||
+      line.startsWith('--- ') ||
+      line.startsWith('+++ ') ||
+      line.startsWith('@@ ') ||
+      line.startsWith('+') ||
+      line.startsWith('-')
+    ) {
+      previewLines.push(line);
+    }
+    if (previewLines.join('\n').length >= MAX_DIFF_EVIDENCE_PER_FILE_CHARS) break;
+  }
+
+  return {
+    path: filePath,
+    newFile,
+    deletedFile,
+    binary,
+    preview: truncate(previewLines.join('\n'), MAX_DIFF_EVIDENCE_PER_FILE_CHARS),
+  };
+}
+
+function prioritizeDiffEvidence(left, right) {
+  return diffEvidenceRank(left) - diffEvidenceRank(right)
+    || String(left.path).localeCompare(String(right.path));
+}
+
+function diffEvidenceRank(file) {
+  const p = String(file.path || '').replaceAll('\\', '/');
+  if (p.startsWith('slide-rule-python/services/')) return 0;
+  if (p.startsWith('slide-rule-python/tests/')) return 1;
+  if (p.includes('/__tests__/') || p.includes('/tests/')) return 2;
+  if (file.newFile) return 3;
+  return 4;
 }
 
 function formatFileSnapshot(snapshot = {}) {
