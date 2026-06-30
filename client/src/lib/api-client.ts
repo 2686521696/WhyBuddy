@@ -1,13 +1,16 @@
 import { useAppStore } from "./store";
 
-export type ApiErrorKind = "demo" | "offline" | "error";
+export type ApiErrorKind = "demo" | "offline" | "error" | "degraded";
 export type ApiErrorSource =
   | "network"
   | "http"
   | "html-fallback"
   | "non-json"
   | "parse"
-  | "storage";
+  | "storage"
+  | "python"
+  | "timeout"
+  | "legacy-fallback";
 
 export interface ApiRequestError {
   kind: ApiErrorKind;
@@ -65,6 +68,44 @@ function extractErrorDetail(payload: unknown): string | null {
   return null;
 }
 
+function isPythonDegradedPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const p: any = payload;
+  return (
+    p.degraded === true ||
+    p.degraded === "true" ||
+    p.status === "degraded" ||
+    (p.error && (typeof p.error === "object" ? p.error.code === "planner_timeout" : String(p.error).includes("timeout"))) ||
+    (typeof p.reason === "string" && /timeout|degraded|python/i.test(p.reason))
+  );
+}
+
+function extractPythonEnvelope(payload: unknown): { message: string; detail?: string; retryable?: boolean } | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p: any = payload;
+  // Only trigger for explicit Python degraded/timeout markers or 5xx python context (do not swallow generic {error:..} server responses)
+  const hasPythonMarker = isPythonDegradedPayload(p) ||
+    (p.error && (typeof p.error === "string" ? /python|timeout|degraded|planner/i.test(p.error) : /python|timeout|degraded|planner/i.test(JSON.stringify(p.error)))) ||
+    (typeof p.reason === "string" && /python|timeout|degraded|planner/i.test(p.reason)) ||
+    p.degraded === true || p.status === "degraded";
+  if (!hasPythonMarker) return null;
+  const msg =
+    p.message ||
+    (typeof p.error === "string" ? p.error : p.error?.message || p.error?.code) ||
+    p.reason ||
+    extractErrorDetail(payload) ||
+    "Python backend error/timeout/degraded";
+  const detailParts: string[] = [];
+  if (p.reason) detailParts.push(`reason=${p.reason}`);
+  if (p.error) detailParts.push(`error=${JSON.stringify(p.error).slice(0,120)}`);
+  if (p.degraded) detailParts.push("degraded=true");
+  return {
+    message: String(msg).slice(0, 200),
+    detail: detailParts.length ? detailParts.join("; ") : "Python envelope normalized",
+    retryable: true,
+  };
+}
+
 function createApiError(
   endpoint: string,
   config: Omit<ApiRequestError, "endpoint">
@@ -85,6 +126,37 @@ export function isOfflineApiError(
   error: ApiRequestError | null | undefined
 ): boolean {
   return error?.kind === "offline";
+}
+
+export function isDegradedApiError(
+  error: ApiRequestError | null | undefined
+): boolean {
+  return error?.kind === "degraded";
+}
+
+export function isPythonBackendFailure(
+  error: ApiRequestError | null | undefined
+): boolean {
+  if (!error) return false;
+  return (
+    error.kind === "degraded" ||
+    error.source === "python" ||
+    error.source === "timeout" ||
+    (error.status != null && (error.status === 502 || error.status === 504)) ||
+    /python|timeout|degraded/i.test(error.message || "") ||
+    /python|timeout|degraded/i.test(error.detail || "")
+  );
+}
+
+export function getLegacyFallbackReason(
+  error: ApiRequestError | null | undefined
+): string | null {
+  if (!error) return null;
+  if (error.source === "html-fallback" || error.source === "legacy-fallback") {
+    return "legacy Node fallback active";
+  }
+  if (error.kind === "degraded") return "Python degraded, legacy may apply";
+  return null;
 }
 
 export async function fetchJsonSafe<T>(
@@ -176,7 +248,30 @@ export async function fetchJsonSafe<T>(
     };
   }
 
+  // Normalize Python error/timeout/degraded envelopes (and legacy) in frontend API helpers (105 req 1)
+  // Even 200 responses from Python may carry degraded=true / planner_timeout for visibility + recoverability.
+  // 502/timeout/legacy fallbacks must not be hidden as silent Node success.
+  const pyEnv = extractPythonEnvelope(payload);
+  if (pyEnv) {
+    return {
+      ok: false,
+      response,
+      error: createApiError(endpoint, {
+        kind: "degraded",
+        source: response.status >= 500 || response.status === 504 ? "timeout" : "python",
+        status: response.status,
+        message: pyEnv.message,
+        detail: pyEnv.detail || "",
+        retryable: pyEnv.retryable !== false,
+      }),
+    };
+  }
+
   if (!response.ok) {
+    const isPython5xx =
+      (response.status === 502 || response.status === 503 || response.status === 504) &&
+      (String(extractErrorDetail(payload) || "").toLowerCase().includes("python") ||
+        String(rawText || "").toLowerCase().includes("python"));
     const fallbackKind =
       response.status === 502 ||
       response.status === 503 ||
@@ -184,20 +279,27 @@ export async function fetchJsonSafe<T>(
         ? getFallbackKind()
         : "error";
 
+    const src: ApiErrorSource = isPython5xx ? "python" : (response.status >= 500 ? "timeout" : "http");
+    const kind = (response.status === 502 || isPython5xx || isPythonDegradedPayload(payload)) ? "degraded" : fallbackKind;
+
     return {
       ok: false,
       response,
       error: createApiError(endpoint, {
-        kind: fallbackKind,
-        source: "http",
+        kind,
+        source: src,
         status: response.status,
         message:
           extractErrorDetail(payload) ??
-          (fallbackKind === "error"
+          (kind === "degraded"
+            ? "Python backend failure (timeout/degraded/502)."
+            : fallbackKind === "error"
             ? `Request failed with status ${response.status}.`
             : "The backend service is not ready yet."),
         detail:
-          fallbackKind === "error"
+          kind === "degraded"
+            ? "Python error/timeout/degraded envelope; retry or legacy fallback visible to user."
+            : fallbackKind === "error"
             ? "The request completed, but the server reported an application error."
             : "Retry after the backend becomes available, or switch back to local preview mode.",
         retryable: response.status >= 500 || response.status === 429,

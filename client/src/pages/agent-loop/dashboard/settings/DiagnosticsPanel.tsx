@@ -137,7 +137,42 @@ function DiagnosticsWarnings({ warnings }: { warnings: WarningRow[] }) {
   );
 }
 
-export function DiagnosticsView({ data, onRefresh }: DiagnosticsPanelProps) {
+function PythonHealthCard({ pythonHealth }: { pythonHealth?: DiagnosticsPanelProps['pythonHealth'] }) {
+  if (!pythonHealth) return null;
+  const tone = pythonHealth.service.status === 'ready'
+    ? 'success'
+    : pythonHealth.service.status === 'offline'
+      ? 'error'
+      : 'warning';
+  return (
+    <section className="native-diagnostics-warning-card">
+      <div className="native-diagnostics-code-head">
+        <Space size={8} align="center">
+          <CodeOutlined />
+          <Text strong>Python Health</Text>
+        </Space>
+        <Tag color={tone}>{pythonHealth.service.label}</Tag>
+      </div>
+      <Descriptions size="small" bordered column={2}>
+        <Descriptions.Item label="Service">{pythonHealth.service.status}</Descriptions.Item>
+        <Descriptions.Item label="Checked At">{pythonHealth.service.checkedAt || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Detail" span={2}>{pythonHealth.service.detail || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Missing config" span={2}>{pythonHealth.hasMissingConfig ? 'yes' : 'no'}</Descriptions.Item>
+      </Descriptions>
+      <div style={{ marginTop: 8 }}>
+        <Space wrap>
+          {pythonHealth.providers.map((provider) => (
+            <Tag key={provider.name} color={provider.readiness === 'ready' ? 'success' : provider.readiness === 'offline' ? 'error' : 'warning'}>
+              {provider.name}:{provider.readiness}
+            </Tag>
+          ))}
+        </Space>
+      </div>
+    </section>
+  );
+}
+
+export function DiagnosticsView({ data, pythonHealth, onRefresh }: DiagnosticsPanelProps) {
   const d = data || {};
   const eff = d.effectiveConfig || {};
   const srcs = d.configSources || {};
@@ -164,6 +199,7 @@ export function DiagnosticsView({ data, onRefresh }: DiagnosticsPanelProps) {
         <CodeCard title="Effective config" data={eff} className="native-diagnostics-code-effective" />
         <CodeCard title="Config sources" data={srcs} className="native-diagnostics-code-sources" />
         <CodeCard title="Last run state" data={last} className="native-diagnostics-code-last" />
+        <PythonHealthCard pythonHealth={pythonHealth} />
         <section className="native-diagnostics-warning-card">
           <div className="native-diagnostics-code-head">
             <Space size={8} align="center">

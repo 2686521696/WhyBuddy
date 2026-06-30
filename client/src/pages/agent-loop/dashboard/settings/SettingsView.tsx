@@ -29,6 +29,7 @@ export function SettingsView({
   onExportSettings,
   onImportSettings,
   diagnosticsData,
+  pythonHealth,
   onRefreshDiagnostics,
   profilesData,
   onListProfiles,
@@ -54,6 +55,7 @@ export function SettingsView({
   onExportSettings?: () => void;
   onImportSettings?: (text: string) => void;
   diagnosticsData?: any;
+  pythonHealth?: import('../dashboardTypes').PythonHealthViewModel | null;
   onRefreshDiagnostics?: () => void;
   profilesData?: any;
   onListProfiles?: () => void;
@@ -100,7 +102,7 @@ export function SettingsView({
       label: 'Diagnostics',
       children: (
         <SettingsPanel title="Diagnostics（只读）" description="查看运行环境、配置来源与关键能力状态。">
-          <DiagnosticsView data={diagnosticsData} onRefresh={onRefreshDiagnostics || (() => {})} />
+          <DiagnosticsView data={diagnosticsData} pythonHealth={pythonHealth} onRefresh={onRefreshDiagnostics || (() => {})} />
         </SettingsPanel>
       ),
     },

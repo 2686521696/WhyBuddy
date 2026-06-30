@@ -4,7 +4,14 @@
 // Python `/api/agent-loop/*` endpoints and projects their raw run state into the
 // OverviewPayload / DetailPayload shapes that DashboardApp renders.
 
-import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask } from "./dashboardTypes";
+import type {
+  AgentLoopSettingsViewModel,
+  DetailPayload,
+  OverviewPayload,
+  OverviewTask,
+  PythonHealthStatus,
+  PythonHealthViewModel,
+} from "./dashboardTypes";
 import {
   activeAgentLabel,
   buildPipelineSteps,
@@ -16,6 +23,7 @@ import {
   phaseLabel,
   resolveAgentRoles,
 } from "./phaseLabels";
+import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError } from "@/lib/api-client";
 
 const BASE = "/api/agent-loop";
 
@@ -58,13 +66,15 @@ function formatClock(ts: string | null | undefined): string {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    // Do not leak full internal URLs to users in error messages
+  // Use normalized fetchJsonSafe so Python error/timeout/degraded/legacy envelopes surface (105 req1)
+  const result = await fetchJsonSafe<T>(url);
+  if (!result.ok) {
     const short = url.replace(/.*\/api\/agent-loop/, "/api/agent-loop");
-    throw new Error(`${short} → HTTP ${res.status}`);
+    const pyFail = isPythonBackendFailure(result.error) ? " [python-degraded]" : "";
+    const degraded = isDegradedApiError(result.error) ? " [degraded]" : "";
+    throw new Error(`${short} → HTTP ${result.error.status ?? "?"} ${pyFail}${degraded} ${result.error.message}`);
   }
-  return (await res.json()) as T;
+  return result.data;
 }
 
 function parseSseJson(event: MessageEvent): Record<string, unknown> {
@@ -435,6 +445,105 @@ export async function saveSettings(values: Record<string, unknown>): Promise<any
 
 export async function fetchProviderHealth(): Promise<any> {
   return getJson(`${BASE}/provider-health`);
+}
+
+function normalizePythonHealthStatus(value: unknown): PythonHealthStatus {
+  const text = String(value ?? "").toLowerCase().replace(/[_\s]+/g, "-");
+  if (text === "ready" || text === "ok" || text === "healthy" || text === "up") return "ready";
+  if (text === "offline" || text === "down" || text === "unreachable") return "offline";
+  if (text === "degraded" || text === "timeout" || text === "error" || text === "failed") return "degraded";
+  if (text === "missing-config" || text === "missing" || text === "not-configured" || text === "unconfigured") {
+    return "missing-config";
+  }
+  return "unknown";
+}
+
+function providerRowsFrom(raw: any): PythonHealthViewModel["providers"] {
+  const source = raw?.providers ?? raw?.providerHealth ?? raw?.readiness ?? raw?.checks ?? {};
+  const rows: PythonHealthViewModel["providers"] = [];
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      if (!item || typeof item !== "object") continue;
+      const name = String(item.name ?? item.provider ?? item.id ?? "provider");
+      const readiness = normalizePythonHealthStatus(item.readiness ?? item.status ?? item.state ?? item.ok);
+      rows.push({ name, readiness, detail: item.detail ?? item.reason ?? item.message ?? null });
+    }
+    return rows;
+  }
+  if (source && typeof source === "object") {
+    for (const [name, item] of Object.entries(source)) {
+      if (item && typeof item === "object") {
+        const it = item as any;
+        rows.push({
+          name,
+          readiness: normalizePythonHealthStatus(it.readiness ?? it.status ?? it.state ?? it.ok),
+          detail: it.detail ?? it.reason ?? it.message ?? null,
+        });
+      } else {
+        rows.push({ name, readiness: normalizePythonHealthStatus(item), detail: null });
+      }
+    }
+  }
+  return rows;
+}
+
+export function normalizePythonHealthViewModel(raw: any): PythonHealthViewModel {
+  const serviceRaw = raw?.service ?? raw?.python ?? raw?.backend ?? raw ?? {};
+  const status = normalizePythonHealthStatus(
+    serviceRaw?.status ?? serviceRaw?.state ?? raw?.status ?? raw?.state ?? (raw?.ok === true ? "ready" : raw?.ok === false ? "degraded" : null),
+  );
+  const providers = providerRowsFrom(raw);
+  const hasMissingConfig =
+    Boolean(raw?.hasMissingConfig ?? raw?.missingConfig) ||
+    providers.some((provider) => provider.readiness === "missing-config");
+  const effectiveStatus: PythonHealthStatus =
+    status !== "unknown" ? status : hasMissingConfig ? "missing-config" : providers.some((p) => p.readiness === "degraded") ? "degraded" : "unknown";
+  const label =
+    effectiveStatus === "ready"
+      ? "Python ready"
+      : effectiveStatus === "offline"
+        ? "Python offline"
+        : effectiveStatus === "degraded"
+          ? "Python degraded"
+          : effectiveStatus === "missing-config"
+            ? "Python missing-config"
+            : "Python health unknown";
+  return {
+    service: {
+      status: effectiveStatus,
+      label,
+      detail: serviceRaw?.detail ?? serviceRaw?.reason ?? serviceRaw?.message ?? raw?.message ?? null,
+      checkedAt: serviceRaw?.checkedAt ?? raw?.checkedAt ?? raw?.updatedAt ?? null,
+    },
+    providers,
+    hasMissingConfig,
+    raw: raw && typeof raw === "object" ? stripRawSecretsDeep(raw) : null,
+  };
+}
+
+export async function fetchPythonHealth(): Promise<PythonHealthViewModel> {
+  try {
+    const [health, providerHealth] = await Promise.allSettled([
+      getJson(`${BASE}/health`),
+      fetchProviderHealth(),
+    ]);
+    const healthRaw = health.status === "fulfilled" ? health.value : {};
+    const providerRaw = providerHealth.status === "fulfilled" ? providerHealth.value : {};
+    return normalizePythonHealthViewModel({
+      ...(healthRaw && typeof healthRaw === "object" ? healthRaw : {}),
+      providers:
+        (providerRaw as any)?.providers ??
+        (providerRaw as any)?.providerHealth ??
+        (providerRaw as any)?.readiness ??
+        providerRaw,
+      providerHealth: providerRaw,
+    });
+  } catch (error: any) {
+    return normalizePythonHealthViewModel({
+      status: isPythonBackendFailure(error) ? "offline" : "degraded",
+      message: error?.message || "Python health probe failed",
+    });
+  }
 }
 
 export async function runQueue(payload: Record<string, unknown> = {}): Promise<any> {

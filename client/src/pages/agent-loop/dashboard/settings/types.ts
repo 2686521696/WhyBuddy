@@ -45,6 +45,7 @@ export type QueueDefaultsPanelProps = {
 
 export type DiagnosticsPanelProps = {
   data?: any;
+  pythonHealth?: import('../dashboardTypes').PythonHealthViewModel | null;
   onRefresh: () => void;
 };
 

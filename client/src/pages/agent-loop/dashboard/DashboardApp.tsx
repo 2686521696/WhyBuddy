@@ -46,7 +46,7 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export type ViewKey = 'sliderule' | 'workbench' | 'settings';
 
@@ -54,13 +54,14 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
   return view !== 'sliderule';
 }
 import SlideRulePage from '@/pages/SlideRule';
-import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask } from './dashboardTypes';
+import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask, PythonHealthViewModel } from './dashboardTypes';
 import { postCommand } from './bridge';
-import { filterSupportedQueuePatch } from './agentLoopApi';
+import { fetchPythonHealth, filterSupportedQueuePatch, normalizePythonHealthViewModel } from './agentLoopApi';
 import SettingsView from './settings/SettingsView';
 import { CliConfigForm } from './settings/CliConfigPanel';
 import { QueueDefaultsView } from './settings/QueueDefaultsPanel';
 import { ProfileCrudView } from './settings/ProfilesPanel';
+import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError } from "@/lib/api-client";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -772,9 +773,21 @@ function AgentLoopSidebar({
   );
 }
 
-function AgentLoopTopbar({ view, showActions = true }: { view: ViewKey; showActions?: boolean }) {
+function AgentLoopTopbar({
+  view,
+  showActions = true,
+  pythonHealth,
+}: {
+  view: ViewKey;
+  showActions?: boolean;
+  pythonHealth?: PythonHealthViewModel | null;
+}) {
   const title =
     view === 'sliderule' ? 'AgentLoop / 推演' : view === 'settings' ? 'AgentLoop / 设置' : 'AgentLoop / 工作台';
+
+  const pythonStatus = pythonHealth?.service?.status || 'unknown';
+  const pythonTone = pythonStatus === 'ready' ? 'success' : pythonStatus === 'offline' ? 'error' : 'warning';
+  const pythonLabel = pythonHealth?.service?.label || 'Python health';
 
   return (
     <Header className="native-header native-agent-topbar">
@@ -783,6 +796,7 @@ function AgentLoopTopbar({ view, showActions = true }: { view: ViewKey; showActi
       </div>
       {showActions ? (
         <Space size="small" className="native-agent-topbar-actions">
+          <Tag color={pythonTone}>{pythonLabel}</Tag>
           <span className="native-topbar-link">本地 Web 预览</span>
           <span className="native-topbar-link">刷新预览</span>
           <span className="native-topbar-runtime">Python API • AgentLoop runtime</span>
@@ -824,7 +838,12 @@ export function DashboardApp({
   const [exportedSettings, setExportedSettings] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
+  const [pythonHealth, setPythonHealth] = useState<any>(null);
   const [profilesData, setProfilesData] = useState<any>(null);
+
+  // Python backend failure visible + retry/fallback/status for AgentLoop core (105)
+  const [pyError, setPyError] = useState<any>(null);
+  const [pyMsg, setPyMsg] = useState<string>("");
 
   const tasks = payload.tasks || [];
   const visibleTasks = useMemo(() => filterTasks(tasks, filter, query), [tasks, filter, query]);
@@ -851,6 +870,33 @@ export function DashboardApp({
       postCommand('listProfiles');
     }
   }, [view]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchPythonHealth()
+      .then((health) => {
+        if (alive) setPythonHealth(normalizePythonHealthViewModel(health));
+      })
+      .catch(() => {
+        if (alive) setPythonHealth(normalizePythonHealthViewModel({ status: 'degraded', message: 'Python health probe failed' }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [view]);
+
+  // Probe + status/retry for Python backend failures visible (105); keep Node as thin proxy
+  const probeAgentLoopPython = useCallback(async () => {
+    try {
+      const r = await fetchJsonSafe<any>("/api/agent-loop/health");
+      if (!r.ok && (isPythonBackendFailure(r.error) || isDegradedApiError(r.error))) {
+        setPyError(r.error);
+        setPyMsg(`Python backend ${r.error.kind}${r.error.status? ' '+r.error.status : ''}: ${r.error.message}`);
+      } else { setPyError(null); setPyMsg(''); }
+    } catch { setPyError({kind:'degraded',message:'unreachable',retryable:true}); setPyMsg('Python timeout/degraded'); }
+  }, []);
+  useEffect(() => { probeAgentLoopPython(); }, [probeAgentLoopPython]);
+  const retryAgentLoopPython = useCallback(() => { setPyMsg('retrying Python...'); probeAgentLoopPython(); }, [probeAgentLoopPython]);
 
   // Receive settings from extension (or mock in dev)
   useEffect(() => {
@@ -983,6 +1029,12 @@ export function DashboardApp({
   const workbenchContent = (
     <div className="native-workbench-shell">
       <OverviewHeader payload={payload} settings={settingsData} />
+      {/* Python error/timeout/degraded visible + retry/status messaging (105 req2); legacy fallback not silent */}
+      {(pyError || pyMsg) && (
+        <Alert type="warning" showIcon style={{margin: '8px 0'}} message="Python backend status"
+          description={<span>{pyMsg} <a onClick={retryAgentLoopPython} style={{cursor:'pointer'}}>retry</a> {isDegradedApiError(pyError) ? '(degraded envelope)' : ''} {isPythonBackendFailure(pyError) ? '· visible, not hidden' : ''}</span>}
+        />
+      )}
       <SummaryStats payload={payload} />
       <Row gutter={[12, 12]} align="stretch" className="native-workbench-grid">
         <Col xs={24} xl={17} xxl={18}>
@@ -1052,6 +1104,7 @@ export function DashboardApp({
       onImportSettings={handleImportSettings}
       diagnosticsData={diagnosticsData}
       onRefreshDiagnostics={() => postCommand('getDiagnostics')}
+      pythonHealth={pythonHealth}
       profilesData={profilesData}
       onListProfiles={handleListProfiles}
       onCreateProfile={handleCreateProfile}
@@ -1076,7 +1129,7 @@ export function DashboardApp({
       <Layout className="native-dashboard native-agent-shell">
         <AgentLoopSidebar view={view} onViewChange={handleViewChange} getViewPath={getViewPath} />
         <Layout className="native-main native-agent-main">
-          <AgentLoopTopbar view={view} showActions={view !== 'sliderule'} />
+          <AgentLoopTopbar view={view} showActions={view !== 'sliderule'} pythonHealth={pythonHealth} />
           <Content className={contentClassName}>
             {view === 'workbench' ? workbenchContent : view === 'sliderule' ? slideruleContent : settingsContent}
           </Content>

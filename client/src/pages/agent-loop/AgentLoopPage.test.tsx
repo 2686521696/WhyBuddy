@@ -13,7 +13,7 @@ import AgentLoopPage, {
   shouldLoadAgentLoopOverview,
   shouldPollAgentLoopOverview,
 } from "./AgentLoopPage";
-import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, shouldRequestSettingsForView } from "./dashboard/DashboardApp";
+import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, SettingsView, shouldRequestSettingsForView } from "./dashboard/DashboardApp";
 import { LlmKeyForm } from "./dashboard/settings/LlmKeysPanel";
 import { DiagnosticsView } from "./dashboard/settings/DiagnosticsPanel";
 
@@ -411,6 +411,44 @@ describe("agentLoopApi (wired capabilities)", () => {
       expect.stringContaining("/api/agent-loop/settings"),
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("105: fetchProviderHealth and health surface expose Python backend provenance for dashboard display", async () => {
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        backend: "sliderule-python",
+        mode: "bridge",
+        providers: [{ provider: "grok", status: "ready" }],
+        checkedAt: "2026-07-01T00:00:00Z",
+      }),
+    } as any);
+
+    const h = await api.fetchProviderHealth();
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/provider-health"));
+    expect(h.backend || h.status).toBeTruthy();
+    // provenance must be visible (Python-owned, not hidden)
+    expect(String(JSON.stringify(h))).toMatch(/sliderule-python|python/i);
+  });
+
+  it("105: dashboard load, run detail, queue overview, settings status exercise Python-first API paths", async () => {
+    const fetchSpy = global.fetch as any;
+    fetchSpy.mockClear();
+    // use persistent resolved for this test to tolerate internal extra calls (snapshot in detail etc)
+    const okJson = (data: any) => ({ ok: true, json: async () => data } as any);
+    fetchSpy.mockResolvedValue(okJson({ queueRunning: false, tasks: [], counts: {} }));
+
+    await api.fetchOverview();
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/"));
+    // override for detail specific
+    fetchSpy.mockResolvedValueOnce(okJson({ runId: "r1", status: "PENDING", task: null, events: [], artifacts: [] }));
+    fetchSpy.mockResolvedValueOnce(okJson({})); // snapshot fallback ok
+    await api.fetchDetail("r1");
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/runs/r1"));
+    fetchSpy.mockResolvedValue(okJson({ effective: {}, keys: {} }));
+    await api.fetchSettings();
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/settings"));
   });
 
   it("agentloop secret settings semantics 111 does not report secret save success against nonsecret backend", async () => {
@@ -1568,6 +1606,113 @@ it("agentloop setting diagnostics visual shell matches reference", () => {
   expect(html).not.toContain("Card size");
   expect(html).not.toContain("max-width:620");
   expect(html).not.toMatch(/RAW_SECRET|sk-[a-z0-9]/i);
+});
+
+it("agentloop diagnostics panel renders python health states for ready offline degraded and missing-config", () => {
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    __AGENT_LOOP_CSP_NONCE__: undefined,
+    __AGENT_LOOP_ASSETS__: {},
+  };
+
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      <DiagnosticsView
+        data={{
+          repoRoot: "/workspace/repo",
+          queuePath: "agent-loop/scripts/migration-queue.json",
+          activeProfile: "local",
+          keys: {
+            grokApiKey: "configured",
+          },
+          effectiveConfig: {
+            fixAgent: "grok",
+            reviewAgent: "codex",
+            workerMaxTurns: 512,
+          },
+          configSources: {
+            fixAgent: "default",
+          },
+          lastRunState: {
+            runId: "2026-06-24T12",
+            status: "DONE_REVIEWED",
+            task: "agent-loop/tasks/demo.md",
+          },
+          warnings: [
+            { category: "ready", message: "Python ready" },
+            { category: "offline", message: "Python offline" },
+            { category: "degraded", message: "Python degraded" },
+            { category: "missing-config", message: "Python missing config" },
+          ],
+          pythonHealth: {
+            service: { status: "ready", detail: "Python backend ready" },
+            providers: [
+              { name: "grok", readiness: "ready" },
+              { name: "codex", readiness: "offline" },
+            ],
+            hasMissingConfig: true,
+          },
+        }}
+        onRefresh={() => {}}
+      />
+    );
+  } finally {
+    if (typeof origWindow === "undefined") {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  expect(html).toContain("Python ready");
+  expect(html).toContain("Python offline");
+  expect(html).toContain("Python degraded");
+  expect(html).toContain("Python missing config");
+  expect(html).toContain("ready");
+  expect(html).toContain("offline");
+  expect(html).toContain("degraded");
+  expect(html).toContain("missing-config");
+});
+
+it("agentloop dashboard topbar renders normalized python health status", () => {
+  const pythonHealth = api.normalizePythonHealthViewModel({
+    status: "ready",
+    checkedAt: "2026-06-30T10:00:00.000Z",
+    providers: {
+      grok: { status: "ready" },
+      codex: { status: "missing-config", reason: "no key" },
+    },
+  });
+
+  const html = renderToStaticMarkup(
+    <DashboardApp
+      payload={{ tasks: [], counts: {} }}
+      view="workbench"
+    />,
+  );
+
+  expect(pythonHealth.service.label).toBe("Python ready");
+  expect(html).toContain("Python health");
+});
+
+it("agentloop python health adapter preserves degraded and missing config states", () => {
+  const vm = api.normalizePythonHealthViewModel({
+    status: "degraded",
+    message: "provider timeout",
+    providers: [
+      { name: "grok", readiness: "missing-config", detail: "api key missing" },
+      { name: "codex", readiness: "offline", detail: "cli unavailable" },
+    ],
+  });
+
+  expect(vm.service.status).toBe("degraded");
+  expect(vm.service.label).toBe("Python degraded");
+  expect(vm.hasMissingConfig).toBe(true);
+  expect(vm.providers.map((provider) => `${provider.name}:${provider.readiness}`)).toEqual([
+    "grok:missing-config",
+    "codex:offline",
+  ]);
 });
 
 it("agentloop dashboard shell constrains content to an internal scroll area", () => {

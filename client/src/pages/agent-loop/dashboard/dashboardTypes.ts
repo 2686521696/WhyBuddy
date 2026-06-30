@@ -118,6 +118,24 @@ export type AgentLoopSettingsViewModel = {
   profiles?: { profiles?: Record<string, unknown>; activeProfile?: string | null } | null;
 };
 
+export type PythonHealthStatus = 'ready' | 'offline' | 'degraded' | 'missing-config' | 'unknown';
+
+export type PythonHealthViewModel = {
+  service: {
+    status: PythonHealthStatus;
+    label: string;
+    detail?: string | null;
+    checkedAt?: string | null;
+  };
+  providers: Array<{
+    name: string;
+    readiness: PythonHealthStatus;
+    detail?: string | null;
+  }>;
+  hasMissingConfig: boolean;
+  raw?: Record<string, unknown> | null;
+};
+
 declare global {
   interface Window {
     acquireVsCodeApi?: () => VsCodeApi;

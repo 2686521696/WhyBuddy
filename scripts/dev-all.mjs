@@ -270,12 +270,17 @@ async function resolveDevEnvironment() {
   const v4Gates = resolveV4AlignmentGates();
   const proxyEnv = await resolveProxyEnvironment();
 
+  // backend-python-total-cutover-105: make local dev prefer Python for owned API routes via Vite proxy.
+  // Explicit flag for client/vite (and children) so resolveApiTarget uses Python target by default.
+  const pythonFirstEnv = { VITE_PYTHON_FIRST_API: "true" };
+
   if (requestedExecutionMode !== "real") {
     return {
       LOBSTER_EXECUTION_MODE: requestedExecutionMode,
       AUTOPILOT_REAL_RUNTIME: masterSwitch,
       ...v4Gates,
       ...proxyEnv,
+      ...pythonFirstEnv,
     };
   }
 
@@ -291,6 +296,7 @@ async function resolveDevEnvironment() {
       AUTOPILOT_REAL_RUNTIME: masterSwitch,
       ...v4Gates,
       ...proxyEnv,
+      ...pythonFirstEnv,
     };
   }
 
@@ -304,6 +310,7 @@ async function resolveDevEnvironment() {
     AUTOPILOT_REAL_RUNTIME: masterSwitch,
     ...v4Gates,
     ...proxyEnv,
+    ...pythonFirstEnv,
   };
 }
 

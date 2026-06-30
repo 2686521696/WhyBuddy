@@ -1,13 +1,13 @@
 /**
- * SlideRule — 产品视图（/sliderule）· 全屏画布 + 浮层 HUD
+ * SlideRule product view (/sliderule): full-screen canvas with floating HUD.
  *
- * 沉浸布局（默认 product / minimal）：
- * - 画布占满视口
- * - 顶部左：话题 + 指标 + 角色并行流
- * - 顶部右：架构调用过程（console + 流式节拍）
- * - 底部居中：IM 输入浮层
+ * Immersive layout (default product / minimal):
+ * - Canvas fills the viewport
+ * - Top left: topic, metrics, and role stream
+ * - Top right: architecture execution console
+ * - Bottom center: IM input surface
  *
- * ?im=dev / engineering 保留左右分栏工程驾驶舱。
+ * ?im=dev / engineering keeps the split engineering cockpit.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -48,13 +48,18 @@ import {
   SLIDERULE_TERMINAL_NODE_ID,
   type ProjectionDensity,
 } from "./sliderule/sliderule-projection-constants";
+import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError, getLegacyFallbackReason } from "@/lib/api-client";
+
+// Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
+// render this component, while turn/evidence/report calls surface Python
+// provenance through the delegated /api/sliderule path.
 
 const HINT_CHIPS_SPLIT = [
-  "路线对比一下",
+  "Compare routes",
   "澄清权限边界",
   "分析安全风险",
-  "拆解成 SPEC Tree",
-  "生成可行性报告",
+  "Break into SPEC Tree",
+  "Generate feasibility report",
   "效果预览",
 ];
 
@@ -93,7 +98,7 @@ function ImStreamingPlaceholder() {
         <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:120ms]" />
         <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:240ms]" />
       </span>
-      架构节点推进中…
+      Architecture nodes advancing...
     </p>
   );
 }
@@ -134,7 +139,7 @@ function TurnFootnote({
       href={`/sliderule/dev?session=${encodeURIComponent(sessionId)}`}
       className="text-slate-500 hover:text-slate-700 hover:underline"
     >
-      证据链
+      Evidence chain
     </a>
   );
 
@@ -223,6 +228,9 @@ function SlideRuleImmersion({
   setDeliverablesOpen,
   openDeliverables,
   embedded = false,
+  pythonApiError,
+  pythonStatusMsg,
+  retryPythonBackend,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -267,6 +275,9 @@ function SlideRuleImmersion({
   setDeliverablesOpen: (open: boolean) => void;
   openDeliverables: () => void;
   embedded?: boolean;
+  pythonApiError?: any;
+  pythonStatusMsg?: string;
+  retryPythonBackend?: () => void;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -275,7 +286,7 @@ function SlideRuleImmersion({
     [sessionState]
   );
 
-  // 澄清卡片可关闭；待回答问题集合变化时重新出现。
+  // Clarification cards can be hidden; they reappear when pending questions change.
   const clarifications = pendingClarifications ?? [];
   const clarifyKey = clarifications.map((c) => c.id).join("|");
   const [clarifyHidden, setClarifyHidden] = useState(false);
@@ -336,6 +347,15 @@ function SlideRuleImmersion({
           onOpenDeliverables={openDeliverables}
           embedded={embedded}
         />
+        {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2) */}
+        {(pythonApiError || pythonStatusMsg) && (
+          <div className="pointer-events-auto absolute left-1/2 top-[72px] z-50 -translate-x-1/2 rounded border bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow" title={pythonStatusMsg}>
+            Python backend: {pythonStatusMsg || "degraded/timeout"} ·
+            <button type="button" onClick={retryPythonBackend} className="ml-2 underline">Retry</button>
+            {getLegacyFallbackReason(pythonApiError) && <span className="ml-2 text-amber-600">fallback active</span>}
+            {isDegradedApiError(pythonApiError) && <span className="ml-1">(degraded envelope)</span>}
+          </div>
+        )}
         <div className={autopilotTheme.immersionOverlayArchRow}>
           <ArchitectureProcessPanel
             liveAction={isRunning ? liveAction : null}
@@ -586,7 +606,7 @@ function SlideRuleSplitEngineering({
             className={`${autopilotTheme.goal} ${!goal ? "text-slate-400" : ""}`}
             data-testid="sliderule-goal-display"
           >
-            {goal || "输入你的想法，开始推演…"}
+            {goal || "Enter an idea to start SlideRule."}
           </div>
         </div>
         <div className="flex items-center gap-3 pl-4">
@@ -595,9 +615,9 @@ function SlideRuleSplitEngineering({
             onClick={openDeliverables}
             data-testid="sliderule-deliverables-open"
             className={autopilotTheme.auditBtn}
-            title="交付物（报告 / 规格树 / 文档 / 提示词包 / 架构图 / 交接包）"
+            title="Deliverables (report / spec tree / docs / prompt pack / architecture / handoff)"
           >
-            交付物
+            Deliverables
           </button>
           <button
             type="button"
@@ -605,11 +625,11 @@ function SlideRuleSplitEngineering({
             disabled={isRunning}
             data-testid="sliderule-reset-session"
             className={autopilotTheme.auditBtn}
-            title={isRunning ? "推演进行中，请稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
+            title={isRunning ? "SlideRule is running; reset later." : "Clear this conversation and restart."}
           >
             重置会话
           </button>
-          <a href="/sliderule/dev" className={autopilotTheme.devLink} title="打开工程驾驶舱">
+          <a href="/sliderule/dev" className={autopilotTheme.devLink} title="Open engineering cockpit">
             Dev
           </a>
         </div>
@@ -637,7 +657,7 @@ function SlideRuleSplitEngineering({
               ) : (
                 <span className="text-[10px] text-slate-400">
                   {graphNodeCount > 0
-                    ? `${graphNodeCount} 节点 · 点击可质疑`
+                    ? `${graphNodeCount} nodes - click to inspect`
                     : "发送消息后展开推理地图"}
                 </span>
               )}
@@ -661,7 +681,7 @@ function SlideRuleSplitEngineering({
               />
             ) : (
               <div className={autopilotTheme.flowEmpty}>
-                发送第一条消息后，推演路径会在这里展开。
+                Send the first message to unfold the reasoning path here.
               </div>
             )}
           </div>
@@ -672,10 +692,10 @@ function SlideRuleSplitEngineering({
             <div className="space-y-6">
               {uiTurns.length === 0 && (
                 <div className={autopilotTheme.emptyState}>
-                  欢迎来到 SlideRule V5。
+                  Welcome to SlideRule V5.
                   <p className={autopilotTheme.emptyHint}>
-                    在下方输入你的目标或质疑，系统会从丰富的能力池中动态挑选 (capability × role) 进行推演。
-                    没有固定阶段，一切由当前状态和你的输入驱动。
+                    Enter a goal or challenge below; the system dynamically selects capability x role steps.
+                    There are no fixed stages; current state and your input drive the route.
                   </p>
                 </div>
               )}
@@ -685,7 +705,7 @@ function SlideRuleSplitEngineering({
                     <div className={autopilotTheme.userBubble}>{turn.user}</div>
                   </div>
                   <div className="rounded-lg border border-slate-200/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
-                    {/* M7 收尾: turn-route 在 marathon 模式下默认隐藏（沉浸 + 避免机制词）。single 模式可见；toggle 仍可强展 */}
+                    {/* M7 close-out: turn-route is hidden by default in marathon mode; single mode remains visible and toggle can expand it. */}
                     {(driveMode !== "marathon" || turn.routeExpanded) && (
                       <TurnRouteTimeline
                         facts={turn.routeFacts}
@@ -708,7 +728,7 @@ function SlideRuleSplitEngineering({
                       />
                     )}
                     {driveMode === "marathon" && !turn.routeExpanded && (
-                      <div className="cursor-pointer text-[10px] text-slate-400" onClick={() => toggleRouteExpanded(turn.id)} title="M7: marathon 收敛中隐藏 turn-route 详情（点击展开内部审计）">— 持续推演（route 隐藏，点击展开） —</div>
+                      <div className="cursor-pointer text-[10px] text-slate-400" onClick={() => toggleRouteExpanded(turn.id)} title="Marathon route details are hidden; click to expand.">Continuing SlideRule. Click to expand route.</div>
                     )}
                     {turn.status === "complete" && (
                       <TurnFootnote
@@ -730,7 +750,7 @@ function SlideRuleSplitEngineering({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                placeholder="工程路径完整 IM…"
+                placeholder="Engineering path IM..."
                 disabled={isRunning}
                 className={autopilotTheme.input}
               />
@@ -740,7 +760,7 @@ function SlideRuleSplitEngineering({
                 disabled={!input.trim()}
                 className={autopilotTheme.sendBtn}
               >
-                {isRunning ? "停止" : "发送"}
+                {isRunning ? "Stop" : "Send"}
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -805,9 +825,39 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     initialGoal: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_GOAL : undefined,
   });
 
+  // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
+  const [pythonApiError, setPythonApiError] = useState<any>(null);
+  const [pythonStatusMsg, setPythonStatusMsg] = useState<string>("");
+  const probePythonBackend = useCallback(async () => {
+    try {
+      const res = await fetchJsonSafe<{ status?: string }>("/api/sliderule/health");
+      if (!res.ok) {
+        setPythonApiError(res.error);
+        setPythonStatusMsg(
+          `Python backend ${res.error.kind}${res.error.status ? " " + res.error.status : ""}: ${res.error.message} ${getLegacyFallbackReason(res.error) || ""}`
+        );
+      } else {
+        setPythonApiError(null);
+        setPythonStatusMsg("");
+      }
+    } catch {
+      setPythonApiError({ kind: "degraded", message: "probe failed", source: "network", retryable: true } as any);
+      setPythonStatusMsg("Python backend probe unreachable; retry available");
+    }
+  }, []);
+  useEffect(() => {
+    // probe once on mount for visibility of python failure states in main workflow
+    probePythonBackend();
+  }, [probePythonBackend]);
+
+  const retryPythonBackend = useCallback(() => {
+    setPythonStatusMsg("retrying Python backend...");
+    probePythonBackend();
+  }, [probePythonBackend]);
+
   const imSurfaceMode = useMemo(() => resolveImSurfaceMode(), []);
   const isImmersion = imSurfaceMode !== "engineering";
-  // 刷新后 uiTurns 为空时,从持久化 sessionState 重建「最近一轮」,让右上角架构执行记录不消失。
+  // Rebuild the latest turn from persisted session state after refresh when uiTurns is empty.
   const restoredLatestTurn = useMemo(
     () => (uiTurns.length === 0 ? deriveLatestTurnFromState(sessionState) : null),
     [uiTurns.length, sessionState]
@@ -865,8 +915,8 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
   const graphNodeCount = reasoningViewModel.visibleNodes.length;
   const graphRevision = `${sessionState.sessionId}-${graphNodeCount}-${sessionState.artifacts?.length ?? 0}-${projectionDensity}-${isRunning}`;
 
-  // 仅在 terminal「本会话内新出现」(刚收敛,看一眼交付)时聚焦;刷新已收敛会话时 terminal
-  // 从首帧就存在,不抢镜头(否则刷新后视角被拉到交付节点)。让 fit 框住整图。
+  // Focus terminal only when it newly appears within the current session.
+  // On refresh, keep the first frame stable and let fit frame the whole graph.
   const terminalMountedRef = useRef(false);
   const prevTerminalIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -875,7 +925,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     const prevTid = prevTerminalIdRef.current;
     prevTerminalIdRef.current = tid;
     terminalMountedRef.current = true;
-    if (!wasMounted) return; // 初次挂载(含刷新)不聚焦
+    if (!wasMounted) return; // Do not focus on initial mount or refresh.
     if (tid && tid !== prevTid) setFocusNodeId(SLIDERULE_TERMINAL_NODE_ID);
   }, [reasoningViewModel.terminalNode?.id]);
 
@@ -891,11 +941,11 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     }
   }, []);
 
-  // 普通点击不再弹窗发起挑战(用户反馈 #1)—— 重推改由 Flow 节点右下角「编辑」按钮内联触发,
-  // 见 onNodeEditSubmit。这里保留为无副作用(可作未来选中/聚焦钩子)。
+  // Plain node clicks no longer open challenge dialogs; edits are handled inline.
+  // Keep this callback side-effect free for future selection/focus hooks.
   const handleGraphNodeClick = useCallback((_node: BrainstormReasoningNode) => {}, []);
 
-  // 节点内联编辑确认 → 带用户输入直接重推(不弹窗)。
+  // Inline node edit confirmation triggers a rerun with user input.
   const handleNodeEditSubmit = useCallback(
     (node: BrainstormReasoningNode, text: string) => {
       const producedArtifactId = (node as { producedArtifactId?: string }).producedArtifactId;
@@ -1000,11 +1050,22 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     setDeliverablesOpen,
     openDeliverables,
     embedded,
+    pythonApiError,
+    pythonStatusMsg,
+    retryPythonBackend,
   };
 
   if (isImmersion) {
-    return <SlideRuleImmersion {...shared} />;
+    return (
+      <div data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+        <SlideRuleImmersion {...shared} />
+      </div>
+    );
   }
 
-  return <SlideRuleSplitEngineering {...shared} />;
+  return (
+    <div data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+      <SlideRuleSplitEngineering {...shared} />
+    </div>
+  );
 }

@@ -148,6 +148,41 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
+// === Python-first frontend API routing (backend-python-total-cutover-105) ===
+// Local dev and frontend API calls prefer Python where a Python route exists (listed owned prefixes).
+// Default is Python-first for /api/sliderule, /api/blueprint/spec-documents (and always /api/agent-loop);
+// explicit Node legacy fallback for other /api/* (Node thin proxy / compat shell).
+// Set VITE_PYTHON_FIRST_API=false (or FRONTEND_PYTHON_FIRST=false etc) to opt out for owned prefixes.
+// PYTHON_API_TARGET overrides target. resolveApiTarget(path) is executable guard (importable for tests/verif).
+// Placed at top level for tsx/node -e verification and vitest.
+const PYTHON_DEFAULT_TARGET = "http://localhost:9700";
+const NODE_DEFAULT_TARGET = "http://localhost:3001";
+export function resolveApiTarget(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  const pyTarget = env.PYTHON_API_TARGET || env.AGENT_LOOP_API_TARGET || PYTHON_DEFAULT_TARGET;
+  if (path.startsWith("/api/agent-loop")) {
+    return pyTarget; // explicit Python-owned (baseline, always)
+  }
+  const hasExplicitDisable =
+    env.VITE_PYTHON_FIRST_API === "false" ||
+    env.FRONTEND_PYTHON_FIRST === "false" ||
+    env.PYTHON_FIRST_PROXY === "false";
+  const hasExplicitEnable =
+    env.VITE_PYTHON_FIRST_API === "true" ||
+    env.FRONTEND_PYTHON_FIRST === "true" ||
+    env.PYTHON_FIRST_PROXY === "true" ||
+    !!env.PYTHON_API_TARGET;
+  const pythonFirstEnabled = hasExplicitEnable || !hasExplicitDisable;
+  const pythonOwnedPrefixes = [
+    "/api/sliderule",
+    "/api/blueprint/spec-documents",
+    // Add more only when Python route cutover proven per 105. Non-listed stay Node (explicit retained boundary).
+  ];
+  if (pythonFirstEnabled && pythonOwnedPrefixes.some((p) => path.startsWith(p))) {
+    return pyTarget;
+  }
+  return NODE_DEFAULT_TARGET;
+}
+
 export default defineConfig(() => {
   const repository = process.env.GITHUB_REPOSITORY || "opencroc/sliderule";
   const repositoryName = repository.split("/")[1] || "sliderule";
@@ -218,12 +253,23 @@ export default defineConfig(() => {
         deny: ["**/.*"],
       },
       proxy: {
+        // Python-first default cutover (105): Python-owned prefixes (/api/agent-loop + listed) resolve via resolveApiTarget
+        // to Python target by default in local dev. Unlisted /api/* fall back to Node (explicit thin proxy/compat shell).
+        // Default enabled unless VITE_PYTHON_FIRST_API=false etc; PYTHON_API_TARGET forces. See guard fn above.
         "/api/agent-loop": {
-          target: process.env.AGENT_LOOP_API_TARGET || "http://localhost:9700",
+          target: resolveApiTarget("/api/agent-loop"),
+          changeOrigin: true,
+        },
+        "/api/sliderule": {
+          target: resolveApiTarget("/api/sliderule"),
+          changeOrigin: true,
+        },
+        "/api/blueprint/spec-documents": {
+          target: resolveApiTarget("/api/blueprint/spec-documents"),
           changeOrigin: true,
         },
         "/api": {
-          target: "http://localhost:3001",
+          target: resolveApiTarget("/api"),
           changeOrigin: true,
         },
         "/socket.io": {

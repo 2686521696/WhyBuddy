@@ -23,6 +23,10 @@ import {
   loadOrSeedGithubPagesDemoSession,
 } from "./github-pages-sliderule-demo";
 
+// 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
+// Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
+// Smoke (updated) starts here and asserts the path.
+
 const DEFAULT_SESSION_ID = "sliderule-v51-product";
 
 function createEmptySessionState(sessionId: string): V5SessionState {
