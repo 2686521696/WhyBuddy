@@ -46,3 +46,20 @@ This task is part of the single-batch NodeJS-to-Python total cutover push. The i
 - Tests prove the Python path is exercised and that Node no longer owns migrated business semantics.
 - Any remaining Node behavior is named as thin proxy, compatibility shell, or explicitly retained boundary with a reason.
 - The worker final report lists commands run, files changed, and whether the migration numerator can change.
+
+## Execution evidence (post-review fix)
+- Python external agent invoke provider contract: invoke_external_a2a_agent + _adapt_* + no-key degraded + missing-endpoint error + provider failure + success + permissionMetadata all in slide-rule-python/services/a2a_runtime.py (Python-owned).
+- A2AClient.invoke (external path) is thin proxy: fully delegates to callPythonA2AExternalInvoke which calls Python provider for adapter/fetch/response/safe-fail (no Node ownership of those semantics).
+- server/routes/a2a.ts /invoke: explicitly named retained compatibility shell for inbound local-executor invokes via handleInvoke (registry lookup is py-delegated; external invoke not owned here). Does not count for this migration target.
+- Remaining Node: stream/invokeStream + concurrent limit check + local executor in handleInvoke kept as explicit retained boundaries (reason: local compat; degraded always visible).
+- Python tests (slide-rule-python/tests/test_a2a_invoke_runtime_bridge.py): missing, no-key degraded, provider failure, success-with-stub + permission metadata. All exercised real contract.
+- Node/Vitest tests (server/tests/a2a-protocol.test.ts): 3 new specific tests using controllable py delegate results: missing-endpoint (exact msg+data), provider-failure, no-key degraded + permissionMetadata attach. Proves py path exercised; Node no longer owns adapter/fetch semantics for external.
+- Commands run (see run logs):
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-a2a-external-agent-invoke-takeover-105.md
+  - node agent-loop/src/check-mojibake.js server/routes/a2a.ts
+  - node agent-loop/src/check-mojibake.js server/tests/a2a-protocol.test.ts
+  - node agent-loop/src/check-mojibake.js slide-rule-python/tests/test_a2a_invoke_runtime_bridge.py
+  - python -m pytest slide-rule-python/tests/test_a2a_invoke_runtime_bridge.py -q --tb=line
+  - npx vitest run server/tests/a2a-protocol.test.ts -t "A2AClient external invoke" --passWithNoTests
+- Files changed (this fix): server/routes/a2a.ts, server/tests/a2a-protocol.test.ts, slide-rule-python/tests/test_a2a_invoke_runtime_bridge.py, agent-loop/tasks/backend-python-a2a-external-agent-invoke-takeover-105.md
+- Migration: Python-owned external agent invoke runtime + contract + tests landed. Node paths for external are thin proxy. Numerator can change for this A2A external-invoke slice. (Route inbound local kept retained, not claimed as Python external.)

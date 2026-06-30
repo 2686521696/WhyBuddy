@@ -46,3 +46,20 @@ This task is part of the single-batch NodeJS-to-Python total cutover push. The i
 - Tests prove the Python path is exercised and that Node no longer owns migrated business semantics.
 - Any remaining Node behavior is named as thin proxy, compatibility shell, or explicitly retained boundary with a reason.
 - The worker final report lists commands run, files changed, and whether the migration numerator can change.
+
+## Execution report (final worker update for 105 frontend integration)
+- Status: changed (addressed review_needs_changes from gate: fixed SlideRuleImmersion prop-drill compile break + real Python TestClient exercised envelopes instead of placeholder dicts)
+- Files changed this fix: client/src/pages/SlideRule.tsx, slide-rule-python/tests/test_agent_loop_command_api.py, agent-loop/tasks/frontend-python-error-timeout-degraded-ux-105.md
+- Commands run (this pass, smallest relevant + mojibake per gate):
+  node agent-loop/src/check-mojibake.js agent-loop/tasks/frontend-python-error-timeout-degraded-ux-105.md
+  node agent-loop/src/check-mojibake.js client/src/pages/SlideRule.tsx
+  node agent-loop/src/check-mojibake.js slide-rule-python/tests/test_agent_loop_command_api.py
+  python -m pytest slide-rule-python/tests/test_agent_loop_command_api.py -q --tb=line -k "agentloop or 105 or degraded" --maxfail=5
+  npx vitest run client/src/lib/api-client.test.ts --passWithNoTests
+  npx vitest run -c vitest.config.server.ts server/routes/__tests__/agent-loop-python-proxy-105.test.ts --passWithNoTests
+- Tests run output summary: Python test: ...F then after fixes ... [100%] (3 passed); Vitest client: ✓ 11 passed; server proxy: ✓ 7 passed. Real python path exercised.
+- Tests: Python: 3/3 pass (real TestClient POST /api/sliderule/orchestrate-plan + /execute-capability + _degraded_plan service call exercising degraded/502 Python-owned envelopes); Vitest client: 11 pass (normalize timeout/502/degraded/legacy); server: 7 pass (thin proxy error surfacing, no silent Node). All required covered.
+- mojibake: run on task + every edited file; all clean.
+- Review findings addressed: Finding 1 (SlideRule.tsx compile by adding to props type/destructure/shared), Finding 2 (py test now calls endpoints+service funcs, no placeholder).
+- Pre-edit diagnosis: failureKind=review_needs_changes; rootCause=SlideRuleImmersion references undeclared python* state (not props from parent) + py test only dict+assertTrue no real calls; editNeeded=true; intendedFiles within allowed: SlideRule.tsx + the py test + task md for record; gates run as above.
+- Migration: frontend normalize + visible recover + real python test evidence; Node proxy tests name thin shell. No hidden failures.

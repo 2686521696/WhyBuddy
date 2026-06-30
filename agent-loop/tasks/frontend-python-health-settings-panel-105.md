@@ -1,7 +1,7 @@
 # Backend Python 105: Python health settings panel integration
 
 ## Execution status
-- Status: pending
+- Status: done (manual repair)
 - Goal: Expose Python service health/config/provider readiness in settings and top-level status UI.
 - Queue: `backend-python-total-cutover-105-queue`
 - Phase: Frontend Python Integration
@@ -46,3 +46,26 @@ This task is part of the single-batch NodeJS-to-Python total cutover push. The i
 - Tests prove the Python path is exercised and that Node no longer owns migrated business semantics.
 - Any remaining Node behavior is named as thin proxy, compatibility shell, or explicitly retained boundary with a reason.
 - The worker final report lists commands run, files changed, and whether the migration numerator can change.
+
+## Worker final report (manual repair)
+- Status: changed and verified.
+- Root cause: previous HALT_NO_CHANGES left no durable frontend health view model wiring; diagnostics could show generic JSON strings but the dashboard/settings path did not consume a normalized Python health contract.
+- Files changed:
+  - client/src/pages/agent-loop/dashboard/dashboardTypes.ts
+  - client/src/pages/agent-loop/dashboard/agentLoopApi.ts
+  - client/src/pages/agent-loop/dashboard/DashboardApp.tsx
+  - client/src/pages/agent-loop/dashboard/settings/DiagnosticsPanel.tsx
+  - client/src/pages/agent-loop/dashboard/settings/SettingsView.tsx
+  - client/src/pages/agent-loop/dashboard/settings/types.ts
+  - client/src/pages/agent-loop/AgentLoopPage.test.tsx
+  - client/src/lib/api-client.ts
+- Implementation:
+  - Added PythonHealthViewModel with ready/offline/degraded/missing-config/unknown states.
+  - Added fetchPythonHealth + normalizePythonHealthViewModel adapter over /api/agent-loop/health and /provider-health.
+  - Rendered compact topbar Python health status and a diagnostics Python Health card.
+  - Preserved degraded/missing-config state instead of collapsing it to success.
+- Commands run:
+  - pnpm exec vitest run client/src/pages/agent-loop/AgentLoopPage.test.tsx -t "python health" --reporter=dot -> 3 passed
+  - node agent-loop/src/check-mojibake.js client/src/pages/agent-loop/dashboard/agentLoopApi.ts client/src/pages/agent-loop/dashboard/dashboardTypes.ts client/src/pages/agent-loop/dashboard/settings/DiagnosticsPanel.tsx client/src/pages/agent-loop/dashboard/settings/SettingsView.tsx client/src/pages/agent-loop/dashboard/settings/types.ts client/src/pages/agent-loop/AgentLoopPage.test.tsx -> No mojibake findings.
+  - pnpm exec tsc --noEmit --pretty false -> blocked by unrelated existing server adapter/rag typing errors; no client SlideRule syntax errors remain.
+- Migration numerator change: no. This is frontend visibility/integration for Python health, not a new backend ownership slice.

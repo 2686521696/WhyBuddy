@@ -1,7 +1,7 @@
 # Backend Python 105: Frontend Python degraded path browser smoke
 
 ## Execution status
-- Status: pending
+- Status: done (manual repair)
 - Goal: Add a browser smoke for Python offline/degraded frontend behavior.
 - Queue: `backend-python-total-cutover-105-queue`
 - Phase: Frontend Python Integration
@@ -46,3 +46,23 @@ This task is part of the single-batch NodeJS-to-Python total cutover push. The i
 - Tests prove the Python path is exercised and that Node no longer owns migrated business semantics.
 - Any remaining Node behavior is named as thin proxy, compatibility shell, or explicitly retained boundary with a reason.
 - The worker final report lists commands run, files changed, and whether the migration numerator can change.
+
+## Worker final report (manual repair)
+- Status: changed and verified.
+- Root cause: previous failed run had diffBytes=0 and did not add an executable browser smoke for Python degraded/offline frontend behavior.
+- Files changed:
+  - scripts/frontend-python-degraded-path-browser-smoke.mjs
+  - package.json
+  - client/src/pages/SlideRule.tsx
+  - client/src/lib/api-client.ts
+  - agent-loop/tasks/frontend-python-degraded-path-browser-smoke-105.md
+- Implementation:
+  - Added `pnpm run smoke:frontend-python-degraded`.
+  - Browser smoke loads `/agent-loop/sliderule`, intercepts `/api/sliderule/health` with a forced Python degraded 503 JSON envelope, and asserts visible UI text for Python backend degraded/retry state.
+  - The smoke fails if the degraded health request is not intercepted or if the UI silently hides the degraded state.
+- Commands run:
+  - node --check scripts/frontend-python-degraded-path-browser-smoke.mjs -> pass
+  - node agent-loop/src/check-mojibake.js scripts/frontend-python-degraded-path-browser-smoke.mjs package.json client/src/pages/SlideRule.tsx client/src/lib/api-client.ts -> No mojibake findings.
+  - pnpm run smoke:frontend-python-degraded -> PASS, screenshot under tmp/frontend-python-degraded-path-browser-smoke/degraded-path.png
+  - pnpm exec vitest run client/src/pages/agent-loop/AgentLoopPage.test.tsx -t "python health" --reporter=dot -> 3 passed
+- Migration numerator change: no. This is an executable degraded-path guard and frontend visibility check; it does not move backend ownership.
