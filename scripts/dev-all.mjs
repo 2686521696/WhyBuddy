@@ -29,13 +29,36 @@ function readNoProxyFromEnvFile() {
   return "";
 }
 
-// Force .env values (including NO_PROXY for blackaicoding.com / custom LLM hosts) to override
-// any pre-existing system env (common on Windows with Clash etc.). This ensures child
-// processes see the correct NO_PROXY list for direct LLM calls.
-dotenv.config({ override: true });
-
 const children = [];
 let shuttingDown = false;
+
+function loadDevDotenv() {
+  // Force .env values (including NO_PROXY for blackaicoding.com / custom LLM hosts) to override
+  // any pre-existing system env (common on Windows with Clash etc.). This ensures child
+  // processes see the correct NO_PROXY list for direct LLM calls.
+  dotenv.config({ override: true });
+}
+
+export function resolvePythonReloadArgs(pythonDir, env = process.env) {
+  const raw = String(env.SLIDE_RULE_PYTHON_RELOAD ?? env.PYTHON_BACKEND_RELOAD ?? "1").trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(raw)) {
+    return [];
+  }
+  return ["--reload", "--reload-dir", pythonDir];
+}
+
+export function buildPythonUvicornArgs(pythonDir, pythonPort, env = process.env) {
+  return [
+    "-m",
+    "uvicorn",
+    "app:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    pythonPort,
+    ...resolvePythonReloadArgs(pythonDir, env),
+  ];
+}
 
 function resolveCommand(command) {
   if (
@@ -477,6 +500,7 @@ process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
 async function main() {
+  loadDevDotenv();
   const sharedDevEnv = await resolveDevEnvironment();
 
   // Explicit visibility: the server child will receive the resolved proxy env (if any).
@@ -563,7 +587,7 @@ async function main() {
     const python = run(
       "slide-rule-python",
       pythonExe,
-      ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", pythonPort],
+      buildPythonUvicornArgs(pythonDir, pythonPort),
       pythonEnv,
       {
         cwd: pythonDir,
@@ -604,4 +628,6 @@ async function main() {
   }
 }
 
-void main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void main();
+}
