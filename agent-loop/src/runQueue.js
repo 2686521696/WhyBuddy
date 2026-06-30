@@ -90,7 +90,7 @@ export function buildResumeUnfinishedPlan({
 } = {}) {
   const enabledTasks = (tasks || []).filter((entry) => entry.enabled !== false);
   const records = outcomes?.tasks || {};
-  let firstUnfinishedIndex = enabledTasks.findIndex((entry) => {
+  const unfinishedTasks = enabledTasks.filter((entry) => {
     const taskId = entry.id || entry.task;
     return !isCleanCompletedQueueTask({
       taskId,
@@ -98,12 +98,10 @@ export function buildResumeUnfinishedPlan({
       checkpointTaskIds,
     });
   });
-  if (firstUnfinishedIndex < 0) firstUnfinishedIndex = enabledTasks.length;
-  const cleanTasks = enabledTasks.slice(0, firstUnfinishedIndex);
-  const unfinishedTasks = enabledTasks.slice(firstUnfinishedIndex);
+  const cleanCount = enabledTasks.length - unfinishedTasks.length;
   return {
     tasks: unfinishedTasks,
-    cleanCount: cleanTasks.length,
+    cleanCount,
     attentionCount: unfinishedTasks.length,
     total: enabledTasks.length,
     nextTaskId: unfinishedTasks[0] ? (unfinishedTasks[0].id || unfinishedTasks[0].task) : null,

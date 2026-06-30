@@ -236,24 +236,26 @@ test('isCleanCompletedQueueTask does not skip rescue patches or attention states
   }), false);
 });
 
-test('buildResumeUnfinishedPlan starts from first not clean task', () => {
+test('buildResumeUnfinishedPlan selects only unfinished tasks', () => {
   const plan = buildResumeUnfinishedPlan({
     tasks: [
       { id: 'task-a', enabled: true },
       { id: 'task-b', enabled: true },
       { id: 'task-c', enabled: true },
+      { id: 'task-d', enabled: true },
     ],
     outcomes: {
       tasks: {
         'task-a': { lastStatus: 'DONE_REVIEWED', lastOutcome: 'done' },
         'task-b': { lastStatus: 'DONE_REVIEWED', lastOutcome: 'done', rescuePatchAvailable: true },
+        'task-c': { lastStatus: 'DONE_REVIEWED', lastOutcome: 'done' },
       },
     },
     checkpointTaskIds: new Set(['task-a', 'task-b']),
   });
 
-  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-b', 'task-c']);
-  assert.equal(plan.cleanCount, 1);
+  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-b', 'task-d']);
+  assert.equal(plan.cleanCount, 2);
   assert.equal(plan.nextTaskId, 'task-b');
   assert.equal(plan.attentionCount, 2);
 });
