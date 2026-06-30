@@ -136,3 +136,80 @@ def test_agentloop_command_api_108_starts_queue_through_bridge_dry_run():
 
     # do not return raw env (test that key not present in top level)
     assert "env" not in data
+
+
+def test_agentloop_dashboard_python_endpoints_health_overview_settings_105(monkeypatch):
+    """105: Python-owned dashboard endpoints (health/runs/overview/queue/overview/settings/provider-health) must expose Python backend provenance.
+    Node will thin-proxy; Python path exercised directly; degraded states visible (no silent Node wrap).
+    """
+    # health provenance
+    r = client.get("/api/agent-loop/health")
+    assert r.status_code == 200
+    h = r.json()
+    assert h.get("backend") == "sliderule-python"
+    assert h.get("mode") == "bridge" or h.get("status") == "ok"
+
+    # runs overview for dashboard load
+    ro = client.get("/api/agent-loop/runs/overview")
+    assert ro.status_code == 200
+    assert isinstance(ro.json(), list)
+
+    # queue overview
+    qo = client.get("/api/agent-loop/queue/overview")
+    assert qo.status_code == 200
+
+    # settings status
+    st = client.get("/api/agent-loop/settings")
+    assert st.status_code == 200
+    ss = st.json()
+    assert "effective" in ss or "keys" in ss or ss.get("loaded") is True
+
+    # provider health for provenance display
+    ph = client.get("/api/agent-loop/provider-health")
+    assert ph.status_code == 200
+    phj = ph.json()
+    assert "providers" in phj or "checkedAt" in phj
+
+    # 105: real Python-owned degraded/502 envelope via TestClient endpoint + service func (no placeholder)
+    # exercises /orchestrate-plan degraded path (via wait_for timeout) and execute-capability 502 for frontend normalize + retry
+    import asyncio
+    import routes.sliderule as sr
+    from sliderule_llm.client import LlmError
+
+    # service func that produces the exact envelope shape used in orchestrate degrade
+    env = sr._degraded_plan("planner_timeout", "timeout", "Python orchestrate.plan timed out before producing a plan.")
+    assert env.get("degraded") is True
+    assert env.get("error") == "planner_timeout"
+    assert "timeout" in str(env.get("reason", ""))
+
+    # TestClient call exercising real python _run_orchestrate_plan -> _degraded_plan path (force timeout inside)
+    def force_timeout(*a, **k):
+        raise asyncio.TimeoutError()
+    monkeypatch.setattr(asyncio, "wait_for", force_timeout)
+    r_deg = client.post(
+        "/api/sliderule/orchestrate-plan",
+        json={"state": {"sessionId": "s105", "goal": {}}, "turnId": "t105"},
+        headers={"x-internal-key": "dev-slide-rule-internal"},
+    )
+    assert r_deg.status_code == 200
+    dj = r_deg.json()
+    assert dj.get("degraded") is True
+    assert "planner_timeout" in str(dj.get("error", "")) or "timeout" in str(dj.get("reason", ""))
+
+    # real TestClient + python path for 502 LLM fail (python native cap)
+    def raise_llm_fail(payload):
+        raise LlmError("python LLM failed for evidence.search")
+    monkeypatch.setattr(sr, "is_python_native_capability", lambda cap: True)
+    monkeypatch.setattr(sr, "execute_capability", raise_llm_fail)
+    r502 = client.post(
+        "/api/sliderule/execute-capability",
+        json={
+            "capabilityId": "evidence.search",
+            "state": {"sessionId": "s105", "goal": {}, "turns": []},
+            "turnId": "t105",
+            "inputArtifactIds": [],
+        },
+        headers={"x-internal-key": "dev-slide-rule-internal"},
+    )
+    assert r502.status_code == 502
+    assert "python LLM failed" in r502.text

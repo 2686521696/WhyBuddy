@@ -37,7 +37,7 @@ export interface GetDeviceInfoNodeExecutionRequest {
 }
 
 export interface WebAigcDeviceRuntimeSummary {
-  runtime: "node";
+  runtime: "node" | "python" | "python-failed";
   platform?: string;
   arch?: string;
   nodeVersion?: string;
@@ -68,15 +68,21 @@ export interface WebAigcDeviceCompatibilitySummary {
 }
 
 export interface GetDeviceInfoNodeExecutionResult {
-  ok: true;
+  ok: boolean;
   nodeType: GetDeviceInfoNodeType;
   output: {
-    status: "completed";
+    status: "completed" | "degraded" | "error";
     runtime: WebAigcDeviceRuntimeSummary;
     client?: WebAigcDeviceClientSummary;
     privacy: WebAigcDevicePrivacySummary;
-    compatibility: WebAigcDeviceCompatibilitySummary;
+    compatibility?: WebAigcDeviceCompatibilitySummary;
     context: Record<string, unknown>;
     warnings: string[];
+    error?: {
+      code?: string;
+      message?: string;
+      retryable?: boolean;
+    };
+    metadata?: Record<string, unknown>;
   };
 }

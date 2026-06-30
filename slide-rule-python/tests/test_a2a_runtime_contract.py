@@ -18,6 +18,11 @@ from services.a2a_runtime import (  # noqa: E402
     A2ARuntimeCancelResult,
     A2ARuntimeFailureResult,
     project_a2a_runtime_contract,
+    record_a2a_chat_projection,
+    generate_a2a_report,
+    increment_a2a_analytics_counter,
+    get_a2a_analytics_snapshot,
+    project_a2a_chat_report_analytics,
 )
 
 
@@ -235,3 +240,92 @@ def test_cancelled_result_model_rejects_completed_status():
 def test_contract_rejects_unknown_operation_before_runtime_work():
     with pytest.raises(ValueError, match="operation must be"):
         project_a2a_runtime_contract({"operation": "register_agent"})
+
+
+# --- 105: chat/report/analytics projection tests (Python-owned) ---
+# Prove record/generate/inc/get/project exercise the Python impl directly.
+# Degraded visible via project fallback; errors raised on bad input per contract.
+
+
+def _unique_sid(prefix: str) -> str:
+    import time as _t
+    return f"{prefix}-{int(_t.time()*1000)}-{id(_t)}"
+
+
+def test_record_a2a_chat_projection_happy_path_and_count_and_validation():
+    sid = _unique_sid("chat105")
+    r1 = record_a2a_chat_projection(sid, "user", "first msg")
+    assert r1["ok"] is True
+    assert r1["sessionId"] == sid
+    assert r1["count"] == 1
+    assert r1["message"]["role"] == "user"
+    assert r1["message"]["content"] == "first msg"
+
+    r2 = record_a2a_chat_projection(sid, "assistant", "reply")
+    assert r2["count"] == 2
+
+    with pytest.raises(ValueError, match="session_id must be non-empty"):
+        record_a2a_chat_projection("", "user", "x")
+
+
+def test_generate_a2a_report_summary_and_full_and_validation():
+    sid = _unique_sid("rpt105")
+    # ensure some chat
+    record_a2a_chat_projection(sid, "user", "q")
+    rep_sum = generate_a2a_report(sid, "summary")
+    assert rep_sum["ok"] is True
+    report = rep_sum["report"]
+    assert report["kind"] == "summary"
+    assert "SUMMARY REPORT" in report["output"]
+    assert report["sessionId"] == sid
+    assert report["chatMessageCount"] == 1
+
+    rep_full = generate_a2a_report(sid, "full")
+    assert rep_full["report"]["kind"] == "full"
+    assert "FULL REPORT" in rep_full["report"]["output"]
+
+    with pytest.raises(ValueError, match="session_id required"):
+        generate_a2a_report("")
+
+
+def test_increment_and_get_a2a_analytics_counter_and_snapshot():
+    name = "a2a.test.counter.105"
+    inc1 = increment_a2a_analytics_counter(name, 1)
+    assert inc1["ok"] is True
+    assert inc1["counter"] == name
+    assert inc1["delta"] == 1
+    val_after1 = inc1["value"]
+
+    inc2 = increment_a2a_analytics_counter(name, 2)
+    assert inc2["value"] == val_after1 + 2
+
+    snap = get_a2a_analytics_snapshot()
+    assert snap["ok"] is True
+    assert "counters" in snap
+    assert snap["source"] == "python-a2a-analytics"
+    assert snap["counters"].get(name) == inc2["value"]
+
+    with pytest.raises(ValueError, match="counter name required"):
+        increment_a2a_analytics_counter("")
+
+
+def test_project_a2a_chat_report_analytics_unified_and_unknown_op_degraded():
+    sid = _unique_sid("proj105")
+    chat = project_a2a_chat_report_analytics("chat", {"sessionId": sid, "role": "user", "content": "p"})
+    assert chat["ok"] is True
+    assert chat["sessionId"] == sid
+
+    rpt = project_a2a_chat_report_analytics("report", {"sessionId": sid, "kind": "summary"})
+    assert rpt["ok"] is True
+    assert "report" in rpt
+
+    inc = project_a2a_chat_report_analytics("analytics_inc", {"name": "proj.cnt", "delta": 5})
+    assert inc["ok"] is True and inc["value"] >= 5
+
+    g = project_a2a_chat_report_analytics("analytics_get", {})
+    assert g["ok"] is True and "counters" in g
+
+    bad = project_a2a_chat_report_analytics("nope", {})
+    assert bad.get("ok") is False
+    assert bad.get("degraded") is True
+    assert "unknown" in str(bad.get("error", ""))

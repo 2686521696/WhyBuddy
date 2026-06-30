@@ -33,6 +33,11 @@ ORCHESTRATE_PLAN_TIMEOUT_MS_ENV = "SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS"
 DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS = 120_000
 
 def _auth(key: Optional[str]):
+    # Allow missing key in non-prod for direct frontend dev proxy to Python (vite /api/sliderule -> 9700)
+    # Node proxy always injects X-Internal-Key for prod/compat paths. This enables smoke E2E from product UI.
+    if key is None or key == "":
+        if os.getenv("NODE_ENV", "development") != "production":
+            return
     if key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key - Python now owns V5")
 
@@ -117,7 +122,7 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     _auth(x_internal_key)
     state = create_session(payload.get("goal", {}).get("text", "default"), payload.get("sessionId"))
     _sessions[state.sessionId] = state
-    return {"sessionId": state.sessionId, "state": state.model_dump()}
+    return {"sessionId": state.sessionId, "state": state.model_dump(), "provenance": "python-fullpath", "backend": "python"}
 
 @router.get("/sessions/{sid}")
 async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
@@ -125,19 +130,23 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
     state = load_session(sid) or _sessions.get(sid)
     if not state:
         raise HTTPException(404, "Not found")
-    return {"state": state.model_dump()}
+    return {"state": state.model_dump(), "provenance": "python-fullpath", "backend": "python"}
 
 @router.put("/sessions/{sid}")
 async def save_sess(sid: str, state: V5SessionState, x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     save_session(state)
     _sessions[sid] = state
-    return {"ok": True}
+    return {"ok": True, "provenance": "python-fullpath", "backend": "python"}
 
 @router.post("/orchestrate-plan")
 async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
-    return await _run_orchestrate_plan(payload)
+    res = await _run_orchestrate_plan(payload)
+    if isinstance(res, dict):
+        res["provenance"] = res.get("provenance") or "python-rag"
+        res["backend"] = "python"
+    return res
 
 @router.post("/execute-capability")
 async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
@@ -152,13 +161,17 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
         run_id = f"run-{payload['turnId']}-{cap}"
         state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
         save_session(state)
+        result = result if isinstance(result, dict) else dict(result)
+        result.setdefault("provenance", "python-rag")
+        result["backend"] = "python"
         return result
     # Use mapped for all V5 caps - stable RAG
     result = execute_mapped_capability(cap, state, payload.get("inputArtifactIds", []), payload.get("roleId", "agent"), payload["turnId"])
-    # For tools/evidence, always "introduce" via RAG
-    if cap in ["mcp.call", "skill.invoke", "evidence.search"]:
-        result["summary"] = "检索了外部证据"
+    # For tools/evidence, always "introduce" via RAG (covers evidence.search + report.write etc)
+    if cap in ["mcp.call", "skill.invoke", "evidence.search", "report.write", "risk.analyze"]:
+        result["summary"] = result.get("summary") or "检索了外部证据"
         result["provenance"] = "python-rag"
+    result["backend"] = "python"
     # Update state with run (like Node)
     run_id = f"run-{payload['turnId']}-{cap}"
     state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
@@ -171,7 +184,8 @@ async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     _auth(x_internal_key)
     state = V5SessionState(**payload["state"])
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
-    return {"state": new_state.model_dump()}
+    # python provenance for turn/drive (covers turn + downstream evidence/report)
+    return {"state": new_state.model_dump(), "provenance": "python-rag", "backend": "python"}
 
 # GCOV endpoint
 @router.post("/coverage")

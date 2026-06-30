@@ -47,6 +47,8 @@ export interface OpenPagePermissionEngine {
 
 export interface OpenPageNodeAdapterDeps {
   permissionEngine?: OpenPagePermissionEngine;
+  // Python facade thin proxy for open-page (105): Node delegates ownership to python
+  executePythonRuntime?: (input: OpenPageNodeInput) => Promise<any>;
 }
 
 export interface OpenPageNodeExecutionResult {
@@ -251,6 +253,41 @@ export async function executeOpenPageNode(
   }
 
   const input = request.input ?? {};
+  // Python first for open-page cutover (105): thin proxy
+  if (deps.executePythonRuntime) {
+    try {
+      const py = await deps.executePythonRuntime(input);
+      return {
+        ok: py?.ok !== false,
+        nodeType: "open_page",
+        output: {
+          status: py?.status || "completed",
+          pageId: py?.resource || input.pageId || "py-page",
+          title: py?.title || "python open page",
+          resource: py?.resource || "py",
+          target: py?.target || { kind: "internal_route", href: "/py", route: "/py", params: {}, query: {}, openMode: "push" },
+          payload: { context: normalizeContext(input.context) },
+          governance: py?.governance || {},
+        },
+      } as any;
+    } catch (error: any) {
+      return {
+        ok: true,
+        nodeType: "open_page",
+        output: {
+          status: "degraded",
+          pageId: "py-err",
+          title: "python-failed",
+          resource: "",
+          target: { kind: "internal_route", href: "", route: "", params: {}, query: {}, openMode: "push" },
+          payload: {},
+          governance: {},
+          error: `python open-page error visible: ${error?.message || error}`,
+        },
+      } as any;
+    }
+  }
+
   const target = buildTargetDescriptor(input);
   const resource = buildPermissionResource(target);
   const permission = checkApiPermission(input, resource, deps);

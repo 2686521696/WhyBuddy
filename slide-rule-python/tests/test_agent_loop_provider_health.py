@@ -24,7 +24,7 @@ except Exception as e:
 
 
 def test_agentloop_provider_health_108_reports_available_missing_and_skipped_providers():
-    """agentloop provider health 108 reports available missing and skipped providers
+    """agentloop provider health 108/105 reports available missing and skipped providers (105 dashboard health/provenance)
 
     Acceptance:
     - classifies LLM providers and CLI workers using ready / missing / skipped / failed

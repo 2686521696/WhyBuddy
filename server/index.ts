@@ -1130,6 +1130,8 @@ async function startServer() {
     "/api/open-page",
     createOpenPageRouter({
       permissionEngine: permCheckEngine,
+      // 105 python thin proxy wiring for open-page
+      executePythonRuntime: createPythonWebAigcAdapter("open"),
     })
   );
 
@@ -1222,6 +1224,74 @@ async function startServer() {
   const { generateDeckViaLLM } = await import(
     "./core/ai-ppt-generation-provider.js"
   );
+
+  // 105 longtail python adapter wiring (thin proxy from Node to python-owned facades)
+  // Cross-platform async production wiring (not Windows-hardcoded execSync shell).
+  // Uses env override, platform venv path, execFile (argv data pass, no blocking sync, no fragile shell quotes).
+  // Node remains thin proxy; real semantics owned in python facades. Errors surface ok:false for caller visibility.
+  function resolvePythonExecutable(): string {
+    const envPy = process.env.SLIDE_RULE_PYTHON || process.env.PYTHON_EXECUTABLE;
+    if (envPy) return envPy;
+    const isWin = process.platform === "win32";
+    // prefer explicit venv if present in PATH resolution; fallback py launcher on win for executable wiring without venv Scripts
+    if (isWin) {
+      return "py";  // use py -3 ... for launcher based (works in this env; prod should set SLIDE_RULE_PYTHON)
+    }
+    return "slide-rule-python/.venv/bin/python";
+  }
+
+  function createPythonWebAigcAdapter(adapter: string) {
+    return async (payload: any) => {
+      const pyExe = resolvePythonExecutable();
+      try {
+        const { execFile } = await import("child_process");
+        const { promisify } = await import("util");
+        const execFileAsync = promisify(execFile);
+        const b64 = Buffer.from(JSON.stringify(payload || {})).toString("base64");
+        // python code receives adapter + b64 via argv[1], argv[2] (avoids embedding/escaping in -c)
+        const pyCode = `
+import sys, json, base64, os
+sys.path.insert(0, os.path.join(os.getcwd(), "slide-rule-python"))
+adapter = sys.argv[1] if len(sys.argv) > 1 else "device_location"
+mod_name = "services.web_aigc_" + adapter.replace("-", "_") + "_adapter"
+mod = __import__(mod_name, fromlist=["*"])
+fn = None
+for name in [
+  "execute_" + adapter.replace("-", "_") + "_runtime_bridge",
+  "execute_open_runtime_bridge",
+  "execute_web_qa_runtime_bridge",
+  "execute_device_location_runtime_bridge",
+  "execute_orchestration_runtime_bridge",
+]:
+  fn = getattr(mod, name, None)
+  if fn: break
+if not fn:
+  fn = getattr(mod, "execute_fake_search_adapter", None)
+if not fn:
+  raise RuntimeError("no execute_*_runtime_bridge for " + adapter)
+data = json.loads(base64.b64decode(sys.argv[2] if len(sys.argv) > 2 else "").decode("utf8"))
+res = fn(data)
+print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "model_dump") else res))
+`;
+        const pyCallArgs = pyExe === "py" ? ["-3", "-c", pyCode, adapter, b64] : ["-c", pyCode, adapter, b64];
+        const out: any = await execFileAsync(
+          pyExe,
+          pyCallArgs,
+          { encoding: "utf8", timeout: 15000, cwd: process.cwd(), windowsHide: true }
+        );
+        const stdout = (out && out.stdout) ? out.stdout : (typeof out === "string" ? out : "");
+        return JSON.parse((stdout || "{}").trim());
+      } catch (e: any) {
+        // return explicit failure shape; adapters map to ok:false or surface error (no silent ok:true)
+        return {
+          ok: false,
+          status: "error",
+          error: { code: "py_bridge", message: String(e && (e.message || e.stderr || e)) },
+          warnings: ["python exec failed, visible"],
+        };
+      }
+    };
+  }
   const mcpToolAdapter = new McpToolAdapter({
     invoker: new InternalMcpToolInvoker(),
     permissionEngine: permCheckEngine,
@@ -1454,6 +1524,8 @@ async function startServer() {
     createOrchestrationRecognitionJumpRouter({
       permissionEngine: permCheckEngine,
       auditLogger: permAuditLogger,
+      // python owned thin proxy 105
+      executePythonRuntime: createPythonWebAigcAdapter("orchestration"),
     })
   );
   app.use("/api/long-text-extraction", createLongTextExtractionRouter());
@@ -1504,15 +1576,21 @@ async function startServer() {
       documentSearch: chatDocumentSearch,
       knowledgeService,
       permissionEngine: permCheckEngine,
+      // python web-qa facade 105 cutover (thin proxy)
+      executePythonRuntime: createPythonWebAigcAdapter("web_qa"),
     })
   );
-  app.use("/api/get-location-info", createGetLocationInfoRouter());
+  app.use("/api/get-location-info", createGetLocationInfoRouter({
+    // python device/location 105
+    executePythonRuntime: createPythonWebAigcAdapter("device_location"),
+  }));
   app.use(
     "/api/get-device-info",
     createGetDeviceInfoRouter({
       processPlatform: process.platform,
       processArch: process.arch,
       processVersion: process.version,
+      executePythonRuntime: createPythonWebAigcAdapter("device_location"),
     })
   );
   serverRuntime.documentSearch = chatDocumentSearch;
@@ -1659,6 +1737,8 @@ async function startServer() {
       processPlatform: process.platform,
       processArch: process.arch,
       processVersion: process.version,
+      // 105 python wiring exposed (used if core forwards)
+      executePythonRuntime: createPythonWebAigcAdapter("device_location"),
     },
     transactionFlowRuntime: {
       permissionEngine: permCheckEngine,

@@ -95,4 +95,15 @@ describe("executeGetDeviceInfoNode", () => {
       "Client hints were unavailable; only runtime summary was returned.",
     );
   });
+
+  it("proxies to python-owned when executePythonRuntime wired (105 longtail)", async () => {
+    const result = await executeGetDeviceInfoNode(
+      { nodeType: "get_device_info", input: {} },
+      {
+        executePythonRuntime: async (i: any) => ({ ok: true, status: "completed", runtime: { runtime: "python" }, metadata: { fromPy: true } }),
+      },
+    );
+    expect(result.output.runtime?.runtime).toBe("python");
+    expect(result.output.metadata?.fromPy).toBe(true);
+  });
 });

@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 
 import { executeGetLocationInfoNode } from "../routes/node-adapters/get-location-info-node-adapter.js";
 
+describe("get-location python proxy 105", () => {
+  it("proxies location to python", async () => {
+    const r = await executeGetLocationInfoNode({ nodeType: "get_location_info", input: {} }, {
+      executePythonRuntime: async () => ({ ok: true, status: "completed", location: { source: "py" } }),
+    });
+    expect(r.output.location?.source).toBe("py");
+  });
+
+  it("passes wrapped {nodeType, input} payload to python bridge (not plain input) for correct device_location branch", async () => {
+    let received: any = null;
+    const execSpy = async (p: any) => {
+      received = p;
+      return { ok: true, status: "completed", location: { source: "py-with-nodeType" }, nodeType: "get_location_info" };
+    };
+    const r = await executeGetLocationInfoNode(
+      { nodeType: "get_location_info", input: { coarseLocation: { city: "TestCity" } } },
+      { executePythonRuntime: execSpy },
+    );
+    expect(received).toEqual({ nodeType: "get_location_info", input: { coarseLocation: { city: "TestCity" } } });
+    expect(r.output.location?.source).toBe("py-with-nodeType");
+  });
+});
+
 describe("executeGetLocationInfoNode", () => {
   it("returns caller-provided coarse location, timezone, locale, and governance summaries", async () => {
     const result = await executeGetLocationInfoNode({

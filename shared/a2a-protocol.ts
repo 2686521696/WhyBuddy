@@ -149,6 +149,8 @@ export function createEnvelope(
 
 // ---------------------------------------------------------------------------
 // Python Contract Slice: A2A Runtime
+// Stream/cancel transport takeover (105): Python owns chunk emit, cancel idempotency,
+// timeout, retry envelope, malformed handling. Node is thin proxy/compat shell.
 // ---------------------------------------------------------------------------
 
 export const A2A_PYTHON_RUNTIME_CONTRACT_VERSION = "a2a.runtime.v1" as const;

@@ -48,6 +48,22 @@ interface WebAigcSearchIdentity {
   token: string;
 }
 
+type PythonRagDelegateResult =
+  | { delegated: true; result: unknown; error?: string }
+  | { delegated: false; error?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isUnavailableResult(value: unknown): boolean {
+  return isRecord(value) && (value.ok === false || value.status === "unavailable");
+}
+
+function statusCodeForUnavailableResult(value: unknown): number {
+  return isRecord(value) && value.status === "unavailable" ? 503 : 500;
+}
+
 function resolveWebAigcSearchIdentity(
   body: Partial<WebAigcSearchRequest> | undefined,
 ): WebAigcSearchIdentity | null {
@@ -102,6 +118,69 @@ function tryRecordAudit(input: Parameters<typeof auditCollector.record>[0]): voi
 
 export function createRAGRouter(deps: RAGRouteDeps): Router {
   const router = Router();
+
+  // IMPORTANT: Node RAG router /ingest, /ingest/batch and /search are EXPLICIT RETAINED NODE COMPATIBILITY SHELL.
+  // Reason (per task 105 + review): Python /api/rag routes not added in this vector store slice.
+  // Delegate: only when Python /api/rag actually responds (200 or error) -> use its result (py vector owned).
+  // Connect fail or 404 -> delegated:false -> explicit fallback to Node shell keeps public API working.
+  // RAG vector production store boundary owned by Python (rag_ingestion.py + RAGVectorStoreProvider).
+  // Node tests use mock to prove successful delegate path (py result returned, no Node dep); fallback ensures compat.
+  // See 000 + 105. Degraded from active delegate is visible.
+
+  function resolvePythonRagBase(): string {
+    return (
+      process.env.PYTHON_SLIDE_RULE_BASE_URL ||
+      process.env.SLIDE_RULE_PYTHON_BASE_URL ||
+      "http://localhost:9700"
+    ).replace(/\/+$/, "");
+  }
+
+  async function tryDelegateToPythonRag(
+    operation: "ingest" | "search" | "upsert" | "delete" | "batch",
+    payload: any,
+  ): Promise<PythonRagDelegateResult> {
+    // Delegate to Python-first when /api/rag http endpoint responds (success or py-reported failure).
+    // Per review finding 1: connection failure or 404 (no Python /api/rag route in this slice) treated as
+    // "delegate unavailable" -> explicit fallback to retained Node compatibility shell (public API works by default).
+    // When Python responds, delegate result becomes the business outcome (thin proxy); Node no longer owns vector semantics.
+    // Python vector boundary owned in slide-rule-python/services/rag_ingestion.py + sliderule_llm/vector.py (RAGVectorStoreProvider).
+    // Degraded states from active delegate are visible (no silent Node success when delegate path taken).
+    const base = resolvePythonRagBase();
+    const internalKey = process.env.PYTHON_SLIDE_RULE_INTERNAL_KEY || "dev-slide-rule-internal";
+    const url = `${base}/api/rag/${operation === "search" ? "search" : "ingest"}`;
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": internalKey,
+        },
+        body: JSON.stringify({ payload: payload?.payload ?? payload, operation }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.status === 404) {
+        // No Python /api/rag route in this vector store slice -> delegate unavailable, use explicit Node compat fallback.
+        return { delegated: false };
+      }
+      if (resp.ok) {
+        return { delegated: true, result: body };
+      }
+      // Non-404 error response from Python: delegate result drives response (visible py failure, no Node dep fallback).
+      const degraded = body && (body.ok === false || body.status === "unavailable" || body.error)
+        ? { ...body, status: "unavailable" }
+        : {
+            ok: false,
+            status: "unavailable",
+            error: { code: "python_rag_delegate_http", message: `python http ${resp.status}`, retryable: true },
+            storage: "unavailable",
+            migratedStorage: false,
+          };
+      return { delegated: true, result: degraded };
+    } catch (e: any) {
+      // Network/connect failure (no Python runtime listening) -> delegate unavailable, explicit compat fallback to Node shell.
+      return { delegated: false };
+    }
+  }
 
   function recordRetrievalMetric(latencyMs: number, resultCount: number): void {
     deps.metrics.recordRetrieval(latencyMs, resultCount > 0);
@@ -194,16 +273,29 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   }
 
   // POST /api/rag/ingest
+  // Explicit retained Node compatibility shell (public API kept per task). Delegate only when Python /api/rag responds.
+  // On delegate unavailable (connect/404) -> fallback to Node shell. On delegate result (py success or py failure) -> return it (thin proxy).
+  // Python owns the vector store boundary (RAGVectorStoreProvider + rag_ingestion production paths).
   router.post('/ingest', async (req, res) => {
     try {
       const payload = req.body?.payload as IngestionPayload;
       if (!payload?.sourceType || !payload?.sourceId || !payload?.content) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
       }
+      const delegate = await tryDelegateToPythonRag("ingest", req.body).catch(
+        (): PythonRagDelegateResult => ({ delegated: false }),
+      );
+      if (delegate.delegated) {
+        const r = delegate.result;
+        if (isUnavailableResult(r)) {
+          return res.status(statusCodeForUnavailableResult(r)).json(r);
+        }
+        return res.json(r);
+      }
+      // Fallback only when delegate did not produce result (thin proxy prefers Python delegate result)
       const result = await deps.ingestionPipeline.ingest(payload);
-      if (isRAGIngestionPythonRuntimeResult(result) && !result.ok) {
-        const statusCode = result.status === 'unavailable' ? 503 : 500;
-        return res.status(statusCode).json(result);
+      if (isUnavailableResult(result)) {
+        return res.status(statusCodeForUnavailableResult(result)).json(result);
       }
       return res.json(result);
     } catch (err) {
@@ -212,13 +304,27 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/rag/ingest/batch
+  // Explicit retained Node compatibility shell. Delegate result (if py responded) drives; else fallback to compat shell.
   router.post('/ingest/batch', async (req, res) => {
     try {
       const payloads = req.body?.payloads as IngestionPayload[];
       if (!Array.isArray(payloads)) {
         return res.status(400).json({ error: 'payloads must be an array' });
       }
+      const delegate = await tryDelegateToPythonRag("batch", req.body).catch(
+        (): PythonRagDelegateResult => ({ delegated: false }),
+      );
+      if (delegate.delegated) {
+        const r = delegate.result;
+        if (isUnavailableResult(r)) {
+          return res.status(statusCodeForUnavailableResult(r)).json(r);
+        }
+        return res.json(r);
+      }
       const result = await deps.ingestionPipeline.ingestBatch(payloads);
+      if (isUnavailableResult(result)) {
+        return res.status(statusCodeForUnavailableResult(result)).json(result);
+      }
       return res.json(result);
     } catch (err) {
       return res.status(500).json({ error: String(err) });
@@ -226,21 +332,32 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/rag/search
+  // Explicit retained Node compatibility shell (public API kept). Delegate to Python when responds; result drives outcome.
+  // When delegate unavailable, fallback keeps compat; vector semantics owned in Python provider.
   router.post('/search', async (req, res) => {
     try {
       const { query, options } = req.body;
       if (!query || !options?.projectId) {
         return res.status(400).json({ error: 'query and options.projectId required' });
       }
+      const delegate = await tryDelegateToPythonRag("search", req.body).catch(
+        (): PythonRagDelegateResult => ({ delegated: false }),
+      );
+      if (delegate.delegated) {
+        const r = delegate.result;
+        if (isUnavailableResult(r)) {
+          return res.status(statusCodeForUnavailableResult(r)).json(r);
+        }
+        return res.json(r);
+      }
       const start = Date.now();
-      const results = await deps.retriever.search(query, options);
+      const results = await deps.retriever.search(query, options || {});
       const latencyMs = Date.now() - start;
-      recordRetrievalMetric(latencyMs, results.length);
       return res.json({
-        results,
-        totalCandidates: results.length,
+        results: results || [],
+        totalCandidates: Array.isArray(results) ? results.length : 0,
         latencyMs,
-        mode: options.mode ?? 'hybrid',
+        mode: options?.mode ?? 'hybrid',
       });
     } catch (err) {
       return res.status(500).json({ error: String(err) });
@@ -322,6 +439,9 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/admin/rag/purge
+  // Explicitly retained Node compatibility shell for this task.
+  // Reason: admin lifecycle purge not part of vector store provider (RAGVectorStoreProvider) takeover slice.
+  // Python has delete provider path; Node lifecycleManager retained until later slice.
   router.post('/admin/purge', async (req, res) => {
     try {
       const result = await deps.lifecycleManager.purge({
@@ -336,6 +456,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // GET /api/admin/rag/dlq
+  // Explicitly retained Node compatibility shell (DLQ admin not migrated in this vector boundary slice).
   router.get('/admin/dlq', async (req, res) => {
     const limit = Number(req.query.limit) || 100;
     const offset = Number(req.query.offset) || 0;
@@ -344,6 +465,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/admin/rag/dlq/:entryId/retry
+  // Explicitly retained Node compatibility shell (retryDeadLetter retained; Python delete covered in provider tests).
   router.post('/admin/dlq/:entryId/retry', async (req, res) => {
     try {
       const result = await deps.ingestionPipeline.retryDeadLetter(req.params.entryId);

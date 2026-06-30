@@ -1,13 +1,19 @@
-"""Deterministic Python contract boundary for A2A runtime.
+"""Python-owned A2A registry and session runtime + stream/cancel transport.
 
-The real CrewAI, LangGraph, Claude, external HTTP agent calls, registry
-mutation, and streaming transport remain Node-owned in this migration slice.
-This module only locks invoke, stream chunk, cancel, failure, and agent-list
-envelopes that a Python runtime must preserve later.
+Registry mutation (register/list/get_agent) and session persistence
+(create/read/update/list_active/terminate) are implemented here with file-backed
+stores. Stream chunks, cancel (idempotent), timeout, retry envelope, and
+malformed handling now Python-owned runtime. Node a2a-server/client/routes act
+only as thin proxies or explicit compatibility shells delegating to Python.
+Contract projection retained for compat; real transport uses side-effecting
+store funcs.
 """
 
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -283,6 +289,136 @@ class A2ARuntimeListAgentsResult(A2ARuntimeBaseResult):
     agents: List[A2AExposedAgentInfo]
 
 
+# Python-owned registry and session store (file-backed for cross-process calls from Node thin proxy).
+# This implements the required register/list/create/read/update/missing-agent behavior.
+_REGISTRY_STORE: Path = Path("slide-rule-python/tmp/a2a_registry.json")
+_SESSIONS_STORE: Path = Path("slide-rule-python/tmp/a2a_sessions.json")
+
+
+def _ensure_store_dir(p: Path) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _load_store(path: Path) -> Dict[str, Any]:
+    _ensure_store_dir(path)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_store(path: Path, data: Dict[str, Any]) -> None:
+    _ensure_store_dir(path)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def register_a2a_agent(agent: Dict[str, Any]) -> Dict[str, Any]:
+    """Register agent into Python-owned registry. Used for registry takeover."""
+    if not isinstance(agent, dict):
+        raise ValueError("agent must be object")
+    aid = str(agent.get("id") or "").strip()
+    if not aid:
+        raise ValueError("agent id required")
+    reg = _load_store(_REGISTRY_STORE)
+    entry = {
+        "id": aid,
+        "name": str(agent.get("name") or aid),
+        "capabilities": list(agent.get("capabilities") or []),
+        "description": str(agent.get("description") or ""),
+    }
+    reg[aid] = entry
+    _save_store(_REGISTRY_STORE, reg)
+    return entry
+
+
+def list_a2a_agents() -> List[Dict[str, Any]]:
+    """List from Python-owned registry (thin proxy target)."""
+    reg = _load_store(_REGISTRY_STORE)
+    return list(reg.values())
+
+
+def get_a2a_agent(agent_id: str) -> Optional[Dict[str, Any]]:
+    """Get single agent; enables Python-owned missing agent semantics."""
+    reg = _load_store(_REGISTRY_STORE)
+    return reg.get(str(agent_id))
+
+
+def create_a2a_session(envelope: Dict[str, Any], framework_type: str = "custom", started_at: Optional[int] = None) -> Dict[str, Any]:
+    """Create session in Python-owned store."""
+    if not isinstance(envelope, dict):
+        raise ValueError("envelope must be object")
+    sid = str(envelope.get("id") or "").strip()
+    if not sid:
+        raise ValueError("envelope id required for session")
+    ft = framework_type if framework_type in {"crewai", "langgraph", "claude", "custom"} else "custom"
+    sess: Dict[str, Any] = {
+        "sessionId": sid,
+        "requestEnvelope": envelope,
+        "status": "pending",
+        "frameworkType": ft,
+        "startedAt": int(started_at) if started_at is not None else 0,
+        "completedAt": None,
+        "response": None,
+        "streamChunks": [],
+    }
+    sessions = _load_store(_SESSIONS_STORE)
+    sessions[sid] = sess
+    _save_store(_SESSIONS_STORE, sessions)
+    return sess
+
+
+def get_a2a_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Read session from Python-owned store."""
+    sessions = _load_store(_SESSIONS_STORE)
+    return sessions.get(str(session_id))
+
+
+def update_a2a_session(session_id: str, **updates: Any) -> Optional[Dict[str, Any]]:
+    """Update session fields in Python-owned store (status/response/completedAt/streamChunks etc)."""
+    sessions = _load_store(_SESSIONS_STORE)
+    sid = str(session_id)
+    if sid not in sessions:
+        return None
+    sess = dict(sessions[sid])
+    for k, v in updates.items():
+        if k in ("status", "response", "completedAt", "streamChunks"):
+            sess[k] = v
+    sessions[sid] = sess
+    _save_store(_SESSIONS_STORE, sessions)
+    return sess
+
+
+def list_a2a_active_sessions() -> List[Dict[str, Any]]:
+    """List active sessions from Python-owned store."""
+    sessions = _load_store(_SESSIONS_STORE)
+    return [s for s in sessions.values() if s.get("status") in ("pending", "running")]
+
+
+def terminate_timed_out_a2a_sessions(default_timeout_ms: int = 60000, now: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Terminate timed out in Python store; returns affected."""
+    sessions = _load_store(_SESSIONS_STORE)
+    now_ms = now if now is not None else 0
+    timed: List[Dict[str, Any]] = []
+    for sid, sess in list(sessions.items()):
+        if sess.get("status") in ("pending", "running"):
+            started = int(sess.get("startedAt") or 0)
+            if now_ms - started > default_timeout_ms:
+                sess["status"] = "failed"
+                sess["completedAt"] = now_ms
+                sess["response"] = {
+                    "jsonrpc": "2.0",
+                    "id": sid,
+                    "error": {"code": -32000, "message": "Session timed out"},
+                }
+                sessions[sid] = sess
+                timed.append(sess)
+    if timed:
+        _save_store(_SESSIONS_STORE, sessions)
+    return timed
+
+
 A2ARuntimeResult = Union[
     A2ARuntimeInvokeResult,
     A2ARuntimeStreamChunkResult,
@@ -528,3 +664,423 @@ def _read_string_map(value: Any) -> Dict[str, str]:
 
 def _is_failure_payload(payload: Dict[str, Any]) -> bool:
     return payload.get("status") == "failed" or payload.get("error") is not None
+
+
+# --- Python-owned A2A stream/cancel transport runtime (for 105 takeover) ---
+# Real side-effecting functions using session store. Node is thin proxy/compat shell.
+# Implements: stream chunks, cancel (idempotent), timeout, retry envelope, malformed handling.
+
+def start_a2a_stream_session(envelope: Dict[str, Any], framework_type: str = "custom") -> Dict[str, Any]:
+    """Python-owned: start a stream session (running status, time, empty chunks)."""
+    if not isinstance(envelope, dict):
+        raise ValueError("envelope must be object")
+    sess = create_a2a_session(envelope, framework_type, started_at=int(time.time() * 1000))
+    sid = sess["sessionId"]
+    update_a2a_session(sid, status="running")
+    return {"ok": True, "status": "running", "session": get_a2a_session(sid)}
+
+
+def emit_a2a_stream_chunk(session_id: str, chunk: str, done: bool = False) -> Dict[str, Any]:
+    """Python-owned stream chunk transport semantics.
+    Appends validated chunk to session, updates status.
+    Malformed (non-str chunk) or missing session -> error result (no silent).
+    """
+    if not isinstance(chunk, str):
+        err = {"code": A2A_ERROR_FRAMEWORK, "message": "Malformed stream chunk: chunk must be string"}
+        return {"ok": False, "status": "failed", "error": err, "session": get_a2a_session(session_id)}
+    sess = get_a2a_session(session_id)
+    if not sess:
+        err = {"code": A2A_ERROR_FRAMEWORK, "message": "Session not found for stream chunk"}
+        return {"ok": False, "status": "failed", "error": err}
+    ch = {"jsonrpc": "2.0", "id": session_id, "chunk": chunk, "done": bool(done)}
+    chunks = list(sess.get("streamChunks", [])) + [ch]
+    new_status = "completed" if done else "running"
+    completed_at = int(time.time() * 1000) if done else sess.get("completedAt")
+    update_a2a_session(session_id, status=new_status, streamChunks=chunks, completedAt=completed_at)
+    updated = get_a2a_session(session_id)
+    return {
+        "ok": True,
+        "status": "completed" if done else "streaming",
+        "streamChunk": ch,
+        "session": updated,
+    }
+
+
+def cancel_a2a_transport(session_id: str) -> Dict[str, Any]:
+    """Python-owned cancel transport with idempotency.
+    If already cancelled, returns same without re-update. Updates session state visibly.
+    """
+    sess = get_a2a_session(session_id)
+    error = {"code": A2A_ERROR_CANCELLED, "message": "A2A session cancelled."}
+    resp = {"jsonrpc": "2.0", "id": session_id, "error": error}
+    now = int(time.time() * 1000)
+    if sess and sess.get("status") == "cancelled":
+        # idempotent: no side effect change
+        existing_resp = sess.get("response") or resp
+        return {
+            "ok": False,
+            "status": "cancelled",
+            "error": error,
+            "response": existing_resp,
+            "session": sess,
+        }
+    if sess:
+        update_a2a_session(
+            session_id,
+            status="cancelled",
+            completedAt=now,
+            response=resp,
+            streamChunks=sess.get("streamChunks", []),
+        )
+        updated = get_a2a_session(session_id)
+    else:
+        # create cancelled placeholder for visibility
+        updated = {
+            "sessionId": session_id,
+            "status": "cancelled",
+            "completedAt": now,
+            "response": resp,
+            "streamChunks": [],
+        }
+    return {
+        "ok": False,
+        "status": "cancelled",
+        "error": error,
+        "response": resp,
+        "session": updated,
+    }
+
+
+def check_a2a_stream_timeout(session_id: str, timeout_ms: int = 60000) -> Dict[str, Any]:
+    """Python-owned timeout integration for stream/cancel paths. Calls terminate."""
+    timed = terminate_timed_out_a2a_sessions(default_timeout_ms=timeout_ms)
+    for s in timed:
+        if str(s.get("sessionId")) == str(session_id):
+            return {"ok": False, "status": "failed", "error": (s.get("response") or {}).get("error")}
+    return {"ok": True, "status": "active"}
+
+
+def get_a2a_retry_envelope(session_id: str, attempt: int = 0) -> Dict[str, Any]:
+    """Python-owned retry envelope for stream/cancel transport."""
+    sess = get_a2a_session(session_id) or {}
+    delay = 100 * (attempt + 1)
+    return {
+        "ok": True,
+        "retry": {"sessionId": session_id, "attempt": attempt, "nextDelayMs": delay},
+        "session": sess,
+    }
+
+
+def handle_malformed_a2a_chunk(session_id: str, reason: str = "bad chunk") -> Dict[str, Any]:
+    """Explicit malformed chunk handling -> error envelope (visible)."""
+    err = {"code": A2A_ERROR_FRAMEWORK, "message": f"Malformed A2A chunk: {reason}"}
+    resp = {"jsonrpc": "2.0", "id": session_id, "error": err}
+    if session_id:
+        update_a2a_session(session_id, status="failed", response=resp, completedAt=int(time.time() * 1000))
+    return {"ok": False, "status": "failed", "error": err, "response": resp}
+
+
+# --- Python-owned external agent invoke provider (105 takeover) ---
+# Contract: missing endpoint, provider failure, success, permission metadata, no-key degraded mode.
+# Safe-failure always visible; Node a2a-client/routes become thin proxy / compat shell.
+# Real HTTP to external A2A endpoints + framework adaptation done here.
+
+
+def _adapt_request_for_external(ft: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Minimal framework adaptation mirrored for external invoke ownership in Python."""
+    ft = ft or "custom"
+    if ft == "crewai":
+        return {
+            "url": "",
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "agent_role": params.get("targetAgent"),
+                "task_description": params.get("task"),
+                "expected_output": "completion",
+                "context": params.get("context"),
+                "tools": params.get("capabilities", []),
+            },
+        }
+    if ft == "langgraph":
+        return {
+            "url": "",
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "input": {
+                    "task": params.get("task"),
+                    "context": params.get("context"),
+                    "capabilities": params.get("capabilities", []),
+                },
+                "config": {
+                    "configurable": {
+                        "agent_id": params.get("targetAgent"),
+                        "stream_mode": bool(params.get("streamMode")),
+                    }
+                },
+            },
+        }
+    if ft == "claude":
+        return {
+            "url": "",
+            "headers": {
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+            },
+            "body": {
+                "model": "claude-sonnet-4-20250514",
+                "system": params.get("context") or "You are a helpful assistant.",
+                "messages": [{"role": "user", "content": params.get("task")}],
+                "tools": [
+                    {"name": c, "description": c, "input_schema": {"type": "object", "properties": {}}}
+                    for c in (params.get("capabilities") or [])
+                ],
+                "max_tokens": 4096,
+                "stream": bool(params.get("streamMode")),
+            },
+        }
+    # custom: passthrough (Node previously errored on getAdapter for custom; now owned here as valid)
+    return {
+        "url": "",
+        "headers": {"Content-Type": "application/json"},
+        "body": {
+            "targetAgent": params.get("targetAgent"),
+            "task": params.get("task"),
+            "context": params.get("context"),
+            "capabilities": params.get("capabilities", []),
+        },
+    }
+
+
+def _adapt_response_for_external(ft: str, raw: Any) -> Dict[str, Any]:
+    """Adapt external provider raw response; attach permission metadata."""
+    output = ""
+    if isinstance(raw, dict):
+        if isinstance(raw.get("result"), str):
+            output = raw["result"]
+        elif isinstance(raw.get("output"), str):
+            output = raw["output"]
+        elif ft == "langgraph" and isinstance(raw.get("result"), dict):
+            ro = raw.get("result") or {}
+            output = ro.get("output") if isinstance(ro.get("output"), str) else ""
+        elif ft == "claude" and isinstance(raw.get("content"), list):
+            for block in raw.get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                    output = block["text"]
+                    break
+    meta = {"framework": ft or "custom", "permission": "granted" if ft else "limited"}
+    return {"output": output, "artifacts": [], "metadata": meta}
+
+
+def invoke_external_a2a_agent(
+    envelope: Dict[str, Any],
+    endpoint: Optional[str] = None,
+    auth: Optional[str] = None,
+    framework_type: str = "custom",
+) -> Dict[str, Any]:
+    """Python external agent invoke provider contract.
+
+    - missing endpoint: explicit error, no fetch
+    - no-key degraded mode: returns visible degraded result with permission metadata; no network call
+    - provider (network/adapt) failure: safe error response with data
+    - success: result with metadata
+    Always updates Python-owned session; failures visible (no silent Node success).
+    """
+    if not isinstance(envelope, dict):
+        envelope = {}
+    sid = str(envelope.get("id") or f"ext-{int(time.time()*1000)}")
+    params = envelope.get("params") or {}
+    ft = framework_type if framework_type in {"crewai", "langgraph", "claude", "custom"} else "custom"
+
+    # ensure session (Python owned)
+    try:
+        create_a2a_session(envelope, ft, started_at=int(time.time() * 1000))
+        update_a2a_session(sid, status="running")
+    except Exception:
+        pass
+
+    if not endpoint or not str(endpoint).strip():
+        err = {
+            "code": A2A_ERROR_FRAMEWORK,
+            "message": "Missing external agent endpoint",
+            "data": {"missing_endpoint": True},
+        }
+        resp = {"jsonrpc": "2.0", "id": sid, "error": err}
+        try:
+            update_a2a_session(sid, status="failed", completedAt=int(time.time() * 1000), response=resp)
+        except Exception:
+            pass
+        return {"ok": False, "response": resp, "session": get_a2a_session(sid) or {}}
+
+    no_key = auth is None or str(auth).strip() == ""
+    if no_key:
+        # no-key degraded mode: visible, limited permission metadata, no external call
+        result = {
+            "output": "[degraded] external agent invoke in no-key mode",
+            "artifacts": [],
+            "metadata": {
+                "degraded": True,
+                "mode": "no-key",
+                "permission": "limited",
+                "source": "python-external-provider",
+            },
+        }
+        resp = {"jsonrpc": "2.0", "id": sid, "result": result}
+        try:
+            update_a2a_session(sid, status="completed", completedAt=int(time.time() * 1000), response=resp)
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "degraded": True,
+            "response": resp,
+            "session": get_a2a_session(sid) or {},
+            "permissionMetadata": result["metadata"],
+        }
+
+    adapted = _adapt_request_for_external(ft, params)
+    url = str(endpoint) + (adapted.get("url") or "")
+    headers = dict(adapted.get("headers") or {"Content-Type": "application/json"})
+    if auth:
+        headers["Authorization"] = f"Bearer {auth}"
+    body = adapted.get("body")
+
+    try:
+        import urllib.request
+        import urllib.error
+        data_bytes = json.dumps(body).encode("utf-8") if body is not None else None
+        req = urllib.request.Request(url, data=data_bytes, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw_resp = json.loads(r.read().decode("utf-8", errors="replace"))
+        adapted_result = _adapt_response_for_external(ft, raw_resp)
+        # attach permission metadata on success
+        if isinstance(adapted_result.get("metadata"), dict):
+            adapted_result["metadata"]["permission"] = "granted"
+        resp = {"jsonrpc": "2.0", "id": sid, "result": adapted_result}
+        try:
+            update_a2a_session(sid, status="completed", completedAt=int(time.time() * 1000), response=resp)
+        except Exception:
+            pass
+        return {"ok": True, "response": resp, "session": get_a2a_session(sid) or {}}
+    except Exception as exc:
+        # provider failure -> safe visible error, no silent
+        msg = f"External provider failure: {str(exc)}"
+        err = {
+            "code": A2A_ERROR_FRAMEWORK,
+            "message": msg,
+            "data": {"provider_failure": True, "endpoint": endpoint, "error": str(exc)},
+        }
+        resp = {"jsonrpc": "2.0", "id": sid, "error": err}
+        try:
+            update_a2a_session(sid, status="failed", completedAt=int(time.time() * 1000), response=resp)
+        except Exception:
+            pass
+        return {"ok": False, "response": resp, "session": get_a2a_session(sid) or {}, "degraded": True}
+
+
+# --- Python-owned chat/report/analytics projection service (105 cutover) ---
+# These implement the required projections, report generation and analytics counters
+# as Python-owned runtime. Node routes are thin proxies only.
+# All failures/degraded states are returned visibly; no silent fallback semantics.
+# File-backed for cross-process Node thin-proxy calls.
+
+_CHAT_PROJ_STORE: Path = Path("slide-rule-python/tmp/a2a_chat_proj.json")
+_REPORT_PROJ_STORE: Path = Path("slide-rule-python/tmp/a2a_report_proj.json")
+_ANALYTICS_STORE: Path = Path("slide-rule-python/tmp/a2a_analytics.json")
+
+
+def _load_proj_store(path: Path) -> Dict[str, Any]:
+    _ensure_store_dir(path)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_proj_store(path: Path, data: Dict[str, Any]) -> None:
+    _ensure_store_dir(path)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def record_a2a_chat_projection(session_id: str, role: str, content: str) -> Dict[str, Any]:
+    """Python-owned A2A chat projection: append message to chat history for session."""
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("session_id must be non-empty string")
+    role = (role or "user").strip() or "user"
+    content = str(content or "")
+    store = _load_proj_store(_CHAT_PROJ_STORE)
+    if session_id not in store:
+        store[session_id] = {"sessionId": session_id, "messages": []}
+    msg = {"role": role, "content": content, "ts": int(time.time() * 1000)}
+    store[session_id]["messages"].append(msg)
+    _save_proj_store(_CHAT_PROJ_STORE, store)
+    return {"ok": True, "sessionId": session_id, "message": msg, "count": len(store[session_id]["messages"])}
+
+
+def generate_a2a_report(session_id: str, kind: str = "summary") -> Dict[str, Any]:
+    """Python-owned A2A report generation projection.
+    Pulls chat proj + session, produces deterministic report output.
+    """
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("session_id required")
+    kind = (kind or "summary").lower()
+    chats = _load_proj_store(_CHAT_PROJ_STORE).get(session_id, {"messages": []})
+    sess = get_a2a_session(session_id) or {}
+    messages = chats.get("messages", [])
+    if kind == "full":
+        output = "FULL REPORT for " + session_id + "\nmsgs:" + str(len(messages))
+    else:
+        output = "SUMMARY REPORT for " + session_id + ": " + str(len(messages)) + " messages; status=" + str(sess.get("status"))
+    report = {
+        "reportId": session_id + "-" + kind,
+        "sessionId": session_id,
+        "kind": kind,
+        "output": output,
+        "generatedAt": int(time.time() * 1000),
+        "chatMessageCount": len(messages),
+        "sessionStatus": sess.get("status"),
+    }
+    reports = _load_proj_store(_REPORT_PROJ_STORE)
+    reports[report["reportId"]] = report
+    _save_proj_store(_REPORT_PROJ_STORE, reports)
+    return {"ok": True, "report": report}
+
+
+def increment_a2a_analytics_counter(name: str, delta: int = 1) -> Dict[str, Any]:
+    """Python-owned analytics counter projection. Visible increments only."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("counter name required")
+    delta = int(delta) if isinstance(delta, (int, float)) else 1
+    store = _load_proj_store(_ANALYTICS_STORE)
+    cur = int(store.get(name, 0))
+    new_val = cur + delta
+    store[name] = new_val
+    _save_proj_store(_ANALYTICS_STORE, store)
+    return {"ok": True, "counter": name, "value": new_val, "delta": delta}
+
+
+def get_a2a_analytics_snapshot() -> Dict[str, Any]:
+    """Python-owned read of analytics counters."""
+    store = _load_proj_store(_ANALYTICS_STORE)
+    return {"ok": True, "counters": store, "source": "python-a2a-analytics"}
+
+
+def project_a2a_chat_report_analytics(op: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Unified Python projection entry for chat/report/analytics.
+    Used by Node thin proxy adapters. All paths return explicit ok/degraded.
+    """
+    if not isinstance(payload, dict):
+        payload = {}
+    op = (op or "").strip()
+    sid = str(payload.get("sessionId") or payload.get("id") or "")
+    if op == "chat":
+        return record_a2a_chat_projection(sid or "anon", payload.get("role", "user"), payload.get("content", ""))
+    if op == "report":
+        return generate_a2a_report(sid or "anon", payload.get("kind", "summary"))
+    if op == "analytics_inc":
+        return increment_a2a_analytics_counter(payload.get("name", "default"), payload.get("delta", 1))
+    if op == "analytics_get":
+        return get_a2a_analytics_snapshot()
+    # fallback visible error for unknown
+    return {"ok": False, "error": {"code": -32000, "message": "unknown a2a chat/report/analytics op: " + op}, "degraded": True}

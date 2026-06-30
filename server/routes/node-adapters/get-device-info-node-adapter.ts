@@ -10,6 +10,8 @@ export interface GetDeviceInfoNodeAdapterDeps {
   processPlatform?: string;
   processArch?: string;
   processVersion?: string;
+  // Python thin proxy wiring (web-aigc longtail cutover 105): when provided, Node is thin proxy and does not own semantics
+  executePythonRuntime?: (input: GetDeviceInfoNodeInput) => Promise<any>;
 }
 
 function normalizeString(value: unknown): string | undefined {
@@ -129,6 +131,26 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function buildPythonDevicePrivacySummary(
+  value: unknown,
+): GetDeviceInfoNodeExecutionResult["output"]["privacy"] {
+  const record = normalizeObject(value);
+  const redactedFields = Array.isArray(record.redactedFields)
+    ? record.redactedFields.filter((field): field is string => typeof field === "string")
+    : [];
+  const notes = Array.isArray(record.notes)
+    ? record.notes.filter((note): note is string => typeof note === "string")
+    : ["Device info was returned by the Python facade."];
+
+  return {
+    collectionMode: "summary_only",
+    rawUserAgentStored: normalizeBoolean(record.rawUserAgentStored, false),
+    redactedFields,
+    retention: normalizeRetention(record.retention),
+    notes,
+  };
+}
+
 function buildRuntimeSummary(
   deps: GetDeviceInfoNodeAdapterDeps,
   privacy: Record<string, unknown>,
@@ -188,6 +210,40 @@ export function isGetDeviceInfoNodeType(
   return value === "get_device_info";
 }
 
+// Thin proxy map for python-owned device info facade (cutover 105).
+// When py reports failure (ok:false), surface as ok:false so callers can distinguish python path failure (per review: no hiding py failure as ok:true degraded).
+export function mapPythonDeviceInfoRuntimeResponse(py: any, input: GetDeviceInfoNodeInput = {}): GetDeviceInfoNodeExecutionResult {
+  if (py && py.ok === false) {
+    return {
+      ok: false,
+      nodeType: "get_device_info",
+      output: {
+        status: "error",
+        runtime: py?.runtime ?? { runtime: "python" },
+        error: py?.error || { code: "py_bridge", message: "python device facade failed" },
+        privacy: buildPythonDevicePrivacySummary(py?.privacy),
+        context: normalizeObject(input.context),
+        warnings: Array.isArray(py?.warnings) ? py.warnings : ["python path failed"],
+        ...(py?.metadata ? { metadata: py.metadata } : {}),
+      },
+    };
+  }
+  const status = py?.status === "completed" ? "completed" : "degraded";
+  return {
+    ok: true,
+    nodeType: "get_device_info",
+    output: {
+      status,
+      runtime: py?.runtime ?? { runtime: "python" },
+      ...(py?.client ? { client: py.client } : {}),
+      privacy: buildPythonDevicePrivacySummary(py?.privacy),
+      context: normalizeObject(input.context),
+      warnings: Array.isArray(py?.warnings) ? py.warnings : ["proxied via python facade"],
+      ...(py?.metadata ? { metadata: py.metadata } : {}),
+    },
+  };
+}
+
 export async function executeGetDeviceInfoNode(
   request: GetDeviceInfoNodeExecutionRequest,
   deps: GetDeviceInfoNodeAdapterDeps = {},
@@ -197,6 +253,29 @@ export async function executeGetDeviceInfoNode(
   }
 
   const input = request.input ?? {};
+  // Python-first: Node is thin proxy when executePythonRuntime provided (long-tail cutover 105)
+  if (deps.executePythonRuntime) {
+    try {
+      const pyResponse = await deps.executePythonRuntime(input);
+      return mapPythonDeviceInfoRuntimeResponse(pyResponse, input);
+    } catch (error: any) {
+      // explicit failure (ok:false) so python bridge error is not hidden behind Node ok:true degraded (review finding 2)
+      return {
+        ok: false,
+        nodeType: "get_device_info",
+        output: {
+          status: "error",
+          runtime: { runtime: "python-failed" },
+          error: { code: "py_bridge", message: String(error?.message || error) },
+          privacy: buildPythonDevicePrivacySummary(undefined),
+          warnings: ["python device facade failed"],
+          context: normalizeObject(input.context),
+        },
+      };
+    }
+  }
+
+  // Retained Node compatibility shell (explicit boundary; python not wired by caller)
   const privacy = normalizeObject(input.privacy);
   const warnings: string[] = [];
   const client = buildClientSummary(input, warnings);

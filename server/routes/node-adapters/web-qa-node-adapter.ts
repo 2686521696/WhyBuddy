@@ -46,6 +46,8 @@ export interface WebQaNodeAdapterDeps
       options?: Partial<UnifiedQueryOptions>,
     ): Promise<UnifiedKnowledgeResult>;
   };
+  // 105 longtail cutover: python web-qa facade; Node is thin proxy when this present
+  executePythonRuntime?: (input: WebQaNodeInput) => Promise<any>;
 }
 
 interface PreparedPageContext {
@@ -608,6 +610,46 @@ export async function executeWebQaNode(
   }
 
   const input = request.input ?? {};
+  // python thin proxy priority for web-qa longtail cutover 105
+  if (deps.executePythonRuntime) {
+    try {
+      const py = await deps.executePythonRuntime(input);
+      return {
+        ok: py?.ok !== false,
+        nodeType: "web_qa",
+        output: {
+          status: py?.status || "completed",
+          strategy: py?.strategy || "document_search",
+          answer: py?.answer || "python web qa proxy",
+          citations: py?.citations || [],
+          sourceLinks: py?.sourceLinks || [],
+          evidenceList: py?.evidenceList || [],
+          fallbackUsed: !!py?.fallbackUsed,
+          fallbackReason: py?.fallbackReason,
+          metadata: py?.metadata || { python: true },
+          observability: { eventKey: "external.web_qa", nodeType: "web_qa", strategy: "python" },
+        },
+      } as any;
+    } catch (error: any) {
+      return {
+        ok: true,
+        nodeType: "web_qa",
+        output: {
+          status: "degraded",
+          strategy: "fallback",
+          answer: "",
+          citations: [],
+          sourceLinks: [],
+          evidenceList: [],
+          fallbackUsed: true,
+          fallbackReason: `python web-qa failed visibly: ${error?.message || error}`,
+          metadata: { providerClosure: { ownership: "python", status: "error" } },
+          observability: {},
+        },
+      } as any;
+    }
+  }
+
   const inputContext = normalizeObject(input.context);
   // consume python provider closure summary for web-qa (explicit config_missing until full python cutover)
   const providerClosure = normalizeObject(inputContext?.providerClosure);

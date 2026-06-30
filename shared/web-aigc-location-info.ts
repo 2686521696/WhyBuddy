@@ -78,6 +78,11 @@ export interface WebAigcLocationPrivacySummary {
 }
 
 export interface WebAigcLocationInfoPayload {
+  status?: string;
+  source?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: string | number;
   coarseLocation?: {
     countryCode?: string;
     region?: string;
@@ -94,11 +99,12 @@ export interface GetLocationInfoNodeExecutionResult {
   ok: true;
   nodeType: GetLocationInfoNodeType;
   output: {
-    status: "completed";
+    status: "completed" | "degraded";
     location: WebAigcLocationInfoPayload;
     authorization: WebAigcLocationAuthorizationSummary;
     privacy: WebAigcLocationPrivacySummary;
     context: Record<string, unknown>;
     warnings: string[];
+    metadata?: Record<string, unknown>;
   };
 }

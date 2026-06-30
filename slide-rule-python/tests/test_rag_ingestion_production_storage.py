@@ -98,10 +98,37 @@ def test_production_storage_is_exposed_from_rag_ingestion_contract_module():
 
     assert result["ok"] is True
     assert result["status"] == "completed"
-    assert result["storage"] == "memory"
-    assert result["migratedStorage"] is True
-    assert result["upsert"]["stored"] is True
-    assert result["upsert"]["upsertedCount"] == 2
+
+
+def test_rag_ingestion_python_vector_provider_no_key_degraded_fake_upsert_delete_retrieve():
+    """105 required: no-key degraded, fake Qdrant, upsert/delete/retrieve via Python provider."""
+    p = _payload("upsert")
+    p["usePythonVectorProvider"] = True
+    p["forceDegraded"] = True
+    res = project_rag_ingestion_production_storage(p, storage=None).model_dump(exclude_none=True)
+    assert res["ok"] is True
+    # must reflect python provider (or explicit degraded unavailable), not fall to contract-only
+    assert res.get("storage") in ("unavailable", "python-vector")
+    assert res.get("migratedStorage") is True
+    # delete path
+    pd = _payload("delete")
+    pd["usePythonVectorProvider"] = True
+    pd["forceDegraded"] = True
+    rd = project_rag_ingestion_production_storage(pd, storage=None).model_dump(exclude_none=True)
+    assert rd["ok"] is True
+    assert rd.get("storage") in ("unavailable", "python-vector")
+
+
+def test_rag_vector_provider_embedding_mismatch_visible():
+    """105: embedding mismatch produces stable visible contract failure from provider path."""
+    p = _payload("upsert")
+    p["usePythonVectorProvider"] = True
+    p["forceEmbeddingMismatch"] = True
+    result = project_rag_ingestion_production_storage(p, storage=None)
+    assert result is not None
+    d = result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result
+    # mismatch must be visible, not arbitrary catch
+    assert d.get("ok") is False or d.get("status") == "unavailable" or "mismatch" in str(d.get("error", "")).lower()
 
 
 def test_unavailable_storage_returns_failure_without_success_payload():

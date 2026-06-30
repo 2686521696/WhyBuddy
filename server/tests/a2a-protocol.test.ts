@@ -471,6 +471,53 @@ describe("A2A Protocol Property Tests", () => {
     );
   });
 
+  // 105: Node is thin proxy for external invoke; business in Python provider.
+  // Tests prove delegation to callPythonA2AExternalInvoke (Python contract); Node owns none of
+  // adapter/fetch/response/permission/no-key/missing/provider-failure semantics.
+  // Concurrent limit and stream retained in Node (explicit compat boundary).
+  it("A2AClient external invoke missing-endpoint delegates to python provider (exact contract error)", async () => {
+    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const r = await client.invoke(
+      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      "custom",
+      "", // missing -> py provider
+      "k",
+    );
+    expect(r.error).toBeDefined();
+    expect(r.error!.message).toBe("Missing external agent endpoint");
+    expect(r.error!.data?.missing_endpoint).toBe(true);
+  });
+
+  it("A2AClient external invoke provider-failure delegates to python (visible error from contract)", async () => {
+    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const r = await client.invoke(
+      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      "custom",
+      "http://127.0.0.1:1/bad", // will cause py urllib failure after endpoint check
+      "k",
+    );
+    expect(r.error).toBeDefined();
+    const msg = r.error!.message || "";
+    expect(msg.includes("External provider failure") || msg.includes("python-external-invoke")).toBe(true);
+  });
+
+  it("A2AClient external invoke no-key degraded delegates to python (permissionMetadata visible)", async () => {
+    const client = new A2AClient({ maxConcurrentSessions: 100, defaultTimeoutMs: 1000 });
+    const r = await client.invoke(
+      { targetAgent: "ext", task: "do", context: "c", capabilities: [], streamMode: false },
+      "custom",
+      "http://example.invalid/a2a",
+      "", // empty auth -> no-key degraded in py provider
+    );
+    // for no-key, py returns result (not error) + degraded
+    expect(r.result).toBeDefined();
+    const data: any = (r as any).data || {};
+    const pyExt = data.pythonExternal || {};
+    expect(pyExt.degraded).toBe(true);
+    expect(pyExt.permissionMetadata?.mode).toBe("no-key");
+    expect(pyExt.permissionMetadata?.permission).toBe("limited");
+  });
+
   // ─── A2A Server Property Tests ───────────────────────────────────────
 
   const mockExecutor = {

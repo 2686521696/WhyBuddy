@@ -310,3 +310,146 @@ def _build_qdrant_filter(filter: Mapping[str, Any]) -> dict[str, Any]:
         else:
             must.append({"key": key, "match": {"value": value}})
     return {"must": must} if must else {}
+
+
+class RAGVectorStoreProvider:
+    """Python-owned RAG vector store provider abstraction with Qdrant-shaped contract.
+
+    This is the production boundary for ingestion vector upsert/delete/retrieval.
+    Node routes act as thin proxies; real semantics live here.
+
+    Supports:
+    - no-key degraded (api_key empty -> still operable but marked degraded)
+    - fake Qdrant via injected transport for tests
+    - upsert, delete, retrieve (search)
+    - embedding dimension mismatch detection on upsert
+    """
+
+    def __init__(
+        self,
+        *,
+        client: QdrantVectorClient | None = None,
+        config: VectorConfig | None = None,
+        transport: Transport | None = None,
+        force_degraded: bool = False,
+    ) -> None:
+        self._degraded = force_degraded
+        if client is not None:
+            self._client = client
+            self._config = client.config
+        else:
+            resolved = config or get_vector_config()
+            self._config = resolved
+            if not resolved or force_degraded:
+                self._degraded = True
+            self._client = QdrantVectorClient(resolved, transport=transport)
+
+    def is_degraded(self) -> bool:
+        return self._degraded or not bool(self._config.api_key)
+
+    def get_config(self) -> VectorConfig:
+        return self._config
+
+    def upsert(self, records: Sequence[Mapping[str, Any]], collection: str | None = None) -> dict[str, Any]:
+        if not records:
+            return {"attempted": True, "stored": False, "upsertedCount": 0, "recordIds": []}
+        dim = self._config.dimension
+        for rec in records:
+            vec = rec.get("vector") or []
+            if len(vec) != dim:
+                raise VectorClientUnavailable(
+                    f"embedding mismatch: vector dim {len(vec)} != expected {dim}"
+                )
+        try:
+            self._client.upsert(records, collection)
+            ids = [str(r.get("id")) for r in records]
+            return {
+                "collection": collection or self._config.collection,
+                "attempted": True,
+                "stored": True,
+                "upsertedCount": len(records),
+                "recordIds": ids,
+            }
+        except (VectorClientTimeout, VectorClientUnavailable) as exc:
+            if self.is_degraded():
+                return {
+                    "collection": collection or self._config.collection,
+                    "attempted": True,
+                    "stored": False,
+                    "upsertedCount": 0,
+                    "recordIds": [],
+                    "degraded": True,
+                    "error": str(exc),
+                }
+            raise
+
+    def delete(self, ids: Sequence[str], collection: str | None = None) -> dict[str, Any]:
+        if not ids:
+            return {"attempted": True, "deleted": False, "deletedCount": 0, "targetIds": []}
+        try:
+            self._client.delete(ids, collection)
+            return {
+                "collection": collection or self._config.collection,
+                "attempted": True,
+                "deleted": True,
+                "deletedCount": len(ids),
+                "targetIds": [str(i) for i in ids],
+            }
+        except (VectorClientTimeout, VectorClientUnavailable) as exc:
+            if self.is_degraded():
+                return {
+                    "collection": collection or self._config.collection,
+                    "attempted": True,
+                    "deleted": False,
+                    "deletedCount": 0,
+                    "targetIds": [str(i) for i in ids],
+                    "degraded": True,
+                    "error": str(exc),
+                }
+            raise
+
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 10,
+        min_score: float | None = None,
+        filter: Mapping[str, Any] | None = None,
+        collection: str | None = None,
+    ) -> list[VectorSearchHit]:
+        try:
+            return self._client.search(
+                query_vector, top_k=top_k, min_score=min_score, filter=filter, collection=collection
+            )
+        except (VectorClientTimeout, VectorClientUnavailable) as exc:
+            if self.is_degraded():
+                return []
+            raise
+
+    def health(self) -> dict[str, Any]:
+        base = {"backend": "qdrant", "degraded": self.is_degraded()}
+        try:
+            h = self._client.health_check()
+            return {**base, **h}
+        except Exception:  # noqa: BLE001
+            return {**base, "connected": False}
+
+
+def create_rag_vector_provider(
+    *,
+    transport: Transport | None = None,
+    force_degraded: bool = False,
+) -> RAGVectorStoreProvider:
+    """Factory for Python RAG vector provider (Qdrant contract).
+
+    - transport injected for fake Qdrant in tests
+    - force_degraded or no api_key yields explicit degraded mode (visible failures)
+    """
+    try:
+        store_cfg = get_vector_store_config()
+        cfg = get_vector_config()
+        if force_degraded or not store_cfg.enabled or store_cfg.runtime == "disabled":
+            return RAGVectorStoreProvider(force_degraded=True)
+        return RAGVectorStoreProvider(config=cfg, transport=transport)
+    except Exception:  # noqa: BLE001
+        return RAGVectorStoreProvider(force_degraded=True)

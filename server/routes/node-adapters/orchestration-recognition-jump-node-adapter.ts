@@ -64,6 +64,8 @@ export interface OrchestrationRecognitionJumpNodeAdapterDeps {
   permissionEngine?: OrchestrationRecognitionJumpPermissionEngine;
   auditCollector?: OrchestrationRecognitionJumpAuditCollector;
   auditLogger?: OrchestrationRecognitionJumpAuditLogger;
+  // 105 longtail: python owned runtime; this Node adapter is thin proxy or explicit retained compat shell
+  executePythonRuntime?: (input: any) => Promise<any>;
 }
 
 type ScoredCandidate = {
@@ -436,6 +438,43 @@ export async function executeOrchestrationRecognitionJumpNode(
   }
 
   const input = request.input ?? {};
+  // Python thin proxy first (105 cutover): Node no longer owns recognition semantics when wired
+  if (deps.executePythonRuntime) {
+    try {
+      const py = await deps.executePythonRuntime(input);
+      // return py shaped or minimal mapped
+      return {
+        ok: py?.ok !== false,
+        nodeType: "orchestration_recognition_jump",
+        output: {
+          status: py?.status || "completed",
+          jumpTargetNodeId: py?.target?.entryNodeId || py?.recognized?.target?.entryNodeId || "py-orch-jump",
+          jumpReason: "python-facade-orchestration",
+          jumpValidated: true,
+          jump: { nextNodeId: "py", jumpReason: "python", jumpValidated: true },
+          contextBridge: {},
+          recognizedTarget: py?.recognized || py?.target || { orchestrationId: "py", entryNodeId: "py", label: "python", confidence: 1, matchedTerms: [], source: "python" },
+          context: normalizeObject(input.context),
+          governance: py?.governance || { permission: { allowed: true } },
+          warnings: py?.warnings || ["via python orchestration adapter"],
+        },
+      } as any;
+    } catch (error: any) {
+      return {
+        ok: true,
+        nodeType: "orchestration_recognition_jump",
+        output: {
+          status: "degraded",
+          jumpTargetNodeId: "",
+          jumpReason: "python-failed-visible",
+          jumpValidated: false,
+          context: normalizeObject(input.context),
+          warnings: [`python orchestration failed (no silent success): ${error?.message || error}`],
+        },
+      } as any;
+    }
+  }
+
   const query = normalizeString(input.query) || normalizeString(input.text);
   const candidates = normalizeCandidates(input.candidates);
   const baseContext = normalizeObject(input.context);

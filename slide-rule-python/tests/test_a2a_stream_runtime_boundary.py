@@ -14,6 +14,13 @@ from services.a2a_runtime import (  # noqa: E402
     A2A_ERROR_CANCELLED,
     A2A_ERROR_FRAMEWORK,
     project_a2a_runtime_contract,
+    start_a2a_stream_session,
+    emit_a2a_stream_chunk,
+    cancel_a2a_transport,
+    check_a2a_stream_timeout,
+    get_a2a_retry_envelope,
+    handle_malformed_a2a_chunk,
+    get_a2a_session,
 )
 
 
@@ -155,3 +162,75 @@ def test_cancelled_stream_boundary_uses_cancel_error_and_never_completes():
     assert result["session"]["requestEnvelope"]["id"] == "a2a-stream-boundary-1"
     assert result["session"]["status"] == "cancelled"
     assert result["session"]["response"] == result["response"]
+
+
+# --- 105 transport takeover tests: exercise Python-owned stream chunks, cancel, timeout, malformed ---
+# These lock ordering, idempotency, timeout, malformed directly on runtime funcs (Node is thin proxy).
+import time as _time
+
+
+def _mk_stream_envelope(sid: str) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "method": "a2a.stream",
+        "id": sid,
+        "params": {
+            "targetAgent": "transport-105-agent",
+            "task": "stream test",
+            "context": "",
+            "capabilities": [],
+            "streamMode": True,
+        },
+        "auth": None,
+    }
+
+
+def test_emit_stream_chunks_ordering_and_done_status():
+    sid = f"stream-order-105-{_time.time_ns()}"
+    start_a2a_stream_session(_mk_stream_envelope(sid))
+    r1 = emit_a2a_stream_chunk(sid, "first")
+    r2 = emit_a2a_stream_chunk(sid, "second")
+    r3 = emit_a2a_stream_chunk(sid, "", done=True)
+    assert r1["ok"] is True and r1["status"] == "streaming"
+    assert r2["ok"] is True and r2["status"] == "streaming"
+    assert r3["ok"] is True and r3["status"] == "completed"
+    sess = get_a2a_session(sid)
+    assert sess is not None
+    assert len(sess.get("streamChunks", [])) == 3
+    assert sess["streamChunks"][0]["chunk"] == "first"
+    assert sess["streamChunks"][1]["chunk"] == "second"
+    assert sess["streamChunks"][2]["done"] is True
+    assert sess["status"] == "completed"
+
+
+def test_cancel_idempotency_no_reupdate():
+    sid = f"cancel-idem-105-{_time.time_ns()}"
+    start_a2a_stream_session(_mk_stream_envelope(sid))
+    c1 = cancel_a2a_transport(sid)
+    t1 = (c1.get("session") or {}).get("completedAt")
+    c2 = cancel_a2a_transport(sid)
+    assert c1["status"] == "cancelled" and c2["status"] == "cancelled"
+    t2 = (c2.get("session") or {}).get("completedAt")
+    assert t2 == t1  # idempotent: no side-effect re-update
+    sess = get_a2a_session(sid)
+    assert sess["status"] == "cancelled"
+
+
+def test_timeout_check_and_malformed_chunk():
+    sid = f"timeout-mal-105-{_time.time_ns()}"
+    start_a2a_stream_session(_mk_stream_envelope(sid))
+    # timeout on active returns active (or may timeout if artificial now)
+    to = check_a2a_stream_timeout(sid, 60000)
+    assert "ok" in to and to["status"] in ("active", "failed")
+    # malformed non-str chunk
+    bad = emit_a2a_stream_chunk(sid, 12345)  # type: ignore[arg-type]
+    assert bad["ok"] is False
+    assert "Malformed stream chunk" in (bad.get("error") or {}).get("message", "")
+    # explicit malformed handler
+    m = handle_malformed_a2a_chunk(sid, "test malformed")
+    assert m["ok"] is False and m["status"] == "failed"
+    sess = get_a2a_session(sid)
+    assert sess is not None and sess.get("status") == "failed"
+    # retry envelope
+    ret = get_a2a_retry_envelope(sid, 2)
+    assert ret["ok"] is True and ret["retry"]["attempt"] == 2

@@ -50,6 +50,8 @@ export interface OpenReportNodeAdapterDeps {
     replayId: string,
   ) => Promise<{ missionId: string; eventCount: number } | null>;
   permissionEngine?: OpenReportPermissionEngine;
+  // 105 cutover: python open runtime owner; Node thin proxy when executePythonRuntime present
+  executePythonRuntime?: (input: OpenReportNodeInput) => Promise<any>;
 }
 
 export interface OpenReportNodeExecutionResult {
@@ -293,6 +295,42 @@ export async function executeOpenReportNode(
   }
 
   const input = request.input ?? {};
+  // prefer python owned open (page/report) per 105 longtail
+  if (deps.executePythonRuntime) {
+    try {
+      const py = await deps.executePythonRuntime(input);
+      return {
+        ok: py?.ok !== false,
+        nodeType: "open_report",
+        output: {
+          status: py?.status || "completed",
+          reportType: py?.kind || input.reportType || "final_report",
+          title: py?.title || "python-report",
+          mode: py?.mode || "view",
+          resource: py?.resource || "py-report",
+          target: py?.target,
+          context: py?.context || {},
+          governance: py?.governance || {},
+        },
+      } as any;
+    } catch (error: any) {
+      return {
+        ok: true,
+        nodeType: "open_report",
+        output: {
+          status: "degraded",
+          reportType: input.reportType || "final_report",
+          title: "py-failed",
+          mode: "view",
+          resource: "",
+          context: {},
+          governance: {},
+          error: `python open-report visible failure: ${error?.message || error}`,
+        },
+      } as any;
+    }
+  }
+
   const reportType = input.reportType;
   if (
     reportType !== "final_report" &&

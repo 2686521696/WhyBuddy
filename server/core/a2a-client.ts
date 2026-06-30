@@ -7,6 +7,120 @@ import type {
 } from "../../shared/a2a-protocol";
 import { createEnvelope, A2A_ERROR_CODES } from "../../shared/a2a-protocol";
 import { getAdapter } from "./a2a-adapters";
+import { execSync } from "child_process";
+import fs from "fs";
+import path from "path";
+
+/**
+ * Explicit compatibility shell: session state moved to Python-owned store.
+ * All create/read/update/get/list/terminate delegate to a2a_runtime.py .
+ * The in-memory Map is removed; Node no longer owns session semantics.
+ * Uses robust venv+system python candidates + temp .py runner (matches registry).
+ */
+function callPythonA2ASessionStore(op: "create" | "get" | "update" | "list_active" | "terminate", payload: any): any {
+  const isWin = process.platform === "win32";
+  const venvExe = isWin
+    ? "slide-rule-python/.venv/Scripts/python.exe"
+    : "slide-rule-python/.venv/bin/python";
+  const candidates = [venvExe, isWin ? "python" : "python3", "python"];
+  const tmpDir = "slide-rule-python/tmp";
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpPy = path.join(tmpDir, `a2a_sess_${op}_${Date.now()}_${Math.random().toString(36).slice(2)}.py`);
+  const pySrc = [
+    "import sys, json",
+    "sys.path.insert(0, 'slide-rule-python')",
+    "from services.a2a_runtime import (",
+    "  create_a2a_session, get_a2a_session, update_a2a_session,",
+    "  list_a2a_active_sessions, terminate_timed_out_a2a_sessions",
+    ")",
+    `op = ${JSON.stringify(op)}`,
+    `payload_json = ${JSON.stringify(JSON.stringify(payload))}`,
+    "p = json.loads(payload_json)",
+    "if op == 'create':",
+    "  res = create_a2a_session(p.get('envelope'), p.get('frameworkType'), p.get('startedAt'))",
+    "elif op == 'get':",
+    "  res = get_a2a_session(p.get('sessionId') or p)",
+    "elif op == 'update':",
+    "  res = update_a2a_session(p.get('sessionId'), **(p.get('updates') or {}))",
+    "elif op == 'list_active':",
+    "  res = list_a2a_active_sessions()",
+    "elif op == 'terminate':",
+    "  res = terminate_timed_out_a2a_sessions(p.get('timeoutMs') or 60000, p.get('now'))",
+    "else:",
+    "  res = []",
+    "print(json.dumps(res))",
+  ].join("\n");
+  fs.writeFileSync(tmpPy, pySrc, "utf8");
+  let lastErr: any;
+  let outStr = "";
+  for (const pythonExe of candidates) {
+    try {
+      outStr = execSync(`"${pythonExe}" "${tmpPy}"`, {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      break;
+    } catch (e: any) {
+      lastErr = e;
+      continue;
+    }
+  }
+  try { fs.unlinkSync(tmpPy); } catch {}
+  if (outStr) {
+    try { return JSON.parse(outStr || "null"); } catch { /* fall to err */ }
+  }
+  throw new Error(`python-a2a-session ${op} failed: ${lastErr?.message || lastErr || "no output"}`);
+}
+
+/** Thin proxy call to Python-owned external agent invoke provider.
+ * Delegates adapter selection, URL/build, fetch, provider response parse + safe failure to Python.
+ * Node no longer owns external invocation boundary or semantics.
+ * Degraded states (missing endpoint, provider fail, no-key) are returned visibly.
+ */
+function callPythonA2AExternalInvoke(payload: any): any {
+  const isWin = process.platform === "win32";
+  const venvExe = isWin
+    ? "slide-rule-python/.venv/Scripts/python.exe"
+    : "slide-rule-python/.venv/bin/python";
+  const candidates = [venvExe, isWin ? "python" : "python3", "python"];
+  const tmpDir = "slide-rule-python/tmp";
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpPy = path.join(tmpDir, `a2a_ext_invoke_${Date.now()}_${Math.random().toString(36).slice(2)}.py`);
+  const pySrc = [
+    "import sys, json",
+    "sys.path.insert(0, 'slide-rule-python')",
+    "from services.a2a_runtime import invoke_external_a2a_agent",
+    `payload_json = ${JSON.stringify(JSON.stringify(payload))}`,
+    "p = json.loads(payload_json)",
+    "res = invoke_external_a2a_agent(",
+    "  p.get('envelope') or p,",
+    "  p.get('endpoint'),",
+    "  p.get('auth'),",
+    "  p.get('frameworkType', 'custom')",
+    ")",
+    "print(json.dumps(res))",
+  ].join("\n");
+  fs.writeFileSync(tmpPy, pySrc, "utf8");
+  let lastErr: any;
+  let outStr = "";
+  for (const pythonExe of candidates) {
+    try {
+      outStr = execSync(`"${pythonExe}" "${tmpPy}"`, {
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      break;
+    } catch (e: any) {
+      lastErr = e;
+      continue;
+    }
+  }
+  try { fs.unlinkSync(tmpPy); } catch {}
+  if (outStr) {
+    try { return JSON.parse(outStr || "null"); } catch { /* fall */ }
+  }
+  throw new Error(`python-a2a-external-invoke failed: ${lastErr?.message || lastErr || "no output"}`);
+}
 
 export interface A2AClientOptions {
   maxConcurrentSessions?: number; // default 10
@@ -14,9 +128,11 @@ export interface A2AClientOptions {
 }
 
 export class A2AClient {
-  private sessions: Map<string, A2ASession> = new Map();
+  // sessions state removed: Python-owned via callPythonA2ASessionStore (thin proxy / compat shell)
   private maxConcurrentSessions: number;
   private defaultTimeoutMs: number;
+  // pythonSessionError recorded on py store failure so degraded state is visible (no silent Node success)
+  private pythonSessionError: string | null = null;
 
   constructor(options: A2AClientOptions = {}) {
     this.maxConcurrentSessions = options.maxConcurrentSessions ?? 10;
@@ -29,7 +145,7 @@ export class A2AClient {
     endpoint: string,
     auth?: string,
   ): Promise<A2AResponse> {
-    // Check concurrent session limit
+    // Check via Python-owned session store (Node shell); failures recorded for visibility
     const activeSessions = this.getActiveSessions();
     if (activeSessions.length >= this.maxConcurrentSessions) {
       return {
@@ -51,65 +167,75 @@ export class A2AClient {
     // Build envelope with auth
     const envelope = createEnvelope("a2a.invoke", truncatedParams, auth);
 
-    // Create session
-    const session: A2ASession = {
-      sessionId: envelope.id,
-      requestEnvelope: envelope,
-      status: "pending",
-      frameworkType,
-      startedAt: Date.now(),
-      streamChunks: [],
-    };
-    this.sessions.set(session.sessionId, session);
-
+    // Delegate create to Python-owned store; failure here blocks normal success response (degraded visible)
+    const started = Date.now();
     try {
-      // Get adapter and adapt request
-      const adapter = getAdapter(frameworkType);
-      const adapted = adapter.adaptRequest(truncatedParams);
-      const url = endpoint + adapted.url;
-      const headers: Record<string, string> = { ...adapted.headers };
-      if (auth) headers["Authorization"] = `Bearer ${auth}`;
-
-      // Update status
-      session.status = "running";
-
-      // Make HTTP request with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        this.defaultTimeoutMs,
-      );
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(adapted.body),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      const rawResponse = await res.json();
-      const result = adapter.adaptResponse(rawResponse);
-
-      const response: A2AResponse = {
+      callPythonA2ASessionStore("create", { envelope, frameworkType, startedAt: started });
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session create failed: ${e?.message || e}`;
+      return {
         jsonrpc: "2.0",
         id: envelope.id,
-        result,
+        error: {
+          code: A2A_ERROR_CODES.INTERNAL_ERROR,
+          message: `A2A session create failed (python degraded): ${this.pythonSessionError}`,
+          data: { degraded: true, pythonError: this.pythonSessionError, source: "python-a2a-session" },
+        },
       };
-      session.status = "completed";
-      session.completedAt = Date.now();
-      session.response = response;
+    }
+
+    // Delegate external agent invoke (adapter, url, fetch, response, safe-failure, no-key, missing-endpoint)
+    // to Python-first provider. Node is thin proxy only; business semantics owned in Python.
+    try {
+      try {
+        callPythonA2ASessionStore("update", { sessionId: envelope.id, updates: { status: "running" } });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
+
+      const pyRes = callPythonA2AExternalInvoke({
+        envelope,
+        endpoint,
+        auth,
+        frameworkType,
+      });
+
+      // pyRes contains response (result or error); may include degraded/permissionMetadata
+      const response: A2AResponse = pyRes && pyRes.response ? pyRes.response : {
+        jsonrpc: "2.0",
+        id: envelope.id,
+        error: { code: A2A_ERROR_CODES.FRAMEWORK_ERROR, message: "python external invoke returned no response" },
+      };
+
+      try {
+        const finalStatus = response.error ? "failed" : "completed";
+        callPythonA2ASessionStore("update", {
+          sessionId: envelope.id,
+          updates: { status: finalStatus, completedAt: Date.now(), response },
+        });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
+      // attach python degraded info if present for visibility
+      if (pyRes && (pyRes.degraded || pyRes.permissionMetadata)) {
+        (response as any).data = { ...(response as any).data, pythonExternal: { degraded: !!pyRes.degraded, permissionMetadata: pyRes.permissionMetadata } };
+      }
       return response;
     } catch (err) {
-      session.status = "failed";
-      session.completedAt = Date.now();
       const message = err instanceof Error ? err.message : "Unknown error";
       const response: A2AResponse = {
         jsonrpc: "2.0",
         id: envelope.id,
-        error: { code: A2A_ERROR_CODES.FRAMEWORK_ERROR, message },
+        error: { code: A2A_ERROR_CODES.FRAMEWORK_ERROR, message: `python-external-invoke delegate failed: ${message}` },
       };
-      session.response = response;
+      try {
+        callPythonA2ASessionStore("update", {
+          sessionId: envelope.id,
+          updates: { status: "failed", completedAt: Date.now(), response },
+        });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
       return response;
     }
   }
@@ -120,7 +246,7 @@ export class A2AClient {
     endpoint: string,
     auth?: string,
   ): AsyncGenerator<A2AStreamChunk> {
-    // Check concurrent session limit
+    // Check via Python-owned
     const activeSessions = this.getActiveSessions();
     if (activeSessions.length >= this.maxConcurrentSessions) {
       throw new Error(
@@ -135,15 +261,13 @@ export class A2AClient {
     };
     const envelope = createEnvelope("a2a.stream", truncatedParams, auth);
 
-    const session: A2ASession = {
-      sessionId: envelope.id,
-      requestEnvelope: envelope,
-      status: "pending",
-      frameworkType,
-      startedAt: Date.now(),
-      streamChunks: [],
-    };
-    this.sessions.set(session.sessionId, session);
+    const started = Date.now();
+    try {
+      callPythonA2ASessionStore("create", { envelope, frameworkType, startedAt: started });
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session create failed: ${e?.message || e}`;
+      throw new Error(`A2A session create failed (python degraded): ${this.pythonSessionError}`);
+    }
 
     try {
       const adapter = getAdapter(frameworkType);
@@ -152,7 +276,11 @@ export class A2AClient {
       const headers: Record<string, string> = { ...adapted.headers };
       if (auth) headers["Authorization"] = `Bearer ${auth}`;
 
-      session.status = "running";
+      try {
+        callPythonA2ASessionStore("update", { sessionId: envelope.id, updates: { status: "running" } });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(
@@ -183,7 +311,13 @@ export class A2AClient {
           chunk: text,
           done: false,
         };
-        session.streamChunks.push(chunk);
+        try {
+          const cur = callPythonA2ASessionStore("get", envelope.id) || {};
+          const chunks = Array.isArray(cur.streamChunks) ? [...cur.streamChunks, chunk] : [chunk];
+          callPythonA2ASessionStore("update", { sessionId: envelope.id, updates: { streamChunks: chunks } });
+        } catch (e: any) {
+          this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+        }
         yield chunk;
       }
 
@@ -193,60 +327,66 @@ export class A2AClient {
         chunk: "",
         done: true,
       };
-      session.streamChunks.push(doneChunk);
+      try {
+        const cur = callPythonA2ASessionStore("get", envelope.id) || {};
+        const chunks = Array.isArray(cur.streamChunks) ? [...cur.streamChunks, doneChunk] : [doneChunk];
+        callPythonA2ASessionStore("update", { sessionId: envelope.id, updates: { streamChunks: chunks, status: "completed", completedAt: Date.now() } });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
       yield doneChunk;
-
-      session.status = "completed";
-      session.completedAt = Date.now();
     } catch (err) {
-      session.status = "failed";
-      session.completedAt = Date.now();
+      try {
+        callPythonA2ASessionStore("update", { sessionId: envelope.id, updates: { status: "failed", completedAt: Date.now() } });
+      } catch (e: any) {
+        this.pythonSessionError = `python-a2a-session update failed: ${e?.message || e}`;
+      }
       throw err;
     }
   }
 
   async cancel(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (
-      session &&
-      (session.status === "pending" || session.status === "running")
-    ) {
-      session.status = "cancelled";
-      session.completedAt = Date.now();
+    // Delegate to Python store
+    try {
+      callPythonA2ASessionStore("update", {
+        sessionId,
+        updates: { status: "cancelled", completedAt: Date.now() },
+      });
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session cancel failed: ${e?.message || e}`;
+      // retained compat: do not throw from cancel, but error is recorded for visibility
     }
   }
 
   getActiveSessions(): A2ASession[] {
-    return Array.from(this.sessions.values()).filter(
-      (s) => s.status === "pending" || s.status === "running",
-    );
+    // Python-first; on fail record error (visible) and return [] (no silent ownership)
+    try {
+      const py = callPythonA2ASessionStore("list_active", {});
+      if (Array.isArray(py)) return py as A2ASession[];
+      return [];
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session list_active failed: ${e?.message || e}`;
+      return [];
+    }
   }
 
   getSession(sessionId: string): A2ASession | undefined {
-    return this.sessions.get(sessionId);
+    try {
+      const s = callPythonA2ASessionStore("get", { sessionId });
+      return s || undefined;
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session get failed: ${e?.message || e}`;
+      return undefined;
+    }
   }
 
   terminateTimedOutSessions(): A2ASession[] {
-    const now = Date.now();
-    const timedOut: A2ASession[] = [];
-    for (const session of Array.from(this.sessions.values())) {
-      if (
-        (session.status === "pending" || session.status === "running") &&
-        now - session.startedAt > this.defaultTimeoutMs
-      ) {
-        session.status = "failed";
-        session.completedAt = now;
-        session.response = {
-          jsonrpc: "2.0",
-          id: session.requestEnvelope.id,
-          error: {
-            code: A2A_ERROR_CODES.TIMEOUT,
-            message: "Session timed out",
-          },
-        };
-        timedOut.push(session);
-      }
+    try {
+      const timed = callPythonA2ASessionStore("terminate", { timeoutMs: this.defaultTimeoutMs, now: Date.now() });
+      return Array.isArray(timed) ? (timed as A2ASession[]) : [];
+    } catch (e: any) {
+      this.pythonSessionError = `python-a2a-session terminate failed: ${e?.message || e}`;
+      return [];
     }
-    return timedOut;
   }
 }

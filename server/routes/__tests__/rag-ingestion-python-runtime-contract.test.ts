@@ -206,51 +206,49 @@ describe("RAG ingestion Python runtime contract", () => {
     expect(isRAGIngestionPythonRuntimeResult(mutated)).toBe(false);
   });
 
-  it("ingest route returns Python unavailable as safe failure without fallback success", async () => {
-    const unavailable = {
-      ...baseContract("ingest", {}),
+  it("ingest route returns Python delegate unavailable as safe failure without fallback success", async () => {
+    // Per review: when delegate path is taken (py /api/rag responds with failure), use delegate result (503), no Node dep.
+    // Simulate py endpoint responding unavailable -> delegated true.
+    const deps = createDeps({ ok: true, status: "completed", storage: "memory" });
+    const origFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn(async () => ({
       ok: false,
-      status: "unavailable",
-      error: {
-        code: "python_rag_ingestion_unavailable",
-        message: "RAG ingestion Python runtime is unavailable.",
-        retryable: true,
-      },
-    };
-    const deps = createDeps(unavailable);
+      status: 503,
+      json: async () => ({ ok: false, status: "unavailable", error: { code: "python_rag_delegate_unavailable", message: "py unavailable" }, storage: "unavailable" }),
+    } as any));
 
-    await withApp(
-      (app) => app.use("/api/rag", createRAGRouter(deps)),
-      async (baseUrl) => {
-        const response = await fetch(`${baseUrl}/api/rag/ingest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payload: {
-              sourceType: "document",
-              sourceId: "doc-contract-1",
-              projectId: "project-contract",
-              content: "Contract body",
-              metadata: {},
-              timestamp: "2026-06-20T00:00:00.000Z",
-            },
-          }),
-        });
+    try {
+      await withApp(
+        (app) => app.use("/api/rag", createRAGRouter(deps)),
+        async (baseUrl) => {
+          const response = await fetch(`${baseUrl}/api/rag/ingest`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: {
+                sourceType: "document",
+                sourceId: "doc-contract-1",
+                projectId: "project-contract",
+                content: "Contract body",
+                metadata: {},
+                timestamp: "2026-06-20T00:00:00.000Z",
+              },
+            }),
+          });
 
-        expect(response.status).toBe(503);
-        const body = await response.json();
-        expect(body).toEqual(unavailable);
-        expect(body.ok).toBe(false);
-        expect(body.status).toBe("unavailable");
-        expect(body.provenance).toMatchObject({ source: "contract-test" });
-        expect(body.lifecycle).toMatchObject({ state: "active" });
-        expect(body.feedback).toMatchObject({
-          helpfulChunkIds: ["document:doc-contract-1:0"],
-        });
-      },
-    );
-
-    expect(deps.ingestionPipeline.ingest).toHaveBeenCalledTimes(1);
+          expect(response.status).toBe(503);
+          const body = await response.json();
+          expect(body.ok).toBe(false);
+          expect(body.status).toBe("unavailable");
+          expect(body.error?.code).toMatch(/python_rag_delegate/);
+          expect(body.storage).toBe("unavailable");
+          // delegate result is business result; no Node fallback
+          expect(deps.ingestionPipeline.ingest).not.toHaveBeenCalled();
+        },
+      );
+    } finally {
+      (globalThis as any).fetch = origFetch;
+    }
   });
 
   it("vector update route maps Python contract unavailable to 503 and preserves provenance", async () => {
@@ -370,6 +368,102 @@ describe("RAG ingestion Python runtime contract", () => {
         expect(body.deletedIds).toEqual([]);
         expect(body.provenance).toMatchObject({ source: "contract-test" });
         expect(body.lifecycle).toMatchObject({ state: "pending_delete" });
+      },
+    );
+  });
+
+  it("node rag /ingest /search delegate to python-first and return delegate result (thin proxy; Node no longer owns business semantics)", async () => {
+    // Per review finding 2: use mock/fake Python endpoint that succeeds with python-vector/migratedStorage result.
+    // Assert Node returns it verbatim and does not call Node deps (proves Python path exercised, Node thin proxy).
+    const pyShape = { ok: true, status: "completed", storage: "python-vector", migratedStorage: true };
+    const deps = createDeps({ ok: true, status: "completed", storage: "memory" });
+    const origFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/rag/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => pyShape,
+        } as any;
+      }
+      return origFetch ? origFetch(url) : Promise.reject(new Error("no fetch"));
+    });
+
+    try {
+      await withApp(
+        (app) => app.use("/api/rag", createRAGRouter(deps)),
+        async (baseUrl) => {
+          const r1 = await fetch(`${baseUrl}/api/rag/ingest`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload: { sourceType: "document", sourceId: "s", projectId: "p", content: "c", timestamp: "t" } }),
+          });
+          expect(r1.status).toBe(200);
+          const b1 = await r1.json();
+          expect(b1).toEqual(pyShape);
+          // delegate result is the business result; Node dep not exercised
+          expect(deps.ingestionPipeline.ingest).not.toHaveBeenCalled();
+        },
+      );
+    } finally {
+      (globalThis as any).fetch = origFetch;
+    }
+  });
+
+  it("node rag /search delegates to python-first and returns python-vector result without node retriever", async () => {
+    const pySearch = { ok: true, status: "completed", storage: "python-vector", migratedStorage: true, results: [{ id: "h1" }] };
+    const deps = createDeps({ ok: true, status: "completed", storage: "memory" });
+    const origFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => pySearch,
+    } as any));
+
+    try {
+      await withApp(
+        (app) => app.use("/api/rag", createRAGRouter(deps)),
+        async (baseUrl) => {
+          const rs = await fetch(`${baseUrl}/api/rag/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: "q", options: { projectId: "p" } }),
+          });
+          expect(rs.status).toBe(200);
+          const bs = await rs.json();
+          expect(bs).toEqual(pySearch);
+          expect(deps.retriever.search).not.toHaveBeenCalled();
+        },
+      );
+    } finally {
+      (globalThis as any).fetch = origFetch;
+    }
+  });
+
+  it("node rag ingest/search fallback to retained compat shell when delegate unavailable (connect/404)", async () => {
+    // Ensures public API compat: when no Python runtime/http, fallback to Node shell (no 503 forced).
+    const pyResultFromNode = { ok: true, status: "completed", storage: "memory" };
+    const deps = createDeps(pyResultFromNode);
+
+    // no mock, real fetch will fail -> delegated false -> fallback
+    await withApp(
+      (app) => app.use("/api/rag", createRAGRouter(deps)),
+      async (baseUrl) => {
+        const ri = await fetch(`${baseUrl}/api/rag/ingest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload: { sourceType: "document", sourceId: "s", projectId: "p", content: "c", timestamp: "t" } }),
+        });
+        const rs = await fetch(`${baseUrl}/api/rag/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: "q", options: { projectId: "p" } }),
+        });
+        // fallback shell exercised (public compat)
+        expect(ri.status).toBe(200);
+        expect(rs.status).toBe(200);
+        expect(deps.ingestionPipeline.ingest).toHaveBeenCalled();
+        expect(deps.retriever.search).toHaveBeenCalled();
       },
     );
   });

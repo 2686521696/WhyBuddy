@@ -8,6 +8,12 @@ import {
   WEB_AIGC_LOCATION_AUTHORIZATION_STATUSES,
 } from "../../../shared/web-aigc-location-info.js";
 
+export interface GetLocationInfoNodeAdapterDeps {
+  // Python thin proxy for 105 longtail cutover: when present Node is proxy, not owner.
+  // receives {nodeType, input} for bridge so python device_location selects correct branch
+  executePythonRuntime?: (payload: { nodeType: string; input: GetLocationInfoNodeInput }) => Promise<any>;
+}
+
 function normalizeString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -239,20 +245,93 @@ function buildPrivacySummary(
   };
 }
 
+function buildPythonPrivacySummary(
+  value: unknown,
+  input: GetLocationInfoNodeInput,
+  location: GetLocationInfoNodeExecutionResult["output"]["location"],
+): GetLocationInfoNodeExecutionResult["output"]["privacy"] {
+  const record = normalizeRecord(value);
+  const deniedFields = Array.isArray(record.deniedFields)
+    ? record.deniedFields.filter((field): field is string => typeof field === "string")
+    : ["latitude", "longitude", "accuracyMeters"];
+  const notes = Array.isArray(record.notes)
+    ? record.notes.filter((note): note is string => typeof note === "string")
+    : ["Location info was returned by the Python facade."];
+
+  return {
+    precisionLevel:
+      record.precisionLevel === "none" ||
+      record.precisionLevel === "coarse" ||
+      record.precisionLevel === "precise_blocked"
+        ? record.precisionLevel
+        : location.coarseLocation || location.source
+          ? "coarse"
+          : "none",
+    dataMinimization: "coarse_only",
+    exactCoordinatesStored: false,
+    exactCoordinatesAllowed: false,
+    deniedFields,
+    retention: normalizeRetention(record.retention ?? normalizeRecord(input.privacy).retention),
+    notes,
+  };
+}
+
 export function isGetLocationInfoNodeType(
   value: unknown,
 ): value is GetLocationInfoNodeType {
   return value === "get_location_info";
 }
 
+// map for python-owned location (105 cutover)
+export function mapPythonLocationInfoRuntimeResponse(py: any, input: GetLocationInfoNodeInput = {}): GetLocationInfoNodeExecutionResult {
+  const location = normalizeRecord(py?.location);
+  return {
+    ok: true,
+    nodeType: "get_location_info",
+    output: {
+      status: py?.status === "completed" ? "completed" : "degraded",
+      location,
+      authorization: { status: "granted", granted: true },
+      privacy: buildPythonPrivacySummary(py?.privacy, input, location),
+      context: normalizeRecord(input.context),
+      warnings: Array.isArray(py?.warnings) ? py.warnings : ["proxied to python device_location facade"],
+      ...(py?.metadata ? { metadata: py.metadata } : {}),
+    },
+  };
+}
+
 export async function executeGetLocationInfoNode(
   request: GetLocationInfoNodeExecutionRequest,
+  deps: GetLocationInfoNodeAdapterDeps = {},
 ): Promise<GetLocationInfoNodeExecutionResult> {
   if (!isGetLocationInfoNodeType(request.nodeType)) {
     throw new Error("Unsupported get_location_info node type.");
   }
 
   const input = request.input ?? {};
+  // prefer python (thin proxy)
+  if (deps.executePythonRuntime) {
+    try {
+      // pass wrapped payload with nodeType so device_location py facade selects location branch (not default device)
+      const py = await deps.executePythonRuntime({ nodeType: "get_location_info", input });
+      return mapPythonLocationInfoRuntimeResponse(py, input);
+    } catch (error: any) {
+      return {
+        ok: true,
+        nodeType: "get_location_info",
+        output: {
+          status: "degraded",
+          location: {},
+          authorization: { status: "not_requested", granted: false },
+          privacy: buildPythonPrivacySummary(undefined, input, {}),
+          context: normalizeRecord(input.context),
+          warnings: [`python location facade error (visible): ${error?.message || error}`],
+        },
+      };
+    }
+  }
+
+  // retained node compat shell (105 task: explicit retained when no python)
   const warnings: string[] = [];
   const context = normalizeRecord(input.context);
   const location = buildNormalizedLocationPayload(input, warnings);

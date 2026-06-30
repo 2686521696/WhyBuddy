@@ -4,7 +4,11 @@ import type { UnifiedQueryOptions, UnifiedKnowledgeResult } from "../../shared/k
 import type { WebAigcDocumentSearchResponse, WebAigcSearchRequest } from "../../shared/rag/web-aigc-search.js";
 import type { ChatNodeAdapterDeps } from "./node-adapters/chat-node-adapter.js";
 import type { OpenPageNodeAdapterDeps } from "./node-adapters/open-page-node-adapter.js";
-import { executeWebQaNode, isWebQaNodeType } from "./node-adapters/web-qa-node-adapter.js";
+import {
+  executeWebQaNode,
+  isWebQaNodeType,
+  type WebQaNodeAdapterDeps,
+} from "./node-adapters/web-qa-node-adapter.js";
 
 export interface WebQaRouterDeps {
   documentSearch?: (
@@ -21,6 +25,7 @@ export interface WebQaRouterDeps {
   getConfig?: ChatNodeAdapterDeps["getConfig"];
   now?: ChatNodeAdapterDeps["now"];
   permissionEngine?: OpenPageNodeAdapterDeps["permissionEngine"];
+  executePythonRuntime?: WebQaNodeAdapterDeps["executePythonRuntime"];
 }
 
 function mapStatusToHttpStatus(status: string | undefined): number {

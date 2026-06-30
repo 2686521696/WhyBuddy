@@ -192,6 +192,55 @@ def test_health_check_returns_false_for_unavailable_backend():
     assert client.health_check() == {"connected": False, "backend": "qdrant"}
 
 
+# --- Additional coverage required by 105 review: no-key degraded, fake Qdrant via provider, embedding mismatch, retrieve ---
+from sliderule_llm.vector import RAGVectorStoreProvider, create_rag_vector_provider  # noqa: E402
+
+
+def test_rag_vector_provider_no_key_degraded():
+    clear_vector_env()
+    prov = RAGVectorStoreProvider(config=VectorConfig("http://f", "c", "", 100, 2), force_degraded=True)
+    assert prov.is_degraded() is True
+    res = prov.upsert([{"id": "x", "vector": [0.1, 0.2], "content": "c"}], "coll")
+    assert res.get("attempted") is True
+    assert res.get("stored") in (False, None) or res.get("degraded")
+
+
+def test_rag_vector_provider_fake_qdrant_upsert_delete_retrieve():
+    clear_vector_env()
+    transport = FakeTransport({"result": [{"id": "h1", "score": 0.8, "payload": {"content": "hit"}}]})
+    prov = RAGVectorStoreProvider(
+        config=VectorConfig("http://f", "c", "", 100, 2),
+        transport=transport,
+    )
+    up = prov.upsert([{"id": "id1", "vector": [0.1, 0.2], "content": "hi"}], "c")
+    assert up["stored"] is True
+    assert up["upsertedCount"] == 1
+    hits = prov.search([0.1, 0.2], top_k=1)
+    assert len(hits) == 1
+    d = prov.delete(["id1"], "c")
+    assert d["deleted"] is True
+
+
+def test_rag_vector_provider_embedding_mismatch_raises():
+    clear_vector_env()
+    prov = RAGVectorStoreProvider(
+        config=VectorConfig("http://f", "c", "k", 100, 4),
+        transport=FakeTransport(),
+    )
+    try:
+        prov.upsert([{"id": "bad", "vector": [0.1, 0.2], "content": "x"}], "c")
+    except Exception as exc:  # noqa: BLE001
+        assert "mismatch" in str(exc).lower() or "dim" in str(exc).lower()
+    else:
+        raise AssertionError("expected embedding mismatch")
+
+
+def test_create_rag_vector_provider_fallback_degraded():
+    clear_vector_env()
+    p = create_rag_vector_provider(force_degraded=True)
+    assert p.is_degraded()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0
