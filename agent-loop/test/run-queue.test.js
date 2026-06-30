@@ -203,14 +203,14 @@ test('isCleanCompletedQueueTask trusts clean authoritative done reviewed outcome
   }), true);
 });
 
-test('isCleanCompletedQueueTask does not skip rescue patches or attention states', () => {
+test('isCleanCompletedQueueTask does not skip active rescue patches or attention states', () => {
   const checkpointTaskIds = new Set(['task-a', 'task-b', 'task-c']);
 
   assert.equal(isCleanCompletedQueueTask({
     taskId: 'task-a',
     record: {
-      lastStatus: 'DONE_REVIEWED',
-      lastOutcome: 'done',
+      lastStatus: 'HALT_HUMAN',
+      lastOutcome: 'failed',
       applyStatus: 'RESCUE_PATCH_AVAILABLE',
     },
     checkpointTaskIds,
@@ -236,6 +236,20 @@ test('isCleanCompletedQueueTask does not skip rescue patches or attention states
   }), false);
 });
 
+test('isCleanCompletedQueueTask treats reviewed done as clean despite stale rescue fields', () => {
+  assert.equal(isCleanCompletedQueueTask({
+    taskId: 'task-a',
+    record: {
+      lastStatus: 'DONE_REVIEWED',
+      lastOutcome: 'done',
+      applyStatus: 'RESCUE_PATCH_AVAILABLE',
+      applyErrorKind: 'PARTIAL_DIFF_GATE_RED',
+      rescuePatchAvailable: true,
+    },
+    checkpointTaskIds: new Set(),
+  }), true);
+});
+
 test('buildResumeUnfinishedPlan selects only unfinished tasks', () => {
   const plan = buildResumeUnfinishedPlan({
     tasks: [
@@ -254,10 +268,10 @@ test('buildResumeUnfinishedPlan selects only unfinished tasks', () => {
     checkpointTaskIds: new Set(['task-a', 'task-b']),
   });
 
-  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-b', 'task-d']);
-  assert.equal(plan.cleanCount, 2);
-  assert.equal(plan.nextTaskId, 'task-b');
-  assert.equal(plan.attentionCount, 2);
+  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-d']);
+  assert.equal(plan.cleanCount, 3);
+  assert.equal(plan.nextTaskId, 'task-d');
+  assert.equal(plan.attentionCount, 1);
 });
 
 test('mergeQueueOutcomes keeps newer clean root completion over stale worktree attention state', () => {

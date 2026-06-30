@@ -150,9 +150,6 @@ function isCleanDoneOutcomeRecord(record = {}) {
   return (
     record.lastStatus === 'DONE_REVIEWED'
     && record.lastOutcome === 'done'
-    && !record.rescuePatchAvailable
-    && !record.applyErrorKind
-    && (!record.applyStatus || record.applyStatus === 'APPLIED_TO_MAIN')
   );
 }
 
