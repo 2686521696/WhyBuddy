@@ -504,9 +504,6 @@ def _is_clean_done_outcome_record(record: Optional[Dict[str, Any]]) -> bool:
     return (
         record.get("lastStatus") == "DONE_REVIEWED"
         and record.get("lastOutcome") == "done"
-        and not record.get("rescuePatchAvailable")
-        and not record.get("applyErrorKind")
-        and (not record.get("applyStatus") or record.get("applyStatus") == "APPLIED_TO_MAIN")
     )
 
 

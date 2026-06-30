@@ -711,6 +711,89 @@ def test_agentloop_queue_overview_treats_done_reviewed_as_reviewed_even_with_sta
     assert data["counts"]["reviewed"] == 1
 
 
+def test_agentloop_queue_overview_prefers_done_reviewed_over_newer_failed_attempt(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    scripts_dir = repo_root / "agent-loop" / "scripts"
+    tasks_dir = repo_root / "agent-loop" / "tasks"
+    root_loop_dir = repo_root / ".agent-loop"
+    worktree_loop_dir = repo_root / ".worktrees" / "backend-python-total-cutover-105" / ".agent-loop"
+    scripts_dir.mkdir(parents=True)
+    tasks_dir.mkdir(parents=True)
+    root_loop_dir.mkdir(parents=True)
+    worktree_loop_dir.mkdir(parents=True)
+
+    (scripts_dir / "backend-python-total-cutover-105-queue.json").write_text(
+        json.dumps(
+            {
+                "defaults": {
+                    "useWorktree": True,
+                    "worktreeScope": "queue",
+                    "queueWorktreeName": "backend-python-total-cutover-105",
+                },
+                "tasks": [
+                    {"id": "task-clean-with-newer-failure", "task": "agent-loop/tasks/task-clean-with-newer-failure.md", "enabled": True},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tasks_dir / "task-clean-with-newer-failure.md").write_text("# task\n", encoding="utf-8")
+    (root_loop_dir / "queue-outcomes.json").write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "task-clean-with-newer-failure": {
+                        "lastStatus": "HALT_HUMAN",
+                        "lastOutcome": "failed",
+                        "lastRunId": "newer-failed",
+                        "lastUpdatedAt": "2026-06-30T09:14:13.331Z",
+                        "diffBytes": 0,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (worktree_loop_dir / "queue-outcomes.json").write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "task-clean-with-newer-failure": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastRunId": "older-clean",
+                        "lastUpdatedAt": "2026-06-29T11:39:56.472Z",
+                        "applyStatus": "RESCUE_PATCH_AVAILABLE",
+                        "applyErrorKind": "PARTIAL_DIFF_GATE_RED",
+                        "rescuePatchAvailable": True,
+                        "diffBytes": 24848,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings_file = repo_root / "data" / "agent-loop-settings.json"
+    settings_file.parent.mkdir(parents=True)
+    settings_file.write_text(
+        json.dumps({"queuePath": "agent-loop/scripts/backend-python-total-cutover-105-queue.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_LOOP_SETTINGS_FILE", str(settings_file))
+    monkeypatch.setattr(agent_loop_runs, "_get_repo_root", lambda: repo_root)
+
+    data = agent_loop_runs.get_agent_loop_queue_overview(str(repo_root))
+    task = data["tasks"][0]
+
+    assert task["status"] == "DONE_REVIEWED"
+    assert task["lastRunId"] == "older-clean"
+    assert task["outcomeGroup"] == "reviewed"
+    assert task["category"] == "landed"
+    assert task["rescuePatchAvailable"] is False
+    assert task["applyStatus"] is None
+
+
 def test_agentloop_queue_overview_separates_state_time_from_latest_attempt(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     scripts_dir = repo_root / "agent-loop" / "scripts"
@@ -805,11 +888,15 @@ def test_agentloop_queue_overview_separates_state_time_from_latest_attempt(tmp_p
     by_id = {task["id"]: task for task in data["tasks"]}
 
     clean_then_rescue = by_id["task-clean-then-rescue"]
-    assert clean_then_rescue["lastRunId"] == "older-clean"
-    assert clean_then_rescue["stateUpdatedAt"] == "2026-06-28T19:11:10.174Z"
-    assert clean_then_rescue["stateUpdatedText"] == "2026-06-28 19:11:10"
+    assert clean_then_rescue["lastRunId"] == "newer-rescue"
+    assert clean_then_rescue["stateUpdatedAt"] == "2026-06-30T01:05:32.209Z"
+    assert clean_then_rescue["stateUpdatedText"] == "2026-06-30 01:05:32"
     assert clean_then_rescue["latestAttemptAt"] == "2026-06-30T01:05:32.209Z"
     assert clean_then_rescue["latestAttemptText"] == "2026-06-30 01:05:32"
+    assert clean_then_rescue["outcomeGroup"] == "reviewed"
+    assert clean_then_rescue["category"] == "landed"
+    assert clean_then_rescue["rescuePatchAvailable"] is False
+    assert clean_then_rescue["applyStatus"] is None
 
     rescue_then_clean = by_id["task-rescue-then-clean"]
     assert rescue_then_clean["lastRunId"] == "newer-clean"
