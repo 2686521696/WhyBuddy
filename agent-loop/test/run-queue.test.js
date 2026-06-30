@@ -187,7 +187,7 @@ test('filterQueueTasks rejects unknown selectors', () => {
   );
 });
 
-test('isCleanCompletedQueueTask requires done reviewed outcome and checkpoint', () => {
+test('isCleanCompletedQueueTask trusts clean authoritative done reviewed outcomes', () => {
   const checkpointTaskIds = new Set(['task-a']);
 
   assert.equal(isCleanCompletedQueueTask({
@@ -200,7 +200,7 @@ test('isCleanCompletedQueueTask requires done reviewed outcome and checkpoint', 
     taskId: 'task-b',
     record: { lastStatus: 'DONE_REVIEWED', lastOutcome: 'done' },
     checkpointTaskIds,
-  }), false);
+  }), true);
 });
 
 test('isCleanCompletedQueueTask does not skip rescue patches or attention states', () => {
@@ -311,9 +311,9 @@ test('mergeQueueOutcomes keeps newer clean root completion over stale worktree a
   });
 
   assert.equal(merged.tasks['task-a'].rescuePatchAvailable, undefined);
-  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-c']);
-  assert.equal(plan.cleanCount, 2);
-  assert.equal(plan.nextTaskId, 'task-c');
+  assert.deepEqual(plan.tasks.map((task) => task.id), []);
+  assert.equal(plan.cleanCount, 3);
+  assert.equal(plan.nextTaskId, null);
 });
 
 test('mergeQueueOutcomes keeps newer clean worktree completion over stale root quarantine state', () => {
@@ -365,6 +365,53 @@ test('mergeQueueOutcomes keeps newer clean worktree completion over stale root q
   assert.deepEqual(plan.tasks.map((task) => task.id), ['task-c']);
   assert.equal(plan.cleanCount, 2);
   assert.equal(plan.nextTaskId, 'task-c');
+});
+
+test('buildResumeUnfinishedPlan skips clean merged outcomes even when checkpoint is absent', () => {
+  const merged = mergeQueueOutcomes(
+    {
+      tasks: {
+        'task-a': {
+          lastStatus: 'HALT_HUMAN',
+          lastOutcome: 'quarantined',
+          lastRunId: '2026-06-27T17-39-43-134Z',
+          lastUpdatedAt: '2026-06-27T17:52:27.956Z',
+          applyStatus: 'RESCUE_PATCH_AVAILABLE',
+          applyErrorKind: 'PARTIAL_DIFF_GATE_RED',
+          rescuePatchAvailable: true,
+        },
+      },
+    },
+    {
+      tasks: {
+        'task-a': {
+          lastStatus: 'DONE_REVIEWED',
+          lastOutcome: 'done',
+          lastRunId: '2026-06-28T18-52-33-680Z',
+          lastUpdatedAt: '2026-06-28T19:11:10.174Z',
+        },
+        'task-b': {
+          lastStatus: 'HALT_HUMAN',
+          lastOutcome: 'failed',
+          lastRunId: '2026-06-28T19-12-00-000Z',
+          lastUpdatedAt: '2026-06-28T19:20:00.000Z',
+        },
+      },
+    },
+  );
+
+  const plan = buildResumeUnfinishedPlan({
+    tasks: [
+      { id: 'task-a', enabled: true },
+      { id: 'task-b', enabled: true },
+    ],
+    outcomes: merged,
+    checkpointTaskIds: new Set(),
+  });
+
+  assert.deepEqual(plan.tasks.map((task) => task.id), ['task-b']);
+  assert.equal(plan.cleanCount, 1);
+  assert.equal(plan.nextTaskId, 'task-b');
 });
 
 test('filterQueueTasks --resume-unfinished keeps --only explicit reruns', () => {

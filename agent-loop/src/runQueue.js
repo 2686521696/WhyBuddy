@@ -164,14 +164,8 @@ export function isCleanCompletedQueueTask({
   checkpointTaskIds = new Set(),
 } = {}) {
   if (!taskId || !record) return false;
-  if (!checkpointTaskIds?.has?.(taskId)) return false;
-  if (record.lastStatus !== 'DONE_REVIEWED') return false;
-  if (record.lastOutcome !== 'done') return false;
-  if (record.rescuePatchAvailable) return false;
-  if (record.applyStatus === 'RESCUE_PATCH_AVAILABLE') return false;
-  if (record.applyStatus && record.applyStatus !== 'APPLIED_TO_MAIN') return false;
-  if (record.applyErrorKind) return false;
-  return true;
+  void checkpointTaskIds;
+  return isCleanDoneOutcomeRecord(record);
 }
 
 export function buildQueueCompletionMessage({
