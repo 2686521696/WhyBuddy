@@ -10,6 +10,7 @@ See audit / FINAL_MIGRATION_STATUS.md for exact coverage vs. "all historical cap
 
 import asyncio
 import os
+import re
 
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -34,6 +35,7 @@ PROVENANCE_PYTHON_RAG = "python-rag"
 PROVENANCE_PYTHON_FULLPATH = "python-fullpath"
 PROVENANCE_PYTHON_LLM = "python-llm"
 PYTHON_BACKEND = "python"
+STATE_AUTHORITY_PYTHON = "python"
 
 # Delivery capability execution contract (task 14: Move delivery capability execution contracts to Python).
 # These delivery caps execute via Python (native LLM when is_python_native_capability true, else mapped).
@@ -132,7 +134,7 @@ def _coerce_state_payload(raw_state: Any) -> Dict[str, Any]:
     if not isinstance(raw_state, dict):
         raise ValueError("state must be an object")
 
-    # Frontend session GET returns { state, provenance, backend }. During local
+    # Frontend session GET returns { state, stateAuthority, provenance, backend }. During local
     # Python-first dev the client can keep that wrapper and merge fresh runtime
     # fields beside it before POST /orchestrate-plan. Python owns the endpoint,
     # so accept the wrapper instead of forcing the browser to special-case it.
@@ -188,7 +190,7 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     _auth(x_internal_key)
     state = create_session(payload.get("goal", {}).get("text", "default"), payload.get("sessionId"))
     _sessions[state.sessionId] = state
-    return {"sessionId": state.sessionId, "state": state.model_dump(), "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.get("/sessions/{sid}")
 async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
@@ -196,14 +198,81 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
     state = load_session(sid) or _sessions.get(sid)
     if not state:
         raise HTTPException(404, "Not found")
-    return {"state": state.model_dump(), "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.put("/sessions/{sid}")
-async def save_sess(sid: str, state: V5SessionState, x_internal_key: Optional[str] = Header(None)):
+async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
-    save_session(state)
-    _sessions[sid] = state
-    return {"ok": True, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    # Sanitize client PUT body to prevent forging server-owned fields per V5.2 authority.
+    # coverageGate, capabilityRuns, artifacts trust and ledgers + sessionReplayLog/reasoningEvents (server append-only) are server-owned only.
+    # Load existing (may be server_trusted via load path) and retain/merge those; client updates only safe fields.
+    # Normal V5SessionState parse on unsanitized client body would reject elevated artifacts; we sanitize first
+    # so full GET state roundtrips are accepted at transport, but server values win.
+    # sessionReplayLog / reasoningEvents are append-only server fields (see persistence merge).
+    client_input: Dict[str, Any] = dict(state) if isinstance(state, dict) else {}
+    client_input.pop("coverageGate", None)
+    client_input.pop("capabilityRuns", None)
+    client_input.pop("decisionLedger", None)
+    client_input.pop("costLedger", None)
+    client_input.pop("flowBoundaryLedger", None)
+    client_input.pop("structureGateLedger", None)
+    # Protect server-owned append-only replay from client/stale overwrite (task requirement)
+    client_input.pop("sessionReplayLog", None)
+    client_input.pop("reasoningEvents", None)
+    # Sanitize artifacts from client: strip server-owned trust fields so parse succeeds; we will not apply client's artifacts list
+    if "artifacts" in client_input and isinstance(client_input.get("artifacts"), list):
+        safe_arts = []
+        for art in client_input["artifacts"]:
+            if isinstance(art, dict):
+                safe = {k: v for k, v in art.items() if k not in ("trustLevel", "producedBy", "passedGates")}
+                safe["trustLevel"] = "untrusted"
+                safe["passedGates"] = []
+                safe_arts.append(safe)
+            else:
+                safe_arts.append(art)
+        client_input["artifacts"] = safe_arts
+    try:
+        client_contrib = V5SessionState(**client_input) if client_input else None
+    except (ValidationError, TypeError, ValueError) as e:
+        raise HTTPException(400, f"invalid session state from client: {str(e).splitlines()[0]}")
+    # load existing server state (trusted)
+    existing = load_session(sid) or _sessions.get(sid)
+    if existing:
+        # Concurrency guard for PUT: reject if client claims older lastTurnId than server (stale request must not overwrite newer authoritative state).
+        # Returns conflict so caller can reload. Persistence-level guard also protects on save even for direct calls.
+        # (Finding 2 resolution)
+        if client_contrib:
+            def _turn_seq(lt: Optional[str]) -> int:
+                if not lt:
+                    return 0
+                m = re.search(r"(\d+)", str(lt))
+                return int(m.group(1)) if m else 0
+            inc_seq = _turn_seq(getattr(client_contrib, "lastTurnId", None))
+            ex_seq = _turn_seq(getattr(existing, "lastTurnId", None))
+            if inc_seq > 0 and ex_seq > 0 and inc_seq < ex_seq:
+                raise HTTPException(409, "stale write rejected: incoming lastTurnId older than current server state (concurrent save guard)")
+        merged = existing.model_copy(deep=True)
+        if client_contrib:
+            # apply client-safe updates, exclude server-owned; never take client's artifacts/runs/gate/ledgers/replay
+            updates = client_contrib.model_dump(exclude={"sessionId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents"})
+            for k, v in updates.items():
+                if hasattr(merged, k):
+                    setattr(merged, k, v)
+            merged.sessionId = sid
+        state = merged
+    else:
+        if client_contrib:
+            client_contrib.sessionId = sid
+            state = client_contrib
+        else:
+            state = V5SessionState(sessionId=sid, goal={"text": "", "status": "needs_refinement"})
+    # Use authoritative result from save_session (which delegates to persistence guard + cache reload)
+    # instead of the pre-save input state. Ensures route _sessions reflects service-forced authoritative
+    # (consistent with "service forces reload authoritative into cache" and load_session behavior).
+    # Fixes review finding 2.
+    authoritative = save_session(state)
+    _sessions[sid] = authoritative
+    return {"ok": True, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.delete("/sessions/{sid}")
 async def delete_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
@@ -212,12 +281,12 @@ async def delete_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
     _sessions.pop(sid, None)
     if not result.get("ok"):
         if result.get("error") == "not_found":
-            return {"ok": True, "sessionId": sid, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+            return {"ok": True, "sessionId": sid, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
         return JSONResponse(
             status_code=500,
-            content={**result, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND},
+            content={**result, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND},
         )
-    return {**result, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    return {**result, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.post("/orchestrate-plan")
 async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
@@ -282,7 +351,7 @@ async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     state = V5SessionState(**payload["state"])
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
-    return {"state": new_state.model_dump(), "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
+    return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
 
 # GCOV endpoint
 @router.post("/coverage")

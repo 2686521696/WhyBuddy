@@ -8,6 +8,8 @@ the older Python mapping shape so existing local dev files can be recovered.
 
 import json
 import os
+import re
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -44,9 +46,31 @@ def _coerce_state(session_id: str, payload: Any) -> Tuple[Optional[V5SessionStat
         return None, _store_error("invalid_shape", f"session {session_id} is not an object")
     raw = {**payload, "sessionId": payload.get("sessionId") or session_id}
     try:
-        return V5SessionState(**raw), None
+        return V5SessionState.server_load(raw), None
     except (TypeError, ValidationError, ValueError) as error:
         return None, _store_error("invalid_session", str(error).splitlines()[0])
+
+
+def _monotonic_key(state: V5SessionState) -> tuple:
+    """Compute comparable (newer > older) key using ONLY lastTurnId numeric as version.
+    This provides the version guard (lastTurnId as monotonic version) for concurrent save protection.
+    Timestamp-equivalent ordering for equal lastTurnId uses serialized lock arrival (first commit wins).
+    Replay/cap/ledger counts are append-only server history and MUST NOT be used
+    to decide full-state clobber (prevents old snapshot with inflated replay count
+    from overwriting committed goal/conversation/artifacts/ledgers at same lastTurnId).
+    lastTurnId is the authority progression signal for V5.2 guard.
+    """
+    lt = getattr(state, "lastTurnId", None) or ""
+    m = re.search(r"(\d+)", str(lt))
+    turn_num = int(m.group(1)) if m else 0
+    return (turn_num,)
+
+
+# Serialized guard lock for save_session_record: ensures read-prior / decide / write is atomic
+# wrt other concurrent save calls (addresses concurrent RMW races). Re-read inside lock
+# sees prior writers' results. Combined with lastTurnId<= compare this provides version/timestamp-equivalent
+# guard (lastTurnId as version; lock order for equal-turn) using existing fields (no extra deps, no schema change).
+_save_lock = threading.Lock()
 
 
 def _read_store(store_file: Optional[StorePath] = None) -> Tuple[Dict[str, V5SessionState], Optional[StoreError]]:
@@ -111,14 +135,80 @@ def save_all(sessions: Dict[str, V5SessionState], store_file: Optional[StorePath
 
 
 def save_session_record(state: V5SessionState, store_file: Optional[StorePath] = None) -> StoreError:
-    sessions, error = _read_store(store_file)
-    if error:
-        return error
-    sessions[state.sessionId] = state
-    result = _write_store(sessions, store_file)
-    if not result.get("ok"):
-        return result
-    return {"ok": True, "sessionId": state.sessionId}
+    # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
+    # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
+    # prior (after previous writer's atomic replace), then decides using current prior.
+    # Replay append-only merge ALWAYS happens from latest prior (server-owned history preserved).
+    # Core authoritative fields (goal, conversation, artifacts, ledgers, lastTurnId etc) are
+    # protected by lastTurnId (version) + <= compare: same-turn or lower cannot overwrite.
+    # counts of replay etc never allow clobber. Fixes review finding 1 (no equal-turn clobber).
+    # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
+    with _save_lock:
+        sessions, error = _read_store(store_file)
+        if error:
+            return error
+
+        # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
+        # Classification: ... -> PYTHON_COMPAT -> PYTHON_AUTHORITY
+        # Read existing replay from durable store and merge (preserve prior + additive new by id);
+        # prevents partial/stale/empty replay from client or in-mem snapshot from overwriting server-owned replay.
+        # Matches V5.2 append-only intent (no clobber on save); reasoningEvents treated same.
+        # Python owns this durability/readback slice; no Node fallback.
+        prior = sessions.get(state.sessionId)
+        prior_log = list(getattr(prior, "sessionReplayLog", []) or []) if prior else []
+        seen = {getattr(e, "id", None) for e in prior_log if getattr(e, "id", None)}
+        for ev in (getattr(state, "sessionReplayLog", []) or []):
+            eid = getattr(ev, "id", None)
+            if eid and eid not in seen:
+                prior_log.append(ev)
+        # reasoningEvents append-only merge (same server-owned append-only rule)
+        prior_reas = list(getattr(prior, "reasoningEvents", []) or []) if prior else []
+        seen_r = {getattr(e, "id", None) for e in prior_reas if getattr(e, "id", None)}
+        for ev in (getattr(state, "reasoningEvents", []) or []):
+            eid = getattr(ev, "id", None)
+            if eid and eid not in seen_r:
+                prior_reas.append(ev)
+
+        # Produce candidate that carries server-merged replay/reasoning (append-only never loses)
+        try:
+            merged_logs_state = state.model_copy(update={"sessionReplayLog": prior_log, "reasoningEvents": prior_reas})
+        except Exception:
+            # fallback: mutate copy of incoming only if needed (rare)
+            try:
+                state.sessionReplayLog = prior_log  # type: ignore[attr-defined]
+                state.reasoningEvents = prior_reas  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            merged_logs_state = state
+
+        # Version/timestamp-equivalent guard (sliderule-python-v52-session-concurrency-guard-105):
+        # lastTurnId ONLY decides core clobber (goal/conversation/artifacts/ledgers/...).
+        # Replay counts etc are excluded from key and from clobber decision (per review finding 1).
+        # Under lock + re-read, serialized: inc turn <= prior turn blocks core overwrite (stale cannot clobber);
+        # this protects same-lastTurnId concurrent/sequential stale snapshots (later arriver under lock loses for core).
+        # Higher turn accepts inc core + merged replay/reasoning logs (append-only always).
+        # Equal-turn uses first-under-lock as timestamp order (no later same-turn stale wins).
+        # This ensures lower or same-turn snapshot cannot overwrite newer authoritative state.
+        # Classification: PYTHON_AUTHORITY. No Node fallback.
+        write_state = merged_logs_state
+        if prior:
+            p_lt = getattr(prior, "lastTurnId", None)
+            i_lt = getattr(state, "lastTurnId", None)
+            if p_lt and i_lt:
+                p_turn = _monotonic_key(prior)[0]
+                i_turn = _monotonic_key(state)[0]  # use original incoming turn, not affected by logs
+                if i_turn <= p_turn:
+                    # lower or equal turn (when version present): retain prior authoritative core fields (prevents same-turn stale clobber);
+                    # still carry any newly appended server-owned replay/reasoning from this attempt
+                    try:
+                        write_state = prior.model_copy(update={"sessionReplayLog": prior_log, "reasoningEvents": prior_reas})
+                    except Exception:
+                        write_state = prior
+        sessions[write_state.sessionId] = write_state
+        result = _write_store(sessions, store_file)
+        if not result.get("ok"):
+            return result
+        return {"ok": True, "sessionId": write_state.sessionId}
 
 
 def load_session_record(session_id: str, store_file: Optional[StorePath] = None) -> StoreError:

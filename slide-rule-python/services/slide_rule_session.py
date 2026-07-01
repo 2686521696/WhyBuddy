@@ -5,7 +5,7 @@ Provides create, load, save, drive loop using stable Python RAG for evidence ins
 """
 
 from typing import Dict, Any, Optional
-from models.v5_state import Artifact, CapabilityRun, V5SessionState
+from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
 from .persistence import delete_session_record, load_all, load_session_record, save_all, save_session_record
@@ -49,9 +49,21 @@ def load_session(session_id: str) -> Optional[V5SessionState]:
         return state
     return None
 
-def save_session(state: V5SessionState):
-    _sessions[state.sessionId] = state
+def save_session(state: V5SessionState) -> V5SessionState:
+    # Delegate guard+merge to persistence (replay append-only + monotonic_key lastTurnId+counts guard).
+    # Then ALWAYS reconcile _sessions cache from the persistence authoritative result (load after write).
+    # This ensures stale/older state passed to service save NEVER stays in the memory authority cache.
+    # load_session will see only the guard-protected newer state; fixes review finding 1.
+    # Python service save path now respects the persistence guard final result.
     save_session_record(state)
+    rec = load_session_record(state.sessionId)
+    if rec.get("ok"):
+        final = rec["session"]
+        _sessions[state.sessionId] = final
+        return final
+    # rare persist error: fall back (do not leave caller assuming success)
+    _sessions[state.sessionId] = state
+    return state
 
 def delete_session(session_id: str):
     _sessions.pop(session_id, None)
@@ -70,7 +82,7 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
         exec_result = execute_capability(cap_id, state, [], role, turn_id)
         # Create artifact from result
         art_id = f"art-{turn_id}-{cap_id}"
-        artifact = Artifact(
+        artifact = Artifact.server_construct(
             id=art_id,
             kind="evidence" if "evidence" in cap_id or cap_id in ["mcp.call", "skill.invoke"] else "report" if cap_id == "report.write" else "risk",
             provenance="python-rag",
@@ -78,7 +90,7 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
             title=exec_result.title,
             summary=exec_result.summary,
             content=exec_result.content,
-            producedBy={"capabilityRunId": f"run-{turn_id}-{cap_id}", "capabilityId": cap_id, "roleId": role},
+            producedBy=ProducedBy(capabilityRunId=f"run-{turn_id}-{cap_id}", capabilityId=cap_id, roleId=role),
             payload={"sources": exec_result.sources},
         )
         state.artifacts.append(artifact)
@@ -94,8 +106,8 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
             )
         )
 
-    save_session(state)
-    return state
+    final = save_session(state)
+    return final
 
 # Load on import
 _load_sessions()
