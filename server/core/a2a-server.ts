@@ -8,8 +8,16 @@ import { execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 
+// Task 50 thin compat shell source marker (centralized for all degraded returns in core).
+const NODE_A2A_COMPAT_SHELL_SOURCE = "node-compat-shell";
+
 /**
- * Thin proxy / compatibility shell for Python-owned A2A.
+ * Thin proxy / compatibility shell for Python-owned A2A. (Task 50 reduction)
+ * Task 50 (backend-python-no-node-a2a-node-compat-thin-proxy-105): Node core A2AServer + routes reduced to PYTHON_FIRST_COMPAT
+ * compatibility shell. Python a2a_runtime owns registry, sessions, stream transport, error/retry/cancel, projections.
+ * - Registry + projections + transport always delegate; errors surfaced as pythonError (no silent Node ownership).
+ * - listExposedAgents + ctor seeding kept only for compat shell + /invoke inbound retained surface.
+ * - All business for A2A protocol surfaces (except inbound invoke execution) is Python source of truth.
  * Registry: delegates to a2a_runtime.py
  * Stream/cancel transport: delegates to Python transport runtime.
  * chat/report/analytics: delegates to Python projection service (chat proj, report gen, analytics counters).
@@ -64,9 +72,9 @@ function callPythonA2ARegistry(op: "register" | "list" | "get", payload: any): a
   throw new Error(`python-a2a-registry ${op} failed: ${lastErr?.message || lastErr || "no output"}`);
 }
 
-/** Python-owned stream/cancel transport bridge.
+/** Python-owned stream/cancel transport bridge (task 48 error/retry/cancel).
  * Node is thin proxy: delegate chunk assembly, session state, cancel idempotency,
- * timeout, retry, malformed to Python runtime in a2a_runtime.py.
+ * timeout, retry, malformed + error creation to Python runtime in a2a_runtime.py.
  * Uses robust temp .py (Windows venv aware).
  */
 function callPythonA2ATransport(op: "start" | "emit_chunk" | "cancel" | "timeout" | "retry", payload: any): any {
@@ -500,7 +508,7 @@ export class A2AServer {
     try {
       return callPythonA2AChatReport("chat", { sessionId, role, content });
     } catch (e: any) {
-      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: "node-compat" };
+      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: NODE_A2A_COMPAT_SHELL_SOURCE };
     }
   }
 
@@ -508,7 +516,7 @@ export class A2AServer {
     try {
       return callPythonA2AChatReport("report", { sessionId, kind });
     } catch (e: any) {
-      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: "node-compat" };
+      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: NODE_A2A_COMPAT_SHELL_SOURCE };
     }
   }
 
@@ -516,7 +524,7 @@ export class A2AServer {
     try {
       return callPythonA2AChatReport("analytics_inc", { name, delta });
     } catch (e: any) {
-      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: "node-compat" };
+      return { ok: false, degraded: true, pythonError: e?.message || String(e), source: NODE_A2A_COMPAT_SHELL_SOURCE };
     }
   }
 
@@ -524,7 +532,7 @@ export class A2AServer {
     try {
       return callPythonA2AChatReport("analytics_get", {});
     } catch (e: any) {
-      return { ok: false, degraded: true, pythonError: e?.message || String(e), counters: {}, source: "node-compat" };
+      return { ok: false, degraded: true, pythonError: e?.message || String(e), counters: {}, source: NODE_A2A_COMPAT_SHELL_SOURCE };
     }
   }
 }

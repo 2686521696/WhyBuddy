@@ -1,8 +1,16 @@
 /**
  * REST API for A2A (Agent-to-Agent) protocol — invoke, stream, cancel, agents, sessions, chat, report, analytics.
- * stream/cancel/registry/sessions: Node is thin proxy bridging to Python-owned (a2a_runtime).
- * chat/report/analytics: Node thin proxy to Python-owned projection service (chat history proj, report gen, analytics counters).
- * Node retains explicit compatibility shell only for these; no business semantics ownership.
+ * Task 47 (backend-python-no-node-a2a-stream-event-contract-105): stream and event transport semantics (chunk emit, session chunk append, ordering, timeout, retry, malformed, cancel idempotency) are Python-owned in services/a2a_runtime.py.
+ * Task 48 (backend-python-no-node-a2a-error-retry-cancel-105): A2A error (create/map), retry envelope, and cancel semantics are Python-owned (create_a2a_error + cancel_a2a_transport + get_a2a_retry_envelope + handle_* / timeout).
+ * Task 49 (backend-python-no-node-a2a-frontend-callsite-cutover-105): A2A frontend callsite audit (client/src) found 0 direct /api/a2a/* callsites. A2A visuals/state are local; protocol surfaces (agents/sessions/chat/report/analytics/stream/cancel) are PYTHON_FIRST_COMPAT with Node thin proxy only. No client callsite edits or Vite route changes needed.
+ * Task 50 (backend-python-no-node-a2a-node-compat-thin-proxy-105): Node A2A route and core server reduced to explicit compatibility shell.
+ *   - Classification: PYTHON_FIRST_COMPAT (Python a2a_runtime is source of truth for registry, sessions, transport, error/retry/cancel, chat/report/analytics projections).
+ *   - /api/a2a/invoke retained as explicit inbound compat shell (local executor); outbound/external invoke delegates to Python.
+ *   - All other handlers: pure thin delegation via callPython* bridges; degraded states carry pythonError/source="node-compat-shell".
+ *   - No Node business semantics ownership for the migrated A2A surfaces.
+ * Task 51 (backend-python-no-node-a2a-api-smoke-python-only-105): Added API smoke proving python backend via source signals on registry/projections; hardened registry responses with explicit python-a2a-registry source.
+ * stream/cancel/registry/sessions/chat/report/analytics: Node is explicit thin proxy/compatibility shell bridging to Python-owned (a2a_runtime); only executor content retained in Node.
+ * No business semantics ownership remains in this route for transport/event/error/retry/cancel.
  */
 import { Router } from "express";
 import type { A2AEnvelope } from "../../shared/a2a-protocol.js";
@@ -17,6 +25,9 @@ import {
 import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
+
+// Task 50: explicit marker for thin compatibility shell (used in degraded responses to prove Node does not own semantics).
+const NODE_A2A_COMPAT_SHELL_SOURCE = "node-compat-shell";
 
 /** Python-first adapter for registry/sessions (Node thin proxy for these endpoints).
  * Robust runner with venv+system candidates + temp .py (addresses venv-only).
@@ -65,7 +76,7 @@ function callPythonA2ARegistrySessions(op: "agents" | "sessions"): any {
 
 /** Direct Python transport bridge for stream/cancel (thin proxy).
  * Complements core delegation; makes /stream /cancel paths show Python-owned
- * (cancel idempotency, chunk transport, timeout/retry/malformed).
+ * (cancel idempotency, chunk transport, timeout/retry/malformed, task 48 error/retry/cancel).
  */
 function callPythonA2ATransport(op: "cancel" | "timeout", payload: any): any {
   const isWin = process.platform === "win32";
@@ -232,8 +243,9 @@ router.post("/invoke", async (req, res) => {
 });
 
 // POST /api/a2a/stream
-// Thin proxy bridge to Python transport (via a2aServer.handleStream which now delegates
-// chunk emission, session state, ordering, malformed, retry/timeout to Python a2a_runtime).
+// PYTHON_FIRST_COMPAT thin proxy (task 47): delegates stream/event transport semantics
+// (start/emit_chunk/timeout/retry/cancel) to Python a2a_runtime; Node yields wrapped chunks only.
+// Degraded python errors surfaced explicitly; no silent Node transport.
 router.post("/stream", async (req, res) => {
   try {
     if (!a2aServer) {
@@ -296,8 +308,8 @@ router.post("/stream", async (req, res) => {
 });
 
 // POST /api/a2a/cancel
-// Explicit Python transport bridge (thin proxy): prefer direct Python cancel for
-// idempotency + session state; fallback to server (which delegates) with visible degraded.
+// Task 48: Explicit Python transport bridge (thin proxy): prefer direct Python cancel for
+// idempotency + session state + error semantics (via create_a2a_error); fallback to server (which delegates) with visible degraded.
 router.post("/cancel", async (req, res) => {
   try {
     if (!a2aServer) {
@@ -356,14 +368,15 @@ router.post("/cancel", async (req, res) => {
 router.get("/agents", (_req, res) => {
   try {
     const agents = callPythonA2ARegistrySessions("agents");
-    return res.json({ agents });
+    // Task 51: attach explicit python source on success path so API smoke can assert PYTHON_FIRST_COMPAT without relying on error/degraded
+    return res.json({ agents, source: "python-a2a-registry" });
   } catch (e: any) {
     // degraded must be visible; do not fall silently if python path broken
     if (!a2aServer) {
       return res.status(500).json({ error: "A2A server not initialized", pythonError: e?.message });
     }
-    // explicit retained compat only on error
-    return res.json({ agents: a2aServer.listExposedAgents(), degraded: true, pythonError: e?.message });
+    // explicit retained compat only on error -- uses node shell source to prove no ownership of registry semantics (task 50)
+    return res.json({ agents: a2aServer.listExposedAgents(), degraded: true, pythonError: e?.message, source: NODE_A2A_COMPAT_SHELL_SOURCE });
   }
 });
 
@@ -371,7 +384,8 @@ router.get("/agents", (_req, res) => {
 router.get("/sessions", (_req, res) => {
   try {
     const sessions = callPythonA2ARegistrySessions("sessions");
-    return res.json({ sessions });
+    // Task 51: attach explicit python source on success path so API smoke can assert PYTHON_FIRST_COMPAT without relying on error/degraded
+    return res.json({ sessions, source: "python-a2a-registry" });
   } catch (e: any) {
     if (!a2aClient) {
       return res.status(500).json({ error: "A2A client not initialized", pythonError: e?.message });
@@ -425,6 +439,7 @@ router.post("/auto-agent", async (req, res) => {
 });
 
 // A2A chat/report/analytics endpoints now routed through Python-first adapter (105 task).
+// Task 49: frontend callsite cutover confirmed no direct client usage of /api/a2a/*; these projections remain PYTHON_FIRST_COMPAT via python adapters.
 // Node is thin proxy/compatibility shell. Real projection, generation, counters owned by Python.
 // All errors from Python are propagated visibly (degraded never hidden).
 router.post("/chat", async (req, res) => {
@@ -437,7 +452,7 @@ router.post("/chat", async (req, res) => {
     return res.json({ ok: true, source: "python-a2a-chat-projection", result: pyRes });
   } catch (e: any) {
     // explicit fallback with visible degradation flag
-    return res.json({ ok: false, degraded: true, source: "node-compat-shell", pythonError: e?.message, result: { sessionId: req.body?.sessionId || null } });
+    return res.json({ ok: false, degraded: true, source: NODE_A2A_COMPAT_SHELL_SOURCE, pythonError: e?.message, result: { sessionId: req.body?.sessionId || null } });
   }
 });
 
@@ -450,7 +465,7 @@ router.post("/report", async (req, res) => {
     const pyRes = callPythonA2AChatReport("report", req.body || {});
     return res.json({ ok: true, source: "python-a2a-report-projection", result: pyRes });
   } catch (e: any) {
-    return res.json({ ok: false, degraded: true, source: "node-compat-shell", pythonError: e?.message, result: null });
+    return res.json({ ok: false, degraded: true, source: NODE_A2A_COMPAT_SHELL_SOURCE, pythonError: e?.message, result: null });
   }
 });
 
@@ -459,7 +474,7 @@ router.get("/analytics", (_req, res) => {
     const pyRes = callPythonA2AChatReport("analytics_get", {});
     return res.json({ ok: true, source: "python-a2a-analytics", result: pyRes });
   } catch (e: any) {
-    return res.json({ ok: false, degraded: true, source: "node-compat-shell", pythonError: e?.message, counters: {} });
+    return res.json({ ok: false, degraded: true, source: NODE_A2A_COMPAT_SHELL_SOURCE, pythonError: e?.message, counters: {} });
   }
 });
 
@@ -468,7 +483,7 @@ router.post("/analytics/inc", async (req, res) => {
     const pyRes = callPythonA2AChatReport("analytics_inc", req.body || {});
     return res.json({ ok: true, source: "python-a2a-analytics", result: pyRes });
   } catch (e: any) {
-    return res.json({ ok: false, degraded: true, source: "node-compat-shell", pythonError: e?.message });
+    return res.json({ ok: false, degraded: true, source: NODE_A2A_COMPAT_SHELL_SOURCE, pythonError: e?.message });
   }
 });
 

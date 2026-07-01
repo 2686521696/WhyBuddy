@@ -14,9 +14,13 @@ from pydantic import ValidationError
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.a2a_runtime import (  # noqa: E402
+    A2A_ERROR_CANCELLED,
     A2A_RUNTIME_CONTRACT_VERSION,
     A2ARuntimeCancelResult,
     A2ARuntimeFailureResult,
+    create_a2a_error,
+    list_a2a_agents,
+    list_a2a_active_sessions,
     project_a2a_runtime_contract,
     record_a2a_chat_projection,
     generate_a2a_report,
@@ -329,3 +333,62 @@ def test_project_a2a_chat_report_analytics_unified_and_unknown_op_degraded():
     assert bad.get("ok") is False
     assert bad.get("degraded") is True
     assert "unknown" in str(bad.get("error", ""))
+
+
+def test_create_a2a_error_factory_and_cancel_error_shape_task48():
+    """Task 48: central create_a2a_error produces consistent shape for error/retry/cancel; cancel contract uses error."""
+    err = create_a2a_error(A2A_ERROR_CANCELLED, "A2A session cancelled.")
+    assert err["code"] == A2A_ERROR_CANCELLED
+    assert err["message"] == "A2A session cancelled."
+    # no data when omitted
+    assert "data" not in err
+
+    # exercise via project contract for cancel (error semantics); use id matching envelope for validator
+    env48 = _envelope("a2a.cancel")
+    cancel_res = project_a2a_runtime_contract(
+        {
+            "operation": "cancel",
+            "sessionId": env48["id"],
+            "envelope": env48,
+            "frameworkType": "custom",
+            "startedAt": 1710000000000,
+        }
+    ).model_dump(exclude_none=True)
+    assert cancel_res["contractVersion"] == A2A_RUNTIME_CONTRACT_VERSION
+    assert cancel_res["runtime"] == "python-contract"
+    assert cancel_res["error"]["code"] == A2A_ERROR_CANCELLED
+    assert cancel_res["status"] == "cancelled"
+
+
+def test_a2a_frontend_callsite_cutover_105_python_source():
+    """Task 49: A2A frontend callsite cutover - prove python-owned registry/sessions/chat/report/analytics are the source (no client direct callsites; Node adapters delegate here).
+    Asserts direct python calls return expected shapes from python impl (list agents/sessions + projections).
+    """
+    agents = list_a2a_agents()
+    assert isinstance(agents, list)
+
+    sessions = list_a2a_active_sessions()
+    assert isinstance(sessions, list)
+
+    # chat/report/analytics via python directly (used by Node thin proxy for any projection surfaces)
+    sid = f"cutover105-{int(__import__('time').time()*1000)}"
+    chat = record_a2a_chat_projection(sid, "user", "cutover test")
+    assert chat["ok"] is True and chat["sessionId"] == sid
+
+    rep = generate_a2a_report(sid, "summary")
+    assert rep["ok"] is True and "report" in rep
+
+    inc = increment_a2a_analytics_counter("a2a.cutover.105", 1)
+    assert inc["ok"] is True
+
+    snap = get_a2a_analytics_snapshot()
+    assert snap["ok"] is True and snap["source"] == "python-a2a-analytics"
+
+    proj = project_a2a_chat_report_analytics("chat", {"sessionId": sid, "role": "user", "content": "p"})
+    assert proj["ok"] is True
+
+    # contract projection for list also python
+    from services.a2a_runtime import project_a2a_runtime_contract
+    la = project_a2a_runtime_contract({"operation": "list_agents", "agents": []}).model_dump(exclude_none=True)
+    assert la["runtime"] == "python-contract"
+    assert la["operation"] == "list_agents"

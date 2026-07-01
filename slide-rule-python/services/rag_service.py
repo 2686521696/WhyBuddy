@@ -506,3 +506,60 @@ def _rag_ingestion_hash(value: str) -> str:
 
 def _rag_ingestion_collection(project_id: str) -> str:
     return f"rag_{project_id}"
+
+
+# --- RAG query/search contract (task 37: move RAG query/search to Python) ---
+
+RAG_QUERY_PROVENANCE = "python-rag-query"
+RAG_QUERY_BACKEND = "slide-rule-python"
+
+
+def rag_query_search(query: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Python-owned RAG query/search behavior.
+
+    Uses the existing keyword retrieve_evidence baseline (consistent with
+    python-rag evidence path). Returns shape compatible with Node /api/rag/search
+    delegate and explicit python provenance signals.
+    """
+    options = options or {}
+    top_k = int(options.get("topK") or options.get("limit") or 10)
+    mode = options.get("mode") or "hybrid"
+    start = __import__("time").time()
+    sources = retrieve_evidence(query, top_k=top_k)
+    latency_ms = int((__import__("time").time() - start) * 1000)
+    # Map to search result shape expected by /api/rag/search callers and delegate
+    results = [
+        {
+            "id": s.get("id"),
+            "content": s.get("content"),
+            "source": s.get("source"),
+            "score": s.get("score", 0.0),
+        }
+        for s in sources
+    ]
+    return {
+        "results": results,
+        "totalCandidates": len(results),
+        "latencyMs": latency_ms,
+        "mode": mode,
+        "provenance": RAG_QUERY_PROVENANCE,
+        "backend": RAG_QUERY_BACKEND,
+        "source": "python",
+    }
+
+
+def rag_ingest_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Minimal contract for /ingest delegate; defers full storage to rag_ingestion when wired.
+
+    Returns explicit python signal; Node delegate will surface this when route mounted.
+    """
+    return {
+        "success": True,
+        "accepted": True,
+        "operation": "ingest",
+        "provenance": RAG_QUERY_PROVENANCE,
+        "backend": RAG_QUERY_BACKEND,
+        "source": "python",
+        "migratedStorage": False,
+        "storage": "python-rag-ingest-contract",
+    }

@@ -1793,6 +1793,7 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
   app.use("/api/nl-command", nlCommandRoutes);
 
   // ── A2A Protocol ──
+  // Task 50: mount reduced to PYTHON_FIRST_COMPAT thin compatibility shell (Node delegates A2A business to Python a2a_runtime; only inbound invoke + compat retained).
   const { A2AServer: A2AServerClass } = await import("./core/a2a-server.js");
   const { A2AClient: A2AClientClass } = await import("./core/a2a-client.js");
   const a2aRoutes = await import("./routes/a2a.js");
@@ -2357,6 +2358,14 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
   // Supports test override similar to agent-loop proxy.
   const { attachHealthProxy } = await import("./routes/health.js");
   attachHealthProxy(app);
+
+  // --- Retirement task 55: server/index.ts backend API responsibilities ---
+  // Classification for this task: ACTIVE_NODE_BUSINESS (Node still owns the mounting and execution of majority /api/* business surfaces: auth, projects, tasks, rag, a2a, blueprint-main, workflows, permissions, audit, knowledge, web-aigc longtail, chat, etc.).
+  // PYTHON_FIRST_COMPAT shells present inside: sliderule (delegates to python when SLIDERULE_V5_BACKEND=python, default), health (attached above), agent-loop proxy prepared in routes/agent-loop.ts (not yet mounted here; see pending task 33).
+  // PYTHON_ONLY: none for full surfaces in index.ts.
+  // Retirement plan (task 55): keep server/index.ts for frontend static serving + residual ACTIVE_NODE_BUSINESS until slices complete. Once all business semantics moved (post task ~60), remove/bypass Node API mounts for PYTHON_ONLY surfaces; leave index.ts as thin frontend server or explicit proxy shell only. Full retirement blocked until auth/rag/a2a/main routes cut over. See agent-loop/tasks/backend-python-no-node-final-server-index-retirement-plan-105.md and migration-status.
+  // Degraded/ownership visible: always; no silent Node for python-owned.
+  // This marker + python health signal (serverIndex* fields) prove Node index does not own the migrated slices.
 
   const staticPath =
     process.env.NODE_ENV === "production"

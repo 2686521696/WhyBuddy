@@ -342,35 +342,12 @@ export type NarrationFallbackReason =
   | "empty_response"
   | "hijacked";
 
-// GET /api/sliderule/ai-topology — 6-AI layout (1 primary scheduler + 5-key aux pool).
-router.get("/ai-topology", (_req: Request, res: Response) => {
-  const primary = getAIConfig();
-  const pool = getSlideRuleCapabilityPool();
-  res.json({
-    primary: {
-      role: "orchestrate + report.write",
-      model: primary.model,
-      configured: Boolean(primary.apiKey),
-    },
-    auxPool: {
-      enabled: isSlideRuleCapabilityPoolEnabled(),
-      size: pool?.size ?? 0,
-      model: pool?.config.model ?? null,
-      capabilities: [
-        "intent.clarify",
-        "route.generate",
-        "route.compare",
-        "requirement.write",
-        "risk.analyze",
-        "counter.argue",
-        "critique.generate",
-        "synthesis.merge",
-      ],
-    },
-    parallelSameRound: true,
-  });
-});
-
+// ai-topology removed (task 57 final-deprecated-stub-cleanup-105): proven unused.
+// - No callsites in client/**, scripts/**, agent-loop/** (grep confirmed).
+// - Marked dead code in inventories (task 09, status).
+// - Classified ACTIVE_NODE_BUSINESS (unused stub); now removed from Node backend API surface.
+// - No Python route added: unused behavior has no owner requirement (retirement of dead stub).
+// - Thin shell / removal proved by dedicated Vitest 404 test below.
 // POST /api/sliderule/orchestrate-plan — scheduling proposal (LLM or heuristic fallback, always 200).
 router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
   const body = (req.body || {}) as {

@@ -6,8 +6,8 @@ Python FastAPI under `slide-rule-python/` is the source of truth for listed cont
 
 ## Registry Version
 - version: "no-node-api-contracts.v1.foundation"
-- lastUpdatedByTask: 10
-- baselineFrom: tasks 01 (route inventory), 02 (callsite inventory), 03 (registry), 06 (route state model), 10 (sliderule frontend callsite->python route->test mapping)
+- lastUpdatedByTask: 56
+- baselineFrom: tasks 01 (route inventory), 02 (callsite inventory), 03 (registry), 06 (route state model), 10 (sliderule frontend callsite->python route->test mapping), 56 (dev/prod routing documentation after Node backend retirement)
 
 ## Contract Classification Model
 Route state model introduced by Foundation task 06 (backend-python-no-node-foundation-deprecation-state-model-105).
@@ -108,3 +108,17 @@ No frontend callsites or Vite were changed (not required for pure registry found
 
 ## Commands (recorded by worker)
 See worker final report in `agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md` for task 03, and `agent-loop/tasks/backend-python-no-node-foundation-deprecation-state-model-105.md` for task 06 (state model hardening, model test, mojibake).
+
+## Task 56: Development and production routing documentation (after Node backend API retirement)
+Task 56 documents the authoritative routing for Python-owned surfaces once Node backend API ownership is retired for those surfaces.
+
+- Classification for routing surfaces: PYTHON_FIRST_COMPAT (Python source of truth for behavior; Node/Vite = routing mechanism / thin compat shell only).
+- Dev routing (Vite): resolveApiTarget + dedicated proxies always send owned prefixes (/api/agent-loop/*, /api/sliderule/*, /api/blueprint/spec-documents/*, /health, /ready) to PYTHON_API_TARGET (default 9700). Unowned /api/* target Node (3001) as explicit thin shell. Env: VITE_PYTHON_FIRST_API=true (default in dev-all) or PYTHON_API_TARGET override.
+- Prod routing: Node remains HTTP entry point (start-prod loads dist/index). Owned surfaces use thin proxy routers (e.g. server/routes/agent-loop.ts fully delegates to 9700, errors surfaced as 502 + python detail; similar delegation in sliderule etc). Python runs standalone (uvicorn slide-rule-python/app.py). No Node business semantics for owned; PYTHON_API_TARGET controls target.
+- Provenance contract (must be observed post-retirement): all Python responses for owned surfaces carry "backend":"slide-rule-python", "source":"python", and surface-specific "provenance". Health + /api/agent-loop/contracts provide live signals. Browser/API smokes (task 54 harness) and contract tests (task 53) assert these; absence or Node-only must fail.
+- Node thin shell boundary (post-retirement): server/routes/* thin proxies + vite proxy + resolve documented as "PYTHON_FIRST_COMPAT", "thin proxy", "delegation only". No reimpl; degraded/fail from Python visible.
+- Update policy alignment: this task updated lastUpdatedByTask to 56 and records routing constraints here + in dedicated agent-loop/tasks/backend-python-no-node-final-routing-docs-105.md (full tables, evidence, risk, commands).
+- Current state (task 56): owned slices (health, agent-loop control, sliderule V5, blueprint spec-docs) documented as routed to Python. Majority surfaces remain ACTIVE_NODE_BUSINESS (high remaining risk). No denom/num change from routing docs.
+- Verification: run the smallest commands recorded in task 56 final report (node fs sim on resolve + python TestClient on /health + /contracts; mojibake on md files).
+
+Future tasks (57+) may reduce/remove more Node mounts for retired surfaces; routing docs here serve as the reference for dev/prod after retirement of Node backend ownership on listed slices.

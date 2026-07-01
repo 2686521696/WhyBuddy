@@ -1,6 +1,10 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import { getRAGConfig, resetRAGConfigCache } from '../rag/config.js';
 import type { RAGConfig } from '../rag/config.js';
+import express from 'express';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createRAGRouter, type RAGRouteDeps } from '../routes/rag.js';
 
 afterEach(() => {
   resetRAGConfigCache();
@@ -167,5 +171,141 @@ describe('getRAGConfig', () => {
 
     const cfg2 = getRAGConfig({ RAG_ENABLED: 'false' });
     expect(cfg2.enabled).toBe(false);
+  });
+});
+
+// RAG query/search thin compatibility shell proof (task 37).
+// Acceptance requires test proving Node does not own business semantics when Python delegate succeeds.
+// This updates the task-allowed Node/Vitest test file (server/tests/rag-config.test.ts) with explicit proof.
+describe('RAG query/search thin compatibility shell (PYTHON_FIRST_COMPAT)', () => {
+  function createDeps() {
+    return {
+      ingestionPipeline: {
+        ingest: vi.fn(async () => ({ success: true, storage: 'node-fallback' })),
+        ingestBatch: vi.fn(),
+        getDeadLetters: vi.fn(async () => []),
+        retryDeadLetter: vi.fn(),
+      } as unknown as RAGRouteDeps['ingestionPipeline'],
+      retriever: {
+        search: vi.fn(async () => []),
+      } as unknown as RAGRouteDeps['retriever'],
+      ragPipeline: {} as RAGRouteDeps['ragPipeline'],
+      feedbackCollector: {
+        recordExplicit: vi.fn(),
+        getStats: vi.fn(() => ({})),
+      } as unknown as RAGRouteDeps['feedbackCollector'],
+      lifecycleManager: {
+        purge: vi.fn(),
+      } as unknown as RAGRouteDeps['lifecycleManager'],
+      healthChecker: {
+        check: vi.fn(),
+      } as unknown as RAGRouteDeps['healthChecker'],
+      metrics: {
+        snapshot: vi.fn(),
+        recordRetrieval: vi.fn(),
+      } as unknown as RAGRouteDeps['metrics'],
+      augmentationLogger: {
+        getByTaskId: vi.fn(() => []),
+      } as unknown as RAGRouteDeps['augmentationLogger'],
+    };
+  }
+
+  async function withApp(
+    configure: (app: express.Express) => void,
+    handler: (baseUrl: string) => Promise<void>,
+  ): Promise<void> {
+    const app = express();
+    app.use(express.json());
+    configure(app);
+    const server = createServer(app);
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+    const address = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      await handler(baseUrl);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }
+
+  it('delegates /api/rag/search to Python and does not execute Node retriever (thin shell proof)', async () => {
+    const pyResult = {
+      results: [{ id: 'py1' }],
+      totalCandidates: 1,
+      provenance: 'python-rag-query',
+      backend: 'slide-rule-python',
+      source: 'python',
+    };
+    const deps = createDeps();
+    const origFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn(async (url: string | URL) => {
+      if (String(url).includes('/api/rag/search')) {
+        return { ok: true, status: 200, json: async () => pyResult } as any;
+      }
+      return origFetch ? origFetch(url) : Promise.reject(new Error('no orig'));
+    });
+
+    try {
+      await withApp(
+        (app) => app.use('/api/rag', createRAGRouter(deps)),
+        async (baseUrl) => {
+          const resp = await fetch(`${baseUrl}/api/rag/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'test q', options: { projectId: 'p1' } }),
+          });
+          expect(resp.status).toBe(200);
+          const body = await resp.json();
+          expect(body.provenance).toBe('python-rag-query');
+          expect(body.backend).toBe('slide-rule-python');
+          // Critical: Node retriever business logic not executed on successful delegate
+          expect(deps.retriever.search).not.toHaveBeenCalled();
+        },
+      );
+    } finally {
+      (globalThis as any).fetch = origFetch;
+    }
+  });
+
+  it('delegates /api/rag/ingest to Python and does not execute Node ingestionPipeline (thin shell proof)', async () => {
+    const pyResult = { success: true, provenance: 'python-rag-query', backend: 'slide-rule-python', source: 'python' };
+    const deps = createDeps();
+    const origFetch = globalThis.fetch;
+    (globalThis as any).fetch = vi.fn(async (url: string | URL) => {
+      if (String(url).includes('/api/rag/ingest')) {
+        return { ok: true, status: 200, json: async () => pyResult } as any;
+      }
+      return origFetch ? origFetch(url) : Promise.reject(new Error('no orig'));
+    });
+
+    try {
+      await withApp(
+        (app) => app.use('/api/rag', createRAGRouter(deps)),
+        async (baseUrl) => {
+          const resp = await fetch(`${baseUrl}/api/rag/ingest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload: { sourceType: 'task_result', sourceId: 't1', content: 'c', projectId: 'p', timestamp: 't' } }),
+          });
+          expect(resp.status).toBe(200);
+          const body = await resp.json();
+          expect(body.provenance).toBe('python-rag-query');
+          // Critical: Node ingestion business not executed on successful delegate
+          expect(deps.ingestionPipeline.ingest).not.toHaveBeenCalled();
+        },
+      );
+    } finally {
+      (globalThis as any).fetch = origFetch;
+    }
   });
 });

@@ -189,4 +189,10 @@ describe("POST /api/sliderule/respond", () => {
     expect(body.source).toBe("llm");
     expect(body.text).toContain("推演说明");
   });
+
+  // Task 57: prove ai-topology deprecated stub was removed (no longer serves backend API path)
+  it("ai-topology stub removed (404, no Node ownership of unused endpoint)", async () => {
+    const res = await fetch(`${base}/ai-topology`, { method: "GET" });
+    expect(res.status).toBe(404);
+  });
 });

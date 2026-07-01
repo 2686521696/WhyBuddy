@@ -119,13 +119,14 @@ function tryRecordAudit(input: Parameters<typeof auditCollector.record>[0]): voi
 export function createRAGRouter(deps: RAGRouteDeps): Router {
   const router = Router();
 
-  // IMPORTANT: Node RAG router /ingest, /ingest/batch and /search are EXPLICIT RETAINED NODE COMPATIBILITY SHELL.
-  // Reason (per task 105 + review): Python /api/rag routes not added in this vector store slice.
-  // Delegate: only when Python /api/rag actually responds (200 or error) -> use its result (py vector owned).
-  // Connect fail or 404 -> delegated:false -> explicit fallback to Node shell keeps public API working.
-  // RAG vector production store boundary owned by Python (rag_ingestion.py + RAGVectorStoreProvider).
-  // Node tests use mock to prove successful delegate path (py result returned, no Node dep); fallback ensures compat.
-  // See 000 + 105. Degraded from active delegate is visible.
+  // RAG query/search behavior classification (task 37): /search + /ingest* are PYTHON_FIRST_COMPAT.
+  // Python FastAPI (slide-rule-python/routes/rag.py + services/rag_service.py) owns the query/search semantics and contract.
+  // Node is explicit thin compatibility shell: tryDelegateToPythonRag always attempted first; when Python responds (ok or error) the result is used verbatim.
+  // Only on connect-fail or 404 fallback to Node retained impl (keeps public surface working during cutover but does not own business when Python live).
+  // Provenance signals ("backend":"slide-rule-python", "source":"python", "provenance":"python-rag-query") must surface on Python path.
+  // Degraded/unavailable from Python delegate are forwarded (visible); no silent Node success when delegate active.
+  // Thin shell proven by test: server/tests/rag-config.test.ts (delegate success => !retriever.search && !ingestionPipeline.ingest).
+  // Vector ingestion provider boundary already in Python (services/rag_ingestion.py); this task moves the query/search entrypoint.
 
   function resolvePythonRagBase(): string {
     return (
@@ -139,12 +140,11 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
     operation: "ingest" | "search" | "upsert" | "delete" | "batch",
     payload: any,
   ): Promise<PythonRagDelegateResult> {
-    // Delegate to Python-first when /api/rag http endpoint responds (success or py-reported failure).
-    // Per review finding 1: connection failure or 404 (no Python /api/rag route in this slice) treated as
-    // "delegate unavailable" -> explicit fallback to retained Node compatibility shell (public API works by default).
-    // When Python responds, delegate result becomes the business outcome (thin proxy); Node no longer owns vector semantics.
-    // Python vector boundary owned in slide-rule-python/services/rag_ingestion.py + sliderule_llm/vector.py (RAGVectorStoreProvider).
-    // Degraded states from active delegate are visible (no silent Node success when delegate path taken).
+    // Delegate to Python (PYTHON_FIRST_COMPAT for query/search per task 37).
+    // Connection failure or 404 -> delegated:false (explicit fallback only; thin compat).
+    // Any response from Python (ok or error body) -> delegated:true and use it verbatim (Python owns).
+    // Signals from Python: backend/slide-rule-python + provenance:python-rag-query expected.
+    // Degraded visible from Python path.
     const base = resolvePythonRagBase();
     const internalKey = process.env.PYTHON_SLIDE_RULE_INTERNAL_KEY || "dev-slide-rule-internal";
     const url = `${base}/api/rag/${operation === "search" ? "search" : "ingest"}`;
@@ -273,9 +273,9 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   }
 
   // POST /api/rag/ingest
-  // Explicit retained Node compatibility shell (public API kept per task). Delegate only when Python /api/rag responds.
-  // On delegate unavailable (connect/404) -> fallback to Node shell. On delegate result (py success or py failure) -> return it (thin proxy).
-  // Python owns the vector store boundary (RAGVectorStoreProvider + rag_ingestion production paths).
+  // PYTHON_FIRST_COMPAT (task 37): Python owns query/ingest behavior. Node is thin proxy.
+  // Delegate result drives (py success or py-reported failure); fallback only explicit compat when delegate unavailable.
+  // Python route: /api/rag/ingest (routes/rag.py) returns provenance.
   router.post('/ingest', async (req, res) => {
     try {
       const payload = req.body?.payload as IngestionPayload;
@@ -304,7 +304,7 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/rag/ingest/batch
-  // Explicit retained Node compatibility shell. Delegate result (if py responded) drives; else fallback to compat shell.
+  // PYTHON_FIRST_COMPAT (task 37): Python owns; Node thin proxy only.
   router.post('/ingest/batch', async (req, res) => {
     try {
       const payloads = req.body?.payloads as IngestionPayload[];
@@ -332,8 +332,9 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
   });
 
   // POST /api/rag/search
-  // Explicit retained Node compatibility shell (public API kept). Delegate to Python when responds; result drives outcome.
-  // When delegate unavailable, fallback keeps compat; vector semantics owned in Python provider.
+  // PYTHON_FIRST_COMPAT (task 37): RAG query/search behavior moved to Python.
+  // Delegate drives outcome (result from /api/rag/search in Python with python-rag-query provenance).
+  // Fallback only on unavailable (explicit compat shell); Node retriever no longer owns when Python live.
   router.post('/search', async (req, res) => {
     try {
       const { query, options } = req.body;

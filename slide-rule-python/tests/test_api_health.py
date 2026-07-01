@@ -81,3 +81,21 @@ def test_python_health_provenance_for_vite_dev_routing():
         assert data.get("source") == "python"
         assert "slide-rule-python" in str(data.get("backend", "")).lower()
         assert "backend:slide-rule-python" in str(data.get("provenance", ""))
+
+
+def test_server_index_retirement_state_from_python_health_task55():
+    """Task 55: Python health surfaces server/index.ts retirement state (ACTIVE_NODE_BUSINESS + plan ref).
+    Proves Python is contract source even for retirement metadata; Node index not owner.
+    """
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert "serverIndexRole" in data
+    assert "ACTIVE_NODE_BUSINESS" in str(data.get("serverIndexRole", ""))
+    assert data.get("serverIndexRetirementTask") == 55
+    assert "plan-recorded" in str(data.get("serverIndexRetirementState", ""))
+    # also check /health
+    r2 = client.get("/health")
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2.get("serverIndexRetirementTask") == 55

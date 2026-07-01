@@ -86,6 +86,10 @@ def _bad_plan_request(message: str) -> JSONResponse:
             "error": "invalid_request",
             "reason": "bad_input",
             "message": message,
+            "backend": PYTHON_BACKEND,
+            "source": "python",
+            "provenance": PROVENANCE_PYTHON_RAG,
+            "degraded": True,
         },
     )
 

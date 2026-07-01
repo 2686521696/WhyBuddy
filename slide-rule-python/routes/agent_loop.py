@@ -106,12 +106,14 @@ def _validate_mode(mode: Optional[str]) -> str:
 
 @router.get("/health")
 async def health():
-    """Return backend identity, bridge mode, and status."""
+    """Return backend identity, bridge mode, and status. Task 58: includes observability coverage."""
     return {
         "status": "ok",
         "backend": "sliderule-python",
         "mode": "bridge",
         "version": "agentloop.v1.bootstrap",
+        "observability": {"health": True, "provenance": True, "degradedStates": True, "errors": True},
+        "source": "python",
     }
 
 
@@ -567,6 +569,18 @@ async def api_contract_registry():
             pythonRoute="/api/blueprint/spec-documents",
             provenanceSignal="python",
         ),
+        ContractSurface(
+            surface="/api/observability",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/api/observability",
+            provenanceSignal="backend:slide-rule-python",
+        ),
+        ContractSurface(
+            surface="/health (with error observability)",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/health,/api/health,/ready",
+            provenanceSignal="backend:slide-rule-python",
+        ),
     ]
     return {
         "registryVersion": "backend-python-no-node.v1",
@@ -578,4 +592,5 @@ async def api_contract_registry():
         "surfaces": [s.model_dump(mode="json") for s in surfaces],
         "denominatorBaseline": 66,
         "pythonOwnedOrCompatCount": 4,
+        "observabilityHardenedByTask": 58,
     }

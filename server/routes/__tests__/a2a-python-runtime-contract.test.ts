@@ -463,4 +463,33 @@ describe("A2A Python runtime contract", () => {
     expect(bad.degraded).toBe(true);
     expect(bad.pythonError).toBeDefined();
   });
+
+  it("Node /cancel and transport error paths act as thin proxy only (task 48: python create_a2a_error + retry/cancel semantics; no Node owned error logic)", async () => {
+    const execute = vi.fn(async () => "x");
+    const executeStream = vi.fn(async function* () {});
+    const server = new A2AServer({
+      apiKeys: ["tk-48"],
+      agentExecutor: { execute, executeStream },
+      exposedAgents: [{ id: "agent-48", name: "A48", capabilities: [], description: "" }],
+    });
+    initA2ARoutes(server, new A2AClient());
+
+    await withApp((app) => app.use("/api/a2a", a2aRouter), async (baseUrl) => {
+      // cancel via route hits direct python bridge
+      const cancelRes = await fetch(`${baseUrl}/api/a2a/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer tk-48" },
+        body: JSON.stringify({ sessionId: "task48-cancel" }),
+      });
+      const cancelBody = await cancelRes.json();
+      expect(cancelBody.error?.code).toBe(A2A_ERROR_CODES.CANCELLED);
+      // python error surfaced verbatim (thin shell, no Node remapping of cancel semantics)
+      expect(cancelBody.error?.message).toBe("A2A session cancelled.");
+    });
+
+    // confirm delegation to python transport for cancel (task 48)
+    const calls = vi.mocked(execSync).mock.calls.map((c: any[]) => String(c[0] || ""));
+    expect(calls.some((cmd) => cmd.includes("cancel") || cmd.includes("a2a_rt_") || cmd.includes("a2a_transport_"))).toBe(true);
+    // Node A2AServer handleCancel used as fallback only in degraded; here proxy exercised
+  });
 });

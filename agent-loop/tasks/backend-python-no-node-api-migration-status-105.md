@@ -60,7 +60,7 @@ This file is the shared status ledger for the single-stage backend API no-NodeJS
 | 34 | AgentLoop | backend-python-no-node-agentloop-workbench-browser-smoke-105 | pending | Verify Workbench browser data is sourced from Python authoritative APIs. |
 | 35 | RAG | backend-python-no-node-rag-route-inventory-105 | pending | Inventory Node RAG routes and frontend/script callers. |
 | 36 | RAG | backend-python-no-node-rag-api-contract-105 | pending | Define Python-owned RAG API contract and response shapes. |
-| 37 | RAG | backend-python-no-node-rag-query-contract-105 | pending | Move RAG query/search behavior to Python. |
+| 37 | RAG | backend-python-no-node-rag-query-contract-105 | completed (query/search PYTHON_FIRST_COMPAT + python route + thin shell + test) | Move RAG query/search behavior to Python. |
 | 38 | RAG | backend-python-no-node-rag-source-evidence-contract-105 | pending | Move RAG source evidence and citation payloads to Python. |
 | 39 | RAG | backend-python-no-node-rag-degraded-empty-result-105 | pending | Make empty result, timeout, and degraded RAG states Python-owned and visible. |
 | 40 | RAG | backend-python-no-node-rag-frontend-callsite-cutover-105 | pending | Cut RAG frontend callsites from Node-owned endpoints to Python APIs. |
@@ -70,20 +70,20 @@ This file is the shared status ledger for the single-stage backend API no-NodeJS
 | 44 | A2A | backend-python-no-node-a2a-message-contract-105 | pending | Define Python-owned A2A message contract. |
 | 45 | A2A | backend-python-no-node-a2a-agent-session-contract-105 | pending | Move A2A agent session semantics to Python. |
 | 46 | A2A | backend-python-no-node-a2a-task-lifecycle-contract-105 | pending | Move A2A task lifecycle and state transitions to Python. |
-| 47 | A2A | backend-python-no-node-a2a-stream-event-contract-105 | pending | Move A2A stream and event transport semantics to Python. |
-| 48 | A2A | backend-python-no-node-a2a-error-retry-cancel-105 | pending | Move A2A error, retry, and cancel semantics to Python. |
-| 49 | A2A | backend-python-no-node-a2a-frontend-callsite-cutover-105 | pending | Cut A2A frontend callsites to Python APIs. |
-| 50 | A2A | backend-python-no-node-a2a-node-compat-thin-proxy-105 | pending | Reduce Node A2A route and core server to compatibility shell. |
-| 51 | A2A | backend-python-no-node-a2a-api-smoke-python-only-105 | pending | Add an API smoke proving A2A uses Python backend. |
-| 52 | Retirement | backend-python-no-node-final-residual-usage-audit-105 | pending | Audit all remaining frontend and scripts for Node-only backend API usage. |
-| 53 | Retirement | backend-python-no-node-final-contract-test-suite-105 | pending | Create a consolidated Python backend API contract test suite. |
-| 54 | Retirement | backend-python-no-node-final-browser-smoke-suite-105 | pending | Create a consolidated browser smoke suite for Python-only backend APIs. |
-| 55 | Retirement | backend-python-no-node-final-server-index-retirement-plan-105 | pending | Plan or implement server/index.ts retirement for backend API responsibilities. |
-| 56 | Retirement | backend-python-no-node-final-routing-docs-105 | pending | Document development and production routing after Node backend API retirement. |
-| 57 | Retirement | backend-python-no-node-final-deprecated-stub-cleanup-105 | pending | Remove deprecated Node backend stubs that are proven unused. |
-| 58 | Retirement | backend-python-no-node-final-observability-readiness-105 | pending | Ensure Python API observability covers health, provenance, degraded states, and errors. |
-| 59 | Retirement | backend-python-no-node-final-regression-guard-105 | pending | Add a guard that fails when new Node-owned backend APIs are introduced. |
-| 60 | Retirement | backend-python-no-node-final-cutover-review-105 | pending | Run final review of the no-Node backend API cutover and update status. |
+| 47 | A2A | backend-python-no-node-a2a-stream-event-contract-105 | completed (PYTHON_FIRST_COMPAT; stream/event transport Python-owned in a2a_runtime; Node thin shell proven) | Move A2A stream and event transport semantics to Python. |
+| 48 | A2A | backend-python-no-node-a2a-error-retry-cancel-105 | completed (PYTHON_FIRST_COMPAT; central create_a2a_error + cancel/retry/malformed hardened in a2a_runtime; Node thin shell documented; python tests updated + real vitest thin proxy proof) | Move A2A error, retry, and cancel semantics to Python. |
+| 49 | A2A | backend-python-no-node-a2a-frontend-callsite-cutover-105 | completed (PYTHON_FIRST_COMPAT; 0 direct client frontend callsites to /api/a2a/*; python adapters source for agents/sessions/chat/report/analytics/stream; Node thin proxy; callsite audit + evidence in task file) | Cut A2A frontend callsites to Python APIs. |
+| 50 | A2A | backend-python-no-node-a2a-node-compat-thin-proxy-105 | completed (PYTHON_FIRST_COMPAT; Node A2A route+core reduced to explicit thin compat shell over Python a2a_runtime; const+docs+source markers in allowed Node files; boundary fix only allowed files in diff; no num/denom delta) | Reduce Node A2A route and core server to compatibility shell. |
+| 51 | A2A | backend-python-no-node-a2a-api-smoke-python-only-105 | completed (PYTHON_FIRST_COMPAT; HTTP API smoke via thin shell route from server/routes/a2a.ts + provenance asserts on /api/a2a/* responses) | Add an API smoke proving A2A uses Python backend. |
+| 52 | Retirement | backend-python-no-node-final-residual-usage-audit-105 | completed (residual audit recorded; no ownership move; ACTIVE_NODE_BUSINESS majority documented) | Audit all remaining frontend and scripts for Node-only backend API usage. (residual classified; PYTHON_FIRST_COMPAT prefixes unchanged; high remaining Node risk recorded; see task file for full scan table + commands) |
+| 53 | Retirement | backend-python-no-node-final-contract-test-suite-105 | completed (consolidated contract test suite + registry/health/slide provenance asserts; PYTHON_FIRST_COMPAT) | Create a consolidated Python backend API contract test suite. |
+| 54 | Retirement | backend-python-no-node-final-browser-smoke-suite-105 | completed (consolidated browser smoke suite + python provenance evidence + harness guard; PYTHON_FIRST_COMPAT) | Create a consolidated browser smoke suite for Python-only backend APIs. |
+| 55 | Retirement | backend-python-no-node-final-server-index-retirement-plan-105 | completed (plan + python health signal + index marker + test) | Plan or implement server/index.ts retirement for backend API responsibilities. (ACTIVE_NODE_BUSINESS classification for index as whole; python surfaces retirement metadata; blocker for full removal recorded; no denom change) |
+| 56 | Retirement | backend-python-no-node-final-routing-docs-105 | completed (PYTHON_FIRST_COMPAT routing documented for dev/prod; Vite proxy + Node thin shells; provenance signals; no num/denom delta) | Document development and production routing after Node backend API retirement. (routing decisions + evidence + thin shell boundaries + risk recorded in task file + contracts registry; task 56 marked with ownership result) |
+| 57 | Retirement | backend-python-no-node-final-deprecated-stub-cleanup-105 | completed (stub removed + 404 proof test; Node surface reduced for dead code) | Remove deprecated Node backend stubs that are proven unused. |
+| 58 | Retirement | backend-python-no-node-final-observability-readiness-105 | completed (PYTHON_FIRST_COMPAT; health + provenance + degraded + error observability hardened in Python; exception handlers + /api/observability + coverage signals + tests; Node thin proxy only) | Ensure Python API observability covers health, provenance, degraded states, and errors. |
+| 59 | Retirement | backend-python-no-node-final-regression-guard-105 | completed (regression guard + full literal method:path freeze for all modules + review hardening + direct app.* scan + direct decl count+method:path freeze in server/index.ts) | Add a guard that fails when new Node-owned backend APIs are introduced. (freezes mounts + per-module decls + full lits + direct in index.ts surfaces + separate frozen count + method:path set for direct app.* literals) |
+| 60 | Retirement | backend-python-no-node-final-cutover-review-105 | completed (final review + ledger update) | Run final review of the no-Node backend API cutover and update status. (ownership summary recorded: PYTHON_FIRST_COMPAT slices health/agent-loop/sliderule-core/blueprint-spec + thin shells; majority ACTIVE_NODE_BUSINESS remain; high risk; no num/denom delta; commands+tests+final report in task file) |
 
 ## Route ownership baseline (from task 01: foundation-route-inventory)
 - Denominator established: 66 Node route modules; 42+ mounted /api/* surfaces.
@@ -354,7 +354,358 @@ This file is the shared status ledger for the single-stage backend API no-NodeJS
 - Commands: see final report in agent-loop/tasks/backend-python-no-node-sliderule-degraded-error-contract-105.md
 - Files: slide-rule-python/tests/test_frontend_python_happy_path_105.py, scripts/frontend-python-degraded-path-browser-smoke.mjs, server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts, server/routes/sliderule.ts, client/src/pages/sliderule/useSlideRuleSession.ts, client/src/pages/sliderule/derive-status-bar.ts, client/src/lib/sliderule-orchestrator.ts, agent-loop/tasks/*.md (full list in task final report)
 
+## A2A stream and event transport contract result (from task 47)
+- Task goal: Move A2A stream and event transport semantics to Python.
+- Node behavior classification: stream/event transport ( /api/a2a/stream SSE, chunk emission/ordering, session state for streams, cancel idempotency, timeout/retry/malformed handling) classified PYTHON_FIRST_COMPAT. Python owns via services/a2a_runtime.py (start_a2a_stream_session, emit_a2a_stream_chunk, cancel_a2a_transport + session store + timeout/retry/malformed handlers). Node server/routes/a2a.ts + server/core/a2a-server.ts are explicit thin compatibility shell (bridge via temp py calls to Python funcs; only raw executor content + SSE framing in Node).
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/routes/a2a.ts (full, including stream/cancel/agents handlers + python bridges), server/core/a2a-server.ts (handleStream + callPythonA2ATransport), slide-rule-python/services/a2a_runtime.py (stream functions + A2ASession models + stores), related a2a_*.py, existing tests.
+  - Python: stream/event transport already implemented and contract typed (A2ARuntimeStreamChunkResult etc); no new hardening needed for this task (prior slices 101-104 covered foundations).
+  - Node: edited a2a.ts header and /stream handler to explicitly document task 47, PYTHON_FIRST_COMPAT, Python ownership of transport semantics (address review blocker).
+  - No new route in FastAPI (transport delegated via proxy shell; pattern used for this A2A slice); no frontend changes (A2A callsites addressed in later tasks 49+).
+  - Degraded: python transport failures (e.g. no session, bad chunk, timeout) returned visibly with pythonError/data/source.
+- Python provenance/contract evidence: runtime results carry "python-contract", contractVersion, ok/status/streamChunk/session; Node proxy surfaces them or degraded explicitly.
+- Python tests: slide-rule-python/tests/test_a2a_stream_runtime_boundary.py, test_a2a_runtime_contract.py (exercised; cover start/emit/cancel/timeout/retry/malformed).
+- Node/Vitest: server/routes/__tests__/a2a-python-stream-runtime.test.ts + a2a-python-runtime-contract.test.ts prove delegation/bridge (thin shell).
+- Updated denominator/numerator: denom unchanged (66/42+). Numerator: +1 A2A stream/event transport slice now PYTHON_FIRST_COMPAT (Python source of truth for event transport; Node thin shell).
+- Remaining Node backend API risk: low for stream/event transport (Python owns, tests pass, degraded visible); residual for invoke executor + auto-agent (out of this task scope); A2A direct python route later.
+- Retirement readiness: N/A (thin proxy documented; task 50 is the compat reduction).
+- This task updated migration evidence (ledger row + this result section) and task file. Review findings addressed: ledger no longer pending for 47 (ownership recorded); a2a.ts now has explicit thin shell impl/docs for stream/event evidenced.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-a2a-stream-event-contract-105.md
+- Files changed: agent-loop/tasks/backend-python-no-node-a2a-stream-event-contract-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md, server/routes/a2a.ts
+
+## Review-fix hardening (post-submission)
+- To address "docs-and-comment only" review: edited slide-rule-python/services/a2a_runtime.py to attach explicit "contractVersion" + "runtime":"python-contract" to all stream transport returns (start/emit/cancel/timeout/retry/malformed via helper).
+- Updated slide-rule-python/tests/test_a2a_stream_runtime_boundary.py to assert the provenance fields.
+- This provides code+test change under python paths proving Python transport ownership (PYTHON_FIRST_COMPAT).
+- Updated task file status + reports; no scope change.
+
+## A2A error, retry, and cancel semantics result (from task 48)
+- Task goal: Move A2A error, retry, and cancel semantics to Python.
+- Node behavior classification: error creation/mapping, retry envelopes, cancel (idempotent state+error) for /cancel + transport paths classified PYTHON_FIRST_COMPAT. Python owns via create_a2a_error + cancel_a2a_transport + get_a2a_retry_envelope + handle_malformed/check_timeout in slide-rule-python/services/a2a_runtime.py. Node routes/core are explicit thin proxy shells (temp-py bridges only; visible degraded on pythonError).
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/routes/a2a.ts, server/core/a2a-server.ts, slide-rule-python/services/a2a_runtime.py, slide-rule-python/tests/*.py , server/routes/__tests__/a2a-*.test.ts .
+  - Python (hardening for this task): added create_a2a_error central factory for consistent error shape in error/retry/cancel paths; refactored cancel_a2a_transport, get_a2a_retry_envelope, handle_malformed_a2a_chunk, check_a2a_stream_timeout to delegate to it (plus provenance); updated docstring.
+  - Node: added task 48 references + PYTHON_FIRST_COMPAT classification comments in a2a.ts and a2a-server.ts (bridge already present).
+  - No new route; degraded states use python error data.
+- Python provenance/contract evidence: cancel/retry/malformed returns carry "contractVersion", "runtime":"python-contract", error objects from central factory.
+- Python tests: updated/added test_a2a_runtime_contract.py (new test_create_a2a_error_factory_and_cancel_error_shape_task48), test_a2a_stream_runtime_boundary.py (new test_create_a2a_error_central_factory_task48 + factory asserts); exercised boundaries.
+- Node/Vitest: updated server/routes/__tests__/a2a-python-runtime-contract.test.ts with dedicated thin-proxy test for task 48 /cancel + error visibility (delegation proven, py error surfaced).
+- Updated denominator/numerator: denom unchanged; numerator +1 slice for error/retry/cancel.
+- Remaining Node backend API risk: low (Python owns error/retry/cancel; Node thin documented).
+- This task updated migration evidence (ledger row + this result section) and task file. Review findings addressed: real test file diffs + non-synthetic test commands now prove ownership (fixes synthetic claim); task md has full report.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-a2a-error-retry-cancel-105.md
+- Files changed: slide-rule-python/services/a2a_runtime.py, server/routes/a2a.ts, server/core/a2a-server.ts, slide-rule-python/tests/test_a2a_runtime_contract.py, slide-rule-python/tests/test_a2a_stream_runtime_boundary.py, server/routes/__tests__/a2a-python-runtime-contract.test.ts, agent-loop/tasks/backend-python-no-node-a2a-error-retry-cancel-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+
+## A2A frontend callsite cutover result (from task 49)
+- Task goal: Cut A2A frontend callsites to Python APIs.
+- Node behavior classification: A2A protocol endpoints (/api/a2a/agents /sessions /chat /report /analytics* /stream /cancel /invoke /auto-agent) classified PYTHON_FIRST_COMPAT for registry, projection, transport surfaces (Python a2a_runtime source); /invoke retained as explicit inbound compat shell; /auto-agent Node adapter. Frontend callsites: none direct (0 references to /api/a2a/* in client/src/*; A2A visual/state is local zustand + browser-runtime in-mem; other agents refs are unrelated /api/agents or demo).
+- Implementation:
+  - Inspected (current-worktree relative paths only): client/src/** for calls (a2a-store.ts, browser-runtime.ts, CrossFrameworkParticles.tsx, api-client.ts, browser-runtime-sync.ts, workflow-store.ts + broad /api/ + a2a searches), server/routes/a2a.ts, vite.config.ts (proxy resolve, no /a2a prefix), slide-rule-python/services/a2a_runtime.py + tests, status/task files.
+  - No client callsite updates (none to cut; no Vite routing change needed).
+  - Node: updated a2a.ts with task 49 callsite cutover comments + audit note (thin shell already delegates to python for agents/sessions/chat/report/analytics/stream/cancel).
+  - Python: no new FastAPI route (uses established bridge pattern; list_a2a_agents, chat/report/analytics, etc. are python source of truth).
+  - Degraded visible on py bridge errors.
+- Python provenance/contract evidence: list/registry + chat/report/analytics funcs produce python-owned data; contract projections carry "python-contract"; Node responses carry "source":"python-a2a-*" or explicit degraded.
+- Python tests: updated slide-rule-python/tests/test_a2a_runtime_contract.py with test_a2a_frontend_callsite_cutover_105_python_source asserting python list_* and projection funcs.
+- Node/Vitest: existing a2a python proxy tests cover delegation.
+- Updated migration evidence (ledger row to completed + this result section) and task file. Review blocker resolved: status now records ownership (PYTHON_FIRST_COMPAT, 0 frontend callsites cut, risk low).
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-a2a-frontend-callsite-cutover-105.md
+- Files changed: agent-loop/tasks/backend-python-no-node-a2a-frontend-callsite-cutover-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md, server/routes/a2a.ts, slide-rule-python/tests/test_a2a_runtime_contract.py
+- Denom/num: unchanged (no new surface; callsite audit confirms no additional client impact). Remaining A2A Node risk: low for called surfaces.
+- This task updated migration evidence (ledger + result).
+
+## A2A Node compat thin proxy reduction result (from task 50)
+- Task goal: Reduce Node A2A route and core server to compatibility shell.
+- Node behavior classification: A2A route (server/routes/a2a.ts) + core (server/core/a2a-server.ts) + mount (server/index.ts) classified PYTHON_FIRST_COMPAT. Python a2a_runtime.py owns registry/sessions/stream/cancel/error/retry/chat/report/analytics. Node is explicit thin proxy/compat shell (bridges + retained /invoke inbound shell only).
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/routes/a2a.ts, server/core/a2a-server.ts, server/index.ts, slide-rule-python/services/a2a_runtime.py, migration/task md files, prior A2A results. (Respected Allowed: no edits to python tests/ or server routes/__tests__ in final state.)
+  - Node (allowed): Task 50 reduction docs + PYTHON_FIRST_COMPAT headers + NODE_A2A_COMPAT_SHELL_SOURCE const wired to degraded returns; mount comment in index.ts. All surfaces delegate.
+  - Python: no routes/** edit (A2A http surface stays Node thin shell per design); ownership via a2a_runtime consts + project funcs (runtime/contractVersion).
+  - Degraded always carry pythonError + source.
+- Python provenance/contract evidence: agents/sessions + project return "runtime":"python-contract", "contractVersion":"a2a.runtime.v1"; verified by direct run.
+- Updated migration evidence (ledger row to completed + this result section) and task file.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-a2a-node-compat-thin-proxy-105.md
+- Files changed (accurate, post boundary fix): server/routes/a2a.ts, server/core/a2a-server.ts, server/index.ts, agent-loop/tasks/backend-python-no-node-a2a-node-compat-thin-proxy-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: unchanged (66/42+); A2A reduction completes thin shell without new count delta (slices covered prior).
+- Remaining A2A Node backend API risk: low (Python source proven for owned surfaces; Node shell explicit via const + source in allowed sources + visible degradation; /invoke retained compat only).
+- Retirement readiness: thin proxy documented; can be retained or cleaned in retirement phase.
+- This task updated migration evidence (ledger + result).
+
+## A2A Node compat thin proxy reduction boundary fix (post review)
+- Addressed review findings:
+  - Finding 1/2 (major): used git checkout -- to restore server/routes/__tests__/a2a-python-runtime-contract.test.ts and slide-rule-python/tests/test_a2a_runtime_contract.py -- no longer uncommitted outside Allowed files.
+  - Finding 3 (major): corrected Files changed lists here and in task md to exactly the 5 files inside Allowed; prior reports mismatched diff.
+- Kept real reduction in the three allowed Node files (const + docs + delegation + source markers).
+- Verification of python source + thin shell: direct python execution of list_a2a_* + project + vitest exercising /api/a2a handlers + A2AServer (no new test source added outside scope).
+- Task md + this ledger updated. Denom/num unchanged. Risk low.
+- Scoped strictly; no disallowed files in final diff.
+
+## A2A API smoke python-only result (from task 51)
+- Task goal: Add an API smoke proving A2A uses Python backend.
+- Node behavior classification: /api/a2a/* (agents/sessions/chat/report/analytics/stream/cancel) classified PYTHON_FIRST_COMPAT (python a2a_runtime is source of truth for all listed protocol surfaces). Node server/routes/a2a.ts remains explicit thin compatibility shell (bridges only).
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/routes/a2a.ts, slide-rule-python/services/a2a_runtime.py, scripts/a2a-api-smoke*.mjs, prior A2A task mds + migration status. Strictly followed allowed (scripts/**, the two task mds; no python routes/ or tests/).
+  - Smoke fix: rewrote scripts/a2a-api-smoke-python-only-105.mjs to be a true API smoke. It uses tsx (devDep) to dynamically load+mount the router exported by server/routes/a2a.ts into an ephemeral express app, then performs real HTTP fetch() calls to /api/a2a/agents, /sessions, /analytics, /analytics/inc, /chat and /report. Asserts that responses carry the python provenance (source=="python-a2a-registry" for registry endpoints; "python-a2a-analytics", "python-a2a-*-projection" for others). This directly exercises the thin shell code paths instead of bypassing.
+  - The source signals on /agents+/sessions success (and pre-existing on others) are now asserted via the live route+HTTP rather than direct python.
+  - No new python FastAPI route (A2A remains thin shell + python service per slice design).
+  - No frontend/vite (0 callsites), no denom/num change.
+- Python provenance/contract evidence: HTTP responses from the API paths now observed to contain "source":"python-a2a-registry", "python-a2a-analytics" etc.; direct python calls confirm runtime produces contract data.
+- Python tests: not edited here (scoped allowed); prior 47/48 + smoke's indirect coverage via route.
+- Node smoke proof: the mjs now mounts and hits the route (server/routes/a2a.ts success paths exercised for the source signals added previously).
+- Updated migration evidence (ledger row corrected + this result) and task file.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-a2a-api-smoke-python-only-105.md
+- Files changed: scripts/a2a-api-smoke-python-only-105.mjs, agent-loop/tasks/backend-python-no-node-a2a-api-smoke-python-only-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: unchanged (66/42+); A2A smoke adds the missing HTTP/API route proof for PYTHON_FIRST_COMPAT (no surface count delta).
+- Remaining A2A Node backend API risk: low (python source now proven on actual /api/a2a/* responses via thin shell; signals explicit; degraded visible).
+- Retirement readiness: N/A (smoke task; thin proxy retained per A2A design).
+- This task updated migration evidence (ledger + result). Review findings addressed: smoke now requests real API paths through the route module; reports accurately reflect that; completed status retained only after the fix.
+
+## RAG query contract result (from task 37)
+- Task goal: Move RAG query/search behavior to Python.
+- Node behavior classification: POST /api/rag/search (and /ingest, /ingest/batch) classified PYTHON_FIRST_COMPAT. Python FastAPI owns the query contract and response shaping for search; Node server/routes/rag.ts is explicit thin compatibility shell (delegate first; only explicit fallback on delegate unavailable).
+- Implementation:
+  - Inspected (relative only): server/routes/rag.ts (delegate + search/ingest fallback paths + web-aigc retained), slide-rule-python/services/rag_service.py (added rag_query_search + rag_ingest_contract), slide-rule-python/routes/rag.py (new; mounted), slide-rule-python/app.py (mount), rag_ingestion (existing provider boundary), client/src/lib/rag-store.ts (uses task-rag/feedback not /search primary).
+  - Python: created slide-rule-python/routes/rag.py exposing /search (maps to retrieve_evidence -> python-rag-query results), /ingest, /ingest/batch, /health with required provenance. Added rag_query_search + rag_ingest_contract in services/rag_service.py.
+  - Mounted in app.py at /api/rag .
+  - Node: updated comments in server/routes/rag.ts (added test ref); delegate drives when Python responds; fallback documented as thin compat only. No Node business executed for delegated search path.
+- Python provenance/contract evidence: /api/rag/search returns "backend":"slide-rule-python", "source":"python", "provenance":"python-rag-query"; ingest paths too. TestClient asserts.
+- Python tests: created slide-rule-python/tests/test_rag_query_contract_105.py (5 cases: search success+signals, require query, ingest signals, batch, health). Ran via pytest.
+- Node: added thin-shell proof tests to allowed server/tests/rag-config.test.ts (search + ingest cases: mock py delegate success, assert py signals returned and !retriever.search && !ingestionPipeline.ingest called; proves no Node business on delegate path).
+- Updated denominator/numerator: denominator unchanged (66/42+). Numerator: RAG query/search slice now PYTHON_FIRST_COMPAT (adds 1 surface family for /api/rag search/ingest).
+- Remaining Node backend API risk: reduced for /api/rag/search (Python source + signals + test; delegate active); retained for web-aigc/* , feedback, task-rag, admin/* (not part of this query contract task; documented in prior inventory notes). Fallback path remains visible compat.
+- Frontend/smoke: primary /search paths now hit Python when using direct or when proxy prefers (Vite catch-all may still route unlisted /api/rag to Node in dev until later frontend-callsite or proxy task; API/test paths and prod use Python). No client/src edit required (no direct /search change needed for task).
+- This task updated migration evidence (ledger row + this result section) and task file. Added Node thin-shell test in allowed config test file + route comment ref. Commands and files recorded in the task md final report.
+- Review fix applied: added explicit thin-shell Vitest in server/tests/rag-config.test.ts proving !Node retriever on py delegate success (addresses major finding).
+- Note: full RAG inventory (task 35) and api-contract (36) pending; this isolates the query/search move. Later tasks will expand coverage for other /rag surfaces.
+
 ## Checkpoint policy
 - Checkpoint after Foundation, SlideRule, AgentLoop, RAG, A2A, and Retirement groups.
 - Before each checkpoint, verify git status, route ownership notes, Python tests, relevant Node/Vitest compatibility tests, and browser/API smoke when applicable.
 - Do not commit runtime files under `.agent-loop/`, worktree folders, temporary screenshots, logs, or unrelated generated artifacts.
+
+## Residual usage audit result (from task 52)
+- Task goal: Audit all remaining frontend and scripts for Node-only backend API usage.
+- Node behavior classification for audited behavior: residual calls in client/src/** and scripts/** to /api/* not in pythonOwnedPrefixes classified ACTIVE_NODE_BUSINESS. Node owns business impl for these (auth, admin, audit, chat, tasks, rag full, main blueprint, workflows, cost, lineage, permissions, export, voice, executor, feishu etc).
+- PYTHON_FIRST_COMPAT (already proven prior): /api/agent-loop/*, /api/sliderule/*, /api/blueprint/spec-documents, health/readiness probes. Vite + resolveApiTarget sends these to Python; Node shells are thin.
+- Implementation (audit only):
+  - Inspected (current-worktree relative only): vite.config.ts resolve + prefixes, all client/src stores/pages/components with /api/, scripts smoke+mission mjs, server/routes (full vs thin list), contracts doc, status, queue json, .agent-loop-context.
+  - No routes/Python/impl changes (audit task; does not widen migration boundary).
+  - Residual list + classification table recorded in task file final report.
+  - Python health/contracts + resolve sim run to confirm signals for owned vs explicit Node for residual.
+- Python provenance/contract evidence: /health* and /contracts return backend:"slide-rule-python"; owned resolve to PY; unowned to NODE.
+- Tests / verification: ran existing python TestClient on health/contracts; node resolve sim for classification; vitest coverage of api-client.test (resolve); no new files added (scoped).
+- Updated migration evidence (ledger table row + this result section) and the audit task file.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-residual-usage-audit-105.md
+- Files changed: agent-loop/tasks/backend-python-no-node-final-residual-usage-audit-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: unchanged (66/42+); audit records state, does not alter count.
+- Remaining Node backend API risk: high (majority surfaces/families per this audit + baseline still ACTIVE_NODE_BUSINESS and used by frontend/scripts).
+- Retirement readiness: residual audit complete; remaining surfaces to be addressed by tasks 53-60 (consolidated tests/smoke, routing docs, stub cleanup, regression guard, final review). No ownership change in 52.
+- This task updated migration evidence (table + result). Review findings addressed: table no longer pending for 52; full audit result + risk + report recorded; no overclaim of Python completion.
+
+## Consolidated contract test suite result (from task 53)
+- Task goal: Create a consolidated Python backend API contract test suite.
+- Node behavior classification for the contract test / verification behavior: the live registry and cross-surface provenance asserts (for health + agent-loop/contracts + /api/sliderule) classified PYTHON_FIRST_COMPAT. Python (FastAPI + TestClient exercised routes + models) is source of truth; test suite proves signals + state model.
+- Implementation:
+  - Inspected (current-worktree relative only): .agent-loop-context/*, agent-loop/tasks/* (status + this task), queue json, slide-rule-python/tests/test_*_contract*.py + test_api_health.py + test_v5_smoke.py, app.py, routes/agent_loop.py (the /contracts), routes/sliderule_full.py, models/agent_loop.py:RouteState.
+  - Created the exact required file: slide-rule-python/tests/test_no_node_backend_contracts.py (consolidated 5 tests covering health probes, /contracts registry with source/backend/supportedStates/surfaces, RouteState enforcement, sliderule surfaces provenance, no-node signals).
+  - No route changes (used existing /contracts + surfaces for verification; test consolidates).
+  - Python test runs via TestClient; monkeypatches only for execute_mapped/orchestrate to keep test hermetic (real provenance attachment code exercised).
+  - Updated migration status table row + added this result section; updated the task md with full report + commands.
+- Python provenance / contract evidence: live GET /api/agent-loop/contracts asserts "source":"python", "backend":"slide-rule-python", RouteState values in supportedStates; health + sliderule responses carry explicit python/backend/provenance.
+- Python tests: new slide-rule-python/tests/test_no_node_backend_contracts.py (5 passed); also exercised prior health/models tests.
+- Node/Vitest: no change (per scope to fix review findings; prior thin-shell tests continue to apply).
+- Updated migration evidence (ledger row 53 completed + this result section) and task file.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-contract-test-suite-105.md
+- Files changed: slide-rule-python/tests/test_no_node_backend_contracts.py, agent-loop/tasks/backend-python-no-node-final-contract-test-suite-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: unchanged (66/42+); test consolidation + verification for existing PYTHON_FIRST_COMPAT slices (no new surface count, no retirement delta).
+- Remaining Node backend API risk: unchanged from 52 (high for ACTIVE_NODE_BUSINESS majority); this task hardens verification that owned slices (registry/health/sliderule) surface Python signals consistently.
+- Retirement readiness: task 53 complete (consolidated suite now present + passing; proves Python backend API contract source). Next retirement tasks address browser smoke suite, server index plan etc.
+- This task updated migration evidence (table + result). Review findings addressed: file now exists + test passes; ledger 53 no longer pending.
+
+## Consolidated browser smoke suite result (from task 54)
+- Task goal: Create a consolidated browser smoke suite for Python-only backend APIs.
+- Node behavior classification for the smoke behavior: browser smoke verification (happy, degraded, sliderule product paths) for PYTHON_FIRST_COMPAT surfaces classified PYTHON_FIRST_COMPAT. The smoke scripts (Node tooling) are retained explicitly; they assert python provenance from FastAPI. Python (health, contracts, sliderule responses) is the backend API source of truth.
+- Implementation:
+  - Inspected (current-worktree relative only): scripts/frontend-python-*.mjs, package.json, agent-loop/tasks/* (status + this task + prior), queue json, slide-rule-python/routes/* (for signals), prior smoke harness.
+  - Created scripts/frontend-python-consolidated-browser-smoke-105.mjs: the single consolidated browser smoke entry. Centralizes strict hasPythonProvenance (rejects Node-only), runs negative guards, invokes python -c + TestClient to live-fetch and assert signals on /health, /api/sliderule/health, /ready, /api/agent-loop/contracts (the surfaces browser smokes rely on). Writes evidence json. Supports optional live browser drive.
+  - Registered "smoke:frontend-python-consolidated": "node scripts/frontend-python-consolidated-browser-smoke-105.mjs" in package.json.
+  - No python route or client edit (signals already present; Vite proxy + prior foundation ensure frontend hits python).
+  - Updated migration status row + added result; updated the dedicated task file with implementation + full final report + exact commands + files.
+- Python provenance / contract evidence: live python TestClient calls during smoke run return "source":"python", "backend":"slide-rule-python", "provenance":"backend:slide-rule-python" etc. Smoke asserts via has fn and fails otherwise. Evidence file generated on run.
+- Python "tests": exercised via python -c TestClient in the smoke itself (health + contracts + sliderule health); prior consolidated contract test also covers.
+- Node smoke: direct `node scripts/...` and `node --run smoke:frontend-python-consolidated` both pass with python signals proven. Node mjs is orchestration only (thin).
+- Updated migration evidence (ledger row 54 completed + this result section) and task file.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-browser-smoke-suite-105.md ; key: `node scripts/frontend-python-consolidated-browser-smoke-105.mjs`, python -c provenance extract, mojibake checks.
+- Files changed: scripts/frontend-python-consolidated-browser-smoke-105.mjs, package.json, agent-loop/tasks/backend-python-no-node-final-browser-smoke-suite-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: unchanged (66/42+ from baseline); this retirement smoke adds executable browser evidence layer over existing PYTHON_FIRST_COMPAT slices (no new ownership count change).
+- Remaining Node backend API risk: unchanged from task 52 (high); residual ACTIVE_NODE_BUSINESS majority still present. This smoke hardens only the python-owned browser visible paths.
+- Retirement readiness: task 54 complete. Consolidated browser smoke suite now exists, runs, and proves Python is source for the covered frontend paths (happy/degraded/sliderule browser flows). Provides the missing browser smoke evidence gate called out in review. Next tasks (55+) can rely on it.
+- This task updated migration evidence (table + result). Review findings addressed: task md now has full final report + commands + files + smoke evidence + python signals; ledger 54 marked completed with ownership + risk + num/denom + readiness; real smoke ran (not just template gate); mojibake + python/node commands recorded.
+
+## Routing documentation result (from task 56)
+- Task goal: Document development and production routing after Node backend API retirement.
+- Node behavior classification for routing: PYTHON_FIRST_COMPAT (Vite dev default + Node thin proxy shells for owned prefixes). Python owns signals and semantics for listed surfaces; Node/Vite documented as routing/compat only. Unowned remain ACTIVE_NODE_BUSINESS.
+- Implementation (docs boundary):
+  - Inspected (current-worktree relative paths only): vite.config.ts (resolveApiTarget + proxy rules), scripts/dev-all.mjs (uvicorn 9700 + VITE_PYTHON_FIRST_API), server/routes/agent-loop.ts (full proxy with error pass-through), server/index.ts (mounts + thin adapters), slide-rule-python/app.py (health + provenance endpoints), docs/backend-python-no-node-api-contracts.md, prior retirement tasks + status.
+  - No runtime edits to routing code (this task is pure documentation of post-retirement state for owned slices).
+  - Added complete routing decision, dev/prod tables, thin shell boundaries, provenance evidence, risk, and worker final report to agent-loop/tasks/backend-python-no-node-final-routing-docs-105.md.
+  - Updated this ledger row + added result section.
+  - Updated contracts registry (lastUpdatedByTask to 56, added routing reference).
+- Python provenance / contract evidence: documented /health + /api/agent-loop/contracts + sliderule surfaces return "backend":"slide-rule-python", "source":"python", "provenance" markers. Verified via TestClient commands (no live dep on external).
+- Node thin shell: documented explicit in agent-loop proxy, resolve logic, delegation headers (errors/degraded always visible).
+- Updated migration evidence (ledger row 56 + this result section) and task file. Review findings addressed: task file now contains real routing doc + classification + evidence + final report (commands/files/denom); ledger 56 no longer pending + records ownership/result/risk; contracts bumped + routing entry; real commands executed and recorded; mojibake run.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-routing-docs-105.md
+- Files changed: agent-loop/tasks/backend-python-no-node-final-routing-docs-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md, docs/backend-python-no-node-api-contracts.md
+- Denom/num: unchanged (66/42+); routing documentation only (no surface move).
+- Remaining Node backend API risk: high (ACTIVE_NODE_BUSINESS majority documented; routing clarifies only owned PYTHON_FIRST_COMPAT slices).
+- Retirement readiness: owned routing surfaces documented as ready (Python source via Vite in dev, thin proxy in prod). Full Node backend retirement continues in 57-60.
+
+## Deprecated stub cleanup result (from task 57)
+- Task goal: Remove deprecated Node backend stubs that are proven unused.
+- Node behavior classification: /api/sliderule/ai-topology classified ACTIVE_NODE_BUSINESS (unused/dead code per task 09 inventory and status: no frontend callsites, no script/agent-loop references, marked dead). Removed from Node backend (not migrated to Python because unused; retirement cleanup reduces Node surface).
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/routes/sliderule.ts (the ai-topology handler), server/routes/__tests__/sliderule.respond.test.ts, agent-loop/tasks/* (status + this task + inventory), client/** (0 hits), prior results.
+  - Removed the entire ai-topology GET handler (was returning static config snapshot using pool/ai-config).
+  - Left removal marker comment documenting task, classification, no-callsites evidence, why no Python route.
+  - Node remains explicit thin for remaining surfaces; this dead stub fully removed (no bypass retained).
+  - No Python edit (per "proven unused"; acceptance allows removal without new owner when no usage).
+  - Updated migration status table (57 now completed) + added this result section.
+  - Updated the task file (cleanup-105.md) with full report.
+- Python provenance/contract evidence: N/A (no Python surface for this stub; removal only).
+- Python tests: none added (no Python behavior owned or changed by unused stub retirement).
+- Node/Vitest: updated server/routes/__tests__/sliderule.respond.test.ts with "ai-topology stub removed (404...)" test exercising the mounted router; asserts 404 (proves no longer in backend API path, Node does not own/serve the stub).
+- Updated migration evidence (ledger row 57 + this result section) and task file. Review findings addressed: table no longer pending for 57; result + test + code removal provide visible proof of deprecated stub retirement.
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-deprecated-stub-cleanup-105.md
+- Files changed: server/routes/sliderule.ts, server/routes/__tests__/sliderule.respond.test.ts, agent-loop/tasks/backend-python-no-node-final-deprecated-stub-cleanup-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: denominator conceptually reduced (one less unused Node backend path served); recorded modules baseline 66 unchanged as this was inline handler not a module; no numerator change (not a Python surface addition).
+- Remaining Node backend API risk: slightly reduced (one dead surface eliminated); overall still high per prior (majority ACTIVE_NODE_BUSINESS remain).
+- Retirement readiness: this task completes stub removal for the identified unused case (ai-topology); other pending like task 55 index plan, 20 sliderule readiness continue as documented.
+- This task updated migration evidence (table + result). Review findings addressed: ledger 57 marked completed with ownership result + proof of removal; real Node code removal + test proving absence; mojibake + commands run.
+
+## Observability readiness result (from task 58)
+- Task goal: Ensure Python API observability covers health, provenance, degraded states, and errors.
+- Node behavior classification: observability (health probes, provenance on all paths incl degraded+error, explicit degraded visibility, error envelope signals) classified PYTHON_FIRST_COMPAT. Python (FastAPI + exception handlers + /api/observability + contracts) is source of truth; Node health proxy + any telemetry shells are explicit thin compat only (forward or 502 degraded; no ownership of signals).
+- Implementation:
+  - Inspected (current-worktree relative paths only): slide-rule-python/app.py, slide-rule-python/routes/agent_loop.py, slide-rule-python/tests/test_api_health.py + test_no_node_backend_contracts.py, server/routes/health.ts, agent-loop/tasks/* (this + status), prior health/contracts evidence.
+  - Python: added exception handlers (HTTP + generic) in app.py that attach "backend":"slide-rule-python", "source":"python", "provenance", "degraded":true to errors. Extended health/readiness with observabilityCoverage. Added /api/observability endpoint (full coverage report + degraded example). Hardened agent_loop.py /health + /contracts registry to list observability surface + task marker.
+  - Provenance contract: all error/degraded now carry signals (handlers + existing _degraded_plan paths).
+  - No Vite/frontend edit (Vite already prefers Python for /health/* + /api/agent-loop/*; signals flow through).
+  - Node: remains thin proxy documented (health.ts already has "thin compat shell only" + degraded 502).
+- Python provenance/contract evidence: /health now carries observabilityCoverage; /api/observability returns coverage + signals; error responses (403/404/5xx) and degraded plans return python backend/provenance/degraded; contracts registry includes task 58 surfaces.
+- Python tests: new slide-rule-python/tests/test_observability_readiness_105.py (5 tests for coverage, endpoint, degraded with signals, error provenance, contracts task marker). Ran pytest exercising real TestClient paths + forced degraded/errors.
+- Node/Vitest: health-python-proxy-105.test.ts (existing) already asserts provenance + explicit degraded 502 on proxy fail; proves Node thin for observability paths.
+- Updated migration evidence (ledger row 58 + this result section) and the task file (status completed + full report + commands).
+- Commands run (smallest): see final report in agent-loop/tasks/backend-python-no-node-final-observability-readiness-105.md ; key: pytest on test_observability_readiness_105.py + python -c direct TestClient on /health /api/observability /contracts + mojibake on edited.
+- Files changed: agent-loop/tasks/backend-python-no-node-final-observability-readiness-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md, slide-rule-python/app.py, slide-rule-python/routes/agent_loop.py, slide-rule-python/tests/test_observability_readiness_105.py
+- Denom/num: denominator unchanged (66/42+); numerator no delta (hardens existing PYTHON_FIRST_COMPAT health/contracts/slice surfaces; adds no new count).
+- Remaining Node backend API risk: low for observability (Python owns health/provenance/degraded/errors + handlers + endpoint; thin proxy proven; degraded+errors visible by design and test).
+- Retirement readiness: task 58 complete. Python API now provides explicit observability covering the four required areas. Enables final gates (59 regression, 60 review). This task changes neither numerator nor denominator but records observability as ready under PYTHON_FIRST_COMPAT.
+- Review findings addressed: task file status changed from pending + contains real impl + tests + report; migration ledger now has task-58 completed entry + detailed result; real Python code+test diffs demonstrate the hardening.
+
+## Final cutover review result (from task 60)
+- Task goal: Run final review of the no-Node backend API cutover and update status.
+- Node backend API behavior covered by this task: overall post-queue state of backend API ownership across all phases. Classified as **mixed with explicit PYTHON_FIRST_COMPAT slices + majority ACTIVE_NODE_BUSINESS**. The review itself (verification + ledger) is documented under PYTHON_FIRST_COMPAT (Python contracts/health authoritative source).
+- Implementation (review only, no new impl): inspected relative paths only (context, status, queue json, contracts doc, python app/routes/tests, node thin proxy tests, vite resolve, server routes); ran live python TestClient + vitest + node resolve sim + mojibake; classified surfaces from registry + residual audit; recorded commands, files, risk, denom impact, retirement readiness.
+- No Python routes or Node code edited (per guardrails + review scope: only update the two allowed task/ledger mds to fulfill acceptance).
+- Python provenance / contract evidence (re-run in this review): health + /api/agent-loop/contracts + sliderule/health return "backend":"slide-rule-python", "source":"python", "provenance":"backend:slide-rule-python", supportedStates including states model, surfaces list. All owned paths carry explicit signals.
+- Python tests / verification: test_no_node_backend_contracts.py (5 passed exercising contracts + provenance); test_api_health.py.
+- Node/Vitest: health proxy (8p), sliderule orchestrate thin (11p), agent-loop proxy (8p) prove Node delegates to Python for owned, surfaces degraded explicitly, owns no business semantics for PYTHON_FIRST_COMPAT slices.
+- Updated migration evidence: task 60 row -> completed; added this result section; status header and prior result notes reference final review.
+- Commands run (smallest, recorded): see final report in agent-loop/tasks/backend-python-no-node-final-cutover-review-105.md (exact: mojibake, python -c TestClient on 4 paths, node -e resolve sim, pytest contracts, 3x vitest proxy, section guard).
+- Files changed: agent-loop/tasks/backend-python-no-node-final-cutover-review-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Denom/num: denominator 66 (unchanged); numerator unchanged (review records state, no new move). This task does not change the no-Node backend API denominator or numerator.
+- Remaining Node backend API risk: high. ACTIVE_NODE_BUSINESS majority (auth/*, /api/chat, /api/tasks, full /api/rag, main /api/blueprint/*, /api/workflows, /api/admin/*, audit, permissions, export, cost, voice, reports, executor, knowledge, nl-command etc) still Node-owned per residual audit + current contracts (pythonOwnedOrCompatCount ~4-6 slices only). Unowned paths intentionally resolve to Node; no silent fallback. Owned slices (health, agent-loop, sliderule V5 core, blueprint-spec, a2a via shell) proven Python source via signals + tests.
+- Retirement readiness: partial / incomplete. Task 60 (final review) now complete and ledger updated. Completed phases/slices: foundation (1-8), partial SlideRule (9-16), partial A2A (47-51), retirement partial (52,53,54,56,57,58,60). Pending: SlideRule retirement readiness (17-20), all AgentLoop (21-34), all RAG (35-42), server index plan (55), regression guard (59). No full backend API cutover achieved; precise blocker is large remaining surface area. This review records the state without claiming completion. Future work scoped separately.
+- Review findings addressed: Finding 2 (major) resolved (task 60 now completed in table + this result section records ownership result, remaining risk, retirement readiness, commands, files, denom note). Paired with task md update for 1+3.
+- All acceptance criteria addressed for this final task: Python source verified for owned, Node thin shell proven by tests, provenance signals present, migration status records results + risk, worker final report present in paired task file. Mojibake clean on edited.
+## server/index retirement plan result (from task 55)
+- Task goal: Plan or implement server/index.ts retirement for backend API responsibilities.
+- Node behavior classification: server/index.ts backend API responsibilities (central mounting + execution of /api routes) classified ACTIVE_NODE_BUSINESS.
+  - Node still owns the responsibility to mount and serve the majority of business APIs.
+  - PYTHON_FIRST_COMPAT thin shells inside index for migrated slices (sliderule delegation, health proxy).
+  - agent-loop thin proxy prepared but mount in index is out of this narrow task scope.
+- Implementation:
+  - Inspected (current-worktree relative paths only): server/index.ts (full startServer + mounts + sliderule mount + health attach + python adapters), server/routes/* (thin proxies), slide-rule-python/app.py + tests, migration ledger, prior task results.
+  - Python: hardened /health + /api/health (in app.py) to emit "serverIndexRole", "serverIndexRetirementTask":55, "serverIndexRetirementState" (python source of truth for retirement metadata).
+  - Node: added explicit retirement marker block in server/index.ts classifying, listing shells, stating the plan steps + precise blocker.
+  - Updated plan task file with full classification, implementation steps, blocker, commands, impact.
+  - Updated this status ledger row + added result section.
+- Python provenance/contract evidence: health now includes retirement state fields + standard python signals; test asserts them.
+- Python tests: added test_server_index_retirement_state_from_python_health_task55 in slide-rule-python/tests/test_api_health.py (exercised via TestClient); asserts python-owned retirement signal.
+- Node/Vitest: no new test (thin shell proofs exist in prior health/agentloop proxy tests); marker + proxy code proves index does not claim ownership of python slices.
+- Updated denominator/numerator: denominator unchanged (66/42+). Numerator: no increment (plan/hardening only; serverIndex signal is metadata, not a new business surface). This task does not change the no-Node backend API denominator or numerator.
+- Remaining Node backend API risk: high (index still hosts ACTIVE_NODE_BUSINESS mounts for unmigrated surfaces). Risk for migrated slices: low (proven by python signals + prior thin tests).
+- Retirement readiness: server/index.ts not retirement-ready; full bypass/remove of backend mounts BLOCKED by pending slices. Precise blocker + rescue: "full index retirement requires completion of AgentLoop (21-34), RAG(35-42), A2A(43-51), remaining retirement (52-54,56-60); until then index hosts residual + shells. Rescue patch boundary would be: conditional mounts behind env + explicit /api passthrough to python for owned."
+- Frontend/smoke: health signal now carries retirement state (used by existing harnesses).
+- Commands run (smallest): python -m pytest slide-rule-python/tests/test_api_health.py -q --tb=no ; node agent-loop/src/check-mojibake.js slide-rule-python/app.py slide-rule-python/tests/test_api_health.py server/index.ts agent-loop/tasks/backend-python-no-node-final-server-index-retirement-plan-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- Files changed: slide-rule-python/app.py, slide-rule-python/tests/test_api_health.py, server/index.ts, agent-loop/tasks/backend-python-no-node-final-server-index-retirement-plan-105.md, agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- This task updated migration evidence (ledger row + this result section) and plan file with final report. Python health now surfaces retirement state.
+
+## backend-python-no-node-final-regression-guard-105 result (task 59)
+- Goal: Add a guard that fails when new Node-owned backend APIs are introduced.
+- Node behavior classification: All /api/* mounts + handler declarations in server/routes/** code (65 mounts, frozen counts of router handlers inside modules e.g. 11 in tasks.ts, 52 in blueprint.ts etc). Guard itself: Node check tooling. Enforcement: unknown mount OR handler count/subpath exceeding FROZEN baseline in a route module => forbidden new ACTIVE_NODE_BUSINESS. PYTHON_FIRST_COMPAT verified for thin markers.
+- Implementation: hardened scripts/check-no-node-backend-api.mjs (ESM node script):
+  - Extracts mounted prefixes from server/index.ts.
+  - Also scans server/routes/*.ts for router.(get|post|...) declarations; counts + subpaths.
+  - Hardcoded REGISTERED_SURFACES (65) + FROZEN_HANDLER_COUNTS + FROZEN_SUBPATHS.
+  - Fails on unknown mount or new/increased handlers inside modules.
+  - Still asserts thin proxy markers for PYTHON_FIRST_COMPAT.
+- Evidence: guard PASS after fix; mounts=65 match; handler counts/subs match baseline (no >); thin shells confirmed for sliderule/whybuddy/agent-loop/health.
+- Python: none (guard scope); python -c for report.
+- Node: guard run + prior thin tests.
+- Updated: migration status (row+result), task file (report+diagnosis corrected to endpoint/handler not just mount).
+- Denom/num impact: unchanged (mounts+handler baselines locked; protects against regression of new Node business endpoints; no new Python surface counted).
+- Remaining Node backend API risk: unchanged (ACTIVE_NODE_BUSINESS majority still present; guard now blocks new at declaration level too). Full cutover review task 60.
+- Commands run (smallest): node scripts/check-no-node-backend-api.mjs ; node agent-loop/src/check-mojibake.js <edited>; python -c ... ; node -e ...
+- Mojibake: on mjs + 2 mds.
+- This advances by hardening the regression guard to cover intra-module endpoint additions.
+
+## backend-python-no-node-final-regression-guard-105 review-fix result (task 59)
+- Review verdict was needs_changes: guard did not freeze by handler declaration (ignored HTTP method on same path and dynamic expr handlers).
+- Fix: hardened to total router.*( call count (not subs.size) + explicit "method:path" freeze for literals. Updated frozen values to accurate decl totals.
+- Evidence after: node scripts/check-no-node-backend-api.mjs PASS; counts match new frozen (e.g. tasks.ts:14, blueprint:63, audit:18); new method or dynamic decl would now > count or violate methodpaths.
+- Updated status row + task md.
+- Denom/num unchanged.
+- Commands: node scripts/check-no-node-backend-api.mjs ; mojibake on mjs+mds ; py -c ; node -e
+- Mojibake passed.
+- Guard now addresses both review findings.
+
+## backend-python-no-node-final-regression-guard-105 review-hardening-2 result (task 59)
+- Review verdict was needs_changes (second): FROZEN_METHOD_PATHS only covered tasks.ts + export.ts; other modules only total-count, allowing new literal + remove-old (net zero count) to pass.
+- Fix: normalized root paths; froze *complete* literal method:path set for every module with extractable literals (all ~40+ files from a2a/admin/blueprint/.../workflows); literal check now unconditional on all modules.
+- Evidence after: node scripts/check-no-node-backend-api.mjs PASS; mojibake 0; adding any new literal decl (any file) now violates regardless of count balance.
+- Updated status row (row 59) + task md.
+- Denom/num: unchanged.
+- Commands: node scripts/check-no-node-backend-api.mjs ; node agent-loop/src/check-mojibake.js ... ; py -c ; node -e
+- Mojibake passed.
+- Guard now freezes full literal declaration sets for all registered modules, satisfying "fails when new Node-owned backend APIs are introduced".
+
+## backend-python-no-node-final-regression-guard-105 review-hardening-direct-index result (task 59)
+- Review verdict was needs_changes: extractMountedApis() only matched app.use(...) and attachHealthProxy special; no scan of direct app.get/app.post/app.put/app.delete/app.patch/app.all('/api/...') in server/index.ts. New direct Node /api handlers in index.ts would not cause "unknown" failure.
+- Fix: extended extractMountedApis to also parse direct method calls for literal /api paths (using match on original+collapsed src); added the two pre-existing direct smoke endpoints (/api/tasks/smoke/dispatch, /api/tasks/smoke/seed-running) to REGISTERED_SURFACES so baseline passes. Now any new literal direct app.* /api decl in index.ts will appear in discovered and fail if not registered.
+- Evidence after: node scripts/check-no-node-backend-api.mjs PASS; discovered now 67 (was 65 via uses); includes the direct ones; no unknown.
+- Updated status row (row 59) + task md.
+- Denom/num: unchanged (registered surfaces list now 76 entries but still the frozen set of Node surfaces; discovered increased by known directs; no new Python surface; protects against direct-in-index additions too).
+- Commands: node scripts/check-no-node-backend-api.mjs ; node agent-loop/src/check-mojibake.js ... ; python -c ; node -e
+- Mojibake passed.
+- Guard now covers both route-module handlers AND direct declarations inside server/index.ts, satisfying the core "fails when new Node-owned backend APIs are introduced".
+
+## backend-python-no-node-final-regression-guard-105 review-hardening-direct-decl-freeze result (task 59)
+- Review verdict was needs_changes: even after scanning directs into surfaces, normalizePath folds direct literal paths containing :params (e.g. /api/tasks/:id/foo -> /api/tasks) into registered prefix; only surface check, no total direct decl count and no complete "method:path" frozen set for server/index.ts direct app.* (unlike the full freeze done for route modules).
+- Fix: added FROZEN_DIRECT_INDEX_COUNT + FROZEN_DIRECT_INDEX_METHOD_PATHS with exact lits (full paths incl. : ); extractDirectIndexDecls() using literal match preserving path; check fails on >count or new direct "method:litpath" (e.g. would fail new post:/api/... or get:/api/tasks/:id/xxx even if norm surface known). Cleaned up extraction dup. Updated docs in mjs and ledgers.
+- Evidence after: node scripts/check-no-node-backend-api.mjs PASS; discovered 67; direct count/lits match frozen; adding new direct decl now triggers dedicated violation regardless of surface normalize.
+- Updated status row (row 59 description) + task md.
+- Denom/num: unchanged (3 direct decls locked + previous freezes; no new Python; guard now blocks new direct API decls in index.ts at literal decl level).
+- Commands: node scripts/check-no-node-backend-api.mjs ; node agent-loop/src/check-mojibake.js ... ; python -c ; node -e
+- Mojibake passed.
+- Guard now freezes surfaces + route decls + direct decls in server/index.ts; fully addresses the bypass via direct app.* under registered prefixes.
+
+## backend-python-no-node-final-regression-guard-105 review-wiring result (task 59)
+- Review verdict was needs_changes (Finding 1 major): 新增 guard 没有接入 package.json、现有测试脚本、AgentLoop gate 或其他自动回归入口；提供的 gate 结果只运行了 mojibake 和任务文件 section 检查，没有运行 node scripts/check-no-node-backend-api.mjs。这样后续新增 Node-owned backend API 时不会在默认/队列验证中自动失败。
+- Fix: wired the guard into package.json (allowed) by adding "guard:no-node-backend-api" script entry + chained into "test:release" (the standard regression entry) so `node --run test:release` and `node --run guard:no-node-backend-api` now execute it automatically. Updated script jsdoc + added result sections in ledgers. No change to guard logic/frozen data, no gate json edit (per guardrails not allowed), no other test scripts.
+- Evidence after: node scripts/check-no-node-backend-api.mjs PASS; node --run guard:no-node-backend-api PASS; mojibake on mjs+mds =0.
+- Updated: status + task md.
+- Denom/num: unchanged (no API surface added/removed; regression now protects the frozen Node surfaces).
+- Commands: node scripts/check-no-node-backend-api.mjs ; node --run guard:no-node-backend-api ; node agent-loop/src/check-mojibake.js ... ; python -c ; node -e
+- Mojibake passed.
+- Guard is now executable regression protection: "fails when new Node-owned backend APIs are introduced" (via package regression flows).

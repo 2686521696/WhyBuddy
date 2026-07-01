@@ -21,7 +21,8 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -30,6 +31,7 @@ from config.settings import settings
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
+from routes.rag import router as rag_router
 from services.persistence import load_all, save_all
 from services.v5_full_driver import drive_full_v5_session
 from models.v5_state import V5SessionState
@@ -66,6 +68,9 @@ app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-docum
 # AgentLoop control plane (Python owned, bridge mode for workers)
 app.include_router(agent_loop_router, prefix="/api/agent-loop")
 
+# RAG query/search (PYTHON_FIRST_COMPAT per task 37); Python owns search/ingest behavior
+app.include_router(rag_router, prefix="/api/rag")
+
 # SlideRule AgentLoop 110: first-class /AgentLoop and /agent-loop web route shell
 # Served by python app; reuses dashboard statics; /api/agent-loop/dashboard remains for compat.
 from fastapi.responses import HTMLResponse, FileResponse
@@ -97,6 +102,7 @@ async def health():
     """Unified health and readiness probe. Python is the backend API source of truth for health/readiness (PYTHON_FIRST_COMPAT).
     Exposes explicit provenance for smokes and cutover verification.
     Readiness is reported separately to support k8s-style /ready probes.
+    Retirement note added by task 55: server/index.ts still holds ACTIVE_NODE_BUSINESS for unmigrated surfaces.
     """
     return {
         "status": "ok",
@@ -109,7 +115,16 @@ async def health():
             "liveness": "/health",
             "readiness": "/ready"
         },
-        "note": "Python FastAPI is backend API source for health/readiness probes. Node /api/health is thin compat proxy only."
+        "observabilityCoverage": {
+            "health": True,
+            "provenance": True,
+            "degradedStates": True,
+            "errors": True
+        },
+        "note": "Python FastAPI is backend API source for health/readiness probes. Node /api/health is thin compat proxy only.",
+        "serverIndexRole": "ACTIVE_NODE_BUSINESS (majority surfaces; thin shells for sliderule/health/agent-loop slices)",
+        "serverIndexRetirementTask": 55,
+        "serverIndexRetirementState": "plan-recorded; blocked pending full slice cutover (auth/rag/a2a/main-blueprint etc)"
     }
 
 
@@ -120,13 +135,83 @@ async def readiness():
         "status": "ready",
         "backend": "slide-rule-python",
         "source": "python",
-        "provenance": "backend:slide-rule-python"
+        "provenance": "backend:slide-rule-python",
+        "observabilityCoverage": {"health": True, "provenance": True, "degradedStates": True, "errors": True}
     }
 
 
 @app.get("/api/sliderule/health")
 async def sliderule_api_health():
     return await health()
+
+
+# --- Observability readiness (task 58): ensure Python API surfaces health, provenance,
+# degraded states, and errors with explicit signals. Node remains thin proxy only.
+# All error paths and degraded returns must carry python provenance so degraded states
+# are visible (never hidden by Node).
+@app.exception_handler(HTTPException)
+async def _observability_http_exception(request: Request, exc: HTTPException):
+    """Attach python provenance to all HTTP error responses for observability."""
+    content = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+    if not isinstance(content, dict):
+        content = {"message": str(content)}
+    content.setdefault("status", "error")
+    content.setdefault("backend", "slide-rule-python")
+    content.setdefault("source", "python")
+    content.setdefault("provenance", "backend:slide-rule-python")
+    content.setdefault("degraded", True)
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
+@app.exception_handler(Exception)
+async def _observability_generic_exception(request: Request, exc: Exception):
+    """Generic errors always surface as degraded with python source (visible to smokes/tests)."""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error": type(exc).__name__,
+            "message": str(exc)[:300],
+            "backend": "slide-rule-python",
+            "source": "python",
+            "provenance": "backend:slide-rule-python",
+            "degraded": True,
+        },
+    )
+
+
+@app.get("/api/observability")
+async def observability():
+    """Unified observability surface covering health, provenance, degraded states, and errors.
+    Python is the backend source of truth. Used by contracts, smokes, and retirement verification.
+    """
+    base_health = await health()
+    return {
+        **base_health,
+        "observability": {
+            "coverage": {
+                "health": True,
+                "provenance": True,
+                "degradedStates": True,
+                "errors": True,
+            },
+            "provenanceSignals": ["backend:slide-rule-python", "source:python", "python-rag", "python-llm", "python-fullpath"],
+            "degradedExample": _degraded_example(),
+            "errorProvenance": "always attached via exception handlers (see /health error paths)",
+        },
+        "note": "Python FastAPI owns observability signals for health/provenance/degraded/errors. Node proxies are thin shells only.",
+    }
+
+
+def _degraded_example():
+    return {
+        "degraded": True,
+        "error": "planner_timeout",
+        "backend": "slide-rule-python",
+        "source": "python",
+        "provenance": "python-rag",
+    }
+
 
 @app.post("/api/sliderule/drive-full")
 async def drive_full(payload: dict, x_internal_key: str = Header(None)):

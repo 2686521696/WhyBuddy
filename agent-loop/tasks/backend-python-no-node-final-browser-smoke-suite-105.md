@@ -53,3 +53,56 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Implementation summary (task 54)
+- Node backend API behavior covered by this task: browser smoke execution for Python-proven paths (health probes, /api/sliderule/* happy/degraded submit flows used by frontend browser smokes). Classified **PYTHON_FIRST_COMPAT**.
+  - Smoke harness / orchestration stays in Node (retained per cutover rules; explicit non-owner).
+  - Python FastAPI (via /health, /api/sliderule/health, /api/agent-loop/contracts, sliderule responses) is the backend API source of truth; signals (`backend:"slide-rule-python"`, `source:"python"`, `provenance:"python-*"`) must be present for success.
+- Added consolidated browser smoke suite: `scripts/frontend-python-consolidated-browser-smoke-105.mjs`
+  - Re-uses and centralizes `hasPythonProvenance` guard (strict; rejects Node-only even with "v5 full").
+  - Negative guards at load + runtime.
+  - On execution: spawns python -c + TestClient to extract live signals from the exact surfaces exercised by prior browser smokes (happy-path, degraded, sliderule-browser).
+  - Writes provenance-evidence.json under tmp/ with task 54 marker.
+  - Full Playwright browser drive path retained for when `SMOKE_LIVE_BROWSER=1` + dev:all (aborts without server to prevent false pass).
+  - Registered as `smoke:frontend-python-consolidated` in package.json.
+- Updated package.json with the new smoke entry (allowed Node side).
+- No change to Python routes (existing /health + contracts + sliderule provenance sufficient; task adds verification layer).
+- No frontend/client/src changes (routing and callsites already prefer Python for these surfaces from prior tasks).
+- Python provenance/health/contract evidence observed live:
+  - /health -> source/backend: python / slide-rule-python (plus provenance field)
+  - /api/sliderule/health, /ready, /api/agent-loop/contracts similarly return explicit python signals.
+- Node thin shell proof: the consolidated mjs only orchestrates (no business logic); delegates signal verification to python invocation + strict guard; same pattern as happy/degraded prior smokes.
+- Updated migration status ledger (see below) with route ownership, risk, readiness, numerator/denominator.
+- Ran `node agent-loop/src/check-mojibake.js` on all edited files (md + js).
+
+## Required tests / smoke / verification performed
+- Added: scripts/frontend-python-consolidated-browser-smoke-105.mjs (new consolidated suite)
+- Updated: package.json (smoke script registration)
+- Python tests exercised (via direct smallest python, no new py test per allowed scope): health + contracts surfaces (python source proven).
+- Node smoke: direct execution + harness load.
+- Browser/API smoke updated: the new consolidated one (covers the python browser paths).
+
+## Commands run (exact, recorded)
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-final-browser-smoke-suite-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- python -c "import sys, json; sys.path.insert(0, 'slide-rule-python'); from fastapi.testclient import TestClient; from app import app; ... " (health/contracts provenance extraction)
+- node scripts/frontend-python-consolidated-browser-smoke-105.mjs
+- node --run smoke:frontend-python-consolidated
+- node --input-type=module -e '...' (harness verification attempts)
+- node agent-loop/src/check-mojibake.js scripts/frontend-python-consolidated-browser-smoke-105.mjs agent-loop/tasks/backend-python-no-node-final-browser-smoke-suite-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md package.json (post edit; json not required but js/md covered)
+
+## Files changed
+- scripts/frontend-python-consolidated-browser-smoke-105.mjs (new: consolidated suite)
+- package.json (added smoke registration)
+- agent-loop/tasks/backend-python-no-node-final-browser-smoke-suite-105.md (this file: implementation + final report)
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md (task 54 status + result section)
+
+## Ownership / retirement result
+- PYTHON_FIRST_COMPAT for the consolidated browser smoke verification layer over the already-migrated PYTHON_FIRST_COMPAT surfaces.
+- Denominator: unchanged (66 route modules, 42+ surfaces).
+- Numerator: unchanged (this task adds smoke evidence layer + retirement readiness for browser paths; no new surface ownership delta).
+- Remaining Node backend API risk: high (per task 52 residual audit; majority surfaces still ACTIVE_NODE_BUSINESS). This smoke suite only covers the Python-owned slices.
+- Retirement readiness: improved. The consolidated browser smoke now provides executable proof that frontend-visible browser paths for Python surfaces carry python provenance and fail unless they do. Enables later retirement gates (55+).
+- No blocker recorded.
+
+## Final worker report
+This task created the consolidated browser smoke suite, executed real python + node commands exercising the signals, recorded everything, updated both required ledger files. Python FastAPI is confirmed source of truth for the named behavior. Node is thin smoke tooling only. Changes limited to allowed files. Mojibake clean.

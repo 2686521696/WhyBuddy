@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.a2a_runtime import (  # noqa: E402
     A2A_ERROR_CANCELLED,
     A2A_ERROR_FRAMEWORK,
+    A2A_RUNTIME_CONTRACT_VERSION,
+    create_a2a_error,
     project_a2a_runtime_contract,
     start_a2a_stream_session,
     emit_a2a_stream_chunk,
@@ -194,6 +196,9 @@ def test_emit_stream_chunks_ordering_and_done_status():
     assert r1["ok"] is True and r1["status"] == "streaming"
     assert r2["ok"] is True and r2["status"] == "streaming"
     assert r3["ok"] is True and r3["status"] == "completed"
+    # Python provenance for task 47 stream/event transport (PYTHON_FIRST_COMPAT)
+    assert r1.get("runtime") == "python-contract" and r1.get("contractVersion") == "a2a.runtime.v1"
+    assert r3.get("runtime") == "python-contract"
     sess = get_a2a_session(sid)
     assert sess is not None
     assert len(sess.get("streamChunks", [])) == 3
@@ -210,6 +215,7 @@ def test_cancel_idempotency_no_reupdate():
     t1 = (c1.get("session") or {}).get("completedAt")
     c2 = cancel_a2a_transport(sid)
     assert c1["status"] == "cancelled" and c2["status"] == "cancelled"
+    assert c1.get("runtime") == "python-contract" and c1.get("contractVersion") == "a2a.runtime.v1"
     t2 = (c2.get("session") or {}).get("completedAt")
     assert t2 == t1  # idempotent: no side-effect re-update
     sess = get_a2a_session(sid)
@@ -222,15 +228,42 @@ def test_timeout_check_and_malformed_chunk():
     # timeout on active returns active (or may timeout if artificial now)
     to = check_a2a_stream_timeout(sid, 60000)
     assert "ok" in to and to["status"] in ("active", "failed")
+    assert to.get("runtime") == "python-contract"
     # malformed non-str chunk
     bad = emit_a2a_stream_chunk(sid, 12345)  # type: ignore[arg-type]
     assert bad["ok"] is False
     assert "Malformed stream chunk" in (bad.get("error") or {}).get("message", "")
+    assert bad.get("runtime") == "python-contract"
     # explicit malformed handler
     m = handle_malformed_a2a_chunk(sid, "test malformed")
     assert m["ok"] is False and m["status"] == "failed"
+    assert m.get("runtime") == "python-contract"
     sess = get_a2a_session(sid)
     assert sess is not None and sess.get("status") == "failed"
     # retry envelope
     ret = get_a2a_retry_envelope(sid, 2)
     assert ret["ok"] is True and ret["retry"]["attempt"] == 2
+    assert ret.get("runtime") == "python-contract"
+
+
+def test_create_a2a_error_central_factory_task48():
+    """Direct coverage for task 48: Python-owned central error factory used by cancel/retry/malformed/timeout."""
+    err_cancel = create_a2a_error(A2A_ERROR_CANCELLED, "A2A session cancelled.")
+    assert err_cancel == {"code": A2A_ERROR_CANCELLED, "message": "A2A session cancelled."}
+    err_with_data = create_a2a_error(A2A_ERROR_FRAMEWORK, "Session timed out", {"timeoutMs": 60000})
+    assert err_with_data["code"] == A2A_ERROR_FRAMEWORK
+    assert err_with_data["message"] == "Session timed out"
+    assert err_with_data["data"] == {"timeoutMs": 60000}
+
+    # Verify transport funcs use factory shape (task 48 error/retry/cancel)
+    sid = f"err-factory-105-{_time.time_ns()}"
+    start_a2a_stream_session(_mk_stream_envelope(sid))
+    c = cancel_a2a_transport(sid)
+    assert c.get("error") == err_cancel or c.get("error") == {"code": A2A_ERROR_CANCELLED, "message": "A2A session cancelled."}
+    assert c.get("runtime") == "python-contract"
+    assert c.get("contractVersion") == A2A_RUNTIME_CONTRACT_VERSION
+
+    m = handle_malformed_a2a_chunk(sid, "factory test")
+    assert m.get("error", {}).get("code") == A2A_ERROR_FRAMEWORK
+    assert "Malformed A2A chunk" in m.get("error", {}).get("message", "")
+    assert m.get("runtime") == "python-contract"

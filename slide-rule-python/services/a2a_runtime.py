@@ -3,10 +3,11 @@
 Registry mutation (register/list/get_agent) and session persistence
 (create/read/update/list_active/terminate) are implemented here with file-backed
 stores. Stream chunks, cancel (idempotent), timeout, retry envelope, and
-malformed handling now Python-owned runtime. Node a2a-server/client/routes act
-only as thin proxies or explicit compatibility shells delegating to Python.
-Contract projection retained for compat; real transport uses side-effecting
-store funcs.
+malformed handling now Python-owned runtime (task 47/48). Error, retry, and
+cancel semantics centralized via create_a2a_error + dedicated transport funcs.
+Node a2a-server/client/routes act only as thin proxies or explicit compatibility
+shells delegating to Python. Contract projection retained for compat; real
+transport uses side-effecting store funcs.
 """
 
 from __future__ import annotations
@@ -24,6 +25,16 @@ A2A_RUNTIME_NAME = "python-contract"
 
 A2A_ERROR_CANCELLED = -32005
 A2A_ERROR_FRAMEWORK = -32006
+
+def create_a2a_error(code: int, message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Python-owned central A2A error factory for error, retry, and cancel semantics.
+    Ensures consistent shape + provenance attachment in transport paths.
+    Used by cancel/retry/malformed/timeout error cases so Node thin proxy sees Python source.
+    """
+    err: Dict[str, Any] = {"code": int(code), "message": message}
+    if data is not None:
+        err["data"] = data
+    return err
 
 A2ARuntimeOperation = Literal["invoke", "stream_chunk", "cancel", "list_agents"]
 A2AFrameworkType = Literal["crewai", "langgraph", "claude", "custom"]
@@ -453,6 +464,7 @@ def project_a2a_runtime_contract(payload: Dict[str, Any]) -> A2ARuntimeResult:
 
     if operation == "cancel":
         session_id = _read_optional_non_empty(payload.get("sessionId"), "sessionId") or envelope.id
+        # task 48: use consistent error via factory shape
         error = A2AError(
             code=A2A_ERROR_CANCELLED,
             message="A2A session cancelled.",
@@ -669,6 +681,15 @@ def _is_failure_payload(payload: Dict[str, Any]) -> bool:
 # --- Python-owned A2A stream/cancel transport runtime (for 105 takeover) ---
 # Real side-effecting functions using session store. Node is thin proxy/compat shell.
 # Implements: stream chunks, cancel (idempotent), timeout, retry envelope, malformed handling.
+# All return dicts carry explicit python-contract provenance so callers (thin Node proxy) see Python source of truth.
+
+def _a2a_runtime_result(base: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach Python contract provenance to transport results for stream/event semantics."""
+    out = dict(base)
+    out["contractVersion"] = A2A_RUNTIME_CONTRACT_VERSION
+    out["runtime"] = A2A_RUNTIME_NAME
+    return out
+
 
 def start_a2a_stream_session(envelope: Dict[str, Any], framework_type: str = "custom") -> Dict[str, Any]:
     """Python-owned: start a stream session (running status, time, empty chunks)."""
@@ -677,7 +698,7 @@ def start_a2a_stream_session(envelope: Dict[str, Any], framework_type: str = "cu
     sess = create_a2a_session(envelope, framework_type, started_at=int(time.time() * 1000))
     sid = sess["sessionId"]
     update_a2a_session(sid, status="running")
-    return {"ok": True, "status": "running", "session": get_a2a_session(sid)}
+    return _a2a_runtime_result({"ok": True, "status": "running", "session": get_a2a_session(sid)})
 
 
 def emit_a2a_stream_chunk(session_id: str, chunk: str, done: bool = False) -> Dict[str, Any]:
@@ -687,43 +708,43 @@ def emit_a2a_stream_chunk(session_id: str, chunk: str, done: bool = False) -> Di
     """
     if not isinstance(chunk, str):
         err = {"code": A2A_ERROR_FRAMEWORK, "message": "Malformed stream chunk: chunk must be string"}
-        return {"ok": False, "status": "failed", "error": err, "session": get_a2a_session(session_id)}
+        return _a2a_runtime_result({"ok": False, "status": "failed", "error": err, "session": get_a2a_session(session_id)})
     sess = get_a2a_session(session_id)
     if not sess:
         err = {"code": A2A_ERROR_FRAMEWORK, "message": "Session not found for stream chunk"}
-        return {"ok": False, "status": "failed", "error": err}
+        return _a2a_runtime_result({"ok": False, "status": "failed", "error": err})
     ch = {"jsonrpc": "2.0", "id": session_id, "chunk": chunk, "done": bool(done)}
     chunks = list(sess.get("streamChunks", [])) + [ch]
     new_status = "completed" if done else "running"
     completed_at = int(time.time() * 1000) if done else sess.get("completedAt")
     update_a2a_session(session_id, status=new_status, streamChunks=chunks, completedAt=completed_at)
     updated = get_a2a_session(session_id)
-    return {
+    return _a2a_runtime_result({
         "ok": True,
         "status": "completed" if done else "streaming",
         "streamChunk": ch,
         "session": updated,
-    }
+    })
 
 
 def cancel_a2a_transport(session_id: str) -> Dict[str, Any]:
-    """Python-owned cancel transport with idempotency.
-    If already cancelled, returns same without re-update. Updates session state visibly.
+    """Python-owned cancel transport with idempotency (task 48 error/retry/cancel semantics).
+    Uses create_a2a_error for central error shape. If already cancelled, returns same without re-update.
     """
     sess = get_a2a_session(session_id)
-    error = {"code": A2A_ERROR_CANCELLED, "message": "A2A session cancelled."}
+    error = create_a2a_error(A2A_ERROR_CANCELLED, "A2A session cancelled.")
     resp = {"jsonrpc": "2.0", "id": session_id, "error": error}
     now = int(time.time() * 1000)
     if sess and sess.get("status") == "cancelled":
         # idempotent: no side effect change
         existing_resp = sess.get("response") or resp
-        return {
+        return _a2a_runtime_result({
             "ok": False,
             "status": "cancelled",
             "error": error,
             "response": existing_resp,
             "session": sess,
-        }
+        })
     if sess:
         update_a2a_session(
             session_id,
@@ -742,42 +763,52 @@ def cancel_a2a_transport(session_id: str) -> Dict[str, Any]:
             "response": resp,
             "streamChunks": [],
         }
-    return {
+    return _a2a_runtime_result({
         "ok": False,
         "status": "cancelled",
         "error": error,
         "response": resp,
         "session": updated,
-    }
+    })
 
 
 def check_a2a_stream_timeout(session_id: str, timeout_ms: int = 60000) -> Dict[str, Any]:
-    """Python-owned timeout integration for stream/cancel paths. Calls terminate."""
+    """Python-owned timeout integration for stream/cancel paths (task 48 error semantics).
+    Uses create_a2a_error shape for timeout errors.
+    """
     timed = terminate_timed_out_a2a_sessions(default_timeout_ms=timeout_ms)
     for s in timed:
         if str(s.get("sessionId")) == str(session_id):
-            return {"ok": False, "status": "failed", "error": (s.get("response") or {}).get("error")}
-    return {"ok": True, "status": "active"}
+            err = create_a2a_error(A2A_ERROR_FRAMEWORK, "Session timed out", {"timeoutMs": timeout_ms})
+            return _a2a_runtime_result({"ok": False, "status": "failed", "error": err})
+    return _a2a_runtime_result({"ok": True, "status": "active"})
 
 
 def get_a2a_retry_envelope(session_id: str, attempt: int = 0) -> Dict[str, Any]:
-    """Python-owned retry envelope for stream/cancel transport."""
+    """Python-owned retry envelope (task 48) for error/retry/cancel transport paths.
+    Central error used for retry-on-fail cases.
+    """
     sess = get_a2a_session(session_id) or {}
     delay = 100 * (attempt + 1)
-    return {
+    base = {
         "ok": True,
         "retry": {"sessionId": session_id, "attempt": attempt, "nextDelayMs": delay},
         "session": sess,
     }
+    if sess.get("status") == "failed":
+        base["error"] = create_a2a_error(A2A_ERROR_FRAMEWORK, "retry after failure", {"attempt": attempt})
+    return _a2a_runtime_result(base)
 
 
 def handle_malformed_a2a_chunk(session_id: str, reason: str = "bad chunk") -> Dict[str, Any]:
-    """Explicit malformed chunk handling -> error envelope (visible)."""
-    err = {"code": A2A_ERROR_FRAMEWORK, "message": f"Malformed A2A chunk: {reason}"}
+    """Python-owned malformed handling using central error (task 48).
+    Explicit error envelope for retry/cancel paths; visible degraded.
+    """
+    err = create_a2a_error(A2A_ERROR_FRAMEWORK, f"Malformed A2A chunk: {reason}")
     resp = {"jsonrpc": "2.0", "id": session_id, "error": err}
     if session_id:
         update_a2a_session(session_id, status="failed", response=resp, completedAt=int(time.time() * 1000))
-    return {"ok": False, "status": "failed", "error": err, "response": resp}
+    return _a2a_runtime_result({"ok": False, "status": "failed", "error": err, "response": resp})
 
 
 # --- Python-owned external agent invoke provider (105 takeover) ---
