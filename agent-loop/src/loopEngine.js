@@ -172,7 +172,7 @@ export async function runLoop({ options, runId = timestamp(), runDir, latestDir,
     autoFix: options.autoFix,
   });
 
-  if (!resumeState && baselineGate.ok && !baselineDevFix) {
+  if (!resumeState && baselineGate.ok && !baselineDevFix && !options.forceFix) {
     if (options.skipReview) {
       taskText = await completeTaskChecklistOnSuccess({ options, fixCwd, taskText });
       await transition('DONE_GATE_ONLY');

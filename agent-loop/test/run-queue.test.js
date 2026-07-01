@@ -589,6 +589,32 @@ test('buildLoopArgsForQueueEntry applies global production budgets when queue om
   assert.deepEqual(args.slice(args.indexOf('--worker-max-turns'), args.indexOf('--worker-max-turns') + 2), ['--worker-max-turns', '512']);
 });
 
+test('buildLoopArgsForQueueEntry passes force-fix for rescue queue reruns', () => {
+  const args = buildLoopArgsForQueueEntry({
+    agentLoopRoot,
+    repoRoot,
+    entry: {
+      id: 'backend-python-no-node-a2a-task-lifecycle-contract-105',
+      task: 'agent-loop/tasks/backend-python-no-node-a2a-task-lifecycle-contract-105.md',
+      forceFix: true,
+    },
+    defaults: {
+      useWorktree: false,
+      autoFix: true,
+      skipReview: false,
+    },
+    index: 0,
+    gateSets: {
+      gates: ['node --version'],
+    },
+    defaultGates: ['node --version'],
+  });
+
+  assert.ok(args.includes('--force-fix'));
+  assert.ok(args.includes('--auto-fix'));
+  assert.equal(args.includes('--skip-review'), false);
+});
+
 test('buildLoopArgsForQueueEntry passes merged worker env from defaults and entry', () => {
   const args = buildLoopArgsForQueueEntry({
     agentLoopRoot,

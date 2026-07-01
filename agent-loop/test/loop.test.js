@@ -54,6 +54,7 @@ test('parseLoopArgs requires cwd, task, and at least one gate', () => {
       grokMaxTurns: 512,
       grokMaxRetries: 1,
       retryBackoffMs: 1000,
+      forceFix: false,
       pauseBeforeFix: false,
       pauseAfterIteration: false,
       guardTests: false,
@@ -229,6 +230,24 @@ test('parseLoopArgs supports skip-review for gate-only runs', () => {
   ]);
 
   assert.equal(parsed.skipReview, true);
+});
+
+test('parseLoopArgs supports force-fix for rescue reruns on green baselines', () => {
+  const parsed = parseLoopArgs([
+    '--cwd',
+    'C:\\repo',
+    '--task',
+    'task.md',
+    '--gate',
+    'npm test',
+    '--auto-fix',
+    '--fix-cwd',
+    'C:\\repo',
+    '--force-fix',
+  ]);
+
+  assert.equal(parsed.forceFix, true);
+  assert.equal(parsed.autoFix, true);
 });
 
 test('parseLoopArgs supports zh-CN loop reports', () => {

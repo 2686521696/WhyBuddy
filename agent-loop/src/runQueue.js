@@ -251,6 +251,7 @@ export function buildLoopArgsForQueueEntry({
   }
 
   if (entry.autoFix ?? defaults.autoFix ?? true) args.push('--auto-fix');
+  if (entry.forceFix ?? defaults.forceFix ?? false) args.push('--force-fix');
 
   const fixAgent = entry.fixAgent ?? defaults.fixAgent;
   if (fixAgent) args.push('--fix-agent', fixAgent);

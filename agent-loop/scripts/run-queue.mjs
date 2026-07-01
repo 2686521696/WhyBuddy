@@ -53,7 +53,10 @@ async function main() {
   const selection = resolveQueueSelection(argv);
   const queue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
   const repoRoot = path.resolve(agentLoopRoot, queue.cwd || '..');
-  const defaults = queue.defaults || {};
+  const defaults = {
+    ...(queue.defaults || {}),
+    ...(argv.includes('--force-fix') ? { forceFix: true } : {}),
+  };
   const defaultGates = queue.gates || [];
   const gateSets = collectGateSets(queue, defaultGates);
   const maxConsecutiveNoChanges = defaults.maxConsecutiveNoChanges ?? 3;

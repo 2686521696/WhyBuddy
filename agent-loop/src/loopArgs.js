@@ -25,6 +25,7 @@ export function parseLoopArgs(argv) {
     grokMaxTurns: 512,
     grokMaxRetries: 1,
     retryBackoffMs: 1000,
+    forceFix: false,
     pauseBeforeFix: false,
     pauseAfterIteration: false,
     guardTests: false,
@@ -143,6 +144,8 @@ export function parseLoopArgs(argv) {
       if (!Number.isFinite(parsed.retryBackoffMs) || parsed.retryBackoffMs < 0) {
         throw new Error('--retry-backoff-ms must be a non-negative integer');
       }
+    } else if (arg === '--force-fix') {
+      parsed.forceFix = true;
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }

@@ -108,6 +108,57 @@ test('runLoop audit-only succeeds without agents when review is skipped and auto
   assert.equal(result.codexReview, null);
 });
 
+test('runLoop force-fix bypasses baseline-green review and runs the fix agent', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
+  const taskPath = path.join(cwd, 'task.md');
+  await fs.writeFile(taskPath, 'rescue green baseline\n\n## Acceptance criteria\n\n- force fix still runs\n', 'utf8');
+
+  const processCalls = [];
+  const gateResults = [
+    gate(true, 0, ''),
+    gate(true, 0, ''),
+  ];
+  const diffs = [
+    '',
+    'diff --git a/rescue.py b/rescue.py\n+forced fix\n',
+  ];
+
+  const result = await runLoop({
+    options: {
+      cwd,
+      fixCwd: cwd,
+      createWorktree: null,
+      task: taskPath,
+      gates: ['npm test'],
+      autoFix: true,
+      forceFix: true,
+      skipReview: true,
+      timeoutMs: 1000,
+      maxIterations: 2,
+    },
+    runDir: cwd,
+    latestDir: cwd,
+    deps: {
+      resolveAgents: async () => ({ codex: 'codex.exe', grok: 'grok.exe' }),
+      evaluateGate: async () => gateResults.shift(),
+      captureDiff: async () => ({ text: diffs.shift() ?? '' }),
+      runProcess: async (command, args, options) => {
+        processCalls.push({ command, args, cwd: options.cwd });
+        return runOk(command, args, options.cwd, '{"verdict":"changed"}');
+      },
+      writeArtifact: artifactWriter(cwd),
+      onState: async () => {},
+    },
+  });
+
+  assert.equal(result.status, 'DONE_FIXED');
+  assert.equal(result.iterations.length, 1);
+  assert.equal(processCalls.length, 1);
+  assert.equal(processCalls[0].command, 'grok.exe');
+  assert.equal(result.grokFix.exitCode, 0);
+  assert.equal(result.codexReview, null);
+});
+
 test('runLoop passes a worktree-local Grok prompt file when fix cwd differs from run dir', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-test-'));
   const fixCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-worktree-'));
