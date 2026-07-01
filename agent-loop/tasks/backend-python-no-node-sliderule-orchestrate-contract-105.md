@@ -53,3 +53,51 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Pre-edit diagnosis
+- failureKind: review_needs_changes
+- rootCause: The task file remained at raw spec (no final report section); no commands/files/denom recorded despite Python impl+test existing; migration-status-105.md kept task 11 as pending without ownership result, wrapper test evidence or Node risk note. Gate only executed mojibake + section existence (per run-summary), not pytest/vitest results.
+- editNeeded: true
+- intendedFiles: ["agent-loop/tasks/backend-python-no-node-sliderule-orchestrate-contract-105.md", "agent-loop/tasks/backend-python-no-node-api-migration-status-105.md"]
+- gatesToRun: ["node agent-loop/src/check-mojibake.js on edited mds", "node -e section check", "$env:PYTHONPATH=... python -m pytest ... -k wrapper and orchestrate", "npx vitest ... sliderule.orchestrate-plan-python-contract.test.ts"]
+
+## Route ownership classification (this task)
+- The orchestrate-plan behavior (POST /api/sliderule/orchestrate-plan, including hardening for frontend session wrapper state) classified PYTHON_FIRST_COMPAT.
+- Python source of truth: slide-rule-python/routes/sliderule_full.py (/orchestrate-plan endpoint + _run_orchestrate_plan + _coerce_state_payload at ~100 for wrapper merge), services/slide_rule_orchestrator.py:orchestrate_plan.
+- Frontend: client/src/lib/sliderule-orchestrator.ts calls /api/sliderule/orchestrate-plan; vite.config.ts resolveApiTarget routes it to Python (9700).
+- Node: server/routes/sliderule.ts direct handler + executeOrchestratePlan (legacy) + python-delegation for 'orchestrate.plan' in execute path remains thin compat shell only. Does not own wrapper coercion or plan business logic. Tests assert delegation and python signals.
+- Wrapper state: GET sessions returns {state, provenance, backend}; POST plan now accepts same wrapper shape (Python merges) without forcing client unwrap. Python contract hardened for this.
+- Degraded states: explicit _degraded_plan returned by Python (timeout, config, error); visible, no silent Node success.
+
+## Implementation summary
+- Python route/service already provided the hardened contract (wrapper coercion + provenance attach + backend signal). Task 11 goal met by prior slice work + verification.
+- No source changes in this remediation pass (per guardrails: only edit files to resolve listed review findings; impl direction was correct).
+- Test coverage: test_v5_smoke.py:test_orchestrate_plan_accepts_frontend_session_wrapper (monkey + assert wrapper inner, python signals).
+- Contract verification in Python tests (test_orchestrate_plan_contract.py etc.).
+- Node compat proof updated in prior but exercised: the orchestrate-plan-python-contract vitest.
+
+## Commands run (smallest relevant, recorded exactly)
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-sliderule-orchestrate-contract-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md  => exit 0, "No mojibake findings."
+- node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['## Required implementation','## Required tests','## Acceptance criteria']) { if(!task.includes(needle)) throw new Error('task missing section: '+needle); } console.log('sections present')" agent-loop/tasks/backend-python-no-node-sliderule-orchestrate-contract-105.md  => exit 0
+- $env:PYTHONPATH="slide-rule-python"; python -m pytest slide-rule-python/tests/test_v5_smoke.py -q --tb=no -k "orchestrate_plan_accepts_frontend_session_wrapper"  => exit 0, "1 passed"
+- $env:PYTHONPATH="slide-rule-python"; python -m pytest slide-rule-python/tests/test_v5_smoke.py -q --tb=no -k "orchestrate or wrapper or sessions"  => exit 0, "3 passed"
+- $env:PYTHONPATH="slide-rule-python"; python -m pytest slide-rule-python/tests/test_orchestrate_plan_contract.py -q --tb=no  => exit 0, "3 passed"
+- npx vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.orchestrate-plan-python-contract.test.ts --reporter=basic  => exit 0, "9 passed" (includes "proves Node /api/sliderule is thin compatibility shell (PYTHON_FIRST_COMPAT)")
+- (pre-edit runs of mojibake and section gates also executed; full pytest/vitest recorded above)
+
+## Files changed
+- agent-loop/tasks/backend-python-no-node-sliderule-orchestrate-contract-105.md
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+(Note: per "only edit files needed to resolve the listed review findings"; did not touch slide-rule-python/tests/test_v5_smoke.py (already contained wrapper test + provenance asserts per minor finding), nor any .py/.ts sources.)
+
+## Denominator / numerator impact
+- Denominator unchanged (66 route modules; 42+ /api surfaces per task 01 baseline).
+- Numerator: no new full surface moved (orchestrate-plan slice was already PYTHON_FIRST_COMPAT from prior inventory/mapping); this task records hardening of Python contract + frontend wrapper state support + explicit thin-shell proof for it. Does not alter the count; improves evidence quality for the slice.
+
+## Worker final report
+- verdict: changed
+- summary: Added missing final report to task file and ownership/result record + completed status to migration ledger for task 11. All review findings resolved. Python is the backend source for orchestrate-plan contract (wrapper state included); Node thin shell proven by tests; provenance signals present; commands and evidence recorded.
+- Acceptance met: Python FastAPI owns the orchestrate-plan + wrapper; migration status updated; frontend via Vite shows Python; ledgers record result and no change to denom/num.
+- Mojibake passed on edited mds.
+- All required commands run and listed exactly.
+- No tests weakened, no scope widened, only ledger updates for the documented gap.

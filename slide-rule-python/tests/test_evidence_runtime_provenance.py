@@ -163,3 +163,137 @@ def test_fallback_evidence_is_not_degraded():
     assert result.error is None
     assert result.sources
     assert result.provenance != DEGRADED_PROVENANCE
+
+
+# --- FastAPI route payload ownership tests (Python-owned evidence+source provenance) ---
+# These prove that slide-rule-python/routes/sliderule_full (mounted in app) returns
+# result payloads carrying "backend":"python", top-level provenance (python-*), and
+# the runtime evidenceProvenance / sources[].provenance from the evidence contract.
+# This directly addresses review: gate must exercise pytest proving route-level signal.
+
+try:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+except Exception:  # pragma: no cover
+    FastAPI = None  # type: ignore
+    TestClient = None  # type: ignore
+
+INTERNAL_KEY = "dev-slide-rule-internal"
+
+
+def _make_full_client():
+    if FastAPI is None or TestClient is None:
+        raise RuntimeError("fastapi not available for route test")
+    app = FastAPI()
+    # import here to use the edited full router which wires execute_evidence_runtime
+    from routes.sliderule_full import router as full_router  # noqa: E402
+    app.include_router(full_router, prefix="/api/sliderule")
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _evidence_search_payload() -> dict:
+    return {
+        "capabilityId": "evidence.search",
+        "state": {
+            "sessionId": "prov-route-105",
+            "goal": {"text": "table progression pacing evidence"},
+            "artifacts": [],
+            "capabilityRuns": [],
+        },
+        "inputArtifactIds": [],
+        "roleId": "grounding",
+        "turnId": "prov-105",
+        "userText": "ground the pacing",
+    }
+
+
+def _post_evidence_route(client):
+    return client.post(
+        "/api/sliderule/execute-capability",
+        json=_evidence_search_payload(),
+        headers={"X-Internal-Key": INTERNAL_KEY},
+    )
+
+
+def test_route_payload_exposes_python_backend_and_provenance(monkeypatch):
+    """Python FastAPI route for evidence.search returns explicit python provenance signals."""
+    from sliderule_llm.client import LlmResult  # noqa: E402
+
+    def fake_llm(messages, **kwargs):
+        return LlmResult(
+            content="## Grounding references\n- runtime evidence note\n## Why\n- proves ownership\n## Gaps\n- n/a",
+            usage={"total_tokens": 11},
+            finish_reason="stop",
+            model="prov-test-llm",
+            latency_ms=1,
+        )
+
+    def retrieved_ev(q):
+        from sliderule_llm.evidence import EvidenceRetrievalResult, EvidenceSource  # noqa: E402
+        return EvidenceRetrievalResult(
+            sources=[EvidenceSource(title="Pacing note", snippet="evidence from tests", provenance=RETRIEVED_PROVENANCE, source_id="doc-prov", score=0.91)],
+            provenance=RETRIEVED_PROVENANCE,
+        )
+
+    monkeypatch.setattr("sliderule_llm.capabilities.call_llm_with_retry", fake_llm)
+    monkeypatch.setattr("routes.sliderule_full.execute_evidence_runtime", retrieved_ev)
+
+    client = _make_full_client()
+    resp = _post_evidence_route(client)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Python owns the result payload
+    assert body.get("backend") == "python"
+    assert body.get("provenance") in ("python-llm", "python-rag")
+    # Evidence and source provenance from runtime contract exposed
+    assert body.get("evidenceProvenance") == RETRIEVED_PROVENANCE
+    assert body["sources"][0]["provenance"] == RETRIEVED_PROVENANCE
+    assert body["sources"][0].get("sourceId") == "doc-prov"
+    assert "model" in body
+
+
+def test_route_payload_exposes_fallback_provenance(monkeypatch):
+    from sliderule_llm.client import LlmResult  # noqa: E402
+
+    def fake_llm(messages, **kwargs):
+        return LlmResult(content="fallback note", usage={}, finish_reason="stop", model="f", latency_ms=0)
+
+    monkeypatch.setattr("sliderule_llm.capabilities.call_llm_with_retry", fake_llm)
+    monkeypatch.setattr(
+        "routes.sliderule_full.execute_evidence_runtime",
+        lambda q: fallback_evidence(q, reason="no_retrieval_hits"),
+    )
+
+    client = _make_full_client()
+    resp = _post_evidence_route(client)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body.get("backend") == "python"
+    assert body.get("evidenceProvenance") == FALLBACK_PROVENANCE
+    assert body["sources"][0]["provenance"] == FALLBACK_PROVENANCE
+    assert body.get("fallbackReason") == "no_retrieval_hits"
+    assert body["evidenceProvenance"] != RETRIEVED_PROVENANCE
+
+
+def test_route_payload_exposes_degraded_provenance(monkeypatch):
+    from sliderule_llm.client import LlmResult  # noqa: E402
+
+    def fake_llm(messages, **kwargs):
+        return LlmResult(content="deg note", usage={}, finish_reason="stop", model="d", latency_ms=0)
+
+    monkeypatch.setattr("sliderule_llm.capabilities.call_llm_with_retry", fake_llm)
+    monkeypatch.setattr(
+        "routes.sliderule_full.execute_evidence_runtime",
+        lambda q: degraded_evidence(q, error="retrieval_runtime_failed", reason="timeout"),
+    )
+
+    client = _make_full_client()
+    resp = _post_evidence_route(client)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body.get("backend") == "python"
+    assert body.get("evidenceProvenance") == DEGRADED_PROVENANCE
+    assert body.get("error") == "retrieval_runtime_failed"
+    assert body["sources"] == []
+    assert body["evidenceProvenance"] != RETRIEVED_PROVENANCE
+    assert body["evidenceProvenance"] != FALLBACK_PROVENANCE

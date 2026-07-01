@@ -2351,19 +2351,12 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
   // Remove together with the env / localStorage shims.
   app.use("/api/whybuddy", slideruleRouterMod.default);
 
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-      features: {
-        workflows: true,
-        tasks: true,
-        feishu: true,
-        executorCallbacks: true,
-        missionSocket: true,
-      },
-    });
-  });
+  // Thin PYTHON_FIRST_COMPAT proxy for unified health/readiness.
+  // Python (slide-rule-python /health or /api/health) is the source of truth.
+  // Node does not own business health semantics; forwards Python response or surfaces degraded state.
+  // Supports test override similar to agent-loop proxy.
+  const { attachHealthProxy } = await import("./routes/health.js");
+  attachHealthProxy(app);
 
   const staticPath =
     process.env.NODE_ENV === "production"

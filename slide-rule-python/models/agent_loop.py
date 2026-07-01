@@ -7,10 +7,24 @@ No filesystem access. No raw secrets exposed in response shapes.
 """
 
 from typing import Any, Dict, List, Optional
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 AGENT_LOOP_MODEL_VERSION = "agentloop.data.v1"
+
+
+class RouteState(str, Enum):
+    """Route ownership / deprecation state model for backend API cutover.
+
+    Introduced by task 06 (foundation-deprecation-state-model).
+    Python is the source of truth; these values are used in contract registry
+    and must be observed by smokes and thin proxies.
+    """
+    ACTIVE_NODE_BUSINESS = "ACTIVE_NODE_BUSINESS"
+    PYTHON_FIRST_COMPAT = "PYTHON_FIRST_COMPAT"
+    PYTHON_ONLY = "PYTHON_ONLY"
+    BLOCKED = "BLOCKED"
 
 
 class AgentLoopBase(BaseModel):
@@ -170,6 +184,7 @@ class AgentLoopCommandReceipt(AgentLoopBase):
 # Public exports
 __all__ = [
     "AGENT_LOOP_MODEL_VERSION",
+    "RouteState",
     "AgentLoopTaskEntry",
     "AgentLoopArtifact",
     "AgentLoopEvent",

@@ -53,3 +53,44 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Node backend API behavior classification
+- Delivery capability execution (document.draft, traceability.matrix, task.write, instruction.package, handoff.package under /api/sliderule/execute-capability) classified as PYTHON_FIRST_COMPAT.
+- Python owns: FastAPI route contract + signals + execution dispatch (native LLM via sliderule_llm for these, or mapped RAG).
+- Node: explicit thin legacy compatibility shell only (delivery-exec-map + isDelivery check reached only on SLIDERULE_V5_BACKEND=legacy; default delegates in routes/sliderule.ts before reaching it).
+
+## Implementation summary
+- Identified in Node: delivery-exec-map.ts (direct impl + is fn), called from routes/sliderule.ts legacy branch only.
+- Python: hardened sliderule_full.py with DELIVERY_CAP_IDS contract definition + deliveryContract signal on execute results (for both native and mapped). Leverages existing native path (is_python_native_capability covers delivery) and execute_mapped_capability in capability_maps.
+- Node compat: updated delivery-exec-map.ts with explicit legacy header; updated its test to prove thin shell.
+- Updated migration status ledger with result for task 14.
+- No frontend, vite, or unrelated edits.
+- Python provenance for delivery now includes "deliveryContract":"python-native-llm" + "backend":"python".
+
+## Commands run (smallest relevant)
+node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-sliderule-delivery-contract-105.md
+node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+node agent-loop/src/check-mojibake.js server/sliderule/delivery-exec-map.ts
+node agent-loop/src/check-mojibake.js server/sliderule/__tests__/delivery-exec-map.test.ts
+node agent-loop/src/check-mojibake.js slide-rule-python/routes/sliderule_full.py
+node agent-loop/src/check-mojibake.js slide-rule-python/tests/test_v5_contract_expansion.py
+node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-sliderule-delivery-contract-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md server/sliderule/delivery-exec-map.ts server/sliderule/__tests__/delivery-exec-map.test.ts slide-rule-python/routes/sliderule_full.py slide-rule-python/tests/test_v5_contract_expansion.py
+$env:PYTHONPATH='slide-rule-python'; python -m pytest slide-rule-python/tests/test_v5_contract_expansion.py -q --tb=no
+$env:PYTHONPATH='slide-rule-python'; python -m pytest slide-rule-python/tests/test_capabilities.py -q --tb=no -k "native or draft or handoff or delivery"
+npx vitest run --config vitest.config.server.ts server/sliderule/__tests__/delivery-exec-map.test.ts --reporter=basic
+
+## Files changed (this fix iteration; prior changes in diff)
+- slide-rule-python/routes/sliderule_full.py
+- slide-rule-python/tests/test_v5_contract_expansion.py
+- server/sliderule/delivery-exec-map.ts
+- server/sliderule/__tests__/delivery-exec-map.test.ts
+- agent-loop/tasks/backend-python-no-node-sliderule-delivery-contract-105.md
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+
+## Migration denominator / numerator impact
+- Denominator unchanged (66 route modules, 42+ /api/* surfaces from task 01).
+- Numerator: this task adds explicit PYTHON_FIRST_COMPAT ownership proof + contract signal for delivery execution slice of /api/sliderule. Python becomes source for delivery caps contract. Changes numerator (delivery contract now counted under proven Python surfaces). Node risk isolated to legacy opt-in.
+- Worker final report records this delta.
+
+## Final report
+Task 14: Moved delivery capability execution contracts to Python. Classified delivery caps as PYTHON_FIRST_COMPAT. Hardened Python route (sliderule_full.py) with DELIVERY_CAP_IDS and "deliveryContract" signal attachment in execute-capability (native path for delivery now emits explicit Python contract evidence). Updated route test (test_v5_contract_expansion.py) to assert the signal for delivery caps (via live TestClient on /execute-capability). Marked Node delivery-exec-map as legacy-only with header; updated its Vitest test (without removing/weakening any original asserts) to stub legacy env, prove bypass under python backend, documenting thin compat shell. Added (not rewrote) a dedicated route-exercising proof it() in delivery-exec-map.test.ts: sets python backend, spies executeDeliveryCapabilityMapped before dynamic router load, calls POST /api/sliderule/execute-capability with document.draft, asserts response has backend+deliveryContract from python, python delegate was called, and execSpy not called (map bypassed). Updated migration status (task 14 completed, table + full result section with ownership, tests, risk). Ran pytest for the delivery-included native test (passes with signal), vitest on delivery test (passes, proves shell + bypass), and node agent-loop/src/check-mojibake.js on every edited file (the two agent-loop mds + server/sliderule/delivery-exec-map.ts + its test + the two slide-rule-python py files; all returned "No mojibake findings"). Exact commands listed above (explicit per-file + combined to cover all). Files changed listed in full. This changes the no-Node backend API numerator (Python delivery contract now proven source; denom static). No scope creep, no test rewrite, degraded visible on legacy fail, only scoped files. Review findings addressed: Commands run section now lists (and actual runs performed) node check-mojibake covering ALL edited md/ts/py files including the previously omitted slide-rule-python/routes/sliderule_full.py, slide-rule-python/tests/test_v5_contract_expansion.py, server/sliderule/delivery-exec-map.ts. Task file updated with details; status reflects. All per rules.

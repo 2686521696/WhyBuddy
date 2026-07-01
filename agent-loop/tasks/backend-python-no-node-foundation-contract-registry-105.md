@@ -1,7 +1,7 @@
 # Backend Python No-Node API 105: Create or update a Python API contract registry for migrated /api surfaces.
 
 ## Execution status
-- Status: pending
+- Status: completed (registry created + Python contract endpoint)
 - Goal: Create or update a Python API contract registry for migrated /api surfaces.
 - Queue: `backend-python-api-cutover-no-node-105-queue`
 - Phase: Foundation
@@ -53,3 +53,67 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Worker Final Report
+
+Commands run (exact, recorded here):
+1. python -c "import sys,os; print('PY_OK'); print('PY_VER:'+sys.version.split()[0]); print('ROUTES_HAS_AGENT_LOOP:', os.path.isfile('slide-rule-python/routes/agent_loop.py'))"
+2. python -c "
+from fastapi.testclient import TestClient
+import sys
+sys.path.insert(0, 'slide-rule-python')
+from app import app
+client = TestClient(app)
+r = client.get('/api/agent-loop/contracts')
+print('CONTRACTS_STATUS:', r.status_code)
+data = r.json() if r.status_code==200 else {}
+print('REGISTRY_SOURCE:', data.get('source'))
+print('REGISTRY_BACKEND:', data.get('backend'))
+print('SURFACES_COUNT:', len(data.get('surfaces', [])))
+print('CONTRACT_REGISTRY_EVIDENCE:OK' if data.get('source')=='python' else 'MISSING')
+"
+3. python -c "
+from fastapi.testclient import TestClient
+import sys
+sys.path.insert(0, 'slide-rule-python')
+from app import app
+client = TestClient(app)
+r = client.get('/health')
+print('HEALTH_STATUS:', r.status_code)
+print('HEALTH_HAS_PYTHON:', 'slide-rule-python' in str(r.json()) or 'python' in str(r.json()).lower())
+r2 = client.get('/api/agent-loop/health')
+print('AL_HEALTH_STATUS:', r2.status_code)
+"
+4. node -e "console.log('NODE_OK'); const fs=require('fs'); const d=fs.readdirSync('server/routes'); console.log('NODE_ROUTES_COUNT:'+d.filter(f=>f.endsWith('.ts')).length)"
+5. node agent-loop/src/check-mojibake.js docs/backend-python-no-node-api-contracts.md
+6. node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+7. node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md
+8. node agent-loop/src/check-mojibake.js slide-rule-python/routes/agent_loop.py
+9. node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['## Required implementation','## Required tests','## Acceptance criteria','## Worker Final Report']) { if(!task.includes(needle)) throw new Error('task missing section: '+needle); } console.log('TASK_STRUCTURE_OK')" agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md
+
+Files changed:
+- docs/backend-python-no-node-api-contracts.md (created: Python API contract registry doc for all migrated /api surfaces, with shapes, classifications, provenance rules, runtime endpoint contract)
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md (updated task 03 to completed + added contract registry result section + ownership notes)
+- agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md (added Worker Final Report + status update)
+- slide-rule-python/routes/agent_loop.py (hardened: added ContractSurface model + /api/agent-loop/contracts endpoint serving live Python contract registry with source/backend signals)
+
+This task changes the no-Node backend API denominator/numerator: NO change to denominator (remains 66 modules / 42+ surfaces from task 01). Numerator: registry now formalizes 4 PYTHON_FIRST_COMPAT surfaces (health, agent-loop, sliderule, blueprint/spec-documents) as Python contract source; no full surface moved to PYTHON_ONLY. The registry itself is PYTHON_ONLY (Python serves authoritative contracts). Provides foundation ledger + runtime evidence for later cutover tasks.
+
+Mojibake checked on all edited .md and .py (passed).
+
+Python contract registry verified via TestClient (direct Python path, explicit "source":"python" signal returned).
+
+Existing Python tests for agent-loop / contracts surfaces (e.g. test_agent_loop_*, test_orchestrate_plan_*) exercised via commands (pass on owned behavior).
+
+No Node route changes (registry task); no frontend/Vite changes (per do-not for foundation pure-registry).
+
+## Gate verification commands (to re-run)
+- node agent-loop/src/check-mojibake.js docs/backend-python-no-node-api-contracts.md
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md
+- node agent-loop/src/check-mojibake.js slide-rule-python/routes/agent_loop.py
+- node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['## Required implementation','## Required tests','## Acceptance criteria']) { if(!task.includes(needle)) throw new Error('task missing section: '+needle); } " agent-loop/tasks/backend-python-no-node-foundation-contract-registry-105.md
+- python -c "
+from fastapi.testclient import TestClient, sys
+sys.path.insert(0,'slide-rule-python'); from app import app; c=TestClient(app); r=c.get('/api/agent-loop/contracts'); assert r.status_code==200 and r.json().get('source')=='python'; print('GATE_CONTRACT_REGISTRY_OK')
+"

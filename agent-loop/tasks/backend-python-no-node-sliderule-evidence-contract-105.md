@@ -53,3 +53,55 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Classification (task 13)
+- Node backend API behavior for evidence provenance and source provenance in SlideRule results (evidence.search + result "evidenceProvenance"/"sources" fields) classified as PYTHON_FIRST_COMPAT.
+- Python (slide-rule-python/routes/sliderule_full.py + sliderule_llm/evidence.py + capability execution) owns the runtime contract for RETRIEVED/FALLBACK/GENERATED/DEGRADED, the to_payload_fields(), and attachment of evidenceProvenance + per-source provenance into FastAPI response payloads.
+- Node (server/routes/sliderule.ts for evidence.search + python-delegation.ts): explicit thin compatibility shell; delegates to /api/sliderule/execute-capability under default SLIDERULE_V5_BACKEND=python; on failure returns explicit degraded (no silent).
+- Vite dev routing already targets Python for /api/sliderule/* (from prior tasks).
+- No ACTIVE_NODE_BUSINESS ownership for evidence provenance surface under default path.
+
+## Implementation
+- Inspected (current-worktree relative paths only): agent-loop/tasks/backend-python-no-node-api-migration-status-105.md, agent-loop/tasks/backend-python-no-node-sliderule-evidence-contract-105.md, slide-rule-python/routes/sliderule_full.py, slide-rule-python/sliderule_llm/evidence.py, slide-rule-python/services/capability_maps.py, slide-rule-python/tests/test_evidence_runtime_provenance.py (and nearby test_evidence_*), server/routes/sliderule.ts, server/sliderule/python-delegation.ts, prior task files for pattern.
+- Python: Wired evidence runtime provenance into the primary FastAPI surface (sliderule_full.py): added import of execute_evidence_runtime, _evidence_query helper, and special-case for "evidence.search" native path that passes evidence_retriever to execute_capability (so runtime provenance used instead of always "generated") + ensures fields in result. This makes FastAPI route payload own the evidence+source provenance values.
+- Hardened Python contract: route responses for evidence now carry "backend":"python", top provenance (python-llm/python-rag), "evidenceProvenance" (one of runtime set), sources[].provenance matching runtime.
+- Node remains thin proxy only (no change needed; delegation already in place; degraded visible).
+- No frontend callsite or Vite edit required (already routes to Python).
+- Updated migration ledger and this task file (required).
+
+## Python tests (Python-owned behavior)
+- Updated slide-rule-python/tests/test_evidence_runtime_provenance.py: kept all original module-level tests (runtime values explicit, retrieved/fallback/generated/degraded stay honest, payload helpers); added 3 new route-level tests using FastAPI TestClient against the mounted full router (/api/sliderule/execute-capability for evidence.search):
+  - test_route_payload_exposes_python_backend_and_provenance: asserts "backend":"python", provenance python-*, evidenceProvenance==RETRIEVED, sources provenance.
+  - test_route_payload_exposes_fallback_provenance
+  - test_route_payload_exposes_degraded_provenance
+- These prove the FastAPI result payload (the contract exposed to frontend/smoke via Vite) is Python-owned for evidence provenance (not just internal module).
+- Tests exercise the actual runtime provenance constants and to_payload_fields in end-to-end route path.
+
+## Node thin-compat tests
+- No new Vitest added (per allowed files scoped to the py test; prior task9/12 delegation tests already cover evidence.search thin proxy + python signals pass-through; e.g. server/routes/__tests__/sliderule.execute-capability.test.ts asserts delegation and no Node ownership).
+- Node proxy test surface proves it does not synthesize provenance.
+
+## Commands run (smallest relevant)
+- python -m pytest slide-rule-python/tests/test_evidence_runtime_provenance.py -q --tb=line
+- python -m pytest slide-rule-python/tests/test_evidence_runtime_provenance.py -q --tb=no -k "route_payload"
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-sliderule-evidence-contract-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md slide-rule-python/routes/sliderule_full.py slide-rule-python/tests/test_evidence_runtime_provenance.py
+
+## Files changed
+- slide-rule-python/routes/sliderule_full.py
+- slide-rule-python/tests/test_evidence_runtime_provenance.py
+- agent-loop/tasks/backend-python-no-node-sliderule-evidence-contract-105.md
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md
+
+## Migration denominator / numerator impact
+- Denominator unchanged (66 route modules, 42+ /api/* surfaces from task 01).
+- Numerator: strengthens PYTHON_FIRST_COMPAT for /api/sliderule evidence provenance slice (adds route-level ownership proof for runtime evidence+source provenance in result payloads); no full new surface count, but closes the gap where only module was tested. This task changes the no-Node backend API numerator by proving evidence provenance Python source of truth for SlideRule results.
+- Records accurate ownership per acceptance.
+
+## Remaining Node backend API risk
+- Low for evidence provenance under default (Vite + SLIDERULE_V5_BACKEND=python): Python FastAPI owns the evidence runtime contract and injects into route result; signals asserted in pytest; Node delegates and forwards.
+- Degraded/fallback states are visible (no hiding).
+- Residual: legacy Node paths only when SLIDERULE_V5_BACKEND=legacy (regression); non-evidence.search surfaces may use other provenance.
+- No silent Node success for evidence path.
+
+## Final report
+Task 13: Made evidence and source provenance Python-owned for SlideRule results. Classified as PYTHON_FIRST_COMPAT. Hardened primary route (sliderule_full.py) to wire execute_evidence_runtime + retriever into evidence.search native path so runtime values (retrieved/fallback/degraded) reach the FastAPI payload with "backend":"python". Updated the allowed test file to add route tests (TestClient on full router) proving payload exposure of provenance/contract signals (module tests retained). Updated migration status (task13 completed, ownership result recorded). Ran required pytest (exercising the new route tests), smallest cmds, and mojibake on all edited files. Files listed. Denom unchanged; numerator impact: proven Python source for this slice of /api/sliderule. No scope creep, no test weakening, degraded visible, real commands executed. Addresses all 3 review findings: task file now has final report+classification+cmds+impact; status ledger records result; test now proves FastAPI route payload ownership and exposure to frontend paths.

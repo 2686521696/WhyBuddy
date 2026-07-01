@@ -34,6 +34,9 @@ export type StatusBarFacts = {
   /** Capability executor seam (pilot vs server-llm). */
   executorModeLabel: string;
   executorModeClassName: string;
+  /** Python degraded/timeout/error states from orchestrate-plan (task 16) surfaced in status for UI visibility. */
+  planDegraded?: boolean;
+  planError?: string | null;
 };
 
 export function deriveStatusBarFacts(
@@ -46,6 +49,9 @@ export function deriveStatusBarFacts(
     /** 沉浸画布：不展示「停泊/歇脚」文案，架构图无 AWAIT 歇脚点。 */
     immersion?: boolean;
     executorMode?: SlideRuleExecutorMode;
+    /** From Python-owned plan when degraded (timeout etc) */
+    planDegraded?: boolean;
+    planError?: string | null;
   }
 ): StatusBarFacts {
   const badge = projectConclusionBadge(state);
@@ -204,6 +210,9 @@ export function deriveStatusBarFacts(
     groundedEvidenceCount,
     executorModeLabel,
     executorModeClassName,
+    // surfaced for Python planner_* degraded visibility (see useSlideRuleSession + orchestrator pass-through)
+    planDegraded: !!opts.planDegraded,
+    planError: opts.planError ?? null,
   };
 }
 

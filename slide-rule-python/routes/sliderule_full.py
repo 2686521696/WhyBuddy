@@ -25,6 +25,36 @@ from services.v5_session_driver import drive_v5_full_path
 from config.settings import settings
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
+from sliderule_llm.evidence import execute_evidence_runtime
+
+# Standardized Python provenance fields (values + attachment) for browser smokes
+# and contract tests (e.g. test_v5_smoke.py). Python is source of truth.
+# See foundation task 07. Node thin proxies must forward these verbatim.
+PROVENANCE_PYTHON_RAG = "python-rag"
+PROVENANCE_PYTHON_FULLPATH = "python-fullpath"
+PROVENANCE_PYTHON_LLM = "python-llm"
+PYTHON_BACKEND = "python"
+
+# Delivery capability execution contract (task 14: Move delivery capability execution contracts to Python).
+# These delivery caps execute via Python (native LLM when is_python_native_capability true, else mapped).
+# Python FastAPI /execute-capability is now the backend API source of truth.
+# Node delivery-exec-map.ts + isDeliveryCapability path only for SLIDERULE_V5_BACKEND=legacy thin compat.
+DELIVERY_CAP_IDS: set[str] = {
+    "document.draft",
+    "traceability.matrix",
+    "task.write",
+    "instruction.package",
+    "handoff.package",
+}
+
+# Visual capability execution contract (task 15: Move visual capability execution contracts to Python).
+# ux.preview / outcome.visualize execute via Python (mapped or native paths in sliderule_full).
+# Python FastAPI /execute-capability is the backend API source of truth for visual contract.
+# Node visual-exec-map.ts + isVisualCapability only for SLIDERULE_V5_BACKEND=legacy thin compat.
+VISUAL_CAP_IDS: set[str] = {
+    "ux.preview",
+    "outcome.visualize",
+}
 
 router = APIRouter(tags=["SlideRule V5 (Full Migration to Python)"])  # prefix handled at include time to avoid double /api/sliderule/api/sliderule/...
 
@@ -68,11 +98,24 @@ def _is_config_missing_error(error: Exception) -> bool:
         or "no provider chain" in message
     )
 
+
+def _evidence_query(payload: Dict[str, Any]) -> str:
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+    goal = state.get("goal") if isinstance(state.get("goal"), dict) else {}
+    return "\n".join(
+        part
+        for part in (
+            str(goal.get("text", "")),
+            str(payload.get("userText", "")),
+        )
+        if part and str(part).strip()
+    )
+
 def _degraded_plan(error_code: str, reason: str, message: str) -> Dict[str, Any]:
     return {
         "selected": [],
         "rationale": "Python orchestrate.plan could not produce a planner result.",
-        "source": "python-rag",
+        "source": PROVENANCE_PYTHON_RAG,
         "converged": False,
         "degraded": True,
         "error": error_code,
@@ -141,7 +184,7 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     _auth(x_internal_key)
     state = create_session(payload.get("goal", {}).get("text", "default"), payload.get("sessionId"))
     _sessions[state.sessionId] = state
-    return {"sessionId": state.sessionId, "state": state.model_dump(), "provenance": "python-fullpath", "backend": "python"}
+    return {"sessionId": state.sessionId, "state": state.model_dump(), "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.get("/sessions/{sid}")
 async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
@@ -149,22 +192,22 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
     state = load_session(sid) or _sessions.get(sid)
     if not state:
         raise HTTPException(404, "Not found")
-    return {"state": state.model_dump(), "provenance": "python-fullpath", "backend": "python"}
+    return {"state": state.model_dump(), "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.put("/sessions/{sid}")
 async def save_sess(sid: str, state: V5SessionState, x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     save_session(state)
     _sessions[sid] = state
-    return {"ok": True, "provenance": "python-fullpath", "backend": "python"}
+    return {"ok": True, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.post("/orchestrate-plan")
 async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     res = await _run_orchestrate_plan(payload)
     if isinstance(res, dict):
-        res["provenance"] = res.get("provenance") or "python-rag"
-        res["backend"] = "python"
+        res["provenance"] = res.get("provenance") or PROVENANCE_PYTHON_RAG
+        res["backend"] = PYTHON_BACKEND
     return res
 
 @router.post("/execute-capability")
@@ -174,23 +217,40 @@ async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Head
     cap = payload["capabilityId"]
     if is_python_native_capability(cap):
         try:
-            result = execute_capability(payload)
+            if cap == "evidence.search":
+                q = _evidence_query(payload)
+                ev = execute_evidence_runtime(q)
+                result = execute_capability(payload, evidence_retriever=lambda _q: ev)
+                result = result if isinstance(result, dict) else dict(result)
+                result.update(ev.to_payload_fields())
+            else:
+                result = execute_capability(payload)
         except LlmError as e:
             raise HTTPException(502, f"python LLM failed for {cap}: {e}")
         run_id = f"run-{payload['turnId']}-{cap}"
         state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
         save_session(state)
         result = result if isinstance(result, dict) else dict(result)
-        result.setdefault("provenance", "python-rag")
-        result["backend"] = "python"
+        result.setdefault("provenance", PROVENANCE_PYTHON_RAG)
+        result["backend"] = PYTHON_BACKEND
+        if cap in DELIVERY_CAP_IDS:
+            result.setdefault("deliveryContract", "python-native-llm")
+        if cap in VISUAL_CAP_IDS:
+            result.setdefault("visualContract", "python-native-llm")
         return result
-    # Use mapped for all V5 caps - stable RAG
+    # Use mapped for all V5 caps - stable RAG (execute-capability semantics owned by Python)
     result = execute_mapped_capability(cap, state, payload.get("inputArtifactIds", []), payload.get("roleId", "agent"), payload["turnId"])
     # For tools/evidence, always "introduce" via RAG (covers evidence.search + report.write etc)
     if cap in ["mcp.call", "skill.invoke", "evidence.search", "report.write", "risk.analyze"]:
         result["summary"] = result.get("summary") or "检索了外部证据"
-        result["provenance"] = "python-rag"
-    result["backend"] = "python"
+        result["provenance"] = PROVENANCE_PYTHON_RAG
+    result = result if isinstance(result, dict) else dict(result)
+    result.setdefault("provenance", PROVENANCE_PYTHON_RAG)
+    result["backend"] = PYTHON_BACKEND
+    if cap in DELIVERY_CAP_IDS:
+        result.setdefault("deliveryContract", "python-mapped")
+    if cap in VISUAL_CAP_IDS:
+        result.setdefault("visualContract", "python-mapped")
     # Update state with run (like Node)
     run_id = f"run-{payload['turnId']}-{cap}"
     state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
@@ -204,7 +264,7 @@ async def drive(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     state = V5SessionState(**payload["state"])
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
-    return {"state": new_state.model_dump(), "provenance": "python-rag", "backend": "python"}
+    return {"state": new_state.model_dump(), "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
 
 # GCOV endpoint
 @router.post("/coverage")

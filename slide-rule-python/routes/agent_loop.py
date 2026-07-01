@@ -38,7 +38,7 @@ from services.agent_loop_settings import (
     validate_enums,
 )
 from services.agent_loop_provider_health import get_provider_health
-from models.agent_loop import AgentLoopSettingsStatus
+from models.agent_loop import AgentLoopSettingsStatus, RouteState
 
 router = APIRouter()
 
@@ -512,3 +512,70 @@ async def run_artifact(run_id: str, artifact_name: str):
     else:
         media = "application/octet-stream"
     return FileResponse(str(p), media_type=media)
+
+
+# --- Contract Registry (Foundation task 03, state model hardened task 06) ---
+# Python API contract registry for migrated /api surfaces.
+# Python is now the source of truth; this endpoint provides runtime contract evidence
+# (provenance signals, classifications via RouteState model).
+# Node remains thin compat only for listed.
+# See docs/backend-python-no-node-api-contracts.md for the static registry.
+# Route state model (ACTIVE_NODE_BUSINESS / PYTHON_FIRST_COMPAT / PYTHON_ONLY) introduced here.
+
+
+class ContractSurface(BaseModel):
+    """Pydantic model for a single registered contract surface (registry entry).
+
+    Uses RouteState (introduced task 06) to enforce classification values.
+    """
+    surface: str
+    classification: RouteState
+    pythonRoute: str
+    provenanceSignal: str
+
+
+@router.get("/contracts")
+async def api_contract_registry():
+    """Return the live Python-owned contract registry for no-Node /api cutover.
+
+    Includes formal RouteState model (task 06) under supportedStates and surfaces use
+    RouteState values. Callers (direct, proxy, smokes) can assert "source":"python"
+    and python backend signals. This hardens the contract verification required by the task.
+    """
+    surfaces = [
+        ContractSurface(
+            surface="/health",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/health",
+            provenanceSignal="backend:slide-rule-python",
+        ),
+        ContractSurface(
+            surface="/api/agent-loop",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/api/agent-loop/*",
+            provenanceSignal="controlPlane:python",
+        ),
+        ContractSurface(
+            surface="/api/sliderule",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/api/sliderule/*",
+            provenanceSignal="source:python-rag",
+        ),
+        ContractSurface(
+            surface="/api/blueprint/spec-documents",
+            classification=RouteState.PYTHON_FIRST_COMPAT,
+            pythonRoute="/api/blueprint/spec-documents",
+            provenanceSignal="python",
+        ),
+    ]
+    return {
+        "registryVersion": "backend-python-no-node.v1",
+        "source": "python",
+        "backend": "slide-rule-python",
+        "routeStateModel": "foundation-deprecation-state-model",
+        "introducedByTask": 6,
+        "supportedStates": [s.value for s in RouteState],
+        "surfaces": [s.model_dump(mode="json") for s in surfaces],
+        "denominatorBaseline": 66,
+        "pythonOwnedOrCompatCount": 4,
+    }

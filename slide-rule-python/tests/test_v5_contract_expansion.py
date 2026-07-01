@@ -85,6 +85,10 @@ def test_python_native_dialogue_caps_use_real_llm_not_rag_stub(monkeypatch):
         assert "Desk assignment" in data.get("content", "")
         assert "RBAC" not in data.get("content", "")
         assert "data scoping" not in data.get("content", "").lower()
+        if cap in {"document.draft", "traceability.matrix", "task.write", "instruction.package", "handoff.package"}:
+            assert data.get("deliveryContract") == "python-native-llm"
+        if cap in {"outcome.visualize", "ux.preview"}:
+            assert data.get("visualContract") == "python-native-llm"
 
 
 def test_python_native_report_write_uses_real_llm_json_not_rag_stub(monkeypatch):

@@ -124,6 +124,10 @@ async function runSmoke() {
     });
   });
 
+  // Note (task 16 remediation): removed synthetic orchestrate-plan route.fulfill.
+  // The orchestrate-plan degraded (planner_timeout etc) contract + backend/provenance MUST be proven by real Python FastAPI (via TestClient in slide-rule-python/tests/test_frontend_python_happy_path_105.py).
+  // This smoke forces only /health degraded (realistic 503 shape from python) and asserts UI visibility of "Python backend" + degraded signals.
+  // Synthetic plan intercept would not prove actual Python FastAPI returns the state in frontend path.
   await page.goto(`${baseUrl}/agent-loop/sliderule`, { waitUntil: "domcontentloaded", timeout: 20000 });
   await page.waitForSelector("text=Python backend", { timeout: 10000 });
   await page.waitForSelector("text=/degraded|503|fallback active|Retry/i", { timeout: 10000 });

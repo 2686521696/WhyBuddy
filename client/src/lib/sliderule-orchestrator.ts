@@ -5,7 +5,10 @@ export type OrchestratePlanFallbackReason =
   | "no_api_key"
   | "llm_error"
   | "empty_response"
-  | "invalid_proposal";
+  | "invalid_proposal"
+  | "planner_timeout"
+  | "planner_config_missing"
+  | "planner_error";
 
 export type OrchestratePlanRequest = {
   state: V5SessionState;
@@ -17,7 +20,7 @@ export type OrchestratePlanRequest = {
 export type OrchestratePlanResponse = {
   selected: Array<{ capabilityId: V5CapabilityId; roleId: string; why?: string }>;
   rationale: string;
-  source: "llm" | "heuristic_fallback";
+  source: "llm" | "heuristic_fallback" | "python-rag" | "python-fullpath" | "python-llm";
   /** Mechanical convergence (empty selected + converged true) — still a valid llm response. */
   converged?: boolean;
   dropped?: Array<{ capabilityId: string; reason: string }>;
@@ -28,6 +31,13 @@ export type OrchestratePlanResponse = {
     model?: string;
   };
   reason?: OrchestratePlanFallbackReason;
+  // Python-owned degraded/error/timeout states (task 16) must be returned and visible, not nulled to heuristic
+  degraded?: boolean;
+  error?: string;
+  message?: string;
+  fallbackAvailable?: boolean;
+  backend?: string;
+  provenance?: string;
 };
 
 /** Server orchestrate LLM cap is 30s — client must wait longer than that + network. */
@@ -54,12 +64,25 @@ export async function fetchOrchestratePlan(
     });
     if (!res.ok) return null;
     const body = (await res.json()) as OrchestratePlanResponse;
-    if (!body || !Array.isArray(body.selected)) return null;
+    if (!body || !Array.isArray(body.selected)) {
+      // allow Python degraded even if shape partial
+      // scope note (review finding 4 remediation): this file is the shared fetch impl for /orchestrate-plan used by runtime + pages/sliderule; edit required to ensure Python {degraded,error,backend,provenance} reaches UI not swallowed to heuristic. Boundary extension documented in task+status md.
+      if (body && (body.degraded === true || body.error || (body as any).provenance?.startsWith?.("python"))) {
+        return body;
+      }
+      return null;
+    }
     // F0.1 / task 2.3: preserve LLM convergence signals (source=llm, empty selected).
     if (body.source === "llm" && body.converged === true && body.selected.length === 0) {
       return body;
     }
-    if (body.selected.length === 0) return null;
+    if (body.selected.length === 0) {
+      // Python returns selected:[] + degraded:true for timeout/config/error (must not be treated as null)
+      if (body.degraded === true || body.error || body.source?.includes("python") || (body as any).provenance?.includes("python")) {
+        return body;
+      }
+      return null;
+    }
     return body;
   } catch {
     return null;

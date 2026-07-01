@@ -2,6 +2,12 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+// Shared smoke harness (foundation task 08): exercises frontend paths and FAILS unless
+// responses carry explicit Python provenance signals from slide-rule-python.
+// This prevents silent success when a frontend flow is backed only by Node-only backend APIs.
+// Python health + /api/sliderule/* submit responses must include "slide-rule-python" / "python-*" markers.
+// Node side remains thin proxy only for PYTHON_FIRST_COMPAT surfaces; harness asserts the source.
+
 const PORT = Number.parseInt(
   process.env.FRONTEND_PYTHON_HAPPY_PORT ?? process.env.SLIDERULE_SMOKE_PORT ?? "3000",
   10,
@@ -50,14 +56,37 @@ async function resolveChromium() {
 }
 
 function hasPythonProvenance(value) {
+  if (!value || typeof value !== "object") return false;
+  const lower = (s) => String(s || "").toLowerCase();
+  const backend = lower(value.backend);
+  const source = lower(value.source);
+  const provenance = lower(value.provenance);
   const text = JSON.stringify(value || {}).toLowerCase();
+  // Explicit Python source signals only (backend/source/provenance fields).
+  // Reject generic strings such as "v5 full" (see review: not a Python provenance marker;
+  // Node-only responses must not pass even if they contain v5 text).
   return (
+    backend.includes("slide-rule-python") ||
+    backend === "python" ||
+    source === "python" ||
+    provenance.includes("python-") ||
+    provenance.includes("slide-rule-python") ||
+    text.includes("slide-rule-python") ||
     text.includes("python-rag") ||
     text.includes("python-fullpath") ||
-    text.includes("python-llm") ||
-    text.includes("slide-rule-python") ||
-    text.includes("v5 full")
+    text.includes("python-llm")
   );
+}
+
+// Negative guard (per review finding): prove that Node-only / non-Python responses fail the provenance check.
+// This ensures the harness will throw on frontend success backed by Node-only APIs.
+const _nodeOnlySample = { status: "ok", backend: "express", source: "node", note: "v5 full compat" };
+if (hasPythonProvenance(_nodeOnlySample)) {
+  throw new Error("hasPythonProvenance must reject Node-only responses (even with 'v5 full')");
+}
+const _nonPythonSample = { status: "ok", backend: "node-compat", provenance: "legacy" };
+if (hasPythonProvenance(_nonPythonSample)) {
+  throw new Error("hasPythonProvenance must reject non-Python backends");
 }
 
 async function runSmoke() {

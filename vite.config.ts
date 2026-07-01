@@ -162,6 +162,9 @@ export function resolveApiTarget(path: string, env: NodeJS.ProcessEnv = process.
   if (path.startsWith("/api/agent-loop")) {
     return pyTarget; // explicit Python-owned (baseline, always)
   }
+  if (path === "/api/health" || path.startsWith("/api/health/") || path === "/health" || path === "/ready") {
+    return pyTarget; // health/readiness unified to Python per foundation task 04 + task 05 Vite default proxy
+  }
   const hasExplicitDisable =
     env.VITE_PYTHON_FIRST_API === "false" ||
     env.FRONTEND_PYTHON_FIRST === "false" ||
@@ -175,7 +178,9 @@ export function resolveApiTarget(path: string, env: NodeJS.ProcessEnv = process.
   const pythonOwnedPrefixes = [
     "/api/sliderule",
     "/api/blueprint/spec-documents",
-    // Add more only when Python route cutover proven per 105. Non-listed stay Node (explicit retained boundary).
+    "/api/health",
+    // health/readiness unified under Python (task 04). Vite dev routing defaults Python for owned (task 05).
+    // Non-listed /api/* stay Node explicit thin compat per policy.
   ];
   if (pythonFirstEnabled && pythonOwnedPrefixes.some((p) => path.startsWith(p))) {
     return pyTarget;
@@ -253,9 +258,9 @@ export default defineConfig(() => {
         deny: ["**/.*"],
       },
       proxy: {
-        // Python-first default cutover (105): Python-owned prefixes (/api/agent-loop + listed) resolve via resolveApiTarget
-        // to Python target by default in local dev. Unlisted /api/* fall back to Node (explicit thin proxy/compat shell).
-        // Default enabled unless VITE_PYTHON_FIRST_API=false etc; PYTHON_API_TARGET forces. See guard fn above.
+        // Python-first default cutover (105): Vite dev routing now prefers Python backend APIs for owned surfaces.
+        // Dedicated entries ensure /api/health, /health, /ready, /api/agent-loop etc target Python via resolve.
+        // Unlisted /api/* fall to Node (explicit thin proxy/compat shell only). PYTHON_FIRST env controls listed.
         "/api/agent-loop": {
           target: resolveApiTarget("/api/agent-loop"),
           changeOrigin: true,
@@ -266,6 +271,18 @@ export default defineConfig(() => {
         },
         "/api/blueprint/spec-documents": {
           target: resolveApiTarget("/api/blueprint/spec-documents"),
+          changeOrigin: true,
+        },
+        "/api/health": {
+          target: resolveApiTarget("/api/health"),
+          changeOrigin: true,
+        },
+        "/health": {
+          target: resolveApiTarget("/health"),
+          changeOrigin: true,
+        },
+        "/ready": {
+          target: resolveApiTarget("/ready"),
           changeOrigin: true,
         },
         "/api": {

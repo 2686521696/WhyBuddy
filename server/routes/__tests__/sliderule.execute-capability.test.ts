@@ -1606,6 +1606,50 @@ describe('POST /api/sliderule/execute-capability (server route)', () => {
 
     staticSpy.mockRestore();
   });
+
+  // Task 12 explicit thin-compat proof for execute-capability (added without altering legacy cases):
+  // When SLIDERULE_V5_BACKEND=python (the migration default), Node /execute-capability
+  // MUST delegate to callPythonSlideRule and MUST NOT invoke Node LLM or pool for V5 caps.
+  // This proves Node is explicit PYTHON_FIRST_COMPAT shell only; Python owns semantics.
+  it('execute-capability is thin proxy only in python mode (task12): delegates and emits python provenance, never owns LLM', async () => {
+    vi.stubEnv('SLIDERULE_V5_BACKEND', 'python');
+    poolJsonLlm.resetSlideRuleCapabilityPoolCache();
+
+    const primarySpy = vi.spyOn(llmClient, 'callLLMJsonWithUsage');
+    const poolSpy = vi.spyOn(poolJsonLlm, 'callPoolJsonLlm');
+    pythonDelegation.callPythonSlideRule.mockResolvedValueOnce({
+      title: 'Execute via Python',
+      summary: 'Python owns execute-capability',
+      content: '结论：Python route/service provides the semantics.\n支撑证据：mapped + native in slide-rule-python',
+      provenance: 'python-llm',
+      backend: 'python',
+    });
+
+    const res = await fetch(`${base}/execute-capability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capabilityId: 'report.write',
+        state: { sessionId: 't12-thin', goal: { text: 'Move execute-capability to Python' } },
+        inputArtifactIds: [],
+        turnId: 't12-thin',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provenance).toBe('python-llm');
+    expect(primarySpy).not.toHaveBeenCalled();
+    expect(poolSpy).not.toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalled();
+    expect(pythonDelegation.callPythonSlideRule).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:9700'),
+      '/api/sliderule/execute-capability',
+      expect.objectContaining({ capabilityId: 'report.write' }),
+      expect.any(String),
+      expect.objectContaining({ timeoutMs: expect.any(Number) })
+    );
+  });
 });
 
 // Live Node->Python delegation smoke has been moved to its own file:

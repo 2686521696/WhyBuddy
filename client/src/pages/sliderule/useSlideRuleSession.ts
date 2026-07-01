@@ -543,9 +543,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const displayLoopId = firstLoop?.loopTurnId ?? turnId;
       const dledger = latestDledgerForTurn(final.decisionLedger, displayLoopId);
       const planSource = dledger?.source ?? "local_heuristic";
+      const planError = firstLoop?.plan?.error || lastLoop?.plan?.error;
       const planOrchestrateReason =
-        planSource === "local_heuristic" ? "orchestrate_unreachable" : null;
-      const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason;
+        planSource === "local_heuristic"
+          ? "orchestrate_unreachable"
+          : planError
+          ? `python_${planError}`
+          : null;
+      // planError / python_* from Python-owned degraded (planner_timeout etc) propagated for UI status visibility (allowed pages file)
+      const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason ?? firstLoop?.plan?.message;
       const planSelectedCount = firstLoop?.plan.selected.length ?? 0;
 
       // M4 complete resume demo: after real frontier (M3), auto-continue 1 round in marathon to show "持续推演" thickness (user aborts via stop anytime; M1 signal respected).

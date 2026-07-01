@@ -1,5 +1,9 @@
 /**
  * S18 · Visual capabilities for /sliderule execute-capability.
+ * Node visual-exec-map is legacy compat shell ONLY (per task 15).
+ * Default python backend owns visual execution contract (see sliderule_full.py VISUAL_CAP_IDS + route delegation in execute-capability).
+ * This map + isVisualCapability is reached only under SLIDERULE_V5_BACKEND=legacy.
+ * Do not interpret direct calls here as Node owning the migrated visual contract.
  */
 
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";

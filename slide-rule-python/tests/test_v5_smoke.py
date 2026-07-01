@@ -26,6 +26,8 @@ def test_health():
     data = r.json()
     assert data["status"] == "ok"
     assert "slide-rule" in data.get("backend", "").lower() or "python" in data.get("backend", "").lower()
+    # Provenance signal (standardized across foundation smokes)
+    assert data.get("source") == "python" or "python" in str(data.get("provenance", "")).lower()
 
 
 def test_sliderule_api_health_alias():
@@ -34,6 +36,7 @@ def test_sliderule_api_health_alias():
     data = r.json()
     assert data["status"] == "ok"
     assert "slide-rule" in data.get("backend", "").lower() or "python" in data.get("backend", "").lower()
+    assert data.get("source") == "python" or "python" in str(data.get("provenance", "")).lower()
 
 
 def test_orchestrate_plan_accepts_frontend_session_wrapper(monkeypatch):
@@ -82,6 +85,9 @@ def test_orchestrate_plan_accepts_frontend_session_wrapper(monkeypatch):
     data = r.json()
     assert data["source"] == "python-rag"
     assert data["backend"] == "python"
+    # Hardened standardized provenance contract asserts (task 07)
+    assert data.get("provenance") == "python-rag"
+    assert data.get("backend") == "python"
 
 def test_sessions_crud():
     payload = {"goal": {"text": "分析权限系统的风险并给出最终报告"}, "sessionId": "smoke-001"}
@@ -89,11 +95,17 @@ def test_sessions_crud():
     assert r.status_code == 200
     data = r.json()
     assert "sessionId" in data or data.get("ok") is True
+    # Standardized provenance for session ops (used by smokes/contract)
+    assert data.get("provenance") == "python-fullpath"
+    assert data.get("backend") == "python"
 
     sid = data.get("sessionId") or "smoke-001"
     r = client.get(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
     assert r.status_code == 200
-    assert "state" in r.json() or "goal" in r.json()
+    sess = r.json()
+    assert "state" in sess or "goal" in sess
+    assert sess.get("provenance") == "python-fullpath"
+    assert sess.get("backend") == "python"
 
 def test_orchestrate_and_execute_report_with_native_llm(monkeypatch):
     from sliderule_llm.client import LlmResult
@@ -164,8 +176,68 @@ def test_orchestrate_and_execute_report_with_native_llm(monkeypatch):
     assert exec_resp.status_code == 200
     data = exec_resp.json()
     assert data.get("provenance") == "python-llm"
+    assert data.get("backend") == "python"
+    # Hardened: standardized Python provenance fields (from routes/sliderule_full constants + llm native)
+    # browser smokes rely on these exact signals; contract test now asserts them explicitly.
+    assert data.get("provenance") in ("python-llm", "python-rag", "python-fullpath")
     content = data.get("content", "")
     assert len(content) > 150
     assert "支撑证据" in content
     assert "收敛决策" in content
     assert "provenance" in content.lower()
+
+
+def test_sliderule_route_inventory_105_python_source_of_truth(monkeypatch):
+    """Task 09 inventory verification: assert Python FastAPI is source for /api/sliderule core surfaces.
+    Exercises key routes added/hardened for no-Node cutover. Proves provenance contract.
+    """
+    # Health sub
+    r = client.get("/api/sliderule/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("source") == "python"
+    assert "slide-rule-python" in data.get("backend", "") or data.get("backend") == "python"
+
+    # Sessions (Python owns)
+    payload = {"goal": {"text": "Inventory /api/sliderule routes"}, "sessionId": "inv-105"}
+    r = client.post("/api/sliderule/sessions", json=payload, headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("provenance") == "python-fullpath"
+    assert data.get("backend") == "python"
+
+    # orchestrate-plan
+    plan_payload = {"state": {"sessionId": "inv-105", "goal": {"text": "inv", "status": "needs_refinement"}, "artifacts": [], "capabilityRuns": [], "graph": {"nodes": [], "edges": []}, "coverageGaps": [], "coverageContract": None}, "turnId": "inv-t", "userText": "inv"}
+    r = client.post("/api/sliderule/orchestrate-plan", json=plan_payload, headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("backend") == "python"
+    assert "provenance" in data
+
+    # execute-capability using monkey to avoid real LLM (structure.decompose etc are native and 502 w/o keys)
+    def fake_is_native(cap): return False
+    monkeypatch.setattr("routes.sliderule_full.is_python_native_capability", fake_is_native)
+    monkeypatch.setattr("sliderule_llm.capabilities.is_python_native_capability", fake_is_native)
+    def fake_mapped(cap, state, ins, role, turn):
+        return {"title": "stub", "summary": "inv stub", "content": "stub for inventory", "provenance": "python-rag"}
+    monkeypatch.setattr("routes.sliderule_full.execute_mapped_capability", fake_mapped)
+    monkeypatch.setattr("services.capability_maps.execute_mapped_capability", fake_mapped)
+    exec_payload = {"capabilityId": "structure.decompose", "state": {"sessionId": "inv-105", "goal": {"text": "inv"}, "artifacts": [], "capabilityRuns": []}, "inputArtifactIds": [], "roleId": "agent", "turnId": "inv-t"}
+    r = client.post("/api/sliderule/execute-capability", json=exec_payload, headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("backend") == "python"
+    assert data.get("provenance") in ("python-rag", "python-llm", "python-fullpath")
+
+    # coverage and drive-turn (Python owned)
+    cov_payload = {"state": {"sessionId": "inv-105", "goal": {"text": "inv"}, "artifacts": [], "capabilityRuns": [], "coverageGaps": [], "coverageContract": None}}
+    r = client.post("/api/sliderule/coverage", json=cov_payload, headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    assert isinstance(r.json(), dict)
+
+    # drive-turn
+    drive_payload = {"state": {"sessionId": "inv-105", "goal": {"text": "inv"}, "artifacts": [], "capabilityRuns": []}, "turnId": "inv-t", "userText": ""}
+    r = client.post("/api/sliderule/drive-turn", json=drive_payload, headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("backend") == "python"

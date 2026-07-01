@@ -1,6 +1,14 @@
 /**
  * S19 · Delivery chain executors for /sliderule execute-capability.
  * document.draft → traceability.matrix → task.write → handoff.package
+ *
+ * LEGACY COMPAT SHELL ONLY (task 14).
+ * Under default SLIDERULE_V5_BACKEND=python, delivery capability execution contract
+ * is owned by Python: slide-rule-python/routes/sliderule_full.py + services/capability_maps.py
+ * + sliderule_llm/capabilities.py (native LLM prompts) .
+ * Node route delegates delivery caps via isPythonV5Cap before reaching this map.
+ * This module is retained only as explicit thin compatibility for legacy env.
+ * Direct calls here do not represent active Node backend API ownership.
  */
 
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";

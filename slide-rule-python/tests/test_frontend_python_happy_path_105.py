@@ -90,3 +90,129 @@ def test_frontend_python_happy_path_mojibake_guard_for_105_task():
     here = os.path.dirname(__file__)
     task = os.path.join(here, "..", "..", "agent-loop", "tasks", "frontend-python-happy-path-browser-smoke-105.md")
     assert os.path.exists(task) or os.path.exists(__file__)
+
+
+# Task 16: explicit coverage for Python-owned timeout, degraded, planner_* error states on orchestrate-plan
+# These must be returned by Python (not hidden) and visible to UI/smoke callers.
+# Strict asserts: always force the branch, require 200 + degraded + exact planner_* error + backend/provenance.
+
+import os as _os
+from unittest import mock
+import time
+
+# Robust patch: import the routes module as loaded by the app under test
+try:
+    import routes.sliderule_full as _sf_mod
+except Exception:
+    _sf_mod = None
+
+
+def _force_orchestrate_degraded(client, payload, env_timeout=None, raise_exc=None):
+    """Helper to force specific degraded path via patch + optional tiny timeout."""
+    old_timeout = _os.environ.get("SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS")
+    if env_timeout is not None:
+        _os.environ["SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS"] = str(env_timeout)
+    try:
+        if raise_exc is None:
+            def _slow(*a, **k):
+                time.sleep(0.05)
+                raise RuntimeError("forced slow for timeout test")
+            target = _sf_mod.orchestrate_plan if _sf_mod else "routes.sliderule_full.orchestrate_plan"
+            patcher = mock.patch.object(_sf_mod, "orchestrate_plan", _slow) if _sf_mod else mock.patch(target, _slow)
+            with patcher:
+                r = client.post("/api/sliderule/orchestrate-plan", json=payload)
+        else:
+            target = _sf_mod.orchestrate_plan if _sf_mod else "routes.sliderule_full.orchestrate_plan"
+            patcher = mock.patch.object(_sf_mod, "orchestrate_plan", side_effect=raise_exc) if _sf_mod else mock.patch(target, side_effect=raise_exc)
+            with patcher:
+                r = client.post("/api/sliderule/orchestrate-plan", json=payload)
+        return r
+    finally:
+        if env_timeout is not None:
+            if old_timeout is None:
+                _os.environ.pop("SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS", None)
+            else:
+                _os.environ["SLIDERULE_ORCHESTRATE_PLAN_TIMEOUT_MS"] = old_timeout
+
+
+def test_python_orchestrate_plan_returns_degraded_on_timeout_105():
+    """Python /orchestrate-plan MUST return 200 + degraded:true + planner_timeout + backend=python + provenance (strict)."""
+    payload = {
+        "state": {
+            "sessionId": "s105-timeout",
+            "goal": {"text": "timeout-test"},
+            "artifacts": [],
+            "capabilityRuns": [],
+            "decisionLedger": [],
+            "graph": {"nodes": [], "edges": []},
+            "staleArtifactIds": [],
+            "conversation": [],
+            "coverageGaps": [],
+        },
+        "turnId": "t105-timeout",
+        "userText": "force-timeout",
+    }
+    # tiny timeout + slow patched orch => TimeoutError branch
+    r = _force_orchestrate_degraded(client, payload, env_timeout=1)
+    assert r.status_code == 200, f"degraded plan must be 200 even on timeout, got {r.status_code}"
+    data = r.json()
+    assert data.get("degraded") is True
+    assert data.get("error") == "planner_timeout"
+    assert data.get("backend") == "python"
+    assert data.get("provenance") == "python-rag"
+    assert "rationale" in data and isinstance(data.get("selected"), list)
+
+
+def test_python_orchestrate_plan_returns_degraded_for_config_missing_105():
+    """planner_config_missing path MUST return 200 + degraded + error + backend/provenance (strict, via patch)."""
+    from sliderule_llm.client import LlmError
+    payload = {
+        "state": {
+            "sessionId": "s105-cfg",
+            "goal": {"text": "cfg-test"},
+            "artifacts": [],
+            "capabilityRuns": [],
+            "decisionLedger": [],
+            "graph": {"nodes": [], "edges": []},
+            "staleArtifactIds": [],
+            "conversation": [],
+            "coverageGaps": [],
+        },
+        "turnId": "t105-cfg",
+        "userText": "cfg-miss",
+    }
+    exc = LlmError("LLM not configured: no api_key in provider chain")
+    r = _force_orchestrate_degraded(client, payload, env_timeout=None, raise_exc=exc)
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("degraded") is True
+    assert data.get("error") == "planner_config_missing"
+    assert data.get("backend") == "python"
+    assert data.get("provenance") == "python-rag"
+
+
+def test_python_orchestrate_plan_returns_python_error_states_visible_105():
+    """planner_error (generic runtime) MUST return 200 + degraded + error + backend/provenance (strict)."""
+    payload = {
+        "state": {
+            "sessionId": "s105-err",
+            "goal": {"text": "err-test"},
+            "artifacts": [],
+            "capabilityRuns": [],
+            "decisionLedger": [],
+            "graph": {"nodes": [], "edges": []},
+            "staleArtifactIds": [],
+            "conversation": [],
+            "coverageGaps": [],
+        },
+        "turnId": "t105-err",
+        "userText": "",
+    }
+    exc = RuntimeError("simulated planner runtime failure for test")
+    r = _force_orchestrate_degraded(client, payload, env_timeout=None, raise_exc=exc)
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("degraded") is True
+    assert data.get("error") == "planner_error"
+    assert data.get("backend") == "python"
+    assert data.get("provenance") == "python-rag"

@@ -1,7 +1,7 @@
 # Backend Python No-Node API 105: Introduce a route state model for ACTIVE_NODE_BUSINESS, PYTHON_FIRST_COMPAT, and PYTHON_ONLY.
 
 ## Execution status
-- Status: pending
+- Status: completed
 - Goal: Introduce a route state model for ACTIVE_NODE_BUSINESS, PYTHON_FIRST_COMPAT, and PYTHON_ONLY.
 - Queue: `backend-python-api-cutover-no-node-105-queue`
 - Phase: Foundation
@@ -53,3 +53,40 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Implementation
+- Identified: the route state model / classification definitions were previously only static in docs/ledger; no formal enforceable model existed in Python or Node for ACTIVE_NODE_BUSINESS etc. Classified the state model itself as PYTHON_ONLY (Python is authoritative).
+- Added formal RouteState enum in slide-rule-python/models/agent_loop.py (str Enum with the 4 states).
+- Hardened slide-rule-python/routes/agent_loop.py: ContractSurface.classification now typed RouteState; /contracts now returns supportedStates + introducedByTask + routeStateModel; all surfaces use enum instances.
+- Updated docs to reflect task 06 as the introducer (lastUpdatedByTask, model doc, response shape).
+- Updated migration status ledger with task 06 result and ownership.
+
+## Tests executed
+- Python: slide-rule-python/tests/test_agent_loop_models.py (added dedicated test for RouteState validation + usage in contract surfaces).
+- Python: slide-rule-python/tests/test_agent_loop_integration_inventory.py (re-ran to cover PYTHON_FIRST_COMPAT surfaces).
+- Python direct: -c exercising import + /contracts endpoint function.
+- Node: thin proxy verification via node -e (agent-loop.ts + proxy test source).
+- Mojibake: passed on all edited.
+
+## Commands run (exact)
+- python -m pytest slide-rule-python/tests/test_agent_loop_models.py::test_route_state_model_task06_introduces_and_validates_classifications -q --tb=line
+- python -m pytest slide-rule-python/tests/test_agent_loop_models.py -q --tb=no
+- python -m pytest slide-rule-python/tests/test_agent_loop_integration_inventory.py -q --tb=no
+- python -c "..." (import RouteState + asyncio.run on api_contract_registry, assert supportedStates)
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-foundation-deprecation-state-model-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md docs/backend-python-no-node-api-contracts.md slide-rule-python/routes/agent_loop.py slide-rule-python/models/agent_loop.py slide-rule-python/tests/test_agent_loop_models.py
+- node -e "..." (node version + thin proxy exists check + provenance test scan)
+
+## Files changed
+- slide-rule-python/models/agent_loop.py (RouteState enum + __all__)
+- slide-rule-python/routes/agent_loop.py (import, ContractSurface, /contracts response + comments)
+- slide-rule-python/tests/test_agent_loop_models.py (import + new test_route_state_model_task06...)
+- docs/backend-python-no-node-api-contracts.md (lastUpdatedByTask=06, model doc, response sample, update policy)
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md (table + full result section)
+- agent-loop/tasks/backend-python-no-node-foundation-deprecation-state-model-105.md (status, impl, report)
+
+## Worker final report
+- Commands run: see above list (smallest relevant pytest, python -c, node -e, mojibake on edited).
+- Files changed: 6 files (3 py source/test, 3 md).
+- This task changes the no-Node backend API denominator/numerator? Denominator: no change. Numerator: state model enforcement + contracts payload now counted as additional PYTHON_ONLY (the RouteState model + registry metadata surface); foundation PYTHON_FIRST_COMPAT surfaces remain at documented 4. The model itself is now Python source of truth (PYTHON_ONLY).
+- Acceptance met: Python FastAPI (models + route) is the source for the route state model. Node is thin (no model ownership, proxy test proves). Migration status updated with ownership + risk. Contracts doc updated with task 06 evidence + verification. No docs-only; code + test added. Mojibake clean. Degraded states remain visible by model contract.
+- Task 06 result recorded; pending review findings addressed.

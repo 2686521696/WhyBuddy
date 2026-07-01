@@ -387,6 +387,41 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
     return res.status(400).json({ error: "bad_request", message: "state is required" });
   }
 
+  const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
+  if (v5Backend === 'python') {
+    // PYTHON_FIRST_COMPAT: delegate orchestrate-plan to Python (task 16 degraded states owned by Python)
+    // Node route kept only as thin compatibility shell; frontend Vite routes to Python.
+    // Thin proof via Vitest in sliderule.orchestrate-plan-python-contract.test.ts (delegation + 502 degraded)
+    const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+    try {
+      const data = await callPythonSlideRule(
+        pythonRuntime.baseUrl,
+        '/api/sliderule/orchestrate-plan',
+        {
+          state: body.state,
+          turnId: String(body.turnId),
+          userText: String(body.userText || ""),
+          intervention: body.intervention ?? null,
+        },
+        pythonRuntime.internalKey,
+        { timeoutMs: pythonRuntime.timeoutMs },
+      );
+      return res.json(data);
+    } catch (e) {
+      console.warn('[sliderule] python orchestrate-plan delegation failed', e);
+      // explicit degraded visible, no silent Node
+      return res.status(502).json({
+        selected: [],
+        rationale: "Python orchestrate.plan delegation failed in compat shell",
+        source: "python-rag",
+        degraded: true,
+        error: "python_unavailable",
+        backend: "python",
+        provenance: "python-rag",
+      });
+    }
+  }
+
   const result = await executeOrchestratePlan({
     state: body.state,
     turnId: String(body.turnId),

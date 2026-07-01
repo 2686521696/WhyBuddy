@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.agent_loop import (  # noqa: E402
     AGENT_LOOP_MODEL_VERSION,
+    RouteState,
     AgentLoopArtifact,
     AgentLoopCommandReceipt,
     AgentLoopCommandRequest,
@@ -193,3 +194,54 @@ def test_agentloop_data_model_108_rejects_raw_secret_fields():
     # ensure receipt doesn't accidentally have secret validator
     rec = AgentLoopCommandReceipt.model_validate({"command": "x", "exitCode": 1})
     assert rec.command == "x"
+
+
+def test_route_state_model_task06_introduces_and_validates_classifications():
+    """Route state model (task 06) introduces RouteState enum used by contract registry.
+
+    - ACTIVE_NODE_BUSINESS, PYTHON_FIRST_COMPAT, PYTHON_ONLY, BLOCKED are the canonical states.
+    - ContractSurface classification uses the enum (string values match).
+    - /contracts surfaces must only use valid states; model is Python source of truth.
+    - This test exercises the model and proves PYTHON_FIRST_COMPAT etc are enforced from Python.
+    """
+    # enum values exist and roundtrip
+    assert RouteState.ACTIVE_NODE_BUSINESS.value == "ACTIVE_NODE_BUSINESS"
+    assert RouteState.PYTHON_FIRST_COMPAT.value == "PYTHON_FIRST_COMPAT"
+    assert RouteState.PYTHON_ONLY.value == "PYTHON_ONLY"
+    assert RouteState.BLOCKED.value == "BLOCKED"
+
+    # can be used as str for json etc
+    states = [s.value for s in RouteState]
+    assert "ACTIVE_NODE_BUSINESS" in states
+    assert "PYTHON_FIRST_COMPAT" in states
+    assert "PYTHON_ONLY" in states
+
+    # validate a contract surface payload using state (as done in /contracts)
+    from pydantic import BaseModel as _BM  # local alias not to conflict
+    # simulate the ContractSurface shape used in route (classification is RouteState)
+    class _TestSurface(_BM):
+        surface: str
+        classification: RouteState
+        pythonRoute: str
+        provenanceSignal: str
+
+    surf = _TestSurface(
+        surface="/health",
+        classification=RouteState.PYTHON_FIRST_COMPAT,
+        pythonRoute="/health",
+        provenanceSignal="backend:slide-rule-python",
+    )
+    d = surf.model_dump(mode="json")
+    assert d["classification"] == "PYTHON_FIRST_COMPAT"
+
+    # invalid state must fail
+    with pytest.raises(ValidationError):
+        _TestSurface(
+            surface="/x",
+            classification="INVALID_STATE",  # type: ignore
+            pythonRoute="/x",
+            provenanceSignal="x",
+        )
+
+    # ensure all documented states are present (matches migration-status and contracts.md)
+    assert set(states) == {"ACTIVE_NODE_BUSINESS", "PYTHON_FIRST_COMPAT", "PYTHON_ONLY", "BLOCKED"}

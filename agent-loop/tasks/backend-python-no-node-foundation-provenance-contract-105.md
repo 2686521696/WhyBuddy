@@ -1,7 +1,7 @@
 # Backend Python No-Node API 105: Standardize Python provenance fields used by browser smokes and contract tests.
 
 ## Execution status
-- Status: pending
+- Status: completed
 - Goal: Standardize Python provenance fields used by browser smokes and contract tests.
 - Queue: `backend-python-api-cutover-no-node-105-queue`
 - Phase: Foundation
@@ -53,3 +53,39 @@ The full queue intentionally runs in one queue-scoped worktree to reduce cross-w
 - Frontend or smoke paths that should hit Python show a Python provenance signal, health signal, or contract evidence.
 - The migration status file records the route ownership result and any remaining Node backend API risk.
 - The worker final report lists commands run, files changed, and whether this task changes the no-Node backend API denominator or numerator.
+
+## Implementation
+- Identified Node backend API behavior: the emission of provenance signals on /api/sliderule/* (sessions, orchestrate-plan, execute-capability, drive-turn) and related contract responses used by browser smokes (sliderule-browser-smoke.mjs, frontend-python-*-smoke.mjs) and contract tests. Classified as PYTHON_FIRST_COMPAT (Python owns the business signals and exact field values; Node server/routes/sliderule.ts is thin proxy shell that forwards verbatim).
+- Added standardization: defined canonical constants (PROVENANCE_PYTHON_RAG, PROVENANCE_PYTHON_FULLPATH, PROVENANCE_PYTHON_LLM, PYTHON_BACKEND) in slide-rule-python/routes/sliderule_full.py and used them for all response attachment points (replaces ad-hoc literals).
+- This ensures consistent fields "provenance" and "backend" (plus "source" for orchestrate) across Python responses.
+- Updated test_v5_smoke.py (the Python contract test for V5 smokes) with new/hardened asserts verifying the standardized fields on sessions, plan, execute (covers python-fullpath, python-rag, python-llm cases).
+- Updated migration status ledger (task table + result section for provenance contract).
+- Updated this task file with implementation, tests, commands, files, final report (addresses review finding 1).
+
+## Tests executed
+- Python: slide-rule-python/tests/test_v5_smoke.py (5 tests, now includes hardened provenance field checks for standardized contract).
+- Python via pytest: run under PYTHONPATH=slide-rule-python to validate import + asserts pass.
+- Node: node agent-loop/src/check-mojibake.js on all edited files (md + py source).
+- No Node business logic change; thin proxy behavior preserved (no edit to server/routes required for this narrow standardization).
+- All commands recorded below; no silent fallbacks, degraded paths still surface explicit signals per prior.
+
+## Commands run (exact)
+- cmd /c "set PYTHONPATH=slide-rule-python && python -m pytest slide-rule-python/tests/test_v5_smoke.py -q --tb=short 2>&1"
+- cmd /c "set PYTHONPATH=slide-rule-python && python -m pytest slide-rule-python/tests/test_v5_smoke.py -q -k test_orchestrate_and_execute_report_with_native_llm --tb=short 2>&1"
+- cmd /c "set PYTHONPATH=slide-rule-python && python -m pytest slide-rule-python/tests/test_v5_smoke.py --collectonly -q --tb=no 2>&1"
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/backend-python-no-node-foundation-provenance-contract-105.md agent-loop/tasks/backend-python-no-node-api-migration-status-105.md slide-rule-python/routes/sliderule_full.py slide-rule-python/tests/test_v5_smoke.py
+- (also ran pre-edit diagnosis commands to inspect current fields before edits)
+
+## Files changed
+- slide-rule-python/routes/sliderule_full.py (added 4 consts for standardized provenance values; replaced all ad-hoc "python-*" / "python" literals with consts for sessions/orchestrate/execute/drive/degraded)
+- slide-rule-python/tests/test_v5_smoke.py (added explicit provenance + backend asserts in health, sessions, orchestrate wrapper, execute report paths; added comments referencing standardization and task 07)
+- agent-loop/tasks/backend-python-no-node-api-migration-status-105.md (updated task 7 row to completed; added full provenance contract result section)
+- agent-loop/tasks/backend-python-no-node-foundation-provenance-contract-105.md (status to completed; added Implementation, Tests, Commands, Files, Worker final report)
+
+## Worker final report
+- Commands run: see exact list above (smallest relevant: pytest v5_smoke (full + -k targeted), collectonly, mojibake on edited files).
+- Files changed: 4 files (2 py for standardization + hardened contract test; 2 md for status + this report).
+- This task changes the no-Node backend API denominator/numerator? Denominator: no change (66/42+). Numerator: provenance fields contract for sliderule surfaces now standardized and asserted in Python (strengthens the PYTHON_FIRST_COMPAT slice for /api/sliderule without adding new full surface count; foundation surfaces provenance signal coverage increased). The canonical values are now defined in Python route (source of truth).
+- Acceptance met: Python FastAPI (routes + consts + test asserts) is the backend API source for the standardized provenance fields. Browser/contract tests (test_v5_smoke) now prove the fields. Node remains documented thin compat (no ownership of signals). Migration status records ownership + risk. Commands/files/denom impact listed. Mojibake passed on edits. Degraded states still carry signals (no hiding).
+- Task 07 provenance standardization complete; review findings addressed (final report added, migration status updated for task 7, test_v5_smoke now has hardened provenance asserts).
+- Worker only edited task-scoped allowed files; no unrelated changes.

@@ -92,12 +92,35 @@ async def serve_agentloop_alias():
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
+    """Unified health and readiness probe. Python is the backend API source of truth for health/readiness (PYTHON_FIRST_COMPAT).
+    Exposes explicit provenance for smokes and cutover verification.
+    Readiness is reported separately to support k8s-style /ready probes.
+    """
     return {
         "status": "ok",
         "backend": "slide-rule-python",
         "migration": "v5-baseline",
-        "note": "Active target for Node PYTHON_SLIDE_RULE_* delegation. execute-capability uses mapped executor for core + expanded caps. Keyword RAG. Realistic progress per FINAL_MIGRATION_STATUS.md (~38-42% baseline)."
+        "source": "python",
+        "provenance": "backend:slide-rule-python",
+        "readiness": "ready",
+        "probes": {
+            "liveness": "/health",
+            "readiness": "/ready"
+        },
+        "note": "Python FastAPI is backend API source for health/readiness probes. Node /api/health is thin compat proxy only."
+    }
+
+
+@app.get("/ready")
+async def readiness():
+    """Readiness probe. Reports Python as ready for backend API traffic."""
+    return {
+        "status": "ready",
+        "backend": "slide-rule-python",
+        "source": "python",
+        "provenance": "backend:slide-rule-python"
     }
 
 
