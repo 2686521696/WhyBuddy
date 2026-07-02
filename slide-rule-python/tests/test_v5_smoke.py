@@ -118,6 +118,19 @@ def test_sessions_crud():
     r = client.get(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
     assert r.status_code == 404
 
+
+def test_sessions_list_python_owned():
+    """Prove Python owns list sessions (for Node thin proxy contract)."""
+    # ensure at least one
+    client.post("/api/sliderule/sessions", json={"goal": {"text": "list-test"}, "sessionId": "smoke-list-1"}, headers={"X-Internal-Key": INTERNAL_KEY})
+    r = client.get("/api/sliderule/sessions", headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    data = r.json()
+    assert "sessions" in data
+    assert isinstance(data["sessions"], list)
+    # Python provenance not required on list but backend signal via shape
+    assert any(s.get("sessionId") == "smoke-list-1" for s in data["sessions"])
+
 def test_orchestrate_and_execute_report_with_native_llm(monkeypatch):
     from sliderule_llm.client import LlmResult
 

@@ -138,6 +138,47 @@ export async function callPythonSlideRule(
   );
 }
 
+/**
+ * Thin delegation for any HTTP method to Python backend (for Node route retirement to thin proxy).
+ * Used for GET /sessions, GET /sessions/:id, PUT /sessions/:id, DELETE to prove no Node business ownership.
+ */
+export async function delegateToPythonSlideRule(
+  pythonBase: string,
+  endpoint: string,
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  payload: any,
+  internalKey: string,
+  options: PythonSlideRuleCallOptions = {},
+) {
+  const normalizedEndpoint = normalizeEndpoint(endpoint);
+  const timeoutMs = options.timeoutMs ?? resolvePythonSlideRuleRuntimeConfig().timeoutMs;
+  const init: RequestInit = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Key": internalKey,
+    },
+  };
+  if (method !== "GET" && method !== "DELETE") {
+    init.body = JSON.stringify(payload ?? {});
+  }
+  return await fetchJsonWithTimeout(
+    `${trimTrailingSlashes(pythonBase)}${normalizedEndpoint}`,
+    init,
+    timeoutMs,
+    `python ${method} ${normalizedEndpoint}`,
+  );
+}
+
+export async function callPythonSlideRuleGet(
+  pythonBase: string,
+  endpoint: string,
+  internalKey: string,
+  options: PythonSlideRuleCallOptions = {},
+) {
+  return delegateToPythonSlideRule(pythonBase, endpoint, "GET", null, internalKey, options);
+}
+
 export async function checkPythonSlideRuleHealth(
   config: PythonSlideRuleRuntimeConfig = resolvePythonSlideRuleRuntimeConfig(),
 ): Promise<PythonSlideRuleHealthResult> {

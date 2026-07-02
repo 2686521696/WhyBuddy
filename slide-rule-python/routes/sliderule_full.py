@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
+from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session
 from services.slide_rule_orchestrator import orchestrate_plan
@@ -225,6 +226,24 @@ async def _run_orchestrate_plan(payload: Any):
     dumped["selected"] = picks
     dumped["converged"] = len(picks) == 0
     return dumped
+
+@router.get("/sessions")
+async def list_sess(x_internal_key: Optional[str] = Header(None)):
+    """Thin list for Node thin-proxy compat. Returns slim list shape matching prior Node contract."""
+    _auth(x_internal_key)
+    states = list((load_all() or {}).values()) or list(_sessions.values())
+    items = []
+    for s in states:
+        g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
+        items.append({
+            "sessionId": getattr(s, "sessionId", ""),
+            "goal": g.get("text", "") if isinstance(g, dict) else "",
+            "createdAt": getattr(s, "createdAt", None),
+            "lastActive": getattr(s, "lastActive", None),
+            "artifactCount": len(getattr(s, "artifacts", []) or []),
+            "phase": getattr(s, "runtimePhase", None),
+        })
+    return {"sessions": items}
 
 @router.post("/sessions")
 async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):

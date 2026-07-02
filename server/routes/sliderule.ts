@@ -19,9 +19,6 @@
 import { readEnvCompat } from "../../shared/env/read-env-compat.js";
 import express, { Router, type Request, type Response } from "express";
 import type { V5SessionState } from "../../shared/blueprint/v5-reasoning-state.js";
-import { stripProjectionForPersist } from "../../shared/blueprint/sliderule-projection-persist.js";
-import { applyReplayOnSave } from "../../shared/blueprint/sliderule-session-replay.js";
-import { sanitizeGoalStatusOnPut } from "../../shared/blueprint/sliderule-coverage-gate.js";
 import { getAIConfig } from "../core/ai-config.js";
 import {
   callLLM,
@@ -96,6 +93,8 @@ import {
 } from "../sliderule/pool-json-llm.js";
 import {
   callPythonSlideRule,
+  callPythonSlideRuleGet,
+  delegateToPythonSlideRule,
   checkPythonSlideRuleHealth,
   resolvePythonSlideRuleRuntimeConfig,
 } from "../sliderule/python-delegation.js";
@@ -105,77 +104,31 @@ import * as path from "path";
 const router = Router();
 
 // Re-export for test spies / external (the real interception for internal calls happens via the imported binding + vi.mock on python-delegation module)
-export { callPythonSlideRule };
+export { callPythonSlideRule, callPythonSlideRuleGet, delegateToPythonSlideRule };
 
-// Durable file-backed pilot store.
-// - DATA_FILE lives under data/ (runtime artifacts are explicitly gitignored below).
-// - Map is hot cache for speed + simple list/GET shaping.
-// - load/reload from disk; flushToDisk after every mutate (set/delete/clear) — now returns boolean.
-// - Atomic write: write .tmp then renameSync.
+// Node sliderule routes REDUCED TO THIN PROXY COMPATIBILITY ONLY (V5.2 NodeRetirement).
+// Python FastAPI owns durable session state + sanitize/replay/merge + V5 capability execution.
+// Non-python legacy business logic (LLM/pool/fallback/mapped/GitHub/repo) is ISOLATED to explicit
+// SLIDERULE_V5_BACKEND=legacy + non-production/test boundary only (per review). Default python = delegate or explicit thin error/404.
+// No business ownership remains in Node prod paths under default.
 const SESSIONS_FILE_ENV = readEnvCompat("SLIDERULE_SESSIONS_FILE");
 const DATA_FILE = SESSIONS_FILE_ENV
   ? path.resolve(process.cwd(), SESSIONS_FILE_ENV)
   : path.resolve(process.cwd(), "data", "sliderule-sessions.json");
-
-// Rename-migration shim: the default sessions file used to be data/whybuddy-sessions.json.
-// Copy (not move — keep the old file for rollback) once, only when the new file doesn't exist yet.
 const LEGACY_DATA_FILE = path.resolve(process.cwd(), "data", "whybuddy-sessions.json");
-function migrateLegacySessionsFile(): void {
-  if (SESSIONS_FILE_ENV) return; // explicit path → operator owns the location, nothing to migrate
-  try {
-    if (!fs.existsSync(DATA_FILE) && fs.existsSync(LEGACY_DATA_FILE)) {
-      fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-      fs.copyFileSync(LEGACY_DATA_FILE, DATA_FILE);
-      console.log("[sliderule-store] migrated legacy sessions file:", LEGACY_DATA_FILE, "->", DATA_FILE);
-    }
-  } catch (e) {
-    console.error("[sliderule-store] legacy sessions file migration failed (starting from new file):", (e as Error)?.message || e);
-  }
+
+// Thin no-op shims retained only for __tests__ that may reference; prod paths delegate.
+function reloadFromDisk(): void { /* thin: Python owns durable; see delegate */ }
+function flushToDisk(): boolean { return true; /* thin */ }
+const sessions = new Map<string, V5SessionState>(); // retained for narrow test surface only; not written by routes
+
+// Legacy isolation per review: full Node business (orchestrate/respond/execute LLM+pool+mapped+specials) only when
+// SLIDERULE_V5_BACKEND=legacy AND (non-prod or explicit test helper). Default (python) = thin proxy only.
+function isLegacyNodeBusinessEnabled(): boolean {
+  const mode = (process.env.SLIDERULE_V5_BACKEND || "python").toLowerCase().trim();
+  if (mode === "python") return false;
+  return process.env.NODE_ENV !== "production" || readEnvCompat("SLIDERULE_ENABLE_TEST_HELPERS") === "1";
 }
-
-const sessions = new Map<string, V5SessionState>();
-
-function loadFromDisk(): void {
-  try {
-    const dir = path.dirname(DATA_FILE);
-    fs.mkdirSync(dir, { recursive: true });
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf8");
-      const arr: Array<[string, V5SessionState]> = raw ? JSON.parse(raw) : [];
-      sessions.clear();
-      for (const [k, v] of arr) {
-        if (k && v) sessions.set(k, v);
-      }
-    }
-  } catch (e) {
-    // Pilot: never crash the server on bad/partial file; start empty and let next flush repair.
-    console.error("[sliderule-store] loadFromDisk failed (starting empty):", (e as Error)?.message || e);
-  }
-}
-
-function reloadFromDisk(): void {
-  sessions.clear();
-  loadFromDisk();
-}
-
-function flushToDisk(): boolean {
-  try {
-    const dir = path.dirname(DATA_FILE);
-    fs.mkdirSync(dir, { recursive: true });
-    const tmp = DATA_FILE + ".tmp";
-    const payload = JSON.stringify(Array.from(sessions.entries()), null, 2);
-    fs.writeFileSync(tmp, payload);
-    fs.renameSync(tmp, DATA_FILE);
-    return true;
-  } catch (e) {
-    console.error("[sliderule-store] flushToDisk failed:", (e as Error)?.message || e);
-    return false;
-  }
-}
-
-// Initial load (runs once when tsx loads this module; watch will re-exec on file change).
-migrateLegacySessionsFile();
-loadFromDisk();
 
 // GET /api/sliderule/sessions
 // Returns { sessions: [...] } for easy consumption (also accepts raw array on client).
@@ -184,75 +137,80 @@ router.get("/health", async (_req: Request, res: Response) => {
   res.status(health.ok ? 200 : 503).json(health);
 });
 
-// GET /api/sliderule/sessions
-// Returns { sessions: [...] } for easy consumption (also accepts raw array on client).
-router.get("/sessions", (_req: Request, res: Response) => {
-  const list = Array.from(sessions.values()).map((s) => ({
-    sessionId: s.sessionId,
-    goal: s.goal?.text || "",
-    createdAt: (s as any).createdAt,
-    lastActive: (s as any).lastActive,
-    artifactCount: (s.artifacts || []).length,
-    phase: (s as any).runtimePhase,
-  }));
-  res.json({ sessions: list });
+// GET /api/sliderule/sessions — thin proxy to Python (Node no longer owns list/session state)
+router.get("/sessions", async (_req: Request, res: Response) => {
+  const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+  try {
+    const data = await callPythonSlideRuleGet(
+      pythonRuntime.baseUrl,
+      "/api/sliderule/sessions",
+      pythonRuntime.internalKey,
+      { timeoutMs: pythonRuntime.timeoutMs },
+    );
+    return res.json(data);
+  } catch (e) {
+    console.warn("[sliderule] python sessions list delegation failed", e);
+    return res.status(502).json({ sessions: [], error: "python_unavailable", backend: "python" });
+  }
 });
 
-// GET /api/sliderule/sessions/:sessionId
-router.get("/sessions/:sessionId", (req: Request, res: Response) => {
+// GET /api/sliderule/sessions/:sessionId — thin proxy to Python
+router.get("/sessions/:sessionId", async (req: Request, res: Response) => {
   const sid = req.params.sessionId;
-  const s = sessions.get(sid);
-  if (!s) {
-    return res.status(404).json({ error: "not_found", sessionId: sid });
+  const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+  try {
+    const data = await callPythonSlideRuleGet(
+      pythonRuntime.baseUrl,
+      `/api/sliderule/sessions/${encodeURIComponent(sid)}`,
+      pythonRuntime.internalKey,
+      { timeoutMs: pythonRuntime.timeoutMs },
+    );
+    return res.json(data);
+  } catch (e) {
+    console.warn("[sliderule] python get session delegation failed", e);
+    return res.status(502).json({ error: "python_unavailable", sessionId: sid, backend: "python" });
   }
-  res.json(s);
 });
 
-// PUT /api/sliderule/sessions/:sessionId
-// Body: the full V5SessionState (or a partial that we treat as the new truth for the session).
-// N1 guard strips unauthorized goal.status=clear writes (GCOV bypass).
-router.put("/sessions/:sessionId", express.json({ limit: "2mb" }), (req: Request, res: Response) => {
+// PUT /api/sliderule/sessions/:sessionId — thin proxy to Python (Node owns ZERO durable state, sanitize, replay, persist)
+router.put("/sessions/:sessionId", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
   const sid = req.params.sessionId;
-  const body = (req.body || {}) as Partial<V5SessionState> & { sessionId?: string };
-
-  const previous = sessions.get(sid);
-
-  // Force the key from the URL (defense in depth)
-  let state: V5SessionState = sanitizeGoalStatusOnPut(
-    {
-      ...(body as V5SessionState),
-      sessionId: sid,
-    },
-    previous
-  );
-
-  // Stamp lastActive for list views (client also does this, server does it too for purity)
-  (state as any).lastActive = new Date().toISOString();
-  if (!(state as any).createdAt) {
-    const existing = sessions.get(sid);
-    (state as any).createdAt = (existing as any)?.createdAt || (state as any).lastActive;
+  const body = req.body || {};
+  const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+  try {
+    const data = await delegateToPythonSlideRule(
+      pythonRuntime.baseUrl,
+      `/api/sliderule/sessions/${encodeURIComponent(sid)}`,
+      "PUT",
+      body,
+      pythonRuntime.internalKey,
+      { timeoutMs: pythonRuntime.timeoutMs },
+    );
+    return res.status(200).json(data);
+  } catch (e) {
+    console.warn("[sliderule] python put session delegation failed", e);
+    return res.status(502).json({ error: "python_unavailable", sessionId: sid, backend: "python" });
   }
-
-  state = applyReplayOnSave(previous, state);
-  state = stripProjectionForPersist(state);
-  sessions.set(sid, state);
-  if (!flushToDisk()) {
-    if (previous) sessions.set(sid, previous);
-    else sessions.delete(sid);
-    return res.status(500).json({ error: "persist_failed" });
-  }
-  res.status(200).json(state);
 });
 
-// DELETE /api/sliderule/sessions/:sessionId
-router.delete("/sessions/:sessionId", (req: Request, res: Response) => {
+// DELETE /api/sliderule/sessions/:sessionId — thin proxy to Python
+router.delete("/sessions/:sessionId", async (req: Request, res: Response) => {
   const sid = req.params.sessionId;
-  const existed = sessions.delete(sid);
-  if (!flushToDisk()) {
-    return res.status(500).end();
+  const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+  try {
+    await delegateToPythonSlideRule(
+      pythonRuntime.baseUrl,
+      `/api/sliderule/sessions/${encodeURIComponent(sid)}`,
+      "DELETE",
+      null,
+      pythonRuntime.internalKey,
+      { timeoutMs: pythonRuntime.timeoutMs },
+    );
+    return res.status(204).end();
+  } catch (e) {
+    console.warn("[sliderule] python delete session delegation failed", e);
+    return res.status(502).end();
   }
-  // 204 No Content is conventional for successful DELETE even if it didn't exist
-  res.status(204).end();
 });
 
 // Test-only helper routes (used by smoke + dev tooling for durable pilot verification).
@@ -366,9 +324,7 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
 
   const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
   if (v5Backend === 'python') {
-    // PYTHON_FIRST_COMPAT: delegate orchestrate-plan to Python (task 16 degraded states owned by Python)
-    // Node route kept only as thin compatibility shell; frontend Vite routes to Python.
-    // Thin proof via Vitest in sliderule.orchestrate-plan-python-contract.test.ts (delegation + 502 degraded)
+    // Thin proxy only (default): delegate to Python. Node executes ZERO orchestrate business.
     const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
     try {
       const data = await callPythonSlideRule(
@@ -386,7 +342,6 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
       return res.json(data);
     } catch (e) {
       console.warn('[sliderule] python orchestrate-plan delegation failed', e);
-      // explicit degraded visible, no silent Node
       return res.status(502).json({
         selected: [],
         rationale: "Python orchestrate.plan delegation failed in compat shell",
@@ -399,17 +354,23 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
     }
   }
 
-  const result = await executeOrchestratePlan({
-    state: body.state,
-    turnId: String(body.turnId),
-    userText: String(body.userText || ""),
-    intervention: body.intervention ?? null,
-  });
+  // Legacy Node business isolated (SLIDERULE_V5_BACKEND=legacy + non-prod/test boundary only)
+  if (isLegacyNodeBusinessEnabled()) {
+    const result = await executeOrchestratePlan({
+      state: body.state,
+      turnId: String(body.turnId),
+      userText: String(body.userText || ""),
+      intervention: body.intervention ?? null,
+    });
+    return res.json(result);
+  }
 
-  return res.json(result);
+  // Default thin-compat when no legacy: explicit no-business
+  return res.status(404).json({ error: "thin_proxy_only", path: "/orchestrate-plan", backend: "python" });
 });
 
-// POST /api/sliderule/respond — user-facing narration (LLM or deterministic fallback, always 200).
+// POST /api/sliderule/respond — thin proxy compat only under default.
+// respond has no Python backend route (client localNarrationFallback on !ok per contract); Node does not own/run narration business in python mode.
 router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
   const body = (req.body || {}) as SlideRuleRespondBody;
 
@@ -418,6 +379,12 @@ router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res
   }
   if (!body.state) {
     return res.status(400).json({ error: "bad_request", message: "state is required" });
+  }
+
+  if (!isLegacyNodeBusinessEnabled()) {
+    // Thin proxy only: do not execute LLM, prompt build, fallback, or any narration business.
+    // Returns 404 so Vite-proxy-to-python or direct call triggers client fallback visibly (degraded explicit).
+    return res.status(404).json({ error: "thin_proxy_only", path: "/respond", note: "client localNarrationFallback expected", backend: "python" });
   }
 
   const goalStatus = (body.state as any)?.goal?.status as GoalStatusForNarration;
@@ -597,29 +564,24 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
   }
 
   try {
-    // GitHub MCP source/evidence capabilities (P0 Autopilot absorption).
-    // These bypass LLM entirely and return the raw executor shape using the
-    // existing mcp-github-source reusable modules (url parse + safe http + summary derivation).
-    // SlideRule runtime still owns commitArtifact, Trust Gate, producedBy, evidenceRefs, etc.
-    if (capabilityId === "source.github.inspect" || capabilityId === "evidence.github.collect") {
-      const gh = await executeGithubMcpCapability(capabilityId, state, inputArtifactIds);
-      return sendJson(gh);
+    // GitHub / repo special cases — legacy Node only, isolated to non-prod/test boundary via isLegacyNodeBusinessEnabled.
+    // Under default python: thin proxy (no specials, no business ever).
+    if (isLegacyNodeBusinessEnabled()) {
+      if (capabilityId === "source.github.inspect" || capabilityId === "evidence.github.collect") {
+        const gh = await executeGithubMcpCapability(capabilityId, state, inputArtifactIds);
+        return sendJson(gh);
+      }
+      if (capabilityId === "repo.static.inspect") {
+        const result = await executeRepoStaticInspect(capabilityId, state, inputArtifactIds);
+        return sendJson(result);
+      }
+      if (capabilityId === "repo.inspect") {
+        const result = await executeRepoInspectMapped(state, inputArtifactIds);
+        return sendJson(result);
+      }
     }
 
-    if (capabilityId === "repo.static.inspect") {
-      const result = await executeRepoStaticInspect(capabilityId, state, inputArtifactIds);
-      return sendJson(result);
-    }
-
-    if (capabilityId === "repo.inspect") {
-      const result = await executeRepoInspectMapped(state, inputArtifactIds);
-      return sendJson(result);
-    }
-
-    // V5 backend switch (per migration audit) - read live from process.env so tests can vi.stubEnv per-it.
-    // Must run before Node mapped structure/delivery/visual/evidence handlers so python mode wins.
-    // - 'python' (default): listed V5 caps delegate to slide-rule-python (real RAG, python-rag provenance).
-    // - 'legacy': preserve old Node LLM/pool/llm_fallback paths + legacy contract tests for report/risk/etc.
+    // V5 delegation: default python always delegates V5 caps (thin proxy). Legacy full paths isolated.
     const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
 
     const isPythonV5Cap =
@@ -694,6 +656,21 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       );
     }
 
+    // Under default python: no Node business. Under legacy isolated: allow mapped/llm.
+    if (!isLegacyNodeBusinessEnabled()) {
+      return sendJson(
+        {
+          title: `${capabilityId} (thin-proxy)`,
+          summary: "Node is thin proxy only; business owned by Python",
+          content: "Unexpected legacy path in default SLIDERULE_V5_BACKEND=python",
+          provenance: "python-delegated-failed",
+          degraded: true,
+          error: "thin_proxy_violation",
+        },
+        500,
+      );
+    }
+
     if (capabilityId === "evidence.search") {
       const result = await executeEvidenceSearchMapped(state, inputArtifactIds, roleId);
       return sendJson(result);
@@ -759,8 +736,7 @@ router.post("/execute-capability", express.json({ limit: "2mb" }), async (req: R
       return sendJson({ ...result, events: (result as any).events });
     }
 
-    // B1: 使用共享 prompt 构造（单一真相）。server 路由现在是薄壳。
-    // 同一套逻辑将被 browser-llm provider 复用。
+    // B1: 使用共享 prompt 构造（单一真相）。server 路由现在是薄壳 (legacy only).
     const { systemPrompt, userPrompt, maxTokens, temperature } = buildCapabilityPrompt({
       capabilityId,
       state: state as any,
