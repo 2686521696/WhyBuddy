@@ -749,6 +749,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     const rowRuleSurface = policyRules.filter(r => r.resourceType != null).map(r => r.id);
     const fieldRuleSurface = policyRules.filter(r => r.fieldRef != null || r.field != null).map(r => r.id);
     const decisionScopeSurface = [...decisionCodes];
+    const crossRuntime = buildRbacCrossRuntimeEdges(model);
     return {
       role: model.roles.map(r => r.id),
       permission: model.permissions.map(p => p.code),
@@ -761,6 +762,8 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
       department: model.departments.map(d => d.id),
       position: model.positions.map(p => p.id),
       user: model.users.map(u => u.id),
+      runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
+      crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
     };
   },
 
@@ -1097,6 +1100,144 @@ export function evaluateRbacFieldAccess(
 // ---------------------------------------------------------------------------
 // Worked example — a "请假审批" platform's RBAC slice (a coherent, valid instance)
 // ---------------------------------------------------------------------------
+
+export type RbacRuntimeTargetSkill = "datamodel" | "workflow" | "page" | "aigc" | "appbundle";
+
+export type RbacRuntimeEvidenceState = "allowed" | "blocked";
+
+export interface RbacCrossRuntimeEvidence {
+  sourceSkill: "rbac";
+  targetSkill: RbacRuntimeTargetSkill;
+  evidenceKey: string;
+  state: RbacRuntimeEvidenceState;
+  reasonCode: string;
+  roleRefs: string[];
+  permissionRefs: string[];
+  policyRefs: string[];
+  decision?: RbacRuntimeDecision;
+}
+
+export interface NormalizedRbacRuntimeContext {
+  sourceSkill: "rbac";
+  targetSkill: RbacRuntimeTargetSkill;
+  roleRefs: string[];
+  permissionRefs: string[];
+  policyRefs: string[];
+  upstreamEvidencePresent: boolean;
+  evidence: RbacCrossRuntimeEvidence;
+}
+
+export const RBAC_CROSS_RUNTIME_EVIDENCE = "RBAC_CROSS_RUNTIME_EVIDENCE";
+export const RBAC_PAGE_RUNTIME_EVIDENCE = "RBAC_PAGE_RUNTIME_EVIDENCE";
+export const RBAC_WORKFLOW_RUNTIME_EVIDENCE = "RBAC_WORKFLOW_RUNTIME_EVIDENCE";
+
+function rbacPolicyRefsForTarget(model: RbacModel, targetSkill: RbacRuntimeTargetSkill): string[] {
+  const policyRules = model.policyRules ?? [];
+  if (targetSkill === "datamodel") {
+    return [
+      ...model.dataRules.map(rule => rule.modelRef),
+      ...policyRules.flatMap(rule => [rule.resourceType, rule.fieldRef].filter(Boolean) as string[]),
+    ].sort();
+  }
+  if (targetSkill === "page") {
+    return [
+      ...model.menus.map(menu => menu.id),
+      ...model.permissions.map(permission => permission.code),
+    ].sort();
+  }
+  if (targetSkill === "workflow") {
+    return [
+      ...model.roles.map(role => role.id),
+      ...model.permissions.map(permission => permission.code),
+    ].sort();
+  }
+  if (targetSkill === "aigc") {
+    return model.permissions.map(permission => permission.code).sort();
+  }
+  return [
+    ...model.roles.map(role => role.id),
+    ...model.permissions.map(permission => permission.code),
+    ...model.menus.map(menu => menu.id),
+  ].sort();
+}
+
+function runtimeRequestIsPresent(request?: RbacRuntimeRequest): request is RbacRuntimeRequest {
+  return !!request && !!request.subject && Array.isArray(request.subject.roleIds) && !!request.action && !!request.resourceType;
+}
+
+export function createRbacCrossRuntimeEvidence(
+  model: RbacModel,
+  targetSkill: RbacRuntimeTargetSkill,
+  request?: RbacRuntimeRequest,
+): RbacCrossRuntimeEvidence {
+  const roleRefs = model.roles.map(role => role.id).sort();
+  const permissionRefs = model.permissions.map(permission => permission.code).sort();
+  const policyRefs = rbacPolicyRefsForTarget(model, targetSkill);
+  const decision = runtimeRequestIsPresent(request)
+    ? evaluateRbacRuntimePolicy(model, request)
+    : undefined;
+  const state: RbacRuntimeEvidenceState =
+    decision ? (decision.effect === "allow" ? "allowed" : "blocked") : (policyRefs.length > 0 ? "allowed" : "blocked");
+  const reasonCode =
+    decision?.reasonCode ??
+    (state === "allowed" ? "RBAC_RUNTIME_EVIDENCE_PRESENT" : "RBAC_RUNTIME_UPSTREAM_ABSENT");
+
+  return {
+    sourceSkill: "rbac",
+    targetSkill,
+    evidenceKey: `${RBAC_CROSS_RUNTIME_EVIDENCE}:${targetSkill}:${state}`,
+    state,
+    reasonCode,
+    roleRefs,
+    permissionRefs,
+    policyRefs,
+    decision,
+  };
+}
+
+export function normalizeRbacRuntimeContextForSkill(
+  model: RbacModel,
+  targetSkill: RbacRuntimeTargetSkill,
+  request?: RbacRuntimeRequest,
+): NormalizedRbacRuntimeContext {
+  const evidence = createRbacCrossRuntimeEvidence(model, targetSkill, request);
+  return {
+    sourceSkill: "rbac",
+    targetSkill,
+    roleRefs: evidence.roleRefs,
+    permissionRefs: evidence.permissionRefs,
+    policyRefs: evidence.policyRefs,
+    upstreamEvidencePresent: evidence.state === "allowed",
+    evidence,
+  };
+}
+
+export function buildRbacCrossRuntimeEdges(model: RbacModel): RbacCrossRuntimeEvidence[] {
+  const targets: RbacRuntimeTargetSkill[] = ["datamodel", "workflow", "page", "aigc", "appbundle"];
+  return targets
+    .filter(target => rbacPolicyRefsForTarget(model, target).length > 0)
+    .map(target => createRbacCrossRuntimeEvidence(model, target));
+}
+
+export function createRbacPageRuntimeEvidence(
+  model: RbacModel,
+  request: RbacRuntimeRequest,
+): RbacCrossRuntimeEvidence {
+  return {
+    ...createRbacCrossRuntimeEvidence(model, "page", request),
+    evidenceKey: RBAC_PAGE_RUNTIME_EVIDENCE,
+  };
+}
+
+export function createRbacWorkflowRuntimeEvidence(
+  model: RbacModel,
+  request: RbacRuntimeRequest,
+): RbacCrossRuntimeEvidence {
+  return {
+    ...createRbacCrossRuntimeEvidence(model, "workflow", request),
+    evidenceKey: RBAC_WORKFLOW_RUNTIME_EVIDENCE,
+  };
+}
 
 export const leaveApprovalRbac: RbacModel = {
   failClosed: true,

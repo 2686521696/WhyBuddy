@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRbacCrossRuntimeEdges,
+  createRbacPageRuntimeEvidence,
+  createRbacWorkflowRuntimeEvidence,
   decideRbacPolicy,
   evaluateRbacFieldAccess,
   evaluateRbacRowAccess,
   evaluateRbacRuntimePolicy,
   evaluateRbacSodPolicy,
   leaveApprovalRbac,
+  normalizeRbacRuntimeContextForSkill,
   purchaseApprovalRbac,
   rbacSkill,
+  RBAC_PAGE_RUNTIME_EVIDENCE,
   RBAC_FIELD_ACCESS_DENIED,
+  RBAC_WORKFLOW_RUNTIME_EVIDENCE,
   RBAC_RUNTIME_SOD_DENIED,
 } from "./rbacSkill";
 import type {
@@ -1152,6 +1158,65 @@ describe("rbac runtime row and field access — 117", () => {
   it("RBAC_FIELD_ACCESS_DENIED constant is the stable denied code (no permissive)", () => {
     expect(RBAC_FIELD_ACCESS_DENIED).toBe("RBAC_FIELD_ACCESS_DENIED");
     // used by field helper on deny
+  });
+});
+
+describe("rbacSkill - 118 cross-runtime evidence", () => {
+  const leaveApproveRequest: RbacRuntimeRequest = {
+    subject: { roleIds: ["manager"] },
+    action: "approve",
+    resourceType: "leave_request",
+    tenantId: "t1",
+    fieldContext: { fields: ["status"] },
+  };
+
+  it("exposes deterministic rbac cross-runtime edges through resolve", () => {
+    const surface = rbacSkill.resolve(leaveApprovalRbac) as any;
+
+    expect(surface.runtimeEvidence).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("RBAC_CROSS_RUNTIME_EVIDENCE:page"),
+      ]),
+    );
+    expect(surface.crossSkillRuntimeEdges).toEqual(
+      expect.arrayContaining(["rbac->page:allowed"]),
+    );
+  });
+
+  it("builds page runtime evidence by reusing evaluateRbacRuntimePolicy", () => {
+    const evidence = createRbacPageRuntimeEvidence(leaveApprovalRbac, leaveApproveRequest);
+
+    expect(evidence.evidenceKey).toBe(RBAC_PAGE_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("page");
+    expect(evidence.state).toBe("allowed");
+    expect(evidence.decision?.effect).toBe("allow");
+    expect(evidence.roleRefs).toContain("manager");
+  });
+
+  it("builds workflow runtime evidence and preserves policy refs", () => {
+    const evidence = createRbacWorkflowRuntimeEvidence(leaveApprovalRbac, leaveApproveRequest);
+
+    expect(evidence.evidenceKey).toBe(RBAC_WORKFLOW_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("workflow");
+    expect(evidence.permissionRefs).toContain("leave:approve");
+    expect(evidence.policyRefs).toEqual(expect.arrayContaining(["manager", "leave:approve"]));
+  });
+
+  it("normalizes per-target context and keeps batch edges complete", () => {
+    const ctx = normalizeRbacRuntimeContextForSkill(leaveApprovalRbac, "page", {
+      subject: { roleIds: [] },
+      action: "",
+      resourceType: "",
+    } as RbacRuntimeRequest);
+
+    expect(ctx.targetSkill).toBe("page");
+    expect(ctx.evidence.state).toBe("allowed");
+    expect(ctx.evidence.reasonCode).toBe("RBAC_RUNTIME_EVIDENCE_PRESENT");
+
+    const edges = buildRbacCrossRuntimeEdges(purchaseApprovalRbac);
+    expect(edges.map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["datamodel", "workflow", "page", "aigc", "appbundle"]),
+    );
   });
 });
 
