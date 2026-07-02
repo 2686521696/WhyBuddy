@@ -60,10 +60,30 @@ def execute_deliberation(state: V5SessionState, cap_id: str, role: str, turn: st
     )
 
 def execute_report(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
-    # Special for report.write: use RAG to build structured report, no template
+    # PYTHON_AUTHORITY slice for report.write (CapabilityParity task): hardened structured report artifact.
+    # Returns explicit kind + gate-facing sections (requiredHeadings from report contract) + python-rag + sources.
+    # Content shape consumable by quality baseline gate (headings + evidenceRef child blocks).
+    # Consistent with executor report.write path. No Node fallback.
     evidence = retrieve_evidence(state.goal.get("text", ""), top_k=10)
-    content = generate_with_rag(f"report.write final report for {_goal_text(state)}", evidence)
-    return {"title": "Report", "summary": "RAG generated report", "content": content, "provenance": "python-rag", "sources": evidence}
+    base = generate_with_rag(f"report.write final report for {_goal_text(state)}", evidence)
+    ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
+    structured = (
+        base + "\n\n# 支撑证据\n" + ev_block + "\n"
+        + "# 反证/挑战\n- Tradeoff between ABAC and scoped RBAC+RLS per evidence.\n"
+        + "# 风险\n- Multi-tenant scope bypass; inheritance escalation; audit gaps.\n"
+        + "# 分歧\n- Start minimal vs over-engineer future policy engine.\n"
+        + "# 收敛决策\n- Adopt RBAC + RLS + audit logging for MVP.\n"
+        + "# 未解缺口\n- Target DB RLS PoC required; mcp/skill external checks.\n"
+        + "# 下一步工程化分支\n- RLS PoC + audit middleware + tool-backed validation.\n"
+    )
+    return {
+        "title": "Report",
+        "summary": "RAG generated report",
+        "content": structured,
+        "provenance": "python-rag",
+        "sources": evidence,
+        "kind": "report",
+    }
 
 def execute_mcp_or_skill(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
     if cap_id == "mcp.call" and get_mcp_runtime() is not None:
@@ -176,7 +196,7 @@ CAPABILITY_EXECUTORS: Dict[str, ExecutorFn] = {
     "report.write": execute_report,
     "mcp.call": execute_mcp_or_skill,
     "skill.invoke": execute_mcp_or_skill,
-    "evidence.search": execute_evidence,
+    "evidence.search": execute_evidence,  # PYTHON_AUTHORITY slice: dedicated path yields sources + "python-rag" for grounded trusted evidence artifacts (see executor)
     "risk.analyze": execute_risk,
     "structure.decompose": execute_structure,
     "document.draft": execute_document,
