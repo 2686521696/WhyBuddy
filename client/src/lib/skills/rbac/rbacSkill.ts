@@ -437,6 +437,12 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
             path: `positions[${pos.id}].roleIds`,
             message: `职责分离冲突「${rule.name}」：岗位同时持有互斥角色 [${held.join(", ")}]`,
           });
+          f.push({
+            code: "RBAC_SOD_VIOLATION",
+            severity: "error",
+            path: `positions[${pos.id}].roleIds`,
+            message: `职责分离冲突「${rule.name}」：岗位同时持有互斥角色 [${held.join(", ")}]`,
+          });
         }
       });
       // users
@@ -446,6 +452,12 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
         if (held.length > 1) {
           f.push({
             code: "RBAC_SOD_MUTUALLY_EXCLUSIVE",
+            severity: "error",
+            path: `users[${user.id}].roleIds`,
+            message: `职责分离冲突「${rule.name}」：用户同时持有互斥角色 [${held.join(", ")}]`,
+          });
+          f.push({
+            code: "RBAC_SOD_VIOLATION",
             severity: "error",
             path: `users[${user.id}].roleIds`,
             message: `职责分离冲突「${rule.name}」：用户同时持有互斥角色 [${held.join(", ")}]`,

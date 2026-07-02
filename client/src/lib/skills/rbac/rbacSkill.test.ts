@@ -308,6 +308,24 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     expect(report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")).toBe(true);
   });
 
+  it("CATCHES mutually exclusive roles (direct) and emits RBAC_SOD_VIOLATION", () => {
+    const m: RbacModel = {
+      ...clone(leaveApprovalRbac),
+      sodRules: [
+        {
+          id: "sod_emp_mgr_vio",
+          name: "员工与主管互斥",
+          exclusiveRoleIds: ["employee", "manager"],
+          severity: "error",
+        },
+      ],
+    };
+    m.users[0].roleIds = ["employee", "manager"];
+    const report = rbacSkill.validate(m);
+    expect(report.ok).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_SOD_VIOLATION")).toBe(true);
+  });
+
   it("emits stable SoD code RBAC_SOD_MUTUALLY_EXCLUSIVE for conflicting permissions", () => {
     const m = clone(leaveApprovalRbac);
     m.sodConstraints = [
