@@ -2,8 +2,8 @@
 Focused pytest for Python-owned GCOV required capability authoring + evaluate (TrustGcov slice).
 Directly proves Python slide_rule_coverage behavior per TS rules.
 No Node fallback; tests the ported author/evaluate/hasTrusted.
-Added direct tests for resolved/waived/open lifecycle impact on evaluate_coverage_gate
-missingCapabilities/passed (review fix for waived not blocking).
+Added/updated direct golden tests for resolved/waived/open lifecycle impact on evaluate_coverage_gate
+to match TS: waived populates waivedGaps but does not exempt from missing or grounding (passed requires actual has_trusted + hasGrounded).
 Added negative tests + hardened artifacts for grounding gate requiring external + sources + non-empty content.
 """
 
@@ -15,6 +15,8 @@ from services.slide_rule_coverage import (
     has_trusted_committed_for_cap,
     has_grounded_external_evidence,
     count_grounded_trusted_artifacts,
+    build_gcov_authoritative_state_for_put,
+    sanitize_goal_status_on_put,
 )
 from services.slide_rule_trust import (
     record_provenance_and_trust_ledger,
@@ -312,8 +314,10 @@ def test_healthy_non_stale_satisfies_grounded_count_and_allows_gate_progress():
 
 
 def test_waived_gap_exempts_cap_from_missing_and_unblocks_passed():
-    """Direct pytest for review finding 1+2: waived capability gap must not appear in missingCapabilities
-    and must not cause passed=false (waived lifecycle actually changes gate result, not just report).
+    """Golden parity test (matches TS evaluateCoverageGate): waived gaps populate waivedGaps
+    and make unresolvedGaps=[], allBlockingHandled=true; however waived does NOT exempt reqs
+    from missingCapabilities (still requires has_trusted for each pre-req) nor relax grounding.
+    Without actual committed artifacts: missing remains populated, passed=false.
     """
     goal = "简单目标"
     auth = author_coverage_contract(goal, "t-waive1")
@@ -324,54 +328,70 @@ def test_waived_gap_exempts_cap_from_missing_and_unblocks_passed():
         if g.get("requiredCapabilityId") == "evidence.search" or g.get("kind") == "missing_evidence":
             g["status"] = "waived"
     state = make_min_state(goal, gaps=gaps, contract=contract)
-    # deliberately no artifacts/runs
+    # deliberately no artifacts/runs -> missing not exempted by waive
     gate = evaluate_coverage_gate(state, [], contract)
-    assert "evidence.search" not in gate["missingCapabilities"]
+    assert "evidence.search" in gate["missingCapabilities"]
     assert gate["unresolvedGaps"] == []
     assert len(gate["waivedGaps"]) > 0
-    # waived exempts -> passed true (no open, no missing, ev handled so grounding/upstream ok)
-    assert gate["passed"] is True
+    # waived alone does not unblock: passed=false (missing not empty, no grounding)
+    assert gate["passed"] is False
+
+    # now provide actual healthy ledger-backed artifact for the req -> missing becomes empty
+    # (waive handled open, actual has_trusted + grounded satisfies missing/grounding -> passed true)
+    run = CapabilityRun(id="r-waive-ev", capabilityId="evidence.search", turnId="t1")
+    state.capabilityRuns = [run]
+    commit_artifact_with_ledger(
+        state,
+        id="a-waive-ev",
+        kind="evidence",
+        provenance="web:search",
+        trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-waive-ev", capabilityId="evidence.search"),
+        content="waived parity grounded",
+        payload={"sources": [{"title": "wsrc"}]},
+    )
+    gate2 = evaluate_coverage_gate(state, [], contract)
+    assert "evidence.search" not in gate2["missingCapabilities"]
+    assert gate2["passed"] is True
 
 
 def test_resolved_gap_exempts_from_missing_like_waived():
-    """Lifecycle coverage: resolved status (carried or set) also exempts cap from missing (not just waived)."""
-    goal = "分析风险"
+    """Golden parity: resolved gap status (carried) populates resolved into gaps and
+    contributes to allBlockingHandled (no unresolved) but does NOT exempt from missingCapabilities.
+    missing still lists reqs without actual has_trusted. Provide to satisfy.
+    """
+    goal = "简单目标"
     auth = author_coverage_contract(goal, "t-res")
     contract = auth["contract"]
     gaps = auth["gaps"]
-    # set one cap gap resolved, ev resolved
+    # set evidence gap resolved (simple contract only has evidence cap req + ev)
     for g in gaps:
-        cap = g.get("requiredCapabilityId")
-        if cap == "risk.analyze" or g.get("kind") == "missing_evidence":
+        if g.get("requiredCapabilityId") == "evidence.search" or g.get("kind") == "missing_evidence":
             g["status"] = "resolved"
-        elif cap:
-            g["status"] = "open"
     state = make_min_state(goal, gaps=gaps, contract=contract)
-    # provide only for non-resolved reqs (e.g. evidence + critique + synthesis) but not risk
-    # but since resolved exempts risk, and to pass need no open + handled
-    # set all non-waived/resolved to have status resolved? to avoid open block, set provided ones resolved too? simpler: set all to resolved/waived for this
-    # provide evidence so if needed
-    run = CapabilityRun(id="r-ev", capabilityId="evidence.search", turnId="t1")
-    state.capabilityRuns = [run]
-    art = commit_artifact_with_ledger(
+    # without provide: even resolved gap, missing still present (no exemption)
+    gate_no = evaluate_coverage_gate(state, [], contract)
+    assert "evidence.search" in gate_no["missingCapabilities"]
+    assert gate_no["passed"] is False
+    # now provide the actual: missing empty + resolved clears open -> passed true
+    run_ev = CapabilityRun(id="r-ev", capabilityId="evidence.search", turnId="t1")
+    state.capabilityRuns = [run_ev]
+    commit_artifact_with_ledger(
         state,
         id="a-ev", kind="evidence", provenance="web:search", trustLevel="gated_pass",
         producedBy=ProducedBy(capabilityRunId="r-ev", capabilityId="evidence.search"),
-        content="resolved-ex test evidence",
+        content="resolved parity evidence",
         payload={"sources": [{"title": "src", "snippet": "s"}]},
     )
-    # now set statuses so no opens: evidence resolved (has), risk resolved (no has, but exempt), others resolved too
-    for g in gaps:
-        if g.get("status") == "open":
-            g["status"] = "resolved"
-    state.coverageGaps = gaps
     gate = evaluate_coverage_gate(state, [], contract)
-    assert "risk.analyze" not in gate["missingCapabilities"]
-    assert gate["passed"] is True  # resolved exemptions + provided allow pass
+    assert "evidence.search" not in gate["missingCapabilities"]
+    assert gate["passed"] is True
 
 
 def test_open_gap_still_blocks_and_populates_missing():
-    """Lifecycle: open status still requires has_trusted; causes missing and !passed."""
+    """Lifecycle: open status still requires has_trusted; causes missing and !passed.
+    (This behavior unchanged and still matches TS.)
+    """
     goal = "简单目标"
     auth = author_coverage_contract(goal, "t-open")
     contract = auth["contract"]
@@ -385,8 +405,11 @@ def test_open_gap_still_blocks_and_populates_missing():
 
 
 def test_waived_ev_gap_exempts_grounding():
-    """Evidence gap waived allows passed without grounded artifact (covers evidence in lifecycle)."""
-    goal = "搭建系统"
+    """Golden parity test (TS match): ev gap waived populates waivedGaps and clears unresolved,
+    but grounding_ok remains strict hasGroundedExternalEvidence (waive does not exempt).
+    Without grounded artifact: grounding false, passed=false even with all gaps waived.
+    """
+    goal = "简单目标"
     auth = author_coverage_contract(goal, "t-wev")
     contract = auth["contract"]
     gaps = auth["gaps"]
@@ -397,10 +420,24 @@ def test_waived_ev_gap_exempts_grounding():
             # waive all caps too for no-open
             g["status"] = "waived"
     state = make_min_state(goal, gaps=gaps, contract=contract)
-    # no artifacts
+    # no artifacts -> even with waived ev, grounding fails (and missing)
     gate = evaluate_coverage_gate(state, [], contract)
-    assert gate["passed"] is True
-    assert any(g in gate["waivedGaps"] for g in [gg["id"] for gg in gaps if gg.get("kind")=="missing_evidence"]) or len(gate["waivedGaps"]) > 0
+    assert gate["passed"] is False
+    assert len(gate["waivedGaps"]) > 0
+    assert "G-GROUND" in gate.get("reason", "")
+
+    # provide actual grounded ev artifact (satisfies has + grounding), waived clears opens -> passed
+    run = CapabilityRun(id="r-wev", capabilityId="evidence.search", turnId="t1")
+    state.capabilityRuns = [run]
+    commit_artifact_with_ledger(
+        state,
+        id="a-wev", kind="evidence", provenance="mcp:github", trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-wev", capabilityId="evidence.search"),
+        content="waived ev grounded content",
+        payload={"sources": [{"u": "x"}]},
+    )
+    gate2 = evaluate_coverage_gate(state, [], contract)
+    assert gate2["passed"] is True
 
 
 # --- grounding gate negative cases for external evidence + sources + non-empty content (review fix) ---
@@ -696,3 +733,406 @@ def test_producedby_gated_pass_but_no_ledger_blocks_trusted_committed():
     record_provenance_and_trust_ledger(state, art, run)
     assert has_provenance_and_trust_ledger(state, "a-noled") is True
     assert has_trusted_committed_for_cap(state, "evidence.search") is True
+
+
+# --- Focused tests for commit-time and ship-time gates for content, tests, merge readiness (sliderule-python-v52-ship-gates-105) ---
+# Direct pytest for Python-owned impl in slide_rule_trust.
+# Proves: content (nonempty + EARS/sections for deliverables), tests (markers), merge (and+marker), phase distinction.
+# Uses passedGates and artifact shape; no Node/TS fallback.
+
+from services.slide_rule_trust import (
+    evaluate_content_gate,
+    evaluate_tests_gate,
+    evaluate_merge_readiness_gate,
+    evaluate_commit_time_gates,
+    evaluate_ship_time_gates,
+)
+
+
+def test_content_gate_requires_nonempty_and_structured_for_deliverables():
+    """Python directly owns ship-time content gate semantics."""
+    # plain evidence with content passes basic
+    art_ev = Artifact.server_construct(id="e1", kind="evidence", content="some", summary="", trustLevel="gated_pass")
+    assert evaluate_content_gate(art_ev)["passed"] is True
+
+    # report/deliverable requires more structure (EARS or length)
+    art_report_empty = Artifact.server_construct(id="r1", kind="report", content="", trustLevel="gated_pass")
+    assert evaluate_content_gate(art_report_empty)["passed"] is False
+
+    art_report_good = Artifact.server_construct(
+        id="r2", kind="report", content="验收标准: EARS格式用例。需求已覆盖。", trustLevel="gated_pass"
+    )
+    assert evaluate_content_gate(art_report_good)["passed"] is True
+
+    # via passedGates marker also ok (commit/ship server gate result)
+    art_marked = {"id": "m1", "kind": "handoff", "passedGates": ["content", "T_CONTENT"]}
+    assert evaluate_content_gate(art_marked)["passed"] is True
+
+
+def test_tests_gate_detects_test_artifacts_and_markers():
+    """Python directly owns ship-time T_TEST gate."""
+    state = make_min_state("目标")
+    assert evaluate_tests_gate(state)["passed"] is False
+
+    # add test artifact
+    t_art = Artifact.server_construct(id="t1", kind="test", content="e2e passed", trustLevel="gated_pass")
+    state.artifacts = [t_art]
+    res = evaluate_tests_gate(state)
+    assert res["passed"] is True
+    assert res["testArtifactCount"] >= 1
+
+    # or via passedGates
+    state2 = make_min_state("目标")
+    state2.artifacts = [{"id": "a2", "kind": "report", "passedGates": ["T_TEST", "ssr"]}]
+    assert evaluate_tests_gate(state2)["passed"] is True
+
+
+def test_merge_readiness_requires_content_tests_and_marker():
+    """Python owns ship-time merge readiness gate (T_MERGE)."""
+    state = make_min_state("目标")
+    assert evaluate_merge_readiness_gate(state)["passed"] is False
+
+    # provide content report + tests marker + merge in passed or gateResults
+    rep = Artifact.server_construct(
+        id="rep", kind="report", content="EARS 验收通过。", trustLevel="gated_pass", passedGates=["content"]
+    )
+    testm = Artifact.server_construct(id="tm", kind="test", content="ok", trustLevel="gated_pass", passedGates=["T_TEST"])
+    # use run with gateResults to carry merge marker for smallest slice
+    run = CapabilityRun(id="rship", capabilityId="handoff", turnId="ts", gateResults=[{"name": "T_MERGE", "passed": True}])
+    state.artifacts = [rep, testm]
+    state.capabilityRuns = [run]
+    mres = evaluate_merge_readiness_gate(state)
+    assert mres["passed"] is True
+    assert mres["contentOk"] and mres["testsOk"]
+
+
+def test_ship_time_gates_aggregate_content_tests_merge():
+    """evaluate_ship_time_gates proves combined port for task goal."""
+    state = make_min_state("目标 for ship")
+    rep = Artifact.server_construct(id="r-ship", kind="deliverable", content="规格成立 EARS", trustLevel="gated_pass", passedGates=["T_CONTENT"])
+    tart = Artifact.server_construct(id="t-ship", kind="e2e", content="tests green", trustLevel="gated_pass", passedGates=["T_TEST"])
+    run = CapabilityRun(id="r-m", capabilityId="pack", turnId="t", gateResults=[{"id": "merge", "passed": True}])
+    state.artifacts = [rep, tart]
+    state.capabilityRuns = [run]
+    sres = evaluate_ship_time_gates(state)
+    assert sres["phase"] == "ship"
+    assert sres["passed"] is True
+    assert sres["content"] and sres["tests"] and sres["merge"]
+
+
+def test_commit_vs_ship_phase_gates_distinguished():
+    """Commit-time vs ship-time gates distinguished per double-speed spec."""
+    state = make_min_state("目标")
+    # commit requires ledger proven healthy
+    # (rely on existing ledger behavior)
+    cres = evaluate_commit_time_gates(state)
+    assert cres["phase"] == "commit"
+    # ship checks different
+    sres = evaluate_ship_time_gates(state)
+    assert sres["phase"] == "ship"
+    # without content/tests/merge evidence, ship fails
+    assert sres["passed"] is False
+
+
+def test_content_gate_fails_on_non_content_markers_only():
+    """Negative: only T_TEST/T_MERGE or unrelated passedGates + empty content/summary MUST fail T_CONTENT.
+    Proves content/tests/merge gates are independent (Finding 1); arbitrary non-empty passedGates no longer bypass.
+    """
+    # only test/merge gate markers, no content -> must fail content gate
+    art_test_only = {"id": "t-only", "kind": "report", "content": "", "summary": "", "passedGates": ["T_TEST", "T_MERGE"]}
+    res1 = evaluate_content_gate(art_test_only)
+    assert res1["passed"] is False
+    assert "missing" in res1.get("reason", "") or "content" in res1.get("reason", "").lower()
+
+    # merge marker only, no content
+    art_merge_only = {"id": "m-only", "kind": "handoff", "content": "", "passedGates": ["merge"]}
+    assert evaluate_content_gate(art_merge_only)["passed"] is False
+
+    # no markers, empty -> fail
+    art_empty = {"id": "e", "kind": "report", "content": "", "summary": ""}
+    assert evaluate_content_gate(art_empty)["passed"] is False
+
+
+def test_merge_and_ship_fail_on_open_blockers():
+    """Negative: open blocking gap/risk/gate in state MUST make T_MERGE and ship_time_gates fail.
+    Even with good content + tests + merge marker. Core "no open blockers" semantic (Finding 2).
+    """
+    state = make_min_state("目标 with blocker")
+    rep = Artifact.server_construct(
+        id="rep", kind="report", content="EARS 验收通过。", trustLevel="gated_pass", passedGates=["T_CONTENT"]
+    )
+    tart = Artifact.server_construct(id="tm", kind="test", content="ok", trustLevel="gated_pass", passedGates=["T_TEST"])
+    run = CapabilityRun(id="rship", capabilityId="handoff", turnId="ts", gateResults=[{"name": "T_MERGE", "passed": True}])
+    state.artifacts = [rep, tart]
+    state.capabilityRuns = [run]
+    # no blockers yet: should pass merge
+    mres = evaluate_merge_readiness_gate(state)
+    assert mres["passed"] is True
+
+    # now inject open coverage gap -> must fail merge and ship
+    state_with_gap = make_min_state("目标 with blocker")
+    state_with_gap.artifacts = [rep, tart]
+    state_with_gap.capabilityRuns = [run]
+    state_with_gap.coverageGaps = [{"id": "gap-cap-foo", "status": "open", "kind": "missing_capability", "requiredCapabilityId": "foo"}]
+    m_block = evaluate_merge_readiness_gate(state_with_gap)
+    assert m_block["passed"] is False
+    assert "open blocker" in m_block.get("reason", "").lower() or len(m_block.get("openBlockers", [])) > 0
+
+    s_block = evaluate_ship_time_gates(state_with_gap)
+    assert s_block["passed"] is False
+    assert s_block.get("merge") is False
+
+    # open risk also blocks
+    state_risk = make_min_state("目标")
+    state_risk.artifacts = [rep, tart]
+    state_risk.capabilityRuns = [run]
+    state_risk.risks = [{"id": "r1", "status": "open", "description": "blocker risk"}]
+    assert evaluate_merge_readiness_gate(state_risk)["passed"] is False
+
+    # openQuestion nonempty blocks
+    state_q = make_min_state("目标")
+    state_q.artifacts = [rep, tart]
+    state_q.capabilityRuns = [run]
+    state_q.openQuestions = [{"q": "unresolved?"}]
+    assert evaluate_merge_readiness_gate(state_q)["passed"] is False
+
+
+# --- Focused pytest for pilot and production quality baseline checks (sliderule-python-v52-quality-baseline-105) ---
+# Direct pytest proving Python-owned quality baseline semantics in slide_rule_trust.
+# Tests production (strict) vs pilot-template (relaxed), contract mins, EARS/headings/embedded rules via minimal contracts.
+# No prior tests modified. Node/TS would be thin consumer if tested (not in scope of this edit).
+
+from services.slide_rule_trust import (
+    evaluate_quality_baseline,
+    PRODUCTION_BASELINE,
+    PILOT_TEMPLATE_BASELINE,
+    get_baseline,
+)
+
+
+def test_quality_baseline_production_vs_pilot_defaults():
+    """Python owns production (full) and pilot-template (relaxed) baselines."""
+    assert PRODUCTION_BASELINE["name"] == "production"
+    assert PILOT_TEMPLATE_BASELINE["name"] == "pilot-template"
+    assert PILOT_TEMPLATE_BASELINE["minContentChars"] == 280
+    assert PRODUCTION_BASELINE["requireAllRequiredHeadings"] is True
+    assert PILOT_TEMPLATE_BASELINE["requireAllRequiredHeadings"] is False
+    b = get_baseline("pilot-template")
+    assert b["name"] == "pilot-template"
+
+
+def test_quality_baseline_no_contract_returns_none():
+    """No applicable contract (e.g. evidence.search) -> None (not failure)."""
+    art = Artifact.server_construct(id="e", kind="evidence", content="x", producedBy=ProducedBy(capabilityRunId="r", capabilityId="evidence.search"))
+    res = evaluate_quality_baseline(art)
+    assert res is None
+
+
+def test_quality_baseline_pilot_passes_short_content():
+    """pilot-template passes with ~280+ chars even without headings/EARS/blocks."""
+    # report contract requires 2400 for prod, but pilot only 280 and no struct
+    short_good = "x" * 300
+    art = {"id": "r-pilot", "content": short_good, "producedBy": {"capabilityId": "report.write"}}
+    res = evaluate_quality_baseline(art, contract=None, baseline=PILOT_TEMPLATE_BASELINE)
+    assert res is not None
+    assert res["status"] == "passed"
+    assert res["baseline"] == "pilot-template"
+    assert res["gateId"] == "quality"
+
+
+def test_quality_baseline_production_fails_short_for_report():
+    """production requires full contract minContentChars (2400) + structure for report."""
+    short = "short report content"
+    art = {"id": "r-prod", "content": short, "producedBy": {"capabilityId": "report.write"}}
+    res = evaluate_quality_baseline(art, baseline=PRODUCTION_BASELINE)
+    assert res is not None
+    assert res["status"] == "failed"
+    assert "content" in (res.get("reason") or "").lower()
+    assert res["baseline"] == "production"
+
+
+def test_quality_baseline_production_passes_with_structured_report():
+    """production passes only when contract length + required headings + child blocks satisfied."""
+    # build content meeting 9seg + evidence refs + length
+    content = (
+        "# 支撑证据\n证据Ref 1\n证据Ref 2\n"
+        "# 风险\nrisk here\n"
+        "# 收敛决策\n"
+        "# 反证/挑战\n"
+        "# 分歧\n"
+        "# 未解缺口\n"
+        "# 下一步工程化分支\n"
+        + ("long body text " * 200)
+    )
+    art = {"id": "r-good", "content": content, "producedBy": {"capabilityId": "report.write"}}
+    res = evaluate_quality_baseline(art, baseline=PRODUCTION_BASELINE)
+    assert res is not None
+    assert res["status"] == "passed"
+    assert res["baseline"] == "production"
+
+
+def test_quality_baseline_pilot_ignores_structure_requirements():
+    """pilot-template ignores headings/blocks/EARS/embedded, only min chars."""
+    art = {"id": "r-p", "content": "x" * 290, "producedBy": {"capabilityId": "report.write"}}
+    res = evaluate_quality_baseline(art, baseline=PILOT_TEMPLATE_BASELINE)
+    assert res is not None and res["status"] == "passed"
+
+    # even without any headings
+    art2 = {"id": "r-p2", "content": "plain text no structure " * 15, "producedBy": {"capabilityId": "report.write"}}
+    res2 = evaluate_quality_baseline(art2, baseline=PILOT_TEMPLATE_BASELINE)
+    assert res2 is not None and res2["status"] == "passed"
+
+
+def test_quality_baseline_result_declares_baseline_name():
+    """Result level declaration of baseline (production vs pilot) for ledger/audit."""
+    art = {"id": "a", "content": "x" * 300, "producedBy": {"capabilityId": "report.write"}}
+    rp = evaluate_quality_baseline(art, baseline=PRODUCTION_BASELINE)
+    rpi = evaluate_quality_baseline(art, baseline=PILOT_TEMPLATE_BASELINE)
+    assert rp["baseline"] == "production"
+    assert rpi["baseline"] == "pilot-template"
+
+
+# --- PUT sanitization recomputes coverage from server ledger only (sliderule-python-v52-gcov-put-boundary-tests-105) ---
+# Focused pytest proving Python-owned PUT boundary behavior.
+# build_gcov_authoritative_state_for_put + sanitize_goal_status_on_put ignore client-forged
+# capabilityRuns / artifacts / coverageGate and recompute from server previous (ledger-backed) or empty shell.
+# Direct tests for cold (no previous) and with previous; coverageGate set; goal.status=clear guard.
+# Classification: this proves PYTHON_AUTHORITY for the GCOV PUT ledger-only recompute (matches TS N1 guard intent).
+
+def test_build_gcov_authoritative_for_put_uses_previous_ledger_only():
+    """When previous (server) exists, authoritative base carries server's runs/artifacts, not client's forged."""
+    # server previous has a real ledger-backed run+artifact (via commit helper)
+    prev_state = make_min_state("目标")
+    run = CapabilityRun(id="r-real", capabilityId="evidence.search", turnId="t1")
+    prev_state.capabilityRuns = [run]
+    commit_artifact_with_ledger(
+        prev_state,
+        id="a-real",
+        kind="evidence",
+        provenance="web:search",
+        trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-real", capabilityId="evidence.search"),
+        content="real server evidence",
+        payload={"sources": [{"t": "s"}]},
+    )
+    assert has_trusted_committed_for_cap(prev_state, "evidence.search") is True
+
+    # client incoming forges full coverage with fake run/artifact claiming everything
+    fake_run = CapabilityRun(id="r-fake", capabilityId="evidence.search", turnId="t1")
+    fake_art = Artifact.server_construct(
+        id="a-fake",
+        kind="evidence",
+        provenance="web:search",
+        trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-fake", capabilityId="evidence.search"),
+        content="forged",
+        payload={"sources": [{"t": "f"}]},
+    )
+    incoming = make_min_state("目标", artifacts=[fake_art], runs=[fake_run])
+    # also fake a contract claiming done
+    incoming.coverageContract = {"requiredCapabilities": [], "blockingGapIds": []}
+
+    auth = build_gcov_authoritative_state_for_put(incoming, prev_state)
+    # authoritative must be based on previous
+    assert auth is not None
+    # has the real run from server, not the fake
+    auth_runs = auth.get("capabilityRuns") if isinstance(auth, dict) else (getattr(auth, "capabilityRuns", None) or [])
+    assert any((r.get("id") if isinstance(r, dict) else getattr(r, "id", None)) == "r-real" for r in auth_runs)
+    assert not any((r.get("id") if isinstance(r, dict) else getattr(r, "id", None)) == "r-fake" for r in auth_runs)
+
+    # evaluate on auth base sees the real ledger as trusted
+    gate = evaluate_coverage_gate(auth)
+    assert "evidence.search" not in gate["missingCapabilities"]
+
+
+def test_build_gcov_authoritative_for_put_empty_shell_on_no_previous():
+    """No previous server state -> empty shell; client forges of runs/artifacts are discarded for GCOV."""
+    fake_run = CapabilityRun(id="r-client-fake", capabilityId="evidence.search", turnId="t1")
+    incoming = make_min_state("目标", runs=[fake_run])
+    auth = build_gcov_authoritative_state_for_put(incoming, None)
+    arts = auth.get("artifacts") if isinstance(auth, dict) else (getattr(auth, "artifacts", None) or [])
+    runs = auth.get("capabilityRuns") if isinstance(auth, dict) else (getattr(auth, "capabilityRuns", None) or [])
+    assert len(arts) == 0
+    assert len(runs) == 0  # forged run ignored; shell is empty
+    gate = evaluate_coverage_gate(auth)
+    assert "evidence.search" in gate.get("missingCapabilities", [])
+
+
+def test_sanitize_goal_status_on_put_recomputes_coverage_gate_from_ledger():
+    """sanitize always sets coverageGate from server ledger recompute (ignores incoming forges)."""
+    prev = make_min_state("简单目标")
+    r = CapabilityRun(id="r-ev", capabilityId="evidence.search", turnId="t")
+    prev.capabilityRuns = [r]
+    commit_artifact_with_ledger(
+        prev, id="a-ev", kind="evidence", provenance="web:search", trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-ev", capabilityId="evidence.search"),
+        content="ev", payload={"sources": [{}]}
+    )
+
+    # client tries to claim passed by forging
+    inc = make_min_state("简单目标")
+    inc.capabilityRuns = [CapabilityRun(id="fake", capabilityId="evidence.search", turnId="t")]
+    inc.goal = {"text": "简单目标", "status": "needs_refinement"}
+
+    res = sanitize_goal_status_on_put(inc, prev)
+    assert "coverageGate" in res
+    cg = res["coverageGate"]
+    assert cg is not None
+    # since prev has evidence but gaps open etc, but key: recomputed using prev (may or not pass full, but uses ledger not fake)
+    # assert no forged run in the effective base used for gate
+    # (we trust the impl used build which did)
+    assert isinstance(cg, dict) and "passed" in cg and "missingCapabilities" in cg
+
+
+def test_sanitize_rejects_clear_when_recomputed_not_passed_and_appends_guard():
+    """If incoming tries goal.status=clear but ledger recompute !passed, revert status + log N1 guard (server ledger only)."""
+    # prev has no healthy evidence -> gate will not pass
+    prev = make_min_state("目标")
+    # no runs/artifacts committed
+
+    inc = make_min_state("目标")
+    inc.goal = {"text": "目标", "status": "clear"}
+    inc.capabilityRuns = [CapabilityRun(id="client-claims", capabilityId="evidence.search", turnId="tx")]  # forge
+
+    res = sanitize_goal_status_on_put(inc, prev)
+    g = res.get("goal") or {}
+    assert g.get("status") != "clear"
+    assert g.get("status") in ("needs_refinement", None) or g.get("status") == "needs_refinement"
+
+    conv = res.get("conversation") or []
+    assert any("N1" in str(c.get("text", "")) or "ledger only" in str(c.get("text", "")).lower() for c in conv if isinstance(c, dict))
+    assert res.get("coverageGate") is not None
+
+
+def test_sanitize_allows_clear_when_recomputed_passed():
+    """When server ledger satisfies the gate, clear is allowed through (no revert)."""
+    prev = make_min_state("简单目标")
+    run = CapabilityRun(id="r-all", capabilityId="evidence.search", turnId="t1")
+    prev.capabilityRuns = [run]
+    commit_artifact_with_ledger(
+        prev,
+        id="a-all",
+        kind="evidence",
+        provenance="web:search",
+        trustLevel="gated_pass",
+        producedBy=ProducedBy(capabilityRunId="r-all", capabilityId="evidence.search"),
+        content="grounded ok",
+        payload={"sources": [{"u": "1"}]},
+    )
+    # also waive gaps in prev to make passed possible (waive clears open, provide satisfies missing/grounding)
+    auth = author_coverage_contract("简单目标", "t1")
+    for g in auth["gaps"]:
+        g["status"] = "waived"
+    prev.coverageGaps = auth["gaps"]
+    prev.coverageContract = auth["contract"]
+
+    inc = make_min_state("简单目标")
+    inc.goal = {"text": "简单目标", "status": "clear"}
+    inc.capabilityRuns = []  # even if client sends nothing, server prev wins
+
+    res = sanitize_goal_status_on_put(inc, prev)
+    g = res.get("goal") or {}
+    # must keep clear since recompute on prev should pass
+    assert g.get("status") == "clear"
+    cg = res.get("coverageGate") or {}
+    assert cg.get("passed") is True

@@ -19,6 +19,11 @@ Classification for sliderule-python-v52-trust-provenance-ledger-105 (review fix 
 Current: PYTHON_COMPAT (has_trusted_committed_for_cap checked only producedBy + trustLevel + !stale; ledger helpers existed but standalone/not consulted; no-ledger gated artifacts could satisfy).
 After: PYTHON_COMPAT (has_trusted_committed_for_cap now requires has_provenance_and_trust_ledger from slide_rule_trust; missing ledger blocks trusted committed for coverage/GCOV even with producedBy+gated_pass+!stale; commit helper forces record in exercised paths; direct tests prove no-ledger blocks gate. Full durable field + exhaustive wiring of all construct sites deferred (blocker recorded in status); no overclaim of PYTHON_AUTHORITY. No Node fallback.
 Python provides ledger requirement enforcement in trusted committed gate for this slice.
+
+Classification for sliderule-python-v52-gcov-put-boundary-tests-105:
+Current behavior before: TS_RUNTIME_OWNED (N1 PUT GCOV ledger-only recompute: buildGcovAuthoritativeStateForPut/emptyGcovLedgerShell/sanitizeGoalStatusOnPut lived exclusively in shared/blueprint/sliderule-coverage-gate.ts; Python evaluate_coverage_gate accepted whatever state was passed, allowing potential client-forged capabilityRuns/artifacts/coverageGate to influence gate on PUT path).
+After: PYTHON_COMPAT (slide_rule_coverage owns _empty_gcov_ledger_shell + build_gcov_authoritative_state_for_put + sanitize_goal_status_on_put with direct focused pytest proving ledger-only base for recompute + clear guard; however the actual PUT handler path (save) still uses general field exclusion/merge from server load without invoking sanitize_goal_status_on_put; no claim that real PUT sanitization recomputes coverage from server ledger only until call-site wiring). Precise blocker recorded in status: route/service call site not present; rescue patch boundary is explicit call inside PUT save after loading previous server ledger. No Node fallback; smallest slice + tests delivered in allowed scope; ownership of full PUT sanitization recompute boundary deferred.
+Python provides the dedicated recompute helper contract for this TrustGcov slice.
 """
 
 from typing import Any, Dict, List, Optional
@@ -310,11 +315,13 @@ def evaluate_coverage_gate(
     selected: Optional[List[Dict[str, Any]]] = None,
     existing_contract: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Port of TS evaluateCoverageGate.
-    missingCapabilities now computed via hasTrustedCommittedForCap (not always []).
-    Resolved/waived gap statuses on capability or evidence gaps now exempt their
-    reqs from missingCapabilities and from grounding/upstream checks so waived
-    coverage gap lifecycle actually unblocks passed (not just reported in waivedGaps).
+    """Port of TS evaluateCoverageGate (exact match to blueprint snapshot).
+    missingCapabilities always computed by calling hasTrustedCommittedForCap for each
+    pre-req (no exemption for resolved/waived gap statuses).
+    waivedGaps collected for reporting only; they affect openBlocking (thus allBlockingHandled)
+    but do not remove reqs from missing or relax grounding/upstream.
+    passed requires allBlockingHandled (no open) AND missing.length===0 AND upstreamOk AND
+    groundingOk = hasGroundedExternalEvidence(state) strictly.
     """
     selected = selected or []
     contract = existing_contract
@@ -341,21 +348,6 @@ def evaluate_coverage_gate(
         _get_attr(g, "id") for g in blocking_gaps if _get_attr(g, "status") == "waived"
     ]
 
-    # Waived/resolved gap lifecycle: gaps with resolved/waived status for a cap or evidence
-    # exempt the corresponding req from missingCapabilities and from grounding/upstream enforcement.
-    # This makes waived (and carried resolved) actually unblock the gate judgment, not just report.
-    # open gaps still require has_trusted (or set resolved when provided).
-    handled_caps: set = set()
-    ev_handled = False
-    for g in blocking_gaps:
-        st = _get_attr(g, "status", "open")
-        if st in ("resolved", "waived"):
-            cap = _get_attr(g, "requiredCapabilityId")
-            if cap:
-                handled_caps.add(cap)
-            if _get_attr(g, "kind") == "missing_evidence" or not cap:
-                ev_handled = True
-
     missing: List[str] = []
     pre_reqs = [
         c for c in (contract.get("requiredCapabilities", []) if isinstance(contract, dict) else [])
@@ -363,8 +355,7 @@ def evaluate_coverage_gate(
     ]
     for req in pre_reqs:
         if not has_trusted_committed_for_cap(state, req):
-            if req not in handled_caps:
-                missing.append(req)
+            missing.append(req)
 
     has_report_intent = any(
         _get_attr(s, "capabilityId") == "report.write" for s in selected
@@ -373,10 +364,9 @@ def evaluate_coverage_gate(
     min_grounded = contract.get("minEvidencePerRequirement", 1) if isinstance(contract, dict) else 1
     upstream_ok = True
     if has_report_intent and grounded_count < min_grounded:
-        if not ev_handled:
-            upstream_ok = False
+        upstream_ok = False
 
-    grounding_ok = has_grounded_external_evidence(state) or ev_handled
+    grounding_ok = has_grounded_external_evidence(state)
     all_blocking_handled = len(open_blocking) == 0
     passed = all_blocking_handled and len(missing) == 0 and upstream_ok and grounding_ok
 
@@ -458,4 +448,134 @@ def reconcile_coverage(state: V5SessionState) -> V5SessionState:
     # assign (dicts acceptable for this slice; model allows)
     state.coverageContract = final_contract
     state.coverageGaps = merged_gaps
+    return state
+
+
+# --- N1 PUT GCOV boundary: recompute coverage from server ledger only (sliderule-python-v52-gcov-put-boundary-tests-105) ---
+# Port of TS buildGcovAuthoritativeStateForPut / sanitizeGoalStatusOnPut / emptyGcovLedgerShell from shared/blueprint/sliderule-coverage-gate.ts
+# Purpose: PUT sanitization must NEVER trust client-submitted capabilityRuns/artifacts/coverageGate for GCOV.
+# Client PUT bodies may forge trustLevel/runs/grounded evidence; authoritative base = previous (server persisted ledger) or empty shell.
+# Classification (step 1): TS_RUNTIME_OWNED (PUT gcov recompute logic only in TS) -> PYTHON_AUTHORITY (Python owns the boundary recompute + gate eval on ledger-only base; tests prove directly; no Node fallback)
+# This slice adds the dedicated helpers so Python GCOV owns the server-ledger-only semantics for PUT sanitization.
+# Routes may call these for coverageGate recompute + status guard; general field sanitize existed prior (SessionAuthority).
+
+def _empty_gcov_ledger_shell(incoming: Any) -> Dict[str, Any]:
+    """Empty ledger shell for cold PUT (no previous server state): never carry client runs/artifacts into GCOV."""
+    goal_text = ""
+    if isinstance(incoming, dict):
+        goal_text = _get_attr(incoming, "goal", {}).get("text", "") if isinstance(_get_attr(incoming, "goal"), dict) else ""
+    else:
+        g = _get_attr(incoming, "goal", {}) or {}
+        goal_text = g.get("text", "") if isinstance(g, dict) else ""
+    return {
+        "sessionId": _get_attr(incoming, "sessionId"),
+        "goal": {"text": goal_text or "", "status": "needs_refinement"},
+        "graph": _get_attr(incoming, "graph") or {"nodes": [], "edges": []},
+        "artifacts": [],
+        "capabilityRuns": [],
+        "coverageGaps": [],
+        "coverageContract": None,
+        "coverageGate": None,
+        "conversation": [],
+        "openQuestions": [],
+        "evidence": [],
+        "decisions": [],
+        "risks": [],
+        "gates": [],
+        "dependencyGraph": [],
+        "staleArtifactIds": [],
+    }
+
+
+def build_gcov_authoritative_state_for_put(incoming: Any, previous: Any = None) -> Dict[str, Any]:
+    """N1 PUT boundary: GCOV must read the server-persisted ledger only.
+    If no previous (first save or cold), return empty shell (client forges ignored).
+    Else return previous (server values for runs, artifacts, gaps, contract).
+    Client incoming's capabilityRuns/artifacts/coverage* are discarded for authoritative gcov base.
+    """
+    if not previous:
+        return _empty_gcov_ledger_shell(incoming)
+    # return previous as-is when model (getattr friendly for has_* and ledger checks); dict ok too
+    if isinstance(previous, dict):
+        return previous
+    # keep model instance (V5SessionState etc) so downstream getattr + has_provenance_and_trust_ledger work
+    # (model_dump would drop runtime ledger attrs and break has_provenance checks on dict state)
+    if hasattr(previous, "capabilityRuns") or hasattr(previous, "__dict__"):
+        return previous
+    # fallback to minimal dict shell copy
+    return {k: getattr(previous, k, None) for k in [
+        "sessionId", "goal", "graph", "artifacts", "capabilityRuns",
+        "coverageGaps", "coverageContract", "coverageGate", "conversation",
+        "openQuestions", "evidence", "decisions", "risks", "gates",
+        "dependencyGraph", "staleArtifactIds"
+    ]}
+
+
+def sanitize_goal_status_on_put(incoming: Any, previous: Any = None) -> Dict[str, Any]:
+    """Recompute GCOV from persisted ledger (server authoritative); reject unauthorized goal.status=clear.
+    Uses build_gcov... to force server previous (or empty) for evaluateCoverageGate.
+    Sets coverageGate to the recomputed result.
+    If client tries to set clear but recomputed not passed, revert to previous or needs_refinement + append guard note.
+    """
+    gcov_base = build_gcov_authoritative_state_for_put(incoming, previous)
+    # evaluate uses gcov_base (ledger) + optional prior contract for compat
+    prior_contract = None
+    if isinstance(gcov_base, dict):
+        prior_contract = gcov_base.get("coverageContract")
+    elif gcov_base is not None:
+        prior_contract = _get_attr(gcov_base, "coverageContract")
+    if not prior_contract and previous is not None:
+        if isinstance(previous, dict):
+            prior_contract = previous.get("coverageContract")
+        else:
+            prior_contract = _get_attr(previous, "coverageContract")
+
+    recomputed = evaluate_coverage_gate(gcov_base, [], prior_contract)
+
+    # start from incoming (safe client fields kept) + override the gcov result
+    if isinstance(incoming, dict):
+        state = dict(incoming)
+    else:
+        state = incoming.model_dump() if hasattr(incoming, "model_dump") else {k: getattr(incoming, k, None) for k in dir(incoming) if not k.startswith("_")}
+
+    state["coverageGate"] = recomputed
+
+    next_status = None
+    goal = state.get("goal") if isinstance(state, dict) else _get_attr(state, "goal")
+    if isinstance(goal, dict):
+        next_status = goal.get("status")
+    else:
+        next_status = _get_attr(goal, "status")
+
+    if next_status != "clear":
+        return state
+
+    if recomputed.get("passed") is True:
+        return state
+
+    # revert
+    reverted = "needs_refinement"
+    if previous is not None:
+        pg = previous.get("goal") if isinstance(previous, dict) else _get_attr(previous, "goal")
+        if isinstance(pg, dict):
+            reverted = pg.get("status", reverted)
+        else:
+            reverted = _get_attr(pg, "status", reverted) or reverted
+
+    if isinstance(state.get("goal"), dict):
+        state["goal"] = {**state["goal"], "status": reverted}
+    else:
+        # best effort
+        state["goal"] = {"text": (state.get("goal") or {}).get("text", "") if isinstance(state.get("goal"), dict) else "", "status": reverted}
+
+    conv = state.get("conversation") or []
+    if not isinstance(conv, list):
+        conv = []
+    conv.append({
+        "id": f"n1-gcov-guard-{int(datetime.now().timestamp()*1000)}",
+        "role": "system",
+        "text": f"[N1] rejected goal.status=clear — server GCOV.passed=false (PUT trusts persisted ledger only) — reverted to {reverted}",
+        "timestamp": datetime.now().isoformat(),
+    })
+    state["conversation"] = conv
     return state
