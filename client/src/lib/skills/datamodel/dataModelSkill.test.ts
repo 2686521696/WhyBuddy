@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   bindingEvidence,
+  buildDataModelCrossRuntimeEdges,
   buildFieldLineageIndex,
+  createDataModelPageRuntimeEvidence,
+  createDataModelRbacRuntimeEvidence,
   dataModelSkill,
+  DM_PAGE_RUNTIME_EVIDENCE,
+  DM_RBAC_RUNTIME_EVIDENCE,
   DM_DATASET_BINDING_FIELD_MISSING,
   DM_LINEAGE_FIELD_MISSING,
   DM_MIGRATION_REMOVED_FIELD_BLOCKER,
   getFieldLifecycle,
   leaveRequestDataModel,
+  normalizeDataModelRuntimeContextForSkill,
   planDataModelMigration,
   purchaseApprovalDataModel,
   resolveDatasetBindingRuntime,
@@ -1112,5 +1118,56 @@ describe("dataModelSkill — the gate", () => {
     expect(ev.code).toBe(DM_DATASET_BINDING_FIELD_MISSING);
     expect(ev.ref).toBe("ds.f");
     expect(ev.severity).toBe("error");
+  });
+});
+
+describe("dataModelSkill - 118 cross-runtime evidence", () => {
+  it("exposes deterministic datamodel cross-runtime edges through resolve", () => {
+    const surface = dataModelSkill.resolve(leaveRequestDataModel) as any;
+
+    expect(surface.runtimeEvidence).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("DM_CROSS_RUNTIME_EVIDENCE:rbac"),
+        expect.stringContaining("DM_CROSS_RUNTIME_EVIDENCE:page"),
+      ]),
+    );
+    expect(surface.crossSkillRuntimeEdges).toEqual(
+      expect.arrayContaining(["datamodel->rbac:allowed", "datamodel->page:allowed"]),
+    );
+  });
+
+  it("builds rbac runtime evidence with entity, field, and policy refs", () => {
+    const evidence = createDataModelRbacRuntimeEvidence(leaveRequestDataModel, { decision: ["RBAC_DECISION_ALLOW"] });
+
+    expect(evidence.evidenceKey).toBe(DM_RBAC_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("rbac");
+    expect(evidence.state).toBe("allowed");
+    expect(evidence.entityRefs).toContain("leave_request");
+    expect(evidence.fieldRefs).toContain("leave_request.approved");
+  });
+
+  it("fails closed for page evidence when upstream page surface is absent", () => {
+    const evidence = createDataModelPageRuntimeEvidence(leaveRequestDataModel);
+
+    expect(evidence.evidenceKey).toBe(DM_PAGE_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("page");
+    expect(evidence.state).toBe("blocked");
+    expect(evidence.reasonCode).toBe("DM_RUNTIME_UPSTREAM_ABSENT");
+  });
+
+  it("normalizes target context and carries lineage refs", () => {
+    const ctx = normalizeDataModelRuntimeContextForSkill(
+      purchaseApprovalDataModel,
+      "aigc",
+      { capability: ["budget_risk_summary"] },
+    );
+
+    expect(ctx.targetSkill).toBe("aigc");
+    expect(ctx.upstreamEvidencePresent).toBe(true);
+    expect(ctx.datasetRefs).toContain("purchase_amount_query");
+    expect(ctx.evidence.lineageRefs.length).toBeGreaterThan(0);
+    expect(buildDataModelCrossRuntimeEdges(purchaseApprovalDataModel).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["rbac", "workflow", "page", "aigc", "appbundle"]),
+    );
   });
 });

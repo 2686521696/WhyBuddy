@@ -894,6 +894,9 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
       // 115.20.07: expose policyDefinition ids (PDP policy inputs defined here, decisions delegated to RBAC)
       policyDefinition: (model.policyDefinitions || []).map((p: PolicyDefinition) => p.id),
     };
+    const crossRuntime = buildDataModelCrossRuntimeEdges(model);
+    surf.runtimeEvidence = crossRuntime.map(edge => edge.evidenceKey);
+    surf.crossSkillRuntimeEdges = crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`);
     return surf;
   },
 
@@ -926,6 +929,162 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
 // ---------------------------------------------------------------------------
 // Worked example — the data layer for "请假审批", with the entities RBAC + Workflow point at.
 // ---------------------------------------------------------------------------
+
+export type DataModelRuntimeTargetSkill = "rbac" | "workflow" | "page" | "aigc" | "appbundle";
+
+export type DataModelRuntimeEvidenceState = "allowed" | "blocked";
+
+export interface DataModelCrossRuntimeEvidence {
+  sourceSkill: "datamodel";
+  targetSkill: DataModelRuntimeTargetSkill;
+  evidenceKey: string;
+  state: DataModelRuntimeEvidenceState;
+  reasonCode: string;
+  entityRefs: string[];
+  fieldRefs: string[];
+  datasetRefs: string[];
+  policyRefs: string[];
+  lineageRefs: string[];
+}
+
+export interface NormalizedDataModelRuntimeContext {
+  sourceSkill: "datamodel";
+  targetSkill: DataModelRuntimeTargetSkill;
+  entityRefs: string[];
+  fieldRefs: string[];
+  datasetRefs: string[];
+  policyRefs: string[];
+  upstreamEvidencePresent: boolean;
+  evidence: DataModelCrossRuntimeEvidence;
+}
+
+export const DM_CROSS_RUNTIME_EVIDENCE = "DM_CROSS_RUNTIME_EVIDENCE";
+export const DM_RBAC_RUNTIME_EVIDENCE = "DM_RBAC_RUNTIME_EVIDENCE";
+export const DM_PAGE_RUNTIME_EVIDENCE = "DM_PAGE_RUNTIME_EVIDENCE";
+
+function dataModelFieldRefs(model: DataModelModel): string[] {
+  return model.entities.flatMap(entity => entity.fields.map(field => `${entity.id}.${field.key}`)).sort();
+}
+
+function dataModelPolicyRefs(model: DataModelModel): string[] {
+  return (model.policyDefinitions ?? []).map(policy => policy.id).sort();
+}
+
+function dataModelDatasetRefs(model: DataModelModel): string[] {
+  return (model.datasets ?? []).map(dataset => dataset.id).sort();
+}
+
+function dataModelLineageRefs(model: DataModelModel): string[] {
+  const index = buildFieldLineageIndex(model);
+  return [
+    ...index.nodes.map(node => node.ref),
+    ...index.edges.map(edge => `${edge.from}->${edge.to}:${edge.kind}`),
+  ].sort();
+}
+
+function dataModelRefsForTarget(model: DataModelModel, targetSkill: DataModelRuntimeTargetSkill): string[] {
+  if (targetSkill === "rbac") {
+    return [
+      ...model.entities.map(entity => entity.id),
+      ...dataModelFieldRefs(model),
+      ...dataModelPolicyRefs(model),
+    ].sort();
+  }
+  if (targetSkill === "workflow" || targetSkill === "page") {
+    return [
+      ...model.entities.map(entity => entity.id),
+      ...dataModelFieldRefs(model),
+      ...dataModelDatasetRefs(model),
+    ].sort();
+  }
+  if (targetSkill === "aigc") {
+    return [
+      ...dataModelDatasetRefs(model),
+      ...dataModelFieldRefs(model),
+      ...dataModelLineageRefs(model),
+    ].sort();
+  }
+  return [
+    ...model.entities.map(entity => entity.id),
+    ...dataModelFieldRefs(model),
+    ...dataModelDatasetRefs(model),
+    ...dataModelPolicyRefs(model),
+  ].sort();
+}
+
+export function createDataModelCrossRuntimeEvidence(
+  model: DataModelModel,
+  targetSkill: DataModelRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): DataModelCrossRuntimeEvidence {
+  const entityRefs = model.entities.map(entity => entity.id).sort();
+  const fieldRefs = dataModelFieldRefs(model);
+  const datasetRefs = dataModelDatasetRefs(model);
+  const policyRefs = dataModelPolicyRefs(model);
+  const lineageRefs = dataModelLineageRefs(model);
+  const targetRefs = dataModelRefsForTarget(model, targetSkill);
+  const upstreamEvidencePresent = upstreamSurface !== undefined && upstreamSurface !== null;
+  const state: DataModelRuntimeEvidenceState =
+    targetRefs.length > 0 && upstreamEvidencePresent ? "allowed" : "blocked";
+
+  return {
+    sourceSkill: "datamodel",
+    targetSkill,
+    evidenceKey: `${DM_CROSS_RUNTIME_EVIDENCE}:${targetSkill}:${state}`,
+    state,
+    reasonCode: state === "allowed" ? "DM_RUNTIME_EVIDENCE_PRESENT" : "DM_RUNTIME_UPSTREAM_ABSENT",
+    entityRefs,
+    fieldRefs,
+    datasetRefs,
+    policyRefs,
+    lineageRefs,
+  };
+}
+
+export function normalizeDataModelRuntimeContextForSkill(
+  model: DataModelModel,
+  targetSkill: DataModelRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): NormalizedDataModelRuntimeContext {
+  const evidence = createDataModelCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
+  return {
+    sourceSkill: "datamodel",
+    targetSkill,
+    entityRefs: evidence.entityRefs,
+    fieldRefs: evidence.fieldRefs,
+    datasetRefs: evidence.datasetRefs,
+    policyRefs: evidence.policyRefs,
+    upstreamEvidencePresent: evidence.state === "allowed",
+    evidence,
+  };
+}
+
+export function buildDataModelCrossRuntimeEdges(model: DataModelModel): DataModelCrossRuntimeEvidence[] {
+  const targets: DataModelRuntimeTargetSkill[] = ["rbac", "workflow", "page", "aigc", "appbundle"];
+  return targets
+    .filter(target => dataModelRefsForTarget(model, target).length > 0)
+    .map(target => createDataModelCrossRuntimeEvidence(model, target, { declared: dataModelRefsForTarget(model, target) }));
+}
+
+export function createDataModelRbacRuntimeEvidence(
+  model: DataModelModel,
+  upstreamSurface: unknown,
+): DataModelCrossRuntimeEvidence {
+  return {
+    ...createDataModelCrossRuntimeEvidence(model, "rbac", upstreamSurface),
+    evidenceKey: DM_RBAC_RUNTIME_EVIDENCE,
+  };
+}
+
+export function createDataModelPageRuntimeEvidence(
+  model: DataModelModel,
+  upstreamSurface?: unknown,
+): DataModelCrossRuntimeEvidence {
+  return {
+    ...createDataModelCrossRuntimeEvidence(model, "page", upstreamSurface),
+    evidenceKey: DM_PAGE_RUNTIME_EVIDENCE,
+  };
+}
 
 export const leaveRequestDataModel: DataModelModel = withSsotMetadata({
   entities: [
