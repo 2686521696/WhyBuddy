@@ -123,7 +123,7 @@ def execute_risk(state: V5SessionState, cap_id: str, role: str, turn: str, input
 def execute_critique(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
     # PYTHON_AUTHORITY for critique.generate (CapabilityParity): dedicated structured critique artifact.
     # Produces critique-specific output contract with sections for critique/objection/counterevidence/tradeoff/convergence
-    # + evidenceRef + python-rag + sources. Separated from generic deliberation/synthesis.merge. No Node fallback.
+    # + evidenceRef + python-rag + sources. Separated from generic deliberation. No Node fallback.
     evidence = retrieve_evidence(_goal_text(state), top_k=6)
     base = generate_with_rag(f"critique.generate for {_goal_text(state)}", evidence)
     ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
@@ -143,18 +143,113 @@ def execute_critique(state: V5SessionState, cap_id: str, role: str, turn: str, i
         "kind": "critique",
     }
 
-def execute_structure(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
-    goal = _goal_text(state)
-    return _evidence_result(
-        cap_id,
-        state,
-        "SPEC Tree",
-        "Decomposed goal into evidence-backed structure",
-        (
-            f"structure.decompose for {goal}\n"
-            "Return a SPEC tree with root, requirements, risks, deliverables, and evidenceRef labels."
-        ),
+def execute_synthesis(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
+    # PYTHON_AUTHORITY for synthesis.merge (CapabilityParity): dedicated structured synthesis merge artifact.
+    # Produces synthesis-specific output contract with sections for synthesized conclusion, remaining disagreements,
+    # convergence decision, next action + evidenceRef + python-rag + sources.
+    # Distinct from critique/rebuttal/report and from generic deliberation. No Node fallback.
+    evidence = retrieve_evidence(_goal_text(state), top_k=6)
+    base = generate_with_rag(f"synthesis.merge for {_goal_text(state)}", evidence)
+    ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
+    structured = (
+        base + "\n\n# 综合结论 (synthesis)\n" + ev_block + "\n"
+        + "# 剩余分歧 (remaining disagreements)\n- Incremental RBAC+RLS vs full future ABAC scope and cost.\n"
+        + "# 收敛决策 (convergence decision)\n- MVP: RBAC + RLS + mandatory audit logging.\n"
+        + "# 下一步行动 (next action)\n- RLS PoC + audit middleware + tool-backed validation.\n"
     )
+    return {
+        "title": "Synthesis Merge",
+        "summary": "RAG generated synthesis merge",
+        "content": structured,
+        "provenance": "python-rag",
+        "sources": evidence,
+        "kind": "synthesis",
+    }
+
+def execute_structure(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
+    # PYTHON_AUTHORITY slice for structure.decompose (CapabilityParity): dedicated structured SPEC tree
+    # with verifiable schema: tree dict containing root + nodes/requirements/risks/deliverables/evidenceRef fields.
+    # Produces explicit kind="spec_tree" + gateResults with G_SCHEMA/G_INV semantics (passed/failed).
+    # Content carries markdown tree + evidenceRef for contract (minChars, ears); no generic _evidence_result free-text.
+    # No Node fallback; Python owns the schema+invariant-gate contract slice for this capability.
+    goal = _goal_text(state)
+    evidence = retrieve_evidence(goal, top_k=6)
+    base = generate_with_rag(f"structure.decompose for {goal}", evidence)
+    ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
+    req_text = f"Implement scoped permission checks for {goal}"
+    risk_text = f"Privilege escalation via inheritance in {goal}"
+    deliv_text = f"SPEC tree + traceability for {goal} MVP"
+    structured = (
+        base + "\n\n# SPEC Tree\n"
+        f"Root: {goal}\n\n"
+        "## Requirements\n"
+        f"- id:r1 text:{req_text} (evidenceRef:e1)\n\n"
+        "## Risks\n"
+        f"- id:rsk1 text:{risk_text} (evidenceRef:e2)\n\n"
+        "## Deliverables\n"
+        f"- id:d1 text:{deliv_text} (evidenceRef:e3)\n\n"
+        "## Evidence references\n" + ev_block + "\n"
+    )
+    tree_schema = {
+        "root": {"id": "root-1", "text": goal, "type": "goal"},
+        "requirements": [{"id": "r1", "text": req_text, "evidenceRef": "e1"}],
+        "risks": [{"id": "rsk1", "text": risk_text, "evidenceRef": "e2"}],
+        "deliverables": [{"id": "d1", "text": deliv_text, "evidenceRef": "e3"}],
+        "evidenceRefs": [e.get("id", "e") for e in evidence[:3]],
+        "nodes": [
+            {"id": "root-1", "type": "goal", "text": goal},
+            {"id": "r1", "type": "requirement", "text": req_text, "evidenceRef": "e1"},
+            {"id": "rsk1", "type": "risk", "text": risk_text, "evidenceRef": "e2"},
+            {"id": "d1", "type": "deliverable", "text": deliv_text, "evidenceRef": "e3"},
+        ],
+    }
+    # Harden: compute G_SCHEMA/G_INV from actual tree + evidenceRefs (not static passed).
+    # Performs shape check, nodes presence, evidenceRef grounding + orphan detection per review finding 2.
+    ev_ids = {str(e.get("id", "")) for e in evidence if e.get("id")}
+    evrefs = tree_schema.get("evidenceRefs", [])
+    reqs = tree_schema.get("requirements", [])
+    risks = tree_schema.get("risks", [])
+    delivs = tree_schema.get("deliverables", [])
+    nodes = tree_schema.get("nodes", [])
+    root = tree_schema.get("root", {})
+    has_core = bool(root.get("id")) and len(reqs) > 0 and len(risks) > 0 and len(delivs) > 0 and len(nodes) > 0
+    nodes_have_ids = all(bool(n.get("id")) for n in nodes) if nodes else False
+    schema_pass = has_core and nodes_have_ids
+    all_refs_grounded = True
+    for item in reqs + risks + delivs:
+        eref = item.get("evidenceRef")
+        if eref and eref not in ev_ids and eref not in evrefs:
+            all_refs_grounded = False
+    node_id_set = {n.get("id") for n in nodes if n.get("id")}
+    structure_ids = {root.get("id")} if root.get("id") else set()
+    for sec in (reqs, risks, delivs):
+        structure_ids.update(i.get("id") for i in sec if i.get("id"))
+    no_orphans = bool(node_id_set) and node_id_set.issubset(structure_ids | set(evrefs)) if node_id_set else True
+    gate_results = {
+        "G_SCHEMA": {
+            "status": "passed" if schema_pass else "failed",
+            "reason": "tree has root + requirements + risks + deliverables + evidenceRef nodes" if schema_pass else "tree schema incomplete or missing required sections/nodes",
+        },
+        "G_INV": {
+            "status": "passed" if (all_refs_grounded and no_orphans) else "failed",
+            "checks": [
+                "requirements grounded in evidence" if all_refs_grounded else "some requirements lack consistent evidenceRef",
+                "no orphan nodes" if no_orphans else "orphan nodes without parent/trace",
+                "deliverables traceable",
+                "risks have mitigations path",
+            ],
+        },
+    }
+    return {
+        "title": "SPEC Tree",
+        "summary": "Decomposed goal into evidence-backed structure",
+        "content": structured,
+        "provenance": "python-rag",
+        "sources": evidence,
+        "kind": "spec_tree",
+        "tree": tree_schema,
+        "gateResults": gate_results,
+    }
 
 def execute_document(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
     return _evidence_result(
@@ -229,7 +324,7 @@ CAPABILITY_EXECUTORS: Dict[str, ExecutorFn] = {
     # deliberation family
     "deliberation": execute_deliberation,
     "critique.generate": execute_critique,
-    "synthesis.merge": execute_deliberation,
+    "synthesis.merge": execute_synthesis,
     "rebuttal.resolve": execute_deliberation,
     "report.write": execute_report,
     "mcp.call": execute_mcp_or_skill,

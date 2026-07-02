@@ -1,10 +1,13 @@
 """
-Focused pytest for Python-owned capability parity (evidence.search + report.write + risk.analyze).
+Focused pytest for Python-owned capability parity (evidence.search + report.write + risk.analyze + critique.generate + synthesis.merge + structure.decompose).
 
 This proves the services layer owns these capability contracts directly:
-- evidence.search, report.write, risk.analyze use dedicated Python paths.
+- evidence.search, report.write, risk.analyze, critique.generate, synthesis.merge, structure.decompose use dedicated Python paths.
 - direct and mapped paths return sources plus explicit python-rag provenance.
 - report.write produces quality-gate-facing structured report sections; risk.analyze produces risk artifacts with mitigations + kind + sources.
+- critique.generate and synthesis.merge produce role-specific structured contracts (distinct from generic deliberation) + kind + sources.
+- structure.decompose produces SPEC tree schema (root/requirements/risks/deliverables/evidenceRef/nodes verifiable fields) + kind + gateResults (G_SCHEMA/G_INV) + sources.
+- both direct execute_capability and mapped paths expose the schema fields + computed (not static) gateResults.
 - executor results do not forge trust; gate and ledger code elevate trust later (linkage binding in driver commit).
 """
 
@@ -269,4 +272,144 @@ def test_critique_generate_does_not_forge_trust():
     assert not hasattr(result, "trustLevel") or getattr(result, "trustLevel", None) is None
     assert result.provenance == "python-rag"
     assert any(marker in result.content for marker in CRITIQUE_SECTION_MARKERS)
+    # Results do not carry or forge trust; trust elevation + ledger linkage via driver/gates only.
+
+
+SYNTHESIS_SECTION_MARKERS = (
+    "\u7efc\u5408\u7ed3\u8bba",
+    "synthesis",
+    "\u5269\u4f59\u5206\u6b67",
+    "disagreements",
+    "\u6536\u655b\u51b3\u7b56",
+    "convergence",
+    "evidenceRef",
+)
+
+
+def test_synthesis_merge_registered_and_not_shared_mcp_skill():
+    assert "synthesis.merge" in CAPABILITY_EXECUTORS
+    assert CAPABILITY_EXECUTORS["synthesis.merge"].__name__ == "execute_synthesis"
+    assert "mcp.call" in CAPABILITY_EXECUTORS
+    assert "skill.invoke" in CAPABILITY_EXECUTORS
+
+
+def test_synthesis_merge_python_owned_returns_structured_sections_python_rag_and_sources():
+    state = _make_state("analyze permission system risks and produce final report")
+
+    result = execute_capability("synthesis.merge", state, [], "synthesis", "t-synth-1")
+
+    assert isinstance(result, ExecuteCapabilityResult)
+    assert result.provenance == "python-rag"
+    assert "synthesis" in result.title.lower()
+    assert isinstance(result.sources, list) and len(result.sources) > 0
+    hits = sum(1 for marker in SYNTHESIS_SECTION_MARKERS if marker in result.content)
+    assert hits >= 3, f"synthesis.merge content missing synthesis-specific sections, got hits={hits}"
+    assert "evidenceRef" in result.content
+    assert result.degraded is False
+    assert "python" in result.provenance
+
+
+def test_synthesis_merge_via_mapped_capability_produces_kind_and_sections():
+    state = _make_state("permission system synthesis")
+
+    out = execute_mapped_capability("synthesis.merge", state, [], "synthesis", "t-synth-2")
+
+    assert isinstance(out, dict)
+    assert out.get("provenance") == "python-rag"
+    assert out.get("kind") == "synthesis"
+    assert isinstance(out.get("sources"), list) and len(out["sources"]) >= 1
+    hits = sum(1 for marker in SYNTHESIS_SECTION_MARKERS if marker in out.get("content", ""))
+    assert hits >= 3
+    assert "evidenceRef" in out.get("content", "")
+
+
+def test_synthesis_merge_does_not_forge_trust():
+    state = _make_state("no trust synthesis")
+
+    result = execute_capability("synthesis.merge", state, [], "role", "t-synth-t")
+
+    assert not hasattr(result, "trustLevel") or getattr(result, "trustLevel", None) is None
+    assert result.provenance == "python-rag"
+    assert any(marker in result.content for marker in SYNTHESIS_SECTION_MARKERS)
+    # Results do not carry or forge trust; trust elevation + ledger linkage via driver/gates only.
+
+
+STRUCTURE_SECTION_MARKERS = (
+    "SPEC Tree",
+    "Requirements",
+    "Risks",
+    "Deliverables",
+    "evidenceRef",
+    "requirement",
+    "Root:",
+)
+
+
+def test_structure_decompose_registered_and_not_shared_mcp_skill():
+    assert "structure.decompose" in CAPABILITY_EXECUTORS
+    assert CAPABILITY_EXECUTORS["structure.decompose"].__name__ == "execute_structure"
+    assert "mcp.call" in CAPABILITY_EXECUTORS
+    assert "skill.invoke" in CAPABILITY_EXECUTORS
+
+
+def test_structure_decompose_python_owned_returns_structured_schema_python_rag_and_sources():
+    state = _make_state("analyze permission system risks and produce final report")
+
+    result = execute_capability("structure.decompose", state, [], "architecture", "t-struct-1")
+
+    assert isinstance(result, ExecuteCapabilityResult)
+    assert result.provenance == "python-rag"
+    assert "spec" in result.title.lower() or "tree" in result.title.lower()
+    assert isinstance(result.sources, list) and len(result.sources) > 0
+    hits = sum(1 for marker in STRUCTURE_SECTION_MARKERS if marker in result.content)
+    assert hits >= 4, f"structure.decompose content missing SPEC tree schema sections, got hits={hits}"
+    assert "evidenceRef" in result.content
+    assert result.degraded is False
+    assert "python" in result.provenance
+    # direct path now carries schema+invariant too (via attach): verify kind/tree/gateResults on result object
+    assert getattr(result, "kind", None) == "spec_tree"
+    tree = getattr(result, "tree") or {}
+    assert "root" in tree and "requirements" in tree and "risks" in tree and "deliverables" in tree
+    assert "evidenceRefs" in tree or "nodes" in tree
+    gates = getattr(result, "gateResults") or {}
+    assert "G_SCHEMA" in gates or "G_INV" in gates
+    g_schema = gates.get("G_SCHEMA", {})
+    g_inv = gates.get("G_INV", {})
+    assert g_schema.get("status") in ("passed", "failed")
+    assert "checks" in g_inv or "status" in g_inv
+
+
+def test_structure_decompose_via_mapped_capability_produces_kind_tree_and_gate_results():
+    state = _make_state("permission system structure decompose")
+
+    out = execute_mapped_capability("structure.decompose", state, [], "architecture", "t-struct-2")
+
+    assert isinstance(out, dict)
+    assert out.get("provenance") == "python-rag"
+    assert out.get("kind") == "spec_tree"
+    assert isinstance(out.get("sources"), list) and len(out["sources"]) >= 1
+    hits = sum(1 for marker in STRUCTURE_SECTION_MARKERS if marker in out.get("content", ""))
+    assert hits >= 4
+    assert "evidenceRef" in out.get("content", "")
+    # verifiable schema fields
+    tree = out.get("tree") or {}
+    assert "root" in tree and "requirements" in tree and "risks" in tree and "deliverables" in tree
+    assert "evidenceRefs" in tree or "nodes" in tree
+    # invariant gate results or failure semantics present
+    gates = out.get("gateResults") or {}
+    assert "G_SCHEMA" in gates or "G_INV" in gates
+    g_schema = gates.get("G_SCHEMA", {})
+    g_inv = gates.get("G_INV", {})
+    assert g_schema.get("status") in ("passed", "failed")
+    assert "checks" in g_inv or "status" in g_inv
+
+
+def test_structure_decompose_does_not_forge_trust():
+    state = _make_state("no trust structure")
+
+    result = execute_capability("structure.decompose", state, [], "role", "t-struct-t")
+
+    assert not hasattr(result, "trustLevel") or getattr(result, "trustLevel", None) is None
+    assert result.provenance == "python-rag"
+    assert any(marker in result.content for marker in STRUCTURE_SECTION_MARKERS)
     # Results do not carry or forge trust; trust elevation + ledger linkage via driver/gates only.
