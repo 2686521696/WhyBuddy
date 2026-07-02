@@ -207,11 +207,35 @@ def execute_report(state: V5SessionState, cap_id: str, role: str, turn: str, inp
     }
 
 def execute_mcp_or_skill(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
+    # PYTHON_AUTHORITY: always explicit contract. runtime present -> with_runtime (success or specific error).
+    # runtime absent -> explicit unavailable (no fallback to execute_capability RAG success shape).
     if cap_id == "mcp.call" and get_mcp_runtime() is not None:
         return execute_mcp_call_with_runtime(state, role, turn, inputs)
     if cap_id == "skill.invoke" and get_skill_runtime() is not None:
         return execute_skill_invoke_with_runtime(state, role, turn, inputs)
-    return execute_capability(cap_id, state, inputs, role, turn).model_dump()
+    if cap_id == "mcp.call":
+        return {
+            "title": "mcp.call unavailable",
+            "summary": "mcp.call Python runtime is not configured",
+            "content": "Python mcp.call runtime unavailable. Explicit contract (no silent RAG template).",
+            "provenance": "python-mcp-runtime",
+            "degraded": True,
+            "error": "mcp_runtime_unavailable",
+            "degradedReason": "runtime_unavailable",
+            "toolName": "mcp.call",
+            "sources": [],
+        }
+    return {
+        "title": "skill.invoke unavailable",
+        "summary": "skill.invoke Python runtime is not configured",
+        "content": "Python skill.invoke runtime unavailable. Explicit contract (no silent RAG template).",
+        "provenance": "python-fake-skill",
+        "degraded": True,
+        "error": "skill_runtime_unavailable",
+        "degradedReason": "runtime_unavailable",
+        "skillId": "skill.invoke",
+        "sources": [],
+    }
 
 def execute_evidence(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
     return execute_capability(cap_id, state, inputs, role, turn).model_dump()
@@ -436,13 +460,49 @@ def execute_prompt_pack(state: V5SessionState, cap_id: str, role: str, turn: str
     }
 
 def execute_visual(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
-    return _evidence_result(
-        cap_id,
-        state,
-        "Outcome Visualization",
-        "Generated architecture/flow preview description",
-        f"outcome.visualize for {_goal_text(state)}. Include Mermaid architecture, flow states, and evidence provenance labels.",
-    )
+    # PYTHON_AUTHORITY for visual preview/outcome capabilities (CapabilityParity seq49):
+    # Dedicated executor (not _evidence_result). Returns visual contract: kind="visual",
+    # content with mermaid/flow + provenance labels, sources + python-rag, degraded, gateResults (G_VISUAL).
+    # Direct + mapped paths expose contract fields. Computed gates (evidence presence). No Node fallback.
+    goal = _goal_text(state)
+    evidence = retrieve_evidence(goal, top_k=6)
+    base = generate_with_rag(f"{cap_id} visual preview for {goal}", evidence)
+    ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
+    is_ux = cap_id == "ux.preview"
+    if is_ux:
+        structured = (
+            base + "\n\n# UX Preview (Python RAG)\n"
+            + "# Screen/state preview\n- Primary flow and states grounded in evidence for goal.\n" + ev_block + "\n"
+            + "# Primary user flow\n- Intake -> render preview -> provenance labels.\n"
+            + "# Interaction notes\n- Grounded elements from state.\n"
+            + "# Source/provenance notes\n" + ev_block + "\n"
+        )
+        title = "UX Preview"
+    else:
+        structured = (
+            base + "\n\n# Outcome Visualization (Python RAG)\n"
+            + "# Architecture / flow preview\n```mermaid\nflowchart TD\n  Goal[" + (goal[:40] or "goal") + "] --> Evidence[Evidence sources]\n  Evidence --> Visual[Preview]\n  Visual --> Gate[G_VISUAL]\n```\n"
+            + "# Evidence provenance labels\n" + ev_block + "\n"
+            + "# Flow states\n- Ready / Degraded / Delivered with source refs.\n"
+        )
+        title = "Outcome Visualization"
+    has_ev = len(evidence) > 0
+    gate_results = {
+        "G_VISUAL": {
+            "status": "passed" if has_ev else "failed",
+            "reason": "visual preview generated with RAG evidence sources and provenance" if has_ev else "no evidence sources for visual grounding",
+        }
+    }
+    return {
+        "title": title,
+        "summary": f"Visual preview via stable RAG for {cap_id}",
+        "content": structured,
+        "provenance": "python-rag",
+        "sources": evidence,
+        "kind": "visual",
+        "degraded": not has_ev,
+        "gateResults": gate_results,
+    }
 
 def execute_handoff(state: V5SessionState, cap_id: str, role: str, turn: str, inputs: List[str]) -> Dict[str, Any]:
     # PYTHON_AUTHORITY for handoff.package (CapabilityParity): dedicated handoff delivery capability.

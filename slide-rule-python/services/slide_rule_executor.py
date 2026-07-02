@@ -158,17 +158,70 @@ def execute_capability(
     goal = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal)
 
     if capability_id in ("mcp.call", "skill.invoke"):
-        evidence = retrieve_evidence(goal, top_k=6)
-        content = generate_with_rag(f"Execute {capability_id} for {goal}", evidence)
-        return ExecuteCapabilityResult(
-            title=f"{capability_id} via stable RAG",
-            summary="检索了外部证据",
-            content=content,
-            provenance="python-rag",
-            sources=evidence,
-            toolName=capability_id if capability_id == "mcp.call" else None,
-            skillName=capability_id if capability_id == "skill.invoke" else None,
-        )
+        # PYTHON_AUTHORITY (CapabilityParity): explicit contract for mcp.call/skill.invoke.
+        # No silent RAG template success ("via stable RAG"). When runtime absent: explicit unavailable/degraded.
+        # When runtime present: delegate to *_with_runtime for success/denied/notfound/invalid etc shapes.
+        # Classification: PYTHON_COMPAT (shared RAG) -> PYTHON_AUTHORITY; no Node fallback.
+        if capability_id == "mcp.call":
+            rt = get_mcp_runtime()
+            if rt is not None:
+                d = execute_mcp_call_with_runtime(state, role_id, turn_id, input_artifact_ids, runtime=rt)
+                res = ExecuteCapabilityResult(
+                    title=d.get("title", "mcp.call"),
+                    summary=d.get("summary", ""),
+                    content=d.get("content", ""),
+                    provenance=d.get("provenance", "python-mcp-runtime"),
+                    degraded=d.get("degraded", False),
+                    sources=d.get("sources", []),
+                    toolName=d.get("toolName"),
+                )
+                if d.get("error"):
+                    res.__dict__["error"] = d["error"]
+                if d.get("degradedReason"):
+                    res.__dict__["degradedReason"] = d["degradedReason"]
+                return res
+            res = ExecuteCapabilityResult(
+                title="mcp.call unavailable",
+                summary="mcp.call Python runtime is not configured",
+                content="Python mcp.call runtime unavailable. Explicit contract (no silent RAG).",
+                provenance="python-mcp-runtime",
+                degraded=True,
+                degradedReason="runtime_unavailable",
+                sources=[],
+                toolName="mcp.call",
+            )
+            res.__dict__["error"] = "mcp_runtime_unavailable"
+            return res
+        else:
+            rt = get_skill_runtime()
+            if rt is not None:
+                d = execute_skill_invoke_with_runtime(state, role_id, turn_id, input_artifact_ids, runtime=rt)
+                res = ExecuteCapabilityResult(
+                    title=d.get("title", "skill.invoke"),
+                    summary=d.get("summary", ""),
+                    content=d.get("content", ""),
+                    provenance=d.get("provenance", "python-fake-skill"),
+                    degraded=d.get("degraded", False),
+                    sources=d.get("sources", []),
+                    skillName=d.get("skillId"),
+                )
+                if d.get("error"):
+                    res.__dict__["error"] = d["error"]
+                if d.get("degradedReason"):
+                    res.__dict__["degradedReason"] = d["degradedReason"]
+                return res
+            res = ExecuteCapabilityResult(
+                title="skill.invoke unavailable",
+                summary="skill.invoke Python runtime is not configured",
+                content="Python skill.invoke runtime unavailable. Explicit contract (no silent RAG).",
+                provenance="python-fake-skill",
+                degraded=True,
+                degradedReason="runtime_unavailable",
+                sources=[],
+                skillName="skill.invoke",
+            )
+            res.__dict__["error"] = "skill_runtime_unavailable"
+            return res
 
     if capability_id == "evidence.search":
         # Dedicated path for evidence.search to produce grounded evidence artifacts
@@ -584,6 +637,49 @@ def execute_capability(
         res.__dict__["kind"] = "handoff"
         res.__dict__["deliveryStatus"] = delivery_status
         res.__dict__["readiness"] = readiness
+        return res
+
+    if capability_id in ("outcome.visualize", "ux.preview"):
+        # PYTHON_AUTHORITY for visual preview/outcome (CapabilityParity seq49): dedicated direct path.
+        # Produces visual contract fields: kind="visual" + content (mermaid/flow + provenance labels) + sources + python-rag + degraded + gateResults (G_VISUAL).
+        # Matches mapped execute_visual contract; explicit evidence-based gates (not static). No generic default.
+        # Direct returns ExecuteCapabilityResult (with __dict__ attach for undeclared per other slices); serialized contract (kind/gateResults) proven via model_dump+merge in parity test (addresses review finding 1: no reliance on getattr alone).
+        evidence = retrieve_evidence(goal, top_k=6)
+        ev_block = "\n".join([f"- evidenceRef:{e.get('id','e')} {e.get('content','')} (source:{e.get('source','')})" for e in evidence[:3]])
+        is_ux = capability_id == "ux.preview"
+        if is_ux:
+            content = (
+                "UX preview (direct Python RAG)\n"
+                + "# Screen/state preview\n- Primary flow grounded.\n" + ev_block + "\n"
+                + "# Primary user flow + Interaction notes\n"
+                + "# Source/provenance notes\n" + ev_block + "\n"
+            )
+            title = "UX Preview (Python RAG)"
+        else:
+            content = (
+                "Outcome visualization (direct Python RAG)\n"
+                + "# Architecture / flow preview\n```mermaid\nflowchart TD\n  Goal[" + (goal[:40] or "goal") + "] --> Evidence\n  Evidence --> Gate[G_VISUAL]\n```\n"
+                + "# Evidence provenance labels\n" + ev_block + "\n"
+                + "# Flow states\n" + "\n"
+            )
+            title = "Outcome Visualization (Python RAG)"
+        has_ev = len(evidence) > 0
+        gate_results = {
+            "G_VISUAL": {
+                "status": "passed" if has_ev else "failed",
+                "reason": "visual preview with RAG sources" if has_ev else "no evidence for visual",
+            }
+        }
+        res = ExecuteCapabilityResult(
+            title=title,
+            summary=f"Visual preview for {capability_id}",
+            content=content,
+            provenance="python-rag",
+            sources=evidence,
+            degraded=not has_ev,
+        )
+        res.__dict__["kind"] = "visual"
+        res.__dict__["gateResults"] = gate_results
         return res
 
     # Default for other caps

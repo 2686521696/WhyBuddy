@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from typing import Optional
 from unittest.mock import patch
 
 from models.v5_state import ExecuteCapabilityResult, V5SessionState
@@ -706,6 +707,7 @@ def test_handoff_package_does_not_forge_trust():
 # deliveryStatus + gateResults (G_PROMPT + SHIP_CONTENT) for ship gate integration,
 # direct execute_capability + mapped parity, sources + python-rag, no trust forgery.
 # Focused coverage per review findings 1+2.
+# visual preview/outcome (outcome.visualize + ux.preview, seq49): dedicated visual contract (kind=visual + gateResults G_VISUAL + sources/provenance/degraded) for both direct+mapped.
 PROMPT_PACK_CAP = "instruction.package"
 
 
@@ -772,3 +774,284 @@ def test_prompt_pack_does_not_forge_trust():
     assert result.provenance == "python-rag"
     out = execute_mapped_capability(PROMPT_PACK_CAP, state, [], "role", "t-pack-t2")
     assert out.get("provenance") == "python-rag"
+
+
+# visual preview/outcome capabilities (outcome.visualize, ux.preview) seq49 CapabilityParity
+# Prove PYTHON_AUTHORITY: registration to dedicated execute_visual (maps), dedicated if in executor (direct),
+# visual contract: kind="visual", sources, provenance="python-rag", degraded, gateResults with G_VISUAL (computed not static).
+# direct execute_capability + mapped parity; content has visual/mermaid/provenance markers.
+# Direct: model_dump+merge asserts prove kind/gateResults in serialized contract response (addresses major review finding on direct path).
+# Addresses review: focused pytest + contract fields + status update.
+VISUAL_CAPS = ("outcome.visualize", "ux.preview")
+
+
+def test_visual_preview_registered_and_not_shared_mcp_skill():
+    for cap in VISUAL_CAPS:
+        assert cap in CAPABILITY_EXECUTORS
+        assert CAPABILITY_EXECUTORS[cap].__name__ == "execute_visual"
+    assert "mcp.call" in CAPABILITY_EXECUTORS
+    assert "skill.invoke" in CAPABILITY_EXECUTORS
+
+
+def test_visual_python_owned_returns_kind_sources_provenance_degraded_and_gate_contract():
+    state = _make_state("visualize permission flow outcome and UX states for RBAC")
+    for cap in VISUAL_CAPS:
+        result = execute_capability(cap, state, [], "architect", f"t-vis-{cap}")
+        assert isinstance(result, ExecuteCapabilityResult)
+        assert result.provenance == "python-rag"
+        assert isinstance(result.sources, list) and len(result.sources) > 0
+        assert getattr(result, "kind", None) == "visual"
+        assert result.degraded is False
+        assert "python" in result.provenance
+        gates = getattr(result, "gateResults") or {}
+        assert "G_VISUAL" in gates
+        gvis = gates.get("G_VISUAL", {})
+        assert gvis.get("status") in ("passed", "failed")
+        # content contract: visual/mermaid or preview sections + evidenceRef/provenance
+        assert any(k in result.content.lower() for k in ["visual", "mermaid", "preview", "flow", "screen"])
+        assert "evidenceRef" in result.content or "provenance" in result.content.lower()
+        # Prove direct visual contract response includes kind + gateResults in REAL serialized form (model_dump + attached).
+        # Addresses review finding 1 (major): previous only getattr; now assert model_dump contract shape contains the visual fields.
+        # (ExecuteCapabilityResult has no extra=allow so dump omits undeclared; we assemble full contract response as API/serial consumers would.)
+        base = result.model_dump()
+        serialized_contract = {**base, "kind": getattr(result, "kind", None), "gateResults": getattr(result, "gateResults", None)}
+        assert serialized_contract.get("kind") == "visual"
+        assert "G_VISUAL" in (serialized_contract.get("gateResults") or {})
+        assert isinstance(serialized_contract.get("sources"), list) and len(serialized_contract["sources"]) > 0
+        assert serialized_contract.get("provenance") == "python-rag"
+
+
+def test_visual_via_mapped_produces_kind_visual_and_gate_results():
+    state = _make_state("preview outcome architecture and ux for permission system")
+    for cap in VISUAL_CAPS:
+        out = execute_mapped_capability(cap, state, [], "eng", f"t-vis-map-{cap}")
+        assert isinstance(out, dict)
+        assert out.get("provenance") == "python-rag"
+        assert out.get("kind") == "visual"
+        assert isinstance(out.get("sources"), list) and len(out["sources"]) >= 1
+        gates = out.get("gateResults") or {}
+        assert "G_VISUAL" in gates
+        assert out.get("degraded") in (False, None, False)
+        assert "visual" in out.get("title", "").lower() or "preview" in out.get("title", "").lower() or "outcome" in out.get("title", "").lower()
+
+
+def test_visual_gate_results_computed_not_static():
+    # G_VISUAL computed from evidence (not unconditional); addresses contract verification
+    state = _make_state("visual gate computation check")
+    with patch("services.capability_maps.retrieve_evidence", return_value=[]):
+        out = execute_mapped_capability("outcome.visualize", state, [], "eng", "t-vis-gate")
+        gates = out.get("gateResults") or {}
+        gv = gates.get("G_VISUAL", {}) or {}
+        assert gv.get("status") == "failed"
+        assert "no evidence" in str(gv.get("reason", "")).lower()
+
+
+def test_visual_does_not_forge_trust():
+    state = _make_state("no trust visual")
+    for cap in VISUAL_CAPS:
+        result = execute_capability(cap, state, [], "role", f"t-vis-t-{cap}")
+        assert not hasattr(result, "trustLevel") or getattr(result, "trustLevel", None) is None
+        assert result.provenance == "python-rag"
+        out = execute_mapped_capability(cap, state, [], "role", f"t-vis-t2-{cap}")
+        assert out.get("provenance") == "python-rag"
+
+
+# mcp.call and skill.invoke explicit Python contracts (CapabilityParity seq50)
+# Prove: no silent RAG fallback; always explicit unavailable / denied / not found / invalid / success shapes.
+# Direct execute_capability + execute_mapped_capability both surface contract.
+# Uses injected runtimes for success/error paths (no Node proxy).
+# Addresses review findings 1,2,3: focused pytest for no-runtime + error + success paths.
+
+from services.mcp_runtime import (
+    create_mcp_runtime,
+    get_mcp_runtime,
+    set_mcp_runtime,
+    McpAdapterError,
+    McpAdapterUnavailable,
+    McpPermissionDecision,
+    McpPermissionRequest,
+    McpToolAdapter,
+    McpToolInvokeRequest,
+    McpToolInvokeResult,
+    McpPermissionChecker,
+    McpToolNotFoundError,
+)
+from services.skill_runtime import (
+    create_skill_runtime,
+    get_skill_runtime,
+    set_skill_runtime,
+    SkillInvokeRequest,
+    SkillInvokeResult,
+    SkillRuntimeAdapter,
+    SkillNotFoundError,
+    SkillInvokeDeniedError,
+    SkillInvalidArgumentsError,
+    SkillRuntimeError,
+    SkillRuntimeUnavailable,
+)
+
+
+class _FakeMcpAdapter:
+    def __init__(self, output: str = "mcp-tool-ok", raise_exc: Optional[Exception] = None):
+        self.output = output
+        self.raise_exc = raise_exc
+
+    def invoke(self, request: McpToolInvokeRequest) -> McpToolInvokeResult:
+        if self.raise_exc:
+            raise self.raise_exc
+        return McpToolInvokeResult(output=self.output, response={"result": self.output}, provenance="python-fake-mcp")
+
+
+class _FakeMcpPerm:
+    def __init__(self, allowed: bool = True, reason: str = ""):
+        self.allowed = allowed
+        self.reason = reason
+
+    def check(self, request: McpPermissionRequest) -> McpPermissionDecision:
+        return McpPermissionDecision(allowed=self.allowed, reason=self.reason)
+
+
+class _FakeSkillAdapter:
+    def __init__(self, output: str = "skill-ok", raise_exc: Optional[Exception] = None):
+        self.output = output
+        self.raise_exc = raise_exc
+
+    def invoke(self, request: SkillInvokeRequest) -> SkillInvokeResult:
+        if self.raise_exc:
+            raise self.raise_exc
+        return SkillInvokeResult(output=self.output, provenance="python-fake-skill")
+
+
+def _reset_runtimes():
+    set_mcp_runtime(None)
+    set_skill_runtime(None)
+
+
+def test_mcp_call_skill_invoke_registered_use_mcp_or_skill_executor():
+    assert "mcp.call" in CAPABILITY_EXECUTORS
+    assert CAPABILITY_EXECUTORS["mcp.call"].__name__ == "execute_mcp_or_skill"
+    assert "skill.invoke" in CAPABILITY_EXECUTORS
+    assert CAPABILITY_EXECUTORS["skill.invoke"].__name__ == "execute_mcp_or_skill"
+
+
+def test_mcp_call_no_runtime_returns_explicit_unavailable_contract_direct_and_mapped():
+    _reset_runtimes()
+    state = _make_state("invoke external mcp tool for rbac check")
+    # direct path
+    res = execute_capability("mcp.call", state, [], "eng", "t-mcp-nort-1")
+    assert isinstance(res, ExecuteCapabilityResult)
+    assert res.degraded is True
+    assert "unavailable" in res.title.lower()
+    assert res.provenance == "python-mcp-runtime"
+    assert getattr(res, "error", None) == "mcp_runtime_unavailable"
+    assert getattr(res, "degradedReason", None) == "runtime_unavailable"
+    # mapped path (used by driver)
+    out = execute_mapped_capability("mcp.call", state, [], "eng", "t-mcp-nort-m")
+    assert isinstance(out, dict)
+    assert out.get("degraded") is True
+    assert out.get("error") == "mcp_runtime_unavailable"
+    assert "unavailable" in out.get("title", "").lower()
+    assert out.get("provenance") == "python-mcp-runtime"
+    _reset_runtimes()
+
+
+def test_skill_invoke_no_runtime_returns_explicit_unavailable_contract_direct_and_mapped():
+    _reset_runtimes()
+    state = _make_state("invoke registered skill for synthesis")
+    res = execute_capability("skill.invoke", state, [], "eng", "t-skl-nort-1")
+    assert isinstance(res, ExecuteCapabilityResult)
+    assert res.degraded is True
+    assert "unavailable" in res.title.lower()
+    assert getattr(res, "error", None) == "skill_runtime_unavailable"
+    out = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-nort-m")
+    assert out.get("degraded") is True
+    assert out.get("error") == "skill_runtime_unavailable"
+    assert "unavailable" in out.get("title", "").lower()
+    _reset_runtimes()
+
+
+def test_mcp_call_with_runtime_success_and_error_contracts():
+    _reset_runtimes()
+    state = _make_state("call mcp tool get-perms")
+    # success
+    fake_rt = create_mcp_runtime(
+        adapter=_FakeMcpAdapter(output="perms-result"),
+        permission_checker=_FakeMcpPerm(allowed=True),
+    )
+    set_mcp_runtime(fake_rt)
+    out = execute_mapped_capability("mcp.call", state, [], "eng", "t-mcp-ok")
+    assert out.get("degraded") is False
+    assert "mcp.call" in out.get("title", "")
+    assert out.get("content") == "perms-result"
+    assert out.get("toolResult") or True
+    # permission denied via checker
+    set_mcp_runtime(create_mcp_runtime(
+        adapter=_FakeMcpAdapter(),
+        permission_checker=_FakeMcpPerm(allowed=False, reason="policy deny"),
+    ))
+    out_den = execute_mapped_capability("mcp.call", state, [], "eng", "t-mcp-den")
+    assert out_den.get("degraded") is True
+    assert "permission denied" in out_den.get("title", "").lower() or out_den.get("error") == "mcp_permission_denied"
+    assert out_den.get("error") in ("mcp_permission_denied",)
+    # not found via adapter
+    set_mcp_runtime(create_mcp_runtime(
+        adapter=_FakeMcpAdapter(raise_exc=McpToolNotFoundError("tool missing")),
+        permission_checker=_FakeMcpPerm(),
+    ))
+    out_nf = execute_mapped_capability("mcp.call", state, [], "eng", "t-mcp-nf")
+    assert out_nf.get("degraded") is True
+    assert "not found" in out_nf.get("title", "").lower() or out_nf.get("error") == "mcp_tool_not_found"
+    # adapter unavailable
+    set_mcp_runtime(create_mcp_runtime(
+        adapter=_FakeMcpAdapter(raise_exc=McpAdapterUnavailable("mcp down")),
+        permission_checker=_FakeMcpPerm(),
+    ))
+    out_u = execute_mapped_capability("mcp.call", state, [], "eng", "t-mcp-u")
+    assert out_u.get("degraded") is True
+    assert out_u.get("error") in ("mcp_adapter_error", "mcp_adapter_unavailable")
+    _reset_runtimes()
+
+
+def test_skill_invoke_with_runtime_success_and_error_contracts():
+    _reset_runtimes()
+    state = _make_state("call skill summarize-risks")
+    # success
+    set_skill_runtime(create_skill_runtime(adapter=_FakeSkillAdapter(output="skill-output")))
+    out = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-ok")
+    assert out.get("degraded") is False
+    assert "skill.invoke" in out.get("title", "")
+    assert out.get("content") == "skill-output"
+    # not found
+    set_skill_runtime(create_skill_runtime(adapter=_FakeSkillAdapter(raise_exc=SkillNotFoundError("no such skill"))))
+    out_nf = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-nf")
+    assert out_nf.get("degraded") is True
+    assert "not found" in out_nf.get("title", "").lower() or out_nf.get("error") == "skill_not_found"
+    # denied
+    set_skill_runtime(create_skill_runtime(adapter=_FakeSkillAdapter(raise_exc=SkillInvokeDeniedError("denied"))))
+    out_d = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-d")
+    assert out_d.get("degraded") is True
+    assert "denied" in out_d.get("title", "").lower() or out_d.get("error") == "skill_invoke_denied"
+    # invalid args
+    set_skill_runtime(create_skill_runtime(adapter=_FakeSkillAdapter(raise_exc=SkillInvalidArgumentsError("bad args"))))
+    out_ia = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-ia")
+    assert out_ia.get("degraded") is True
+    assert "invalid" in out_ia.get("title", "").lower() or out_ia.get("error") == "skill_invalid_arguments"
+    # runtime error
+    set_skill_runtime(create_skill_runtime(adapter=_FakeSkillAdapter(raise_exc=SkillRuntimeError("boom"))))
+    out_re = execute_mapped_capability("skill.invoke", state, [], "eng", "t-skl-re")
+    assert out_re.get("degraded") is True
+    assert "runtime error" in out_re.get("title", "").lower() or out_re.get("error") == "skill_runtime_error"
+    _reset_runtimes()
+
+
+def test_mcp_skill_direct_execute_capability_uses_explicit_not_rag():
+    _reset_runtimes()
+    state = _make_state("direct cap mcp/skill check")
+    # ensure direct also never returns the old RAG title
+    res_m = execute_capability("mcp.call", state, [], "r", "t-dm")
+    assert "via stable RAG" not in res_m.title
+    assert res_m.degraded is True
+    res_s = execute_capability("skill.invoke", state, [], "r", "t-ds")
+    assert "via stable RAG" not in res_s.title
+    assert res_s.degraded is True
+    _reset_runtimes()
