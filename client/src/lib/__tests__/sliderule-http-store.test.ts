@@ -125,4 +125,43 @@ describe("HttpSlideRuleSessionStore Python compatibility", () => {
     expect((loaded as any)?.provenance).toBeUndefined(); // unwrapped
     expect(loaded?.graph).toBeDefined();
   });
+
+  it("deleteSession + load post-delete returns undefined (404 contract) and preserves chinese goal fidelity on pre-delete load (browser /agent-loop/sliderule reset contract)", async () => {
+    // Browser smoke contract test: exercises the client path used by resetSession in /agent-loop/sliderule (useSlideRuleSession + SlideRule UI reset button).
+    // Vitest emulates browser JS runtime (Vite bundle); fetch goes to /api (Vite proxy -> Python 9700).
+    // Covers: 1) chinese state fidelity read via http-store.load (no mojibake in client-visible state), 2) delete, 3) subsequent load returns undefined (maps 404).
+    // Proves only TS_RUNTIME_OWNED thin frontend contract consumer; Python owns DELETE/GET 404 + no-mojibake (see pytest).
+    const chinese = "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake";
+    const preState = {
+      ...makeState("reset-browser-smoke-105"),
+      goal: { text: chinese, status: "needs_refinement" },
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ state: preState, provenance: "python-fullpath", backend: "python" }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => "",
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+        text: async () => "",
+      } as Response);
+    const store = new HttpSlideRuleSessionStore();
+    const loadedPre = await store.load("reset-browser-smoke-105");
+    expect(loadedPre?.goal?.text).toBe(chinese); // chinese fidelity in browser client read
+    await store.deleteSession("reset-browser-smoke-105");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/reset-browser-smoke-105"),
+      expect.objectContaining({ method: "DELETE" })
+    );
+    const loadedPost = await store.load("reset-browser-smoke-105");
+    expect(loadedPost).toBeUndefined(); // 404 contract after reset delete, for browser reload
+  });
 });

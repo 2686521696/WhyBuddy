@@ -267,6 +267,50 @@ def test_sliderule_route_inventory_105_python_source_of_truth(monkeypatch):
     assert data.get("backend") == "python"
 
 
+def test_reset_session_browser_smoke_python_delete_get_no_mojibake():
+    """Browser smoke for reset session: exercises Python DELETE/GET 404 flow.
+    Matches user-visible /agent-loop/sliderule reset (via client HttpSlideRuleSessionStore.deleteSession).
+    Uses Chinese goal to assert no mojibake in response envelopes.
+    Directly proves PYTHON_AUTHORITY for durable reset (no resurrection, envelope has stateAuthority/provenance/backend).
+    """
+    sid = "reset-browser-smoke-105"
+    # create with chinese (browser goal)
+    r = client.post(
+        "/api/sliderule/sessions",
+        json={"goal": {"text": "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake"}, "sessionId": sid},
+        headers={"X-Internal-Key": INTERNAL_KEY},
+    )
+    assert r.status_code == 200
+    create_data = r.json()
+    create_state = create_data.get("state", create_data)
+    create_goal = create_state.get("goal", {}).get("text", "") if isinstance(create_state, dict) else ""
+    assert create_goal == "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake"
+    # pre GET (browser load before reset)
+    r = client.get(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    get_data = r.json()
+    get_state = get_data.get("state", get_data)
+    get_goal = get_state.get("goal", {}).get("text", "") if isinstance(get_state, dict) else ""
+    assert get_goal == "浏览器重置会话 smoke 测试：reset session + DELETE/GET 无 mojibake"
+    assert "浏览器重置会话" in get_goal
+    assert "无 mojibake" in get_goal
+    # DELETE (reset action)
+    r = client.delete(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+    deleted = r.json()
+    assert deleted.get("ok") is True
+    assert deleted.get("sessionId") == sid
+    assert deleted.get("stateAuthority") == "python"
+    assert deleted.get("provenance") == "python-fullpath"
+    assert deleted.get("backend") == "python"
+    # post GET -> 404 proves durable clear for browser reset
+    r = client.get(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 404
+    # repeated delete stable
+    r = client.delete(f"/api/sliderule/sessions/{sid}", headers={"X-Internal-Key": INTERNAL_KEY})
+    assert r.status_code == 200
+
+
 def test_python_owned_execute_and_orchestrate_for_node_retirement(monkeypatch):
     """Focused pytest for NodeRetirement task: directly proves Python owns orchestrate-plan + execute-capability behavior.
     Node default must be thin proxy only (no legacy Node execute paths); Python provides the impl and provenance.
