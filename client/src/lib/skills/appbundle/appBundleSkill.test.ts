@@ -6,13 +6,20 @@ import { leaveApprovalPage, pageSkill, purchaseApprovalPage } from "../page/page
 import { leaveApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
 import { leaveApprovalWorkflow, workflowSkill } from "../workflow/workflowSkill";
 import {
+  APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH,
   APPBUNDLE_CLOSURE_MATRIX,
+  APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH,
   APPBUNDLE_ROLLBACK_UNPINNED,
   APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
   appBundleSkill,
+  buildAppBundleCrossRuntimeEdges,
+  createAppBundleAigcPositivePathSample,
+  createAppBundleCrossRuntimeEvidence,
+  createAppBundlePageNegativePathSample,
   createAppBundleRuntimeSnapshot,
   evaluateAppBundleRuntimeClosure,
   leaveApprovalAppBundle,
+  normalizeAppBundleRuntimeContextForSkill,
   planAppBundleRollback,
   purchaseApprovalAppBundle,
   runtimeClosure,
@@ -850,5 +857,61 @@ describe("appBundleSkill - runtime snapshot and rollback (117)", () => {
     const lTarget: AppBundleRuntimeSnapshot = { ...lSnap, appVersion: "0.9.0", pinnedRefs: lSnap.pinnedRefs.map((r) => r.replace("@1.0.0", "@0.9.0")) };
     const lPlan = planAppBundleRollback(lSnap, lTarget);
     expect(lPlan).not.toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+  });
+});
+
+describe("appBundleSkill - 118 cross-runtime evidence", () => {
+  it("exposes deterministic appbundle cross-runtime edges through resolve", () => {
+    const surface = appBundleSkill.resolve(purchaseApprovalAppBundle) as any;
+
+    expect(surface.runtimeEvidence).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("APPBUNDLE_CROSS_RUNTIME_EVIDENCE:app_purchase_approval:aigc"),
+      ]),
+    );
+    expect(surface.crossSkillRuntimeEdges).toEqual(
+      expect.arrayContaining(["appbundle->aigc:allowed"]),
+    );
+  });
+
+  it("builds positive appbundle to aigc evidence without external side effects", () => {
+    const sample = createAppBundleAigcPositivePathSample(purchaseApprovalAppBundle, purchaseAigcSurface.aigc);
+
+    expect(sample.evidence.evidenceKey).toBe(APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH);
+    expect(sample.targetSkill).toBe("aigc");
+    expect(sample.upstreamEvidencePresent).toBe(true);
+    expect(sample.evidence.state).toBe("allowed");
+    expect(sample.declaredRefs).toContain("budget_risk_summary");
+  });
+
+  it("fails closed for appbundle to page when upstream page evidence is absent", () => {
+    const sample = createAppBundlePageNegativePathSample(leaveApprovalAppBundle);
+
+    expect(sample.evidence.evidenceKey).toBe(APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH);
+    expect(sample.targetSkill).toBe("page");
+    expect(sample.upstreamEvidencePresent).toBe(false);
+    expect(sample.evidence.state).toBe("blocked");
+    expect(sample.evidence.reasonCode).toBe("APPBUNDLE_PAGE_UPSTREAM_ABSENT");
+  });
+
+  it("normalizes per-target runtime context and preserves pinned refs", () => {
+    const ctx = normalizeAppBundleRuntimeContextForSkill(
+      purchaseApprovalAppBundle,
+      "rbac",
+      purchaseFullSurface.rbac,
+    );
+    const evidence = createAppBundleCrossRuntimeEvidence(
+      purchaseApprovalAppBundle,
+      "rbac",
+      purchaseFullSurface.rbac,
+    );
+
+    expect(ctx.evidence).toEqual(evidence);
+    expect(ctx.evidence.state).toBe("allowed");
+    expect(ctx.declaredRefs).toContain("requester");
+    expect(ctx.pinnedRefs.some(ref => ref.startsWith("rbac:"))).toBe(true);
+    expect(buildAppBundleCrossRuntimeEdges(purchaseApprovalAppBundle).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc"]),
+    );
   });
 });

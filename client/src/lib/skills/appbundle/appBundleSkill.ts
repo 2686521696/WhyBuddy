@@ -580,10 +580,13 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
   },
 
   resolve(model: AppBundleModel): ResolvableSurface {
+    const crossRuntime = buildAppBundleCrossRuntimeEdges(model);
     return {
       app: [model.id],
       menu: model.menuEntries.map(menu => menu.id),
       pageBinding: model.pageBindings.map(binding => `${binding.pageRef}->${binding.workflowRef ?? "none"}`),
+      runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
+      crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       ...(model.runtimeSnapshot?.pinnedRefs ? { pinnedRefs: [...model.runtimeSnapshot.pinnedRefs] } : {}),
       ...(model.releaseArtifact ? { releaseArtifact: [model.releaseArtifact.appVersion, model.releaseArtifact.traceId] } : {}),
       ...(model.rollbackTargets ? { rollbackTargets: model.rollbackTargets.map(t => `${t.appVersion}:${t.exists}:${t.immutable}`) } : {}),
@@ -747,6 +750,152 @@ export function validateAppBundlePublishGate(
     blockers,
     perSkillSummaries: Object.keys(perSkillSummaries).length > 0 ? perSkillSummaries : undefined,
     unresolvedRefs: unresolvedRefs.length > 0 ? unresolvedRefs : undefined,
+  };
+}
+
+export type AppBundleRuntimeTargetSkill = Exclude<AppBundleSkillId, "appbundle">;
+
+export type AppBundleRuntimeEvidenceState = "allowed" | "blocked";
+
+export interface AppBundleCrossRuntimeEvidence {
+  sourceSkill: "appbundle";
+  targetSkill: AppBundleRuntimeTargetSkill;
+  evidenceKey: string;
+  appId: string;
+  appVersion: string;
+  declaredRefs: string[];
+  pinnedRefs: string[];
+  state: AppBundleRuntimeEvidenceState;
+  reasonCode: string;
+  closureHash?: string;
+}
+
+export interface NormalizedAppBundleRuntimeContext {
+  sourceSkill: "appbundle";
+  targetSkill: AppBundleRuntimeTargetSkill;
+  appId: string;
+  appVersion: string;
+  declaredRefs: string[];
+  pinnedRefs: string[];
+  upstreamEvidencePresent: boolean;
+  evidence: AppBundleCrossRuntimeEvidence;
+}
+
+export const APPBUNDLE_CROSS_RUNTIME_EVIDENCE = "APPBUNDLE_CROSS_RUNTIME_EVIDENCE";
+export const APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH = "APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH";
+export const APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH = "APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH";
+
+function declaredRefsForTarget(model: AppBundleModel, targetSkill: AppBundleRuntimeTargetSkill): string[] {
+  if (targetSkill === "datamodel") return [...model.entityRefs, ...(model.fieldRefs ?? [])].sort();
+  if (targetSkill === "rbac") return [...model.roleRefs, ...(model.permissionRefs ?? []), ...menuRoleRefs(model.menuEntries)].sort();
+  if (targetSkill === "workflow") return [...model.workflowRefs, ...model.pageBindings.flatMap(binding => binding.workflowRef ? [binding.workflowRef] : [])].sort();
+  if (targetSkill === "page") {
+    return [
+      ...model.pageRefs,
+      ...model.pageBindings.map(binding => binding.pageRef),
+      ...model.menuEntries.map(menu => menu.pageRef),
+    ].sort();
+  }
+  return [...(model.aigcCapabilityRefs ?? [])].sort();
+}
+
+function targetSurfaceHasEvidence(surface: unknown): boolean {
+  if (!surface) return false;
+  if (Array.isArray(surface)) return surface.length > 0;
+  if (typeof surface !== "object") return true;
+  return Object.values(surface as Record<string, unknown>).some(value => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null;
+  });
+}
+
+function pinnedRefsForTarget(snapshot: AppBundleRuntimeSnapshot, targetSkill: AppBundleRuntimeTargetSkill): string[] {
+  const prefix = `${targetSkill}:`;
+  return snapshot.pinnedRefs.filter(ref => ref.startsWith(prefix)).sort();
+}
+
+export function createAppBundleCrossRuntimeEvidence(
+  model: AppBundleModel,
+  targetSkill: AppBundleRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): AppBundleCrossRuntimeEvidence {
+  const snapshot = createAppBundleRuntimeSnapshot(model);
+  const declaredRefs = declaredRefsForTarget(model, targetSkill);
+  const pinnedRefs = pinnedRefsForTarget(snapshot, targetSkill);
+  const upstreamEvidencePresent = targetSurfaceHasEvidence(upstreamSurface);
+  const state: AppBundleRuntimeEvidenceState =
+    declaredRefs.length > 0 && upstreamEvidencePresent ? "allowed" : "blocked";
+  const reasonCode =
+    state === "allowed"
+      ? "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT"
+      : upstreamEvidencePresent
+        ? "APPBUNDLE_RUNTIME_REFS_ABSENT"
+        : "APPBUNDLE_RUNTIME_UPSTREAM_ABSENT";
+
+  return {
+    sourceSkill: "appbundle",
+    targetSkill,
+    evidenceKey: `${APPBUNDLE_CROSS_RUNTIME_EVIDENCE}:${model.id}:${targetSkill}:${state}`,
+    appId: model.id,
+    appVersion: snapshot.appVersion,
+    declaredRefs,
+    pinnedRefs,
+    state,
+    reasonCode,
+    closureHash: snapshot.closureHash,
+  };
+}
+
+export function normalizeAppBundleRuntimeContextForSkill(
+  model: AppBundleModel,
+  targetSkill: AppBundleRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): NormalizedAppBundleRuntimeContext {
+  const evidence = createAppBundleCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
+  return {
+    sourceSkill: "appbundle",
+    targetSkill,
+    appId: evidence.appId,
+    appVersion: evidence.appVersion,
+    declaredRefs: evidence.declaredRefs,
+    pinnedRefs: evidence.pinnedRefs,
+    upstreamEvidencePresent: evidence.state === "allowed",
+    evidence,
+  };
+}
+
+export function buildAppBundleCrossRuntimeEdges(model: AppBundleModel): AppBundleCrossRuntimeEvidence[] {
+  const targets: AppBundleRuntimeTargetSkill[] = ["datamodel", "rbac", "workflow", "page", "aigc"];
+  return targets
+    .filter(target => declaredRefsForTarget(model, target).length > 0)
+    .map(target => createAppBundleCrossRuntimeEvidence(model, target, { declared: declaredRefsForTarget(model, target) }));
+}
+
+export function createAppBundlePageNegativePathSample(model: AppBundleModel = leaveApprovalAppBundle): NormalizedAppBundleRuntimeContext {
+  const ctx = normalizeAppBundleRuntimeContextForSkill(model, "page");
+  return {
+    ...ctx,
+    evidence: {
+      ...ctx.evidence,
+      evidenceKey: APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH,
+      state: "blocked",
+      reasonCode: "APPBUNDLE_PAGE_UPSTREAM_ABSENT",
+    },
+    upstreamEvidencePresent: false,
+  };
+}
+
+export function createAppBundleAigcPositivePathSample(
+  model: AppBundleModel = purchaseApprovalAppBundle,
+  upstreamSurface: unknown = { capability: model.aigcCapabilityRefs ?? [] },
+): NormalizedAppBundleRuntimeContext {
+  const ctx = normalizeAppBundleRuntimeContextForSkill(model, "aigc", upstreamSurface);
+  return {
+    ...ctx,
+    evidence: {
+      ...ctx.evidence,
+      evidenceKey: APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH,
+    },
   };
 }
 
