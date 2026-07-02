@@ -415,11 +415,14 @@ def test_orchestrate_plan_route_delegates_selected_to_pick():
     def fake_orch(s, t, u):
         return Bogus()
 
+    orig_route_pick = None
     try:
         orch_mod.orchestrate_plan = fake_orch
         # ensure route module sees the patched symbol (import time binding)
         import routes.sliderule_full as rfull
+        orig_route_pick = getattr(rfull, "pick_next_capabilities", None)
         rfull.orchestrate_plan = fake_orch
+        rfull.pick_next_capabilities = pick_next_capabilities
 
         client = TestClient(app, raise_server_exceptions=False)
         payload = {
@@ -445,6 +448,8 @@ def test_orchestrate_plan_route_delegates_selected_to_pick():
             orch_mod.orchestrate_plan = orig_orch
             import routes.sliderule_full as rfull
             rfull.orchestrate_plan = orig_orch
+            if orig_route_pick is not None:
+                rfull.pick_next_capabilities = orig_route_pick
 
 
 # --- Focused multi-loop execution tests for Python driver authority (addresses review Findings 1 and 3) ---

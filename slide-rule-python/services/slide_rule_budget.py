@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
-from models.v5_state import V5SessionState, CapabilityCostRecord
+from models.v5_state import V5SessionState, CapabilityCostRecord, SchedulingDecision
 
 
 class BudgetPolicy(BaseModel):
@@ -145,7 +145,13 @@ def evaluate_budget_before_orchestrate(
 
 
 def apply_budget_park(state: V5SessionState, reason: str, turn_id: str = "budget") -> V5SessionState:
-    """Helper: park state at budget await (PYTHON_AUTHORITY)."""
+    """Helper: park state at budget await (PYTHON_AUTHORITY).
+    Uses costLedger-derived budget decision (via caller evaluate or marathon session_tokens recompute) to:
+    - set runtimePhase/awaitReason="budget"
+    - append 0-token cost gate record
+    - write budget_exhausted decision (blocked_by_budget) to decisionLedger
+    - set escalated for escalation trajectory.
+    """
     state.runtimePhase = "awaiting"
     state.awaitReason = "budget"
     state.awaitDetail = reason or "budget policy limit"
@@ -163,4 +169,23 @@ def apply_budget_park(state: V5SessionState, reason: str, turn_id: str = "budget
         createdAt=now,
     ))
     state.costLedger = cl
+    # costLedger-triggered budget_exhausted decision + await/escalation (addresses review findings 1,2)
+    # mirrors TS blocked_by_budget SchedulingDecision written on budget block path
+    dl = list(getattr(state, "decisionLedger", []) or [])
+    budget_dec = {
+        "id": f"{turn_id}-dledger-budget",
+        "turnId": turn_id,
+        "saw": [],
+        "chose": [],
+        "skipped": [{"capabilityId": "budget.gate", "reason": "blocked_by_budget"}],
+        "addresses": [],
+        "rationale": f"blocked_by_budget: {reason or 'costLedger budget policy limit'}",
+        "alternativesRejected": [],
+        "createdAt": now,
+        "source": "budget_policy",
+    }
+    dl.append(budget_dec)
+    state.decisionLedger = dl
+    # explicit escalation marker for budget_exhausted await/escalation trajectory
+    state.escalated = True
     return state

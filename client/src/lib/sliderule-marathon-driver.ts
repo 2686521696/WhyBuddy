@@ -173,11 +173,10 @@ export async function driveMarathon(
   let currentSeed = seedText;
   let stopReason: MarathonStopReason = "await_human";
   const previousFrontiers: string[] = [];
-  // TS THIN COMPAT CONSUMER ONLY:
-  // - Named budget policy (maxTurns, maxRuns*, maxRepeat, maxTokens) + evaluate_budget_before_orchestrate + session_budget_exhausted classification implemented in slide-rule-python/services/slide_rule_budget.py + drive_marathon (PYTHON slice).
-  // - This TS driveMarathon is UI entry + compatibility fallback; it first consumes /api/sliderule/drive-marathon.
-  // - Production path (useSlideRuleSession calls this driveMarathon) now reaches Python drive_marathon before local fallback.
-  // - Named budget policy is owned by Python; the fallback branch below is only for offline/test environments where the API is unavailable.
+  // TS THIN COMPAT CONSUMER ONLY (review finding 3):
+  // - Named budget policy + marathon stop (session_budget_exhausted) owned by PYTHON_AUTHORITY in slide-rule-python/services/slide_rule_budget.py + drive_marathon (defaults to real drive_reasoning_turn).
+  // - This TS driveMarathon first tries Python /api (driveMarathonViaPython); local loop retained ONLY as compat/offline fallback when fetch fails or Python unavailable.
+  // - Residual risk: when Python API unreachable, TS fallback executes digest/frontier/re-entry (no Python inner gates in that case). Documented in migration status. Production prefers Python.
 
   // M4: AutopilotPolicy (explicit, audit-able; attached for TopHud/raw export)
   const policy = {
@@ -292,7 +291,7 @@ export async function driveMarathon(
       break;
     }
 
-    // no TS session budget decision here (maxTokens etc removed). session_budget_exhausted classification for the ported Python policy lives in drive_marathon (Python); however current prod path does not reach Python drive_marathon, inner driveReasoningSession applies separate TS budget checks and may emit "budget_exhausted". See status for blocker. TS only thin.
+    // no TS session budget decision here (maxTokens etc removed). session_budget_exhausted + reentry now PYTHON_AUTHORITY default via /api (drive_marathon + real inner driver). Fallback below only for API-unavailable case (see review minor finding 3 + status residual risk note). TS only thin compat.
   }
 
   return { finalState: working, rounds, stopReason };

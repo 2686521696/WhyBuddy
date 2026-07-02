@@ -1,7 +1,7 @@
 """
 Python-owned V5.2 Marathon / Session Budget orchestration (BudgetMarathon phase).
 
-PYTHON_AUTHORITY for: BudgetPolicy enforcement (via slide_rule_budget), drive_marathon stop classification (session_budget_exhausted, frontier_exhausted, await_human, budget_exhausted), frontier propose, round digest, supersededArtifactIds append, decisionLedger frontier entries.
+PYTHON_AUTHORITY for: BudgetPolicy enforcement (via slide_rule_budget), drive_marathon stop classification (session_budget_exhausted, frontier_exhausted, await_human, budget_exhausted), frontier propose, round digest, supersededArtifactIds append, decisionLedger frontier entries + budget_exhausted decisions from costLedger.
 
 Inner turn execution reuses drive_reasoning_turn / drive_full_v5_session at route/driver layer (see slide_rule_session, v5_full_driver, routes); this module provides budget+marathon orchestration slice on top. Accepts optional drive_step for real driver injection.
 
@@ -25,20 +25,26 @@ try:
 except Exception:
     execute_capability = None
 
-# Minimal integration point (review finding 2): this module owns marathon orchestration + budget stop classification (PYTHON_AUTHORITY);
-# it reuses the existing Python-owned driver drive_reasoning_turn (from slide_rule_session, used by routes + drive_full + v5_full_driver paths) via optional drive_step injection.
-# Callers/tests inject the real driver to prove budget/max* gates execute around real Python driver/API path (no isolated-only evidence).
+# Minimal integration point: this module owns marathon orchestration + budget stop classification (PYTHON_AUTHORITY);
+# reuses Python-owned drive_reasoning_turn (from slide_rule_session) via drive_step.
+# Default (omitted arg) = real driver (prod re-entry + route execute inner gates); explicit=None forces synthetic for marker tests.
 try:
-    from .slide_rule_session import drive_reasoning_turn  # real PYTHON driver path reused by drive_marathon
+    from .slide_rule_session import drive_reasoning_turn  # real PYTHON driver path reused by drive_marathon (default)
 except Exception:
     drive_reasoning_turn = None
+
+# Sentinel (review finding 2): distinguishes "arg omitted" (use real driver) vs "explicit drive_step=None" (force synthetic marker for tests).
+# Callers/ route pass the driver explicitly; default now drives real inner; explicit None forces marker path only.
+_DRIVE_STEP_SENTINEL = object()
 
 
 class MarathonStopReason:
     USER_INTERRUPTED = "user_interrupted"
     SESSION_BUDGET_EXHAUSTED = "session_budget_exhausted"
+    BUDGET_EXHAUSTED = "budget_exhausted"
     FRONTIER_EXHAUSTED = "frontier_exhausted"
     AWAIT_HUMAN = "await_human"
+    INNER_DRIVER_FAILED = "inner_driver_failed"
 
 
 def propose_frontier(
@@ -92,14 +98,14 @@ def drive_marathon(
     max_rounds: int = 8,
     stop_signal: Any = None,
     on_round_complete: Optional[Callable] = None,
-    drive_step: Optional[Callable[[V5SessionState, str, str], V5SessionState]] = None,
+    drive_step: Optional[Callable[[V5SessionState, str, str], V5SessionState]] = _DRIVE_STEP_SENTINEL,
 ) -> Dict[str, Any]:
     """
     Marathon drive loop: reuses inner drive budget policy + optional real drive_step (e.g. drive_reasoning_turn).
     Stops on: user abort, session maxTokens (recomputed from costLedger after drive_step), frontier dupes/exhaust, human await, inner budget.
     Returns {finalState, rounds, stopReason}
     PYTHON_AUTHORITY for budget enforcement + marathon stop classification + ledger/superseded (minimal slice; full parity with drive_marathon prod route pending separate wiring).
-    drive_step defaults to None (synthetic); callers/tests inject drive_reasoning_turn (real Python driver from slide_rule_session) to run budget gate around real driver path.
+    drive_step: when omitted (default) uses real drive_reasoning_turn so prod re-entry/route calls execute inner driver gates/ledger/await/confirm/GCOV (no fallback hiding); explicit drive_step=None forces synthetic marker path (for marker tests only); pass callable for override.
     """
     working = state
     current_seed = seed_text
@@ -108,7 +114,10 @@ def drive_marathon(
     previous_frontiers: List[str] = []
     session_tokens = 0
 
-    effective_drive_step = drive_step  # explicit; integration tests pass real drive_reasoning_turn to prove path
+    if drive_step is not _DRIVE_STEP_SENTINEL:
+        effective_drive_step = drive_step  # explicit (None forces marker; callable overrides)
+    else:
+        effective_drive_step = drive_reasoning_turn  # default: real PYTHON inner driver for prod reentry preserving gates
 
     # seed from costLedger
     costs = getattr(working, "costLedger", []) or []
@@ -134,21 +143,44 @@ def drive_marathon(
             break
 
         turn_id = f"marathon-{int(_time.time()*1000)}-{r}"
+        drive_succeeded = False
         if effective_drive_step:
-            # integrate real Python-owned driver path (review finding 2): drive_reasoning_turn executes under budget gate
+            # real Python driver path (default for prod re-entry + route); must not swallow failure
             try:
                 working = effective_drive_step(working, turn_id, current_seed) or working
-            except Exception:
-                # fallback to synthetic marker if injected driver not usable in this context
-                pass
+                drive_succeeded = True
+            except Exception as exc:
+                # Finding 1 (major): explicit stop on inner failure; write auditable error evidence to decisionLedger;
+                # set blocking state; BREAK without digest/frontier/superseded/rounds continuation or non-error stopReason.
+                # This ensures failure of drive_reasoning_turn (inner gates/ledger/await/confirm/GCOV) is not masked as successful marathon advance.
+                dl = list(getattr(working, "decisionLedger", []) or [])
+                dl.append({
+                    "id": f"marathon-driver-fail-{turn_id}",
+                    "turnId": turn_id,
+                    "source": "marathon_inner_driver",
+                    "reason": "inner_driver_failed",
+                    "rationale": f"drive_reasoning_turn raised; stopping re-entry without frontier/digest to preserve inner gates. err={str(exc)[:200]}",
+                    "error": str(exc)[:500],
+                    "at": datetime.now(timezone.utc).isoformat(),
+                })
+                working.decisionLedger = dl
+                stop_reason = MarathonStopReason.INNER_DRIVER_FAILED
+                working.awaitReason = "error"
+                working.awaitDetail = f"inner driver failure: {str(exc)[:80]}"
+                rounds.append({"loopTurnId": turn_id, "stopReason": stop_reason})
+                break
         else:
-            # synthetic advance marker (minimal slice; real drive attached via routes / caller-supplied drive_step)
+            # synthetic advance marker ONLY when explicitly drive_step=None (via sentinel); not for default/prod path
             conv = getattr(working, "conversation", []) or []
             conv.append({"role": "system", "text": f"[marathon round {r}] seed: {current_seed[:80]}", "turnId": turn_id})
             working.conversation = conv
+            drive_succeeded = True
 
-        # cost/ledger: only synthetic marker when no drive_step (real driver owns its appends via execute); always recompute from ledger
-        # addresses finding 3 (minor): maxTokens semantics from costLedger, not fixed +1200
+        if not drive_succeeded:
+            # failure path already recorded and broke
+            continue
+
+        # cost/ledger synthetic ONLY for explicit marker path (real driver owns its own appends)
         if not effective_drive_step:
             cl = list(getattr(working, "costLedger", []) or [])
             cl.append({
@@ -162,7 +194,7 @@ def drive_marathon(
             })
             working.costLedger = cl
 
-        # recompute session_tokens from current ledger (drive_step may have appended; synthetic marker above only for non-drive)
+        # recompute session_tokens from current ledger
         costs = getattr(working, "costLedger", []) or []
         session_tokens = 0
         for c in costs:
