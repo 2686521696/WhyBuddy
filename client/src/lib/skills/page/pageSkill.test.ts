@@ -3,10 +3,16 @@ import { describe, expect, it } from "vitest";
 import { dataModelSkill, leaveRequestDataModel, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
 import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
 import {
+  buildPageCrossRuntimeEdges,
+  createPageRbacRuntimeEvidence,
+  createPageWorkflowRuntimeEvidence,
   evaluatePageBindingExpressions,
   leaveApprovalPage,
+  normalizePageRuntimeContextForSkill,
   PAGE_BINDING_RUNTIME_ERROR,
+  PAGE_RBAC_RUNTIME_EVIDENCE,
   PAGE_WORKFLOW_TASK_VIEW_INVALID,
+  PAGE_WORKFLOW_RUNTIME_EVIDENCE,
   pageSkill,
   projectWorkflowTaskView,
   purchaseApprovalPage,
@@ -651,6 +657,56 @@ describe("pageSkill - 117 binding expression runtime (pure deterministic)", () =
   it("fails closed for invalid input model (negative)", () => {
     const res = evaluatePageBindingExpressions({} as any, {});
     expect(res).toBe(PAGE_BINDING_RUNTIME_ERROR);
+  });
+});
+
+describe("pageSkill - 118 cross-runtime evidence", () => {
+  it("exposes deterministic page cross-runtime edges through resolve", () => {
+    const surface = pageSkill.resolve(leaveApprovalPage) as any;
+
+    expect(surface.runtimeEvidence).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("PAGE_CROSS_RUNTIME_EVIDENCE:datamodel"),
+        expect.stringContaining("PAGE_CROSS_RUNTIME_EVIDENCE:rbac"),
+      ]),
+    );
+    expect(surface.crossSkillRuntimeEdges).toEqual(
+      expect.arrayContaining(["page->datamodel:allowed", "page->rbac:allowed"]),
+    );
+  });
+
+  it("builds rbac runtime evidence from permission render refs", () => {
+    const evidence = createPageRbacRuntimeEvidence(leaveApprovalPage, fullSurface.rbac);
+
+    expect(evidence.evidenceKey).toBe(PAGE_RBAC_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("rbac");
+    expect(evidence.state).toBe("allowed");
+    expect(evidence.roleRefs).toContain("manager");
+  });
+
+  it("fails closed for workflow runtime evidence when upstream workflow is absent", () => {
+    const evidence = createPageWorkflowRuntimeEvidence(leaveApprovalPage);
+
+    expect(evidence.evidenceKey).toBe(PAGE_WORKFLOW_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("workflow");
+    expect(evidence.state).toBe("blocked");
+    expect(evidence.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
+  });
+
+  it("normalizes appbundle context and preserves page snapshots", () => {
+    const ctx = normalizePageRuntimeContextForSkill(
+      purchaseApprovalPage,
+      "appbundle",
+      { app: ["app_purchase_approval"] },
+    );
+
+    expect(ctx.targetSkill).toBe("appbundle");
+    expect(ctx.upstreamEvidencePresent).toBe(true);
+    expect(ctx.componentRefs).toContain("amount");
+    expect(ctx.evidence.snapshotRefs.length).toBeGreaterThan(0);
+    expect(buildPageCrossRuntimeEdges(purchaseApprovalPage).map(edge => edge.targetSkill)).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "aigc", "appbundle"]),
+    );
   });
 });
 

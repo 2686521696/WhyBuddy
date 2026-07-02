@@ -796,6 +796,9 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
         })),
       ],
     };
+    const crossRuntime = buildPageCrossRuntimeEdges(model);
+    surf.runtimeEvidence = crossRuntime.map(edge => edge.evidenceKey);
+    surf.crossSkillRuntimeEdges = crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`);
     if (model.pageVersion) surf.pageVersion = model.pageVersion;
     if (model.published !== undefined) surf.published = model.published;
     if (model.snapshotRefs && model.snapshotRefs.length > 0) surf.snapshotRefs = [...model.snapshotRefs];
@@ -808,6 +811,145 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
     throw new Error(`pageSkill.generate: needs the reasoning engine to generate a page model for intent: "${intent}"`);
   },
 };
+
+export type PageRuntimeTargetSkill = "datamodel" | "rbac" | "workflow" | "aigc" | "appbundle";
+
+export type PageRuntimeEvidenceState = "allowed" | "blocked";
+
+export interface PageCrossRuntimeEvidence {
+  sourceSkill: "page";
+  targetSkill: PageRuntimeTargetSkill;
+  evidenceKey: string;
+  state: PageRuntimeEvidenceState;
+  reasonCode: string;
+  pageId: string;
+  componentRefs: string[];
+  fieldRefs: string[];
+  roleRefs: string[];
+  permissionRefs: string[];
+  workflowRefs: string[];
+  snapshotRefs: string[];
+}
+
+export interface NormalizedPageRuntimeContext {
+  sourceSkill: "page";
+  targetSkill: PageRuntimeTargetSkill;
+  pageId: string;
+  componentRefs: string[];
+  fieldRefs: string[];
+  roleRefs: string[];
+  permissionRefs: string[];
+  workflowRefs: string[];
+  upstreamEvidencePresent: boolean;
+  evidence: PageCrossRuntimeEvidence;
+}
+
+export const PAGE_CROSS_RUNTIME_EVIDENCE = "PAGE_CROSS_RUNTIME_EVIDENCE";
+export const PAGE_RBAC_RUNTIME_EVIDENCE = "PAGE_RBAC_RUNTIME_EVIDENCE";
+export const PAGE_WORKFLOW_RUNTIME_EVIDENCE = "PAGE_WORKFLOW_RUNTIME_EVIDENCE";
+
+function pageFieldRefs(model: PageModel): string[] {
+  return [...new Set(model.components.flatMap(component => {
+    const field = component.bindingSchema?.field ?? component.field;
+    return field ? [field] : [];
+  }))].sort();
+}
+
+function pageRoleRefs(model: PageModel): string[] {
+  return [...new Set(model.components.flatMap(component => [
+    ...(component.visibleToRoles ?? []),
+    ...(component.permissionRender?.roleRefs ?? []),
+  ]))].sort();
+}
+
+function pagePermissionRefs(model: PageModel): string[] {
+  return [...new Set(model.components.flatMap(component => component.permissionRender?.permissionRefs ?? []))].sort();
+}
+
+function pageWorkflowRefs(model: PageModel): string[] {
+  return [...new Set([...(model.workflowLaunchRefs ?? []), ...model.linkageRules.flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : [])])].sort();
+}
+
+function pageRefsForTarget(model: PageModel, targetSkill: PageRuntimeTargetSkill): string[] {
+  if (targetSkill === "datamodel") return [model.entity, ...pageFieldRefs(model)].sort();
+  if (targetSkill === "rbac") return [...pageRoleRefs(model), ...pagePermissionRefs(model)].sort();
+  if (targetSkill === "workflow") return pageWorkflowRefs(model);
+  if (targetSkill === "aigc") return [...pageFieldRefs(model), ...model.components.map(component => component.id)].sort();
+  return [model.id, ...(model.snapshotRefs ?? []), ...model.components.map(component => component.id)].sort();
+}
+
+export function createPageCrossRuntimeEvidence(
+  model: PageModel,
+  targetSkill: PageRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): PageCrossRuntimeEvidence {
+  const targetRefs = pageRefsForTarget(model, targetSkill);
+  const upstreamEvidencePresent = upstreamSurface !== undefined && upstreamSurface !== null;
+  const state: PageRuntimeEvidenceState =
+    targetRefs.length > 0 && upstreamEvidencePresent ? "allowed" : "blocked";
+
+  return {
+    sourceSkill: "page",
+    targetSkill,
+    evidenceKey: `${PAGE_CROSS_RUNTIME_EVIDENCE}:${targetSkill}:${state}`,
+    state,
+    reasonCode: state === "allowed" ? "PAGE_RUNTIME_EVIDENCE_PRESENT" : "PAGE_RUNTIME_UPSTREAM_ABSENT",
+    pageId: model.id,
+    componentRefs: model.components.map(component => component.id).sort(),
+    fieldRefs: pageFieldRefs(model),
+    roleRefs: pageRoleRefs(model),
+    permissionRefs: pagePermissionRefs(model),
+    workflowRefs: pageWorkflowRefs(model),
+    snapshotRefs: [...(model.snapshotRefs ?? [])].sort(),
+  };
+}
+
+export function normalizePageRuntimeContextForSkill(
+  model: PageModel,
+  targetSkill: PageRuntimeTargetSkill,
+  upstreamSurface?: unknown,
+): NormalizedPageRuntimeContext {
+  const evidence = createPageCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
+  return {
+    sourceSkill: "page",
+    targetSkill,
+    pageId: model.id,
+    componentRefs: evidence.componentRefs,
+    fieldRefs: evidence.fieldRefs,
+    roleRefs: evidence.roleRefs,
+    permissionRefs: evidence.permissionRefs,
+    workflowRefs: evidence.workflowRefs,
+    upstreamEvidencePresent: evidence.state === "allowed",
+    evidence,
+  };
+}
+
+export function buildPageCrossRuntimeEdges(model: PageModel): PageCrossRuntimeEvidence[] {
+  const targets: PageRuntimeTargetSkill[] = ["datamodel", "rbac", "workflow", "aigc", "appbundle"];
+  return targets
+    .filter(target => pageRefsForTarget(model, target).length > 0)
+    .map(target => createPageCrossRuntimeEvidence(model, target, { declared: pageRefsForTarget(model, target) }));
+}
+
+export function createPageRbacRuntimeEvidence(
+  model: PageModel,
+  upstreamSurface: unknown,
+): PageCrossRuntimeEvidence {
+  return {
+    ...createPageCrossRuntimeEvidence(model, "rbac", upstreamSurface),
+    evidenceKey: PAGE_RBAC_RUNTIME_EVIDENCE,
+  };
+}
+
+export function createPageWorkflowRuntimeEvidence(
+  model: PageModel,
+  upstreamSurface?: unknown,
+): PageCrossRuntimeEvidence {
+  return {
+    ...createPageCrossRuntimeEvidence(model, "workflow", upstreamSurface),
+    evidenceKey: PAGE_WORKFLOW_RUNTIME_EVIDENCE,
+  };
+}
 
 export const leaveApprovalPage: PageModel = {
   id: "page_leave_request",
