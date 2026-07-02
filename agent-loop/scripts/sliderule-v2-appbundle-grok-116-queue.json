@@ -1,0 +1,188 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-appbundle-grok-116-run",
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "grok",
+    "reviewModel": "grok-build",
+    "scopedReview": true,
+    "workerMaxTurns": 512,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 512,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 8,
+    "guardTests": false,
+    "maxIterations": 16,
+    "agentIdleTimeoutMs": 300000,
+    "agentTimeoutMs": 600000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "timeoutMs": 1800000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    },
+    "cleanupWorktree": false
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-appbundle-version-pins-113",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-version-pins-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/appbundle/appBundleModel.ts'; foreach($m in 'versionPins','publishManifest','runtimeSnapshot'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/appbundle/appBundleModel.ts client/src/lib/skills/appbundle/appBundleSkill.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-publish-gate-113",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-publish-gate-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/appbundle/appBundleSkill.ts'; foreach($m in 'publishGate','APPBUNDLE_PUBLISH_REF_MISSING','APPBUNDLE_VERSION_UNPINNED','APPBUNDLE_GHOST_REF','APPBUNDLE_PEP_BYPASS'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/orchestrator.test.ts --reporter=dot",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/appbundle/appBundleSkill.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/orchestrator.ts client/src/lib/skills/orchestrator.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-closure-matrix-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-closure-matrix-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-publish-gate-hardening-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-publish-gate-hardening-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-version-pin-policy-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-version-pin-policy-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-runtime-snapshot-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-runtime-snapshot-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-impact-closure-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-impact-closure-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-appbundle-release-artifact-rollback-115",
+      "task": "agent-loop/tasks/sliderule-v2-appbundle-release-artifact-rollback-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    }
+  ]
+}

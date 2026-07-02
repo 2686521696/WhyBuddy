@@ -273,6 +273,7 @@ async function main() {
       })
       : null;
 
+    const runStartedAtMs = Date.now();
     const run = await runProcess(process.execPath, args, {
       cwd: agentLoopRoot,
       env: {
@@ -322,7 +323,11 @@ async function main() {
       break;
     }
 
-    const state = await readLatestState(repoRoot);
+    const state = await readStateForCompletedQueueTask({
+      repoRoot,
+      taskFile: entry.task,
+      startedAtMs: runStartedAtMs,
+    });
     let summary = buildQueueSummaryFromState({
       entry,
       state,
@@ -563,6 +568,39 @@ async function readQueueOutcomesFromWorktree(worktreePath) {
     if (error.code === 'ENOENT') return { tasks: {} };
     throw error;
   }
+}
+
+async function readStateForCompletedQueueTask({ repoRoot, taskFile, startedAtMs }) {
+  const runsDir = path.join(repoRoot, '.agent-loop', 'runs');
+  const normalizedTask = normalizeTaskPath(taskFile);
+  const candidates = [];
+
+  try {
+    const entries = await fs.readdir(runsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const statePath = path.join(runsDir, entry.name, 'state.json');
+      try {
+        const stat = await fs.stat(statePath);
+        if (stat.mtimeMs + 5000 < startedAtMs) continue;
+        const state = JSON.parse(await fs.readFile(statePath, 'utf8'));
+        if (normalizeTaskPath(state?.options?.task) !== normalizedTask) continue;
+        candidates.push({ state, mtimeMs: stat.mtimeMs, runId: state?.runId || entry.name });
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw error;
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  candidates.sort((a, b) => (b.mtimeMs - a.mtimeMs) || String(b.runId).localeCompare(String(a.runId)));
+  return candidates[0]?.state || readLatestState(repoRoot);
+}
+
+function normalizeTaskPath(value) {
+  return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
 async function readGitHeadIfPresent({ cwd, timeoutMs }) {

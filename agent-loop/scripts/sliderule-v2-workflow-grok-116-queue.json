@@ -1,0 +1,296 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-workflow-grok-116-run",
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "grok",
+    "reviewModel": "grok-build",
+    "scopedReview": true,
+    "workerMaxTurns": 512,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 512,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 8,
+    "guardTests": false,
+    "maxIterations": 16,
+    "agentIdleTimeoutMs": 300000,
+    "agentTimeoutMs": 600000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "timeoutMs": 1800000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    },
+    "cleanupWorktree": false
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-workflow-pep-model-113",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-pep-model-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/workflow/workflowModel.ts'; foreach($m in 'actorRoleRef','policyCheckRefs','fieldRefs','traceSpan'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/workflow/workflowSkill.test.ts --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/workflow/workflowModel.ts client/src/lib/skills/workflow/workflowSkill.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-pep-gate-project-113",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-pep-gate-project-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/workflow/workflowSkill.ts'; foreach($m in 'WF_ASSIGNEE_MISSING_ROLE','WF_PEP_BYPASS','SSOT','DataModel'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/orchestrator.test.ts --reporter=dot",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/workflow/workflowSkill.ts client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/orchestrator.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-form-ssot-binding-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-form-ssot-binding-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-assignee-pdp-resolution-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-assignee-pdp-resolution-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-approval-mode-model-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-approval-mode-model-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-approval-mode-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-approval-mode-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-timeout-action-model-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-timeout-action-model-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-delegation-model-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-delegation-model-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-instance-snapshot-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-instance-snapshot-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-version-pins-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-version-pins-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-variable-reference-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-variable-reference-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-path-coverage-hardening-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-path-coverage-hardening-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-publish-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-publish-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-workflow-project-impact-115",
+      "task": "agent-loop/tasks/sliderule-v2-workflow-project-impact-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    }
+  ]
+}

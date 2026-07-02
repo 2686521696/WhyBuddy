@@ -1,0 +1,279 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-datamodel-grok-116-run",
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "grok",
+    "reviewModel": "grok-build",
+    "scopedReview": true,
+    "workerMaxTurns": 512,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 512,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 8,
+    "guardTests": false,
+    "maxIterations": 16,
+    "agentIdleTimeoutMs": 300000,
+    "agentTimeoutMs": 600000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "timeoutMs": 1800000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    },
+    "cleanupWorktree": false
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-datamodel-ssot-model-113",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-ssot-model-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/datamodel/dataModelModel.ts'; foreach($m in 'fieldId','version','lifecycle','storageRole','namespace'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/datamodel/dataModelModel.ts client/src/lib/skills/datamodel/dataModelSkill.ts client/src/lib/skills/datamodel/dataModelSkill.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-ssot-gate-113",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-ssot-gate-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/datamodel/dataModelSkill.ts'; foreach($m in 'DM_FIELD_VERSION_MISMATCH','DM_FIELD_DEPRECATED','DM_FIELD_REMOVED','DM_OLAP_NOT_SSOT'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts --reporter=dot",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/datamodel/dataModelSkill.ts client/src/lib/skills/datamodel/dataModelSkill.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-ssot-project-resolve-113",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-ssot-project-resolve-113.md",
+      "gates": [
+        "$p='client/src/lib/skills/datamodel/dataModelSkill.ts'; foreach($m in 'refNodeId','field','lifecycle','version'){ if(-not (Select-String -LiteralPath $p -Pattern $m -SimpleMatch -Quiet)){ throw ('missing '+$m+' in '+$p) } }",
+        "pnpm exec vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/orchestrator.test.ts --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false",
+        "node agent-loop/src/check-mojibake.js {{taskFile}} client/src/lib/skills/datamodel/dataModelSkill.ts client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/orchestrator.test.ts"
+      ],
+      "enabled": true,
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-field-version-model-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-field-version-model-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-field-deprecation-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-field-deprecation-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-relation-cardinality-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-relation-cardinality-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-migration-plan-gate-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-migration-plan-gate-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-dataset-binding-model-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-dataset-binding-model-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-sensitive-field-policy-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-sensitive-field-policy-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-pdp-delegation-policy-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-pdp-delegation-policy-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-ssot-resolve-surface-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-ssot-resolve-surface-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-impact-graph-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-impact-graph-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    },
+    {
+      "id": "sliderule-v2-datamodel-projector-v2-115",
+      "task": "agent-loop/tasks/sliderule-v2-datamodel-projector-v2-115.md",
+      "enabled": true,
+      "gates": [
+        "node agent-loop/src/check-mojibake.js {{taskFile}}",
+        "pnpm exec vitest run client/src/lib/skills --reporter=dot",
+        "pnpm exec tsc --noEmit --pretty false"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 16,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "grok",
+      "reviewModel": "grok-build",
+      "skipReview": false,
+      "scopedReview": true
+    }
+  ]
+}
