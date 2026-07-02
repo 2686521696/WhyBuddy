@@ -1,8 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+const OUTCOMES_LOCK_TIMEOUT_MS = 120000;
+const OUTCOMES_STALE_LOCK_MS = 300000;
+
 export function queueOutcomesPath(repoRoot) {
   return path.join(repoRoot, '.agent-loop', 'queue-outcomes.json');
+}
+
+function queueOutcomesLockPath(repoRoot) {
+  return path.join(repoRoot, '.agent-loop', 'queue-outcomes.lock');
 }
 
 export async function readQueueOutcomes(repoRoot) {
@@ -19,7 +26,53 @@ export async function readQueueOutcomes(repoRoot) {
 export async function writeQueueOutcomes(repoRoot, data) {
   const filePath = queueOutcomesPath(repoRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  await fs.rename(tmpPath, filePath);
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquireQueueOutcomesLock(repoRoot, {
+  timeoutMs = OUTCOMES_LOCK_TIMEOUT_MS,
+  staleMs = OUTCOMES_STALE_LOCK_MS,
+} = {}) {
+  const lockPath = queueOutcomesLockPath(repoRoot);
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      await fs.mkdir(lockPath);
+      await fs.writeFile(
+        path.join(lockPath, 'owner.json'),
+        `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }, null, 2)}\n`,
+        'utf8',
+      );
+      return async () => {
+        await fs.rm(lockPath, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+
+      try {
+        const stat = await fs.stat(lockPath);
+        if (Date.now() - stat.mtimeMs > staleMs) {
+          await fs.rm(lockPath, { recursive: true, force: true });
+          continue;
+        }
+      } catch (statError) {
+        if (statError.code !== 'ENOENT') throw statError;
+      }
+
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`timed out waiting for queue outcomes lock: ${lockPath}`);
+      }
+      await sleep(100 + Math.floor(Math.random() * 150));
+    }
+  }
 }
 
 export function shouldSkipAutoDisabledTask({ entry, outcomes, maxConsecutiveNoChanges = 3 }) {
@@ -107,23 +160,28 @@ export async function recordQueueTaskOutcome({
   autoDisableOnNoChanges = true,
 }) {
   const label = entry.id || entry.task;
-  const outcomes = await readQueueOutcomes(repoRoot);
-  outcomes.tasks ||= {};
-  outcomes.tasks[label] = updateQueueOutcomeRecord({
-    record: outcomes.tasks[label],
-    status: summary.status,
-    outcome: summary.outcome,
-    runId: summary.runId,
-    applyStatus: summary.applyStatus,
-    applyErrorKind: summary.applyErrorKind,
-    applyErrorFiles: summary.applyErrorFiles,
-    applyError: summary.applyError,
-    rescuePatchAvailable: summary.rescuePatchAvailable,
-    diffBytes: summary.diffBytes,
-    queuePauseReason: summary.queuePauseReason,
-    maxConsecutiveNoChanges,
-    autoDisableOnNoChanges,
-  });
-  await writeQueueOutcomes(repoRoot, outcomes);
-  return outcomes.tasks[label];
+  const releaseLock = await acquireQueueOutcomesLock(repoRoot);
+  try {
+    const outcomes = await readQueueOutcomes(repoRoot);
+    outcomes.tasks ||= {};
+    outcomes.tasks[label] = updateQueueOutcomeRecord({
+      record: outcomes.tasks[label],
+      status: summary.status,
+      outcome: summary.outcome,
+      runId: summary.runId,
+      applyStatus: summary.applyStatus,
+      applyErrorKind: summary.applyErrorKind,
+      applyErrorFiles: summary.applyErrorFiles,
+      applyError: summary.applyError,
+      rescuePatchAvailable: summary.rescuePatchAvailable,
+      diffBytes: summary.diffBytes,
+      queuePauseReason: summary.queuePauseReason,
+      maxConsecutiveNoChanges,
+      autoDisableOnNoChanges,
+    });
+    await writeQueueOutcomes(repoRoot, outcomes);
+    return outcomes.tasks[label];
+  } finally {
+    await releaseLock();
+  }
 }

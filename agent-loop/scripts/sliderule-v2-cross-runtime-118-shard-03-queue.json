@@ -15,7 +15,7 @@
     "workerMaxRetries": 1,
     "grokMaxTurns": 512,
     "grokMaxRetries": 1,
-    "reviewMaxTurns": 0,
+    "reviewMaxTurns": 1,
     "guardTests": false,
     "maxIterations": 16,
     "agentIdleTimeoutMs": 1200000,
