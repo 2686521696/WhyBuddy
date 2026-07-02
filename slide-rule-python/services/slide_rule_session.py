@@ -11,6 +11,17 @@ from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
 from .persistence import delete_session_record, load_all, load_session_record, save_all, save_session_record
 from .slide_rule_coverage import evaluate_coverage_gate
+from .slide_rule_interactive_gates import (
+    open_human_question_gap_count,
+    user_clears_readiness,
+    evaluate_interactive_gate_after_commit,
+    apply_resolve_and_clear_readiness,
+    apply_route_selection_resolution,
+    user_picks_route,
+    user_rejects_route_selection,
+    gaps_from_gap_ask_content,
+    merge_gap_ask_into_state,
+)
 
 _sessions: Dict[str, V5SessionState] = {}
 
@@ -86,6 +97,12 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
     )
     # Immediate persist after start emit: makes orchestrating visible to GET /sessions poll BEFORE any cap exec (addresses review: no mid-save -> frozen)
     state = save_session(state)
+    # G_READY resolution: on user turn intake, resolve open_question gaps from answer text and clear await if cleared.
+    # This is the userClearsReadiness + resolveReadinessGaps path (PYTHON_AUTHORITY).
+    state = apply_resolve_and_clear_readiness(state, user_text or "")
+    # G_CONFIRM + route selection/reject (PYTHON_AUTHORITY): user pick clears confirm await; reject stales route artifacts and clears (enables re-compare without re-park).
+    # Named behaviors (userPicksRoute/userRejectsRouteSelection + state writes) now in Python; no Node fallback.
+    state = apply_route_selection_resolution(state, user_text or "")
     try:
         plan_result = orchestrate_plan(state, turn_id, user_text)
         # PYTHON_AUTHORITY pick: explicitly invoke pick_next_capabilities; use its result directly.
@@ -151,6 +168,29 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
                 )
                 # Persist complete immediately so poll sees cap done before next or drive return
                 state = save_session(state)
+
+                # G_READY / interactive gate materialization + park (after clarification caps):
+                # gap.ask/intent.clarify content -> open_question gaps; then evaluate gate; if park set awaiting+ready and break.
+                # Prevents continuing execution past G_READY (no LLM self-answer). User answer will resolve on next drive.
+                if cap_id in ("gap.ask", "intent.clarify", "question.expand"):
+                    try:
+                        content = getattr(exec_result, "content", "") or ""
+                        gfs = gaps_from_gap_ask_content(content, turn_id, art_id)
+                        if gfs:
+                            merge_gap_ask_into_state(state, gfs)
+                    except Exception:
+                        pass
+                ig = evaluate_interactive_gate_after_commit(state, {"capabilityId": cap_id, "turnUserText": user_text or "", "committed": True})
+                if ig.get("park"):
+                    state.runtimePhase = "awaiting"
+                    state.awaitReason = ig.get("gate") or "ready"
+                    state.awaitDetail = ig.get("detail", "readiness gate parked for human answer")
+                    append_reasoning_event(
+                        state, turnId=turn_id, capabilityRunId=f"phase-{turn_id}", capabilityId="driver", kind="think",
+                        text=f"phase_changed: awaiting ({state.awaitReason}) via G_READY gate", order=9
+                    )
+                    state = save_session(state)
+                    return save_session(state)  # direct early return after G_READY park; skips all subsequent phase decision (prevents awaitReason overwrite to user_input)
             except Exception as cap_exc:
                 # Record per-capability error run; preserve prior state (append); do not whole-fail here
                 dur = int((_time.time() - t0) * 1000)
@@ -177,6 +217,17 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str) ->
         # Phase decision: coverage or no more selected -> done or awaiting
         # rely on picks (from pick_next_capabilities) to reflect full fallback/selection rules.
         # Empty picks == converge (no legacy plan fallback).
+        # G_READY post-turn: if human questions remain, park ready (authoritative, not user_input).
+        # Short-circuit BEFORE coverage/picks decision to prevent else branch overwriting awaitReason to "user_input".
+        # This ensures Python-owned G_READY park is preserved (no self-answer past readiness gate).
+        if open_human_question_gap_count(state) > 0 and not user_clears_readiness(user_text or "", state):
+            state.runtimePhase = "awaiting"
+            state.awaitReason = "ready"
+            state.awaitDetail = f"{open_human_question_gap_count(state)} open human question(s) after turn; awaiting clarification"
+            append_reasoning_event(state, turnId=turn_id, capabilityRunId=f"phase-{turn_id}", capabilityId="driver", kind="think", text="phase_changed: awaiting (ready) G_READY", order=10)
+            state = save_session(state)
+            final = save_session(state)
+            return final
         gate = evaluate_coverage_gate(state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
             state.runtimePhase = "done"
@@ -443,7 +494,7 @@ def _pick_brainstorm_primers(state: V5SessionState) -> list:
 
 def _pick_readiness_chain(state: V5SessionState) -> list:
     picks = []
-    oq = len(getattr(state, "openQuestions", []) or [])
+    oq = open_human_question_gap_count(state) or len(getattr(state, "openQuestions", []) or [])
     if oq > 0 or not (getattr(state, "artifacts", []) or []):
         if {"capabilityId": "gap.ask", "roleId": "产品"} not in picks:
             picks.append({"capabilityId": "gap.ask", "roleId": "产品"})
@@ -454,7 +505,7 @@ def _pick_readiness_chain(state: V5SessionState) -> list:
 
 
 def _needs_readiness_chain(state: V5SessionState, user_text: str) -> bool:
-    oq = len(getattr(state, "openQuestions", []) or [])
+    oq = open_human_question_gap_count(state) or len(getattr(state, "openQuestions", []) or [])
     arts = len(getattr(state, "artifacts", []) or [])
     ut = (user_text or "").lower()
     if oq > 0:
@@ -487,7 +538,7 @@ def pick_next_capabilities(state: V5SessionState, user_text: str) -> list[dict]:
     cap_runs = getattr(state, "capabilityRuns", []) or []
     recent_runs = [(r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")) for r in cap_runs[-6:]]
     recent_ledger = [(r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")) for r in cap_runs[-4:]]
-    open_q_count = len(getattr(state, "openQuestions", []) or [])
+    open_q_count = open_human_question_gap_count(state) or len(getattr(state, "openQuestions", []) or [])
     ungrounded = _recent_ungrounded_attempts_py(state, 3)
     session_grounded = _has_grounded_external_evidence_py(state)
     should_skip_ev = (not session_grounded and ungrounded >= 2)

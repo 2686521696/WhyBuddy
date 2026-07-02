@@ -48,16 +48,20 @@ def test_drive_reasoning_turn_sets_orchestrating_then_awaiting_or_done():
     importlib.reload(orch_mod)
     from services.slide_rule_session import drive_reasoning_turn as _reloaded_drive
     orig_orch = sess_mod.__dict__.get("orchestrate_plan")
+    orig_pick = sess_mod.__dict__.get("pick_next_capabilities")
     orig_gate = sess_mod.__dict__.get("evaluate_coverage_gate")
     orig_save = sess_mod.__dict__.get("save_session")
     # override both the orch module and the sess bound name
     orch_mod.orchestrate_plan = lambda s, t, u: DummyPlan()
     sess_mod.__dict__["orchestrate_plan"] = orch_mod.orchestrate_plan
+    sess_mod.__dict__["pick_next_capabilities"] = lambda s, u: []
     sess_mod.__dict__["evaluate_coverage_gate"] = lambda s: {"passed": False}
     # avoid save side effects / possible model_dump variance in test env; just return mutated state (phase already set)
     sess_mod.__dict__["save_session"] = lambda st: st
     if "orchestrate_plan" in _reloaded_drive.__globals__:
         _reloaded_drive.__globals__["orchestrate_plan"] = sess_mod.__dict__["orchestrate_plan"]
+    if "pick_next_capabilities" in _reloaded_drive.__globals__:
+        _reloaded_drive.__globals__["pick_next_capabilities"] = sess_mod.__dict__["pick_next_capabilities"]
     if "evaluate_coverage_gate" in _reloaded_drive.__globals__:
         _reloaded_drive.__globals__["evaluate_coverage_gate"] = sess_mod.__dict__["evaluate_coverage_gate"]
     if "save_session" in _reloaded_drive.__globals__:
@@ -66,6 +70,7 @@ def test_drive_reasoning_turn_sets_orchestrating_then_awaiting_or_done():
         out = _reloaded_drive(state, "t1", "user input")
     finally:
         if orig_orch is not None: sess_mod.__dict__["orchestrate_plan"] = orig_orch
+        if orig_pick is not None: sess_mod.__dict__["pick_next_capabilities"] = orig_pick
         if orig_gate is not None: sess_mod.__dict__["evaluate_coverage_gate"] = orig_gate
         if orig_save is not None: sess_mod.__dict__["save_session"] = orig_save
     # orchestrating was transient; ends in awaiting or done based on gate
