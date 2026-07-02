@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
+from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session
 from services.slide_rule_orchestrator import orchestrate_plan
 from services.v5_capability_executor import execute_v5_capability
@@ -499,6 +500,38 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     user_text = payload.get("userText", "") or payload.get("user_text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+
+@router.post("/drive-marathon")
+async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """Python-owned marathon/budget route.
+
+    This is the production wiring point for BudgetMarathon: frontend/Node callers consume
+    the Python decision instead of owning maxTurns/maxRuns/maxRepeat/maxTokens locally.
+    """
+    _auth(x_internal_key)
+    state = V5SessionState(**payload["state"])
+    seed_text = payload.get("seedText") or payload.get("seed_text") or payload.get("userText") or ""
+    budget = payload.get("budget") or {}
+    policy = payload.get("policy") or None
+    max_rounds = int(payload.get("maxRounds") or payload.get("max_rounds") or 8)
+    result = drive_marathon(
+        state,
+        seed_text,
+        budget=budget,
+        policy=policy,
+        max_rounds=max_rounds,
+        drive_step=drive_reasoning_turn,
+    )
+    final_state = result.get("finalState")
+    return {
+        "state": final_state.model_dump() if hasattr(final_state, "model_dump") else final_state,
+        "rounds": result.get("rounds") or [],
+        "stopReason": result.get("stopReason"),
+        "stateAuthority": STATE_AUTHORITY_PYTHON,
+        "provenance": PROVENANCE_PYTHON_FULLPATH,
+        "backend": PYTHON_BACKEND,
+        "budgetAuthority": "python",
+    }
 
 # GCOV endpoint
 @router.post("/coverage")

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/sliderule-runtime";
 import { deriveStatusBarFacts } from "../derive-status-bar";
 
@@ -127,6 +127,37 @@ it("M2.1: marathon driver skeleton with 3-round mock chain (auto-seed, exhausted
   expect(res.rounds.length).toBeGreaterThan(0);
   expect(res.stopReason).toBeDefined(); // frontier or other in stub
   // 真实 mock frontier 会在下波；当前 skeleton 覆盖接口
+});
+
+it("BudgetMarathon: driveMarathon first consumes Python authority endpoint", async () => {
+  const { driveMarathon } = await import("@/lib/sliderule-marathon-driver");
+  const controller = new AbortController();
+  const state = createInitialSessionState("python marathon route");
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      backend: "python",
+      budgetAuthority: "python",
+      state: { ...state, runtimePhase: "awaiting", awaitReason: "budget" },
+      rounds: [{ loopTurnId: "py-1", stopReason: "session_budget_exhausted" }],
+      stopReason: "session_budget_exhausted",
+    }),
+  } as any);
+  try {
+    const res = await driveMarathon(state, "seed-python", {
+      stopSignal: controller.signal,
+      budget: { maxTokens: 1000, declaredAt: new Date().toISOString() },
+      policy: {},
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/sliderule/drive-marathon",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(res.stopReason).toBe("session_budget_exhausted");
+    expect((res.finalState as any).awaitReason).toBe("budget");
+  } finally {
+    fetchSpy.mockRestore();
+  }
 });
 
 /** M3/M5/M6 探索测试：driver de-dupe (M3), budget exhausted (M5), superseded (M6). */

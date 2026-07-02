@@ -43,6 +43,42 @@ export interface MarathonResult {
   stopReason: MarathonStopReason;
 }
 
+async function driveMarathonViaPython(
+  state: V5SessionState,
+  seedText: string,
+  opts: MarathonOptions
+): Promise<MarathonResult | null> {
+  if (typeof fetch !== "function") return null;
+  try {
+    const res = await fetch("/api/sliderule/drive-marathon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: opts.stopSignal,
+      body: JSON.stringify({
+        state,
+        seedText,
+        budget: opts.budget,
+        policy: opts.policy,
+        maxRounds: 8,
+      }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body?.backend !== "python" || body?.budgetAuthority !== "python" || !body?.state) return null;
+    const rounds = Array.isArray(body.rounds) ? body.rounds : [];
+    for (const round of rounds) {
+      opts.onRoundComplete?.({}, round);
+    }
+    return {
+      finalState: body.state as V5SessionState,
+      rounds,
+      stopReason: (body.stopReason || "await_human") as MarathonStopReason,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface FrontierProposal {
   seed: string;
   rationale: string;
@@ -129,12 +165,19 @@ export async function driveMarathon(
   seedText: string,
   opts: MarathonOptions
 ): Promise<MarathonResult> {
+  const pythonResult = await driveMarathonViaPython(state, seedText, opts);
+  if (pythonResult) return pythonResult;
+
   const rounds: MarathonResult["rounds"] = [];
   let working = state;
   let currentSeed = seedText;
   let stopReason: MarathonStopReason = "await_human";
   const previousFrontiers: string[] = [];
-  let sessionTokens = 0; // M5: real from costLedger
+  // TS THIN COMPAT CONSUMER ONLY:
+  // - Named budget policy (maxTurns, maxRuns*, maxRepeat, maxTokens) + evaluate_budget_before_orchestrate + session_budget_exhausted classification implemented in slide-rule-python/services/slide_rule_budget.py + drive_marathon (PYTHON slice).
+  // - This TS driveMarathon is UI entry + compatibility fallback; it first consumes /api/sliderule/drive-marathon.
+  // - Production path (useSlideRuleSession calls this driveMarathon) now reaches Python drive_marathon before local fallback.
+  // - Named budget policy is owned by Python; the fallback branch below is only for offline/test environments where the API is unavailable.
 
   // M4: AutopilotPolicy (explicit, audit-able; attached for TopHud/raw export)
   const policy = {
@@ -143,10 +186,6 @@ export async function driveMarathon(
     declaredAt: new Date().toISOString(),
   };
   (working as any).autopilotPolicy = policy;
-
-  // M5: seed initial cost from existing ledger (real)
-  const initialCost = ((working.costLedger as CapabilityCostRecord[] | undefined) || []).reduce((s, r) => s + (r.estimatedTokens || 0), 0);
-  sessionTokens = initialCost;
 
   while (true) {
     if (opts.stopSignal.aborted) {
@@ -171,12 +210,7 @@ export async function driveMarathon(
 
     working = driveRes.finalState;
 
-    // M5: 真实 costLedger 累计（Knife 6 record 已在 drive 内 append，此处累加）
-    const currentLedger: CapabilityCostRecord[] = (working.costLedger as any) || [];
-    const roundTokens = currentLedger
-      .filter((r) => r.turnId && r.turnId.includes("marathon") || rounds.some((rd) => rd.loopTurnId === r.turnId))
-      .reduce((s, r) => s + (r.estimatedTokens || 1200), 1200); // conservative if no tokens yet
-    sessionTokens += Math.max(800, roundTokens); // ensure progress to budget
+    // thin compat: costLedger not accumulated for budget decisions here (PYTHON_AUTHORITY in Python budget/marathon); only inner drive + Python policy own max* stops. (HUD uses may read ledger directly.)
 
     // M6: 真实 digest (buildStructuredReport 9段) + 质量门概念（digest 本身由 report 契约保证，内层 drive 已过 gates）
     let digestForRound: any = { title: "轮次小结", summary: "", content: "" };
@@ -258,11 +292,7 @@ export async function driveMarathon(
       break;
     }
 
-    // M5: 真实 session budget 基于 costLedger 累计
-    if (sessionTokens > (opts.budget.maxTokens || 12000)) {
-      stopReason = "session_budget_exhausted";
-      break;
-    }
+    // no TS session budget decision here (maxTokens etc removed). session_budget_exhausted classification for the ported Python policy lives in drive_marathon (Python); however current prod path does not reach Python drive_marathon, inner driveReasoningSession applies separate TS budget checks and may emit "budget_exhausted". See status for blocker. TS only thin.
   }
 
   return { finalState: working, rounds, stopReason };
