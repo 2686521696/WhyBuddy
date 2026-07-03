@@ -974,13 +974,60 @@ function classifyAppBundleRuntimeClosureFindings(
   return { findingsByTier, classifiedFindings };
 }
 
+const DM_RBAC_POLICY_IMPACT_EVIDENCE_KEY = "DM_RBAC_POLICY_IMPACT_EVIDENCE";
+const DM_PAGE_BINDING_IMPACT_EVIDENCE_KEY = "DM_PAGE_BINDING_IMPACT_EVIDENCE";
+const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY = "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
+const RBAC_PDP_EXPLAIN_EVIDENCE_KEY = "RBAC_PDP_EXPLAIN_EVIDENCE";
+
+function collectPositiveRuntimeEvidenceKeys(value: unknown, keys = new Set<string>()): Set<string> {
+  if (!value || typeof value !== "object") return keys;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectPositiveRuntimeEvidenceKeys(item, keys));
+    return keys;
+  }
+
+  const record = value as Record<string, unknown>;
+  const evidenceKey = typeof record.evidenceKey === "string" ? record.evidenceKey : undefined;
+  if (evidenceKey) {
+    const state = typeof record.state === "string" ? record.state.toLowerCase() : "";
+    const reasonCode = typeof record.reasonCode === "string" ? record.reasonCode.toLowerCase() : "";
+    const hasPositiveEvidence = record.hasPositiveEvidence;
+    const allow = record.allow;
+    const isExplicitNegative =
+      state === "blocked" ||
+      state === "denied" ||
+      evidenceKey.toLowerCase().includes("fail-closed") ||
+      reasonCode.includes("fail_closed") ||
+      hasPositiveEvidence === false ||
+      allow === false;
+    if (!isExplicitNegative) {
+      keys.add(evidenceKey);
+    }
+  }
+
+  Object.values(record).forEach((item) => collectPositiveRuntimeEvidenceKeys(item, keys));
+  return keys;
+}
+
+function hasEvidenceKey(keys: Set<string>, expected: string): boolean {
+  for (const key of keys) {
+    if (key === expected || key.startsWith(`${expected}:`)) return true;
+  }
+  return false;
+}
+
 function hasRuntimeEvidenceFields(m: any, skillId: string): { policy: boolean; bindings: boolean; taskView: boolean; aigcPolicy: boolean; present: boolean } {
   if (!m || typeof m !== "object") return { policy: false, bindings: false, taskView: false, aigcPolicy: false, present: false };
   const keys = Object.keys(m);
   const kset = new Set(keys.map((k: string) => k.toLowerCase()));
-  const hasPolicy = kset.has("pep") || kset.has("actorroleref") || kset.has("policycheckrefs") || kset.has("failclosed") || kset.has("permissions") || kset.has("roles") || kset.has("dualcontrolpolicies") || kset.has("datarules") || kset.has("policydefinitions") || !!m.publishManifest || !!m.runtimeSnapshot || !!m.releaseArtifact || !!m.publishGateEvidence;
-  const hasBindings = kset.has("entities") || kset.has("entityrefs") || kset.has("fieldrefs") || kset.has("relations") || kset.has("components") || kset.has("bindings");
-  const hasTaskView = kset.has("components") || kset.has("published") || kset.has("pageversion") || kset.has("snapshotrefs") || kset.has("pagebindings") || kset.has("workflowrefs") || kset.has("menuentries") || kset.has("tasks");
+  const evidenceKeys = collectPositiveRuntimeEvidenceKeys(m);
+  const hasDataModelRbacImpact = hasEvidenceKey(evidenceKeys, DM_RBAC_POLICY_IMPACT_EVIDENCE_KEY);
+  const hasDataModelPageImpact = hasEvidenceKey(evidenceKeys, DM_PAGE_BINDING_IMPACT_EVIDENCE_KEY);
+  const hasDataModelWorkflowImpact = hasEvidenceKey(evidenceKeys, DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY);
+  const hasRbacPdpExplain = hasEvidenceKey(evidenceKeys, RBAC_PDP_EXPLAIN_EVIDENCE_KEY);
+  const hasPolicy = kset.has("pep") || kset.has("actorroleref") || kset.has("policycheckrefs") || kset.has("failclosed") || kset.has("permissions") || kset.has("roles") || kset.has("dualcontrolpolicies") || kset.has("datarules") || kset.has("policydefinitions") || !!m.publishManifest || !!m.runtimeSnapshot || !!m.releaseArtifact || !!m.publishGateEvidence || hasDataModelRbacImpact || hasRbacPdpExplain;
+  const hasBindings = kset.has("entities") || kset.has("entityrefs") || kset.has("fieldrefs") || kset.has("relations") || kset.has("components") || kset.has("bindings") || hasDataModelRbacImpact || hasDataModelPageImpact || hasDataModelWorkflowImpact;
+  const hasTaskView = kset.has("components") || kset.has("published") || kset.has("pageversion") || kset.has("snapshotrefs") || kset.has("pagebindings") || kset.has("workflowrefs") || kset.has("menuentries") || kset.has("tasks") || hasDataModelPageImpact || hasDataModelWorkflowImpact;
   const hasAigcPolicy = kset.has("capabilities") || kset.has("outputschemas") || kset.has("retrievalpolicies") || kset.has("citationpolicies") || kset.has("prompttemplates") || kset.has("aigccapabilityrefs") || kset.has("pep");
   const present = hasPolicy || hasBindings || hasTaskView || hasAigcPolicy || (skillId === "appbundle" && (kset.has("versionpins") || kset.has("runtimesnapshot")));
   return { policy: hasPolicy, bindings: hasBindings, taskView: hasTaskView, aigcPolicy: hasAigcPolicy, present };

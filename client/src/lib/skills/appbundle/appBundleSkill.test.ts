@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { aigcSkill, purchaseRiskAigcModel } from "../aigc/aigcSkill";
-import { dataModelSkill, leaveRequestDataModel } from "../datamodel/dataModelSkill";
+import {
+  dataModelSkill,
+  DM_PAGE_BINDING_IMPACT_EVIDENCE,
+  DM_RBAC_POLICY_IMPACT_EVIDENCE,
+  DM_WORKFLOW_BINDING_IMPACT_EVIDENCE,
+  leaveRequestDataModel,
+} from "../datamodel/dataModelSkill";
 import { leaveApprovalPage, pageSkill, purchaseApprovalPage } from "../page/pageSkill";
-import { leaveApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
+import { leaveApprovalRbac, RBAC_PDP_EXPLAIN_EVIDENCE, rbacSkill } from "../rbac/rbacSkill";
 import { leaveApprovalWorkflow, workflowSkill } from "../workflow/workflowSkill";
 import {
   APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH,
@@ -748,6 +754,31 @@ describe("appBundleSkill - runtime closure (117)", () => {
     if (report.perSkillEvidence.aigc) {
       expect(report.perSkillEvidence.aigc.evidencePresent).toBe(false);
     }
+  });
+
+  it("accepts DataModel and RBAC runtime evidence keys as closure-positive evidence", () => {
+    const models = {
+      ...buildPurchaseModels(),
+      datamodel: {
+        evidence: [
+          { evidenceKey: DM_RBAC_POLICY_IMPACT_EVIDENCE, state: "allowed", hasPositiveEvidence: true },
+          { evidenceKey: DM_PAGE_BINDING_IMPACT_EVIDENCE, state: "allowed", hasPositiveEvidence: true },
+          { evidenceKey: DM_WORKFLOW_BINDING_IMPACT_EVIDENCE, state: "allowed", hasPositiveEvidence: true },
+        ],
+      },
+      rbac: {
+        evidenceKey: `${RBAC_PDP_EXPLAIN_EVIDENCE}:allow`,
+        allow: true,
+        denyPrecedence: false,
+      },
+    };
+
+    const report = evaluateAppBundleRuntimeClosure(models);
+
+    expect(report.blocked).toBe(false);
+    expect(report.perSkillEvidence.datamodel?.dataModelBindings).toBe(true);
+    expect(report.perSkillEvidence.rbac?.runtimePolicyEvidence).toBe(true);
+    expect(report.perSkillEvidence.rbac?.rbacPdpDecisions).toBe(true);
   });
 
   it("blocks runtime closure on missing AIGC runtime evidence for purchase (negative fail-closed)", () => {
