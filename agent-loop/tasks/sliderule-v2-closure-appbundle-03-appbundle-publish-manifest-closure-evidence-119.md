@@ -1,7 +1,7 @@
 # sliderule-v2-closure-appbundle-03-appbundle-publish-manifest-closure-evidence-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: appbundle
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -74,4 +74,11 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
   - npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts
   - npx vitest run client/src/lib/skills/orchestrator.test.ts
 - How advances: wires the missing publish manifest attachment inside AppBundle publishGate (the publish/runtime closure aggregator), so the manifest surface now exposes the closure evidence digest; fixtures and focused tests cover both positive evidence and fail-closed negative; UI path now touches the manifest digest surface. Preserves all prior semantics, deterministic pure TS helpers, no weakening of gates.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the AppBundle runtime closure batch. `attachClosureEvidenceDigestToPublishManifest` attaches stable closure digest evidence without weakening manifest validation.
+
+Validation:
+- `npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 2 files / 113 tests passed.
 - Addresses review: executable impl + schema + fixture + adapter + tests + final report now present; no more "only task md" evidence.
