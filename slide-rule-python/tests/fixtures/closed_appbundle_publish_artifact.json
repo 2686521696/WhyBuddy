@@ -1,0 +1,88 @@
+{
+  "id": "closed-appbundle-publish-artifact-120",
+  "appId": "app_purchase_approval",
+  "appVersion": "1.0.0",
+  "traceId": "trace-closed-120",
+  "publishGateEvidence": {
+    "status": "passed",
+    "passedAt": "2026-07-04T00:00:00.000Z",
+    "evidenceSummary": "closed positive path with full per-skill evidence"
+  },
+  "runtimeClosureSummary": {
+    "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+    "closureHash": "feedface",
+    "generatedAt": "2026-07-04T00:00:00.000Z",
+    "stableDigest": "deadbeef120",
+    "blocked": false,
+    "blockerCount": 0,
+    "evidencePresentCount": 6,
+    "skillCount": 6
+  },
+  "manifest": {
+    "appId": "app_purchase_approval",
+    "appVersion": "1.0.0",
+    "createdAt": "2026-07-04T00:00:00.000Z",
+    "gateStatus": "passed",
+    "closureEvidenceDigest": "deadbeef120"
+  },
+  "runtimeClosure": {
+    "skillsChecked": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+    "versionPinsChecked": true,
+    "perSkill": {}
+  },
+  "perSkillEvidence": {
+    "datamodel": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:datamodel:closed-120",
+      "evidenceId": "dm-evid-120",
+      "artifactId": "artifact-datamodel-closed-120",
+      "path": "skills/datamodel/closure-evidence.json",
+      "digest": "deadbeef120"
+    },
+    "rbac": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:rbac:closed-120",
+      "evidenceId": "rbac-evid-120",
+      "artifactId": "artifact-rbac-closed-120",
+      "path": "skills/rbac/closure-evidence.json",
+      "digest": "deadbeef120"
+    },
+    "workflow": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:workflow:closed-120",
+      "evidenceId": "wf-evid-120",
+      "artifactId": "artifact-workflow-closed-120",
+      "path": "skills/workflow/closure-evidence.json",
+      "digest": "deadbeef120"
+    },
+    "page": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:page:closed-120",
+      "evidenceId": "page-evid-120",
+      "artifactId": "artifact-page-closed-120",
+      "path": "skills/page/closure-evidence.json",
+      "digest": "deadbeef120"
+    },
+    "aigc": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:aigc:closed-120",
+      "evidenceId": "aigc-evid-120",
+      "artifactId": "artifact-aigc-closed-120",
+      "path": "skills/aigc/closure-evidence.json",
+      "digest": "deadbeef120"
+    },
+    "appbundle": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:appbundle:closed-120",
+      "evidenceId": "appb-evid-120",
+      "artifactId": "artifact-appbundle-closed-120",
+      "path": "skills/appbundle/closure-evidence.json",
+      "digest": "deadbeef120"
+    }
+  },
+  "findingsByTier": {
+    "hard_blocker": [],
+    "warning": [],
+    "info": []
+  }
+}

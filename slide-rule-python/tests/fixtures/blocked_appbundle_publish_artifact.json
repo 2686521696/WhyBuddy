@@ -1,0 +1,62 @@
+{
+  "id": "blocked-appbundle-publish-artifact-120",
+  "appId": "app_purchase_approval",
+  "appVersion": "1.0.0",
+  "traceId": "trace-blocked-120",
+  "publishGateEvidence": {
+    "status": "failed",
+    "passedAt": null,
+    "evidenceSummary": "fail-closed due to missing evidence for aigc"
+  },
+  "runtimeClosureSummary": {
+    "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+    "closureHash": "badbad01",
+    "generatedAt": "2026-07-04T00:00:00.000Z",
+    "stableDigest": "badc0ded120",
+    "blocked": true,
+    "blockerCount": 1,
+    "evidencePresentCount": 1,
+    "skillCount": 2
+  },
+  "manifest": {
+    "appId": "app_purchase_approval",
+    "appVersion": "1.0.0",
+    "createdAt": "2026-07-04T00:00:00.000Z",
+    "gateStatus": "failed",
+    "closureEvidenceDigest": "badc0ded120"
+  },
+  "runtimeClosure": {
+    "skillsChecked": ["aigc", "appbundle"],
+    "versionPinsChecked": true,
+    "perSkill": {}
+  },
+  "perSkillEvidence": {
+    "aigc": {
+      "evidencePresent": false,
+      "evidenceRef": "evidence:aigc:blocked-120",
+      "evidenceId": "aigc-evid-120",
+      "artifactId": null,
+      "path": "skills/aigc/closure-evidence.json",
+      "digest": null,
+      "blocker": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"
+    },
+    "appbundle": {
+      "evidencePresent": true,
+      "evidenceRef": "evidence:appbundle:blocked-120",
+      "evidenceId": "appb-evid-120",
+      "artifactId": "artifact-appbundle-blocked-120",
+      "path": "skills/appbundle/closure-evidence.json",
+      "digest": "badc0ded120"
+    }
+  },
+  "findingsByTier": {
+    "hard_blocker": [
+      {
+        "code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+        "path": "aigc"
+      }
+    ],
+    "warning": [],
+    "info": []
+  }
+}

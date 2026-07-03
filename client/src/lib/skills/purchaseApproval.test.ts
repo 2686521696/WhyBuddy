@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { deriveApplication, slideRule } from "./slideRule";
 import { evaluateAppBundleRuntimeClosure, purchaseApprovalAppBundle } from "./appbundle/appBundleSkill";
@@ -185,5 +188,40 @@ describe("purchase approval E2E scenario", () => {
     expect(report.perSkillEvidence.appbundle?.versionPin?.pinned).toBe(true);
     expect(report.findingsByTier?.hard_blocker ?? []).toHaveLength(0);
     expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
+  });
+
+  it("loads real AppBundle publish artifacts for inspect hash rollback and block evidence", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
+    );
+    const blocked = JSON.parse(
+      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    expect(closed.appId).toBe("app_purchase_approval");
+    expect(closed.appVersion).toBe("1.0.0");
+    expect(closed.runtimeClosureSummary?.blocked).toBe(false);
+    expect(closed.runtimeClosureSummary?.evidencePresentCount).toBe(6);
+    expect(closed.runtimeClosure?.skillsChecked).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"])
+    );
+    expect(closed.manifest?.closureEvidenceDigest).toBe(
+      closed.runtimeClosureSummary?.stableDigest
+    );
+    expect(closed.perSkillEvidence.datamodel?.evidencePresent).toBe(true);
+    expect(closed.perSkillEvidence.appbundle?.artifactId).toContain("artifact-");
+
+    expect(blocked.appId).toBe("app_purchase_approval");
+    expect(blocked.runtimeClosureSummary?.blocked).toBe(true);
+    expect(blocked.runtimeClosureSummary?.blockerCount).toBeGreaterThan(0);
+    expect(blocked.perSkillEvidence.aigc?.evidencePresent).toBe(false);
+    expect(blocked.findingsByTier?.hard_blocker?.[0]?.code).toBe(
+      "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"
+    );
+    expect(closed.runtimeClosureSummary?.stableDigest).not.toBe(
+      blocked.runtimeClosureSummary?.stableDigest
+    );
   });
 });
