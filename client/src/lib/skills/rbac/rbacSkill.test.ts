@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRbacCrossRuntimeEdges,
   createRbacPageRuntimeEvidence,
+  createRbacPdpExplainEvidence,
   createRbacWorkflowRuntimeEvidence,
   decideRbacPolicy,
   evaluateRbacFieldAccess,
@@ -15,6 +16,7 @@ import {
   rbacSkill,
   RBAC_PAGE_RUNTIME_EVIDENCE,
   RBAC_FIELD_ACCESS_DENIED,
+  RBAC_PDP_EXPLAIN_EVIDENCE,
   RBAC_WORKFLOW_RUNTIME_EVIDENCE,
   RBAC_RUNTIME_SOD_DENIED,
 } from "./rbacSkill";
@@ -1333,5 +1335,75 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
       approverUserIds: ["u_finn", "u_other"],
     });
     expect(pos2.allow).toBe(true);
+  });
+});
+
+describe("rbac PDP explain evidence — closure helper", () => {
+  it("produces deterministic allow explanation evidence for an allowed PDP decision", () => {
+    const evidence = createRbacPdpExplainEvidence(leaveApprovalRbac, {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    });
+
+    expect(evidence.evidenceKey).toBe(`${RBAC_PDP_EXPLAIN_EVIDENCE}:allow`);
+    expect(evidence.allow).toBe(true);
+    expect(evidence.code).toBe("RBAC_DECISION_ALLOW");
+    expect(evidence.source).toBe("rbac-pdp");
+    expect(evidence.matchedPermission).toBe("leave:approve");
+    expect(evidence.expandedRoles).toContain("manager");
+    expect(evidence.explanation).toContain("allow");
+
+    const again = createRbacPdpExplainEvidence(leaveApprovalRbac, {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    });
+    expect(again).toEqual(evidence);
+  });
+
+  it("produces fail-closed explanation evidence for missing runtime context", () => {
+    const evidence = createRbacPdpExplainEvidence(leaveApprovalRbac, {
+      subject: { roleIds: ["employee"] },
+      action: "create",
+      resourceType: "leave_request",
+      tenantId: "",
+      fieldContext: { fields: ["status"] },
+    } as any);
+
+    expect(evidence.evidenceKey).toBe(`${RBAC_PDP_EXPLAIN_EVIDENCE}:fail-closed`);
+    expect(evidence.allow).toBe(false);
+    expect(evidence.code).toBe("RBAC_DECISION_FAIL_CLOSED");
+    expect(evidence.explanation).toContain("fail-closed");
+  });
+
+  it("preserves deny-precedence explanation evidence when an explicit deny rule wins", () => {
+    const model = clone(leaveApprovalRbac);
+    model.policyRules = [
+      {
+        id: "deny_leave_create",
+        effect: "deny",
+        roleId: "employee",
+        resourceType: "leave_request",
+        permissionCode: "leave:create",
+      },
+    ];
+
+    const evidence = createRbacPdpExplainEvidence(model, {
+      subject: { roleIds: ["employee"] },
+      action: "create",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    });
+
+    expect(evidence.allow).toBe(false);
+    expect(evidence.denyPrecedence).toBe(true);
+    expect(evidence.matchedPolicyId).toBe("deny_leave_create");
+    expect(evidence.explanation).toContain("deny-precedence");
   });
 });

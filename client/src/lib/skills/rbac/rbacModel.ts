@@ -147,6 +147,8 @@ export interface PolicyDecision {
   policyId?: string;
   /** 117: matched SoD rule id for RBAC_RUNTIME_SOD_DENIED evidence */
   sodRuleId?: string;
+  /** true when an explicit deny rule wins over otherwise available allow evidence */
+  denyPrecedence?: boolean;
 }
 
 /** 115.10.06: policy effect for explicit allow/deny rules (deny must override allow). */
@@ -207,6 +209,24 @@ export interface RbacModel {
 
 /** 117: pure runtime fail-closed code for evaluateRbacRuntimePolicy missing-inputs and default-deny cases. */
 export const RBAC_RUNTIME_FAIL_CLOSED = "RBAC_RUNTIME_FAIL_CLOSED";
+
+export const RBAC_PDP_EXPLAIN_EVIDENCE = "RBAC_PDP_EXPLAIN_EVIDENCE";
+
+export interface RbacPdpExplainEvidence {
+  evidenceKey: string;
+  allow: boolean;
+  code: string;
+  reason: string;
+  reasonCode?: string;
+  expandedRoles?: string[];
+  matchedPermission?: string;
+  matchedPolicyId?: string;
+  policyVersion?: string;
+  denyPrecedence?: boolean;
+  sodRuleId?: string;
+  source: "rbac-pdp";
+  explanation: string;
+}
 
 /** Pure runtime PDP request (117). Must support subject/user or role refs, action, resourceType, optional resourceId, fieldRef, context scope. */
 export interface RbacRuntimeRequest {

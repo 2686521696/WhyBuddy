@@ -16,11 +16,12 @@ import type {
   PolicyRule,
   RbacFieldAccessLevel,
   RbacModel,
+  RbacPdpExplainEvidence,
   RbacRuntimeDecision,
   RbacRuntimeRequest,
 } from "./rbacModel";
-import { RBAC_RUNTIME_FAIL_CLOSED } from "./rbacModel";
-export { RBAC_RUNTIME_FAIL_CLOSED };
+import { RBAC_PDP_EXPLAIN_EVIDENCE, RBAC_RUNTIME_FAIL_CLOSED } from "./rbacModel";
+export { RBAC_PDP_EXPLAIN_EVIDENCE, RBAC_RUNTIME_FAIL_CLOSED };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -876,6 +877,7 @@ export function decideRbacPolicy(model: RbacModel, request: PolicyContext): Poli
         policyVersion: dr.version,
         policyLifecycleState: dr.lifecycleState,
         policyId: dr.id,
+        denyPrecedence: true,
       });
     }
 
@@ -1095,6 +1097,41 @@ export function evaluateRbacFieldAccess(
     ...decision,
     level: "read" as RbacFieldAccessLevel,
   } as any;
+}
+
+export function createRbacPdpExplainEvidence(
+  model: RbacModel,
+  request: PolicyContext
+): RbacPdpExplainEvidence {
+  const decision = decideRbacPolicy(model, request);
+  const allow = Boolean(decision.allow);
+  const evidenceKey = `${RBAC_PDP_EXPLAIN_EVIDENCE}:${allow ? "allow" : "fail-closed"}`;
+  const explanationParts = [
+    allow ? `allow via ${decision.matchedPermission ?? "permission"}` : "fail-closed",
+    decision.expandedRoles?.length ? `roles=[${decision.expandedRoles.join(",")}]` : "",
+    decision.matchedPermission ? `matched=${decision.matchedPermission}` : "",
+    decision.policyId
+      ? `policy=${decision.policyId}${decision.policyVersion ? `@${decision.policyVersion}` : ""}`
+      : "",
+    decision.denyPrecedence ? "deny-precedence" : "",
+    decision.sodRuleId ? `sod=${decision.sodRuleId}` : "",
+  ].filter(Boolean);
+
+  return {
+    evidenceKey,
+    allow,
+    code: decision.code,
+    reason: decision.reason,
+    reasonCode: decision.reasonCode ?? decision.code,
+    expandedRoles: decision.expandedRoles,
+    matchedPermission: decision.matchedPermission,
+    matchedPolicyId: decision.policyId,
+    policyVersion: decision.policyVersion,
+    denyPrecedence: decision.denyPrecedence,
+    sodRuleId: decision.sodRuleId,
+    source: "rbac-pdp",
+    explanation: `${decision.code}: ${decision.reason} | ${explanationParts.join(" ")}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
