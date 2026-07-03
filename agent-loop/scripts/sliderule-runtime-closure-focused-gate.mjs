@@ -51,6 +51,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts",
   },
   {
+    id: "report-export-closure-summary",
+    command: "npx vitest run client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts -t \"serializes report/export summary\"",
+  },
+  {
     id: "drive-full-model-attachments",
     command: "cd slide-rule-python && python -m pytest tests/test_sliderule_driver_fullpath.py -k \"drive_full or result_to_dict\"",
   },

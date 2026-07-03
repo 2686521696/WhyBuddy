@@ -385,6 +385,61 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).not.toContain("### Blocked closure report section");
   });
 
+  it("serializes report/export summary from publishClosure evidence", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-report-export-summary");
+    const fullPerSkillEvidence = {
+      datamodel: { evidencePresent: true },
+      rbac: { evidencePresent: true },
+      workflow: { evidencePresent: true },
+      page: { evidencePresent: true },
+      aigc: { evidencePresent: true },
+      appbundle: { evidencePresent: true },
+    };
+
+    const closedMd = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishClosure: {
+        blocked: false,
+        blockerCount: 0,
+        evidencePresentCount: 6,
+        skillCount: 6,
+        versionPinsChecked: true,
+        stableDigest: "c0de120",
+        tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
+        topBlockers: [],
+        perSkillEvidence: fullPerSkillEvidence,
+      },
+    } as any);
+
+    expect(closedMd).toContain("### Report/Export Summary (from publish artifact closure)");
+    expect(closedMd).toContain("source=publish-artifact-closure");
+    expect(closedMd).toContain("status=closed");
+    expect(closedMd).toContain("digest=c0de120");
+    expect(closedMd).toContain("evidence=6/6");
+
+    const blockedMd = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishClosure: {
+        blocked: false,
+        blockerCount: 0,
+        evidencePresentCount: 5,
+        skillCount: 6,
+        versionPinsChecked: true,
+        stableDigest: "incomplete120",
+        tierCounts: { hard_blocker: 0, warning: 1, info: 0 },
+        topBlockers: [],
+        perSkillEvidence: {
+          ...fullPerSkillEvidence,
+          aigc: { evidencePresent: false },
+        },
+      },
+    } as any);
+
+    expect(blockedMd).toContain("status=blocked");
+    expect(blockedMd).toContain("digest=incomplete120");
+    expect(blockedMd).toContain("evidence=5/6");
+  });
+
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);

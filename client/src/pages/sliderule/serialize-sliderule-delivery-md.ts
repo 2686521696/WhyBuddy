@@ -4,6 +4,7 @@ import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-st
 import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
 import {
+  deriveReportExportClosureSummary,
   formatClosureStatusAndTopBlockersForFinalReport,
   renderPublishClosureBlocker,
 } from "./derive-cross-runtime-summary";
@@ -166,6 +167,17 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
     lines.push("");
     lines.push(`开放缺口: ${replay.openGapIds.join(", ")}`);
   }
+
+  const reportExportClosure = deriveReportExportClosureSummary((state as any).publishClosure);
+  lines.push("");
+  lines.push("### Report/Export Summary (from publish artifact closure)");
+  lines.push(
+    `source=${reportExportClosure.source} status=${reportExportClosure.status} digest=${
+      reportExportClosure.digest || "n/a"
+    } evidence=${reportExportClosure.evidencePresentCount}/${reportExportClosure.skillCount} pins=${
+      reportExportClosure.versionPinsChecked
+    } blockers=${reportExportClosure.blockerCount}`
+  );
 
   lines.push("");
   lines.push("---");
