@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { deriveCrossRuntimeGraphSummary } from "../derive-cross-runtime-summary";
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
 import {
+  deriveReportExportClosureSummaryFromPublishArtifact,
   derivePublishClosureSummary,
   deriveReportExportClosureSummary,
   deriveRollbackClosureDiffSummary,
@@ -461,6 +465,33 @@ describe("deriveReportExportClosureSummary", () => {
       skillCount: 0,
       versionPinsChecked: false,
       blockerCount: 0,
+    });
+  });
+
+  it("derives report/export summary from real AppBundle publish artifact fixtures", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8"));
+    const blocked = JSON.parse(readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8"));
+
+    expect(deriveReportExportClosureSummaryFromPublishArtifact(closed)).toEqual({
+      source: "publish-artifact-closure",
+      status: "closed",
+      digest: "deadbeef120",
+      evidencePresentCount: 6,
+      skillCount: 6,
+      versionPinsChecked: true,
+      blockerCount: 0,
+    });
+
+    expect(deriveReportExportClosureSummaryFromPublishArtifact(blocked)).toMatchObject({
+      source: "publish-artifact-closure",
+      status: "blocked",
+      digest: "badc0ded120",
+      evidencePresentCount: 1,
+      skillCount: 2,
+      versionPinsChecked: true,
+      blockerCount: 1,
     });
   });
 });

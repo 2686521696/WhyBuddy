@@ -247,6 +247,50 @@ export function deriveReportExportClosureSummary(
   };
 }
 
+export function deriveReportExportClosureSummaryFromPublishArtifact(
+  artifact: unknown
+): ReportExportClosureSummary {
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+    return deriveReportExportClosureSummary(null);
+  }
+  const raw = artifact as any;
+  const summary = raw.runtimeClosureSummary;
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return deriveReportExportClosureSummary(null);
+  }
+  return deriveReportExportClosureSummary({
+    blocked: summary.blocked === true,
+    blockerCount: Number(summary.blockerCount ?? 0),
+    evidencePresentCount: Number(summary.evidencePresentCount ?? 0),
+    skillCount: Number(summary.skillCount ?? 0),
+    versionPinsChecked: raw.runtimeClosure?.versionPinsChecked === true,
+    closureId: summary.closureId,
+    closureHash: summary.closureHash,
+    generatedAt: summary.generatedAt,
+    stableDigest: summary.stableDigest || raw.manifest?.closureEvidenceDigest,
+    tierCounts: raw.findingsByTier
+      ? {
+          hard_blocker: Array.isArray(raw.findingsByTier.hard_blocker)
+            ? raw.findingsByTier.hard_blocker.length
+            : 0,
+          warning: Array.isArray(raw.findingsByTier.warning)
+            ? raw.findingsByTier.warning.length
+            : 0,
+          info: Array.isArray(raw.findingsByTier.info) ? raw.findingsByTier.info.length : 0,
+        }
+      : { hard_blocker: 0, warning: 0, info: 0 },
+    topBlockers: Array.isArray(raw.findingsByTier?.hard_blocker)
+      ? raw.findingsByTier.hard_blocker.slice(0, 3).map((blocker: any) => ({
+          code: String(blocker?.code || "UNKNOWN_BLOCKER"),
+          path: String(blocker?.path || ""),
+          affectedSkill: blocker?.affectedSkill,
+          ref: blocker?.ref,
+        }))
+      : [],
+    perSkillEvidence: raw.perSkillEvidence,
+  } as PublishClosureSummary);
+}
+
 /**
  * Produces compact closure status and top blockers text for inclusion
  * in AgentLoop final report text. Deterministic, no side effects.
