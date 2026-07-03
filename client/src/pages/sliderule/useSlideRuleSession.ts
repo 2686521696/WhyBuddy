@@ -44,21 +44,25 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
 }
 
 /**
- * Frontend session store adapter for publishClosure persistence (119 objective).
- * Explicitly carries the (python /drive-full) publishClosure evidence projection through
- * load/save roundtrips. Old sessions without the key remain compatible (None / undefined).
+ * Frontend session store adapter for Python evidence projection persistence.
+ * Explicitly carries the (python /drive-full) publishClosure and skillRuntimeGraph evidence
+ * projections through load/save roundtrips. Old sessions without the keys remain compatible.
  * No network/DB/provider calls; pure local shape passthrough + defaults.
  * Positive: when present on loaded or drive-final, preserved on persist.
- * Fail-closed negative: missing field yields no publishClosure (preview may still apply).
+ * Fail-closed negative: missing fields stay absent (preview may still apply).
  */
-function preservePublishClosure(state: V5SessionState): V5SessionState {
+function preservePythonEvidenceProjection(state: V5SessionState): V5SessionState {
   const pc = (state as any).publishClosure;
-  if (pc === undefined) return state;
-  return { ...state, publishClosure: pc } as V5SessionState;
+  const sg = (state as any).skillRuntimeGraph;
+  if (pc === undefined && sg === undefined) return state;
+  const next: any = { ...state };
+  if (pc !== undefined) next.publishClosure = pc;
+  if (sg !== undefined) next.skillRuntimeGraph = sg;
+  return next as V5SessionState;
 }
 
 async function persistSession(state: V5SessionState): Promise<V5SessionState> {
-  const toSave = preservePublishClosure(state);
+  const toSave = preservePythonEvidenceProjection(state);
   return SlideRuleRuntime.saveSessionState(toSave);
 }
 
@@ -253,7 +257,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         }
       }
       if (!cancelled) {
-        const hydrated = preservePublishClosure(loaded);
+        const hydrated = preservePythonEvidenceProjection(loaded);
         setSessionState(hydrated);
         setSessionHydrated(true);
       }
@@ -335,7 +339,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ]);
 
     try {
-      const loadedState = preservePublishClosure(
+      const loadedState = preservePythonEvidenceProjection(
         sanitizeLegacyEmptySeed(
           await SlideRuleRuntime.loadOrCreateSessionState(sessionState.sessionId || sessionId)
         )
@@ -811,7 +815,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         let loaded = await SlideRuleRuntime.loadOrCreateSessionState(
           sessionState.sessionId || sessionId
         );
-        loaded = preservePublishClosure(sanitizeLegacyEmptySeed(loaded));
+        loaded = preservePythonEvidenceProjection(sanitizeLegacyEmptySeed(loaded));
 
         const goalText = loaded.goal?.text?.trim() || turn.user.trim();
         const uiExecutor = createUiCapabilityExecutor(
@@ -921,7 +925,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       if (SlideRuleRuntime.deleteSlideRuleSession) {
         await SlideRuleRuntime.deleteSlideRuleSession(sid);
       }
-      const fresh = preservePublishClosure(
+      const fresh = preservePythonEvidenceProjection(
         sanitizeLegacyEmptySeed(
           await SlideRuleRuntime.loadOrCreateSessionState(
             sid,
@@ -1006,3 +1010,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resolveInteractiveGate,
   };
 }
+
+export const __sessionEvidenceTestHelpers = {
+  preservePythonEvidenceProjection,
+};

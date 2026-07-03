@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
 import { deriveLatestTurnFromState } from "../derive-persisted-turn";
+import { __sessionEvidenceTestHelpers } from "../useSlideRuleSession";
 
 /**
  * 修复:刷新后 uiTurns 为空 → 右上角架构执行记录消失。
@@ -103,5 +104,25 @@ describe("publishClosure frontend session persistence (119)", () => {
     // persist sim
     const persisted = JSON.parse(JSON.stringify(after));
     expect(persisted.publishClosure?.blocked).toBe(false);
+  });
+
+  it("preserves Python closure and skill runtime graph projections together", () => {
+    const graph = {
+      edges: [{ sourceSkill: "datamodel", targetSkill: "page", state: "allowed" }],
+      evidenceBySkill: { datamodel: ["DM_PAGE_BINDING_IMPACT_EVIDENCE"] },
+    };
+    const state = {
+      sessionId: "pc-graph",
+      goal: { text: "preserve graph" },
+      artifacts: [],
+      capabilityRuns: [],
+      publishClosure: samplePublishClosure,
+      skillRuntimeGraph: graph,
+    } as any;
+
+    const preserved = __sessionEvidenceTestHelpers.preservePythonEvidenceProjection(state) as any;
+
+    expect(preserved.publishClosure).toBe(samplePublishClosure);
+    expect(preserved.skillRuntimeGraph).toBe(graph);
   });
 });
