@@ -8,6 +8,46 @@ vi.mock("../TurnRouteTimeline", () => ({
 }));
 
 describe("ArchitectureProcessPanel publish closure drilldown", () => {
+  it("renders stable skill linkage row targets for cross-runtime examples", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        liveAction={null}
+        sessionId="arch-panel-linkage"
+        isRunning={false}
+        latestTurn={{
+          id: "turn-linkage",
+          routeFacts: {} as any,
+          steps: [],
+          actions: [],
+          status: "complete",
+          routeLitCount: 0,
+          routeExpanded: true,
+        }}
+        crossRuntimeGraph={{
+          edgeCount: 1,
+          allowedCount: 1,
+          blockedCount: 0,
+          skillCount: 2,
+          evidenceCount: 1,
+          examples: [
+            {
+              sourceSkill: "datamodel",
+              targetSkill: "page",
+              state: "allowed",
+              evidenceKey: "DM_PAGE:leave_request",
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(html).toContain('data-testid="sliderule-skill-linkage-row"');
+    expect(html).toContain('data-source-skill="datamodel"');
+    expect(html).toContain('data-target-skill="page"');
+    expect(html).toContain('data-state="allowed"');
+    expect(html).toContain('data-evidence-key="DM_PAGE:leave_request"');
+  });
+
   it("renders stable blocker drilldown targets for closure blockers", () => {
     const html = renderToStaticMarkup(
       <ArchitectureProcessPanel

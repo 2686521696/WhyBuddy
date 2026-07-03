@@ -167,6 +167,11 @@ export function ArchitectureProcessPanel({
             {crossRuntimeGraph.examples.map((edge) => (
               <div
                 key={`${edge.sourceSkill}-${edge.targetSkill}-${edge.state}-${edge.evidenceKey ?? ""}`}
+                data-testid="sliderule-skill-linkage-row"
+                data-source-skill={edge.sourceSkill}
+                data-target-skill={edge.targetSkill}
+                data-state={edge.state}
+                data-evidence-key={edge.evidenceKey ?? ""}
                 className="truncate"
                 title={edge.evidenceKey ?? `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`}
               >
