@@ -1,7 +1,7 @@
 # sliderule-v2-closure-skills-05-rbac-fail-closed-negative-path-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: skills
 - Owner: grok
@@ -75,3 +75,10 @@ Validation commands:
 - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-05-rbac-fail-closed-negative-path-119.md
 
 This task advances publish/runtime closure by adding dedicated createRbacFailClosedNegativePath adapter + focused +ve/-ve tests proving deterministic RBAC deny (no allow fallback) on negative inputs (RBAC_RUNTIME_FAIL_CLOSED), routing cross-runtime evidence decision through adapter, and wiring explicit consumption inside Page PEP (renderPageRuntimePolicy) so Page (and downstream AppBundle runtimeClosure) can rely on dedicated fail-closed negative path evidence. Scoped to allowed files, stable APIs, no test weakening.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Skill linkage closure batch. RBAC fail-closed negative path is covered by RBAC, Page, and AppBundle closure tests.
+
+Validation:
+- `npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/rbac/rbacSkill.test.ts client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/page/pageSkill.test.ts client/src/lib/skills/aigc/aigcSkill.test.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 7 files / 470 tests passed.

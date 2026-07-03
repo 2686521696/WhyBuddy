@@ -1,7 +1,7 @@
 # sliderule-v2-closure-skills-04-rbac-pdp-explain-evidence-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: skills
 - Owner: grok
@@ -75,3 +75,10 @@ Validation commands:
 - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-04-rbac-pdp-explain-evidence-119.md
 
 This task advances publish/runtime closure by hardening RBAC PDP deterministic explanation evidence (positive allow + negative deny/fail-closed) so AppBundle closure collector (hasRbacPdpExplain + perSkillEvidence.rbacPdpDecisions) can consume both paths without ignoring fail-closed evidence. Focused tests cover the three outcomes and end-to-end closure recognition. Public APIs stable. Scoped to skills + task doc.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Skill linkage closure batch. RBAC PDP allow/deny/fail-closed explanation evidence is covered by RBAC tests and consumed by AppBundle runtime closure tests.
+
+Validation:
+- `npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/rbac/rbacSkill.test.ts client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/page/pageSkill.test.ts client/src/lib/skills/aigc/aigcSkill.test.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 7 files / 470 tests passed.

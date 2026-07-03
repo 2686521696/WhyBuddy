@@ -1,7 +1,7 @@
 # sliderule-v2-closure-skills-12-appbundle-aggregate-edge-validation-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: skills
 - Owner: grok
@@ -82,3 +82,10 @@ Validation commands:
 
 How this advances publish/runtime closure:
 Provides the missing executable, deterministic validation of AppBundle's role as aggregator of cross-skill runtime edges from all six surfaces (positive allowed paths + explicit fail-closed blocked when evidence absent). Supplies focused tests and report for the 119 wave candidate material. Complements evaluateAppBundleRuntimeClosure without weakening prior semantics.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Skill linkage closure batch. AppBundle aggregate edge validation is covered across all six Skill surfaces with positive and fail-closed negative paths.
+
+Validation:
+- `npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/rbac/rbacSkill.test.ts client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/page/pageSkill.test.ts client/src/lib/skills/aigc/aigcSkill.test.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 7 files / 470 tests passed.

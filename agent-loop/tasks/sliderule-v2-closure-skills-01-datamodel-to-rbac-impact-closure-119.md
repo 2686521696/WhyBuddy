@@ -1,7 +1,7 @@
 # sliderule-v2-closure-skills-01-datamodel-to-rbac-impact-closure-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: skills
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -75,3 +75,10 @@ Validation commands:
 - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-01-datamodel-to-rbac-impact-closure-119.md
 
 How this advances publish/runtime closure: DataModel field/entity changes (policyRef for PDP delegation, lifecycle deltas, migrationPlan) now deterministically produce and embed both positive ("DM_RBAC_POLICY_IMPACT_POSITIVE", hasPositiveEvidence:true) and fail-closed negative ("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD") evidence objects. These are discoverable by evaluateAppBundleRuntimeClosure's hasDataModelRbacImpact / collectPositiveRuntimeEvidenceKeys without test-only stubs, and exposed on resolve surfaces and cross-runtime. Provides executable Skill-boundary impl + evidence paths required by objective and acceptance.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Skill linkage closure batch. DataModel-to-RBAC impact evidence is covered by the skill test matrix and AppBundle runtime closure collector.
+
+Validation:
+- `npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts client/src/lib/skills/rbac/rbacSkill.test.ts client/src/lib/skills/workflow/workflowSkill.test.ts client/src/lib/skills/page/pageSkill.test.ts client/src/lib/skills/aigc/aigcSkill.test.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 7 files / 470 tests passed.
