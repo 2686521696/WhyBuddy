@@ -109,6 +109,10 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).toContain('data-target-skill="page"');
     expect(html).toContain('data-state="allowed"');
     expect(html).toContain('data-evidence-key="DM_PAGE:leave_request"');
+    expect(html).toContain('data-testid="sliderule-skill-linkage-source"');
+    expect(html).toContain('data-testid="sliderule-skill-linkage-target"');
+    expect(html).toContain('aria-label="Select source skill datamodel"');
+    expect(html).toContain('aria-label="Select target skill page"');
   });
 
   it("renders stable blocker drilldown targets for closure blockers", () => {
@@ -160,6 +164,10 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).toContain('data-skill="page"');
     expect(html).toContain('data-ref="page_purchase_request"');
     expect(html).toContain('data-path="pageBindings[0].pageRef"');
+    expect(html).toContain('data-testid="sliderule-closure-blocker-skill"');
+    expect(html).toContain('data-testid="sliderule-closure-blocker-ref"');
+    expect(html).toContain('aria-label="Select affected skill page"');
+    expect(html).toContain('aria-label="Select ref page_purchase_request"');
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(html).not.toContain('data-testid="publish-closure-fail-closed"');
   });

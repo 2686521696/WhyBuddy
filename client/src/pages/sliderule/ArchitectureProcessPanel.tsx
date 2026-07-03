@@ -23,6 +23,8 @@ export function ArchitectureProcessPanel({
   onToggleRoute,
   crossRuntimeGraph,
   publishClosure,
+  onSelectSkillLinkage,
+  onSelectClosureBlocker,
 }: {
   liveAction: LiveAction | null;
   latestTurn?: {
@@ -45,6 +47,8 @@ export function ArchitectureProcessPanel({
   onToggleRoute?: () => void;
   crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
   publishClosure?: PublishClosureSummary | null;
+  onSelectSkillLinkage?: (edge: CrossRuntimeGraphSummary["examples"][number]) => void;
+  onSelectClosureBlocker?: (blocker: PublishClosureSummary["topBlockers"][number]) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -182,9 +186,27 @@ export function ArchitectureProcessPanel({
                     className="truncate"
                     title={edge.evidenceKey ?? `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`}
                   >
-                    <span className="font-mono text-slate-700">{edge.sourceSkill}</span>
+                    <button
+                      type="button"
+                      data-testid="sliderule-skill-linkage-source"
+                      data-skill={edge.sourceSkill}
+                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-slate-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                      aria-label={`Select source skill ${edge.sourceSkill}`}
+                      onClick={() => onSelectSkillLinkage?.(edge)}
+                    >
+                      {edge.sourceSkill}
+                    </button>
                     <span className="px-1 text-slate-400">-&gt;</span>
-                    <span className="font-mono text-slate-700">{edge.targetSkill}</span>
+                    <button
+                      type="button"
+                      data-testid="sliderule-skill-linkage-target"
+                      data-skill={edge.targetSkill}
+                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-slate-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                      aria-label={`Select target skill ${edge.targetSkill}`}
+                      onClick={() => onSelectSkillLinkage?.(edge)}
+                    >
+                      {edge.targetSkill}
+                    </button>
                     <span className="pl-1 text-slate-400">{edge.state}</span>
                   </div>
                 ))}
@@ -226,27 +248,51 @@ export function ArchitectureProcessPanel({
               </div>
               {publishClosureBlockers.length > 0 && (
                 <div className="mt-1 space-y-0.5">
-                  {publishClosureBlockers.map((blocker) => (
-                    <div
-                      key={`${blocker.code}-${blocker.path}`}
-                      data-testid="sliderule-publish-closure-blocker"
-                      data-skill={blocker.affectedSkill ?? ""}
-                      data-ref={blocker.ref ?? ""}
-                      data-path={blocker.path}
-                      className="truncate font-mono text-[9px] text-rose-700"
-                      title={[
-                        blocker.code,
-                        blocker.affectedSkill ? `skill=${blocker.affectedSkill}` : null,
-                        blocker.ref ? `ref=${blocker.ref}` : null,
-                        `path=${blocker.path}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" / ")}
-                    >
-                      {blocker.code} / {blocker.affectedSkill ?? "skill?"} /{" "}
-                      {blocker.ref ?? blocker.path}
-                    </div>
-                  ))}
+                  {publishClosureBlockers.map((blocker) => {
+                    const affectedSkill = blocker.affectedSkill ?? "";
+                    const blockerRef = blocker.ref ?? blocker.path;
+                    return (
+                      <div
+                        key={`${blocker.code}-${blocker.path}`}
+                        data-testid="sliderule-publish-closure-blocker"
+                        data-skill={affectedSkill}
+                        data-ref={blocker.ref ?? ""}
+                        data-path={blocker.path}
+                        className="truncate font-mono text-[9px] text-rose-700"
+                        title={[
+                          blocker.code,
+                          affectedSkill ? `skill=${affectedSkill}` : null,
+                          blocker.ref ? `ref=${blocker.ref}` : null,
+                          `path=${blocker.path}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" / ")}
+                      >
+                        {blocker.code} /{" "}
+                        <button
+                          type="button"
+                          data-testid="sliderule-closure-blocker-skill"
+                          data-skill={affectedSkill}
+                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                          aria-label={`Select affected skill ${affectedSkill || "unknown"}`}
+                          onClick={() => onSelectClosureBlocker?.(blocker)}
+                        >
+                          {affectedSkill || "skill?"}
+                        </button>
+                        {" / "}
+                        <button
+                          type="button"
+                          data-testid="sliderule-closure-blocker-ref"
+                          data-ref={blocker.ref ?? ""}
+                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                          aria-label={`Select ref ${blockerRef}`}
+                          onClick={() => onSelectClosureBlocker?.(blocker)}
+                        >
+                          {blockerRef}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {publishClosureFailClosed && (
