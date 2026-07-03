@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-drivefull-07-drive-full-degraded-evidence-negative-120
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: drivefull
 - Owner: grok
@@ -9,6 +9,14 @@
 - Landing: codex-reviewed-only
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
+- Last execution: 2026-07-04
+- AgentLoop run id: `2026-07-03T17-04-27-586Z`
+- AgentLoop local time: `2026-07-04 01:04:27 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
+- Grok ran: `true`
+- Codex ran: `true`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Add a degraded /drive-full case where capability errors are visible in closure diagnostics.
 
