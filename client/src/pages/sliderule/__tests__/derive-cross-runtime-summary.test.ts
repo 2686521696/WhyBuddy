@@ -4,6 +4,7 @@ import { deriveCrossRuntimeGraphSummary } from "../derive-cross-runtime-summary"
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
 import {
   derivePublishClosureSummary,
+  deriveReportExportClosureSummary,
   deriveRollbackClosureDiffSummary,
   formatClosureStatusAndTopBlockersForFinalReport,
   normalizeBlockerForRender,
@@ -389,5 +390,77 @@ describe("deriveRollbackClosureDiffSummary", () => {
     expect(selectRollbackClosureDiffSummary(primary, fallback)).toBe(primary);
     expect(selectRollbackClosureDiffSummary(null, fallback)).toBe(fallback);
     expect(selectRollbackClosureDiffSummary(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("deriveReportExportClosureSummary", () => {
+  it("marks publish artifact closure as closed only with digest and full evidence", () => {
+    const summary = deriveReportExportClosureSummary({
+      blocked: false,
+      stableDigest: "digest-closed",
+      evidencePresentCount: 6,
+      skillCount: 6,
+      versionPinsChecked: true,
+      blockerCount: 0,
+      tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
+      topBlockers: [],
+      perSkillEvidence: {
+        datamodel: { evidencePresent: true },
+        rbac: { evidencePresent: true },
+        workflow: { evidencePresent: true },
+        page: { evidencePresent: true },
+        aigc: { evidencePresent: true },
+        appbundle: { evidencePresent: true },
+      },
+    });
+
+    expect(summary).toEqual({
+      source: "publish-artifact-closure",
+      status: "closed",
+      digest: "digest-closed",
+      evidencePresentCount: 6,
+      skillCount: 6,
+      versionPinsChecked: true,
+      blockerCount: 0,
+    });
+  });
+
+  it("fails closed when digest or six-skill evidence is incomplete", () => {
+    expect(
+      deriveReportExportClosureSummary({
+        blocked: false,
+        evidencePresentCount: 6,
+        skillCount: 6,
+        versionPinsChecked: true,
+        blockerCount: 0,
+        tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+        topBlockers: [],
+      }).status
+    ).toBe("blocked");
+
+    expect(
+      deriveReportExportClosureSummary({
+        blocked: false,
+        stableDigest: "digest-incomplete",
+        evidencePresentCount: 5,
+        skillCount: 6,
+        versionPinsChecked: true,
+        blockerCount: 0,
+        tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+        topBlockers: [],
+      }).status
+    ).toBe("blocked");
+  });
+
+  it("returns degraded summary for absent or invalid closure input", () => {
+    expect(deriveReportExportClosureSummary(null)).toEqual({
+      source: "publish-artifact-closure",
+      status: "degraded",
+      digest: null,
+      evidencePresentCount: 0,
+      skillCount: 0,
+      versionPinsChecked: false,
+      blockerCount: 0,
+    });
   });
 });

@@ -54,6 +54,16 @@ export type RollbackClosureDiffSummary = {
   targetStableDigest?: string;
 };
 
+export type ReportExportClosureSummary = {
+  source: "publish-artifact-closure";
+  status: "closed" | "blocked" | "degraded";
+  digest: string | null;
+  evidencePresentCount: number;
+  skillCount: number;
+  versionPinsChecked: boolean;
+  blockerCount: number;
+};
+
 export function normalizeBlockerForRender(
   blocker: { code?: string; path?: string; affectedSkill?: string; ref?: string } | null | undefined
 ): {
@@ -195,6 +205,46 @@ export function selectRollbackClosureDiffSummary(
   fallback: RollbackClosureDiffSummary | null | undefined
 ): RollbackClosureDiffSummary | null {
   return primary ?? fallback ?? null;
+}
+
+export function deriveReportExportClosureSummary(
+  closure: PublishClosureSummary | null | undefined
+): ReportExportClosureSummary {
+  if (!closure || typeof closure !== "object" || Array.isArray(closure)) {
+    return {
+      source: "publish-artifact-closure",
+      status: "degraded",
+      digest: null,
+      evidencePresentCount: 0,
+      skillCount: 0,
+      versionPinsChecked: false,
+      blockerCount: 0,
+    };
+  }
+
+  const digest = closure.stableDigest || closure.closureHash || null;
+  const evidencePresentCount = Number(closure.evidencePresentCount ?? 0);
+  const skillCount = Number(closure.skillCount ?? 0);
+  const evidenceComplete = skillCount > 0 && evidencePresentCount >= skillCount;
+  const requiredSkills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
+  const perSkill = closure.perSkillEvidence;
+  const perSkillComplete = perSkill
+    ? requiredSkills.every((skill) => perSkill[skill]?.evidencePresent === true)
+    : true;
+  const status =
+    closure.blocked === false && digest && evidenceComplete && perSkillComplete
+      ? "closed"
+      : "blocked";
+
+  return {
+    source: "publish-artifact-closure",
+    status,
+    digest,
+    evidencePresentCount,
+    skillCount,
+    versionPinsChecked: closure.versionPinsChecked === true,
+    blockerCount: Number(closure.blockerCount ?? 0),
+  };
 }
 
 /**
