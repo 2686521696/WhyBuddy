@@ -485,6 +485,31 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).not.toContain("runtime closure evidence was not found");
   });
 
+  it("serializes blocked AppBundle closure section from a real publish artifact", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-appbundle-artifact-blocked-section");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const blocked = JSON.parse(
+      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    const md = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishArtifact: blocked,
+    } as any);
+
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    expect(md).toContain("closure outcome: blocked");
+    expect(md).toContain("digest badc0ded120");
+    expect(md).toContain("| aigc | missing |");
+    expect(md).toContain("| appbundle | present |");
+    expect(md).toContain("### Blocked closure report section");
+    expect(md).toContain("code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
+    expect(md).toContain("path: aigc");
+    expect(md).not.toContain(CLOSED_CLOSURE_REPORT_SECTION);
+    expect(md).not.toContain("runtime closure evidence was not found");
+  });
+
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);
