@@ -19,10 +19,18 @@ def _as_dict(value: Any) -> Dict[str, Any]:
         return value
     if hasattr(value, "model_dump"):
         try:
-            dumped = value.model_dump()
+            raw_attrs = getattr(value, "__dict__", {})
+            exclude_keys = {
+                key
+                for key, nested in raw_attrs.items()
+                if not key.startswith("_")
+                and hasattr(nested, "model_dump")
+                and not isinstance(nested, dict)
+            }
+            dumped = value.model_dump(exclude=exclude_keys) if exclude_keys else value.model_dump()
             if not isinstance(dumped, dict):
                 dumped = {}
-            for key, nested in getattr(value, "__dict__", {}).items():
+            for key, nested in raw_attrs.items():
                 if key.startswith("_") or key in dumped:
                     continue
                 dumped[key] = nested

@@ -337,7 +337,7 @@ def test_drive_full_closure_response_absent_is_fail_closed_119():
     assert derive_publish_closure_response(state) is None
 
 
-def test_publish_closure_derives_from_execute_result_runtime_closure_attachment_120():
+def test_publish_closure_derives_from_execute_result_runtime_closure_attachment_120(recwarn):
     result = ExecuteCapabilityResult(
         title="appbundle.runtimeClosure",
         summary="closure eval",
@@ -383,6 +383,10 @@ def test_publish_closure_derives_from_execute_result_runtime_closure_attachment_
     assert response["blocked"] is False
     assert response["closureHash"] == "c0ffee120"
     assert response["perSkillEvidence"]["rbac"]["evidencePresent"] is True
+    assert not [
+        warning for warning in recwarn.list
+        if "PydanticSerializationUnexpectedValue" in str(warning.message)
+    ]
 
 
 def test_appbundle_executor_closure_hash_stable_for_unchanged_publish_inputs_120():
