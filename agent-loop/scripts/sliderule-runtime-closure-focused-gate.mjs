@@ -47,6 +47,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx -t \"surfaces python /drive-full publishClosure\"",
   },
   {
+    id: "browser-route-probe",
+    command: "node agent-loop/scripts/sliderule-browser-route-probe.mjs",
+  },
+  {
     id: "closure-summary-surface",
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts",
   },
