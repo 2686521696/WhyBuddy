@@ -31,6 +31,7 @@ export type OverviewTask = {
   applyError?: string | null;
   applyErrorFiles?: string[];
   closureStatus?: {
+    status?: string | null;
     blocked?: boolean | null;
     evidencePresentCount?: number | null;
     skillCount?: number | null;

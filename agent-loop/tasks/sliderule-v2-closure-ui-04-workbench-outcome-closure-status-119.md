@@ -1,7 +1,7 @@
 # sliderule-v2-closure-ui-04-workbench-outcome-closure-status-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: ui
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on compact operational visibility. Keep the page quiet and avoid large lay
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,23 @@ Focus on compact operational visibility. Keep the page quiet and avoid large lay
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report
+
+Changed files:
+- `slide-rule-python/services/agent_loop_runs.py`
+- `slide-rule-python/tests/test_agent_loop_queue_overview.py`
+- `client/src/pages/agent-loop/dashboard/dashboardTypes.ts`
+- `agent-loop/tasks/sliderule-v2-closure-ui-04-workbench-outcome-closure-status-119.md`
+
+Exported/updated symbols:
+- `get_agent_loop_queue_overview`
+- `OverviewTask.closureStatus`
+
+Validation commands:
+- `.\\slide-rule-python\\.venv\\Scripts\\python.exe -m pytest slide-rule-python/tests/test_agent_loop_queue_overview.py -q --tb=short`
+- `npx vitest run client/src/pages/agent-loop/AgentLoopPage.test.tsx --reporter=dot`
+- `node --run check`
+- `git diff --check`
+
+This lands queue overview closure status pass-through for AgentLoop Workbench. Queue outcomes with `publishClosure` now produce a compact `closureStatus` object for both queued tasks and discovered task files; outcomes without closure evidence keep `closureStatus: null` so the Workbench does not fabricate green closure. The existing Workbench badge renderer consumes this field and already has focused SSR coverage.

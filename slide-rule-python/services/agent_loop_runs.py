@@ -551,6 +551,49 @@ def _latest_queue_attempt_record(
     return candidate_record if candidate_time >= current_time else current_record
 
 
+def _build_closure_status_from_record(record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(record, dict):
+        return None
+
+    publish_closure = record.get("publishClosure")
+    if isinstance(publish_closure, dict):
+        status = publish_closure.get("status") or publish_closure.get("closureStatus")
+        normalized_status = str(status).strip().lower() if status is not None else ""
+        top_blockers = publish_closure.get("topBlockers")
+        blocker_count = publish_closure.get("blockerCount")
+        if isinstance(top_blockers, list):
+            blocker_count = len(top_blockers)
+        blocked = bool(
+            publish_closure.get("blocked")
+            or publish_closure.get("failClosed")
+            or normalized_status in {"blocked", "fail", "failed", "hard_blocked"}
+        )
+        return {
+            "status": normalized_status or ("blocked" if blocked else "closed"),
+            "blocked": blocked,
+            "evidencePresentCount": publish_closure.get("evidencePresentCount")
+            if publish_closure.get("evidencePresentCount") is not None
+            else publish_closure.get("evidencePresent"),
+            "skillCount": publish_closure.get("skillCount"),
+            "stableDigest": publish_closure.get("stableDigest") or publish_closure.get("digest"),
+            "closureHash": publish_closure.get("closureHash") or record.get("closureHash"),
+            "blockerCount": blocker_count,
+        }
+
+    closure_status = record.get("closureStatus")
+    closure_hash = record.get("closureHash")
+    if closure_status is None and closure_hash is None:
+        return None
+
+    normalized_status = str(closure_status).strip().lower() if closure_status is not None else ""
+    blocked = normalized_status in {"blocked", "fail", "failed", "hard_blocked"}
+    return {
+        "status": normalized_status or None,
+        "blocked": blocked,
+        "closureHash": closure_hash,
+    }
+
+
 def _merged_queue_outcomes(repo: Path, artifact_root: Path) -> Dict[str, Any]:
     root_artifact = _agent_loop_artifact_root(repo)
     root_outcomes = _safe_read_json(_artifact_queue_outcomes_path(root_artifact)) or {"tasks": {}}
@@ -834,6 +877,7 @@ def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any
             "rescuePatchAvailable": apply_details["rescuePatchAvailable"],
             "diffBytes": int(record.get("diffBytes") or 0),
             "worktreeErrorFiles": record.get("worktreeErrorFiles") if isinstance(record.get("worktreeErrorFiles"), list) else [],
+            "closureStatus": _build_closure_status_from_record(record),
         }
         item["category"] = _classify_triage_category(enabled, bool(record.get("autoDisabled")), running, outcome_group, stale)
         items.append(item)
@@ -917,6 +961,7 @@ def _queue_overview_from_files(repo_root: Optional[str] = None) -> Dict[str, Any
             "rescuePatchAvailable": apply_details["rescuePatchAvailable"],
             "diffBytes": int(record.get("diffBytes") or 0),
             "worktreeErrorFiles": record.get("worktreeErrorFiles") if isinstance(record.get("worktreeErrorFiles"), list) else [],
+            "closureStatus": _build_closure_status_from_record(record),
         }
         item["category"] = _classify_triage_category(True, bool(record.get("autoDisabled")), running, outcome_group, bool(stale_run and same_as_running))
         items.append(item)

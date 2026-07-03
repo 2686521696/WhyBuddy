@@ -1211,3 +1211,99 @@ def test_agentloop_queue_overview_does_not_treat_active_state_as_running_without
     assert data["current"]["runId"] == "2026-06-27T13-43-24-683Z"
     assert data["current"]["backgroundRunId"] is None
     assert data["current"]["staleRun"] is True
+
+
+def test_queue_overview_surfaces_closure_status_from_outcomes(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    scripts_dir = repo_root / "agent-loop" / "scripts"
+    tasks_dir = repo_root / "agent-loop" / "tasks"
+    loop_dir = repo_root / ".agent-loop"
+    scripts_dir.mkdir(parents=True)
+    tasks_dir.mkdir(parents=True)
+    loop_dir.mkdir(parents=True)
+
+    (scripts_dir / "closure-ui-119-queue.json").write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "task-closed", "task": "agent-loop/tasks/closed-task.md", "enabled": True},
+                    {"id": "task-blocked", "task": "agent-loop/tasks/blocked-task.md", "enabled": True},
+                    {"id": "task-absent", "task": "agent-loop/tasks/absent-task.md", "enabled": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name in ("closed-task.md", "blocked-task.md", "absent-task.md"):
+        (tasks_dir / name).write_text("# task\n", encoding="utf-8")
+
+    (loop_dir / "queue-outcomes.json").write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "task-closed": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastUpdatedAt": "2026-07-03T00:00:00.000Z",
+                        "publishClosure": {
+                            "status": "closed",
+                            "blocked": False,
+                            "evidencePresentCount": 6,
+                            "skillCount": 6,
+                            "stableDigest": "deadbeef",
+                            "closureHash": "abc123",
+                            "topBlockers": [],
+                        },
+                    },
+                    "task-blocked": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastUpdatedAt": "2026-07-03T00:01:00.000Z",
+                        "publishClosure": {
+                            "status": "blocked",
+                            "blocked": True,
+                            "evidencePresentCount": 2,
+                            "skillCount": 6,
+                            "topBlockers": ["hard-missing-skill-evidence"],
+                        },
+                    },
+                    "task-absent": {
+                        "lastStatus": "DONE_REVIEWED",
+                        "lastOutcome": "done",
+                        "lastUpdatedAt": "2026-07-03T00:02:00.000Z",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings_file = repo_root / "data" / "agent-loop-settings.json"
+    settings_file.parent.mkdir(parents=True)
+    settings_file.write_text(
+        json.dumps({"queuePath": "agent-loop/scripts/closure-ui-119-queue.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_LOOP_SETTINGS_FILE", str(settings_file))
+    monkeypatch.setattr(agent_loop_runs, "_get_repo_root", lambda: repo_root)
+
+    data = agent_loop_runs.get_agent_loop_queue_overview(str(repo_root))
+    by_id = {task["id"]: task for task in data["tasks"]}
+
+    closed = by_id["task-closed"]["closureStatus"]
+    assert closed["status"] == "closed"
+    assert closed["blocked"] is False
+    assert closed["evidencePresentCount"] == 6
+    assert closed["skillCount"] == 6
+    assert closed["stableDigest"] == "deadbeef"
+    assert closed["closureHash"] == "abc123"
+    assert closed["blockerCount"] == 0
+
+    blocked = by_id["task-blocked"]["closureStatus"]
+    assert blocked["status"] == "blocked"
+    assert blocked["blocked"] is True
+    assert blocked["evidencePresentCount"] == 2
+    assert blocked["skillCount"] == 6
+    assert blocked["blockerCount"] == 1
+
+    assert by_id["task-absent"]["closureStatus"] is None
