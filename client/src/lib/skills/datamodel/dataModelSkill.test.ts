@@ -7,12 +7,14 @@ import {
   createDataModelPageRuntimeEvidence,
   createDataModelPageBindingImpactEvidence,
   createDataModelRbacPolicyImpactEvidence,
+  createDataModelWorkflowBindingImpactEvidence,
   createDataModelRbacRuntimeEvidence,
   dataModelSkill,
   DM_PAGE_RUNTIME_EVIDENCE,
   DM_PAGE_BINDING_IMPACT_EVIDENCE,
   DM_RBAC_POLICY_IMPACT_EVIDENCE,
   DM_RBAC_RUNTIME_EVIDENCE,
+  DM_WORKFLOW_BINDING_IMPACT_EVIDENCE,
   DM_DATASET_BINDING_FIELD_MISSING,
   DM_LINEAGE_FIELD_MISSING,
   DM_MIGRATION_REMOVED_FIELD_BLOCKER,
@@ -1193,6 +1195,42 @@ describe("dataModelSkill - 119 datamodel to page binding impact evidence", () =>
     expect(evidence.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
     expect(evidence.state).toBe("blocked");
     expect(evidence.reasonCode).toBe("DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+    expect(evidence.hasPositiveEvidence).toBe(false);
+  });
+});
+
+describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", () => {
+  it("allows when changed DataModel fields overlap Workflow binding refs", () => {
+    const evidence = createDataModelWorkflowBindingImpactEvidence(
+      purchaseApprovalDataModel,
+      { field: ["purchase_request.amount", "purchase_request.status"] },
+      ["purchase_request.amount", "purchase_request.status"]
+    );
+
+    expect(evidence.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    expect(evidence.state).toBe("allowed");
+    expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
+    expect(evidence.changedFieldRefs).toContain("purchase_request.amount");
+    expect(evidence.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
+    expect(evidence.hasPositiveEvidence).toBe(true);
+  });
+
+  it("fails closed when a removed DataModel field is still referenced by Workflow binding refs", () => {
+    const removedModel = clone(purchaseApprovalDataModel);
+    const purchaseRequest = removedModel.entities.find((entity) => entity.id === "purchase_request")!;
+    purchaseRequest.fields = purchaseRequest.fields.map((field) =>
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
+    );
+
+    const evidence = createDataModelWorkflowBindingImpactEvidence(
+      removedModel,
+      { field: ["purchase_request.amount"] },
+      ["purchase_request.amount"]
+    );
+
+    expect(evidence.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    expect(evidence.state).toBe("blocked");
+    expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
 });
