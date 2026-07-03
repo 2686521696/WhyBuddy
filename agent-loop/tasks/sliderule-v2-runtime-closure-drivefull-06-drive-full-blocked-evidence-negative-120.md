@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-drivefull-06-drive-full-blocked-evidence-negative-120
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: drivefull
 - Owner: grok
@@ -9,6 +9,14 @@
 - Landing: codex-reviewed-only
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
+- Last execution: 2026-07-04
+- AgentLoop run id: `2026-07-03T16-58-52-843Z`
+- AgentLoop local time: `2026-07-04 00:58:52 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
+- Grok ran: `true`
+- Codex ran: `true`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Add a blocked /drive-full case where missing Skill evidence cannot produce a closed publishClosure.
 
