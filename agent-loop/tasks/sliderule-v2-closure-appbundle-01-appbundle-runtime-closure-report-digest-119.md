@@ -53,3 +53,29 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Implementation notes
+- Updated typed summary schema and derivation in pages layer to fully expose the four fields from AppBundle runtime closure report (closureId, closureHash, generatedAt, stableDigest).
+- Updated focused test expectations to cover positive digest cases and blocked (fail-closed) cases with the fields.
+- Updated digest line rendering to include generatedAt for evidence in serialized reports.
+- Preserved all existing behavior and fail-closed checks; no public names changed.
+- Changes scoped to client/src/pages/sliderule/** (as noted in review) + task doc.
+
+## Final Report
+Changed files:
+- client/src/pages/sliderule/derive-cross-runtime-summary.ts (exported: PublishClosureSummary, derivePublishClosureSummary)
+- client/src/pages/sliderule/serialize-sliderule-delivery-md.ts (internal deriveAppBundleClosureRender)
+- client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts (tests for derivePublishClosureSummary)
+
+Exported symbols updated/used: PublishClosureSummary now includes generatedAt?: string; derive now surfaces report.generatedAt, report.closure* and stableDigest.
+
+Validation commands:
+- npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts
+- npx vitest run client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts -t "AppBundle"
+- node -e "
+  const m = require('fs').readFileSync('client/src/pages/sliderule/derive-cross-runtime-summary.ts','utf8');
+  console.log('has generatedAt:', /generatedAt/.test(m));
+  console.log('has closureId:', /closureId/.test(m));
+"
+
+This advances publish/runtime closure by ensuring the digest/closure metadata fields (id/hash/timestamp/stableDigest) from evaluateAppBundleRuntimeClosure are propagated through the sliderule page summary layer used for UI display, MD delivery, and cross-runtime preview. Provides explicit test evidence for the fields in both ok and blocked paths.

@@ -53,3 +53,20 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (for codex review / main landing)
+- Changed files:
+  - client/src/lib/skills/orchestrator.ts
+  - client/src/lib/skills/purchaseApproval.test.ts
+  - agent-loop/tasks/sliderule-v2-closure-appbundle-02-appbundle-release-artifact-closure-summary-119.md (report only)
+- Exported symbols / changed:
+  - publishGate now returns `releaseArtifactWithRuntimeClosure` (the AppBundleReleaseArtifact after attachRuntimeClosureSummaryToReleaseArtifact)
+  - attachRuntimeClosureSummaryToReleaseArtifact (was internal; now wired from publish aggregator)
+  - New test assertions exercising positive attachment (blocked:false + evidence count) and fail-closed attachment (blocked:true + blockerCount)
+- Validation commands (ran clean):
+  - npx vitest run client/src/lib/skills/purchaseApproval.test.ts
+  - npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts
+  - npx vitest run client/src/lib/skills/orchestrator.test.ts
+  - npx vitest run client/src/lib/skills/kernel.test.ts
+- How advances: wires the missing attachment step inside the AppBundle publishGate (without altering gate semantics or blockers), so release artifact evidence now carries runtime closure summary with both positive and fail-closed cases covered by focused tests in the publish path. UI still derives summaries; artifact layer now has the aggregation. No new public names; deterministic pure TS.
+- No weakening of existing publish gate fail-closed behavior.

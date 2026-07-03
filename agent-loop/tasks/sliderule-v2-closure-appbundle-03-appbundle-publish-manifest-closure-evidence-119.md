@@ -53,3 +53,25 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (for codex review / main landing)
+- Changed files:
+  - client/src/lib/skills/appbundle/appBundleSkill.ts
+  - client/src/lib/skills/orchestrator.ts
+  - client/src/lib/skills/purchaseApproval.test.ts
+  - client/src/pages/SlideRule.tsx
+  - client/src/lib/skills/appbundle/appBundleSkill.test.ts
+  - agent-loop/tasks/sliderule-v2-closure-appbundle-03-appbundle-publish-manifest-closure-evidence-119.md (final report only)
+- Exported symbols / changed:
+  - publishGate now returns `publishManifestWithClosureDigest` (the AppBundlePublishManifest after attachClosureEvidenceDigestToPublishManifest)
+  - attachClosureEvidenceDigestToPublishManifest wired from publish aggregator (symmetric to release)
+  - Fixtures now populate closureEvidenceDigest (positive evidence in model surface)
+  - New/updated test assertions for manifest digest on publish surface (positive: digest present+hex+matches stable; fail-closed negative: digest attached even when blocked)
+  - SlideRule.tsx now references manifest digest field + adapter mapping + manifest output closure from publishGate result
+  - No public API name changes
+- Validation commands (ran clean):
+  - npx vitest run client/src/lib/skills/purchaseApproval.test.ts
+  - npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts
+  - npx vitest run client/src/lib/skills/orchestrator.test.ts
+- How advances: wires the missing publish manifest attachment inside AppBundle publishGate (the publish/runtime closure aggregator), so the manifest surface now exposes the closure evidence digest; fixtures and focused tests cover both positive evidence and fail-closed negative; UI path now touches the manifest digest surface. Preserves all prior semantics, deterministic pure TS helpers, no weakening of gates.
+- Addresses review: executable impl + schema + fixture + adapter + tests + final report now present; no more "only task md" evidence.

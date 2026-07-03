@@ -53,3 +53,24 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (119 taxonomy)
+
+Changed files:
+- client/src/lib/skills/appbundle/appBundleModel.ts (added APPBUNDLE_CLOSURE_TIERS const for typed schema)
+- client/src/lib/skills/appbundle/appBundleSkill.ts (enhanced deterministic classifyAppBundleRuntimeClosureFinding with explicit code-based mapping to hard_blocker/warning/info; updated classify* to use Classified type; re-exported TIERS via runtimeClosure)
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts (added dedicated taxonomy test covering direct classify, positive pass (info tier for EVIDENCE_PRESENT), fail-closed negative (hard_blocker), classifiedFindings assertions; updated positive assertions for new info tier; asserted APPBUNDLE_CLOSURE_TIERS and Classified type usage)
+
+Exported symbols (new or key):
+- APPBUNDLE_CLOSURE_TIERS (from model and appBundleSkill)
+- classifyAppBundleRuntimeClosureFinding (refined, public)
+- ClassifiedAppBundleClosureFinding (typed)
+- runtimeClosure.APPBUNDLE_CLOSURE_TIERS, evaluateAppBundleRuntimeClosure (existing stable)
+- findingsByTier and classifiedFindings on AppBundleRuntimeClosureReport
+
+Validation commands:
+- pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot
+- pnpm exec tsc --noEmit --pretty false -p tsconfig.json
+- (gates also include the task marker + mojibake as before)
+
+This advances publish/runtime closure by providing the missing deterministic tier classification for findings with both positive evidence (info) and fail-closed (hard_blocker) behavior, plus tests proving the mapping. Public names unchanged. Pure TS, local deterministic, no external calls.

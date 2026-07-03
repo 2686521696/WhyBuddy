@@ -53,3 +53,21 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Implementation report (grok fix for review)
+Changed files:
+- client/src/lib/skills/appbundle/appBundleSkill.ts
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- agent-loop/tasks/sliderule-v2-closure-appbundle-06-appbundle-snapshot-mismatch-negative-119.md (report only)
+
+Exported symbols added:
+- validateAppBundleVersionPinVsRuntimeSnapshot(model: AppBundleModel): { matched: boolean; blockers: Finding[] }
+- exposed on runtimeClosure.validateAppBundleVersionPinVsRuntimeSnapshot
+
+This implements explicit bidirectional fail-closed negative for version pin vs runtime snapshot mismatch (uses APPBUNDLE_RUNTIME_CLOSURE_BLOCKED), plus positive match path. Integrated into evaluateAppBundleRuntimeClosure. Focused tests cover direct helper (positive/negative) and via evaluate (negative blocks). Pure TS, deterministic, uses existing fixtures + clones. No public API breakage.
+
+Validation commands:
+- pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot
+- pnpm exec tsc --noEmit --pretty false
+
+Advances publish/runtime closure by hardening AppBundle (aggregator) with explicit snapshot/pin contract enforcement at runtime closure evaluation.

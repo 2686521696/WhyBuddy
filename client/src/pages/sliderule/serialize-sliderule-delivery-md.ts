@@ -233,7 +233,7 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
         `version pins: ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
         `python publishClosure: ${blocked ? "blocked" : "closed"}`,
         `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
-        `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"}`,
+        `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"} · generatedAt ${publishClosure.generatedAt ?? "n/a"}`,
         `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,
       ], detailLines),
     };

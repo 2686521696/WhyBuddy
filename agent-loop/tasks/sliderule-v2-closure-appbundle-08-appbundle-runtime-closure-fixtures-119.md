@@ -53,3 +53,23 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (119-appbundle-runtime-closure-fixtures)
+Changed files:
+- client/src/lib/skills/appbundle/appBundleSkill.ts
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- agent-loop/tasks/sliderule-v2-closure-appbundle-08-appbundle-runtime-closure-fixtures-119.md
+
+Exported symbols (new):
+- closedAppBundleRuntimeClosureReport (AppBundleRuntimeClosureReport fixture, blocked:false)
+- blockedAppBundleRuntimeClosureReport (AppBundleRuntimeClosureReport fixture, blocked:true + APPBUNDLE_RUNTIME_CLOSURE_BLOCKED)
+- runtimeClosure.closedAppBundleRuntimeClosureReport
+- runtimeClosure.blockedAppBundleRuntimeClosureReport
+- (updated) runtimeClosure (now exposes fixtures)
+
+Validation commands:
+- pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot -t "119 deterministic closed/blocked"
+- pnpm exec tsc --noEmit --pretty false
+- node -e "const fs=require('fs'); const t=fs.readFileSync('agent-loop/tasks/sliderule-v2-closure-appbundle-08-appbundle-runtime-closure-fixtures-119.md','utf8'); console.log('markers ok:', t.includes('119-appbundle-runtime-closure') && t.includes('closedAppBundleRuntimeClosureReport'))"
+
+How this advances publish/runtime closure: Provides pure deterministic fixtures for the closed (positive evidence, all skills present) and blocked (fail-closed on missing AIGC/page/snapshot/pins) AppBundle runtime closure reports. AppBundle is the aggregator; fixtures + focused tests (positive/negative) enable reliable cross-runtime testing without recomputing every time, while preserving all existing fail-closed semantics and public API names. Complements 117/118 work for Codex landing.

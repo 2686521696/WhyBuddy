@@ -24,6 +24,7 @@ export type PublishClosureSummary = {
   versionPinsChecked: boolean;
   closureId?: string;
   closureHash?: string;
+  generatedAt?: string;
   stableDigest?: string;
   tierCounts: Record<AppBundleClosureTier, number>;
   topBlockers: Array<{
@@ -93,6 +94,7 @@ export function derivePublishClosureSummary(
     versionPinsChecked: report.runtimeClosure.versionPinsChecked,
     closureId: report.closureId,
     closureHash: report.closureHash,
+    generatedAt: report.generatedAt,
     stableDigest: report.stableDigest,
     tierCounts: {
       hard_blocker: findingsByTier.hard_blocker?.length ?? 0,

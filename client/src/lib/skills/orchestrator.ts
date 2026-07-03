@@ -23,6 +23,8 @@ import type { DependencyGraph, ImpactReport, ResourceRef } from "./impact";
 import {
   evaluateAppBundleRuntimeClosure,
   APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+  attachRuntimeClosureSummaryToReleaseArtifact,
+  attachClosureEvidenceDigestToPublishManifest,
   type AppBundleRuntimeClosureReport,
 } from "./appbundle/appBundleSkill";
 
@@ -182,6 +184,10 @@ export class Orchestrator {
     blockers: Finding[];
     result: OrchestratorResult;
     runtimeClosure?: AppBundleRuntimeClosureReport;
+    /** AppBundle release artifact evidence with runtime closure summary attached (for publish/runtime closure aggregator). */
+    releaseArtifactWithRuntimeClosure?: any;
+    /** AppBundle publish manifest with closure evidence digest attached (exposes publish closure evidence digest through publish manifest surface). */
+    publishManifestWithClosureDigest?: any;
     /** Unresolved cross-refs (after normalize) remain explicit for contract visibility. */
     unresolvedRefs?: CrossRefEdge[];
   } {
@@ -225,7 +231,36 @@ export class Orchestrator {
       }
     }
 
-    return { publishable: blockers.length === 0, blockers, result, runtimeClosure, unresolvedRefs };
+    // Attach runtime closure summary to AppBundle release artifact evidence.
+    // Executed in publishGate (AppBundle publish aggregator) to ensure release artifact
+    // layer carries the summary (positive evidence + fail-closed blocked state).
+    // Does not mutate inputs; pure helper; does not affect gate publishable decision.
+    let releaseArtifactWithRuntimeClosure: any = undefined;
+    if (runtimeClosure && "appbundle" in models) {
+      const abModel = (models as any).appbundle;
+      if (abModel && abModel.releaseArtifact) {
+        releaseArtifactWithRuntimeClosure = attachRuntimeClosureSummaryToReleaseArtifact(
+          abModel.releaseArtifact,
+          runtimeClosure
+        );
+      }
+    }
+
+    // Attach closure evidence digest to AppBundle publish manifest (this task).
+    // Pure attachment in publish aggregator to expose digest on the publish manifest surface.
+    // Positive: digest present when evidence collected; negative/fail-closed: digest still attached even if blocked.
+    let publishManifestWithClosureDigest: any = undefined;
+    if (runtimeClosure && "appbundle" in models) {
+      const abModel = (models as any).appbundle;
+      if (abModel && abModel.publishManifest) {
+        publishManifestWithClosureDigest = attachClosureEvidenceDigestToPublishManifest(
+          abModel.publishManifest,
+          runtimeClosure.stableDigest
+        );
+      }
+    }
+
+    return { publishable: blockers.length === 0, blockers, result, runtimeClosure, releaseArtifactWithRuntimeClosure, publishManifestWithClosureDigest, unresolvedRefs };
   }
 
   buildDependencyGraph(models: Record<string, unknown>): DependencyGraph {

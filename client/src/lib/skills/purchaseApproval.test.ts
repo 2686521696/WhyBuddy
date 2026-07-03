@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveApplication, slideRule } from "./slideRule";
+import { evaluateAppBundleRuntimeClosure, purchaseApprovalAppBundle } from "./appbundle/appBundleSkill";
+import { purchaseApprovalDataModel } from "./datamodel/dataModelSkill";
+import { purchaseApprovalRbac } from "./rbac/rbacSkill";
+import { purchaseApprovalWorkflow } from "./workflow/workflowSkill";
+import { purchaseApprovalPage } from "./page/pageSkill";
+import { purchaseRiskAigcModel } from "./aigc/aigcSkill";
 
 function pathIncludes(report: ReturnType<typeof slideRule.impact>, nodes: string[]): boolean {
   return report.paths.some(path => {
@@ -60,6 +66,20 @@ describe("purchase approval E2E scenario", () => {
     expect(publishGate.runtimeClosure?.perSkillEvidence.aigc.aigcInvocationOutputPolicy).toBe(true);
     expect(publishGate.runtimeClosure?.perSkillEvidence.page.workflowPageTaskViewConsistency).toBe(true);
     expect(publishGate.runtimeClosure?.perSkillEvidence.rbac.rbacPdpDecisions).toBe(true);
+
+    // Positive evidence: runtime closure summary attached to release artifact in publish gate return.
+    expect(publishGate.releaseArtifactWithRuntimeClosure).toBeDefined();
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.appId).toBe("app_purchase_approval");
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blocked).toBe(false);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.closureId).toContain("runtime-closure");
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.evidencePresentCount).toBeGreaterThan(0);
+
+    // Positive: publish closure evidence digest exposed via AppBundle publish manifest surface.
+    expect(publishGate.publishManifestWithClosureDigest).toBeDefined();
+    expect(publishGate.publishManifestWithClosureDigest?.appId).toBe("app_purchase_approval");
+    expect(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe(publishGate.runtimeClosure?.stableDigest);
+    expect(typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe("string");
+    expect(/^[0-9a-f]{6,}$/i.test(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest ?? "")).toBe(true);
   });
 
   it("blocks publishGate through runtime closure when a declared Skill model is missing", async () => {
@@ -74,6 +94,16 @@ describe("purchase approval E2E scenario", () => {
     expect(
       publishGate.blockers.some((blocker) => blocker.code === "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED")
     ).toBe(true);
+
+    // Fail-closed negative: blocked summary is still attached to release artifact evidence (no weakening).
+    expect(publishGate.releaseArtifactWithRuntimeClosure).toBeDefined();
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blocked).toBe(true);
+    expect(publishGate.releaseArtifactWithRuntimeClosure?.runtimeClosureSummary?.blockerCount).toBeGreaterThan(0);
+
+    // Fail-closed negative: publish manifest still receives the closure evidence digest (surface exposure not weakened).
+    expect(publishGate.publishManifestWithClosureDigest).toBeDefined();
+    expect(publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe(publishGate.runtimeClosure?.stableDigest);
+    expect(typeof publishGate.publishManifestWithClosureDigest?.closureEvidenceDigest).toBe("string");
   });
 
   it("returns impact paths for purchase amount and finance role", async () => {
@@ -127,5 +157,33 @@ describe("purchase approval E2E scenario", () => {
 
     expect(result.ok).toBe(true);
     expect(result.spec.skills.appbundle).toMatchObject({ id: "app_leave_approval" });
+  });
+
+  it("exposes explicit per-skill positive runtime closure evidence for purchase approval AppBundle (positive coverage incl aigc)", () => {
+    // direct per-skill evidence using purchase fixture (incl aigc) to prove purchase AppBundle per-skill positive evidence
+    const purchaseModels = {
+      appbundle: purchaseApprovalAppBundle,
+      datamodel: purchaseApprovalDataModel,
+      rbac: purchaseApprovalRbac,
+      workflow: purchaseApprovalWorkflow,
+      page: purchaseApprovalPage,
+      aigc: purchaseRiskAigcModel,
+    };
+    const report = evaluateAppBundleRuntimeClosure(purchaseModels);
+    expect(report.blocked).toBe(false);
+    expect(report.perSkillEvidence.datamodel?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.datamodel?.dataModelBindings).toBe(true);
+    expect(report.perSkillEvidence.rbac?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.rbac?.rbacPdpDecisions).toBe(true);
+    expect(report.perSkillEvidence.workflow?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.workflow?.workflowPageTaskViewConsistency).toBe(true);
+    expect(report.perSkillEvidence.page?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.page?.workflowPageTaskViewConsistency).toBe(true);
+    expect(report.perSkillEvidence.aigc?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.aigc?.aigcInvocationOutputPolicy).toBe(true);
+    expect(report.perSkillEvidence.appbundle?.evidencePresent).toBe(true);
+    expect(report.perSkillEvidence.appbundle?.versionPin?.pinned).toBe(true);
+    expect(report.findingsByTier?.hard_blocker ?? []).toHaveLength(0);
+    expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
   });
 });

@@ -119,7 +119,17 @@ export interface AppBundleRollbackPlan {
   closureHashMatch?: boolean;
 }
 
+export interface AppBundleRollbackClosureComparison {
+  appId: string;
+  fromVersion: string;
+  toVersion: string;
+  closureHashMatch: boolean;
+  changedClosureRefs: string[];
+}
+
 export type AppBundleClosureTier = "hard_blocker" | "warning" | "info";
+
+export const APPBUNDLE_CLOSURE_TIERS: readonly AppBundleClosureTier[] = ["hard_blocker", "warning", "info"] as const;
 
 export interface ClassifiedAppBundleClosureFinding {
   code: string;

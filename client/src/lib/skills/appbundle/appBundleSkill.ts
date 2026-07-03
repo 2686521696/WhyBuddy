@@ -14,12 +14,15 @@ import type {
   AppBundlePublishManifest,
   AppBundleReleaseArtifact,
   AppBundleReleaseArtifactRuntimeClosureSummary,
+  AppBundleRollbackClosureComparison,
   AppBundleRollbackPlan,
   AppBundleRuntimeSnapshot,
   AppBundleSkillId,
   AppMenuEntry,
   ClassifiedAppBundleClosureFinding,
 } from "./appBundleModel";
+import { APPBUNDLE_CLOSURE_TIERS } from "./appBundleModel";
+export { APPBUNDLE_CLOSURE_TIERS } from "./appBundleModel";
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -948,9 +951,19 @@ export interface AppBundleRuntimeClosureReport {
 }
 
 export function classifyAppBundleRuntimeClosureFinding(finding: Finding): AppBundleClosureTier {
-  if (finding.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED) return "hard_blocker";
+  // Deterministic tier mapping for AppBundle runtime closure findings (task 119):
+  // - APPBUNDLE_RUNTIME_CLOSURE_BLOCKED or any error severity -> hard_blocker (fail-closed)
+  // - APPBUNDLE_RUNTIME_EVIDENCE_PRESENT -> info (positive evidence)
+  // - other warnings -> warning
+  // - default -> info
+  if (finding.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED || finding.severity === "error") {
+    return "hard_blocker";
+  }
+  if (finding.code === "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT") {
+    return "info";
+  }
   if (finding.severity === "warning") return "warning";
-  return finding.severity === "error" ? "hard_blocker" : "info";
+  return "info";
 }
 
 function classifyAppBundleRuntimeClosureFindings(
@@ -966,10 +979,10 @@ function classifyAppBundleRuntimeClosureFindings(
     warning: [],
     info: [],
   };
-  const classifiedFindings = all.map((finding) => {
+  const classifiedFindings: ClassifiedAppBundleClosureFinding[] = all.map((finding) => {
     const tier = classifyAppBundleRuntimeClosureFinding(finding);
     findingsByTier[tier].push(finding);
-    return { ...finding, tier };
+    return { ...finding, tier } as ClassifiedAppBundleClosureFinding;
   });
   return { findingsByTier, classifiedFindings };
 }
@@ -1191,6 +1204,17 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
     });
   }
 
+  // 119: explicit fail-closed for version pin vs runtime snapshot mismatch using dedicated pure helper.
+  // Ensures bidirectional check even if snapshot supplied independently at runtime closure time.
+  if (appBundleModel) {
+    const mismatchReport = validateAppBundleVersionPinVsRuntimeSnapshot(appBundleModel);
+    mismatchReport.blockers.forEach((b) => {
+      if (!blockers.some((bb) => bb.code === b.code && bb.path === b.path && bb.message === b.message)) {
+        blockers.push(b);
+      }
+    });
+  }
+
   const appId = appBundleModel?.id ?? "unknown-app";
   const appVersion = appBundleModel?.runtimeSnapshot?.appVersion ?? appBundleModel?.publishManifest?.appVersion ?? "0.0.0";
   const skillsChecked = Object.keys(perSkillEvidence).sort();
@@ -1228,10 +1252,81 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
   };
 }
 
+// 119-appbundle-runtime-closure: deterministic fixtures for closed (blocked:false, full positive evidence) and blocked (fail-closed with APPBUNDLE_RUNTIME_CLOSURE_BLOCKED) AppBundle runtime closure reports.
+// Pure data; both cases included per required implementation. Stable for cross-runtime and aggregator tests.
+// No network/DB/etc. Defined before use in runtimeClosure export.
+export const closedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport = Object.freeze({
+  blocked: false,
+  blockers: [],
+  perSkillEvidence: {
+    datamodel: { skillId: "datamodel", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: true, rbacPdpDecisions: true, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+    rbac: { skillId: "rbac", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: false, rbacPdpDecisions: true, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+    workflow: { skillId: "workflow", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: false, rbacPdpDecisions: true, workflowPageTaskViewConsistency: true, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+    page: { skillId: "page", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: true, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+    aigc: { skillId: "aigc", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: true, unresolvedRefs: false, evidencePresent: true },
+    appbundle: { skillId: "appbundle", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+  },
+  runtimeClosure: {
+    skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+    versionPinsChecked: true,
+    perSkill: {},
+  },
+  closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+  closureHash: "a1b2c3d4",
+  generatedAt: "2026-01-01T00:00:00.000Z",
+  stableDigest: "e5f6a7b8",
+  findingsByTier: { hard_blocker: [], warning: [], info: [] },
+  classifiedFindings: [],
+});
+
+export const blockedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport = Object.freeze({
+  blocked: true,
+  blockers: [{
+    code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+    severity: "error" as const,
+    path: "aigc",
+    message: "Missing AIGC runtime evidence for invocation/output policy.",
+  }],
+  perSkillEvidence: {
+    aigc: { skillId: "aigc", versionPin: { pinned: false }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: false },
+    appbundle: { skillId: "appbundle", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
+  },
+  runtimeClosure: {
+    skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+    versionPinsChecked: true,
+    perSkill: {},
+  },
+  closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+  closureHash: "badbad01",
+  generatedAt: "2026-01-01T00:00:00.000Z",
+  stableDigest: "badc0ded",
+  findingsByTier: {
+    hard_blocker: [{
+      code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+      severity: "error" as const,
+      path: "aigc",
+      message: "Missing AIGC runtime evidence for invocation/output policy.",
+    }],
+    warning: [],
+    info: [],
+  },
+  classifiedFindings: [{
+    code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+    severity: "error" as const,
+    path: "aigc",
+    message: "Missing AIGC runtime evidence for invocation/output policy.",
+    tier: "hard_blocker" as const,
+  }],
+});
+
 export const runtimeClosure = {
   evaluateAppBundleRuntimeClosure,
   APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
   classifyAppBundleRuntimeClosureFinding,
+  APPBUNDLE_CLOSURE_TIERS,
+  validateAppBundleVersionPinVsRuntimeSnapshot,
+  closedAppBundleRuntimeClosureReport,
+  blockedAppBundleRuntimeClosureReport,
 };
 
 export const leaveApprovalAppBundle: AppBundleModel = {
@@ -1261,6 +1356,7 @@ export const leaveApprovalAppBundle: AppBundleModel = {
     appVersion: "1.0.0",
     createdAt: "PUBLISH_TIME",
     gateStatus: "not_run",
+    closureEvidenceDigest: "c0ffee1234ab",
     includedRefs: {
       entities: ["employee", "leave_request"],
       fields: ["leave_request.approved"],
@@ -1358,6 +1454,7 @@ export const purchaseApprovalAppBundle: AppBundleModel = {
     appVersion: "1.0.0",
     createdAt: "PUBLISH_TIME",
     gateStatus: "not_run",
+    closureEvidenceDigest: "def4567890ab",
     includedRefs: {
       entities: ["employee", "department", "vendor", "purchase_request"],
       fields: [
@@ -1545,6 +1642,86 @@ export function planAppBundleRollback(
     changedRefs: [...new Set(changed)].sort(),
     closureHashMatch: currentSnapshot.closureHash === targetSnapshot.closureHash,
   };
+}
+
+export function compareAppBundleRollbackTargetSnapshotsByClosureHash(
+  currentSnapshot: AppBundleRuntimeSnapshot,
+  targetSnapshot: AppBundleRuntimeSnapshot
+): AppBundleRollbackClosureComparison | "APPBUNDLE_ROLLBACK_UNPINNED" {
+  // Compare rollback target snapshots by runtime closure hash (119 objective).
+  // Requires both snapshots to carry closureHash (fail-closed if absent for hash-based compare).
+  // Reuses plan for pinned validation and diff, but derives changedClosureRefs from hash match.
+  // Pure deterministic helper; exposes empty changedClosureRefs on hash match (positive).
+  // Returns sentinel on unpinned/invalid (fail-closed negative).
+  if (!currentSnapshot?.closureHash || !targetSnapshot?.closureHash) {
+    return APPBUNDLE_ROLLBACK_UNPINNED;
+  }
+  const plan = planAppBundleRollback(currentSnapshot, targetSnapshot);
+  if (plan === APPBUNDLE_ROLLBACK_UNPINNED) return plan;
+  const closureHashMatch = !!plan.closureHashMatch;
+  const changedClosureRefs = closureHashMatch ? [] : plan.changedRefs;
+  return {
+    appId: plan.appId,
+    fromVersion: plan.fromVersion,
+    toVersion: plan.toVersion,
+    closureHashMatch,
+    changedClosureRefs,
+  };
+}
+
+// 119 task: pure deterministic fail-closed negative handling for version pin versus runtime snapshot mismatch.
+// AppBundle is the publish/runtime closure aggregator. Both directions checked.
+// Returns blockers using APPBUNDLE_RUNTIME_CLOSURE_BLOCKED on any divergence (no weakening of fail-closed).
+export function validateAppBundleVersionPinVsRuntimeSnapshot(
+  model: AppBundleModel
+): { matched: boolean; blockers: Finding[] } {
+  const blockers: Finding[] = [];
+  if (!model) {
+    return { matched: false, blockers };
+  }
+  const pins = model.versionPins ?? [];
+  const snap = model.runtimeSnapshot;
+  if (!snap || !Array.isArray(snap.pinnedRefs)) {
+    if (pins.length > 0) {
+      blockers.push({
+        code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+        severity: "error",
+        path: "runtimeSnapshot",
+        message: "Version pins present but runtimeSnapshot missing or invalid (version pin vs runtime snapshot mismatch).",
+      });
+    }
+    return { matched: blockers.length === 0, blockers };
+  }
+  const snapSet = new Set(snap.pinnedRefs);
+  const pinRefs = pins
+    .filter((p) => isFixedPinVersion(p.version))
+    .map((p) => pinnedRef(p.skillId, p.ref, p.version));
+  const pinSet = new Set(pinRefs);
+
+  // pins must be present in snapshot
+  for (const pref of pinRefs) {
+    if (!snapSet.has(pref)) {
+      blockers.push({
+        code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+        severity: "error",
+        path: "runtimeSnapshot.pinnedRefs",
+        message: `Version pin ${pref} missing from runtime snapshot (version pin vs runtime snapshot mismatch).`,
+      });
+    }
+  }
+  // snapshot refs must be backed by pins (bidirectional)
+  for (const sref of snap.pinnedRefs) {
+    if (!pinSet.has(sref)) {
+      blockers.push({
+        code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+        severity: "error",
+        path: "runtimeSnapshot.pinnedRefs",
+        message: `Runtime snapshot ref ${sref} has no corresponding version pin (version pin vs runtime snapshot mismatch).`,
+      });
+    }
+  }
+  const matched = blockers.length === 0;
+  return { matched, blockers };
 }
 
 export function attachRuntimeClosureSummaryToReleaseArtifact(

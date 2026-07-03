@@ -53,3 +53,24 @@ Focus on AppBundle as the publish/runtime closure aggregator. Prefer pure TypeSc
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Implementation report (grok fix for review)
+Changed files:
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- client/src/lib/skills/purchaseApproval.test.ts
+- agent-loop/tasks/sliderule-v2-closure-appbundle-07-appbundle-leave-purchase-positive-closure-119.md (report only)
+
+Exported symbols exercised/updated (no new public names):
+- evaluateAppBundleRuntimeClosure
+- leaveApprovalAppBundle / purchaseApprovalAppBundle (existing fixtures)
+- buildLeaveModels / buildPurchaseModels (internal test helpers)
+- perSkillEvidence fields: evidencePresent, dataModelBindings, rbacPdpDecisions, workflowPageTaskViewConsistency, versionPin.pinned, aigcInvocationOutputPolicy etc.
+- classifyAppBundleRuntimeClosureFinding, APPBUNDLE_RUNTIME_CLOSURE_BLOCKED, findingsByTier
+
+This adds explicit per-skill positive evidence assertions for leave approval AppBundle (core skills: datamodel/rbac/workflow/page/appbundle) in appBundleSkill.test.ts (plus existing leave fail-closed), and for purchase approval AppBundle (incl aigc) in purchaseApproval.test.ts + purchase positive test in appBundleSkill.test.ts. Strengthens coverage of per-skill (datamodel/rbac/workflow/page/aigc/appbundle) positive + hard_blocker fail-closed without changing impl or fixtures. Keeps all prior semantics, pure deterministic TS.
+
+Validation commands:
+- pnpm exec vitest run client/src/lib/skills/purchaseApproval.test.ts client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot
+- pnpm exec tsc --noEmit --pretty false
+
+Advances publish/runtime closure by ensuring the AppBundle aggregator's leave and purchase positive paths carry explicit per-skill evidence (purchase incl aigc) as required for the 119 wave candidate material.

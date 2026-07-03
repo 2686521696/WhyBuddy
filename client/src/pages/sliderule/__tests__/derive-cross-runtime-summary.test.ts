@@ -81,6 +81,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
       versionPinsChecked: true,
       closureId: undefined,
       closureHash: undefined,
+      generatedAt: undefined,
       stableDigest: undefined,
       tierCounts: {
         hard_blocker: 0,
@@ -156,6 +157,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
       versionPinsChecked: false,
       closureId: "appbundle:app_test@1.0.0:runtime-closure",
       closureHash: "feedface",
+      generatedAt: "2026-07-03T00:00:00.000Z",
       stableDigest: "deadbeef",
       tierCounts: {
         hard_blocker: 1,
