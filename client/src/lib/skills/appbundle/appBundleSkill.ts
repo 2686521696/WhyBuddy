@@ -1004,6 +1004,14 @@ export function createAllSixSkillsPositiveClosedSample() {
   };
 }
 
+export function createMultiSkillNegativeBlockedSample() {
+  return {
+    ...createAllSixSkillsPositiveClosedSample(),
+    workflow: { id: "wf_purchase_approval_negative" },
+    aigc: { id: "aigc_risk_negative" },
+  };
+}
+
 // 119: AppBundle aggregate edge validation across all six Skill runtime evidence surfaces.
 // Pure, deterministic, no IO. Positive paths yield "allowed"; absent/missing upstreams yield explicit "blocked" fail-closed.
 export const APPBUNDLE_AGGREGATE_EDGE_VALIDATION = "APPBUNDLE_AGGREGATE_EDGE_VALIDATION";

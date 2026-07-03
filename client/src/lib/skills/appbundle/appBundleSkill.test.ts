@@ -31,6 +31,7 @@ import {
   createAppBundleWorkflowTaskViewPositiveSample,
   createAppBundleWorkflowTaskViewNegativeSample,
   createAllSixSkillsPositiveClosedSample,
+  createMultiSkillNegativeBlockedSample,
   APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE,
   APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE,
   evaluateAppBundleRuntimeClosure,
@@ -836,6 +837,21 @@ describe("appBundleSkill - runtime closure (117)", () => {
     expect(Object.values(report.perSkillEvidence).every((evidence) => evidence.evidencePresent)).toBe(true);
     expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
     expect(report.stableDigest).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("blocks one canonical negative sample while still traversing all six Skills", () => {
+    const report = evaluateAppBundleRuntimeClosure(createMultiSkillNegativeBlockedSample());
+
+    expect(report.blocked).toBe(true);
+    expect(Object.keys(report.perSkillEvidence)).toHaveLength(6);
+    expect(report.runtimeClosure?.skillsChecked).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]),
+    );
+    expect(report.blockers.some((blocker) => blocker.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED && blocker.path === "workflow")).toBe(true);
+    expect(report.blockers.some((blocker) => blocker.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED && blocker.path === "aigc")).toBe(true);
+    expect(Object.values(report.perSkillEvidence).filter((evidence) => evidence.evidencePresent)).toHaveLength(4);
+    expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
+    expect(report.findingsByTier?.hard_blocker.length).toBeGreaterThanOrEqual(2);
   });
 
   it("passes positive runtime closure for leave approval (no AIGC required, Page + core evidence)", () => {
