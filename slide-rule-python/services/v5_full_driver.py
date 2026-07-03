@@ -29,7 +29,18 @@ def _result_to_dict(result: Any) -> Dict[str, Any]:
             dumped = result.model_dump()
         except Exception:
             return {}
-        return dumped if isinstance(dumped, dict) else {}
+        normalized = dumped if isinstance(dumped, dict) else {}
+        for key, value in getattr(result, "__dict__", {}).items():
+            if key.startswith("_") or key in normalized:
+                continue
+            normalized[key] = value
+        return normalized
+    if hasattr(result, "__dict__"):
+        return {
+            key: value
+            for key, value in getattr(result, "__dict__", {}).items()
+            if not key.startswith("_")
+        }
     return {}
 
 def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, user_instruction: str = "") -> V5SessionState:

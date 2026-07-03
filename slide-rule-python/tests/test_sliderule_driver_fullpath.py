@@ -9,9 +9,9 @@ import pytest
 from unittest.mock import patch
 
 try:
-    from models.v5_state import V5SessionState, Artifact, CapabilityRun
+    from models.v5_state import V5SessionState, Artifact, CapabilityRun, ExecuteCapabilityResult
     from services.slide_rule_session import create_session, drive_reasoning_turn
-    from services.v5_full_driver import drive_full_v5_session
+    from services.v5_full_driver import drive_full_v5_session, _result_to_dict
 except Exception as e:
     pytest.skip(f"imports failed for driver fullpath test: {e}", allow_module_level=True)
 
@@ -32,6 +32,26 @@ def test_create_session_starts_idle():
     state = create_session("test goal", "sr-idle")
     assert state.runtimePhase == "idle"
     assert state.sessionId == "sr-idle"
+
+
+def test_result_to_dict_preserves_model_dump_runtime_closure_attachment():
+    result = ExecuteCapabilityResult(
+        title="Runtime closure",
+        summary="closure summary",
+        content="closure content",
+        provenance="python-rag",
+    )
+    result.__dict__["runtimeClosure"] = {
+        "blocked": False,
+        "closureHash": "model-attachment-hash",
+        "perSkillEvidence": {"appbundle": {"evidencePresent": True}},
+    }
+
+    normalized = _result_to_dict(result)
+
+    assert normalized["title"] == "Runtime closure"
+    assert normalized["provenance"] == "python-rag"
+    assert normalized["runtimeClosure"]["closureHash"] == "model-attachment-hash"
 
 
 def test_drive_reasoning_turn_sets_orchestrating_then_awaiting_or_done():
