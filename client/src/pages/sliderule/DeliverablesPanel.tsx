@@ -4,6 +4,10 @@ import type { Artifact, V5SessionState } from "@shared/blueprint/v5-reasoning-st
 import { parseReportSections } from "./parse-report-sections";
 import { MarkdownRenderer } from "@/pages/autopilot/right-rail/streaming-doc/MarkdownRenderer";
 import { DEFAULT_LOCALE } from "@/lib/locale";
+import {
+  deriveReportExportClosureSummary,
+  type PublishClosureSummary,
+} from "./derive-cross-runtime-summary";
 
 /**
  * 交付物面板（SettingsDialog 同构外壳）。
@@ -69,6 +73,7 @@ export function DeliverablesPanel({
   onGenerate,
   onExportMd,
   onEvidenceRefClick,
+  publishClosure,
 }: {
   open: boolean;
   onClose: () => void;
@@ -77,6 +82,7 @@ export function DeliverablesPanel({
   onGenerate: () => void;
   onExportMd: () => void;
   onEvidenceRefClick?: (artifactId: string) => void;
+  publishClosure?: PublishClosureSummary | null;
 }) {
   const grouped = React.useMemo(() => {
     const map = new Map<CategoryId, Artifact[]>();
@@ -187,6 +193,7 @@ export function DeliverablesPanel({
                     category={active}
                     artifact={activeArtifact}
                     onEvidenceRefClick={onEvidenceRefClick}
+                    publishClosure={publishClosure}
                   />
                 ) : (
                   <p className="text-sm text-slate-400">该分类暂无内容</p>
@@ -231,18 +238,33 @@ function DeliverableViewer({
   category,
   artifact,
   onEvidenceRefClick,
+  publishClosure,
 }: {
   category: CategoryId;
   artifact: Artifact;
   onEvidenceRefClick?: (artifactId: string) => void;
+  publishClosure?: PublishClosureSummary | null;
 }) {
   const content = String(artifact.content || "");
 
   if (category === "report") {
     const sections = parseReportSections(artifact);
+    const closureSummary = publishClosure
+      ? deriveReportExportClosureSummary(publishClosure)
+      : null;
     return (
       <div className="space-y-4">
         <h2 className="text-base font-bold text-slate-900">{artifact.title || "可行性报告"}</h2>
+        {closureSummary && (
+          <div
+            data-testid="report-export-closure-summary"
+            className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
+          >
+            source={closureSummary.source} status={closureSummary.status} digest=
+            {closureSummary.digest || "n/a"} evidence={closureSummary.evidencePresentCount}/
+            {closureSummary.skillCount}
+          </div>
+        )}
         {sections.map((sec) => (
           <section key={sec.id} className="border-b border-slate-100 pb-4 last:border-0">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-800">{sec.label}</h3>

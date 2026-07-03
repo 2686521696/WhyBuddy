@@ -477,6 +477,7 @@ function SlideRuleImmersion({
         onGenerate={() => generateDeliverables()}
         onExportMd={() => onExportDeliverables()}
         onEvidenceRefClick={onEvidenceRefClick}
+        publishClosure={publishClosure}
       />
     </div>
   );
@@ -807,6 +808,7 @@ function SlideRuleSplitEngineering({
         onGenerate={() => generateDeliverables()}
         onExportMd={() => onExportDeliverables()}
         onEvidenceRefClick={onEvidenceRefClick}
+        publishClosure={publishClosure}
       />
     </div>
   );
