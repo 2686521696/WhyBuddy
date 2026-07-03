@@ -5,6 +5,7 @@ import {
   buildWorkflowCrossRuntimeEdges,
   createWorkflowDataModelRuntimeEvidence,
   createWorkflowRbacRuntimeEvidence,
+  createWorkflowPageRuntimeEvidence,
   createWorkflowInstanceSnapshot,
   leaveApprovalWorkflow,
   normalizeWorkflowRuntimeContextForSkill,
@@ -12,11 +13,14 @@ import {
   purchaseApprovalWorkflow,
   resolveWorkflowAssignees,
   startWorkflowInstance,
+  traceWorkflowTaskStateToPageTaskSurfaceEvidence,
   transitionWorkflowInstance,
   validateWorkflowInstanceSnapshot,
   WF_ASSIGNEE_PDP_DENIED,
   WF_DATAMODEL_RUNTIME_EVIDENCE,
+  WF_PAGE_RUNTIME_EVIDENCE,
   WF_RBAC_RUNTIME_EVIDENCE,
+  WF_WORKFLOW_TO_PAGE_TRACE,
   workflowSkill,
   WF_RUNTIME_INVALID_TRANSITION,
   createWorkflowAssigneePolicyEvidenceFromDecision,
@@ -24,6 +28,7 @@ import {
 import type { WorkflowInstance, WorkflowInstanceSnapshot, WorkflowModel, WorkflowTransitionCommand } from "./workflowModel";
 import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill, decideRbacPolicy } from "../rbac/rbacSkill";
 import { dataModelSkill, leaveRequestDataModel } from "../datamodel/dataModelSkill";
+import { leaveApprovalPage } from "../page/pageSkill";
 import type { PolicyDecision } from "../rbac/rbacModel";
 
 const clone = (m: WorkflowModel): WorkflowModel => structuredClone(m);
@@ -912,5 +917,47 @@ describe("workflowSkill — V2 117 workflow form binding runtime (buildWorkflowF
     expect(rt.formFieldRefs).toEqual(["leave_request.approved"]);
     expect(rt.fields[0].pdpState).toBe("allowed");
     expect(rt.findings.length).toBe(0);
+  });
+});
+
+describe("workflowSkill - 120 workflow task state to page surface trace", () => {
+  it("traces workflow task state to Page task surface as a closed path", () => {
+    const instance = startWorkflowInstance(leaveApprovalWorkflow, { id: "inst_wf_page_positive" });
+    const trace = traceWorkflowTaskStateToPageTaskSurfaceEvidence(leaveApprovalWorkflow, instance, leaveApprovalPage);
+
+    expect(trace.traceId).toBe(WF_WORKFLOW_TO_PAGE_TRACE);
+    expect(trace.sourceSkill).toBe("workflow");
+    expect(trace.targetSkill).toBe("page");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("WF_PAGE_TASK_SURFACE_POSITIVE_CLOSED");
+    expect(trace.currentNodeId).toBe(instance.currentNodeId);
+    expect(trace.pageTaskSurfaceValid).toBe(true);
+  });
+
+  it("traces missing workflow task state to Page as fail-closed", () => {
+    const trace = traceWorkflowTaskStateToPageTaskSurfaceEvidence(
+      leaveApprovalWorkflow,
+      { workflowId: leaveApprovalWorkflow.id, currentNodeId: "" } as any,
+      leaveApprovalPage,
+    );
+
+    expect(trace.state).toBe("blocked");
+    expect(trace.reasonCode).toBe("WF_PAGE_TASK_SURFACE_FAIL_CLOSED");
+    expect(trace.pageTaskSurfaceValid).toBe(false);
+  });
+
+  it("exposes dedicated page runtime evidence and workflowToPageTrace on resolve", () => {
+    const surface = workflowSkill.resolve(leaveApprovalWorkflow) as any;
+    const evidence = createWorkflowPageRuntimeEvidence(
+      leaveApprovalWorkflow,
+      { page: true },
+      createWorkflowInstanceSnapshot(leaveApprovalWorkflow, "inst_wf_page_evidence"),
+    );
+
+    expect(evidence.evidenceKey).toBe(WF_PAGE_RUNTIME_EVIDENCE);
+    expect(evidence.targetSkill).toBe("page");
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([WF_PAGE_RUNTIME_EVIDENCE]));
+    expect(surface.workflowToPageTrace).toBeTruthy();
+    expect(surface.workflowToPageTrace.traceId).toBe(WF_WORKFLOW_TO_PAGE_TRACE);
   });
 });

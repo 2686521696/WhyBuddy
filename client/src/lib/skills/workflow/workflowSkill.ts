@@ -20,6 +20,8 @@ import type {
 import { getFieldLifecycle } from "../datamodel/dataModelSkill";
 import { decideRbacPolicy } from "../rbac/rbacSkill";
 import type { PolicyDecision } from "../rbac/rbacModel";
+import type { PageModel } from "../page/pageModel";
+import { PAGE_WORKFLOW_TASK_VIEW_INVALID, projectWorkflowTaskView } from "../page/pageSkill";
 
 // ---------------------------------------------------------------------------
 // Graph helpers — this is where "the hard skill" lives: execution semantics.
@@ -552,13 +554,18 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
   // -- CROSS-SKILL SURFACE -------------------------------------------------
   resolve(model: WorkflowModel): ResolvableSurface {
     const crossRuntime = buildWorkflowCrossRuntimeEdges(model);
-    return {
+    const surface: any = {
       workflow: [model.id],
       node: model.nodes.map(n => n.id),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       ...(model.version ? { version: [model.id] } : {}),
+      workflowToPageTrace: traceWorkflowTaskStateToPageTaskSurfaceEvidence(model),
     };
+    if (!surface.runtimeEvidence.includes(WF_PAGE_RUNTIME_EVIDENCE)) {
+      surface.runtimeEvidence = [...surface.runtimeEvidence, WF_PAGE_RUNTIME_EVIDENCE];
+    }
+    return surface;
   },
 
   async generate(intent: string): Promise<WorkflowModel> {
@@ -1155,6 +1162,73 @@ export function createWorkflowDataModelRuntimeEvidence(
   return {
     ...createWorkflowCrossRuntimeEvidence(model, "datamodel", upstreamSurface, snapshot),
     evidenceKey: WF_DATAMODEL_RUNTIME_EVIDENCE,
+  };
+}
+
+export const WF_PAGE_RUNTIME_EVIDENCE = "WF_PAGE_RUNTIME_EVIDENCE";
+export const WF_WORKFLOW_TO_PAGE_TRACE = "WF_WORKFLOW_TO_PAGE_TRACE";
+
+export function createWorkflowPageRuntimeEvidence(
+  model: WorkflowModel,
+  upstreamSurface?: unknown,
+  snapshot?: WorkflowInstanceSnapshot,
+): WorkflowCrossRuntimeEvidence {
+  return {
+    ...createWorkflowCrossRuntimeEvidence(model, "page", upstreamSurface, snapshot),
+    evidenceKey: WF_PAGE_RUNTIME_EVIDENCE,
+  };
+}
+
+export interface WorkflowToPageTrace {
+  traceId: typeof WF_WORKFLOW_TO_PAGE_TRACE;
+  sourceSkill: "workflow";
+  targetSkill: "page";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  workflowId: string;
+  currentNodeId?: string;
+  pageTaskSurfaceValid: boolean;
+  evidenceKey: string;
+}
+
+interface WorkflowTaskStateLike {
+  currentNodeId?: string;
+  workflowId?: string;
+  status?: string;
+  variables?: Record<string, unknown>;
+}
+
+export function traceWorkflowTaskStateToPageTaskSurfaceEvidence(
+  model: WorkflowModel,
+  instance?: WorkflowTaskStateLike,
+  page?: PageModel,
+): WorkflowToPageTrace {
+  const currentNodeId = instance?.currentNodeId;
+  const hasTaskState = typeof currentNodeId === "string" && currentNodeId.length > 0;
+  let pageTaskSurfaceValid = false;
+
+  if (hasTaskState && page) {
+    try {
+      pageTaskSurfaceValid = projectWorkflowTaskView(page, instance as unknown as WorkflowInstance) !== PAGE_WORKFLOW_TASK_VIEW_INVALID;
+    } catch {
+      pageTaskSurfaceValid = false;
+    }
+  } else if (hasTaskState) {
+    pageTaskSurfaceValid = model.nodes.some(node => node.id === currentNodeId);
+  }
+
+  const closed = hasTaskState && pageTaskSurfaceValid;
+
+  return {
+    traceId: WF_WORKFLOW_TO_PAGE_TRACE,
+    sourceSkill: "workflow",
+    targetSkill: "page",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "WF_PAGE_TASK_SURFACE_POSITIVE_CLOSED" : "WF_PAGE_TASK_SURFACE_FAIL_CLOSED",
+    workflowId: model.id,
+    currentNodeId,
+    pageTaskSurfaceValid,
+    evidenceKey: `${WF_WORKFLOW_TO_PAGE_TRACE}:${closed ? "closed" : "blocked"}`,
   };
 }
 
