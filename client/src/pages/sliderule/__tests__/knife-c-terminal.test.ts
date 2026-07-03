@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildClearStateWithTrustedReport } from "@/lib/sliderule-fullpath-fixtures";
 import { deriveSlideRuleReasoningViewModel } from "../derive-reasoning-view-model";
 import { deriveTrustSeal } from "../derive-trust-seal";
@@ -438,6 +441,27 @@ describe("Knife C · terminal delivery platform", () => {
     expect(blockedMd).toContain("status=blocked");
     expect(blockedMd).toContain("digest=incomplete120");
     expect(blockedMd).toContain("evidence=5/6");
+  });
+
+  it("serializes report/export summary from a real AppBundle publish artifact when publishClosure is absent", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-report-export-artifact-summary");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    const md = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishArtifact: closed,
+    } as any);
+
+    expect(md).toContain("### Report/Export Summary (from publish artifact closure)");
+    expect(md).toContain("source=publish-artifact-closure");
+    expect(md).toContain("status=closed");
+    expect(md).toContain("digest=deadbeef120");
+    expect(md).toContain("evidence=6/6");
+    expect(md).toContain("pins=true");
   });
 
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {

@@ -5,6 +5,7 @@ import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
 import {
   deriveReportExportClosureSummary,
+  deriveReportExportClosureSummaryFromPublishArtifact,
   formatClosureStatusAndTopBlockersForFinalReport,
   renderPublishClosureBlocker,
 } from "./derive-cross-runtime-summary";
@@ -168,7 +169,11 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
     lines.push(`开放缺口: ${replay.openGapIds.join(", ")}`);
   }
 
-  const reportExportClosure = deriveReportExportClosureSummary((state as any).publishClosure);
+  const publishArtifact =
+    (state as any).publishArtifact ?? (state as any).releaseArtifactWithRuntimeClosure ?? null;
+  const reportExportClosure = (state as any).publishClosure
+    ? deriveReportExportClosureSummary((state as any).publishClosure)
+    : deriveReportExportClosureSummaryFromPublishArtifact(publishArtifact);
   lines.push("");
   lines.push("### Report/Export Summary (from publish artifact closure)");
   lines.push(
