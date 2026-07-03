@@ -15,6 +15,7 @@ import type {
   AppBundleReleaseArtifact,
   AppBundleReleaseArtifactRuntimeClosureSummary,
   AppBundleRollbackClosureComparison,
+  AppBundleRollbackClosureDiffEvidence,
   AppBundleRollbackPlan,
   AppBundleRuntimeSnapshot,
   AppBundleSkillId,
@@ -1971,5 +1972,43 @@ export function attachClosureEvidenceDigestToPublishManifest(
   return {
     ...manifest,
     closureEvidenceDigest: digest,
+  };
+}
+
+export function comparePublishArtifactsForRollbackClosureDiff(
+  currentPublishArtifact: any,
+  targetPublishArtifact: any,
+): AppBundleRollbackClosureDiffEvidence | typeof APPBUNDLE_ROLLBACK_UNPINNED {
+  const currentSummary = currentPublishArtifact?.runtimeClosureSummary || currentPublishArtifact || {};
+  const targetSummary = targetPublishArtifact?.runtimeClosureSummary || targetPublishArtifact || {};
+  const currentDigest = currentSummary.stableDigest || currentSummary.closureHash;
+  const targetDigest = targetSummary.stableDigest || targetSummary.closureHash;
+
+  if (!currentDigest || !targetDigest) {
+    return APPBUNDLE_ROLLBACK_UNPINNED;
+  }
+
+  const currentEvidence = (currentPublishArtifact?.perSkillEvidence || currentSummary.perSkillEvidence || {}) as Record<string, any>;
+  const targetEvidence = (targetPublishArtifact?.perSkillEvidence || targetSummary.perSkillEvidence || {}) as Record<string, any>;
+  const changedPerSkillRefs = new Set<string>();
+
+  for (const skill of new Set([...Object.keys(currentEvidence), ...Object.keys(targetEvidence)])) {
+    const currentRef = currentEvidence[skill]?.digest || currentEvidence[skill]?.evidenceRef || currentEvidence[skill]?.artifactId;
+    const targetRef = targetEvidence[skill]?.digest || targetEvidence[skill]?.evidenceRef || targetEvidence[skill]?.artifactId;
+    if (currentRef !== targetRef) {
+      changedPerSkillRefs.add(skill);
+    }
+  }
+
+  return {
+    appId: currentSummary.appId || currentPublishArtifact?.appId || targetSummary.appId || targetPublishArtifact?.appId || "app",
+    currentVersion: currentPublishArtifact?.appVersion || currentSummary.appVersion,
+    targetVersion: targetPublishArtifact?.appVersion || targetSummary.appVersion,
+    currentStableDigest: currentDigest,
+    targetStableDigest: targetDigest,
+    digestMatch: currentDigest === targetDigest,
+    changedPerSkillRefs: [...changedPerSkillRefs].sort(),
+    evidencePresentCountCurrent: currentSummary.evidencePresentCount,
+    evidencePresentCountTarget: targetSummary.evidencePresentCount,
   };
 }

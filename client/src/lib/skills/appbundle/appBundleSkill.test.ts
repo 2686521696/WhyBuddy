@@ -40,6 +40,7 @@ import {
   runtimeClosure,
   APPBUNDLE_CLOSURE_TIERS,
   compareAppBundleRollbackTargetSnapshotsByClosureHash,
+  comparePublishArtifactsForRollbackClosureDiff,
   validateAppBundlePublishGate,
   validateAppBundleVersionPinVsRuntimeSnapshot,
   closedAppBundleRuntimeClosureReport,
@@ -47,7 +48,7 @@ import {
   validateAppBundleAggregateEdges,
   APPBUNDLE_AGGREGATE_EDGE_VALIDATION,
 } from "./appBundleSkill";
-import type { AppBundleModel, AppBundleRollbackClosureComparison, AppBundleRuntimeSnapshot, ClassifiedAppBundleClosureFinding } from "./appBundleModel";
+import type { AppBundleModel, AppBundleRollbackClosureComparison, AppBundleRollbackClosureDiffEvidence, AppBundleRuntimeSnapshot, ClassifiedAppBundleClosureFinding } from "./appBundleModel";
 import { purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
 import { purchaseApprovalRbac } from "../rbac/rbacSkill";
 import { purchaseApprovalWorkflow } from "../workflow/workflowSkill";
@@ -1223,6 +1224,82 @@ describe("appBundleSkill - compare rollback target snapshots by runtime closure 
     if (cmp1 !== APPBUNDLE_ROLLBACK_UNPINNED && cmp2 !== APPBUNDLE_ROLLBACK_UNPINNED) {
       expect((cmp1 as AppBundleRollbackClosureComparison).changedClosureRefs).toEqual((cmp2 as AppBundleRollbackClosureComparison).changedClosureRefs);
       expect((cmp1 as AppBundleRollbackClosureComparison).closureHashMatch).toBe((cmp2 as AppBundleRollbackClosureComparison).closureHashMatch);
+    }
+  });
+});
+
+describe("appBundleSkill - 120 rollback closure diff evidence between current/target publish artifacts", () => {
+  it("compares publish artifacts by stableDigest (positive closed path: digest match yields no changed refs)", () => {
+    const closed = {
+      id: "closed-appbundle-publish-artifact-120",
+      appId: "app_purchase_approval",
+      appVersion: "1.0.0",
+      runtimeClosureSummary: { stableDigest: "deadbeef120", blocked: false, evidencePresentCount: 6 },
+      perSkillEvidence: {
+        datamodel: { evidencePresent: true, digest: "deadbeef120", evidenceRef: "evidence:datamodel:closed-120" },
+        rbac: { evidencePresent: true, digest: "deadbeef120" },
+        workflow: { evidencePresent: true, digest: "deadbeef120" },
+        page: { evidencePresent: true, digest: "deadbeef120" },
+        aigc: { evidencePresent: true, digest: "deadbeef120" },
+        appbundle: { evidencePresent: true, digest: "deadbeef120" },
+      },
+    };
+    const sameTarget = JSON.parse(JSON.stringify(closed));
+    const diffEv = comparePublishArtifactsForRollbackClosureDiff(closed, sameTarget);
+    expect(diffEv).not.toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    const d = diffEv as AppBundleRollbackClosureDiffEvidence;
+    expect(d.digestMatch).toBe(true);
+    expect(d.changedPerSkillRefs).toEqual([]);
+    expect(d.currentStableDigest).toBe("deadbeef120");
+    expect(d.targetStableDigest).toBe("deadbeef120");
+    expect(d.evidencePresentCountCurrent).toBe(6);
+  });
+
+  it("compares publish artifacts and exposes changed per-skill refs (positive closed: mismatch path)", () => {
+    const current = {
+      appId: "app_purchase_approval",
+      appVersion: "1.0.0",
+      runtimeClosureSummary: { stableDigest: "deadbeef120", evidencePresentCount: 6 },
+      perSkillEvidence: { datamodel: { digest: "deadbeef120" }, appbundle: { digest: "deadbeef120" } },
+    };
+    const target = {
+      appId: "app_purchase_approval",
+      appVersion: "0.9.0",
+      runtimeClosureSummary: { stableDigest: "c0ffee99", evidencePresentCount: 5 },
+      perSkillEvidence: { datamodel: { digest: "olddigest" }, appbundle: { digest: "c0ffee99" } },
+    };
+    const diffEv = comparePublishArtifactsForRollbackClosureDiff(current, target);
+    expect(diffEv).not.toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    const d = diffEv as AppBundleRollbackClosureDiffEvidence;
+    expect(d.digestMatch).toBe(false);
+    expect(Array.isArray(d.changedPerSkillRefs)).toBe(true);
+    expect(d.changedPerSkillRefs).toContain("datamodel");
+    expect(d.currentVersion).toBe("1.0.0");
+    expect(d.targetVersion).toBe("0.9.0");
+  });
+
+  it("returns sentinel for missing digest or absent artifacts (fail-closed / degraded negative path)", () => {
+    const closed: any = { appId: "x", appVersion: "1.0.0", runtimeClosureSummary: { stableDigest: "deadbeef120" } };
+    const noDigest: any = { appId: "x", appVersion: "0.9.0", runtimeClosureSummary: { blocked: true } };
+    expect(comparePublishArtifactsForRollbackClosureDiff(closed, noDigest)).toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    expect(comparePublishArtifactsForRollbackClosureDiff(null, closed)).toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    expect(comparePublishArtifactsForRollbackClosureDiff(closed, {})).toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    // also direct publishClosure shape (projection)
+    const pcCurrent = { stableDigest: "d1", perSkillEvidence: { appbundle: { digest: "d1" } } };
+    const pcTarget = { stableDigest: "d2", perSkillEvidence: { appbundle: { digest: "d2" } } };
+    const d2 = comparePublishArtifactsForRollbackClosureDiff(pcCurrent, pcTarget);
+    expect(d2).not.toBe(APPBUNDLE_ROLLBACK_UNPINNED);
+    expect((d2 as AppBundleRollbackClosureDiffEvidence).digestMatch).toBe(false);
+  });
+
+  it("exposes the compare helper (deterministic, importable)", () => {
+    expect(typeof comparePublishArtifactsForRollbackClosureDiff).toBe("function");
+    const a = { runtimeClosureSummary: { stableDigest: "aa11" } };
+    const b = { runtimeClosureSummary: { stableDigest: "aa11" } };
+    const r1 = comparePublishArtifactsForRollbackClosureDiff(a, b);
+    const r2 = comparePublishArtifactsForRollbackClosureDiff(a, b);
+    if (r1 !== APPBUNDLE_ROLLBACK_UNPINNED && r2 !== APPBUNDLE_ROLLBACK_UNPINNED) {
+      expect((r1 as AppBundleRollbackClosureDiffEvidence).digestMatch).toBe((r2 as AppBundleRollbackClosureDiffEvidence).digestMatch);
     }
   });
 });

@@ -127,6 +127,19 @@ export interface AppBundleRollbackClosureComparison {
   changedClosureRefs: string[];
 }
 
+export interface AppBundleRollbackClosureDiffEvidence {
+  appId: string;
+  currentVersion?: string;
+  targetVersion?: string;
+  currentStableDigest?: string;
+  targetStableDigest?: string;
+  digestMatch: boolean;
+  changedPerSkillRefs: string[];
+  evidencePresentCountCurrent?: number;
+  evidencePresentCountTarget?: number;
+  degraded?: boolean;
+}
+
 export type AppBundleClosureTier = "hard_blocker" | "warning" | "info";
 
 export const APPBUNDLE_CLOSURE_TIERS: readonly AppBundleClosureTier[] = ["hard_blocker", "warning", "info"] as const;
