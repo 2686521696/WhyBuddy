@@ -23,8 +23,12 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/lib/skills/aigc/aigcSkill.test.ts",
   },
   {
-    id: "workflow-page-projector",
-    command: "npx vitest run client/src/lib/skills/page/pageSkill.test.ts -t \"WorkflowTaskView|workflow task|projectWorkflowTaskView\"",
+    id: "skilltrace-page",
+    command: "npx vitest run client/src/lib/skills/page/pageSkill.test.ts",
+  },
+  {
+    id: "skilltrace-appbundle-closure",
+    command: "npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts -t \"runtime closure|publishGate|AppBundle closure|appbundle aggregate|focused vitest matrix\"",
   },
   {
     id: "browser-evidence-projection",
