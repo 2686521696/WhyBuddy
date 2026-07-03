@@ -192,6 +192,34 @@ function TurnFootnote({
   );
 }
 
+function DriveFullStatusBanner({
+  status,
+  className = "",
+}: {
+  status?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
+  className?: string;
+}) {
+  if (!status || status === "idle" || status === "python_success") return null;
+  const text =
+    status === "loading"
+      ? "/drive-full loading Python..."
+      : status === "timeout"
+      ? "/drive-full timeout"
+      : status === "python_unavailable"
+      ? "/drive-full Python unavailable"
+      : "/drive-full fallback";
+  return (
+    <div
+      data-testid="sliderule-drive-full-status"
+      data-status={status}
+      className={`pointer-events-auto rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm ${className}`}
+      title={text}
+    >
+      {text}
+    </div>
+  );
+}
+
 function SlideRuleImmersion({
   goal,
   uiTurns,
@@ -241,6 +269,7 @@ function SlideRuleImmersion({
   retryPythonBackend,
   crossRuntimeGraph,
   publishClosure,
+  driveFullStatus,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -290,6 +319,7 @@ function SlideRuleImmersion({
   retryPythonBackend?: () => void;
   crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
   publishClosure?: PublishClosureSummary | null;
+  driveFullStatus?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -368,6 +398,10 @@ function SlideRuleImmersion({
             {isDegradedApiError(pythonApiError) && <span className="ml-1">(degraded envelope)</span>}
           </div>
         )}
+        <DriveFullStatusBanner
+          status={driveFullStatus}
+          className="absolute left-1/2 top-[96px] z-50 -translate-x-1/2"
+        />
         <div className={autopilotTheme.immersionOverlayArchRow}>
           <ArchitectureProcessPanel
             liveAction={isRunning ? liveAction : null}
@@ -523,6 +557,7 @@ function SlideRuleSplitEngineering({
   setDeliverablesOpen,
   openDeliverables,
   publishClosure,
+  driveFullStatus,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -563,6 +598,7 @@ function SlideRuleSplitEngineering({
   setDeliverablesOpen: (open: boolean) => void;
   openDeliverables: () => void;
   publishClosure?: PublishClosureSummary | null;
+  driveFullStatus?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
 }) {
   const imScrollRef = useRef<HTMLElement>(null);
   const imBottomRef = useRef<HTMLDivElement>(null);
@@ -651,6 +687,8 @@ function SlideRuleSplitEngineering({
           </a>
         </div>
       </header>
+
+      <DriveFullStatusBanner status={driveFullStatus} className="mx-6 mt-2 inline-flex" />
 
       <SlideRuleStatusBar
         state={sessionState}
@@ -838,6 +876,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     answerClarifications,
     generateDeliverables,
     stop,
+    driveFullStatus,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
@@ -1155,6 +1194,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     retryPythonBackend,
     crossRuntimeGraph,
     publishClosure,
+    driveFullStatus,
   };
 
   if (isImmersion) {

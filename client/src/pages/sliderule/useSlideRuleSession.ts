@@ -150,6 +150,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     createEmptySessionState(sessionId)
   );
   const [sessionHydrated, setSessionHydrated] = useState(false);
+  const [driveFullStatus, setDriveFullStatus] = useState<
+    "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback"
+  >("idle");
 
   // M2: drive mode (persisted for session; default "single" per spec)
   const [driveMode, setDriveMode] = useState<SlideRuleRuntime.SlideRuleDriveMode>(() => {
@@ -515,10 +518,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         drive = { finalState: marathonRes.finalState, stopReason: marathonRes.stopReason, loops: [] };
         usedMarathonDriver = true;
       } else {
-        const { driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
+        const { classifyDriveFullStatus, driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
+        setDriveFullStatus("loading");
         const pythonDrive = await driveFullViaPython(preparedState, userText.trim(), {
           stopSignal: controller.signal,
         });
+        setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
         drive = pythonDrive
           ? { finalState: pythonDrive.finalState, stopReason: pythonDrive.stopReason || "completed", loops: [] }
           : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
@@ -958,6 +963,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setInput("");
     setLiveAction(null);
     setNextGateShouldFail(false);
+    setDriveFullStatus("idle");
   }, [isRunning, sessionState.sessionId, sessionId]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
@@ -1020,6 +1026,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // M5: real marathon budget, surfaced to the HUD for synchronization.
     marathonBudget,
     setMarathonBudget: (b: { maxTokens: number; declaredAt: string }) => setMarathonBudget(b),
+    driveFullStatus,
     sendMessage,
     runTurn,
     challengeTurn,

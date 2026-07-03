@@ -5,6 +5,7 @@ import { ArchitectureProcessPanel } from "../ArchitectureProcessPanel";
 import SlideRule from "@/pages/SlideRule";
 
 const EmbeddedSlideRule = SlideRule as React.ComponentType<{ embedded?: boolean }>;
+const slideRuleHookOverrides: { driveFullStatus?: string | null } = {};
 
 vi.mock("../TurnRouteTimeline", () => ({
   TurnRouteTimeline: () => <div data-testid="mock-turn-route-timeline" />,
@@ -81,6 +82,7 @@ vi.mock("../useSlideRuleSession", async () => {
       setDriveMode: () => {},
       stop: () => {},
       executorMode: "server-llm" as const,
+      driveFullStatus: slideRuleHookOverrides.driveFullStatus ?? "idle",
     }),
   };
 });
@@ -402,5 +404,18 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     // For negative, we use direct panel wrapped (mock provides positive, but root always present)
     const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
     expect(html).toContain('data-testid="sliderule-root"');
+  });
+
+  it("surfaces /drive-full timeout status at the root so command submit is visibly not stuck", () => {
+    slideRuleHookOverrides.driveFullStatus = "timeout";
+    try {
+      const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
+
+      expect(html).toContain('data-testid="sliderule-drive-full-status"');
+      expect(html).toContain('data-status="timeout"');
+      expect(html).toContain("/drive-full");
+    } finally {
+      slideRuleHookOverrides.driveFullStatus = null;
+    }
   });
 });
