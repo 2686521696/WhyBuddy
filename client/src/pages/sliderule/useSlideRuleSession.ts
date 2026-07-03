@@ -11,6 +11,7 @@ import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { createUiCapabilityExecutor, mapArtifactsToWhyArtifacts } from "./ui-capability-executor";
+import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
@@ -515,7 +516,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           router: driveOpts.router,
           maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
         });
-        drive = { finalState: marathonRes.finalState, stopReason: marathonRes.stopReason, loops: [] };
+        drive = {
+          finalState: marathonRes.finalState,
+          stopReason: marathonRes.stopReason,
+          loops: [],
+          publishClosure: marathonRes.publishClosure,
+        };
         usedMarathonDriver = true;
       } else {
         const { classifyDriveFullStatus, driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
@@ -526,12 +532,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         });
         setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
         drive = pythonDrive
-          ? { finalState: pythonDrive.finalState, stopReason: pythonDrive.stopReason || "completed", loops: pythonDrive.loops || [] }
+          ? {
+              finalState: pythonDrive.finalState,
+              stopReason: pythonDrive.stopReason || "completed",
+              loops: pythonDrive.loops || [],
+              publishClosure: pythonDrive.publishClosure,
+            }
           : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
         usedMarathonDriver = false;
       }
 
       let final = drive.finalState;
+      final = mergePublishClosureForPersistedTurn(final, (drive as any).publishClosure);
       final = await persistSession(final);
       applyPersistedState(final);
 

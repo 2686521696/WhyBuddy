@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
-import { deriveLatestTurnFromState } from "../derive-persisted-turn";
+import { deriveLatestTurnFromState, mergePublishClosureForPersistedTurn } from "../derive-persisted-turn";
 import { __sessionEvidenceTestHelpers } from "../useSlideRuleSession";
 
 /**
@@ -143,5 +143,61 @@ describe("publishClosure frontend session persistence (119)", () => {
     expect((fresh as any).publishClosure).toBeUndefined();
     expect((fresh.artifacts || []).length).toBe(0);
     expect((fresh.capabilityRuns || []).length).toBe(0);
+  });
+});
+
+describe("persisted turn publishClosure merge order (120)", () => {
+  const pythonClosed = {
+    blocked: false,
+    blockerCount: 0,
+    evidencePresentCount: 6,
+    skillCount: 6,
+    versionPinsChecked: true,
+    closureHash: "python-authoritative-120",
+    tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+    topBlockers: [],
+    perSkillEvidence: {},
+  };
+
+  const previewOnly = {
+    blocked: false,
+    blockerCount: 0,
+    evidencePresentCount: 2,
+    skillCount: 6,
+    versionPinsChecked: false,
+    closureHash: "ts-preview-only",
+    tierCounts: { hard_blocker: 0, warning: 1, info: 0 },
+    topBlockers: [],
+    perSkillEvidence: {},
+  };
+
+  it("persists Python top-level closure over a stale preview closure", () => {
+    const stateWithPreview = {
+      sessionId: "merge-120",
+      goal: { text: "merge order", status: "clear" },
+      artifacts: [],
+      capabilityRuns: [],
+      publishClosure: previewOnly,
+    } as any;
+
+    const merged = mergePublishClosureForPersistedTurn(stateWithPreview, pythonClosed) as any;
+
+    expect(merged.publishClosure?.closureHash).toBe("python-authoritative-120");
+    expect(merged.publishClosure?.evidencePresentCount).toBe(6);
+  });
+
+  it("does not promote preview closure when Python has no authoritative closure", () => {
+    const stateWithPreview = {
+      sessionId: "merge-degraded-120",
+      goal: { text: "merge degraded", status: "clear" },
+      artifacts: [],
+      capabilityRuns: [],
+      publishClosure: previewOnly,
+    } as any;
+
+    const merged = mergePublishClosureForPersistedTurn(stateWithPreview, undefined) as any;
+
+    expect("publishClosure" in merged).toBe(false);
+    expect(merged.publishClosure).toBeUndefined();
   });
 });

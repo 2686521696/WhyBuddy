@@ -109,3 +109,12 @@ export function deriveLatestTurnFromState(
     actions: [],
   } as UiTurn;
 }
+
+export function mergePublishClosureForPersistedTurn(
+  state: V5SessionState,
+  pythonPublishClosure: unknown
+): V5SessionState {
+  const { publishClosure: _previewPublishClosure, ...rest } = state as any;
+  if (pythonPublishClosure == null) return rest as V5SessionState;
+  return { ...rest, publishClosure: pythonPublishClosure } as V5SessionState;
+}

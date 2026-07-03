@@ -41,6 +41,7 @@ export interface MarathonResult {
     seed?: string; // auto-seeded for next
   }>;
   stopReason: MarathonStopReason;
+  publishClosure?: any;
 }
 
 export type DriveFullStatus =
@@ -82,6 +83,7 @@ async function driveMarathonViaPython(
       finalState,
       rounds,
       stopReason: (body.stopReason || "await_human") as MarathonStopReason,
+      publishClosure: body.publishClosure,
     };
   } catch {
     return null;
@@ -107,7 +109,7 @@ export async function driveFullViaPython(
   state: V5SessionState,
   userText: string,
   opts: { stopSignal?: AbortSignal; maxLoops?: number; turnId?: string } = {}
-): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[] } | null> {
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
   try {
     const res = await fetch("/api/sliderule/drive-full", {
@@ -134,6 +136,7 @@ export async function driveFullViaPython(
     return {
       finalState,
       stopReason: body.stopReason || "completed",
+      publishClosure: body.publishClosure,
       loops: opts.turnId
         ? [
             {
