@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.v5_state import CapabilityRun, V5SessionState  # noqa: E402
+from models.v5_state import CapabilityRun, ExecuteCapabilityResult, V5SessionState  # noqa: E402
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response  # noqa: E402
 
 
@@ -62,6 +62,55 @@ def test_derive_skill_runtime_graph_returns_full_shape_for_positive_edges():
     assert "appbundle" in g["bySkill"]
     assert "evidenceBySkill" in g
     assert len(g["evidenceBySkill"].get("datamodel", [])) >= 1
+
+
+def test_derive_skill_runtime_graph_reads_execute_result_attachment_120():
+    result = ExecuteCapabilityResult(
+        title="skill runtime graph",
+        summary="graph",
+        content="",
+        provenance="python-closure",
+    )
+    result.__dict__["skillRuntimeGraph"] = {
+        "edges": [
+            {
+                "sourceSkill": "datamodel",
+                "targetSkill": "rbac",
+                "state": "allowed",
+                "evidenceKey": "ev:model-attachment",
+                "raw": "datamodel->rbac:allowed",
+            }
+        ],
+        "bySkill": {
+            "datamodel": [],
+            "rbac": [],
+        },
+        "evidenceBySkill": {
+            "datamodel": ["ev:model-attachment"],
+            "rbac": ["ev:model-attachment"],
+        },
+    }
+    run = CapabilityRun(
+        id="run-srg-model-120",
+        capabilityId="appbundle.skillGraph",
+        turnId="t-srg-model",
+        result=None,
+    )
+    run.result = result
+    state = V5SessionState(
+        sessionId="srg-model-attachment",
+        goal={"text": "skill runtime graph attachment"},
+        artifacts=[],
+        capabilityRuns=[run],
+        coverageGaps=[],
+        coverageContract=None,
+    )
+
+    graph = derive_skill_runtime_graph_response(state)
+
+    assert graph is not None
+    assert graph["edges"][0]["evidenceKey"] == "ev:model-attachment"
+    assert "ev:model-attachment" in graph["evidenceBySkill"]["rbac"]
 
 
 def test_derive_skill_runtime_graph_returns_none_for_empty():

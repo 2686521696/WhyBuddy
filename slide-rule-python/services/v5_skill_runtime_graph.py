@@ -18,14 +18,37 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return value
     if hasattr(value, "model_dump"):
-        dumped = value.model_dump()
-        return dumped if isinstance(dumped, dict) else {}
+        try:
+            dumped = value.model_dump()
+            if not isinstance(dumped, dict):
+                dumped = {}
+            for key, nested in getattr(value, "__dict__", {}).items():
+                if key.startswith("_") or key in dumped:
+                    continue
+                dumped[key] = nested
+            return dumped
+        except Exception:
+            pass
+    if hasattr(value, "__dict__"):
+        return {
+            key: nested
+            for key, nested in getattr(value, "__dict__", {}).items()
+            if not key.startswith("_")
+        }
     return {}
 
 
-def _is_degraded(run: Dict[str, Any]) -> bool:
+def _run_result_raw(run: Any, run_data: Dict[str, Any]) -> Any:
+    if not isinstance(run, dict):
+        raw = getattr(run, "result", None)
+        if raw is not None:
+            return raw
+    return run_data.get("result")
+
+
+def _is_degraded(run: Any) -> bool:
     rd = _as_dict(run)
-    res = _as_dict(rd.get("result"))
+    res = _as_dict(_run_result_raw(run, rd))
     if rd.get("error") is not None:
         return True
     if res.get("degraded") is True:
@@ -131,17 +154,16 @@ def derive_skill_runtime_graph_response(state: V5SessionState) -> Optional[Dict[
 
     # Latest run is authoritative for current final_state. If degraded/error, fail-closed.
     # This directly addresses the case where /drive-full final_state has current run degraded.
-    latest = _as_dict(runs[-1])
-    if _is_degraded(latest):
+    if _is_degraded(runs[-1]):
         return None
 
     for run in reversed(runs):
         run_d = _as_dict(run)
-        if _is_degraded(run_d):
+        if _is_degraded(run):
             # skip older degraded runs; do not return their graph data
             continue
 
-        result = _as_dict(run_d.get("result"))
+        result = _as_dict(_run_result_raw(run, run_d))
         # direct embed pass-through (future python caps or appbundle may emit)
         for key in ("skillRuntimeGraph", "crossRuntimeGraph"):
             cand = result.get(key)
