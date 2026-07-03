@@ -43,8 +43,16 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-status-bar.test.ts -t \"driveFullViaPython attaches\"",
   },
   {
+    id: "browser-drive-full-status-classifier",
+    command: "npx vitest run client/src/pages/sliderule/__tests__/derive-status-bar.test.ts -t \"classifies /drive-full status\"",
+  },
+  {
     id: "browser-skill-runtime-visible",
     command: "npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx -t \"surfaces python /drive-full publishClosure\"",
+  },
+  {
+    id: "browser-drive-full-status-visible",
+    command: "npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx -t \"drive-full timeout status\"",
   },
   {
     id: "browser-route-probe",
