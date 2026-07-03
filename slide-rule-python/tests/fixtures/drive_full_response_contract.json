@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "purpose": "deterministic /drive-full response contract fixture for runtime closure e2e",
+    "includes": ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"],
+    "positive_closed_path": true,
+    "negative_degraded_fail_closed_path": true,
+    "deterministic": true,
+    "no_live_providers": true
+  },
+  "positive": {
+    "command": "sliderule-page-drive-full",
+    "stateAuthority": "python",
+    "provenance": "python-fullpath",
+    "backend": "python",
+    "skillRuntimeGraph": {
+      "edges": [
+        {
+          "sourceSkill": "datamodel",
+          "targetSkill": "rbac",
+          "state": "allowed",
+          "evidenceKey": "E-dm-rbac"
+        },
+        {
+          "sourceSkill": "rbac",
+          "targetSkill": "aigc",
+          "state": "allowed",
+          "evidenceKey": "E-rbac-aigc"
+        }
+      ],
+      "bySkill": {
+        "datamodel": [
+          {
+            "sourceSkill": "datamodel",
+            "targetSkill": "rbac",
+            "state": "allowed"
+          }
+        ],
+        "rbac": [
+          {
+            "sourceSkill": "datamodel",
+            "targetSkill": "rbac",
+            "state": "allowed"
+          }
+        ],
+        "aigc": [
+          {
+            "sourceSkill": "rbac",
+            "targetSkill": "aigc",
+            "state": "allowed"
+          }
+        ]
+      },
+      "evidenceBySkill": {
+        "datamodel": ["E-dm-rbac"],
+        "rbac": ["E-dm-rbac", "E-rbac-aigc"],
+        "aigc": ["E-rbac-aigc"]
+      }
+    },
+    "publishClosure": {
+      "blocked": false,
+      "blockerCount": 0,
+      "evidencePresentCount": 6,
+      "skillCount": 6,
+      "versionPinsChecked": true,
+      "closureId": "appbundle:drivefull-positive@120:runtime-closure",
+      "closureHash": "c0ffee120",
+      "stableDigest": "deadbeef120",
+      "tierCounts": {
+        "hard_blocker": 0,
+        "warning": 0,
+        "info": 2
+      },
+      "perSkillEvidence": {
+        "datamodel": {
+          "skillId": "datamodel",
+          "evidencePresent": true
+        },
+        "rbac": {
+          "skillId": "rbac",
+          "evidencePresent": true
+        },
+        "workflow": {
+          "skillId": "workflow",
+          "evidencePresent": true
+        },
+        "page": {
+          "skillId": "page",
+          "evidencePresent": true
+        },
+        "aigc": {
+          "skillId": "aigc",
+          "evidencePresent": true
+        },
+        "appbundle": {
+          "skillId": "appbundle",
+          "evidencePresent": true
+        }
+      },
+      "topBlockers": []
+    },
+    "report": {
+      "status": "closed",
+      "evidencePresentCount": 6,
+      "blockers": [],
+      "summary": "positive closed closure from /drive-full python authority"
+    },
+    "degraded": false,
+    "max_loops": 5,
+    "runtimePhase": "done"
+  },
+  "degraded": {
+    "command": "sliderule-page-drive-full",
+    "stateAuthority": "python",
+    "provenance": "python-fullpath",
+    "backend": "python",
+    "skillRuntimeGraph": null,
+    "publishClosure": null,
+    "report": {
+      "status": "degraded",
+      "reason": "capability error on latest run",
+      "error": {
+        "code": "capability_execution_failed"
+      }
+    },
+    "degraded": true,
+    "max_loops": 1,
+    "runtimePhase": "failed",
+    "error": "latest run degraded; fail-closed on graph and closure"
+  }
+}

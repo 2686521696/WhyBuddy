@@ -1173,3 +1173,37 @@ def test_drive_full_blocked_path_for_missing_declared_skill_evidence(monkeypatch
     validated = PublishClosureResponse.model_validate(pc)
     assert validated.blocked is True
     # also skill graph may be absent here, but publish proves the blocked path
+
+
+def test_drive_full_response_contract_fixture_120():
+    import json
+    import os
+
+    fixture_path = os.path.join(os.path.dirname(__file__), "fixtures", "drive_full_response_contract.json")
+    assert os.path.exists(fixture_path), "drive full response contract fixture must exist"
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        fixture = json.load(f)
+
+    assert fixture["meta"]["includes"] == ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"]
+    assert fixture["meta"]["positive_closed_path"] is True
+    assert fixture["meta"]["negative_degraded_fail_closed_path"] is True
+
+    positive = fixture["positive"]
+    degraded = fixture["degraded"]
+
+    assert positive["command"] == "sliderule-page-drive-full"
+    assert positive["degraded"] is False
+    assert positive["publishClosure"]["blocked"] is False
+    assert positive["publishClosure"]["evidencePresentCount"] == 6
+    assert len(positive["skillRuntimeGraph"]["edges"]) >= 1
+    assert positive["report"]["status"] == "closed"
+
+    assert degraded["command"] == "sliderule-page-drive-full"
+    assert degraded["degraded"] is True
+    assert degraded["publishClosure"] is None
+    assert degraded["skillRuntimeGraph"] is None
+    assert degraded["report"]["status"] == "degraded"
+
+    for key in ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"]:
+        assert key in positive
+        assert key in degraded
