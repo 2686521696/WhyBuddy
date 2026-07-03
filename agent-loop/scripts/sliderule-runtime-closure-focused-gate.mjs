@@ -59,6 +59,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/DeliverablesPanel.test.tsx",
   },
   {
+    id: "closure-final-json-summary",
+    command: "node --test agent-loop/src/closureFinalSummary.test.mjs",
+  },
+  {
     id: "drive-full-model-attachments",
     command: "cd slide-rule-python && python -m pytest tests/test_sliderule_driver_fullpath.py -k \"drive_full or result_to_dict\"",
   },
