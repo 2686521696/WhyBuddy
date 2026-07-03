@@ -981,6 +981,10 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
       return [];
     })();
     surf.workflowBindingImpactEvidence = createDataModelWorkflowBindingImpactEvidence(model, changed, workflowBindingFieldRefs);
+    surf.datamodelToWorkflowTrace = traceDataModelEntityFieldToWorkflowBindingEvidence(
+      model,
+      surf.workflowBindingImpactEvidence,
+    );
     // 119 fix: only include DM_WORKFLOW key for positive cases; fail-closed negative (removed field) does not pollute runtimeEvidence list.
     const workflowImpact = surf.workflowBindingImpactEvidence;
     if (workflowImpact && workflowImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_WORKFLOW_BINDING_IMPACT_EVIDENCE || String(k).startsWith(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE))) {
@@ -1055,6 +1059,7 @@ export const DM_PAGE_BINDING_IMPACT_EVIDENCE = "DM_PAGE_BINDING_IMPACT_EVIDENCE"
 export const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE = "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
 export const DM_DATAMODEL_TO_RBAC_TRACE = "DM_DATAMODEL_TO_RBAC_TRACE";
 export const DM_DATAMODEL_TO_PAGE_TRACE = "DM_DATAMODEL_TO_PAGE_TRACE";
+export const DM_DATAMODEL_TO_WORKFLOW_TRACE = "DM_DATAMODEL_TO_WORKFLOW_TRACE";
 
 export interface DataModelToRbacTrace {
   traceId: typeof DM_DATAMODEL_TO_RBAC_TRACE;
@@ -1074,6 +1079,17 @@ export interface DataModelToPageTrace {
   sourceEntityRefs: string[];
   sourceFieldRefs: string[];
   impact: DataModelPageBindingImpactEvidence;
+  state: "closed" | "blocked";
+  reasonCode: string;
+}
+
+export interface DataModelToWorkflowTrace {
+  traceId: typeof DM_DATAMODEL_TO_WORKFLOW_TRACE;
+  sourceSkill: "datamodel";
+  targetSkill: "workflow";
+  sourceEntityRefs: string[];
+  sourceFieldRefs: string[];
+  impact: DataModelWorkflowBindingImpactEvidence;
   state: "closed" | "blocked";
   reasonCode: string;
 }
@@ -1233,6 +1249,39 @@ export function traceDataModelEntityFieldToPageBindingEvidence(
     impact,
     state: closed ? "closed" : "blocked",
     reasonCode: closed ? "DM_PAGE_TRACE_POSITIVE_CLOSED" : impact.reasonCode,
+  };
+}
+
+export function traceDataModelEntityFieldToWorkflowBindingEvidence(
+  model: DataModelModel,
+  impactEvidence?: DataModelWorkflowBindingImpactEvidence,
+): DataModelToWorkflowTrace {
+  const changed = deriveDataModelChangedRefs(model);
+  const workflowBindingFieldRefs: string[] = (() => {
+    const hasPurchase = (model.entities || []).some((entity: Entity) => entity.id === "purchase_request");
+    if (hasPurchase) return PURCHASE_WORKFLOW_BINDING_REFS;
+    const hasLeave = (model.entities || []).some((entity: Entity) => entity.id === "leave_request");
+    if (hasLeave) return LEAVE_WORKFLOW_BINDING_REFS;
+    return [];
+  })();
+  const impact =
+    impactEvidence ??
+    createDataModelWorkflowBindingImpactEvidence(
+      model,
+      { entity: changed.entity, field: changed.field },
+      workflowBindingFieldRefs,
+    );
+  const closed = impact.hasPositiveEvidence === true && impact.state === "allowed";
+
+  return {
+    traceId: DM_DATAMODEL_TO_WORKFLOW_TRACE,
+    sourceSkill: "datamodel",
+    targetSkill: "workflow",
+    sourceEntityRefs: changed.entity,
+    sourceFieldRefs: changed.field,
+    impact,
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "DM_WORKFLOW_TRACE_POSITIVE_CLOSED" : impact.reasonCode,
   };
 }
 
@@ -1616,5 +1665,9 @@ const LEAVE_WORKFLOW_BINDING_REFS: string[] = ["leave_request.approved"];
       workflowBindingFieldRefs = LEAVE_WORKFLOW_BINDING_REFS;
     }
     (m as any).workflowBindingImpactEvidence = createDataModelWorkflowBindingImpactEvidence(m, changed, workflowBindingFieldRefs);
+    (m as any).datamodelToWorkflowTrace = traceDataModelEntityFieldToWorkflowBindingEvidence(
+      m,
+      (m as any).workflowBindingImpactEvidence,
+    );
   }
 })();
