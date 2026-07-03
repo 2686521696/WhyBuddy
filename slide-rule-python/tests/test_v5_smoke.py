@@ -732,6 +732,8 @@ def test_drive_full_returns_publish_closure_response_when_available(monkeypatch)
     assert env["publishClosure"]["skillCount"] == 6
     assert env["publishClosure"]["versionPinsChecked"] is True
     assert env["publishClosure"]["closureHash"] == "feedface"
+    assert env["publishClosure"]["perSkillEvidence"]["datamodel"]["evidencePresent"] is True
+    assert env["publishClosure"]["perSkillEvidence"]["aigc"]["evidencePresent"] is True
 
 
 def test_drive_marathon_returns_publish_closure_response_when_available(monkeypatch):
@@ -801,3 +803,5 @@ def test_drive_marathon_returns_publish_closure_response_when_available(monkeypa
     assert env["publishClosure"]["blocked"] is False
     assert env["publishClosure"]["evidencePresentCount"] == 6
     assert env["publishClosure"]["skillCount"] == 6
+    assert env["publishClosure"]["perSkillEvidence"]["datamodel"]["evidencePresent"] is True
+    assert env["publishClosure"]["perSkillEvidence"]["aigc"]["evidencePresent"] is True

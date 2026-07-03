@@ -54,6 +54,8 @@ def test_derive_publish_closure_response_from_runtime_closure_result():
     assert response["closureHash"] == "feedface"
     assert response["stableDigest"] == "deadbeef"
     assert response["tierCounts"] == {"hard_blocker": 0, "warning": 1, "info": 2}
+    assert response["perSkillEvidence"]["datamodel"]["evidencePresent"] is True
+    assert response["perSkillEvidence"]["aigc"]["evidencePresent"] is True
 
 
 def test_derive_publish_closure_response_returns_none_without_runtime_closure():

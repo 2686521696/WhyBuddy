@@ -55,6 +55,7 @@ def _to_publish_closure_summary(report: Dict[str, Any]) -> Optional[Dict[str, An
             "warning": _tier_count(report, "warning"),
             "info": _tier_count(report, "info"),
         },
+        "perSkillEvidence": per_skill,
         "topBlockers": top_blockers,
     }
 
