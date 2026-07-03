@@ -101,12 +101,15 @@ export function derivePublishClosureSummary(
       warning: findingsByTier.warning?.length ?? 0,
       info: findingsByTier.info?.length ?? 0,
     },
-    topBlockers: report.blockers.slice(0, blockerLimit).map((blocker) => ({
-      code: blocker.code,
-      path: blocker.path,
-      affectedSkill: (blocker as { affectedSkill?: string }).affectedSkill,
-      ref: (blocker as { ref?: string }).ref,
-    })),
+    topBlockers: report.blockers.slice(0, blockerLimit).map((blocker) => {
+      const ext = blocker as { affectedSkill?: string; ref?: string };
+      return {
+        code: blocker.code,
+        path: blocker.path,
+        affectedSkill: ext.affectedSkill,
+        ref: ext.ref,
+      };
+    }),
   };
 }
 
@@ -143,3 +146,35 @@ export function formatClosureStatusAndTopBlockersForFinalReport(
     `closureHash: ${summary.closureHash ?? "n/a"}`,
   ].join("\n");
 }
+
+// Baseline-safe fixtures for frontend typecheck post-closure integration (119 precheck-03).
+// These typed constants ensure PublishClosureSummary schema and closure fields (blocked/evidence/tiers) are exercised by tsc --noEmit.
+// Positive evidence case (clean closure) and fail-closed negative case (blocked) included for deterministic coverage.
+export const BASELINE_SAFE_PUBLISH_CLOSURE_SUMMARY: PublishClosureSummary = {
+  blocked: false,
+  blockerCount: 0,
+  evidencePresentCount: 6,
+  skillCount: 6,
+  versionPinsChecked: true,
+  closureId: "appbundle-closure-119-baseline",
+  closureHash: "sha256-closure-baseline-000",
+  stableDigest: "digest-119-frontend-precheck",
+  tierCounts: { hard_blocker: 0, warning: 1, info: 3 },
+  topBlockers: [],
+};
+
+export const BASELINE_SAFE_PUBLISH_CLOSURE_BLOCKED: PublishClosureSummary = {
+  blocked: true,
+  blockerCount: 2,
+  evidencePresentCount: 2,
+  skillCount: 6,
+  versionPinsChecked: true,
+  closureId: "appbundle-closure-119-blocked",
+  closureHash: "sha256-closure-blocked-001",
+  stableDigest: "digest-119-blocked",
+  tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+  topBlockers: [
+    { code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "versionPins.datamodel", affectedSkill: "datamodel", ref: undefined },
+    { code: "APPBUNDLE_REF_MISSING_ENTITY", path: "entityRefs[0]", affectedSkill: "datamodel", ref: "Order" },
+  ],
+};

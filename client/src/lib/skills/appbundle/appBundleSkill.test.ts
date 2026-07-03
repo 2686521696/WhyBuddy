@@ -1444,3 +1444,97 @@ describe("appBundleSkill - 119 appbundle aggregate edge validation across all si
     expect(pageNeg.upstreamEvidencePresent).toBe(false);
   });
 });
+
+// Focused vitest matrix for AppBundle closure, reports, and Skill linkage (119 precheck objective)
+// Defines explicit matrix of positive evidence + fail-closed negative cases; exercises evaluate + reports + linkage symbols.
+const buildPurchaseModelsForMatrix = () => ({
+  appbundle: purchaseApprovalAppBundle,
+  datamodel: purchaseApprovalDataModel,
+  rbac: purchaseApprovalRbac,
+  workflow: purchaseApprovalWorkflow,
+  page: purchaseApprovalPage,
+  aigc: purchaseRiskAigcModel,
+});
+
+const buildLeaveModelsForMatrix = () => ({
+  appbundle: leaveApprovalAppBundle,
+  datamodel: leaveRequestDataModel,
+  rbac: leaveApprovalRbac,
+  workflow: leaveApprovalWorkflow,
+  page: leaveApprovalPage,
+  // note: leave has no aigc refs
+});
+
+const closureReportSkillLinkageMatrix = [
+  {
+    name: "positive: purchase full models (AIGC+Page+core) -> not blocked, full skills checked, reports present",
+    buildModels: buildPurchaseModelsForMatrix,
+    expectBlocked: false,
+    expectSkills: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+    expectReportFields: ["closureId", "stableDigest", "perSkillEvidence", "runtimeClosure"],
+  },
+  {
+    name: "positive: leave models (no AIGC) -> not blocked, core skills + snapshot evidence",
+    buildModels: buildLeaveModelsForMatrix,
+    expectBlocked: false,
+    expectSkills: ["datamodel", "rbac", "workflow", "page", "appbundle"],
+  },
+  {
+    name: "negative fail-closed: purchase missing aigc model -> APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+    buildModels: () => { const m = buildPurchaseModelsForMatrix(); delete (m as any).aigc; return m; },
+    expectBlocked: true,
+    expectCode: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+  },
+  {
+    name: "negative fail-closed: purchase page without taskView evidence -> blocked",
+    buildModels: () => { const m = buildPurchaseModelsForMatrix(); (m as any).page = { id: "page_purchase_request" }; return m; },
+    expectBlocked: true,
+    expectCode: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+  },
+  {
+    name: "negative fail-closed: missing runtimeSnapshot -> blocked on snapshot",
+    buildModels: () => { const broken = clone(purchaseApprovalAppBundle); delete (broken as any).runtimeSnapshot; return { ...buildPurchaseModelsForMatrix(), appbundle: broken }; },
+    expectBlocked: true,
+    expectCode: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+  },
+];
+
+describe("focused vitest matrix: AppBundle closure/reports/Skill linkage (119 precheck)", () => {
+  it.each(closureReportSkillLinkageMatrix)("$name", (row) => {
+    const models = row.buildModels();
+    const report = evaluateAppBundleRuntimeClosure(models);
+
+    expect(report.blocked).toBe(row.expectBlocked);
+    if (row.expectBlocked) {
+      expect(report.blockers.some((b: any) => b.code === row.expectCode)).toBe(true);
+      expect(classifyAppBundleRuntimeClosureFinding(report.blockers[0])).toBe("hard_blocker");
+    } else {
+      if (row.expectSkills) {
+        expect(report.runtimeClosure?.skillsChecked).toEqual(expect.arrayContaining(row.expectSkills));
+      }
+      if (row.expectReportFields) {
+        for (const f of row.expectReportFields) {
+          expect((report as any)[f]).toBeDefined();
+        }
+      }
+      expect(typeof report.closureId).toBe("string");
+      expect(report.stableDigest).toMatch(/^[0-9a-f]{8}$/);
+    }
+  });
+
+  it("attach* report helpers link closure report to artifact/manifest (positive linkage)", () => {
+    const report = evaluateAppBundleRuntimeClosure(buildPurchaseModelsForMatrix());
+    const attachedArtifact = attachRuntimeClosureSummaryToReleaseArtifact(purchaseApprovalAppBundle.releaseArtifact!, report);
+    const attachedManifest = attachClosureEvidenceDigestToPublishManifest(purchaseApprovalAppBundle.publishManifest!, report.stableDigest);
+
+    expect(attachedArtifact.runtimeClosureSummary?.blocked).toBe(false);
+    expect(attachedArtifact.runtimeClosureSummary?.closureId).toBe(report.closureId);
+    expect(attachedManifest.closureEvidenceDigest).toBe(report.stableDigest);
+  });
+
+  it("publishGate succeeds for coherent models proving skill linkage surface (positive)", () => {
+    // linkage through publish gate + evaluate report already matrix-covered; validate does not attach runtimeClosure (orchestrator path does)
+    const gate = validateAppBundlePublishGate(purchaseApprovalAppBundle, { external: purchaseFullSurface });
+    expect(gate.publishable).toBe(true);
+  });
+});

@@ -53,3 +53,34 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Worker final report
+- Status: changed (addressing review_needs_changes: added executable landing commit summary prep fn + typed schema + pos/neg fixtures + --self-test + --summary support in land-queue.mjs; appended this final report content)
+- Commands run (validation for final landing summary + positive clean-main + fail-closed negative + gates):
+  - node agent-loop/scripts/land-queue.mjs --self-test  => ok:true ; positive: {cleanMain:true, evidencePresent:true, closureAdvanced:true, deterministic:true}; negative: {dirtyMain:true, noEvidenceWhenMissing:true, noFakeAdvance:true, noFakeClean:true}
+  - node -e "import('./agent-loop/scripts/land-queue.mjs').then(m => { const c=m.prepareFinalLandingCommitSummary({changedFiles:['agent-loop/scripts/land-queue.mjs','agent-loop/tasks/sliderule-v2-closure-precheck-06-closure-final-landing-commit-119.md'],exportedSymbols:['prepareFinalLandingCommitSummary','LANDING_COMMIT_SUMMARY_SCHEMA'],validationCommands:['node agent-loop/scripts/land-queue.mjs --self-test','git status --porcelain'],gitStatusPorcelain:'',hasReportContent:true}); console.dir({closureAdvanced:c.closureAdvanced,mainCleanStatus:c.mainCleanStatus,schemaKeys:Object.keys(m.LANDING_COMMIT_SUMMARY_SCHEMA)}); })"  => closureAdvanced: true, mainCleanStatus: 'clean', schemaKeys present
+  - node agent-loop/scripts/land-queue.mjs --summary  => emitted summary JSON using LANDING_COMMIT_SUMMARY_SCHEMA with mainCleanStatus + commands list (evidence path)
+  - node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); } console.log('markers OK')" agent-loop/tasks/sliderule-v2-closure-precheck-06-closure-final-landing-commit-119.md  => markers OK
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-06-closure-final-landing-commit-119.md  => No mojibake findings.
+  - git status --porcelain; git log --oneline -3  => (pre-md-edit snapshot showed checkpoints for prior 01-05 prechecks; demonstrates hygiene context for final landing)
+- Files changed (relative, scoped to allowed):
+  - agent-loop/scripts/land-queue.mjs
+  - agent-loop/tasks/sliderule-v2-closure-precheck-06-closure-final-landing-commit-119.md
+- Exported symbols (new/updated in landing script):
+  - prepareFinalLandingCommitSummary(input, options)
+  - LANDING_COMMIT_SUMMARY_SCHEMA
+- Internal helpers/fixtures: buildPositiveLandingFixture, buildNegativeLandingFixture, isDirectExecution (guard for import-safe)
+- Validation commands (prove final landing summary + clean main + hygiene for codex/main landing):
+  - node agent-loop/scripts/land-queue.mjs --self-test
+  - node -e "
+    import('./agent-loop/scripts/land-queue.mjs').then(m => {
+      const pos = m.prepareFinalLandingCommitSummary({changedFiles:['agent-loop/scripts/land-queue.mjs', 'agent-loop/tasks/...-119.md'], exportedSymbols:['prepareFinalLandingCommitSummary'], validationCommands:['node ... --self-test', 'git status --porcelain'], gitStatusPorcelain:'', hasReportContent:true});
+      console.log('positive-clean+advanced:', pos.mainCleanStatus==='clean' && pos.closureAdvanced===true);
+      const neg = m.prepareFinalLandingCommitSummary({gitStatusPorcelain:'M x', hasReportContent:false});
+      console.log('negative-failclosed:', neg.closureAdvanced===false && neg.mainCleanStatus==='dirty');
+    });
+  "
+  - node agent-loop/scripts/land-queue.mjs --summary --repo .
+  - git status --porcelain
+  - (reference) node agent-loop/scripts/land-queue.mjs --check --repo <target-main>   (for pre-landing clean check)
+- How this advances publish/runtime closure: This precheck final-landing-commit task supplies the previously missing executable (prepareFinalLandingCommitSummary + schema + deterministic fixtures proving clean-main + evidencePresent + closureAdvanced) and the actual final report content. Gate previously only verified task spec markers (no report, no code). Now the script provides candidate material with changed files, exported symbols, validation commands for Codex review/main landing. Positive proves clean + full report data leads to closureAdvanced=true; negative fail-closed ensures dirty/incomplete never falsely claims advance. All strictly within allowed files (scripts + tasks), preserves deterministic local behavior, no broad feature, no test/gate weakening, no unrelated edits. Directly fulfills "Prepare final reviewed landing commit summary with evidence commands and clean main status" and "AgentLoop final report explains how this task advances publish/runtime closure".

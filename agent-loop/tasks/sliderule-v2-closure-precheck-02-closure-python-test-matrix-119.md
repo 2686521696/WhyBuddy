@@ -53,3 +53,23 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Worker final report
+- Status: changed (addressing review_needs_changes: added focused Python test matrix for drive-full closure schema + happy/blocked/fail-closed paths; ran pytest; added this report)
+- Commands run (smallest relevant for Python drive-full closure matrix definition+run):
+  - slide-rule-python/.venv/Scripts/python.exe -m pytest tests/test_v5_publish_closure_response.py -q --tb=line  => 5 passed (original 2 + matrix 3 cases)
+  - slide-rule-python/.venv/Scripts/python.exe -m pytest tests/test_v5_publish_closure_response.py -q -k "closure_matrix or drive_full_closure" --tb=no  => targeted matrix
+  - node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" agent-loop/tasks/sliderule-v2-closure-precheck-02-closure-python-test-matrix-119.md  => markers OK
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-02-closure-python-test-matrix-119.md  => clean
+- Files changed (relative, scoped to allowed):
+  - slide-rule-python/tests/test_v5_publish_closure_response.py
+  - agent-loop/tasks/sliderule-v2-closure-precheck-02-closure-python-test-matrix-119.md
+- Exported symbols (new/updated in test):
+  - test_drive_full_closure_schema_matrix_happy_blocked_119 (parametrized matrix, 3 cases: 1 happy, 2 blocked)
+  - test_drive_full_closure_response_absent_is_fail_closed_119 (explicit negative)
+  - describe-equivalent: matrix covers drive-full style runtimeClosure schema (blocked, blockers, perSkillEvidence, closureHash, findingsByTier, topBlockers)
+- Validation commands (per required for 119 precheck + cross ref 118):
+  - slide-rule-python/.venv/Scripts/python.exe -m pytest tests/test_v5_publish_closure_response.py -q
+  - slide-rule-python/.venv/Scripts/python.exe -m pytest tests/test_v5_publish_closure_response.py tests/test_v5_smoke.py -q -k "publish_closure or drive_full" --tb=line
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-02-closure-python-test-matrix-119.md
+- How this advances publish/runtime closure: This precheck task supplies the missing Python test matrix definition and execution evidence for drive-full closure schema (positive happy non-blocked evidence paths + explicit blocked/fail-closed negative behaviors in derive_publish_closure_response used by routes after drive_full_v5_session). Previously gate only marker-checked the task; now executable matrix + pytest runs prove drive-full publishClosure extraction (blocked/happy, schema keys) for AppBundle runtime closure per Objective. Provides clean candidate slice for codex review/landing without weakening any fail-closed semantics or existing tests. Scoped to slide-rule-python and task file. All public API (derive_publish_closure_response) stable.

@@ -53,3 +53,26 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Worker final report
+- Status: changed (addressing review_needs_changes: executed actual frontend typecheck via tsc --noEmit covering closure types; added typed baseline fixtures for PublishClosureSummary (positive + blocked fail-closed); recorded clean baseline findings + this report)
+- Commands run (validation for frontend typecheck post AppBundle closure integration):
+  - node -e "..." (capture) npx tsc --noEmit --pretty false  => TYPECHECK_STATUS:0 , (clean no output)  [baseline-safe: 0 errors]
+  - node --run check  => exit 0 (root typecheck includes client/src for frontend)
+  - node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" agent-loop/tasks/sliderule-v2-closure-precheck-03-closure-frontend-typecheck-119.md  => markers OK
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-03-closure-frontend-typecheck-119.md  => clean
+  - node -e "..." (write log) => artifacts/flow-check/frontend-typecheck-119.log (captured clean result)
+- Files changed (relative, scoped to allowed):
+  - client/src/pages/sliderule/derive-cross-runtime-summary.ts
+  - agent-loop/tasks/sliderule-v2-closure-precheck-03-closure-frontend-typecheck-119.md
+- Exported symbols (new/updated):
+  - BASELINE_SAFE_PUBLISH_CLOSURE_SUMMARY (positive evidence typed fixture)
+  - BASELINE_SAFE_PUBLISH_CLOSURE_BLOCKED (fail-closed negative typed fixture)
+  - improved topBlockers extraction (typed ext without loose cast) in derivePublishClosureSummary
+  - PublishClosureSummary, derivePublishClosureSummary, selectPublishClosureSummary (existing, now covered by typecheck evidence)
+- Validation commands (to prove frontend typecheck + closure schema):
+  - npx tsc --noEmit --pretty false
+  - node --run check
+  - node --run typecheck
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-03-closure-frontend-typecheck-119.md
+- How this advances publish/runtime closure: This precheck task directly fulfills the objective by running the frontend typecheck (tsc covering client/src derive + appbundle closure types and UI summary adapters) after integration, recording baseline-safe (clean, exit 0, no errors) findings explicitly. Adds minimal typed fixtures (positive happy closure + blocked fail-closed) and slight type improvement to ensure schema stability is compile-checked (no weakening of AppBundle publish/runtime closure semantics or fail-closed behavior). Provides the missing command execution evidence + concise report that prior gate lacked; produces usable candidate material for codex review/landing in 119 wave without broad features or edits outside allowed files. All public names stable.

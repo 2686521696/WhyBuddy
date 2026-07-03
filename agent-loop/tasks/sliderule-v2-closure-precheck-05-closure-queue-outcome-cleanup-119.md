@@ -53,3 +53,31 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Worker final report
+- Status: changed (addressing review_needs_changes: added dedicated outcome cleanup script + typed schema + positive/negative evidence in --self-test + final report)
+- Commands run (validation for queue outcome normalization + positive + fail-closed):
+  - node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" agent-loop/tasks/sliderule-v2-closure-precheck-05-closure-queue-outcome-cleanup-119.md  => markers OK
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-precheck-05-closure-queue-outcome-cleanup-119.md  => clean
+  - node agent-loop/scripts/normalize-closure-queue-outcomes.mjs --self-test  => positive (cleaned rescue/apply for DONE closure tasks, marked closed) + negative (HALT/failed/crashed untouched, no fake done) ; allGood=true
+- Files changed (relative, scoped to allowed):
+  - agent-loop/scripts/normalize-closure-queue-outcomes.mjs
+  - agent-loop/tasks/sliderule-v2-closure-precheck-05-closure-queue-outcome-cleanup-119.md
+- Exported symbols (in cleanup script):
+  - normalizeClosureQueueOutcomes(outcomes, options)
+  - CLOSURE_QUEUE_OUTCOME_SCHEMA
+- Internal helpers: buildPositiveFixture, buildNegativeFixture
+- Validation commands (prove normalization for 119 closure shards):
+  - node agent-loop/scripts/normalize-closure-queue-outcomes.mjs --self-test
+  - node -e "
+    import('./agent-loop/scripts/normalize-closure-queue-outcomes.mjs').then(m => {
+      const pos = { tasks: { 'sliderule-v2-closure-precheck-05-closure-queue-outcome-cleanup-119': { lastStatus:'DONE_REVIEWED', lastOutcome:'done', rescuePatchAvailable:true, applyStatus:'X' } } };
+      const out = m.normalizeClosureQueueOutcomes(pos);
+      console.log('positive-cleaned:', out.tasks['sliderule-v2-closure-precheck-05-closure-queue-outcome-cleanup-119'].rescuePatchAvailable === false);
+      const neg = { tasks: { 'sliderule-v2-cross-runtime-118-shard-01-queue': { lastStatus:'HALT_NO_CHANGES', lastOutcome:'failed' } } };
+      const nout = m.normalizeClosureQueueOutcomes(neg);
+      console.log('negative-preserved:', nout.tasks['sliderule-v2-cross-runtime-118-shard-01-queue'].lastOutcome === 'failed');
+    });
+  "
+  - node agent-loop/scripts/normalize-closure-queue-outcomes.mjs agent-loop/scripts/sliderule-v2-closure-precheck-119-queue.json  (no-op hygiene ok)
+- How this advances publish/runtime closure: This precheck task supplies the missing executable queue outcome normalizer (script + schema + deterministic fixtures) scoped to 119 closure shards and 118 cross-runtime shards. Previously only marker gates + PENDING task existed with zero proof of normalization. Now normalizeClosureQueueOutcomes + --self-test prove positive hygiene (stale rescue/apply cleared for DONE_REVIEWED closure tasks; closureStatus=closed) + fail-closed negative (HALT/failed/crashed states are never rewritten to done). Provides clean candidate material for codex review/landing. Strictly within allowed files (scripts + tasks), no gate/test weakening, no broad changes. Advances queue hygiene objective for 119 closure wave.

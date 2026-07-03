@@ -11,6 +11,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from models.v5_state import CapabilityRun, V5SessionState  # noqa: E402
 from services.v5_publish_closure_response import (
     derive_publish_closure_response,
@@ -196,3 +198,139 @@ def test_derive_publish_closure_response_blocked_for_missing_declared_skill_evid
     assert response["skillCount"] == 3
     assert response["perSkillEvidence"]["rbac"]["evidencePresent"] is False
     assert response["topBlockers"][0]["affectedSkill"] == "rbac"
+
+# 119 precheck: Python test matrix for drive-full closure schema + happy/blocked paths.
+# Positive (happy): non-blocked with evidence -> publishClosure reflects happy evidence.
+# Negative/fail-closed: blocked true with blockers; also absence returns None (no false publish ok).
+@pytest.mark.parametrize(
+    ("label", "blocked", "blockers", "skills_evidence", "expected_blocked", "expected_blocker_count"),
+    [
+        # happy path: clean publish, evidence present across skills
+        (
+            "happy-evidence-present",
+            False,
+            [],
+            {
+                "datamodel": {"evidencePresent": True},
+                "rbac": {"evidencePresent": True},
+                "workflow": {"evidencePresent": True},
+                "page": {"evidencePresent": True},
+                "aigc": {"evidencePresent": True},
+                "appbundle": {"evidencePresent": True},
+            },
+            False,
+            0,
+        ),
+        # blocked path: has blockers -> blocked true, topBlockers populated
+        (
+            "blocked-with-appbundle-ref-missing",
+            True,
+            [
+                {
+                    "code": "APPBUNDLE_PUBLISH_REF_MISSING",
+                    "path": "menuEntries[0].roleRefs[2]",
+                    "affectedSkill": "rbac",
+                    "ref": "role:finance-admin",
+                }
+            ],
+            {
+                "datamodel": {"evidencePresent": True},
+                "rbac": {"evidencePresent": False},
+                "workflow": {"evidencePresent": True},
+                "page": {"evidencePresent": True},
+                "aigc": {"evidencePresent": True},
+                "appbundle": {"evidencePresent": True},
+            },
+            True,
+            1,
+        ),
+        # blocked path variant: multiple blockers, fail-closed surface (top 3 only in summary)
+        (
+            "blocked-multi",
+            True,
+            [
+                {"code": "B1", "path": "p1", "affectedSkill": "s1", "ref": "r1"},
+                {"code": "B2", "path": "p2", "affectedSkill": "s2", "ref": "r2"},
+                {"code": "B3", "path": "p3", "affectedSkill": "s3", "ref": "r3"},
+                {"code": "B4", "path": "p4", "affectedSkill": "s4", "ref": "r4"},
+            ],
+            {"datamodel": {"evidencePresent": False}},
+            True,
+            4,
+        ),
+    ],
+)
+def test_drive_full_closure_schema_matrix_happy_blocked_119(
+    label: str,
+    blocked: bool,
+    blockers: list,
+    skills_evidence: dict,
+    expected_blocked: bool,
+    expected_blocker_count: int,
+):
+    """Drive-full closure schema matrix: exercises derive_publish_closure_response with drive-full style runtimeClosure payload.
+    Covers schema keys used by routes after drive_full_v5_session: blocked, blockers, perSkillEvidence, runtimeClosure inner, closureHash etc.
+    Positive evidence + explicit fail-closed negative (blocked) behavior.
+    """
+    runtime_inner = {
+        "skillsChecked": list(skills_evidence.keys()),
+        "versionPinsChecked": True,
+    }
+    state = V5SessionState(
+        sessionId=f"closure-matrix-{label}",
+        goal={"text": f"drive full closure matrix {label}"},
+        artifacts=[],
+        capabilityRuns=[
+            CapabilityRun(
+                id=f"run-closure-{label}",
+                capabilityId="appbundle.runtimeClosure",
+                turnId="t-closure-matrix",
+                result={
+                    "runtimeClosure": {
+                        "blocked": blocked,
+                        "blockers": blockers,
+                        "perSkillEvidence": skills_evidence,
+                        "runtimeClosure": runtime_inner,
+                        "closureId": f"appbundle:matrix@{label}:runtime-closure",
+                        "closureHash": "c0ffee",
+                        "stableDigest": "baddcafe",
+                        "findingsByTier": {
+                            "hard_blocker": [{"code": "H"}] if blocked else [],
+                            "warning": [],
+                            "info": [],
+                        },
+                    }
+                },
+            )
+        ],
+    )
+
+    response = derive_publish_closure_response(state)
+
+    assert response is not None, f"matrix case {label} must surface publishClosure"
+    assert response["blocked"] is expected_blocked, f"blocked mismatch for {label}"
+    assert response["blockerCount"] == expected_blocker_count
+    assert response["evidencePresentCount"] == sum(
+        1 for v in skills_evidence.values() if v.get("evidencePresent") is True
+    )
+    assert response["skillCount"] == len(skills_evidence)
+    assert response["versionPinsChecked"] is True
+    assert response.get("closureHash") == "c0ffee"
+    if expected_blocked and blockers:
+        assert len(response.get("topBlockers", [])) >= 1
+        assert response["topBlockers"][0]["affectedSkill"] == blockers[0]["affectedSkill"]
+    # fail-closed negative: if no closure cap run, None (already covered by sibling test)
+
+
+def test_drive_full_closure_response_absent_is_fail_closed_119():
+    """Explicit fail-closed: drive full without closure run yields no publishClosure (None)."""
+    state = V5SessionState(
+        sessionId="closure-matrix-absent",
+        goal={"text": "drive full no closure cap"},
+        artifacts=[],
+        capabilityRuns=[
+            # some other cap run, no appbundle.runtimeClosure
+            CapabilityRun(id="run-other", capabilityId="some.other", turnId="t1", result={"title": "x"})
+        ],
+    )
+    assert derive_publish_closure_response(state) is None
