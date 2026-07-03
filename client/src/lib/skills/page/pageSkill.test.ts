@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { dataModelSkill, leaveRequestDataModel, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
 import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
-import { leaveApprovalAppBundle } from "../appbundle/appBundleSkill";
+import { evaluateAppBundleRuntimeClosure, leaveApprovalAppBundle } from "../appbundle/appBundleSkill";
 import { slideRule } from "../slideRule";
 import {
   buildPageCrossRuntimeEdges,
@@ -24,6 +24,10 @@ import {
   renderPageRuntimePolicy,
   PAGE_RUNTIME_COMPONENT_HIDDEN,
   taskActions,
+  createPageRouteBindingAppBundleEvidence,
+  PAGE_ROUTE_BINDING_EVIDENCE,
+  PAGE_TO_APPBUNDLE_TRACE,
+  tracePageRouteBindingToAppBundleClosureEvidence,
 } from "./pageSkill";
 import type { BindingSchema, ComponentRenderState, PageModel, PageRenderContext, PermissionRender } from "./pageModel";
 
@@ -936,5 +940,60 @@ describe("pageSkill - Page permission render evidence closure against RBAC polic
     const permEv = pageInfo?.pageRbacPermissionEvidence;
     expect(permEv?.state).toBe("blocked");
     expect(permEv?.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
+  });
+});
+
+describe("pageSkill - 120 page route binding to appbundle closure trace", () => {
+  it("traces Page route and workflow launch bindings to AppBundle closure as a closed path", () => {
+    const pageWithRoutes = {
+      ...leaveApprovalPage,
+      routeRefs: ["leave.form", "leave.approve"],
+      workflowLaunchRefs: ["wf_leave_approval"],
+    };
+
+    const trace = tracePageRouteBindingToAppBundleClosureEvidence(pageWithRoutes, leaveApprovalAppBundle);
+
+    expect(trace.traceId).toBe(PAGE_TO_APPBUNDLE_TRACE);
+    expect(trace.sourceSkill).toBe("page");
+    expect(trace.targetSkill).toBe("appbundle");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED");
+    expect(trace.routeRefs).toContain("leave.form");
+    expect(trace.pageBindingEvidencePresent).toBe(true);
+  });
+
+  it("traces missing AppBundle upstream or route binding refs as fail-closed", () => {
+    const pageWithoutRoutes = {
+      ...leaveApprovalPage,
+      routeRefs: [],
+      appMenuRefs: [],
+      workflowLaunchRefs: [],
+    };
+
+    const missingRefs = tracePageRouteBindingToAppBundleClosureEvidence(pageWithoutRoutes, leaveApprovalAppBundle);
+    const missingBundle = tracePageRouteBindingToAppBundleClosureEvidence(leaveApprovalPage);
+
+    expect(missingRefs.state).toBe("blocked");
+    expect(missingRefs.reasonCode).toBe("PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED");
+    expect(missingBundle.state).toBe("blocked");
+    expect(missingBundle.pageBindingEvidencePresent).toBe(false);
+  });
+
+  it("resolve and AppBundle runtime closure expose Page route binding evidence", () => {
+    const pageWithRoutes = {
+      ...leaveApprovalPage,
+      routeRefs: ["leave.form", "leave.approve"],
+      workflowLaunchRefs: ["wf_leave_approval"],
+    };
+    const surface = pageSkill.resolve(pageWithRoutes) as any;
+    const evidence = createPageRouteBindingAppBundleEvidence(pageWithRoutes, leaveApprovalAppBundle);
+    const report = evaluateAppBundleRuntimeClosure({ page: pageWithRoutes, appbundle: leaveApprovalAppBundle });
+    const pageInfo = report.perSkillEvidence.page as any;
+
+    expect(evidence.evidenceKey).toBe(PAGE_ROUTE_BINDING_EVIDENCE);
+    expect(evidence.targetSkill).toBe("appbundle");
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([PAGE_ROUTE_BINDING_EVIDENCE]));
+    expect(surface.pageToAppBundleTrace.traceId).toBe(PAGE_TO_APPBUNDLE_TRACE);
+    expect(pageInfo.pageRouteBindingEvidence.state).toBe("closed");
   });
 });

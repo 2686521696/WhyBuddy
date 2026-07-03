@@ -32,6 +32,7 @@ import {
   leaveApprovalPage,
   pageSkill,
   PAGE_WORKFLOW_TASK_VIEW_INVALID,
+  tracePageRouteBindingToAppBundleClosureEvidence,
 } from "../page/pageSkill";
 import { dataModelSkill } from "../datamodel/dataModelSkill";
 import { rbacSkill } from "../rbac/rbacSkill";
@@ -1275,6 +1276,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       pageRbacPermissionEvidence = createPageRbacRuntimeEvidence(skillModel as any, rbacUpstream);
     }
 
+    let pageRouteBindingEvidence: any = undefined;
+    if (skillId === "page" && skillModel && Array.isArray(skillModel.components)) {
+      pageRouteBindingEvidence = tracePageRouteBindingToAppBundleClosureEvidence(skillModel as any, appBundleModel);
+    }
+
     const evidence = {
       skillId,
       versionPin,
@@ -1284,9 +1290,10 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       rbacPdpDecisions: ev.policy || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed"),
       aigcInvocationOutputPolicy: ev.aigcPolicy,
       unresolvedRefs: false,
-      evidencePresent: Boolean(ev.present) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed") || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed"),
+      evidencePresent: Boolean(ev.present) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed") || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed") || Boolean(pageRouteBindingEvidence && pageRouteBindingEvidence.state === "closed"),
       dataModelFieldBindingEvidence,
       pageRbacPermissionEvidence,
+      pageRouteBindingEvidence,
     };
 
     // Version pins are required for runtime closure for assembled refs

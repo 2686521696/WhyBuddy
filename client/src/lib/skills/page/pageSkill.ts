@@ -799,6 +799,10 @@ export const pageSkill: Skill<PageModel> & CrossSkill<PageModel> = {
     const crossRuntime = buildPageCrossRuntimeEdges(model);
     surf.runtimeEvidence = crossRuntime.map(edge => edge.evidenceKey);
     surf.crossSkillRuntimeEdges = crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`);
+    surf.pageToAppBundleTrace = tracePageRouteBindingToAppBundleClosureEvidence(model);
+    if (!surf.runtimeEvidence.includes(PAGE_ROUTE_BINDING_EVIDENCE)) {
+      surf.runtimeEvidence = [...surf.runtimeEvidence, PAGE_ROUTE_BINDING_EVIDENCE];
+    }
     if (model.pageVersion) surf.pageVersion = model.pageVersion;
     if (model.published !== undefined) surf.published = model.published;
     if (model.snapshotRefs && model.snapshotRefs.length > 0) surf.snapshotRefs = [...model.snapshotRefs];
@@ -847,6 +851,21 @@ export interface NormalizedPageRuntimeContext {
 export const PAGE_CROSS_RUNTIME_EVIDENCE = "PAGE_CROSS_RUNTIME_EVIDENCE";
 export const PAGE_RBAC_RUNTIME_EVIDENCE = "PAGE_RBAC_RUNTIME_EVIDENCE";
 export const PAGE_WORKFLOW_RUNTIME_EVIDENCE = "PAGE_WORKFLOW_RUNTIME_EVIDENCE";
+export const PAGE_ROUTE_BINDING_EVIDENCE = "PAGE_ROUTE_BINDING_EVIDENCE";
+export const PAGE_TO_APPBUNDLE_TRACE = "PAGE_TO_APPBUNDLE_TRACE";
+
+export interface PageToAppBundleTrace {
+  traceId: typeof PAGE_TO_APPBUNDLE_TRACE;
+  sourceSkill: "page";
+  targetSkill: "appbundle";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  pageId: string;
+  routeRefs: string[];
+  bindingRefs: string[];
+  pageBindingEvidencePresent: boolean;
+  evidenceKey: string;
+}
 
 function pageFieldRefs(model: PageModel): string[] {
   return [...new Set((model.components ?? []).flatMap(component => {
@@ -951,6 +970,47 @@ export function createPageWorkflowRuntimeEvidence(
   return {
     ...createPageCrossRuntimeEvidence(model, "workflow", upstreamSurface),
     evidenceKey: PAGE_WORKFLOW_RUNTIME_EVIDENCE,
+  };
+}
+
+function pageRouteBindingRefs(model: PageModel): string[] {
+  return [...new Set([
+    ...(model.routeRefs ?? []),
+    ...(model.appMenuRefs ?? []),
+    ...(model.workflowLaunchRefs ?? []),
+    ...(model.linkageRules ?? []).flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : []),
+  ])].sort();
+}
+
+export function tracePageRouteBindingToAppBundleClosureEvidence(
+  model: PageModel,
+  appBundleSurface?: unknown,
+): PageToAppBundleTrace {
+  const routeRefs = pageRouteBindingRefs(model);
+  const upstreamPresent = appBundleSurface !== undefined && appBundleSurface !== null;
+  const closed = routeRefs.length > 0 && upstreamPresent;
+
+  return {
+    traceId: PAGE_TO_APPBUNDLE_TRACE,
+    sourceSkill: "page",
+    targetSkill: "appbundle",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "PAGE_APPBUNDLE_ROUTE_BINDING_POSITIVE_CLOSED" : "PAGE_APPBUNDLE_ROUTE_BINDING_FAIL_CLOSED",
+    pageId: model.id,
+    routeRefs,
+    bindingRefs: [...(model.routeRefs ?? []), ...(model.appMenuRefs ?? [])].sort(),
+    pageBindingEvidencePresent: closed,
+    evidenceKey: `${PAGE_TO_APPBUNDLE_TRACE}:${closed ? "closed" : "blocked"}`,
+  };
+}
+
+export function createPageRouteBindingAppBundleEvidence(
+  model: PageModel,
+  appBundleSurface?: unknown,
+): PageCrossRuntimeEvidence {
+  return {
+    ...createPageCrossRuntimeEvidence(model, "appbundle", appBundleSurface),
+    evidenceKey: PAGE_ROUTE_BINDING_EVIDENCE,
   };
 }
 
