@@ -1,0 +1,245 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-runtime-closure-drivefull-120-run",
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "codex",
+    "reviewModel": "gpt-5.5",
+    "scopedReview": true,
+    "workerMaxTurns": 512,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 512,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 4,
+    "guardTests": false,
+    "maxIterations": 12,
+    "agentIdleTimeoutMs": 1200000,
+    "agentTimeoutMs": 2400000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "cleanupWorktree": false,
+    "timeoutMs": 3600000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    }
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-01-drive-full-response-contract-fixture-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-01-drive-full-response-contract-fixture-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-02-drive-full-page-command-adapter-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-02-drive-full-page-command-adapter-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-03-drive-full-model-dump-deep-compat-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-03-drive-full-model-dump-deep-compat-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-04-drive-full-proxy-passthrough-contract-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-04-drive-full-proxy-passthrough-contract-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-05-drive-full-session-merge-order-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-05-drive-full-session-merge-order-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-06-drive-full-blocked-evidence-negative-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-06-drive-full-blocked-evidence-negative-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-07-drive-full-degraded-evidence-negative-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-07-drive-full-degraded-evidence-negative-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-08-drive-full-report-appendix-source-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-08-drive-full-report-appendix-source-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-09-drive-full-legacy-session-compat-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-09-drive-full-legacy-session-compat-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-10-drive-full-command-id-stability-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-10-drive-full-command-id-stability-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-11-drive-full-focused-python-tests-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-11-drive-full-focused-python-tests-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-drivefull-12-drive-full-focused-vitest-tests-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-12-drive-full-focused-vitest-tests-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    }
+  ]
+}

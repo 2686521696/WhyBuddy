@@ -1,0 +1,245 @@
+{
+  "cwd": "..",
+  "defaults": {
+    "useWorktree": true,
+    "worktreeScope": "queue",
+    "queueWorktreeName": "sliderule-v2-runtime-closure-appbundle-120-run",
+    "autoFix": true,
+    "skipReview": false,
+    "fixAgent": "grok",
+    "fixModel": "grok-build",
+    "reviewAgent": "codex",
+    "reviewModel": "gpt-5.5",
+    "scopedReview": true,
+    "workerMaxTurns": 512,
+    "workerMaxRetries": 1,
+    "grokMaxTurns": 512,
+    "grokMaxRetries": 1,
+    "reviewMaxTurns": 4,
+    "guardTests": false,
+    "maxIterations": 12,
+    "agentIdleTimeoutMs": 1200000,
+    "agentTimeoutMs": 2400000,
+    "noSyncTaskStatus": false,
+    "autoDisableOnNoChanges": false,
+    "cleanupWorktree": false,
+    "timeoutMs": 3600000,
+    "lang": "zh-CN",
+    "pythonExe": "slide-rule-python/.venv/Scripts/python.exe",
+    "workerEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:7890",
+      "HTTPS_PROXY": "http://127.0.0.1:7890",
+      "ALL_PROXY": "http://127.0.0.1:7890",
+      "NO_PROXY": "localhost,127.0.0.1,::1"
+    }
+  },
+  "gates": [
+    "node agent-loop/src/check-mojibake.js {{taskFile}}"
+  ],
+  "tasks": [
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-01-publish-artifact-runtime-fixture-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-01-publish-artifact-runtime-fixture-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-02-publish-artifact-blocked-fixture-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-02-publish-artifact-blocked-fixture-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-03-manifest-runtime-closure-digest-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-03-manifest-runtime-closure-digest-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-04-manifest-skill-ref-index-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-04-manifest-skill-ref-index-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-05-artifact-hash-regression-test-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-05-artifact-hash-regression-test-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-06-rollback-closure-diff-evidence-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-06-rollback-closure-diff-evidence-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-07-runtime-artifact-fail-closed-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-07-runtime-artifact-fail-closed-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-08-runtime-artifact-summary-ui-data-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-08-runtime-artifact-summary-ui-data-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-09-runtime-artifact-report-data-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-09-runtime-artifact-report-data-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-10-purchase-approval-artifact-smoke-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-10-purchase-approval-artifact-smoke-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-11-leave-request-artifact-smoke-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-11-leave-request-artifact-smoke-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    },
+    {
+      "id": "sliderule-v2-runtime-closure-appbundle-12-appbundle-artifact-focused-tests-120",
+      "task": "agent-loop/tasks/sliderule-v2-runtime-closure-appbundle-12-appbundle-artifact-focused-tests-120.md",
+      "enabled": true,
+      "gates": [
+        "node -e \"const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['120-runtime-closure-e2e','## Required implementation','## Acceptance criteria','codex-reviewed-only']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }\" {{taskFile}}",
+        "node agent-loop/src/check-mojibake.js {{taskFile}}"
+      ],
+      "workerMaxTurns": 512,
+      "maxIterations": 12,
+      "fixAgent": "grok",
+      "fixModel": "grok-build",
+      "reviewAgent": "codex",
+      "reviewModel": "gpt-5.5",
+      "scopedReview": true,
+      "skipReview": false
+    }
+  ]
+}
