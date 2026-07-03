@@ -31,16 +31,18 @@ import {
   createWorkflowTaskViewAppBundleBindingEvidence,
   leaveApprovalPage,
   pageSkill,
+  purchaseApprovalPage,
   PAGE_WORKFLOW_TASK_VIEW_INVALID,
   tracePageRouteBindingToAppBundleClosureEvidence,
 } from "../page/pageSkill";
-import { dataModelSkill } from "../datamodel/dataModelSkill";
-import { rbacSkill } from "../rbac/rbacSkill";
+import { dataModelSkill, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
+import { rbacSkill, purchaseApprovalRbac } from "../rbac/rbacSkill";
 import {
   traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence,
   workflowSkill,
+  purchaseApprovalWorkflow,
 } from "../workflow/workflowSkill";
-import { aigcSkill } from "../aigc/aigcSkill";
+import { aigcSkill, purchaseRiskAigcModel } from "../aigc/aigcSkill";
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -988,6 +990,17 @@ export function createAppBundleAigcNegativePathSample(
       reasonCode: "APPBUNDLE_AIGC_POLICY_SCHEMA_EVIDENCE_ABSENT",
     },
     upstreamEvidencePresent: false,
+  };
+}
+
+export function createAllSixSkillsPositiveClosedSample() {
+  return {
+    appbundle: purchaseApprovalAppBundle,
+    datamodel: purchaseApprovalDataModel,
+    rbac: purchaseApprovalRbac,
+    workflow: purchaseApprovalWorkflow,
+    page: purchaseApprovalPage,
+    aigc: purchaseRiskAigcModel,
   };
 }
 

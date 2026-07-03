@@ -30,6 +30,7 @@ import {
   createAppBundleRuntimeSnapshot,
   createAppBundleWorkflowTaskViewPositiveSample,
   createAppBundleWorkflowTaskViewNegativeSample,
+  createAllSixSkillsPositiveClosedSample,
   APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE,
   APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE,
   evaluateAppBundleRuntimeClosure,
@@ -821,6 +822,20 @@ describe("appBundleSkill - runtime closure (117)", () => {
       expect(["hard_blocker", "warning", "info"]).toContain(cf.tier);
       expect(cf.code).toBeDefined();
     });
+  });
+
+  it("keeps one canonical positive sample closed across all six Skills", () => {
+    const report = evaluateAppBundleRuntimeClosure(createAllSixSkillsPositiveClosedSample());
+
+    expect(report.blocked).toBe(false);
+    expect(report.blockers).toHaveLength(0);
+    expect(Object.keys(report.perSkillEvidence)).toHaveLength(6);
+    expect(report.runtimeClosure?.skillsChecked).toEqual(
+      expect.arrayContaining(["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]),
+    );
+    expect(Object.values(report.perSkillEvidence).every((evidence) => evidence.evidencePresent)).toBe(true);
+    expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
+    expect(report.stableDigest).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("passes positive runtime closure for leave approval (no AIGC required, Page + core evidence)", () => {
