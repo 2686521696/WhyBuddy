@@ -909,12 +909,26 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [deliverablesOpen, setDeliverablesOpen] = useState(false);
   const openDeliverables = useCallback(() => setDeliverablesOpen(true), []);
-  const [crossRuntimeGraph, setCrossRuntimeGraph] =
-    useState<CrossRuntimeGraphSummary | null>(null);
-  const [publishClosure, setPublishClosure] =
-    useState<PublishClosureSummary | null>(null);
+  // pythonPublishClosure: authoritative Python-produced evidence from /drive-full (persisted in sessionState);
+  // used by select to prefer over TS preview. See useEffect below for the prefer/fallback decision.
   const pythonPublishClosure = (sessionState as { publishClosure?: PublishClosureSummary | null })
     .publishClosure;
+  // Seed initial from python /drive-full for immediate visibility of pass-through at root render
+  // (useEffect will refine with derive result; static smoke renders use the initial).
+  const initialCross = pythonPublishClosure
+    ? {
+        edgeCount: 0,
+        allowedCount: 0,
+        blockedCount: 0,
+        skillCount: pythonPublishClosure.skillCount || 0,
+        evidenceCount: pythonPublishClosure.evidencePresentCount || 0,
+        examples: [],
+      }
+    : null;
+  const [crossRuntimeGraph, setCrossRuntimeGraph] =
+    useState<CrossRuntimeGraphSummary | null>(initialCross);
+  const [publishClosure, setPublishClosure] =
+    useState<PublishClosureSummary | null>(pythonPublishClosure ?? null);
 
   useEffect(() => {
     const intent = goal || latestTurn?.user || "";
@@ -935,13 +949,18 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
           publishGate.runtimeClosure,
           { blockerLimit: 3 }
         );
-        setPublishClosure(
-          selectPublishClosureSummary(pythonPublishClosure, previewClosure)
-        );
+        // Core page selection logic (119 objective):
+        // Prefer Python-produced closure evidence (from persisted sessionState via Python /drive-full)
+        // when present. Fall back to local TS previewClosure ONLY when Python one is absent.
+        // This is the explicit prefer-python-over-preview behavior required for frontend.
+        const preferredClosure = selectPublishClosureSummary(pythonPublishClosure, previewClosure);
+        setPublishClosure(preferredClosure);
       })
       .catch(() => {
         if (!cancelled) {
           setCrossRuntimeGraph(null);
+          // fail-closed: on derive error, still select python (if present from session) else null;
+          // never fabricate a preview here.
           setPublishClosure(selectPublishClosureSummary(pythonPublishClosure, null));
         }
       });
@@ -1116,14 +1135,14 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
 
   if (isImmersion) {
     return (
-      <div data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+      <div data-testid="sliderule-root" data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
         <SlideRuleImmersion {...shared} />
       </div>
     );
   }
 
   return (
-    <div data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+    <div data-testid="sliderule-root" data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
       <SlideRuleSplitEngineering {...shared} />
     </div>
   );

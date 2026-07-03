@@ -53,3 +53,23 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report (concise)
+
+Changed files:
+- slide-rule-python/services/v5_publish_closure_response.py
+- slide-rule-python/tests/test_v5_publish_closure_response.py
+- agent-loop/tasks/sliderule-v2-closure-python-02-python-drive-full-publish-closure-schema-119.md
+
+Exported symbols (from slide-rule-python/services/v5_publish_closure_response.py):
+- derive_publish_closure_response
+- PublishClosureResponse (Pydantic typed schema for response payload)
+- PublishClosureTopBlocker
+- PublishClosureTierCounts
+
+Validation commands:
+- cd slide-rule-python; python -m pytest tests/test_v5_publish_closure_response.py -q --tb=line
+- cd slide-rule-python; python -m pytest tests/test_v5_smoke.py -q -k "publish_closure" --tb=no
+- cd slide-rule-python; python -m pytest tests/test_v5_smoke.py -q -k "drive_full_returns_publish_closure_response_when_available" --tb=line
+
+This task adds the Python typed schema (Pydantic models) + adapter derive + focused positive/negative tests for publishClosure/runtimeClosure payloads returned by /drive-full. It provides reviewable evidence of the schema shape (matching cross-runtime report) and fail-closed None behavior, enabling Codex review for main landing. Advances 119-appbundle-runtime-closure by owning the Python /drive-full response contract slice.

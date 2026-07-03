@@ -284,6 +284,82 @@ router.post("/orchestrate-plan", express.json({ limit: "2mb" }), async (req: Req
   return res.status(404).json({ error: "thin_proxy_only", path: "/orchestrate-plan", backend: "python" });
 });
 
+// POST /api/sliderule/drive-full — thin proxy to Python for multi-loop full drive.
+// Python returns top-level publishClosure + skillRuntimeGraph (cross-runtime closure fields).
+// Node forwards the entire response body verbatim (no schema filtering, no drop of extra keys).
+router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
+  const body = (req.body || {}) as { state?: any; max_loops?: number; userText?: string; user_text?: string };
+  if (!body.state) {
+    return res.status(400).json({ error: "bad_request", message: "state is required" });
+  }
+
+  const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
+  if (v5Backend === 'python') {
+    const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+    try {
+      const data = await callPythonSlideRule(
+        pythonRuntime.baseUrl,
+        '/api/sliderule/drive-full',
+        {
+          state: body.state,
+          max_loops: body.max_loops ?? 10,
+          userText: body.userText ?? body.user_text ?? '',
+        },
+        pythonRuntime.internalKey,
+        { timeoutMs: pythonRuntime.timeoutMs },
+      );
+      // Raw pass-through: any Python fields (publishClosure, skillRuntimeGraph, stateAuthority, etc.) survive.
+      // Note: missing declared Skill evidence fail-closed (blocked:true, evidencePresentCount < skillCount) is
+      // carried inside successful publishClosure from Python /drive-full (per appbundle runtime closure semantics).
+      // This error path ONLY covers delegation failure (python unavailable); no green faking in either path.
+      return res.json(data);
+    } catch (e) {
+      console.warn('[sliderule] python drive-full delegation failed', e);
+      // Fail-closed: explicit error, no fabricated publishClosure/skillRuntimeGraph.
+      return res.status(502).json({
+        error: "python_unavailable",
+        backend: "python",
+        degraded: true,
+      });
+    }
+  }
+
+  // Legacy/no-python: thin proxy only (no drive business in Node).
+  return res.status(404).json({ error: "thin_proxy_only", path: "/drive-full", backend: "python" });
+});
+
+// POST /api/sliderule/drive-marathon — thin proxy (also carries publishClosure + skillRuntimeGraph from Python).
+router.post("/drive-marathon", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {
+  const body = (req.body || {}) as any;
+  if (!body.state) {
+    return res.status(400).json({ error: "bad_request", message: "state is required" });
+  }
+
+  const v5Backend = (process.env.SLIDERULE_V5_BACKEND || 'python').toLowerCase().trim();
+  if (v5Backend === 'python') {
+    const pythonRuntime = resolvePythonSlideRuleRuntimeConfig();
+    try {
+      const data = await callPythonSlideRule(
+        pythonRuntime.baseUrl,
+        '/api/sliderule/drive-marathon',
+        body,
+        pythonRuntime.internalKey,
+        { timeoutMs: pythonRuntime.timeoutMs },
+      );
+      return res.json(data);
+    } catch (e) {
+      console.warn('[sliderule] python drive-marathon delegation failed', e);
+      return res.status(502).json({
+        error: "python_unavailable",
+        backend: "python",
+        degraded: true,
+      });
+    }
+  }
+
+  return res.status(404).json({ error: "thin_proxy_only", path: "/drive-marathon", backend: "python" });
+});
+
 // POST /api/sliderule/respond — thin proxy compat only under default (this NodeRetirement task).
 // respond has no Python backend route (client localNarrationFallback on !ok per contract); Node does not own/run narration business in python mode (explicit 404, legacy LLM only behind guard).
 router.post("/respond", express.json({ limit: "2mb" }), async (req: Request, res: Response) => {

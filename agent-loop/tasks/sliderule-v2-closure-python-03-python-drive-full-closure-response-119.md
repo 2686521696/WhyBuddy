@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,26 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report (concise, for Codex review)
+
+**Changed files (relative, scoped):**
+- `slide-rule-python/tests/test_v5_smoke.py`
+- `agent-loop/tasks/sliderule-v2-closure-python-03-python-drive-full-closure-response-119.md` (report only; no sole-md reliance)
+
+**Exported / key symbols exercised (Python /drive-full):**
+- `routes/sliderule_full.drive_full` (POST /drive-full) returns `publishClosure` + `skillRuntimeGraph`
+- `services.v5_publish_closure_response.derive_publish_closure_response` (and `PublishClosureResponse` pydantic schema)
+- `services.v5_skill_runtime_graph.derive_skill_runtime_graph_response`
+- `services.v5_full_driver.drive_full_v5_session` (used by route)
+- Public schema models: `PublishClosureResponse`, `PublishClosureTierCounts`, `PublishClosureTopBlocker`
+
+**Validation commands:**
+- `cd slide-rule-python && python -m pytest tests/test_v5_smoke.py -q -k "drive_full_route_returns_publish_closure_and_skill_runtime_graph or drive_full_route_returns_none" --tb=line`
+- `cd slide-rule-python && python -m pytest tests/test_v5_publish_closure_response.py tests/test_v5_skill_runtime_graph.py -q --tb=no`
+- `cd slide-rule-python && python -m pytest tests/test_v5_smoke.py::test_drive_full_route_returns_publish_closure_and_skill_runtime_graph_when_available -q --tb=short`
+
+**How this advances publish/runtime closure:**
+Provides executable route-level positive evidence (both fields populated when appbundle.runtimeClosure + skill graph runs present) and fail-closed negative (None when no/dgraded evidence) directly in Python /drive-full handler + derives. Uses only local deterministic fakes (no provider/net). Adds focused test coverage at the /drive-full surface (previously unit-only on derives). Keeps names stable. Supplies the final report the gate lacked. Candidate material for cross-runtime landing.
+
+Public API names stable: no renames; /drive-full, derive_* unchanged.

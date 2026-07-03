@@ -183,7 +183,9 @@ export function createGithubPagesSlideRuleSessionStore(
       const raw = backing.getItem(STORAGE_KEY_PREFIX + sessionId);
       if (!raw) return undefined;
       try {
-        return JSON.parse(raw) as V5SessionState;
+        const parsed = JSON.parse(raw);
+        // publishClosure (if present in saved) or absent (legacy) both tolerated; adapter in useSlideRuleSession also preserves.
+        return parsed as V5SessionState;
       } catch {
         return undefined;
       }
@@ -192,14 +194,17 @@ export function createGithubPagesSlideRuleSessionStore(
     async save(state: V5SessionState): Promise<V5SessionState> {
       const sessionId = state.sessionId || GITHUB_PAGES_DEMO_SESSION_ID;
       const now = new Date().toISOString();
-      const saved = {
+      // Explicit carry of publishClosure (if present) for session store persistence + legacy compat.
+      const pc = (state as any).publishClosure;
+      const saved: any = {
         ...state,
         sessionId,
         lastActive: now,
         createdAt: (state as V5SessionState & { createdAt?: string }).createdAt || now,
-      } as V5SessionState;
+      };
+      if (pc !== undefined) saved.publishClosure = pc;
       backing?.setItem(STORAGE_KEY_PREFIX + sessionId, JSON.stringify(saved));
-      return saved;
+      return saved as V5SessionState;
     },
 
     async deleteSession(sessionId: string): Promise<void> {

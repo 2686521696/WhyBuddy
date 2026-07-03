@@ -345,6 +345,12 @@ class V5SessionState(BaseModel):
     brainstormDegraded: bool = False
     escalated: bool = False
     projectionDirtyNodeIds: List[str] = Field(default_factory=list)
+    # publishClosure (AppBundle runtime/publish closure evidence projection from python /drive-full and /drive-marathon):
+    # Frontend SlideRule session state persistence (119): declared as optional so store load/save roundtrips carry it.
+    # Attached on drive response (client adapter or python route), preserved here.
+    # Legacy sessions without key load with None (fail-closed compat, no breakage).
+    # Pure schema + pass-through; derive logic stays in v5_publish_closure_response; no network/provider/DB here.
+    publishClosure: Optional[Dict[str, Any]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

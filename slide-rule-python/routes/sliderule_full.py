@@ -22,6 +22,7 @@ from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_publish_closure_response import derive_publish_closure_response
+from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.slide_rule_orchestrator import orchestrate_plan
 from services.v5_capability_executor import execute_v5_capability
 from services.slide_rule_coverage import author_coverage_contract, evaluate_coverage_gate, reconcile_coverage
@@ -280,6 +281,9 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
     # Protect server-owned append-only replay from client/stale overwrite (task requirement)
     client_input.pop("sessionReplayLog", None)
     client_input.pop("reasoningEvents", None)
+    # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
+    # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
+    # Legacy sessions load with default None (see model).
     # Sanitize artifacts from client: strip server-owned trust fields so parse succeeds; we will not apply client's artifacts list
     if "artifacts" in client_input and isinstance(client_input.get("artifacts"), list):
         safe_arts = []
@@ -315,6 +319,7 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
         merged = existing.model_copy(deep=True)
         if client_contrib:
             # apply client-safe updates, exclude server-owned; never take client's artifacts/runs/gate/ledgers/replay
+            # publishClosure intentionally NOT excluded: allows roundtrip persist of publish closure evidence into session state.
             updates = client_contrib.model_dump(exclude={"sessionId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents"})
             for k, v in updates.items():
                 if hasattr(merged, k):
@@ -525,6 +530,7 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
         "provenance": PROVENANCE_PYTHON_FULLPATH,
         "backend": PYTHON_BACKEND,
         "publishClosure": derive_publish_closure_response(new_state),
+        "skillRuntimeGraph": derive_skill_runtime_graph_response(new_state),
     }
 
 @router.post("/drive-marathon")
@@ -550,6 +556,7 @@ async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional
     )
     final_state = result.get("finalState")
     publish_closure = derive_publish_closure_response(final_state) if isinstance(final_state, V5SessionState) else None
+    skill_graph = derive_skill_runtime_graph_response(final_state) if isinstance(final_state, V5SessionState) else None
     return {
         "state": final_state.model_dump() if hasattr(final_state, "model_dump") else final_state,
         "rounds": result.get("rounds") or [],
@@ -559,6 +566,7 @@ async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional
         "backend": PYTHON_BACKEND,
         "budgetAuthority": "python",
         "publishClosure": publish_closure,
+        "skillRuntimeGraph": skill_graph,
     }
 
 # GCOV endpoint

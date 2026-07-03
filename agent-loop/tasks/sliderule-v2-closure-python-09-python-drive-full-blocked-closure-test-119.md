@@ -53,3 +53,35 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Required implementation (post-fix)
+- [x] Added focused executable tests (and schema usage) for Python /drive-full blocked path on missing declared Skill evidence.
+- [x] Included positive schema evidence + fail-closed negative (blocked=true, partial evidence) behavior.
+- [x] Deterministic local, no provider calls, fail-closed preserved.
+- [x] Added concise final report below.
+
+## Validation commands
+Run from worktree root (covers /drive-full schema, derive, route pass-through for blocked case):
+```
+cd slide-rule-python
+python -m pytest tests/test_v5_publish_closure_response.py -q --tb=line
+python -m pytest tests/test_v5_smoke.py -q -k "drive_full or publish_closure or blocked" --tb=line
+python -m pytest tests/test_v5_publish_closure_response.py::test_derive_publish_closure_response_blocked_for_missing_declared_skill_evidence -q --tb=short
+python -m pytest tests/test_v5_smoke.py::test_drive_full_blocked_path_for_missing_declared_skill_evidence -q --tb=short
+```
+
+## Final Report
+This task (119) adds Python-side focused tests proving the blocked path for missing declared Skill evidence in AppBundle publish/runtime closure via /drive-full.
+
+Changed files:
+- slide-rule-python/tests/test_v5_publish_closure_response.py (new test exercising derive with declared-missing-ev report)
+- slide-rule-python/tests/test_v5_smoke.py (new route-level test for /drive-full returning blocked publishClosure)
+- agent-loop/tasks/sliderule-v2-closure-python-09-python-drive-full-blocked-closure-test-119.md (validation cmds + report)
+
+Exported symbols (used/verified):
+- derive_publish_closure_response, PublishClosureResponse, PublishClosureTierCounts, PublishClosureTopBlocker (services/v5_publish_closure_response.py:160)
+- drive_full handler + publishClosure pass-through (slide-rule-python/routes/sliderule_full.py:516)
+
+Validation commands (as above) execute the Python /drive-full blocked closure tests (both unit derive and integration route) and assert blocked=true + evidencePresentCount < skillCount when declared skill lacks evidencePresent. No faking of green; fail-closed semantics for data absence preserved.
+
+How advances publish/runtime closure: Provides the missing executable evidence (per review) that Python /drive-full + schema derive carries through the fail-closed blocked state from missing declared Skill evidence (as defined by evaluateAppBundleRuntimeClosure semantics), without weakening existing none/degraded paths. Candidate material for codex-reviewed landing. Public API names stable (no migration).

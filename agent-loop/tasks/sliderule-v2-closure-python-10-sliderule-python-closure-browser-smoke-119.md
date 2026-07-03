@@ -53,3 +53,16 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Concise final report
+Changed files:
+- client/src/pages/SlideRule.tsx (added data-testid="sliderule-root"; seeded initial crossRuntimeGraph/publishClosure from pythonPublishClosure extracted from sessionState for sync visibility of /drive-full pass-through at mount)
+- client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx (updated browser smoke describe to wrap renders under sliderule-root; added full <SlideRule embedded /> root renders asserting testid + python publishClosure content)
+- agent-loop/tasks/sliderule-v2-closure-python-10-sliderule-python-closure-browser-smoke-119.md (this report)
+
+Exported symbols / key ids (stable): data-testid="sliderule-root", data-testid="sliderule-cross-runtime-graph", data-testid="sliderule-publish-closure"; ArchitectureProcessPanel props: crossRuntimeGraph, publishClosure (python shape); selectPublishClosureSummary / derive* (unchanged); useSlideRuleSession preservePublishClosure adapter (unchanged).
+
+Validation commands:
+- node -e "const fs=require('fs'); const task=fs.readFileSync('agent-loop/tasks/sliderule-v2-closure-python-10-sliderule-python-closure-browser-smoke-119.md','utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only','Concise final report']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }"
+- npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx
+- (covers: root render for /agent-loop/sliderule embedded + positive/negative python closure pass-through visibility)

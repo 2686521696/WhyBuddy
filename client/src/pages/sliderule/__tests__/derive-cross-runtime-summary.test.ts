@@ -173,7 +173,7 @@ describe("deriveCrossRuntimeGraphSummary", () => {
     });
   });
 
-  it("prefers Python publish closure over local preview closure", () => {
+  it("positive: prefers Python publish closure over local preview closure when Python evidence present", () => {
     const preview = {
       blocked: true,
       blockerCount: 1,
@@ -195,8 +195,35 @@ describe("deriveCrossRuntimeGraphSummary", () => {
       topBlockers: [],
     };
 
-    expect(selectPublishClosureSummary(python, preview)?.closureHash).toBe("python");
-    expect(selectPublishClosureSummary(null, preview)?.closureHash).toBe("preview");
+    // explicit positive: when both exist, python (from /drive-full) is chosen
+    const selected = selectPublishClosureSummary(python, preview);
+    expect(selected?.closureHash).toBe("python");
+    expect(selected?.versionPinsChecked).toBe(true);
+    expect(selected?.blocked).toBe(false);
+  });
+
+  it("negative: falls back to TS preview only when Python closure absent (null/undefined)", () => {
+    const preview = {
+      blocked: false,
+      blockerCount: 0,
+      evidencePresentCount: 4,
+      skillCount: 6,
+      versionPinsChecked: true,
+      closureHash: "preview-only",
+      tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+      topBlockers: [],
+    };
+
+    expect(selectPublishClosureSummary(null, preview)?.closureHash).toBe("preview-only");
+    expect(selectPublishClosureSummary(undefined, preview)?.closureHash).toBe("preview-only");
+    // also when preview is null too
+    expect(selectPublishClosureSummary(null, null)).toBeNull();
+  });
+
+  it("negative/fail-closed: null when no Python and no preview available", () => {
+    expect(selectPublishClosureSummary(null, null)).toBeNull();
+    expect(selectPublishClosureSummary(undefined, undefined)).toBeNull();
+    expect(selectPublishClosureSummary(null, undefined)).toBeNull();
   });
 });
 

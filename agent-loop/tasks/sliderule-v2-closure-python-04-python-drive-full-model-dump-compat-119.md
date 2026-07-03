@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,31 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report (concise, for Codex review)
+
+**Changed files (relative, scoped to task):**
+- `slide-rule-python/services/v5_full_driver.py`
+- `slide-rule-python/services/v5_publish_closure_response.py`
+- `slide-rule-python/services/v5_skill_runtime_graph.py`
+- `slide-rule-python/tests/test_v5_smoke.py`
+- `agent-loop/tasks/sliderule-v2-closure-python-04-python-drive-full-model-dump-compat-119.md`
+
+**Exported / key symbols exercised (Python /drive-full model-dump compat):**
+- `services.v5_full_driver._result_to_dict` (now documented adapter for Pydantic model_dump results + plain dict capability results in drive_full_v5_session)
+- `services.v5_publish_closure_response._as_dict` + `derive_publish_closure_response`
+- `services.v5_skill_runtime_graph._as_dict` + `derive_skill_runtime_graph_response`
+- `routes.sliderule_full.drive_full` (POST /drive-full returns publishClosure/skillRuntimeGraph)
+- `services.v5_capability_executor.execute_v5_capability` (returns model; normalized in driver)
+- Focused test: `test_drive_full_model_dump_and_plain_dict_capability_result_compat`
+
+**Validation commands:**
+- `cd slide-rule-python && python -m pytest tests/test_v5_smoke.py -q -k "drive_full_model_dump_and_plain_dict or accepts_real_execute or drive_full_route_returns" --tb=line`
+- `cd slide-rule-python && python -m pytest tests/test_v5_smoke.py::test_drive_full_model_dump_and_plain_dict_capability_result_compat -q --tb=short`
+- `cd slide-rule-python && python -m pytest tests/test_v5_publish_closure_response.py tests/test_v5_skill_runtime_graph.py -q --tb=no`
+- `cd slide-rule-python && python -m pytest tests/test_v5_smoke.py -q -k "drive_full" --tb=line`
+
+**How this advances publish/runtime closure:**
+Supplies the missing executable adapter (_result_to_dict + _as_dict) + focused test snapshot for /drive-full Python side that explicitly exercises both Pydantic model_dump() capability results and plain dicts in pass-through (publishClosure + skillRuntimeGraph). Adds positive (both shapes derive) and fail-closed negative (degraded/error latest -> None for graph, no masking) behavior. All local fakes, zero provider/net calls enforced. Provides the evidence the gate lacked. Task.md now carries final report. Keeps public API (/drive-full, drive_full_v5_session, derive_*) stable. Candidate slice for 119-appbundle-runtime-closure cross-runtime landing.
+
+Public API names stable; no renames.

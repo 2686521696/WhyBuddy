@@ -43,8 +43,23 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
   return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
 }
 
+/**
+ * Frontend session store adapter for publishClosure persistence (119 objective).
+ * Explicitly carries the (python /drive-full) publishClosure evidence projection through
+ * load/save roundtrips. Old sessions without the key remain compatible (None / undefined).
+ * No network/DB/provider calls; pure local shape passthrough + defaults.
+ * Positive: when present on loaded or drive-final, preserved on persist.
+ * Fail-closed negative: missing field yields no publishClosure (preview may still apply).
+ */
+function preservePublishClosure(state: V5SessionState): V5SessionState {
+  const pc = (state as any).publishClosure;
+  if (pc === undefined) return state;
+  return { ...state, publishClosure: pc } as V5SessionState;
+}
+
 async function persistSession(state: V5SessionState): Promise<V5SessionState> {
-  return SlideRuleRuntime.saveSessionState(state);
+  const toSave = preservePublishClosure(state);
+  return SlideRuleRuntime.saveSessionState(toSave);
 }
 
 function hasReadyByokPool(): boolean {
@@ -238,7 +253,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         }
       }
       if (!cancelled) {
-        setSessionState(loaded);
+        const hydrated = preservePublishClosure(loaded);
+        setSessionState(hydrated);
         setSessionHydrated(true);
       }
     })();
@@ -319,8 +335,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ]);
 
     try {
-      const loadedState = sanitizeLegacyEmptySeed(
-        await SlideRuleRuntime.loadOrCreateSessionState(sessionState.sessionId || sessionId)
+      const loadedState = preservePublishClosure(
+        sanitizeLegacyEmptySeed(
+          await SlideRuleRuntime.loadOrCreateSessionState(sessionState.sessionId || sessionId)
+        )
       );
 
       const goalStatusBefore = loadedState.goal?.status;
@@ -793,7 +811,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         let loaded = await SlideRuleRuntime.loadOrCreateSessionState(
           sessionState.sessionId || sessionId
         );
-        loaded = sanitizeLegacyEmptySeed(loaded);
+        loaded = preservePublishClosure(sanitizeLegacyEmptySeed(loaded));
 
         const goalText = loaded.goal?.text?.trim() || turn.user.trim();
         const uiExecutor = createUiCapabilityExecutor(
@@ -903,10 +921,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       if (SlideRuleRuntime.deleteSlideRuleSession) {
         await SlideRuleRuntime.deleteSlideRuleSession(sid);
       }
-      const fresh = sanitizeLegacyEmptySeed(
-        await SlideRuleRuntime.loadOrCreateSessionState(
-          sid,
-          SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT
+      const fresh = preservePublishClosure(
+        sanitizeLegacyEmptySeed(
+          await SlideRuleRuntime.loadOrCreateSessionState(
+            sid,
+            SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT
+          )
         )
       );
       setSessionState(fresh);

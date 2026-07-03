@@ -53,3 +53,14 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Implementation report (for review)
+- Files changed (scoped):
+  - client/src/pages/SlideRule.tsx (core selection logic + comments for prefer python / fallback preview + fail-closed)
+  - client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts (positive prefer test + negative/fail-closed fallback tests)
+- Executable: selectPublishClosureSummary (public, stable), derivePublishClosureSummary (stable), PublishClosureSummary type.
+- Python pass-through /drive-full unchanged (as reviewed).
+- Validation: `npx vitest run src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts` (all pass)
+- Positive: when python present + preview, selects python (from session/python drive-full)
+- Fail-closed negative: python absent -> preview; both absent -> null (no fabrication)
+- How advances: ensures page (SlideRule.tsx) uses Python-produced AppBundle runtime closure evidence preferentially over TS preview per 119 objective, with tests proving both behaviors. Thin proxy + schema pass-through preserved.

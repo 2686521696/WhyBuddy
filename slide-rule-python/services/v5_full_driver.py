@@ -16,7 +16,12 @@ from .slide_rule_coverage import evaluate_coverage_gate, reconcile_coverage
 
 
 def _result_to_dict(result: Any) -> Dict[str, Any]:
-    """Normalize executor results from Pydantic models or legacy dicts."""
+    """Normalize executor results from Pydantic model_dump() or plain dict capability results.
+    This is the core adapter for /drive-full compat (task 119-04): keeps drive_full_v5_session
+    and downstream pass-through working whether caps return ExecuteCapabilityResult (pydantic)
+    or legacy/plain dicts. Deterministic; never triggers provider. Degraded/error results are
+    passed through as-is (upper layers and error recording preserve fail-closed).
+    """
     if isinstance(result, dict):
         return result
     if hasattr(result, "model_dump"):

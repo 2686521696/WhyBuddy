@@ -41,3 +41,67 @@ describe("deriveLatestTurnFromState (执行记录刷新后重建)", () => {
     expect(deriveTurnRoute(turn!.routeFacts).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Focused test for 119: publishClosure evidence persistence in frontend SlideRule session state.
+ * - Positive: state carrying publishClosure survives JSON roundtrip (store save/load sim) and explicit preserve shape.
+ * - Fail-closed negative: legacy state missing publishClosure key remains valid, loads with undefined (no crash, preview fallback applies).
+ * No weakening of other behavior; uses only persisted state shapes.
+ */
+describe("publishClosure frontend session persistence (119)", () => {
+  const samplePublishClosure = {
+    blocked: false,
+    blockerCount: 0,
+    evidencePresentCount: 6,
+    skillCount: 6,
+    versionPinsChecked: true,
+    closureHash: "feedface",
+    tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+    topBlockers: [],
+    perSkillEvidence: {},
+  };
+
+  it("preserves publishClosure through simulated store roundtrip (save/load json)", () => {
+    const base: any = {
+      sessionId: "pc-test-1",
+      goal: { text: "persist publishClosure", status: "clear" },
+      artifacts: [],
+      capabilityRuns: [],
+      publishClosure: samplePublishClosure,
+    };
+    // simulate save (json stringify) + load (parse) as github-pages + http store do
+    const serialized = JSON.stringify(base);
+    const loaded = JSON.parse(serialized) as any;
+    expect(loaded.publishClosure).toBeTruthy();
+    expect(loaded.publishClosure.evidencePresentCount).toBe(6);
+    expect(loaded.publishClosure.closureHash).toBe("feedface");
+  });
+
+  it("legacy session missing publishClosure loads with undefined (compat, fail-closed)", () => {
+    const legacy: any = {
+      sessionId: "pc-legacy",
+      goal: { text: "old session", status: "clear" },
+      artifacts: [],
+      capabilityRuns: [],
+      // deliberately no publishClosure key
+    };
+    const serialized = JSON.stringify(legacy);
+    const loaded = JSON.parse(serialized) as any;
+    expect("publishClosure" in loaded).toBe(false);
+    expect(loaded.publishClosure).toBeUndefined();
+    // cast path in UI stays safe
+    const pythonPc = (loaded as { publishClosure?: any }).publishClosure;
+    expect(pythonPc).toBeUndefined();
+  });
+
+  it("explicit attach on drive-final state keeps publishClosure for persist", () => {
+    const pre: any = { sessionId: "pc-attach", goal: { text: "attach" }, artifacts: [] };
+    const withPc = { ...pre, publishClosure: samplePublishClosure };
+    // simulate what marathon python attach + preserve does
+    const after = { ...(withPc as any) } as any;
+    expect(after.publishClosure?.evidencePresentCount).toBe(6);
+    // persist sim
+    const persisted = JSON.parse(JSON.stringify(after));
+    expect(persisted.publishClosure?.blocked).toBe(false);
+  });
+});

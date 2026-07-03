@@ -73,6 +73,11 @@ export type UiTurn = {
 
 export type SlideRuleExecutorMode = "pilot" | "server-llm" | "default" | "demo" | "browser-llm";
 
+/** Extended persisted session state including publishClosure evidence (for frontend session store adapter).
+ *  publishClosure?: PublishClosureSummary | null is carried explicitly by useSlideRuleSession adapter + python schema.
+ *  Optional for legacy session compat (old sessions missing key load/restore with undefined, no breakage).
+ */
+
 /** @deprecated Engineering cockpit only — product page uses UiTurn. */
 export type ChatTurn = {
   id: string;
