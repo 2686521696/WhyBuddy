@@ -8,7 +8,7 @@ test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-clos
     baseUrl: "http://localhost:3000",
     fetchImpl: async (url) => ({
       status: url.endsWith("/agent-loop/sliderule") ? 200 : 404,
-      text: async () => "<div data-testid=\"sliderule-root\">SlideRule</div>",
+      text: async () => "<div data-testid=\"sliderule-root\" data-python-provenance=\"via-delegation\" data-backend=\"python-fullpath-e2e\">SlideRule</div>",
     }),
   });
 
@@ -20,6 +20,8 @@ test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-clos
       httpStatus: 200,
       hasSlideruleRoot: true,
       hasSlideRuleText: true,
+      hasPythonProvenance: true,
+      hasPythonBackend: true,
     },
   });
 

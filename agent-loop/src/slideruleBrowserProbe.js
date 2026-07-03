@@ -9,7 +9,13 @@ export async function probeSlideruleBrowserRoute(options = {}) {
       status: "degraded-skip",
       route,
       reason: "fetch is unavailable",
-      evidence: { httpStatus: null, hasSlideruleRoot: false, hasSlideRuleText: false },
+      evidence: {
+        httpStatus: null,
+        hasSlideruleRoot: false,
+        hasSlideRuleText: false,
+        hasPythonProvenance: false,
+        hasPythonBackend: false,
+      },
     };
   }
 
@@ -19,7 +25,15 @@ export async function probeSlideruleBrowserRoute(options = {}) {
     const text = typeof response?.text === "function" ? await response.text().catch(() => "") : "";
     const hasSlideruleRoot = /data-testid=["']sliderule-root["']/.test(text);
     const hasSlideRuleText = /SlideRule|sliderule/i.test(text);
-    const evidence = { httpStatus, hasSlideruleRoot, hasSlideRuleText };
+    const hasPythonProvenance = /data-python-provenance=["'][^"']+["']/.test(text);
+    const hasPythonBackend = /data-backend=["'][^"']*python[^"']*["']/i.test(text);
+    const evidence = {
+      httpStatus,
+      hasSlideruleRoot,
+      hasSlideRuleText,
+      hasPythonProvenance,
+      hasPythonBackend,
+    };
 
     if (httpStatus >= 500 || httpStatus <= 0) {
       return { ok: false, status: "failed", route, evidence };
@@ -32,7 +46,13 @@ export async function probeSlideruleBrowserRoute(options = {}) {
       status: "degraded-skip",
       route,
       reason: String(error?.message || error || "route unreachable"),
-      evidence: { httpStatus: null, hasSlideruleRoot: false, hasSlideRuleText: false },
+      evidence: {
+        httpStatus: null,
+        hasSlideruleRoot: false,
+        hasSlideRuleText: false,
+        hasPythonProvenance: false,
+        hasPythonBackend: false,
+      },
     };
   }
 }
