@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from models.v5_state import CapabilityRun, V5SessionState  # noqa: E402
+from models.v5_state import CapabilityRun, ExecuteCapabilityResult, V5SessionState  # noqa: E402
 from services.v5_publish_closure_response import (
     derive_publish_closure_response,
     PublishClosureResponse,
@@ -334,3 +334,51 @@ def test_drive_full_closure_response_absent_is_fail_closed_119():
         ],
     )
     assert derive_publish_closure_response(state) is None
+
+
+def test_publish_closure_derives_from_execute_result_runtime_closure_attachment_120():
+    result = ExecuteCapabilityResult(
+        title="appbundle.runtimeClosure",
+        summary="closure eval",
+        content="",
+        provenance="python-closure",
+    )
+    result.__dict__["runtimeClosure"] = {
+        "blocked": False,
+        "blockers": [],
+        "perSkillEvidence": {
+            "datamodel": {"evidencePresent": True},
+            "rbac": {"evidencePresent": True},
+            "appbundle": {"evidencePresent": True},
+        },
+        "runtimeClosure": {
+            "skillsChecked": ["datamodel", "rbac", "appbundle"],
+            "versionPinsChecked": True,
+        },
+        "closureId": "appbundle:compat@120",
+        "closureHash": "c0ffee120",
+        "stableDigest": "beef120",
+        "findingsByTier": {"hard_blocker": [], "warning": [], "info": []},
+    }
+    run = CapabilityRun(
+        id="run-nested-120",
+        capabilityId="appbundle.runtimeClosure",
+        turnId="t120",
+        result=None,
+    )
+    run.result = result
+    state = V5SessionState(
+        sessionId="closure-nested-model-120",
+        goal={"text": "nested model_dump compat"},
+        artifacts=[],
+        capabilityRuns=[run],
+    )
+
+    response = derive_publish_closure_response(state)
+
+    assert response is not None
+    validated = PublishClosureResponse.model_validate(response)
+    assert isinstance(validated.tierCounts, PublishClosureTierCounts)
+    assert response["blocked"] is False
+    assert response["closureHash"] == "c0ffee120"
+    assert response["perSkillEvidence"]["rbac"]["evidencePresent"] is True

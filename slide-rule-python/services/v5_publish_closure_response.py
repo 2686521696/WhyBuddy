@@ -65,8 +65,23 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return value
     if hasattr(value, "model_dump"):
-        dumped = value.model_dump()
-        return dumped if isinstance(dumped, dict) else {}
+        try:
+            dumped = value.model_dump()
+            if not isinstance(dumped, dict):
+                dumped = {}
+            for key, nested in getattr(value, "__dict__", {}).items():
+                if key.startswith("_") or key in dumped:
+                    continue
+                dumped[key] = nested
+            return dumped
+        except Exception:
+            pass
+    if hasattr(value, "__dict__"):
+        return {
+            key: nested
+            for key, nested in getattr(value, "__dict__", {}).items()
+            if not key.startswith("_")
+        }
     return {}
 
 
@@ -141,7 +156,10 @@ def derive_publish_closure_response(state: V5SessionState) -> Optional[Dict[str,
         return None
     for run in reversed(getattr(state, "capabilityRuns", []) or []):
         run_data = _as_dict(run)
-        result = _as_dict(run_data.get("result"))
+        result_raw = None if isinstance(run, dict) else getattr(run, "result", None)
+        if result_raw is None:
+            result_raw = run_data.get("result")
+        result = _as_dict(result_raw)
         for candidate in (
             _as_dict(result.get("runtimeClosure")),
             result,
