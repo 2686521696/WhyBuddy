@@ -21,6 +21,7 @@ from services.slide_rule_session import create_session, delete_session, load_ses
 from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session
+from services.v5_publish_closure_response import derive_publish_closure_response
 from services.slide_rule_orchestrator import orchestrate_plan
 from services.v5_capability_executor import execute_v5_capability
 from services.slide_rule_coverage import author_coverage_contract, evaluate_coverage_gate, reconcile_coverage
@@ -518,7 +519,13 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     max_loops = int(payload.get("max_loops", 10))
     user_text = payload.get("userText", "") or payload.get("user_text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
-    return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    return {
+        "state": new_state.model_dump(),
+        "stateAuthority": STATE_AUTHORITY_PYTHON,
+        "provenance": PROVENANCE_PYTHON_FULLPATH,
+        "backend": PYTHON_BACKEND,
+        "publishClosure": derive_publish_closure_response(new_state),
+    }
 
 @router.post("/drive-marathon")
 async def drive_marathon_route(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):

@@ -666,3 +666,69 @@ def test_drive_full_accepts_real_execute_capability_result_model(monkeypatch):
         "object has no attribute 'get'" in str(run.get("error", {}))
         for run in state.get("capabilityRuns", [])
     )
+
+
+def test_drive_full_returns_publish_closure_response_when_available(monkeypatch):
+    from models.v5_state import CapabilityRun
+
+    def fake_drive_full(state, max_loops=10, user_instruction=""):
+        state.capabilityRuns.append(
+            CapabilityRun(
+                id="run-closure-route",
+                capabilityId="appbundle.runtimeClosure",
+                turnId="t-closure-route",
+                result={
+                    "runtimeClosure": {
+                        "blocked": False,
+                        "blockers": [],
+                        "perSkillEvidence": {
+                            "datamodel": {"evidencePresent": True},
+                            "rbac": {"evidencePresent": True},
+                            "workflow": {"evidencePresent": True},
+                            "page": {"evidencePresent": True},
+                            "aigc": {"evidencePresent": True},
+                            "appbundle": {"evidencePresent": True},
+                        },
+                        "runtimeClosure": {
+                            "skillsChecked": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+                            "versionPinsChecked": True,
+                        },
+                        "closureHash": "feedface",
+                        "stableDigest": "deadbeef",
+                        "findingsByTier": {"hard_blocker": [], "warning": [], "info": []},
+                    }
+                },
+            )
+        )
+        return state
+
+    monkeypatch.setattr("routes.sliderule_full.drive_full_v5_session", fake_drive_full)
+
+    r = client.post(
+        "/api/sliderule/drive-full",
+        json={
+            "state": {
+                "sessionId": "closure-route",
+                "goal": {"text": "return closure", "status": "needs_refinement"},
+                "artifacts": [],
+                "capabilityRuns": [],
+                "coverageGaps": [],
+                "coverageContract": None,
+                "graph": {"nodes": [], "edges": []},
+                "conversation": [],
+                "runtimePhase": "idle",
+            },
+            "turnId": "closure-route-t1",
+            "userText": "return closure",
+            "max_loops": 1,
+        },
+        headers={"X-Internal-Key": INTERNAL_KEY},
+    )
+
+    assert r.status_code == 200, r.text
+    env = r.json()
+    assert env["publishClosure"]["blocked"] is False
+    assert env["publishClosure"]["evidencePresentCount"] == 6
+    assert env["publishClosure"]["skillCount"] == 6
+    assert env["publishClosure"]["versionPinsChecked"] is True
+    assert env["publishClosure"]["closureHash"] == "feedface"
