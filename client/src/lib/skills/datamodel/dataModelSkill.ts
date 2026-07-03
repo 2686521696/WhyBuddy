@@ -960,6 +960,10 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
       (ds.selectedFields || []).map((sf: any) => `${ds.entityRef}.${sf.field}`)
     );
     surf.pageBindingImpactEvidence = createDataModelPageBindingImpactEvidence(model, changed, pageBindingFieldRefs);
+    surf.datamodelToPageTrace = traceDataModelEntityFieldToPageBindingEvidence(
+      model,
+      surf.pageBindingImpactEvidence,
+    );
     // 119 fix: only include DM_PAGE key for positive cases (mirrors rbac; fail-closed negative stays out of runtimeEvidence).
     const pageImpact = surf.pageBindingImpactEvidence;
     if (pageImpact && pageImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_PAGE_BINDING_IMPACT_EVIDENCE || String(k).startsWith(DM_PAGE_BINDING_IMPACT_EVIDENCE))) {
@@ -1050,6 +1054,7 @@ export const DM_RBAC_POLICY_IMPACT_EVIDENCE = "DM_RBAC_POLICY_IMPACT_EVIDENCE";
 export const DM_PAGE_BINDING_IMPACT_EVIDENCE = "DM_PAGE_BINDING_IMPACT_EVIDENCE";
 export const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE = "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
 export const DM_DATAMODEL_TO_RBAC_TRACE = "DM_DATAMODEL_TO_RBAC_TRACE";
+export const DM_DATAMODEL_TO_PAGE_TRACE = "DM_DATAMODEL_TO_PAGE_TRACE";
 
 export interface DataModelToRbacTrace {
   traceId: typeof DM_DATAMODEL_TO_RBAC_TRACE;
@@ -1058,6 +1063,17 @@ export interface DataModelToRbacTrace {
   sourceEntityRefs: string[];
   sourceFieldRefs: string[];
   impact: DataModelRbacPolicyImpactEvidence;
+  state: "closed" | "blocked";
+  reasonCode: string;
+}
+
+export interface DataModelToPageTrace {
+  traceId: typeof DM_DATAMODEL_TO_PAGE_TRACE;
+  sourceSkill: "datamodel";
+  targetSkill: "page";
+  sourceEntityRefs: string[];
+  sourceFieldRefs: string[];
+  impact: DataModelPageBindingImpactEvidence;
   state: "closed" | "blocked";
   reasonCode: string;
 }
@@ -1188,6 +1204,35 @@ export function traceDataModelEntityFieldToRbacPolicyImpact(
     impact,
     state: closed ? "closed" : "blocked",
     reasonCode: closed ? "DM_RBAC_TRACE_POSITIVE_CLOSED" : impact.reasonCode,
+  };
+}
+
+export function traceDataModelEntityFieldToPageBindingEvidence(
+  model: DataModelModel,
+  impactEvidence?: DataModelPageBindingImpactEvidence,
+): DataModelToPageTrace {
+  const changed = deriveDataModelChangedRefs(model);
+  const pageBindingFieldRefs = (model.datasets || []).flatMap((dataset: Dataset) =>
+    (dataset.selectedFields || []).map((field: any) => `${dataset.entityRef}.${field.field}`)
+  );
+  const impact =
+    impactEvidence ??
+    createDataModelPageBindingImpactEvidence(
+      model,
+      { entity: changed.entity, field: changed.field },
+      pageBindingFieldRefs,
+    );
+  const closed = impact.hasPositiveEvidence === true && impact.state === "allowed";
+
+  return {
+    traceId: DM_DATAMODEL_TO_PAGE_TRACE,
+    sourceSkill: "datamodel",
+    targetSkill: "page",
+    sourceEntityRefs: changed.entity,
+    sourceFieldRefs: changed.field,
+    impact,
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "DM_PAGE_TRACE_POSITIVE_CLOSED" : impact.reasonCode,
   };
 }
 
