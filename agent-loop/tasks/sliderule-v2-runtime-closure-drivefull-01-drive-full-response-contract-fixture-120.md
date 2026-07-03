@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-drivefull-01-drive-full-response-contract-fixture-120
 
 ## Execution status
-- Status: HALT_HUMAN
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: drivefull
 - Owner: grok
@@ -10,13 +10,13 @@
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
 - Last execution: 2026-07-04
-- AgentLoop run id: `2026-07-03T16-19-14-839Z`
-- AgentLoop local time: `2026-07-04 00:19:14 (Asia/Shanghai)`
-- AgentLoop result: `HALT_HUMAN`
-- AgentLoop run mode: `halt-human-after-codex-review`
+- AgentLoop run id: `2026-07-03T16-23-40-481Z`
+- AgentLoop local time: `2026-07-04 00:23:40 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
 - Grok ran: `true`
 - Codex ran: `true`
-- gate result: 最近状态为 `HALT_HUMAN`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Add a deterministic /drive-full response fixture that includes command, skillRuntimeGraph, publishClosure, report, and degraded fields.
 
