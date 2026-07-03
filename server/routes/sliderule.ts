@@ -74,6 +74,112 @@ function isLegacyNodeBusinessEnabled(): boolean {
   return process.env.NODE_ENV !== "production" || readEnvCompat("SLIDERULE_ENABLE_TEST_HELPERS") === "1";
 }
 
+const REQUIRED_PUBLISH_CLOSURE_SKILLS = [
+  "datamodel",
+  "rbac",
+  "workflow",
+  "page",
+  "aigc",
+  "appbundle",
+] as const;
+
+const isPlainObject = (value: unknown): value is Record<string, any> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+export function normalizePublishClosureForProxy(
+  publishClosure: unknown,
+): Record<string, any> | "strip" | undefined {
+  if (publishClosure === undefined) return undefined;
+  if (!isPlainObject(publishClosure) || typeof publishClosure.blocked !== "boolean") {
+    return "strip";
+  }
+
+  const perSkillEvidence = isPlainObject(publishClosure.perSkillEvidence)
+    ? publishClosure.perSkillEvidence
+    : {};
+
+  if (publishClosure.blocked) {
+    return { ...publishClosure, perSkillEvidence };
+  }
+
+  const hasDigest = Boolean(publishClosure.stableDigest || publishClosure.closureHash);
+  const hasAllSkillEvidence = REQUIRED_PUBLISH_CLOSURE_SKILLS.every((skill) => {
+    const evidence = perSkillEvidence[skill];
+    return isPlainObject(evidence) && evidence.evidencePresent === true;
+  });
+
+  if (!hasDigest || !hasAllSkillEvidence) {
+    return {
+      ...publishClosure,
+      blocked: true,
+      blockerCount: Number(publishClosure.blockerCount || 0) + 1,
+      perSkillEvidence,
+    };
+  }
+
+  return { ...publishClosure, perSkillEvidence };
+}
+
+export function derivePublishClosureReportExportSummary(
+  publishClosure: unknown,
+): Record<string, any> {
+  const normalized = normalizePublishClosureForProxy(publishClosure);
+  if (!normalized || normalized === "strip") {
+    return {
+      source: "publish-artifact-closure",
+      status: "degraded",
+      blocked: true,
+      digest: null,
+    };
+  }
+
+  const digest = normalized.stableDigest || normalized.closureHash || null;
+  if (normalized.blocked) {
+    return {
+      source: "publish-artifact-closure",
+      status: "blocked",
+      blocked: true,
+      digest,
+      evidencePresentCount: normalized.evidencePresentCount,
+    };
+  }
+
+  return {
+    source: "publish-artifact-closure",
+    status: "closed",
+    blocked: false,
+    digest,
+    evidencePresentCount: normalized.evidencePresentCount,
+    skillCount: normalized.skillCount,
+  };
+}
+
+function normalizeDriveClosureResponse<T extends Record<string, any>>(data: T): T {
+  let out: Record<string, any> = data;
+
+  if (Object.prototype.hasOwnProperty.call(data, "publishClosure")) {
+    const normalized = normalizePublishClosureForProxy(data.publishClosure);
+    if (normalized === "strip") {
+      const { publishClosure: _publishClosure, ...rest } = out;
+      out = rest;
+    } else if (normalized) {
+      out = { ...out, publishClosure: normalized };
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, "rollbackClosureDiff")) {
+    const rollbackClosureDiff = data.rollbackClosureDiff;
+    if (!isPlainObject(rollbackClosureDiff)) {
+      const { rollbackClosureDiff: _rollbackClosureDiff, ...rest } = out;
+      out = rest;
+    } else if (typeof rollbackClosureDiff.digestMatch !== "boolean") {
+      out = { ...out, rollbackClosureDiff: { ...rollbackClosureDiff, degraded: true } };
+    }
+  }
+
+  return out as T;
+}
+
 // GET /api/sliderule/sessions
 // Returns { sessions: [...] } for easy consumption (also accepts raw array on client).
 router.get("/health", async (_req: Request, res: Response) => {
@@ -308,11 +414,7 @@ router.post("/drive-full", express.json({ limit: "2mb" }), async (req: Request, 
         pythonRuntime.internalKey,
         { timeoutMs: pythonRuntime.timeoutMs },
       );
-      // Raw pass-through: any Python fields (publishClosure, skillRuntimeGraph, stateAuthority, etc.) survive.
-      // Note: missing declared Skill evidence fail-closed (blocked:true, evidencePresentCount < skillCount) is
-      // carried inside successful publishClosure from Python /drive-full (per appbundle runtime closure semantics).
-      // This error path ONLY covers delegation failure (python unavailable); no green faking in either path.
-      return res.json(data);
+      return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {
       console.warn('[sliderule] python drive-full delegation failed', e);
       // Fail-closed: explicit error, no fabricated publishClosure/skillRuntimeGraph.
@@ -346,7 +448,7 @@ router.post("/drive-marathon", express.json({ limit: "2mb" }), async (req: Reque
         pythonRuntime.internalKey,
         { timeoutMs: pythonRuntime.timeoutMs },
       );
-      return res.json(data);
+      return res.json(normalizeDriveClosureResponse(data as any));
     } catch (e) {
       console.warn('[sliderule] python drive-marathon delegation failed', e);
       return res.status(502).json({
