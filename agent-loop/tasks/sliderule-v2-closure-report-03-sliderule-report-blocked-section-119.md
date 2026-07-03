@@ -1,7 +1,7 @@
 # sliderule-v2-closure-report-03-sliderule-report-blocked-section-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: report
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on delivery/report serialization. Do not change core runtime semantics unl
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -67,3 +67,21 @@ Validation commands:
 - npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts client/src/pages/sliderule/__tests__/parse-report-sections-appbundle-boundary.test.ts
 
 Summary: Added "### Blocked closure report section" in report serialization (under AppBundle closure appendix) that explicitly lists for each topBlocker: code, path, affectedSkill (and ref if present). Positive tests assert presence + fields on blocked; negative asserts absence on closed and fail-closed-no-evidence cases. Preserves all legacy "closure blockers" and existing behavior. Advances 119 report serialization for blocked closure with deterministic local output for Codex review.
+
+## Codex Review Landing
+
+Changed files:
+- `client/src/pages/sliderule/serialize-sliderule-delivery-md.ts`
+- `client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts`
+- `agent-loop/tasks/sliderule-v2-closure-report-03-sliderule-report-blocked-section-119.md`
+
+Exported/updated symbols:
+- `deriveAppBundleClosureRender`
+- `serializeSlideRuleDeliveryMd`
+
+Validation commands:
+- `npx vitest run client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts --reporter=dot`
+- `node --run check`
+- `git diff --check`
+
+Codex verified the blocked closure section in the delivery/report serializer. The blocked fixture asserts blocker code, path, affected skill, normalized blocker lines, and explicitly verifies that blocked output does not emit the closed closure section.

@@ -313,6 +313,7 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(md).toContain("affectedSkill: page");
     expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
+    expect(md).not.toContain(CLOSED_CLOSURE_REPORT_SECTION);
   });
 
   it("serializes per-skill publishClosure evidence coverage for markdown review", () => {
@@ -381,6 +382,7 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("evidence coverage and version pins verified for closed runtime closure.");
     expect(md).toContain("| datamodel | present |");
     expect(renderPerSkillEvidenceCoverageTable(perSkillEvidence)).toContain("| appbundle | present |");
+    expect(md).not.toContain("### Blocked closure report section");
   });
 
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
