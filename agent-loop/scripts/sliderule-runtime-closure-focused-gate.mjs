@@ -71,7 +71,7 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/DeliverablesPanel.test.tsx",
   },
   {
-    id: "closure-final-json-summary",
+    id: "closure-final-summary",
     command: "node --test agent-loop/src/closureFinalSummary.test.mjs",
   },
   {

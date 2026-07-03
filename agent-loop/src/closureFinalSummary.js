@@ -33,3 +33,44 @@ export function buildCompactClosureSummary(result = {}) {
     },
   };
 }
+
+export function buildMarkdownClosureSummary(result = {}) {
+  const compact = buildCompactClosureSummary(result);
+  const rawResults = Array.isArray(result.results) ? result.results : [];
+  const lines = [
+    "# SlideRule Runtime Closure Gate Summary",
+    "",
+    `**ok**: ${compact.ok}`,
+    `**pass counts**: ${compact.passed}/${compact.total} (failed: ${compact.failed})`,
+    `**failedMatrices**: ${compact.failedMatrices.length ? compact.failedMatrices.join(", ") : "none"}`,
+    "",
+    "## Commands",
+  ];
+
+  if (rawResults.length === 0) {
+    lines.push("- (no command details in compact input)");
+  } else {
+    for (const entry of rawResults) {
+      const matrix = String(entry?.matrix || "unknown");
+      const command = String(entry?.command || "(command unavailable)").slice(0, 140);
+      const exitCode = entry?.exitCode ?? "?";
+      const ok = entry?.ok === true;
+      const output = String(entry?.output || "").replace(/\s+/g, " ").trim().slice(0, 90);
+      lines.push(`- ${matrix}: \`${command}\` (exit=${exitCode}, ok=${ok})${output ? ` - ${output}` : ""}`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Matrices",
+    ...(compact.matrices.length ? compact.matrices.map((matrix) => `- ${matrix}`) : ["- (not provided)"]),
+    "",
+    "## Residual risks",
+    "- Browser smoke can degrade-skip when the local dev server is unavailable.",
+    "- Secret and dirty-main checks only prove the current working diff at gate time.",
+    "- This is a focused gate; broader CI remains the final backstop.",
+    "",
+  );
+
+  return lines.join("\n");
+}
