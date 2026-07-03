@@ -561,9 +561,13 @@ export const workflowSkill: Skill<WorkflowModel> & CrossSkill<WorkflowModel> = {
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       ...(model.version ? { version: [model.id] } : {}),
       workflowToPageTrace: traceWorkflowTaskStateToPageTaskSurfaceEvidence(model),
+      workflowToAppBundleTrace: traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(model),
     };
     if (!surface.runtimeEvidence.includes(WF_PAGE_RUNTIME_EVIDENCE)) {
       surface.runtimeEvidence = [...surface.runtimeEvidence, WF_PAGE_RUNTIME_EVIDENCE];
+    }
+    if (!surface.runtimeEvidence.includes(WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE)) {
+      surface.runtimeEvidence = [...surface.runtimeEvidence, WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE];
     }
     return surface;
   },
@@ -1167,6 +1171,8 @@ export function createWorkflowDataModelRuntimeEvidence(
 
 export const WF_PAGE_RUNTIME_EVIDENCE = "WF_PAGE_RUNTIME_EVIDENCE";
 export const WF_WORKFLOW_TO_PAGE_TRACE = "WF_WORKFLOW_TO_PAGE_TRACE";
+export const WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE = "WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE";
+export const WF_WORKFLOW_TO_APPBUNDLE_TRACE = "WF_WORKFLOW_TO_APPBUNDLE_TRACE";
 
 export function createWorkflowPageRuntimeEvidence(
   model: WorkflowModel,
@@ -1188,6 +1194,18 @@ export interface WorkflowToPageTrace {
   workflowId: string;
   currentNodeId?: string;
   pageTaskSurfaceValid: boolean;
+  evidenceKey: string;
+}
+
+export interface WorkflowToAppBundleTrace {
+  traceId: typeof WF_WORKFLOW_TO_APPBUNDLE_TRACE;
+  sourceSkill: "workflow";
+  targetSkill: "appbundle";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  workflowId: string;
+  hasRuntimeRefs: boolean;
+  appBundleEvidencePresent: boolean;
   evidenceKey: string;
 }
 
@@ -1229,6 +1247,41 @@ export function traceWorkflowTaskStateToPageTaskSurfaceEvidence(
     currentNodeId,
     pageTaskSurfaceValid,
     evidenceKey: `${WF_WORKFLOW_TO_PAGE_TRACE}:${closed ? "closed" : "blocked"}`,
+  };
+}
+
+export function traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(
+  model: WorkflowModel,
+  appBundleSurface?: unknown,
+): WorkflowToAppBundleTrace {
+  const nodeCount = Array.isArray(model.nodes) ? model.nodes.length : 0;
+  const fieldRefCount = Array.isArray(model.fieldRefs) ? model.fieldRefs.length : 0;
+  const transitionCount = Array.isArray(model.edges) ? model.edges.length : 0;
+  const hasRuntimeRefs = nodeCount > 0 || fieldRefCount > 0 || transitionCount > 0 || model.published === true;
+  const upstreamPresent = appBundleSurface !== undefined && appBundleSurface !== null;
+  const closed = hasRuntimeRefs && upstreamPresent;
+
+  return {
+    traceId: WF_WORKFLOW_TO_APPBUNDLE_TRACE,
+    sourceSkill: "workflow",
+    targetSkill: "appbundle",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "WF_APPBUNDLE_RUNTIME_EVIDENCE_POSITIVE_CLOSED" : "WF_APPBUNDLE_RUNTIME_FAIL_CLOSED",
+    workflowId: model.id,
+    hasRuntimeRefs,
+    appBundleEvidencePresent: closed,
+    evidenceKey: `${WF_WORKFLOW_TO_APPBUNDLE_TRACE}:${closed ? "closed" : "blocked"}`,
+  };
+}
+
+export function createWorkflowToAppBundleRuntimeEvidence(
+  model: WorkflowModel,
+  appBundleSurface?: unknown,
+  snapshot?: WorkflowInstanceSnapshot,
+): WorkflowCrossRuntimeEvidence {
+  return {
+    ...createWorkflowCrossRuntimeEvidence(model, "appbundle", appBundleSurface, snapshot),
+    evidenceKey: WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE,
   };
 }
 

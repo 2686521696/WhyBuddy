@@ -36,7 +36,10 @@ import {
 } from "../page/pageSkill";
 import { dataModelSkill } from "../datamodel/dataModelSkill";
 import { rbacSkill } from "../rbac/rbacSkill";
-import { workflowSkill } from "../workflow/workflowSkill";
+import {
+  traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence,
+  workflowSkill,
+} from "../workflow/workflowSkill";
 import { aigcSkill } from "../aigc/aigcSkill";
 
 function sanitizeId(raw: string): string {
@@ -1281,6 +1284,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       pageRouteBindingEvidence = tracePageRouteBindingToAppBundleClosureEvidence(skillModel as any, appBundleModel);
     }
 
+    let workflowRuntimeToAppBundleEvidence: any = undefined;
+    if (skillId === "workflow" && skillModel) {
+      workflowRuntimeToAppBundleEvidence = traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(skillModel as any, appBundleModel);
+    }
+
     const evidence = {
       skillId,
       versionPin,
@@ -1290,10 +1298,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       rbacPdpDecisions: ev.policy || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed"),
       aigcInvocationOutputPolicy: ev.aigcPolicy,
       unresolvedRefs: false,
-      evidencePresent: Boolean(ev.present) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed") || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed") || Boolean(pageRouteBindingEvidence && pageRouteBindingEvidence.state === "closed"),
+      evidencePresent: Boolean(ev.present) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed") || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed") || Boolean(pageRouteBindingEvidence && pageRouteBindingEvidence.state === "closed") || Boolean(workflowRuntimeToAppBundleEvidence && workflowRuntimeToAppBundleEvidence.state === "closed"),
       dataModelFieldBindingEvidence,
       pageRbacPermissionEvidence,
       pageRouteBindingEvidence,
+      workflowRuntimeToAppBundleEvidence,
     };
 
     // Version pins are required for runtime closure for assembled refs

@@ -6,6 +6,7 @@ import {
   createWorkflowDataModelRuntimeEvidence,
   createWorkflowRbacRuntimeEvidence,
   createWorkflowPageRuntimeEvidence,
+  createWorkflowToAppBundleRuntimeEvidence,
   createWorkflowInstanceSnapshot,
   leaveApprovalWorkflow,
   normalizeWorkflowRuntimeContextForSkill,
@@ -13,6 +14,7 @@ import {
   purchaseApprovalWorkflow,
   resolveWorkflowAssignees,
   startWorkflowInstance,
+  traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence,
   traceWorkflowTaskStateToPageTaskSurfaceEvidence,
   transitionWorkflowInstance,
   validateWorkflowInstanceSnapshot,
@@ -20,6 +22,8 @@ import {
   WF_DATAMODEL_RUNTIME_EVIDENCE,
   WF_PAGE_RUNTIME_EVIDENCE,
   WF_RBAC_RUNTIME_EVIDENCE,
+  WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE,
+  WF_WORKFLOW_TO_APPBUNDLE_TRACE,
   WF_WORKFLOW_TO_PAGE_TRACE,
   workflowSkill,
   WF_RUNTIME_INVALID_TRANSITION,
@@ -29,6 +33,7 @@ import type { WorkflowInstance, WorkflowInstanceSnapshot, WorkflowModel, Workflo
 import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill, decideRbacPolicy } from "../rbac/rbacSkill";
 import { dataModelSkill, leaveRequestDataModel } from "../datamodel/dataModelSkill";
 import { leaveApprovalPage } from "../page/pageSkill";
+import { evaluateAppBundleRuntimeClosure, leaveApprovalAppBundle } from "../appbundle/appBundleSkill";
 import type { PolicyDecision } from "../rbac/rbacModel";
 
 const clone = (m: WorkflowModel): WorkflowModel => structuredClone(m);
@@ -959,5 +964,50 @@ describe("workflowSkill - 120 workflow task state to page surface trace", () => 
     expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([WF_PAGE_RUNTIME_EVIDENCE]));
     expect(surface.workflowToPageTrace).toBeTruthy();
     expect(surface.workflowToPageTrace.traceId).toBe(WF_WORKFLOW_TO_PAGE_TRACE);
+  });
+});
+
+describe("workflowSkill - 120 workflow runtime to appbundle closure trace", () => {
+  it("traces Workflow runtime refs to AppBundle closure as a closed path", () => {
+    const trace = traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(
+      leaveApprovalWorkflow,
+      leaveApprovalAppBundle,
+    );
+
+    expect(trace.traceId).toBe(WF_WORKFLOW_TO_APPBUNDLE_TRACE);
+    expect(trace.sourceSkill).toBe("workflow");
+    expect(trace.targetSkill).toBe("appbundle");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("WF_APPBUNDLE_RUNTIME_EVIDENCE_POSITIVE_CLOSED");
+    expect(trace.workflowId).toBe(leaveApprovalWorkflow.id);
+    expect(trace.hasRuntimeRefs).toBe(true);
+    expect(trace.appBundleEvidencePresent).toBe(true);
+  });
+
+  it("traces missing AppBundle upstream or empty Workflow runtime refs as fail-closed", () => {
+    const missingBundle = traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(leaveApprovalWorkflow);
+    const emptyWorkflow = { id: "wf_empty", nodes: [], edges: [], fieldRefs: [] } as any;
+    const missingRefs = traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(emptyWorkflow, leaveApprovalAppBundle);
+
+    expect(missingBundle.state).toBe("blocked");
+    expect(missingBundle.reasonCode).toBe("WF_APPBUNDLE_RUNTIME_FAIL_CLOSED");
+    expect(missingRefs.state).toBe("blocked");
+    expect(missingRefs.hasRuntimeRefs).toBe(false);
+  });
+
+  it("resolve and AppBundle runtime closure expose Workflow to AppBundle evidence", () => {
+    const surface = workflowSkill.resolve(leaveApprovalWorkflow) as any;
+    const evidence = createWorkflowToAppBundleRuntimeEvidence(leaveApprovalWorkflow, leaveApprovalAppBundle);
+    const report = evaluateAppBundleRuntimeClosure({
+      workflow: leaveApprovalWorkflow,
+      appbundle: leaveApprovalAppBundle,
+    });
+    const workflowInfo = report.perSkillEvidence.workflow as any;
+
+    expect(evidence.evidenceKey).toBe(WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE);
+    expect(evidence.targetSkill).toBe("appbundle");
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([WF_WORKFLOW_RUNTIME_TO_APPBUNDLE_EVIDENCE]));
+    expect(surface.workflowToAppBundleTrace.traceId).toBe(WF_WORKFLOW_TO_APPBUNDLE_TRACE);
+    expect(workflowInfo.workflowRuntimeToAppBundleEvidence.state).toBe("closed");
   });
 });
