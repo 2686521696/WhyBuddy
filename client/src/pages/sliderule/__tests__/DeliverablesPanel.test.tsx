@@ -118,6 +118,52 @@ describe("DeliverablesPanel report closure summary", () => {
     expect(html).toContain("evidence=6/6");
   });
 
+  it("surfaces blocked report/export closure summary from session publishArtifact", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const blocked = JSON.parse(
+      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    const html = renderToStaticMarkup(
+      <DeliverablesPanel
+        open={true}
+        onClose={() => {}}
+        isRunning={false}
+        onGenerate={() => {}}
+        onExportMd={() => {}}
+        sessionState={
+          {
+            sessionId: "deliverables-report-export-blocked-artifact-summary",
+            goal: { text: "blocked publish artifact", status: "needs_refinement" },
+            publishArtifact: blocked,
+            artifacts: [
+              {
+                id: "report-deliverables-blocked-artifact",
+                kind: "report",
+                provenance: "ai_generated",
+                trustLevel: "gated_pass",
+                passedGates: ["commit"],
+                title: "Delivery report",
+                content: "Conclusion: publish artifact closure is blocked.",
+                producedBy: {
+                  capabilityRunId: "run-report",
+                  capabilityId: "report.write",
+                  roleId: "report",
+                },
+              },
+            ],
+          } as any
+        }
+      />
+    );
+
+    expect(html).toContain('data-testid="report-export-closure-summary"');
+    expect(html).toContain("status=blocked");
+    expect(html).toContain("digest=badc0ded120");
+    expect(html).toContain("evidence=1/2");
+  });
+
   it("does not render a degraded closure summary when no closure evidence exists", () => {
     const html = renderToStaticMarkup(
       <DeliverablesPanel
