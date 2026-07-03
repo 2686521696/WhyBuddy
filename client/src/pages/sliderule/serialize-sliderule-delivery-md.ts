@@ -3,7 +3,10 @@ import { replayCoverage } from "@shared/blueprint/sliderule-coverage-replay";
 import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
-import { renderPublishClosureBlocker } from "./derive-cross-runtime-summary";
+import {
+  formatClosureStatusAndTopBlockersForFinalReport,
+  renderPublishClosureBlocker,
+} from "./derive-cross-runtime-summary";
 
 /** Pure md serializer for Knife C delivery export — does not mutate state. */
 export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
@@ -233,6 +236,7 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
       `closure outcome: ${blocked ? "blocked" : "closed"}`,
       `version pins: ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
       `python publishClosure: ${blocked ? "blocked" : "closed"}`,
+      ...formatClosureStatusAndTopBlockersForFinalReport(publishClosure).split("\n"),
       `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
       `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"} · generatedAt ${publishClosure.generatedAt ?? "n/a"}`,
       `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,

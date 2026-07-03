@@ -249,6 +249,8 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("closure outcome: closed");
     expect(md).toContain("version pins: checked");
     expect(md).toContain("python publishClosure");
+    expect(md).toContain("closure status: closed");
+    expect(md).toContain("top blockers: none");
     expect(md).toContain("6/6 evidence");
     expect(md).toContain("feedface");
     // Negative: closed case must not emit the blocked closure report section
@@ -286,6 +288,8 @@ describe("Knife C · terminal delivery platform", () => {
     } as any);
 
     expect(md).toContain("closure outcome: blocked");
+    expect(md).toContain("closure status: blocked");
+    expect(md).toContain("top blockers: APPBUNDLE_PUBLISH_REF_MISSING@menuEntries[0].roleRefs[2]; APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@runtimeSnapshot.pageBindings[1]");
     expect(md).toContain("closure blockers");
     expect(md).toContain("APPBUNDLE_PUBLISH_REF_MISSING");
     expect(md).toContain("rbac");
