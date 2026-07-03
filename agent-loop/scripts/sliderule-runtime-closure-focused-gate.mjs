@@ -11,6 +11,22 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts",
   },
   {
+    id: "skilltrace-rbac",
+    command: "npx vitest run client/src/lib/skills/rbac/rbacSkill.test.ts",
+  },
+  {
+    id: "skilltrace-workflow",
+    command: "npx vitest run client/src/lib/skills/workflow/workflowSkill.test.ts",
+  },
+  {
+    id: "skilltrace-aigc",
+    command: "npx vitest run client/src/lib/skills/aigc/aigcSkill.test.ts",
+  },
+  {
+    id: "workflow-page-projector",
+    command: "npx vitest run client/src/lib/skills/page/pageSkill.test.ts -t \"WorkflowTaskView|workflow task|projectWorkflowTaskView\"",
+  },
+  {
     id: "browser-evidence-projection",
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-persisted-turn.test.ts",
   },
