@@ -751,7 +751,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
     const fieldRuleSurface = policyRules.filter(r => r.fieldRef != null || r.field != null).map(r => r.id);
     const decisionScopeSurface = [...decisionCodes];
     const crossRuntime = buildRbacCrossRuntimeEdges(model);
-    return {
+    const surface: any = {
       role: model.roles.map(r => r.id),
       permission: model.permissions.map(p => p.code),
       policy: policySurface,
@@ -765,7 +765,9 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
       user: model.users.map(u => u.id),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
+      rbacToPageTrace: traceRbacAllowDenyToPageRenderPermissionEvidence(model),
     };
+    return surface;
   },
 
   // -- THE LLM SEAM (stub; real impl asks SlideRule to fill the metamodel) --
@@ -1188,6 +1190,17 @@ export interface NormalizedRbacRuntimeContext {
 export const RBAC_CROSS_RUNTIME_EVIDENCE = "RBAC_CROSS_RUNTIME_EVIDENCE";
 export const RBAC_PAGE_RUNTIME_EVIDENCE = "RBAC_PAGE_RUNTIME_EVIDENCE";
 export const RBAC_WORKFLOW_RUNTIME_EVIDENCE = "RBAC_WORKFLOW_RUNTIME_EVIDENCE";
+export const RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE = "RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE";
+
+export interface RbacToPageTrace {
+  traceId: typeof RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE;
+  sourceSkill: "rbac";
+  targetSkill: "page";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  decision: RbacRuntimeDecision;
+  pageEvidence: RbacCrossRuntimeEvidence;
+}
 
 function rbacPolicyRefsForTarget(model: RbacModel, targetSkill: RbacRuntimeTargetSkill): string[] {
   const policyRules = model.policyRules ?? [];
@@ -1284,6 +1297,48 @@ export function createRbacPageRuntimeEvidence(
   return {
     ...createRbacCrossRuntimeEvidence(model, "page", request),
     evidenceKey: RBAC_PAGE_RUNTIME_EVIDENCE,
+  };
+}
+
+function derivePositiveRbacPageTraceRequest(model: RbacModel): RbacRuntimeRequest {
+  for (const permission of model.permissions) {
+    const role = model.roles.find(candidate => candidate.permissionCodes.includes(permission.code));
+    if (role) {
+      return {
+        subject: { roleIds: [role.id] },
+        action: permission.action,
+        resourceType: permission.resource,
+        tenantId: "t-default",
+        fieldContext: { fields: [] },
+      };
+    }
+  }
+
+  return {
+    subject: { roleIds: [] },
+    action: "",
+    resourceType: "",
+    tenantId: "t-default",
+    fieldContext: { fields: [] },
+  };
+}
+
+export function traceRbacAllowDenyToPageRenderPermissionEvidence(
+  model: RbacModel,
+  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model),
+): RbacToPageTrace {
+  const decision = createRbacFailClosedNegativePath(model, request);
+  const pageEvidence = createRbacPageRuntimeEvidence(model, request);
+  const closed = decision.effect === "allow" && pageEvidence.state === "allowed";
+
+  return {
+    traceId: RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE,
+    sourceSkill: "rbac",
+    targetSkill: "page",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "RBAC_PAGE_TRACE_POSITIVE_CLOSED" : "RBAC_PAGE_TRACE_FAIL_CLOSED",
+    decision,
+    pageEvidence,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   createRbacPageRuntimeEvidence,
   createRbacPdpExplainEvidence,
   createRbacWorkflowRuntimeEvidence,
+  traceRbacAllowDenyToPageRenderPermissionEvidence,
   decideRbacPolicy,
   evaluateRbacFieldAccess,
   evaluateRbacRowAccess,
@@ -15,6 +16,7 @@ import {
   normalizeRbacRuntimeContextForSkill,
   purchaseApprovalRbac,
   rbacSkill,
+  RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE,
   RBAC_PAGE_RUNTIME_EVIDENCE,
   RBAC_FIELD_ACCESS_DENIED,
   RBAC_PDP_EXPLAIN_EVIDENCE,
@@ -1221,6 +1223,43 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     expect(edges.map(edge => edge.targetSkill)).toEqual(
       expect.arrayContaining(["datamodel", "workflow", "page", "aigc", "appbundle"]),
     );
+  });
+
+  it("traces RBAC allow decisions to Page render permission evidence as a closed path", () => {
+    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(leaveApprovalRbac, leaveApproveRequest);
+
+    expect(trace.traceId).toBe(RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE);
+    expect(trace.sourceSkill).toBe("rbac");
+    expect(trace.targetSkill).toBe("page");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("RBAC_PAGE_TRACE_POSITIVE_CLOSED");
+    expect(trace.decision.effect).toBe("allow");
+    expect(trace.pageEvidence.evidenceKey).toBe(RBAC_PAGE_RUNTIME_EVIDENCE);
+  });
+
+  it("traces RBAC deny decisions to Page render permission evidence as fail-closed", () => {
+    const deniedRequest: RbacRuntimeRequest = {
+      subject: { roleIds: ["employee"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    };
+
+    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(leaveApprovalRbac, deniedRequest);
+
+    expect(trace.state).toBe("blocked");
+    expect(trace.reasonCode).toBe("RBAC_PAGE_TRACE_FAIL_CLOSED");
+    expect(trace.decision.effect).toBe("deny");
+    expect(trace.pageEvidence.state).toBe("blocked");
+  });
+
+  it("resolve surface exposes rbacToPageTrace for runtime linkage consumers", () => {
+    const surface = rbacSkill.resolve(leaveApprovalRbac) as any;
+
+    expect(surface.rbacToPageTrace).toBeTruthy();
+    expect(surface.rbacToPageTrace.traceId).toBe(RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE);
+    expect(surface.rbacToPageTrace.state).toBe("closed");
   });
 });
 
