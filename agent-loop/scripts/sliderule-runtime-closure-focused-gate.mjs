@@ -31,6 +31,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts -t \"runtime closure|publishGate|AppBundle closure|appbundle aggregate|focused vitest matrix\"",
   },
   {
+    id: "appbundle-python-closure-hash",
+    command: "cd slide-rule-python && python -m pytest tests/test_v5_publish_closure_response.py -q",
+  },
+  {
     id: "browser-evidence-projection",
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-persisted-turn.test.ts",
   },

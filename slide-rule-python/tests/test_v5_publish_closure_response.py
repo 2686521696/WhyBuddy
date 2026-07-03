@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from models.v5_state import CapabilityRun, ExecuteCapabilityResult, V5SessionState  # noqa: E402
+from models.v5_state import Artifact, CapabilityRun, ExecuteCapabilityResult, V5SessionState  # noqa: E402
+from services.v5_capability_executor import execute_v5_capability  # noqa: E402
 from services.v5_publish_closure_response import (
     derive_publish_closure_response,
     PublishClosureResponse,
@@ -382,3 +383,52 @@ def test_publish_closure_derives_from_execute_result_runtime_closure_attachment_
     assert response["blocked"] is False
     assert response["closureHash"] == "c0ffee120"
     assert response["perSkillEvidence"]["rbac"]["evidencePresent"] is True
+
+
+def test_appbundle_executor_closure_hash_stable_for_unchanged_publish_inputs_120():
+    def state_for(suffix: str) -> V5SessionState:
+        return V5SessionState(
+            sessionId=f"hash-{suffix}",
+            goal={"text": "build publish manifest"},
+            artifacts=[
+                Artifact(id=f"artifact-datamodel-{suffix}", kind="evidence", title="datamodel skill closure"),
+                Artifact(id=f"artifact-rbac-{suffix}", kind="evidence", title="rbac skill closure"),
+                Artifact(id=f"artifact-workflow-{suffix}", kind="evidence", title="workflow skill closure"),
+                Artifact(id=f"artifact-page-{suffix}", kind="evidence", title="page skill closure"),
+                Artifact(id=f"artifact-aigc-{suffix}", kind="evidence", title="aigc skill closure"),
+                Artifact(id=f"artifact-appbundle-{suffix}", kind="evidence", title="appbundle skill closure"),
+            ],
+            capabilityRuns=[],
+        )
+
+    first = state_for("same")
+    second = state_for("same")
+    changed = state_for("changed")
+
+    first_result = execute_v5_capability("appbundle.runtimeClosure", first, [], "agent", "t1")
+    second_result = execute_v5_capability("appbundle.runtimeClosure", second, [], "agent", "t2")
+    changed_result = execute_v5_capability("appbundle.runtimeClosure", changed, [], "agent", "t3")
+
+    first.capabilityRuns = [
+        CapabilityRun(id="run-first", capabilityId="appbundle.runtimeClosure", turnId="t1", result=first_result)
+    ]
+    second.capabilityRuns = [
+        CapabilityRun(id="run-second", capabilityId="appbundle.runtimeClosure", turnId="t2", result=second_result)
+    ]
+    changed.capabilityRuns = [
+        CapabilityRun(id="run-changed", capabilityId="appbundle.runtimeClosure", turnId="t3", result=changed_result)
+    ]
+
+    first_closure = derive_publish_closure_response(first)
+    second_closure = derive_publish_closure_response(second)
+    changed_closure = derive_publish_closure_response(changed)
+
+    assert first_closure is not None
+    assert second_closure is not None
+    assert changed_closure is not None
+    assert first_closure["blocked"] is False
+    assert first_closure["evidencePresentCount"] == 6
+    assert first_closure["closureHash"] == second_closure["closureHash"]
+    assert first_closure["stableDigest"] == second_closure["stableDigest"]
+    assert first_closure["closureHash"] != changed_closure["closureHash"]
+    assert first_closure["stableDigest"] != changed_closure["stableDigest"]
