@@ -106,8 +106,8 @@ export function classifyDriveFullStatus(
 export async function driveFullViaPython(
   state: V5SessionState,
   userText: string,
-  opts: { stopSignal?: AbortSignal; maxLoops?: number } = {}
-): Promise<{ finalState: V5SessionState; stopReason?: string } | null> {
+  opts: { stopSignal?: AbortSignal; maxLoops?: number; turnId?: string } = {}
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[] } | null> {
   if (typeof fetch !== "function") return null;
   try {
     const res = await fetch("/api/sliderule/drive-full", {
@@ -118,6 +118,7 @@ export async function driveFullViaPython(
         state,
         userText,
         max_loops: opts.maxLoops ?? 10,
+        turnId: opts.turnId,
       }),
     });
     if (!res.ok) return null;
@@ -133,6 +134,16 @@ export async function driveFullViaPython(
     return {
       finalState,
       stopReason: body.stopReason || "completed",
+      loops: opts.turnId
+        ? [
+            {
+              loopTurnId: opts.turnId,
+              plan: { selected: [], reason: "python_drive_full", expectedArtifacts: [] },
+              committedArtifactIds: [],
+              stopSignal: "drive_full",
+            },
+          ]
+        : [],
     };
   } catch {
     return null;

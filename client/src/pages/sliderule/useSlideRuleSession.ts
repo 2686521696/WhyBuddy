@@ -522,10 +522,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         setDriveFullStatus("loading");
         const pythonDrive = await driveFullViaPython(preparedState, userText.trim(), {
           stopSignal: controller.signal,
+          turnId,
         });
         setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
         drive = pythonDrive
-          ? { finalState: pythonDrive.finalState, stopReason: pythonDrive.stopReason || "completed", loops: [] }
+          ? { finalState: pythonDrive.finalState, stopReason: pythonDrive.stopReason || "completed", loops: pythonDrive.loops || [] }
           : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
         usedMarathonDriver = false;
       }

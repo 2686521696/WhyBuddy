@@ -307,6 +307,7 @@ it("driveFullViaPython attaches Python publishClosure on success and returns nul
     const positive = await driveFullViaPython(state, "show closure on page", {
       stopSignal: new AbortController().signal,
       maxLoops: 7,
+      turnId: "turn-command-120",
     });
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
@@ -317,7 +318,9 @@ it("driveFullViaPython attaches Python publishClosure on success and returns nul
         body: expect.stringContaining('"max_loops":7'),
       })
     );
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as any).body)).turnId).toBe("turn-command-120");
     expect(positive?.finalState.runtimePhase).toBe("done");
+    expect((positive as any)?.loops?.[0]?.loopTurnId).toBe("turn-command-120");
     expect((positive?.finalState as any).publishClosure?.blocked).toBe(false);
     expect((positive?.finalState as any).publishClosure?.evidencePresentCount).toBe(6);
     expect((positive?.finalState as any).publishClosure?.closureHash).toBe("python-closed-120");
