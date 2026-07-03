@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-appbundle-09-runtime-artifact-report-data-120
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: appbundle
 - Owner: grok
@@ -9,6 +9,14 @@
 - Landing: codex-reviewed-only
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
+- Last execution: 2026-07-04
+- AgentLoop run id: `2026-07-03T17-45-48-849Z`
+- AgentLoop local time: `2026-07-04 01:45:48 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
+- Grok ran: `true`
+- Codex ran: `true`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Produce report/export summary data from the same publish artifact closure shape.
 
