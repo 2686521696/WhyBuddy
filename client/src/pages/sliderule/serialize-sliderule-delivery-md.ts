@@ -165,9 +165,31 @@ export interface AppBundleClosureRender {
   summaryLines: string[];
 }
 
-function appendClosureBlockerLines(lines: string[], blockerLines: string[]): string[] {
-  if (blockerLines.length === 0) return lines;
-  return [...lines, "closure blockers:", ...blockerLines];
+const APPBUNDLE_CLOSURE_SKILL_ORDER = [
+  "datamodel",
+  "rbac",
+  "workflow",
+  "page",
+  "aigc",
+  "appbundle",
+];
+
+function appendClosureDetailLines(lines: string[], detailLines: string[]): string[] {
+  if (detailLines.length === 0) return lines;
+  return [...lines, ...detailLines];
+}
+
+function perSkillEvidenceCoverageLines(perSkillEvidence: unknown): string[] {
+  if (!perSkillEvidence || typeof perSkillEvidence !== "object") return [];
+  const evidence = perSkillEvidence as Record<string, { evidencePresent?: boolean } | undefined>;
+  return [
+    "evidence coverage:",
+    "| skill | evidence |",
+    "| --- | --- |",
+    ...APPBUNDLE_CLOSURE_SKILL_ORDER.map((skill) =>
+      `| ${skill} | ${evidence[skill]?.evidencePresent === true ? "present" : "missing"} |`
+    ),
+  ];
 }
 
 export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleClosureRender {
@@ -186,14 +208,18 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
           return `- ${code}${skill}${path}${ref}`;
         })
       : [];
+    const detailLines = [
+      ...perSkillEvidenceCoverageLines(publishClosure.perSkillEvidence),
+      ...(blockerLines.length > 0 ? ["closure blockers:", ...blockerLines] : []),
+    ];
     return {
       present: true,
-      summaryLines: appendClosureBlockerLines([
+      summaryLines: appendClosureDetailLines([
         `python publishClosure: ${blocked ? "blocked" : "closed"}`,
         `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
         `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"}`,
         `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,
-      ], blockerLines),
+      ], detailLines),
     };
   }
 

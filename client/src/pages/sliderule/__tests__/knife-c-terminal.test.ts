@@ -285,6 +285,36 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("role:finance-admin");
   });
 
+  it("serializes per-skill publishClosure evidence coverage for markdown review", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-coverage-md");
+    const md = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishClosure: {
+        blocked: true,
+        blockerCount: 1,
+        evidencePresentCount: 5,
+        skillCount: 6,
+        versionPinsChecked: true,
+        closureHash: "f00dbabe",
+        stableDigest: "0ddba11",
+        tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+        perSkillEvidence: {
+          datamodel: { evidencePresent: true },
+          rbac: { evidencePresent: true },
+          workflow: { evidencePresent: true },
+          page: { evidencePresent: true },
+          aigc: { evidencePresent: false },
+          appbundle: { evidencePresent: true },
+        },
+      },
+    } as any);
+
+    expect(md).toContain("evidence coverage:");
+    expect(md).toContain("| datamodel | present |");
+    expect(md).toContain("| aigc | missing |");
+    expect(md).toContain("| appbundle | present |");
+  });
+
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);
