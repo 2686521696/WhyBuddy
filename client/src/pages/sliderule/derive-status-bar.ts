@@ -41,6 +41,7 @@ export type StatusBarFacts = {
   publishClosureLabel?: string;
   publishClosureClassName?: string;
   publishClosureHint?: string;
+  publishClosureFailClosed?: boolean;
 };
 
 export function deriveStatusBarFacts(
@@ -216,6 +217,10 @@ export function deriveStatusBarFacts(
         `info ${publishClosure.tierCounts.info}`,
       ].join(" - ")
     : undefined;
+  const publishClosureFailClosed = !!(
+    publishClosure?.blocked &&
+    (!Array.isArray(publishClosure.topBlockers) || publishClosure.topBlockers.length === 0)
+  );
 
   return {
     goalSnippet,
@@ -239,6 +244,7 @@ export function deriveStatusBarFacts(
     publishClosureLabel,
     publishClosureClassName,
     publishClosureHint,
+    publishClosureFailClosed,
     // surfaced for Python planner_* degraded visibility (see useSlideRuleSession + orchestrator pass-through)
     planDegraded: !!opts.planDegraded,
     planError: opts.planError ?? null,

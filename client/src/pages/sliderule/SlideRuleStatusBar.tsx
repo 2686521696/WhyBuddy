@@ -68,6 +68,7 @@ export function SlideRuleStatusBar({
         {facts.publishClosureLabel && (
           <span
             data-testid="sliderule-publish-closure-badge"
+            data-fail-closed={facts.publishClosureFailClosed ? "true" : "false"}
             title={facts.publishClosureHint}
             className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-medium ring-1 ring-inset ${facts.publishClosureClassName}`}
           >

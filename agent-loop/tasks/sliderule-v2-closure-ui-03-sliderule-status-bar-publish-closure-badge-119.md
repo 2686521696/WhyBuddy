@@ -1,7 +1,7 @@
 # sliderule-v2-closure-ui-03-sliderule-status-bar-publish-closure-badge-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: ui
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on compact operational visibility. Keep the page quiet and avoid large lay
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,23 @@ Focus on compact operational visibility. Keep the page quiet and avoid large lay
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report
+
+Changed files:
+- `client/src/pages/sliderule/derive-status-bar.ts`
+- `client/src/pages/sliderule/SlideRuleStatusBar.tsx`
+- `client/src/pages/sliderule/__tests__/SlideRuleStatusBar.test.tsx`
+- `agent-loop/tasks/sliderule-v2-closure-ui-03-sliderule-status-bar-publish-closure-badge-119.md`
+
+Exported/updated symbols:
+- `StatusBarFacts.publishClosureFailClosed`
+- `deriveStatusBarFacts`
+- `SlideRuleStatusBar`
+
+Validation commands:
+- `npx vitest run client/src/pages/sliderule/__tests__/SlideRuleStatusBar.test.tsx client/src/pages/sliderule/__tests__/derive-status-bar.test.ts --reporter=dot`
+- `node --run check`
+- `git diff --check`
+
+This lands the compact status-bar publish closure badge with deterministic closed, blocked, fail-closed blocked, and absent-summary render coverage. It preserves the existing visual layout and adds only an audit/test attribute for the fail-closed case.
