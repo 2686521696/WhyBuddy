@@ -66,6 +66,25 @@ async function persistSession(state: V5SessionState): Promise<V5SessionState> {
   return SlideRuleRuntime.saveSessionState(toSave);
 }
 
+async function prepareVisibleResetSessionState(
+  sessionId: string,
+  deleteSession?: (sessionId: string) => Promise<void>,
+  saveSession: (state: V5SessionState) => Promise<V5SessionState> = persistSession
+): Promise<V5SessionState> {
+  try {
+    await deleteSession?.(sessionId);
+  } catch {
+    // Reset must remain visible even when the backend delete route is unavailable.
+  }
+
+  const empty = sanitizeLegacyEmptySeed(createEmptySessionState(sessionId));
+  try {
+    return await saveSession(empty);
+  } catch {
+    return empty;
+  }
+}
+
 function hasReadyByokPool(): boolean {
   const pool = loadByokPool();
   return !!(pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey));
@@ -922,16 +941,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const seeded = await store.save(createGithubPagesSlideRuleSeedSession());
       setSessionState(seeded);
     } else {
-      if (SlideRuleRuntime.deleteSlideRuleSession) {
-        await SlideRuleRuntime.deleteSlideRuleSession(sid);
-      }
-      const fresh = preservePythonEvidenceProjection(
-        sanitizeLegacyEmptySeed(
-          await SlideRuleRuntime.loadOrCreateSessionState(
-            sid,
-            SlideRuleRuntime.EMPTY_SESSION_GOAL_TEXT
-          )
-        )
+      const fresh = await prepareVisibleResetSessionState(
+        sid,
+        SlideRuleRuntime.deleteSlideRuleSession,
+        persistSession
       );
       setSessionState(fresh);
     }
@@ -1013,4 +1026,5 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
 export const __sessionEvidenceTestHelpers = {
   preservePythonEvidenceProjection,
+  prepareVisibleResetSessionState,
 };

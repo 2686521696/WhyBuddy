@@ -125,4 +125,23 @@ describe("publishClosure frontend session persistence (119)", () => {
     expect(preserved.publishClosure).toBe(samplePublishClosure);
     expect(preserved.skillRuntimeGraph).toBe(graph);
   });
+
+  it("prepares a visible empty reset state when backend reset or save fails", async () => {
+    const fresh = await __sessionEvidenceTestHelpers.prepareVisibleResetSessionState(
+      "reset-fallback-session",
+      async () => {
+        throw new Error("DELETE /api/sliderule/sessions/reset-fallback-session returned 405");
+      },
+      async () => {
+        throw new Error("save failed");
+      }
+    );
+
+    expect(fresh.sessionId).toBe("reset-fallback-session");
+    expect(fresh.goal?.text).toBe("");
+    expect(fresh.goal?.status).toBe("needs_refinement");
+    expect((fresh as any).publishClosure).toBeUndefined();
+    expect((fresh.artifacts || []).length).toBe(0);
+    expect((fresh.capabilityRuns || []).length).toBe(0);
+  });
 });
