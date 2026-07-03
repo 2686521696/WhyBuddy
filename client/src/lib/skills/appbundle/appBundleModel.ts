@@ -44,6 +44,7 @@ export interface AppBundlePublishManifest {
   createdAt: string;
   includedRefs: AppBundleIncludedRefs;
   gateStatus: AppBundleGateStatus;
+  closureEvidenceDigest?: string;
 }
 
 export interface AppBundleRuntimeSnapshot {
@@ -59,6 +60,17 @@ export interface AppBundleRuntimeSnapshot {
   closureHash?: string;
 }
 
+export interface AppBundleReleaseArtifactRuntimeClosureSummary {
+  closureId?: string;
+  closureHash?: string;
+  generatedAt?: string;
+  stableDigest?: string;
+  blocked: boolean;
+  blockerCount: number;
+  evidencePresentCount?: number;
+  skillCount?: number;
+}
+
 export interface AppBundleReleaseArtifact {
   appId: string;
   appVersion: string;
@@ -68,6 +80,7 @@ export interface AppBundleReleaseArtifact {
     passedAt?: string;
     evidenceSummary?: string;
   };
+  runtimeClosureSummary?: AppBundleReleaseArtifactRuntimeClosureSummary;
 }
 
 export interface AppBundleRollbackTarget {
@@ -104,4 +117,14 @@ export interface AppBundleRollbackPlan {
   toVersion: string;
   changedRefs: string[];
   closureHashMatch?: boolean;
+}
+
+export type AppBundleClosureTier = "hard_blocker" | "warning" | "info";
+
+export interface ClassifiedAppBundleClosureFinding {
+  code: string;
+  severity: "error" | "warning";
+  path: string;
+  message: string;
+  tier: AppBundleClosureTier;
 }

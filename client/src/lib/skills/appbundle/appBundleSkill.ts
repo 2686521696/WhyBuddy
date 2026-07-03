@@ -8,7 +8,18 @@ import {
   type Skill,
   type ValidateContext,
 } from "../skill";
-import type { AppBundleModel, AppBundleSkillId, AppMenuEntry, AppBundleRuntimeSnapshot, AppBundleRollbackPlan } from "./appBundleModel";
+import type {
+  AppBundleClosureTier,
+  AppBundleModel,
+  AppBundlePublishManifest,
+  AppBundleReleaseArtifact,
+  AppBundleReleaseArtifactRuntimeClosureSummary,
+  AppBundleRollbackPlan,
+  AppBundleRuntimeSnapshot,
+  AppBundleSkillId,
+  AppMenuEntry,
+  ClassifiedAppBundleClosureFinding,
+} from "./appBundleModel";
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -403,6 +414,14 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
         severity: "error",
         path: "publishManifest.appId",
         message: `Publish manifest app id ${model.publishManifest.appId} does not match bundle id ${model.id}.`,
+      });
+    }
+    if (model.publishManifest?.closureEvidenceDigest != null && !/^[0-9a-f]{6,}$/i.test(model.publishManifest.closureEvidenceDigest)) {
+      f.push({
+        code: "APPBUNDLE_PUBLISH_MANIFEST_ILLEGAL_CLOSURE_DIGEST",
+        severity: "error",
+        path: "publishManifest.closureEvidenceDigest",
+        message: `Publish manifest closureEvidenceDigest must be a stable hex digest; got "${model.publishManifest.closureEvidenceDigest}".`,
       });
     }
 
@@ -920,6 +939,39 @@ export interface AppBundleRuntimeClosureReport {
     versionPinsChecked: boolean;
     perSkill: Record<string, unknown>;
   };
+  closureId?: string;
+  closureHash?: string;
+  generatedAt?: string;
+  stableDigest?: string;
+  findingsByTier?: Record<AppBundleClosureTier, Finding[]>;
+  classifiedFindings?: ClassifiedAppBundleClosureFinding[];
+}
+
+export function classifyAppBundleRuntimeClosureFinding(finding: Finding): AppBundleClosureTier {
+  if (finding.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED) return "hard_blocker";
+  if (finding.severity === "warning") return "warning";
+  return finding.severity === "error" ? "hard_blocker" : "info";
+}
+
+function classifyAppBundleRuntimeClosureFindings(
+  blockers: Finding[],
+  info: Finding[],
+): {
+  findingsByTier: Record<AppBundleClosureTier, Finding[]>;
+  classifiedFindings: ClassifiedAppBundleClosureFinding[];
+} {
+  const all = [...blockers, ...info];
+  const findingsByTier: Record<AppBundleClosureTier, Finding[]> = {
+    hard_blocker: [],
+    warning: [],
+    info: [],
+  };
+  const classifiedFindings = all.map((finding) => {
+    const tier = classifyAppBundleRuntimeClosureFinding(finding);
+    findingsByTier[tier].push(finding);
+    return { ...finding, tier };
+  });
+  return { findingsByTier, classifiedFindings };
 }
 
 function hasRuntimeEvidenceFields(m: any, skillId: string): { policy: boolean; bindings: boolean; taskView: boolean; aigcPolicy: boolean; present: boolean } {
@@ -936,6 +988,7 @@ function hasRuntimeEvidenceFields(m: any, skillId: string): { policy: boolean; b
 
 export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>): AppBundleRuntimeClosureReport {
   const blockers: Finding[] = [];
+  const infoFindings: Finding[] = [];
   const perSkillEvidence: AppBundleRuntimeClosureReport["perSkillEvidence"] = {} as any;
   const appBundleModel = (models.appbundle || models["appBundle"]) as AppBundleModel | undefined;
 
@@ -1008,6 +1061,13 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
           path: skillId,
           message: `Skill ${skillId} provides no runtime closure evidence (policy, bindings, views, snapshot).`,
         });
+      } else {
+        infoFindings.push({
+          code: "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT",
+          severity: "warning",
+          path: skillId,
+          message: `Runtime evidence present for ${skillId}.`,
+        });
       }
     } else if (appBundleModel) {
       const requiresModel =
@@ -1035,6 +1095,13 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
         path: "runtimeSnapshot",
         message: "AppBundle runtime closure requires runtimeSnapshot with pinnedRefs evidence.",
       });
+    } else {
+      infoFindings.push({
+        code: "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT",
+        severity: "warning",
+        path: "runtimeSnapshot",
+        message: "Runtime evidence present for runtimeSnapshot.",
+      });
     }
     if (!appBundleModel.versionPins || appBundleModel.versionPins.length === 0) {
       blockers.push({
@@ -1042,6 +1109,13 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
         severity: "error",
         path: "versionPins",
         message: "AppBundle runtime closure requires versionPins.",
+      });
+    } else {
+      infoFindings.push({
+        code: "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT",
+        severity: "warning",
+        path: "versionPins",
+        message: "Runtime evidence present for versionPins.",
       });
     }
   } else {
@@ -1070,6 +1144,25 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
     });
   }
 
+  const appId = appBundleModel?.id ?? "unknown-app";
+  const appVersion = appBundleModel?.runtimeSnapshot?.appVersion ?? appBundleModel?.publishManifest?.appVersion ?? "0.0.0";
+  const skillsChecked = Object.keys(perSkillEvidence).sort();
+  const evidenceBits = skillsChecked
+    .map((skillId) => `${skillId}:${perSkillEvidence[skillId]?.evidencePresent ? "1" : "0"}`)
+    .join("|");
+  const digestInput = [
+    appId,
+    appVersion,
+    blockers.length > 0 ? "blocked" : "ok",
+    String(blockers.length),
+    skillsChecked.join(","),
+    evidenceBits,
+  ].join("||");
+  const closureId = `appbundle:${appId}@${appVersion}:runtime-closure`;
+  const closureHash = simpleStableHash(digestInput);
+  const stableDigest = simpleStableHash(`v119||${digestInput}`);
+  const { findingsByTier, classifiedFindings } = classifyAppBundleRuntimeClosureFindings(blockers, infoFindings);
+
   return {
     blocked: blockers.length > 0,
     blockers,
@@ -1079,12 +1172,19 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       versionPinsChecked: !!appBundleModel?.versionPins?.length,
       perSkill: perSkillEvidence,
     },
+    closureId,
+    closureHash,
+    generatedAt: new Date().toISOString(),
+    stableDigest,
+    findingsByTier,
+    classifiedFindings,
   };
 }
 
 export const runtimeClosure = {
   evaluateAppBundleRuntimeClosure,
   APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+  classifyAppBundleRuntimeClosureFinding,
 };
 
 export const leaveApprovalAppBundle: AppBundleModel = {
@@ -1397,5 +1497,37 @@ export function planAppBundleRollback(
     toVersion: targetSnapshot.appVersion,
     changedRefs: [...new Set(changed)].sort(),
     closureHashMatch: currentSnapshot.closureHash === targetSnapshot.closureHash,
+  };
+}
+
+export function attachRuntimeClosureSummaryToReleaseArtifact(
+  artifact: AppBundleReleaseArtifact,
+  report: AppBundleRuntimeClosureReport | undefined,
+): AppBundleReleaseArtifact {
+  if (!report) return artifact;
+  const summary: AppBundleReleaseArtifactRuntimeClosureSummary = {
+    closureId: report.closureId,
+    closureHash: report.closureHash,
+    generatedAt: report.generatedAt,
+    stableDigest: report.stableDigest,
+    blocked: report.blocked,
+    blockerCount: report.blockers.length,
+    evidencePresentCount: Object.values(report.perSkillEvidence).filter((e) => e.evidencePresent).length,
+    skillCount: report.runtimeClosure?.skillsChecked.length,
+  };
+  return {
+    ...artifact,
+    runtimeClosureSummary: summary,
+  };
+}
+
+export function attachClosureEvidenceDigestToPublishManifest(
+  manifest: AppBundlePublishManifest,
+  digest: string | undefined,
+): AppBundlePublishManifest {
+  if (!digest) return manifest;
+  return {
+    ...manifest,
+    closureEvidenceDigest: digest,
   };
 }

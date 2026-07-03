@@ -12,7 +12,10 @@ import {
   APPBUNDLE_ROLLBACK_UNPINNED,
   APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
   appBundleSkill,
+  attachClosureEvidenceDigestToPublishManifest,
+  attachRuntimeClosureSummaryToReleaseArtifact,
   buildAppBundleCrossRuntimeEdges,
+  classifyAppBundleRuntimeClosureFinding,
   createAppBundleAigcPositivePathSample,
   createAppBundleCrossRuntimeEvidence,
   createAppBundlePageNegativePathSample,
@@ -710,6 +713,8 @@ describe("appBundleSkill - runtime closure (117)", () => {
     expect(APPBUNDLE_RUNTIME_CLOSURE_BLOCKED).toBe("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(runtimeClosure).toBeDefined();
     expect(typeof runtimeClosure.evaluateAppBundleRuntimeClosure).toBe("function");
+    expect(typeof classifyAppBundleRuntimeClosureFinding).toBe("function");
+    expect(typeof runtimeClosure.classifyAppBundleRuntimeClosureFinding).toBe("function");
   });
 
   it("passes positive runtime closure for purchase approval (AIGC + Page evidence present, all pins)", () => {
@@ -724,6 +729,12 @@ describe("appBundleSkill - runtime closure (117)", () => {
     expect(report.runtimeClosure?.skillsChecked).toContain("aigc");
     expect(report.runtimeClosure?.skillsChecked).toContain("page");
     expect(report.perSkillEvidence.appbundle?.versionPin?.pinned).toBe(true);
+    expect(report.closureId).toBe("appbundle:app_purchase_approval@1.0.0:runtime-closure");
+    expect(report.closureHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(report.stableDigest).toMatch(/^[0-9a-f]{8}$/);
+    expect(report.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(report.findingsByTier?.hard_blocker).toHaveLength(0);
+    expect(report.findingsByTier?.warning.length).toBeGreaterThan(0);
   });
 
   it("passes positive runtime closure for leave approval (no AIGC required, Page + core evidence)", () => {
@@ -749,6 +760,10 @@ describe("appBundleSkill - runtime closure (117)", () => {
     expect(report.blocked).toBe(true);
     expect(report.blockers.some(b => b.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED && b.message.includes("AIGC"))).toBe(true);
     expect(report.perSkillEvidence.aigc?.evidencePresent).toBe(false);
+    expect(report.closureId).toMatch(/app_purchase_approval/);
+    expect(report.stableDigest).toMatch(/^[0-9a-f]{8}$/);
+    expect(report.findingsByTier?.hard_blocker.length).toBeGreaterThan(0);
+    expect(classifyAppBundleRuntimeClosureFinding(report.blockers[0])).toBe("hard_blocker");
   });
 
   it("blocks runtime closure on missing Page runtime evidence (negative fail-closed)", () => {
@@ -780,6 +795,56 @@ describe("appBundleSkill - runtime closure (117)", () => {
     const report = evaluateAppBundleRuntimeClosure(buildPurchaseModels());
     expect(report.blocked).toBe(false);
     expect(Object.keys(report.perSkillEvidence).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("keeps runtime closure digest stable for identical inputs", () => {
+    const first = evaluateAppBundleRuntimeClosure(buildPurchaseModels());
+    const second = evaluateAppBundleRuntimeClosure(buildPurchaseModels());
+
+    expect(first.closureId).toBe(second.closureId);
+    expect(first.closureHash).toBe(second.closureHash);
+    expect(first.stableDigest).toBe(second.stableDigest);
+  });
+
+  it("attaches runtime closure summary to release artifact without mutating the original", () => {
+    const report = evaluateAppBundleRuntimeClosure(buildPurchaseModels());
+    const original = purchaseApprovalAppBundle.releaseArtifact!;
+    const attached = attachRuntimeClosureSummaryToReleaseArtifact(original, report);
+
+    expect(attached).not.toBe(original);
+    expect(original.runtimeClosureSummary).toBeUndefined();
+    expect(attached.runtimeClosureSummary?.blocked).toBe(false);
+    expect(attached.runtimeClosureSummary?.closureId).toBe(report.closureId);
+    expect(attached.runtimeClosureSummary?.stableDigest).toBe(report.stableDigest);
+    expect(attached.runtimeClosureSummary?.evidencePresentCount).toBeGreaterThan(0);
+  });
+
+  it("attaches blocked runtime closure summary for fail-closed report", () => {
+    const models = buildPurchaseModels();
+    delete (models as any).aigc;
+    const report = evaluateAppBundleRuntimeClosure(models);
+    const attached = attachRuntimeClosureSummaryToReleaseArtifact(purchaseApprovalAppBundle.releaseArtifact!, report);
+
+    expect(report.blocked).toBe(true);
+    expect(attached.runtimeClosureSummary?.blocked).toBe(true);
+    expect(attached.runtimeClosureSummary?.blockerCount).toBeGreaterThan(0);
+  });
+
+  it("attaches and validates closure evidence digest on publish manifest when present", () => {
+    const report = evaluateAppBundleRuntimeClosure(buildPurchaseModels());
+    const manifest = attachClosureEvidenceDigestToPublishManifest(
+      purchaseApprovalAppBundle.publishManifest!,
+      report.stableDigest,
+    );
+
+    expect(manifest).not.toBe(purchaseApprovalAppBundle.publishManifest);
+    expect(manifest.closureEvidenceDigest).toBe(report.stableDigest);
+    expect(appBundleSkill.validate({ ...purchaseApprovalAppBundle, publishManifest: manifest }).ok).toBe(true);
+
+    const invalid = { ...manifest, closureEvidenceDigest: "not-hex!" };
+    const invalidReport = appBundleSkill.validate({ ...purchaseApprovalAppBundle, publishManifest: invalid });
+    expect(invalidReport.ok).toBe(false);
+    expect(invalidReport.errors.some(e => e.code === "APPBUNDLE_PUBLISH_MANIFEST_ILLEGAL_CLOSURE_DIGEST")).toBe(true);
   });
 });
 
