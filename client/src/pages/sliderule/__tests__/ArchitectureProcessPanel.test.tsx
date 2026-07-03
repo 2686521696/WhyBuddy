@@ -172,6 +172,44 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     expect(html).not.toContain('data-testid="publish-closure-fail-closed"');
   });
 
+  it("renders unknown instead of question-mark fallback for missing closure blocker skill", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        liveAction={null}
+        sessionId="arch-panel-unknown-skill"
+        isRunning={false}
+        latestTurn={{
+          id: "turn-closure-unknown",
+          routeFacts: {} as any,
+          steps: [],
+          actions: [],
+          status: "complete",
+          routeLitCount: 0,
+          routeExpanded: true,
+        }}
+        publishClosure={{
+          blocked: true,
+          blockerCount: 1,
+          evidencePresentCount: 5,
+          skillCount: 6,
+          versionPinsChecked: false,
+          closureHash: "feedface",
+          tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+          topBlockers: [
+            {
+              code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+              path: "runtimeClosure.perSkill.unknown",
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(html).toContain('aria-label="Select affected skill unknown"');
+    expect(html).toContain(">unknown</button>");
+    expect(html).not.toContain("skill?");
+  });
+
   it("renders fail-closed marker when closure is blocked without blocker details", () => {
     const html = renderToStaticMarkup(
       <ArchitectureProcessPanel

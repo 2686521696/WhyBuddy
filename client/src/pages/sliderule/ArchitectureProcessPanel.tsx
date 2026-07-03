@@ -277,7 +277,7 @@ export function ArchitectureProcessPanel({
                           aria-label={`Select affected skill ${affectedSkill || "unknown"}`}
                           onClick={() => onSelectClosureBlocker?.(blocker)}
                         >
-                          {affectedSkill || "skill?"}
+                          {affectedSkill || "unknown"}
                         </button>
                         {" / "}
                         <button
