@@ -26,8 +26,8 @@ import {
   type WorkflowTaskViewResult,
 } from "./pageModel";
 import { getFieldLifecycle } from "../datamodel/dataModelSkill";
-import { decideRbacPolicy } from "../rbac/rbacSkill";
-import type { PolicyContext } from "../rbac/rbacModel";
+import { createRbacFailClosedNegativePath } from "../rbac/rbacSkill";
+import type { RbacRuntimeRequest } from "../rbac/rbacModel";
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -138,8 +138,8 @@ function getFieldPdpVisibleTo(surface: any, ref: string): string[] | undefined {
 export const PAGE_RUNTIME_COMPONENT_HIDDEN: ComponentRenderState = "hidden";
 
 /** Pure executable runtime policy: computes deterministic render states for each component id.
- * Uses PermissionRender + RBAC decide evidence (fail-closed), DataModel lifecycle (removed -> hidden),
- * and Workflow task context overrides. Denied never silently editable.
+ * Uses PermissionRender + createRbacFailClosedNegativePath (RBAC runtime fail-closed negative path 119) for PEP,
+ * DataModel lifecycle (removed -> hidden), and Workflow task context overrides. Denied never silently editable.
  */
 export function renderPageRuntimePolicy(
   model: PageModel,
@@ -193,7 +193,7 @@ export function renderPageRuntimePolicy(
             const hint = p0.includes(":") ? p0.split(":").pop()! : p0;
             if (hint && hint.length > 0) action = hint;
           }
-          const req: PolicyContext = {
+          const req: RbacRuntimeRequest = {
             subject: { roleIds: subjectRoles },
             action,
             resourceType,
@@ -201,13 +201,13 @@ export function renderPageRuntimePolicy(
             fieldContext: {
               fields: boundField ? [boundField.split(".").pop() ?? boundField] : [],
             },
-            // supply sufficient for SoD/dual checks so render policy shows eligible components (enforcement at action time)
+            // supply for context; adapter guarantees fail-closed negative (RBAC_RUNTIME_FAIL_CLOSED) with no allow fallback
             approverCount: 2,
             isSelf: false,
           };
-          const dec = decideRbacPolicy(rbacCfg.model, req);
-          // only trust explicit allow; any RBAC_DECISION_FAIL_CLOSED or !allow keeps deny
-          if (dec && dec.allow === true && dec.code === "RBAC_DECISION_ALLOW") {
+          const dec = createRbacFailClosedNegativePath(rbacCfg.model, req);
+          // only trust explicit allow via dedicated fail-closed negative path adapter (119); !allow or RBAC_RUNTIME_FAIL_CLOSED keeps deny
+          if (dec && dec.effect === "allow") {
             rbacAllowed = true;
           } else {
             rbacAllowed = false;
@@ -849,33 +849,36 @@ export const PAGE_RBAC_RUNTIME_EVIDENCE = "PAGE_RBAC_RUNTIME_EVIDENCE";
 export const PAGE_WORKFLOW_RUNTIME_EVIDENCE = "PAGE_WORKFLOW_RUNTIME_EVIDENCE";
 
 function pageFieldRefs(model: PageModel): string[] {
-  return [...new Set(model.components.flatMap(component => {
+  return [...new Set((model.components ?? []).flatMap(component => {
     const field = component.bindingSchema?.field ?? component.field;
     return field ? [field] : [];
   }))].sort();
 }
 
 function pageRoleRefs(model: PageModel): string[] {
-  return [...new Set(model.components.flatMap(component => [
+  return [...new Set((model.components ?? []).flatMap(component => [
     ...(component.visibleToRoles ?? []),
     ...(component.permissionRender?.roleRefs ?? []),
   ]))].sort();
 }
 
 function pagePermissionRefs(model: PageModel): string[] {
-  return [...new Set(model.components.flatMap(component => component.permissionRender?.permissionRefs ?? []))].sort();
+  return [...new Set((model.components ?? []).flatMap(component => component.permissionRender?.permissionRefs ?? []))].sort();
 }
 
 function pageWorkflowRefs(model: PageModel): string[] {
-  return [...new Set([...(model.workflowLaunchRefs ?? []), ...model.linkageRules.flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : [])])].sort();
+  return [...new Set([
+    ...(model.workflowLaunchRefs ?? []),
+    ...(model.linkageRules ?? []).flatMap(rule => rule.target.resourceRef ? [rule.target.resourceRef] : []),
+  ])].sort();
 }
 
 function pageRefsForTarget(model: PageModel, targetSkill: PageRuntimeTargetSkill): string[] {
   if (targetSkill === "datamodel") return [model.entity, ...pageFieldRefs(model)].sort();
   if (targetSkill === "rbac") return [...pageRoleRefs(model), ...pagePermissionRefs(model)].sort();
   if (targetSkill === "workflow") return pageWorkflowRefs(model);
-  if (targetSkill === "aigc") return [...pageFieldRefs(model), ...model.components.map(component => component.id)].sort();
-  return [model.id, ...(model.snapshotRefs ?? []), ...model.components.map(component => component.id)].sort();
+  if (targetSkill === "aigc") return [...pageFieldRefs(model), ...(model.components ?? []).map(component => component.id)].sort();
+  return [model.id, ...(model.snapshotRefs ?? []), ...(model.components ?? []).map(component => component.id)].sort();
 }
 
 export function createPageCrossRuntimeEvidence(
@@ -895,7 +898,7 @@ export function createPageCrossRuntimeEvidence(
     state,
     reasonCode: state === "allowed" ? "PAGE_RUNTIME_EVIDENCE_PRESENT" : "PAGE_RUNTIME_UPSTREAM_ABSENT",
     pageId: model.id,
-    componentRefs: model.components.map(component => component.id).sort(),
+    componentRefs: (model.components ?? []).map(component => component.id).sort(),
     fieldRefs: pageFieldRefs(model),
     roleRefs: pageRoleRefs(model),
     permissionRefs: pagePermissionRefs(model),
@@ -1197,6 +1200,9 @@ export function projectWorkflowTaskView(
   if (!pageModel || !workflowInstance || typeof workflowInstance.currentNodeId !== "string" || workflowInstance.currentNodeId.length === 0) {
     return PAGE_WORKFLOW_TASK_VIEW_INVALID;
   }
+  if (!Array.isArray(pageModel.components)) {
+    return PAGE_WORKFLOW_TASK_VIEW_INVALID;
+  }
 
   const wfId = workflowInstance.workflowId;
   const launchRefs = pageModel.workflowLaunchRefs ?? [];
@@ -1309,3 +1315,63 @@ export function projectWorkflowTaskView(
 
 // Re-export the sentinel and taskActions for direct consumers (string presence guaranteed in this module)
 export { PAGE_WORKFLOW_TASK_VIEW_INVALID, taskActions };
+
+// ---------------------------------------------------------------------------
+// 119: Workflow task view closure adapter against Page task surfaces + AppBundle bindings
+// Deterministic positive path + fail-closed negative (PAGE_WORKFLOW_TASK_VIEW_INVALID on mismatch).
+// Pure local executable evidence for AppBundle runtime closure's workflowPageTaskViewConsistency.
+// ---------------------------------------------------------------------------
+
+export const WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE = "WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE";
+
+type WorkflowInstanceShape = {
+  id?: string;
+  workflowId?: string;
+  currentNodeId?: string;
+  currentNodeType?: string;
+  variables?: Record<string, unknown>;
+  status?: string;
+};
+
+/**
+ * 119 closure adapter for Workflow task view vs Page + AppBundle pageBindings.
+ * Positive: valid page + matching binding + good instance -> returns view (allowed).
+ * Fail-closed: any invalid/mismatch -> PAGE_WORKFLOW_TASK_VIEW_INVALID (blocked).
+ * Used by AppBundle evaluate to drive workflowPageTaskViewConsistency without side effects.
+ */
+export function createWorkflowTaskViewAppBundleBindingEvidence(
+  page: PageModel,
+  pageBinding?: { pageRef: string; workflowRef?: string },
+  instance?: WorkflowInstanceShape
+): {
+  state: "allowed" | "blocked";
+  evidenceKey: string;
+  result: WorkflowTaskViewResult;
+  pageRef: string;
+  workflowRef?: string;
+} {
+  const pageRef = page?.id ?? "unknown";
+  const wfRef = pageBinding?.workflowRef;
+  if (!page || !Array.isArray((page as any).components)) {
+    return {
+      state: "blocked",
+      evidenceKey: `${WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE}:${pageRef}:${wfRef ?? "none"}:blocked`,
+      result: PAGE_WORKFLOW_TASK_VIEW_INVALID,
+      pageRef,
+      workflowRef: wfRef,
+    };
+  }
+  const view = projectWorkflowTaskView(page, instance as any);
+  const isProjectionValid = view !== PAGE_WORKFLOW_TASK_VIEW_INVALID;
+  // binding alignment check (when binding declares workflowRef, instance must match or projection already failed)
+  const bindingAligned =
+    !wfRef || !instance || instance.workflowId === wfRef || instance.workflowId === undefined;
+  const state: "allowed" | "blocked" = isProjectionValid && bindingAligned ? "allowed" : "blocked";
+  return {
+    state,
+    evidenceKey: `${WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE}:${pageRef}:${wfRef ?? "none"}:${state}`,
+    result: view,
+    pageRef,
+    workflowRef: wfRef,
+  };
+}

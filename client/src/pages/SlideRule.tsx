@@ -938,9 +938,17 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
       return;
     }
     let cancelled = false;
+    // DataModel field changes (deriveDataModelChangedRefs + createDataModelPageBindingImpactEvidence)
+    // -> .pageBindingImpactEvidence on datamodel resolve() surface
+    // -> DM_PAGE_BINDING_IMPACT_EVIDENCE added to runtimeEvidence ONLY on positive (fail-closed negatives excluded)
+    // -> flows via orchestrator crossRuntimeGraph + slideRule.publishGate().runtimeClosure (AppBundle evaluate)
+    // -> derive*Summary -> UI publishClosure/crossRuntimeGraph. This is the 119 DM->Page binding runtime closure path.
     deriveApplication(intent)
       .then((result) => {
         if (cancelled) return;
+        // Page field binding evidence closed in publish/runtime via create+evaluate against real DM SSOT in closure path (119).
+        // publishGate receives the skills (containing datamodel model + page) so runtimeClosure now computes
+        // Page->datamodel field binding evidence using real upstream SSOT surface (no temp private field).
         const publishGate = slideRule.publishGate(result.spec.skills);
         setCrossRuntimeGraph(
           deriveCrossRuntimeGraphSummary(result.crossRuntimeGraph, { exampleLimit: 5 })

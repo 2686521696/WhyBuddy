@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRbacCrossRuntimeEdges,
+  createRbacFailClosedNegativePath,
   createRbacPageRuntimeEvidence,
   createRbacPdpExplainEvidence,
   createRbacWorkflowRuntimeEvidence,
@@ -17,6 +18,7 @@ import {
   RBAC_PAGE_RUNTIME_EVIDENCE,
   RBAC_FIELD_ACCESS_DENIED,
   RBAC_PDP_EXPLAIN_EVIDENCE,
+  RBAC_RUNTIME_FAIL_CLOSED,
   RBAC_WORKFLOW_RUNTIME_EVIDENCE,
   RBAC_RUNTIME_SOD_DENIED,
 } from "./rbacSkill";
@@ -1336,6 +1338,26 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
     });
     expect(pos2.allow).toBe(true);
   });
+
+  it("createRbacFailClosedNegativePath returns deny + RBAC_RUNTIME_FAIL_CLOSED on negative inputs (no fallback) (119 negative path)", () => {
+    // negative: missing input -> fail closed
+    const neg1 = createRbacFailClosedNegativePath(leaveApprovalRbac, { subject: { roleIds: [] }, action: "create", resourceType: "leave_request" });
+    expect(neg1.effect).toBe("deny");
+    expect(neg1.reasonCode).toBe(RBAC_RUNTIME_FAIL_CLOSED);
+
+    // negative: unknown role
+    const neg2 = createRbacFailClosedNegativePath(leaveApprovalRbac, { subject: { roleIds: ["ghost"] }, action: "approve", resourceType: "leave_request", tenantId: "t1", fieldContext: { fields: [] } });
+    expect(neg2.effect).toBe("deny");
+    expect(neg2.reasonCode).toBe(RBAC_RUNTIME_FAIL_CLOSED);
+
+    // positive path remains via evaluateRbacRuntimePolicy (adapter is dedicated for explicit fail-closed negative naming)
+    const pos = evaluateRbacRuntimePolicy(leaveApprovalRbac, {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+    });
+    expect(pos.effect).toBe("allow");
+  });
 });
 
 describe("rbac PDP explain evidence — closure helper", () => {
@@ -1405,5 +1427,20 @@ describe("rbac PDP explain evidence — closure helper", () => {
     expect(evidence.denyPrecedence).toBe(true);
     expect(evidence.matchedPolicyId).toBe("deny_leave_create");
     expect(evidence.explanation).toContain("deny-precedence");
+  });
+
+  it("exposes deterministic :deny key for explicit policy deny (distinct from general fail-closed)", () => {
+    const model = clone(leaveApprovalRbac);
+    model.policyRules = [{ id: "pr_explicit_deny", effect: "deny", roleId: "employee", resourceType: "leave_request" }];
+    const evidence = createRbacPdpExplainEvidence(model, {
+      subject: { roleIds: ["employee"] },
+      action: "create",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    });
+    expect(evidence.evidenceKey).toBe(`${RBAC_PDP_EXPLAIN_EVIDENCE}:deny`);
+    expect(evidence.allow).toBe(false);
+    expect(evidence.denyPrecedence).toBe(true);
   });
 });

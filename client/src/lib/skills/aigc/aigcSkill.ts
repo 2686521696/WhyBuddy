@@ -787,7 +787,104 @@ export const purchaseRiskAigcModel: AigcModel = {
   ],
 };
 
+// Fixture for AIGC negative sample (119): capability declares refs but policy or schema evidence absent -> fail-closed in evaluate + evidence creators.
+export const aigcModelWithMissingPolicyOrSchema: AigcModel = {
+  id: "aigc_missing_policy_schema_negative",
+  name: "AIGC negative sample - policy or schema absent",
+  pep: "pep",
+  capabilities: [
+    {
+      id: "cap_without_policy_schema",
+      name: "Cap missing policy/schema",
+      kind: "summary",
+      providerRef: "openai_gpt4o_ref",
+      promptRef: "purchase_risk_prompt",
+      outputSchemaRef: "purchase_risk_output",
+      permissionRefs: ["purchase:finance_approve"],
+      knowledgeSourceRefs: ["vendor_policy_knowledge"],  // RAG without policy -> fail closed
+      retrievalPolicyRef: undefined,
+      citationPolicyRef: undefined,
+      toolRefs: [],
+    },
+  ],
+  providers: [
+    {
+      id: "openai_gpt4o_ref",
+      name: "OpenAI GPT-4o reference",
+      providerRef: "openai",
+      modelRef: "gpt-4o",
+      tokenBudget: 16000,
+      keyRef: "keyref:llm/openai/default",
+    },
+  ],
+  promptTemplates: [
+    {
+      id: "purchase_risk_prompt",
+      version: "1.0.0",
+      template: "Summarize.",
+    },
+  ],
+  outputSchemas: [],  // schema evidence absent
+  knowledgeSources: [],
+  retrievalPolicies: [],
+  citationPolicies: [],
+  toolConfigs: [],
+  toolPolicies: [],
+};
+
 export const AIGC_RUNTIME_POLICY_DENIED = "AIGC_RUNTIME_POLICY_DENIED" as const;
+
+// AIGC positive sample evidence for DataModel / Page / RBAC / AppBundle closure (119)
+export const AIGC_POSITIVE_SAMPLE_EVIDENCE = "AIGC_POSITIVE_SAMPLE_EVIDENCE";
+export const AIGC_POSITIVE_SAMPLE_TO_DATAMODEL = "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL";
+export const AIGC_POSITIVE_SAMPLE_TO_PAGE = "AIGC_POSITIVE_SAMPLE_TO_PAGE";
+export const AIGC_POSITIVE_SAMPLE_TO_RBAC = "AIGC_POSITIVE_SAMPLE_TO_RBAC";
+export const AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE = "AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE";
+
+export function createAigcPositiveSampleEvidence(
+  model: AigcModel = purchaseRiskAigcModel,
+  targetSkill: AigcRuntimeTargetSkill = "appbundle"
+): AigcCrossRuntimeEvidence {
+  const refs = aigcRefsForTarget(model, targetSkill);
+  const base = createAigcCrossRuntimeEvidence(model, targetSkill, { declared: refs });
+  // Override to dedicated positive sample evidence key for closure consumers (DM/Page/RBAC/AppBundle)
+  const positiveKey =
+    targetSkill === "datamodel" ? AIGC_POSITIVE_SAMPLE_TO_DATAMODEL :
+    targetSkill === "page" ? AIGC_POSITIVE_SAMPLE_TO_PAGE :
+    targetSkill === "rbac" ? AIGC_POSITIVE_SAMPLE_TO_RBAC :
+    AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE;
+  return {
+    ...base,
+    evidenceKey: positiveKey,
+  };
+}
+
+export function createAigcFailClosedNegativeEvidence(
+  model: AigcModel = purchaseRiskAigcModel,
+  targetSkill: AigcRuntimeTargetSkill = "page"
+): AigcCrossRuntimeEvidence {
+  // Explicit fail-closed negative: absent/empty upstream surface yields "blocked"
+  return createAigcCrossRuntimeEvidence(model, targetSkill);
+}
+
+// AIGC negative sample evidence (119): fails closed when policy (retrieval/citation/tool) or schema evidence is absent.
+export const AIGC_NEGATIVE_SAMPLE_EVIDENCE = "AIGC_NEGATIVE_SAMPLE_EVIDENCE";
+export const AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT = "AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT";
+
+export function createAigcNegativeSampleForPolicyOrSchemaAbsent(
+  model: AigcModel = purchaseRiskAigcModel,
+  targetSkill: AigcRuntimeTargetSkill = "appbundle"
+): AigcCrossRuntimeEvidence {
+  // Dedicated fail-closed negative path for when policy or output schema evidence absent in AIGC wiring.
+  // Uses upstream-absent to force "blocked" state; evaluateAigcRuntimePolicy separately denies on missing policy/schema refs.
+  const base = createAigcCrossRuntimeEvidence(model, targetSkill);
+  return {
+    ...base,
+    evidenceKey: AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT,
+    reasonCode: "AIGC_RUNTIME_POLICY_OR_SCHEMA_EVIDENCE_ABSENT",
+    state: "blocked",
+  };
+}
 
 export type AigcRuntimePolicyDecision =
   | typeof AIGC_RUNTIME_POLICY_DENIED

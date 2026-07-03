@@ -41,11 +41,11 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,25 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (concise)
+Changed files:
+- client/src/lib/skills/rbac/rbacSkill.ts
+- client/src/lib/skills/rbac/rbacSkill.test.ts
+- client/src/lib/skills/appbundle/appBundleSkill.ts
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- agent-loop/tasks/sliderule-v2-closure-skills-04-rbac-pdp-explain-evidence-119.md
+
+Exported symbols (stable, no rename):
+- RBAC_PDP_EXPLAIN_EVIDENCE (const, from rbacModel + re-export)
+- createRbacPdpExplainEvidence(model, request): RbacPdpExplainEvidence  (now yields evidenceKey ending :allow | :deny | :fail-closed)
+- RbacPdpExplainEvidence (typed schema in rbacModel.ts)
+- Related: decideRbacPolicy (unchanged), evaluateRbacRuntimePolicy (unchanged compat)
+
+Validation commands:
+- npx vitest run client/src/lib/skills/rbac/rbacSkill.test.ts
+- npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- node -e "const fs=require('fs'); const t=fs.readFileSync('agent-loop/tasks/sliderule-v2-closure-skills-04-rbac-pdp-explain-evidence-119.md','utf8'); for(const n of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only','Final report']) { if(!t.includes(n)) throw new Error('missing '+n); }"
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-04-rbac-pdp-explain-evidence-119.md
+
+This task advances publish/runtime closure by hardening RBAC PDP deterministic explanation evidence (positive allow + negative deny/fail-closed) so AppBundle closure collector (hasRbacPdpExplain + perSkillEvidence.rbacPdpDecisions) can consume both paths without ignoring fail-closed evidence. Focused tests cover the three outcomes and end-to-end closure recognition. Public APIs stable. Scoped to skills + task doc.

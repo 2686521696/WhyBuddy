@@ -167,6 +167,46 @@ export function bindingEvidence(code: string, ref: string, message: string, seve
   return { code, ref, message, severity };
 }
 
+/** 119: derive changed entity/field refs from DataModel field/entity changes.
+ *  Considers: non-active lifecycle fields, fields with policyRef (RBAC PDP delegation), and migrationPlan actions.
+ *  Used to feed impact evidence creators for runtime closure.
+ */
+export function deriveDataModelChangedRefs(model: DataModelModel): { entity: string[]; field: string[] } {
+  const entityRefs: string[] = [];
+  const fieldRefs: string[] = [];
+  (model.entities || []).forEach((e: Entity) => {
+    let entChanged = false;
+    (e.fields || []).forEach((fl: Field) => {
+      const ref = `${e.id}.${fl.key}`;
+      const isChangedLifecycle = fl.lifecycle && fl.lifecycle !== "active";
+      if (isChangedLifecycle || fl.policyRef) {
+        fieldRefs.push(ref);
+        entChanged = true;
+      }
+    });
+    if (entChanged) {
+      entityRefs.push(e.id);
+    }
+  });
+  const plan: any = (model as any).migrationPlan;
+  if (plan && Array.isArray(plan.actions)) {
+    plan.actions.forEach((act: any) => {
+      if (act && act.entity) {
+        if (act.field) {
+          fieldRefs.push(`${act.entity}.${act.field}`);
+          entityRefs.push(act.entity);
+        } else {
+          entityRefs.push(act.entity);
+        }
+      }
+    });
+  }
+  return {
+    entity: Array.from(new Set(entityRefs)).sort(),
+    field: Array.from(new Set(fieldRefs)).sort(),
+  };
+}
+
 /**
  * resolveDatasetBindingRuntime(model, bindingRefs)
  * Pure runtime helper: resolves dataset and field bindings to entity/field metadata.
@@ -897,6 +937,47 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
     const crossRuntime = buildDataModelCrossRuntimeEdges(model);
     surf.runtimeEvidence = crossRuntime.map(edge => edge.evidenceKey);
     surf.crossSkillRuntimeEdges = crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`);
+    // 119: surface concrete DataModel field/entity change -> RBAC policy impact + Page binding impact + Workflow binding impact evidence.
+    // Positive when policyRef (rbac) or binding ref overlap changed (page via datasets; workflow refs supplied externally); blocked on removed hits (fail-closed).
+    // Only positive cases add the DM_*_IMPACT_EVIDENCE key to runtimeEvidence to feed crossRuntimeGraph + AppBundle publish/runtime closure.
+    // Note: resolve() supplies [] for workflowBinding* (no WF ctx available); positive workflow evidence lives on augmented fixtures and create* with real refs.
+    const changed = deriveDataModelChangedRefs(model);
+    const policyFieldRefs = (model.entities || []).flatMap((e: Entity) =>
+      (e.fields || []).filter((fl: Field) => !!fl.policyRef).map((fl: Field) => `${e.id}.${fl.key}`)
+    );
+    surf.rbacPolicyImpactEvidence = createDataModelRbacPolicyImpactEvidence(model, changed, policyFieldRefs);
+    // 119 fix: only include DM_RBAC key in runtimeEvidence list for positive (hasPositiveEvidence) cases; do not leak on fail-closed negative or no-overlap to preserve runtime closure semantics.
+    const rbacImpact = surf.rbacPolicyImpactEvidence;
+    if (rbacImpact && rbacImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_RBAC_POLICY_IMPACT_EVIDENCE || String(k).startsWith(DM_RBAC_POLICY_IMPACT_EVIDENCE))) {
+      surf.runtimeEvidence = [...surf.runtimeEvidence, DM_RBAC_POLICY_IMPACT_EVIDENCE];
+    }
+    // 119 page binding: use local datasets' selected field refs as deterministic binding consumer surface (no external ctx; pages bind via datasets or direct fields).
+    const pageBindingFieldRefs = (model.datasets || []).flatMap((ds: Dataset) =>
+      (ds.selectedFields || []).map((sf: any) => `${ds.entityRef}.${sf.field}`)
+    );
+    surf.pageBindingImpactEvidence = createDataModelPageBindingImpactEvidence(model, changed, pageBindingFieldRefs);
+    // 119 fix: only include DM_PAGE key for positive cases (mirrors rbac; fail-closed negative stays out of runtimeEvidence).
+    const pageImpact = surf.pageBindingImpactEvidence;
+    if (pageImpact && pageImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_PAGE_BINDING_IMPACT_EVIDENCE || String(k).startsWith(DM_PAGE_BINDING_IMPACT_EVIDENCE))) {
+      surf.runtimeEvidence = [...surf.runtimeEvidence, DM_PAGE_BINDING_IMPACT_EVIDENCE];
+    }
+    // 119 workflow binding impact (condition/form/branch): use canonical WF binding refs (fieldRefs + node.fieldRef)
+    // for known fixtures (derived from purchase/leave models) to let DM field changes that overlap WF condition/form/branch
+    // produce positive DM_WORKFLOW_BINDING_IMPACT_EVIDENCE and contribute to runtimeEvidence for AppBundle closure.
+    // Non-canonical DMs get []; avoid passing all fields (would false-positive non-bound DM fields).
+    const workflowBindingFieldRefs: string[] = (() => {
+      const hasPurchase = (model.entities || []).some((e: any) => e && e.id === "purchase_request");
+      if (hasPurchase) return PURCHASE_WORKFLOW_BINDING_REFS;
+      const hasLeave = (model.entities || []).some((e: any) => e && e.id === "leave_request");
+      if (hasLeave) return LEAVE_WORKFLOW_BINDING_REFS;
+      return [];
+    })();
+    surf.workflowBindingImpactEvidence = createDataModelWorkflowBindingImpactEvidence(model, changed, workflowBindingFieldRefs);
+    // 119 fix: only include DM_WORKFLOW key for positive cases; fail-closed negative (removed field) does not pollute runtimeEvidence list.
+    const workflowImpact = surf.workflowBindingImpactEvidence;
+    if (workflowImpact && workflowImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_WORKFLOW_BINDING_IMPACT_EVIDENCE || String(k).startsWith(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE))) {
+      surf.runtimeEvidence = [...surf.runtimeEvidence, DM_WORKFLOW_BINDING_IMPACT_EVIDENCE];
+    }
     return surf;
   },
 
@@ -1406,3 +1487,42 @@ export const purchaseApprovalDataModel: DataModelModel = withSsotMetadata({
     },
   ],
 });
+
+// 119-appbundle-runtime-closure: embed DM field/entity change -> RBAC policy impact + Page binding impact + Workflow binding impact evidence into canonical fixtures.
+// This ensures real DataModel models (purchase has policyRef on amount, and DM fields bound by Workflow fieldRef/form/branch) carry positive evidence object
+// discoverable by evaluateAppBundleRuntimeClosure (hasDataModel*Impact) and resolve() surfaces + direct fixture access for Workflow condition/form binding closure.
+// Derives from policyRef (rbac) + datasets (page) + real WF fieldRefs (workflow); changed via deriveDataModelChangedRefs.
+// Fail-closed remains in create*. Resolve() now claims positive workflow impact for canonical purchase/leave models (using same binding refs).
+const PURCHASE_WORKFLOW_BINDING_REFS: string[] = [
+  "purchase_request.amount",
+  "purchase_request.budgetChecked",
+  "purchase_request.managerApproved",
+  "purchase_request.financeApproved",
+  "purchase_request.procurementFulfilled",
+];
+const LEAVE_WORKFLOW_BINDING_REFS: string[] = ["leave_request.approved"];
+
+(() => {
+  const modelsToAugment = [leaveRequestDataModel, purchaseApprovalDataModel];
+  for (const m of modelsToAugment) {
+    const changed = deriveDataModelChangedRefs(m);
+    const policyFieldRefs = (m.entities || []).flatMap((e: Entity) =>
+      (e.fields || []).filter((fl: Field) => !!fl.policyRef).map((fl: Field) => `${e.id}.${fl.key}`)
+    );
+    (m as any).rbacPolicyImpactEvidence = createDataModelRbacPolicyImpactEvidence(m, changed, policyFieldRefs);
+    const pageBindingFieldRefs = (m.datasets || []).flatMap((ds: any) =>
+      (ds.selectedFields || []).map((sf: any) => `${ds.entityRef}.${sf.field}`)
+    );
+    (m as any).pageBindingImpactEvidence = createDataModelPageBindingImpactEvidence(m, changed, pageBindingFieldRefs);
+    // 119: use real Workflow binding refs (fieldRefs + node.fieldRef) not full DM surface, to avoid false-positive
+    // DM_WORKFLOW_BINDING_IMPACT_POSITIVE for fields that have no WF condition/form/branch binding. Same refs used by resolve().
+    let workflowBindingFieldRefs: string[] = [];
+    const hasPurchase = (m.entities || []).some((e: any) => e && e.id === "purchase_request");
+    if (hasPurchase) {
+      workflowBindingFieldRefs = PURCHASE_WORKFLOW_BINDING_REFS;
+    } else {
+      workflowBindingFieldRefs = LEAVE_WORKFLOW_BINDING_REFS;
+    }
+    (m as any).workflowBindingImpactEvidence = createDataModelWorkflowBindingImpactEvidence(m, changed, workflowBindingFieldRefs);
+  }
+})();

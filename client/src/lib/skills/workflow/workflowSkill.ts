@@ -19,6 +19,7 @@ import type {
 } from "./workflowModel";
 import { getFieldLifecycle } from "../datamodel/dataModelSkill";
 import { decideRbacPolicy } from "../rbac/rbacSkill";
+import type { PolicyDecision } from "../rbac/rbacModel";
 
 // ---------------------------------------------------------------------------
 // Graph helpers — this is where "the hard skill" lives: execution semantics.
@@ -870,6 +871,49 @@ export function resolveWorkflowAssignees(
   return {
     assignees: [roleRef],
     policyEvidence: evid,
+  };
+}
+
+/**
+ * 119 closure adapter: closes Workflow assignee policy evidence against RBAC roles and PolicyDecision.
+ * Consumes a PolicyDecision (from decideRbacPolicy / RBAC PDP) + workflow node roleRef.
+ * Deterministic positive: allow decision -> returns assignees + evidence.
+ * Fail-closed negative: !allow / missing / bad node -> WF_ASSIGNEE_PDP_DENIED (no silent allow).
+ * Pure local, no side effects; stable addition, resolveWorkflowAssignees remains primary evidence consumer.
+ */
+export function createWorkflowAssigneePolicyEvidenceFromDecision(
+  model: WorkflowModel,
+  nodeId: string,
+  decision: PolicyDecision | { allow?: boolean; effect?: string } | null | undefined
+): { assignees: string[]; policyEvidence: any } | typeof WF_ASSIGNEE_PDP_DENIED {
+  const node = model.nodes.find((n) => n.id === nodeId);
+  if (!node || node.type !== "approval") {
+    return WF_ASSIGNEE_PDP_DENIED;
+  }
+  const roleRef = node.assigneeRoleRef || node.assigneeRole;
+  if (!roleRef) {
+    return WF_ASSIGNEE_PDP_DENIED;
+  }
+  if (!decision || typeof decision !== "object") {
+    return WF_ASSIGNEE_PDP_DENIED;
+  }
+  const allow = (decision as any).allow === true || (decision as any).effect === "allow";
+  if (!allow) {
+    return WF_ASSIGNEE_PDP_DENIED;
+  }
+  // 119: bind RBAC PolicyDecision roles to the node's assigneeRoleRef (major review fix).
+  // Fail-closed: an allow decision whose expandedRoles/subject roles do not include this roleRef
+  // (or carries no role attestation) must not produce evidence for an unrelated approval node.
+  const d: any = decision;
+  const expanded: string[] = Array.isArray(d.expandedRoles) ? d.expandedRoles : [];
+  const subjRoles: string[] = Array.isArray(d.subject?.roleIds) ? d.subject.roleIds : (Array.isArray(d.roleIds) ? d.roleIds : []);
+  const attested = [...expanded, ...subjRoles];
+  if (attested.length === 0 || !attested.includes(roleRef)) {
+    return WF_ASSIGNEE_PDP_DENIED;
+  }
+  return {
+    assignees: [roleRef],
+    policyEvidence: { ...(decision as any), role: roleRef, source: "rbac-policy-decision" },
   };
 }
 

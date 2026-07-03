@@ -53,3 +53,25 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (concise, per Required implementation)
+- Changed files:
+  - client/src/lib/skills/aigc/aigcSkill.ts
+  - client/src/lib/skills/aigc/aigcSkill.test.ts
+  - client/src/lib/skills/appbundle/appBundleSkill.ts
+  - client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- Exported symbols (new for AIGC negative sample evidence that fails closed on absent policy/schema):
+  - aigcModelWithMissingPolicyOrSchema (fixture demonstrating absent schema/policy)
+  - AIGC_NEGATIVE_SAMPLE_EVIDENCE, AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT
+  - createAigcNegativeSampleForPolicyOrSchemaAbsent(model, targetSkill) -> AigcCrossRuntimeEvidence (state "blocked", specific reason)
+  - APPBUNDLE_AIGC_NEGATIVE_RUNTIME_PATH
+  - createAppBundleAigcNegativePathSample(model) -> Normalized... (state blocked, APPBUNDLE_AIGC_POLICY_SCHEMA_EVIDENCE_ABSENT)
+  - (existing) createAigcFailClosedNegativeEvidence, createAigcPositiveSampleEvidence, evaluateAigcRuntimePolicy (now covered by dedicated negative test)
+- How advances publish/runtime closure: Adds deterministic negative sample evidence path for AIGC when policy (retrieval/citation) or schema absent, complementing positive; surfaces feed appbundle runtime closure evaluate + publish gates with explicit blocked on absent policy/schema evidence. Preserves all prior fail-closed, no new IO, no API breaks.
+- Validation commands (deterministic, local):
+  - pnpm exec vitest run client/src/lib/skills/aigc/aigcSkill.test.ts --reporter=dot
+  - pnpm exec vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot
+  - pnpm exec vitest run client/src/lib/skills --reporter=dot
+  - pnpm exec tsc --noEmit --skipLibCheck
+- Public API: additive only (new creators+consts+fixture); existing createAigc* and evaluate stable. No migration.
+- No secrets/IO/weakening; all tests 463 pass in skills; focused negative for absent policy/schema.

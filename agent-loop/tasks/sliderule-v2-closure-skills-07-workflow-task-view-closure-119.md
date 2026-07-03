@@ -53,3 +53,21 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Worker final report (post-fix for review_needs_changes)
+- Status: changed
+- Commands run (focused validation, relative paths):
+  - npx vitest run client/src/lib/skills/page/pageSkill.test.ts --reporter=dot
+  - npx vitest run client/src/lib/skills/page/pageSkill.test.ts -t "119 workflow task view" --reporter=verbose
+  - npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --reporter=dot
+  - npx tsc --noEmit
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-07-workflow-task-view-closure-119.md
+  - node -e "const fs=require('fs'); const task=fs.readFileSync(process.argv[1],'utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only','Worker final report']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }" agent-loop/tasks/sliderule-v2-closure-skills-07-workflow-task-view-closure-119.md
+- Files changed: ["client/src/lib/skills/page/pageSkill.ts", "client/src/lib/skills/appbundle/appBundleSkill.ts", "client/src/lib/skills/page/pageSkill.test.ts", "client/src/pages/SlideRule.tsx", "agent-loop/tasks/sliderule-v2-closure-skills-07-workflow-task-view-closure-119.md"]
+- Exported symbols: createWorkflowTaskViewAppBundleBindingEvidence, WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE (from pageSkill); createAppBundleWorkflowTaskViewPositiveSample / NegativeSample, APPBUNDLE_WORKFLOW_TASK_VIEW_* (from appBundleSkill); projectWorkflowTaskView (now directly referenced); workflowPageTaskViewConsistency path now exercises projection in evaluateAppBundleRuntimeClosure
+- Validation outputs (to be recorded):
+  - pageSkill vitest: all prior + 3 new 119 tests pass
+  - tsc: clean
+  - mojibake: clean
+  - markers: include required + report
+- How this advances publish/runtime closure: Adds executable adapter createWorkflowTaskViewAppBundleBindingEvidence (calls projectWorkflowTaskView for Page task surface) + wiring inside AppBundle evaluateAppBundleRuntimeClosure so that pageBindings produce workflowPageTaskViewConsistency (positive when valid binding+instance projects view; fail-closed to INVALID/blocked on mismatch/empty). Added dedicated positive/negative 119 tests. SlideRule.tsx now directly imports and references for task view closure evidence. Provides both paths scoped to one boundary without weakening fail-closed or prior semantics. Supplies focused candidate for Codex.

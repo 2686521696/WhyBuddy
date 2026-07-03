@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { dataModelSkill, leaveRequestDataModel, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
 import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
+import { leaveApprovalAppBundle } from "../appbundle/appBundleSkill";
+import { slideRule } from "../slideRule";
 import {
   buildPageCrossRuntimeEdges,
+  createPageCrossRuntimeEvidence,
   createPageRbacRuntimeEvidence,
   createPageWorkflowRuntimeEvidence,
   evaluatePageBindingExpressions,
@@ -15,6 +18,8 @@ import {
   PAGE_WORKFLOW_RUNTIME_EVIDENCE,
   pageSkill,
   projectWorkflowTaskView,
+  createWorkflowTaskViewAppBundleBindingEvidence,
+  WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE,
   purchaseApprovalPage,
   renderPageRuntimePolicy,
   PAGE_RUNTIME_COMPONENT_HIDDEN,
@@ -139,7 +144,7 @@ describe("pageSkill - surface, projector, and cross-skill refs", () => {
   });
 });
 
-describe("pageSkill — V2 PEP model (BindingSchema, PermissionRender, componentVersion, traceSpan)", () => {
+describe("pageSkill - V2 PEP model (BindingSchema, PermissionRender, componentVersion, traceSpan)", () => {
   it("sample page remains readable and can express bindings, permission rendering, and linkage rules", () => {
     const page = clone(leaveApprovalPage);
 
@@ -314,7 +319,7 @@ describe("pageSkill - field-level visibility gate (pdpVisibleTo policy on bound 
   });
 });
 
-describe("pageSkill — DataModel field lifecycle (deprecated/removed) via external SSOT", () => {
+describe("pageSkill - DataModel field lifecycle (deprecated/removed) via external SSOT", () => {
   const cloneDM = (m: any) => structuredClone(m);
 
   it("warns (ok=true) when Page binds via field or bindingSchema to a deprecated DataModel SSOT field", () => {
@@ -784,5 +789,152 @@ describe("pageSkill - V2 117 workflow task view projection (pure runtime)", () =
     const instPurch = { id: "c2", workflowId: "wf_purchase_approval", currentNodeId: "manager" };
     const v2 = projectWorkflowTaskView(purchaseApprovalPage, instPurch);
     expect(v2).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
+  });
+});
+
+// 119 focused: Workflow task view evidence closed vs Page surfaces and AppBundle bindings (positive + fail-closed)
+describe("pageSkill - 119 workflow task view AppBundle binding closure", () => {
+  it("positive: matching pageBinding + instance projects valid task view (allowed evidence)", () => {
+    const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_leave_approval", mode: "approve" as const };
+    const inst = { id: "i119", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
+    const ev = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, inst);
+    expect(ev.state).toBe("allowed");
+    expect(ev.evidenceKey).toContain(WORKFLOW_TASK_VIEW_APPBUNDLE_BINDING_EVIDENCE);
+    expect(ev.result).not.toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
+    expect(ev.pageRef).toBe(leaveApprovalPage.id);
+  });
+
+  it("fail-closed negative: bad instance or no currentNode returns blocked + INVALID", () => {
+    const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_leave_approval" };
+    const bad = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, { workflowId: "wf_leave_approval" } as any);
+    expect(bad.state).toBe("blocked");
+    expect(bad.result).toBe(PAGE_WORKFLOW_TASK_VIEW_INVALID);
+  });
+
+  it("fail-closed negative: binding workflowRef mismatch yields blocked", () => {
+    const binding = { pageRef: leaveApprovalPage.id, workflowRef: "wf_other" };
+    const inst = { id: "x", workflowId: "wf_leave_approval", currentNodeId: "a_mgr" };
+    const ev = createWorkflowTaskViewAppBundleBindingEvidence(leaveApprovalPage, binding, inst);
+    expect(ev.state).toBe("blocked");
+  });
+});
+
+describe("pageSkill - Page field binding evidence closure against DataModel SSOT (119)", () => {
+  it("provides positive Page field binding evidence to datamodel when upstream SSOT surface present (positive)", () => {
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", fullSurface.datamodel);
+    expect(ev.targetSkill).toBe("datamodel");
+    expect(ev.state).toBe("allowed");
+    expect(ev.reasonCode).toBe("PAGE_RUNTIME_EVIDENCE_PRESENT");
+    expect(ev.fieldRefs.length).toBeGreaterThan(0);
+    expect(ev.fieldRefs).toContain("leave_request.approved");
+    expect(ev.componentRefs).toContain("approve");
+  });
+
+  it("fail-closes to blocked state for Page field binding evidence when no upstream DataModel surface (negative, fail-closed)", () => {
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", undefined);
+    expect(ev.state).toBe("blocked");
+    expect(ev.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
+    expect(ev.fieldRefs.length).toBeGreaterThan(0); // fields declared, but evidence blocked
+  });
+
+  it("exposes field bindings via resolve surface for datamodel SSOT closure", () => {
+    const surf = pageSkill.resolve(leaveApprovalPage);
+    expect(surf.field).toContain("leave_request.approved");
+    expect(surf.field).toContain("leave_request.days");
+    // runtimeEvidence includes cross to datamodel for field binding
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(Array.isArray(surf.crossSkillRuntimeEdges)).toBe(true);
+  });
+
+  it("Page fieldRefs match DataModel SSOT fields surface boundary (positive match)", () => {
+    const dmSurf = dataModelSkill.resolve(leaveRequestDataModel);
+    const ev = createPageCrossRuntimeEvidence(leaveApprovalPage, "datamodel", dmSurf);
+    expect(ev.state).toBe("allowed");
+    const dmFields: string[] = Array.isArray((dmSurf as any).field) ? (dmSurf as any).field : ((dmSurf as any).fields || []).map((f: any) => f && f.ref).filter(Boolean);
+    // all page declared fields must be present in the DM SSOT surface when evidence allowed
+    if (ev.fieldRefs.length > 0 && dmFields.length > 0) {
+      expect(ev.fieldRefs.every(f => dmFields.includes(f))).toBe(true);
+    }
+  });
+
+  it("slideRule.publishGate consumes Page->datamodel field binding evidence (positive, real SSOT)", () => {
+    const models = {
+      page: leaveApprovalPage,
+      datamodel: leaveRequestDataModel,
+      appbundle: leaveApprovalAppBundle,
+    };
+    const gate = slideRule.publishGate(models);
+    expect(gate.runtimeClosure).toBeDefined();
+    const pageInfo: any = gate.runtimeClosure!.perSkillEvidence?.page;
+    expect(pageInfo).toBeTruthy();
+    const bindingEv = pageInfo.dataModelFieldBindingEvidence;
+    expect(bindingEv).toBeTruthy();
+    expect(bindingEv.targetSkill).toBe("datamodel");
+    expect(bindingEv.state).toBe("allowed");
+    expect(bindingEv.fieldRefs).toContain("leave_request.approved");
+  });
+
+  it("slideRule.publishGate sees fail-closed Page field binding evidence when datamodel absent (negative)", () => {
+    const models = {
+      page: leaveApprovalPage,
+      appbundle: leaveApprovalAppBundle,
+    };
+    const gate = slideRule.publishGate(models);
+    expect(gate.runtimeClosure).toBeDefined();
+    const pageInfo: any = gate.runtimeClosure!.perSkillEvidence?.page;
+    const bindingEv = pageInfo?.dataModelFieldBindingEvidence;
+    expect(bindingEv?.state).toBe("blocked");
+    expect(bindingEv?.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
+  });
+});
+
+describe("pageSkill - Page permission render evidence closure against RBAC policy surfaces (119)", () => {
+  it("provides positive Page permission render evidence to rbac when upstream RBAC surface present (positive)", () => {
+    const ev = createPageRbacRuntimeEvidence(leaveApprovalPage, fullSurface.rbac);
+    expect(ev.targetSkill).toBe("rbac");
+    expect(ev.state).toBe("allowed");
+    expect(ev.reasonCode).toBe("PAGE_RUNTIME_EVIDENCE_PRESENT");
+    expect(ev.roleRefs).toContain("manager");
+    expect(ev.permissionRefs).toContain("leave:approve");
+    expect(ev.componentRefs).toContain("approve");
+  });
+
+  it("fail-closes to blocked state for Page permission render evidence when no upstream RBAC surface (negative, fail-closed)", () => {
+    const ev = createPageRbacRuntimeEvidence(leaveApprovalPage, undefined);
+    expect(ev.state).toBe("blocked");
+    expect(ev.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
+    expect(ev.roleRefs.length).toBeGreaterThan(0);
+    expect(ev.permissionRefs.length).toBeGreaterThan(0);
+  });
+
+  it("slideRule.publishGate consumes Page permission render evidence against RBAC (positive, real surface)", () => {
+    const models = {
+      page: leaveApprovalPage,
+      rbac: leaveApprovalRbac,
+      appbundle: leaveApprovalAppBundle,
+    };
+    const gate = slideRule.publishGate(models);
+    expect(gate.runtimeClosure).toBeDefined();
+    const pageInfo: any = gate.runtimeClosure!.perSkillEvidence?.page;
+    expect(pageInfo).toBeTruthy();
+    const permEv = pageInfo.pageRbacPermissionEvidence;
+    expect(permEv).toBeTruthy();
+    expect(permEv.targetSkill).toBe("rbac");
+    expect(permEv.state).toBe("allowed");
+    expect(permEv.roleRefs).toContain("employee");
+    expect(permEv.permissionRefs).toContain("leave:create");
+  });
+
+  it("slideRule.publishGate sees fail-closed Page permission render evidence when rbac absent (negative)", () => {
+    const models = {
+      page: leaveApprovalPage,
+      appbundle: leaveApprovalAppBundle,
+    };
+    const gate = slideRule.publishGate(models);
+    expect(gate.runtimeClosure).toBeDefined();
+    const pageInfo: any = gate.runtimeClosure!.perSkillEvidence?.page;
+    const permEv = pageInfo?.pageRbacPermissionEvidence;
+    expect(permEv?.state).toBe("blocked");
+    expect(permEv?.reasonCode).toBe("PAGE_RUNTIME_UPSTREAM_ABSENT");
   });
 });

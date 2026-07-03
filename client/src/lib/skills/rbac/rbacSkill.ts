@@ -1105,9 +1105,16 @@ export function createRbacPdpExplainEvidence(
 ): RbacPdpExplainEvidence {
   const decision = decideRbacPolicy(model, request);
   const allow = Boolean(decision.allow);
-  const evidenceKey = `${RBAC_PDP_EXPLAIN_EVIDENCE}:${allow ? "allow" : "fail-closed"}`;
+  // Deterministic classification for downstream closure: allow / deny (explicit precedence or SoD) / fail-closed (default negative)
+  let outcome: "allow" | "deny" | "fail-closed" = allow ? "allow" : "fail-closed";
+  if (!allow) {
+    if (decision.denyPrecedence === true || (decision.reason || "").toLowerCase().includes("deny") || decision.reasonCode === "RBAC_RUNTIME_SOD_DENIED") {
+      outcome = "deny";
+    }
+  }
+  const evidenceKey = `${RBAC_PDP_EXPLAIN_EVIDENCE}:${outcome}`;
   const explanationParts = [
-    allow ? `allow via ${decision.matchedPermission ?? "permission"}` : "fail-closed",
+    allow ? `allow via ${decision.matchedPermission ?? "permission"}` : outcome,
     decision.expandedRoles?.length ? `roles=[${decision.expandedRoles.join(",")}]` : "",
     decision.matchedPermission ? `matched=${decision.matchedPermission}` : "",
     decision.policyId
@@ -1132,6 +1139,20 @@ export function createRbacPdpExplainEvidence(
     source: "rbac-pdp",
     explanation: `${decision.code}: ${decision.reason} | ${explanationParts.join(" ")}`,
   };
+}
+
+/** 119: dedicated pure adapter for RBAC fail-closed negative path.
+ * Consumed by Page (renderPageRuntimePolicy PEP + createRbac*RuntimeEvidence cross), AppBundle runtimeClosure evidence paths, etc.
+ * Guarantees deterministic deny (RBAC_RUNTIME_FAIL_CLOSED) with no allow fallback on negative inputs.
+ * Positive path remains via evaluateRbacRuntimePolicy / decideRbacPolicy.
+ */
+export function createRbacFailClosedNegativePath(
+  model: RbacModel,
+  request: RbacRuntimeRequest,
+): RbacRuntimeDecision {
+  // Pure adapter naming the fail-closed negative path (delegates; caller provides negative request context).
+  // Deterministic: when request lacks matching grant evidence, evaluate already returns RBAC_RUNTIME_FAIL_CLOSED deny.
+  return evaluateRbacRuntimePolicy(model, request);
 }
 
 // ---------------------------------------------------------------------------
@@ -1211,7 +1232,7 @@ export function createRbacCrossRuntimeEvidence(
   const permissionRefs = model.permissions.map(permission => permission.code).sort();
   const policyRefs = rbacPolicyRefsForTarget(model, targetSkill);
   const decision = runtimeRequestIsPresent(request)
-    ? evaluateRbacRuntimePolicy(model, request)
+    ? createRbacFailClosedNegativePath(model, request)
     : undefined;
   const state: RbacRuntimeEvidenceState =
     decision ? (decision.effect === "allow" ? "allowed" : "blocked") : (policyRefs.length > 0 ? "allowed" : "blocked");

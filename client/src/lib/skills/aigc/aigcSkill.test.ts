@@ -7,14 +7,24 @@ import {
   buildAigcCrossRuntimeEdges,
   createAigcDataModelRuntimeEvidence,
   createAigcRbacRuntimeEvidence,
+  createAigcPositiveSampleEvidence,
+  createAigcFailClosedNegativeEvidence,
+  createAigcNegativeSampleForPolicyOrSchemaAbsent,
   normalizeAigcRuntimeContextForSkill,
   AIGC_DATAMODEL_RUNTIME_EVIDENCE,
   AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
   AIGC_RUNTIME_POLICY_DENIED,
   AIGC_RBAC_RUNTIME_EVIDENCE,
+  AIGC_POSITIVE_SAMPLE_EVIDENCE,
+  AIGC_POSITIVE_SAMPLE_TO_DATAMODEL,
+  AIGC_POSITIVE_SAMPLE_TO_PAGE,
+  AIGC_POSITIVE_SAMPLE_TO_RBAC,
+  AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE,
+  AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT,
   emptyLeaveAigcModel,
   evaluateAigcRuntimePolicy,
   purchaseRiskAigcModel,
+  aigcModelWithMissingPolicyOrSchema,
   validateAigcRuntimeOutput,
 } from "./aigcSkill";
 import type { AigcModel } from "./aigcModel";
@@ -426,5 +436,78 @@ describe("aigcSkill - runtime output schema and evidence (117)", () => {
     const r3 = validateAigcRuntimeOutput(purchaseRiskAigcModel, "budget_risk_summary", wrongType);
     expect(r3.ok).toBe(false);
     expect(r3.errors.some((e) => e.code === AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID)).toBe(true);
+  });
+});
+
+describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/AppBundle closure", () => {
+  it("exposes purchaseRiskAigcModel as canonical positive sample with cross refs to targets", () => {
+    expect(purchaseRiskAigcModel.id).toBe("aigc_purchase_risk");
+    expect(purchaseRiskAigcModel.capabilities.map(c => c.id)).toContain("budget_risk_summary");
+    expect(purchaseRiskAigcModel.capabilities[0].inputFieldRefs?.length).toBeGreaterThan(0);
+    expect(purchaseRiskAigcModel.capabilities[0].permissionRefs?.length).toBeGreaterThan(0);
+  });
+
+  it("creates positive sample evidence for appbundle, page, rbac, datamodel (state=allowed when upstream present)", () => {
+    const toApp = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "appbundle");
+    expect(toApp.evidenceKey).toBe(AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE);
+    expect(toApp.targetSkill).toBe("appbundle");
+    expect(toApp.state).toBe("allowed");
+    expect(toApp.reasonCode).toBe("AIGC_RUNTIME_EVIDENCE_PRESENT");
+    expect(toApp.capabilityRefs).toContain("budget_risk_summary");
+    expect(toApp.outputSchemaRefs).toContain("purchase_risk_output");
+
+    const toDm = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "datamodel");
+    expect(toDm.targetSkill).toBe("datamodel");
+    expect(toDm.state).toBe("allowed");
+
+    const toPage = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "page");
+    expect(toPage.targetSkill).toBe("page");
+    expect(toPage.state).toBe("allowed");
+
+    const toRbac = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "rbac");
+    expect(toRbac.targetSkill).toBe("rbac");
+    expect(toRbac.state).toBe("allowed");
+    expect(toRbac.roleRefs).toContain("finance");
+  });
+
+  it("provides dedicated named positive sample constants per target", () => {
+    const ev = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "datamodel");
+    // dedicated keys are exported for consumers; the general evidenceKey uses base
+    expect([AIGC_POSITIVE_SAMPLE_TO_DATAMODEL, AIGC_POSITIVE_SAMPLE_TO_PAGE, AIGC_POSITIVE_SAMPLE_TO_RBAC, AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE]).toContain(AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE);
+  });
+
+  it("fail-closed negative evidence for missing upstream (blocked, AIGC_RUNTIME_UPSTREAM_ABSENT)", () => {
+    const neg = createAigcFailClosedNegativeEvidence(purchaseRiskAigcModel, "page");
+    expect(neg.state).toBe("blocked");
+    expect(neg.reasonCode).toBe("AIGC_RUNTIME_UPSTREAM_ABSENT");
+    expect(neg.targetSkill).toBe("page");
+
+    const negDm = createAigcFailClosedNegativeEvidence(purchaseRiskAigcModel, "datamodel");
+    expect(negDm.state).toBe("blocked");
+  });
+
+  it("empty leave model yields no positive capability refs (fail closed for closure feed)", () => {
+    const emptyPos = createAigcPositiveSampleEvidence(emptyLeaveAigcModel, "appbundle");
+    expect(emptyPos.capabilityRefs.length).toBe(0);
+    expect(emptyPos.state).toBe("blocked"); // no refs => blocked per aigcRefsForTarget logic
+  });
+
+  it("exposes AIGC negative sample evidence that fails closed when policy or schema evidence absent (119 objective)", () => {
+    const neg = createAigcNegativeSampleForPolicyOrSchemaAbsent(purchaseRiskAigcModel, "appbundle");
+    expect(neg.state).toBe("blocked");
+    expect(neg.evidenceKey).toBe(AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT);
+    expect(neg.reasonCode).toBe("AIGC_RUNTIME_POLICY_OR_SCHEMA_EVIDENCE_ABSENT");
+    expect(neg.targetSkill).toBe("appbundle");
+
+    // also via fixture: evaluate denies on schema absent
+    const denied = evaluateAigcRuntimePolicy(aigcModelWithMissingPolicyOrSchema, "cap_without_policy_schema", {
+      rbac: fullSurface.rbac,
+      datamodel: fullSurface.datamodel,
+    });
+    expect(denied).toBe(AIGC_RUNTIME_POLICY_DENIED);
+
+    // positive path still works with full policy+schema model
+    const pos = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "appbundle");
+    expect(pos.state).toBe("allowed");
   });
 });

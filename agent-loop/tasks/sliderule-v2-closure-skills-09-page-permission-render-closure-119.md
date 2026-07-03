@@ -53,3 +53,23 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report (page-permission-render-closure-119)
+Changed files:
+- client/src/lib/skills/appbundle/appBundleSkill.ts (added pageRbacPermissionEvidence computation for page skill in evaluateAppBundleRuntimeClosure using createPageRbacRuntimeEvidence + real rbac upstream surface; wired into rbacPdpDecisions, evidencePresent, perSkillEvidence record and interface)
+- client/src/lib/skills/page/pageSkill.test.ts (added focused describe "pageSkill — Page permission render evidence closure against RBAC policy surfaces (119)" with 4 tests: direct positive/negative for createPageRbac..., and via slideRule.publishGate positive allowed + fail-closed blocked)
+- agent-loop/tasks/sliderule-v2-closure-skills-09-page-permission-render-closure-119.md (this report)
+
+Exported symbols exercised/added: createPageRbacRuntimeEvidence (existing public), createPageCrossRuntimeEvidence (used), pageRbacPermissionEvidence (new closure field in runtime report, optional/compat), pageSkill.resolve / rbacSkill.resolve (surfaces). No public API rename.
+
+Validation commands:
+- npx vitest run client/src/lib/skills/page/pageSkill.test.ts -t "Page permission render evidence closure"
+- npx vitest run client/src/lib/skills/page/pageSkill.test.ts
+- npx vitest run client/src/lib/skills/purchaseApproval.test.ts
+- node -e "
+  const {deriveApplication, slideRule} = require('./client/src/lib/skills/slideRule');
+  deriveApplication('请假申请').then(r => { const g=slideRule.publishGate(r.spec.skills); const p=g.runtimeClosure?.perSkillEvidence?.page; console.log('publishable:',g.publishable,'pagePermEv:',p&&p.pageRbacPermissionEvidence&&p.pageRbacPermissionEvidence.state); });
+"
+- tsc --noEmit -p tsconfig.json (client types)
+
+How this task advances publish/runtime closure: Parallels the field-binding closure (08) for the Page<->RBAC boundary: now evaluateAppBundleRuntimeClosure explicitly materializes Page permission rendering evidence (PermissionRender role+perm refs) as pageRbacPermissionEvidence with deterministic positive (allowed+refs on real RBAC surface) and fail-closed negative (blocked on absent). Tests cover direct create fn + end-to-end publishGate path. Existing fail-closed PDP/render semantics untouched. Enables AppBundle runtimeClosure to prove Page permission render surface against RBAC policy for 119 wave, usable for codex review/landing. Scoped to allowed files.

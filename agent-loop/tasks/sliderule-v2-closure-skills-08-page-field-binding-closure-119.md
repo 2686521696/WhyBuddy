@@ -53,3 +53,22 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report (page-field-binding-closure-119)
+Changed files:
+- client/src/pages/SlideRule.tsx (fixed: createPageCrossRuntimeEvidence call moved before slideRule.publishGate, now passes real datamodel from result.spec.skills as upstream SSOT surface/fields (not fake {declared:true}), result assigned (not void) so evidence computation participates in publish/runtimeClosure context)
+- client/src/lib/skills/page/pageSkill.test.ts (added focused describe + 3 tests exercising positive allowed + fail-closed blocked for field binding evidence)
+- agent-loop/tasks/sliderule-v2-closure-skills-08-page-field-binding-closure-119.md (this report)
+
+Exported symbols exercised/added: createPageCrossRuntimeEvidence (existing public), pageSkill.resolve (field surface), pageFieldRefs (internal used for evidence). No public API rename.
+
+Validation commands:
+- npx vitest run client/src/lib/skills/page/pageSkill.test.ts -t "page field binding evidence closure"
+- npx vitest run client/src/lib/skills/page/pageSkill.test.ts
+- node -e "
+  const {deriveApplication, slideRule} = require('./client/src/lib/skills/slideRule');
+  deriveApplication('请假申请').then(r => { const g=slideRule.publishGate(r.spec.skills); console.log('publishable:',g.publishable,'hasRuntimeClosure:',!!g.runtimeClosure); });
+"
+- tsc check on client (type ok, no new deps)
+
+How this advances publish/runtime closure: Wires deterministic Page->DataModel field binding evidence (via createPageCrossRuntimeEvidence with actual DM SSOT surface/fields from spec.skills) directly into the derive/publishGate path in SlideRule (before gate, evidence result participates in closure flow for crossRuntime/publish preview). Combined with unit tests for positive (allowed + fieldRefs on real upstream) and fail-closed (blocked on absent), this closes the binding evidence for AppBundle runtimeClosure without weakening semantics. Report now matches implemented behavior and gate evidence. Scoped, preserves fail-closed. Candidate for codex slice.

@@ -53,3 +53,27 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (concise, per Required implementation)
+- Changed files:
+  - client/src/lib/skills/aigc/aigcSkill.ts
+  - client/src/lib/skills/aigc/aigcSkill.test.ts
+  - agent-loop/tasks/sliderule-v2-closure-skills-10-aigc-positive-sample-closure-119.md
+- Exported symbols (new/used for positive sample evidence feeding closure):
+  - purchaseRiskAigcModel (canonical positive AIGC sample)
+  - emptyLeaveAigcModel (negative/empty)
+  - AIGC_POSITIVE_SAMPLE_TO_DATAMODEL, AIGC_POSITIVE_SAMPLE_TO_PAGE, AIGC_POSITIVE_SAMPLE_TO_RBAC, AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE
+  - AIGC_POSITIVE_SAMPLE_EVIDENCE
+  - createAigcPositiveSampleEvidence(model, targetSkill) -> AigcCrossRuntimeEvidence (state "allowed" with refs)
+  - createAigcFailClosedNegativeEvidence(model, targetSkill) -> ... (state "blocked")
+  - createAigcCrossRuntimeEvidence, buildAigcCrossRuntimeEdges, evaluateAigcRuntimePolicy (existing, used), normalizeAigcRuntimeContextForSkill
+  - validateAigcRuntimeOutput (fail-closed on missing citationEvidence etc.)
+- How advances publish/runtime closure: AIGC now exposes deterministic positive evidence paths (purchase risk sample with capability/field/permission/outputSchema refs) and explicit fail-closed blocked negatives for the four target skills (datamodel, page, rbac, appbundle). These surfaces (resolve + cross runtime + dedicated positive creators) feed AppBundle runtime closure checks, publish gates, and impact without runtime side effects.
+- Validation commands (deterministic, local):
+  - pnpm exec vitest run client/src/lib/skills/aigc/aigcSkill.test.ts --reporter=dot
+  - pnpm exec vitest run client/src/lib/skills --reporter=dot
+  - node -e "const fs=require('fs'); const t=fs.readFileSync('agent-loop/tasks/sliderule-v2-closure-skills-10-aigc-positive-sample-closure-119.md','utf8'); console.log('markers ok:', t.includes('119-appbundle-runtime-closure') && t.includes('## Required implementation'));"
+  - node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-10-aigc-positive-sample-closure-119.md
+  - pnpm exec tsc --noEmit --pretty false | findstr /C:"error TS" || echo "tsc clean (no new errors)"
+- Public API: no renames; additive exports only. No migration needed.
+- No secrets, no IO, no weaken of fail-closed (evaluate + evidence + output validate + cross all preserve deny/blocked on missing).

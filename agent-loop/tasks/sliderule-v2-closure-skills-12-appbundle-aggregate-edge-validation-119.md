@@ -41,11 +41,11 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,32 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Implementation notes (119)
+- Added `validateAppBundleAggregateEdges(models)` pure function and `APPBUNDLE_AGGREGATE_EDGE_VALIDATION` const + typed `AppBundleAggregateEdgeValidation`.
+- Resolves surfaces for all 6 skills (datamodel/rbac/workflow/page/aigc/appbundle) inside the validator, collects crossSkillRuntimeEdges to form aggregate view.
+- Positive: full purchase models yield >0 allowed edges, per-surface positive flags, closureEvidencePresent.
+- Fail-closed negative: absent surfaces (e.g. no aigc/datamodel) set failClosedSampled=true, positive=false, closureEvidencePresent=false. No silent allow.
+- Re-exported via runtimeClosure for visibility.
+- Added 3 focused unit tests exercising positive aggregate across 6 + negative absent surface paths + sample compat.
+- Preserved all prior behavior; no changes to existing APIs or gates.
+
+## Final Report
+Changed files:
+- client/src/lib/skills/appbundle/appBundleSkill.ts
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts
+- agent-loop/tasks/sliderule-v2-closure-skills-12-appbundle-aggregate-edge-validation-119.md
+
+Exported symbols (new):
+- validateAppBundleAggregateEdges
+- APPBUNDLE_AGGREGATE_EDGE_VALIDATION
+- interface AppBundleAggregateEdgeValidation
+- (also attached to runtimeClosure export for compat)
+
+Validation commands:
+- npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts --testNamePattern="119 appbundle aggregate edge validation"
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-12-appbundle-aggregate-edge-validation-119.md
+- (existing gate markers remain unchanged)
+
+How this advances publish/runtime closure:
+Provides the missing executable, deterministic validation of AppBundle's role as aggregator of cross-skill runtime edges from all six surfaces (positive allowed paths + explicit fail-closed blocked when evidence absent). Supplies focused tests and report for the 119 wave candidate material. Complements evaluateAppBundleRuntimeClosure without weakening prior semantics.

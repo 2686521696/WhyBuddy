@@ -10,6 +10,7 @@ import {
   createDataModelWorkflowBindingImpactEvidence,
   createDataModelRbacRuntimeEvidence,
   dataModelSkill,
+  deriveDataModelChangedRefs,
   DM_PAGE_RUNTIME_EVIDENCE,
   DM_PAGE_BINDING_IMPACT_EVIDENCE,
   DM_RBAC_POLICY_IMPACT_EVIDENCE,
@@ -27,6 +28,7 @@ import {
   traceFieldLineage,
 } from "./dataModelSkill";
 import type { DataModelModel, Relation } from "./dataModelModel";
+import { purchaseApprovalWorkflow, leaveApprovalWorkflow } from "../workflow/workflowSkill";
 
 const clone = (m: DataModelModel): DataModelModel => structuredClone(m);
 
@@ -1161,6 +1163,45 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
     expect(evidence.reasonCode).toBe("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
+
+  it("datamodel fixture with policy-carrying field change embeds positive rbac policy impact evidence (closure)", () => {
+    const dm: any = purchaseApprovalDataModel;
+    const ev = dm.rbacPolicyImpactEvidence;
+    expect(ev).toBeTruthy();
+    expect(ev.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
+    expect(ev.state).toBe("allowed");
+    expect(ev.reasonCode).toBe("DM_RBAC_POLICY_IMPACT_POSITIVE");
+    expect(ev.hasPositiveEvidence).toBe(true);
+    expect(ev.changedFieldRefs).toContain("purchase_request.amount");
+  });
+
+  it("resolve surface includes rbacPolicyImpactEvidence and runtimeEvidence key for datamodel->rbac impact", () => {
+    const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
+    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
+    expect(surf.rbacPolicyImpactEvidence?.hasPositiveEvidence).toBe(true);
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE]));
+  });
+
+  it("deriveDataModelChangedRefs detects policyRef fields as changed (positive path seed)", () => {
+    const ch = deriveDataModelChangedRefs(purchaseApprovalDataModel);
+    expect(ch.field).toContain("purchase_request.amount");
+    expect(ch.entity).toContain("purchase_request");
+    // ensure unrelated entities are not marked changed (fixes over-broad entityRefs)
+    expect(ch.entity).not.toContain("employee");
+  });
+
+  it("resolve surface includes rbacPolicyImpactEvidence but does not add DM key to runtimeEvidence on fail-closed negative", () => {
+    const removedModel = clone(purchaseApprovalDataModel);
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
+    const surf: any = dataModelSkill.resolve(removedModel);
+    expect(surf.rbacPolicyImpactEvidence?.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
+    expect(surf.rbacPolicyImpactEvidence?.hasPositiveEvidence).toBe(false);
+    expect(surf.rbacPolicyImpactEvidence?.state).toBe("blocked");
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE]));
+  });
 });
 
 describe("dataModelSkill - 119 datamodel to page binding impact evidence", () => {
@@ -1197,14 +1238,47 @@ describe("dataModelSkill - 119 datamodel to page binding impact evidence", () =>
     expect(evidence.reasonCode).toBe("DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
   });
+
+  it("resolve surface includes pageBindingImpactEvidence and runtimeEvidence key for datamodel->page binding impact (positive)", () => {
+    const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
+    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
+    expect(surf.pageBindingImpactEvidence?.hasPositiveEvidence).toBe(true);
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE]));
+  });
+
+  it("resolve surface includes pageBindingImpactEvidence but does not add DM_PAGE key to runtimeEvidence on fail-closed negative", () => {
+    const removedModel = clone(purchaseApprovalDataModel);
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
+    const surf: any = dataModelSkill.resolve(removedModel);
+    expect(surf.pageBindingImpactEvidence?.evidenceKey).toBe(DM_PAGE_BINDING_IMPACT_EVIDENCE);
+    expect(surf.pageBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
+    expect(surf.pageBindingImpactEvidence?.state).toBe("blocked");
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_PAGE_BINDING_IMPACT_EVIDENCE]));
+  });
 });
 
 describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", () => {
-  it("allows when changed DataModel fields overlap Workflow binding refs", () => {
+  // Extract real Workflow condition/form/branch binding refs (fieldRefs + node.fieldRef) to drive evidence
+  // instead of dataset proxy. This validates DM field change impact against actual workflow bindings.
+  const getRealWorkflowBindingRefs = (wf: any): string[] => {
+    const refs: string[] = [];
+    if (Array.isArray(wf?.fieldRefs)) refs.push(...wf.fieldRefs);
+    (wf?.nodes || []).forEach((n: any) => {
+      if (n && typeof n.fieldRef === "string") refs.push(n.fieldRef);
+    });
+    return Array.from(new Set(refs)).sort();
+  };
+
+  it("allows when changed DataModel fields overlap real Workflow fieldRef/form/branch bindings", () => {
+    const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
+    expect(wfBindings).toContain("purchase_request.amount");
     const evidence = createDataModelWorkflowBindingImpactEvidence(
       purchaseApprovalDataModel,
       { field: ["purchase_request.amount", "purchase_request.status"] },
-      ["purchase_request.amount", "purchase_request.status"]
+      wfBindings
     );
 
     expect(evidence.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
@@ -1215,23 +1289,121 @@ describe("dataModelSkill - 119 datamodel to workflow binding impact evidence", (
     expect(evidence.hasPositiveEvidence).toBe(true);
   });
 
-  it("fails closed when a removed DataModel field is still referenced by Workflow binding refs", () => {
+  it("fails closed when a removed DataModel field is still referenced by real Workflow binding refs (form/branch)", () => {
     const removedModel = clone(purchaseApprovalDataModel);
     const purchaseRequest = removedModel.entities.find((entity) => entity.id === "purchase_request")!;
     purchaseRequest.fields = purchaseRequest.fields.map((field) =>
       field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
     );
+    const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
 
     const evidence = createDataModelWorkflowBindingImpactEvidence(
       removedModel,
       { field: ["purchase_request.amount"] },
-      ["purchase_request.amount"]
+      wfBindings
     );
 
     expect(evidence.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
     expect(evidence.state).toBe("blocked");
     expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
     expect(evidence.hasPositiveEvidence).toBe(false);
+  });
+
+  it("recognizes real workflow branch condition fieldRef bindings (e.g. budgetChecked) for positive impact when marked changed", () => {
+    const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
+    // branch nodes carry condition refs
+    const branchRefs = (purchaseApprovalWorkflow.nodes || []).filter((n: any) => n.type === "branch" && n.fieldRef).map((n: any) => n.fieldRef);
+    expect(branchRefs.length).toBeGreaterThan(0);
+    expect(wfBindings).toEqual(expect.arrayContaining(branchRefs));
+    // simulate DM change on a bound branch field (create accepts explicit changed for deterministic test)
+    const evidence = createDataModelWorkflowBindingImpactEvidence(
+      purchaseApprovalDataModel,
+      { field: ["purchase_request.budgetChecked"] },
+      wfBindings
+    );
+    expect(evidence.hasPositiveEvidence).toBe(true);
+    expect(evidence.impactedWorkflowBindingRefs).toContain("purchase_request.budgetChecked");
+    expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
+  });
+
+  it("fail-closed removed only for bindings that are in real workflow refs (not for unbound DM fields)", () => {
+    const removedModel = clone(purchaseApprovalDataModel);
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "id" ? { ...f, lifecycle: "removed" as const } : f);
+    const wfBindings = getRealWorkflowBindingRefs(purchaseApprovalWorkflow);
+    // "purchase_request.id" is not a workflow form/branch binding ref in the fixture
+    expect(wfBindings).not.toContain("purchase_request.id");
+
+    const evidence = createDataModelWorkflowBindingImpactEvidence(
+      removedModel,
+      { field: ["purchase_request.id"] },
+      wfBindings
+    );
+    expect(evidence.state).toBe("blocked");
+    expect(evidence.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_NO_OVERLAP");
+    expect(evidence.hasPositiveEvidence).toBe(false);
+    // must not use the removed-field fail-closed code when the removed field is absent from real wf bindings
+    expect(evidence.reasonCode).not.toBe("DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+  });
+
+  it("datamodel fixture embeds positive workflow binding impact evidence using real workflow binding refs (closure)", () => {
+    const dm: any = purchaseApprovalDataModel;
+    const ev = dm.workflowBindingImpactEvidence;
+    expect(ev).toBeTruthy();
+    expect(ev.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    expect(ev.state).toBe("allowed");
+    expect(ev.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
+    expect(ev.hasPositiveEvidence).toBe(true);
+    expect(ev.changedFieldRefs).toContain("purchase_request.amount");
+    expect(ev.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
+  });
+
+  it("resolve surface includes workflowBindingImpactEvidence and runtimeEvidence key for datamodel->workflow binding impact (positive)", () => {
+    const surf: any = dataModelSkill.resolve(purchaseApprovalDataModel);
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    // resolve now supplies real WF binding refs for canonical fixtures (purchase amount etc have policyRef seeding changed + overlap)
+    expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(true);
+    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_POSITIVE");
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
+    expect(surf.workflowBindingImpactEvidence?.impactedWorkflowBindingRefs).toContain("purchase_request.amount");
+  });
+
+  it("resolve surface includes workflowBindingImpactEvidence but does not add DM_WORKFLOW key to runtimeEvidence on fail-closed negative (removed bound field)", () => {
+    const removedModel = clone(purchaseApprovalDataModel);
+    const pr = removedModel.entities.find((e: any) => e.id === "purchase_request")!;
+    pr.fields = pr.fields.map((f: any) => f.key === "amount" ? { ...f, lifecycle: "removed" as const } : f);
+    const surf: any = dataModelSkill.resolve(removedModel);
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
+    expect(surf.workflowBindingImpactEvidence?.state).toBe("blocked");
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
+  });
+
+  it("resolve surface does not add DM_WORKFLOW key for changed/removed DM fields that are not in real Workflow refs (no false-positive closure evidence)", () => {
+    // This is the required resolve-level negative: a changed field absent from WF fieldRefs+node.fieldRef must not produce the impact key in runtimeEvidence.
+    // Use leaveRequestDataModel + change on "employee" (unrelated to its WF binding "leave_request.approved") so no entity/field overlap.
+    const changedModel = clone(leaveRequestDataModel);
+    const emp = changedModel.entities.find((e: any) => e.id === "employee")!;
+    emp.fields = emp.fields.map((f: any) => f.key === "name" ? { ...f, lifecycle: "changed" as const } : f);
+    const wfBindingsForCheck = (() => {
+      const refs: string[] = [];
+      const wf: any = leaveApprovalWorkflow;
+      if (Array.isArray(wf?.fieldRefs)) refs.push(...wf.fieldRefs);
+      (wf?.nodes || []).forEach((n: any) => { if (n && typeof n.fieldRef === "string") refs.push(n.fieldRef); });
+      return Array.from(new Set(refs)).sort();
+    })();
+    expect(wfBindingsForCheck).not.toContain("employee.name");
+
+    const surf: any = dataModelSkill.resolve(changedModel);
+    expect(surf.workflowBindingImpactEvidence?.evidenceKey).toBe(DM_WORKFLOW_BINDING_IMPACT_EVIDENCE);
+    expect(surf.workflowBindingImpactEvidence?.hasPositiveEvidence).toBe(false);
+    expect(surf.workflowBindingImpactEvidence?.reasonCode).toBe("DM_WORKFLOW_BINDING_IMPACT_NO_OVERLAP");
+    expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
+    expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_WORKFLOW_BINDING_IMPACT_EVIDENCE]));
+    // also confirm the changed field was detected by derive but not treated as WF binding impact
+    expect(surf.workflowBindingImpactEvidence?.changedFieldRefs || []).toContain("employee.name");
   });
 });
 

@@ -53,3 +53,25 @@ Focus on one Skill boundary at a time. Add deterministic positive and fail-close
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (119 datamodel-to-rbac-impact)
+Changed files:
+- client/src/lib/skills/datamodel/dataModelSkill.ts (added deriveDataModelChangedRefs; wired createDataModelRbacPolicyImpactEvidence into resolve surface + attached to canonical fixtures via post-init using policyRef+ migration changes)
+- client/src/lib/skills/datamodel/dataModelSkill.test.ts (added 3 focused its asserting fixture embed, resolve surface, derive)
+- client/src/lib/skills/appbundle/appBundleSkill.test.ts (updated purchase closure test to assert datamodel impact evidence now reaches)
+- agent-loop/tasks/sliderule-v2-closure-skills-01-datamodel-to-rbac-impact-closure-119.md (this report)
+
+Exported symbols (stable; new is additive):
+- deriveDataModelChangedRefs (new helper, used internally)
+- createDataModelRbacPolicyImpactEvidence (pre-existing, now live from changes)
+- DM_RBAC_POLICY_IMPACT_EVIDENCE
+- dataModelSkill.resolve now yields .rbacPolicyImpactEvidence on surface
+- fixture models now carry .rbacPolicyImpactEvidence
+
+Validation commands:
+- npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts -t "119 datamodel to rbac policy impact evidence|datamodel fixture with policy-carrying|resolve surface includes rbacPolicyImpactEvidence|deriveDataModelChangedRefs|resolve surface includes rbacPolicyImpactEvidence but does not add DM key to runtimeEvidence on fail-closed negative"
+- npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts -t "passes positive runtime closure for purchase|accepts DataModel"
+- npx vitest run client/src/lib/skills/datamodel/dataModelSkill.test.ts -t "datamodel fixture with policy-carrying field change embeds positive rbac policy impact evidence" --reporter=dot
+- node agent-loop/src/check-mojibake.js agent-loop/tasks/sliderule-v2-closure-skills-01-datamodel-to-rbac-impact-closure-119.md
+
+How this advances publish/runtime closure: DataModel field/entity changes (policyRef for PDP delegation, lifecycle deltas, migrationPlan) now deterministically produce and embed both positive ("DM_RBAC_POLICY_IMPACT_POSITIVE", hasPositiveEvidence:true) and fail-closed negative ("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD") evidence objects. These are discoverable by evaluateAppBundleRuntimeClosure's hasDataModelRbacImpact / collectPositiveRuntimeEvidenceKeys without test-only stubs, and exposed on resolve surfaces and cross-runtime. Provides executable Skill-boundary impl + evidence paths required by objective and acceptance.

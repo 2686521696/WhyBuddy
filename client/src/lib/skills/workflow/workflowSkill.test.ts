@@ -19,10 +19,12 @@ import {
   WF_RBAC_RUNTIME_EVIDENCE,
   workflowSkill,
   WF_RUNTIME_INVALID_TRANSITION,
+  createWorkflowAssigneePolicyEvidenceFromDecision,
 } from "./workflowSkill";
 import type { WorkflowInstance, WorkflowInstanceSnapshot, WorkflowModel, WorkflowTransitionCommand } from "./workflowModel";
-import { leaveApprovalRbac, rbacSkill } from "../rbac/rbacSkill";
+import { leaveApprovalRbac, purchaseApprovalRbac, rbacSkill, decideRbacPolicy } from "../rbac/rbacSkill";
 import { dataModelSkill, leaveRequestDataModel } from "../datamodel/dataModelSkill";
+import type { PolicyDecision } from "../rbac/rbacModel";
 
 const clone = (m: WorkflowModel): WorkflowModel => structuredClone(m);
 
@@ -706,6 +708,86 @@ describe("workflowSkill — assignee policy runtime (V2 117, evidence-driven, fa
     expect(policyEvidence).toBe("policyEvidence");
     expect(leaveApprovalWorkflow.nodes.some(n => n.assigneeRoleRef)).toBe(true);
     expect(purchaseApprovalWorkflow.nodes.some(n => n.assigneeRoleRef)).toBe(true);
+  });
+});
+
+// 119 assignee policy closure: direct tie to RBAC roles + PolicyDecision (positive + fail-closed negative)
+describe("workflowSkill — assignee policy closure against RBAC roles and policy decisions (119)", () => {
+  it("positive: createWorkflowAssigneePolicyEvidenceFromDecision with RBAC decideRbacPolicy allow produces assignees (manager role)", () => {
+    const request: any = {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t_default",
+      fieldContext: { fields: [] },
+    };
+    const decision: PolicyDecision = decideRbacPolicy(leaveApprovalRbac, request);
+    expect(decision.allow).toBe(true);
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(leaveApprovalWorkflow, "a_mgr", decision);
+    expect(res).not.toBe(WF_ASSIGNEE_PDP_DENIED);
+    const r = res as { assignees: string[]; policyEvidence?: any };
+    expect(r.assignees).toContain("manager");
+    expect(r.policyEvidence).toBeTruthy();
+    expect(r.policyEvidence.allow).toBe(true);
+    expect(r.policyEvidence.role).toBe("manager");
+  });
+
+  it("positive: uses RBAC decision for purchase assignee (department_manager)", () => {
+    const req: any = {
+      subject: { roleIds: ["department_manager"] },
+      action: "manager_approve",
+      resourceType: "purchase_request",
+      tenantId: "t_default",
+      fieldContext: { fields: [] },
+    };
+    const dec = decideRbacPolicy(purchaseApprovalRbac, req);
+    // must use real RBAC decision (no synthetic fallback; fixture is closed)
+    expect(dec.allow).toBe(true);
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(purchaseApprovalWorkflow, "manager", dec);
+    expect(res).not.toBe(WF_ASSIGNEE_PDP_DENIED);
+    expect((res as any).assignees).toContain("department_manager");
+  });
+
+  it("fail-closed negative: RBAC policy decision allow=false yields WF_ASSIGNEE_PDP_DENIED", () => {
+    const denyDecision: Partial<PolicyDecision> = { allow: false, code: "RBAC_DECISION_FAIL_CLOSED", reason: "no permission" };
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(leaveApprovalWorkflow, "a_mgr", denyDecision);
+    expect(res).toBe(WF_ASSIGNEE_PDP_DENIED);
+  });
+
+  it("fail-closed negative: RBAC decision via evaluate fail closed for invalid subject", () => {
+    // use decide to get a real fail-closed decision
+    const badReq: any = { subject: { roleIds: [] }, action: "approve", resourceType: "leave_request", tenantId: "t", fieldContext: { fields: [] } };
+    const badDec = decideRbacPolicy(leaveApprovalRbac, badReq);
+    expect(badDec.allow).toBe(false);
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(leaveApprovalWorkflow, "a_mgr", badDec);
+    expect(res).toBe(WF_ASSIGNEE_PDP_DENIED);
+  });
+
+  it("fail-closed negative: non-approval node or missing roleRef still DENIED even with allow decision", () => {
+    const okDec = { allow: true };
+    const resStart = createWorkflowAssigneePolicyEvidenceFromDecision(leaveApprovalWorkflow, "s", okDec);
+    expect(resStart).toBe(WF_ASSIGNEE_PDP_DENIED);
+  });
+
+  it("fail-closed negative: allow=true decision but RBAC attested roles do not match workflow node assigneeRoleRef is DENIED", () => {
+    // real allow from manager (leave) must not satisfy a purchase node requiring department_manager
+    const mgrReq: any = {
+      subject: { roleIds: ["manager"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t_default",
+      fieldContext: { fields: [] },
+    };
+    const mgrDec = decideRbacPolicy(leaveApprovalRbac, mgrReq);
+    expect(mgrDec.allow).toBe(true);
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(purchaseApprovalWorkflow, "manager", mgrDec);
+    expect(res).toBe(WF_ASSIGNEE_PDP_DENIED);
+  });
+
+  it("fail-closed negative: synthetic allow=true with mismatched expandedRoles vs assigneeRoleRef is DENIED", () => {
+    const mismatchDec = { allow: true, expandedRoles: ["unrelated"], matchedPermission: "foo:bar" };
+    const res = createWorkflowAssigneePolicyEvidenceFromDecision(leaveApprovalWorkflow, "a_mgr", mismatchDec);
+    expect(res).toBe(WF_ASSIGNEE_PDP_DENIED);
   });
 });
 
