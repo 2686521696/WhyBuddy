@@ -53,3 +53,17 @@ Focus on delivery/report serialization. Do not change core runtime semantics unl
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final report (concise)
+Changed files:
+- client/src/pages/sliderule/serialize-sliderule-delivery-md.ts
+- client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts
+- agent-loop/tasks/sliderule-v2-closure-report-03-sliderule-report-blocked-section-119.md (report only)
+
+Exported/updated symbols: deriveAppBundleClosureRender (internal emit logic for blocked section), serializeSlideRuleDeliveryMd, enrichReportWriteWithRuntimeClosure (via shared render)
+
+Validation commands:
+- npx vitest run client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts
+- npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts client/src/pages/sliderule/__tests__/parse-report-sections-appbundle-boundary.test.ts
+
+Summary: Added "### Blocked closure report section" in report serialization (under AppBundle closure appendix) that explicitly lists for each topBlocker: code, path, affectedSkill (and ref if present). Positive tests assert presence + fields on blocked; negative asserts absence on closed and fail-closed-no-evidence cases. Preserves all legacy "closure blockers" and existing behavior. Advances 119 report serialization for blocked closure with deterministic local output for Codex review.

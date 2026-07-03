@@ -199,19 +199,33 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
     const evidencePresentCount = Number(publishClosure.evidencePresentCount ?? 0);
     const skillCount = Number(publishClosure.skillCount ?? 0);
     const tierCounts = publishClosure.tierCounts ?? {};
-    const blockerLines = Array.isArray(publishClosure.topBlockers)
-      ? publishClosure.topBlockers.slice(0, 3).map((blocker: any) => {
-          const code = String(blocker?.code || "UNKNOWN_BLOCKER");
-          const skill = blocker?.affectedSkill ? ` skill=${blocker.affectedSkill}` : "";
-          const path = blocker?.path ? ` path=${blocker.path}` : "";
-          const ref = blocker?.ref ? ` ref=${blocker.ref}` : "";
-          return `- ${code}${skill}${path}${ref}`;
-        })
-      : [];
-    const detailLines = [
+    const detailLines: string[] = [
       ...perSkillEvidenceCoverageLines(publishClosure.perSkillEvidence),
-      ...(blockerLines.length > 0 ? ["closure blockers:", ...blockerLines] : []),
     ];
+    const topBlockersArr = Array.isArray(publishClosure.topBlockers)
+      ? publishClosure.topBlockers.slice(0, 3)
+      : [];
+    if (blocked && topBlockersArr.length > 0) {
+      detailLines.push("### Blocked closure report section", "");
+      topBlockersArr.forEach((blocker: any) => {
+        const code = String(blocker?.code || "UNKNOWN_BLOCKER");
+        detailLines.push(`- code: ${code}`);
+        if (blocker?.path) detailLines.push(`  path: ${blocker.path}`);
+        if (blocker?.affectedSkill) detailLines.push(`  affectedSkill: ${blocker.affectedSkill}`);
+        if (blocker?.ref) detailLines.push(`  ref: ${blocker.ref}`);
+      });
+      detailLines.push("");
+    }
+    if (topBlockersArr.length > 0) {
+      const legacyBlockerLines = topBlockersArr.map((blocker: any) => {
+        const code = String(blocker?.code || "UNKNOWN_BLOCKER");
+        const skill = blocker?.affectedSkill ? ` skill=${blocker.affectedSkill}` : "";
+        const path = blocker?.path ? ` path=${blocker.path}` : "";
+        const ref = blocker?.ref ? ` ref=${blocker.ref}` : "";
+        return `- ${code}${skill}${path}${ref}`;
+      });
+      detailLines.push("closure blockers:", ...legacyBlockerLines);
+    }
     return {
       present: true,
       summaryLines: appendClosureDetailLines([

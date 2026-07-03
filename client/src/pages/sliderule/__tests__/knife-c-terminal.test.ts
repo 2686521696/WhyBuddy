@@ -248,6 +248,8 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("python publishClosure");
     expect(md).toContain("6/6 evidence");
     expect(md).toContain("feedface");
+    // Negative: closed case must not emit the blocked closure report section
+    expect(md).not.toContain("### Blocked closure report section");
   });
 
   it("serializes publishClosure blocker path details for markdown review", () => {
@@ -286,6 +288,13 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("rbac");
     expect(md).toContain("menuEntries[0].roleRefs[2]");
     expect(md).toContain("role:finance-admin");
+    // Positive evidence for blocked closure report section (task 119-03 objective)
+    expect(md).toContain("### Blocked closure report section");
+    expect(md).toContain("code: APPBUNDLE_PUBLISH_REF_MISSING");
+    expect(md).toContain("path: menuEntries[0].roleRefs[2]");
+    expect(md).toContain("affectedSkill: rbac");
+    expect(md).toContain("code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
+    expect(md).toContain("affectedSkill: page");
   });
 
   it("serializes per-skill publishClosure evidence coverage for markdown review", () => {
@@ -327,6 +336,8 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("AppBundle publish/runtime closure");
     expect(md).toContain("runtime closure evidence was not found");
     expect(md).toContain("publish should remain blocked");
+    // Fail-closed negative: no structured blocked section when no evidence
+    expect(md).not.toContain("### Blocked closure report section");
   });
 
   it("enriches report.write with AppBundle closure appendix without mutating the artifact", () => {

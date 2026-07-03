@@ -114,3 +114,30 @@ export function selectPublishClosureSummary(
 ): PublishClosureSummary | null {
   return pythonClosure ?? previewClosure ?? null;
 }
+
+/**
+ * Produces compact closure status and top blockers text for inclusion
+ * in AgentLoop final report text. Deterministic, no side effects.
+ * Supports both closed (positive) and blocked (fail-closed negative) cases.
+ */
+export function formatClosureStatusAndTopBlockersForFinalReport(
+  summary: PublishClosureSummary | null | undefined
+): string {
+  if (!summary) {
+    return "closure status: unknown\ntop blockers: n/a";
+  }
+  const status = summary.blocked ? "blocked" : "closed";
+  const topBlockersText =
+    Array.isArray(summary.topBlockers) && summary.topBlockers.length > 0
+      ? summary.topBlockers
+          .map((b: any) => `${String(b.code || "UNKNOWN")}${b.path ? "@" + b.path : ""}`)
+          .join("; ")
+      : "none";
+  return [
+    `closure status: ${status}`,
+    `top blockers: ${topBlockersText}`,
+    `evidence: ${summary.evidencePresentCount}/${summary.skillCount}`,
+    `pinsChecked: ${summary.versionPinsChecked}`,
+    `closureHash: ${summary.closureHash ?? "n/a"}`,
+  ].join("\n");
+}

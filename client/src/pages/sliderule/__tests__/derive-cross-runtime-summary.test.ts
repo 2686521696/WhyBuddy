@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { deriveCrossRuntimeGraphSummary } from "../derive-cross-runtime-summary";
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
-import { derivePublishClosureSummary, selectPublishClosureSummary } from "../derive-cross-runtime-summary";
+import { derivePublishClosureSummary, selectPublishClosureSummary, formatClosureStatusAndTopBlockersForFinalReport } from "../derive-cross-runtime-summary";
 
 describe("deriveCrossRuntimeGraphSummary", () => {
   it("summarizes allowed and blocked runtime graph edges for the page", () => {
@@ -197,5 +197,71 @@ describe("deriveCrossRuntimeGraphSummary", () => {
 
     expect(selectPublishClosureSummary(python, preview)?.closureHash).toBe("python");
     expect(selectPublishClosureSummary(null, preview)?.closureHash).toBe("preview");
+  });
+});
+
+describe("formatClosureStatusAndTopBlockersForFinalReport", () => {
+  it("formats closed status with no top blockers (positive evidence)", () => {
+    const summary = derivePublishClosureSummary({
+      blocked: false,
+      blockers: [],
+      perSkillEvidence: {
+        datamodel: { evidencePresent: true },
+        rbac: { evidencePresent: true },
+        workflow: { evidencePresent: true },
+        page: { evidencePresent: true },
+        aigc: { evidencePresent: true },
+        appbundle: { evidencePresent: true },
+      } as any,
+      runtimeClosure: {
+        skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+        versionPinsChecked: true,
+        perSkill: {} as any,
+      },
+      closureHash: "abc123",
+    });
+    const text = formatClosureStatusAndTopBlockersForFinalReport(summary);
+    expect(text).toContain("closure status: closed");
+    expect(text).toContain("top blockers: none");
+    expect(text).toContain("evidence: 6/6");
+    expect(text).toContain("pinsChecked: true");
+    expect(text).toContain("closureHash: abc123");
+  });
+
+  it("formats blocked status with top blockers (fail-closed negative behavior)", () => {
+    const summary = derivePublishClosureSummary(
+      {
+        blocked: true,
+        blockers: [
+          {
+            code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+            severity: "error",
+            path: "page",
+            message: "Missing evidence.",
+            affectedSkill: "page",
+          },
+          { code: "OTHER_BLOCKER", severity: "error", path: "rbac" },
+        ],
+        perSkillEvidence: { page: { evidencePresent: false } } as any,
+        runtimeClosure: {
+          skillsChecked: ["page", "rbac"],
+          versionPinsChecked: false,
+          perSkill: {} as any,
+        },
+        stableDigest: "def456",
+      },
+      { blockerLimit: 2 }
+    );
+    const text = formatClosureStatusAndTopBlockersForFinalReport(summary);
+    expect(text).toContain("closure status: blocked");
+    expect(text).toContain("top blockers: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@page; OTHER_BLOCKER@rbac");
+    expect(text).toContain("evidence: 0/2");
+    expect(text).toContain("pinsChecked: false");
+    expect(text).toContain("closureHash: n/a");
+  });
+
+  it("returns unknown status text for null/undefined (negative path)", () => {
+    expect(formatClosureStatusAndTopBlockersForFinalReport(null)).toBe("closure status: unknown\ntop blockers: n/a");
+    expect(formatClosureStatusAndTopBlockersForFinalReport(undefined)).toBe("closure status: unknown\ntop blockers: n/a");
   });
 });
