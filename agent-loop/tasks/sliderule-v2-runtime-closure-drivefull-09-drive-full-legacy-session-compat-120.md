@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-drivefull-09-drive-full-legacy-session-compat-120
 
 ## Execution status
-- Status: DONE_REVIEWED
+- Status: HALT_QUEUE_CHECKPOINT_FAILED
 - Phase: 120-runtime-closure-e2e
 - Theme: drivefull
 - Owner: grok
@@ -12,11 +12,12 @@
 - Last execution: 2026-07-04
 - AgentLoop run id: `2026-07-03T17-20-21-615Z`
 - AgentLoop local time: `2026-07-04 01:20:21 (Asia/Shanghai)`
-- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop result: `HALT_QUEUE_CHECKPOINT_FAILED`
 - AgentLoop run mode: `grok-fix+codex-review`
 - Grok ran: `true`
 - Codex ran: `true`
-- gate result: 最终状态为 `DONE_REVIEWED`
+- Queue checkpoint: `HALT_QUEUE_CHECKPOINT_FAILED` after a reviewed final report; see `.agent-loop/queue-outcomes.json`.
+- gate result: final report was `DONE_REVIEWED`; queue checkpoint result is authoritative here.
 ## Objective
 Keep old sessions without closure fields renderable after the Python adapter is enabled.
 
