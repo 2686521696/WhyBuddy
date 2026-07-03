@@ -253,6 +253,10 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("top blockers: none");
     expect(md).toContain("6/6 evidence");
     expect(md).toContain("feedface");
+    expect(md.indexOf(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER)).toBeGreaterThan(
+      md.indexOf("## 推演报告（核心交付 · 人类可读版）")
+    );
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
     // Negative: closed case must not emit the blocked closure report section
     expect(md).not.toContain("### Blocked closure report section");
   });
@@ -308,6 +312,7 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("affectedSkill: rbac");
     expect(md).toContain("code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(md).toContain("affectedSkill: page");
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
   });
 
   it("serializes per-skill publishClosure evidence coverage for markdown review", () => {
@@ -385,6 +390,7 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(md).toContain("runtime closure evidence was not found");
     expect(md).toContain("publish should remain blocked");
+    expect((md.match(/## AppBundle publish\/runtime closure/g) || []).length).toBe(1);
     // Fail-closed negative: no structured blocked section when no evidence
     expect(md).not.toContain("### Blocked closure report section");
   });

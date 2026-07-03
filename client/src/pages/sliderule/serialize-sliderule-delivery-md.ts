@@ -41,6 +41,14 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
     }
     lines.push("> 注：报告中如有外部 URL、证据 artifact，请在画布上点击对应节点或证据按钮查看完整上下文。");
     lines.push("");
+
+    const enriched = enrichReportWriteWithRuntimeClosure(report, state);
+    const enrichedContent = String(enriched.report.content || "");
+    const closureStart = enrichedContent.indexOf(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    if (closureStart >= 0) {
+      lines.push(enrichedContent.slice(closureStart).trim());
+      lines.push("");
+    }
   }
 
   // 尽力包含其他分类交付物（与 DeliverablesPanel 分类对齐）
@@ -84,17 +92,19 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
     addSection("规格 / 设计 / 任务文档", otherDoc);
   }
 
-  const closureRender = deriveAppBundleClosureRender(state);
-  lines.push(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
-  lines.push("");
-  if (closureRender.present) {
-    closureRender.summaryLines.forEach((line) => lines.push(line));
-  } else {
-    lines.push(
-      "runtime closure evidence was not found; publish should remain blocked until version pins, runtime snapshot, and per-skill runtime evidence are present."
-    );
+  if (!report) {
+    const closureRender = deriveAppBundleClosureRender(state);
+    lines.push(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    lines.push("");
+    if (closureRender.present) {
+      closureRender.summaryLines.forEach((line) => lines.push(line));
+    } else {
+      lines.push(
+        "runtime closure evidence was not found; publish should remain blocked until version pins, runtime snapshot, and per-skill runtime evidence are present."
+      );
+    }
+    lines.push("");
   }
-  lines.push("");
 
   lines.push("## 审计明细（内部 / 开发者参考，可忽略）");
   lines.push("");

@@ -1,7 +1,7 @@
 # sliderule-v2-closure-report-07-sliderule-export-closure-tests-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: report
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on delivery/report serialization. Do not change core runtime semantics unl
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,19 @@ Focus on delivery/report serialization. Do not change core runtime semantics unl
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Final Report
+
+Changed files:
+- `client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts`
+- `agent-loop/tasks/sliderule-v2-closure-report-07-sliderule-export-closure-tests-119.md`
+
+Exported/updated symbols:
+- `serializeSlideRuleDeliveryMd`
+
+Validation commands:
+- `npx vitest run client/src/pages/sliderule/__tests__/knife-c-terminal.test.ts client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts --reporter=dot`
+- `node --run check`
+- `git diff --check`
+
+This lands focused export coverage for generated delivery markdown. The tests assert closure status, top blockers, normalized blocker rendering, report-section placement, and duplicate-header prevention for generated report content.
