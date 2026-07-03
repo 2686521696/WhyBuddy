@@ -7,6 +7,7 @@ import {
   createRbacPdpExplainEvidence,
   createRbacWorkflowRuntimeEvidence,
   traceRbacAllowDenyToPageRenderPermissionEvidence,
+  traceRbacAllowDenyToWorkflowTaskEvidence,
   decideRbacPolicy,
   evaluateRbacFieldAccess,
   evaluateRbacRowAccess,
@@ -17,6 +18,7 @@ import {
   purchaseApprovalRbac,
   rbacSkill,
   RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE,
+  RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE,
   RBAC_PAGE_RUNTIME_EVIDENCE,
   RBAC_FIELD_ACCESS_DENIED,
   RBAC_PDP_EXPLAIN_EVIDENCE,
@@ -1260,6 +1262,43 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     expect(surface.rbacToPageTrace).toBeTruthy();
     expect(surface.rbacToPageTrace.traceId).toBe(RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE);
     expect(surface.rbacToPageTrace.state).toBe("closed");
+  });
+
+  it("traces RBAC allow decisions to Workflow task evidence as a closed path", () => {
+    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(leaveApprovalRbac, leaveApproveRequest);
+
+    expect(trace.traceId).toBe(RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE);
+    expect(trace.sourceSkill).toBe("rbac");
+    expect(trace.targetSkill).toBe("workflow");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("RBAC_WORKFLOW_TRACE_POSITIVE_CLOSED");
+    expect(trace.decision.effect).toBe("allow");
+    expect(trace.workflowEvidence.evidenceKey).toBe(RBAC_WORKFLOW_RUNTIME_EVIDENCE);
+  });
+
+  it("traces RBAC deny decisions to Workflow task evidence as fail-closed", () => {
+    const deniedRequest: RbacRuntimeRequest = {
+      subject: { roleIds: ["employee"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: ["status"] },
+    };
+
+    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(leaveApprovalRbac, deniedRequest);
+
+    expect(trace.state).toBe("blocked");
+    expect(trace.reasonCode).toBe("RBAC_WORKFLOW_TRACE_FAIL_CLOSED");
+    expect(trace.decision.effect).toBe("deny");
+    expect(trace.workflowEvidence.state).toBe("blocked");
+  });
+
+  it("resolve surface exposes rbacToWorkflowTrace for runtime linkage consumers", () => {
+    const surface = rbacSkill.resolve(leaveApprovalRbac) as any;
+
+    expect(surface.rbacToWorkflowTrace).toBeTruthy();
+    expect(surface.rbacToWorkflowTrace.traceId).toBe(RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE);
+    expect(surface.rbacToWorkflowTrace.state).toBe("closed");
   });
 });
 

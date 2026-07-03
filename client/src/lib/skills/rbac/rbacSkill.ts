@@ -766,6 +766,7 @@ export const rbacSkill: Skill<RbacModel> & CrossSkill<RbacModel> = {
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       rbacToPageTrace: traceRbacAllowDenyToPageRenderPermissionEvidence(model),
+      rbacToWorkflowTrace: traceRbacAllowDenyToWorkflowTaskEvidence(model),
     };
     return surface;
   },
@@ -1191,6 +1192,7 @@ export const RBAC_CROSS_RUNTIME_EVIDENCE = "RBAC_CROSS_RUNTIME_EVIDENCE";
 export const RBAC_PAGE_RUNTIME_EVIDENCE = "RBAC_PAGE_RUNTIME_EVIDENCE";
 export const RBAC_WORKFLOW_RUNTIME_EVIDENCE = "RBAC_WORKFLOW_RUNTIME_EVIDENCE";
 export const RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE = "RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE";
+export const RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE = "RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE";
 
 export interface RbacToPageTrace {
   traceId: typeof RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE;
@@ -1200,6 +1202,16 @@ export interface RbacToPageTrace {
   reasonCode: string;
   decision: RbacRuntimeDecision;
   pageEvidence: RbacCrossRuntimeEvidence;
+}
+
+export interface RbacToWorkflowTrace {
+  traceId: typeof RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE;
+  sourceSkill: "rbac";
+  targetSkill: "workflow";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  decision: RbacRuntimeDecision;
+  workflowEvidence: RbacCrossRuntimeEvidence;
 }
 
 function rbacPolicyRefsForTarget(model: RbacModel, targetSkill: RbacRuntimeTargetSkill): string[] {
@@ -1339,6 +1351,25 @@ export function traceRbacAllowDenyToPageRenderPermissionEvidence(
     reasonCode: closed ? "RBAC_PAGE_TRACE_POSITIVE_CLOSED" : "RBAC_PAGE_TRACE_FAIL_CLOSED",
     decision,
     pageEvidence,
+  };
+}
+
+export function traceRbacAllowDenyToWorkflowTaskEvidence(
+  model: RbacModel,
+  request: RbacRuntimeRequest = derivePositiveRbacPageTraceRequest(model),
+): RbacToWorkflowTrace {
+  const decision = createRbacFailClosedNegativePath(model, request);
+  const workflowEvidence = createRbacWorkflowRuntimeEvidence(model, request);
+  const closed = decision.effect === "allow" && workflowEvidence.state === "allowed";
+
+  return {
+    traceId: RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE,
+    sourceSkill: "rbac",
+    targetSkill: "workflow",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "RBAC_WORKFLOW_TRACE_POSITIVE_CLOSED" : "RBAC_WORKFLOW_TRACE_FAIL_CLOSED",
+    decision,
+    workflowEvidence,
   };
 }
 
