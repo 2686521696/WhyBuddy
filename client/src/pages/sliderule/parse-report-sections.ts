@@ -12,10 +12,27 @@ const SECTION_LABEL_PATTERN =
   "结论(?:（待补证）)?|支撑证据|反证\\/挑战|反证|证据|风险|分歧|多角色立场（面板贡献）|多角色立场|收敛决策|未解缺口|下一步工程化分支|下一步|provenance\\s*\\/\\s*upstream refs";
 
 const APPBUNDLE_CLOSURE_APPENDIX_HEADER =
-  /^\s*#{1,4}\s*AppBundle\s+(?:publish\/runtime\s+closure|发布\/运行时闭包)(?:\s|\(|（|$).*$/im;
+  /^\s*#{1,4}\s*AppBundle\b.*(?:publish\/runtime\s+closure|runtime\s+closure\s+summary).*$/im;
+
+function stripAppBundleClosureAppendix(content: string): string {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const appendixIndex = lines.findIndex((line) => {
+    const normalized = line.trim().toLowerCase();
+    return (
+      normalized.startsWith("#") &&
+      normalized.includes("appbundle") &&
+      (normalized.includes("publish/runtime closure") ||
+        normalized.includes("runtime closure summary"))
+    );
+  });
+  if (appendixIndex >= 0) {
+    return lines.slice(0, appendixIndex).join("\n");
+  }
+  return content.split(APPBUNDLE_CLOSURE_APPENDIX_HEADER)[0] ?? content;
+}
 
 function normalizeReportContent(content: string): string {
-  const withoutClosureAppendix = content.split(APPBUNDLE_CLOSURE_APPENDIX_HEADER)[0] ?? content;
+  const withoutClosureAppendix = stripAppBundleClosureAppendix(content);
   return withoutClosureAppendix
     .replace(/\r\n/g, "\n")
     .replace(/^【[^】]+】\s*/gm, "")
@@ -71,7 +88,8 @@ function splitByHeaders(content: string): ReportSection[] {
 /** Parse report.write artifact into named sections for DeliverablesPanel (and md export). */
 export function parseReportSections(report: Artifact): ReportSection[] {
   const content = String(report.content || report.summary || "");
-  const fromHeaders = splitByHeaders(content);
+  const normalizedContent = normalizeReportContent(content);
+  const fromHeaders = splitByHeaders(normalizedContent);
   if (fromHeaders.length >= 3) {
     return fromHeaders.map((s) => ({
       ...s,
@@ -79,7 +97,10 @@ export function parseReportSections(report: Artifact): ReportSection[] {
     }));
   }
 
-  const fragments = extractArtifactFragments(report, 800);
+  const fragments = extractArtifactFragments(
+    { ...report, content: normalizedContent, summary: normalizedContent },
+    800
+  );
   if (fragments.length > 0) {
     return fragments.map((f, i) => ({
       id: `frag-${i}`,
@@ -93,7 +114,7 @@ export function parseReportSections(report: Artifact): ReportSection[] {
     {
       id: "full",
       label: "报告全文",
-      body: content.trim() || report.title || "",
+      body: normalizedContent || report.title || "",
       evidenceRefs: [...(report.evidenceRefs || [])],
     },
   ];

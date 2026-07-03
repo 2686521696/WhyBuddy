@@ -67,4 +67,23 @@ describe("parseReportSections AppBundle closure boundary", () => {
       "art-appbundle-closure"
     );
   });
+
+  it("keeps UTF-8 Chinese AppBundle closure appendix out of core report sections", () => {
+    const sections = parseReportSections(
+      reportOf(
+        [
+          "缁撹锛氭帹杩?",
+          "鏀拺璇佹嵁锛氳瘉鎹鏂?",
+          "椋庨櫓锛氶闄╂鏂?",
+          "鏀舵暃鍐崇瓥锛氬喅绛栨鏂?",
+          "## AppBundle 发布/运行时闭环 (runtime closure summary)",
+          "runtimeClosure stableDigest=deadbeef",
+        ].join("\n")
+      )
+    );
+
+    expect(sections.map((section) => section.body).join("\n")).not.toContain(
+      "stableDigest"
+    );
+  });
 });
