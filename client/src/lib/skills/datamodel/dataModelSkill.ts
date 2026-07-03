@@ -946,6 +946,10 @@ export const dataModelSkill: Skill<DataModelModel> & CrossSkill<DataModelModel> 
       (e.fields || []).filter((fl: Field) => !!fl.policyRef).map((fl: Field) => `${e.id}.${fl.key}`)
     );
     surf.rbacPolicyImpactEvidence = createDataModelRbacPolicyImpactEvidence(model, changed, policyFieldRefs);
+    surf.datamodelToRbacTrace = traceDataModelEntityFieldToRbacPolicyImpact(
+      model,
+      surf.rbacPolicyImpactEvidence,
+    );
     // 119 fix: only include DM_RBAC key in runtimeEvidence list for positive (hasPositiveEvidence) cases; do not leak on fail-closed negative or no-overlap to preserve runtime closure semantics.
     const rbacImpact = surf.rbacPolicyImpactEvidence;
     if (rbacImpact && rbacImpact.hasPositiveEvidence === true && Array.isArray(surf.runtimeEvidence) && !surf.runtimeEvidence.some((k: string) => k === DM_RBAC_POLICY_IMPACT_EVIDENCE || String(k).startsWith(DM_RBAC_POLICY_IMPACT_EVIDENCE))) {
@@ -1045,6 +1049,18 @@ export const DM_PAGE_RUNTIME_EVIDENCE = "DM_PAGE_RUNTIME_EVIDENCE";
 export const DM_RBAC_POLICY_IMPACT_EVIDENCE = "DM_RBAC_POLICY_IMPACT_EVIDENCE";
 export const DM_PAGE_BINDING_IMPACT_EVIDENCE = "DM_PAGE_BINDING_IMPACT_EVIDENCE";
 export const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE = "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
+export const DM_DATAMODEL_TO_RBAC_TRACE = "DM_DATAMODEL_TO_RBAC_TRACE";
+
+export interface DataModelToRbacTrace {
+  traceId: typeof DM_DATAMODEL_TO_RBAC_TRACE;
+  sourceSkill: "datamodel";
+  targetSkill: "rbac";
+  sourceEntityRefs: string[];
+  sourceFieldRefs: string[];
+  impact: DataModelRbacPolicyImpactEvidence;
+  state: "closed" | "blocked";
+  reasonCode: string;
+}
 
 export interface DataModelRbacPolicyImpactEvidence {
   evidenceKey: typeof DM_RBAC_POLICY_IMPACT_EVIDENCE;
@@ -1141,6 +1157,37 @@ export function createDataModelRbacPolicyImpactEvidence(
     changedFieldRefs,
     impactedPolicyRefs: [],
     hasPositiveEvidence: false,
+  };
+}
+
+export function traceDataModelEntityFieldToRbacPolicyImpact(
+  model: DataModelModel,
+  impactEvidence?: DataModelRbacPolicyImpactEvidence,
+): DataModelToRbacTrace {
+  const changed = deriveDataModelChangedRefs(model);
+  const policyFieldRefs = (model.entities || []).flatMap((entity: Entity) =>
+    (entity.fields || [])
+      .filter((field: Field) => !!field.policyRef)
+      .map((field: Field) => `${entity.id}.${field.key}`)
+  );
+  const impact =
+    impactEvidence ??
+    createDataModelRbacPolicyImpactEvidence(
+      model,
+      { entity: changed.entity, field: changed.field },
+      policyFieldRefs,
+    );
+  const closed = impact.hasPositiveEvidence === true && impact.state === "allowed";
+
+  return {
+    traceId: DM_DATAMODEL_TO_RBAC_TRACE,
+    sourceSkill: "datamodel",
+    targetSkill: "rbac",
+    sourceEntityRefs: changed.entity,
+    sourceFieldRefs: changed.field,
+    impact,
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed ? "DM_RBAC_TRACE_POSITIVE_CLOSED" : impact.reasonCode,
   };
 }
 

@@ -11,6 +11,7 @@ import {
   createDataModelRbacRuntimeEvidence,
   dataModelSkill,
   deriveDataModelChangedRefs,
+  DM_DATAMODEL_TO_RBAC_TRACE,
   DM_PAGE_RUNTIME_EVIDENCE,
   DM_PAGE_BINDING_IMPACT_EVIDENCE,
   DM_RBAC_POLICY_IMPACT_EVIDENCE,
@@ -26,6 +27,7 @@ import {
   purchaseApprovalDataModel,
   resolveDatasetBindingRuntime,
   traceFieldLineage,
+  traceDataModelEntityFieldToRbacPolicyImpact,
 } from "./dataModelSkill";
 import type { DataModelModel, Relation } from "./dataModelModel";
 import { purchaseApprovalWorkflow, leaveApprovalWorkflow } from "../workflow/workflowSkill";
@@ -1201,6 +1203,42 @@ describe("dataModelSkill - 119 datamodel to rbac policy impact evidence", () => 
     expect(surf.rbacPolicyImpactEvidence?.state).toBe("blocked");
     expect(Array.isArray(surf.runtimeEvidence)).toBe(true);
     expect(surf.runtimeEvidence).not.toEqual(expect.arrayContaining([DM_RBAC_POLICY_IMPACT_EVIDENCE]));
+  });
+
+  it("traces datamodel field changes to RBAC policy impact as a closed cross-skill path", () => {
+    const trace = traceDataModelEntityFieldToRbacPolicyImpact(purchaseApprovalDataModel);
+
+    expect(trace.traceId).toBe(DM_DATAMODEL_TO_RBAC_TRACE);
+    expect(trace.sourceSkill).toBe("datamodel");
+    expect(trace.targetSkill).toBe("rbac");
+    expect(trace.sourceFieldRefs).toContain("purchase_request.amount");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("DM_RBAC_TRACE_POSITIVE_CLOSED");
+    expect(trace.impact.evidenceKey).toBe(DM_RBAC_POLICY_IMPACT_EVIDENCE);
+    expect(trace.impact.hasPositiveEvidence).toBe(true);
+  });
+
+  it("traces datamodel removed policy field to RBAC as fail-closed", () => {
+    const removed = clone(purchaseApprovalDataModel);
+    const purchaseRequest = removed.entities.find(entity => entity.id === "purchase_request")!;
+    purchaseRequest.fields = purchaseRequest.fields.map(field =>
+      field.key === "amount" ? { ...field, lifecycle: "removed" as const } : field
+    );
+
+    const trace = traceDataModelEntityFieldToRbacPolicyImpact(removed);
+
+    expect(trace.state).toBe("blocked");
+    expect(trace.impact.state).toBe("blocked");
+    expect(trace.reasonCode).toBe("DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD");
+    expect(trace.impact.impactedPolicyRefs).toContain("purchase_request.amount");
+  });
+
+  it("resolve surface exposes datamodelToRbacTrace for runtime linkage consumers", () => {
+    const surface = dataModelSkill.resolve(purchaseApprovalDataModel) as any;
+
+    expect(surface.datamodelToRbacTrace).toBeTruthy();
+    expect(surface.datamodelToRbacTrace.traceId).toBe(DM_DATAMODEL_TO_RBAC_TRACE);
+    expect(surface.datamodelToRbacTrace.state).toBe("closed");
   });
 });
 
