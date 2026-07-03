@@ -250,15 +250,21 @@ export function deriveReportExportClosureSummary(
 export function deriveReportExportClosureSummaryFromPublishArtifact(
   artifact: unknown
 ): ReportExportClosureSummary {
+  return deriveReportExportClosureSummary(derivePublishClosureSummaryFromPublishArtifact(artifact));
+}
+
+export function derivePublishClosureSummaryFromPublishArtifact(
+  artifact: unknown
+): PublishClosureSummary | null {
   if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
-    return deriveReportExportClosureSummary(null);
+    return null;
   }
   const raw = artifact as any;
   const summary = raw.runtimeClosureSummary;
   if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
-    return deriveReportExportClosureSummary(null);
+    return null;
   }
-  return deriveReportExportClosureSummary({
+  return {
     blocked: summary.blocked === true,
     blockerCount: Number(summary.blockerCount ?? 0),
     evidencePresentCount: Number(summary.evidencePresentCount ?? 0),
@@ -288,7 +294,7 @@ export function deriveReportExportClosureSummaryFromPublishArtifact(
         }))
       : [],
     perSkillEvidence: raw.perSkillEvidence,
-  } as PublishClosureSummary);
+  } as PublishClosureSummary;
 }
 
 /**

@@ -4,6 +4,7 @@ import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-st
 import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
 import {
+  derivePublishClosureSummaryFromPublishArtifact,
   deriveReportExportClosureSummary,
   deriveReportExportClosureSummaryFromPublishArtifact,
   formatClosureStatusAndTopBlockersForFinalReport,
@@ -232,7 +233,10 @@ export function renderPerSkillEvidenceCoverageTable(perSkillEvidence: unknown): 
 }
 
 export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleClosureRender {
-  const publishClosure = (state as any).publishClosure;
+  const publishArtifact =
+    (state as any).publishArtifact ?? (state as any).releaseArtifactWithRuntimeClosure ?? null;
+  const publishClosure =
+    (state as any).publishClosure ?? derivePublishClosureSummaryFromPublishArtifact(publishArtifact);
   if (publishClosure && typeof publishClosure === "object") {
     const blocked = !!publishClosure.blocked;
     const evidencePresentCount = Number(publishClosure.evidencePresentCount ?? 0);

@@ -464,6 +464,27 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("pins=true");
   });
 
+  it("serializes AppBundle closure section from a real publish artifact when publishClosure is absent", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-appbundle-artifact-section");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    const md = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishArtifact: closed,
+    } as any);
+
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    expect(md).toContain("closure outcome: closed");
+    expect(md).toContain("digest deadbeef120");
+    expect(md).toContain("| datamodel | present |");
+    expect(md).toContain(CLOSED_CLOSURE_REPORT_SECTION);
+    expect(md).not.toContain("runtime closure evidence was not found");
+  });
+
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);
