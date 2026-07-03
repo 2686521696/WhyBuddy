@@ -911,11 +911,18 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
   const openDeliverables = useCallback(() => setDeliverablesOpen(true), []);
   // pythonPublishClosure: authoritative Python-produced evidence from /drive-full (persisted in sessionState);
   // used by select to prefer over TS preview. See useEffect below for the prefer/fallback decision.
-  const pythonPublishClosure = (sessionState as { publishClosure?: PublishClosureSummary | null })
-    .publishClosure;
+  const sessionEvidence = sessionState as {
+    publishClosure?: PublishClosureSummary | null;
+    skillRuntimeGraph?: unknown;
+  };
+  const pythonPublishClosure = sessionEvidence.publishClosure ?? null;
+  const pythonSkillRuntimeGraph = sessionEvidence.skillRuntimeGraph ?? null;
   // Seed initial from python /drive-full for immediate visibility of pass-through at root render
   // (useEffect will refine with derive result; static smoke renders use the initial).
-  const initialCross = pythonPublishClosure
+  const initialCrossFromRuntime = pythonSkillRuntimeGraph
+    ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
+    : null;
+  const initialCross = initialCrossFromRuntime || (pythonPublishClosure
     ? {
         edgeCount: 0,
         allowedCount: 0,
@@ -924,7 +931,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
         evidenceCount: pythonPublishClosure.evidencePresentCount || 0,
         examples: [],
       }
-    : null;
+    : null);
   const [crossRuntimeGraph, setCrossRuntimeGraph] =
     useState<CrossRuntimeGraphSummary | null>(initialCross);
   const [publishClosure, setPublishClosure] =
@@ -950,8 +957,11 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
         // publishGate receives the skills (containing datamodel model + page) so runtimeClosure now computes
         // Page->datamodel field binding evidence using real upstream SSOT surface (no temp private field).
         const publishGate = slideRule.publishGate(result.spec.skills);
+        const runtimeCross = pythonSkillRuntimeGraph
+          ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
+          : null;
         setCrossRuntimeGraph(
-          deriveCrossRuntimeGraphSummary(result.crossRuntimeGraph, { exampleLimit: 5 })
+          runtimeCross || deriveCrossRuntimeGraphSummary(result.crossRuntimeGraph, { exampleLimit: 5 })
         );
         const previewClosure = derivePublishClosureSummary(
           publishGate.runtimeClosure,
@@ -966,7 +976,11 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
       })
       .catch(() => {
         if (!cancelled) {
-          setCrossRuntimeGraph(null);
+          setCrossRuntimeGraph(
+            pythonSkillRuntimeGraph
+              ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
+              : null
+          );
           // fail-closed: on derive error, still select python (if present from session) else null;
           // never fabricate a preview here.
           setPublishClosure(selectPublishClosureSummary(pythonPublishClosure, null));
@@ -975,7 +989,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     return () => {
       cancelled = true;
     };
-  }, [goal, latestTurn?.user, pythonPublishClosure]);
+  }, [goal, latestTurn?.user, pythonPublishClosure, pythonSkillRuntimeGraph]);
 
   const reasoningViewModel = useMemo(
     () =>

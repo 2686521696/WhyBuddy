@@ -35,6 +35,21 @@ vi.mock("../useSlideRuleSession", async () => {
       tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
       topBlockers: [],
     },
+    skillRuntimeGraph: {
+      edges: [
+        {
+          sourceSkill: "datamodel",
+          targetSkill: "page",
+          state: "allowed",
+          evidenceKey: "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+        },
+      ],
+      bySkill: {},
+      evidenceBySkill: {
+        datamodel: ["DM_PAGE_BINDING_IMPACT_EVIDENCE"],
+        page: ["PAGE_FIELD_BINDING_EVIDENCE"],
+      },
+    },
   };
   return {
     useSlideRuleSession: () => ({
@@ -377,6 +392,10 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).toContain("publish closed");
     expect(html).toContain("6/6 evidence");
     expect(html).toContain("pins checked");
+    expect(html).toContain('data-testid="sliderule-skill-linkage-row"');
+    expect(html).toContain('data-source-skill="datamodel"');
+    expect(html).toContain('data-target-skill="page"');
+    expect(html).toContain("DM_PAGE_BINDING_IMPACT_EVIDENCE");
   });
 
   it("renders sliderule-root for embedded path (negative: no stale when absent)", () => {

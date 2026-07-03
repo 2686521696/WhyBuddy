@@ -39,6 +39,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-status-bar.test.ts -t \"driveFullViaPython attaches\"",
   },
   {
+    id: "browser-skill-runtime-visible",
+    command: "npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx -t \"surfaces python /drive-full publishClosure\"",
+  },
+  {
     id: "closure-summary-surface",
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts",
   },
