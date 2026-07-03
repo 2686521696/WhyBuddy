@@ -30,6 +30,14 @@ export type OverviewTask = {
   applyErrorKind?: string | null;
   applyError?: string | null;
   applyErrorFiles?: string[];
+  closureStatus?: {
+    blocked?: boolean | null;
+    evidencePresentCount?: number | null;
+    skillCount?: number | null;
+    stableDigest?: string | null;
+    closureHash?: string | null;
+    blockerCount?: number | null;
+  } | null;
   lastRunId?: string | null;
 };
 

@@ -161,6 +161,42 @@ function statusLabel(task: OverviewTask): string {
   return labels[key] || key;
 }
 
+function closureStatusParts(task: OverviewTask): string[] {
+  const closure = task.closureStatus;
+  if (!closure) return [];
+  const parts = [closure.blocked ? 'closure blocked' : 'closure closed'];
+  const evidence = Number(closure.evidencePresentCount);
+  const skills = Number(closure.skillCount);
+  if (Number.isFinite(evidence) && Number.isFinite(skills) && skills > 0) {
+    parts.push(`${evidence}/${skills} evidence`);
+  } else if (Number.isFinite(evidence) && evidence > 0) {
+    parts.push(`${evidence} evidence`);
+  }
+  const digest = closure.stableDigest || closure.closureHash;
+  if (digest) {
+    parts.push(String(digest).slice(0, 12));
+  }
+  const blockers = Number(closure.blockerCount);
+  if (Number.isFinite(blockers) && blockers > 0) {
+    parts.push(`${blockers} blockers`);
+  }
+  return parts;
+}
+
+function ClosureStatusBadge({ task }: { task: OverviewTask }) {
+  const parts = closureStatusParts(task);
+  if (parts.length === 0) return null;
+  return (
+    <Tag
+      data-testid="agentloop-task-closure-status"
+      color={task.closureStatus?.blocked ? 'warning' : 'success'}
+      className="native-closure-status"
+    >
+      {parts.join(' · ')}
+    </Tag>
+  );
+}
+
 function taskLabel(task: OverviewTask): string {
   return task.taskLabel || task.task.split('/').pop()?.replace(/\.md$/, '') || task.task;
 }
@@ -504,6 +540,7 @@ function QueueTable({
           <Text type="secondary" className="native-task-path" ellipsis={{ tooltip: task.task }}>
             {task.task}
           </Text>
+          <ClosureStatusBadge task={task} />
         </Space>
       ),
     },
@@ -648,6 +685,7 @@ function TaskInspector({
             <Text type="secondary" className="native-task-path native-inspector-task-path" ellipsis={{ tooltip: task.task }}>
               {task.task}
             </Text>
+            <ClosureStatusBadge task={task} />
           </div>
 
           <div className="native-inspector-meta">

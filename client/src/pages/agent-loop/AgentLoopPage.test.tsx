@@ -17,6 +17,19 @@ import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, Settin
 import { LlmKeyForm } from "./dashboard/settings/LlmKeysPanel";
 import { DiagnosticsView } from "./dashboard/settings/DiagnosticsPanel";
 
+function jsonResponse(data: unknown, status = 200): any {
+  const body = JSON.stringify(data);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null),
+    },
+    text: async () => body,
+    json: async () => data,
+  };
+}
+
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
   return {
@@ -254,6 +267,39 @@ describe("AgentLoopPage", () => {
     expect(html).toContain("sliderule-v2-hardening-scope-115");
   });
 
+  it("renders closure status from queue outcomes in the workbench task overview", () => {
+    const html = renderToStaticMarkup(
+      <DashboardApp
+        payload={{
+          counts: {
+            queueTotal: 1,
+            total: 1,
+          },
+          tasks: [
+            {
+              id: "sliderule-v2-closure-ui-04",
+              task: "agent-loop/tasks/sliderule-v2-closure-ui-04-workbench-outcome-closure-status-119.md",
+              statusLabel: "DONE_REVIEWED",
+              outcomeGroup: "reviewed",
+              closureStatus: {
+                blocked: false,
+                evidencePresentCount: 6,
+                skillCount: 6,
+                stableDigest: "deadbeef",
+              },
+            } as any,
+          ],
+        }}
+        view="workbench"
+      />,
+    );
+
+    expect(html).toContain('data-testid="agentloop-task-closure-status"');
+    expect(html).toContain("closure closed");
+    expect(html).toContain("6/6 evidence");
+    expect(html).toContain("deadbeef");
+  });
+
   it("keeps queue metrics scoped to queue entries while all tasks includes task files", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
@@ -365,19 +411,15 @@ describe("agentLoopApi (wired capabilities)", () => {
   });
 
   it("fetchOverview hits the queue overview endpoint used by the VS Code dashboard", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => [],
-    } as any);
+    (global.fetch as any).mockResolvedValueOnce(jsonResponse([]));
 
     await api.fetchOverview();
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/queue/overview"));
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/queue/overview");
   });
 
   it("fetchDetail and derived paths include reportPath/landingPath/statePath for UI buttons", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         runId: "2026-06-25T12-00-00-000Z",
         status: "DONE_FIXED",
         task: { path: "tasks/foo.md" },
@@ -385,7 +427,7 @@ describe("agentLoopApi (wired capabilities)", () => {
         iterations: [],
         events: [],
       }),
-    } as any);
+    );
 
     const d = await api.fetchDetail("2026-06-25T12-00-00-000Z");
     expect(d.reportPath).toBeTruthy();
@@ -399,11 +441,11 @@ describe("agentLoopApi (wired capabilities)", () => {
 
   it("fetchSettings/saveSettings hit the Python /settings surface", async () => {
     (global.fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ effective: { fixAgent: "grok" }, keys: {} }) } as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) } as any);
+      .mockResolvedValueOnce(jsonResponse({ effective: { fixAgent: "grok" }, keys: {} }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
     const s = await api.fetchSettings();
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/settings"));
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/settings");
     expect(s.effective || s).toBeTruthy();
 
     await api.saveSettings({ fixAgent: "codex" });
@@ -414,19 +456,18 @@ describe("agentLoopApi (wired capabilities)", () => {
   });
 
   it("105: fetchProviderHealth and health surface expose Python backend provenance for dashboard display", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         status: "ok",
         backend: "sliderule-python",
         mode: "bridge",
         providers: [{ provider: "grok", status: "ready" }],
         checkedAt: "2026-07-01T00:00:00Z",
       }),
-    } as any);
+    );
 
     const h = await api.fetchProviderHealth();
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/provider-health"));
+    expect((global.fetch as any).mock.calls[0]?.[0]).toContain("/api/agent-loop/provider-health");
     expect(h.backend || h.status).toBeTruthy();
     // provenance must be visible (Python-owned, not hidden)
     expect(String(JSON.stringify(h))).toMatch(/sliderule-python|python/i);
@@ -436,19 +477,19 @@ describe("agentLoopApi (wired capabilities)", () => {
     const fetchSpy = global.fetch as any;
     fetchSpy.mockClear();
     // use persistent resolved for this test to tolerate internal extra calls (snapshot in detail etc)
-    const okJson = (data: any) => ({ ok: true, json: async () => data } as any);
+    const okJson = (data: any) => jsonResponse(data);
     fetchSpy.mockResolvedValue(okJson({ queueRunning: false, tasks: [], counts: {} }));
 
     await api.fetchOverview();
-    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/"));
+    expect(fetchSpy.mock.calls[0]?.[0]).toContain("/api/agent-loop/");
     // override for detail specific
     fetchSpy.mockResolvedValueOnce(okJson({ runId: "r1", status: "PENDING", task: null, events: [], artifacts: [] }));
     fetchSpy.mockResolvedValueOnce(okJson({})); // snapshot fallback ok
     await api.fetchDetail("r1");
-    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/runs/r1"));
+    expect(fetchSpy.mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/runs/r1"))).toBe(true);
     fetchSpy.mockResolvedValue(okJson({ effective: {}, keys: {} }));
     await api.fetchSettings();
-    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/settings"));
+    expect(fetchSpy.mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/settings"))).toBe(true);
   });
 
   it("agentloop secret settings semantics 111 does not report secret save success against nonsecret backend", async () => {
@@ -510,15 +551,14 @@ describe("agentLoopApi (wired capabilities)", () => {
   });
 
   it("agentloop cancel semantics 111 surfaces queued cancel placeholder instead of stop success", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         status: "queued-cancel",
         message: "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
         exitCode: null,
         timedOut: false,
       }),
-    } as any);
+    );
 
     const res = await api.cancelCurrent({});
     expect(res.status).toBe("queued-cancel");
@@ -580,9 +620,8 @@ describe("agentLoopApi (wired capabilities)", () => {
   });
 
   it("agentloop artifact route truth 111 maps report landing and state actions to distinct safe resources", async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         runId: "2026-06-25T12-00-00-000Z",
         status: "DONE_FIXED",
         task: { path: "tasks/foo.md" },
@@ -596,7 +635,7 @@ describe("agentLoopApi (wired capabilities)", () => {
           { id: "state.json", kind: "state" },
         ],
       }),
-    } as any);
+    );
 
     const d = await api.fetchDetail("2026-06-25T12-00-00-000Z");
     expect(d.reportPath).toBeTruthy();
@@ -679,10 +718,7 @@ describe("agentloop web bridge interaction 111", () => {
 
     const captured = (globalThis as any).__AGENT_LOOP_CAPTURED_EFFECT__;
     expect(typeof captured).toBe("function");
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => [],
-    } as any);
+    (global.fetch as any).mockResolvedValueOnce(jsonResponse([]));
     captured();
     expect(setSpy).toHaveBeenCalled();
     const handler = setSpy.mock.calls.find((call) => typeof call[0] === "function")?.[0] as
@@ -690,13 +726,12 @@ describe("agentloop web bridge interaction 111", () => {
       | undefined;
     expect(handler).toBeTruthy();
 
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         effective: { fixAgent: "grok", baseUrl: "http://x", activeProfile: "runtime111" },
         keys: { grokApiKey: "configured" },
       }),
-    } as any);
+    );
 
     handler!("getSettings", {});
     await flushBridge();
@@ -726,13 +761,12 @@ describe("agentloop web bridge interaction 111", () => {
     expect(profilesMsg).toBeTruthy();
     expect(profilesMsg.data.payload.unsupported).toBe(true);
 
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         status: "queued-cancel",
         message: "cancel is a queued-cancel placeholder (unsupported by bridge; no process kill)",
       }),
-    } as any);
+    );
 
     handler!("stopRun", {});
     await flushBridge();
@@ -742,9 +776,8 @@ describe("agentloop web bridge interaction 111", () => {
     expect(String(cancelMsg.data.payload.message || "")).toMatch(/queued-cancel|placeholder|no process kill/i);
     expect(cancelMsg.data.payload.status).not.toBe("stopped");
 
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    (global.fetch as any).mockResolvedValueOnce(
+      jsonResponse({
         runId: "2026-06-25T12-00-00-000Z",
         status: "DONE_FIXED",
         task: { path: "tasks/foo.md" },
@@ -757,12 +790,12 @@ describe("agentloop web bridge interaction 111", () => {
           { id: "state.json", kind: "state" },
         ],
       }),
-    } as any);
+    );
 
     handler!("openTask", { taskPath: "tasks/foo.md", runId: "2026-06-25T12-00-00-000Z" });
     await flushBridge();
 
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-loop/runs/2026-06-25T12-00-00-000Z"));
+    expect((global.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes("/api/agent-loop/runs/2026-06-25T12-00-00-000Z"))).toBe(true);
   });
 });
 
@@ -1205,7 +1238,7 @@ it("agentloop setting runtime linkage 112 applies nonsecret settings to run cont
   // Also confirms: no secrets leak into payloads; explicit contract for backend ownership of some opts documented.
   // Update for review: also covers honest provider-health shape (no truthy status -> ok) and initial settings linkage contract.
   const origFetch = global.fetch;
-  global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) } as any);
+  global.fetch = vi.fn().mockResolvedValue(jsonResponse({}));
   try {
     // direct api usage as exercised by run controls
     await api.runQueue({ queue: "q.json", fixAgent: "codex", reviewAgent: "grok", activeProfile: "team", workerMaxTurns: 64 });
