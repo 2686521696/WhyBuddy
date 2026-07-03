@@ -105,3 +105,84 @@ def create_skill_runtime(
         runtime=runtime,
         provenance=selected_provenance,
     )
+
+
+DM_RBAC_POLICY_IMPACT_EVIDENCE = "DM_RBAC_POLICY_IMPACT_EVIDENCE"
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return sorted(item for item in value if isinstance(item, str))
+
+
+def create_datamodel_rbac_policy_impact_evidence(
+    datamodel: Dict[str, Any],
+    changed: Optional[Dict[str, Any]] = None,
+    rbac_policy_field_refs: Optional[list[Any]] = None,
+) -> Dict[str, Any]:
+    changed_data = changed if isinstance(changed, dict) else {}
+    changed_entity_refs = _normalize_string_list(changed_data.get("entity"))
+    changed_field_refs = _normalize_string_list(changed_data.get("field"))
+    policy_refs = _normalize_string_list(rbac_policy_field_refs)
+    entities = datamodel.get("entities", []) if isinstance(datamodel, dict) else []
+    removed_field_refs: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str):
+            continue
+        for field in entity.get("fields", []) or []:
+            if not isinstance(field, dict):
+                continue
+            field_key = field.get("key")
+            if isinstance(field_key, str) and field.get("lifecycle") == "removed":
+                removed_field_refs.append(f"{entity_id}.{field_key}")
+
+    removed_policy_hits = sorted(ref for ref in removed_field_refs if ref in policy_refs)
+    impacted_policy_refs = sorted(
+        policy_ref
+        for policy_ref in policy_refs
+        if any(policy_ref == field_ref for field_ref in changed_field_refs)
+        or any(
+            policy_ref == entity_ref or policy_ref.startswith(f"{entity_ref}.")
+            for entity_ref in changed_entity_refs
+        )
+    )
+
+    if removed_policy_hits:
+        return {
+            "evidenceKey": DM_RBAC_POLICY_IMPACT_EVIDENCE,
+            "state": "blocked",
+            "reasonCode": "DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD",
+            "changedEntityRefs": changed_entity_refs,
+            "changedFieldRefs": changed_field_refs,
+            "impactedPolicyRefs": removed_policy_hits,
+            "hasPositiveEvidence": False,
+        }
+
+    if impacted_policy_refs:
+        return {
+            "evidenceKey": DM_RBAC_POLICY_IMPACT_EVIDENCE,
+            "state": "allowed",
+            "reasonCode": "DM_RBAC_POLICY_IMPACT_POSITIVE",
+            "changedEntityRefs": changed_entity_refs,
+            "changedFieldRefs": changed_field_refs,
+            "impactedPolicyRefs": impacted_policy_refs,
+            "hasPositiveEvidence": True,
+        }
+
+    return {
+        "evidenceKey": DM_RBAC_POLICY_IMPACT_EVIDENCE,
+        "state": "blocked",
+        "reasonCode": (
+            "DM_RBAC_POLICY_IMPACT_NO_OVERLAP"
+            if changed_entity_refs or changed_field_refs
+            else "DM_RBAC_POLICY_IMPACT_NO_EVIDENCE"
+        ),
+        "changedEntityRefs": changed_entity_refs,
+        "changedFieldRefs": changed_field_refs,
+        "impactedPolicyRefs": [],
+        "hasPositiveEvidence": False,
+    }

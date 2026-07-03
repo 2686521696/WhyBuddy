@@ -13,12 +13,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.v5_state import V5SessionState  # noqa: E402
 from services.capability_maps import execute_mapped_capability  # noqa: E402
 from services.skill_runtime import (  # noqa: E402
+    DM_RBAC_POLICY_IMPACT_EVIDENCE,
     SkillInvokeDeniedError,
     SkillInvokeRequest,
     SkillInvokeResult,
     SkillNotFoundError,
     SkillRuntimeAdapter,
     SkillRuntimeError,
+    create_datamodel_rbac_policy_impact_evidence,
     create_skill_runtime,
     set_skill_runtime,
 )
@@ -160,3 +162,49 @@ def test_real_runtime_error_has_stable_error_classification():
     assert result["provenance"] == "skill-runtime:fixture-runtime"
     assert result["arguments"] == {"topic": "migration boundaries"}
     assert "skillResult" not in result
+
+
+def test_datamodel_rbac_policy_impact_evidence_positive_path():
+    datamodel = {
+        "entities": [
+            {
+                "id": "purchase_request",
+                "fields": [{"key": "amount"}, {"key": "status"}],
+            }
+        ]
+    }
+
+    evidence = create_datamodel_rbac_policy_impact_evidence(
+        datamodel,
+        {"field": ["purchase_request.amount"]},
+        ["purchase_request.amount", "purchase_request.status"],
+    )
+
+    assert evidence["evidenceKey"] == DM_RBAC_POLICY_IMPACT_EVIDENCE
+    assert evidence["state"] == "allowed"
+    assert evidence["reasonCode"] == "DM_RBAC_POLICY_IMPACT_POSITIVE"
+    assert "purchase_request.amount" in evidence["changedFieldRefs"]
+    assert "purchase_request.amount" in evidence["impactedPolicyRefs"]
+    assert evidence["hasPositiveEvidence"] is True
+
+
+def test_datamodel_rbac_policy_impact_evidence_fail_closed_removed_field():
+    datamodel = {
+        "entities": [
+            {
+                "id": "purchase_request",
+                "fields": [{"key": "amount", "lifecycle": "removed"}],
+            }
+        ]
+    }
+
+    evidence = create_datamodel_rbac_policy_impact_evidence(
+        datamodel,
+        {"field": ["purchase_request.amount"]},
+        ["purchase_request.amount"],
+    )
+
+    assert evidence["evidenceKey"] == DM_RBAC_POLICY_IMPACT_EVIDENCE
+    assert evidence["state"] == "blocked"
+    assert evidence["reasonCode"] == "DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
+    assert evidence["hasPositiveEvidence"] is False
