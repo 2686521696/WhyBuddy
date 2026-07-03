@@ -8,7 +8,15 @@ test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-clos
     baseUrl: "http://localhost:3000",
     fetchImpl: async (url) => ({
       status: url.endsWith("/agent-loop/sliderule") ? 200 : 404,
-      text: async () => "<div data-testid=\"sliderule-root\" data-python-provenance=\"via-delegation\" data-backend=\"python-fullpath-e2e\">SlideRule</div>",
+      text: async () => `
+        <div data-testid="sliderule-root" data-python-provenance="via-delegation" data-backend="python-fullpath-e2e">
+          <textarea placeholder="Engineering path IM..."></textarea>
+          <button type="submit">Run</button>
+          <button data-testid="sliderule-reset-session">Reset</button>
+          <div data-testid="sliderule-goal-display">Persisted goal</div>
+          SlideRule
+        </div>
+      `,
     }),
   });
 
@@ -22,6 +30,10 @@ test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-clos
       hasSlideRuleText: true,
       hasPythonProvenance: true,
       hasPythonBackend: true,
+      hasCommandInput: true,
+      hasCommandSubmit: true,
+      hasResetControl: true,
+      hasReloadRecoveryMarker: true,
     },
   });
 
