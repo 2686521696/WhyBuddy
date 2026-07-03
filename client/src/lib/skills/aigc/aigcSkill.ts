@@ -460,7 +460,7 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
   resolve(model: AigcModel): ResolvableSurface {
     const refs = capabilityRefs(model);
     const crossRuntime = buildAigcCrossRuntimeEdges(model);
-    return {
+    const surface: any = {
       aigc: [model.id],
       capability: model.capabilities.map(cap => cap.id),
       provider: model.providers.map(provider => provider.id),
@@ -476,7 +476,17 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
       field: unique([...refs.inputFieldRefs, ...refs.outputFieldRefs]),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
+      aigcToDataModelTrace: traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(model),
     };
+    const datamodelSample = createAigcPositiveSampleEvidence(model, "datamodel");
+    if (datamodelSample.state === "allowed") {
+      surface.runtimeEvidence = unique([
+        ...surface.runtimeEvidence,
+        AIGC_POSITIVE_SAMPLE_TO_DATAMODEL,
+        AIGC_DATAMODEL_RUNTIME_EVIDENCE,
+      ]);
+    }
+    return surface;
   },
 
   crossRefs(model: AigcModel): CrossRefEdge[] {
@@ -840,6 +850,20 @@ export const AIGC_POSITIVE_SAMPLE_TO_DATAMODEL = "AIGC_POSITIVE_SAMPLE_TO_DATAMO
 export const AIGC_POSITIVE_SAMPLE_TO_PAGE = "AIGC_POSITIVE_SAMPLE_TO_PAGE";
 export const AIGC_POSITIVE_SAMPLE_TO_RBAC = "AIGC_POSITIVE_SAMPLE_TO_RBAC";
 export const AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE = "AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE";
+export const AIGC_DATAMODEL_TRACE = "AIGC_DATAMODEL_TRACE";
+
+export interface AigcToDataModelTrace {
+  traceId: typeof AIGC_DATAMODEL_TRACE;
+  sourceSkill: "aigc";
+  targetSkill: "datamodel";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  modelId: string;
+  capabilityRefs: string[];
+  schemaRefs: string[];
+  fieldRefs: string[];
+  evidenceKey: string;
+}
 
 export function createAigcPositiveSampleEvidence(
   model: AigcModel = purchaseRiskAigcModel,
@@ -856,6 +880,41 @@ export function createAigcPositiveSampleEvidence(
   return {
     ...base,
     evidenceKey: positiveKey,
+  };
+}
+
+export function traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(
+  model: AigcModel,
+  datamodelSurface?: { field?: string[]; outputSchema?: string[]; fields?: Array<{ ref?: string }> },
+): AigcToDataModelTrace {
+  const refs = capabilityRefs(model);
+  const schemaRefs = model.outputSchemas.map(schema => schema.id).sort();
+  const fieldRefs = unique([...refs.inputFieldRefs, ...refs.outputFieldRefs]);
+  const capabilityIds = model.capabilities.map(capability => capability.id).sort();
+  const surfaceRefs = datamodelSurface
+    ? unique([
+        ...(datamodelSurface.field ?? []),
+        ...(datamodelSurface.outputSchema ?? []),
+        ...((datamodelSurface.fields ?? []).map(field => field.ref).filter((ref): ref is string => typeof ref === "string")),
+      ])
+    : [...schemaRefs, ...fieldRefs];
+  const hasSchemaEvidence = schemaRefs.length > 0 && fieldRefs.length > 0;
+  const hasSurfaceEvidence = schemaRefs.some(ref => surfaceRefs.includes(ref)) || fieldRefs.some(ref => surfaceRefs.includes(ref));
+  const closed = capabilityIds.length > 0 && hasSchemaEvidence && hasSurfaceEvidence;
+
+  return {
+    traceId: AIGC_DATAMODEL_TRACE,
+    sourceSkill: "aigc",
+    targetSkill: "datamodel",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed
+      ? "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_CLOSED"
+      : "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_FAIL_CLOSED",
+    modelId: model.id,
+    capabilityRefs: capabilityIds,
+    schemaRefs,
+    fieldRefs,
+    evidenceKey: `${AIGC_DATAMODEL_TRACE}:${closed ? "closed" : "blocked"}`,
   };
 }
 

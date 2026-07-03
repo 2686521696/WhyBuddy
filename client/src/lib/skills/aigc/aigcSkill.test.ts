@@ -12,6 +12,7 @@ import {
   createAigcNegativeSampleForPolicyOrSchemaAbsent,
   normalizeAigcRuntimeContextForSkill,
   AIGC_DATAMODEL_RUNTIME_EVIDENCE,
+  AIGC_DATAMODEL_TRACE,
   AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
   AIGC_RUNTIME_POLICY_DENIED,
   AIGC_RBAC_RUNTIME_EVIDENCE,
@@ -21,6 +22,7 @@ import {
   AIGC_POSITIVE_SAMPLE_TO_RBAC,
   AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE,
   AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT,
+  traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence,
   emptyLeaveAigcModel,
   evaluateAigcRuntimePolicy,
   purchaseRiskAigcModel,
@@ -509,5 +511,33 @@ describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/
     // positive path still works with full policy+schema model
     const pos = createAigcPositiveSampleEvidence(purchaseRiskAigcModel, "appbundle");
     expect(pos.state).toBe("allowed");
+  });
+
+  it("traces AIGC positive sample evidence to DataModel schema evidence as a closed path", () => {
+    const trace = traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(purchaseRiskAigcModel);
+
+    expect(trace.traceId).toBe(AIGC_DATAMODEL_TRACE);
+    expect(trace.sourceSkill).toBe("aigc");
+    expect(trace.targetSkill).toBe("datamodel");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_CLOSED");
+    expect(trace.capabilityRefs).toContain("budget_risk_summary");
+    expect(trace.fieldRefs).toContain("purchase_request.amount");
+  });
+
+  it("traces missing AIGC schema evidence to DataModel as fail-closed", () => {
+    const trace = traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(emptyLeaveAigcModel);
+
+    expect(trace.state).toBe("blocked");
+    expect(trace.reasonCode).toBe("AIGC_POSITIVE_SAMPLE_TO_DATAMODEL_SCHEMA_FAIL_CLOSED");
+  });
+
+  it("resolve surface exposes aigcToDataModelTrace for runtime linkage consumers", () => {
+    const surface = aigcSkill.resolve(purchaseRiskAigcModel) as any;
+
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([AIGC_POSITIVE_SAMPLE_TO_DATAMODEL]));
+    expect(surface.aigcToDataModelTrace).toBeTruthy();
+    expect(surface.aigcToDataModelTrace.traceId).toBe(AIGC_DATAMODEL_TRACE);
+    expect(surface.aigcToDataModelTrace.state).toBe("closed");
   });
 });
