@@ -15,6 +15,7 @@ from services.capability_maps import execute_mapped_capability  # noqa: E402
 from services.skill_runtime import (  # noqa: E402
     DM_PAGE_BINDING_IMPACT_EVIDENCE,
     DM_RBAC_POLICY_IMPACT_EVIDENCE,
+    DM_WORKFLOW_BINDING_IMPACT_EVIDENCE,
     SkillInvokeDeniedError,
     SkillInvokeRequest,
     SkillInvokeResult,
@@ -23,6 +24,7 @@ from services.skill_runtime import (  # noqa: E402
     SkillRuntimeError,
     create_datamodel_page_binding_impact_evidence,
     create_datamodel_rbac_policy_impact_evidence,
+    create_datamodel_workflow_binding_impact_evidence,
     create_skill_runtime,
     set_skill_runtime,
 )
@@ -255,4 +257,50 @@ def test_datamodel_page_binding_impact_evidence_fail_closed_removed_field():
     assert evidence["evidenceKey"] == DM_PAGE_BINDING_IMPACT_EVIDENCE
     assert evidence["state"] == "blocked"
     assert evidence["reasonCode"] == "DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
+    assert evidence["hasPositiveEvidence"] is False
+
+
+def test_datamodel_workflow_binding_impact_evidence_positive_path():
+    datamodel = {
+        "entities": [
+            {
+                "id": "purchase_request",
+                "fields": [{"key": "amount"}, {"key": "status"}],
+            }
+        ]
+    }
+
+    evidence = create_datamodel_workflow_binding_impact_evidence(
+        datamodel,
+        {"field": ["purchase_request.status"]},
+        ["purchase_request.amount", "purchase_request.status"],
+    )
+
+    assert evidence["evidenceKey"] == DM_WORKFLOW_BINDING_IMPACT_EVIDENCE
+    assert evidence["state"] == "allowed"
+    assert evidence["reasonCode"] == "DM_WORKFLOW_BINDING_IMPACT_POSITIVE"
+    assert "purchase_request.status" in evidence["changedFieldRefs"]
+    assert "purchase_request.status" in evidence["impactedWorkflowBindingRefs"]
+    assert evidence["hasPositiveEvidence"] is True
+
+
+def test_datamodel_workflow_binding_impact_evidence_fail_closed_removed_field():
+    datamodel = {
+        "entities": [
+            {
+                "id": "purchase_request",
+                "fields": [{"key": "status", "lifecycle": "removed"}],
+            }
+        ]
+    }
+
+    evidence = create_datamodel_workflow_binding_impact_evidence(
+        datamodel,
+        {"field": ["purchase_request.status"]},
+        ["purchase_request.status"],
+    )
+
+    assert evidence["evidenceKey"] == DM_WORKFLOW_BINDING_IMPACT_EVIDENCE
+    assert evidence["state"] == "blocked"
+    assert evidence["reasonCode"] == "DM_WORKFLOW_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD"
     assert evidence["hasPositiveEvidence"] is False
