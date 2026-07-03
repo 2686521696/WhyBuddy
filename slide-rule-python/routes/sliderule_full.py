@@ -531,6 +531,7 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
         "backend": PYTHON_BACKEND,
         "publishClosure": derive_publish_closure_response(new_state),
         "skillRuntimeGraph": derive_skill_runtime_graph_response(new_state),
+        "closureWarnings": [],
     }
 
 @router.post("/drive-marathon")

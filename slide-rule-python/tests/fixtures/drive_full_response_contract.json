@@ -1,7 +1,7 @@
 {
   "meta": {
     "purpose": "deterministic /drive-full response contract fixture for runtime closure e2e",
-    "includes": ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"],
+    "includes": ["command", "skillRuntimeGraph", "publishClosure", "closureWarnings", "report", "degraded"],
     "positive_closed_path": true,
     "negative_degraded_fail_closed_path": true,
     "deterministic": true,
@@ -98,6 +98,7 @@
       },
       "topBlockers": []
     },
+    "closureWarnings": [],
     "report": {
       "status": "closed",
       "evidencePresentCount": 6,
@@ -115,6 +116,7 @@
     "backend": "python",
     "skillRuntimeGraph": null,
     "publishClosure": null,
+    "closureWarnings": null,
     "report": {
       "status": "degraded",
       "reason": "capability error on latest run",

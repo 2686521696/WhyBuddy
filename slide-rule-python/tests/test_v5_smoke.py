@@ -755,6 +755,7 @@ def test_drive_full_route_returns_publish_closure_and_skill_runtime_graph_when_a
     assert env["publishClosure"]["closureHash"] == "feedface"
     assert env["publishClosure"]["perSkillEvidence"]["datamodel"]["evidencePresent"] is True
     assert env["publishClosure"]["perSkillEvidence"]["aigc"]["evidencePresent"] is True
+    assert env["closureWarnings"] == []
     # skillRuntimeGraph positive (from /drive-full pass-through)
     assert env.get("skillRuntimeGraph") is not None
     g = env["skillRuntimeGraph"]
@@ -1184,7 +1185,7 @@ def test_drive_full_response_contract_fixture_120():
     with open(fixture_path, "r", encoding="utf-8") as f:
         fixture = json.load(f)
 
-    assert fixture["meta"]["includes"] == ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"]
+    assert fixture["meta"]["includes"] == ["command", "skillRuntimeGraph", "publishClosure", "closureWarnings", "report", "degraded"]
     assert fixture["meta"]["positive_closed_path"] is True
     assert fixture["meta"]["negative_degraded_fail_closed_path"] is True
 
@@ -1195,15 +1196,17 @@ def test_drive_full_response_contract_fixture_120():
     assert positive["degraded"] is False
     assert positive["publishClosure"]["blocked"] is False
     assert positive["publishClosure"]["evidencePresentCount"] == 6
+    assert positive["closureWarnings"] == []
     assert len(positive["skillRuntimeGraph"]["edges"]) >= 1
     assert positive["report"]["status"] == "closed"
 
     assert degraded["command"] == "sliderule-page-drive-full"
     assert degraded["degraded"] is True
     assert degraded["publishClosure"] is None
+    assert degraded["closureWarnings"] is None
     assert degraded["skillRuntimeGraph"] is None
     assert degraded["report"]["status"] == "degraded"
 
-    for key in ["command", "skillRuntimeGraph", "publishClosure", "report", "degraded"]:
+    for key in ["command", "skillRuntimeGraph", "publishClosure", "closureWarnings", "report", "degraded"]:
         assert key in positive
         assert key in degraded
