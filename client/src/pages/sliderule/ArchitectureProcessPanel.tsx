@@ -51,6 +51,9 @@ export function ArchitectureProcessPanel({
   const atBottomRef = useRef(true);
 
   const streaming = latestTurn?.status === "streaming";
+  const publishClosureBlockers = publishClosure?.topBlockers ?? [];
+  const publishClosureFailClosed =
+    !!publishClosure?.blocked && publishClosureBlockers.length === 0;
 
   const scrollSignature = latestTurn
     ? (() => {
@@ -142,50 +145,58 @@ export function ArchitectureProcessPanel({
         retrying={isRunning}
         onRetryCapability={onRetryCapability}
       />
-      {crossRuntimeGraph && (
+      {(crossRuntimeGraph || publishClosure) && (
         <section
           className="mt-3 rounded-md border border-slate-200/80 bg-white/70 px-3 py-2 text-[10px] text-slate-600 shadow-sm"
           data-testid="sliderule-cross-runtime-graph"
           aria-label="Skill runtime linkage"
         >
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <span className="font-mono font-semibold uppercase tracking-wide text-slate-500">
-              Skill linkage
-            </span>
-            <span className="font-mono text-slate-500">
-              {crossRuntimeGraph.edgeCount} edges / {crossRuntimeGraph.skillCount} skills
-            </span>
-          </div>
-          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px]">
-            <span className="text-emerald-700">allowed {crossRuntimeGraph.allowedCount}</span>
-            {crossRuntimeGraph.blockedCount > 0 && (
-              <span className="text-rose-700">blocked {crossRuntimeGraph.blockedCount}</span>
-            )}
-            <span className="text-slate-500">evidence {crossRuntimeGraph.evidenceCount}</span>
-          </div>
-          <div className="space-y-0.5">
-            {crossRuntimeGraph.examples.map((edge) => (
-              <div
-                key={`${edge.sourceSkill}-${edge.targetSkill}-${edge.state}-${edge.evidenceKey ?? ""}`}
-                data-testid="sliderule-skill-linkage-row"
-                data-source-skill={edge.sourceSkill}
-                data-target-skill={edge.targetSkill}
-                data-state={edge.state}
-                data-evidence-key={edge.evidenceKey ?? ""}
-                className="truncate"
-                title={edge.evidenceKey ?? `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`}
-              >
-                <span className="font-mono text-slate-700">{edge.sourceSkill}</span>
-                <span className="px-1 text-slate-400">-&gt;</span>
-                <span className="font-mono text-slate-700">{edge.targetSkill}</span>
-                <span className="pl-1 text-slate-400">{edge.state}</span>
+          {crossRuntimeGraph && (
+            <>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <span className="font-mono font-semibold uppercase tracking-wide text-slate-500">
+                  Skill linkage
+                </span>
+                <span className="font-mono text-slate-500">
+                  {crossRuntimeGraph.edgeCount} edges / {crossRuntimeGraph.skillCount} skills
+                </span>
               </div>
-            ))}
-          </div>
+              <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px]">
+                <span className="text-emerald-700">
+                  allowed {crossRuntimeGraph.allowedCount}
+                </span>
+                {crossRuntimeGraph.blockedCount > 0 && (
+                  <span className="text-rose-700">blocked {crossRuntimeGraph.blockedCount}</span>
+                )}
+                <span className="text-slate-500">evidence {crossRuntimeGraph.evidenceCount}</span>
+              </div>
+              <div className="space-y-0.5">
+                {crossRuntimeGraph.examples.map((edge) => (
+                  <div
+                    key={`${edge.sourceSkill}-${edge.targetSkill}-${edge.state}-${edge.evidenceKey ?? ""}`}
+                    data-testid="sliderule-skill-linkage-row"
+                    data-source-skill={edge.sourceSkill}
+                    data-target-skill={edge.targetSkill}
+                    data-state={edge.state}
+                    data-evidence-key={edge.evidenceKey ?? ""}
+                    className="truncate"
+                    title={edge.evidenceKey ?? `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`}
+                  >
+                    <span className="font-mono text-slate-700">{edge.sourceSkill}</span>
+                    <span className="px-1 text-slate-400">-&gt;</span>
+                    <span className="font-mono text-slate-700">{edge.targetSkill}</span>
+                    <span className="pl-1 text-slate-400">{edge.state}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           {publishClosure && (
             <div
               className="mt-2 border-t border-slate-200/80 pt-2"
               data-testid="sliderule-publish-closure"
+              data-state={publishClosure.blocked ? "blocked" : "closed"}
+              data-fail-closed={publishClosureFailClosed ? "true" : "false"}
             >
               <div className="flex items-center justify-between gap-3 font-mono text-[9px]">
                 <span className={publishClosure.blocked ? "text-rose-700" : "text-emerald-700"}>
@@ -213,9 +224,9 @@ export function ArchitectureProcessPanel({
                 <span className="text-amber-700">warn {publishClosure.tierCounts.warning}</span>
                 <span className="text-slate-500">info {publishClosure.tierCounts.info}</span>
               </div>
-              {publishClosure.topBlockers.length > 0 && (
+              {publishClosureBlockers.length > 0 && (
                 <div className="mt-1 space-y-0.5">
-                  {publishClosure.topBlockers.map((blocker) => (
+                  {publishClosureBlockers.map((blocker) => (
                     <div
                       key={`${blocker.code}-${blocker.path}`}
                       data-testid="sliderule-publish-closure-blocker"
@@ -236,6 +247,15 @@ export function ArchitectureProcessPanel({
                       {blocker.ref ?? blocker.path}
                     </div>
                   ))}
+                </div>
+              )}
+              {publishClosureFailClosed && (
+                <div
+                  data-testid="publish-closure-fail-closed"
+                  className="mt-1 truncate font-mono text-[9px] text-rose-700"
+                  title="blocked publish closure did not include topBlockers"
+                >
+                  fail-closed: blocked with no topBlockers
                 </div>
               )}
             </div>

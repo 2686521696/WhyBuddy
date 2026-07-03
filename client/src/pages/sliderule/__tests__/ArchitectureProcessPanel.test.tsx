@@ -155,10 +155,50 @@ describe("ArchitectureProcessPanel publish closure drilldown", () => {
     );
 
     expect(html).toContain('data-testid="sliderule-publish-closure-blocker"');
+    expect(html).toContain('data-state="blocked"');
+    expect(html).toContain('data-fail-closed="false"');
     expect(html).toContain('data-skill="page"');
     expect(html).toContain('data-ref="page_purchase_request"');
     expect(html).toContain('data-path="pageBindings[0].pageRef"');
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
+    expect(html).not.toContain('data-testid="publish-closure-fail-closed"');
+  });
+
+  it("renders fail-closed marker when closure is blocked without blocker details", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        liveAction={null}
+        sessionId="arch-panel-empty-blockers"
+        isRunning={false}
+        latestTurn={{
+          id: "turn-empty-blockers",
+          routeFacts: {} as any,
+          steps: [],
+          actions: [],
+          status: "complete",
+          routeLitCount: 0,
+          routeExpanded: true,
+        }}
+        crossRuntimeGraph={null}
+        publishClosure={{
+          blocked: true,
+          blockerCount: 1,
+          evidencePresentCount: 5,
+          skillCount: 6,
+          versionPinsChecked: true,
+          closureHash: "blocked-without-details",
+          tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+          topBlockers: [],
+        }}
+      />
+    );
+
+    expect(html).toContain('data-testid="sliderule-publish-closure"');
+    expect(html).toContain('data-state="blocked"');
+    expect(html).toContain('data-fail-closed="true"');
+    expect(html).toContain('data-testid="publish-closure-fail-closed"');
+    expect(html).toContain("fail-closed: blocked with no topBlockers");
+    expect(html).not.toContain('data-testid="sliderule-publish-closure-blocker"');
   });
 });
 
@@ -220,6 +260,8 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).toContain('data-testid="sliderule-root"');
     expect(html).toContain('data-testid="sliderule-cross-runtime-graph"');
     expect(html).toContain('data-testid="sliderule-publish-closure"');
+    expect(html).toContain('data-state="closed"');
+    expect(html).toContain('data-fail-closed="false"');
     expect(html).toContain("publish closed");
     expect(html).toContain("6/6 evidence");
     expect(html).toContain("pins checked");
