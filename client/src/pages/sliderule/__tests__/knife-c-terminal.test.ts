@@ -4,8 +4,11 @@ import { deriveSlideRuleReasoningViewModel } from "../derive-reasoning-view-mode
 import { deriveTrustSeal } from "../derive-trust-seal";
 import { parseReportSections } from "../parse-report-sections";
 import {
+  APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER,
+  CLOSED_CLOSURE_REPORT_SECTION,
   deriveAppBundleClosureRender,
   enrichReportWriteWithRuntimeClosure,
+  renderPerSkillEvidenceCoverageTable,
   serializeSlideRuleDeliveryMd,
 } from "../serialize-sliderule-delivery-md";
 import { SLIDERULE_TERMINAL_NODE_ID } from "../sliderule-projection-constants";
@@ -220,7 +223,7 @@ describe("Knife C · terminal delivery platform", () => {
       artifacts: [...(state.artifacts || []), closureArtifact],
     });
 
-    expect(md).toContain("AppBundle publish/runtime closure");
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(md).toContain("art-appbundle-closure-md");
     expect(md).toContain("versionPinsChecked");
   });
@@ -242,7 +245,7 @@ describe("Knife C · terminal delivery platform", () => {
       },
     } as any);
 
-    expect(md).toContain("AppBundle publish/runtime closure");
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(md).toContain("closure outcome: closed");
     expect(md).toContain("version pins: checked");
     expect(md).toContain("python publishClosure");
@@ -329,11 +332,47 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("| appbundle | present |");
   });
 
+  it("serializes closed closure report section and exported coverage table", () => {
+    const { state } = buildClearStateWithTrustedReport("knife-c-python-closure-closed-section");
+    const perSkillEvidence = {
+      datamodel: { evidencePresent: true },
+      rbac: { evidencePresent: true },
+      workflow: { evidencePresent: true },
+      page: { evidencePresent: true },
+      aigc: { evidencePresent: true },
+      appbundle: { evidencePresent: true },
+    };
+    const md = serializeSlideRuleDeliveryMd({
+      ...state,
+      publishClosure: {
+        blocked: false,
+        blockerCount: 0,
+        evidencePresentCount: 6,
+        skillCount: 6,
+        versionPinsChecked: true,
+        closureId: "appbundle:sliderule-report-fixture-smoke@119:runtime-closure",
+        closureHash: "c10sure119",
+        stableDigest: "deadbeef119",
+        tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
+        topBlockers: [],
+        perSkillEvidence,
+      },
+    } as any);
+
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    expect(md).toContain("closure outcome: closed");
+    expect(md).toContain(CLOSED_CLOSURE_REPORT_SECTION);
+    expect(md).toContain("versionPinsChecked: true");
+    expect(md).toContain("evidence coverage and version pins verified for closed runtime closure.");
+    expect(md).toContain("| datamodel | present |");
+    expect(renderPerSkillEvidenceCoverageTable(perSkillEvidence)).toContain("| appbundle | present |");
+  });
+
   it("serializes fail-closed AppBundle closure note when evidence is absent", () => {
     const { state } = buildClearStateWithTrustedReport("knife-c-closure-md-negative");
     const md = serializeSlideRuleDeliveryMd(state);
 
-    expect(md).toContain("AppBundle publish/runtime closure");
+    expect(md).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(md).toContain("runtime closure evidence was not found");
     expect(md).toContain("publish should remain blocked");
     // Fail-closed negative: no structured blocked section when no evidence
@@ -366,7 +405,7 @@ describe("Knife C · terminal delivery platform", () => {
 
     expect(result.included).toBe(true);
     expect(result.report).not.toBe(report);
-    expect(result.report.content).toContain("AppBundle publish/runtime closure");
+    expect(result.report.content).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(result.report.content).toContain("art-report-closure-positive");
     expect(report.content).toBe(originalContent);
   });
@@ -379,7 +418,7 @@ describe("Knife C · terminal delivery platform", () => {
 
     expect(result.included).toBe(false);
     expect(result.report).not.toBe(report);
-    expect(result.report.content).toContain("AppBundle publish/runtime closure");
+    expect(result.report.content).toContain(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     expect(result.report.content).toContain("runtime closure evidence was not found");
     expect(result.report.content).toContain("publish should remain blocked");
   });

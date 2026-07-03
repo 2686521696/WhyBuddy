@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { deriveCrossRuntimeGraphSummary } from "../derive-cross-runtime-summary";
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
-import { derivePublishClosureSummary, selectPublishClosureSummary, formatClosureStatusAndTopBlockersForFinalReport } from "../derive-cross-runtime-summary";
+import {
+  derivePublishClosureSummary,
+  formatClosureStatusAndTopBlockersForFinalReport,
+  normalizeBlockerForRender,
+  renderPublishClosureBlocker,
+  selectPublishClosureSummary,
+} from "../derive-cross-runtime-summary";
 
 describe("deriveCrossRuntimeGraphSummary", () => {
   it("summarizes allowed and blocked runtime graph edges for the page", () => {
@@ -89,6 +95,14 @@ describe("deriveCrossRuntimeGraphSummary", () => {
         info: 0,
       },
       topBlockers: [],
+      perSkillEvidence: {
+        datamodel: { evidencePresent: true },
+        rbac: { evidencePresent: true },
+        workflow: { evidencePresent: true },
+        page: { evidencePresent: true },
+        aigc: { evidencePresent: true },
+        appbundle: { evidencePresent: true },
+      },
     });
   });
 
@@ -172,7 +186,31 @@ describe("deriveCrossRuntimeGraphSummary", () => {
           ref: "page_purchase_request",
         },
       ],
+      perSkillEvidence: {
+        page: { evidencePresent: false },
+        appbundle: { evidencePresent: true },
+      },
     });
+  });
+
+  it("normalizes and renders publish closure blockers for report markdown", () => {
+    const normalized = normalizeBlockerForRender({
+      code: "APPBUNDLE_PUBLISH_REF_MISSING",
+      path: "menuEntries[0].roleRefs[2]",
+      affectedSkill: "rbac",
+      ref: "role:finance-admin",
+    });
+
+    expect(normalized).toEqual({
+      code: "APPBUNDLE_PUBLISH_REF_MISSING",
+      path: "menuEntries[0].roleRefs[2]",
+      affectedSkill: "rbac",
+      ref: "role:finance-admin",
+    });
+    expect(renderPublishClosureBlocker(normalized)).toBe(
+      "APPBUNDLE_PUBLISH_REF_MISSING skill=rbac path=menuEntries[0].roleRefs[2] ref=role:finance-admin"
+    );
+    expect(renderPublishClosureBlocker(null)).toBe("UNKNOWN_BLOCKER");
   });
 
   it("positive: prefers Python publish closure over local preview closure when Python evidence present", () => {

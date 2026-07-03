@@ -33,7 +33,37 @@ export type PublishClosureSummary = {
     affectedSkill?: string;
     ref?: string;
   }>;
+  perSkillEvidence?: Record<
+    "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle",
+    { evidencePresent?: boolean } | undefined
+  >;
 };
+
+export function normalizeBlockerForRender(
+  blocker: { code?: string; path?: string; affectedSkill?: string; ref?: string } | null | undefined
+): {
+  code: string;
+  path: string;
+  affectedSkill?: string;
+  ref?: string;
+} {
+  return {
+    code: String(blocker?.code || "UNKNOWN_BLOCKER"),
+    path: String(blocker?.path || ""),
+    affectedSkill: blocker?.affectedSkill,
+    ref: blocker?.ref,
+  };
+}
+
+export function renderPublishClosureBlocker(
+  blocker: { code?: string; path?: string; affectedSkill?: string; ref?: string } | null | undefined
+): string {
+  const b = normalizeBlockerForRender(blocker);
+  const skill = b.affectedSkill ? ` skill=${b.affectedSkill}` : "";
+  const path = b.path ? ` path=${b.path}` : "";
+  const ref = b.ref ? ` ref=${b.ref}` : "";
+  return `${b.code}${skill}${path}${ref}`;
+}
 
 export function deriveCrossRuntimeGraphSummary(
   graph: CrossRuntimeGraph | null | undefined,
@@ -102,14 +132,15 @@ export function derivePublishClosureSummary(
       info: findingsByTier.info?.length ?? 0,
     },
     topBlockers: report.blockers.slice(0, blockerLimit).map((blocker) => {
-      const ext = blocker as { affectedSkill?: string; ref?: string };
+      const normalized = normalizeBlockerForRender(blocker);
       return {
-        code: blocker.code,
-        path: blocker.path,
-        affectedSkill: ext.affectedSkill,
-        ref: ext.ref,
+        code: normalized.code,
+        path: normalized.path,
+        affectedSkill: normalized.affectedSkill,
+        ref: normalized.ref,
       };
     }),
+    perSkillEvidence: report.perSkillEvidence as PublishClosureSummary["perSkillEvidence"],
   };
 }
 

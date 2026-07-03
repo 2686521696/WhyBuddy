@@ -3,6 +3,7 @@ import { replayCoverage } from "@shared/blueprint/sliderule-coverage-replay";
 import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
+import { renderPublishClosureBlocker } from "./derive-cross-runtime-summary";
 
 /** Pure md serializer for Knife C delivery export — does not mutate state. */
 export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
@@ -81,7 +82,7 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
   }
 
   const closureRender = deriveAppBundleClosureRender(state);
-  lines.push("## AppBundle publish/runtime closure");
+  lines.push(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
   lines.push("");
   if (closureRender.present) {
     closureRender.summaryLines.forEach((line) => lines.push(line));
@@ -165,6 +166,10 @@ export interface AppBundleClosureRender {
   summaryLines: string[];
 }
 
+export const APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER = "## AppBundle publish/runtime closure";
+
+export const CLOSED_CLOSURE_REPORT_SECTION = "## Closed Closure Report Section";
+
 const APPBUNDLE_CLOSURE_SKILL_ORDER = [
   "datamodel",
   "rbac",
@@ -192,6 +197,10 @@ function perSkillEvidenceCoverageLines(perSkillEvidence: unknown): string[] {
   ];
 }
 
+export function renderPerSkillEvidenceCoverageTable(perSkillEvidence: unknown): string {
+  return perSkillEvidenceCoverageLines(perSkillEvidence).join("\n");
+}
+
 export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleClosureRender {
   const publishClosure = (state as any).publishClosure;
   if (publishClosure && typeof publishClosure === "object") {
@@ -217,25 +226,28 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
       detailLines.push("");
     }
     if (topBlockersArr.length > 0) {
-      const legacyBlockerLines = topBlockersArr.map((blocker: any) => {
-        const code = String(blocker?.code || "UNKNOWN_BLOCKER");
-        const skill = blocker?.affectedSkill ? ` skill=${blocker.affectedSkill}` : "";
-        const path = blocker?.path ? ` path=${blocker.path}` : "";
-        const ref = blocker?.ref ? ` ref=${blocker.ref}` : "";
-        return `- ${code}${skill}${path}${ref}`;
-      });
+      const legacyBlockerLines = topBlockersArr.map((blocker: any) => `- ${renderPublishClosureBlocker(blocker)}`);
       detailLines.push("closure blockers:", ...legacyBlockerLines);
+    }
+    const baseLines = [
+      `closure outcome: ${blocked ? "blocked" : "closed"}`,
+      `version pins: ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
+      `python publishClosure: ${blocked ? "blocked" : "closed"}`,
+      `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
+      `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"} · generatedAt ${publishClosure.generatedAt ?? "n/a"}`,
+      `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,
+    ];
+    if (!blocked) {
+      baseLines.push(
+        "",
+        CLOSED_CLOSURE_REPORT_SECTION,
+        `versionPinsChecked: ${publishClosure.versionPinsChecked === true ? "true" : "false"}`,
+        "evidence coverage and version pins verified for closed runtime closure.",
+      );
     }
     return {
       present: true,
-      summaryLines: appendClosureDetailLines([
-        `closure outcome: ${blocked ? "blocked" : "closed"}`,
-        `version pins: ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
-        `python publishClosure: ${blocked ? "blocked" : "closed"}`,
-        `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
-        `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"} · generatedAt ${publishClosure.generatedAt ?? "n/a"}`,
-        `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,
-      ], detailLines),
+      summaryLines: appendClosureDetailLines(baseLines, detailLines),
     };
   }
 
