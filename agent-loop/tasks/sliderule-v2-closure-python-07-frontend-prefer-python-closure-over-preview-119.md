@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-07-frontend-prefer-python-closure-over-preview-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -64,3 +64,12 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Positive: when python present + preview, selects python (from session/python drive-full)
 - Fail-closed negative: python absent -> preview; both absent -> null (no fabrication)
 - How advances: ensures page (SlideRule.tsx) uses Python-produced AppBundle runtime closure evidence preferentially over TS preview per 119 objective, with tests proving both behaviors. Thin proxy + schema pass-through preserved.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. `client/src/pages/sliderule/derive-cross-runtime-summary.ts` exposes `selectPublishClosureSummary`, and `client/src/pages/SlideRule.tsx` prefers Python-produced `publishClosure` from session state over preview-derived closure summaries.
+
+Validation:
+- `npx vitest run client/src/pages/sliderule/__tests__/derive-persisted-turn.test.ts client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx client/src/pages/sliderule/__tests__/derive-status-bar.test.ts --reporter=dot` -> 4 files / 38 tests passed.
+
+Selection remains fail-closed: Python `null`/absent does not invent closure, and preview is only used as the fallback path.

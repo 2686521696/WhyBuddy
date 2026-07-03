@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-03-python-drive-full-closure-response-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -76,3 +76,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 Provides executable route-level positive evidence (both fields populated when appbundle.runtimeClosure + skill graph runs present) and fail-closed negative (None when no/dgraded evidence) directly in Python /drive-full handler + derives. Uses only local deterministic fakes (no provider/net). Adds focused test coverage at the /drive-full surface (previously unit-only on derives). Keeps names stable. Supplies the final report the gate lacked. Candidate material for cross-runtime landing.
 
 Public API names stable: no renames; /drive-full, derive_* unchanged.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. `slide-rule-python/routes/sliderule_full.py` returns authoritative top-level `publishClosure` and `skillRuntimeGraph` from Python for `/drive-full`.
+
+Validation:
+- `cd slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_v5_smoke.py::test_drive_full_accepts_real_execute_capability_result_model tests/test_v5_smoke.py::test_drive_full_route_returns_publish_closure_and_skill_runtime_graph_when_available tests/test_v5_smoke.py::test_drive_full_happy_path_returns_closed_publish_closure_evidence tests/test_v5_smoke.py::test_drive_full_route_returns_none_publishClosure_skillRuntimeGraph_on_no_evidence tests/test_v5_smoke.py::test_drive_full_model_dump_and_plain_dict_capability_result_compat tests/test_v5_smoke.py::test_drive_full_blocked_path_for_missing_declared_skill_evidence -q --tb=short` -> 6 passed.
+- `npx vitest run client/src/pages/sliderule/__tests__/derive-persisted-turn.test.ts client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx client/src/pages/sliderule/__tests__/derive-status-bar.test.ts --reporter=dot` -> 4 files / 38 tests passed.

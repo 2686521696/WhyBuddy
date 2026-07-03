@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-04-python-drive-full-model-dump-compat-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -79,5 +79,14 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 
 **How this advances publish/runtime closure:**
 Supplies the missing executable adapter (_result_to_dict + _as_dict) + focused test snapshot for /drive-full Python side that explicitly exercises both Pydantic model_dump() capability results and plain dicts in pass-through (publishClosure + skillRuntimeGraph). Adds positive (both shapes derive) and fail-closed negative (degraded/error latest -> None for graph, no masking) behavior. All local fakes, zero provider/net calls enforced. Provides the evidence the gate lacked. Task.md now carries final report. Keeps public API (/drive-full, drive_full_v5_session, derive_*) stable. Candidate slice for 119-appbundle-runtime-closure cross-runtime landing.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. `slide-rule-python/services/v5_full_driver.py` normalizes executor outputs through `_result_to_dict`, and derive adapters accept both `model_dump()` objects and plain dicts.
+
+Validation:
+- `cd slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_v5_smoke.py::test_drive_full_accepts_real_execute_capability_result_model tests/test_v5_smoke.py::test_drive_full_route_returns_publish_closure_and_skill_runtime_graph_when_available tests/test_v5_smoke.py::test_drive_full_happy_path_returns_closed_publish_closure_evidence tests/test_v5_smoke.py::test_drive_full_route_returns_none_publishClosure_skillRuntimeGraph_on_no_evidence tests/test_v5_smoke.py::test_drive_full_model_dump_and_plain_dict_capability_result_compat tests/test_v5_smoke.py::test_drive_full_blocked_path_for_missing_declared_skill_evidence -q --tb=short` -> 6 passed.
+
+Public API names remain stable: `_result_to_dict`, `drive_full_v5_session`, `/drive-full`, and derive helpers.
 
 Public API names stable; no renames.

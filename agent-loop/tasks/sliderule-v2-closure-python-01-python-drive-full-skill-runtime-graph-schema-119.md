@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-01-python-drive-full-skill-runtime-graph-schema-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,13 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. Evidence lives in `slide-rule-python/services/v5_skill_runtime_graph.py`, `slide-rule-python/routes/sliderule_full.py`, and `slide-rule-python/tests/test_v5_skill_runtime_graph.py`.
+
+Validation:
+- `.\slide-rule-python\.venv\Scripts\python.exe -m pytest slide-rule-python/tests/test_v5_publish_closure_response.py slide-rule-python/tests/test_v5_skill_runtime_graph.py -q --tb=short` -> 19 passed.
+- `cd slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_v5_smoke.py::test_drive_full_accepts_real_execute_capability_result_model tests/test_v5_smoke.py::test_drive_full_route_returns_publish_closure_and_skill_runtime_graph_when_available tests/test_v5_smoke.py::test_drive_full_happy_path_returns_closed_publish_closure_evidence tests/test_v5_smoke.py::test_drive_full_route_returns_none_publishClosure_skillRuntimeGraph_on_no_evidence tests/test_v5_smoke.py::test_drive_full_model_dump_and_plain_dict_capability_result_compat tests/test_v5_smoke.py::test_drive_full_blocked_path_for_missing_declared_skill_evidence -q --tb=short` -> 6 passed.
+
+Public API names remain stable: `derive_skill_runtime_graph_response`, `/api/sliderule/drive-full`, and top-level `skillRuntimeGraph`.

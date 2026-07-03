@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-10-sliderule-python-closure-browser-smoke-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -66,3 +66,10 @@ Validation commands:
 - node -e "const fs=require('fs'); const task=fs.readFileSync('agent-loop/tasks/sliderule-v2-closure-python-10-sliderule-python-closure-browser-smoke-119.md','utf8'); for (const needle of ['119-appbundle-runtime-closure','## Required implementation','## Acceptance criteria','codex-reviewed-only','Concise final report']) { if(!task.includes(needle)) throw new Error('task missing marker: '+needle); }"
 - npx vitest run client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx
 - (covers: root render for /agent-loop/sliderule embedded + positive/negative python closure pass-through visibility)
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. Browser-visible closure smoke is represented by SSR/component coverage in `client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx`, including embedded `SlideRule` root render and Python `publishClosure` pass-through visibility.
+
+Validation:
+- `npx vitest run client/src/pages/sliderule/__tests__/derive-persisted-turn.test.ts client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts client/src/pages/sliderule/__tests__/ArchitectureProcessPanel.test.tsx client/src/pages/sliderule/__tests__/derive-status-bar.test.ts --reporter=dot` -> 4 files / 38 tests passed.

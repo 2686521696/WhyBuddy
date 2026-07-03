@@ -1,7 +1,7 @@
 # sliderule-v2-closure-python-05-node-sliderule-proxy-closure-pass-through-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: python
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -53,3 +53,12 @@ Focus on Python /drive-full schema and pass-through. Preserve degraded/error sta
 - Focused tests are added or updated when practical.
 - Existing AppBundle publish/runtime closure semantics are not weakened.
 - AgentLoop final report explains how this task advances publish/runtime closure.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the Python `/drive-full` closure batch. `server/routes/sliderule.ts` keeps `/api/sliderule/drive-full` as a thin Python proxy and returns the Python response body verbatim, preserving `publishClosure`, `skillRuntimeGraph`, `stateAuthority`, and related fields.
+
+Validation:
+- `npx vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.thin-proxy-sessions.test.ts server/routes/__tests__/sliderule.evidence-python-proxy-contract.test.ts --reporter=dot` -> 2 files / 10 tests passed.
+
+Fail-closed delegation behavior remains explicit: Python unavailability returns `502 python_unavailable` without fabricated closure fields.
