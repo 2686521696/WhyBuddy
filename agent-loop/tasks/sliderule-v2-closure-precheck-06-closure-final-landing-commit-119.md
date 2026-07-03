@@ -1,7 +1,7 @@
 # sliderule-v2-closure-precheck-06-closure-final-landing-commit-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: precheck
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -84,3 +84,16 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
   - git status --porcelain
   - (reference) node agent-loop/scripts/land-queue.mjs --check --repo <target-main>   (for pre-landing clean check)
 - How this advances publish/runtime closure: This precheck final-landing-commit task supplies the previously missing executable (prepareFinalLandingCommitSummary + schema + deterministic fixtures proving clean-main + evidencePresent + closureAdvanced) and the actual final report content. Gate previously only verified task spec markers (no report, no code). Now the script provides candidate material with changed files, exported symbols, validation commands for Codex review/main landing. Positive proves clean + full report data leads to closureAdvanced=true; negative fail-closed ensures dirty/incomplete never falsely claims advance. All strictly within allowed files (scripts + tasks), preserves deterministic local behavior, no broad feature, no test/gate weakening, no unrelated edits. Directly fulfills "Prepare final reviewed landing commit summary with evidence commands and clean main status" and "AgentLoop final report explains how this task advances publish/runtime closure".
+
+## Codex Review Landing
+
+Reviewed and landed as part of the closure precheck batch. Final landing summary self-test passed with clean-main positive and dirty/incomplete fail-closed negative behavior.
+
+Validation:
+- `npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/orchestrator.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 3 files / 128 tests passed.
+- `cd slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_v5_publish_closure_response.py tests/test_v5_smoke.py -q -k "publish_closure or drive_full" --tb=short` -> 16 passed / 12 deselected.
+- `node agent-loop/scripts/normalize-closure-queue-outcomes.mjs --self-test` -> ok true.
+- `node agent-loop/scripts/land-queue.mjs --self-test` -> ok true.
+- `node agent-loop/scripts/secret-scan.mjs --self-test` -> positive clean and negative blocker cases passed.
+- `node --run check` -> exit 0.
+- `git diff --check` -> exit 0.

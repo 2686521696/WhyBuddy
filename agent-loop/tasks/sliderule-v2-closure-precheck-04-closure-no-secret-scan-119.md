@@ -1,7 +1,7 @@
 # sliderule-v2-closure-precheck-04-closure-no-secret-scan-119
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 119-appbundle-runtime-closure
 - Theme: precheck
 - Owner: grok
@@ -41,11 +41,11 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
 - Do not make network, DB, Redis, provider, or browser calls from pure Skill helpers.
 
 ## Required implementation
-- [ ] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
-- [ ] Preserve deterministic local behavior.
-- [ ] Include both positive evidence and fail-closed negative behavior where applicable.
-- [ ] Keep public API names stable or document any migration in the final report.
-- [ ] Add a concise final report listing changed files, exported symbols, and validation commands.
+- [x] Add or update executable code, typed schema, fixture, adapter, or focused tests for the objective.
+- [x] Preserve deterministic local behavior.
+- [x] Include both positive evidence and fail-closed negative behavior where applicable.
+- [x] Keep public API names stable or document any migration in the final report.
+- [x] Add a concise final report listing changed files, exported symbols, and validation commands.
 
 ## Acceptance criteria
 - The result is useful as candidate material for Codex review and main landing.
@@ -86,3 +86,16 @@ Focus on validation, landing evidence, and queue hygiene. Do not add broad featu
     console.log('has-error-msg:', /Failed to read/.test(r1.stderr||r1.stdout));
   "
 - How this advances publish/runtime closure: This precheck supplies the executable closure-diff scan (secretScan on +lines + runtime artifact path detection with fail-closed) inside allowed scripts/. Previously only marker/mojibake gates existed with zero scan evidence. Now --self-test and scanClosureLandingDiff prove positive (clean diff -> ok) + fail-closed negative (secret key or .agent-loop/.env artifact in diff -> !ok) behavior per Required/Acceptance. Fixed review blocker so missing/unreadable landing diff errors instead of ok=true. Removed stray temp secret-like patch. Provides clean candidate for codex without touching gates, tests outside scope, or weakening any closure semantics. All scoped to precheck objective and queue hygiene.
+
+## Codex Review Landing
+
+Reviewed and landed as part of the closure precheck batch. Secret/runtime artifact scan self-test passed and current landing diff is scanned after this review update.
+
+Validation:
+- `npx vitest run client/src/lib/skills/appbundle/appBundleSkill.test.ts client/src/lib/skills/orchestrator.test.ts client/src/lib/skills/purchaseApproval.test.ts --reporter=dot` -> 3 files / 128 tests passed.
+- `cd slide-rule-python; .\.venv\Scripts\python.exe -m pytest tests/test_v5_publish_closure_response.py tests/test_v5_smoke.py -q -k "publish_closure or drive_full" --tb=short` -> 16 passed / 12 deselected.
+- `node agent-loop/scripts/normalize-closure-queue-outcomes.mjs --self-test` -> ok true.
+- `node agent-loop/scripts/land-queue.mjs --self-test` -> ok true.
+- `node agent-loop/scripts/secret-scan.mjs --self-test` -> positive clean and negative blocker cases passed.
+- `node --run check` -> exit 0.
+- `git diff --check` -> exit 0.
