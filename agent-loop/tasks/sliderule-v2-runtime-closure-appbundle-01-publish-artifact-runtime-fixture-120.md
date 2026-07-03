@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-appbundle-01-publish-artifact-runtime-fixture-120
 
 ## Execution status
-- Status: HALT_HUMAN
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: appbundle
 - Owner: grok
@@ -10,13 +10,13 @@
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
 - Last execution: 2026-07-04
-- AgentLoop run id: `2026-07-03T16-19-14-831Z`
-- AgentLoop local time: `2026-07-04 00:19:14 (Asia/Shanghai)`
-- AgentLoop result: `HALT_HUMAN`
-- AgentLoop run mode: `halt-human-after-codex-review`
+- AgentLoop run id: `2026-07-03T16-36-44-980Z`
+- AgentLoop local time: `2026-07-04 00:36:44 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
 - Grok ran: `true`
 - Codex ran: `true`
-- gate result: 最近状态为 `HALT_HUMAN`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Add a closed AppBundle publish artifact fixture with runtimeClosure, manifest digest, and per-skill evidence refs.
 
