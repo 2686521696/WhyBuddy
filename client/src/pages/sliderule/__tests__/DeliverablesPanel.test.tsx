@@ -1,5 +1,8 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import { DeliverablesPanel } from "../DeliverablesPanel";
@@ -67,5 +70,88 @@ describe("DeliverablesPanel report closure summary", () => {
     expect(html).toContain("status=closed");
     expect(html).toContain("digest=digest-ui-120");
     expect(html).toContain("evidence=6/6");
+  });
+
+  it("surfaces report/export closure summary from session publishArtifact when publishClosure is absent", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const closed = JSON.parse(
+      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
+    );
+
+    const html = renderToStaticMarkup(
+      <DeliverablesPanel
+        open={true}
+        onClose={() => {}}
+        isRunning={false}
+        onGenerate={() => {}}
+        onExportMd={() => {}}
+        sessionState={
+          {
+            sessionId: "deliverables-report-export-artifact-summary",
+            goal: { text: "publish artifact", status: "clear" },
+            publishArtifact: closed,
+            artifacts: [
+              {
+                id: "report-deliverables-artifact",
+                kind: "report",
+                provenance: "ai_generated",
+                trustLevel: "gated_pass",
+                passedGates: ["commit"],
+                title: "Delivery report",
+                content: "Conclusion: publish artifact closure is ready.",
+                producedBy: {
+                  capabilityRunId: "run-report",
+                  capabilityId: "report.write",
+                  roleId: "report",
+                },
+              },
+            ],
+          } as any
+        }
+      />
+    );
+
+    expect(html).toContain('data-testid="report-export-closure-summary"');
+    expect(html).toContain("status=closed");
+    expect(html).toContain("digest=deadbeef120");
+    expect(html).toContain("evidence=6/6");
+  });
+
+  it("does not render a degraded closure summary when no closure evidence exists", () => {
+    const html = renderToStaticMarkup(
+      <DeliverablesPanel
+        open={true}
+        onClose={() => {}}
+        isRunning={false}
+        onGenerate={() => {}}
+        onExportMd={() => {}}
+        sessionState={
+          {
+            sessionId: "deliverables-report-no-closure-evidence",
+            goal: { text: "plain report", status: "clear" },
+            artifacts: [
+              {
+                id: "report-no-closure-evidence",
+                kind: "report",
+                provenance: "ai_generated",
+                trustLevel: "gated_pass",
+                passedGates: ["commit"],
+                title: "Delivery report",
+                content: "Conclusion: no appbundle artifact yet.",
+                producedBy: {
+                  capabilityRunId: "run-report",
+                  capabilityId: "report.write",
+                  roleId: "report",
+                },
+              },
+            ],
+          } as any
+        }
+      />
+    );
+
+    expect(html).not.toContain('data-testid="report-export-closure-summary"');
+    expect(html).not.toContain("status=degraded");
   });
 });

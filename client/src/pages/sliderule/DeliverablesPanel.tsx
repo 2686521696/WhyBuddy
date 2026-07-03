@@ -6,6 +6,7 @@ import { MarkdownRenderer } from "@/pages/autopilot/right-rail/streaming-doc/Mar
 import { DEFAULT_LOCALE } from "@/lib/locale";
 import {
   deriveReportExportClosureSummary,
+  deriveReportExportClosureSummaryFromPublishArtifact,
   type PublishClosureSummary,
 } from "./derive-cross-runtime-summary";
 
@@ -194,6 +195,7 @@ export function DeliverablesPanel({
                     artifact={activeArtifact}
                     onEvidenceRefClick={onEvidenceRefClick}
                     publishClosure={publishClosure}
+                    sessionState={sessionState}
                   />
                 ) : (
                   <p className="text-sm text-slate-400">该分类暂无内容</p>
@@ -239,19 +241,25 @@ function DeliverableViewer({
   artifact,
   onEvidenceRefClick,
   publishClosure,
+  sessionState,
 }: {
   category: CategoryId;
   artifact: Artifact;
   onEvidenceRefClick?: (artifactId: string) => void;
   publishClosure?: PublishClosureSummary | null;
+  sessionState: V5SessionState;
 }) {
   const content = String(artifact.content || "");
 
   if (category === "report") {
     const sections = parseReportSections(artifact);
+    const publishArtifact =
+      (sessionState as any).publishArtifact ?? (sessionState as any).releaseArtifactWithRuntimeClosure;
     const closureSummary = publishClosure
       ? deriveReportExportClosureSummary(publishClosure)
-      : null;
+      : publishArtifact
+        ? deriveReportExportClosureSummaryFromPublishArtifact(publishArtifact)
+        : null;
     return (
       <div className="space-y-4">
         <h2 className="text-base font-bold text-slate-900">{artifact.title || "可行性报告"}</h2>
