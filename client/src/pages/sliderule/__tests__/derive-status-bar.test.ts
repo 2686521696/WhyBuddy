@@ -274,3 +274,59 @@ it("M5 preservation: driveMarathon consumes real costLedger; low maxTokens force
   expect(Array.isArray(cl)).toBe(true);
   expect(["session_budget_exhausted", "frontier_exhausted", "await_human"].includes(res.stopReason)).toBe(true);
 });
+
+it("driveFullViaPython attaches Python publishClosure on success and returns null on degraded response", async () => {
+  const { driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
+  const state = createInitialSessionState("drive-full-python-closure-120");
+
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        backend: "python",
+        state: { ...state, runtimePhase: "done" },
+        publishClosure: {
+          blocked: false,
+          evidencePresentCount: 6,
+          skillCount: 6,
+          versionPinsChecked: true,
+          closureHash: "python-closed-120",
+          tierCounts: { hard_blocker: 0, warning: 0, info: 1 },
+          topBlockers: [],
+        },
+      }),
+    } as any)
+    .mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: "python_unavailable" }),
+    } as any);
+
+  try {
+    const positive = await driveFullViaPython(state, "show closure on page", {
+      stopSignal: new AbortController().signal,
+      maxLoops: 7,
+    });
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "/api/sliderule/drive-full",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"max_loops":7'),
+      })
+    );
+    expect(positive?.finalState.runtimePhase).toBe("done");
+    expect((positive?.finalState as any).publishClosure?.blocked).toBe(false);
+    expect((positive?.finalState as any).publishClosure?.evidencePresentCount).toBe(6);
+    expect((positive?.finalState as any).publishClosure?.closureHash).toBe("python-closed-120");
+
+    const degraded = await driveFullViaPython(state, "fallback locally", {
+      stopSignal: new AbortController().signal,
+    });
+    expect(degraded).toBeNull();
+  } finally {
+    fetchSpy.mockRestore();
+  }
+});

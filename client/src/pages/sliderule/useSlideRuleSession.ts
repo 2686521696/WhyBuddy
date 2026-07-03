@@ -515,7 +515,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         drive = { finalState: marathonRes.finalState, stopReason: marathonRes.stopReason, loops: [] };
         usedMarathonDriver = true;
       } else {
-        drive = await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
+        const { driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
+        const pythonDrive = await driveFullViaPython(preparedState, userText.trim(), {
+          stopSignal: controller.signal,
+        });
+        drive = pythonDrive
+          ? { finalState: pythonDrive.finalState, stopReason: pythonDrive.stopReason || "completed", loops: [] }
+          : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
         usedMarathonDriver = false;
       }
 

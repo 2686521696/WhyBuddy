@@ -82,6 +82,42 @@ async function driveMarathonViaPython(
   }
 }
 
+export async function driveFullViaPython(
+  state: V5SessionState,
+  userText: string,
+  opts: { stopSignal?: AbortSignal; maxLoops?: number } = {}
+): Promise<{ finalState: V5SessionState; stopReason?: string } | null> {
+  if (typeof fetch !== "function") return null;
+  try {
+    const res = await fetch("/api/sliderule/drive-full", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: opts.stopSignal,
+      body: JSON.stringify({
+        state,
+        userText,
+        max_loops: opts.maxLoops ?? 10,
+      }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body?.backend !== "python" || !body?.state) return null;
+    const finalState: any = { ...(body.state as V5SessionState) };
+    if (body.publishClosure !== undefined) {
+      finalState.publishClosure = body.publishClosure;
+    }
+    if (body.skillRuntimeGraph !== undefined) {
+      finalState.skillRuntimeGraph = body.skillRuntimeGraph;
+    }
+    return {
+      finalState,
+      stopReason: body.stopReason || "completed",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface FrontierProposal {
   seed: string;
   rationale: string;
