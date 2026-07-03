@@ -961,9 +961,84 @@ export interface NormalizedDataModelRuntimeContext {
 export const DM_CROSS_RUNTIME_EVIDENCE = "DM_CROSS_RUNTIME_EVIDENCE";
 export const DM_RBAC_RUNTIME_EVIDENCE = "DM_RBAC_RUNTIME_EVIDENCE";
 export const DM_PAGE_RUNTIME_EVIDENCE = "DM_PAGE_RUNTIME_EVIDENCE";
+export const DM_RBAC_POLICY_IMPACT_EVIDENCE = "DM_RBAC_POLICY_IMPACT_EVIDENCE";
+
+export interface DataModelRbacPolicyImpactEvidence {
+  evidenceKey: typeof DM_RBAC_POLICY_IMPACT_EVIDENCE;
+  state: DataModelRuntimeEvidenceState;
+  reasonCode: string;
+  changedEntityRefs: string[];
+  changedFieldRefs: string[];
+  impactedPolicyRefs: string[];
+  hasPositiveEvidence: boolean;
+}
 
 function dataModelFieldRefs(model: DataModelModel): string[] {
   return model.entities.flatMap(entity => entity.fields.map(field => `${entity.id}.${field.key}`)).sort();
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string").sort();
+}
+
+export function createDataModelRbacPolicyImpactEvidence(
+  model: DataModelModel,
+  changed: { entity?: unknown; field?: unknown } = {},
+  rbacPolicyFieldRefs: unknown = [],
+): DataModelRbacPolicyImpactEvidence {
+  const changedEntityRefs = normalizeStringList(changed.entity);
+  const changedFieldRefs = normalizeStringList(changed.field);
+  const policyRefs = normalizeStringList(rbacPolicyFieldRefs);
+  const removedFieldRefs = model.entities.flatMap(entity =>
+    entity.fields
+      .filter(field => field.lifecycle === "removed")
+      .map(field => `${entity.id}.${field.key}`)
+  );
+  const removedPolicyHits = removedFieldRefs.filter(ref => policyRefs.includes(ref));
+  const impactedPolicyRefs = policyRefs
+    .filter(policyRef =>
+      changedFieldRefs.some(fieldRef => policyRef === fieldRef) ||
+      changedEntityRefs.some(entityRef => policyRef === entityRef || policyRef.startsWith(`${entityRef}.`))
+    )
+    .sort();
+
+  if (removedPolicyHits.length > 0) {
+    return {
+      evidenceKey: DM_RBAC_POLICY_IMPACT_EVIDENCE,
+      state: "blocked",
+      reasonCode: "DM_RBAC_POLICY_IMPACT_FAIL_CLOSED_REMOVED_FIELD",
+      changedEntityRefs,
+      changedFieldRefs,
+      impactedPolicyRefs: removedPolicyHits.sort(),
+      hasPositiveEvidence: false,
+    };
+  }
+
+  if (impactedPolicyRefs.length > 0) {
+    return {
+      evidenceKey: DM_RBAC_POLICY_IMPACT_EVIDENCE,
+      state: "allowed",
+      reasonCode: "DM_RBAC_POLICY_IMPACT_POSITIVE",
+      changedEntityRefs,
+      changedFieldRefs,
+      impactedPolicyRefs,
+      hasPositiveEvidence: true,
+    };
+  }
+
+  return {
+    evidenceKey: DM_RBAC_POLICY_IMPACT_EVIDENCE,
+    state: "blocked",
+    reasonCode:
+      changedEntityRefs.length > 0 || changedFieldRefs.length > 0
+        ? "DM_RBAC_POLICY_IMPACT_NO_OVERLAP"
+        : "DM_RBAC_POLICY_IMPACT_NO_EVIDENCE",
+    changedEntityRefs,
+    changedFieldRefs,
+    impactedPolicyRefs: [],
+    hasPositiveEvidence: false,
+  };
 }
 
 function dataModelPolicyRefs(model: DataModelModel): string[] {
