@@ -108,6 +108,7 @@ def create_skill_runtime(
 
 
 DM_RBAC_POLICY_IMPACT_EVIDENCE = "DM_RBAC_POLICY_IMPACT_EVIDENCE"
+DM_PAGE_BINDING_IMPACT_EVIDENCE = "DM_PAGE_BINDING_IMPACT_EVIDENCE"
 
 
 def _normalize_string_list(value: Any) -> list[str]:
@@ -184,5 +185,77 @@ def create_datamodel_rbac_policy_impact_evidence(
         "changedEntityRefs": changed_entity_refs,
         "changedFieldRefs": changed_field_refs,
         "impactedPolicyRefs": [],
+        "hasPositiveEvidence": False,
+    }
+
+
+def create_datamodel_page_binding_impact_evidence(
+    datamodel: Dict[str, Any],
+    changed: Optional[Dict[str, Any]] = None,
+    page_binding_field_refs: Optional[list[Any]] = None,
+) -> Dict[str, Any]:
+    changed_data = changed if isinstance(changed, dict) else {}
+    changed_entity_refs = _normalize_string_list(changed_data.get("entity"))
+    changed_field_refs = _normalize_string_list(changed_data.get("field"))
+    binding_refs = _normalize_string_list(page_binding_field_refs)
+    entities = datamodel.get("entities", []) if isinstance(datamodel, dict) else []
+    removed_field_refs: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str):
+            continue
+        for field in entity.get("fields", []) or []:
+            if not isinstance(field, dict):
+                continue
+            field_key = field.get("key")
+            if isinstance(field_key, str) and field.get("lifecycle") == "removed":
+                removed_field_refs.append(f"{entity_id}.{field_key}")
+
+    removed_binding_hits = sorted(ref for ref in removed_field_refs if ref in binding_refs)
+    impacted_binding_refs = sorted(
+        binding_ref
+        for binding_ref in binding_refs
+        if any(binding_ref == field_ref for field_ref in changed_field_refs)
+        or any(
+            binding_ref == entity_ref or binding_ref.startswith(f"{entity_ref}.")
+            for entity_ref in changed_entity_refs
+        )
+    )
+
+    if removed_binding_hits:
+        return {
+            "evidenceKey": DM_PAGE_BINDING_IMPACT_EVIDENCE,
+            "state": "blocked",
+            "reasonCode": "DM_PAGE_BINDING_IMPACT_FAIL_CLOSED_REMOVED_FIELD",
+            "changedEntityRefs": changed_entity_refs,
+            "changedFieldRefs": changed_field_refs,
+            "impactedPageBindingRefs": removed_binding_hits,
+            "hasPositiveEvidence": False,
+        }
+
+    if impacted_binding_refs:
+        return {
+            "evidenceKey": DM_PAGE_BINDING_IMPACT_EVIDENCE,
+            "state": "allowed",
+            "reasonCode": "DM_PAGE_BINDING_IMPACT_POSITIVE",
+            "changedEntityRefs": changed_entity_refs,
+            "changedFieldRefs": changed_field_refs,
+            "impactedPageBindingRefs": impacted_binding_refs,
+            "hasPositiveEvidence": True,
+        }
+
+    return {
+        "evidenceKey": DM_PAGE_BINDING_IMPACT_EVIDENCE,
+        "state": "blocked",
+        "reasonCode": (
+            "DM_PAGE_BINDING_IMPACT_NO_OVERLAP"
+            if changed_entity_refs or changed_field_refs
+            else "DM_PAGE_BINDING_IMPACT_NO_EVIDENCE"
+        ),
+        "changedEntityRefs": changed_entity_refs,
+        "changedFieldRefs": changed_field_refs,
+        "impactedPageBindingRefs": [],
         "hasPositiveEvidence": False,
     }
