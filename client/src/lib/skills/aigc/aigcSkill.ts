@@ -477,6 +477,7 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
       crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
       aigcToDataModelTrace: traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(model),
+      aigcToRbacTrace: traceAigcProposedAccessFailClosedAgainstRbacEvidence(model),
     };
     const datamodelSample = createAigcPositiveSampleEvidence(model, "datamodel");
     if (datamodelSample.state === "allowed") {
@@ -485,6 +486,10 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
         AIGC_POSITIVE_SAMPLE_TO_DATAMODEL,
         AIGC_DATAMODEL_RUNTIME_EVIDENCE,
       ]);
+    }
+    const rbacEvidence = createAigcProposedAccessRbacEvidence(model, { declared: capabilityRefs(model) });
+    if (rbacEvidence.permissionRefs.length > 0 || rbacEvidence.roleRefs.length > 0) {
+      surface.runtimeEvidence = unique([...surface.runtimeEvidence, AIGC_RBAC_RUNTIME_EVIDENCE]);
     }
     return surface;
   },
@@ -588,6 +593,20 @@ export interface NormalizedAigcRuntimeContext {
 export const AIGC_CROSS_RUNTIME_EVIDENCE = "AIGC_CROSS_RUNTIME_EVIDENCE";
 export const AIGC_RBAC_RUNTIME_EVIDENCE = "AIGC_RBAC_RUNTIME_EVIDENCE";
 export const AIGC_DATAMODEL_RUNTIME_EVIDENCE = "AIGC_DATAMODEL_RUNTIME_EVIDENCE";
+export const AIGC_RBAC_PROPOSED_ACCESS_TRACE = "AIGC_RBAC_PROPOSED_ACCESS_TRACE";
+
+export interface AigcProposedAccessToRbacTrace {
+  traceId: typeof AIGC_RBAC_PROPOSED_ACCESS_TRACE;
+  sourceSkill: "aigc";
+  targetSkill: "rbac";
+  state: "closed" | "blocked";
+  reasonCode: string;
+  modelId: string;
+  capabilityRefs: string[];
+  roleRefs: string[];
+  permissionRefs: string[];
+  evidenceKey: string;
+}
 
 function aigcRefsForTarget(model: AigcModel, targetSkill: AigcRuntimeTargetSkill): string[] {
   const refs = capabilityRefs(model);
@@ -674,6 +693,46 @@ export function createAigcDataModelRuntimeEvidence(
   return {
     ...createAigcCrossRuntimeEvidence(model, "datamodel", upstreamSurface),
     evidenceKey: AIGC_DATAMODEL_RUNTIME_EVIDENCE,
+  };
+}
+
+export function createAigcProposedAccessRbacEvidence(
+  model: AigcModel,
+  upstreamSurface?: unknown,
+): AigcCrossRuntimeEvidence {
+  return {
+    ...createAigcCrossRuntimeEvidence(model, "rbac", upstreamSurface),
+    evidenceKey: AIGC_RBAC_RUNTIME_EVIDENCE,
+  };
+}
+
+export function traceAigcProposedAccessFailClosedAgainstRbacEvidence(
+  model: AigcModel,
+  rbacSurface?: { role?: string[]; permission?: string[]; permissions?: string[] },
+): AigcProposedAccessToRbacTrace {
+  const refs = capabilityRefs(model);
+  const roleRefs = refs.roleRefs.sort();
+  const permissionRefs = refs.permissionRefs.sort();
+  const rbacRoles = rbacSurface?.role ?? [];
+  const rbacPermissions = rbacSurface?.permission ?? rbacSurface?.permissions ?? [];
+  const hasProposedAccess = model.capabilities.length > 0 && (roleRefs.length > 0 || permissionRefs.length > 0);
+  const hasAllRoles = roleRefs.every(role => rbacRoles.includes(role));
+  const hasAllPermissions = permissionRefs.every(permission => rbacPermissions.includes(permission));
+  const closed = hasProposedAccess && hasAllRoles && hasAllPermissions;
+
+  return {
+    traceId: AIGC_RBAC_PROPOSED_ACCESS_TRACE,
+    sourceSkill: "aigc",
+    targetSkill: "rbac",
+    state: closed ? "closed" : "blocked",
+    reasonCode: closed
+      ? "AIGC_PROPOSED_ACCESS_RBAC_EVIDENCE_CLOSED"
+      : "AIGC_PROPOSED_ACCESS_FAIL_CLOSED_AGAINST_RBAC",
+    modelId: model.id,
+    capabilityRefs: model.capabilities.map(capability => capability.id).sort(),
+    roleRefs,
+    permissionRefs,
+    evidenceKey: `${AIGC_RBAC_PROPOSED_ACCESS_TRACE}:${closed ? "closed" : "blocked"}`,
   };
 }
 

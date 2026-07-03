@@ -10,12 +10,14 @@ import {
   createAigcPositiveSampleEvidence,
   createAigcFailClosedNegativeEvidence,
   createAigcNegativeSampleForPolicyOrSchemaAbsent,
+  createAigcProposedAccessRbacEvidence,
   normalizeAigcRuntimeContextForSkill,
   AIGC_DATAMODEL_RUNTIME_EVIDENCE,
   AIGC_DATAMODEL_TRACE,
   AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
   AIGC_RUNTIME_POLICY_DENIED,
   AIGC_RBAC_RUNTIME_EVIDENCE,
+  AIGC_RBAC_PROPOSED_ACCESS_TRACE,
   AIGC_POSITIVE_SAMPLE_EVIDENCE,
   AIGC_POSITIVE_SAMPLE_TO_DATAMODEL,
   AIGC_POSITIVE_SAMPLE_TO_PAGE,
@@ -23,6 +25,7 @@ import {
   AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE,
   AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT,
   traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence,
+  traceAigcProposedAccessFailClosedAgainstRbacEvidence,
   emptyLeaveAigcModel,
   evaluateAigcRuntimePolicy,
   purchaseRiskAigcModel,
@@ -539,5 +542,44 @@ describe("aigcSkill - 119 AIGC positive sample evidence for DataModel/Page/RBAC/
     expect(surface.aigcToDataModelTrace).toBeTruthy();
     expect(surface.aigcToDataModelTrace.traceId).toBe(AIGC_DATAMODEL_TRACE);
     expect(surface.aigcToDataModelTrace.state).toBe("closed");
+  });
+
+  it("traces proposed AIGC access to RBAC as closed when RBAC surface proves all refs", () => {
+    const trace = traceAigcProposedAccessFailClosedAgainstRbacEvidence(
+      purchaseRiskAigcModel,
+      { role: ["finance", "department_manager"], permission: ["purchase:view", "purchase:finance_approve"] },
+    );
+
+    expect(trace.traceId).toBe(AIGC_RBAC_PROPOSED_ACCESS_TRACE);
+    expect(trace.sourceSkill).toBe("aigc");
+    expect(trace.targetSkill).toBe("rbac");
+    expect(trace.state).toBe("closed");
+    expect(trace.reasonCode).toBe("AIGC_PROPOSED_ACCESS_RBAC_EVIDENCE_CLOSED");
+    expect(trace.roleRefs).toContain("finance");
+    expect(trace.permissionRefs).toContain("purchase:finance_approve");
+  });
+
+  it("traces proposed AIGC access to RBAC as fail-closed when RBAC evidence is absent or incomplete", () => {
+    const absent = traceAigcProposedAccessFailClosedAgainstRbacEvidence(purchaseRiskAigcModel);
+    const incomplete = traceAigcProposedAccessFailClosedAgainstRbacEvidence(
+      purchaseRiskAigcModel,
+      { role: ["guest"], permission: ["purchase:view"] },
+    );
+
+    expect(absent.state).toBe("blocked");
+    expect(absent.reasonCode).toBe("AIGC_PROPOSED_ACCESS_FAIL_CLOSED_AGAINST_RBAC");
+    expect(incomplete.state).toBe("blocked");
+    expect(incomplete.permissionRefs).toContain("purchase:finance_approve");
+  });
+
+  it("resolve surface exposes aigcToRbacTrace and proposed access RBAC evidence", () => {
+    const surface = aigcSkill.resolve(purchaseRiskAigcModel) as any;
+    const evidence = createAigcProposedAccessRbacEvidence(purchaseRiskAigcModel);
+
+    expect(evidence.evidenceKey).toBe(AIGC_RBAC_RUNTIME_EVIDENCE);
+    expect(evidence.state).toBe("blocked");
+    expect(surface.runtimeEvidence).toEqual(expect.arrayContaining([AIGC_RBAC_RUNTIME_EVIDENCE]));
+    expect(surface.aigcToRbacTrace).toBeTruthy();
+    expect(surface.aigcToRbacTrace.traceId).toBe(AIGC_RBAC_PROPOSED_ACCESS_TRACE);
   });
 });
