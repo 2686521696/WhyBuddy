@@ -65,6 +65,30 @@ test('updateExecutionStatusSection refreshes managed fields without touching che
   assert.doesNotMatch(updated, /`old-run`/);
 });
 
+test('updateExecutionStatusSection refreshes English execution status sections', () => {
+  const markdown = [
+    '# runtime closure task',
+    '',
+    '## Execution status',
+    '- Status: PENDING',
+    '- Phase: 120-runtime-closure-e2e',
+    '- Owner: grok',
+    '',
+    '## Objective',
+    'Keep the task runnable.',
+    '',
+  ].join('\n');
+
+  const updated = updateExecutionStatusSection(markdown, sampleRun);
+
+  assert.match(updated, /- Status: DONE_GATE_ONLY/);
+  assert.match(updated, /- AgentLoop run id: `2026-06-16T17-00-02-496Z`/);
+  assert.match(updated, /- AgentLoop run mode: `gate-only`/);
+  assert.match(updated, /- Grok ran: `false`/);
+  assert.match(updated, /- Owner: grok/);
+  assert.match(updated, /## Objective/);
+});
+
 test('shouldSkipTaskFile ignores templates and audit-only shells', () => {
   assert.equal(shouldSkipTaskFile('## 执行状态\n- 状态：模板文件'), true);
   assert.equal(shouldSkipTaskFile('## 执行状态\n- 状态：已实现并验证通过'), false);
@@ -171,6 +195,37 @@ test('syncTaskFileFromRun writes the current run without reading list-runs histo
   assert.equal(result.update.changed, true);
   assert.match(await fs.readFile(taskAbsolutePath, 'utf8'), /AgentLoop 运行模式：`gate-only`/);
   assert.deepEqual(result.migrationStatus.changedCapabilities, ['gap.ask']);
+});
+
+test('syncTaskFileFromRun writes English execution status sections', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-loop-sync-english-run-'));
+  const taskPath = 'agent-loop/tasks/sliderule-v2-runtime-closure-drivefull-01-demo-120.md';
+  const taskAbsolutePath = path.join(root, taskPath);
+  await fs.mkdir(path.dirname(taskAbsolutePath), { recursive: true });
+  await fs.writeFile(taskAbsolutePath, [
+    '# runtime closure',
+    '',
+    '## Execution status',
+    '- Status: PENDING',
+    '- Phase: 120-runtime-closure-e2e',
+    '',
+    '## Objective',
+    'Exercise English status sync.',
+    '',
+  ].join('\n'), 'utf8');
+
+  const result = await syncTaskFileFromRun({
+    cwd: root,
+    taskPath,
+    run: sampleRun,
+    includeMigrationStatus: false,
+  });
+
+  assert.equal(result.update.changed, true);
+  const updated = await fs.readFile(taskAbsolutePath, 'utf8');
+  assert.match(updated, /- Status: DONE_GATE_ONLY/);
+  assert.match(updated, /- AgentLoop result: `DONE_GATE_ONLY`/);
+  assert.match(updated, /## Objective/);
 });
 
 test('migrationCapabilityForTask resolves absolute discovered paths against repo cwd', () => {

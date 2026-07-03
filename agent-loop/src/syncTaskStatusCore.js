@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { listRuns } from './listRunsCore.js';
 
+const ENGLISH_EXECUTION_STATUS_HEADING = '## Execution status';
+
 const EXECUTION_STATUS_HEADING = '## 执行状态';
 const TEMPLATE_MARKERS = [
   '模板文件',
@@ -159,6 +161,14 @@ export async function tryAutoSyncTaskStatus(activeOptions, runSummary) {
 }
 
 export function updateExecutionStatusSection(markdown, run) {
+  const englishSection = findSection(markdown, ENGLISH_EXECUTION_STATUS_HEADING);
+  if (englishSection) {
+    const fieldValues = buildEnglishManagedFieldValues(run);
+    const updatedLines = upsertEnglishFieldLines(englishSection.bodyLines, fieldValues);
+    const nextSectionBody = `${updatedLines.join('\n')}\n`;
+    return `${englishSection.before}${ENGLISH_EXECUTION_STATUS_HEADING}\n${nextSectionBody}${englishSection.after}`;
+  }
+
   const section = findSection(markdown, EXECUTION_STATUS_HEADING);
   if (!section) return markdown;
 
@@ -209,6 +219,20 @@ export function buildManagedFieldValues(run) {
 
 export function shouldSkipTaskFile(markdown) {
   return TEMPLATE_MARKERS.some((marker) => markdown.includes(marker));
+}
+
+export function buildEnglishManagedFieldValues(run) {
+  const values = new Map();
+  values.set('Status', run.status || '');
+  values.set('Last execution', formatExecutionDate(run));
+  values.set('AgentLoop run id', `\`${run.runId}\``);
+  values.set('AgentLoop local time', `\`${run.runTimeLocal}\``);
+  values.set('AgentLoop result', `\`${run.status}\``);
+  values.set('AgentLoop run mode', `\`${run.runMode}\``);
+  values.set('Grok ran', `\`${run.grokRan}\``);
+  values.set('Codex ran', `\`${run.codexRan}\``);
+  values.set('gate result', describeGateResult(run));
+  return values;
 }
 
 function resolveTaskPaths({ cwd, taskPaths, all, tasksDir }) {
@@ -269,7 +293,7 @@ async function syncSingleTaskFile({ cwd, taskPath, run, dryRun }) {
     };
   }
 
-  if (!findSection(original, EXECUTION_STATUS_HEADING)) {
+  if (!findExecutionStatusSection(original)) {
     return {
       taskPath: taskFile.relativePath,
       skipped: true,
@@ -359,6 +383,13 @@ function findSection(markdown, heading, { boundary = 'section' } = {}) {
   };
 }
 
+function findExecutionStatusSection(markdown) {
+  return (
+    findSection(markdown, EXECUTION_STATUS_HEADING)
+    || findSection(markdown, ENGLISH_EXECUTION_STATUS_HEADING)
+  );
+}
+
 function upsertFieldLines(bodyLines, fieldValues) {
   const managedKeys = new Set(MANAGED_FIELDS);
   const seen = new Set();
@@ -386,6 +417,39 @@ function upsertFieldLines(bodyLines, fieldValues) {
   if (missing.length > 0) {
     const insertIndex = findManagedFieldInsertIndex(result);
     const toInsert = missing.map((key) => `- ${key}：${fieldValues.get(key)}`);
+    result.splice(insertIndex, 0, ...toInsert);
+  }
+
+  return result;
+}
+
+function upsertEnglishFieldLines(bodyLines, fieldValues) {
+  const managedKeys = new Set(fieldValues.keys());
+  const seen = new Set();
+  const result = [];
+
+  for (const line of bodyLines) {
+    const match = line.match(/^- ([^:]+):\s*(.*)$/);
+    if (!match) {
+      result.push(line);
+      continue;
+    }
+
+    const [, rawKey] = match;
+    const key = rawKey.trim();
+    if (!managedKeys.has(key)) {
+      result.push(line);
+      continue;
+    }
+
+    seen.add(key);
+    result.push(`- ${key}: ${fieldValues.get(key)}`);
+  }
+
+  const missing = [...fieldValues.keys()].filter((key) => !seen.has(key));
+  if (missing.length > 0) {
+    const insertIndex = findManagedFieldInsertIndex(result);
+    const toInsert = missing.map((key) => `- ${key}: ${fieldValues.get(key)}`);
     result.splice(insertIndex, 0, ...toInsert);
   }
 
