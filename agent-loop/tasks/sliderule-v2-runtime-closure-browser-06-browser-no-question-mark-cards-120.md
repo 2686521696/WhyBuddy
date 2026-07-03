@@ -1,7 +1,7 @@
 # sliderule-v2-runtime-closure-browser-06-browser-no-question-mark-cards-120
 
 ## Execution status
-- Status: PENDING
+- Status: DONE_REVIEWED
 - Phase: 120-runtime-closure-e2e
 - Theme: browser
 - Owner: grok
@@ -9,6 +9,14 @@
 - Landing: codex-reviewed-only
 - Reference wave: 119 closure wave plus 118 cross-runtime candidates
 
+- Last execution: 2026-07-04
+- AgentLoop run id: `2026-07-03T17-19-18-303Z`
+- AgentLoop local time: `2026-07-04 01:19:18 (Asia/Shanghai)`
+- AgentLoop result: `DONE_REVIEWED`
+- AgentLoop run mode: `grok-fix+codex-review`
+- Grok ran: `true`
+- Codex ran: `true`
+- gate result: 最终状态为 `DONE_REVIEWED`
 ## Objective
 Remove or test against placeholder question-mark cards in the closure surfaces.
 
