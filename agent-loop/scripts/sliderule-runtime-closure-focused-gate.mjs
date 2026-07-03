@@ -43,6 +43,10 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "cd slide-rule-python && python -m pytest tests/test_sliderule_driver_fullpath.py -k \"drive_full or result_to_dict\"",
   },
   {
+    id: "skill-runtime-graph-model-attachments",
+    command: "cd slide-rule-python && python -m pytest tests/test_v5_skill_runtime_graph.py",
+  },
+  {
     id: "typecheck",
     command: "node --run check",
   },
