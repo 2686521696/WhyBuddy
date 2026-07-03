@@ -21,7 +21,14 @@ def test_derive_publish_closure_response_from_runtime_closure_result():
                 result={
                     "runtimeClosure": {
                         "blocked": False,
-                        "blockers": [],
+                        "blockers": [
+                            {
+                                "code": "APPBUNDLE_PUBLISH_REF_MISSING",
+                                "path": "menuEntries[0].roleRefs[2]",
+                                "affectedSkill": "rbac",
+                                "ref": "role:finance-admin",
+                            }
+                        ],
                         "perSkillEvidence": {
                             "datamodel": {"evidencePresent": True},
                             "rbac": {"evidencePresent": True},
@@ -48,6 +55,7 @@ def test_derive_publish_closure_response_from_runtime_closure_result():
 
     assert response is not None
     assert response["blocked"] is False
+    assert response["blockerCount"] == 1
     assert response["evidencePresentCount"] == 6
     assert response["skillCount"] == 6
     assert response["versionPinsChecked"] is True
@@ -56,6 +64,8 @@ def test_derive_publish_closure_response_from_runtime_closure_result():
     assert response["tierCounts"] == {"hard_blocker": 0, "warning": 1, "info": 2}
     assert response["perSkillEvidence"]["datamodel"]["evidencePresent"] is True
     assert response["perSkillEvidence"]["aigc"]["evidencePresent"] is True
+    assert response["topBlockers"][0]["affectedSkill"] == "rbac"
+    assert response["topBlockers"][0]["ref"] == "role:finance-admin"
 
 
 def test_derive_publish_closure_response_returns_none_without_runtime_closure():

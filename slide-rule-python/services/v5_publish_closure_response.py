@@ -36,6 +36,8 @@ def _to_publish_closure_summary(report: Dict[str, Any]) -> Optional[Dict[str, An
         top_blockers.append({
             "code": str(blocker_dict.get("code") or ""),
             "path": str(blocker_dict.get("path") or ""),
+            "affectedSkill": str(blocker_dict.get("affectedSkill") or ""),
+            "ref": str(blocker_dict.get("ref") or ""),
         })
 
     return {
