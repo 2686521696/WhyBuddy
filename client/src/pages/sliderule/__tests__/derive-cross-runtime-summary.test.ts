@@ -4,10 +4,12 @@ import { deriveCrossRuntimeGraphSummary } from "../derive-cross-runtime-summary"
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
 import {
   derivePublishClosureSummary,
+  deriveRollbackClosureDiffSummary,
   formatClosureStatusAndTopBlockersForFinalReport,
   normalizeBlockerForRender,
   renderPublishClosureBlocker,
   selectPublishClosureSummary,
+  selectRollbackClosureDiffSummary,
 } from "../derive-cross-runtime-summary";
 
 describe("deriveCrossRuntimeGraphSummary", () => {
@@ -330,5 +332,62 @@ describe("formatClosureStatusAndTopBlockersForFinalReport", () => {
   it("returns unknown status text for null/undefined (negative path)", () => {
     expect(formatClosureStatusAndTopBlockersForFinalReport(null)).toBe("closure status: unknown\ntop blockers: n/a");
     expect(formatClosureStatusAndTopBlockersForFinalReport(undefined)).toBe("closure status: unknown\ntop blockers: n/a");
+  });
+});
+
+describe("deriveRollbackClosureDiffSummary", () => {
+  it("summarizes matching rollback closure artifacts for compact UI display", () => {
+    const summary = deriveRollbackClosureDiffSummary({
+      appId: "leave-request",
+      currentVersion: "1.0.0",
+      targetVersion: "1.0.0",
+      currentStableDigest: "digest-a",
+      targetStableDigest: "digest-a",
+      digestMatch: true,
+      changedPerSkillRefs: [],
+      evidencePresentCountCurrent: 6,
+      evidencePresentCountTarget: 6,
+    });
+
+    expect(summary).toEqual({
+      digestMatch: true,
+      changedRefCount: 0,
+      evidencePresentCountCurrent: 6,
+      evidencePresentCountTarget: 6,
+      degraded: false,
+      currentVersion: "1.0.0",
+      targetVersion: "1.0.0",
+      currentStableDigest: "digest-a",
+      targetStableDigest: "digest-a",
+    });
+  });
+
+  it("fails closed when rollback closure diff is missing a digest match decision", () => {
+    const summary = deriveRollbackClosureDiffSummary({
+      appId: "leave-request",
+      currentVersion: "1.0.0",
+      targetVersion: "1.1.0",
+      changedPerSkillRefs: ["datamodel", "page"],
+      evidencePresentCountCurrent: 4,
+      evidencePresentCountTarget: 6,
+    } as any);
+
+    expect(summary).toMatchObject({
+      digestMatch: false,
+      changedRefCount: 2,
+      evidencePresentCountCurrent: 4,
+      evidencePresentCountTarget: 6,
+      degraded: true,
+    });
+    expect(deriveRollbackClosureDiffSummary(null)).toBeNull();
+  });
+
+  it("selects primary rollback closure diff summary before fallback", () => {
+    const primary = { digestMatch: true, changedRefCount: 0, degraded: false };
+    const fallback = { digestMatch: false, changedRefCount: 1, degraded: true };
+
+    expect(selectRollbackClosureDiffSummary(primary, fallback)).toBe(primary);
+    expect(selectRollbackClosureDiffSummary(null, fallback)).toBe(fallback);
+    expect(selectRollbackClosureDiffSummary(undefined, undefined)).toBeNull();
   });
 });

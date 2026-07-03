@@ -1,6 +1,9 @@
 import type { CrossRuntimeGraph } from "@/lib/skills/orchestrator";
 import type { AppBundleRuntimeClosureReport } from "@/lib/skills/appbundle/appBundleSkill";
-import type { AppBundleClosureTier } from "@/lib/skills/appbundle/appBundleModel";
+import type {
+  AppBundleClosureTier,
+  AppBundleRollbackClosureDiffEvidence,
+} from "@/lib/skills/appbundle/appBundleModel";
 
 export type CrossRuntimeGraphSummary = {
   edgeCount: number;
@@ -37,6 +40,18 @@ export type PublishClosureSummary = {
     "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle",
     { evidencePresent?: boolean } | undefined
   >;
+};
+
+export type RollbackClosureDiffSummary = {
+  digestMatch: boolean;
+  changedRefCount: number;
+  evidencePresentCountCurrent?: number;
+  evidencePresentCountTarget?: number;
+  degraded?: boolean;
+  currentVersion?: string;
+  targetVersion?: string;
+  currentStableDigest?: string;
+  targetStableDigest?: string;
 };
 
 export function normalizeBlockerForRender(
@@ -149,6 +164,37 @@ export function selectPublishClosureSummary(
   previewClosure: PublishClosureSummary | null | undefined
 ): PublishClosureSummary | null {
   return pythonClosure ?? previewClosure ?? null;
+}
+
+export function deriveRollbackClosureDiffSummary(
+  diff: AppBundleRollbackClosureDiffEvidence | null | undefined
+): RollbackClosureDiffSummary | null {
+  if (!diff || typeof diff !== "object" || Array.isArray(diff)) return null;
+
+  const raw = diff as Partial<AppBundleRollbackClosureDiffEvidence>;
+  const changedRefCount = Array.isArray(raw.changedPerSkillRefs)
+    ? raw.changedPerSkillRefs.length
+    : 0;
+  const hasDigestDecision = typeof raw.digestMatch === "boolean";
+
+  return {
+    digestMatch: hasDigestDecision ? raw.digestMatch === true : false,
+    changedRefCount,
+    evidencePresentCountCurrent: raw.evidencePresentCountCurrent,
+    evidencePresentCountTarget: raw.evidencePresentCountTarget,
+    degraded: hasDigestDecision ? raw.degraded === true : true,
+    currentVersion: raw.currentVersion,
+    targetVersion: raw.targetVersion,
+    currentStableDigest: raw.currentStableDigest,
+    targetStableDigest: raw.targetStableDigest,
+  };
+}
+
+export function selectRollbackClosureDiffSummary(
+  primary: RollbackClosureDiffSummary | null | undefined,
+  fallback: RollbackClosureDiffSummary | null | undefined
+): RollbackClosureDiffSummary | null {
+  return primary ?? fallback ?? null;
 }
 
 /**
