@@ -291,6 +291,12 @@ describe("Knife C · terminal delivery platform", () => {
     expect(md).toContain("closure status: blocked");
     expect(md).toContain("top blockers: APPBUNDLE_PUBLISH_REF_MISSING@menuEntries[0].roleRefs[2]; APPBUNDLE_RUNTIME_CLOSURE_BLOCKED@runtimeSnapshot.pageBindings[1]");
     expect(md).toContain("closure blockers");
+    expect(md).toContain(
+      "APPBUNDLE_PUBLISH_REF_MISSING skill=rbac path=menuEntries[0].roleRefs[2] ref=role:finance-admin"
+    );
+    expect(md).toContain(
+      "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED skill=page path=runtimeSnapshot.pageBindings[1] ref=page:leave-approval"
+    );
     expect(md).toContain("APPBUNDLE_PUBLISH_REF_MISSING");
     expect(md).toContain("rbac");
     expect(md).toContain("menuEntries[0].roleRefs[2]");
