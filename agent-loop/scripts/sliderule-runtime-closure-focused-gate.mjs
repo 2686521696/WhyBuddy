@@ -67,6 +67,14 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "node --test agent-loop/src/closureFinalSummary.test.mjs",
   },
   {
+    id: "closure-secret-scan",
+    command: "node agent-loop/scripts/secret-scan.mjs --self-test",
+  },
+  {
+    id: "closure-secret-scan-module",
+    command: "node --test agent-loop/src/secretScan.test.mjs",
+  },
+  {
     id: "drive-full-model-attachments",
     command: "cd slide-rule-python && python -m pytest tests/test_sliderule_driver_fullpath.py -k \"drive_full or result_to_dict\"",
   },

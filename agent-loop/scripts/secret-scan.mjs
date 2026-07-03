@@ -1,85 +1,12 @@
 import fs from 'node:fs/promises';
-import { scanTextForSecrets, summarizeSecretFindings } from '../src/secretScan.js';
+import {
+  scanClosureLandingDiff,
+  scanTextForSecrets,
+  summarizeClosureScan,
+  summarizeSecretFindings,
+} from '../src/secretScan.js';
 
-// --- closure landing diff scan additions (for precheck-04 objective) ---
-const RUNTIME_ARTIFACT_PATTERNS = [
-  { re: /(^|\/)\.agent-loop(\/|$)/, kind: 'agent_loop_artifact' },
-  { re: /(^|\/)\.worktrees(\/|$)/, kind: 'worktree_artifact' },
-  { re: /(^|\/)\.env(\.|\/|$)/, kind: 'env_file' },
-  { re: /__pycache__/, kind: 'pycache' },
-  { re: /\.pyc$/, kind: 'pyc_file' },
-  { re: /\.(stdout|stderr)\.log$/, kind: 'log_artifact' },
-  { re: /node_modules\//, kind: 'node_modules' },
-];
-
-function extractAddedFromDiff(diffText = '') {
-  const files = [];
-  let currentPath = null;
-  let addedLines = [];
-  for (const line of String(diffText).split(/\r?\n/)) {
-    const header = line.match(/^diff --git a\/.* b\/(.+)$/);
-    if (header) {
-      if (currentPath !== null) {
-        files.push({ path: currentPath, added: addedLines.join('\n') });
-      }
-      currentPath = header[1];
-      addedLines = [];
-      continue;
-    }
-    if (currentPath !== null && line.startsWith('+') && !line.startsWith('+++ ')) {
-      addedLines.push(line.slice(1));
-    }
-  }
-  if (currentPath !== null) {
-    files.push({ path: currentPath, added: addedLines.join('\n') });
-  }
-  return files;
-}
-
-function scanForRuntimeArtifacts(paths = []) {
-  const findings = [];
-  for (const p of paths) {
-    for (const { re, kind } of RUNTIME_ARTIFACT_PATTERNS) {
-      if (re.test(p)) {
-        findings.push({ path: p, kind, severity: 'blocker' });
-        break;
-      }
-    }
-  }
-  return findings;
-}
-
-export function scanClosureLandingDiff(diffText = '') {
-  const added = extractAddedFromDiff(diffText);
-  const changedPaths = added.map((f) => f.path);
-  const artifactFindings = scanForRuntimeArtifacts(changedPaths);
-  const secretFindings = [];
-  for (const f of added) {
-    if (f.added && f.added.length > 0) {
-      secretFindings.push(...scanTextForSecrets({ path: f.path, text: f.added }));
-    }
-  }
-  const secretSummary = summarizeSecretFindings(secretFindings);
-  const hasBlockingArtifacts = artifactFindings.length > 0;
-  return {
-    ok: secretSummary.ok && !hasBlockingArtifacts,
-    secretSummary,
-    secretFindings,
-    artifactFindings,
-    changedPaths,
-  };
-}
-
-function summarizeClosureScan(result) {
-  return {
-    ok: result.ok,
-    blockers: (result.secretSummary?.blockers || 0) + result.artifactFindings.length,
-    secrets: result.secretFindings.length,
-    runtimeArtifacts: result.artifactFindings.length,
-    changedFiles: result.changedPaths.length,
-  };
-}
-// --- end closure additions ---
+export { scanClosureLandingDiff, summarizeClosureScan };
 
 async function main() {
   const argv = process.argv.slice(2);
