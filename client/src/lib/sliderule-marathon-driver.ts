@@ -43,6 +43,12 @@ export interface MarathonResult {
   stopReason: MarathonStopReason;
 }
 
+export type DriveFullStatus =
+  | "python_success"
+  | "timeout"
+  | "python_unavailable"
+  | "fallback";
+
 async function driveMarathonViaPython(
   state: V5SessionState,
   seedText: string,
@@ -80,6 +86,21 @@ async function driveMarathonViaPython(
   } catch {
     return null;
   }
+}
+
+export function classifyDriveFullStatus(
+  result:
+    | { finalState?: V5SessionState | null; error?: string | null; status?: number | null }
+    | null
+    | undefined
+): DriveFullStatus {
+  if (result?.finalState) return "python_success";
+  const error = String(result?.error || "").toLowerCase();
+  if (error.includes("timeout") || result?.status === 504) return "timeout";
+  if (error.includes("python_unavailable") || error.includes("unavailable")) {
+    return "python_unavailable";
+  }
+  return "fallback";
 }
 
 export async function driveFullViaPython(

@@ -330,3 +330,14 @@ it("driveFullViaPython attaches Python publishClosure on success and returns nul
     fetchSpy.mockRestore();
   }
 });
+
+it("classifies /drive-full status for visible loading and fallback states", async () => {
+  const { classifyDriveFullStatus } = await import("@/lib/sliderule-marathon-driver");
+
+  expect(classifyDriveFullStatus({ finalState: createInitialSessionState("ok") })).toBe(
+    "python_success"
+  );
+  expect(classifyDriveFullStatus({ error: "timeout" })).toBe("timeout");
+  expect(classifyDriveFullStatus({ error: "python_unavailable" })).toBe("python_unavailable");
+  expect(classifyDriveFullStatus(null)).toBe("fallback");
+});
