@@ -80,6 +80,19 @@ def _auth(key: Optional[str]):
     if key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key - Python now owns V5")
 
+
+def _turn_seq_for_drive_full(value: Optional[str]) -> int:
+    if not value:
+        return 0
+    m = re.search(r"(\d+)", str(value))
+    return int(m.group(1)) if m else 0
+
+
+def _advance_drive_full_turn_id(value: Optional[str]) -> str:
+    """Bump server-authored drive-full saves past same-turn client snapshots."""
+    return f"turn-{_turn_seq_for_drive_full(value) + 1}-drive-full"
+
+
 def _planner_timeout_seconds() -> float:
     raw = os.getenv(ORCHESTRATE_PLAN_TIMEOUT_MS_ENV, str(DEFAULT_ORCHESTRATE_PLAN_TIMEOUT_MS))
     try:
@@ -528,6 +541,7 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     skill_graph = derive_skill_runtime_graph_response(new_state)
     new_state.publishClosure = publish_closure
     new_state.skillRuntimeGraph = skill_graph
+    new_state.lastTurnId = _advance_drive_full_turn_id(getattr(new_state, "lastTurnId", None))
     save_session(new_state)
     return {
         "state": new_state.model_dump(),

@@ -18,6 +18,7 @@ Node .env: PYTHON_SLIDE_RULE_BASE_URL=http://localhost:9700 + internal key
 
 import sys
 import os
+import re
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,17 @@ from services.v5_full_driver import drive_full_v5_session
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from models.v5_state import V5SessionState
+
+
+def _turn_seq_for_drive_full(value) -> int:
+    if not value:
+        return 0
+    match = re.search(r"(\d+)", str(value))
+    return int(match.group(1)) if match else 0
+
+
+def _advance_drive_full_turn_id(value) -> str:
+    return f"turn-{_turn_seq_for_drive_full(value) + 1}-drive-full"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -227,6 +239,7 @@ async def drive_full(payload: dict, x_internal_key: str = Header(None)):
     skill_graph = derive_skill_runtime_graph_response(final)
     final.publishClosure = publish_closure
     final.skillRuntimeGraph = skill_graph
+    final.lastTurnId = _advance_drive_full_turn_id(getattr(final, "lastTurnId", None))
     save_session(final)
     return {
         "state": final.model_dump(),

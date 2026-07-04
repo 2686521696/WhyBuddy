@@ -111,7 +111,7 @@ def test_app_drive_full_route_returns_runtime_closure_contract(monkeypatch):
 def test_app_drive_full_persists_latest_runtime_projection_for_reload(monkeypatch):
     """POST /drive-full must persist latest publishClosure for session reload."""
     from models.v5_state import CapabilityRun
-    import app as app_module
+    import routes.sliderule_full as sliderule_full_module
 
     sid = "app-route-drive-full-persisted-projection"
 
@@ -150,7 +150,7 @@ def test_app_drive_full_persists_latest_runtime_projection_for_reload(monkeypatc
         )
         return state
 
-    monkeypatch.setattr(app_module, "drive_full_v5_session", fake_drive_full)
+    monkeypatch.setattr(sliderule_full_module, "drive_full_v5_session", fake_drive_full)
 
     post = client.post(
         "/api/sliderule/drive-full",
@@ -177,6 +177,91 @@ def test_app_drive_full_persists_latest_runtime_projection_for_reload(monkeypatc
     assert state["publishClosure"]["blocked"] is False
     assert state["publishClosure"]["evidencePresentCount"] == 6
     assert state["skillRuntimeGraph"]["edges"][0]["sourceSkill"] == "datamodel"
+
+
+def test_app_drive_full_persists_phase_when_existing_session_has_same_turn(monkeypatch):
+    """drive-full save is server-authoritative even when client posts the same lastTurnId."""
+    from models.v5_state import CapabilityRun, V5SessionState
+    from services.slide_rule_session import delete_session, save_session
+    import routes.sliderule_full as sliderule_full_module
+
+    sid = "app-route-drive-full-same-turn-phase"
+    prior = V5SessionState(
+        sessionId=sid,
+        goal={"text": "purchase approval", "status": "needs_refinement"},
+        artifacts=[],
+        capabilityRuns=[],
+        coverageGaps=[],
+        conversation=[],
+        runtimePhase="orchestrating",
+        lastTurnId="turn-100",
+    )
+    save_session(prior)
+
+    def fake_drive_full(state, max_loops=5, user_instruction=""):
+        state.lastTurnId = "turn-100"
+        state.runtimePhase = "awaiting"
+        state.awaitReason = "max_repeat_guard"
+        state.capabilityRuns.append(
+            CapabilityRun(
+                id="run-appbundle-phase",
+                capabilityId="appbundle.runtimeClosure",
+                turnId="loop-closure",
+                result={
+                    "runtimeClosure": {
+                        "skillsChecked": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+                        "versionPinsChecked": True,
+                        "crossSkillRuntimeEdges": [
+                            {"sourceSkill": "datamodel", "targetSkill": "page", "state": "allowed", "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"}
+                        ],
+                    },
+                    "perSkillEvidence": {
+                        skill: {"evidencePresent": True}
+                        for skill in ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+                    },
+                    "blocked": False,
+                    "blockers": [],
+                    "closureId": "appbundle:purchase-approval@1.0.0:runtime-closure",
+                    "closureHash": "phase123",
+                    "stableDigest": "phase456",
+                    "findingsByTier": {"hard_blocker": [], "warning": [], "info": []},
+                },
+            )
+        )
+        return state
+
+    monkeypatch.setattr(sliderule_full_module, "drive_full_v5_session", fake_drive_full)
+
+    try:
+        post = client.post(
+            "/api/sliderule/drive-full",
+            headers={"x-internal-key": INTERNAL_KEY},
+            json={
+                "state": {
+                    "sessionId": sid,
+                    "goal": {"text": "purchase approval"},
+                    "artifacts": [],
+                    "capabilityRuns": [],
+                    "coverageGaps": [],
+                    "conversation": [],
+                    "runtimePhase": "orchestrating",
+                    "lastTurnId": "turn-100",
+                },
+                "userText": "purchase approval route contract",
+                "max_loops": 3,
+            },
+        )
+        assert post.status_code == 200
+
+        loaded = client.get(f"/api/sliderule/sessions/{sid}", headers={"x-internal-key": INTERNAL_KEY})
+        assert loaded.status_code == 200
+        state = loaded.json()["state"]
+        assert state["runtimePhase"] == "awaiting"
+        assert state["awaitReason"] == "max_repeat_guard"
+        assert state["lastTurnId"] != "turn-100"
+        assert state["capabilityRuns"][0]["capabilityId"] == "appbundle.runtimeClosure"
+    finally:
+        delete_session(sid)
 
 
 def test_orchestrate_plan_accepts_frontend_session_wrapper(monkeypatch):
