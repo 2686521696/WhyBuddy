@@ -108,6 +108,22 @@ export function deriveSliderulePageIdentity({ rootText = "", title = "", route =
   return /SlideRule|sliderule/i.test(`${rootText}\n${title}\n${route}`);
 }
 
+async function clickFirstVisibleEnabled(locator, { reverse = false } = {}) {
+  const count = await locator.count().catch(() => 0);
+  const indexes = Array.from({ length: count }, (_, index) => index);
+  if (reverse) indexes.reverse();
+  for (const index of indexes) {
+    const target = locator.nth(index);
+    const visible = await target.isVisible().catch(() => false);
+    const disabled = await target.isDisabled().catch(() => true);
+    if (visible && !disabled) {
+      await target.click();
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function collectSliderulePageSmokeEvidence(page) {
   const root = page.locator('[data-testid="sliderule-root"]').first();
   const rootCount = await root.count();
@@ -118,7 +134,7 @@ export async function collectSliderulePageSmokeEvidence(page) {
   const backend = rootCount > 0 ? await root.getAttribute("data-backend").catch(() => "") : "";
   const commandInput = page.locator('[data-testid="sliderule-composer-input"]').first();
   const composerButtons = page.locator('[data-testid="sliderule-composer-dock"] button');
-  const resetControl = page.locator('[data-testid="sliderule-reset-session"]').first();
+  const resetControls = page.locator('[data-testid="sliderule-reset-session"]');
   const goalDisplay = page.locator('[data-testid="sliderule-goal-display"]').first();
   const smokeCommand = "SlideRule page controls smoke";
 
@@ -141,8 +157,20 @@ export async function collectSliderulePageSmokeEvidence(page) {
   }
 
   let hasResetClickAcknowledged = false;
-  if ((await resetControl.count()) > 0) {
-    await resetControl.click().catch(() => {});
+  if ((await resetControls.count()) > 0) {
+    const clicked = await clickFirstVisibleEnabled(resetControls).catch(() => false);
+    if (clicked) {
+      await page
+        .waitForFunction(
+          () => {
+            const input = document.querySelector('[data-testid="sliderule-composer-input"]');
+            return input && "value" in input && input.value === "";
+          },
+          undefined,
+          { timeout: 5000 },
+        )
+        .catch(() => {});
+    }
     const valueAfterReset = await commandInput.inputValue().catch(() => "");
     hasResetClickAcknowledged = valueAfterReset === "";
   }
@@ -159,7 +187,7 @@ export async function collectSliderulePageSmokeEvidence(page) {
     hasCommandSubmit: (await composerButtons.count()) >= 2,
     hasCommandInputMutation,
     hasCommandSubmitEnabled,
-    hasResetControl: (await resetControl.count()) > 0,
+    hasResetControl: (await resetControls.count()) > 0,
     hasResetClickAcknowledged,
     hasReloadRecoveryMarker: (await page.locator('[data-testid="sliderule-goal-display"]').count()) > 0,
     hasReloadAfterReset,
@@ -209,19 +237,20 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
       })
       .catch(() => {});
 
-    const buttonCount = await composerButtons.count();
-    for (let index = buttonCount - 1; index >= 0; index -= 1) {
-      const button = composerButtons.nth(index);
-      const visible = await button.isVisible().catch(() => false);
-      const disabled = await button.isDisabled().catch(() => true);
-      if (visible && !disabled) {
-        await button.click();
-        break;
-      }
-    }
+    await clickFirstVisibleEnabled(composerButtons, { reverse: true });
 
     await responsePromise;
     await commandInput.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+    await page
+      .waitForFunction(
+        () => {
+          const input = document.querySelector('[data-testid="sliderule-composer-input"]');
+          return input && "disabled" in input && input.disabled === false;
+        },
+        undefined,
+        { timeout: 30000 },
+      )
+      .catch(() => {});
     const hasCommandSettled = await commandInput.isEnabled().catch(() => false);
     const hasPageUsableAfterCommand =
       (await page.locator('[data-testid="sliderule-root"]').count().catch(() => 0)) > 0 &&
