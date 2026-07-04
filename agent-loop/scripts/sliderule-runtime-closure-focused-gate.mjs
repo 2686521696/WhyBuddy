@@ -120,6 +120,18 @@ export const FOCUSED_GATE_COMMANDS = [
   },
 ];
 
+export function buildFocusedGateCommands({ requireLiveBrowser = false } = {}) {
+  return FOCUSED_GATE_COMMANDS.map((entry) => {
+    if (entry.id !== "browser-page-controls-smoke" || !requireLiveBrowser) {
+      return entry;
+    }
+    return {
+      ...entry,
+      command: `${entry.command} --require-live`,
+    };
+  });
+}
+
 function runCommand(command) {
   const result = spawnSync(command, {
     shell: true,
@@ -132,8 +144,9 @@ function runCommand(command) {
   };
 }
 
-export function runFocusedGate({ simulate = false } = {}) {
-  const results = FOCUSED_GATE_COMMANDS.map((entry) => {
+export function runFocusedGate({ simulate = false, requireLiveBrowser = false } = {}) {
+  const commands = buildFocusedGateCommands({ requireLiveBrowser });
+  const results = commands.map((entry) => {
     if (simulate) {
       return { ...entry, exitCode: 0, ok: true, output: "simulated" };
     }
@@ -154,9 +167,10 @@ export function runFocusedGate({ simulate = false } = {}) {
 
 function printList() {
   console.log("SlideRule runtime closure focused gate");
-  for (const entry of FOCUSED_GATE_COMMANDS) {
+  for (const entry of buildFocusedGateCommands()) {
     console.log(`- ${entry.id}: ${entry.command}`);
   }
+  console.log("Use --require-live-browser to force the Playwright page smoke to require a running dev server.");
 }
 
 function main() {
@@ -165,7 +179,10 @@ function main() {
     printList();
     return;
   }
-  const result = runFocusedGate({ simulate: args.has("--self-test") });
+  const result = runFocusedGate({
+    simulate: args.has("--self-test"),
+    requireLiveBrowser: args.has("--require-live-browser"),
+  });
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 1;
 }
