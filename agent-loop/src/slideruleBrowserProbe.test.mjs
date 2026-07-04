@@ -60,3 +60,25 @@ test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-clos
   assert.equal(failed.status, "failed");
   assert.equal(failed.evidence.httpStatus, 503);
 });
+
+test("probeSlideruleBrowserRoute fails closed when the route is reachable but core controls are missing", async () => {
+  const incomplete = await probeSlideruleBrowserRoute({
+    baseUrl: "http://localhost:3000",
+    fetchImpl: async () => ({
+      status: 200,
+      text: async () => `
+        <main>
+          <h1>SlideRule shell</h1>
+          <p>Route mounted, but no real command surface.</p>
+        </main>
+      `,
+    }),
+  });
+
+  assert.equal(incomplete.ok, false);
+  assert.equal(incomplete.status, "incomplete");
+  assert.equal(incomplete.evidence.httpStatus, 200);
+  assert.equal(incomplete.evidence.hasCommandInput, false);
+  assert.equal(incomplete.evidence.hasCommandSubmit, false);
+  assert.equal(incomplete.evidence.hasResetControl, false);
+});

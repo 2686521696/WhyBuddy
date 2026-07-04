@@ -52,6 +52,23 @@ export async function probeSlideruleBrowserRoute(options = {}) {
       return { ok: false, status: "failed", route, evidence };
     }
 
+    const hasCoreInteractiveSurface =
+      hasSlideruleRoot &&
+      hasSlideRuleText &&
+      hasCommandInput &&
+      hasCommandSubmit &&
+      hasResetControl &&
+      hasReloadRecoveryMarker;
+    if (!hasCoreInteractiveSurface) {
+      return {
+        ok: false,
+        status: "incomplete",
+        route,
+        reason: "reachable route is missing required sliderule command/reset/reload controls",
+        evidence,
+      };
+    }
+
     return { ok: true, status: "reachable", route, evidence };
   } catch (error) {
     return {
