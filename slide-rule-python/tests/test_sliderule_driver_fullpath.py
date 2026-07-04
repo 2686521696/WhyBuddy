@@ -12,6 +12,7 @@ try:
     from models.v5_state import V5SessionState, Artifact, CapabilityRun, ExecuteCapabilityResult
     from services.slide_rule_session import create_session, drive_reasoning_turn
     from services.v5_full_driver import drive_full_v5_session, _result_to_dict
+    from services.v5_capability_executor import execute_v5_capability
 except Exception as e:
     pytest.skip(f"imports failed for driver fullpath test: {e}", allow_module_level=True)
 
@@ -225,6 +226,36 @@ def test_drive_full_appends_runtime_closure_for_real_command_replay():
     assert closure["evidencePresentCount"] == 6
     assert graph is not None
     assert graph["edges"][0]["sourceSkill"] == "datamodel"
+
+
+def test_purchase_approval_runtime_closure_uses_linkage_evidence_without_prior_artifacts(monkeypatch):
+    """Real purchase approval command should close from deterministic six-Skill linkage evidence.
+
+    This guards the live page path where a user submits the purchase approval app prompt:
+    risk/counter/synthesis artifacts may not mention every Skill by name, but the dedicated
+    purchase approval runtime sample still has enough deterministic linkage evidence to close 6/6.
+    """
+    import services.v5_capability_executor as exec_mod
+
+    state = _mk_state("sr-purchase-runtime-linkage")
+    state.goal["text"] = "生成一个采购审批应用，包含采购单、申请人、部门经理、财务、采购执行、审批流、表单页面和风险摘要"
+    monkeypatch.setattr(exec_mod, "retrieve_evidence", lambda *_args, **_kwargs: [{"title": "purchase approval evidence"}])
+    monkeypatch.setattr(exec_mod, "generate_with_rag", lambda *_args, **_kwargs: "purchase approval generated content")
+
+    result = execute_v5_capability("appbundle.runtimeClosure", state, [], "appbundle", "turn-purchase")
+
+    assert result["blocked"] is False
+    assert result["runtimeClosure"]["skillsChecked"] == ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+    assert sum(1 for item in result["perSkillEvidence"].values() if item["evidencePresent"] is True) == 6
+    assert result["perSkillEvidence"]["datamodel"]["artifactId"].startswith("runtime-linkage-")
+    assert result["perSkillEvidence"]["aigc"]["evidenceRef"].startswith("evidence:aigc:")
+
+    mojibake_state = _mk_state("sr-purchase-runtime-linkage-mojibake")
+    mojibake_state.goal["text"] = state.goal["text"].encode("utf-8").decode("latin1")
+    mojibake_result = execute_v5_capability("appbundle.runtimeClosure", mojibake_state, [], "appbundle", "turn-purchase-mojibake")
+
+    assert mojibake_result["blocked"] is False
+    assert sum(1 for item in mojibake_result["perSkillEvidence"].values() if item["evidencePresent"] is True) == 6
 
 
 def test_drive_turn_failure_transitions_to_failed():

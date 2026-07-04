@@ -33,6 +33,7 @@ from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 from services.persistence import load_all, save_all
+from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
@@ -224,6 +225,9 @@ async def drive_full(payload: dict, x_internal_key: str = Header(None)):
     final = drive_full_v5_session(state, max_loops=payload.get("max_loops", 5), user_instruction=user_text)
     publish_closure = derive_publish_closure_response(final)
     skill_graph = derive_skill_runtime_graph_response(final)
+    final.publishClosure = publish_closure
+    final.skillRuntimeGraph = skill_graph
+    save_session(final)
     return {
         "state": final.model_dump(),
         "status": "V5 full path completed with real RAG evidence",

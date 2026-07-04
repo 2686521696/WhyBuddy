@@ -524,13 +524,18 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     max_loops = int(payload.get("max_loops", 10))
     user_text = payload.get("userText", "") or payload.get("user_text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+    publish_closure = derive_publish_closure_response(new_state)
+    skill_graph = derive_skill_runtime_graph_response(new_state)
+    new_state.publishClosure = publish_closure
+    new_state.skillRuntimeGraph = skill_graph
+    save_session(new_state)
     return {
         "state": new_state.model_dump(),
         "stateAuthority": STATE_AUTHORITY_PYTHON,
         "provenance": PROVENANCE_PYTHON_FULLPATH,
         "backend": PYTHON_BACKEND,
-        "publishClosure": derive_publish_closure_response(new_state),
-        "skillRuntimeGraph": derive_skill_runtime_graph_response(new_state),
+        "publishClosure": publish_closure,
+        "skillRuntimeGraph": skill_graph,
         "closureWarnings": [],
     }
 
