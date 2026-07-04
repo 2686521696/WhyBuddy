@@ -62,6 +62,48 @@ export function evaluateSliderulePageSmokeEvidence(evidence) {
   };
 }
 
+export function evaluateSlideruleCommandSmokeEvidence(evidence) {
+  const pageResult = evaluateSliderulePageSmokeEvidence(evidence);
+  const normalized = {
+    ...pageResult.evidence,
+    hasDriveFullPost: evidence?.hasDriveFullPost === true,
+    hasPythonDriveFullResponse: evidence?.hasPythonDriveFullResponse === true,
+    hasCommandSettled: evidence?.hasCommandSettled === true,
+    hasPageUsableAfterCommand: evidence?.hasPageUsableAfterCommand === true,
+    hasNoFatalConsoleErrors: evidence?.hasNoFatalConsoleErrors === true,
+  };
+
+  if (!pageResult.ok) {
+    return {
+      ...pageResult,
+      evidence: normalized,
+    };
+  }
+
+  const hasCommandClosure =
+    normalized.hasDriveFullPost &&
+    normalized.hasPythonDriveFullResponse &&
+    normalized.hasCommandSettled &&
+    normalized.hasPageUsableAfterCommand &&
+    normalized.hasNoFatalConsoleErrors;
+
+  if (!hasCommandClosure) {
+    return {
+      ok: false,
+      status: "incomplete-command",
+      reason: "sliderule page command did not close through python /drive-full with usable page recovery",
+      evidence: normalized,
+    };
+  }
+
+  return {
+    ok: true,
+    status: "command-ready",
+    reason: "sliderule page submitted a real command through python /drive-full and stayed usable",
+    evidence: normalized,
+  };
+}
+
 export function deriveSliderulePageIdentity({ rootText = "", title = "", route = "" } = {}) {
   return /SlideRule|sliderule/i.test(`${rootText}\n${title}\n${route}`);
 }
@@ -122,4 +164,81 @@ export async function collectSliderulePageSmokeEvidence(page) {
     hasReloadRecoveryMarker: (await page.locator('[data-testid="sliderule-goal-display"]').count()) > 0,
     hasReloadAfterReset,
   };
+}
+
+export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
+  const commandText = options.commandText || "采购审批应用 command smoke";
+  const responseTimeoutMs = options.responseTimeoutMs || 60000;
+  const baseEvidence = await collectSliderulePageSmokeEvidence(page);
+  const fatalConsoleErrors = [];
+  let hasDriveFullPost = false;
+  let hasPythonDriveFullResponse = false;
+
+  const onRequest = (request) => {
+    if (request.method() === "POST" && /\/api\/sliderule\/drive-full(?:\?|$)/.test(request.url())) {
+      hasDriveFullPost = true;
+    }
+  };
+  const onConsole = (message) => {
+    if (message.type() === "error") fatalConsoleErrors.push(message.text());
+  };
+  const onPageError = (error) => {
+    fatalConsoleErrors.push(String(error?.message || error));
+  };
+
+  page.on("request", onRequest);
+  page.on("console", onConsole);
+  page.on("pageerror", onPageError);
+
+  try {
+    const commandInput = page.locator('[data-testid="sliderule-composer-input"]').first();
+    const composerButtons = page.locator('[data-testid="sliderule-composer-dock"] button');
+    await commandInput.fill(commandText);
+
+    const responsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/sliderule\/drive-full(?:\?|$)/.test(response.url()),
+        { timeout: responseTimeoutMs },
+      )
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        hasPythonDriveFullResponse =
+          response.ok() && body?.backend === "python" && Boolean(body?.state);
+      })
+      .catch(() => {});
+
+    const buttonCount = await composerButtons.count();
+    for (let index = buttonCount - 1; index >= 0; index -= 1) {
+      const button = composerButtons.nth(index);
+      const visible = await button.isVisible().catch(() => false);
+      const disabled = await button.isDisabled().catch(() => true);
+      if (visible && !disabled) {
+        await button.click();
+        break;
+      }
+    }
+
+    await responsePromise;
+    await commandInput.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+    const hasCommandSettled = await commandInput.isEnabled().catch(() => false);
+    const hasPageUsableAfterCommand =
+      (await page.locator('[data-testid="sliderule-root"]').count().catch(() => 0)) > 0 &&
+      (await commandInput.count().catch(() => 0)) > 0 &&
+      hasCommandSettled;
+
+    return {
+      ...baseEvidence,
+      hasDriveFullPost,
+      hasPythonDriveFullResponse,
+      hasCommandSettled,
+      hasPageUsableAfterCommand,
+      hasNoFatalConsoleErrors: fatalConsoleErrors.length === 0,
+    };
+  } finally {
+    page.off("request", onRequest);
+    page.off("console", onConsole);
+    page.off("pageerror", onPageError);
+  }
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   deriveSliderulePageIdentity,
+  evaluateSlideruleCommandSmokeEvidence,
   evaluateSliderulePageSmokeEvidence,
 } from "./sliderulePageSmoke.js";
 
@@ -69,4 +70,32 @@ test("deriveSliderulePageIdentity accepts route/title identity when rendered tex
     }),
     true,
   );
+});
+
+const completeCommandEvidence = {
+  ...completeEvidence,
+  hasDriveFullPost: true,
+  hasPythonDriveFullResponse: true,
+  hasCommandSettled: true,
+  hasPageUsableAfterCommand: true,
+  hasNoFatalConsoleErrors: true,
+};
+
+test("evaluateSlideruleCommandSmokeEvidence closes when a real command reaches python /drive-full", () => {
+  assert.deepEqual(evaluateSlideruleCommandSmokeEvidence(completeCommandEvidence), {
+    ok: true,
+    status: "command-ready",
+    reason: "sliderule page submitted a real command through python /drive-full and stayed usable",
+    evidence: completeCommandEvidence,
+  });
+});
+
+test("evaluateSlideruleCommandSmokeEvidence fails closed when command submit does not reach python /drive-full", () => {
+  const evidence = { ...completeCommandEvidence, hasPythonDriveFullResponse: false };
+  const result = evaluateSlideruleCommandSmokeEvidence(evidence);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete-command");
+  assert.match(result.reason, /python \/drive-full/);
+  assert.equal(result.evidence.hasPythonDriveFullResponse, false);
 });
