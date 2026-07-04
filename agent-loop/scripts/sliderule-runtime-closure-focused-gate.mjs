@@ -67,6 +67,14 @@ export const FOCUSED_GATE_COMMANDS = [
     command: "node --test agent-loop/src/slideruleBrowserProbe.test.mjs",
   },
   {
+    id: "browser-page-controls-smoke-module",
+    command: "node --test agent-loop/src/sliderulePageSmoke.test.mjs",
+  },
+  {
+    id: "browser-page-controls-smoke",
+    command: "node agent-loop/scripts/sliderule-page-controls-smoke.mjs",
+  },
+  {
     id: "closure-summary-surface",
     command: "npx vitest run client/src/pages/sliderule/__tests__/derive-cross-runtime-summary.test.ts",
   },
