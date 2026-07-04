@@ -120,10 +120,20 @@ export const FOCUSED_GATE_COMMANDS = [
   },
 ];
 
-export function buildFocusedGateCommands({ requireLiveBrowser = false, requireCommandSubmit = false } = {}) {
+export function buildFocusedGateCommands({
+  requireLiveBrowser = false,
+  requireCommandSubmit = false,
+  requireRuntimeSurface = false,
+} = {}) {
   return FOCUSED_GATE_COMMANDS.map((entry) => {
     if (entry.id !== "browser-page-controls-smoke") {
       return entry;
+    }
+    if (requireRuntimeSurface) {
+      return {
+        ...entry,
+        command: `${entry.command} --require-live --submit-command --require-runtime-surface`,
+      };
     }
     if (requireCommandSubmit) {
       return {
@@ -155,8 +165,13 @@ function runCommand(command) {
   };
 }
 
-export function runFocusedGate({ simulate = false, requireLiveBrowser = false, requireCommandSubmit = false } = {}) {
-  const commands = buildFocusedGateCommands({ requireLiveBrowser, requireCommandSubmit });
+export function runFocusedGate({
+  simulate = false,
+  requireLiveBrowser = false,
+  requireCommandSubmit = false,
+  requireRuntimeSurface = false,
+} = {}) {
+  const commands = buildFocusedGateCommands({ requireLiveBrowser, requireCommandSubmit, requireRuntimeSurface });
   const results = commands.map((entry) => {
     if (simulate) {
       return { ...entry, exitCode: 0, ok: true, output: "simulated" };
@@ -183,6 +198,7 @@ function printList() {
   }
   console.log("Use --require-live-browser to force the Playwright page smoke to require a running dev server.");
   console.log("Use --require-command-submit to force the Playwright page smoke to submit a real command through /drive-full.");
+  console.log("Use --require-runtime-surface to also require AppBundle publish closure and cross-runtime graph surfaces.");
 }
 
 function main() {
@@ -195,6 +211,7 @@ function main() {
     simulate: args.has("--self-test"),
     requireLiveBrowser: args.has("--require-live-browser"),
     requireCommandSubmit: args.has("--require-command-submit"),
+    requireRuntimeSurface: args.has("--require-runtime-surface"),
   });
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 1;

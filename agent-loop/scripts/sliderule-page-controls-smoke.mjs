@@ -6,11 +6,13 @@ import {
   collectSliderulePageSmokeEvidence,
   evaluateSlideruleCommandSmokeEvidence,
   evaluateSliderulePageSmokeEvidence,
+  evaluateSlideruleRuntimeSurfaceSmokeEvidence,
 } from "../src/sliderulePageSmoke.js";
 
 const args = new Set(process.argv.slice(2));
 const requireLive = args.has("--require-live");
 const submitCommand = args.has("--submit-command");
+const requireRuntimeSurface = args.has("--require-runtime-surface");
 const baseUrl = (process.env.SLIDERULE_BROWSER_PROBE_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 const route = `${baseUrl}/agent-loop/sliderule`;
 
@@ -46,6 +48,7 @@ if (args.has("--help") || args.has("--list")) {
   console.log("  node agent-loop/scripts/sliderule-page-controls-smoke.mjs");
   console.log("  node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live");
   console.log("  node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command");
+  console.log("  node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command --require-runtime-surface");
   process.exit(0);
 }
 
@@ -77,11 +80,13 @@ try {
   await page.waitForSelector('[data-testid="sliderule-root"]', { timeout: 10000 });
   await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 10000 });
 
-  const evidence = submitCommand
+  const evidence = submitCommand || requireRuntimeSurface
     ? await collectSlideruleCommandSmokeEvidence(page)
     : await collectSliderulePageSmokeEvidence(page);
   const result = {
-    ...(submitCommand
+    ...(requireRuntimeSurface
+      ? evaluateSlideruleRuntimeSurfaceSmokeEvidence(evidence)
+      : submitCommand
       ? evaluateSlideruleCommandSmokeEvidence(evidence)
       : evaluateSliderulePageSmokeEvidence(evidence)),
     route,

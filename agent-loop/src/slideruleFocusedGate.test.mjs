@@ -24,3 +24,14 @@ test("buildFocusedGateCommands can require a real command submit smoke", () => {
     "node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command",
   );
 });
+
+test("buildFocusedGateCommands can require AppBundle runtime surface smoke", () => {
+  const commands = buildFocusedGateCommands({ requireRuntimeSurface: true });
+  const pageSmoke = commands.find((entry) => entry.id === "browser-page-controls-smoke");
+
+  assert.ok(pageSmoke);
+  assert.equal(
+    pageSmoke.command,
+    "node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command --require-runtime-surface",
+  );
+});

@@ -5,6 +5,7 @@ import {
   deriveSliderulePageIdentity,
   evaluateSlideruleCommandSmokeEvidence,
   evaluateSliderulePageSmokeEvidence,
+  evaluateSlideruleRuntimeSurfaceSmokeEvidence,
 } from "./sliderulePageSmoke.js";
 
 const completeEvidence = {
@@ -81,6 +82,12 @@ const completeCommandEvidence = {
   hasNoFatalConsoleErrors: true,
 };
 
+const completeRuntimeSurfaceEvidence = {
+  ...completeCommandEvidence,
+  hasPublishClosureSurface: true,
+  hasCrossRuntimeGraphSurface: true,
+};
+
 test("evaluateSlideruleCommandSmokeEvidence closes when a real command reaches python /drive-full", () => {
   assert.deepEqual(evaluateSlideruleCommandSmokeEvidence(completeCommandEvidence), {
     ok: true,
@@ -98,4 +105,23 @@ test("evaluateSlideruleCommandSmokeEvidence fails closed when command submit doe
   assert.equal(result.status, "incomplete-command");
   assert.match(result.reason, /python \/drive-full/);
   assert.equal(result.evidence.hasPythonDriveFullResponse, false);
+});
+
+test("evaluateSlideruleRuntimeSurfaceSmokeEvidence closes when command evidence renders AppBundle surfaces", () => {
+  assert.deepEqual(evaluateSlideruleRuntimeSurfaceSmokeEvidence(completeRuntimeSurfaceEvidence), {
+    ok: true,
+    status: "runtime-surface-ready",
+    reason: "sliderule page rendered AppBundle publish closure and cross-runtime graph after python /drive-full",
+    evidence: completeRuntimeSurfaceEvidence,
+  });
+});
+
+test("evaluateSlideruleRuntimeSurfaceSmokeEvidence fails closed when AppBundle runtime surface is missing", () => {
+  const evidence = { ...completeRuntimeSurfaceEvidence, hasPublishClosureSurface: false };
+  const result = evaluateSlideruleRuntimeSurfaceSmokeEvidence(evidence);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete-runtime-surface");
+  assert.match(result.reason, /AppBundle/);
+  assert.equal(result.evidence.hasPublishClosureSurface, false);
 });

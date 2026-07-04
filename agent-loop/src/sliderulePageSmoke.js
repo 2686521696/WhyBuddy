@@ -104,6 +104,38 @@ export function evaluateSlideruleCommandSmokeEvidence(evidence) {
   };
 }
 
+export function evaluateSlideruleRuntimeSurfaceSmokeEvidence(evidence) {
+  const commandResult = evaluateSlideruleCommandSmokeEvidence(evidence);
+  const normalized = {
+    ...commandResult.evidence,
+    hasPublishClosureSurface: evidence?.hasPublishClosureSurface === true,
+    hasCrossRuntimeGraphSurface: evidence?.hasCrossRuntimeGraphSurface === true,
+  };
+
+  if (!commandResult.ok) {
+    return {
+      ...commandResult,
+      evidence: normalized,
+    };
+  }
+
+  if (!normalized.hasPublishClosureSurface || !normalized.hasCrossRuntimeGraphSurface) {
+    return {
+      ok: false,
+      status: "incomplete-runtime-surface",
+      reason: "sliderule page did not render AppBundle runtime closure surfaces after python /drive-full",
+      evidence: normalized,
+    };
+  }
+
+  return {
+    ok: true,
+    status: "runtime-surface-ready",
+    reason: "sliderule page rendered AppBundle publish closure and cross-runtime graph after python /drive-full",
+    evidence: normalized,
+  };
+}
+
 export function deriveSliderulePageIdentity({ rootText = "", title = "", route = "" } = {}) {
   return /SlideRule|sliderule/i.test(`${rootText}\n${title}\n${route}`);
 }
@@ -256,6 +288,10 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
       (await page.locator('[data-testid="sliderule-root"]').count().catch(() => 0)) > 0 &&
       (await commandInput.count().catch(() => 0)) > 0 &&
       hasCommandSettled;
+    const hasPublishClosureSurface =
+      (await page.locator('[data-testid="sliderule-publish-closure"]').count().catch(() => 0)) > 0;
+    const hasCrossRuntimeGraphSurface =
+      (await page.locator('[data-testid="sliderule-cross-runtime-graph"]').count().catch(() => 0)) > 0;
 
     return {
       ...baseEvidence,
@@ -264,6 +300,8 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
       hasCommandSettled,
       hasPageUsableAfterCommand,
       hasNoFatalConsoleErrors: fatalConsoleErrors.length === 0,
+      hasPublishClosureSurface,
+      hasCrossRuntimeGraphSurface,
     };
   } finally {
     page.off("request", onRequest);
