@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { resolveSlideruleBrowserProbeOptions } from "./slideruleBrowserProbeOptions.js";
 import { probeSlideruleBrowserRoute } from "./slideruleBrowserProbe.js";
 
 test("probeSlideruleBrowserRoute reports reachable, degraded skip, and fail-closed states", async () => {
@@ -106,4 +107,16 @@ test("probeSlideruleBrowserRoute strict python evidence mode requires python pro
   assert.equal(missingPythonEvidence.evidence.hasCommandInput, true);
   assert.equal(missingPythonEvidence.evidence.hasPythonProvenance, false);
   assert.equal(missingPythonEvidence.evidence.hasPythonBackend, false);
+});
+
+test("resolveSlideruleBrowserProbeOptions maps strict python evidence env switch", () => {
+  const options = resolveSlideruleBrowserProbeOptions({
+    SLIDERULE_BROWSER_PROBE_BASE_URL: "http://127.0.0.1:5173",
+    SLIDERULE_BROWSER_PROBE_REQUIRE_PYTHON: "1",
+  });
+
+  assert.deepEqual(options, {
+    baseUrl: "http://127.0.0.1:5173",
+    requirePythonEvidence: true,
+  });
 });
