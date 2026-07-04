@@ -30,6 +30,18 @@ export function buildCompactClosureSummary(result = {}) {
       forTask: result.meta?.forTask || "sliderule-runtime-closure-focused-gate",
       compact: true,
       simulate: result.meta?.simulate === true,
+      ...(typeof result.meta?.requireLiveBrowser === "boolean"
+        ? { requireLiveBrowser: result.meta.requireLiveBrowser }
+        : {}),
+      ...(typeof result.meta?.requireCommandSubmit === "boolean"
+        ? { requireCommandSubmit: result.meta.requireCommandSubmit }
+        : {}),
+      ...(typeof result.meta?.requireRuntimeSurface === "boolean"
+        ? { requireRuntimeSurface: result.meta.requireRuntimeSurface }
+        : {}),
+      ...(typeof result.meta?.requirePersistenceReplay === "boolean"
+        ? { requirePersistenceReplay: result.meta.requirePersistenceReplay }
+        : {}),
     },
   };
 }

@@ -13,7 +13,7 @@ test("buildCompactClosureSummary emits compact closed and fail-closed summaries"
       { matrix: "vitest", ok: true },
     ],
     summary: { passed: 3, failed: 0, total: 3 },
-    meta: { simulate: true, forTask: "closure-gate-120" },
+    meta: { simulate: true, forTask: "closure-gate-120", requirePersistenceReplay: true },
   });
 
   assert.deepEqual(closed, {
@@ -23,7 +23,12 @@ test("buildCompactClosureSummary emits compact closed and fail-closed summaries"
     total: 3,
     matrices: ["frontend", "python", "vitest"],
     failedMatrices: [],
-    meta: { forTask: "closure-gate-120", compact: true, simulate: true },
+    meta: {
+      forTask: "closure-gate-120",
+      compact: true,
+      simulate: true,
+      requirePersistenceReplay: true,
+    },
   });
 
   const blocked = buildCompactClosureSummary({
