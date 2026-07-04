@@ -13,8 +13,12 @@ const completeEvidence = {
   hasPythonBackend: true,
   hasCommandInput: true,
   hasCommandSubmit: true,
+  hasCommandInputMutation: true,
+  hasCommandSubmitEnabled: true,
   hasResetControl: true,
+  hasResetClickAcknowledged: true,
   hasReloadRecoveryMarker: true,
+  hasReloadAfterReset: true,
 };
 
 test("evaluateSliderulePageSmokeEvidence closes when page controls and python markers are present", () => {
@@ -34,6 +38,16 @@ test("evaluateSliderulePageSmokeEvidence fails closed when required page control
   assert.equal(result.status, "incomplete");
   assert.match(result.reason, /command\/reset\/reload controls/);
   assert.equal(result.evidence.hasResetControl, false);
+});
+
+test("evaluateSliderulePageSmokeEvidence fails closed when controls are present but not actionable", () => {
+  const evidence = { ...completeEvidence, hasCommandSubmitEnabled: false };
+  const result = evaluateSliderulePageSmokeEvidence(evidence);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete-action");
+  assert.match(result.reason, /not actionable/);
+  assert.equal(result.evidence.hasCommandSubmitEnabled, false);
 });
 
 test("evaluateSliderulePageSmokeEvidence fails closed when strict python markers are missing", () => {
