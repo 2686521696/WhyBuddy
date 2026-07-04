@@ -84,6 +84,34 @@ test("probeSlideruleBrowserRoute fails closed when the route is reachable but co
   assert.equal(incomplete.evidence.hasResetControl, false);
 });
 
+test("probeSlideruleBrowserRoute reports spa-shell when Vite serves the client-rendered app shell", async () => {
+  const shell = await probeSlideruleBrowserRoute({
+    baseUrl: "http://localhost:3000",
+    requirePythonEvidence: true,
+    fetchImpl: async () => ({
+      status: 200,
+      text: async () => `
+        <!doctype html>
+        <html>
+          <head>
+            <script type="module" src="/@vite/client"></script>
+            <title>SlideRule</title>
+          </head>
+          <body>
+            <div id="root"></div>
+            <script type="module" src="/src/main.tsx"></script>
+          </body>
+        </html>
+      `,
+    }),
+  });
+
+  assert.equal(shell.ok, true);
+  assert.equal(shell.status, "spa-shell");
+  assert.equal(shell.evidence.hasSlideRuleText, true);
+  assert.equal(shell.evidence.hasCommandInput, false);
+});
+
 test("probeSlideruleBrowserRoute strict python evidence mode requires python provenance and backend markers", async () => {
   const missingPythonEvidence = await probeSlideruleBrowserRoute({
     baseUrl: "http://localhost:3000",

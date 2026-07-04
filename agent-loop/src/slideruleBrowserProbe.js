@@ -37,6 +37,9 @@ export async function probeSlideruleBrowserRoute(options = {}) {
     const hasCommandSubmit = /<button\b[^>]*(type=["']submit["'][^>]*)?>[\s\S]*?(Run|Submit|发送|推演|开始)/i.test(text);
     const hasResetControl = /data-testid=["']sliderule-reset-session["']|>\s*(Reset|重置会话|重新开始)\s*</i.test(text);
     const hasReloadRecoveryMarker = /data-testid=["']sliderule-goal-display["']|publishClosure|skillRuntimeGraph|closureHash/i.test(text);
+    const hasSpaShell =
+      /<div\b[^>]+id=["']root["'][^>]*>/i.test(text) &&
+      /\/@vite\/client|\/src\/main\.(t|j)sx?/i.test(text);
     const evidence = {
       httpStatus,
       hasSlideruleRoot,
@@ -61,6 +64,15 @@ export async function probeSlideruleBrowserRoute(options = {}) {
       hasResetControl &&
       hasReloadRecoveryMarker;
     if (!hasCoreInteractiveSurface) {
+      if (hasSpaShell) {
+        return {
+          ok: true,
+          status: "spa-shell",
+          route,
+          reason: "reachable route returned the Vite/React app shell; use Playwright smoke for rendered controls",
+          evidence,
+        };
+      }
       return {
         ok: false,
         status: "incomplete",

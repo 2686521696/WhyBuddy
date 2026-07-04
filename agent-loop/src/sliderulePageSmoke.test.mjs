@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluateSliderulePageSmokeEvidence } from "./sliderulePageSmoke.js";
+import {
+  deriveSliderulePageIdentity,
+  evaluateSliderulePageSmokeEvidence,
+} from "./sliderulePageSmoke.js";
 
 const completeEvidence = {
   hasSlideruleRoot: true,
@@ -41,4 +44,15 @@ test("evaluateSliderulePageSmokeEvidence fails closed when strict python markers
   assert.equal(result.status, "incomplete-python");
   assert.match(result.reason, /python provenance\/backend markers/);
   assert.equal(result.evidence.hasPythonBackend, false);
+});
+
+test("deriveSliderulePageIdentity accepts route/title identity when rendered text omits brand text", () => {
+  assert.equal(
+    deriveSliderulePageIdentity({
+      rootText: "STATUS ready",
+      title: "SlideRule",
+      route: "http://localhost:3000/agent-loop/sliderule",
+    }),
+    true,
+  );
 });

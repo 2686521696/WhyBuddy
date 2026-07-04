@@ -44,10 +44,16 @@ export function evaluateSliderulePageSmokeEvidence(evidence) {
   };
 }
 
+export function deriveSliderulePageIdentity({ rootText = "", title = "", route = "" } = {}) {
+  return /SlideRule|sliderule/i.test(`${rootText}\n${title}\n${route}`);
+}
+
 export async function collectSliderulePageSmokeEvidence(page) {
   const root = page.locator('[data-testid="sliderule-root"]').first();
   const rootCount = await root.count();
   const rootText = rootCount > 0 ? await root.innerText({ timeout: 3000 }).catch(() => "") : "";
+  const title = await page.title().catch(() => "");
+  const route = page.url();
   const pythonProvenance = rootCount > 0 ? await root.getAttribute("data-python-provenance").catch(() => "") : "";
   const backend = rootCount > 0 ? await root.getAttribute("data-backend").catch(() => "") : "";
   const commandInput = page.locator('[data-testid="sliderule-composer-input"]').first();
@@ -55,7 +61,7 @@ export async function collectSliderulePageSmokeEvidence(page) {
 
   return {
     hasSlideruleRoot: rootCount > 0,
-    hasSlideRuleText: /SlideRule|sliderule/i.test(rootText),
+    hasSlideRuleText: deriveSliderulePageIdentity({ rootText, title, route }),
     hasPythonProvenance: Boolean(pythonProvenance),
     hasPythonBackend: /python/i.test(String(backend || "")),
     hasCommandInput: (await commandInput.count()) > 0,
