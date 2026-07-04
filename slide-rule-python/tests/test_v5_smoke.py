@@ -264,6 +264,90 @@ def test_app_drive_full_persists_phase_when_existing_session_has_same_turn(monke
         delete_session(sid)
 
 
+def test_session_get_repairs_mojibake_and_projects_purchase_graph():
+    from models.v5_state import V5SessionState
+    from services.slide_rule_session import delete_session, save_session
+
+    sid = "session-mojibake-purchase-refresh"
+    chinese = "生成一个采购审批应用，包含采购单、申请人、部门经理、财务、采购执行、审批流、表单页面和风险摘要"
+    mojibake = chinese.encode("utf-8").decode("latin1").encode("utf-8").decode("latin1")
+    prior = V5SessionState(
+        sessionId=sid,
+        goal={"text": mojibake, "status": "needs_refinement"},
+        artifacts=[],
+        capabilityRuns=[],
+        coverageGaps=[],
+        conversation=[{"id": "c1", "role": "user", "text": mojibake}],
+        graph={
+            "nodes": [{"id": "root", "type": "question", "title": mojibake, "body": mojibake}],
+            "edges": [],
+        },
+        runtimePhase="awaiting",
+        lastTurnId="turn-1",
+    )
+    save_session(prior)
+    try:
+        loaded = client.get(f"/api/sliderule/sessions/{sid}", headers={"x-internal-key": INTERNAL_KEY})
+        assert loaded.status_code == 200
+        state = loaded.json()["state"]
+        assert state["goal"]["text"] == chinese
+        assert state["conversation"][0]["text"] == chinese
+        assert state["graph"]["centralQuestion"]["title"] == "采购审批应用"
+        assert len(state["graph"]["nodes"]) >= 6
+        assert any(node["id"] == "purchase-workflow" for node in state["graph"]["nodes"])
+    finally:
+        delete_session(sid)
+
+
+def test_drive_full_repairs_purchase_text_and_returns_business_graph(monkeypatch):
+    from models.v5_state import V5SessionState
+    from services.slide_rule_session import delete_session
+    import routes.sliderule_full as sliderule_full_module
+
+    sid = "drive-full-purchase-business-graph"
+    chinese = "生成一个采购审批应用，包含采购单、申请人、部门经理、财务、采购执行、审批流、表单页面和风险摘要"
+    mojibake = chinese.encode("utf-8").decode("latin1").encode("utf-8").decode("latin1")
+
+    def fake_drive_full(state, max_loops=5, user_instruction=""):
+        assert user_instruction == chinese
+        assert state.goal["text"] == chinese
+        state.runtimePhase = "awaiting"
+        state.awaitReason = "max_repeat_guard"
+        return state
+
+    monkeypatch.setattr(sliderule_full_module, "drive_full_v5_session", fake_drive_full)
+
+    try:
+        post = client.post(
+            "/api/sliderule/drive-full",
+            headers={"x-internal-key": INTERNAL_KEY},
+            json={
+                "state": {
+                    "sessionId": sid,
+                    "goal": {"text": mojibake, "status": "needs_refinement"},
+                    "artifacts": [],
+                    "capabilityRuns": [],
+                    "coverageGaps": [],
+                    "conversation": [{"id": "c1", "role": "user", "text": mojibake}],
+                    "graph": {"nodes": [{"id": "root", "type": "question", "title": mojibake, "body": mojibake}], "edges": []},
+                    "runtimePhase": "orchestrating",
+                    "lastTurnId": "turn-200",
+                },
+                "userText": mojibake,
+                "max_loops": 3,
+            },
+        )
+        assert post.status_code == 200
+        state = post.json()["state"]
+        assert state["goal"]["text"] == chinese
+        assert state["conversation"][0]["text"] == chinese
+        assert state["graph"]["stage"] == "purchase_approval_app_closure"
+        assert len(state["graph"]["nodes"]) >= 6
+        assert any(node["title"].startswith("Workflow") for node in state["graph"]["nodes"])
+    finally:
+        delete_session(sid)
+
+
 def test_orchestrate_plan_accepts_frontend_session_wrapper(monkeypatch):
     from services.slide_rule_orchestrator import OrchestratePlanResult
 

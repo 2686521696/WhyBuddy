@@ -38,6 +38,7 @@ from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
+from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from models.v5_state import V5SessionState
 
 
@@ -232,9 +233,11 @@ def _degraded_example():
 async def drive_full(payload: dict, x_internal_key: str = Header(None)):
     if x_internal_key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key")
-    state = V5SessionState(**payload["state"])
-    user_text = payload.get("userText", "") or payload.get("user_text", "")
+    raw_state, _ = sanitize_session_dict(payload["state"])
+    state = V5SessionState(**raw_state)
+    user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     final = drive_full_v5_session(state, max_loops=payload.get("max_loops", 5), user_instruction=user_text)
+    final, _ = sanitize_session_state(final)
     publish_closure = derive_publish_closure_response(final)
     skill_graph = derive_skill_runtime_graph_response(final)
     final.publishClosure = publish_closure

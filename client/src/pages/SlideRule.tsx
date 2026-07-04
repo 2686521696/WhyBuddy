@@ -448,6 +448,7 @@ function SlideRuleImmersion({
           }
           telemetry={reasoningViewModel.telemetry}
           executorMode={executorMode}
+          publishClosure={publishClosure}
           projectionDensity={projectionDensity}
           onProjectionDensityChange={onProjectionDensityChange}
           viewMode={viewMode}

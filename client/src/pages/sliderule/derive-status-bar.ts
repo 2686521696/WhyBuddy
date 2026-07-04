@@ -78,6 +78,12 @@ export function deriveStatusBarFacts(
   const driveLoopCount =
     opts.driveLoopCount ??
     new Set((state.capabilityRuns || []).map((r) => r.turnId).filter(Boolean)).size;
+  const publishClosureClosed = !!(
+    opts.publishClosure &&
+    !opts.publishClosure.blocked &&
+    opts.publishClosure.skillCount > 0 &&
+    opts.publishClosure.evidencePresentCount >= opts.publishClosure.skillCount
+  );
 
   const phase = state.runtimePhase || "idle";
   let phaseLabel: string;
@@ -96,6 +102,10 @@ export function deriveStatusBarFacts(
     phaseLabel = "已交付";
   } else {
     phaseLabel = "空闲";
+  }
+
+  if (publishClosureClosed && !opts.isRunning) {
+    phaseLabel = "发布闭环完成";
   }
 
   const awaitDetail = state.awaitDetail?.trim();
@@ -146,10 +156,15 @@ export function deriveStatusBarFacts(
     parkHint = `待补 ${openGapCount} 项缺口`;
   }
 
+  if (publishClosureClosed && !opts.isRunning) {
+    parkHint = "6/6 Skill 证据已闭环，可查看交付物或继续细化";
+  }
+
   const dataReady =
-    trustedArtifactCount > 0 &&
-    openGapCount === 0 &&
-    (phase === "awaiting" || state.goal?.status === "clear");
+    publishClosureClosed ||
+    (trustedArtifactCount > 0 &&
+      openGapCount === 0 &&
+      (phase === "awaiting" || state.goal?.status === "clear"));
 
   const groundedEvidenceCount = countGroundedTrustedArtifacts(state);
   const sessionGrounded = hasGroundedExternalEvidence(state);
@@ -224,8 +239,10 @@ export function deriveStatusBarFacts(
 
   return {
     goalSnippet,
-    conclusionLabel: badge.label,
-    conclusionClassName: badge.className,
+    conclusionLabel: publishClosureClosed ? "已闭环" : badge.label,
+    conclusionClassName: publishClosureClosed
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : badge.className,
     turnCount: opts.turnCount,
     capabilityRunCount: runs.length,
     openGapCount,

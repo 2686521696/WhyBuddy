@@ -7,6 +7,7 @@ import type { SlideRuleExecutorMode } from "./types";
 import type { ProjectionDensity } from "./sliderule-projection-constants";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { Layers, Settings2 } from "lucide-react";
+import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 
 export function SlideRuleTopHud({
   state,
@@ -16,6 +17,7 @@ export function SlideRuleTopHud({
   driveLoopCount,
   telemetry,
   executorMode,
+  publishClosure,
   projectionDensity,
   onProjectionDensityChange,
   viewMode,
@@ -32,6 +34,7 @@ export function SlideRuleTopHud({
   driveLoopCount?: number;
   telemetry?: BrainstormGraphTelemetry | null;
   executorMode?: SlideRuleExecutorMode;
+  publishClosure?: PublishClosureSummary | null;
   projectionDensity?: ProjectionDensity;
   onProjectionDensityChange?: (density: ProjectionDensity) => void;
   viewMode?: "overview" | "collaboration" | "reasoning";
@@ -47,6 +50,7 @@ export function SlideRuleTopHud({
     driveLoopCount,
     immersion: true,
     executorMode,
+    publishClosure,
   });
 
   return (
@@ -70,7 +74,7 @@ export function SlideRuleTopHud({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             STATUS
           </span>
-          <span className="text-[10px] text-slate-500">待细化</span>
+          <span className="text-[10px] text-slate-500">{facts.conclusionLabel}</span>
           <span className="font-mono text-[10px] text-slate-400">话题</span>
           <span
             className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-slate-800 sm:max-w-[min(38vw,420px)] ${

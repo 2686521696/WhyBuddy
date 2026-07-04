@@ -23,6 +23,7 @@ from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
+from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from services.slide_rule_orchestrator import orchestrate_plan
 from services.v5_capability_executor import execute_v5_capability
 from services.slide_rule_coverage import author_coverage_contract, evaluate_coverage_gate, reconcile_coverage
@@ -263,7 +264,10 @@ async def list_sess(x_internal_key: Optional[str] = Header(None)):
 @router.post("/sessions")
 async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
-    state = create_session(payload.get("goal", {}).get("text", "default"), payload.get("sessionId"))
+    goal_text = payload.get("goal", {}).get("text", "default")
+    repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
+    state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), payload.get("sessionId"))
+    state, _ = sanitize_session_state(state)
     _sessions[state.sessionId] = state
     return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
@@ -273,6 +277,9 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
     state = load_session(sid) or _sessions.get(sid)
     if not state:
         raise HTTPException(404, "Not found")
+    state, changed = sanitize_session_state(state)
+    if changed:
+        _sessions[sid] = state
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.put("/sessions/{sid}")
@@ -285,6 +292,7 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
     # so full GET state roundtrips are accepted at transport, but server values win.
     # sessionReplayLog / reasoningEvents are append-only server fields (see persistence merge).
     client_input: Dict[str, Any] = dict(state) if isinstance(state, dict) else {}
+    client_input, _ = sanitize_session_dict(client_input)
     client_input.pop("coverageGate", None)
     client_input.pop("capabilityRuns", None)
     client_input.pop("decisionLedger", None)
@@ -349,7 +357,9 @@ async def save_sess(sid: str, state: Dict[str, Any], x_internal_key: Optional[st
     # instead of the pre-save input state. Ensures route _sessions reflects service-forced authoritative
     # (consistent with "service forces reload authoritative into cache" and load_session behavior).
     # Fixes review finding 2.
+    state, _ = sanitize_session_state(state)
     authoritative = save_session(state)
+    authoritative, _ = sanitize_session_state(authoritative)
     _sessions[sid] = authoritative
     return {"ok": True, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
@@ -533,10 +543,12 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     Real userText (user instruction) is forwarded so it drives pick/orchestrate/execute/artifacts/GCOV/phase.
     """
     _auth(x_internal_key)
-    state = V5SessionState(**payload["state"])
+    raw_state, _ = sanitize_session_dict(payload["state"])
+    state = V5SessionState(**raw_state)
     max_loops = int(payload.get("max_loops", 10))
-    user_text = payload.get("userText", "") or payload.get("user_text", "")
+    user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+    new_state, _ = sanitize_session_state(new_state)
     publish_closure = derive_publish_closure_response(new_state)
     skill_graph = derive_skill_runtime_graph_response(new_state)
     new_state.publishClosure = publish_closure
