@@ -82,3 +82,28 @@ test("probeSlideruleBrowserRoute fails closed when the route is reachable but co
   assert.equal(incomplete.evidence.hasCommandSubmit, false);
   assert.equal(incomplete.evidence.hasResetControl, false);
 });
+
+test("probeSlideruleBrowserRoute strict python evidence mode requires python provenance and backend markers", async () => {
+  const missingPythonEvidence = await probeSlideruleBrowserRoute({
+    baseUrl: "http://localhost:3000",
+    requirePythonEvidence: true,
+    fetchImpl: async () => ({
+      status: 200,
+      text: async () => `
+        <div data-testid="sliderule-root">
+          <textarea placeholder="Engineering path IM..."></textarea>
+          <button type="submit">Run</button>
+          <button data-testid="sliderule-reset-session">Reset</button>
+          <div data-testid="sliderule-goal-display">Persisted goal</div>
+          SlideRule
+        </div>
+      `,
+    }),
+  });
+
+  assert.equal(missingPythonEvidence.ok, false);
+  assert.equal(missingPythonEvidence.status, "incomplete-python");
+  assert.equal(missingPythonEvidence.evidence.hasCommandInput, true);
+  assert.equal(missingPythonEvidence.evidence.hasPythonProvenance, false);
+  assert.equal(missingPythonEvidence.evidence.hasPythonBackend, false);
+});

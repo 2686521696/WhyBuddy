@@ -2,6 +2,7 @@ export async function probeSlideruleBrowserRoute(options = {}) {
   const baseUrl = String(options.baseUrl || "http://localhost:3000").replace(/\/+$/, "");
   const route = `${baseUrl}/agent-loop/sliderule`;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const requirePythonEvidence = options.requirePythonEvidence === true;
   const emptyEvidence = () => ({
     httpStatus: null,
     hasSlideruleRoot: false,
@@ -65,6 +66,16 @@ export async function probeSlideruleBrowserRoute(options = {}) {
         status: "incomplete",
         route,
         reason: "reachable route is missing required sliderule command/reset/reload controls",
+        evidence,
+      };
+    }
+
+    if (requirePythonEvidence && (!hasPythonProvenance || !hasPythonBackend)) {
+      return {
+        ok: false,
+        status: "incomplete-python",
+        route,
+        reason: "reachable sliderule route is missing required python provenance/backend markers",
         evidence,
       };
     }
