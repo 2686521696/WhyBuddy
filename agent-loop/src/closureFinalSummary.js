@@ -52,11 +52,12 @@ export function buildMarkdownClosureSummary(result = {}) {
   } else {
     for (const entry of rawResults) {
       const matrix = String(entry?.matrix || "unknown");
+      const id = entry?.id ? `${String(entry.id)} ` : "";
       const command = String(entry?.command || "(command unavailable)").slice(0, 140);
       const exitCode = entry?.exitCode ?? "?";
       const ok = entry?.ok === true;
       const output = String(entry?.output || "").replace(/\s+/g, " ").trim().slice(0, 90);
-      lines.push(`- ${matrix}: \`${command}\` (exit=${exitCode}, ok=${ok})${output ? ` - ${output}` : ""}`);
+      lines.push(`- ${matrix}: ${id}\`${command}\` (exit=${exitCode}, ok=${ok})${output ? ` - ${output}` : ""}`);
     }
   }
 

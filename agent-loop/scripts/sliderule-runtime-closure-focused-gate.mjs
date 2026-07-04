@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import {
+  buildCompactClosureSummary,
+  buildMarkdownClosureSummary,
+} from "../src/closureFinalSummary.js";
 
 export const FOCUSED_GATE_COMMANDS = [
   {
@@ -160,6 +164,18 @@ export function buildFocusedGateCommands({
   });
 }
 
+export function inferFocusedGateMatrix(id = "") {
+  if (id.startsWith("appbundle") || id.startsWith("skilltrace")) return "appbundle";
+  if (id.startsWith("browser")) return "browser";
+  if (id.startsWith("report") || id.startsWith("deliverables") || id.startsWith("closure-summary") || id.startsWith("closure-final")) {
+    return "report";
+  }
+  if (id.startsWith("closure-secret") || id === "diff-check") return "precheck";
+  if (id.startsWith("drive-full") || id.includes("python") || id.startsWith("skill-runtime-graph")) return "python";
+  if (id === "typecheck") return "typecheck";
+  return "misc";
+}
+
 function runCommand(command) {
   const result = spawnSync(command, {
     shell: true,
@@ -186,13 +202,15 @@ export function runFocusedGate({
     requirePersistenceReplay,
   });
   const results = commands.map((entry) => {
+    const matrix = inferFocusedGateMatrix(entry.id);
     if (simulate) {
-      return { ...entry, exitCode: 0, ok: true, output: "simulated" };
+      return { ...entry, matrix, exitCode: 0, ok: true, output: "simulated" };
     }
     const result = runCommand(entry.command);
-    return { ...entry, ok: result.exitCode === 0, ...result };
+    return { ...entry, matrix, ok: result.exitCode === 0, ...result };
   });
   const failed = results.filter((result) => !result.ok).length;
+  const matrices = [...new Set(results.map((result) => result.matrix))];
   return {
     ok: failed === 0,
     summary: {
@@ -200,8 +218,27 @@ export function runFocusedGate({
       passed: results.length - failed,
       failed,
     },
+    matrices,
+    meta: {
+      forTask: "sliderule-runtime-closure-focused-gate",
+      simulate,
+      requireLiveBrowser,
+      requireCommandSubmit,
+      requireRuntimeSurface,
+      requirePersistenceReplay,
+    },
     results,
   };
+}
+
+export function formatFocusedGateOutput(result, { format = "full-json" } = {}) {
+  if (format === "compact-json") {
+    return JSON.stringify(buildCompactClosureSummary(result), null, 2);
+  }
+  if (format === "markdown") {
+    return buildMarkdownClosureSummary(result);
+  }
+  return JSON.stringify(result, null, 2);
 }
 
 function printList() {
@@ -213,6 +250,8 @@ function printList() {
   console.log("Use --require-command-submit to force the Playwright page smoke to submit a real command through /drive-full.");
   console.log("Use --require-runtime-surface to also require AppBundle publish closure and cross-runtime graph surfaces.");
   console.log("Use --require-persistence-replay to also require those surfaces to survive reload.");
+  console.log("Use --compact-json to print the compact final summary.");
+  console.log("Use --markdown to print a Markdown final summary.");
 }
 
 function main() {
@@ -228,7 +267,12 @@ function main() {
     requireRuntimeSurface: args.has("--require-runtime-surface"),
     requirePersistenceReplay: args.has("--require-persistence-replay"),
   });
-  console.log(JSON.stringify(result, null, 2));
+  const format = args.has("--compact-json")
+    ? "compact-json"
+    : args.has("--markdown")
+    ? "markdown"
+    : "full-json";
+  console.log(formatFocusedGateOutput(result, { format }));
   if (!result.ok) process.exitCode = 1;
 }
 
