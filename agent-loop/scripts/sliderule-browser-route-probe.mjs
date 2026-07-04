@@ -4,12 +4,13 @@ import { probeSlideruleBrowserRoute } from "../src/slideruleBrowserProbe.js";
 import { resolveSlideruleBrowserProbeOptions } from "../src/slideruleBrowserProbeOptions.js";
 
 const args = new Set(process.argv.slice(2));
-const probeOptions = resolveSlideruleBrowserProbeOptions(process.env);
+const probeOptions = resolveSlideruleBrowserProbeOptions(process.env, process.argv.slice(2));
 
 if (args.has("--help") || args.has("--list")) {
   console.log("sliderule-browser-route-probe: optional /agent-loop/sliderule route probe");
   console.log("  SLIDERULE_BROWSER_PROBE_BASE_URL=http://localhost:3000 node agent-loop/scripts/sliderule-browser-route-probe.mjs");
   console.log("  SLIDERULE_BROWSER_PROBE_REQUIRE_PYTHON=1 node agent-loop/scripts/sliderule-browser-route-probe.mjs");
+  console.log("  node agent-loop/scripts/sliderule-browser-route-probe.mjs --require-python");
   process.exit(0);
 }
 

@@ -1,6 +1,8 @@
-export function resolveSlideruleBrowserProbeOptions(env = process.env) {
+export function resolveSlideruleBrowserProbeOptions(env = process.env, argv = []) {
+  const args = new Set(argv);
   return {
     baseUrl: env.SLIDERULE_BROWSER_PROBE_BASE_URL || "http://localhost:3000",
-    requirePythonEvidence: env.SLIDERULE_BROWSER_PROBE_REQUIRE_PYTHON === "1",
+    requirePythonEvidence:
+      env.SLIDERULE_BROWSER_PROBE_REQUIRE_PYTHON === "1" || args.has("--require-python"),
   };
 }

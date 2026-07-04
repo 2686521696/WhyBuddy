@@ -120,3 +120,15 @@ test("resolveSlideruleBrowserProbeOptions maps strict python evidence env switch
     requirePythonEvidence: true,
   });
 });
+
+test("resolveSlideruleBrowserProbeOptions maps strict python evidence cli switch", () => {
+  const options = resolveSlideruleBrowserProbeOptions(
+    { SLIDERULE_BROWSER_PROBE_BASE_URL: "http://127.0.0.1:5173" },
+    ["--require-python"],
+  );
+
+  assert.deepEqual(options, {
+    baseUrl: "http://127.0.0.1:5173",
+    requirePythonEvidence: true,
+  });
+});
