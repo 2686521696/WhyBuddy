@@ -9,7 +9,17 @@ from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, model_validator, ValidationInfo
 
 # AwaitReason from shared/blueprint/v5-reasoning-state.ts for runtime await parking (P0)
-AwaitReason = Literal["ready", "confirm", "coverage", "budget", "convergence", "user_input"]
+AwaitReason = Literal[
+    "ready",
+    "confirm",
+    "coverage",
+    "budget",
+    "convergence",
+    "user_input",
+    "max_loops",
+    "max_repeat_guard",
+    "no_progress",
+]
 
 
 class ProducedBy(BaseModel):
@@ -351,6 +361,9 @@ class V5SessionState(BaseModel):
     # Legacy sessions without key load with None (fail-closed compat, no breakage).
     # Pure schema + pass-through; derive logic stays in v5_publish_closure_response; no network/provider/DB here.
     publishClosure: Optional[Dict[str, Any]] = None
+    # skillRuntimeGraph (cross-skill runtime evidence graph from python /drive-full and /drive-marathon):
+    # Kept durable alongside publishClosure so browser reload can replay Skill linkage surfaces.
+    skillRuntimeGraph: Optional[Dict[str, Any]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

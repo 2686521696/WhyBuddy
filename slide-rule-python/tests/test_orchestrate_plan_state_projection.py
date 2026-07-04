@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.v5_state import CapabilityRun, V5SessionState  # noqa: E402
+from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState  # noqa: E402
 from services.slide_rule_orchestrator import (  # noqa: E402
     build_plan_state_projection,
     orchestrate_plan,
@@ -85,6 +85,31 @@ def test_converged_projection_has_complete_empty_step_shape():
     assert projection["partial"] is False
     assert projection["steps"] == []
     assert projection["error"] is None
+
+
+def test_orchestrate_plan_accepts_pydantic_produced_by_artifacts():
+    state = V5SessionState(
+        sessionId="orch-produced-by-object",
+        goal={"text": "Create a migration handoff plan with evidence and risks."},
+        artifacts=[
+            Artifact.server_construct(
+                id="art-evidence",
+                kind="evidence",
+                provenance="python-rag",
+                producedBy=ProducedBy(
+                    capabilityRunId="run-evidence",
+                    capabilityId="evidence.search",
+                    roleId="grounding",
+                ),
+                content="grounded evidence",
+            )
+        ],
+        capabilityRuns=[],
+    )
+
+    result = orchestrate_plan(state, "turn-produced-by", "Plan evidence, risks, and handoff").model_dump()
+
+    assert "evidence.search" not in [item["capabilityId"] for item in result["selected"]]
 
 
 def test_error_projection_has_explicit_error_and_recovery_shape():

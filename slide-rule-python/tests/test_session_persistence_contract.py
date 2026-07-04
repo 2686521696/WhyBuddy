@@ -22,6 +22,74 @@ def make_state(session_id: str, goal_text: str = "persist contract") -> V5Sessio
     )
 
 
+def test_session_state_roundtrips_python_runtime_closure_projection():
+    state = V5SessionState.server_load(
+        {
+            "sessionId": "runtime-closure-roundtrip",
+            "goal": {"text": "purchase approval"},
+            "publishClosure": {
+                "blocked": False,
+                "evidencePresentCount": 6,
+                "skillCount": 6,
+            },
+            "skillRuntimeGraph": {
+                "edges": [
+                    {
+                        "sourceSkill": "datamodel",
+                        "targetSkill": "page",
+                        "state": "allowed",
+                        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+                    }
+                ],
+                "bySkill": {},
+                "evidenceBySkill": {},
+            },
+        }
+    )
+
+    dumped = state.model_dump()
+
+    assert dumped["publishClosure"]["evidencePresentCount"] == 6
+    assert dumped["skillRuntimeGraph"]["edges"][0]["sourceSkill"] == "datamodel"
+
+
+def test_session_state_accepts_drive_full_max_loops_await_reason():
+    for reason in ["max_loops", "max_repeat_guard", "no_progress"]:
+        state = V5SessionState(sessionId=f"{reason}-await", goal={"text": "g"}, awaitReason=reason)
+
+        assert state.awaitReason == reason
+
+
+def test_same_turn_save_merges_runtime_projection_fields(tmp_path):
+    store_file = tmp_path / "sessions.json"
+    prior = make_state("projection-merge", "prior")
+    prior.lastTurnId = "turn-100"
+    save_session_record(prior, store_file=store_file)
+
+    incoming = make_state("projection-merge", "incoming")
+    incoming.lastTurnId = "turn-100"
+    incoming.publishClosure = {"blocked": True, "evidencePresentCount": 0, "skillCount": 6}
+    incoming.skillRuntimeGraph = {
+        "edges": [
+            {
+                "sourceSkill": "datamodel",
+                "targetSkill": "page",
+                "state": "allowed",
+                "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+            }
+        ],
+        "bySkill": {},
+        "evidenceBySkill": {},
+    }
+
+    save_session_record(incoming, store_file=store_file)
+    loaded = load_session_record("projection-merge", store_file=store_file)["session"]
+
+    assert loaded.goal["text"] == "prior"
+    assert loaded.publishClosure["skillCount"] == 6
+    assert loaded.skillRuntimeGraph["edges"][0]["targetSkill"] == "page"
+
+
 def test_save_load_and_list_use_node_compatible_store_shape(tmp_path):
     store_file = tmp_path / "sessions.json"
     state = make_state("py-contract-001")

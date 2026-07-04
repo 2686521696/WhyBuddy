@@ -14,6 +14,45 @@ from .rag_service import retrieve_evidence, generate_with_rag
 
 REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
+RUNTIME_CLOSURE_EDGES = [
+    {
+        "sourceSkill": "datamodel",
+        "targetSkill": "rbac",
+        "state": "allowed",
+        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE",
+    },
+    {
+        "sourceSkill": "datamodel",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+    },
+    {
+        "sourceSkill": "rbac",
+        "targetSkill": "workflow",
+        "state": "allowed",
+        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
+    },
+    {
+        "sourceSkill": "workflow",
+        "targetSkill": "page",
+        "state": "allowed",
+        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
+    },
+    {
+        "sourceSkill": "page",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
+    },
+    {
+        "sourceSkill": "aigc",
+        "targetSkill": "appbundle",
+        "state": "allowed",
+        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE",
+    },
+]
+
 
 def _artifact_dicts(state: V5SessionState) -> List[Dict[str, Any]]:
     artifacts: List[Dict[str, Any]] = []
@@ -114,7 +153,27 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
                 "runtimeClosure": {
                     "skillsChecked": REQUIRED_EVIDENCE_KEYS[:],
                     "versionPinsChecked": True,
+                    "crossSkillRuntimeEdges": RUNTIME_CLOSURE_EDGES[:],
                     "perSkill": {},
+                },
+                "skillRuntimeGraph": {
+                    "edges": RUNTIME_CLOSURE_EDGES[:],
+                    "bySkill": {
+                        skill: [
+                            edge
+                            for edge in RUNTIME_CLOSURE_EDGES
+                            if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
+                        ]
+                        for skill in REQUIRED_EVIDENCE_KEYS
+                    },
+                    "evidenceBySkill": {
+                        skill: [
+                            edge["evidenceKey"]
+                            for edge in RUNTIME_CLOSURE_EDGES
+                            if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
+                        ]
+                        for skill in REQUIRED_EVIDENCE_KEYS
+                    },
                 },
                 "perSkillEvidence": per_skill,
                 "blocked": blocked,

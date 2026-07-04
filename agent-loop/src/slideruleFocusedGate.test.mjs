@@ -35,3 +35,14 @@ test("buildFocusedGateCommands can require AppBundle runtime surface smoke", () 
     "node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command --require-runtime-surface",
   );
 });
+
+test("buildFocusedGateCommands can require persistence replay smoke", () => {
+  const commands = buildFocusedGateCommands({ requirePersistenceReplay: true });
+  const pageSmoke = commands.find((entry) => entry.id === "browser-page-controls-smoke");
+
+  assert.ok(pageSmoke);
+  assert.equal(
+    pageSmoke.command,
+    "node agent-loop/scripts/sliderule-page-controls-smoke.mjs --require-live --submit-command --require-runtime-surface --require-persistence-replay",
+  );
+});

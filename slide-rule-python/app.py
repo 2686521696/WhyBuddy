@@ -34,6 +34,8 @@ from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 from services.persistence import load_all, save_all
 from services.v5_full_driver import drive_full_v5_session
+from services.v5_publish_closure_response import derive_publish_closure_response
+from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from models.v5_state import V5SessionState
 
 @asynccontextmanager
@@ -218,8 +220,20 @@ async def drive_full(payload: dict, x_internal_key: str = Header(None)):
     if x_internal_key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key")
     state = V5SessionState(**payload["state"])
-    final = drive_full_v5_session(state, max_loops=payload.get("max_loops", 5))
-    return {"state": final.model_dump(), "status": "V5 full path completed with real RAG evidence"}
+    user_text = payload.get("userText", "") or payload.get("user_text", "")
+    final = drive_full_v5_session(state, max_loops=payload.get("max_loops", 5), user_instruction=user_text)
+    publish_closure = derive_publish_closure_response(final)
+    skill_graph = derive_skill_runtime_graph_response(final)
+    return {
+        "state": final.model_dump(),
+        "status": "V5 full path completed with real RAG evidence",
+        "stateAuthority": "python",
+        "provenance": "python-fullpath",
+        "backend": "python",
+        "publishClosure": publish_closure,
+        "skillRuntimeGraph": skill_graph,
+        "closureWarnings": [],
+    }
 
 if __name__ == "__main__":
     import uvicorn

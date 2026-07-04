@@ -124,10 +124,17 @@ export function buildFocusedGateCommands({
   requireLiveBrowser = false,
   requireCommandSubmit = false,
   requireRuntimeSurface = false,
+  requirePersistenceReplay = false,
 } = {}) {
   return FOCUSED_GATE_COMMANDS.map((entry) => {
     if (entry.id !== "browser-page-controls-smoke") {
       return entry;
+    }
+    if (requirePersistenceReplay) {
+      return {
+        ...entry,
+        command: `${entry.command} --require-live --submit-command --require-runtime-surface --require-persistence-replay`,
+      };
     }
     if (requireRuntimeSurface) {
       return {
@@ -170,8 +177,14 @@ export function runFocusedGate({
   requireLiveBrowser = false,
   requireCommandSubmit = false,
   requireRuntimeSurface = false,
+  requirePersistenceReplay = false,
 } = {}) {
-  const commands = buildFocusedGateCommands({ requireLiveBrowser, requireCommandSubmit, requireRuntimeSurface });
+  const commands = buildFocusedGateCommands({
+    requireLiveBrowser,
+    requireCommandSubmit,
+    requireRuntimeSurface,
+    requirePersistenceReplay,
+  });
   const results = commands.map((entry) => {
     if (simulate) {
       return { ...entry, exitCode: 0, ok: true, output: "simulated" };
@@ -199,6 +212,7 @@ function printList() {
   console.log("Use --require-live-browser to force the Playwright page smoke to require a running dev server.");
   console.log("Use --require-command-submit to force the Playwright page smoke to submit a real command through /drive-full.");
   console.log("Use --require-runtime-surface to also require AppBundle publish closure and cross-runtime graph surfaces.");
+  console.log("Use --require-persistence-replay to also require those surfaces to survive reload.");
 }
 
 function main() {
@@ -212,6 +226,7 @@ function main() {
     requireLiveBrowser: args.has("--require-live-browser"),
     requireCommandSubmit: args.has("--require-command-submit"),
     requireRuntimeSurface: args.has("--require-runtime-surface"),
+    requirePersistenceReplay: args.has("--require-persistence-replay"),
   });
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 1;

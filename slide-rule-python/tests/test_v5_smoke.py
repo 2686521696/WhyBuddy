@@ -39,6 +39,75 @@ def test_sliderule_api_health_alias():
     assert data.get("source") == "python" or "python" in str(data.get("provenance", "")).lower()
 
 
+def test_app_drive_full_route_returns_runtime_closure_contract(monkeypatch):
+    from models.v5_state import CapabilityRun
+    import routes.sliderule_full as sliderule_full_module
+
+    seen = {}
+
+    def fake_drive_full(state, max_loops=5, user_instruction=""):
+        seen["max_loops"] = max_loops
+        seen["user_instruction"] = user_instruction
+        state.capabilityRuns.append(
+            CapabilityRun(
+                id="run-appbundle",
+                capabilityId="appbundle.runtimeClosure",
+                turnId="loop-closure",
+                result={
+                    "runtimeClosure": {
+                        "skillsChecked": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+                        "versionPinsChecked": True,
+                        "crossSkillRuntimeEdges": [
+                            {
+                                "sourceSkill": "datamodel",
+                                "targetSkill": "page",
+                                "state": "allowed",
+                                "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+                            }
+                        ],
+                    },
+                    "perSkillEvidence": {
+                        skill: {"evidencePresent": True}
+                        for skill in ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+                    },
+                    "blocked": False,
+                    "blockers": [],
+                    "closureId": "appbundle:purchase-approval@1.0.0:runtime-closure",
+                    "closureHash": "closure123",
+                    "stableDigest": "stable123",
+                    "findingsByTier": {"hard_blocker": [], "warning": [], "info": []},
+                },
+            )
+        )
+        return state
+
+    monkeypatch.setattr(sliderule_full_module, "drive_full_v5_session", fake_drive_full)
+
+    r = client.post(
+        "/api/sliderule/drive-full",
+        headers={"x-internal-key": INTERNAL_KEY},
+        json={
+            "state": {
+                "sessionId": "app-route-drive-full",
+                "goal": {"text": "purchase approval"},
+                "artifacts": [],
+                "capabilityRuns": [],
+                "coverageGaps": [],
+                "conversation": [],
+            },
+            "userText": "purchase approval route contract",
+            "max_loops": 3,
+        },
+    )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert seen == {"max_loops": 3, "user_instruction": "purchase approval route contract"}
+    assert data["backend"] == "python"
+    assert data["publishClosure"]["evidencePresentCount"] == 6
+    assert data["skillRuntimeGraph"]["edges"][0]["sourceSkill"] == "datamodel"
+
+
 def test_orchestrate_plan_accepts_frontend_session_wrapper(monkeypatch):
     from services.slide_rule_orchestrator import OrchestratePlanResult
 

@@ -13,6 +13,8 @@ from .slide_rule_session import pick_next_capabilities, commit_artifact, append_
 from .v5_capability_executor import execute_v5_capability
 from .persistence import persist_state
 from .slide_rule_coverage import evaluate_coverage_gate, reconcile_coverage
+from .v5_publish_closure_response import derive_publish_closure_response
+from .v5_skill_runtime_graph import derive_skill_runtime_graph_response
 
 
 def _result_to_dict(result: Any) -> Dict[str, Any]:
@@ -42,6 +44,122 @@ def _result_to_dict(result: Any) -> Dict[str, Any]:
             if not key.startswith("_")
         }
     return {}
+
+
+def _commit_capability_result(
+    state: V5SessionState,
+    *,
+    capability_id: str,
+    role_id: str,
+    turn_id: str,
+    run_id: str,
+    artifact_id: str,
+    result_data: Dict[str, Any],
+    duration_ms: int,
+) -> None:
+    produced = ProducedBy(capabilityRunId=run_id, capabilityId=capability_id, roleId=role_id)
+    kind = "evidence" if "evidence" in capability_id or capability_id in ["mcp.call", "skill.invoke"] else ("report" if "report" in capability_id else "risk")
+    commit_artifact(
+        state,
+        id=artifact_id,
+        kind=kind,
+        content=result_data.get("content", ""),
+        summary=result_data.get("summary", ""),
+        title=result_data.get("title"),
+        provenance=result_data.get("provenance", "python-rag"),
+        producedBy=produced,
+        inputArtifactIds=[],
+        turnId=turn_id,
+        sources=result_data.get("sources", []),
+    )
+    if getattr(state, "capabilityRuns", None):
+        last = state.capabilityRuns[-1]
+        if hasattr(last, "result"):
+            last.result = result_data
+        elif isinstance(last, dict):
+            last["result"] = result_data
+        if hasattr(last, "timing"):
+            last.timing = {"durationMs": duration_ms}
+
+
+def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: str, loop: int) -> V5SessionState:
+    """Append Python-owned AppBundle closure evidence for replay when a real command ran.
+
+    The UI can derive preview surfaces, but reload requires persisted Python evidence.
+    This keeps the route fail-closed: if AppBundle reports missing skill evidence, the
+    derived publishClosure is blocked rather than fabricated green.
+    """
+    if not (user_instruction or "").strip():
+        return state
+    if derive_publish_closure_response(state) is not None and derive_skill_runtime_graph_response(state) is not None:
+        return state
+
+    import time as _time
+
+    capability_id = "appbundle.runtimeClosure"
+    role_id = "appbundle"
+    turn_id = f"loop-{loop}-closure"
+    run_id = f"run-{loop}-{capability_id}"
+    append_reasoning_event(
+        state,
+        turnId=turn_id,
+        capabilityRunId=run_id,
+        capabilityId=capability_id,
+        kind="capability_start",
+        text=f"capability_started: {capability_id}",
+        roleId=role_id,
+        order=1,
+    )
+    append_replay_event(state, kind="capability_run", turnId=turn_id, capabilityId=capability_id, capabilityRunId=run_id)
+    persist_state(state)
+    t0 = _time.time()
+    try:
+        result = execute_v5_capability(capability_id, state, [], role_id, turn_id)
+        result_data = _result_to_dict(result)
+        _commit_capability_result(
+            state,
+            capability_id=capability_id,
+            role_id=role_id,
+            turn_id=turn_id,
+            run_id=run_id,
+            artifact_id=f"art-{loop}-{capability_id}",
+            result_data=result_data,
+            duration_ms=int((_time.time() - t0) * 1000),
+        )
+        append_reasoning_event(
+            state,
+            turnId=turn_id,
+            capabilityRunId=run_id,
+            capabilityId=capability_id,
+            kind="capability_complete",
+            text=f"capability_completed: {capability_id}",
+            roleId=role_id,
+            order=2,
+        )
+        persist_state(state)
+    except Exception as cap_exc:
+        from .slide_rule_session import record_capability_run_error
+
+        record_capability_run_error(
+            state,
+            capabilityId=capability_id,
+            turnId=turn_id,
+            error={"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": capability_id},
+            roleId=role_id,
+            timing={"durationMs": int((_time.time() - t0) * 1000)},
+        )
+        append_reasoning_event(
+            state,
+            turnId=turn_id,
+            capabilityRunId=run_id,
+            capabilityId=capability_id,
+            kind="capability_complete",
+            text=f"capability_completed: {capability_id} (error)",
+            roleId=role_id,
+            order=2,
+        )
+        persist_state(state)
+    return state
 
 def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, user_instruction: str = "") -> V5SessionState:
     """
@@ -248,6 +366,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 break
             loop += 1
             persist_state(state)
+        state = _ensure_runtime_closure_evidence(state, user_instruction, loop)
         # Final phase: done if clear/coverage, else awaiting (converged or budget)
         gate = evaluate_coverage_gate(state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":

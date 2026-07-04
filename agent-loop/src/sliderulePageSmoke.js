@@ -68,6 +68,8 @@ export function evaluateSlideruleCommandSmokeEvidence(evidence) {
     ...pageResult.evidence,
     hasDriveFullPost: evidence?.hasDriveFullPost === true,
     hasPythonDriveFullResponse: evidence?.hasPythonDriveFullResponse === true,
+    hasPythonPublishClosureResponse: evidence?.hasPythonPublishClosureResponse === true,
+    hasPythonSkillRuntimeGraphResponse: evidence?.hasPythonSkillRuntimeGraphResponse === true,
     hasCommandSettled: evidence?.hasCommandSettled === true,
     hasPageUsableAfterCommand: evidence?.hasPageUsableAfterCommand === true,
     hasNoFatalConsoleErrors: evidence?.hasNoFatalConsoleErrors === true,
@@ -83,6 +85,8 @@ export function evaluateSlideruleCommandSmokeEvidence(evidence) {
   const hasCommandClosure =
     normalized.hasDriveFullPost &&
     normalized.hasPythonDriveFullResponse &&
+    normalized.hasPythonPublishClosureResponse &&
+    normalized.hasPythonSkillRuntimeGraphResponse &&
     normalized.hasCommandSettled &&
     normalized.hasPageUsableAfterCommand &&
     normalized.hasNoFatalConsoleErrors;
@@ -91,7 +95,7 @@ export function evaluateSlideruleCommandSmokeEvidence(evidence) {
     return {
       ok: false,
       status: "incomplete-command",
-      reason: "sliderule page command did not close through python /drive-full with usable page recovery",
+      reason: "sliderule page command did not close through python /drive-full with runtime evidence and usable page recovery",
       evidence: normalized,
     };
   }
@@ -99,7 +103,7 @@ export function evaluateSlideruleCommandSmokeEvidence(evidence) {
   return {
     ok: true,
     status: "command-ready",
-    reason: "sliderule page submitted a real command through python /drive-full and stayed usable",
+    reason: "sliderule page submitted a real command through python /drive-full, received runtime evidence, and stayed usable",
     evidence: normalized,
   };
 }
@@ -132,6 +136,44 @@ export function evaluateSlideruleRuntimeSurfaceSmokeEvidence(evidence) {
     ok: true,
     status: "runtime-surface-ready",
     reason: "sliderule page rendered AppBundle publish closure and cross-runtime graph after python /drive-full",
+    evidence: normalized,
+  };
+}
+
+export function evaluateSliderulePersistenceReplaySmokeEvidence(evidence) {
+  const runtimeResult = evaluateSlideruleRuntimeSurfaceSmokeEvidence(evidence);
+  const normalized = {
+    ...runtimeResult.evidence,
+    hasPublishClosureAfterReplay: evidence?.hasPublishClosureAfterReplay === true,
+    hasCrossRuntimeGraphAfterReplay: evidence?.hasCrossRuntimeGraphAfterReplay === true,
+    hasPageUsableAfterReplay: evidence?.hasPageUsableAfterReplay === true,
+  };
+
+  if (!runtimeResult.ok) {
+    return {
+      ...runtimeResult,
+      evidence: normalized,
+    };
+  }
+
+  const hasReplayClosure =
+    normalized.hasPublishClosureAfterReplay &&
+    normalized.hasCrossRuntimeGraphAfterReplay &&
+    normalized.hasPageUsableAfterReplay;
+
+  if (!hasReplayClosure) {
+    return {
+      ok: false,
+      status: "incomplete-persistence-replay",
+      reason: "sliderule page lost AppBundle runtime closure surfaces after reload",
+      evidence: normalized,
+    };
+  }
+
+  return {
+    ok: true,
+    status: "persistence-replay-ready",
+    reason: "sliderule page restored AppBundle runtime closure surfaces after reload",
     evidence: normalized,
   };
 }
@@ -233,6 +275,8 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
   const fatalConsoleErrors = [];
   let hasDriveFullPost = false;
   let hasPythonDriveFullResponse = false;
+  let hasPythonPublishClosureResponse = false;
+  let hasPythonSkillRuntimeGraphResponse = false;
 
   const onRequest = (request) => {
     if (request.method() === "POST" && /\/api\/sliderule\/drive-full(?:\?|$)/.test(request.url())) {
@@ -266,6 +310,13 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
         const body = await response.json().catch(() => null);
         hasPythonDriveFullResponse =
           response.ok() && body?.backend === "python" && Boolean(body?.state);
+        hasPythonPublishClosureResponse =
+          response.ok() && body?.backend === "python" && Boolean(body?.publishClosure);
+        hasPythonSkillRuntimeGraphResponse =
+          response.ok() &&
+          body?.backend === "python" &&
+          Array.isArray(body?.skillRuntimeGraph?.edges) &&
+          body.skillRuntimeGraph.edges.length > 0;
       })
       .catch(() => {});
 
@@ -297,6 +348,8 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
       ...baseEvidence,
       hasDriveFullPost,
       hasPythonDriveFullResponse,
+      hasPythonPublishClosureResponse,
+      hasPythonSkillRuntimeGraphResponse,
       hasCommandSettled,
       hasPageUsableAfterCommand,
       hasNoFatalConsoleErrors: fatalConsoleErrors.length === 0,
@@ -308,4 +361,30 @@ export async function collectSlideruleCommandSmokeEvidence(page, options = {}) {
     page.off("console", onConsole);
     page.off("pageerror", onPageError);
   }
+}
+
+export async function collectSliderulePersistenceReplaySmokeEvidence(page, options = {}) {
+  const commandEvidence = await collectSlideruleCommandSmokeEvidence(page, options);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="sliderule-root"]', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="sliderule-publish-closure"]', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="sliderule-cross-runtime-graph"]', { timeout: 15000 }).catch(() => {});
+
+  const commandInput = page.locator('[data-testid="sliderule-composer-input"]').first();
+  const hasPublishClosureAfterReplay =
+    (await page.locator('[data-testid="sliderule-publish-closure"]').count().catch(() => 0)) > 0;
+  const hasCrossRuntimeGraphAfterReplay =
+    (await page.locator('[data-testid="sliderule-cross-runtime-graph"]').count().catch(() => 0)) > 0;
+  const hasPageUsableAfterReplay =
+    (await page.locator('[data-testid="sliderule-root"]').count().catch(() => 0)) > 0 &&
+    (await commandInput.count().catch(() => 0)) > 0 &&
+    (await commandInput.isEnabled().catch(() => false));
+
+  return {
+    ...commandEvidence,
+    hasPublishClosureAfterReplay,
+    hasCrossRuntimeGraphAfterReplay,
+    hasPageUsableAfterReplay,
+  };
 }

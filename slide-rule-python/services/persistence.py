@@ -200,8 +200,19 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
                 if i_turn <= p_turn:
                     # lower or equal turn (when version present): retain prior authoritative core fields (prevents same-turn stale clobber);
                     # still carry any newly appended server-owned replay/reasoning from this attempt
+                    projection_updates: Dict[str, Any] = {}
+                    if getattr(state, "publishClosure", None) is not None:
+                        projection_updates["publishClosure"] = getattr(state, "publishClosure", None)
+                    if getattr(state, "skillRuntimeGraph", None) is not None:
+                        projection_updates["skillRuntimeGraph"] = getattr(state, "skillRuntimeGraph", None)
                     try:
-                        write_state = prior.model_copy(update={"sessionReplayLog": prior_log, "reasoningEvents": prior_reas})
+                        write_state = prior.model_copy(
+                            update={
+                                "sessionReplayLog": prior_log,
+                                "reasoningEvents": prior_reas,
+                                **projection_updates,
+                            }
+                        )
                     except Exception:
                         write_state = prior
         sessions[write_state.sessionId] = write_state

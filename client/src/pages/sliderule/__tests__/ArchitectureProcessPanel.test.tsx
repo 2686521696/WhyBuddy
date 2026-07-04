@@ -2,7 +2,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ArchitectureProcessPanel } from "../ArchitectureProcessPanel";
-import SlideRule from "@/pages/SlideRule";
+import SlideRule, {
+  deriveNoIntentRuntimeProjection,
+  deriveImmediatePythonRuntimeProjection,
+  loadPythonRuntimeProjectionFromSession,
+} from "@/pages/SlideRule";
 
 const EmbeddedSlideRule = SlideRule as React.ComponentType<{ embedded?: boolean }>;
 const slideRuleHookOverrides: { driveFullStatus?: string | null } = {};
@@ -331,6 +335,25 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).toContain("datamodel");
   });
 
+  it("renders persisted runtime closure surfaces after reload even when latestTurn cannot be rebuilt", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        liveAction={null}
+        sessionId="agent-loop-sliderule-reload"
+        isRunning={false}
+        latestTurn={null}
+        crossRuntimeGraph={crossGraph}
+        publishClosure={pythonClosedClosure}
+      />
+    );
+
+    expect(html).toContain('data-testid="sliderule-arch-process-panel"');
+    expect(html).toContain('data-testid="sliderule-cross-runtime-graph"');
+    expect(html).toContain('data-testid="sliderule-publish-closure"');
+    expect(html).toContain("publish closed");
+    expect(html).toContain("6/6 evidence");
+  });
+
   it("fail-closed negative: renders publish blocked (no evidence fabrication) for missing declared skill from /drive-full", () => {
     const blockedClosure = {
       blocked: true,
@@ -417,5 +440,74 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     } finally {
       slideRuleHookOverrides.driveFullStatus = null;
     }
+  });
+
+  it("keeps python runtime projection when reload has no rebuilt intent yet", () => {
+    const projection = deriveNoIntentRuntimeProjection({
+      pythonPublishClosure: pythonClosedClosure,
+      pythonSkillRuntimeGraph: {
+        edges: [
+          {
+            sourceSkill: "datamodel",
+            targetSkill: "page",
+            state: "allowed",
+            evidenceKey: "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+          },
+        ],
+      },
+    } as any);
+
+    expect(projection.publishClosure?.evidencePresentCount).toBe(6);
+    expect(projection.crossRuntimeGraph?.skillCount).toBeGreaterThan(0);
+  });
+
+  it("keeps hydrated python runtime projection with a non-empty persisted goal before local preview completes", () => {
+    const projection = deriveImmediatePythonRuntimeProjection({
+      pythonPublishClosure: pythonClosedClosure,
+      pythonSkillRuntimeGraph: {
+        edges: [
+          {
+            sourceSkill: "datamodel",
+            targetSkill: "page",
+            state: "allowed",
+            evidenceKey: "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+          },
+        ],
+      },
+    } as any);
+
+    expect(projection).not.toBeNull();
+    expect(projection?.publishClosure?.closureHash).toBe("abc123python");
+    expect(projection?.crossRuntimeGraph?.skillCount).toBeGreaterThan(0);
+  });
+
+  it("loads persisted python runtime projection from the session envelope for reload replay", async () => {
+    const fetcher = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        state: {
+          publishClosure: pythonClosedClosure,
+          skillRuntimeGraph: {
+            edges: [
+              {
+                sourceSkill: "datamodel",
+                targetSkill: "page",
+                state: "allowed",
+                evidenceKey: "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+              },
+            ],
+          },
+        },
+      }),
+    })) as any;
+
+    const projection = await loadPythonRuntimeProjectionFromSession("sliderule-v51-product", fetcher);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/sliderule/sessions/sliderule-v51-product",
+      expect.objectContaining({ method: "GET" })
+    );
+    expect(projection?.publishClosure?.closureHash).toBe("abc123python");
+    expect(projection?.crossRuntimeGraph?.edgeCount).toBe(1);
   });
 });

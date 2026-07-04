@@ -129,6 +129,104 @@ def test_drive_full_v5_sets_orchestrating_and_ends_awaiting_or_done():
     assert out.runtimePhase in ("done", "awaiting")
 
 
+def test_drive_full_appends_runtime_closure_for_real_command_replay():
+    """A normal /drive-full command must end with Python-owned closure evidence.
+
+    This guards the browser persistence replay path: the page may render a TS preview,
+    but reload can only restore AppBundle closure surfaces from persisted Python state.
+    """
+    state = _mk_state("sr-full-runtime-closure")
+    state.goal["text"] = "purchase approval persistence replay"
+
+    class DummyPlan:
+        selected = []
+        rationale = "runtime closure command"
+
+    import services.v5_full_driver as drv_mod
+    from services.v5_publish_closure_response import derive_publish_closure_response
+    from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
+
+    calls = []
+
+    def fake_pick(_state, _user_text):
+        if not calls:
+            calls.append("picked")
+            return [{"capabilityId": "intent.parse", "roleId": "product"}]
+        return []
+
+    def fake_execute(capability_id, _state, _input_ids, _role_id, _turn_id):
+        if capability_id == "appbundle.runtimeClosure":
+            return {
+                "title": "runtime closure",
+                "summary": "closed runtime closure",
+                "content": "runtime closure content",
+                "provenance": "python-rag",
+                "runtimeClosure": {
+                    "skillsChecked": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+                    "versionPinsChecked": True,
+                    "crossSkillRuntimeEdges": [
+                        {
+                            "sourceSkill": "datamodel",
+                            "targetSkill": "page",
+                            "state": "allowed",
+                            "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+                        }
+                    ],
+                },
+                "perSkillEvidence": {
+                    skill: {"evidencePresent": True}
+                    for skill in ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+                },
+                "blocked": False,
+                "blockers": [],
+                "closureId": "appbundle:purchase-approval@1.0.0:runtime-closure",
+                "closureHash": "closure123",
+                "stableDigest": "stable123",
+                "findingsByTier": {"hard_blocker": [], "warning": [], "info": []},
+            }
+        return {
+            "title": capability_id,
+            "summary": "normal capability",
+            "content": f"normal content for {capability_id}",
+            "provenance": "python-rag",
+        }
+
+    orig_orch = getattr(drv_mod, "orchestrate_plan", None)
+    orig_pick = getattr(drv_mod, "pick_next_capabilities", None)
+    orig_gate = getattr(drv_mod, "evaluate_coverage_gate", None)
+    orig_rec = getattr(drv_mod, "reconcile_coverage", None)
+    orig_exec = getattr(drv_mod, "execute_v5_capability", None)
+    orig_persist = getattr(drv_mod, "persist_state", None)
+    drv_mod.orchestrate_plan = lambda s, t, u: DummyPlan()
+    drv_mod.pick_next_capabilities = fake_pick
+    drv_mod.evaluate_coverage_gate = lambda s: {"passed": False}
+    drv_mod.reconcile_coverage = lambda s: s
+    drv_mod.execute_v5_capability = fake_execute
+    drv_mod.persist_state = lambda s: s
+    try:
+        out = drive_full_v5_session(state, max_loops=3, user_instruction="purchase approval command")
+    finally:
+        if orig_orch is not None: drv_mod.orchestrate_plan = orig_orch
+        if orig_pick is not None: drv_mod.pick_next_capabilities = orig_pick
+        if orig_gate is not None: drv_mod.evaluate_coverage_gate = orig_gate
+        if orig_rec is not None: drv_mod.reconcile_coverage = orig_rec
+        if orig_exec is not None: drv_mod.execute_v5_capability = orig_exec
+        if orig_persist is not None: drv_mod.persist_state = orig_persist
+
+    closure = derive_publish_closure_response(out)
+    graph = derive_skill_runtime_graph_response(out)
+
+    assert any(
+        (getattr(run, "capabilityId", "") == "appbundle.runtimeClosure")
+        for run in out.capabilityRuns
+    )
+    assert closure is not None
+    assert closure["blocked"] is False
+    assert closure["evidencePresentCount"] == 6
+    assert graph is not None
+    assert graph["edges"][0]["sourceSkill"] == "datamodel"
+
+
 def test_drive_turn_failure_transitions_to_failed():
     state = _mk_state("sr-fail")
 

@@ -5,6 +5,7 @@ import {
   deriveSliderulePageIdentity,
   evaluateSlideruleCommandSmokeEvidence,
   evaluateSliderulePageSmokeEvidence,
+  evaluateSliderulePersistenceReplaySmokeEvidence,
   evaluateSlideruleRuntimeSurfaceSmokeEvidence,
 } from "./sliderulePageSmoke.js";
 
@@ -77,6 +78,8 @@ const completeCommandEvidence = {
   ...completeEvidence,
   hasDriveFullPost: true,
   hasPythonDriveFullResponse: true,
+  hasPythonPublishClosureResponse: true,
+  hasPythonSkillRuntimeGraphResponse: true,
   hasCommandSettled: true,
   hasPageUsableAfterCommand: true,
   hasNoFatalConsoleErrors: true,
@@ -88,11 +91,18 @@ const completeRuntimeSurfaceEvidence = {
   hasCrossRuntimeGraphSurface: true,
 };
 
+const completePersistenceReplayEvidence = {
+  ...completeRuntimeSurfaceEvidence,
+  hasPublishClosureAfterReplay: true,
+  hasCrossRuntimeGraphAfterReplay: true,
+  hasPageUsableAfterReplay: true,
+};
+
 test("evaluateSlideruleCommandSmokeEvidence closes when a real command reaches python /drive-full", () => {
   assert.deepEqual(evaluateSlideruleCommandSmokeEvidence(completeCommandEvidence), {
     ok: true,
     status: "command-ready",
-    reason: "sliderule page submitted a real command through python /drive-full and stayed usable",
+    reason: "sliderule page submitted a real command through python /drive-full, received runtime evidence, and stayed usable",
     evidence: completeCommandEvidence,
   });
 });
@@ -105,6 +115,16 @@ test("evaluateSlideruleCommandSmokeEvidence fails closed when command submit doe
   assert.equal(result.status, "incomplete-command");
   assert.match(result.reason, /python \/drive-full/);
   assert.equal(result.evidence.hasPythonDriveFullResponse, false);
+});
+
+test("evaluateSlideruleCommandSmokeEvidence fails closed when python /drive-full omits runtime evidence", () => {
+  const evidence = { ...completeCommandEvidence, hasPythonSkillRuntimeGraphResponse: false };
+  const result = evaluateSlideruleCommandSmokeEvidence(evidence);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete-command");
+  assert.match(result.reason, /runtime evidence/);
+  assert.equal(result.evidence.hasPythonSkillRuntimeGraphResponse, false);
 });
 
 test("evaluateSlideruleRuntimeSurfaceSmokeEvidence closes when command evidence renders AppBundle surfaces", () => {
@@ -124,4 +144,23 @@ test("evaluateSlideruleRuntimeSurfaceSmokeEvidence fails closed when AppBundle r
   assert.equal(result.status, "incomplete-runtime-surface");
   assert.match(result.reason, /AppBundle/);
   assert.equal(result.evidence.hasPublishClosureSurface, false);
+});
+
+test("evaluateSliderulePersistenceReplaySmokeEvidence closes when AppBundle surfaces survive reload", () => {
+  assert.deepEqual(evaluateSliderulePersistenceReplaySmokeEvidence(completePersistenceReplayEvidence), {
+    ok: true,
+    status: "persistence-replay-ready",
+    reason: "sliderule page restored AppBundle runtime closure surfaces after reload",
+    evidence: completePersistenceReplayEvidence,
+  });
+});
+
+test("evaluateSliderulePersistenceReplaySmokeEvidence fails closed when reload loses runtime closure surfaces", () => {
+  const evidence = { ...completePersistenceReplayEvidence, hasCrossRuntimeGraphAfterReplay: false };
+  const result = evaluateSliderulePersistenceReplaySmokeEvidence(evidence);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete-persistence-replay");
+  assert.match(result.reason, /reload/);
+  assert.equal(result.evidence.hasCrossRuntimeGraphAfterReplay, false);
 });

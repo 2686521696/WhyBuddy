@@ -107,7 +107,7 @@ export function ArchitectureProcessPanel({
     });
   }, [scrollSignature, streaming, latestTurn]);
 
-  if (!latestTurn) {
+  if (!latestTurn && !crossRuntimeGraph && !publishClosure) {
     return null;
   }
 
@@ -134,21 +134,23 @@ export function ArchitectureProcessPanel({
         </p>
       )}
 
-      <TurnRouteTimeline
-        facts={latestTurn.routeFacts}
-        steps={latestTurn.steps}
-        actions={latestTurn.actions}
-        sessionId={sessionId}
-        expanded={streaming || latestTurn.routeExpanded}
-        onToggle={onToggleRoute ?? (() => {})}
-        litCount={latestTurn.routeLitCount}
-        streaming={streaming}
-        liveAction={streaming ? liveAction : null}
-        surfaceMode="product"
-        immersionOverlay
-        retrying={isRunning}
-        onRetryCapability={onRetryCapability}
-      />
+      {latestTurn && (
+        <TurnRouteTimeline
+          facts={latestTurn.routeFacts}
+          steps={latestTurn.steps}
+          actions={latestTurn.actions}
+          sessionId={sessionId}
+          expanded={streaming || latestTurn.routeExpanded}
+          onToggle={onToggleRoute ?? (() => {})}
+          litCount={latestTurn.routeLitCount}
+          streaming={streaming}
+          liveAction={streaming ? liveAction : null}
+          surfaceMode="product"
+          immersionOverlay
+          retrying={isRunning}
+          onRetryCapability={onRetryCapability}
+        />
+      )}
       {(crossRuntimeGraph || publishClosure) && (
         <section
           className="mt-3 rounded-md border border-slate-200/80 bg-white/70 px-3 py-2 text-[10px] text-slate-600 shadow-sm"

@@ -220,6 +220,74 @@ function DriveFullStatusBanner({
   );
 }
 
+export function deriveNoIntentRuntimeProjection({
+  pythonPublishClosure,
+  pythonSkillRuntimeGraph,
+}: {
+  pythonPublishClosure?: PublishClosureSummary | null;
+  pythonSkillRuntimeGraph?: unknown;
+}): {
+  crossRuntimeGraph: CrossRuntimeGraphSummary | null;
+  publishClosure: PublishClosureSummary | null;
+} {
+  const runtimeCross = pythonSkillRuntimeGraph
+    ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
+    : null;
+  const closure = pythonPublishClosure ?? null;
+  return {
+    crossRuntimeGraph:
+      runtimeCross ||
+      (closure
+        ? {
+            edgeCount: 0,
+            allowedCount: 0,
+            blockedCount: 0,
+            skillCount: closure.skillCount || 0,
+            evidenceCount: closure.evidencePresentCount || 0,
+            examples: [],
+          }
+        : null),
+    publishClosure: closure,
+  };
+}
+
+export function deriveImmediatePythonRuntimeProjection({
+  pythonPublishClosure,
+  pythonSkillRuntimeGraph,
+}: {
+  pythonPublishClosure?: PublishClosureSummary | null;
+  pythonSkillRuntimeGraph?: unknown;
+}): {
+  crossRuntimeGraph: CrossRuntimeGraphSummary | null;
+  publishClosure: PublishClosureSummary | null;
+} | null {
+  if (!pythonPublishClosure && !pythonSkillRuntimeGraph) return null;
+  return deriveNoIntentRuntimeProjection({
+    pythonPublishClosure,
+    pythonSkillRuntimeGraph,
+  });
+}
+
+export async function loadPythonRuntimeProjectionFromSession(
+  sessionId: string,
+  fetcher: typeof fetch = fetch
+): Promise<{
+  crossRuntimeGraph: CrossRuntimeGraphSummary | null;
+  publishClosure: PublishClosureSummary | null;
+} | null> {
+  const response = await fetcher(
+    `/api/sliderule/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "GET", headers: { Accept: "application/json" } }
+  );
+  if (!response.ok) return null;
+  const body = await response.json().catch(() => null);
+  const state = body?.state && typeof body.state === "object" ? body.state : body;
+  return deriveImmediatePythonRuntimeProjection({
+    pythonPublishClosure: state?.publishClosure ?? null,
+    pythonSkillRuntimeGraph: state?.skillRuntimeGraph ?? null,
+  });
+}
+
 function SlideRuleImmersion({
   goal,
   uiTurns,
@@ -960,29 +1028,60 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
   const pythonSkillRuntimeGraph = sessionEvidence.skillRuntimeGraph ?? null;
   // Seed initial from python /drive-full for immediate visibility of pass-through at root render
   // (useEffect will refine with derive result; static smoke renders use the initial).
-  const initialCrossFromRuntime = pythonSkillRuntimeGraph
-    ? deriveCrossRuntimeGraphSummary(pythonSkillRuntimeGraph as any, { exampleLimit: 5 })
-    : null;
-  const initialCross = initialCrossFromRuntime || (pythonPublishClosure
-    ? {
-        edgeCount: 0,
-        allowedCount: 0,
-        blockedCount: 0,
-        skillCount: pythonPublishClosure.skillCount || 0,
-        evidenceCount: pythonPublishClosure.evidencePresentCount || 0,
-        examples: [],
-      }
-    : null);
+  const initialProjection = deriveNoIntentRuntimeProjection({
+    pythonPublishClosure,
+    pythonSkillRuntimeGraph,
+  });
   const [crossRuntimeGraph, setCrossRuntimeGraph] =
-    useState<CrossRuntimeGraphSummary | null>(initialCross);
+    useState<CrossRuntimeGraphSummary | null>(initialProjection.crossRuntimeGraph);
   const [publishClosure, setPublishClosure] =
     useState<PublishClosureSummary | null>(pythonPublishClosure ?? null);
+  const visiblePythonRuntimeProjection = deriveImmediatePythonRuntimeProjection({
+    pythonPublishClosure,
+    pythonSkillRuntimeGraph,
+  });
+  const visibleCrossRuntimeGraph =
+    visiblePythonRuntimeProjection?.crossRuntimeGraph ?? crossRuntimeGraph;
+  const visiblePublishClosure =
+    visiblePythonRuntimeProjection?.publishClosure ?? publishClosure;
+
+  useEffect(() => {
+    if (visiblePythonRuntimeProjection || pythonPublishClosure || pythonSkillRuntimeGraph) return;
+    let cancelled = false;
+    loadPythonRuntimeProjectionFromSession(sessionState.sessionId || "sliderule-v51-product")
+      .then((projection) => {
+        if (cancelled || !projection) return;
+        setCrossRuntimeGraph(projection.crossRuntimeGraph);
+        setPublishClosure(projection.publishClosure);
+      })
+      .catch(() => {
+        // Missing persisted projection is a valid fail-closed state; local preview can still render.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sessionState.sessionId,
+    visiblePythonRuntimeProjection,
+    pythonPublishClosure,
+    pythonSkillRuntimeGraph,
+  ]);
 
   useEffect(() => {
     const intent = goal || latestTurn?.user || "";
+    const immediatePythonProjection = deriveImmediatePythonRuntimeProjection({
+      pythonPublishClosure,
+      pythonSkillRuntimeGraph,
+    });
+    if (immediatePythonProjection) {
+      setCrossRuntimeGraph(immediatePythonProjection.crossRuntimeGraph);
+      setPublishClosure(immediatePythonProjection.publishClosure);
+    }
     if (!intent.trim()) {
-      setCrossRuntimeGraph(null);
-      setPublishClosure(null);
+      if (!immediatePythonProjection) {
+        setCrossRuntimeGraph(null);
+        setPublishClosure(null);
+      }
       return;
     }
     let cancelled = false;
@@ -1192,21 +1291,35 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     pythonApiError,
     pythonStatusMsg,
     retryPythonBackend,
-    crossRuntimeGraph,
-    publishClosure,
+    crossRuntimeGraph: visibleCrossRuntimeGraph,
+    publishClosure: visiblePublishClosure,
     driveFullStatus,
   };
 
   if (isImmersion) {
     return (
-      <div data-testid="sliderule-root" data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+      <div
+        data-testid="sliderule-root"
+        data-python-provenance="via-delegation"
+        data-paths="/agent-loop/sliderule /sliderule"
+        data-backend="python-fullpath-e2e"
+        data-runtime-publish-closure={visiblePublishClosure ? "present" : "absent"}
+        data-runtime-skill-graph={visibleCrossRuntimeGraph ? "present" : "absent"}
+      >
         <SlideRuleImmersion {...shared} />
       </div>
     );
   }
 
   return (
-    <div data-testid="sliderule-root" data-python-provenance="via-delegation" data-paths="/agent-loop/sliderule /sliderule" data-backend="python-fullpath-e2e">
+    <div
+      data-testid="sliderule-root"
+      data-python-provenance="via-delegation"
+      data-paths="/agent-loop/sliderule /sliderule"
+      data-backend="python-fullpath-e2e"
+      data-runtime-publish-closure={visiblePublishClosure ? "present" : "absent"}
+      data-runtime-skill-graph={visibleCrossRuntimeGraph ? "present" : "absent"}
+    >
       <SlideRuleSplitEngineering {...shared} />
     </div>
   );

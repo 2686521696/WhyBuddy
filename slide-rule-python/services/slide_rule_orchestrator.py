@@ -23,7 +23,12 @@ def _has_capability_output(state: V5SessionState, capability_id: str) -> bool:
             return True
     for artifact in state.artifacts:
         produced_by = artifact.producedBy or {}
-        if produced_by.get("capabilityId") == capability_id and artifact.provenance.startswith("python-rag"):
+        produced_capability = (
+            produced_by.get("capabilityId")
+            if isinstance(produced_by, dict)
+            else getattr(produced_by, "capabilityId", None)
+        )
+        if produced_capability == capability_id and artifact.provenance.startswith("python-rag"):
             return True
     return False
 
