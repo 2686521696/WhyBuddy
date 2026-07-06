@@ -2,25 +2,25 @@
 
 > 基线：`SLIDERULE_V5_BACKEND=python`（默认），Node 经 `server/sliderule/python-delegation.ts` 薄代理到 :9700。
 > 数据来源：`server/routes/`（67 个顶层路由模块 + `blueprint/` 约 70 个子模块 + `node-adapters/` 35 个适配器）、
-> `slide-rule-python/app.py` + `routes/`（5 个路由模块，4 个已挂载）、`slide-rule-python/FINAL_MIGRATION_STATUS.md`。
+> `slide-rule-python/app.py` + `routes/`（9 个路由模块，8 个已挂载；sliderule.py 未挂载）、`slide-rule-python/FINAL_MIGRATION_STATUS.md`。
 
 ## 一、总览
 
 - **整体对等度**：约 **36–40%**（与 FINAL_MIGRATION_STATUS.md 自评一致）。V5 sliderule 执行面 + agent-loop + a2a 已由 Python 主导；LLM Phase 1 约 80%；真实 RAG 仅 10–15%；V5 之外的全服务器迁移为个位数百分比。
-- **Python 已挂载 HTTP 面**（app.py）：`/api/sliderule/*`（sliderule_full）、`/api/blueprint/spec-documents/*`、`/api/agent-loop/*`、`/api/rag/*`、health/ready/observability + AgentLoop 静态面板。`routes/blueprint_jobs.py` 已写但**未挂载**。
-- **Python services 层远宽于路由层**（约 115 个 service 文件：auth_*、permission_*、audit_*、task_*、telemetry_*、web_aigc_*_adapter、a2a_* 等已做"takeover/cutover"），但多数**没有对应 FastAPI 路由**，即"有内脏没有皮肤"。
+- **Python 已挂载 HTTP 面**（app.py）：`/api/sliderule/*`（sliderule_full）、`/api/blueprint/spec-documents/*`、`/api/blueprint/jobs/*`、`/api/agent-loop/*`、`/api/rag/*`、**`/api/auth/*`、`/api/permissions/*`、`/api/audit/*`（2026-07 新挂载，routes/auth.py / permissions.py / audit.py）**、health/ready/observability + AgentLoop 静态面板。
+- **Python services 层仍宽于路由层**（约 115 个 service 文件）。auth_*、permission_*、audit_* 已有 HTTP 皮肤（见七）；task_*、telemetry_*、web_aigc_*_adapter 等仍**没有对应 FastAPI 路由**，即"有内脏没有皮肤"。
 
 ### 三个最大缺口
 1. ~~真实向量 RAG~~（2026-07 已落地 `services/vector_rag.py`：embedding + 本地余弦索引，凭据缺失时诚实回退关键词；Qdrant 后端可作后续增强）。
 2. **跨进程实测闭环**：Node→Python 真实委托 smoke（`sliderule.live-delegation.test.ts`）默认 skip；`structure.decompose` live 尚无干净通过记录；未映射能力仍落 generic fallback。
-3. **HTTP 面缺口**：auth / permissions / tasks / audit / telemetry / web-aigc 适配器在 Python 只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
+3. **HTTP 面缺口**（2026-07 部分收窄）：auth / permissions / audit 已挂载薄路由（Node 侧接代理为下一步）；tasks / telemetry / web-aigc 适配器在 Python 仍只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
 
 ### 建议迁移顺序（先解锁金链路：一句话 → spec → Skill 联动 → 预览/导出）
 1. **补齐 V5 execute 实测**：live delegation smoke 常态化（已提供入口 `pnpm run smoke:live-delegation`，需先启动 :9700；下一步进 CI），structure.decompose / report.write 干净通过；未映射 cap 收敛进 `execute_mapped_capability`。
 2. **真实向量 RAG**（rag_service + rag.py 换 embedding 检索）——直接提升 evidence/report/risk 三个金链路能力的产出质量。
 3. **挂载 Python 侧 skill/mcp 运行时路由**（v5_skill_runtime_graph / mcp_runtime 已存在），消除 `skill.invoke`、`mcp.call` 依赖 Node 的最后一段。
 4. **预览/导出面**：blueprint spec-docs 的 review/export 代理开关（`BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY`）转默认开，挂载 blueprint_jobs.py。
-5. **auth/permissions/audit 补路由挂载**（service 已 takeover），之后 Node index.ts 才能按计划退役（见 index.ts 内 task 55/60 注释）。
+5. ~~auth/permissions/audit 补路由挂载~~（2026-07 已完成：/api/auth /api/permissions /api/audit，X-Internal-Key 鉴权，测试 test_*_routes_http_surface.py）。剩余退役前置：Node auth.ts/permissions.ts/audit.ts 对这些端点接薄代理 + node-retained 面（mailer/用户库/权限管理 CRUD/真实审计链）的处置决定（见 index.ts 内 task 55/60 注释）。
 
 图例：✅ 已由 Python 主导（Node 薄代理/已委托）｜🟡 部分/开关控制｜❌ 仅 Node｜🗄️ legacy 分支（仅 `SLIDERULE_V5_BACKEND=legacy` 时加载）
 
@@ -61,7 +61,7 @@
 |---|---|---|---|---|
 | a2a.ts（stream/cancel/registry/sessions/chat/report/analytics） | ✅ PYTHON_FIRST_COMPAT 薄代理（task 47–51） | services/a2a_runtime.py 等 4 个 | 迁移到Python（已完成） | /invoke 保留 Node 本地执行器兼容壳 |
 | agents.ts / guest-agents.ts | ❌ Node | 无 | 保留Node薄代理 | 非金链路，低频管理面 |
-| planets.ts / tasks.ts / projects.ts / workflows.ts | ❌ Node | task_* / mission_* / workflow_runtime services（无路由） | 迁移到Python（次优先） | index.ts 退役前置项（task 55 注释点名 main routes） |
+| planets.ts / tasks.ts / projects.ts / workflows.ts | ❌ Node | task_* / mission_* / workflow_runtime services（无路由；2026-07 评估：task_* 均为决策/投影切片，需 Node 提供任务记录，无任务存储/执行引擎，**不足以承接 tasks.ts 的 CRUD+执行面**，故未随 auth/permissions/audit 一起挂载） | 迁移到Python（次优先） | index.ts 退役前置项（task 55 注释点名 main routes） |
 | replay.ts / lineage.ts | ❌ Node | services/mission_event_replay.py（无路由） | 保留Node薄代理 | 观测型，后置 |
 | reputation.ts / analytics.ts | ❌ Node | 无 | 保留Node薄代理 | marketplace/声誉体系，产品线未定前不迁 |
 | export.ts / reports.ts | ❌ Node | 无 | 保留Node薄代理 | 跨框架工作流导出，与金链路导出不同物 |
@@ -77,9 +77,9 @@
 
 | 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
 |---|---|---|---|---|
-| auth.ts | ❌ Node | auth_*（10 个 takeover services，无路由） | 迁移到Python | index.ts 退役硬前置（"auth…cut over"） |
-| permissions.ts | ❌ Node | permission_*（7 个 services，无路由） | 迁移到Python | 同上 |
-| audit.ts | ❌ Node | audit_*（3 个 services，无路由） | 迁移到Python | 同上 |
+| auth.ts | 🟡 Node 业务面保留（尚未接 Python 代理） | 🟡 **/api/auth 已挂载**（2026-07，routes/auth.py）：register / login / email-code/login / identity/execute（identity 桥）+ session/{write,read,refresh,logout,delete}（AUTH_SESSION_STORE_FILE JSON 边界）+ 7 个 `__internal/*` 闭环/takeover 面（audit-closure、token-mailer-session-cutover、session-token-boundary、production-ownership-closure、session-repository-takeover、token-issuance-takeover、mailer-user-store-scope） | 迁移到Python（下一步：Node auth.ts 的 python* deps 指向这些端点） | 仍 Node-retained：email-code/send（真实 mailer）、生产用户库、密码哈希、cookie 签发；identity 为 bounded 契约（test 凭据），真实凭据校验未迁。测试：test_auth_routes_http_surface.py |
+| permissions.ts | 🟡 Node 管理面保留 | 🟡 **/api/permissions 已挂载**（2026-07，routes/permissions.py）：check（deny-first 检查运行时）、audit-hook、rate-limit/{check,record,reset}、policy/decision（确定性策略决策切片）、management/evaluate（显式 node_owned 边界）+ 4 个 `__internal/*` 决策面（policy-store-cutover、production-ownership-closure、durable-store-boundary、policy-store-takeover） | 迁移到Python（检查/决策面）；管理面保留Node | 仍 Node-owned：roles/policies/tokens CRUD、grant-temp/revoke/escalate、conflicts/risk、审计 trail/usage/violations/export、templates、web-aigc matrix（permission_management 对管理操作显式返回 unsupported/node_owned）。测试：test_permissions_routes_http_surface.py |
+| audit.ts | 🟡 Node 真实审计链保留 | 🟡 **/api/audit 已挂载**（2026-07，routes/audit.py）：sink（生产 sink 合成写入 envelope）、retention-export（保留决策 + 导出 manifest）、evidence/classify（安全证据切片 classify/retain/export）+ `__internal/durable-store-retention-takeover` | 迁移到Python（合成/边界面）；真实链保留Node | 仍 Node-owned：hash 链存储、events 查询/搜索、verify/stats、compliance report、anomalies、permission trail、lineage、retention archive（Python 面均为合成安全切片，externalEmit=false）。测试：test_audit_routes_http_surface.py |
 | admin.ts / config.ts | ❌ Node | 无 | 保留Node薄代理 | 低频管理面 |
 | knowledge-admin.ts | ✅ 经 /api/admin/knowledge/proxy 代理 | services/knowledge_admin_runtime.py | 迁移到Python（已完成） | 失败带 node-knowledge-admin-python-runtime 溯源 |
 | feishu.ts | ❌ Node | 无 | 保留Node薄代理 | 外部 IM 桥，独立演进 |

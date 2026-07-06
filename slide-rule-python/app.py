@@ -29,7 +29,10 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config.settings import settings
+from routes.audit import router as audit_router
+from routes.auth import router as auth_router
 from routes.blueprint_jobs import router as blueprint_jobs_router
+from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
@@ -88,6 +91,13 @@ app.add_middleware(
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
+
+# Auth / permissions / audit takeover services now have an HTTP skin (task 55/60:
+# top blocker for Node index.ts retirement). Thin delegation to services/auth_*,
+# permission_*, audit_*; node-retained surfaces stay in server/routes/*.ts.
+app.include_router(auth_router, prefix="/api/auth")
+app.include_router(permissions_router, prefix="/api/permissions")
+app.include_router(audit_router, prefix="/api/audit")
 
 # AgentLoop control plane (Python owned, bridge mode for workers)
 app.include_router(agent_loop_router, prefix="/api/agent-loop")

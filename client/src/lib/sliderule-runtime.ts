@@ -3679,8 +3679,12 @@ export function orchestrateReasoningTurn(
         coverageContract: contract,
         coverageGaps: gaps,
       };
-      working = resolveCoverageGapsFromState(working);
     }
+    // Knife 7 / golden-path fix (parity with Python resolve_coverage_gaps_from_state):
+    // resolve gaps already satisfied by prior trusted commits BEFORE every gate evaluation.
+    // Reconcile may have just (re)authored the contract with all gaps open even though the
+    // required capabilities were trusted-committed in earlier turns.
+    working = resolveCoverageGapsFromState(working);
     const gateResult = evaluateCoverageGate(working, [], working.coverageContract);
     working = {
       ...working,
@@ -3867,9 +3871,12 @@ export function orchestrateReasoningTurn(
       coverageContract: contract,
       coverageGaps: gaps,
     };
-    // Knife 7: on first authoring in this ORCH, immediately resolve any gaps already satisfied by prior state (e.g. previous turns' commits).
-    working = resolveCoverageGapsFromState(working);
   }
+  // Knife 7 / golden-path fix (parity with Python resolve_coverage_gaps_from_state):
+  // resolve gaps satisfied by prior trusted commits BEFORE every gate evaluation — reconcile may
+  // have just (re)authored the contract with all gaps open even though the required capabilities
+  // were trusted-committed in earlier turns.
+  working = resolveCoverageGapsFromState(working);
   const gateResult = evaluateCoverageGate(working, selected, working.coverageContract);
   working = {
     ...working,
@@ -3899,7 +3906,26 @@ export function orchestrateReasoningTurn(
 
     // Budget respect in same turn (conservative v1): use policy maxPerTurn, assume 0 committed yet this turn.
     const policy = getDefaultBudgetPolicy();
-    const afford = Math.max(0, policy.maxCapabilityRunsPerTurn - effectiveSelected.length);
+    let afford = Math.max(0, policy.maxCapabilityRunsPerTurn - effectiveSelected.length);
+    // Golden-path fix: a premature report.write cannot commit this turn anyway (GCOV would
+    // hard-block below). If evicting it frees exactly enough budget to schedule EVERY missing
+    // pre-req, swap it out so the turn makes real progress instead of parking with an empty plan.
+    // When even that is not enough, keep the original hard-block behavior unchanged.
+    const hasPrematureReport = effectiveSelected.some(
+      (s: any) => s.capabilityId === 'report.write'
+    );
+    if (toForce.length > afford && hasPrematureReport) {
+      const affordWithoutReport = Math.max(
+        0,
+        policy.maxCapabilityRunsPerTurn - (effectiveSelected.length - 1)
+      );
+      if (toForce.length <= affordWithoutReport) {
+        effectiveSelected = effectiveSelected.filter(
+          (s: any) => s.capabilityId !== 'report.write'
+        );
+        afford = affordWithoutReport;
+      }
+    }
     const forced = toForce.slice(0, afford);
     const forcedIds = forced.map((f: any) => f.capabilityId);
 

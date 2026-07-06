@@ -230,9 +230,13 @@ export function buildClearStateWithTrustedReport(sessionId: string): {
   let s = createInitialSessionState(COMPLEX_GOAL_TEXT, sessionId);
 
   const riskId = 'risk-1';
+  const critId = 'crit-1';
   const evId = 'ev-ground-1';
   const synthId = 'synth-1';
   s = commitTrusted(s, riskId, 'risk.analyze', '安全', 'risk', `${sessionId}-r0`);
+  // The complex CoverageContract now includes critique.generate (V5.2/V5.3 面板质疑纳入合约);
+  // without a trusted critique run the converge turn can no longer reach a GCOV-pass.
+  s = commitTrusted(s, critId, 'critique.generate', '挑刺', 'risk', `${sessionId}-r0c`);
   s = commitGroundedEvidence(s, evId, `${sessionId}-r0b`);
   s = commitTrusted(s, synthId, 'synthesis.merge', '综合', 'synthesis', `${sessionId}-r1`);
 

@@ -129,7 +129,10 @@ function buildClearFlowState(rt: RuntimeModule): V5SessionState {
   let s = rt.createInitialSessionState(goalText, 'integration-clear');
 
   // Ordinary upstream turns produce trusted required pre-reqs (incl. grounded evidence for G-GROUND).
+  // The complex CoverageContract now also requires critique.generate (V5.2/V5.3 面板质疑纳入合约),
+  // so the flow commits a trusted critique run as well before converging.
   s = commitTrusted(rt, s, 'risk-1', 'risk.analyze', '安全', 'risk', 'int-r0');
+  s = commitTrusted(rt, s, 'crit-1', 'critique.generate', '挑刺', 'risk', 'int-r0c');
   s = commitGroundedEvidence(s, 'ev-ground-1', 'int-r0b');
   s = commitTrusted(rt, s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'int-r1');
 

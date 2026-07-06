@@ -76,7 +76,12 @@ export function SlideRuleTopHud({
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             STATUS
           </span>
-          <span className="text-[10px] text-slate-500">{facts.conclusionLabel}</span>
+          <span
+            data-testid="sliderule-conclusion-badge"
+            className="text-[10px] text-slate-500"
+          >
+            {facts.conclusionLabel}
+          </span>
           <span className="font-mono text-[10px] text-slate-400">话题</span>
           <span
             className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-slate-800 sm:max-w-[min(38vw,420px)] ${

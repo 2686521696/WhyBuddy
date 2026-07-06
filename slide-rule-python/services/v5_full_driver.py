@@ -107,8 +107,13 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
     """
     if not (user_instruction or "").strip():
         return state
-    if derive_publish_closure_response(state) is not None and derive_skill_runtime_graph_response(state) is not None:
-        return state
+    existing_closure = derive_publish_closure_response(state)
+    if existing_closure is not None and derive_skill_runtime_graph_response(state) is not None:
+        blocked = bool(existing_closure.get("blocked")) if isinstance(existing_closure, dict) else bool(getattr(existing_closure, "blocked", False))
+        if not blocked:
+            return state
+        # blocked 的闭环允许在新一轮重建（例如 LLM 瞬时失败导致 0/6）：
+        # fail-closed 语义不变——证据真缺失时重建后依然 blocked。
 
     import time as _time
 

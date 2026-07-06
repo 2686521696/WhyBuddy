@@ -98,10 +98,12 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
             max_tokens=4000,
         )
         return parsed if isinstance(parsed, dict) else None
-    except LlmError:
-        # No key / rate limit / parse failure / shape failure — fail-closed.
+    except LlmError as exc:
+        # No key / rate limit / parse failure / shape failure — fail-closed，但留痕便于诊断。
+        print(f"[v5_llm_generate] LlmError: {str(exc)[:200]}")
         return None
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        print(f"[v5_llm_generate] unexpected error: {str(exc)[:200]}")
         return None
 
 
@@ -122,16 +124,26 @@ def generate_five_system_model(
     if not (goal or "").strip():
         return None
     fn = llm_json_fn or _default_llm_json_fn
-    try:
-        model = fn(goal)
-    except Exception:
-        return None
-    if not isinstance(model, dict):
-        return None
-    # Cheap presence check before handing to the gate (gate does the real work).
-    if not all(section in model for section in _REQUIRED_SECTIONS):
-        return None
-    return model
+    # 一次有界重试：并发/限流下的瞬时失败不该直接变成永久 publish blocked
+    # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。
+    attempts = 2 if llm_json_fn is None else 1
+    for attempt in range(attempts):
+        try:
+            model = fn(goal)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} raised: {str(exc)[:200]}")
+            model = None
+        if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
+            return model
+        if model is not None:
+            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned incomplete model (missing sections)")
+        else:
+            print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned no model")
+        if attempt + 1 < attempts:
+            import time as _time
+
+            _time.sleep(2.0)
+    return None
 
 
 def model_to_linkage_artifacts(model: Dict[str, Any], goal: str) -> List[Dict[str, Any]]:
