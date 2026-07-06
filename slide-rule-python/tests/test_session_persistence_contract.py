@@ -576,7 +576,9 @@ def test_delete_reset_contract_clears_persistence_service_route_caches_and_is_id
     headers = {"X-Internal-Key": INTERNAL_KEY}
     sid = "delete-reset-contract-001"
 
-    # Create via route (populates route cache + service cache + persistence)
+    # Create via route (populates service cache + persistence; since the stream-persistence fix
+    # the route no longer writes its own _sessions on create/GET — durable writes go through
+    # save_session so the authoritative store stays consistent; route _sessions is only written on PUT)
     create_resp = client.post(
         "/api/sliderule/sessions",
         json={"goal": {"text": "delete reset contract"}, "sessionId": sid},
@@ -584,11 +586,14 @@ def test_delete_reset_contract_clears_persistence_service_route_caches_and_is_id
     )
     assert create_resp.status_code == 200, "create must succeed for setup"
 
-    # Pre-state: loadable from persistence and present in both caches
+    # Pre-state: loadable from persistence and present in service cache
     pre_load = load_session_record(sid)
     assert pre_load.get("ok") is True, "session must be persisted before delete"
     assert sid in sess_mod._sessions, "service cache must contain sid before delete"
-    assert sid in route_mod._sessions, "route cache must contain sid before delete"
+    # Seed the route cache manually (as a PUT save_sess would) so the
+    # "DELETE clears the route cache" assertion below remains meaningful under the current contract.
+    route_mod._sessions[sid] = sess_mod._sessions[sid]
+    assert sid in route_mod._sessions, "route cache seeded (PUT-equivalent) before delete"
 
     # Pre GET succeeds
     pre_get = client.get(f"/api/sliderule/sessions/{sid}", headers=headers)
@@ -1056,6 +1061,14 @@ def test_drive_reasoning_turn_nonempty_selected_writes_gated_artifacts_capruns_a
         )
 
     monkeypatch.setattr("services.slide_rule_session.orchestrate_plan", fake_nonempty_orchestrate)
+    # Current PYTHON_AUTHORITY pick contract: drive_reasoning_turn selects via
+    # pick_next_capabilities (explicit pick; plan_result.selected is legacy and no longer drives
+    # the loop). Patch the pick to the same NON-EMPTY selection so this test still exercises the
+    # real gated commit path for exactly evidence.search.
+    monkeypatch.setattr(
+        "services.slide_rule_session.pick_next_capabilities",
+        lambda state, user_text: [{"capabilityId": "evidence.search", "roleId": "grounding"}],
+    )
 
     import services.slide_rule_session as sess_mod
     import services.persistence as pers

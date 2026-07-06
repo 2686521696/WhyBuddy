@@ -1240,6 +1240,23 @@ def _looks_like_abs_path(s: Any) -> bool:
     return False
 
 
+def _path_basename(value: str) -> str:
+    """Basename for both windows-style and posix paths, independent of host OS.
+
+    Plain Path(...).name on Linux would keep windows abs paths intact (backslash
+    is not a separator there), leaking e.g. C:\\Users\\... in API responses.
+    """
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    st = str(value).strip()
+    try:
+        if re.match(r"^[a-zA-Z]:[\\/]", st) or st.startswith("\\\\") or "\\" in st:
+            return PureWindowsPath(st).name
+        return PurePosixPath(st).name
+    except Exception:
+        return ""
+
+
 def _sanitize_for_response(obj: Any) -> Any:
     """Recursively replace absolute paths in state-derived payloads (options, task, iterations, fix/review) with basename.
 
@@ -1254,11 +1271,8 @@ def _sanitize_for_response(obj: Any) -> Any:
             # keys that typically hold paths: always sanitize their string value if abs
             if kl in ("cwd", "reporoot", "worktree", "root", "workdir", "logpath", "filepath", "dir", "basedir") or "path" in kl or "dir" in kl or "file" in kl:
                 if isinstance(v, str) and _looks_like_abs_path(v):
-                    try:
-                        bn = Path(v).name
-                        out[k] = bn if bn else "[redacted-path]"
-                    except Exception:
-                        out[k] = "[redacted-path]"
+                    bn = _path_basename(v)
+                    out[k] = bn if bn and not _looks_like_abs_path(bn) else "[redacted-path]"
                     continue
             out[k] = _sanitize_for_response(v)
         return out
@@ -1266,11 +1280,8 @@ def _sanitize_for_response(obj: Any) -> Any:
         return [_sanitize_for_response(item) for item in obj]
     if isinstance(obj, str):
         if _looks_like_abs_path(obj):
-            try:
-                bn = Path(obj).name
-                return bn if bn else "[redacted-path]"
-            except Exception:
-                return "[redacted-path]"
+            bn = _path_basename(obj)
+            return bn if bn and not _looks_like_abs_path(bn) else "[redacted-path]"
         return obj
     return obj
 

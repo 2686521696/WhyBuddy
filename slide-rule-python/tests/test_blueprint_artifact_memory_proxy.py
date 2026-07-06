@@ -177,8 +177,12 @@ def test_error_contract_rejects_invalid_resource():
 
     assert response.status_code == 400
     data = response.json()
-    assert data["detail"]["error"] == "invalid_resource"
-    assert "ledger" in data["detail"]["allowedResources"]
+    # app.py observability handler (task 58) flattens HTTPException dict details into the
+    # top-level body and attaches python provenance/degraded signals (no "detail" wrapper).
+    assert data["error"] == "invalid_resource"
+    assert "ledger" in data["allowedResources"]
+    assert data["degraded"] is True
+    assert data["backend"] == "slide-rule-python"
 
 
 def test_contract_requires_internal_key():

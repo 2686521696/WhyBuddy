@@ -145,7 +145,7 @@ async def health():
             "degradedStates": True,
             "errors": True
         },
-        "note": "Python FastAPI is backend API source for health/readiness probes. Node /api/health is thin compat proxy only.",
+        "note": "Python FastAPI is backend API source for health/readiness probes. Node /api/health is thin compat proxy only and delegates via PYTHON_SLIDE_RULE_BASE_URL.",
         "serverIndexRole": "ACTIVE_NODE_BUSINESS (majority surfaces; thin shells for sliderule/health/agent-loop slices)",
         "serverIndexRetirementTask": 55,
         "serverIndexRetirementState": "plan-recorded; blocked pending full slice cutover (auth/rag/a2a/main-blueprint etc)"

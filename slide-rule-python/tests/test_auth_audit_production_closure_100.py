@@ -11,6 +11,7 @@ Covers:
 import os
 import sys
 import json
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,6 +21,13 @@ from services.auth_audit_production_closure import (  # noqa: E402
     CLOSURE_STATUSES,
     execute_auth_audit_production_closure,
 )
+
+
+def _future_instant(days: int = 1) -> str:
+    # The closure probes the session boundary against the real clock, so the
+    # fixture expiry must be computed relative to now instead of hardcoded.
+    instant = datetime.now(timezone.utc) + timedelta(days=days)
+    return instant.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _session_store(tmp_path):
@@ -37,7 +45,7 @@ def _session_store(tmp_path):
                         "emailVerified": True,
                         "createdAt": "2026-04-30T00:00:00.000Z",
                     },
-                    "expiresAt": "2026-07-01T00:00:00.000Z",
+                    "expiresAt": _future_instant(days=1),
                 }
             }
         ),

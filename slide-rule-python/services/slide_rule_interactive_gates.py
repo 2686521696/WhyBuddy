@@ -255,10 +255,13 @@ def merge_gap_ask_into_state(state: Any, gaps: List[Dict[str, Any]]) -> Any:
         blocking.add(nid)
     if new_ids:
         if isinstance(contract, dict) or contract is None:
-            if contract is None:
-                contract = {"blockingGapIds": list(blocking)}
-            else:
-                contract = {**contract, "blockingGapIds": list(blocking)}
+            contract = {**(contract or {}), "blockingGapIds": list(blocking)}
+            # A partial contract dict (e.g. seeded here from None/{}) must still round-trip
+            # through V5SessionState.server_load on persistence read-back — CoverageContract
+            # requires id + requiredCapabilities, so a bare {"blockingGapIds": [...]} would
+            # corrupt the durable store (store_corrupt/invalid_session on every later read).
+            contract.setdefault("id", f"cov-gap-ask-{_get_attr(state, 'lastTurnId', None) or 'seed'}")
+            contract.setdefault("requiredCapabilities", [])
             state.coverageContract = contract
         else:
             # model

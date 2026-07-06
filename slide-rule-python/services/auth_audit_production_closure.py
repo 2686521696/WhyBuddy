@@ -83,6 +83,22 @@ def _success_envelope(
     }
 
 
+def _error_code(envelope: Any) -> Optional[str]:
+    """Extract an error code from a sub envelope.
+
+    Sub runtimes are inconsistent: store-level failures report
+    ``{"error": {"code": ...}}`` while auth-session contract errors report
+    ``{"error": "expired"|"missing"|...}`` (a plain string). Handle both.
+    """
+    error = (envelope or {}).get("error") if isinstance(envelope, dict) else None
+    if isinstance(error, dict):
+        code = error.get("code")
+        return code if isinstance(code, str) else None
+    if isinstance(error, str):
+        return error
+    return None
+
+
 def _detect_external_missing(envelopes: Dict[str, Any]) -> bool:
     # external_missing when sink or retention reports external platform missing or node owned only
     sink = envelopes.get("auditSink") or {}
@@ -215,7 +231,7 @@ def execute_auth_audit_production_closure(payload: Dict[str, Any]) -> Dict[str, 
         status = "degraded"
     elif _detect_external_missing(sub_envelopes):
         status = "external_missing"
-    elif (sess or {}).get("error", {}).get("code") in ("auth_session_store_missing_config", "auth_session_store_failure") or \
+    elif _error_code(sess) in ("auth_session_store_missing_config", "auth_session_store_failure") or \
          (sess or {}).get("status") == 503:
         status = "config_missing"
     elif not (ident or {}).get("ok") and (ident or {}).get("error") in ("invalid_credentials", "expired_code"):

@@ -69,6 +69,7 @@ def test_drive_reasoning_turn_sets_orchestrating_then_awaiting_or_done():
     importlib.reload(orch_mod)
     from services.slide_rule_session import drive_reasoning_turn as _reloaded_drive
     orig_orch = sess_mod.__dict__.get("orchestrate_plan")
+    orig_mod_orch = orch_mod.orchestrate_plan
     orig_pick = sess_mod.__dict__.get("pick_next_capabilities")
     orig_gate = sess_mod.__dict__.get("evaluate_coverage_gate")
     orig_save = sess_mod.__dict__.get("save_session")
@@ -90,6 +91,7 @@ def test_drive_reasoning_turn_sets_orchestrating_then_awaiting_or_done():
     try:
         out = _reloaded_drive(state, "t1", "user input")
     finally:
+        orch_mod.orchestrate_plan = orig_mod_orch
         if orig_orch is not None: sess_mod.__dict__["orchestrate_plan"] = orig_orch
         if orig_pick is not None: sess_mod.__dict__["pick_next_capabilities"] = orig_pick
         if orig_gate is not None: sess_mod.__dict__["evaluate_coverage_gate"] = orig_gate

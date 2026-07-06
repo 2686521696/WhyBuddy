@@ -179,6 +179,7 @@ def test_drive_marathon_hits_session_budget_exhausted():
     importlib.reload(sess_mod)
     importlib.reload(orch_mod)
     orig_orch = sess_mod.__dict__.get("orchestrate_plan")
+    orig_mod_orch = orch_mod.orchestrate_plan
     orig_pick = sess_mod.__dict__.get("pick_next_capabilities")
     orig_gate = sess_mod.__dict__.get("evaluate_coverage_gate")
     orig_save = sess_mod.__dict__.get("save_session")
@@ -215,11 +216,15 @@ def test_drive_marathon_hits_session_budget_exhausted():
         assert getattr(final, "awaitReason", None) == "budget"
         assert getattr(final, "escalated", False) is True
     finally:
+        # _patch_driver_globals 在打桩之后才保存"原值"，且 driver.__globals__ 与
+        # sess_mod.__dict__ 是同一字典——必须先执行它，再用 orig_* 恢复真实实现，
+        # 最后同步路由绑定，否则桩会被写回并泄漏给后续测试。
+        _restore_driver_globals(real_drt, original_driver_globals)
+        orch_mod.orchestrate_plan = orig_mod_orch
         if orig_orch is not None: sess_mod.__dict__["orchestrate_plan"] = orig_orch
         if orig_pick is not None: sess_mod.__dict__["pick_next_capabilities"] = orig_pick
         if orig_gate is not None: sess_mod.__dict__["evaluate_coverage_gate"] = orig_gate
         if orig_save is not None: sess_mod.__dict__["save_session"] = orig_save
-        _restore_driver_globals(real_drt, original_driver_globals)
         _restore_route_bindings(sess_mod)
 
 
@@ -274,6 +279,7 @@ def test_drive_marathon_integrates_python_driver_path_and_enforces_budget():
     importlib.reload(sess_mod)
     importlib.reload(orch_mod)
     orig_orch = sess_mod.__dict__.get("orchestrate_plan")
+    orig_mod_orch = orch_mod.orchestrate_plan
     orig_pick = sess_mod.__dict__.get("pick_next_capabilities")
     orig_gate = sess_mod.__dict__.get("evaluate_coverage_gate")
     orig_save = sess_mod.__dict__.get("save_session")
@@ -329,11 +335,15 @@ def test_drive_marathon_integrates_python_driver_path_and_enforces_budget():
         dl = getattr(final, "decisionLedger", []) or []
         assert len(getattr(final, "conversation", []) or []) >= 1
     finally:
+        # _patch_driver_globals 在打桩之后才保存"原值"，且 driver.__globals__ 与
+        # sess_mod.__dict__ 是同一字典——必须先执行它，再用 orig_* 恢复真实实现，
+        # 最后同步路由绑定，否则桩会被写回并泄漏给后续测试。
+        _restore_driver_globals(real_drt, original_driver_globals)
+        orch_mod.orchestrate_plan = orig_mod_orch
         if orig_orch is not None: sess_mod.__dict__["orchestrate_plan"] = orig_orch
         if orig_pick is not None: sess_mod.__dict__["pick_next_capabilities"] = orig_pick
         if orig_gate is not None: sess_mod.__dict__["evaluate_coverage_gate"] = orig_gate
         if orig_save is not None: sess_mod.__dict__["save_session"] = orig_save
-        _restore_driver_globals(real_drt, original_driver_globals)
         _restore_route_bindings(sess_mod)
 
 
@@ -349,6 +359,7 @@ def test_drive_marathon_route_is_python_budget_authority():
     importlib.reload(sess_mod)
     importlib.reload(orch_mod)
     orig_orch = sess_mod.__dict__.get("orchestrate_plan")
+    orig_mod_orch = orch_mod.orchestrate_plan
     orig_pick = sess_mod.__dict__.get("pick_next_capabilities")
     orig_gate = sess_mod.__dict__.get("evaluate_coverage_gate")
     orig_save = sess_mod.__dict__.get("save_session")
@@ -406,11 +417,15 @@ def test_drive_marathon_route_is_python_budget_authority():
         assert any(isinstance(c, dict) and c.get("role") == "user" for c in conv), "route must use real drive_reasoning_turn (preserves inner gates)"
         assert not any("[marathon round" in str(c) for c in conv), "route low-budget path must not bypass to synthetic marker"
     finally:
+        # _patch_driver_globals 在打桩之后才保存"原值"，且 driver.__globals__ 与
+        # sess_mod.__dict__ 是同一字典——必须先执行它，再用 orig_* 恢复真实实现，
+        # 最后同步路由绑定，否则桩会被写回并泄漏给后续测试。
+        _restore_driver_globals(real_drt, original_driver_globals)
+        orch_mod.orchestrate_plan = orig_mod_orch
         if orig_orch is not None: sess_mod.__dict__["orchestrate_plan"] = orig_orch
         if orig_pick is not None: sess_mod.__dict__["pick_next_capabilities"] = orig_pick
         if orig_gate is not None: sess_mod.__dict__["evaluate_coverage_gate"] = orig_gate
         if orig_save is not None: sess_mod.__dict__["save_session"] = orig_save
-        _restore_driver_globals(real_drt, original_driver_globals)
         _restore_route_bindings(sess_mod)
 
 

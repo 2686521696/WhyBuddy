@@ -20,7 +20,7 @@ from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
 from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
-from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream
+from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream, _result_to_dict
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
@@ -285,9 +285,12 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
         raise HTTPException(404, "Not found")
     state, changed = sanitize_session_state(state)
     if changed:
-        # Persist sanitized state so subsequent GETs and service layer see the corrected version.
-        # Avoids _sessions-only write that would diverge from durable persistence.
-        state = save_session(state)
+        # Best-effort persist of the sanitized state so subsequent GETs and the service layer
+        # see the corrected version. NOTE: the persistence concurrency guard retains the prior
+        # core state for equal lastTurnId (stale-clobber protection), so the write may be a
+        # no-op — the GET response must still return the repaired state, not the guard's
+        # prior (mojibake) snapshot. Do not reassign from save_session here.
+        save_session(state)
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.put("/sessions/{sid}")
@@ -562,6 +565,13 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+    # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
+    # Normalize them to plain dicts BEFORE sanitize/derive/persist so json persistence and the
+    # response envelope never see a non-serializable result object.
+    for _run in getattr(new_state, "capabilityRuns", []) or []:
+        _res = getattr(_run, "result", None)
+        if _res is not None and not isinstance(_res, dict):
+            _run.result = _result_to_dict(_res)
     new_state, _ = sanitize_session_state(new_state)
     publish_closure = derive_publish_closure_response(new_state)
     skill_graph = derive_skill_runtime_graph_response(new_state)

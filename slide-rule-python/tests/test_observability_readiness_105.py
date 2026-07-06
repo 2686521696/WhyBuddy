@@ -113,8 +113,14 @@ def test_error_responses_carry_python_provenance_and_degraded():
     assert "slide-rule-python" in str(d404.get("backend", "")).lower() or d404.get("backend") == "python"
     assert d404.get("degraded") is True or d404.get("status") == "error"
 
-    # trigger 403 on drive-full (enforced without dev skip)
-    r403 = client.post("/api/sliderule/drive-full", json={"state": {}}, headers={})
+    # trigger 403 on drive-full. A missing key is intentionally allowed in non-prod
+    # (_auth dev skip for the direct Vite->Python proxy), so a wrong non-empty key is
+    # the enforced 403 path here.
+    r403 = client.post(
+        "/api/sliderule/drive-full",
+        json={"state": {}},
+        headers={"X-Internal-Key": "wrong-key-observability-105"},
+    )
     assert r403.status_code == 403
     d403 = r403.json()
     assert "slide-rule-python" in str(d403.get("backend", "")).lower() or d403.get("backend") == "python"

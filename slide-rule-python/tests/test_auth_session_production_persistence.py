@@ -22,6 +22,11 @@ VALID_USER = {
 }
 
 
+# Frozen clock injected into reads so the test never depends on wall time;
+# the fixture expiry below is in this clock's future.
+FROZEN_NOW = "2026-06-22T12:00:00.000Z"
+
+
 def _session(session_id: str = "session-1"):
     return {
         "sessionId": session_id,
@@ -37,9 +42,9 @@ def test_write_read_and_delete_session_record_use_configured_store_without_leaki
     store_file = tmp_path / "auth-sessions.json"
 
     written = write_auth_session_record(_session(), store_file=store_file)
-    read = read_auth_session_record("session-1", store_file=store_file)
+    read = read_auth_session_record("session-1", store_file=store_file, now=FROZEN_NOW)
     deleted = delete_auth_session_record("session-1", store_file=store_file)
-    missing_after_delete = read_auth_session_record("session-1", store_file=store_file)
+    missing_after_delete = read_auth_session_record("session-1", store_file=store_file, now=FROZEN_NOW)
 
     assert written == {"ok": True, "operation": "write", "sessionId": "session-1"}
     assert read == {

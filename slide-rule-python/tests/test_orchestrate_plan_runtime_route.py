@@ -13,6 +13,8 @@ INTERNAL_KEY = "dev-slide-rule-internal"
 
 
 def _runtime_payload() -> dict:
+    # Mirrors tests/fixtures/orchestrate_plan_golden.json: selected is now PYTHON_AUTHORITY
+    # pick_next_capabilities output (keyword/state driven), not the planner's old fixed list.
     return {
         "state": {
             "sessionId": "orch-runtime-route",
@@ -24,7 +26,7 @@ def _runtime_payload() -> dict:
             "capabilityRuns": [],
         },
         "turnId": "turn-orch-runtime-route",
-        "userText": "Create a spec structure and handoff plan for the runtime route.",
+        "userText": "Create a migration handoff plan with evidence and risks.",
     }
 
 
@@ -45,11 +47,11 @@ def test_orchestrate_plan_runtime_route_returns_contract_compatible_shape():
     assert isinstance(body["selected"], list)
     assert body["selected"]
 
+    # required ids per the golden pick contract (orchestrate_plan_golden.json):
+    # cold-session pick semantics must ground with evidence and cover risk.
     capability_ids = [item["capabilityId"] for item in body["selected"]]
     assert "evidence.search" in capability_ids
     assert "risk.analyze" in capability_ids
-    assert "structure.decompose" in capability_ids
-    assert "document.draft" in capability_ids
 
     for item in body["selected"]:
         assert isinstance(item["capabilityId"], str)

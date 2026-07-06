@@ -173,7 +173,7 @@ def test_agentloop_dashboard_python_endpoints_health_overview_settings_105(monke
     # 105: real Python-owned degraded/502 envelope via TestClient endpoint + service func (no placeholder)
     # exercises /orchestrate-plan degraded path (via wait_for timeout) and execute-capability 502 for frontend normalize + retry
     import asyncio
-    import routes.sliderule as sr
+    import routes.sliderule_full as sr  # mounted /api/sliderule surface (app.py includes sliderule_full_router)
     from sliderule_llm.client import LlmError
 
     # service func that produces the exact envelope shape used in orchestrate degrade
@@ -197,10 +197,17 @@ def test_agentloop_dashboard_python_endpoints_health_overview_settings_105(monke
     assert "planner_timeout" in str(dj.get("error", "")) or "timeout" in str(dj.get("reason", ""))
 
     # real TestClient + python path for 502 LLM fail (python native cap)
-    def raise_llm_fail(payload):
+    # restore asyncio.wait_for first: sliderule_full's execute-capability also wraps the native
+    # execute in wait_for, and a forced TimeoutError would return the degraded 200 envelope
+    # (execute_timeout) instead of exercising the LlmError -> 502 contract.
+    monkeypatch.undo()
+
+    def raise_llm_fail(payload, **_kwargs):
         raise LlmError("python LLM failed for evidence.search")
     monkeypatch.setattr(sr, "is_python_native_capability", lambda cap: True)
     monkeypatch.setattr(sr, "execute_capability", raise_llm_fail)
+    # avoid hitting the real evidence retrieval runtime before the forced LLM failure
+    monkeypatch.setattr(sr, "execute_evidence_runtime", lambda _q: None)
     r502 = client.post(
         "/api/sliderule/execute-capability",
         json={
