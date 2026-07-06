@@ -22,6 +22,8 @@ export function SlideRuleTopHud({
   onProjectionDensityChange,
   viewMode,
   onViewModeChange,
+  surfaceMode = "reasoning",
+  onSurfaceModeChange,
   onResetSession,
   onOpenSettings,
   onOpenDeliverables,
@@ -39,11 +41,14 @@ export function SlideRuleTopHud({
   onProjectionDensityChange?: (density: ProjectionDensity) => void;
   viewMode?: "overview" | "collaboration" | "reasoning";
   onViewModeChange?: (mode: "overview" | "collaboration" | "reasoning") => void;
+  surfaceMode?: "chat" | "reasoning";
+  onSurfaceModeChange?: (mode: "chat" | "reasoning") => void;
   onResetSession?: () => void;
   onOpenSettings?: () => void;
   onOpenDeliverables?: () => void;
   embedded?: boolean;
 }) {
+  const effectiveSurfaceMode = surfaceMode || "reasoning";
   const facts = deriveStatusBarFacts(state, {
     turnCount,
     isRunning,
@@ -59,10 +64,7 @@ export function SlideRuleTopHud({
       data-testid="sliderule-status-bar"
     >
       <div className="flex w-full items-start justify-between gap-4">
-
-        <div
-          className={`${autopilotTheme.overlayBar} min-w-0 flex-1 pr-4`}
-        >
+        <div className={`${autopilotTheme.overlayBar} min-w-0 flex-1 pr-4`}>
           {embedded ? null : (
             <img
               src="/assets/sliderule_logo_wordmark_transparent.png"
@@ -88,8 +90,11 @@ export function SlideRuleTopHud({
           <span className="hidden h-3 w-px bg-slate-300 md:inline-block" aria-hidden />
           <span className="hidden text-slate-400 sm:inline">
             阶段{" "}
-            <span className="font-mono font-semibold text-slate-700">{facts.phaseLabel || "就绪"}</span>
+            <span className="font-mono font-semibold text-slate-700">
+              {facts.phaseLabel || "就绪"}
+            </span>
           </span>
+
           {turnCount > 0 && onViewModeChange && (
             <div
               className="flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5 ring-1 ring-slate-200/80"
@@ -108,12 +113,37 @@ export function SlideRuleTopHud({
                   }`}
                   title={mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "思考链"}
                 >
-                  {mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "链"}
+                  {mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "链路"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {onSurfaceModeChange && (
+            <div
+              className="ml-2 flex items-center gap-0.5 rounded-full bg-indigo-100 p-0.5 ring-1 ring-indigo-200/80"
+              data-testid="sliderule-surfacemode-toggle"
+              title="界面模式"
+            >
+              {(["chat", "reasoning"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={isRunning}
+                  onClick={() => onSurfaceModeChange(mode)}
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
+                    effectiveSurfaceMode === mode
+                      ? "bg-white text-indigo-700 shadow-sm"
+                      : "text-indigo-500 hover:text-indigo-700"
+                  }`}
+                >
+                  {mode === "chat" ? "聊天" : "推演"}
                 </button>
               ))}
             </div>
           )}
         </div>
+
         <div
           className="flex shrink-0 items-center justify-end gap-2 py-1"
           data-testid="sliderule-header-actions"
@@ -124,7 +154,7 @@ export function SlideRuleTopHud({
               onClick={onOpenDeliverables}
               data-testid="sliderule-deliverables-open"
               className={`${autopilotTheme.auditBtn} flex items-center gap-1`}
-              title="交付物（报告 / 规格树 / 文档 / 提示词包 / 架构图 / 交接包）"
+              title="交付物"
             >
               <Layers className="h-3.5 w-3.5" />
               交付物
@@ -136,7 +166,7 @@ export function SlideRuleTopHud({
               onClick={onOpenSettings}
               data-testid="sliderule-settings-open"
               className={`${autopilotTheme.auditBtn} flex items-center justify-center`}
-              title="设置（模型 / 推演偏好）"
+              title="设置"
               aria-label="设置"
             >
               <Settings2 className="h-3.5 w-3.5" />
@@ -149,21 +179,23 @@ export function SlideRuleTopHud({
               disabled={isRunning}
               data-testid="sliderule-reset-session"
               className={autopilotTheme.auditBtn}
-              title={isRunning ? "推演进行中，请稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
+              title={isRunning ? "推演进行中，稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
             >
               重置会话
             </button>
           )}
-          <a href="/sliderule/dev" className={autopilotTheme.devLink}>
-            Dev
-          </a>
+          {!IS_GITHUB_PAGES && (
+            <a href="/sliderule/dev" className={autopilotTheme.devLink}>
+              Dev
+            </a>
+          )}
         </div>
       </div>
     </header>
   );
 }
 
-function InlineMetric({ label, value }: { label: string; value: number }) {
+export function InlineMetric({ label, value }: { label: string; value: number }) {
   return (
     <span className="tabular-nums text-slate-600">
       <span className="text-slate-400">{label} </span>

@@ -25,6 +25,11 @@ import type {
 import { APPBUNDLE_CLOSURE_TIERS } from "./appBundleModel";
 export { APPBUNDLE_CLOSURE_TIERS } from "./appBundleModel";
 import type { PageModel } from "../page/pageModel";
+// --- P4 TODO (2026-07 下旬到期): 以下具体模型 import 仅被 sample 工厂函数
+// (createAllSixSkillsPositiveClosedSample 等) 和 generate() 降级桩使用。
+// 核心 validate / project / resolve / crossRefs 已只依赖 ResolvableSurface 抽象。
+// 迁移路径: 把工厂函数移到 __tests__/appBundleTestHelpers.ts，
+// 让 appBundleSkill.ts 对其他 Skill 只 import 纯 Skill 接口而非 fixture 对象。
 import {
   createPageCrossRuntimeEvidence,
   createPageRbacRuntimeEvidence,

@@ -153,6 +153,140 @@ export async function driveFullViaPython(
   }
 }
 
+/** Skill IDs emitted by the Python SSE stream. */
+export type SkillId = "dataModel" | "workflow" | "rbac" | "page" | "aigc" | "appBundle";
+
+export interface DriveFullStreamOpts {
+  stopSignal?: AbortSignal;
+  maxLoops?: number;
+  turnId?: string;
+  /** Called each time one of the 5 skill systems starts (post-closure sequence). */
+  onSkillActivated?: (skillId: SkillId, label: string) => void;
+  /** Called when a skill finishes, with its real closure evidence + graph. */
+  onSkillCompleted?: (
+    skillId: SkillId,
+    hasError: boolean,
+    detail?: {
+      mermaid?: string | null;
+      evidencePresent?: boolean;
+      evidenceRef?: string | null;
+      artifactId?: string | null;
+      digest?: string | null;
+      edges?: Array<Record<string, any>> | null;
+    }
+  ) => void;
+  /** Called for each reasoning-engine step (evidence.search, risk.analyze ...). */
+  onReasoningStep?: (label: string, loop?: number) => void;
+}
+
+/**
+ * SSE version of driveFullViaPython.
+ *
+ * Connects to /api/sliderule/drive-full-stream and consumes the event stream.
+ * Calls opts.onSkillActivated / onSkillCompleted as events arrive so the UI
+ * can highlight the active thumbnail in real time.
+ * Returns the same shape as driveFullViaPython on completion, or null on error.
+ */
+export async function driveFullViaPythonStream(
+  state: V5SessionState,
+  userText: string,
+  opts: DriveFullStreamOpts = {}
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+  if (typeof fetch !== "function") return null;
+  try {
+    const res = await fetch("/api/sliderule/drive-full-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: opts.stopSignal,
+      body: JSON.stringify({
+        state,
+        userText,
+        max_loops: opts.maxLoops ?? 10,
+        turnId: opts.turnId,
+      }),
+    });
+    if (!res.ok || !res.body) return null;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let finalState: V5SessionState | null = null;
+    let publishClosure: any = undefined;
+    let stopReason = "completed";
+
+    outer: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      // SSE lines: "data: {...}\n\n"
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";  // keep incomplete last line
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (!jsonStr) continue;
+
+        let event: any;
+        try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        switch (event.type) {
+          case "reasoning_step":
+            opts.onReasoningStep?.(event.label as string, event.loop as number | undefined);
+            break;
+          case "skill_start":
+            opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
+            break;
+          case "skill_result":
+            opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
+              mermaid: (event.mermaid as string | null) ?? null,
+              evidencePresent: event.evidencePresent as boolean | undefined,
+              evidenceRef: (event.evidenceRef as string | null) ?? null,
+              artifactId: (event.artifactId as string | null) ?? null,
+              digest: (event.digest as string | null) ?? null,
+              edges: (event.edges as Array<Record<string, any>> | null) ?? null,
+            });
+            break;
+          case "publish_closure":
+            publishClosure = event.data;
+            break;
+          case "complete":
+            if (event.state) {
+              finalState = event.state as V5SessionState;
+              if (publishClosure !== undefined) {
+                (finalState as any).publishClosure = publishClosure;
+              }
+            }
+            break outer;
+          case "error":
+            return null;
+        }
+      }
+    }
+
+    if (!finalState) return null;
+    return {
+      finalState,
+      stopReason,
+      publishClosure,
+      loops: opts.turnId
+        ? [
+            {
+              loopTurnId: opts.turnId,
+              plan: { selected: [], reason: "python_drive_full_stream", expectedArtifacts: [] },
+              committedArtifactIds: [],
+              stopSignal: "drive_full_stream",
+            },
+          ]
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface FrontierProposal {
   seed: string;
   rationale: string;

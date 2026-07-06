@@ -457,6 +457,28 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
     return { nodes, edges, mermaid: lines.join("\n") };
   },
 
+  /**
+   * resolve() 输出合约 (P4 — 2026-07 明确化)
+   *
+   * 向 AppBundleSkill 暴露的字段（AppBundle.validate/evaluate 依赖）：
+   *   - `aigc`           : [model.id]                             —— 本 AIGC 应用标识
+   *   - `capability`     : cap.id[]                               —— 所有 AI 能力 ID
+   *   - `provider`       : provider.id[]                          —— LLM/服务提供商 ID
+   *   - `prompt`         : promptTemplate.id[]                    —— Prompt 模板 ID
+   *   - `outputSchema`   : outputSchema.id[]                      —— 输出 Schema ID
+   *   - `role`           : roleRef[]                              —— 跨系统角色引用（→ RBAC）
+   *   - `permission`     : permissionRef[]                        —— 跨系统权限引用（→ RBAC）
+   *   - `field`          : inputField∪outputField                 —— 跨系统字段引用（→ DataModel）
+   *   - `runtimeEvidence`: evidenceKey[]                          —— 运行时证据 key（AppBundle 闭环用）
+   *   - `crossSkillRuntimeEdges`: "sourceSkill->targetSkill:state"[] —— 跨系统运行时边
+   *
+   * 条件字段（仅正向路径出现）：
+   *   - `aigcToDataModelTrace`  : 正向路径 AIGC→DataModel 证据跟踪
+   *   - `aigcToRbacTrace`       : AIGC→RBAC fail-closed 访问控制追踪
+   *
+   * AppBundle 用 `runtimeEvidence` 数组中的 key 来验证 AIGC 证据是否存在；
+   * 只有至少一个 key 的证据通过时，AppBundle 才将 AIGC 标记为 evidencePresent=true。
+   */
   resolve(model: AigcModel): ResolvableSurface {
     const refs = capabilityRefs(model);
     const crossRuntime = buildAigcCrossRuntimeEdges(model);

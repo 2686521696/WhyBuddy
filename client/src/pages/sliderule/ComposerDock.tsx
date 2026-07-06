@@ -1,12 +1,22 @@
 import React from "react";
-import { autopilotTheme } from "./autopilot-theme";
-import { Brain, Check, ChevronDown, RefreshCw } from "lucide-react";
+import { Brain, Check, ChevronDown, FileText, Link, Mic, Plus, RefreshCw, SendHorizontal, Square, Zap } from "lucide-react";
 
-/** Compact token budget label: 89000 → "89k", 12500 → "12.5k", 800 → "800". */
 function formatBudgetTokens(n: number): string {
   if (n < 1000) return String(n);
   const k = n / 1000;
   return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
+}
+
+/** Returns true if the text looks like a URL. */
+function looksLikeUrl(text: string): boolean {
+  return /^https?:\/\/[^\s]{4,}/.test(text.trim());
+}
+
+/** Returns true if the DataTransfer contains files. */
+function hasFiles(dt: DataTransfer): boolean {
+  return dt.items
+    ? Array.from(dt.items).some((item) => item.kind === "file")
+    : dt.files.length > 0;
 }
 
 export function ComposerDock({
@@ -16,11 +26,9 @@ export function ComposerDock({
   isRunning,
   goal,
   latestUserText,
-  // driveMode/set from parent (M2); for demo fall back to local if not wired in all splits
   driveMode: outerDriveMode,
   setDriveMode: outerSetDriveMode,
   marathonBudget: outerMarathonBudget,
-  // optional setter if parent wants live sync (future)
   onBudgetChange,
   stop,
 }: {
@@ -30,7 +38,7 @@ export function ComposerDock({
   isRunning: boolean;
   goal: string;
   latestUserText?: string;
-  hintChips?: string[]; // kept in props for parent compatibility (no longer rendered)
+  hintChips?: string[];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
   marathonBudget?: { maxTokens: number; declaredAt: string };
@@ -38,54 +46,60 @@ export function ComposerDock({
   stop?: () => void;
 }) {
   const [localMode, setLocalMode] = React.useState<"single" | "marathon">("single");
+  const [isModeOpen, setIsModeOpen] = React.useState(false);
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [attachmentHint, setAttachmentHint] = React.useState<string | null>(null);
+  const modeRef = React.useRef<HTMLDivElement | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const driveMode = outerDriveMode || localMode;
   const setDriveMode = outerSetDriveMode || setLocalMode;
   let marathonBudget = outerMarathonBudget || (() => {
-    try { return JSON.parse(localStorage.getItem("sliderule:marathonBudget") || "null"); } catch { return null; }
+    try {
+      return JSON.parse(localStorage.getItem("sliderule:marathonBudget") || "null");
+    } catch {
+      return null;
+    }
   })();
-  // prefer outer if present
   if (outerMarathonBudget) marathonBudget = outerMarathonBudget;
-
-  const [isModeOpen, setIsModeOpen] = React.useState(false);
-  const modeRef = React.useRef(null);
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const selectMode = (mode: "single" | "marathon") => {
     if (mode === "marathon") {
-      // M5 强制 UI: marathon 开时弹预算
       let budget = { maxTokens: 12000, declaredAt: new Date().toISOString() };
       try {
         const raw = localStorage.getItem("sliderule:marathonBudget");
         if (raw) budget = JSON.parse(raw);
       } catch {}
-      const ans = window.prompt("M5 强制预算（marathon 开启）\n输入本 session 最大 token 上限（默认 12000）:", String(budget.maxTokens));
+      const ans = window.prompt(
+        "持续推演预算\n输入本 session 最大 token 上限（默认 12000）",
+        String(budget.maxTokens)
+      );
       if (ans) {
         const n = Math.max(2000, Math.min(80000, parseInt(ans, 10) || 12000));
         budget = { maxTokens: n, declaredAt: new Date().toISOString() };
-        try { localStorage.setItem("sliderule:marathonBudget", JSON.stringify(budget)); } catch {}
-        if (onBudgetChange) onBudgetChange(budget);
+        try {
+          localStorage.setItem("sliderule:marathonBudget", JSON.stringify(budget));
+        } catch {}
+        onBudgetChange?.(budget);
       }
-      try { (window as any).__slideruleMarathonBudget = budget; } catch {}
+      try {
+        (window as any).__slideruleMarathonBudget = budget;
+      } catch {}
     }
     setDriveMode(mode);
     setIsModeOpen(false);
   };
 
-  // Close dropdown on outside click (Grok-like behavior)
   React.useEffect(() => {
-    const handleClickOutside = (event: any) => {
-      const refEl: any = modeRef.current;
-      if (refEl && !refEl.contains(event && event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      const refEl = modeRef.current;
+      if (refEl && !refEl.contains(event.target as Node)) {
         setIsModeOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Auto-grow textarea (optimization: comfortable multi-line without fixed rows)
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -94,179 +108,215 @@ export function ComposerDock({
       return;
     }
     ta.style.height = "auto";
-    const max = 110;
-    ta.style.height = Math.min(ta.scrollHeight, max) + "px";
+    ta.style.height = `${Math.min(ta.scrollHeight, 112)}px`;
   }, []);
 
   React.useEffect(() => {
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
-  const placeholderText =
-    driveMode === "marathon"
-      ? "输入新种子继续推演，或质疑当前结果...（Shift+Enter 换行）"
-      : goal
-        ? "继续补充想法，或质疑图上节点...（Shift+Enter 换行）"
-        : "描述你想推演的问题、产品、功能或路线…（Shift+Enter 换行）";
+  // Listen for example prompt clicks from ClaudeChatSurface empty state.
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text;
+      if (text) {
+        setInput(text);
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener("sliderule:fill-prompt", handler);
+    return () => window.removeEventListener("sliderule:fill-prompt", handler);
+  }, [setInput]);
 
-  // chips no longer rendered (user requested removal of bottom bubbles)
-  // const chips = hintChips?.length ? hintChips : DEFAULT_HINT_CHIPS;
+  /** Handle text paste — detect URLs and surface a hint. */
+  const handlePaste = React.useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const pasted = e.clipboardData.getData("text");
+      if (looksLikeUrl(pasted)) {
+        // Let the default paste fill the textarea, then surface a hint.
+        setTimeout(() => {
+          setAttachmentHint(`已检测到 URL — 可直接发送，SlideRule 会尝试抓取摘要`);
+          setTimeout(() => setAttachmentHint(null), 5000);
+        }, 0);
+      }
+    },
+    []
+  );
+
+  /** Drag-and-drop: accept files, show overlay hint. */
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = React.useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = React.useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (!files.length) return;
+      const names = files.map((f) => f.name).join(", ");
+      const suffix = `[附件: ${names}]`;
+      // setInput only accepts string; read the current textarea value instead of functional updater.
+      const current = textareaRef.current?.value ?? "";
+      setInput(current ? `${current}\n${suffix}` : suffix);
+      setAttachmentHint(`已添加附件提示：${names}（文件解析服务开发中）`);
+      setTimeout(() => setAttachmentHint(null), 5000);
+    },
+    [setInput]
+  );
+
+  const placeholderText = "畅所欲问";
+
   return (
-    <div className={`pointer-events-none flex ${autopilotTheme.composerDockWidth} flex-col items-center gap-2`}>
+    <div className="pointer-events-none flex w-[min(820px,calc(100vw-32px))] flex-col items-center gap-2">
       {latestUserText && (
-        <div
-          className={
-            driveMode === "marathon"
-              ? autopilotTheme.latestUserBubbleMarathon
-              : autopilotTheme.latestUserBubble
-          }
-        >
+        <div className="max-w-[min(760px,90vw)] truncate rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-xs text-slate-500 shadow-sm">
           本轮 · {latestUserText.slice(0, 72)}
-          {latestUserText.length > 72 ? "…" : ""}
+          {latestUserText.length > 72 ? "..." : ""}
         </div>
       )}
+
       <div
-        className="pointer-events-auto w-full bg-transparent p-0"
+        className={`pointer-events-auto relative w-full rounded-[24px] border bg-white px-3 py-2 shadow-[0_6px_28px_rgb(15_23_42/0.08)] transition-colors ${
+          isDragOver ? "border-blue-400 bg-blue-50/40" : "border-slate-200"
+        }`}
         data-testid="sliderule-composer-dock"
         data-mode={driveMode}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
-        {/* Grok-style input bar with integrated left mode prefix (like Grok model selector).
-            The mode pill is now a compact left prefix inside the bar.
-            Icons: 🧠 for deep think, 🔄 for marathon/continuous.
-            Dropdown improves: better left positioning, fixed width, smooth scale/fade animation, current selection check. */}
-        <div
-          className={`${
-            driveMode === "marathon"
-              ? autopilotTheme.grokInputBarMarathon
-              : autopilotTheme.grokInputBar
-          } border-0 ${
-            driveMode === "marathon"
-              ? "shadow-[0_12px_40px_rgb(79_70_229/0.08)]"
-              : ""
-          }`}
-        >
-          {/* Left mode selector prefix - integrated like Grok (pure SVG icons, smaller pill with hover scale) */}
-          <div className="relative flex w-[100px] shrink-0 items-center sm:w-[132px]" ref={modeRef}>
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[24px] bg-blue-50/60">
+            <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+              <FileText className="h-4 w-4" />
+              拖拽文件到这里
+            </div>
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <div className="relative shrink-0" ref={modeRef}>
             <button
               type="button"
-              onClick={() => setIsModeOpen(!isModeOpen)}
+              onClick={() => setIsModeOpen((open) => !open)}
               disabled={isRunning}
-              className={`flex h-11 w-full items-center gap-2 rounded-full px-3 text-[11px] font-semibold transition-all duration-150 active:scale-[0.985] ${
-                driveMode === "marathon"
-                  ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100/70"
-                  : "bg-slate-50/80 text-slate-600 hover:bg-slate-100/80"
-              } ${isRunning ? "opacity-50 cursor-not-allowed" : ""}`}
-              title="切换推演模式（Grok 风格前缀下拉）"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 disabled:opacity-45"
+              title="选择推演模式"
             >
-              {driveMode === "marathon" ? (
-                <RefreshCw className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-              ) : (
-                <Brain className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-              )}
-              <span className="min-w-0 truncate leading-none">
-                {driveMode === "marathon" ? "持续推演" : "深思一轮"}
-              </span>
-              {driveMode === "marathon" && (
-                <span className="font-mono text-[8px] tabular-nums text-indigo-400/80">
-                  ·{formatBudgetTokens(marathonBudget?.maxTokens || 12000)}
-                </span>
-              )}
-              <ChevronDown className="ml-auto h-3 w-3 shrink-0 text-current/50" strokeWidth={2.2} />
+              <Plus className="h-5 w-5" />
             </button>
 
-            {/* Mode menu */}
             <div
               data-testid="sliderule-mode-menu"
-              className={`absolute bottom-full left-0 z-[60] mb-2 w-[218px] origin-bottom-left overflow-hidden rounded-[18px] border border-white/80 bg-white/95 p-1.5 text-sm shadow-[0_18px_48px_rgb(15_23_42/0.16)] ring-1 ring-slate-200/70 backdrop-blur-xl transition-all duration-150 ease-out ${
-                isModeOpen
-                  ? "opacity-100 scale-100 translate-y-0"
-                  : "opacity-0 scale-95 translate-y-2 pointer-events-none"
+              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[18px] border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
+                isModeOpen ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-2 scale-95 opacity-0"
               }`}
             >
               <button
                 type="button"
                 onClick={() => selectMode("single")}
-                className={`flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition-colors hover:bg-slate-50 ${driveMode === "single" ? "bg-emerald-50/80" : ""}`}
+                className={`flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition hover:bg-slate-50 ${
+                  driveMode === "single" ? "bg-slate-100" : ""
+                }`}
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  <Brain className="h-3.5 w-3.5" strokeWidth={2.2} />
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                  <Brain className="h-3.5 w-3.5" />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                    深思一轮
-                    {driveMode === "single" && <Check className="h-3 w-3 text-emerald-500" strokeWidth={2.4} />}
-                  </div>
-                  <div className="mt-0.5 truncate text-[10px] leading-4 text-slate-500">想清楚一个问题后停下</div>
-                </div>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-slate-800">深思一轮</span>
+                  <span className="block truncate text-[10px] text-slate-500">想清楚一个问题后停下</span>
+                </span>
+                {driveMode === "single" && <Check className="h-3.5 w-3.5 text-emerald-500" />}
               </button>
 
               <button
                 type="button"
                 onClick={() => selectMode("marathon")}
-                className={`mt-1 flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition-colors hover:bg-slate-50 ${driveMode === "marathon" ? "bg-indigo-50/80" : ""}`}
+                className={`mt-1 flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition hover:bg-slate-50 ${
+                  driveMode === "marathon" ? "bg-indigo-50" : ""
+                }`}
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
-                  <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                    持续推演
-                    {driveMode === "marathon" && <Check className="h-3 w-3 text-indigo-500" strokeWidth={2.4} />}
-                  </div>
-                  <div className="mt-0.5 truncate text-[10px] leading-4 text-slate-500">自动推进到需要确认</div>
-                </div>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-slate-800">持续推演</span>
+                  <span className="block truncate text-[10px] text-slate-500">
+                    自动推进到需要确认 · {formatBudgetTokens(marathonBudget?.maxTokens || 12000)}
+                  </span>
+                </span>
+                {driveMode === "marathon" && <Check className="h-3.5 w-3.5 text-indigo-500" />}
               </button>
             </div>
           </div>
 
-          {/* subtle divider between prefix and input */}
-          <div className="mx-2 h-7 w-px flex-shrink-0 bg-slate-200/70 sm:mx-4" />
-
-          <div className="relative h-11 min-w-0 flex-1">
-            {!input && (
-              <div className="pointer-events-none absolute left-4 right-2 top-1/2 -translate-y-1/2 truncate text-[14px] leading-[22px] text-slate-400">
-                {placeholderText}
-              </div>
-            )}
+          <div className="min-w-0 flex-1 pb-0.5">
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                // trigger height adjust immediately for responsive feel
-                // (the effect also catches it for external changes)
+              onChange={(event) => {
+                setInput(event.target.value);
                 requestAnimationFrame(adjustTextareaHeight);
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!isRunning && input.trim()) sendMessage();
                 }
               }}
-              placeholder=""
+              onPaste={handlePaste}
+              placeholder={placeholderText}
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className={autopilotTheme.grokInput}
-              style={{ minHeight: "44px" }}
+              className="block max-h-28 min-h-11 w-full resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60"
               data-testid="sliderule-composer-input"
             />
           </div>
+
+          <button
+            type="button"
+            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 sm:flex"
+            title={driveMode === "marathon" ? "持续推演" : "深思一轮"}
+            onClick={() => selectMode(driveMode === "marathon" ? "single" : "marathon")}
+            disabled={isRunning}
+          >
+            {driveMode === "marathon" ? <RefreshCw className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 sm:flex"
+            title="语音输入"
+            disabled
+          >
+            <Mic className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={isRunning ? (stop || (() => {})) : sendMessage}
             disabled={!isRunning && !input.trim()}
-            className={
-              isRunning
-                ? "inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-red-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-red-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                : !isRunning && driveMode === "marathon"
-                ? autopilotTheme.grokSendBtnMarathon
-                : autopilotTheme.grokSendBtn
-            }
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
+            title={isRunning ? "停止" : "发送"}
           >
-            {isRunning ? "停止" : "发送"}
+            {isRunning ? <Square className="h-4 w-4 fill-current" /> : <SendHorizontal className="h-4 w-4" />}
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsModeOpen((open) => !open)}
+          disabled={isRunning}
+          className="absolute bottom-[-26px] left-4 hidden items-center gap-1 text-[10px] text-slate-400 hover:text-slate-700 sm:flex"
+        >
+          {driveMode === "marathon" ? "持续推演" : "深思一轮"}
+          <ChevronDown className="h-3 w-3" />
+        </button>
       </div>
     </div>
   );

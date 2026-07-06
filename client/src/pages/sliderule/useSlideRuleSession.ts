@@ -17,6 +17,7 @@ import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import type { TurnStep, UiTurn, WhyArtifact, SlideRuleExecutorMode } from "./types";
+import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import * as Marathon from "@/lib/sliderule-marathon-driver";
 import {
   createGithubPagesSlideRuleSeedSession,
@@ -154,6 +155,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [driveFullStatus, setDriveFullStatus] = useState<
     "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback"
   >("idle");
+
+  // SSE-driven: which of the 6 skill systems is currently executing on Python side.
+  // null = none active (before run starts or after completion).
+  const [activeSkillId, setActiveSkillId] = useState<SkillId | null>(null);
+
+  // Accumulated per-skill content from SSE skill_result events (raw model/mermaid).
+  const [skillContents, setSkillContents] = useState<Partial<Record<SkillId, string>>>({});
+  const [latestMermaid, setLatestMermaid] = useState<string | null>(null);
 
   // M2: drive mode (persisted for session; default "single" per spec)
   const [driveMode, setDriveMode] = useState<SlideRuleRuntime.SlideRuleDriveMode>(() => {
@@ -427,6 +436,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         setLiveAction,
       });
 
+      // Immediate reaction so user sees something right after pressing send (before any network)
+      appendStep({
+        id: `${turnId}-intake`,
+        kind: "chip",
+        capabilityId: "intent.parse" as any,
+        roleId: "system",
+        label: "指令已接收 · 启动推理",
+        realLlm: false,
+        loopTurnId: turnId,
+        progressType: "thinking",
+      });
+      setLiveAction({ label: "规划第一轮能力与路线...", external: false });
+
       // M2/M3/M4/M5/M6: driveMode selects single vs marathon thin layer.
       // Product path for marathon now uses driveMarathon (with budget enforcement and real M3/M6 ledger append).
       // Live callbacks forwarded to inner drives for UI updates.
@@ -504,48 +526,101 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
       let drive: any;
       let usedMarathonDriver = false;
-      if (driveMode === "marathon") {
-        const { driveMarathon } = await import("@/lib/sliderule-marathon-driver");
-        const marathonRes = await driveMarathon(preparedState, userText.trim(), {
-          stopSignal: controller.signal,
-          budget: { maxTokens: marathonBudget?.maxTokens || 12000, declaredAt: new Date().toISOString() },
-          policy: { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true },
-          executor: driveOpts.executor,
-          onCapabilityRound: driveOpts.onCapabilityRound,
-          onLoopComplete: driveOpts.onLoopComplete,
-          router: driveOpts.router,
-          maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
+      let driveErrored = false;
+      try {
+        if (driveMode === "marathon") {
+          const { driveMarathon } = await import("@/lib/sliderule-marathon-driver");
+          const marathonRes = await driveMarathon(preparedState, userText.trim(), {
+            stopSignal: controller.signal,
+            budget: { maxTokens: marathonBudget?.maxTokens || 12000, declaredAt: new Date().toISOString() },
+            policy: { autoConfirmRoute: "primary", autoWaiveNonBlockingGaps: true },
+            executor: driveOpts.executor,
+            onCapabilityRound: driveOpts.onCapabilityRound,
+            onLoopComplete: driveOpts.onLoopComplete,
+            router: driveOpts.router,
+            maxLoopsPerMessage: driveOpts.maxLoopsPerMessage,
+          });
+          drive = {
+            finalState: marathonRes.finalState,
+            stopReason: marathonRes.stopReason,
+            loops: [],
+            publishClosure: marathonRes.publishClosure,
+          };
+          usedMarathonDriver = true;
+        } else {
+          const { classifyDriveFullStatus, driveFullViaPythonStream } = await import("@/lib/sliderule-marathon-driver");
+          setDriveFullStatus("loading");
+          const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
+            stopSignal: controller.signal,
+            turnId,
+            onSkillActivated: (skillId, _label) => {
+              setActiveSkillId(skillId);
+            },
+            onSkillCompleted: (skillId, _hasError, detail) => {
+              // Accumulate per-skill mermaid projection for the right-panel screens.
+              const mermaid = detail?.mermaid ?? null;
+              if (mermaid) {
+                setSkillContents((prev) => ({ ...prev, [skillId]: mermaid }));
+                setLatestMermaid(mermaid);
+              }
+            },
+          });
+          setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
+          drive = pythonDrive
+            ? {
+                finalState: pythonDrive.finalState,
+                stopReason: pythonDrive.stopReason || "completed",
+                loops: pythonDrive.loops || [],
+                publishClosure: pythonDrive.publishClosure,
+              }
+            : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
+          usedMarathonDriver = false;
+        }
+      } catch (driveErr: any) {
+        driveErrored = true;
+        // Graceful: don't leave the turn dangling as "streaming" forever.
+        const errMsg = driveErr?.message || String(driveErr);
+        appendStep({
+          id: `${turnId}-drive-err`,
+          kind: "capability_fail",
+          capabilityId: "intent.parse" as any,
+          roleId: "system",
+          loopTurnId: turnId,
+          capabilityRunId: `${turnId}-drive-err`,
+          runIndex: 0,
+          message: `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`,
         });
-        drive = {
-          finalState: marathonRes.finalState,
-          stopReason: marathonRes.stopReason,
-          loops: [],
-          publishClosure: marathonRes.publishClosure,
-        };
-        usedMarathonDriver = true;
-      } else {
-        const { classifyDriveFullStatus, driveFullViaPython } = await import("@/lib/sliderule-marathon-driver");
-        setDriveFullStatus("loading");
-        const pythonDrive = await driveFullViaPython(preparedState, userText.trim(), {
-          stopSignal: controller.signal,
-          turnId,
-        });
-        setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
-        drive = pythonDrive
-          ? {
-              finalState: pythonDrive.finalState,
-              stopReason: pythonDrive.stopReason || "completed",
-              loops: pythonDrive.loops || [],
-              publishClosure: pythonDrive.publishClosure,
-            }
-          : await SlideRuleRuntime.driveReasoningSession(preparedState, driveOpts as any);
-        usedMarathonDriver = false;
+        // Try to at least persist the intake state so graph has something
+        try {
+          const snap = SlideRuleRuntime.deriveNodeStatus ? SlideRuleRuntime.deriveNodeStatus(preparedState) : preparedState;
+          await persistSession(snap);
+          applyPersistedState(snap);
+        } catch {}
+        setUiTurns((prev) =>
+          prev.map((t) =>
+            t.id === turnId
+              ? {
+                  ...t,
+                  status: "complete",
+                  assistant: `推演中断：${errMsg.slice(0, 200)}（可重试或换指令）`,
+                  assistantSource: "fallback",
+                }
+              : t
+          )
+        );
+        // fall through to finally cleanup
+        drive = { finalState: preparedState, stopReason: "error", loops: [] };
       }
 
-      let final = drive.finalState;
-      final = mergePublishClosureForPersistedTurn(final, (drive as any).publishClosure);
-      final = await persistSession(final);
-      applyPersistedState(final);
+      let final = (drive && drive.finalState) || preparedState;
+      final = mergePublishClosureForPersistedTurn(final, (drive as any)?.publishClosure);
+      try {
+        final = await persistSession(final);
+        applyPersistedState(final);
+      } catch (pErr) {
+        // non-fatal for UI
+        applyPersistedState(final);
+      }
 
       // M1 cleanup
       abortControllerRef.current = null;
@@ -588,7 +663,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
 
       // M4 demo complete: if marathon await_human (G_READY) or policy path, fire real Notification (user permission)
-      if (driveMode === "marathon" && (drive.stopReason === "await_ready" || drive.stopReason === "coverage_sufficient" /* after auto */)) {
+      if (!driveErrored && driveMode === "marathon" && (drive.stopReason === "await_ready" || drive.stopReason === "coverage_sufficient" /* after auto */)) {
         try {
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
             new Notification("SlideRule 持续推演", { body: "本轮已收敛或需要人工确认。点击后可继续 marathon。" });
@@ -600,24 +675,28 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         } catch {}
       }
 
-      const firstLoop = drive.loops[0];
-      const lastLoop = drive.loops[drive.loops.length - 1];
-      firstLoopPlanCountRef.value = firstLoop?.plan.selected.length ?? 0;
+      if (driveErrored) {
+        // Error already surfaced a completed turn + snapshot state in catch handler.
+        // Skip all success post-processing (would reference possibly bad dummy drive data).
+      } else {
+        const firstLoop = drive.loops[0];
+        const lastLoop = drive.loops[drive.loops.length - 1];
+        firstLoopPlanCountRef.value = firstLoop?.plan.selected.length ?? 0;
 
-      const rounds = buildTurnRoundsFromDrive(final.decisionLedger, drive);
-      const displayLoopId = firstLoop?.loopTurnId ?? turnId;
-      const dledger = latestDledgerForTurn(final.decisionLedger, displayLoopId);
-      const planSource = dledger?.source ?? "local_heuristic";
-      const planError = firstLoop?.plan?.error || lastLoop?.plan?.error;
-      const planOrchestrateReason =
-        planSource === "local_heuristic"
-          ? "orchestrate_unreachable"
-          : planError
-          ? `python_${planError}`
-          : null;
-      // planError / python_* from Python-owned degraded (planner_timeout etc) propagated for UI status visibility (allowed pages file)
-      const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason ?? firstLoop?.plan?.message;
-      const planSelectedCount = firstLoop?.plan.selected.length ?? 0;
+        const rounds = buildTurnRoundsFromDrive(final.decisionLedger, drive);
+        const displayLoopId = firstLoop?.loopTurnId ?? turnId;
+        const dledger = latestDledgerForTurn(final.decisionLedger, displayLoopId);
+        const planSource = dledger?.source ?? "local_heuristic";
+        const planError = firstLoop?.plan?.error || lastLoop?.plan?.error;
+        const planOrchestrateReason =
+          planSource === "local_heuristic"
+            ? "orchestrate_unreachable"
+            : planError
+            ? `python_${planError}`
+            : null;
+        // planError / python_* from Python-owned degraded (planner_timeout etc) propagated for UI status visibility (allowed pages file)
+        const planReason = firstLoop?.plan.reason ?? lastLoop?.plan.reason ?? firstLoop?.plan?.message;
+        const planSelectedCount = firstLoop?.plan.selected.length ?? 0;
 
       // M4 complete resume demo: after real frontier (M3), auto-continue 1 round in marathon to show "持续推演" thickness (user aborts via stop anytime; M1 signal respected).
       // Real digest/propose already injected above; this gives multi-round without extra clicks for video/demo.
@@ -756,27 +835,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         assistantText = (assistantText || "") + lastDigestNote;
       }
 
-      setUiTurns((prev) =>
-        prev.map((t) => {
-          if (t.id !== turnId) return t;
-          return {
-            ...t,
-            status: "complete",
-            routeFacts: completeRouteFacts,
-            routeExpanded: imMode !== "minimal",
-            routeLitCount: deriveTurnRoute(completeRouteFacts).length,
-            assistant: assistantText,
-            assistantSource,
-            narrationReason,
-            main,
-            actions: actionsAcc,
-          };
-        })
-      );
+        setUiTurns((prev) =>
+          prev.map((t) => {
+            if (t.id !== turnId) return t;
+            return {
+              ...t,
+              status: "complete",
+              routeFacts: completeRouteFacts,
+              routeExpanded: imMode !== "minimal",
+              routeLitCount: deriveTurnRoute(completeRouteFacts).length,
+              assistant: assistantText,
+              assistantSource,
+              narrationReason,
+              main,
+              actions: actionsAcc,
+            };
+          })
+        );
+      } // end of else (success path for live drive updates)
       setNextGateShouldFail(false);
     } finally {
       setIsRunning(false);
       setLiveAction(null);
+      setActiveSkillId(null);  // clear highlighted skill thumbnail after run ends
     }
   };
 
@@ -1040,6 +1121,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     marathonBudget,
     setMarathonBudget: (b: { maxTokens: number; declaredAt: string }) => setMarathonBudget(b),
     driveFullStatus,
+    // SSE live skill highlight — which of the 6 systems is currently executing.
+    activeSkillId,
+    // Accumulated per-skill content from SSE events (for system screen renderers).
+    skillContents,
+    latestMermaid,
     sendMessage,
     runTurn,
     challengeTurn,

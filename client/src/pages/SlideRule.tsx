@@ -57,6 +57,18 @@ import {
 } from "./sliderule/sliderule-projection-constants";
 import { fetchJsonSafe, isPythonBackendFailure, isDegradedApiError, getLegacyFallbackReason } from "@/lib/api-client";
 import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
+import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
+import {
+  Code2,
+  History,
+  MoreHorizontal,
+  PanelLeftClose,
+  PencilLine,
+  Plus,
+  Search,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -192,6 +204,414 @@ function TurnFootnote({
   );
 }
 
+function textFromStep(step: UiTurn["steps"][number] | null | undefined): string {
+  if (!step) return "";
+  if (step.kind === "narration" || step.kind === "step_narration") return step.text;
+  if (step.kind === "chip") return step.label;
+  if (step.kind === "capability_fail") return step.message;
+  return "";
+}
+
+function assistantTextForTurn(turn: UiTurn, publishClosure?: PublishClosureSummary | null): string {
+  const assistant = turn.assistant?.trim();
+  if (assistant) return assistant;
+  const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
+  if (finalStepText) return finalStepText;
+  const recentStepText = [...turn.steps].reverse().map(textFromStep).find(Boolean);
+  if (recentStepText) return recentStepText;
+  if (publishClosure) {
+    const status = publishClosure.blocked ? "发布闭环被阻塞" : "发布闭环已完成";
+    return `${status}：${publishClosure.evidencePresentCount}/${publishClosure.skillCount} 个 Skill 证据可用，版本钉扎${publishClosure.versionPinsChecked ? "已检查" : "未完成"}。`;
+  }
+  return turn.status === "streaming" ? "正在整理推演结果..." : "本轮已完成，但还没有生成可展示的回答。";
+}
+
+// Alias kept for backward compat within this file — remove when all usages are unified.
+const cleanAssistantTextForTurn = assistantTextForTurn;
+
+function closureSkillRows(publishClosure?: PublishClosureSummary | null) {
+  const evidence = publishClosure?.perSkillEvidence;
+  const skills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
+  return skills.map((skill) => ({
+    skill,
+    present: evidence?.[skill]?.evidencePresent === true,
+  }));
+}
+
+function SlideRuleChatSurface({
+  uiTurns,
+  isRunning,
+  liveAction,
+  latestTurn,
+  publishClosure,
+  crossRuntimeGraph,
+  onOpenDeliverables,
+  onSwitchToReasoning,
+  onChallenge,
+}: {
+  uiTurns: UiTurn[];
+  isRunning: boolean;
+  liveAction: LiveAction | null;
+  latestTurn: UiTurn | null;
+  publishClosure?: PublishClosureSummary | null;
+  crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
+  onOpenDeliverables: () => void;
+  onSwitchToReasoning?: () => void;
+  onChallenge: (id: string) => void;
+}) {
+  const skillRows = closureSkillRows(publishClosure);
+  const hasClosure = !!publishClosure;
+  const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
+
+  return (
+    <div className="absolute inset-x-0 bottom-[104px] top-[104px] z-0 overflow-hidden bg-[radial-gradient(circle_at_top_left,rgb(239_246_255),transparent_34%),linear-gradient(180deg,#ffffff,#f8fafc)]">
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 sm:px-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              SlideRule Chat
+            </div>
+            <div className="mt-0.5 truncate text-sm font-medium text-slate-800">
+              {isRunning
+                ? liveAction?.label || latestStepText || "正在推演..."
+                : hasClosure
+                  ? publishClosure.blocked
+                    ? "发布闭环被阻塞"
+                    : "发布闭环完成"
+                  : "等待你的下一条指令"}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {hasClosure && (
+              <div
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  publishClosure.blocked
+                    ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                    : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                }`}
+              >
+                {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
+              </div>
+            )}
+            {crossRuntimeGraph && (
+              <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+                edges {crossRuntimeGraph.edgeCount} · evidence {crossRuntimeGraph.evidenceCount}
+              </div>
+            )}
+            {onSwitchToReasoning && (
+              <button
+                type="button"
+                onClick={onSwitchToReasoning}
+                className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:bg-slate-700"
+              >
+                看推演链路
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-200/80 bg-white/75 px-3 py-4 shadow-sm backdrop-blur-xl sm:px-5">
+          {uiTurns.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="text-lg font-semibold text-slate-800">把应用意图发给 SlideRule</div>
+              <div className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
+                例如：做一个采购审批应用，包含采购单、经理审批、财务确认、字段权限和发布闭环。
+              </div>
+              <div className="mt-4 grid max-w-2xl gap-2 text-left text-xs text-slate-500 sm:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">DataModel 定义实体字段</div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">RBAC / Workflow 验证权限流程</div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">AppBundle 汇总发布证据</div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {uiTurns.map((turn) => {
+                const answer = assistantTextForTurn(turn, publishClosure);
+                const recentSteps = turn.steps.slice(-4).map(textFromStep).filter(Boolean);
+                return (
+                  <div key={turn.id} className="space-y-2">
+                    <div className="flex justify-end">
+                      <div className="max-w-[82%] rounded-lg bg-slate-900 px-4 py-2 text-sm leading-6 text-white shadow-sm">
+                        {turn.user}
+                      </div>
+                    </div>
+                    <div className="flex justify-start">
+                      <div className="max-w-[88%] rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+                        {turn.status === "streaming" ? (
+                          <div className="space-y-2">
+                            <ImStreamingPlaceholder />
+                            {recentSteps.length > 0 && (
+                              <div className="space-y-1">
+                                {recentSteps.map((stepText, index) => (
+                                  <div key={`${turn.id}-step-${index}`} className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+                                    {stepText}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap">{answer}</div>
+                        )}
+
+                        {turn.status === "complete" && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+                            {turn.main && (
+                              <button
+                                type="button"
+                                onClick={() => onChallenge(turn.main!.artifactId)}
+                                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+                              >
+                                质疑本轮
+                              </button>
+                            )}
+                            <span className="text-[11px] text-slate-400">
+                              {turn.steps.length} steps · {turn.routeLitCount || 0} route refs
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {hasClosure && (
+          <div className="mt-3 rounded-lg border border-slate-200/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-slate-700">
+                AppBundle 发布证据 · {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
+              </div>
+              <button
+                type="button"
+                onClick={onOpenDeliverables}
+                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+              >
+                打开交付物
+              </button>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-6">
+              {skillRows.map(({ skill, present }) => (
+                <div
+                  key={skill}
+                  className={`rounded-md px-2 py-1 text-center text-[11px] font-medium ${
+                    present ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                  }`}
+                >
+                  {skill}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const EXAMPLE_PROMPTS = [
+  "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限",
+  "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
+  "构建客户服务工单平台，含工单创建、分派、升级和 SLA 闭环",
+] as const;
+
+/** ClaudeChatSurface — Claude 风格对话界面（无侧边栏，纯白背景，轻量 prose 布局）*/
+function ClaudeChatSurface({
+  goal,
+  uiTurns,
+  isRunning,
+  liveAction,
+  latestTurn,
+  publishClosure,
+  crossRuntimeGraph,
+  onOpenDeliverables,
+  onSwitchToReasoning,
+  onResetSession,
+  onChallenge,
+  // onStudioMode for embedding in SlideRuleStudio (no absolute positioning needed)
+  embedded,
+}: {
+  embedded?: boolean;
+  goal: string;
+  uiTurns: UiTurn[];
+  isRunning: boolean;
+  liveAction: LiveAction | null;
+  latestTurn: UiTurn | null;
+  publishClosure?: PublishClosureSummary | null;
+  crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
+  onOpenDeliverables: () => void;
+  onSwitchToReasoning?: () => void;
+  onResetSession: () => void;
+  onChallenge: (id: string) => void;
+}) {
+  const skillRows = closureSkillRows(publishClosure);
+  const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
+  const thinkingText =
+    liveAction?.label ||
+    latestStepText ||
+    (publishClosure
+      ? publishClosure.blocked
+        ? "发布闭环被阻塞，等待下一步修正"
+        : "发布闭环完成"
+      : "正在推演...");
+
+  return (
+    <div className={`${embedded ? "relative h-full" : "absolute inset-0"} z-0 flex flex-col overflow-hidden bg-white text-slate-950`}>
+      {/* Top bar */}
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
+        <span className="text-sm font-semibold text-slate-800">SlideRule</span>
+        <div className="flex items-center gap-1">
+          {onSwitchToReasoning && (
+            <button
+              type="button"
+              onClick={onSwitchToReasoning}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            >
+              推演
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onResetSession}
+            disabled={isRunning}
+            className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+          >
+            新对话
+          </button>
+          <button
+            type="button"
+            onClick={onOpenDeliverables}
+            className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            title="交付物"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Chat area */}
+      <div className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6">
+        {uiTurns.length === 0 ? (
+          /* Empty state — 3 clickable example prompts */
+          <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
+            <div>
+              <div className="text-[22px] font-semibold text-slate-900">我能帮你把意图推演成应用闭环</div>
+              <div className="mt-2 text-sm text-slate-500">
+                发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 w-full max-w-[520px]">
+              {EXAMPLE_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  disabled={isRunning}
+                  onClick={() => {
+                    // Dispatch a custom event so ComposerDock can pick it up
+                    window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text: prompt } }));
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6 py-2">
+            {uiTurns.map((turn) => {
+              const answer = assistantTextForTurn(turn, publishClosure);
+              const recentSteps = turn.steps.slice(-3).map(textFromStep).filter(Boolean);
+              return (
+                <section key={turn.id} className="space-y-4">
+                  {/* User bubble — right, bg-slate-100, no border */}
+                  <div className="flex justify-end">
+                    <div className="max-w-[520px] rounded-2xl bg-slate-100 px-4 py-2.5 text-[15px] leading-7 text-slate-900">
+                      {turn.user}
+                    </div>
+                  </div>
+
+                  {/* Assistant reply — left, prose, no card */}
+                  <div className="max-w-[640px]">
+                    {turn.status === "streaming" ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                          <span className="inline-flex gap-0.5">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                              <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300" style={{ animationDelay: `${i * 120}ms` }} />
+                            ))}
+                          </span>
+                          {thinkingText}
+                        </div>
+                        {recentSteps.length > 0 && (
+                          <div className="space-y-1 pl-4">
+                            {recentSteps.map((t, i) => (
+                              <div key={i} className="text-xs text-slate-400">{t}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2 text-[15px] leading-7 text-slate-800">
+                        <div className="prose prose-slate max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                          {publishClosure && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                              {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
+                            </span>
+                          )}
+                          {turn.main && (
+                            <button
+                              type="button"
+                              onClick={() => onChallenge(turn.main!.artifactId)}
+                              className="rounded-full bg-slate-100 px-2 py-0.5 hover:bg-slate-200"
+                            >
+                              质疑本轮
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* AppBundle closure bar */}
+      {publishClosure && (
+        <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-2">
+          <div className="mx-auto flex max-w-[780px] items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1">
+              {skillRows.map(({ skill, present }) => (
+                <span
+                  key={skill}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    present ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                  }`}
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+            <button type="button" onClick={onOpenDeliverables} className="shrink-0 text-xs text-slate-500 hover:text-slate-900">
+              交付物
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Backward-compat alias — consumed by SlideRuleStudio chatSlot and legacy call sites
+const GrokStyleChatSurface = ClaudeChatSurface;
+
 function DriveFullStatusBanner({
   status,
   className = "",
@@ -315,6 +735,8 @@ function SlideRuleImmersion({
   onProjectionDensityChange,
   viewMode,
   onViewModeChange,
+  surfaceMode,
+  onSurfaceModeChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -338,6 +760,9 @@ function SlideRuleImmersion({
   crossRuntimeGraph,
   publishClosure,
   driveFullStatus,
+  activeSkillId = null,
+  skillContents = {},
+  latestMermaid = null,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -365,6 +790,8 @@ function SlideRuleImmersion({
   onProjectionDensityChange: (density: ProjectionDensity) => void;
   viewMode: "overview" | "collaboration" | "reasoning";
   onViewModeChange: (mode: "overview" | "collaboration" | "reasoning") => void;
+  surfaceMode?: "chat" | "reasoning" | "studio";
+  onSurfaceModeChange?: (mode: "chat" | "reasoning" | "studio") => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -388,6 +815,10 @@ function SlideRuleImmersion({
   crossRuntimeGraph?: CrossRuntimeGraphSummary | null;
   publishClosure?: PublishClosureSummary | null;
   driveFullStatus?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
+  /** SSE-driven active skill for SlideRuleStudio */
+  activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
+  skillContents?: Partial<Record<import("@/lib/sliderule-marathon-driver").SkillId, string>>;
+  latestMermaid?: string | null;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -407,35 +838,41 @@ function SlideRuleImmersion({
 
   return (
     <div className={autopilotTheme.immersionPage}>
-      <div className={autopilotTheme.immersionCanvas}>
-        {graphNodeCount > 0 ? (
-          <ReasoningFlowSurface
-            viewModel={reasoningViewModel}
-            initialScale={0.88}
-            graphRevision={graphRevision}
-            className="absolute inset-0"
-            showChrome={false}
-            showBottomChrome
-            onNodeClick={handleGraphNodeClick}
-            onNodeEditSubmit={handleNodeEditSubmit}
-            onResolveInteractiveGate={handleResolveInteractiveGate}
-            externalHighlightedIds={lineageHighlightIds}
-            focusNodeId={focusNodeId}
-            onTerminalAction={handleTerminalAction}
-            terminalCanExport={reasoningViewModel.terminalMeta?.canExport}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center px-6 pb-[16vh] pt-24">
-            <img
-              src="/assets/SlideRule_transparent_cropped.png"
-              alt="SlideRule"
-              className="w-[min(82vw,360px)] object-contain opacity-[0.55] drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)]"
-              title="SlideRule"
+      {/* In chat mode: pure chat, no flow canvas.
+          The large page will be used by the chat history + output.
+          Switch to 推演 mode to see the full reasoning flow nodes and process on the big canvas. */}
+      {surfaceMode === "reasoning" && (
+        <div className={autopilotTheme.immersionCanvas}>
+          {graphNodeCount > 0 ? (
+            <ReasoningFlowSurface
+              viewModel={reasoningViewModel}
+              initialScale={0.88}
+              graphRevision={graphRevision}
+              className="absolute inset-0"
+              showChrome={false}
+              showBottomChrome
+              onNodeClick={handleGraphNodeClick}
+              onNodeEditSubmit={handleNodeEditSubmit}
+              onResolveInteractiveGate={handleResolveInteractiveGate}
+              externalHighlightedIds={lineageHighlightIds}
+              focusNodeId={focusNodeId}
+              onTerminalAction={handleTerminalAction}
+              terminalCanExport={reasoningViewModel.terminalMeta?.canExport}
             />
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 pb-[16vh] pt-24">
+              <img
+                src="/assets/SlideRule_transparent_cropped.png"
+                alt="SlideRule"
+                className="w-[min(82vw,360px)] object-contain opacity-[0.55] drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)]"
+                title="SlideRule"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
+      {surfaceMode === "reasoning" && (
       <div className={autopilotTheme.immersionOverlayTop}>
         <SlideRuleTopHud
           state={sessionState}
@@ -453,6 +890,8 @@ function SlideRuleImmersion({
           onProjectionDensityChange={onProjectionDensityChange}
           viewMode={viewMode}
           onViewModeChange={onViewModeChange}
+          surfaceMode={surfaceMode}
+          onSurfaceModeChange={onSurfaceModeChange}
           onResetSession={resetSession}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDeliverables={openDeliverables}
@@ -472,36 +911,87 @@ function SlideRuleImmersion({
           className="absolute left-1/2 top-[96px] z-50 -translate-x-1/2"
         />
         <div className={autopilotTheme.immersionOverlayArchRow}>
-          <ArchitectureProcessPanel
-            liveAction={isRunning ? liveAction : null}
-            latestTurn={
-              latestTurn
-                ? {
-                    id: latestTurn.id,
-                    routeFacts: latestTurn.routeFacts,
-                    steps: latestTurn.steps,
-                    actions: latestTurn.actions,
-                    status: latestTurn.status,
-                    routeLitCount: latestTurn.routeLitCount,
-                    routeExpanded: latestTurn.routeExpanded,
-                  }
-                : null
-            }
-            sessionId={sessionId}
-            isRunning={isRunning}
-            onToggleRoute={
-              latestTurn ? () => toggleRouteExpanded(latestTurn.id) : undefined
-            }
-            onRetryCapability={
-              latestTurn
-                ? (params) => retryCapability(latestTurn.id, params)
-                : undefined
-            }
-            crossRuntimeGraph={crossRuntimeGraph}
-            publishClosure={publishClosure}
-          />
+          {surfaceMode === "reasoning" && (
+            <ArchitectureProcessPanel
+              liveAction={isRunning ? liveAction : null}
+              latestTurn={
+                latestTurn
+                  ? {
+                      id: latestTurn.id,
+                      routeFacts: latestTurn.routeFacts,
+                      steps: latestTurn.steps,
+                      actions: latestTurn.actions,
+                      status: latestTurn.status,
+                      routeLitCount: latestTurn.routeLitCount,
+                      routeExpanded: latestTurn.routeExpanded,
+                    }
+                  : null
+              }
+              sessionId={sessionId}
+              isRunning={isRunning}
+              onToggleRoute={
+                latestTurn ? () => toggleRouteExpanded(latestTurn.id) : undefined
+              }
+              onRetryCapability={
+                latestTurn
+                  ? (params) => retryCapability(latestTurn.id, params)
+                  : undefined
+              }
+              crossRuntimeGraph={crossRuntimeGraph}
+              publishClosure={publishClosure}
+            />
+          )}
         </div>
       </div>
+      )}
+
+      {surfaceMode === "chat" && (
+        <GrokStyleChatSurface
+          embedded={embedded}
+          goal={goal}
+          uiTurns={uiTurns}
+          isRunning={isRunning}
+          liveAction={liveAction}
+          latestTurn={latestTurn}
+          publishClosure={publishClosure}
+          crossRuntimeGraph={crossRuntimeGraph}
+          onOpenDeliverables={openDeliverables}
+          onSwitchToReasoning={
+            onSurfaceModeChange ? () => onSurfaceModeChange("reasoning") : undefined
+          }
+          onResetSession={resetSession}
+          onChallenge={challengeTurn}
+        />
+      )}
+
+      {/* Studio mode — 38/62 split layout with skill visualisation */}
+      {surfaceMode === "studio" && (
+        <SlideRuleStudio
+          chatSlot={
+            <GrokStyleChatSurface
+              embedded
+              goal={goal}
+              uiTurns={uiTurns}
+              isRunning={isRunning}
+              liveAction={liveAction}
+              latestTurn={latestTurn}
+              publishClosure={publishClosure}
+              crossRuntimeGraph={crossRuntimeGraph}
+              onOpenDeliverables={openDeliverables}
+              onSwitchToReasoning={
+                onSurfaceModeChange ? () => onSurfaceModeChange("reasoning") : undefined
+              }
+              onResetSession={resetSession}
+              onChallenge={challengeTurn}
+            />
+          }
+          activeSkillId={activeSkillId}
+          publishClosure={publishClosure}
+          latestMermaid={latestMermaid}
+          skillContents={skillContents}
+          className="absolute inset-x-0 bottom-[104px] top-[104px]"
+        />
+      )}
 
       {imSurfaceMode === "minimal" && latestTurn && (
         <div className="pointer-events-none absolute left-1/2 top-[42%] z-10 w-[min(90%,480px)] -translate-x-1/2">
@@ -544,6 +1034,7 @@ function SlideRuleImmersion({
               onClose={() => setClarifyHidden(true)}
             />
           )}
+
           <ComposerDock
             input={input}
             setInput={setInput}
@@ -613,6 +1104,8 @@ function SlideRuleSplitEngineering({
   onProjectionDensityChange,
   viewMode,
   onViewModeChange,
+  surfaceMode,
+  onSurfaceModeChange,
   imSurfaceMode,
   latestTurn,
   latestTurnId,
@@ -654,6 +1147,8 @@ function SlideRuleSplitEngineering({
   onProjectionDensityChange: (density: ProjectionDensity) => void;
   viewMode: "overview" | "collaboration" | "reasoning";
   onViewModeChange: (mode: "overview" | "collaboration" | "reasoning") => void;
+  surfaceMode?: "chat" | "reasoning" | "studio";
+  onSurfaceModeChange?: (mode: "chat" | "reasoning" | "studio") => void;
   imSurfaceMode: ReturnType<typeof resolveImSurfaceMode>;
   latestTurn: UiTurn | null;
   latestTurnId: string | null;
@@ -946,6 +1441,9 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     generateDeliverables,
     stop,
     driveFullStatus,
+    activeSkillId,
+    skillContents,
+    latestMermaid,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
@@ -1015,6 +1513,24 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
       localStorage.setItem(VIEW_MODE_STORAGE_KEY, m);
     } catch {}
   }, []);
+
+  const SURFACE_MODE_KEY = "sliderule:surface-mode:v1";
+  const [surfaceMode, setSurfaceMode] = useState<"chat" | "reasoning" | "studio">(() => {
+    try {
+      const stored = localStorage.getItem(SURFACE_MODE_KEY);
+      if (stored === "chat" || stored === "studio") return stored;
+      return "reasoning";
+    } catch {
+      return "reasoning";
+    }
+  });
+  const onSurfaceModeChange = useCallback((m: "chat" | "reasoning" | "studio") => {
+    setSurfaceMode(m);
+    try {
+      localStorage.setItem(SURFACE_MODE_KEY, m);
+    } catch {}
+  }, []);
+
   const [lineageHighlightIds, setLineageHighlightIds] = useState<string[]>([]);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [deliverablesOpen, setDeliverablesOpen] = useState(false);
@@ -1091,6 +1607,13 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     // -> DM_PAGE_BINDING_IMPACT_EVIDENCE added to runtimeEvidence ONLY on positive (fail-closed negatives excluded)
     // -> flows via orchestrator crossRuntimeGraph + slideRule.publishGate().runtimeClosure (AppBundle evaluate)
     // -> derive*Summary -> UI publishClosure/crossRuntimeGraph. This is the 119 DM->Page binding runtime closure path.
+    //
+    // NOTE — generate() 降级行为 (P4):
+    // deriveApplication() 内部调用每个 Skill 的 generate(intent)。
+    // 当前 appBundleSkill.generate() 只识别"采购/purchase"和"请假/leave"两个意图词；
+    // 其他意图会抛出 Error，被 deriveApplication 的 try/catch 降级为空 crossRuntimeGraph。
+    // 此处的结果 (result.spec.skills) 已包含五系统 resolve 产出——publishGate 仍能正常校验闭包。
+    // 待 LLM generate() 实现后，覆盖面将从fixture扩展到任意意图，不需要修改此处。
     deriveApplication(intent)
       .then((result) => {
         if (cancelled) return;
@@ -1272,6 +1795,8 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     onProjectionDensityChange: handleProjectionDensityChange,
     viewMode,
     onViewModeChange,
+    surfaceMode,
+    onSurfaceModeChange,
     imSurfaceMode,
     latestTurn,
     latestTurnId,
@@ -1295,6 +1820,9 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     crossRuntimeGraph: visibleCrossRuntimeGraph,
     publishClosure: visiblePublishClosure,
     driveFullStatus,
+    activeSkillId,
+    skillContents,
+    latestMermaid,
   };
 
   if (isImmersion) {
