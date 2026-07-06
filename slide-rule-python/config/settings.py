@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Internal key for SlideRule delegation (from Node)
     SLIDE_RULE_INTERNAL_KEY: str = "dev-slide-rule-internal"
 
+    # Parallel capability batches in the full drive loop (services/v5_full_driver.py).
+    # Each selected capability's provider call is independent; default ON overlaps
+    # them (execute concurrently, commit sequentially in selection order).
+    # Explicit false selects the serial reference path unchanged. Env var of the
+    # same name wins at runtime (checked dynamically by _parallel_caps_enabled).
+    SLIDERULE_PARALLEL_CAPS: bool = True
+
     # Durable task (mission) store for the /api/tasks surface (routes/tasks.py).
     # JSON array of [taskId, MissionRecord] entries; override via TASK_STORE_FILE env.
     TASK_STORE_FILE: str = "data/tasks.json"

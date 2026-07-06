@@ -5,7 +5,9 @@ This replaces the entire Node V5 loop with Python RAG-backed execution.
 All capabilities now produce real evidence via RAG, no templates, no degraded, no su8 issues.
 """
 
-from typing import Dict, Any, AsyncGenerator
+import os
+import time
+from typing import Dict, Any, AsyncGenerator, List, Optional
 from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
@@ -72,6 +74,7 @@ def _commit_capability_result(
     artifact_id: str,
     result_data: Dict[str, Any],
     duration_ms: int,
+    parallel: Optional[bool] = None,
 ) -> None:
     produced = ProducedBy(capabilityRunId=run_id, capabilityId=capability_id, roleId=role_id)
     kind = "evidence" if "evidence" in capability_id or capability_id in ["mcp.call", "skill.invoke"] else ("report" if "report" in capability_id else "risk")
@@ -95,7 +98,211 @@ def _commit_capability_result(
         elif isinstance(last, dict):
             last["result"] = result_data
         if hasattr(last, "timing"):
-            last.timing = {"durationMs": duration_ms}
+            timing: Dict[str, Any] = {"durationMs": duration_ms}
+            if parallel is not None:
+                # Timing telemetry marker: attribute this measurement to the
+                # parallel batch path (absent on the untouched serial path).
+                timing["parallel"] = parallel
+            last.timing = timing
+
+
+# ---------------------------------------------------------------------------
+# Parallel capability batch (SLIDERULE_PARALLEL_CAPS)
+#
+# Product decision: no artificial speed-ups (no lower-quality shortcuts) — we
+# only remove engineering waste. Within one drive loop each selected capability
+# makes an INDEPENDENT provider call; serializing them wastes wall time.
+#
+# Design: "parallel execute, deterministic commit".
+#   Phase A (visibility): capability_start reasoning/replay events for ALL
+#     selected caps are appended + persisted BEFORE the batch runs, so pollers
+#     see what's in flight.
+#   Phase B (execute):    execute_v5_capability runs concurrently. It is
+#     read-only on state (reads state.goal; appbundle/runtimeClosure caps also
+#     read state.artifacts — those are commit-order sensitive and therefore run
+#     as serial barriers at their original position, after preceding commits).
+#   Phase C (commit):     commit_artifact / capabilityRuns / dependencyGraph /
+#     error recording are applied SEQUENTIALLY in the original selection order,
+#     so artifact/run ordering and execution-chain edges are byte-identical to
+#     serial mode for the same results. State is never mutated concurrently.
+#
+# The serial code path below stays intact (reference semantics) and is chosen
+# whenever the flag is explicitly false (or a single capability is selected).
+# ---------------------------------------------------------------------------
+
+def _parallel_caps_enabled() -> bool:
+    """SLIDERULE_PARALLEL_CAPS: env wins (dynamic), settings next, default ON.
+
+    Explicit "false"/"0"/"no"/"off" selects the untouched serial path.
+    """
+    env = os.getenv("SLIDERULE_PARALLEL_CAPS")
+    if env is not None and str(env).strip() != "":
+        return str(env).strip().lower() not in ("0", "false", "no", "off")
+    try:
+        from config.settings import settings as _settings
+        return bool(getattr(_settings, "SLIDERULE_PARALLEL_CAPS", True))
+    except Exception:
+        return True
+
+
+def _is_commit_order_sensitive_cap(capability_id: str) -> bool:
+    """Caps whose EXECUTOR reads committed artifacts (not just goal text).
+
+    execute_v5_capability's appbundle/runtimeClosure branch derives per-skill
+    evidence from state.artifacts, so in serial mode it observes the commits of
+    caps earlier in the same batch. Such caps must run as barriers.
+    """
+    cap = (capability_id or "").lower()
+    return "appbundle" in cap or "runtimeclosure" in cap
+
+
+def _split_parallel_segments(selected: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Split the selection into maximal parallel-safe groups; commit-order
+    sensitive caps become single-element barrier segments at their position."""
+    segments: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    for sel in selected:
+        if _is_commit_order_sensitive_cap(sel.get("capabilityId", "")):
+            if current:
+                segments.append(current)
+                current = []
+            segments.append([sel])
+        else:
+            current.append(sel)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _timed_execute(cap: str, state: V5SessionState, role: str, turn_id: str) -> Dict[str, Any]:
+    """Execute one capability, catching its error (per-cap try/except identical
+    to the serial path — one failure must not sink the batch). Read-only on state."""
+    t0 = time.time()
+    try:
+        result = execute_v5_capability(cap, state, [], role, turn_id)
+        return {
+            "ok": True,
+            "result_data": _result_to_dict(result),
+            "error": None,
+            "durationMs": int((time.time() - t0) * 1000),
+        }
+    except Exception as cap_exc:  # noqa: BLE001 — mirrors serial per-cap recovery
+        return {
+            "ok": False,
+            "result_data": None,
+            "error": cap_exc,
+            "durationMs": int((time.time() - t0) * 1000),
+        }
+
+
+def _execute_group_parallel(state: V5SessionState, group: List[Dict[str, Any]], turn_id: str) -> List[Dict[str, Any]]:
+    """Run a parallel-safe group concurrently; results aligned with group order.
+    Max workers = number of selected caps in the group (picker caps selection at 5)."""
+    if len(group) == 1:
+        sel = group[0]
+        return [_timed_execute(sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id)]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=min(len(group), 5)) as pool:
+        futures = [
+            pool.submit(_timed_execute, sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id)
+            for sel in group
+        ]
+        return [f.result() for f in futures]
+
+
+def _emit_batch_capability_starts(state: V5SessionState, selected: List[Dict[str, Any]], loop: int) -> None:
+    """Phase A: pre-emit capability_start reasoning/replay events for the whole
+    batch and persist once, so stream watchers/pollers see what's in flight."""
+    turn_id = f"loop-{loop}"
+    for sel in selected:
+        cap = sel["capabilityId"]
+        role = sel.get("roleId", "agent")
+        run_id = f"run-{loop}-{cap}"
+        append_reasoning_event(
+            state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_start",
+            text=f"capability_started: {cap}", roleId=role, order=1,
+        )
+        append_replay_event(state, kind="capability_run", turnId=turn_id, capabilityId=cap, capabilityRunId=run_id)
+    persist_state(state)
+
+
+def _commit_executed_outcome(
+    state: V5SessionState,
+    *,
+    sel: Dict[str, Any],
+    loop: int,
+    outcome: Dict[str, Any],
+    parallel: bool = True,
+) -> None:
+    """Phase C: apply one capability's state mutations (sequential, selection order).
+
+    Success: commit_artifact + run result/timing + capability_complete (same as serial).
+    Error: record_capability_run_error + degraded awaitDetail (same as serial) — an
+    errored capability never prevents the other caps' commits.
+    """
+    cap = sel["capabilityId"]
+    role = sel.get("roleId", "agent")
+    turn_id = f"loop-{loop}"
+    run_id = f"run-{loop}-{cap}"
+    if outcome["ok"]:
+        _commit_capability_result(
+            state,
+            capability_id=cap,
+            role_id=role,
+            turn_id=turn_id,
+            run_id=run_id,
+            artifact_id=f"art-{loop}-{cap}",
+            result_data=outcome["result_data"] or {},
+            duration_ms=outcome["durationMs"],
+            parallel=parallel,
+        )
+        append_reasoning_event(
+            state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
+            text=f"capability_completed: {cap}", roleId=role, order=2,
+        )
+        persist_state(state)
+    else:
+        from .slide_rule_session import record_capability_run_error
+
+        err = {"code": "capability_execution_failed", "message": str(outcome["error"])[:200], "capabilityId": cap}
+        record_capability_run_error(
+            state,
+            capabilityId=cap,
+            turnId=turn_id,
+            error=err,
+            roleId=role,
+            timing={"durationMs": outcome["durationMs"], "parallel": parallel},
+        )
+        append_reasoning_event(
+            state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
+            text=f"capability_completed: {cap} (error)", roleId=role, order=2,
+        )
+        persist_state(state)
+        state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
+
+
+def _append_loop_timing_event(state: V5SessionState, loop: int, caps: int, wall_ms: int) -> None:
+    """Per-loop wall-duration telemetry with the parallel marker, so before/after
+    measurements are attributable in the persisted reasoning ledger."""
+    append_reasoning_event(
+        state, turnId=f"loop-{loop}", capabilityRunId=f"loop-{loop}-timing", capabilityId="driver",
+        kind="think", text=f"loop_timing: loop={loop} caps={caps} wallMs={wall_ms} parallel=true", order=3,
+    )
+
+
+def _run_selected_batch_parallel(state: V5SessionState, selected: List[Dict[str, Any]], loop: int) -> None:
+    """Sync driver's parallel batch: pre-emit starts, execute concurrently,
+    commit sequentially in the original selection order."""
+    t_loop = time.time()
+    turn_id = f"loop-{loop}"
+    _emit_batch_capability_starts(state, selected, loop)
+    for group in _split_parallel_segments(selected):
+        outcomes = _execute_group_parallel(state, group, turn_id)
+        for sel, outcome in zip(group, outcomes):
+            _commit_executed_outcome(state, sel=sel, loop=loop, outcome=outcome, parallel=True)
+    _append_loop_timing_event(state, loop, len(selected), int((time.time() - t_loop) * 1000))
+    persist_state(state)
 
 
 def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: str, loop: int) -> V5SessionState:
@@ -278,7 +485,15 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 break  # converged per pick semantics (empty after all rules)
             # execute selected
             import time as _time
-            for sel in selected:
+            # SLIDERULE_PARALLEL_CAPS (default ON): overlap the independent per-cap
+            # provider calls; commits stay sequential in selection order. Explicit
+            # false (or a single-cap batch) takes the serial reference path below.
+            if _parallel_caps_enabled() and len(selected) > 1:
+                _run_selected_batch_parallel(state, selected, loop)
+                serial_selected = []
+            else:
+                serial_selected = selected
+            for sel in serial_selected:
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
                 turn_id = f"loop-{loop}"
@@ -584,7 +799,39 @@ async def drive_full_v5_session_stream(
                 break
 
             # Execute selected
-            for sel in selected:
+            # SLIDERULE_PARALLEL_CAPS (default ON): pre-emit ALL capability_start
+            # events (persisted) + reasoning_step SSE events, run the independent
+            # provider calls concurrently, then commit sequentially in selection
+            # order and emit reasoning_step_result per cap as commits land — so
+            # step-event pairing stays coherent for stream watchers. Explicit
+            # false (or single-cap batch) takes the serial reference path below.
+            batch_parallel = _parallel_caps_enabled() and len(selected) > 1
+            if batch_parallel:
+                t_loop = _time.time()
+                turn_id = f"loop-{loop}"
+                await asyncio.to_thread(_emit_batch_capability_starts, state, selected, loop)
+                for sel in selected:
+                    yield {"type": "reasoning_step", "label": sel["capabilityId"], "loop": loop}
+                for group in _split_parallel_segments(selected):
+                    outcomes = await asyncio.gather(*[
+                        asyncio.to_thread(
+                            _timed_execute, sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id
+                        )
+                        for sel in group
+                    ])
+                    for sel, outcome in zip(group, outcomes):
+                        await asyncio.to_thread(
+                            _commit_executed_outcome, state, sel=sel, loop=loop, outcome=outcome, parallel=True
+                        )
+                        yield {
+                            "type": "reasoning_step_result",
+                            "label": sel["capabilityId"],
+                            "error": not outcome["ok"],
+                            "summary": (outcome["result_data"] or {}).get("summary") if outcome["ok"] else None,
+                        }
+                _append_loop_timing_event(state, loop, len(selected), int((_time.time() - t_loop) * 1000))
+                persist_state(state)
+            for sel in ([] if batch_parallel else selected):
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
                 turn_id = f"loop-{loop}"
