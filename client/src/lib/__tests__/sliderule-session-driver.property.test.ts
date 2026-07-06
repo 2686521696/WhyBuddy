@@ -71,8 +71,15 @@ describe("Property 5: maxLoopsPerMessage stops with budget_exhausted", () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async (maxLoops) => {
         const { preparedState } = prep("p5");
+        // Evolved contract: route.compare now parks the drive at G_CONFIRM (await_confirm,
+        // S12 interactive gate — the user must pick a branch; see
+        // shared/blueprint/sliderule-interactive-gates.ts evaluateConfirmGateAfterCommit and
+        // the "parks await_confirm after route.compare" unit spec), so it can no longer be
+        // used to exercise the pure loop-budget stop. risk.analyze triggers no interactive
+        // gate and stays under maxRepeatPerCapability (6) for maxLoops ≤ 5, matching the
+        // "stops with budget_exhausted after maxLoopsPerMessage" unit spec.
         const router = createDeterministicRouter((_req, i) => ({
-          selected: [{ capabilityId: "route.compare", roleId: "工程" }],
+          selected: [{ capabilityId: "risk.analyze", roleId: "安全" }],
           rationale: `loop-${i}`,
           source: "heuristic_fallback",
         }));

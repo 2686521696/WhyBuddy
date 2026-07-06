@@ -113,12 +113,19 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
       userText,
     });
 
-    // Assert the picker selected the full V5 team (proactive upstream planning for report)
+    // Assert the picker selected the full V5 pre-req team. Evolved golden-path contract
+    // (7618e06 / 7f88d83): the complex CoverageContract requires critique.generate +
+    // evidence.search, and GCOV swaps a doomed-this-turn report.write for the missing
+    // pre-reqs when that lets ALL of them fit the per-turn budget. So the FIRST turn
+    // schedules the full upstream team (no premature report), and report.write lands on
+    // the follow-up converge turn once every pre-req is trusted-committed.
     const selectedCaps = plan.selected.map((s) => s.capabilityId);
     expect(selectedCaps).toContain('risk.analyze');
     expect(selectedCaps).toContain('counter.argue');
     expect(selectedCaps).toContain('synthesis.merge');
-    expect(selectedCaps).toContain('report.write');
+    expect(selectedCaps).toContain('critique.generate');
+    expect(selectedCaps).toContain('evidence.search');
+    expect(selectedCaps).not.toContain('report.write'); // deferred: GCOV evicted the premature report
 
     // 2. Simulate the page's same-round commit loop with fresh resolve each step
     let working = afterPlan;
@@ -161,6 +168,50 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
         "pilot-template" // test fixture uses simulator-style content; K3 thickness covered by dedicated K3.x tests
       );
 
+      working = updatedState;
+
+      expect(committed).not.toBeNull();
+    });
+
+    // 3. Follow-up converge turn: with every pre-req trusted-committed, GCOV now passes and
+    //    the picker schedules report.write (the second half of the evolved two-turn golden path).
+    const turn2Id = 'turn-combo-2';
+    const { newState: afterPlan2, plan: plan2 } = orchestrateReasoningTurn(working, {
+      turnId: turn2Id,
+      userText: '现在可以出最终可行性报告了',
+    });
+    const selectedCaps2 = plan2.selected.map((s) => s.capabilityId);
+    expect(selectedCaps2).toContain('report.write');
+
+    working = afterPlan2;
+    plan2.selected.forEach((sel, idx) => {
+      const cap = sel.capabilityId;
+      const role = sel.roleId || 'agent';
+      const runId = `${turn2Id}-run-${idx}`;
+      const freshInputs = findInputsForCapability(working, cap);
+      const isReport = cap === 'report.write';
+      const contentForThis = isReport
+        ? `【可行性 / 产品推演报告】结论：建议推进权限系统建设。支撑证据片段：\n- 来自 risk(risk.analyze×安全): ${SEMANTIC_CONTENTS['risk.analyze']}\n- 来自 risk(counter.argue×挑刺): ${SEMANTIC_CONTENTS['counter.argue']}\n- 来自 synthesis(synthesis.merge×综合): ${SEMANTIC_CONTENTS['synthesis.merge']}`
+        : SEMANTIC_CONTENTS[cap] ?? `${role} 通过 ${cap} 贡献了内容。`;
+
+      const rawWithContent = {
+        ...(cap === 'evidence.search'
+          ? createGroundedEvidenceRaw(`${turn2Id}-art-${idx}`)
+          : createRawArtifact(`${turn2Id}-art-${idx}`, cap, role, 'risk')),
+        kind: isReport ? 'report' : cap === 'evidence.search' ? 'evidence' : 'risk',
+        title: contentForThis.split('\n')[0]?.slice(0, 80),
+        summary: cap === 'evidence.search' ? '【来源: F1_Github_Source 取数】' : contentForThis.slice(0, 200),
+        content: contentForThis,
+      } as any;
+
+      const { updatedState, committed } = commitArtifact(
+        working,
+        rawWithContent,
+        runId,
+        false,
+        freshInputs,
+        "pilot-template"
+      );
       working = updatedState;
 
       if (isReport) {
@@ -1359,9 +1410,17 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
         const listBody = await listRes.json().catch(() => ({} as any));
         expect(listBody).toHaveProperty('sessions');
 
-        // GET /:id for missing still hits the handler (its own 404), proving the route exists
+        // GET /:id for missing still hits the handler, proving the route exists. Evolved
+        // contract (041b264 python-first thin proxy): the Node route delegates to the Python
+        // backend and surfaces ANY non-OK python response (including python's 404 for a
+        // missing session) as 502 {error:"python_unavailable"} — see
+        // server/routes/sliderule.ts GET /sessions/:sessionId + python-delegation
+        // fetchJsonWithTimeout (throws on !response.ok). Either way a JSON body comes back
+        // from the registered handler, never an unmatched-route express 404 HTML page.
         const getMissing = await fetch(`${base}/sessions/__guard-test-missing-id`);
-        expect(getMissing.status).toBe(404);
+        expect([404, 502]).toContain(getMissing.status);
+        const getMissingBody = await getMissing.json().catch(() => null);
+        expect(getMissingBody).not.toBeNull(); // handler responded with JSON → route exists
 
         // DELETE route active (returns 204 even for unknown id)
         const delRes = await fetch(`${base}/sessions/__guard-test-del`, { method: 'DELETE' });
@@ -1709,9 +1768,23 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
       (riskArt as any).trustLevel = 'gated_pass';
       (riskArt as any).passedGates = ['commit'];
     }
+    // The complex CoverageContract now also requires critique.generate (V5.2/V5.3 面板质疑纳入合约,
+    // see shared/blueprint/sliderule-coverage-gate.ts); commit a trusted critique run too.
+    const { updatedState: sCrit } = commitArtifact(
+      sRisk,
+      createRawArtifact('c1', 'critique.generate', '挑刺', 'risk'),
+      'gc3-r0c',
+      false,
+      []
+    );
+    const critArt = (sCrit.artifacts || []).find((a: any) => a.producedBy?.capabilityId === 'critique.generate');
+    if (critArt) {
+      (critArt as any).trustLevel = 'gated_pass';
+      (critArt as any).passedGates = ['commit'];
+    }
     // Also a synthesis for report path
     const { updatedState: sBoth } = commitArtifact(
-      sRisk,
+      sCrit,
       createRawArtifact('s1', 'synthesis.merge', '综合', 'synthesis'),
       'gc3-r1',
       false,
@@ -2085,8 +2158,12 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
     let s = createInitialSessionState('有风险报告', 'cov7-4');
     const { contract, gaps } = authorCoverageContract(s.goal.text, 't4');
     s = { ...s, coverageContract: contract, coverageGaps: gaps };
-    // resolve by committing risk
-    const { updatedState: s2 } = commitArtifact(s, createRawArtifact('r4', 'risk.analyze', '安全', 'risk'), 'r4', false, []);
+    // resolve by committing risk — plus critique.generate + synthesis.merge, which the evolved
+    // complex contract also requires (V5.2/V5.3 面板质疑纳入合约): the gate's missing-capability
+    // check demands a trusted run for EVERY required pre-req regardless of gap status.
+    const { updatedState: sR } = commitArtifact(s, createRawArtifact('r4', 'risk.analyze', '安全', 'risk'), 'r4', false, []);
+    const { updatedState: sC } = commitArtifact(sR, createRawArtifact('c4', 'critique.generate', '挑刺', 'risk'), 'r4c', false, []);
+    const { updatedState: s2 } = commitArtifact(sC, createRawArtifact('sy4', 'synthesis.merge', '综合', 'synthesis'), 'r4s', false, []);
     // waive the evidence gap if present
     const evGap = (s2.coverageGaps || []).find((g: CoverageGap) => g.kind === 'missing_evidence');
     let s3 = s2;
@@ -2239,6 +2316,27 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
     if (riskArt) {
       (riskArt as any).trustLevel = 'gated_pass';
       (riskArt as any).passedGates = ['commit'];
+    }
+    // Evolved complex contract (V5.2/V5.3 面板质疑纳入合约) also requires trusted
+    // critique.generate + synthesis.merge runs before sufficiency can be reached
+    // (unresolvedRequiredCapabilities must be empty).
+    for (const [cid, capId, role, kind] of [
+      ['crit-waive', 'critique.generate', '挑刺', 'risk'],
+      ['synth-waive', 'synthesis.merge', '综合', 'synthesis'],
+    ] as const) {
+      const { updatedState } = commitArtifact(
+        sAfterWaive,
+        createRawArtifact(cid, capId as V5CapabilityId, role, kind as Artifact['kind']),
+        `t-waive-run-${cid}`,
+        false,
+        []
+      );
+      sAfterWaive = updatedState;
+      const art = (sAfterWaive.artifacts || []).find((a: any) => a.id === cid);
+      if (art) {
+        (art as any).trustLevel = 'gated_pass';
+        (art as any).passedGates = ['commit'];
+      }
     }
     sAfterWaive = commitGroundedEvidence(sAfterWaive, 'ev-waive', 't-waive-run-ev');
 

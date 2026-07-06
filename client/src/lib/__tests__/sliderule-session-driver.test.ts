@@ -17,11 +17,22 @@ import {
 } from "../sliderule-fullpath-fixtures";
 
 describe("driveReasoningSession (Session_Driver, task 4.1/4.2)", () => {
-  it("picker routes vague goal to gap.ask before risk (S11 scheduling)", () => {
+  it("picker routes vague goal through the readiness chain before risk (S11 scheduling)", () => {
     const s = createInitialSessionState("做一个系统", "sd-pick-s11");
     const picks = pickNextCapabilities(s, "做一个系统");
-    expect(picks[0]?.capabilityId).toBe("gap.ask");
+    // Evolved contract (V5.2/V5.3 audit, see sliderule-pick-heuristic.ts P0 S11 comment):
+    // "做一个系统" resolves to the complex role mode ("造东西" goals go through the
+    // multi-role panel), so brainstorm primers (critique.generate → synthesis.merge) are
+    // deliberately merged IN FRONT of the readiness picks instead of a pure gap.ask
+    // short-circuit. The S11 core guarantees remain: the readiness chain (gap.ask +
+    // question.expand) is scheduled ahead of any convergence, and report.write is never
+    // picked on a vague cold start.
+    expect(picks[0]?.capabilityId).toBe("critique.generate");
+    expect(picks.some((p) => p.capabilityId === "gap.ask")).toBe(true);
     expect(picks.some((p) => p.capabilityId === "question.expand")).toBe(true);
+    const gapIdx = picks.findIndex((p) => p.capabilityId === "gap.ask");
+    const riskIdx = picks.findIndex((p) => p.capabilityId === "risk.analyze");
+    if (riskIdx >= 0) expect(gapIdx).toBeLessThan(riskIdx); // gap.ask still precedes risk
     expect(picks.some((p) => p.capabilityId === "report.write")).toBe(false);
   });
 

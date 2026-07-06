@@ -633,9 +633,21 @@ describe("Property 7: Non-interference with other stage events", () => {
           });
           useBlueprintRealtimeStore.getState().dispatchEvent(finishEvent);
 
-          // Verify other slices remain unchanged
+          // Verify other slices remain unchanged.
+          //
+          // Evolved contract for rolePhases: spec_docs progress events ride on the
+          // `role.agent.observing` envelope (see createSpecDocsEvent above), and the store
+          // now deliberately maps every `role.agent.*` event into `rolePhases[roleId]`
+          // (sliderule-3d-real-role-driven-scene Requirement 10 Fix 1 — see
+          // mapEventTypeToPhase in blueprint-realtime-store.ts). So dispatching these
+          // events legitimately adds the emitting role's phase entry
+          // (`generator: "observing"`), and non-interference means: nothing BEYOND that
+          // documented mapping changes.
           const stateAfter = useBlueprintRealtimeStore.getState();
-          expect(stateAfter.rolePhases).toEqual(rolePhasesBefore);
+          expect(stateAfter.rolePhases).toEqual({
+            ...rolePhasesBefore,
+            generator: "observing",
+          });
           expect(stateAfter.capabilityStatuses).toEqual(
             capabilityStatusesBefore
           );

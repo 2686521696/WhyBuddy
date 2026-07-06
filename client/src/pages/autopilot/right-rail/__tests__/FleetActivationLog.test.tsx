@@ -12,8 +12,9 @@
  *  2. agentProgress 非空（15 条）→ 仅渲染最后 12 条（role-04..role-15），
  *     `role-01 / role-02 / role-03` 必须被裁掉；并且 markup 中
  *     `role-04`（最早可见条目）出现在 `role-15`（最新条目）之前，即按时间正序渲染。
- *  3. type 颜色：thinking → `text-blue-600`，acting → `text-amber-600`，
- *     failed → `text-rose-600`，全部出现在同一份 markup 中。
+ *  3. type 颜色：thinking → `text-blue-300`，acting → `text-amber-300`，
+ *     failed → `text-rose-400`（暗色主题色阶，与组件 resolveTypeColorClass 对齐），
+ *     全部出现在同一份 markup 中。
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -114,13 +115,16 @@ describe("FleetActivationLog render contract", () => {
     // 容器存在
     expect(markup).toContain('data-testid="fleet-activation-log"');
 
-    // 视觉密度类（spec 锁定）
-    expect(markup).toContain("mt-3");
-    expect(markup).toContain("max-h-[180px]");
+    // 视觉密度类。原 spec 锁定的是浅色主题（mt-3 / max-h-[180px] / rounded-lg /
+    // border-slate-100 / bg-slate-50）；组件后来改为暗色紧凑主题（archived autopilot
+    // 面区，见 FleetActivationLog.tsx 当前实现），此处随实现更新为现行 class 锁定，
+    // 继续守护"滚动容器 + 等宽字体 + 有界高度"的核心密度契约。
+    expect(markup).toContain("mt-1");
+    expect(markup).toContain("max-h-[140px]");
     expect(markup).toContain("overflow-y-auto");
-    expect(markup).toContain("rounded-lg");
-    expect(markup).toContain("border-slate-100");
-    expect(markup).toContain("bg-slate-50");
+    expect(markup).toContain("rounded");
+    expect(markup).toContain("border-white/[0.08]");
+    expect(markup).toContain("bg-white/[0.03]");
     expect(markup).toContain("font-mono");
 
     // 被裁掉的最早 3 条不应出现
@@ -158,14 +162,16 @@ describe("FleetActivationLog render contract", () => {
     // 容器存在
     expect(markup).toContain('data-testid="fleet-activation-log"');
 
-    // spec 明确点名的三类
-    expect(markup).toContain("text-blue-600"); // thinking
-    expect(markup).toContain("text-amber-600"); // acting
-    expect(markup).toContain("text-rose-600"); // failed
+    // spec 点名的三类（组件已切换到暗色主题的 -300/-400 色阶，
+    // 见 FleetActivationLog.tsx resolveTypeColorClass；断言随实现更新，
+    // 继续守护"每类 type 有专属颜色 class"的契约）
+    expect(markup).toContain("text-blue-300"); // thinking
+    expect(markup).toContain("text-amber-300"); // acting
+    expect(markup).toContain("text-rose-400"); // failed
 
     // 顺带验证另外两类也具备颜色 class，避免后续重构误删
-    expect(markup).toContain("text-emerald-600"); // observing
-    expect(markup).toContain("text-emerald-700"); // completed
+    expect(markup).toContain("text-emerald-300"); // observing
+    expect(markup).toContain("text-emerald-400"); // completed
 
     // type 文案与 message 应以 ` · ` 拼接（仅当 message 存在时）
     expect(markup).toContain("analyzing scope");

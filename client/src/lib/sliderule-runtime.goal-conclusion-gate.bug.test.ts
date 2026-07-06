@@ -120,7 +120,11 @@ describe('SlideRule GCOV-pass writes goal.status when G-GROUND satisfied (Proper
     let s = createInitialSessionState(goalText, 'bug-gcov-pass-combo');
 
     // Seed trusted required pre-reqs + grounded evidence (G-GROUND) + synthesis upstream.
+    // The complex CoverageContract now also requires critique.generate (V5.2/V5.3 面板质疑纳入合约,
+    // see shared/blueprint/sliderule-coverage-gate.ts); without a trusted critique run the turn
+    // can no longer be in the GCOV-pass domain this test targets.
     s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', 'combo-r0');
+    s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', 'combo-r0c');
     s = commitGroundedEvidence(s, 'ev-1', 'combo-r1');
     s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'combo-r2');
 
@@ -141,8 +145,13 @@ describe('SlideRule GCOV-pass writes goal.status when G-GROUND satisfied (Proper
     const goalText = '权限系统风险分析后的最终可行性报告';
     let s = createInitialSessionState(goalText, 'bug-gcov-pass-waived');
 
-    // Trusted required pre-reqs + grounded evidence present.
+    // Trusted required pre-reqs + grounded evidence present. NOTE: the gate's missing-capability
+    // check is independent of gap waivers, so EVERY required pre-req of the evolved complex
+    // contract (risk.analyze + critique.generate + synthesis.merge, V5.2/V5.3 面板质疑纳入合约)
+    // needs a trusted run for the waived GCOV-pass mechanism to reach passed === true.
     s = commitTrusted(s, 'risk-2', 'risk.analyze', '安全', 'risk', 'wv-r0');
+    s = commitTrusted(s, 'crit-2', 'critique.generate', '挑刺', 'risk', 'wv-r0c');
+    s = commitTrusted(s, 'synth-2', 'synthesis.merge', '综合', 'synthesis', 'wv-r0s');
     s = commitGroundedEvidence(s, 'ev-2', 'wv-r1');
 
     // Pre-author + freeze the contract so orchestrate does not re-author/auto-resolve,
@@ -213,7 +222,10 @@ describe('SlideRule GCOV-pass writes goal.status when G-GROUND satisfied (Proper
         let s = createInitialSessionState(goalText, `bug-gcov-prop-${seed}`);
 
         // Build a GCOV-pass candidate: trusted required pre-reqs + grounded evidence.
+        // Evolved contract (V5.2/V5.3): critique.generate is required for complex goals, so
+        // it must be trusted-committed for any input to land in the GCOV-pass domain.
         s = commitTrusted(s, `risk-${seed}`, 'risk.analyze', '安全', 'risk', `prop-${seed}-r0`);
+        s = commitTrusted(s, `crit-${seed}`, 'critique.generate', '挑刺', 'risk', `prop-${seed}-r0c`);
         s = commitGroundedEvidence(s, `ev-${seed}`, `prop-${seed}-r1`);
         if (withSynthesis) {
           s = commitTrusted(s, `synth-${seed}`, 'synthesis.merge', '综合', 'synthesis', `prop-${seed}-r2`);

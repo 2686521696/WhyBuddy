@@ -133,7 +133,12 @@ describe('deriveGoalConclusion (pure GCOV conclusion mapping, Task 3.1)', () => 
     let s = createInitialSessionState(goalText, 'unit-needs-refine-trusted');
 
     // Trusted required pre-reqs present (incl. grounded evidence for G-GROUND contract).
+    // The evolved complex contract (V5.2/V5.3 面板质疑纳入合约) also requires critique.generate
+    // and synthesis.merge; ALL pre-reqs must be trusted here or deriveGoalConclusion classifies
+    // the state as unsatisfiable ("not_recommended") instead of the fallthrough this test targets.
     s = commitTrusted(s, 'risk-ok', 'risk.analyze', '安全', 'risk', 'u-rr0');
+    s = commitTrusted(s, 'crit-ok', 'critique.generate', '挑刺', 'risk', 'u-rr0c');
+    s = commitTrusted(s, 'synth-ok', 'synthesis.merge', '综合', 'synthesis', 'u-rr0s');
     s = commitTrusted(s, 'ev-ok', 'evidence.search', '接地', 'evidence', 'u-rr1');
     const ev = (s.artifacts || []).find((a) => a.id === 'ev-ok');
     if (ev) {

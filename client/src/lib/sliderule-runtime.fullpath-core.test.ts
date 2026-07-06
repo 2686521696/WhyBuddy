@@ -169,6 +169,10 @@ describe('S2 · standard convergence to clear (soul loop, first lap)', () => {
   it('a converge turn over trusted upstreams passes the coverage gate and writes goal.status = clear', () => {
     let s = createInitialSessionState(COMPLEX_GOAL_TEXT, 'S2-clear');
     s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', 'S2-r0');
+    // The complex CoverageContract now includes critique.generate (V5.2/V5.3 面板质疑纳入合约,
+    // see shared/blueprint/sliderule-coverage-gate.ts + fixture change in 7f88d83); without a
+    // trusted critique run the converge turn can no longer reach a GCOV-pass.
+    s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', 'S2-r0c');
     s = commitGroundedEvidence(s, 'ev-ground-1', 'S2-r0b');
     s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'S2-r1');
 
@@ -305,6 +309,9 @@ describe('S3 · GCOV hard-block + forced scheduling', () => {
     let s = seedMissingRequiredCapability('S3-recover');
     // Supply a trusted risk.analyze run (resolves the required pre-req + evidence gap).
     s = commitTrusted(s, 'trusted-risk', 'risk.analyze', '安全', 'risk', 'S3-rec-r0');
+    // Evolved contract (V5.2/V5.3): complex contracts also require a trusted critique.generate
+    // before GCOV can pass (same treatment as buildClearStateWithTrustedReport in the fixtures).
+    s = commitTrusted(s, 'trusted-crit', 'critique.generate', '挑刺', 'risk', 'S3-rec-r0c');
     s = commitGroundedEvidence(s, 'ev-ground-1', 'S3-rec-r0b');
     s = commitTrusted(s, 'trusted-synth', 'synthesis.merge', '综合', 'synthesis', 'S3-rec-r1', ['trusted-risk']);
 

@@ -146,6 +146,10 @@ function buildClearStateWithTrustedReport(
   let s = createInitialSessionState(goalText, sessionId);
 
   s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', `${sessionId}-r0`);
+  // The complex CoverageContract now includes critique.generate (V5.2/V5.3 面板质疑纳入合约);
+  // without a trusted critique run the converge turn can no longer reach a GCOV-pass
+  // (same treatment as buildClearStateWithTrustedReport in sliderule-fullpath-fixtures.ts).
+  s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', `${sessionId}-r0c`);
   s = commitGroundedEvidence(s, 'ev-ground-1', `${sessionId}-r0b`);
   s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', `${sessionId}-r1`);
 
@@ -444,6 +448,8 @@ describe('PRESERVATION (shared): GCOV-pass write, single-writer, DERIVE P3 invar
   it('GCOV-pass write path is unchanged: a converge turn over trusted upstreams writes "clear" (Req 3.5)', () => {
     let s = createInitialSessionState('分析权限系统的风险并给出最终报告', 'pres-gcov-pass');
     s = commitTrusted(s, 'risk-1', 'risk.analyze', '安全', 'risk', 'gp-r0');
+    // Evolved contract (V5.2/V5.3): critique.generate is required for complex goals.
+    s = commitTrusted(s, 'crit-1', 'critique.generate', '挑刺', 'risk', 'gp-r0c');
     s = commitGroundedEvidence(s, 'ev-ground-1', 'gp-r0b');
     s = commitTrusted(s, 'synth-1', 'synthesis.merge', '综合', 'synthesis', 'gp-r1');
 

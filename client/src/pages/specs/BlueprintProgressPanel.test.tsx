@@ -1340,7 +1340,11 @@ describe("BlueprintProgressPanel", () => {
     expect(markup).toContain("跟踪审计证据。");
     expect(markup).toContain('data-testid="effect-preview-workbench"');
     expect(markup).toContain("效果预演");
-    expect(markup).toContain("1 份已接受文档");
+    // Evolved copy: the effect-preview workbench badge now counts "可用文档" instead of
+    // "已接受文档" (see EffectPreviewPanel.tsx previewSourceDocuments badge; the sibling
+    // production-snapshot test EffectPreviewPanel.production-snapshot.test.tsx explicitly
+    // asserts the old "份已接受文档" phrase is GONE from the markup).
+    expect(markup).toContain("1 份可用文档");
     expect(markup).toContain("生成预演");
     expect(markup).toContain('data-testid="effect-preview-list"');
     expect(markup).toContain("预演详情");
