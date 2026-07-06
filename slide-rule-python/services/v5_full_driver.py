@@ -12,7 +12,11 @@ from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_session import pick_next_capabilities, commit_artifact, append_reasoning_event, append_replay_event
 from .v5_capability_executor import execute_v5_capability
 from .persistence import persist_state
-from .slide_rule_coverage import evaluate_coverage_gate, reconcile_coverage
+from .slide_rule_coverage import (
+    evaluate_coverage_gate,
+    reconcile_coverage,
+    resolve_coverage_gaps_from_state,
+)
 from .v5_publish_closure_response import derive_publish_closure_response
 from .v5_skill_runtime_graph import derive_skill_runtime_graph_response
 
@@ -359,7 +363,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 state.awaitReason = "no_progress"
                 state.awaitDetail = f"no_progress streak {no_progress_streak} (no art/gap advance)"
                 break
-            # Check GCOV
+            # Check GCOV (resolve first: committed trusted caps close their gaps)
+            state = resolve_coverage_gaps_from_state(state)
             gate = evaluate_coverage_gate(state)
             if gate.get("passed"):
                 state.goal["status"] = "clear"
@@ -368,6 +373,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             persist_state(state)
         state = _ensure_runtime_closure_evidence(state, user_instruction, loop)
         # Final phase: done if clear/coverage, else awaiting (converged or budget)
+        state = resolve_coverage_gaps_from_state(state)
         gate = evaluate_coverage_gate(state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
             state.runtimePhase = "done"
@@ -659,6 +665,7 @@ async def drive_full_v5_session_stream(
                 state.awaitDetail = f"no_progress streak {no_progress_streak}"
                 break
 
+            state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
             gate = await asyncio.to_thread(evaluate_coverage_gate, state)
             if gate.get("passed"):
                 state.goal["status"] = "clear"
@@ -668,6 +675,7 @@ async def drive_full_v5_session_stream(
 
         state = await asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
 
+        state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
         gate = await asyncio.to_thread(evaluate_coverage_gate, state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
             state.runtimePhase = "done"

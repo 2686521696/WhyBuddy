@@ -234,6 +234,8 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str, in
             state = save_session(state)
             final = save_session(state)
             return final
+        from .slide_rule_coverage import resolve_coverage_gaps_from_state
+        state = resolve_coverage_gaps_from_state(state)
         gate = evaluate_coverage_gate(state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
             state.runtimePhase = "done"
@@ -687,6 +689,32 @@ def pick_next_capabilities(state: V5SessionState, user_text: str) -> list[dict]:
         primers = [p for p in _pick_brainstorm_primers(state) if not any(x["capabilityId"] == p["capabilityId"] for x in picks)]
         if primers:
             picks = primers + picks
+
+    # contract-driven fill: 合约要求但尚未 trusted-committed 的能力必须被选中，
+    # 否则启发式规则漏选（如 critique.generate）会导致 max_repeat_guard 死锁（金链路修复）。
+    contract = getattr(state, "coverageContract", None)
+    contract_reqs = (
+        contract.get("requiredCapabilities") if isinstance(contract, dict)
+        else getattr(contract, "requiredCapabilities", None)
+    ) or []
+    if contract_reqs:
+        from .slide_rule_coverage import has_trusted_committed_for_cap
+        contract_roles = {
+            "critique.generate": "挑刺",
+            "risk.analyze": "安全",
+            "synthesis.merge": "综合",
+            "evidence.search": "接地",
+            "report.write": "综合",
+        }
+        for cap in contract_reqs:
+            if cap == "report.write":
+                continue  # report 收尾由 has_synth/has_report 规则驱动
+            if cap == "evidence.search" and should_skip_ev:
+                continue
+            if has_trusted_committed_for_cap(state, cap):
+                continue
+            if not any(p["capabilityId"] == cap for p in picks):
+                picks.append({"capabilityId": cap, "roleId": contract_roles.get(cap, "agent")})
 
     # multi agent game
     goal_game = ((_goal_text(state) or "") + " " + (user_text or "")).lower()

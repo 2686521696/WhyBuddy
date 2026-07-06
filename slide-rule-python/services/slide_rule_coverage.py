@@ -385,6 +385,68 @@ def evaluate_coverage_gate(
     }
 
 
+def resolve_coverage_gaps_from_state(state: V5SessionState) -> V5SessionState:
+    """Port of TS resolveCoverageGapsFromState (client/src/lib/sliderule-runtime.ts).
+
+    能力提交且通过信任门后，把对应 missing_capability 缺口置为 resolved；
+    接地证据数达到 minEvidencePerRequirement 后关闭 missing_evidence 缺口。
+    没有这一步，覆盖门的 open_blocking 永远非零，推演不可能收敛（金链路修复）。
+    """
+    contract = _get_attr(state, "coverageContract")
+    if not contract:
+        return state
+    if not isinstance(contract, dict):
+        contract = contract.model_dump() if hasattr(contract, "model_dump") else dict(contract)
+    gaps = _get_list(state, "coverageGaps")
+    if not gaps:
+        return state
+    now = datetime.now().isoformat()
+    min_evidence = contract.get("minEvidencePerRequirement", 1) or 1
+    grounded_count: Optional[int] = None
+
+    for g in gaps:
+        if _get_attr(g, "status", "open") != "open":
+            continue
+        kind = _get_attr(g, "kind")
+        req_cap = _get_attr(g, "requiredCapabilityId")
+        if kind == "missing_capability" and req_cap:
+            if has_trusted_committed_for_cap(state, req_cap):
+                _set_gap(g, status="resolved", updatedAt=now)
+                resolved_art = _last_trusted_artifact_for_cap(state, req_cap)
+                if resolved_art:
+                    _set_gap(g, resolvedByArtifactId=resolved_art)
+        elif kind == "missing_evidence":
+            if grounded_count is None:
+                grounded_count = count_grounded_trusted_artifacts(state)
+            if grounded_count >= min_evidence:
+                _set_gap(g, status="resolved", updatedAt=now)
+
+    state.coverageGaps = gaps
+    return state
+
+
+def _set_gap(gap: Any, **fields: Any) -> None:
+    for key, value in fields.items():
+        if isinstance(gap, dict):
+            gap[key] = value
+        else:
+            try:
+                setattr(gap, key, value)
+            except Exception:
+                pass
+
+
+def _last_trusted_artifact_for_cap(state: Any, cap_id: str) -> Optional[str]:
+    last_id: Optional[str] = None
+    stales = set(_get_list(state, "staleArtifactIds"))
+    for art in _get_list(state, "artifacts"):
+        prod = _get_attr(art, "producedBy")
+        cap = prod.get("capabilityId") if isinstance(prod, dict) else _get_attr(prod, "capabilityId")
+        if cap == cap_id and _is_healthy_artifact(art, stales):
+            last_id = _get_attr(art, "id")
+    return last_id
+
+
 def reconcile_coverage(state: V5SessionState) -> V5SessionState:
     """Port of TS reconcileCoverageContract (upgrade guard + gap status carry)."""
     goal_text = _get_attr(_get_attr(state, "goal", {}), "text", "") or ""
