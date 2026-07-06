@@ -32,6 +32,7 @@ from config.settings import settings
 from routes.audit import router as audit_router
 from routes.auth import router as auth_router
 from routes.blueprint_jobs import router as blueprint_jobs_router
+from routes.tasks import router as tasks_router
 from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
@@ -98,6 +99,11 @@ app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(permissions_router, prefix="/api/permissions")
 app.include_router(audit_router, prefix="/api/audit")
+
+# Task (mission) store surface: first Python slice of Node routes/tasks.ts
+# (CRUD + events + cancel on services/task_store.py; executor dispatch,
+# projection/session views, decisions, operator-actions, artifacts stay Node-owned).
+app.include_router(tasks_router, prefix="/api/tasks")
 
 # AgentLoop control plane (Python owned, bridge mode for workers)
 app.include_router(agent_loop_router, prefix="/api/agent-loop")

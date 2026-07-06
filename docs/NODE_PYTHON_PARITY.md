@@ -13,7 +13,7 @@
 ### 三个最大缺口
 1. ~~真实向量 RAG~~（2026-07 已落地 `services/vector_rag.py`：embedding + 本地余弦索引，凭据缺失时诚实回退关键词；Qdrant 后端可作后续增强）。
 2. **跨进程实测闭环**：Node→Python 真实委托 smoke（`sliderule.live-delegation.test.ts`）默认 skip；`structure.decompose` live 尚无干净通过记录；未映射能力仍落 generic fallback。
-3. **HTTP 面缺口**（2026-07 部分收窄）：auth / permissions / audit 已挂载薄路由（Node 侧接代理为下一步）；tasks / telemetry / web-aigc 适配器在 Python 仍只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
+3. **HTTP 面缺口**（2026-07 部分收窄）：auth / permissions / audit 已挂载薄路由（Node 侧接代理为下一步）；tasks 已挂载 `/api/tasks` 存储+CRUD 核心切片（见第五节，执行面仍在 Node）；telemetry / web-aigc 适配器在 Python 仍只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
 
 ### 建议迁移顺序（先解锁金链路：一句话 → spec → Skill 联动 → 预览/导出）
 1. **补齐 V5 execute 实测**：live delegation smoke 常态化（已提供入口 `pnpm run smoke:live-delegation`，需先启动 :9700；下一步进 CI），structure.decompose / report.write 干净通过；未映射 cap 收敛进 `execute_mapped_capability`。
@@ -61,7 +61,7 @@
 |---|---|---|---|---|
 | a2a.ts（stream/cancel/registry/sessions/chat/report/analytics） | ✅ PYTHON_FIRST_COMPAT 薄代理（task 47–51） | services/a2a_runtime.py 等 4 个 | 迁移到Python（已完成） | /invoke 保留 Node 本地执行器兼容壳 |
 | agents.ts / guest-agents.ts | ❌ Node | 无 | 保留Node薄代理 | 非金链路，低频管理面 |
-| planets.ts / tasks.ts / projects.ts / workflows.ts | ❌ Node | task_* / mission_* / workflow_runtime services（无路由；2026-07 评估：task_* 均为决策/投影切片，需 Node 提供任务记录，无任务存储/执行引擎，**不足以承接 tasks.ts 的 CRUD+执行面**，故未随 auth/permissions/audit 一起挂载） | 迁移到Python（次优先） | index.ts 退役前置项（task 55 注释点名 main routes） |
+| planets.ts / tasks.ts / projects.ts / workflows.ts | ❌ Node（tasks.ts 执行面/视图面仍 Node） | tasks.ts **CRUD 核心已可承接**（2026-07）：`services/task_store.py`（MissionRecord 契约 JSON 持久化，`data/tasks.json`，`TASK_STORE_FILE` 可配，原子写+锁+坏记录隔离）+ `routes/tasks.py` **已挂载 /api/tasks**（X-Internal-Key）：POST `/`、GET `/`、GET `/:id`、GET `/:id/events`（对齐 Node 字段名：`ok/task/tasks/missionId/events/alreadyFinal/executorForwarded/lifecycle`）、POST `/:id/cancel`（幂等 alreadyFinal），另有 Python 侧 POST `/:id/status`、POST `/:id/events`（Node 无对应 HTTP 端点，对应 runtime mark*/log 内部方法）；lifecycle 封套用 task_lifecycle_runtime 就地投影并按 Node applyLifecycleRuntimeTaskEnvelope 语义应用。**未迁移**：executor 派发/取消转发（executorForwarded 恒 false）、projectId 属主校验（带 projectId 请求按 Node 未配置语义回 500）、GET `/:id/projection`、GET `/:id/session`、GET `/:id/decisions`、POST `/:id/decision`、POST `/:id/operator-actions`、GET `/:id/artifacts*`、workflow retry/autonomy；planets/projects/workflows 仍无路由 | 迁移到Python（次优先；下一步：executor 面或 Node 薄代理接 /api/tasks） | index.ts 退役前置项（task 55 注释点名 main routes）；测试：test_task_store.py + test_tasks_routes_http_surface.py（38 例） |
 | replay.ts / lineage.ts | ❌ Node | services/mission_event_replay.py（无路由） | 保留Node薄代理 | 观测型，后置 |
 | reputation.ts / analytics.ts | ❌ Node | 无 | 保留Node薄代理 | marketplace/声誉体系，产品线未定前不迁 |
 | export.ts / reports.ts | ❌ Node | 无 | 保留Node薄代理 | 跨框架工作流导出，与金链路导出不同物 |

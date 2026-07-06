@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Internal key for SlideRule delegation (from Node)
     SLIDE_RULE_INTERNAL_KEY: str = "dev-slide-rule-internal"
 
+    # Durable task (mission) store for the /api/tasks surface (routes/tasks.py).
+    # JSON array of [taskId, MissionRecord] entries; override via TASK_STORE_FILE env.
+    TASK_STORE_FILE: str = "data/tasks.json"
+
     # Node-bridge runtime for skill.invoke / mcp.call (strangler migration).
     # Python owns the runtime boundary; execution is bridged to Node's existing
     # /api/skills/:id/execute and /api/mcp/nodes/execute until native adapters land.
