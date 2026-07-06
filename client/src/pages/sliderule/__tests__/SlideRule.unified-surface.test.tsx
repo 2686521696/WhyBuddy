@@ -132,7 +132,8 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain("发一句业务目标，SlideRule 串起五系统");
     expect(html).toContain("做一个采购审批应用，含采购单、经理审批、财务确认和字段权限");
     expect(html).toContain("设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理");
-    expect(html).toContain("构建客户服务工单平台，含工单创建、分派、升级和 SLA 闭环");
+    // 第三条 chip 是新颖域（非内置演示域）——用户从 chips 就能体验真实 LLM 路径
+    expect(html).toContain("做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养");
     // single bottom composer, unchanged
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(1);
     // the old duplicate empty-state copy is gone

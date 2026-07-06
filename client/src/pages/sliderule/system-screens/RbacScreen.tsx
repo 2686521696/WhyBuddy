@@ -7,6 +7,7 @@
 
 import React, { useMemo } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import { EvidenceBadges } from "./EvidenceBadges";
 
 interface RbacScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -74,8 +75,7 @@ export function RbacScreen({
   }, [rawContent]);
 
   const evidence = publishClosure?.perSkillEvidence?.["rbac"];
-  const hasEvidence = evidence?.evidencePresent === true;
-  const isPlaceholder = !rawContent;
+  const isPlaceholder = !rawContent || !parseRolesFromContent(rawContent);
 
   return (
     <div
@@ -87,11 +87,9 @@ export function RbacScreen({
         <div className="h-2 w-2 rounded-full bg-orange-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">RBAC</span>
         <span className="text-xs text-stone-400">角色 → 权限 · 菜单 · 数据规则</span>
-        {hasEvidence && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-            evidence ✓
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadges evidence={evidence} />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -136,8 +134,8 @@ export function RbacScreen({
         </table>
 
         {isPlaceholder && (
-          <div className="mt-4 text-center text-[10px] text-stone-300">
-            推演完成后将显示真实权限矩阵
+          <div className="mt-4 text-center text-[10px] text-stone-400">
+            占位示意（非本话题数据）· 推演完成后将显示真实权限矩阵
           </div>
         )}
       </div>

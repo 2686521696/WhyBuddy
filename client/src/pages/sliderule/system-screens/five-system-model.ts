@@ -255,6 +255,33 @@ export function mergeFiveSystemModels(
 }
 
 // ---------------------------------------------------------------------------
+// Evidence source (honest path labeling)
+// ---------------------------------------------------------------------------
+
+export interface EvidenceSourceInfo {
+  kind: "llm" | "builtin";
+  label: string;
+}
+
+/**
+ * 证据来源识别：Python 侧 _build_per_skill_evidence 的产物 id 前缀是路径事实——
+ *   llm-linkage-*     → 真实 LLM 五系统生成（novel intent）
+ *   runtime-linkage-* → 内置演示域（采购/请假/工单/入职，确定性 fixture，不调 LLM）
+ * 识别不了时返回 null（不猜、不冒充）。
+ */
+export function evidenceSourceOf(
+  evidence:
+    | { artifactId?: string; evidenceRef?: string }
+    | null
+    | undefined
+): EvidenceSourceInfo | null {
+  const id = String(evidence?.artifactId || evidence?.evidenceRef || "");
+  if (id.startsWith("llm-linkage-")) return { kind: "llm", label: "LLM 生成" };
+  if (id.startsWith("runtime-linkage-")) return { kind: "builtin", label: "内置演示域" };
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Cross-reference resolution
 // ---------------------------------------------------------------------------
 
@@ -369,6 +396,29 @@ export function workflowModelToMermaid(
     if (!nodeIds.has(t.from) || !nodeIds.has(t.to)) continue; // dangling — gate should reject; skip honestly
     const cond = t.condition ? `|${mermaidLabel(t.condition)}|` : "";
     lines.push(`  ${mermaidId(t.from)} -->${cond} ${mermaidId(t.to)}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * datamodel.entities → mermaid erDiagram。刷新/重载路径的真实数据源
+ * （modelSection 持久化在 perSkillEvidence，SSE mermaid 已丢失时用它重建）。
+ * entities 为空返回 null（调用方降级，不伪造）。
+ */
+export function datamodelToMermaid(
+  datamodel: FiveSystemModel["datamodel"] | null | undefined
+): string | null {
+  const entities = datamodel?.entities ?? [];
+  if (entities.length === 0) return null;
+  const lines = ["erDiagram"];
+  for (const entity of entities) {
+    lines.push(`  ${mermaidId(entity.id)} {`);
+    for (const field of entity.fields ?? []) {
+      const type = mermaidId(String(field.type || "string")) || "string";
+      const name = mermaidId(field.id);
+      lines.push(`    ${type} ${name}${field.id === "id" ? " PK" : ""}`);
+    }
+    lines.push("  }");
   }
   return lines.join("\n");
 }

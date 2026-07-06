@@ -87,6 +87,27 @@ async function prepareVisibleResetSessionState(
   }
 }
 
+/** 已闭环会话：goal 已 clear / 相位 done / 发布闭环证据齐 6。 */
+function isClosedSessionState(state: V5SessionState): boolean {
+  if (state.goal?.status === "clear") return true;
+  if ((state as any).runtimePhase === "done") return true;
+  const pc: any = (state as any).publishClosure;
+  return !!pc && pc.blocked === false && Number(pc.evidencePresentCount ?? 0) >= 6;
+}
+
+/**
+ * 新应用意图启发式：动词（做/搭建/设计/构建/开发…）+ 载体名词（系统/应用/平台…）。
+ * 用于"已闭环话题里输入新想法"的自动开新话题——intake 的 new_goal 只认空会话，
+ * 否则新意图落进旧话题，gate 已通过会秒回 closed 6/6（零推演，用户误读为造假）。
+ */
+export function looksLikeNewAppIntent(text: string): boolean {
+  const t = (text || "").trim();
+  if (t.length < 6) return false;
+  const verb = /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
+  const noun = /(系统|应用|平台|工具|app|小程序|管理端|门户|网站)/i;
+  return verb.test(t) && noun.test(t);
+}
+
 function hasReadyByokPool(): boolean {
   const pool = loadByokPool();
   return !!(pool && validateByokPool(pool).ok && pool.entries.some((e) => e.enabled && e.apiKey));
@@ -377,10 +398,32 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         )
       );
 
-      const goalStatusBefore = loadedState.goal?.status;
-      const staleArtifactIdsBefore = [...(loadedState.staleArtifactIds || [])];
+      // 已闭环话题 + 新应用意图（非干预轮）→ 自动开新话题。
+      // intake 的 new_goal 只认空会话；若新意图落进已闭环的旧话题，服务端权威
+      // 会话 gate 已通过 → 秒回 closed 6/6（零推演、旧证据），用户必然误读。
+      // 语义与右上角"重置会话"一致（同 sessionId、清空服务端会话），但保留
+      // 本地聊天流，并用可见 chip 明示切换。
+      let workingState = loadedState;
+      let autoNewTopic = false;
+      if (
+        !IS_GITHUB_PAGES &&
+        !intervention &&
+        isClosedSessionState(loadedState) &&
+        looksLikeNewAppIntent(userText) &&
+        userText.trim() !== (loadedState.goal?.text || "").trim()
+      ) {
+        workingState = await prepareVisibleResetSessionState(
+          loadedState.sessionId || sessionState.sessionId || sessionId,
+          SlideRuleRuntime.deleteSlideRuleSession,
+          persistSession
+        );
+        autoNewTopic = true;
+      }
 
-      const { preparedState } = SlideRuleRuntime.intakeMessage(loadedState, {
+      const goalStatusBefore = workingState.goal?.status;
+      const staleArtifactIdsBefore = [...(workingState.staleArtifactIds || [])];
+
+      const { preparedState } = SlideRuleRuntime.intakeMessage(workingState, {
         turnId,
         userText: userText.trim(),
         intervention,
@@ -437,6 +480,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       });
 
       // Immediate reaction so user sees something right after pressing send (before any network)
+      if (autoNewTopic) {
+        appendStep({
+          id: `${turnId}-new-topic`,
+          kind: "chip",
+          capabilityId: "intent.parse" as any,
+          roleId: "system",
+          label: "上一话题已闭环 · 检测到新意图，已自动开启新话题",
+          realLlm: false,
+          loopTurnId: turnId,
+          progressType: "thinking",
+        });
+      }
       appendStep({
         id: `${turnId}-intake`,
         kind: "chip",

@@ -13,6 +13,7 @@
 import React, { useMemo } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import { EvidenceBadges } from "./EvidenceBadges";
 import {
   type FiveSystemModel,
   type RefResolution,
@@ -111,7 +112,6 @@ export function AigcScreen({
   );
 
   const evidence = publishClosure?.perSkillEvidence?.["aigc"];
-  const hasEvidence = evidence?.evidencePresent === true;
 
   return (
     <div
@@ -125,11 +125,9 @@ export function AigcScreen({
         <span className="text-xs text-stone-400">
           {hasModel ? `${capabilities.length} 项 AI 能力 · 字段绑定` : "Prompt 模板 · 触发条件"}
         </span>
-        {hasEvidence && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-            evidence ✓
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadges evidence={evidence} />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -234,8 +232,8 @@ export function AigcScreen({
               ))}
             </div>
 
-            <div className="mt-4 text-center text-[10px] text-stone-300">
-              推演完成后将显示真实 AIGC 功能设计
+            <div className="mt-4 text-center text-[10px] text-stone-400">
+              占位示意（非本话题数据）· 推演完成后将显示真实 AIGC 功能设计
             </div>
           </>
         )}

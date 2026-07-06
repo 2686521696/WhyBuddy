@@ -15,6 +15,7 @@ import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
   type FiveSystemModel,
   type RefResolution,
+  evidenceSourceOf,
   resolveEntityRef,
   resolvePageRef,
   resolveRoleRef,
@@ -90,6 +91,15 @@ export function AppBundleScreen({
     !!bindings &&
     (bindings.pages.length > 0 || bindings.roles.length > 0 || bindings.entities.length > 0);
 
+  // 看板级来源徽章：取首个可识别来源的证据条目（同一话题六证据同路径产出）。
+  const boardSource = useMemo(() => {
+    for (const key of Object.keys(perSkill) as SkillKey[]) {
+      const source = evidenceSourceOf(perSkill[key]);
+      if (source) return source;
+    }
+    return null;
+  }, [perSkill]);
+
   return (
     <div
       className={`flex h-full w-full flex-col bg-white ${className}`}
@@ -102,6 +112,23 @@ export function AppBundleScreen({
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
         <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
+          {boardSource && (
+            <span
+              data-testid={`evidence-source-${boardSource.kind}`}
+              className={
+                boardSource.kind === "llm"
+                  ? "rounded-full bg-[#F8E8E0] px-2 py-0.5 text-[10px] font-medium text-[#C4633F]"
+                  : "rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+              }
+              title={
+                boardSource.kind === "llm"
+                  ? "本话题为新颖意图，五系统模型由真实 LLM 生成并通过结构闸"
+                  : "本话题命中内置演示域（确定性样板，秒出、不调 LLM）"
+              }
+            >
+              {boardSource.label}
+            </span>
+          )}
           <span
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
               allDone

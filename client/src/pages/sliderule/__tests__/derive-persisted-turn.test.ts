@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
 import { deriveLatestTurnFromState, mergePublishClosureForPersistedTurn } from "../derive-persisted-turn";
-import { __sessionEvidenceTestHelpers } from "../useSlideRuleSession";
+import { __sessionEvidenceTestHelpers, looksLikeNewAppIntent } from "../useSlideRuleSession";
 
 /**
  * 修复:刷新后 uiTurns 为空 → 右上角架构执行记录消失。
@@ -199,5 +199,27 @@ describe("persisted turn publishClosure merge order (120)", () => {
 
     expect("publishClosure" in merged).toBe(false);
     expect(merged.publishClosure).toBeUndefined();
+  });
+});
+
+/**
+ * 已闭环话题里输入新应用意图 → 自动开新话题的启发式。
+ * 误判代价不对称：漏判只是用户需手动重置（现状）；错判会清掉旧话题会话，
+ * 所以动词+载体名词都命中才算新意图。
+ */
+describe("looksLikeNewAppIntent (自动新话题启发式)", () => {
+  it("识别内置 chips 与常见新应用表述", () => {
+    expect(looksLikeNewAppIntent("做一个采购审批应用，含采购单、经理审批、财务确认和字段权限")).toBe(true);
+    expect(looksLikeNewAppIntent("设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理")).toBe(true);
+    expect(looksLikeNewAppIntent("做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养")).toBe(true);
+    expect(looksLikeNewAppIntent("帮我做个宠物医院预约平台")).toBe(true);
+  });
+
+  it("不误伤追问/交付/挑战类输入（保持既有 refine 语义）", () => {
+    expect(looksLikeNewAppIntent("打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包")).toBe(false);
+    expect(looksLikeNewAppIntent("把审批改成两级")).toBe(false);
+    expect(looksLikeNewAppIntent("这个结论的依据不够充分，请重新推演。")).toBe(false);
+    expect(looksLikeNewAppIntent("好的")).toBe(false);
+    expect(looksLikeNewAppIntent("")).toBe(false);
   });
 });

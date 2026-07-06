@@ -16,6 +16,8 @@ import { WorkflowScreen } from "../system-screens/WorkflowScreen";
 import { AigcScreen } from "../system-screens/AigcScreen";
 import { AppBundleScreen } from "../system-screens/AppBundleScreen";
 import { ActiveSystemScreen } from "../system-screens/ActiveSystemScreen";
+import { DataModelScreen } from "../system-screens/DataModelScreen";
+import { PageScreen } from "../system-screens/PageScreen";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
@@ -23,6 +25,8 @@ import {
   mergeFiveSystemModels,
   workflowModelToMermaid,
   crossSkillEdgesToMermaid,
+  datamodelToMermaid,
+  evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
   type FiveSystemModel,
@@ -503,5 +507,119 @@ describe("ActiveSystemScreen 派发", () => {
       <ActiveSystemScreen activeSkillId="aigc" publishClosure={CLOSURE_CLOSED} />
     );
     expect(aigcHtml).not.toContain('data-testid="aigc-capabilities"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 诚实路径标注 — 来源徽章（LLM 生成 / 内置演示域）+ 占位明示 + datamodel 重建
+// ---------------------------------------------------------------------------
+
+const CLOSURE_BUILTIN: PublishClosureSummary = {
+  ...CLOSURE_CLOSED,
+  perSkillEvidence: {
+    datamodel: { evidencePresent: true, artifactId: "runtime-linkage-datamodel" },
+    rbac: { evidencePresent: true, artifactId: "runtime-linkage-rbac" },
+    workflow: { evidencePresent: true, artifactId: "runtime-linkage-workflow" },
+    page: { evidencePresent: true, artifactId: "runtime-linkage-page" },
+    aigc: { evidencePresent: true, artifactId: "runtime-linkage-aigc" },
+    appbundle: { evidencePresent: true, artifactId: "runtime-linkage-appbundle" },
+  },
+};
+
+describe("诚实路径标注（来源徽章 + 占位明示）", () => {
+  it("evidenceSourceOf：artifactId 前缀 → 来源；识别不了返回 null", () => {
+    expect(evidenceSourceOf({ artifactId: "llm-linkage-page" })).toEqual({
+      kind: "llm",
+      label: "LLM 生成",
+    });
+    expect(evidenceSourceOf({ artifactId: "runtime-linkage-page" })).toEqual({
+      kind: "builtin",
+      label: "内置演示域",
+    });
+    expect(evidenceSourceOf({ evidenceRef: "llm-linkage-rbac" })?.kind).toBe("llm");
+    expect(evidenceSourceOf({ artifactId: "something-else" })).toBeNull();
+    expect(evidenceSourceOf(null)).toBeNull();
+  });
+
+  it("LLM 闭环：各系统屏头部出现「LLM 生成」珊瑚徽章", () => {
+    for (const skill of ["workflow", "rbac", "page", "aigc", "dataModel"] as const) {
+      const html = renderToStaticMarkup(
+        <ActiveSystemScreen activeSkillId={skill} publishClosure={CLOSURE_CLOSED} />
+      );
+      expect(html).toContain('data-testid="evidence-source-llm"');
+      expect(html).toContain("LLM 生成");
+      expect(html).toContain("evidence ✓");
+    }
+  });
+
+  it("内置演示域闭环：各系统屏 + AppBundle 看板出现「内置演示域」琥珀徽章", () => {
+    const workflowHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={CLOSURE_BUILTIN} />
+    );
+    expect(workflowHtml).toContain('data-testid="evidence-source-builtin"');
+    expect(workflowHtml).toContain("内置演示域");
+    const bundleHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId={null} publishClosure={CLOSURE_BUILTIN} />
+    );
+    expect(bundleHtml).toContain('data-testid="evidence-source-builtin"');
+  });
+
+  it("无证据时不渲染任何徽章（不猜、不冒充）", () => {
+    const html = renderToStaticMarkup(<ActiveSystemScreen activeSkillId="workflow" />);
+    expect(html).not.toContain("evidence ✓");
+    expect(html).not.toContain("evidence-source-");
+  });
+
+  it("datamodelToMermaid：实体字段 → erDiagram；空实体 fail-closed 返回 null", () => {
+    const diagram = datamodelToMermaid(MODEL.datamodel);
+    expect(diagram).not.toBeNull();
+    expect(diagram).toContain("erDiagram");
+    expect(diagram).toContain("course {");
+    expect(diagram).toContain("string title");
+    expect(datamodelToMermaid({ entities: [] })).toBeNull();
+    expect(datamodelToMermaid(undefined)).toBeNull();
+  });
+
+  // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，
+  // 否则其他隐藏屏的占位文案会串进同一份 HTML。
+  it("DataModel 屏 reload 路径：模型实体重建真实 ER，不再显示采购占位", () => {
+    const html = renderToStaticMarkup(
+      <DataModelScreen
+        publishClosure={CLOSURE_CLOSED}
+        model={{ datamodel: MODEL.datamodel }}
+      />
+    );
+    expect(html).not.toContain("占位示意");
+    expect(html).not.toContain("PurchaseOrder");
+  });
+
+  it("DataModel/Page 屏占位态明示「占位示意（非本话题数据）」", () => {
+    const dmHtml = renderToStaticMarkup(<DataModelScreen />);
+    expect(dmHtml).toContain("占位示意（非本话题数据）");
+    const pageHtml = renderToStaticMarkup(<PageScreen />);
+    expect(pageHtml).toContain("占位示意（非本话题数据）");
+  });
+
+  it("Page 屏模型路径：pages[].fieldBindings 交叉解析渲染，未解析绑定标红", () => {
+    const modelWithBrokenBinding: FiveSystemModel = {
+      ...MODEL,
+      page: {
+        pages: [
+          {
+            id: "enroll_page",
+            name: "选课页",
+            fieldBindings: ["course.title", "nonexistent.field"],
+            actionPermissions: ["course:read"],
+          },
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(<PageScreen model={modelWithBrokenBinding} />);
+    expect(html).toContain("选课页");
+    expect(html).toContain("课程.课程名"); // resolved → 实体名.字段名
+    expect(html).toContain("✗ nonexistent.field"); // unresolved 如实标红
+    expect(html).toContain("course:read");
+    expect(html).not.toContain("占位示意");
+    expect(html).not.toContain("采购申请表");
   });
 });

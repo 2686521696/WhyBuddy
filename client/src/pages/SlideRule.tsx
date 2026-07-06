@@ -185,10 +185,12 @@ function closureSkillRows(publishClosure?: PublishClosureSummary | null) {
   }));
 }
 
+// 前两条为内置演示域（确定性 fixture，秒出、不调 LLM）；
+// 第三条为新颖域，走真实 LLM 五系统生成——用户从 chips 就能体验两条路径。
 const EXAMPLE_PROMPTS = [
   "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限",
   "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
-  "构建客户服务工单平台，含工单创建、分派、升级和 SLA 闭环",
+  "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养",
 ] as const;
 
 /**

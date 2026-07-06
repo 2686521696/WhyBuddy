@@ -1,15 +1,22 @@
 /**
  * PageScreen — 页面 wireframe（字段列表 + 操作按钮）
  *
- * 展示 Page Skill 产出的页面结构：字段列表、表单区域、操作按钮。
+ * 数据优先级（诚实降级链）：
+ *   1. 五系统模型 page 段：pages[].fieldBindings 经 resolveFieldRef 与
+ *      datamodel 交叉校验（未解析引用如实标红），actionPermissions 渲染为按钮。
+ *   2. 占位骨架（降透明度 + 明示），不冒充真实产物。
  */
 
 import React, { useMemo } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import { EvidenceBadges } from "./EvidenceBadges";
+import { resolveFieldRef, type FiveSystemModel } from "./five-system-model";
 
 interface PageScreenProps {
   publishClosure?: PublishClosureSummary | null;
   rawContent?: string | null;
+  /** 解析出的五系统模型（page 段 + datamodel 段做字段绑定交叉校验）。 */
+  model?: FiveSystemModel | null;
   isActive?: boolean;
   className?: string;
 }
@@ -53,12 +60,30 @@ const PLACEHOLDER_PAGES: PageDef[] = [
 export function PageScreen({
   publishClosure,
   rawContent,
+  model,
   isActive = false,
   className = "",
 }: PageScreenProps) {
-  const pages = PLACEHOLDER_PAGES; // future: parse rawContent
+  // 模型 page 段在场时渲染真实页面结构；否则占位骨架（明示，不伪装）。
+  const modelPages = model?.page?.pages ?? [];
+  const isPlaceholder = modelPages.length === 0;
+  const pages = useMemo<PageDef[]>(() => {
+    if (modelPages.length === 0) return PLACEHOLDER_PAGES;
+    return modelPages.map((p, i) => ({
+      title: p.name || p.id || `页面 ${i + 1}`,
+      fields: (p.fieldBindings ?? []).map((ref) => {
+        const res = resolveFieldRef(ref, model);
+        return {
+          name: res.label,
+          type: res.resolved ? "bound" : "unresolved",
+          required: false,
+          editable: true,
+        };
+      }),
+      actions: (p.actionPermissions ?? []).map(String),
+    }));
+  }, [modelPages, model]);
   const evidence = publishClosure?.perSkillEvidence?.["page"];
-  const hasEvidence = evidence?.evidencePresent === true;
 
   return (
     <div
@@ -70,17 +95,15 @@ export function PageScreen({
         <div className="h-2 w-2 rounded-full bg-teal-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">Page</span>
         <span className="text-xs text-stone-400">页面 Wireframe</span>
-        {hasEvidence && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-            evidence ✓
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadges evidence={evidence} />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {pages.map((page) => (
-            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 ${rawContent ? "" : "opacity-40"}`}>
+            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
               {/* Page title bar */}
               <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 shadow-sm">
                 <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
@@ -91,7 +114,15 @@ export function PageScreen({
               <div className="space-y-1.5">
                 {page.fields.map((field) => (
                   <div key={field.name} className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-[10px] text-stone-500">{field.name}</span>
+                    <span
+                      className={`w-20 shrink-0 truncate text-[10px] ${
+                        field.type === "unresolved" ? "text-red-500" : "text-stone-500"
+                      }`}
+                      title={field.type === "unresolved" ? `字段绑定未在数据模型中解析：${field.name}` : field.name}
+                    >
+                      {field.type === "unresolved" ? "✗ " : ""}
+                      {field.name}
+                    </span>
                     <div
                       className={`h-5 flex-1 rounded border text-[10px] ${
                         field.editable
@@ -125,9 +156,9 @@ export function PageScreen({
           ))}
         </div>
 
-        {!rawContent && (
-          <div className="mt-4 text-center text-[10px] text-stone-300">
-            推演完成后将显示真实页面字段绑定
+        {isPlaceholder && (
+          <div className="mt-4 text-center text-[10px] text-stone-400">
+            占位示意（非本话题数据）· 推演完成后将显示真实页面字段绑定
           </div>
         )}
       </div>

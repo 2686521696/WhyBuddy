@@ -71,6 +71,7 @@ export function ActiveSystemScreen({
           <DataModelScreen
             publishClosure={publishClosure}
             mermaidSource={skillContents.dataModel ?? latestMermaid}
+            model={fiveSystemModel}
             isActive={activeSkillId === "dataModel"}
           />
         </div>
@@ -97,6 +98,7 @@ export function ActiveSystemScreen({
           <PageScreen
             publishClosure={publishClosure}
             rawContent={skillContents.page}
+            model={fiveSystemModel}
             isActive={activeSkillId === "page"}
           />
         </div>

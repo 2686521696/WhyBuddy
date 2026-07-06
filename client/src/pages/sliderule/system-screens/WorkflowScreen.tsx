@@ -12,6 +12,7 @@
 import React, { useMemo } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import { EvidenceBadges } from "./EvidenceBadges";
 import {
   type FiveSystemModel,
   type SkillRuntimeGraphLike,
@@ -99,7 +100,6 @@ export function WorkflowScreen({
   ).length;
 
   const evidence = publishClosure?.perSkillEvidence?.["workflow"];
-  const hasEvidence = evidence?.evidencePresent === true;
 
   return (
     <div
@@ -129,11 +129,7 @@ export function WorkflowScreen({
               {unresolvedRoleCount} 个角色未在 RBAC 定义
             </span>
           )}
-          {hasEvidence && (
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-              evidence ✓
-            </span>
-          )}
+          <EvidenceBadges evidence={evidence} />
         </div>
       </div>
 
@@ -176,8 +172,8 @@ export function WorkflowScreen({
       </div>
 
       {sourceKind === "placeholder" && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-300">
-          推演完成后将显示真实业务流程
+        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
+          占位示意（非本话题数据）· 推演完成后将显示真实业务流程
         </div>
       )}
     </div>

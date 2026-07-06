@@ -8,11 +8,15 @@
 import React, { useMemo } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import { EvidenceBadges } from "./EvidenceBadges";
+import { datamodelToMermaid, type FiveSystemModel } from "./five-system-model";
 
 interface DataModelScreenProps {
   publishClosure?: PublishClosureSummary | null;
   /** Raw artifact content containing mermaid ER/class diagram */
   mermaidSource?: string | null;
+  /** 解析出的五系统模型（刷新路径：modelSection 重建真实实体关系）。 */
+  model?: FiveSystemModel | null;
   isActive?: boolean;
   className?: string;
 }
@@ -52,19 +56,23 @@ function extractMermaid(text: string): string | null {
 export function DataModelScreen({
   publishClosure,
   mermaidSource,
+  model,
   isActive = false,
   className = "",
 }: DataModelScreenProps) {
-  const diagram = useMemo(() => {
-    if (mermaidSource) {
-      const extracted = extractMermaid(mermaidSource);
-      if (extracted) return extracted;
-    }
-    return null;
+  // 诚实降级链：SSE mermaid（实时）→ 五系统模型实体（刷新重建）→ 占位骨架。
+  const sseDiagram = useMemo(() => {
+    if (!mermaidSource) return null;
+    return extractMermaid(mermaidSource);
   }, [mermaidSource]);
+  const modelDiagram = useMemo(
+    () => datamodelToMermaid(model?.datamodel),
+    [model?.datamodel]
+  );
+  const diagram = sseDiagram ?? modelDiagram;
+  const isPlaceholder = !diagram;
 
   const evidence = publishClosure?.perSkillEvidence?.["datamodel"];
-  const hasEvidence = evidence?.evidencePresent === true;
 
   return (
     <div
@@ -78,24 +86,22 @@ export function DataModelScreen({
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           DataModel
         </span>
-        {hasEvidence && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-            evidence ✓
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadges evidence={evidence} />
+        </div>
       </div>
 
-      {/* Diagram area */}
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      {/* Diagram area — 占位骨架降透明度并明示，不冒充真实产物 */}
+      <div className={`min-h-0 flex-1 overflow-auto p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
         <MermaidDiagram
           chart={diagram ?? PLACEHOLDER_ER}
           className="h-full w-full"
         />
       </div>
 
-      {!hasEvidence && !diagram && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-300">
-          推演完成后将显示真实实体关系
+      {isPlaceholder && (
+        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
+          占位示意（非本话题数据）· 推演完成后将显示真实实体关系
         </div>
       )}
     </div>
