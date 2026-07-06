@@ -33,6 +33,16 @@ def _clear_cutover_env(monkeypatch):
     for k in keys:
         monkeypatch.delenv(k, raising=False)
 
+    # 隔离开发者本地 .env：_get_env 会回退读 pydantic settings（settings 加载 .env），
+    # 仅清 os.environ 不够；把默认值为 None 的凭据属性一并清掉。
+    try:
+        from config.settings import settings as _settings
+        for attr in ("LLM_API_KEY", "QDRANT_API_KEY"):
+            if hasattr(_settings, attr):
+                monkeypatch.setattr(_settings, attr, None)
+    except Exception:
+        pass
+
 
 def test_cutover_readiness_outputs_all_statuses(monkeypatch):
     _clear_cutover_env(monkeypatch)

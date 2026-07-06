@@ -376,6 +376,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         state = resolve_coverage_gaps_from_state(state)
         gate = evaluate_coverage_gate(state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
+            if gate.get("passed") and isinstance(state.goal, dict):
+                state.goal["status"] = "clear"  # 最终门通过时 phase/status 保持一致
             state.runtimePhase = "done"
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end", capabilityId="driver", kind="think", text="phase_changed: done", order=10)
             persist_state(state)
@@ -678,6 +680,8 @@ async def drive_full_v5_session_stream(
         state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
         gate = await asyncio.to_thread(evaluate_coverage_gate, state)
         if gate.get("passed") or (state.goal or {}).get("status") == "clear":
+            if gate.get("passed") and isinstance(state.goal, dict):
+                state.goal["status"] = "clear"  # 最终门通过时 phase/status 保持一致
             state.runtimePhase = "done"
             append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
                 capabilityId="driver", kind="think", text="phase_changed: done", order=10)

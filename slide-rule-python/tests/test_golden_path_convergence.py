@@ -97,6 +97,58 @@ def test_picker_fills_contract_required_capability_missed_by_heuristics():
     assert any(p["capabilityId"] == "critique.generate" for p in picks), picks
 
 
+def test_drive_full_uses_persisted_server_state_as_authority(tmp_path, monkeypatch):
+    """回归：drive-full 必须以持久化的服务端会话为起点。
+
+    客户端 state 副本经防伪造清洗后没有 trustLevel/producedBy/台账；曾经的实现
+    以它为起点，导致"生成交付物"回合把之前所有 trusted-committed 进度清零、
+    delivery 分支永不触发。
+    """
+    monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
+    import importlib
+    import services.persistence as persistence_mod
+    import services.slide_rule_session as session_mod
+    importlib.reload(persistence_mod)
+    session_mod._sessions.clear()
+
+    from fastapi.testclient import TestClient
+    import app as app_mod
+
+    # 服务端持久化：已收敛、带可信产物的会话
+    state = _state_with_contract()
+    state.sessionId = "authority-check"
+    for cap in ["critique.generate", "risk.analyze", "synthesis.merge", "evidence.search"]:
+        _commit(state, cap)
+    from services.slide_rule_coverage import resolve_coverage_gaps_from_state as _resolve
+    state = _resolve(state)
+    state.goal["status"] = "clear"
+    from services.slide_rule_session import save_session
+    save_session(state)
+
+    client = TestClient(app_mod.app)
+    degraded_client_copy = {
+        "sessionId": "authority-check",
+        "goal": {"text": COMPLEX_GOAL},  # 客户端副本：无 status、无可信产物
+        "artifacts": [],
+    }
+    resp = client.post(
+        "/api/sliderule/drive-full",
+        json={"state": degraded_client_copy, "userText": "打包交付：生成 spec 树、规格文档、提示词包", "max_loops": 4},
+        headers={"X-Internal-Key": "dev-slide-rule-internal"},
+    )
+    assert resp.status_code == 200, resp.text
+    out_state = resp.json().get("state") or {}
+    arts = out_state.get("artifacts") or []
+    # 服务端权威起点：之前提交的可信产物必须保留
+    prior_ids = {f"art-0-{cap}" for cap in ["critique.generate", "risk.analyze", "synthesis.merge", "evidence.search"]}
+    got_ids = {a.get("id") for a in arts}
+    assert prior_ids.issubset(got_ids), f"prior trusted artifacts lost: {sorted(prior_ids - got_ids)}"
+    # 交付意图 + clear 状态：应产出 delivery 类产物
+    delivery_caps = {"document.draft", "task.write", "instruction.package", "outcome.visualize", "handoff.package", "report.write"}
+    produced_caps = {(a.get("producedBy") or {}).get("capabilityId") for a in arts}
+    assert produced_caps & delivery_caps, f"no delivery artifacts produced: {sorted(produced_caps - {None})}"
+
+
 def test_full_driver_converges_instead_of_max_repeat_guard_stall(tmp_path, monkeypatch):
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
     from services.v5_full_driver import drive_full_v5_session

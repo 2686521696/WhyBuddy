@@ -561,7 +561,13 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     """
     _auth(x_internal_key)
     raw_state, _ = sanitize_session_dict(payload["state"])
-    state = V5SessionState(**raw_state)
+    # PYTHON_AUTHORITY: 已持久化的服务端会话是权威起点。客户端 state 经防伪造清洗后
+    # 会失去 trustLevel/producedBy/台账（正确的防伪行为），若以它为起点，之前所有
+    # trusted-committed 产物会被清零、收敛状态丢失（例如"生成交付物"回合触发不了
+    # delivery 分支）。仅在无持久化会话（首轮）时才用清洗后的客户端 state 起步。
+    sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
+    persisted = load_session(sid) if sid else None
+    state = persisted if persisted is not None else V5SessionState(**raw_state)
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
@@ -656,13 +662,20 @@ async def drive_full_stream(
     _auth(x_internal_key)
 
     raw_state, _ = sanitize_session_dict(payload.get("state") or {})
-    try:
-        state = V5SessionState(**raw_state)
-    except (ValidationError, TypeError, ValueError) as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "invalid_state", "message": str(e).splitlines()[0]},
-        )
+    # PYTHON_AUTHORITY: 同 /drive-full——已持久化会话为权威起点（防伪造清洗会剥掉
+    # 客户端 state 的 trust/producedBy/台账，以其起步会清零全部可信进度）。
+    sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
+    persisted = load_session(sid) if sid else None
+    if persisted is not None:
+        state = persisted
+    else:
+        try:
+            state = V5SessionState(**raw_state)
+        except (ValidationError, TypeError, ValueError) as e:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_state", "message": str(e).splitlines()[0]},
+            )
 
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict(

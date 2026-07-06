@@ -571,6 +571,7 @@ def pick_next_capabilities(state: V5SessionState, user_text: str) -> list[dict]:
             picks.append({"capabilityId": "report.write", "roleId": "综合"})
         if has_structure_decompose_intent(user_text) and not _has_spec_tree_artifact(state):
             picks.append({"capabilityId": "structure.decompose", "roleId": "架构"})
+        from .slide_rule_coverage import has_trusted_committed_for_cap as _has_committed
         for cap, role in [
             ("document.draft", "工程"),
             ("traceability.matrix", "综合"),
@@ -579,6 +580,10 @@ def pick_next_capabilities(state: V5SessionState, user_text: str) -> list[dict]:
             ("outcome.visualize", "架构"),
             ("handoff.package", "工程"),
         ]:
+            # 已可信提交的交付能力不重复执行：避免重复产物与无谓的 LLM 调用，
+            # 也让 5-cap 限制下多轮"打包交付"能推进到未完成的能力（如 handoff）。
+            if _has_committed(state, cap):
+                continue
             if not any(p["capabilityId"] == cap for p in picks):
                 picks.append({"capabilityId": cap, "roleId": role})
         # unified dedup + cap<=5 (addresses review: delivery branch must not bypass final dedup/out[:5];
