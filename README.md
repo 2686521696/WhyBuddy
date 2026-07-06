@@ -64,7 +64,7 @@ You spend **days** writing a PRD, **weeks** aligning the team, and **months** be
 
 ### 💡 Solution
 
-Enter an idea → **5 minutes** → full rehearsal → decide whether it is worth building → if not, move to the next idea.
+Enter an idea → **one coffee's worth of real LLM deliberation, every step visible** → full rehearsal → decide whether it is worth building → if not, move to the next idea.
 
 </td>
 </tr>
