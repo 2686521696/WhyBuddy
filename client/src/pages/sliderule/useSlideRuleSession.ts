@@ -565,10 +565,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               setActiveSkillId(skillId);
             },
             onSkillCompleted: (skillId, _hasError, detail) => {
-              // Accumulate per-skill mermaid projection for the right-panel screens.
+              // Accumulate per-skill content for the right-panel screens:
+              // mermaid (cross-skill edge projection) first, then the gate-PASSED
+              // five-system model section as a fenced JSON block. The screens'
+              // extractMermaid/extractFlow read the leading mermaid; the
+              // five-system-model parser reads the fenced JSON. Deterministic
+              // domains carry no modelSection — screens degrade honestly.
               const mermaid = detail?.mermaid ?? null;
+              const modelSection = detail?.modelSection ?? null;
+              const parts: string[] = [];
+              if (mermaid) parts.push(mermaid);
+              if (modelSection && typeof modelSection === "object") {
+                // skillId → model key: dataModel→datamodel, appBundle→appbundle, rest identity.
+                const modelKey = skillId.toLowerCase();
+                try {
+                  parts.push("```json\n" + JSON.stringify({ [modelKey]: modelSection }) + "\n```");
+                } catch {
+                  // unserializable — keep mermaid-only content
+                }
+              }
+              if (parts.length > 0) {
+                const content = parts.join("\n\n");
+                setSkillContents((prev) => ({ ...prev, [skillId]: content }));
+              }
               if (mermaid) {
-                setSkillContents((prev) => ({ ...prev, [skillId]: mermaid }));
                 setLatestMermaid(mermaid);
               }
             },

@@ -173,6 +173,8 @@ export interface DriveFullStreamOpts {
       artifactId?: string | null;
       digest?: string | null;
       edges?: Array<Record<string, any>> | null;
+      /** Gate-PASSED five-system model section for this skill (LLM path; null on deterministic domains). */
+      modelSection?: Record<string, any> | null;
     }
   ) => void;
   /** Called for each reasoning-engine step (evidence.search, risk.analyze ...). */
@@ -247,6 +249,7 @@ export async function driveFullViaPythonStream(
               artifactId: (event.artifactId as string | null) ?? null,
               digest: (event.digest as string | null) ?? null,
               edges: (event.edges as Array<Record<string, any>> | null) ?? null,
+              modelSection: (event.modelSection as Record<string, any> | null) ?? null,
             });
             break;
           case "publish_closure":

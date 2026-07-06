@@ -46,6 +46,8 @@ export type PublishClosureSummary = {
         digest?: string;
         path?: string;
         summary?: string;
+        /** Gate 通过的 LLM 五系统模型段（纯载荷，不参与 trust 判定；确定性域缺失）。 */
+        modelSection?: Record<string, unknown>;
       }
     | undefined
   >;

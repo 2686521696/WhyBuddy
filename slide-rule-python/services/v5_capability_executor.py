@@ -228,6 +228,14 @@ def _build_per_skill_evidence(
             "artifactId": artifact_id,
             "digest": digest,
         }
+        # Gate-PASSED LLM model section rides along as PAYLOAD ONLY: it is not part
+        # of the evidence-match haystack, and _stable_closure_hash reads named trust
+        # fields only — modelSection can never flip evidencePresent/blocked/hash.
+        # Deterministic domains (purchase/leave/ticket/onboarding) have no LLM model,
+        # so the key is simply absent there (screens degrade honestly; never fabricate).
+        model_section = artifact.get("_model_section") if isinstance(artifact, dict) else None
+        if evidence_present and model_section is not None:
+            per_skill[skill]["modelSection"] = model_section
     return per_skill
 
 

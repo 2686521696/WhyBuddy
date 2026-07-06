@@ -12,7 +12,9 @@ import React, { useMemo } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
+  mergeFiveSystemModels,
   parseFiveSystemModelFromContents,
+  parseFiveSystemModelFromPerSkillEvidence,
   type SkillRuntimeGraphLike,
 } from "./five-system-model";
 import { DataModelScreen } from "./DataModelScreen";
@@ -42,10 +44,17 @@ export function ActiveSystemScreen({
   skillRuntimeGraph = null,
   className = "",
 }: ActiveSystemScreenProps) {
-  // 从 SSE 累积内容中解析结构化五系统模型（一次解析，多屏共享做交叉引用）。
+  // 结构化五系统模型（一次解析，多屏共享做交叉引用）：
+  //   live 路径 — SSE skill_result 累积的 skillContents（fenced JSON）；
+  //   reload 路径 — 持久化 publishClosure.perSkillEvidence[*].modelSection。
+  // 段级合并，live 段优先；两者皆空时各屏自行诚实降级。
   const fiveSystemModel = useMemo(
-    () => parseFiveSystemModelFromContents(skillContents),
-    [skillContents]
+    () =>
+      mergeFiveSystemModels(
+        parseFiveSystemModelFromContents(skillContents),
+        parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
+      ),
+    [skillContents, publishClosure?.perSkillEvidence]
   );
 
   // 16:9 aspect ratio wrapper

@@ -19,6 +19,8 @@ import { ActiveSystemScreen } from "../system-screens/ActiveSystemScreen";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
+  parseFiveSystemModelFromPerSkillEvidence,
+  mergeFiveSystemModels,
   workflowModelToMermaid,
   crossSkillEdgesToMermaid,
   resolveFieldRef,
@@ -184,6 +186,52 @@ describe("five-system-model 解析", () => {
     expect(merged?.aigc?.capabilities).toHaveLength(2);
     expect(merged?.rbac?.roles).toContain("student");
     expect(merged?.datamodel).toBeUndefined();
+  });
+
+  it("解析 SSE skill_result 实际形状：mermaid 边图 + fenced JSON 模型段共存", () => {
+    // useSlideRuleSession 把 skill_result 的 mermaid 与 modelSection 拼成一条内容：
+    // 前段供 extractFlow/extractMermaid，后段 fenced JSON 供本解析器。
+    const live =
+      'flowchart LR\n  rbac["rbac"] -->|RBAC_WORKFLOW_ASSIGNEE_EVIDENCE| workflow["workflow"]' +
+      "\n\n```json\n" + JSON.stringify({ workflow: MODEL.workflow }) + "\n```";
+    const parsed = parseFiveSystemModel(live);
+    expect(parsed?.workflow?.nodes).toHaveLength(3);
+    const merged = parseFiveSystemModelFromContents({ workflow: live });
+    expect(merged?.workflow?.id).toBe("wf_enroll");
+  });
+
+  it("parseFiveSystemModelFromPerSkillEvidence 从持久化 modelSection 重建（reload 路径）", () => {
+    const model = parseFiveSystemModelFromPerSkillEvidence({
+      datamodel: { modelSection: MODEL.datamodel },
+      rbac: { modelSection: MODEL.rbac },
+      workflow: { modelSection: MODEL.workflow },
+      page: {}, // 无 modelSection —— 段缺失，不伪造
+      aigc: { modelSection: MODEL.aigc },
+      appbundle: { modelSection: MODEL.appbundle },
+    });
+    expect(model?.workflow?.nodes).toHaveLength(3);
+    expect(model?.aigc?.capabilities).toHaveLength(2);
+    expect(model?.page).toBeUndefined();
+    // 确定性域：perSkillEvidence 无 modelSection → null（fail-closed）
+    expect(
+      parseFiveSystemModelFromPerSkillEvidence({
+        datamodel: { evidencePresent: true } as { modelSection?: unknown },
+      })
+    ).toBeNull();
+    expect(parseFiveSystemModelFromPerSkillEvidence(null)).toBeNull();
+  });
+
+  it("mergeFiveSystemModels 段级合并，primary 优先，皆空返回 null", () => {
+    const primary: FiveSystemModel = { workflow: MODEL.workflow };
+    const fallback: FiveSystemModel = {
+      workflow: { id: "stale_wf", nodes: [], transitions: [] },
+      rbac: MODEL.rbac,
+    };
+    const merged = mergeFiveSystemModels(primary, fallback);
+    expect(merged?.workflow?.id).toBe("wf_enroll"); // primary 覆盖 fallback
+    expect(merged?.rbac?.roles).toContain("student"); // fallback 补齐缺段
+    expect(mergeFiveSystemModels(null, null)).toBeNull();
+    expect(mergeFiveSystemModels({}, undefined)).toBeNull();
   });
 
   it("workflowModelToMermaid 输出 nodes/transitions/条件/角色", () => {
@@ -414,5 +462,46 @@ describe("ActiveSystemScreen 派发", () => {
     );
     expect(html).toContain('data-testid="aigc-capabilities"');
     expect(html).toContain("课程简介生成");
+  });
+
+  it("reload 路径：无 skillContents，仅 publishClosure.perSkillEvidence.modelSection 也能渲染模型", () => {
+    const closureWithModel: PublishClosureSummary = {
+      ...CLOSURE_CLOSED,
+      perSkillEvidence: {
+        datamodel: { evidencePresent: true, modelSection: MODEL.datamodel as Record<string, unknown> },
+        rbac: { evidencePresent: true, modelSection: MODEL.rbac as Record<string, unknown> },
+        workflow: { evidencePresent: true, modelSection: MODEL.workflow as Record<string, unknown> },
+        page: { evidencePresent: true, modelSection: MODEL.page as Record<string, unknown> },
+        aigc: { evidencePresent: true, modelSection: MODEL.aigc as Record<string, unknown> },
+        appbundle: { evidencePresent: true, modelSection: MODEL.appbundle as Record<string, unknown> },
+      },
+    };
+    const workflowHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={closureWithModel} />
+    );
+    expect(workflowHtml).toContain("3 节点 · 2 转移");
+    expect(workflowHtml).toContain("提交选课");
+    const aigcHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId="aigc" publishClosure={closureWithModel} />
+    );
+    expect(aigcHtml).toContain('data-testid="aigc-capabilities"');
+    expect(aigcHtml).toContain("课程简介生成");
+    const bundleHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId={null} publishClosure={closureWithModel} />
+    );
+    expect(bundleHtml).toContain('data-testid="appbundle-bindings"');
+  });
+
+  it("确定性域（无 modelSection）不伪造模型：closed 6/6 但各屏走降级链", () => {
+    const workflowHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId="workflow" publishClosure={CLOSURE_CLOSED} />
+    );
+    // 无模型 → 不出现节点角色表；证据徽标仍如实展示
+    expect(workflowHtml).not.toContain('data-testid="workflow-node-roles"');
+    expect(workflowHtml).toContain("evidence ✓");
+    const aigcHtml = renderToStaticMarkup(
+      <ActiveSystemScreen activeSkillId="aigc" publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(aigcHtml).not.toContain('data-testid="aigc-capabilities"');
   });
 });

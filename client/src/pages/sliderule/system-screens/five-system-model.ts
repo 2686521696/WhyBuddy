@@ -211,6 +211,49 @@ export function parseFiveSystemModelFromContents(
   return merged;
 }
 
+/**
+ * 从持久化的 publishClosure.perSkillEvidence 重建五系统模型（刷新/重载路径）。
+ *
+ * Python 侧 _build_per_skill_evidence 把 gate 通过的 LLM 模型段作为
+ * perSkillEvidence[skill].modelSection 纯载荷持久化（不参与 trust 判定）。
+ * 确定性域（采购/请假/工单/入职）没有 LLM 模型 → 字段缺失 → 返回 null，
+ * 调用方走既有降级链（SSE mermaid / skillRuntimeGraph / 占位），不伪造。
+ */
+export function parseFiveSystemModelFromPerSkillEvidence(
+  perSkillEvidence:
+    | Partial<Record<string, { modelSection?: unknown } | undefined>>
+    | null
+    | undefined
+): FiveSystemModel | null {
+  if (!perSkillEvidence) return null;
+  let model: FiveSystemModel | null = null;
+  for (const key of MODEL_KEYS) {
+    const section = perSkillEvidence[key]?.modelSection;
+    if (isPlainObject(section)) {
+      model = model ?? {};
+      (model as Record<string, unknown>)[key] = section;
+    }
+  }
+  return model;
+}
+
+/**
+ * 段级合并两个模型来源（primary 段优先，缺段由 fallback 补齐）。
+ * 两者皆空返回 null —— 保持 fail-closed 语义。
+ */
+export function mergeFiveSystemModels(
+  primary: FiveSystemModel | null | undefined,
+  fallback: FiveSystemModel | null | undefined
+): FiveSystemModel | null {
+  if (!primary && !fallback) return null;
+  const merged: FiveSystemModel = {};
+  for (const key of MODEL_KEYS) {
+    const section = primary?.[key] ?? fallback?.[key];
+    if (section) (merged as Record<string, unknown>)[key] = section;
+  }
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
 // ---------------------------------------------------------------------------
 // Cross-reference resolution
 // ---------------------------------------------------------------------------

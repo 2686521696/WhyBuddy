@@ -163,9 +163,146 @@ def test_wiring_deterministic_domain_unaffected_by_llm():
     assert called["n"] == 0  # deterministic domain never touches the LLM
 
 
+# ---------------------------------------------------------------------------
+# T3.5 — thread the gate-PASSED model through evidence + SSE (payload only)
+# ---------------------------------------------------------------------------
+
+
+def test_llm_path_per_skill_evidence_carries_model_sections():
+    """Gate-passed LLM model sections ride on perSkillEvidence as modelSection payload."""
+    model = _valid_library_model()
+    state = _empty_state("图书馆借阅系统")
+    per_skill = _build_per_skill_evidence(
+        state, blocked_signal=False, goal="图书馆借阅系统",
+        llm_json_fn=lambda g: model,
+    )
+    for skill in REQUIRED_EVIDENCE_KEYS:
+        assert per_skill[skill]["evidencePresent"] is True
+        assert per_skill[skill]["modelSection"] == model[skill], skill
+
+
+def test_deterministic_domain_has_no_model_section():
+    """Fixture domains have no LLM model — the key must be absent (never fabricated)."""
+    state = _empty_state("采购审批平台")
+    per_skill = _build_per_skill_evidence(state, blocked_signal=False, goal="采购审批平台")
+    for skill in REQUIRED_EVIDENCE_KEYS:
+        assert per_skill[skill]["evidencePresent"] is True
+        assert "modelSection" not in per_skill[skill], skill
+
+
+def test_model_section_never_participates_in_closure_hash():
+    """modelSection is payload only: closure hash identical with or without it."""
+    from services.v5_capability_executor import _stable_closure_hash
+
+    state = _empty_state("图书馆借阅系统")
+    with_model = _build_per_skill_evidence(
+        state, blocked_signal=False, goal="图书馆借阅系统",
+        llm_json_fn=lambda g: _valid_library_model(),
+    )
+    stripped = {
+        skill: {k: v for k, v in entry.items() if k != "modelSection"}
+        for skill, entry in with_model.items()
+    }
+    assert _stable_closure_hash(with_model, False, "图书馆借阅系统") == \
+        _stable_closure_hash(stripped, False, "图书馆借阅系统")
+
+
+def test_linkage_artifact_content_embeds_fenced_section_json():
+    """Artifact content carries the section as a fenced ```json block (client-parseable),
+    while matching/trust still reads only id/title/kind/summary."""
+    import json
+    from services.v5_llm_generate import model_to_linkage_artifacts
+
+    model = _valid_library_model()
+    artifacts = model_to_linkage_artifacts(model, "图书馆借阅系统")
+    assert len(artifacts) == 6
+    for artifact in artifacts:
+        skill = artifact["id"].replace("llm-linkage-", "")
+        assert artifact["_model_section"] == model[skill]
+        content = artifact["content"]
+        assert "```json" in content
+        fenced = content.split("```json", 1)[1].split("```", 1)[0].strip()
+        assert json.loads(fenced) == {skill: model[skill]}
+        # trust haystack fields stay clean of model payload
+        assert "```" not in artifact["summary"]
+        assert "```" not in artifact["title"]
+
+
+def test_stream_skill_result_emits_model_section_for_llm_path(monkeypatch):
+    """drive_full_v5_session_stream: skill_result events carry modelSection when the
+    (mocked) LLM path closes a novel intent; shape matches the client contract."""
+    import asyncio
+    import services.v5_llm_generate as v5_llm_generate
+
+    model = _valid_library_model()
+    monkeypatch.setenv("SLIDERULE_LLM_GENERATE_ENABLED", "1")
+    monkeypatch.setattr(
+        v5_llm_generate, "generate_five_system_model",
+        lambda goal, llm_json_fn=None: model,
+    )
+
+    from services.v5_full_driver import drive_full_v5_session_stream
+
+    state = V5SessionState(
+        sessionId="t-llm-stream",
+        goal={"text": "图书馆借阅系统", "status": "needs_refinement"},
+    )
+
+    async def _collect():
+        events = []
+        async for event in drive_full_v5_session_stream(
+            state, max_loops=1, user_instruction="图书馆借阅系统"
+        ):
+            events.append(event)
+        return events
+
+    events = asyncio.run(_collect())
+    skill_results = [e for e in events if e.get("type") == "skill_result"]
+    assert len(skill_results) == 6, [e.get("type") for e in events]
+    by_label = {e["label"]: e for e in skill_results}
+    for skill in REQUIRED_EVIDENCE_KEYS:
+        event = by_label[skill]
+        assert event["evidencePresent"] is True
+        assert event["modelSection"] == model[skill], skill
+        assert isinstance(event.get("mermaid"), str)  # edge projection still present
+
+
+def test_stream_skill_result_model_section_none_for_deterministic_domain():
+    """Deterministic fixture domain: skill_result still closes 6/6 but modelSection is None."""
+    import asyncio
+
+    from services.v5_full_driver import drive_full_v5_session_stream
+
+    state = V5SessionState(
+        sessionId="t-det-stream",
+        goal={"text": "采购审批平台", "status": "needs_refinement"},
+    )
+
+    async def _collect():
+        events = []
+        async for event in drive_full_v5_session_stream(
+            state, max_loops=1, user_instruction="采购审批平台"
+        ):
+            events.append(event)
+        return events
+
+    events = asyncio.run(_collect())
+    skill_results = [e for e in events if e.get("type") == "skill_result"]
+    assert len(skill_results) == 6
+    for event in skill_results:
+        assert "modelSection" in event  # field always present in the SSE contract
+        assert event["modelSection"] is None  # no LLM model — never fabricated
+
+
 if __name__ == "__main__":
-    # Allow running directly without pytest.
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    # Allow running directly without pytest (fixture-taking tests are pytest-only).
+    import inspect
+
+    fns = [
+        v for k, v in sorted(globals().items())
+        if k.startswith("test_") and callable(v)
+        and not inspect.signature(v).parameters
+    ]
     passed = 0
     for fn in fns:
         try:

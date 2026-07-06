@@ -150,17 +150,37 @@ def model_to_linkage_artifacts(model: Dict[str, Any], goal: str) -> List[Dict[st
     """Convert a gate-passed model into per-skill artifacts the closure evidence
     builder can match (id contains the skill key, so _build_per_skill_evidence
     picks them up). Deterministic; no LLM.
+
+    The gate-PASSED model section rides along twice:
+      - `_model_section` — structured payload consumed by _build_per_skill_evidence
+        (becomes perSkillEvidence[skill].modelSection and the skill_result SSE field);
+      - a fenced ```json block inside `content` so the section survives as plain
+        artifact text too (the client parser reads fenced JSON from rawContent).
+    Both are PAYLOAD ONLY: evidence matching hashes only id/title/kind/summary and
+    the closure hash never includes them, so they cannot flip trust decisions.
     """
+    import json as _json
+
     artifacts: List[Dict[str, Any]] = []
     for skill in _REQUIRED_SECTIONS:
         section = model.get(skill)
         summary = f"LLM-generated {skill} model for: {goal[:60]}"
+        section_block = ""
+        if section is not None:
+            try:
+                section_block = (
+                    "\n\n```json\n"
+                    + _json.dumps({skill: section}, ensure_ascii=False)
+                    + "\n```"
+                )
+            except (TypeError, ValueError):
+                section_block = ""  # unserializable payload — keep the artifact text-only
         artifacts.append({
             "id": f"llm-linkage-{skill}",
             "title": f"{skill} model (LLM generate)",
             "kind": "runtimeClosureEvidence",
             "summary": summary,
-            "content": f"{skill} section of LLM-generated five-system model",
+            "content": f"{skill} section of LLM-generated five-system model{section_block}",
             "provenance": "python-llm-generate",
             "_model_section": section,
         })

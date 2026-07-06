@@ -492,7 +492,7 @@ async def drive_full_v5_session_stream(
         {"type": "phase_change",  "phase": str}
         {"type": "skill_start",   "skill": str, "label": str}
         {"type": "skill_result",  "skill": str, "label": str, "error": bool,
-                                  "model": dict|None, "mermaid": str|None}
+                                  "modelSection": dict|None, "mermaid": str|None}
         {"type": "publish_closure", "data": dict}
         {"type": "complete",      "state": dict}
     """
@@ -771,6 +771,10 @@ async def drive_full_v5_session_stream(
                 "digest": ev.get("digest"),
                 "edges": edges,
                 "mermaid": _skill_edges_to_mermaid(closure_key, edges),
+                # Gate-PASSED five-system model section for this skill (LLM path).
+                # None on deterministic domains — the client degrades honestly.
+                # Payload only: never consulted for trust/closure decisions.
+                "modelSection": ev.get("modelSection"),
             }
 
     # Emit full closure payload after the per-skill walk.
