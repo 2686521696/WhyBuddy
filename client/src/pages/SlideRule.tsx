@@ -861,10 +861,15 @@ function SlideRuleImmersion({
             />
           ) : (
             <div className="flex h-full items-center justify-center px-6 pb-[16vh] pt-24">
+              {/* 品牌水印只保留给真正的空会话:一旦有内容(已有轮次/恢复的会话/运行中,HUD 会浮出
+                  INTAKE / SKILL LINKAGE 等卡片)就淡出,避免卡片压在水印上显得错乱。
+                  latestTurn 同时覆盖实时轮次与刷新后从持久化状态恢复的轮次。 */}
               <img
                 src="/assets/SlideRule_transparent_cropped.png"
                 alt="SlideRule"
-                className="w-[min(82vw,360px)] object-contain opacity-[0.55] drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)]"
+                className={`w-[min(82vw,360px)] object-contain drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)] transition-opacity duration-500 ${
+                  latestTurn || isRunning ? "opacity-0" : "opacity-[0.55]"
+                }`}
                 title="SlideRule"
               />
             </div>

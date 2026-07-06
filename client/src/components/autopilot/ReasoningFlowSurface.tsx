@@ -1510,9 +1510,13 @@ export function ReasoningFlowSurface({
 
       {bottomChrome && (
         <>
+          {/* 左下思考日志。沉浸模式(showChrome=false,如 /sliderule)底部中央悬浮着输入条(grokInputBar),
+              日志需抬高到输入条之上(bottom-[104px] 与宿主底部悬浮区高度对齐),避免被输入框遮挡。 */}
           {consoleLines.length > 0 && (
             <div
-              className="absolute bottom-4 left-4 z-20 rounded-lg border border-slate-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono text-slate-600 shadow-sm backdrop-blur max-h-[100px] max-w-[440px] overflow-auto max-[640px]:bottom-[132px] max-[640px]:left-3 max-[640px]:max-w-none max-[640px]:right-auto"
+              className={`absolute left-4 z-20 rounded-lg border border-slate-200 bg-white/90 px-3 py-1.5 text-[10px] font-mono text-slate-600 shadow-sm backdrop-blur max-h-[100px] max-w-[440px] overflow-auto max-[640px]:bottom-[132px] max-[640px]:left-3 max-[640px]:max-w-none max-[640px]:right-auto ${
+                showChrome ? "bottom-4" : "bottom-[104px]"
+              }`}
               data-testid="reasoning-flow-console"
             >
               {consoleLines.slice(-6).map((line, idx) => {
