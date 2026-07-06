@@ -16,7 +16,7 @@
 3. **HTTP 面缺口**：auth / permissions / tasks / audit / telemetry / web-aigc 适配器在 Python 只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
 
 ### 建议迁移顺序（先解锁金链路：一句话 → spec → Skill 联动 → 预览/导出）
-1. **补齐 V5 execute 实测**：live delegation smoke 常态化（:9700 + LIVE_NODE_TO_PYTHON_SLIDERULE=1 进 CI），structure.decompose / report.write 干净通过；未映射 cap 收敛进 `execute_mapped_capability`。
+1. **补齐 V5 execute 实测**：live delegation smoke 常态化（已提供入口 `pnpm run smoke:live-delegation`，需先启动 :9700；下一步进 CI），structure.decompose / report.write 干净通过；未映射 cap 收敛进 `execute_mapped_capability`。
 2. **真实向量 RAG**（rag_service + rag.py 换 embedding 检索）——直接提升 evidence/report/risk 三个金链路能力的产出质量。
 3. **挂载 Python 侧 skill/mcp 运行时路由**（v5_skill_runtime_graph / mcp_runtime 已存在），消除 `skill.invoke`、`mcp.call` 依赖 Node 的最后一段。
 4. **预览/导出面**：blueprint spec-docs 的 review/export 代理开关（`BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY`）转默认开，挂载 blueprint_jobs.py。
@@ -50,9 +50,9 @@
 | 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
 |---|---|---|---|---|
 | blueprint.ts + blueprint/（brainstorm、spec-tree、agent-crew、stage-edit、jobs、preview…约 70 子模块） | ❌ Node 全量（400+ 文件） | 大量 blueprint_* takeover services；无对应完整路由 | **保留Node原样，不再迁移（存档）** | 产品决策：autopilot 归档；避免沉没成本 |
-| spec-documents 生成（generate-one/batch） | 🟡 开关代理（BLUEPRINT_SPEC_DOCS_PYTHON_PROXY，默认关） | blueprint_spec_docs.py ✅ | 迁移到Python（开关转默认开） | 金链路"一句话→spec"依赖此面 |
-| spec-documents review/export | 🟡 开关代理（BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY，默认关） | ✅（/review /export /artifact-memory/contract） | 迁移到Python（开关转默认开） | 金链路"预览/导出"依赖此面 |
-| blueprint jobs runtime（start/status/cancel/read） | ❌ Node（jobs/…） | blueprint_jobs.py 已写**未挂载** | 迁移到Python（先挂载） | 一行 include_router 即可开始验证 |
+| spec-documents 生成（generate-one/batch） | ✅ 代理默认开（BLUEPRINT_SPEC_DOCS_PYTHON_PROXY，2026-07 转默认 true；显式 false 关闭；测试环境默认关） | blueprint_spec_docs.py ✅ | 已完成 | Python 失败自动回退 Node/模板 |
+| spec-documents review/export | ✅ 代理默认开（BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY，同上） | ✅（/review /export /artifact-memory/contract） | 已完成 | 4xx 业务失败透传；5xx/不可达自动回退 Node 本地实现 |
+| blueprint jobs runtime（start/status/cancel/read） | ❌ Node（jobs/…） | blueprint_jobs.py ✅ **已挂载**（/api/blueprint/jobs，2026-07） | 迁移到Python（Node 侧接代理为下一步） | Python 面已可验证（test_blueprint_job_runtime_proxy.py） |
 | socket-relay、agent-reasoning-bridge | ❌ Node（socket） | 无 | 保留Node薄代理 | socket 依赖是 index.ts 暂不能退役的原因之一 |
 
 ## 五、A2A / Agents / 协作

@@ -440,7 +440,26 @@ type BlueprintPythonProxyFailure = {
 };
 
 function isBlueprintReviewExportPythonProxyEnabled(): boolean {
-  return process.env[BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY] === "true";
+  const value = process.env[BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY];
+  if (value === "true") return true;
+  if (value === "false") return false;
+  // Python-first：未显式配置时默认走 Python 代理（基础设施故障回退 Node 本地实现）。
+  // 测试环境保持默认关，避免每个用例先打一次不可达的 :9700。
+  return !isVitestEnvironment();
+}
+
+function isVitestEnvironment(): boolean {
+  return (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    process.env.VITEST_WORKER_ID !== undefined ||
+    process.env.VITEST_POOL_ID !== undefined
+  );
+}
+
+/** 基础设施级失败（Python 不可达 / 5xx）→ 应回退 Node 本地实现；业务失败（4xx）→ 透传。 */
+function isPythonProxyInfraFailure(failure: BlueprintPythonProxyFailure): boolean {
+  return failure.status >= 500;
 }
 
 function resolvePythonReviewExportBaseUrl(): string {
@@ -2173,7 +2192,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
         now: (deps.now?.() ?? new Date()).toISOString(),
       });
 
-      if (!delegated.ok) {
+      if (!delegated.ok && !isPythonProxyInfraFailure(delegated)) {
         res.status(delegated.status).json({
           error: delegated.error,
           message: delegated.message,
@@ -2184,29 +2203,32 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
         return;
       }
 
-      const result = delegated.result;
-      if (result.kind === "invalid_request") {
-        res.status(400).json({ error: result.message });
-        return;
-      }
-      if (result.kind === "not_found") {
-        res
-          .status(404)
-          .json({ error: result.message, ...(result.details ?? {}) });
-        return;
-      }
+      if (delegated.ok) {
+        const result = delegated.result;
+        if (result.kind === "invalid_request") {
+          res.status(400).json({ error: result.message });
+          return;
+        }
+        if (result.kind === "not_found") {
+          res
+            .status(404)
+            .json({ error: result.message, ...(result.details ?? {}) });
+          return;
+        }
 
-      res.setHeader("Content-Type", result.archive.contentType);
-      res.setHeader(
-        "Content-Disposition",
-        formatContentDisposition(result.archive.filename),
-      );
-      if (result.archive.encoding === "base64") {
-        res.send(Buffer.from(result.archive.body, "base64"));
-      } else {
-        res.send(result.archive.body);
+        res.setHeader("Content-Type", result.archive.contentType);
+        res.setHeader(
+          "Content-Disposition",
+          formatContentDisposition(result.archive.filename),
+        );
+        if (result.archive.encoding === "base64") {
+          res.send(Buffer.from(result.archive.body, "base64"));
+        } else {
+          res.send(result.archive.body);
+        }
+        return;
       }
-      return;
+      // Python 不可达 / 5xx：回退到下方 Node 本地导出实现。
     }
 
     const result = await buildSpecExportArchive(
@@ -2921,7 +2943,7 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           now: reviewedAt,
         });
 
-        if (!delegated.ok) {
+        if (!delegated.ok && !isPythonProxyInfraFailure(delegated)) {
           res.status(delegated.status).json({
             error: delegated.error,
             message: delegated.message,
@@ -2932,15 +2954,18 @@ export function createBlueprintRouter(deps: BlueprintRouterDeps = {}): Router {
           return;
         }
 
-        jobStore.save(delegated.response.job);
-        blueprintServiceContext.agentCrewStageActivationDriver?.onStageTransition({
-          jobId: delegated.response.job.id,
-          stageId: "spec_docs",
-          transition: "stage_started",
-          job: delegated.response.job,
-        });
-        res.json(delegated.response);
-        return;
+        if (delegated.ok) {
+          jobStore.save(delegated.response.job);
+          blueprintServiceContext.agentCrewStageActivationDriver?.onStageTransition({
+            jobId: delegated.response.job.id,
+            stageId: "spec_docs",
+            transition: "stage_started",
+            job: delegated.response.job,
+          });
+          res.json(delegated.response);
+          return;
+        }
+        // Python 不可达 / 5xx：回退到下方 Node 本地 review 实现。
       }
 
       const result = reviewSpecDocument(
@@ -11204,7 +11229,12 @@ interface PythonSpecDocsBatchResponse {
 }
 
 function isPythonSpecDocsProxyEnabled(): boolean {
-  return process.env[PYTHON_SPEC_DOCS_PROXY_ENABLED] === "true";
+  const value = process.env[PYTHON_SPEC_DOCS_PROXY_ENABLED];
+  if (value === "true") return true;
+  if (value === "false") return false;
+  // Python-first：未显式配置时默认走 Python 代理（失败回退模板）。
+  // 测试环境保持默认关，避免每个用例先打一次不可达的 :9700。
+  return !isVitestEnvironment();
 }
 
 function resolvePythonSpecDocsBaseUrl(): string {

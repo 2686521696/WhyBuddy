@@ -253,6 +253,30 @@ describe("Blueprint review/export Python proxy", () => {
     });
   });
 
+  it("falls back to the Node export when the Python proxy is unreachable", async () => {
+    vi.stubEnv("BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY", "true");
+    vi.stubEnv("PYTHON_SLIDE_RULE_BASE_URL", "http://python-export.test");
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith("http://127.0.0.1:")) {
+        return originalFetch(input, init);
+      }
+      throw new Error("connect ECONNREFUSED 127.0.0.1:9700");
+    });
+    const jobStore = createMemoryBlueprintJobStore([makeJob()]);
+
+    await withServer(jobStore, async (baseUrl) => {
+      const response = await fetch(
+        `${baseUrl}/api/blueprint/jobs/job-1/spec-documents/export?granularity=single&nodeId=node-1&type=requirements`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/markdown");
+      expect(await response.text()).toContain("Contract body");
+    });
+  });
+
   it("uses the existing Node export path when the Python proxy switch is disabled", async () => {
     vi.stubEnv("BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY", "false");
     const fetchSpy = vi.spyOn(globalThis, "fetch");

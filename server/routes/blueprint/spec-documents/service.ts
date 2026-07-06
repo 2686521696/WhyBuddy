@@ -169,7 +169,21 @@ const PYTHON_PROXY_BASE_URL = "PYTHON_SLIDE_RULE_BASE_URL";
 const PYTHON_PROXY_INTERNAL_KEY = "PYTHON_SLIDE_RULE_INTERNAL_KEY";
 
 function isPythonSpecDocsProxyEnabled(): boolean {
-  return process.env[PYTHON_PROXY_ENABLED] === "true";
+  const value = process.env[PYTHON_PROXY_ENABLED];
+  if (value === "true") return true;
+  if (value === "false") return false;
+  // Python-first：未显式配置时默认走 Python 代理（失败自动回退 Node）。
+  // 测试环境保持默认关，避免每个用例先打一次不可达的 :9700。
+  return !isVitestEnvironment();
+}
+
+function isVitestEnvironment(): boolean {
+  return (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    process.env.VITEST_WORKER_ID !== undefined ||
+    process.env.VITEST_POOL_ID !== undefined
+  );
 }
 
 function resolvePythonSpecDocsBaseUrl(): string {

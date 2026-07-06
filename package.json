@@ -37,6 +37,7 @@
     "smoke:restart": "node scripts/mission-restart-smoke.mjs",
     "smoke:sliderule": "node scripts/sliderule-browser-smoke.mjs",
     "smoke:sliderule-store": "node scripts/sliderule-store-api-smoke.mjs",
+    "smoke:live-delegation": "LIVE_NODE_TO_PYTHON_SLIDERULE=1 vitest run --config vitest.config.server.ts server/routes/__tests__/sliderule.live-delegation.test.ts",
     "smoke:frontend-python-happy": "node scripts/frontend-python-happy-path-browser-smoke.mjs",
     "smoke:frontend-python-degraded": "node scripts/frontend-python-degraded-path-browser-smoke.mjs",
     "smoke:frontend-python-consolidated": "node scripts/frontend-python-consolidated-browser-smoke-105.mjs",
