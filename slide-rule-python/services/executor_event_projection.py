@@ -21,6 +21,18 @@ Two deliberately distinct decision surfaces are exposed, matching Node:
   from the mapper in documented edge cases (e.g. ``job.completed`` with
   status "waiting" waits; ``job.failed`` with status "cancelled" cancels).
 
+Slice 2 additions:
+
+- ``normalize_executor_artifacts`` ports the index.ts
+  ``normalizeExecutorArtifacts`` ingestion normalization, hardened with the
+  read-path traversal guard from server/routes/artifact-utils.ts
+  (``validateArtifactPath``: any ``..`` in the path rejects). Node only
+  applies that guard when *serving* artifact content; applying it at
+  ingestion is therefore at least as strict.
+- The projection envelope exposes a top-level ``dedup`` verdict so the Node
+  route can (opt-in, EXECUTOR_EVENTS_DEDUP_ENFORCED) skip landing duplicate /
+  out-of-order state-changing deliveries.
+
 No invented behavior: every fallback chain is a line-for-line port.
 """
 
@@ -87,6 +99,102 @@ def _clamp_progress(value: Any) -> float:
 def _delivery(event: dict[str, Any]) -> dict[str, Any]:
     delivery = event.get("delivery")
     return delivery if isinstance(delivery, dict) else {}
+
+
+# ── Dedup verdict (delivery envelope, server/core/executor-event-mapper.ts) ─
+
+
+def resolve_executor_delivery_dedup(event: dict[str, Any]) -> dict[str, Any]:
+    """The delivery dedup verdict the pure mapper folds into its action.
+
+    Exposed as a first-class envelope field so Node can enforce it on the
+    landing path (EXECUTOR_EVENTS_DEDUP_ENFORCED, default OFF — the inline
+    Node route historically never consulted ``delivery``).
+    """
+    delivery = _delivery(event)
+    if delivery.get("duplicate") is True:
+        return {"duplicate": True, "reason": "duplicate"}
+    if delivery.get("outOfOrder") is True:
+        return {"duplicate": True, "reason": "out_of_order"}
+    return {"duplicate": False}
+
+
+# ── Artifacts normalization port (server/index.ts normalizeExecutorArtifacts
+#    + server/routes/artifact-utils.ts validateArtifactPath) ─────────────────
+
+ARTIFACT_KINDS = ("file", "report", "url", "log")
+
+
+def validate_artifact_path(artifact_path: str) -> bool:
+    """Port of artifact-utils.ts ``validateArtifactPath``: any ``..`` rejects
+    (covers ``../``, ``..\\`` and embedded traversal segments)."""
+    return ".." not in artifact_path
+
+
+def _optional_trimmed(value: Any) -> Optional[str]:
+    """JS ``value?.trim() || undefined`` for optional artifact fields."""
+    trimmed = _trimmed(value)
+    return trimmed or None
+
+
+def normalize_executor_artifacts(artifacts: Any) -> Optional[list[dict[str, Any]]]:
+    """Port of index.ts ``normalizeExecutorArtifacts`` with the traversal
+    guard applied at ingestion.
+
+    Returns ``None`` when the input is not an array (Node ``undefined``:
+    the mission keeps its current artifacts). Otherwise returns the
+    normalized list, which MAY be empty — Node collapses an empty result to
+    ``undefined`` before patching, and the seam mirrors that.
+
+    Divergence (deliberate, stricter): an artifact whose trimmed ``path``
+    contains ``..`` is dropped entirely. Node ingests such records and only
+    rejects them later when the artifact content is read
+    (validateArtifactPath in the artifacts routes), so dropping at ingestion
+    is at least as strict end to end.
+    """
+    if not isinstance(artifacts, list):
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        kind = artifact.get("kind")
+        if kind not in ARTIFACT_KINDS:
+            continue
+        name = _trimmed(artifact.get("name"))
+        if not name:
+            continue
+
+        path = _optional_trimmed(artifact.get("path"))
+        if path is not None and not validate_artifact_path(path):
+            # Traversal payload (e.g. "../../etc/passwd"): reject at ingestion.
+            continue
+
+        entry: dict[str, Any] = {"kind": kind, "name": name}
+        artifact_id = _optional_trimmed(artifact.get("id"))
+        if artifact_id is not None:
+            entry["id"] = artifact_id
+        if path is not None:
+            entry["path"] = path
+        url = _optional_trimmed(artifact.get("url"))
+        if url is not None:
+            entry["url"] = url
+        mime_type = _optional_trimmed(artifact.get("mimeType"))
+        if mime_type is not None:
+            entry["mimeType"] = mime_type
+        preview_type = artifact.get("previewType")
+        if preview_type in ("text", "json", "html", "pdf", "image", "log"):
+            entry["previewType"] = preview_type
+        size = artifact.get("size")
+        if _is_number(size) and size >= 0:
+            entry["size"] = size
+        description = _optional_trimmed(artifact.get("description"))
+        if description is not None:
+            entry["description"] = description
+        normalized.append(entry)
+
+    return normalized
 
 
 # ── Pure mapper port (server/core/executor-event-mapper.ts) ─────────────────
@@ -311,7 +419,7 @@ def project_executor_event(
     action = map_executor_event_to_action(event)
     apply_plan = build_executor_apply_plan(event, mission)
 
-    return {
+    envelope = {
         "ok": True,
         "source": "python",
         "provenance": EXECUTOR_EVENT_PROJECTION_PROVENANCE,
@@ -321,5 +429,14 @@ def project_executor_event(
         "stateChanging": is_state_changing_executor_event(event.get("type"), event.get("status")),
         "routing": routing,
         "action": action,
+        "dedup": resolve_executor_delivery_dedup(event),
         "apply": apply_plan,
     }
+
+    # Only claim the artifacts decision when the delivery actually carried an
+    # artifacts array; otherwise Node keeps its own (identical) normalization.
+    artifacts = normalize_executor_artifacts(event.get("artifacts"))
+    if artifacts is not None:
+        envelope["artifacts"] = artifacts
+
+    return envelope

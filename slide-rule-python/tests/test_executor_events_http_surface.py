@@ -123,9 +123,31 @@ def test_project_duplicate_terminal_delivery_returns_dedup_verdict():
     }
     body = _project({"event": event, "mission": MISSION}).json()
     assert body["action"] == {"action": "duplicate", "reason": "duplicate"}
+    assert body["dedup"] == {"duplicate": True, "reason": "duplicate"}
     assert body["routing"]["ignoredTerminal"] is True
     # The apply plan mirrors the inline route, which never dedups.
     assert body["apply"]["kind"] == "done"
+
+
+def test_project_normalizes_artifacts_and_blocks_traversal_paths():
+    event = {
+        **BASE_EVENT,
+        "eventId": "evt-http-artifacts",
+        "type": "job.completed",
+        "status": "completed",
+        "artifacts": [
+            {"kind": "file", "name": " report.json ", "path": " out/report.json "},
+            {"kind": "file", "name": "evil", "path": "../../etc/passwd"},
+            {"kind": "bogus", "name": "dropped"},
+        ],
+    }
+    body = _project({"event": event, "mission": MISSION}).json()
+    assert body["artifacts"] == [
+        {"kind": "file", "name": "report.json", "path": "out/report.json"}
+    ]
+
+    no_artifacts = _project({"event": BASE_EVENT, "mission": MISSION}).json()
+    assert "artifacts" not in no_artifacts
 
 
 def test_project_blueprint_mission_routes_to_blueprint():

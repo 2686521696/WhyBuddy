@@ -23,8 +23,11 @@ from services.executor_event_projection import (  # noqa: E402
     is_blueprint_executor_mission_id,
     is_state_changing_executor_event,
     map_executor_event_to_action,
+    normalize_executor_artifacts,
     project_executor_event,
     resolve_executor_callback_routing,
+    resolve_executor_delivery_dedup,
+    validate_artifact_path,
 )
 
 rng = random.Random(20260706)
@@ -638,3 +641,129 @@ def test_project_executor_event_fail_closed_on_malformed_payloads():
         event = dict(VALID_EVENT)
         event[missing] = "   "
         assert project_executor_event(event, MISSION)["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# Slice 2: dedup verdict (first-class envelope field)
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_verdict_mirrors_the_mapper_delivery_checks():
+    assert resolve_executor_delivery_dedup({}) == {"duplicate": False}
+    assert resolve_executor_delivery_dedup({"delivery": {"duplicate": True}}) == {
+        "duplicate": True,
+        "reason": "duplicate",
+    }
+    assert resolve_executor_delivery_dedup({"delivery": {"outOfOrder": True}}) == {
+        "duplicate": True,
+        "reason": "out_of_order",
+    }
+    # duplicate wins over outOfOrder, matching the mapper branch order.
+    assert resolve_executor_delivery_dedup(
+        {"delivery": {"duplicate": True, "outOfOrder": True}}
+    ) == {"duplicate": True, "reason": "duplicate"}
+    # Truthy-but-not-True values do not trigger (JS === true).
+    assert resolve_executor_delivery_dedup({"delivery": {"duplicate": 1}}) == {
+        "duplicate": False
+    }
+
+
+def test_projection_envelope_carries_dedup_verdict():
+    envelope = project_executor_event(
+        {**VALID_EVENT, "delivery": {"duplicate": True}}, MISSION
+    )
+    assert envelope["dedup"] == {"duplicate": True, "reason": "duplicate"}
+    assert envelope["action"] == {"action": "duplicate", "reason": "duplicate"}
+    # The apply plan still mirrors the inline route (which never dedups).
+    assert envelope["apply"]["kind"] == "done"
+
+    envelope = project_executor_event(dict(VALID_EVENT), MISSION)
+    assert envelope["dedup"] == {"duplicate": False}
+
+
+# ---------------------------------------------------------------------------
+# Slice 2: artifacts normalization (index.ts normalizeExecutorArtifacts +
+# artifact-utils.ts validateArtifactPath)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_artifact_path_rejects_any_dotdot():
+    assert validate_artifact_path("reports/out.json")
+    assert not validate_artifact_path("../secrets")
+    assert not validate_artifact_path("a/../../b")
+    assert not validate_artifact_path("..\\windows\\style")
+    assert not validate_artifact_path("weird..name")  # Node is this strict too
+
+
+def test_normalize_artifacts_non_array_returns_none():
+    assert normalize_executor_artifacts(None) is None
+    assert normalize_executor_artifacts({"kind": "file"}) is None
+    assert normalize_executor_artifacts("nope") is None
+
+
+def test_normalize_artifacts_field_trimming_and_filtering():
+    normalized = normalize_executor_artifacts(
+        [
+            {
+                "kind": "file",
+                "id": " a1 ",
+                "name": "  report.json  ",
+                "path": " out/report.json ",
+                "url": "",
+                "mimeType": " application/json ",
+                "previewType": "json",
+                "size": 128,
+                "description": " the report ",
+            },
+            {"kind": "hologram", "name": "bad kind"},
+            {"kind": "file", "name": "   "},
+            "not-an-object",
+            {"kind": "log", "name": "run.log", "size": -5},
+            {"kind": "url", "name": "link", "url": " http://x ", "previewType": "nope"},
+        ]
+    )
+    assert normalized == [
+        {
+            "kind": "file",
+            "name": "report.json",
+            "id": "a1",
+            "path": "out/report.json",
+            "mimeType": "application/json",
+            "previewType": "json",
+            "size": 128,
+            "description": "the report",
+        },
+        {"kind": "log", "name": "run.log"},
+        {"kind": "url", "name": "link", "url": "http://x"},
+    ]
+
+
+def test_normalize_artifacts_drops_path_traversal_payloads():
+    normalized = normalize_executor_artifacts(
+        [
+            {"kind": "file", "name": "evil", "path": "../../etc/passwd"},
+            {"kind": "file", "name": "evil-win", "path": "..\\..\\secret"},
+            {"kind": "file", "name": "evil-nested", "path": "ok/../../../etc/shadow"},
+            {"kind": "file", "name": "good", "path": "artifacts/out.txt"},
+        ]
+    )
+    assert normalized == [{"kind": "file", "name": "good", "path": "artifacts/out.txt"}]
+
+
+def test_projection_envelope_artifacts_key_only_when_delivery_carries_array():
+    envelope = project_executor_event(dict(VALID_EVENT), MISSION)
+    assert "artifacts" not in envelope
+
+    envelope = project_executor_event(
+        {**VALID_EVENT, "artifacts": [{"kind": "file", "name": "a", "path": "x.txt"}]},
+        MISSION,
+    )
+    assert envelope["artifacts"] == [{"kind": "file", "name": "a", "path": "x.txt"}]
+
+    # All entries rejected -> explicit empty list (Node seam maps it to
+    # "keep current artifacts" instead of falling back to raw event data).
+    envelope = project_executor_event(
+        {**VALID_EVENT, "artifacts": [{"kind": "file", "name": "e", "path": "../x"}]},
+        MISSION,
+    )
+    assert envelope["artifacts"] == []

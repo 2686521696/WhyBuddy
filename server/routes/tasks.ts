@@ -58,6 +58,13 @@ import {
   type PythonThinProxyRequest,
   type PythonThinProxyResult,
 } from './python-thin-proxy.js';
+import {
+  decideExecutorCancelViaPython,
+  interpretExecutorCancelDownstreamViaPython,
+  isExecutorDispatchPythonDecisionsEnabled,
+  planExecutorDispatchViaPython,
+  type ExecutorCancelPythonDecision,
+} from './executor-dispatch-python-decisions.js';
 
 const DEFAULT_LIMIT = 20;
 const DEFAULT_DECISION_LIMIT = 50;
@@ -1280,20 +1287,64 @@ async function dispatchMissionToExecutor(
 
   const executionMode =
     process.env.LOBSTER_EXECUTION_MODE === 'mock' ? 'mock' : 'real';
-  applyMissionDispatchPayload(firstJob, missionId, sourceText, executionMode);
+
+  // ── Python dispatch decision surface (EXECUTOR_DISPATCH_PYTHON_DECISIONS,
+  // default OFF). Pure decisions only: job payload patch, requestId /
+  // idempotencyKey derivation and callback URL passthrough come from Python
+  // when the flag is on and the envelope validates; any infra failure or
+  // invalid envelope falls back to the identical inline derivations below.
+  // The ExecutorClient HTTP transport, retries and traceId stay in Node.
+  let requestId = `mission_${missionId}_attempt_${mission.attempt ?? 1}`;
+  let idempotencyKey = `mission:${missionId}:attempt:${mission.attempt ?? 1}`;
+  let callbackUrl = options.callbackUrl;
+  let jobPayloadDecided = false;
+  if (isExecutorDispatchPythonDecisionsEnabled()) {
+    const planned = await planExecutorDispatchViaPython({
+      mission: {
+        missionId,
+        title: mission.title,
+        sourceText: mission.sourceText,
+        attempt: mission.attempt,
+        topicId: mission.topicId,
+      },
+      executionModeEnv: process.env.LOBSTER_EXECUTION_MODE,
+      hasFirstJob: true,
+      firstJobPayload: firstJob.payload,
+      callbackUrl: options.callbackUrl,
+      fetchImpl: options.fetchImpl,
+    });
+    if (planned.delegated) {
+      requestId = planned.plan.requestId;
+      idempotencyKey = planned.plan.idempotencyKey;
+      if (planned.plan.callbackUrl) {
+        callbackUrl = planned.plan.callbackUrl;
+      }
+      if (planned.plan.jobPayload) {
+        firstJob.payload = planned.plan.jobPayload;
+        jobPayloadDecided = true;
+      }
+    } else {
+      console.warn(
+        `[tasks] python dispatch decisions unavailable; falling back to Node decisions: ${planned.reason}`,
+      );
+    }
+  }
+  if (!jobPayloadDecided) {
+    applyMissionDispatchPayload(firstJob, missionId, sourceText, executionMode);
+  }
 
   const executorClient = new ExecutorClient({
     baseUrl: options.executorBaseUrl,
-    callbackUrl: options.callbackUrl,
+    callbackUrl,
     fetchImpl: options.fetchImpl,
   });
 
   try {
     const dispatchResult = await executorClient.dispatchPlan(buildResult.plan, {
       jobId: firstJob.id,
-      requestId: `mission_${missionId}_attempt_${mission.attempt ?? 1}`,
+      requestId,
       traceId: randomUUID(),
-      idempotencyKey: `mission:${missionId}:attempt:${mission.attempt ?? 1}`,
+      idempotencyKey,
     });
 
     runtime.updateMissionStage(
@@ -1948,7 +1999,47 @@ export function createTaskRouter(
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    if (FINAL_MISSION_STATUSES.has(task.status)) {
+    // ── Python cancel decision surface (EXECUTOR_DISPATCH_PYTHON_DECISIONS,
+    // default OFF). Pure decisions only: already-final short-circuit,
+    // reason/requestedBy/source normalization, forward verdict and cancel
+    // URL/request body come from Python when the flag is on and the envelope
+    // validates; otherwise the identical inline derivations below apply. The
+    // downstream HTTP call, lifecycle/store/scheduler advisories and the
+    // runtime cancel stay in Node.
+    let pythonCancelDecision: ExecutorCancelPythonDecision | undefined;
+    const pythonCancelTaskInput = {
+      id: task.id,
+      status: task.status,
+      executor: {
+        jobId: task.executor?.jobId,
+        baseUrl: task.executor?.baseUrl,
+      },
+    };
+    const pythonCancelBodyInput = {
+      reason: req.body?.reason,
+      requestedBy: req.body?.requestedBy,
+      source: req.body?.source,
+    };
+    if (isExecutorDispatchPythonDecisionsEnabled()) {
+      const decided = await decideExecutorCancelViaPython({
+        task: pythonCancelTaskInput,
+        body: pythonCancelBodyInput,
+        defaultExecutorBaseUrl,
+        fetchImpl,
+      });
+      if (decided.delegated) {
+        pythonCancelDecision = decided.decision;
+      } else {
+        console.warn(
+          `[tasks] python cancel decisions unavailable; falling back to Node decisions: ${decided.reason}`,
+        );
+      }
+    }
+
+    const alreadyFinal = pythonCancelDecision
+      ? pythonCancelDecision.alreadyFinal
+      : FINAL_MISSION_STATUSES.has(task.status);
+    if (alreadyFinal) {
       return res.json({
         ok: true,
         alreadyFinal: true,
@@ -1957,15 +2048,19 @@ export function createTaskRouter(
       });
     }
 
-    const reason =
-      typeof req.body?.reason === 'string' && req.body.reason.trim()
+    const reason = pythonCancelDecision
+      ? pythonCancelDecision.reason
+      : typeof req.body?.reason === 'string' && req.body.reason.trim()
         ? req.body.reason.trim()
         : undefined;
-    const requestedBy =
-      typeof req.body?.requestedBy === 'string' && req.body.requestedBy.trim()
+    const requestedBy = pythonCancelDecision
+      ? pythonCancelDecision.requestedBy
+      : typeof req.body?.requestedBy === 'string' && req.body.requestedBy.trim()
         ? req.body.requestedBy.trim()
         : undefined;
-    const source = normalizeCancelSource(req.body?.source);
+    const source = pythonCancelDecision
+      ? pythonCancelDecision.cancelSource
+      : normalizeCancelSource(req.body?.source);
 
     const cancelUser = (req as unknown as AuthenticatedRequest).user;
     const cancelActor = cancelUser
@@ -2028,33 +2123,39 @@ export function createTaskRouter(
         )
       : undefined;
 
-    const executorJobId = task.executor?.jobId?.trim();
+    const executorJobId = pythonCancelDecision
+      ? pythonCancelDecision.executorJobId
+      : task.executor?.jobId?.trim();
+    const shouldForwardToExecutor = pythonCancelDecision
+      ? pythonCancelDecision.forward
+      : Boolean(executorJobId);
     let executorForwarded = false;
 
-    if (executorJobId) {
+    if (shouldForwardToExecutor && executorJobId) {
       const executorBaseUrl =
         task.executor?.baseUrl?.trim() || defaultExecutorBaseUrl;
-      const requestBody: CancelExecutorJobRequest = {
-        reason,
-        requestedBy,
-        source: toExecutorCancelSource(source),
-      };
+      const cancelRequestUrl =
+        pythonCancelDecision?.cancelUrl ??
+        buildExecutorUrl(
+          executorBaseUrl,
+          EXECUTOR_API_ROUTES.cancelJob.replace(':id', encodeURIComponent(executorJobId)),
+        );
+      const requestBody: CancelExecutorJobRequest | Record<string, unknown> =
+        pythonCancelDecision?.requestBody ?? {
+          reason,
+          requestedBy,
+          source: toExecutorCancelSource(source),
+        };
 
       let downstreamResponse: Response;
       try {
-        downstreamResponse = await fetchImpl(
-          buildExecutorUrl(
-            executorBaseUrl,
-            EXECUTOR_API_ROUTES.cancelJob.replace(':id', encodeURIComponent(executorJobId)),
-          ),
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
+        downstreamResponse = await fetchImpl(cancelRequestUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        );
+          body: JSON.stringify(requestBody),
+        });
       } catch (error) {
         return res.status(503).json({
           error:
@@ -2072,30 +2173,67 @@ export function createTaskRouter(
         parsedBody = null;
       }
 
-      if (!downstreamResponse.ok) {
-        const message =
-          typeof parsedBody === 'object' &&
-          parsedBody !== null &&
-          'error' in parsedBody &&
-          typeof parsedBody.error === 'string'
-            ? parsedBody.error
-            : `Executor cancel request failed with HTTP ${downstreamResponse.status}`;
-
-        if (downstreamResponse.status !== 404) {
-          return res.status(502).json({ error: message });
-        }
-      } else {
-        executorForwarded = true;
-        const downstreamStatus =
-          typeof parsedBody === 'object' &&
-          parsedBody !== null &&
-          'status' in parsedBody
-            ? parsedBody.status
-            : undefined;
-        if (!isExecutorTerminalStatus(downstreamStatus)) {
-          executorForwarded = true;
+      // Downstream outcome interpretation: Python verdict when the decision
+      // surface is active (infra failure falls back to the identical inline
+      // interpretation), Node inline otherwise.
+      let cancelOutcome:
+        | { executorForwarded: boolean; error?: { status: number; message: string } }
+        | undefined;
+      if (pythonCancelDecision) {
+        const interpreted = await interpretExecutorCancelDownstreamViaPython({
+          task: pythonCancelTaskInput,
+          body: pythonCancelBodyInput,
+          defaultExecutorBaseUrl,
+          downstream: {
+            ok: downstreamResponse.ok,
+            status: downstreamResponse.status,
+            body: parsedBody,
+          },
+          fetchImpl,
+        });
+        if (interpreted.delegated) {
+          cancelOutcome = interpreted.outcome;
+        } else {
+          console.warn(
+            `[tasks] python cancel outcome unavailable; falling back to Node interpretation: ${interpreted.reason}`,
+          );
         }
       }
+      if (!cancelOutcome) {
+        if (!downstreamResponse.ok) {
+          const message =
+            typeof parsedBody === 'object' &&
+            parsedBody !== null &&
+            'error' in parsedBody &&
+            typeof parsedBody.error === 'string'
+              ? parsedBody.error
+              : `Executor cancel request failed with HTTP ${downstreamResponse.status}`;
+
+          cancelOutcome =
+            downstreamResponse.status !== 404
+              ? { executorForwarded: false, error: { status: 502, message } }
+              : { executorForwarded: false };
+        } else {
+          let forwarded = true;
+          const downstreamStatus =
+            typeof parsedBody === 'object' &&
+            parsedBody !== null &&
+            'status' in parsedBody
+              ? parsedBody.status
+              : undefined;
+          if (!isExecutorTerminalStatus(downstreamStatus)) {
+            forwarded = true;
+          }
+          cancelOutcome = { executorForwarded: forwarded };
+        }
+      }
+
+      if (cancelOutcome.error) {
+        return res
+          .status(cancelOutcome.error.status)
+          .json({ error: cancelOutcome.error.message });
+      }
+      executorForwarded = cancelOutcome.executorForwarded;
     }
 
     const cancelled = runtime.cancelMission(task.id, {

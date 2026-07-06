@@ -17,7 +17,10 @@ import {
 } from "../shared/mission/contracts.js";
 import type { ExecutorEvent } from "../shared/executor/contracts.js";
 import { isBlueprintExecutorMissionId } from "./core/executor-callback-routing.js";
-import { runExecutorEventPythonProjection } from "./routes/executor-events-python-projection.js";
+import {
+  applyOrSkipProjectedExecutorAction,
+  maybeProjectExecutorEventViaPython,
+} from "./routes/executor-events-python-projection.js";
 import type {
   ExecutorPreviewSession,
   ExecutorPreviewSessionStatus,
@@ -1934,7 +1937,49 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
       `Executor event at ${executorStageLabel(stageKey)}`;
     const executorName =
       event.executor?.trim() || current.executor?.name || "executor";
-    const artifacts = normalizeExecutorArtifacts(event.artifacts);
+
+    // ── Python event→action projection (EXECUTOR_EVENTS_PYTHON_PROJECTION,
+    // default ON; explicit "false" opts out, vitest stays on the Node path).
+    // STATE-CHANGING events only; streaming events (job.log / job.log_stream /
+    // job.screenshot) always stay inline so the Socket.IO passthrough never
+    // gains an HTTP hop. The decision is fetched BEFORE the execution patch so
+    // the Python-normalized artifacts (slice 2) land in the same patch; the
+    // runtime apply still happens after the patch + heartbeat reset, exactly
+    // where the inline branches run. On Python infra failure this is null and
+    // the inline mapper below stays the source of behavior — byte-identical.
+    const pythonProjection = await maybeProjectExecutorEventViaPython({
+      event: {
+        version: event.version,
+        eventId: event.eventId,
+        missionId,
+        jobId: event.jobId.trim(),
+        executor: event.executor,
+        type: event.type,
+        status: event.status,
+        occurredAt: event.occurredAt,
+        stageKey: event.stageKey,
+        progress: event.progress,
+        message: event.message,
+        detail: event.detail,
+        summary: event.summary,
+        errorCode: event.errorCode,
+        waitingFor: event.waitingFor,
+        log: event.log,
+        delivery: (event as Record<string, unknown>).delivery,
+        artifacts: event.artifacts,
+      },
+      mission: {
+        currentProgress: current.progress,
+        stageLabel: executorStageLabel(stageKey),
+      },
+    });
+
+    // Artifacts: consume the Python normalization when it claimed the
+    // decision (delivery carried an array and every entry validated,
+    // traversal-guarded); otherwise keep the identical Node normalization.
+    const artifacts = pythonProjection?.artifactsProvided
+      ? pythonProjection.artifacts
+      : normalizeExecutorArtifacts(event.artifacts);
     const instance = normalizeExecutorInstance(event.payload);
     const securitySummary = normalizeSecuritySummary(event.payload);
     const previewSession = normalizePreviewSession(event.payload);
@@ -1965,76 +2010,52 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
     // ── HeartbeatMonitor: reset on every event ──
     heartbeatMonitor.resetHeartbeat(missionId);
 
-    // ── Python event→action projection (EXECUTOR_EVENTS_PYTHON_PROJECTION,
-    // default ON; explicit "false" opts out, vitest stays on the Node path).
-    // STATE-CHANGING events only; streaming events (job.log / job.log_stream /
-    // job.screenshot) always stay inline so the Socket.IO passthrough never
-    // gains an HTTP hop. On Python infra failure we fall through to the
-    // existing inline mapper below — byte-identical behavior.
-    const pythonProjectionHandled = await runExecutorEventPythonProjection({
-      event: {
-        version: event.version,
-        eventId: event.eventId,
-        missionId,
-        jobId: event.jobId.trim(),
-        executor: event.executor,
-        type: event.type,
-        status: event.status,
-        occurredAt: event.occurredAt,
-        stageKey: event.stageKey,
-        progress: event.progress,
-        message: event.message,
-        detail: event.detail,
-        summary: event.summary,
-        errorCode: event.errorCode,
-        waitingFor: event.waitingFor,
-        log: event.log,
-        delivery: (event as Record<string, unknown>).delivery,
-      },
-      mission: {
-        currentProgress: current.progress,
-        stageLabel: executorStageLabel(stageKey),
-      },
-      ctx: {
-        missionId,
-        stageKey,
-        executorName,
-        decision: normalizeExecutorDecision(event.decision),
-      },
-      deps: {
-        markMissionRunning: (id, stage, runningDetail, runningProgress, source) =>
-          void missionRuntime.markMissionRunning(
-            id,
-            stage,
-            runningDetail,
-            runningProgress,
-            source
-          ),
-        waitOnMission: (
-          id,
-          waitingFor,
-          waitingDetail,
-          waitingProgress,
-          decision,
-          source
-        ) =>
-          void missionRuntime.waitOnMission(
+    // Apply the Python-projected action through the same runtime calls the
+    // inline handler performs. With EXECUTOR_EVENTS_DEDUP_ENFORCED=true
+    // (default OFF) a duplicate / out-of-order verdict skips the apply
+    // (logged) so replayed terminal events cannot re-land.
+    if (pythonProjection) {
+      applyOrSkipProjectedExecutorAction(
+        pythonProjection,
+        {
+          missionId,
+          stageKey,
+          executorName,
+          decision: normalizeExecutorDecision(event.decision),
+        },
+        {
+          markMissionRunning: (id, stage, runningDetail, runningProgress, source) =>
+            void missionRuntime.markMissionRunning(
+              id,
+              stage,
+              runningDetail,
+              runningProgress,
+              source
+            ),
+          waitOnMission: (
             id,
             waitingFor,
             waitingDetail,
             waitingProgress,
-            decision as MissionDecision | undefined,
+            decision,
             source
-          ),
-        finishMission: (id, summary, source) =>
-          void missionRuntime.finishMission(id, summary, source),
-        failMission: (id, message, source) =>
-          void missionRuntime.failMission(id, message, source),
-        cancelMission: (id, input) => void missionRuntime.cancelMission(id, input),
-        clearHeartbeat: id => heartbeatMonitor.clearHeartbeat(id),
-      },
-    });
-    if (pythonProjectionHandled) {
+          ) =>
+            void missionRuntime.waitOnMission(
+              id,
+              waitingFor,
+              waitingDetail,
+              waitingProgress,
+              decision as MissionDecision | undefined,
+              source
+            ),
+          finishMission: (id, summary, source) =>
+            void missionRuntime.finishMission(id, summary, source),
+          failMission: (id, message, source) =>
+            void missionRuntime.failMission(id, message, source),
+          cancelMission: (id, input) => void missionRuntime.cancelMission(id, input),
+          clearHeartbeat: id => heartbeatMonitor.clearHeartbeat(id),
+        },
+      );
       return response.json({
         ok: true,
         accepted: true,

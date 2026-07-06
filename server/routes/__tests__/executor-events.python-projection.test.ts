@@ -12,11 +12,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG,
   EXECUTOR_EVENTS_PROJECT_ENDPOINT,
   EXECUTOR_EVENTS_PYTHON_PROJECTION_FLAG,
   applyPythonProjectedExecutorAction,
+  isExecutorEventsDedupEnforcementEnabled,
   isExecutorEventsPythonProjectionEnabled,
   isStateChangingExecutorCallbackEvent,
+  maybeProjectExecutorEventViaPython,
   projectExecutorEventViaPython,
   runExecutorEventPythonProjection,
   type ExecutorProjectionApplyDeps,
@@ -368,6 +371,259 @@ describe("runExecutorEventPythonProjection", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(deps.markMissionRunning).not.toHaveBeenCalled();
+  });
+});
+
+describe("EXECUTOR_EVENTS_DEDUP_ENFORCED dedup landing (slice 2)", () => {
+  const duplicateEnvelope = {
+    ...pythonEnvelope({
+      kind: "done",
+      progress: 100,
+      detail: "All work finished.",
+      message: "All work finished.",
+      clearHeartbeat: true,
+    }),
+    action: { action: "duplicate", reason: "duplicate" },
+    dedup: { duplicate: true, reason: "duplicate" },
+  };
+
+  it("is default OFF: only an explicit true enables enforcement", () => {
+    expect(isExecutorEventsDedupEnforcementEnabled()).toBe(false);
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "1");
+    expect(isExecutorEventsDedupEnforcementEnabled()).toBe(false);
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "true");
+    expect(isExecutorEventsDedupEnforcementEnabled()).toBe(true);
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "false");
+    expect(isExecutorEventsDedupEnforcementEnabled()).toBe(false);
+  });
+
+  it("flag on: a forged terminal replay (duplicate verdict) is blocked — no runtime writes", async () => {
+    enableFlag();
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "true");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    stubFetch(async () => jsonResponse(duplicateEnvelope));
+    const deps = makeDeps();
+
+    const handled = await runExecutorEventPythonProjection({
+      event: {
+        ...baseEvent,
+        delivery: { sequence: 8, attempt: 2, duplicate: true, outOfOrder: false },
+      },
+      mission,
+      ctx,
+      deps,
+    });
+
+    // Handled (the route answers ok) but nothing was applied.
+    expect(handled).toBe(true);
+    expect(deps.markMissionRunning).not.toHaveBeenCalled();
+    expect(deps.finishMission).not.toHaveBeenCalled();
+    expect(deps.failMission).not.toHaveBeenCalled();
+    expect(deps.cancelMission).not.toHaveBeenCalled();
+    expect(deps.clearHeartbeat).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("EXECUTOR_EVENTS_DEDUP_ENFORCED"),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("mission-1"));
+  });
+
+  it("flag on: an out_of_order verdict is blocked too", async () => {
+    enableFlag();
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "true");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    stubFetch(async () =>
+      jsonResponse({
+        ...duplicateEnvelope,
+        action: { action: "duplicate", reason: "out_of_order" },
+        dedup: { duplicate: true, reason: "out_of_order" },
+      }),
+    );
+    const deps = makeDeps();
+
+    const handled = await runExecutorEventPythonProjection({
+      event: { ...baseEvent, delivery: { outOfOrder: true } },
+      mission,
+      ctx,
+      deps,
+    });
+
+    expect(handled).toBe(true);
+    expect(deps.finishMission).not.toHaveBeenCalled();
+  });
+
+  it("flag off (default): the duplicate delivery still lands, unchanged behavior", async () => {
+    enableFlag();
+    stubFetch(async () => jsonResponse(duplicateEnvelope));
+    const deps = makeDeps();
+
+    const handled = await runExecutorEventPythonProjection({
+      event: { ...baseEvent, delivery: { duplicate: true } },
+      mission,
+      ctx,
+      deps,
+    });
+
+    expect(handled).toBe(true);
+    expect(deps.markMissionRunning).toHaveBeenCalled();
+    expect(deps.finishMission).toHaveBeenCalledWith(
+      "mission-1",
+      "All work finished.",
+      "executor",
+    );
+    expect(deps.clearHeartbeat).toHaveBeenCalledWith("mission-1");
+  });
+
+  it("older python envelopes without dedup: the mapper duplicate action is honored", async () => {
+    enableFlag();
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "true");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { dedup: _dedup, ...withoutDedup } = duplicateEnvelope;
+    stubFetch(async () => jsonResponse(withoutDedup));
+    const deps = makeDeps();
+
+    const handled = await runExecutorEventPythonProjection({
+      event: { ...baseEvent, delivery: { duplicate: true } },
+      mission,
+      ctx,
+      deps,
+    });
+
+    expect(handled).toBe(true);
+    expect(deps.finishMission).not.toHaveBeenCalled();
+  });
+
+  it("flag on but no duplicate verdict: applies normally", async () => {
+    enableFlag();
+    vi.stubEnv(EXECUTOR_EVENTS_DEDUP_ENFORCED_FLAG, "true");
+    stubFetch(async () =>
+      jsonResponse({
+        ...pythonEnvelope({
+          kind: "done",
+          progress: 100,
+          detail: "All work finished.",
+          clearHeartbeat: true,
+        }),
+        dedup: { duplicate: false },
+      }),
+    );
+    const deps = makeDeps();
+
+    const handled = await runExecutorEventPythonProjection({
+      event: baseEvent,
+      mission,
+      ctx,
+      deps,
+    });
+
+    expect(handled).toBe(true);
+    expect(deps.finishMission).toHaveBeenCalled();
+  });
+});
+
+describe("python-normalized artifacts consumption (slice 2)", () => {
+  const applyPlan = {
+    kind: "done",
+    progress: 100,
+    detail: "All work finished.",
+    clearHeartbeat: true,
+  };
+
+  it("consumes a valid normalized artifacts list", async () => {
+    enableFlag();
+    stubFetch(async () =>
+      jsonResponse({
+        ...pythonEnvelope(applyPlan),
+        artifacts: [
+          {
+            kind: "file",
+            name: "report.json",
+            path: "out/report.json",
+            mimeType: "application/json",
+            previewType: "json",
+            size: 128,
+          },
+        ],
+      }),
+    );
+
+    const result = await maybeProjectExecutorEventViaPython({
+      event: { ...baseEvent, artifacts: [{ kind: "file", name: "report.json" }] },
+      mission,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.artifactsProvided).toBe(true);
+    expect(result!.artifacts).toEqual([
+      {
+        kind: "file",
+        name: "report.json",
+        path: "out/report.json",
+        mimeType: "application/json",
+        previewType: "json",
+        size: 128,
+        id: undefined,
+        url: undefined,
+        description: undefined,
+      },
+    ]);
+  });
+
+  it("an empty python list collapses to undefined but still claims the decision", async () => {
+    enableFlag();
+    stubFetch(async () =>
+      jsonResponse({ ...pythonEnvelope(applyPlan), artifacts: [] }),
+    );
+
+    const result = await maybeProjectExecutorEventViaPython({
+      event: {
+        ...baseEvent,
+        artifacts: [{ kind: "file", name: "evil", path: "../../etc/passwd" }],
+      },
+      mission,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.artifactsProvided).toBe(true);
+    expect(result!.artifacts).toBeUndefined();
+  });
+
+  it("rejects traversal paths and malformed entries wholesale (fallback discipline)", async () => {
+    enableFlag();
+    for (const artifacts of [
+      [{ kind: "file", name: "evil", path: "../../etc/passwd" }],
+      [{ kind: "file", name: "evil", path: "ok/../../secret" }],
+      [{ kind: "hologram", name: "x" }],
+      [{ kind: "file", name: "" }],
+      ["not-an-object"],
+      "not-an-array",
+    ]) {
+      stubFetch(async () =>
+        jsonResponse({ ...pythonEnvelope(applyPlan), artifacts }),
+      );
+      const result = await maybeProjectExecutorEventViaPython({
+        event: baseEvent,
+        mission,
+      });
+      expect(result).not.toBeNull();
+      // Whole decision rejected -> Node keeps its own normalization.
+      expect(result!.artifactsProvided).toBe(false);
+      expect(result!.artifacts).toBeUndefined();
+      vi.restoreAllMocks();
+      enableFlag();
+    }
+  });
+
+  it("absent artifacts field leaves the decision with Node", async () => {
+    enableFlag();
+    stubFetch(async () => jsonResponse(pythonEnvelope(applyPlan)));
+
+    const result = await maybeProjectExecutorEventViaPython({
+      event: baseEvent,
+      mission,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.artifactsProvided).toBe(false);
   });
 });
 
