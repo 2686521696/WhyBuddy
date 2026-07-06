@@ -22,12 +22,13 @@ async function stopWindowsProjectProcesses() {
     `  }`,
     `  if ($commandLine -like "*$root*") { return $true }`,
     `  if ($commandLine -match 'scripts[\\\\/]dev-all\\.mjs') { return $true }`,
+    `  # Keep server patterns so dev:stop also catches manual "npm run dev:server".`,
     `  if ($commandLine -match '--import\\s+tsx/esm\\s+server/index\\.ts') { return $true }`,
     `  if ($commandLine -match '--watch-path=server\\s+--watch-path=shared\\s+--import\\s+tsx/esm\\s+server/index\\.ts') { return $true }`,
     `  if ($commandLine -match 'tsx(?:\\.cmd)?\"?\\s+watch.*server/index\\.ts') { return $true }`,
     `  if ($commandLine -match 'services[\\\\/]lobster-executor[\\\\/]src[\\\\/]index\\.ts') { return $true }`,
     `  if ($commandLine -match 'vite(?:\\.cmd)?\"?\\s+--host') { return $true }`,
-    `  if ($commandLine -match 'npm(?:\\.cmd)?\"?\\s+run\\s+dev(?::server|:all|:frontend|:advanced)?') { return $true }`,
+    `  if ($commandLine -match 'npm(?:\\.cmd)?\"?\\s+run\\s+dev(?::server|:all|:frontend|:advanced|:sliderule)?') { return $true }`,
     `  return $false`,
     `}`,
     `$all = Get-CimInstance Win32_Process | Where-Object {`,
@@ -69,7 +70,7 @@ async function stopUnixProjectProcesses() {
     })
     .filter((entry) => {
       if (!entry || entry.pid === process.pid || !entry.command.includes(projectRoot)) return false;
-      if (entry.command.includes("node")) return true;
+      if (entry.command.includes("node")) return true;   // catches vite, executor, and any manual dev:server
       // Only the slide-rule-python uvicorn dev server; never a stray pytest / worker.
       return (
         entry.command.includes("uvicorn") &&
@@ -94,3 +95,5 @@ if (process.platform === "win32") {
 } else {
   await stopUnixProjectProcesses();
 }
+
+console.log("dev:stop complete.");

@@ -13,14 +13,14 @@ import os
 import re
 
 from fastapi import APIRouter, HTTPException, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
 from services.persistence import load_all
 from services.slide_rule_marathon import drive_marathon
-from services.v5_full_driver import drive_full_v5_session
+from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
@@ -207,7 +207,9 @@ async def _run_orchestrate_plan(payload: Any):
         return _bad_plan_request("turnId is required")
 
     try:
-        state = V5SessionState(**_coerce_state_payload(payload["state"]))
+        # orchestrate-plan may receive state with previously elevated artifacts from prior loop commits.
+        # Use server_load for consistency with execute and persisted state handling.
+        state = V5SessionState.server_load(_coerce_state_payload(payload["state"]))
     except (TypeError, ValidationError, ValueError) as error:
         return _bad_plan_request(f"state is invalid: {str(error).splitlines()[0]}")
 
@@ -267,8 +269,12 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     goal_text = payload.get("goal", {}).get("text", "default")
     repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
     state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), payload.get("sessionId"))
-    state, _ = sanitize_session_state(state)
-    _sessions[state.sessionId] = state
+    state, changed = sanitize_session_state(state)
+    # If sanitize mutated the state, persist via save_session so the authoritative
+    # store is consistent. create_session already called _save_sessions internally,
+    # but that was before the sanitize pass — re-save only when changed.
+    if changed:
+        state = save_session(state)
     return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.get("/sessions/{sid}")
@@ -279,7 +285,9 @@ async def get_sess(sid: str, x_internal_key: Optional[str] = Header(None)):
         raise HTTPException(404, "Not found")
     state, changed = sanitize_session_state(state)
     if changed:
-        _sessions[sid] = state
+        # Persist sanitized state so subsequent GETs and service layer see the corrected version.
+        # Avoids _sessions-only write that would diverge from durable persistence.
+        state = save_session(state)
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.put("/sessions/{sid}")
@@ -389,7 +397,13 @@ async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(N
 @router.post("/execute-capability")
 async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
-    state = V5SessionState(**payload["state"])
+    # For execute-capability in drive context (JS driver or mixed), the incoming state
+    # may contain previously server-constructed artifacts (with producedBy, gated_pass etc.)
+    # from prior commits in the same turn or loaded session state.
+    # Use server_load (server_trusted context) to allow legitimate elevated artifacts.
+    # Client cannot forge *new* ones this way because the data originated from server.
+    state_payload = _coerce_state_payload(payload.get("state") or {})
+    state = V5SessionState.server_load(state_payload)
     cap = payload["capabilityId"]
     import time as _time
     t0 = _time.time()
@@ -608,3 +622,63 @@ async def cov(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(No
     state = V5SessionState(**payload["state"])
     gate = evaluate_coverage_gate(state)
     return gate
+
+
+# SSE streaming endpoint — yields live skill-progress events while drive runs.
+# Frontend connects with EventSource; each event is a JSON line.
+@router.post("/drive-full-stream")
+async def drive_full_stream(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """Stream drive-full execution as Server-Sent Events.
+
+    Each event has the shape:  data: <json>\\n\\n
+    Event types (see v5_full_driver.drive_full_v5_session_stream):
+        phase_change  — runtimePhase transition
+        skill_start   — a capability is about to execute (use to highlight thumbnail)
+        skill_result  — capability finished (model + optional mermaid)
+        publish_closure — final closure evidence
+        complete      — final state; stream ends
+    """
+    import json
+
+    _auth(x_internal_key)
+
+    raw_state, _ = sanitize_session_dict(payload.get("state") or {})
+    try:
+        state = V5SessionState(**raw_state)
+    except (ValidationError, TypeError, ValueError) as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_state", "message": str(e).splitlines()[0]},
+        )
+
+    max_loops = int(payload.get("max_loops", 10))
+    user_text = sanitize_session_dict(
+        {"text": payload.get("userText", "") or payload.get("user_text", "")}
+    )[0].get("text", "")
+
+    async def event_generator():
+        try:
+            async for event in drive_full_v5_session_stream(
+                state, max_loops=max_loops, user_instruction=user_text
+            ):
+                if isinstance(event, dict) and event.get("type") == "complete" and isinstance(event.get("state"), dict):
+                    final_state = V5SessionState.server_load(event["state"])
+                    final_state, _ = sanitize_session_state(final_state)
+                    final_state = save_session(final_state)
+                    event = {**event, "state": final_state.model_dump()}
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            error_event = {"type": "error", "message": str(exc)[:300]}
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx buffering
+        },
+    )

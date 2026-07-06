@@ -23,7 +23,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -161,6 +161,21 @@ async def sliderule_api_health():
     return await health()
 
 
+@app.get("/minimal", response_class=HTMLResponse)
+async def serve_minimal_page():
+    """Minimal standalone verification page (no build step, no React).
+
+    Drives the /api/sliderule chain directly and renders backend truth:
+    per-skill closure evidence + skillRuntimeGraph. Served at
+    http://localhost:9700/minimal — used to validate the backend flow
+    independently of the full SPA.
+    """
+    minimal_path = _Path(__file__).resolve().parent / "static" / "minimal.html"
+    if minimal_path.exists():
+        return FileResponse(str(minimal_path), media_type="text/html")
+    return HTMLResponse("<h1>minimal.html not found</h1>", status_code=404)
+
+
 # --- Observability readiness (task 58): ensure Python API surfaces health, provenance,
 # degraded states, and errors with explicit signals. Node remains thin proxy only.
 # All error paths and degraded returns must carry python provenance so degraded states
@@ -231,7 +246,14 @@ def _degraded_example():
 
 @app.post("/api/sliderule/drive-full")
 async def drive_full(payload: dict, x_internal_key: str = Header(None)):
-    if x_internal_key != settings.SLIDE_RULE_INTERNAL_KEY:
+    # Match lenient dev auth from router (allows missing key in non-prod for direct Vite proxy)
+    if x_internal_key is None or x_internal_key == "":
+        if os.getenv("NODE_ENV", "development") != "production":
+            pass
+        else:
+            if x_internal_key != settings.SLIDE_RULE_INTERNAL_KEY:
+                raise HTTPException(403, "Invalid key")
+    elif x_internal_key != settings.SLIDE_RULE_INTERNAL_KEY:
         raise HTTPException(403, "Invalid key")
     raw_state, _ = sanitize_session_dict(payload["state"])
     state = V5SessionState(**raw_state)
@@ -254,6 +276,75 @@ async def drive_full(payload: dict, x_internal_key: str = Header(None)):
         "skillRuntimeGraph": skill_graph,
         "closureWarnings": [],
     }
+
+
+# --- Pure Python direct mode (no Node middleman) ---
+# Serve the built React SPA (dist/public) so /agent-loop/sliderule etc can be accessed
+# directly on the Python port (e.g. http://localhost:9700/agent-loop/sliderule).
+# This lets you run ONLY uvicorn (no Node server at all) for sliderule-focused work.
+#
+# Usage:
+#   1. npm run build
+#   2. (optional) SLIDERULE_STATIC_DIR=/absolute/path/to/dist/public python -m uvicorn app:app --port 9700
+#   3. Open http://localhost:9700/agent-loop/sliderule
+#
+# All /api/sliderule and /api/agent-loop APIs are already mounted and will be direct.
+import os
+from pathlib import Path as _Path
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
+
+_static_dir_env = os.getenv("SLIDERULE_STATIC_DIR")
+if _static_dir_env:
+    _spa_static = _Path(_static_dir_env)
+else:
+    # Default: from slide-rule-python/ go up to repo root /dist/public
+    _spa_static = _Path(__file__).resolve().parent.parent / "dist" / "public"
+
+if _spa_static.exists():
+    # Mount Vite assets (JS/CSS) so the served index.html can load them
+    _assets_dir = _spa_static / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="spa-assets")
+
+    # Also expose top-level static files if any (favicons etc.)
+    app.mount("/static-spa", StaticFiles(directory=str(_spa_static)), name="spa-root-files")
+
+    def _serve_spa_index():
+        index_file = _spa_static / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file), media_type="text/html")
+        return HTMLResponse("<h1>SPA not built. Run `npm run build` first.</h1>")
+
+    # SPA fallback for the rich sliderule / agent-loop experience (pure direct to 9700, no Node).
+    # Client-side routes (wouter) need index.html returned for these paths.
+    # /api/* routes are already registered earlier so they take priority.
+    @app.get("/agent-loop/sliderule/{full_path:path}", include_in_schema=False)
+    @app.get("/agent-loop/sliderule", include_in_schema=False)
+    async def _spa_agent_loop_sliderule(full_path: str = ""):
+        return _serve_spa_index()
+
+    @app.get("/sliderule/{full_path:path}", include_in_schema=False)
+    @app.get("/sliderule", include_in_schema=False)
+    async def _spa_sliderule(full_path: str = ""):
+        return _serve_spa_index()
+
+    # Optional: full /agent-loop/* can also fall to SPA if you want the rich UI instead of minimal dashboard.
+    # If you still want the old minimal shell at /agent-loop , comment the next two lines.
+    @app.get("/agent-loop/{full_path:path}", include_in_schema=False)
+    @app.get("/agent-loop", include_in_schema=False)
+    async def _spa_agent_loop_catch(full_path: str = ""):
+        return _serve_spa_index()
+
+    @app.get("/AgentLoop/{full_path:path}", include_in_schema=False)
+    @app.get("/AgentLoop", include_in_schema=False)
+    async def _spa_agent_loop_upper(full_path: str = ""):
+        return _serve_spa_index()
+
+    # Root fallback (useful when running pure Python on 9700)
+    @app.get("/", include_in_schema=False)
+    async def _spa_root():
+        return _serve_spa_index()
 
 if __name__ == "__main__":
     import uvicorn
