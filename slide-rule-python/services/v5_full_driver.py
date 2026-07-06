@@ -10,6 +10,18 @@ from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_session import pick_next_capabilities, commit_artifact, append_reasoning_event, append_replay_event
+
+
+def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
+    """交付意图下是否还有未提交的交付能力可选（用于门通过后的继续判定）。"""
+    from .slide_rule_session import _is_delivery_intent
+
+    if not _is_delivery_intent(user_instruction or ""):
+        return False
+    try:
+        return bool(pick_next_capabilities(state, user_instruction or ""))
+    except Exception:
+        return False
 from .v5_capability_executor import execute_v5_capability
 from .persistence import persist_state
 from .slide_rule_coverage import (
@@ -368,6 +380,12 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             gate = evaluate_coverage_gate(state)
             if gate.get("passed"):
                 state.goal["status"] = "clear"
+                # 交付意图：门通过但交付清单未出全时继续循环（单轮限选 5 个能力，
+                # picker 会跳过已提交项），让一轮"打包交付"产出全部交付物。
+                if _has_pending_delivery_picks(state, user_instruction):
+                    loop += 1
+                    persist_state(state)
+                    continue
                 break
             loop += 1
             persist_state(state)
@@ -671,6 +689,11 @@ async def drive_full_v5_session_stream(
             gate = await asyncio.to_thread(evaluate_coverage_gate, state)
             if gate.get("passed"):
                 state.goal["status"] = "clear"
+                # 交付意图：门通过但交付清单未出全时继续循环（同步驱动同款逻辑）。
+                if await asyncio.to_thread(_has_pending_delivery_picks, state, user_instruction):
+                    loop += 1
+                    persist_state(state)
+                    continue
                 break
             loop += 1
             persist_state(state)

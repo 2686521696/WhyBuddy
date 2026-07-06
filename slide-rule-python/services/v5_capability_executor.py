@@ -263,7 +263,14 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
         summary = "Retrieved external evidence via tool/skill"
     elif "report" in capability_id:
         summary = "Retrieved external evidence and generated a report"
-        content = f"[Supporting evidence] {evidence[0] if evidence else ''}\n[Counter-evidence] ...\n... full structured\n{content}"
+        # 人类可读的证据摘要行（不要 dict 转储进报告正文）
+        top = evidence[0] if evidence else None
+        top_line = (
+            f"{top.get('content', '')}（来源: {top.get('source', '?')} · 置信 {top.get('score', 0)} · 检索方式 {top.get('retrieval', 'keyword')}）"
+            if isinstance(top, dict)
+            else ""
+        )
+        content = f"【支撑证据】{top_line}\n\n{content}"
     elif "evidence" in capability_id:
         summary = "Retrieved external evidence"
     else:

@@ -149,6 +149,46 @@ def test_drive_full_uses_persisted_server_state_as_authority(tmp_path, monkeypat
     assert produced_caps & delivery_caps, f"no delivery artifacts produced: {sorted(produced_caps - {None})}"
 
 
+def test_single_delivery_turn_produces_full_package(tmp_path, monkeypatch):
+    """一轮"打包交付"应产出全部交付物：门通过后若交付清单未出全，驱动循环
+    必须继续（单轮限选 5 个能力 + picker 跳过已提交项协同完成）。"""
+    monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
+    from services.v5_full_driver import drive_full_v5_session
+
+    # 已收敛的会话（复用合约 + 全部前置能力已提交）
+    state = _state_with_contract()
+    state.sessionId = "single-delivery-turn"
+    for cap in ["critique.generate", "risk.analyze", "synthesis.merge", "evidence.search"]:
+        _commit(state, cap)
+    state = resolve_coverage_gaps_from_state(state)
+    state.goal["status"] = "clear"
+
+    out = drive_full_v5_session(
+        state,
+        user_instruction="打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
+        max_loops=8,
+    )
+    final = out["finalState"] if isinstance(out, dict) and "finalState" in out else out
+    arts = final.get("artifacts") if isinstance(final, dict) else getattr(final, "artifacts", [])
+    produced = set()
+    for a in arts or []:
+        prod = a.get("producedBy") if isinstance(a, dict) else getattr(a, "producedBy", None)
+        cap = prod.get("capabilityId") if isinstance(prod, dict) else getattr(prod, "capabilityId", None)
+        if cap:
+            produced.add(cap)
+
+    expected = {
+        "report.write",
+        "document.draft",
+        "traceability.matrix",
+        "task.write",
+        "instruction.package",
+        "outcome.visualize",
+        "handoff.package",
+    }
+    assert expected.issubset(produced), f"missing deliverables: {sorted(expected - produced)}"
+
+
 def test_full_driver_converges_instead_of_max_repeat_guard_stall(tmp_path, monkeypatch):
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
     from services.v5_full_driver import drive_full_v5_session
