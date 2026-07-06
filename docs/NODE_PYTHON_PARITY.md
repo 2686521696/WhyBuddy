@@ -1,0 +1,124 @@
+# Node → Python 迁移对等清单（NODE_PYTHON_PARITY）
+
+> 基线：`SLIDERULE_V5_BACKEND=python`（默认），Node 经 `server/sliderule/python-delegation.ts` 薄代理到 :9700。
+> 数据来源：`server/routes/`（67 个顶层路由模块 + `blueprint/` 约 70 个子模块 + `node-adapters/` 35 个适配器）、
+> `slide-rule-python/app.py` + `routes/`（5 个路由模块，4 个已挂载）、`slide-rule-python/FINAL_MIGRATION_STATUS.md`。
+
+## 一、总览
+
+- **整体对等度**：约 **36–40%**（与 FINAL_MIGRATION_STATUS.md 自评一致）。V5 sliderule 执行面 + agent-loop + a2a 已由 Python 主导；LLM Phase 1 约 80%；真实 RAG 仅 10–15%；V5 之外的全服务器迁移为个位数百分比。
+- **Python 已挂载 HTTP 面**（app.py）：`/api/sliderule/*`（sliderule_full）、`/api/blueprint/spec-documents/*`、`/api/agent-loop/*`、`/api/rag/*`、health/ready/observability + AgentLoop 静态面板。`routes/blueprint_jobs.py` 已写但**未挂载**。
+- **Python services 层远宽于路由层**（约 115 个 service 文件：auth_*、permission_*、audit_*、task_*、telemetry_*、web_aigc_*_adapter、a2a_* 等已做"takeover/cutover"），但多数**没有对应 FastAPI 路由**，即"有内脏没有皮肤"。
+
+### 三个最大缺口
+1. **真实向量 RAG**：Python 侧仍是关键词/tag 检索 + 生成（无 Qdrant/embedding），证据链达不到生产级；这是金链路"Skill 联动→报告/导出"的证据质量瓶颈。
+2. **跨进程实测闭环**：Node→Python 真实委托 smoke（`sliderule.live-delegation.test.ts`）默认 skip；`structure.decompose` live 尚无干净通过记录；未映射能力仍落 generic fallback。
+3. **HTTP 面缺口**：auth / permissions / tasks / audit / telemetry / web-aigc 适配器在 Python 只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
+
+### 建议迁移顺序（先解锁金链路：一句话 → spec → Skill 联动 → 预览/导出）
+1. **补齐 V5 execute 实测**：live delegation smoke 常态化（:9700 + LIVE_NODE_TO_PYTHON_SLIDERULE=1 进 CI），structure.decompose / report.write 干净通过；未映射 cap 收敛进 `execute_mapped_capability`。
+2. **真实向量 RAG**（rag_service + rag.py 换 embedding 检索）——直接提升 evidence/report/risk 三个金链路能力的产出质量。
+3. **挂载 Python 侧 skill/mcp 运行时路由**（v5_skill_runtime_graph / mcp_runtime 已存在），消除 `skill.invoke`、`mcp.call` 依赖 Node 的最后一段。
+4. **预览/导出面**：blueprint spec-docs 的 review/export 代理开关（`BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY`）转默认开，挂载 blueprint_jobs.py。
+5. **auth/permissions/audit 补路由挂载**（service 已 takeover），之后 Node index.ts 才能按计划退役（见 index.ts 内 task 55/60 注释）。
+
+图例：✅ 已由 Python 主导（Node 薄代理/已委托）｜🟡 部分/开关控制｜❌ 仅 Node｜🗄️ legacy 分支（仅 `SLIDERULE_V5_BACKEND=legacy` 时加载）
+
+## 二、SlideRule 核心（金链路）
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| /api/sliderule sessions CRUD | ✅ 薄代理（sliderule.ts） | sliderule_full.py 全量 | 迁移到Python（已完成，保留薄代理） | GET/PUT/DELETE 均 delegateToPythonSlideRule |
+| /orchestrate-plan | ✅ 薄代理 | ✅ | 迁移到Python（已完成） | 失败时返回 python_unavailable，不再回落 Node 业务 |
+| /execute-capability（V5 caps） | ✅ 薄代理 + 🗄️ legacy 动态导入 | execute_mapped_capability 覆盖多数 cap | 迁移到Python | 未映射 cap 落 generic fallback；structure.decompose live 未闭环 |
+| /drive-full /drive-marathon /coverage /drive-full-stream | ✅ 薄代理 | ✅（含 stream） | 迁移到Python（已完成） | Python 另有顶层 /api/sliderule/drive-full 宽松鉴权 |
+| /respond（legacy 会话应答） | 🗄️ legacy 路径 | 无 | 放弃删除 | 仅 legacy 分支可达 |
+| sessions/__clear、__reload 测试钩子 | ❌ 测试用 | 无 | 保留Node薄代理 | 仅测试环境 |
+| skills.ts（Skill 注册/版本/指标） | ❌ Node | services/v5_skill_runtime_graph.py、skill_runtime.py（无路由） | **迁移到Python（高优）** | skill.invoke 是金链路"Skill 联动"关键 |
+| mcp.ts（mcp.call） | ❌ Node（node-adapter） | services/mcp_runtime.py（无路由） | **迁移到Python（高优）** | 历史"外部工具调用失败"痛点来源 |
+| nl-command.ts | ❌ Node（直连 llm-client） | services/nl_command_runtime.py（无路由） | 迁移到Python | 一句话入口相关 |
+| health.ts / persistence-health.ts | ✅ health 已代理；persistence ❌ | /health /ready /api/observability | 保留Node薄代理 | persistence-health 可并入 Python observability |
+
+## 三、Agent-Loop
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| /api/agent-loop 全面（runs/queue/settings/stream/artifacts/cancel） | ✅ 纯薄代理（agent-loop.ts），**尚未在 index.ts 挂载**（task 33） | agent_loop.py 全量 + 静态 dashboard + 十余个 agent_loop_* services | 迁移到Python（已完成） | 前端可直连 :9700；Node 代理挂载或直接跳过均可 |
+
+## 四、Blueprint / Autopilot（存档为 legacy）
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| blueprint.ts + blueprint/（brainstorm、spec-tree、agent-crew、stage-edit、jobs、preview…约 70 子模块） | ❌ Node 全量（400+ 文件） | 大量 blueprint_* takeover services；无对应完整路由 | **保留Node原样，不再迁移（存档）** | 产品决策：autopilot 归档；避免沉没成本 |
+| spec-documents 生成（generate-one/batch） | 🟡 开关代理（BLUEPRINT_SPEC_DOCS_PYTHON_PROXY，默认关） | blueprint_spec_docs.py ✅ | 迁移到Python（开关转默认开） | 金链路"一句话→spec"依赖此面 |
+| spec-documents review/export | 🟡 开关代理（BLUEPRINT_REVIEW_EXPORT_PYTHON_PROXY，默认关） | ✅（/review /export /artifact-memory/contract） | 迁移到Python（开关转默认开） | 金链路"预览/导出"依赖此面 |
+| blueprint jobs runtime（start/status/cancel/read） | ❌ Node（jobs/…） | blueprint_jobs.py 已写**未挂载** | 迁移到Python（先挂载） | 一行 include_router 即可开始验证 |
+| socket-relay、agent-reasoning-bridge | ❌ Node（socket） | 无 | 保留Node薄代理 | socket 依赖是 index.ts 暂不能退役的原因之一 |
+
+## 五、A2A / Agents / 协作
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| a2a.ts（stream/cancel/registry/sessions/chat/report/analytics） | ✅ PYTHON_FIRST_COMPAT 薄代理（task 47–51） | services/a2a_runtime.py 等 4 个 | 迁移到Python（已完成） | /invoke 保留 Node 本地执行器兼容壳 |
+| agents.ts / guest-agents.ts | ❌ Node | 无 | 保留Node薄代理 | 非金链路，低频管理面 |
+| planets.ts / tasks.ts / projects.ts / workflows.ts | ❌ Node | task_* / mission_* / workflow_runtime services（无路由） | 迁移到Python（次优先） | index.ts 退役前置项（task 55 注释点名 main routes） |
+| replay.ts / lineage.ts | ❌ Node | services/mission_event_replay.py（无路由） | 保留Node薄代理 | 观测型，后置 |
+| reputation.ts / analytics.ts | ❌ Node | 无 | 保留Node薄代理 | marketplace/声誉体系，产品线未定前不迁 |
+| export.ts / reports.ts | ❌ Node | 无 | 保留Node薄代理 | 跨框架工作流导出，与金链路导出不同物 |
+
+## 六、计费 / 成本 / 遥测
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| cost.ts（成本观测） | ❌ Node | services/slide_rule_budget.py（无路由） | 迁移到Python | 预算门控与 V5 执行同域，宜随核心走 |
+| telemetry.ts | ❌ Node | telemetry.py / telemetry_runtime.py（无路由） | 迁移到Python | service 已在，缺挂载 |
+
+## 七、Admin / 审计 / 认证 / 权限
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| auth.ts | ❌ Node | auth_*（10 个 takeover services，无路由） | 迁移到Python | index.ts 退役硬前置（"auth…cut over"） |
+| permissions.ts | ❌ Node | permission_*（7 个 services，无路由） | 迁移到Python | 同上 |
+| audit.ts | ❌ Node | audit_*（3 个 services，无路由） | 迁移到Python | 同上 |
+| admin.ts / config.ts | ❌ Node | 无 | 保留Node薄代理 | 低频管理面 |
+| knowledge-admin.ts | ✅ 经 /api/admin/knowledge/proxy 代理 | services/knowledge_admin_runtime.py | 迁移到Python（已完成） | 失败带 node-knowledge-admin-python-runtime 溯源 |
+| feishu.ts | ❌ Node | 无 | 保留Node薄代理 | 外部 IM 桥，独立演进 |
+
+## 八、RAG / 知识
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| rag.ts（query/search/ingest） | ✅ delegate-first，连接失败才回落 Node 兼容 | rag.py（search/ingest/batch/health）+ rag_service | 迁移到Python（已完成主体） | **最大缺口：仍是关键词/tag，非向量** |
+| knowledge.ts（知识图谱公开 API） | ❌ Node | 无 | 保留Node薄代理 | 图谱与 RAG 演进合并后再迁 |
+| vector-delete.ts / vector-update.ts | ❌ Node | 无（Python 无向量库） | 迁移到Python（随真实向量 RAG 一起） | 现在迁没有落点 |
+| graph-search.ts / similarity-match.ts | ❌ Node（node-adapter） | web_aigc_search_adapter.py（无路由） | 迁移到Python（随检索面） | sliderule 证据链可能引用 |
+
+## 九、Web-AIGC 能力路由（一次性能力面，约 30 个）
+
+Python 已有 16 个 `web_aigc_*_adapter` services，但**均无挂载路由**；Node 侧全部经 `node-adapters/` 执行。
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| web-search.ts / web-qa.ts / image-search.ts | ❌ Node | web_aigc_search/web_qa_adapter（无路由） | 迁移到Python | 金链路证据采集会用到 |
+| intent-recognition.ts / orchestration-recognition-jump.ts | ❌ Node | web_aigc_orchestration_adapter（无路由） | 迁移到Python | "一句话"入口识别相关 |
+| chat.ts / robot-reply.ts / format-output.ts | ❌ Node | 部分 adapter | 保留Node薄代理 | 通用对话面，非 sliderule 专属 |
+| file-generation / file-slicing / file-translation / excel-read / long-text-extraction | ❌ Node | web_aigc_file_adapter（无路由） | 保留Node薄代理 | 文档处理按需再迁 |
+| ai-ppt / dynamic-chart / vision / voice / audio-recognition / ocr-recognition / static-webpage-read | ❌ Node | 对应 adapter services（无路由） | **放弃候选** | sliderule 不调用的一次性演示能力 |
+| open-page / open-report / open-dashboard / get-device-info / get-location-info / transaction-flow | ❌ Node | web_aigc_open/device_location/transaction_flow_adapter | **放弃候选** | 纯前端跳转/设备信息类，价值低 |
+| web-aigc-risk-actions.ts / aigc-monitoring.ts | ❌ Node | 无 | 保留Node薄代理 | 风控/监控面，观察期 |
+
+## 十、其他基础设施
+
+| 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
+|---|---|---|---|---|
+| ue.ts（UE5 本地串流） | ❌ Node | 无 | 放弃删除（或独立仓） | 与主线无关的实验运行时 |
+| artifact-utils.ts | ❌ Node（工具函数） | 无 | 保留Node | 非路由，静态资产 MIME 映射 |
+| a2a-python-runtime.ts | ✅ 桥接件本体 | — | 保留Node薄代理 | 属于代理基建，随 Node 壳存亡 |
+
+## 十一、统计
+
+- ✅ 已由 Python 主导（Node 薄代理已生效）：**7 个面**（sliderule V5 执行/会话、agent-loop、a2a、rag query、knowledge-admin、health、blueprint spec-docs 开关代理×2 计入🟡）。
+- 建议**迁移到Python**（含已完成保持 + 待补挂载）：约 **24 项**，其中高优 5 项（skill/mcp 运行时、真实向量 RAG、spec-docs 代理默认开、blueprint_jobs 挂载、live 委托实测）。
+- 建议**保留Node薄代理**（暂不迁）：约 **17 项**（blueprint 存档、agents/guest-agents、reputation/analytics、replay/lineage、admin/config、feishu、chat 系、文件处理系、风控监控、socket-relay）。
+- 建议**放弃删除**：约 **15 项**（/respond legacy、ue.ts、一次性 web-aigc 能力：ai-ppt、dynamic-chart、vision、voice、audio/ocr-recognition、static-webpage-read、open-page/report/dashboard、get-device/location-info、transaction-flow）。
+- 🗄️ legacy 死分支：sliderule.ts 内所有 `isLegacyNodeBusinessEnabled()` 动态导入路径（orchestrate/execute/respond 的 Node 业务），默认与生产环境永不加载，V5 live 闭环后可物理删除。
