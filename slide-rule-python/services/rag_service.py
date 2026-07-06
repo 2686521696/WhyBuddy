@@ -23,10 +23,21 @@ KNOWLEDGE_BASE = [
 ]
 
 def retrieve_evidence(query: str, top_k: int = 6) -> List[Dict[str, Any]]:
-    """Realistic RAG retrieval (keyword overlap + relevance).
-    In full port: use embedding + Qdrant like tws-ai-ask-python vector_db_service + rag_service.
+    """RAG retrieval：向量优先（配置了 embedding 凭据时），关键词基线兜底。
+    每条结果带 retrieval 字段如实标注检索方式（vector / keyword）。
     Always returns sources so tools/evidence bring '外部证据'.
     """
+    from services.vector_rag import vector_search_or_none
+
+    vector_results = vector_search_or_none(query, top_k, seed_corpus=KNOWLEDGE_BASE)
+    if vector_results is not None:
+        return vector_results
+
+    return _retrieve_evidence_keyword(query, top_k)
+
+
+def _retrieve_evidence_keyword(query: str, top_k: int = 6) -> List[Dict[str, Any]]:
+    """关键词基线（历史行为，向量不可用时的诚实降级路径）。"""
     q_lower = query.lower()
     scored = []
     for item in KNOWLEDGE_BASE:
@@ -46,11 +57,12 @@ def retrieve_evidence(query: str, top_k: int = 6) -> List[Dict[str, Any]]:
             "content": item["content"],
             "source": item["source"],
             "score": round(min(score / 3.0, 1.0), 2),
-            "id": item["id"]
+            "id": item["id"],
+            "retrieval": "keyword",
         })
     if not results:
         # Fallback minimal evidence
-        results = [{"content": "RBAC scoping and audit logging are baseline for permission systems.", "source": "fallback-knowledge", "score": 0.6, "id": "fallback"}]
+        results = [{"content": "RBAC scoping and audit logging are baseline for permission systems.", "source": "fallback-knowledge", "score": 0.6, "id": "fallback", "retrieval": "keyword"}]
     return results
 
 def generate_with_rag(prompt: str, context: List[Dict[str, Any]]) -> str:
@@ -523,10 +535,12 @@ def rag_query_search(query: str, options: Optional[Dict[str, Any]] = None) -> Di
     """
     options = options or {}
     top_k = int(options.get("topK") or options.get("limit") or 10)
-    mode = options.get("mode") or "hybrid"
     start = __import__("time").time()
     sources = retrieve_evidence(query, top_k=top_k)
     latency_ms = int((__import__("time").time() - start) * 1000)
+    # 如实标注检索方式：向量命中 → semantic；关键词基线 → keyword
+    used_vector = any(s.get("retrieval") == "vector" for s in sources)
+    mode = "semantic" if used_vector else "keyword"
     # Map to search result shape expected by /api/rag/search callers and delegate
     results = [
         {
@@ -534,6 +548,7 @@ def rag_query_search(query: str, options: Optional[Dict[str, Any]] = None) -> Di
             "content": s.get("content"),
             "source": s.get("source"),
             "score": s.get("score", 0.0),
+            "retrieval": s.get("retrieval", "keyword"),
         }
         for s in sources
     ]
@@ -542,6 +557,7 @@ def rag_query_search(query: str, options: Optional[Dict[str, Any]] = None) -> Di
         "totalCandidates": len(results),
         "latencyMs": latency_ms,
         "mode": mode,
+        "retrieval": "vector" if used_vector else "keyword",
         "provenance": RAG_QUERY_PROVENANCE,
         "backend": RAG_QUERY_BACKEND,
         "source": "python",
@@ -549,17 +565,53 @@ def rag_query_search(query: str, options: Optional[Dict[str, Any]] = None) -> Di
 
 
 def rag_ingest_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Minimal contract for /ingest delegate; defers full storage to rag_ingestion when wired.
-
-    Returns explicit python signal; Node delegate will surface this when route mounted.
+    """/ingest delegate：向量库可用（embedding 凭据已配置）时真实入库；
+    否则保持 contract-only 响应（migratedStorage: False），诚实标注。
     """
-    return {
+    base = {
         "success": True,
         "accepted": True,
         "operation": "ingest",
         "provenance": RAG_QUERY_PROVENANCE,
         "backend": RAG_QUERY_BACKEND,
         "source": "python",
+    }
+
+    from services.vector_rag import EmbeddingUnavailable, get_vector_store
+
+    store = get_vector_store(KNOWLEDGE_BASE)
+    if store is not None and store.available():
+        try:
+            chunks = _build_rag_ingestion_chunks(payload)
+            total = store.ingest(
+                [
+                    {
+                        "id": chunk["chunkId"],
+                        "content": chunk["content"],
+                        "source": f"{chunk['sourceType']}:{chunk['sourceId']}",
+                    }
+                    for chunk in chunks
+                ]
+            )
+            return {
+                **base,
+                "migratedStorage": True,
+                "storage": "python-rag-vector-index",
+                "chunkCount": len(chunks),
+                "indexSize": total,
+            }
+        except (EmbeddingUnavailable, ValueError) as exc:
+            return {
+                **base,
+                "success": False,
+                "accepted": False,
+                "migratedStorage": False,
+                "storage": "python-rag-vector-index",
+                "error": {"code": "python_rag_vector_ingest_failed", "message": str(exc)[:200], "retryable": True},
+            }
+
+    return {
+        **base,
         "migratedStorage": False,
         "storage": "python-rag-ingest-contract",
     }

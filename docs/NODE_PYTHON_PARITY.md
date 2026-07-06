@@ -11,7 +11,7 @@
 - **Python services 层远宽于路由层**（约 115 个 service 文件：auth_*、permission_*、audit_*、task_*、telemetry_*、web_aigc_*_adapter、a2a_* 等已做"takeover/cutover"），但多数**没有对应 FastAPI 路由**，即"有内脏没有皮肤"。
 
 ### 三个最大缺口
-1. **真实向量 RAG**：Python 侧仍是关键词/tag 检索 + 生成（无 Qdrant/embedding），证据链达不到生产级；这是金链路"Skill 联动→报告/导出"的证据质量瓶颈。
+1. ~~真实向量 RAG~~（2026-07 已落地 `services/vector_rag.py`：embedding + 本地余弦索引，凭据缺失时诚实回退关键词；Qdrant 后端可作后续增强）。
 2. **跨进程实测闭环**：Node→Python 真实委托 smoke（`sliderule.live-delegation.test.ts`）默认 skip；`structure.decompose` live 尚无干净通过记录；未映射能力仍落 generic fallback。
 3. **HTTP 面缺口**：auth / permissions / tasks / audit / telemetry / web-aigc 适配器在 Python 只有 service，没有挂载路由，Node 无法对这些面做薄代理收编。
 
@@ -88,7 +88,7 @@
 
 | 能力/路由 | Node 现状 | Python 现状 | 建议 | 备注 |
 |---|---|---|---|---|
-| rag.ts（query/search/ingest） | ✅ delegate-first，连接失败才回落 Node 兼容 | rag.py（search/ingest/batch/health）+ rag_service | 迁移到Python（已完成主体） | **最大缺口：仍是关键词/tag，非向量** |
+| rag.ts（query/search/ingest） | ✅ delegate-first，连接失败才回落 Node 兼容 | rag.py + rag_service + **vector_rag.py（2026-07：真实向量检索）** | 已完成 | 配置 LLM_API_KEY 即语义检索（provenance 如实标 vector/keyword）；ingest 可真实入库本地向量索引；无凭据时诚实回退关键词基线 |
 | knowledge.ts（知识图谱公开 API） | ❌ Node | 无 | 保留Node薄代理 | 图谱与 RAG 演进合并后再迁 |
 | vector-delete.ts / vector-update.ts | ❌ Node | 无（Python 无向量库） | 迁移到Python（随真实向量 RAG 一起） | 现在迁没有落点 |
 | graph-search.ts / similarity-match.ts | ❌ Node（node-adapter） | web_aigc_search_adapter.py（无路由） | 迁移到Python（随检索面） | sliderule 证据链可能引用 |

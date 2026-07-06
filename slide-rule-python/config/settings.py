@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     NODE_BRIDGE_RUNTIME_ENABLED: bool = True
     NODE_BRIDGE_BASE_URL: str = "http://localhost:3001"
 
+    # Real vector RAG (embeddings + cosine index). Needs LLM_API_KEY for the
+    # OpenAI-compatible /embeddings endpoint; without it retrieval falls back
+    # to the keyword baseline with honest provenance.
+    RAG_VECTOR_ENABLED: bool = True
+    RAG_VECTOR_INDEX_PATH: str = "data/rag-vector-index.json"
+
     # AgentLoop worker bridge (108): builds commands for existing Node queue runner.
     # Node remains execution owner; Python owns command construction + receipts.
     # Safe defaults; do not assume node present in dry-run.

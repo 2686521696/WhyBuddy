@@ -189,3 +189,4 @@ tws-ai-ask-python/
 
 # Blueprint job store 是运行时生成的数据，不入库（见 server/routes/blueprint/job-store.ts）
 .kiro/blueprint-assets/jobs.json
+slide-rule-python/data/rag-vector-index.json
