@@ -865,10 +865,10 @@ function SlideRuleImmersion({
                   INTAKE / SKILL LINKAGE 等卡片)就淡出,避免卡片压在水印上显得错乱。
                   latestTurn 同时覆盖实时轮次与刷新后从持久化状态恢复的轮次。 */}
               <img
-                src="/assets/SlideRule_transparent_cropped.png"
+                src="/assets/sliderule-logo.png"
                 alt="SlideRule"
-                className={`w-[min(82vw,360px)] object-contain drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)] transition-opacity duration-500 ${
-                  latestTurn || isRunning ? "opacity-0" : "opacity-[0.55]"
+                className={`w-[min(82vw,420px)] object-contain drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)] transition-opacity duration-500 ${
+                  latestTurn || isRunning ? "opacity-0" : "opacity-[0.88]"
                 }`}
                 title="SlideRule"
               />

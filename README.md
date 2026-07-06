@@ -12,7 +12,7 @@
 </p>
 
 <blockquote>
-<strong>Progress note:</strong> The engineering app currently trails the SlideRule Skill. For the complete product rehearsal experience, use the <a href="./skills/sliderule.zip">SlideRule Skill</a> first; the engineered project is still moving forward.
+<strong>Progress note (updated 2026-07):</strong> The engineered app now runs the full golden path end to end — one-sentence intent → LLM-generated five-system model (validated by deterministic gates) → publish closure (6/6 evidence) → exportable delivery package, verified across 9+ novel domains (<a href="./docs/five-system-generation-eval.md">generation eval report</a>). The portable <a href="./skills/sliderule.zip">SlideRule Skill</a> remains available for agent hosts.
 </blockquote>
 
 <blockquote>
@@ -34,9 +34,9 @@
   <img alt="status" src="https://img.shields.io/badge/Status-Early_Testing-orange?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/License-MIT-111827?style=flat-square" />
   <img alt="stars" src="https://img.shields.io/github/stars/xiaojilele-glitch/SlideRule?style=flat-square" />
-  <img alt="ts" src="https://img.shields.io/badge/TypeScript-576k_Lines-2563eb?style=flat-square" />
-  <img alt="tests" src="https://img.shields.io/badge/Tests-921_Files-0f766e?style=flat-square" />
-  <img alt="specs" src="https://img.shields.io/badge/Specs-303_Dirs-7c3aed?style=flat-square" />
+  <img alt="ts" src="https://img.shields.io/badge/TypeScript-791k_Lines-2563eb?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/Tests-1503_Files-0f766e?style=flat-square" />
+  <img alt="specs" src="https://img.shields.io/badge/Specs-316_Dirs-7c3aed?style=flat-square" />
 </p>
 
 ---

@@ -12,7 +12,7 @@
 </p>
 
 <blockquote>
-<strong>进度说明：</strong>当前工程化项目进度暂时落后于 SlideRule Skill。如需完整产品预演体验，请优先使用 <a href="./skills/sliderule.zip">SlideRule Skill</a>；工程化项目仍在持续推进中。
+<strong>进度说明（2026-07 更新）：</strong>工程化应用已跑通完整黄金路径——一句话意图 → LLM 五系统模型（确定性结构门校验）→ 发布闭环（6/6 证据）→ 可导出交付包，并在 9+ 个全新领域实测通过（<a href="./docs/five-system-generation-eval.md">生成质量评测报告</a>）。便携版 <a href="./skills/sliderule.zip">SlideRule Skill</a> 继续可用于各 Agent 宿主。
 </blockquote>
 
 <blockquote>
@@ -34,9 +34,9 @@
   <img alt="status" src="https://img.shields.io/badge/状态-早期测试-orange?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/协议-MIT-111827?style=flat-square" />
   <img alt="stars" src="https://img.shields.io/github/stars/xiaojilele-glitch/SlideRule?style=flat-square" />
-  <img alt="ts" src="https://img.shields.io/badge/TypeScript-576k_行-2563eb?style=flat-square" />
-  <img alt="tests" src="https://img.shields.io/badge/测试-921_文件-0f766e?style=flat-square" />
-  <img alt="specs" src="https://img.shields.io/badge/规格-303_目录-7c3aed?style=flat-square" />
+  <img alt="ts" src="https://img.shields.io/badge/TypeScript-791k_行-2563eb?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/测试-1503_文件-0f766e?style=flat-square" />
+  <img alt="specs" src="https://img.shields.io/badge/规格-316_目录-7c3aed?style=flat-square" />
 </p>
 
 ---
