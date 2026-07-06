@@ -1,17 +1,33 @@
 /**
  * WorkflowScreen — 16:9 流程图渲染器
  *
- * 渲染 Mermaid flowchart 或 sequenceDiagram，
- * 展示 Workflow Skill 产出的业务流程。
+ * 数据优先级（诚实降级链）：
+ *   1. 五系统模型 workflow 段：nodes/transitions 渲染成 Mermaid flowchart，
+ *      节点审批人角色（assigneeRole）与 rbac.roles 交叉校验，未解析引用如实标红。
+ *   2. SSE skill_result 携带的 mermaid（跨系统联动图，实时推演中）。
+ *   3. 持久化 skillRuntimeGraph 的 workflow 跨系统边（刷新后重建）。
+ *   4. 占位骨架（降透明度 + 提示），不冒充真实产物。
  */
 
 import React, { useMemo } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import {
+  type FiveSystemModel,
+  type SkillRuntimeGraphLike,
+  workflowModelToMermaid,
+  resolveRoleRef,
+  edgesForSkill,
+  crossSkillEdgesToMermaid,
+} from "./five-system-model";
 
 interface WorkflowScreenProps {
   publishClosure?: PublishClosureSummary | null;
   mermaidSource?: string | null;
+  /** 解析出的五系统模型（含 rbac 段用于 assigneeRole 交叉引用）。 */
+  model?: FiveSystemModel | null;
+  /** 持久化的跨系统运行时图（刷新后无 SSE mermaid 时的真实数据源）。 */
+  skillRuntimeGraph?: SkillRuntimeGraphLike | null;
   isActive?: boolean;
   className?: string;
 }
@@ -39,16 +55,48 @@ function extractFlow(text: string): string | null {
 export function WorkflowScreen({
   publishClosure,
   mermaidSource,
+  model,
+  skillRuntimeGraph,
   isActive = false,
   className = "",
 }: WorkflowScreenProps) {
-  const diagram = useMemo(() => {
-    if (mermaidSource) {
-      const extracted = extractFlow(mermaidSource);
-      if (extracted) return extracted;
-    }
-    return null;
+  const workflow = model?.workflow;
+  const nodes = workflow?.nodes ?? [];
+  const transitions = workflow?.transitions ?? [];
+
+  const modelDiagram = useMemo(() => workflowModelToMermaid(workflow), [workflow]);
+
+  const sseDiagram = useMemo(() => {
+    if (!mermaidSource) return null;
+    return extractFlow(mermaidSource);
   }, [mermaidSource]);
+
+  const graphEdges = useMemo(
+    () => edgesForSkill(skillRuntimeGraph, "workflow"),
+    [skillRuntimeGraph]
+  );
+  const graphDiagram = useMemo(
+    () => (graphEdges.length > 0 ? crossSkillEdgesToMermaid("workflow", graphEdges) : null),
+    [graphEdges]
+  );
+
+  // 降级链：模型 → SSE mermaid → 持久化跨系统边 → 占位
+  const diagram = modelDiagram ?? sseDiagram ?? graphDiagram;
+  const sourceKind: "model" | "sse" | "graph" | "placeholder" = modelDiagram
+    ? "model"
+    : sseDiagram
+    ? "sse"
+    : graphDiagram
+    ? "graph"
+    : "placeholder";
+
+  const roleResolutions = useMemo(
+    () => nodes.map((node) => ({ node, role: resolveRoleRef(node.assigneeRole, model) })),
+    [nodes, model]
+  );
+  const unresolvedRoleCount = roleResolutions.filter(
+    (r) => r.role.ref && !r.role.resolved
+  ).length;
 
   const evidence = publishClosure?.perSkillEvidence?.["workflow"];
   const hasEvidence = evidence?.evidencePresent === true;
@@ -64,21 +112,70 @@ export function WorkflowScreen({
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Workflow
         </span>
-        {hasEvidence && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-            evidence ✓
+        {sourceKind === "model" && (
+          <span className="text-xs text-slate-400">
+            {nodes.length} 节点 · {transitions.length} 转移
           </span>
+        )}
+        {sourceKind === "sse" && (
+          <span className="text-xs text-slate-400">跨系统联动 · 实时</span>
+        )}
+        {sourceKind === "graph" && (
+          <span className="text-xs text-slate-400">跨系统联动 · 已持久化</span>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {unresolvedRoleCount > 0 && (
+            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 ring-1 ring-red-200">
+              {unresolvedRoleCount} 个角色未在 RBAC 定义
+            </span>
+          )}
+          {hasEvidence && (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
+              evidence ✓
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Diagram */}
+        <div className={`min-h-0 min-w-0 flex-1 overflow-auto p-3 ${sourceKind === "placeholder" ? "opacity-40" : ""}`}>
+          <MermaidDiagram chart={diagram ?? PLACEHOLDER_FLOW} className="h-full w-full" />
+        </div>
+
+        {/* Node/assignee table — only when the structured model is present */}
+        {sourceKind === "model" && nodes.length > 0 && (
+          <div className="w-64 shrink-0 overflow-auto border-l border-slate-100">
+            <div className="sticky top-0 z-10 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              节点 → 审批人角色（RBAC）
+            </div>
+            <ul className="divide-y divide-slate-100" data-testid="workflow-node-roles">
+              {roleResolutions.map(({ node, role }) => (
+                <li key={node.id} className="px-3 py-2 text-xs">
+                  <div className="font-medium text-slate-800">{node.name || node.id}</div>
+                  <div className="mt-1">
+                    {role.ref ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+                          role.resolved
+                            ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+                            : "bg-red-50 text-red-600 ring-1 ring-red-200"
+                        }`}
+                      >
+                        {role.resolved ? "✓" : "✗"} {role.label}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-300">无审批人</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        <MermaidDiagram
-          chart={diagram ?? PLACEHOLDER_FLOW}
-          className="h-full w-full"
-        />
-      </div>
-
-      {!hasEvidence && !diagram && (
+      {sourceKind === "placeholder" && (
         <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-slate-300">
           推演完成后将显示真实业务流程
         </div>

@@ -14,6 +14,7 @@ import type { UiTurn } from "./types";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { SkillThumbnailBar } from "./SkillThumbnailBar";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
+import type { SkillRuntimeGraphLike } from "./system-screens/five-system-model";
 
 interface SlideRuleStudioProps {
   // --- Chat panel (left) ---
@@ -26,6 +27,8 @@ interface SlideRuleStudioProps {
   latestMermaid?: string | null;
   /** Per-skill raw content accumulated from SSE skill_result events */
   skillContents?: Partial<Record<SkillId, string>>;
+  /** Persisted cross-skill runtime graph (python /drive-full projection) */
+  skillRuntimeGraph?: SkillRuntimeGraphLike | null;
 
   className?: string;
 }
@@ -36,6 +39,7 @@ export function SlideRuleStudio({
   publishClosure,
   latestMermaid,
   skillContents,
+  skillRuntimeGraph,
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail)
@@ -72,6 +76,7 @@ export function SlideRuleStudio({
           publishClosure={publishClosure}
           latestMermaid={latestMermaid}
           skillContents={skillContents}
+          skillRuntimeGraph={skillRuntimeGraph}
           className="min-h-0 flex-1"
         />
       </div>

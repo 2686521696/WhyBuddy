@@ -994,6 +994,10 @@ function SlideRuleImmersion({
           publishClosure={publishClosure}
           latestMermaid={latestMermaid}
           skillContents={skillContents}
+          skillRuntimeGraph={
+            (sessionState as { skillRuntimeGraph?: import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike | null })
+              .skillRuntimeGraph ?? null
+          }
           className="absolute inset-x-0 bottom-[104px] top-[104px]"
         />
       )}

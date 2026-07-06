@@ -550,6 +550,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         } else {
           const { classifyDriveFullStatus, driveFullViaPythonStream } = await import("@/lib/sliderule-marathon-driver");
           setDriveFullStatus("loading");
+          // PYTHON_AUTHORITY: /drive-full-stream 以已持久化会话为权威起点（防伪造，
+          // 见 routes/sliderule_full.py drive_full_stream）。intake 后的 goal 必须先
+          // 落盘，否则 Python 侧以旧的空 goal 推演，闭环 fail-closed 成 0/6。
+          try {
+            await persistSession(preparedState);
+          } catch {
+            // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
+          }
           const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
             stopSignal: controller.signal,
             turnId,

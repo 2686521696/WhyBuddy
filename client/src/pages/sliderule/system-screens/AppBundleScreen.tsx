@@ -1,15 +1,30 @@
 /**
  * AppBundleScreen — 六系统发布证据看板（默认视图）
  *
- * 无激活 Skill 时展示，汇总所有系统的证据状态。
+ * 无激活 Skill 时展示，汇总所有系统的证据状态：
+ *   - 六系统证据卡片（evidencePresent + evidenceRef/artifactId 证据链接）
+ *   - 发布阻塞项（topBlockers：code/path/affectedSkill，fail-closed 如实展示）
+ *   - 闭环元信息（closureHash · stableDigest · generatedAt · versionPins）
+ *   - 五系统模型 appbundle 段的绑定（pageBindings/roleRefs/dataModelRefs，
+ *     交叉引用解析到 page/workflow/rbac/datamodel，未解析引用标红）
  * 是整个 SlideRuleStudio 的"主页"进度锚点。
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import {
+  type FiveSystemModel,
+  type RefResolution,
+  resolveEntityRef,
+  resolvePageRef,
+  resolveRoleRef,
+  resolveWorkflowRef,
+} from "./five-system-model";
 
 interface AppBundleScreenProps {
   publishClosure?: PublishClosureSummary | null;
+  /** 解析出的五系统模型（appbundle 段绑定 + 各段交叉引用目标）。 */
+  model?: FiveSystemModel | null;
   isActive?: boolean;
   className?: string;
 }
@@ -29,18 +44,51 @@ const SKILL_META: Array<{
   { key: "appbundle", label: "AppBundle", desc: "发布闭环 · 版本钉扎", color: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-400" },
 ];
 
+function BindingChip({ res }: { res: RefResolution }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+        res.resolved
+          ? "bg-slate-100 text-slate-700"
+          : "bg-red-50 text-red-600 ring-1 ring-red-200"
+      }`}
+    >
+      {res.resolved ? res.label : `✗ ${res.label}`}
+    </span>
+  );
+}
+
 export function AppBundleScreen({
   publishClosure,
+  model,
   isActive = false,
   className = "",
 }: AppBundleScreenProps) {
-  type SkillEv = { evidencePresent?: boolean; summary?: string } | undefined;
   type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
-  const perSkill = (publishClosure?.perSkillEvidence ?? {}) as Partial<Record<SkillKey, SkillEv>>;
+  const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
+    PublishClosureSummary["perSkillEvidence"]
+  >;
   const totalPresent = publishClosure?.evidencePresentCount ?? 0;
   const totalSkills = publishClosure?.skillCount ?? 6;
   const blocked = publishClosure?.blocked ?? true;
   const allDone = !blocked && totalPresent >= totalSkills;
+  const topBlockers = publishClosure?.topBlockers ?? [];
+
+  const bundle = model?.appbundle;
+  const bindings = useMemo(() => {
+    if (!bundle) return null;
+    return {
+      pages: (bundle.pageBindings ?? []).map((b) => ({
+        page: resolvePageRef(b.pageRef, model),
+        workflow: resolveWorkflowRef(b.workflowRef, model),
+      })),
+      roles: (bundle.roleRefs ?? []).map((r) => resolveRoleRef(r, model)),
+      entities: (bundle.dataModelRefs ?? []).map((e) => resolveEntityRef(e, model)),
+    };
+  }, [bundle, model]);
+  const hasBindings =
+    !!bindings &&
+    (bindings.pages.length > 0 || bindings.roles.length > 0 || bindings.entities.length > 0);
 
   return (
     <div
@@ -74,11 +122,39 @@ export function AppBundleScreen({
         />
       </div>
 
-      {/* Six skill cards */}
       <div className="min-h-0 flex-1 overflow-auto p-4">
+        {/* Blockers — fail-closed 如实展示 */}
+        {blocked && topBlockers.length > 0 && (
+          <div
+            className="mb-3 rounded-xl border border-red-200 bg-red-50/60 p-3"
+            data-testid="appbundle-blockers"
+          >
+            <div className="text-[11px] font-semibold text-red-700">
+              发布阻塞项 · {publishClosure?.blockerCount ?? topBlockers.length}
+            </div>
+            <ul className="mt-1.5 space-y-1">
+              {topBlockers.map((b, i) => (
+                <li key={`${b.code}-${i}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
+                    {b.code}
+                  </span>
+                  {b.affectedSkill && (
+                    <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
+                      skill={b.affectedSkill}
+                    </span>
+                  )}
+                  {b.path && <span className="font-mono text-red-400">{b.path}</span>}
+                  {b.ref && <span className="font-mono text-red-400">ref={b.ref}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Six skill cards */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {SKILL_META.map(({ key, label, desc, color, dot }) => {
-            const ev = perSkill[key as keyof typeof perSkill];
+            const ev = perSkill[key as SkillKey];
             const present = ev?.evidencePresent === true;
             return (
               <div
@@ -104,10 +180,69 @@ export function AppBundleScreen({
                 {present && ev?.summary && (
                   <div className="mt-1.5 line-clamp-2 text-[10px] text-slate-400">{ev.summary}</div>
                 )}
+                {present && (ev?.artifactId || ev?.evidenceRef) && (
+                  <div
+                    className="mt-1.5 truncate font-mono text-[9px] text-slate-400"
+                    title={ev?.evidenceRef || ev?.artifactId}
+                  >
+                    {ev?.artifactId || ev?.evidenceRef}
+                    {ev?.digest ? ` · ${ev.digest.slice(0, 8)}` : ""}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+
+        {/* Model bindings — appbundle 段（pageBindings / roleRefs / dataModelRefs） */}
+        {hasBindings && bindings && (
+          <div
+            className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+            data-testid="appbundle-bindings"
+          >
+            <div className="text-[11px] font-semibold text-slate-600">应用装配绑定</div>
+            <div className="mt-2 space-y-2 text-[11px]">
+              {bindings.pages.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-24 shrink-0 text-slate-400">页面 ↔ 流程</span>
+                  {bindings.pages.map((b, i) => (
+                    <span key={`${b.page.ref}-${i}`} className="inline-flex items-center gap-1">
+                      <BindingChip res={b.page} />
+                      <span className="text-slate-300">→</span>
+                      <BindingChip res={b.workflow} />
+                    </span>
+                  ))}
+                </div>
+              )}
+              {bindings.roles.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-24 shrink-0 text-slate-400">角色（RBAC）</span>
+                  {bindings.roles.map((r) => (
+                    <BindingChip key={r.ref} res={r} />
+                  ))}
+                </div>
+              )}
+              {bindings.entities.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-24 shrink-0 text-slate-400">实体（DataModel）</span>
+                  {bindings.entities.map((e) => (
+                    <BindingChip key={e.ref} res={e} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Closure meta */}
+        {publishClosure && (publishClosure.closureHash || publishClosure.stableDigest || publishClosure.generatedAt) && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-slate-400">
+            {publishClosure.closureHash && <span>closureHash={publishClosure.closureHash}</span>}
+            {publishClosure.stableDigest && <span>digest={publishClosure.stableDigest}</span>}
+            {publishClosure.generatedAt && <span>generatedAt={publishClosure.generatedAt}</span>}
+            <span>versionPins={publishClosure.versionPinsChecked ? "checked" : "unchecked"}</span>
+          </div>
+        )}
 
         {!publishClosure && (
           <div className="mt-6 text-center text-xs text-slate-300">

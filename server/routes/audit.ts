@@ -32,6 +32,10 @@ import type { ComplianceMapper } from "../audit/compliance-mapper.js";
 import type { AuditExport } from "../audit/audit-export.js";
 import type { AuditRetention } from "../audit/audit-retention.js";
 import type { AuditCollector } from "../audit/audit-collector.js";
+import {
+  delegateToPythonThinProxy,
+  isPythonThinProxyEnabled,
+} from "./python-thin-proxy.js";
 
 // ---------------------------------------------------------------------------
 // Route prefix — strip so we can mount at /api/audit
@@ -43,6 +47,31 @@ function stripPrefix(routeDef: string): string {
   const path = routeDef.replace(/^[A-Z]+\s+/, "");
   return path.startsWith(PREFIX) ? path.slice(PREFIX.length) || "/" : path;
 }
+
+// ---------------------------------------------------------------------------
+// Python thin proxy (slide-rule-python routes/audit.py, task 55 unblock)
+// ---------------------------------------------------------------------------
+//
+// Endpoint-for-endpoint delegation for the audit runtime surfaces Python owns:
+// sink (production sink write envelope, synthetic, no external IO),
+// retention-export (retention decision + export manifest) and
+// evidence/classify (safe audit evidence slice). The real hash-chained audit
+// store, query/search, verify/stats, compliance, anomalies, permission trails,
+// lineage and retention archive below stay Node-owned and are never delegated.
+//
+// Security-sensitive surface: flag default OFF (AUDIT_PYTHON_PROXY, explicit
+// "true" opts in) — the wiring exists, flipping the default is a later
+// decision. Flag off keeps today's Node surface (these paths 404). Business
+// responses from Python (2xx/4xx) pass through verbatim; infra failures
+// (connect failure / 5xx / key rejection) return an explicit 502
+// python_unavailable (no fabricated Node result, sliderule.ts precedent).
+const AUDIT_PYTHON_PROXY_FLAG = "AUDIT_PYTHON_PROXY";
+
+const PYTHON_AUDIT_PROXY_ENDPOINTS = [
+  "/sink",
+  "/retention-export",
+  "/evidence/classify",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -70,6 +99,32 @@ export function createAuditRouter(deps: AuditRouterDeps): Router {
     auditRetention,
   } = deps;
   const router = Router();
+
+  // Python-owned audit runtime surfaces (flag-gated thin proxy, see above).
+  for (const endpoint of PYTHON_AUDIT_PROXY_ENDPOINTS) {
+    router.post(endpoint, async (req, res, next) => {
+      if (!isPythonThinProxyEnabled(AUDIT_PYTHON_PROXY_FLAG, { defaultEnabled: false })) {
+        return next();
+      }
+      const delegated = await delegateToPythonThinProxy({
+        endpoint: `${PREFIX}${endpoint}`,
+        method: "POST",
+        payload: req.body ?? {},
+      });
+      if (!delegated.delegated) {
+        console.warn(
+          `[audit] python delegation failed for ${PREFIX}${endpoint}: ${delegated.reason}`,
+        );
+        return res.status(502).json({
+          ok: false,
+          error: "python_unavailable",
+          backend: "python",
+          endpoint: `${PREFIX}${endpoint}`,
+        });
+      }
+      return res.status(delegated.status).json(delegated.body);
+    });
+  }
 
   // =====================================================================
   // 12.3 GET /events/search — Full-text search (BEFORE :id)

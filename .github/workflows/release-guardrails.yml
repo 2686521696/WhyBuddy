@@ -153,6 +153,62 @@ jobs:
       - name: Build
         run: pnpm run build
 
+  python-live-delegation:
+    name: python-live-delegation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: slide-rule-python/requirements.txt
+
+      - name: Install Python Dependencies
+        run: pip install -r slide-rule-python/requirements.txt
+
+      - name: Start slide-rule-python (uvicorn :9700, no LLM key)
+        working-directory: slide-rule-python
+        run: |
+          nohup python -m uvicorn app:app --host 127.0.0.1 --port 9700 > uvicorn.log 2>&1 &
+          echo "waiting for slide-rule-python health on :9700"
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9700/health > /dev/null; then
+              echo "slide-rule-python healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "slide-rule-python did not become healthy in time" >&2
+          cat uvicorn.log >&2 || true
+          exit 1
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Live Node -> Python Delegation Smoke
+        run: pnpm run smoke:live-delegation
+
+      - name: Dump uvicorn log on failure
+        if: failure()
+        run: cat slide-rule-python/uvicorn.log || true
+
   quality-gates:
     name: quality-gates
     if: always()

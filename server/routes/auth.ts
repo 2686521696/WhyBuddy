@@ -36,6 +36,10 @@ import type {
   UserRole,
   UserStatus,
 } from "../persistence/repositories.js";
+import {
+  delegateToPythonThinProxy,
+  isPythonThinProxyEnabled,
+} from "./python-thin-proxy.js";
 
 type AuthJson = AuthResponse | SendEmailLoginCodeResponse | AuthErrorResponse;
 
@@ -129,6 +133,59 @@ export interface AuthRouterDeps {
 
 function jsonError(error: string): AuthErrorResponse {
   return { success: false, error };
+}
+
+// Python thin-proxy delegation for the auth surfaces served endpoint-for-endpoint
+// by slide-rule-python routes/auth.py (/register, /login, /email-code/login and
+// the seven GET /__internal/* closure/takeover surfaces). Security-sensitive:
+// flag default OFF (AUTH_PYTHON_PROXY, explicit "true" opts in) — the wiring
+// exists, flipping the default is a later decision. Node keeps cookie issuance
+// and the production user repository (Python identity is a bounded decision
+// envelope); infra failures (connect failure / 5xx / key rejection) fall back
+// to the existing Node implementation, business 4xx envelopes pass through.
+// Node-retained endpoints (/email-code/send real mailer, /me, /refresh,
+// /logout cookie/session semantics) are intentionally NOT delegated.
+const AUTH_PYTHON_PROXY_FLAG = "AUTH_PYTHON_PROXY";
+
+function isAuthPythonProxyEnabled(): boolean {
+  return isPythonThinProxyEnabled(AUTH_PYTHON_PROXY_FLAG, { defaultEnabled: false });
+}
+
+async function delegateAuthIdentityToPython(
+  endpoint: "/register" | "/login" | "/email-code/login",
+  payload: Record<string, unknown>,
+): Promise<PythonAuthIdentityResult | null> {
+  if (!isAuthPythonProxyEnabled()) return null;
+  const delegated = await delegateToPythonThinProxy({
+    endpoint: `/api/auth${endpoint}`,
+    method: "POST",
+    payload,
+  });
+  if (!delegated.delegated) {
+    console.warn(
+      `[auth] python identity delegation unavailable for ${endpoint}; falling back to Node implementation: ${delegated.reason}`,
+    );
+    return null;
+  }
+  return validatePythonAuthIdentityResult(delegated.body);
+}
+
+async function delegateAuthInternalToPython(name: string): Promise<unknown | null> {
+  if (!isAuthPythonProxyEnabled()) return null;
+  const delegated = await delegateToPythonThinProxy({
+    endpoint: `/api/auth/__internal/${name}`,
+    method: "POST",
+    payload: { metadata: { source: "node-python-proxy" } },
+  });
+  if (!delegated.delegated || delegated.status >= 400) {
+    console.warn(
+      `[auth] python __internal/${name} delegation unavailable; using Node fallback envelope${
+        delegated.delegated ? ` (python http ${delegated.status})` : `: ${delegated.reason}`
+      }`,
+    );
+    return null;
+  }
+  return delegated.body;
 }
 
 function authMutationStatus(status: PythonAuthSessionMutationContract["status"]): 401 | 503 {
@@ -358,8 +415,16 @@ export function createAuthRouter(deps: AuthRouterDeps) {
       return;
     }
 
-    // python identity runtime bridge (thin)
-    const pyReg = await runPythonIdentity(deps, { operation: "register", email, password, displayName: body.displayName });
+    // python identity runtime bridge (thin): injected dep first, then the
+    // flag-gated HTTP thin proxy to slide-rule-python (AUTH_PYTHON_PROXY).
+    const pyReg =
+      (await runPythonIdentity(deps, { operation: "register", email, password, displayName: body.displayName })) ??
+      (await delegateAuthIdentityToPython("/register", {
+        operation: "register",
+        email,
+        password,
+        displayName: body.displayName,
+      }));
     if (pyReg) {
       if (!pyReg.ok) {
         const mapped = mapPythonIdentityError(pyReg);
@@ -418,8 +483,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
       return;
     }
 
-    // python identity runtime bridge (thin): if provided, delegate decision envelope
-    const pyLogin = await runPythonIdentity(deps, { operation: "login", email, password });
+    // python identity runtime bridge (thin): if provided, delegate decision envelope;
+    // otherwise the flag-gated HTTP thin proxy (AUTH_PYTHON_PROXY, default off).
+    const pyLogin =
+      (await runPythonIdentity(deps, { operation: "login", email, password })) ??
+      (await delegateAuthIdentityToPython("/login", { operation: "login", email, password }));
     if (pyLogin) {
       if (!pyLogin.ok) {
         const mapped = mapPythonIdentityError(pyLogin);
@@ -530,8 +598,15 @@ export function createAuthRouter(deps: AuthRouterDeps) {
       return;
     }
 
-    // python identity runtime bridge (thin) for email code
-    const pyVerify = await runPythonIdentity(deps, { operation: "verify_email_code", email, code });
+    // python identity runtime bridge (thin) for email code; injected dep first,
+    // then the flag-gated HTTP thin proxy (AUTH_PYTHON_PROXY, default off).
+    const pyVerify =
+      (await runPythonIdentity(deps, { operation: "verify_email_code", email, code })) ??
+      (await delegateAuthIdentityToPython("/email-code/login", {
+        operation: "verify_email_code",
+        email,
+        code,
+      }));
     if (pyVerify) {
       if (!pyVerify.ok) {
         const mapped = mapPythonIdentityError(pyVerify);
@@ -618,7 +693,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python auth/audit production closure summary (for migration evidence only)
   // Node retains password/email/session/policy/risk/audit metadata boundaries
   router.get("/__internal/auth-audit-closure", async (request, response) => {
-    const closure = await runPythonAuthAuditClosure(deps, { metadata: { source: "node-consume" } });
+    let closure = await runPythonAuthAuditClosure(deps, { metadata: { source: "node-consume" } });
+    if (!closure) {
+      const proxied = await delegateAuthInternalToPython("auth-audit-closure");
+      if (proxied) closure = validateAuthAuditProductionClosure(proxied);
+    }
     if (closure) {
       response.json({ success: true, closure });
       return;
@@ -640,7 +719,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python token/mailer/session cutover readiness (101)
   // Node retains real token issuance, email delivery, session repo, password policy
   router.get("/__internal/auth-token-mailer-session-cutover", async (request, response) => {
-    const cutover = await runPythonTokenMailerSessionCutover(deps, { metadata: { source: "node-consume" } });
+    let cutover = await runPythonTokenMailerSessionCutover(deps, { metadata: { source: "node-consume" } });
+    if (!cutover) {
+      const proxied = await delegateAuthInternalToPython("auth-token-mailer-session-cutover");
+      if (proxied) cutover = validateAuthTokenMailerSessionCutover(proxied);
+    }
     if (cutover) {
       response.json({ success: true, cutover });
       return;
@@ -662,7 +745,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python auth session token boundary 103
   // Node retains production session/token; python decision boundary only
   router.get("/__internal/auth-session-token-boundary", async (request, response) => {
-    const boundary = await runPythonAuthSessionTokenBoundary(deps, { metadata: { source: "node-consume" } });
+    let boundary = await runPythonAuthSessionTokenBoundary(deps, { metadata: { source: "node-consume" } });
+    if (!boundary) {
+      const proxied = await delegateAuthInternalToPython("auth-session-token-boundary");
+      if (proxied) boundary = validateAuthSessionTokenBoundary(proxied);
+    }
     if (boundary) {
       response.json({ success: true, boundary });
       return;
@@ -691,7 +778,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
 
   // thin consumption of python auth production ownership closure 102
   router.get("/__internal/auth-production-ownership-closure", async (request, response) => {
-    const closure = await runPythonAuthProductionOwnershipClosure(deps, { metadata: { source: "node-consume" } });
+    let closure = await runPythonAuthProductionOwnershipClosure(deps, { metadata: { source: "node-consume" } });
+    if (!closure) {
+      const proxied = await delegateAuthInternalToPython("auth-production-ownership-closure");
+      if (proxied) closure = validateAuthProductionOwnershipClosure(proxied);
+    }
     if (closure) {
       response.json({ success: true, closure });
       return;
@@ -714,7 +805,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python auth session repository takeover 104
   // bounded create/read/revoke evidence; takeover flag only for proven slice; retained otherwise
   router.get("/__internal/auth-session-repository-takeover", async (request, response) => {
-    const takeover = await runPythonAuthSessionRepositoryTakeover(deps, { metadata: { source: "node-consume" } });
+    let takeover = await runPythonAuthSessionRepositoryTakeover(deps, { metadata: { source: "node-consume" } });
+    if (!takeover) {
+      const proxied = await delegateAuthInternalToPython("auth-session-repository-takeover");
+      if (proxied) takeover = validateAuthSessionRepositoryTakeover(proxied);
+    }
     if (takeover) {
       response.json({ success: true, takeover });
       return;
@@ -737,7 +832,11 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python auth token issuance takeover 104
   // decision for issue/refresh/revoke slice; node retains real token issuance
   router.get("/__internal/auth-token-issuance-takeover", async (request, response) => {
-    const takeover = await runPythonAuthTokenIssuanceTakeover(deps, { metadata: { source: "node-consume" } });
+    let takeover = await runPythonAuthTokenIssuanceTakeover(deps, { metadata: { source: "node-consume" } });
+    if (!takeover) {
+      const proxied = await delegateAuthInternalToPython("auth-token-issuance-takeover");
+      if (proxied) takeover = validateAuthTokenIssuanceTakeover(proxied);
+    }
     if (takeover) {
       response.json({ success: true, takeover });
       return;
@@ -760,7 +859,10 @@ export function createAuthRouter(deps: AuthRouterDeps) {
   // thin consumption of python auth mailer user store scope 104
   // classifies emailCodeMailer/userRepository as node-retained (retained surfaces + reason/denom)
   router.get("/__internal/auth-mailer-user-store-scope", async (request, response) => {
-    const scope = await runPythonAuthMailerUserStoreScope(deps, { metadata: { source: "node-consume" } });
+    let scope = await runPythonAuthMailerUserStoreScope(deps, { metadata: { source: "node-consume" } });
+    if (!scope) {
+      scope = await delegateAuthInternalToPython("auth-mailer-user-store-scope");
+    }
     if (scope) {
       response.json({ success: true, scope });
       return;

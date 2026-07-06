@@ -19,6 +19,10 @@ import type { TokenService } from "../permission/token-service.js";
 import type { DynamicPermissionManager } from "../permission/dynamic-manager.js";
 import type { ConflictDetector } from "../permission/conflict-detector.js";
 import type { AuditLogger } from "../permission/audit-logger.js";
+import {
+  delegateToPythonThinProxy,
+  isPythonThinProxyEnabled,
+} from "./python-thin-proxy.js";
 
 // ---------------------------------------------------------------------------
 // Route prefix — strip so we can mount at /api/permissions
@@ -31,6 +35,34 @@ function stripPrefix(routeDef: string): string {
   const path = routeDef.replace(/^[A-Z]+\s+/, "");
   return path.startsWith(PREFIX) ? path.slice(PREFIX.length) || "/" : path;
 }
+
+// ---------------------------------------------------------------------------
+// Python thin proxy (slide-rule-python routes/permissions.py, task 55 unblock)
+// ---------------------------------------------------------------------------
+//
+// Endpoint-for-endpoint delegation for the permission runtime surfaces that
+// Python owns: check (deny-first check runtime), audit-hook, rate-limit
+// {check,record,reset} and policy/decision (deterministic policy decision
+// slice). These paths have no Node business implementation — Node's
+// role/policy/token CRUD, dynamic grants, conflicts/risk, audit trail and
+// templates below stay Node-owned and are never delegated.
+//
+// Security-sensitive surface: flag default OFF (PERMISSIONS_PYTHON_PROXY,
+// explicit "true" opts in) — the wiring exists, flipping the default is a
+// later decision. Flag off keeps today's Node surface (these paths 404).
+// Business responses from Python (2xx/4xx) pass through verbatim; infra
+// failures (connect failure / 5xx / key rejection) return an explicit 502
+// python_unavailable (no fabricated Node result, sliderule.ts precedent).
+const PERMISSIONS_PYTHON_PROXY_FLAG = "PERMISSIONS_PYTHON_PROXY";
+
+const PYTHON_PERMISSION_PROXY_ENDPOINTS = [
+  "/check",
+  "/audit-hook",
+  "/rate-limit/check",
+  "/rate-limit/record",
+  "/rate-limit/reset",
+  "/policy/decision",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -58,6 +90,32 @@ export function createPermissionRouter(deps: PermissionRouterDeps): Router {
 
   // Route management remains Node-owned in this Python migration boundary.
   // Python permission check runtime evidence is not route management coverage.
+
+  // Python-owned permission runtime surfaces (flag-gated thin proxy, see above).
+  for (const endpoint of PYTHON_PERMISSION_PROXY_ENDPOINTS) {
+    router.post(endpoint, async (req, res, next) => {
+      if (!isPythonThinProxyEnabled(PERMISSIONS_PYTHON_PROXY_FLAG, { defaultEnabled: false })) {
+        return next();
+      }
+      const delegated = await delegateToPythonThinProxy({
+        endpoint: `${PREFIX}${endpoint}`,
+        method: "POST",
+        payload: req.body ?? {},
+      });
+      if (!delegated.delegated) {
+        console.warn(
+          `[permissions] python delegation failed for ${PREFIX}${endpoint}: ${delegated.reason}`,
+        );
+        return res.status(502).json({
+          ok: false,
+          error: "python_unavailable",
+          backend: "python",
+          endpoint: `${PREFIX}${endpoint}`,
+        });
+      }
+      return res.status(delegated.status).json(delegated.body);
+    });
+  }
 
   // =====================================================================
   // 10.1 角色管理路由 (GET/POST/PUT /api/permissions/roles)

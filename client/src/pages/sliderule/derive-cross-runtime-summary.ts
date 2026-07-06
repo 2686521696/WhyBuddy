@@ -38,7 +38,16 @@ export type PublishClosureSummary = {
   }>;
   perSkillEvidence?: Record<
     "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle",
-    { evidencePresent?: boolean } | undefined
+    | {
+        evidencePresent?: boolean;
+        /** Python /drive-full 证据投影的补充字段（v5_capability_executor._build_per_skill_evidence）。 */
+        evidenceRef?: string;
+        artifactId?: string;
+        digest?: string;
+        path?: string;
+        summary?: string;
+      }
+    | undefined
   >;
 };
 

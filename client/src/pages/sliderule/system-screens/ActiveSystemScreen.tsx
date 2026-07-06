@@ -3,11 +3,18 @@
  *
  * 根据 activeSkillId 派发到对应系统渲染器。
  * 无激活 Skill 时默认展示 AppBundleScreen（发布证据看板）。
+ *
+ * skillContents 里若携带结构化五系统模型（JSON），在这里统一解析一次，
+ * 传给 Workflow/AIGC/AppBundle 做交叉引用渲染；解析失败时各屏自行诚实降级。
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
+import {
+  parseFiveSystemModelFromContents,
+  type SkillRuntimeGraphLike,
+} from "./five-system-model";
 import { DataModelScreen } from "./DataModelScreen";
 import { WorkflowScreen } from "./WorkflowScreen";
 import { RbacScreen } from "./RbacScreen";
@@ -22,6 +29,8 @@ interface ActiveSystemScreenProps {
   latestMermaid?: string | null;
   /** Raw content strings by skill (populated as SSE results arrive) */
   skillContents?: Partial<Record<SkillId, string>>;
+  /** Persisted cross-skill runtime graph (from python /drive-full, survives reload) */
+  skillRuntimeGraph?: SkillRuntimeGraphLike | null;
   className?: string;
 }
 
@@ -30,8 +39,15 @@ export function ActiveSystemScreen({
   publishClosure,
   latestMermaid,
   skillContents = {},
+  skillRuntimeGraph = null,
   className = "",
 }: ActiveSystemScreenProps) {
+  // 从 SSE 累积内容中解析结构化五系统模型（一次解析，多屏共享做交叉引用）。
+  const fiveSystemModel = useMemo(
+    () => parseFiveSystemModelFromContents(skillContents),
+    [skillContents]
+  );
+
   // 16:9 aspect ratio wrapper
   return (
     <div
@@ -45,7 +61,7 @@ export function ActiveSystemScreen({
         <div className={activeSkillId === "dataModel" ? "h-full w-full" : "hidden"}>
           <DataModelScreen
             publishClosure={publishClosure}
-            mermaidSource={latestMermaid ?? skillContents.dataModel}
+            mermaidSource={skillContents.dataModel ?? latestMermaid}
             isActive={activeSkillId === "dataModel"}
           />
         </div>
@@ -53,7 +69,9 @@ export function ActiveSystemScreen({
         <div className={activeSkillId === "workflow" ? "h-full w-full" : "hidden"}>
           <WorkflowScreen
             publishClosure={publishClosure}
-            mermaidSource={latestMermaid ?? skillContents.workflow}
+            mermaidSource={skillContents.workflow ?? latestMermaid}
+            model={fiveSystemModel}
+            skillRuntimeGraph={skillRuntimeGraph}
             isActive={activeSkillId === "workflow"}
           />
         </div>
@@ -78,6 +96,7 @@ export function ActiveSystemScreen({
           <AigcScreen
             publishClosure={publishClosure}
             rawContent={skillContents.aigc}
+            model={fiveSystemModel}
             isActive={activeSkillId === "aigc"}
           />
         </div>
@@ -86,6 +105,7 @@ export function ActiveSystemScreen({
         <div className={!activeSkillId || activeSkillId === "appBundle" ? "h-full w-full" : "hidden"}>
           <AppBundleScreen
             publishClosure={publishClosure}
+            model={fiveSystemModel}
             isActive={!activeSkillId || activeSkillId === "appBundle"}
           />
         </div>

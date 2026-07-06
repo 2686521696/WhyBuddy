@@ -52,12 +52,33 @@ import {
   resolveArtifactAbsolutePath,
   resolveExecutorJobAbsolutePath,
 } from './artifact-utils.js';
+import {
+  delegateToPythonThinProxy,
+  isPythonThinProxyEnabled,
+  type PythonThinProxyRequest,
+  type PythonThinProxyResult,
+} from './python-thin-proxy.js';
 
 const DEFAULT_LIMIT = 20;
 const DEFAULT_DECISION_LIMIT = 50;
 const MAX_LIMIT = 200;
 const DEFAULT_EXECUTOR_BASE_URL = 'http://127.0.0.1:3031';
 const FINAL_MISSION_STATUSES = new Set(['done', 'failed', 'cancelled']);
+
+// Python thin-proxy delegation for the mission-record CRUD core slice served by
+// slide-rule-python routes/tasks.py (POST /, GET /, GET /:id, GET /:id/events,
+// POST /:id/cancel). Flag semantics: default ON — explicit "false" opts out,
+// vitest environments stay on the Node path unless the flag is explicitly
+// "true" (see server/routes/python-thin-proxy.ts). Infra failures (connect
+// failure / 5xx) gracefully fall back to the Node implementation below;
+// business 4xx responses from Python pass through verbatim. All other tasks
+// endpoints (projection/session/decisions/operator-actions/artifacts/decision,
+// executor dispatch, workflow retry) remain Node-owned and are untouched.
+const TASKS_PYTHON_PROXY_FLAG = 'TASKS_PYTHON_PROXY';
+
+function isTasksPythonProxyEnabled(): boolean {
+  return isPythonThinProxyEnabled(TASKS_PYTHON_PROXY_FLAG, { defaultEnabled: true });
+}
 
 export interface TaskRouterOptions {
   fetchImpl?: typeof fetch;
@@ -1354,6 +1375,22 @@ export function createTaskRouter(
   });
   const workflowRetry = getWorkflowRetryDependencies(options);
 
+  async function delegateTasksRouteToPython(
+    input: Omit<PythonThinProxyRequest, 'fetchImpl'>,
+  ): Promise<PythonThinProxyResult> {
+    const delegated = await delegateToPythonThinProxy({ ...input, fetchImpl });
+    if (!delegated.delegated) {
+      console.warn(
+        `[tasks] python delegation unavailable for ${input.method ?? 'POST'} ${input.endpoint}; falling back to Node implementation: ${delegated.reason}`,
+      );
+    }
+    return delegated;
+  }
+
+  function rawLimitQuery(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  }
+
   async function buildExecutorLogFallback(
     missionId: string,
     jobId: string,
@@ -1424,6 +1461,28 @@ export function createTaskRouter(
       req.body && typeof req.body === 'object'
         ? (req.body as Record<string, unknown>)
         : {};
+
+    if (isTasksPythonProxyEnabled()) {
+      // Node-retained create concerns are NOT delegated: executor dispatch
+      // (nl-command / explicit autoDispatch) and project owner validation
+      // (projectId) stay on the Node path — the Python slice deliberately does
+      // not own them (executorForwarded always false, no project store).
+      const requiresNodeOwnedCreate =
+        Boolean(parseOptionalString(body.projectId) ?? getProjectionProjectId(body)) ||
+        body.autoDispatch === true ||
+        (typeof body.kind === 'string' && body.kind.trim() === 'nl-command');
+      if (!requiresNodeOwnedCreate) {
+        const delegated = await delegateTasksRouteToPython({
+          endpoint: '/api/tasks',
+          method: 'POST',
+          payload: body,
+        });
+        if (delegated.delegated) {
+          return res.status(delegated.status).json(delegated.body);
+        }
+      }
+    }
+
     const title = buildTaskTitle(body.title, body.sourceText);
     const bodyProjectId = parseOptionalString(body.projectId);
     const projectionProjectId = getProjectionProjectId(body);
@@ -1704,7 +1763,18 @@ export function createTaskRouter(
     });
   });
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
+    if (isTasksPythonProxyEnabled()) {
+      const delegated = await delegateTasksRouteToPython({
+        endpoint: '/api/tasks',
+        method: 'GET',
+        query: { limit: rawLimitQuery(req.query.limit) },
+      });
+      if (delegated.delegated) {
+        return res.status(delegated.status).json(delegated.body);
+      }
+    }
+
     const limit = parseLimit(req.query.limit);
     res.json({
       ok: true,
@@ -1713,6 +1783,16 @@ export function createTaskRouter(
   });
 
   router.get('/:id', async (req, res) => {
+    if (isTasksPythonProxyEnabled()) {
+      const delegated = await delegateTasksRouteToPython({
+        endpoint: `/api/tasks/${encodeURIComponent(req.params.id)}`,
+        method: 'GET',
+      });
+      if (delegated.delegated) {
+        return res.status(delegated.status).json(delegated.body);
+      }
+    }
+
     let task = runtime.getTask(req.params.id);
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
@@ -1765,6 +1845,17 @@ export function createTaskRouter(
   });
 
   router.get('/:id/events', async (req, res) => {
+    if (isTasksPythonProxyEnabled()) {
+      const delegated = await delegateTasksRouteToPython({
+        endpoint: `/api/tasks/${encodeURIComponent(req.params.id)}/events`,
+        method: 'GET',
+        query: { limit: rawLimitQuery(req.query.limit) },
+      });
+      if (delegated.delegated) {
+        return res.status(delegated.status).json(delegated.body);
+      }
+    }
+
     const task = runtime.getTask(req.params.id);
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
@@ -1841,6 +1932,17 @@ export function createTaskRouter(
   });
 
   router.post('/:id/cancel', async (req, res) => {
+    if (isTasksPythonProxyEnabled()) {
+      const delegated = await delegateTasksRouteToPython({
+        endpoint: `/api/tasks/${encodeURIComponent(req.params.id)}/cancel`,
+        method: 'POST',
+        payload: req.body && typeof req.body === 'object' ? req.body : {},
+      });
+      if (delegated.delegated) {
+        return res.status(delegated.status).json(delegated.body);
+      }
+    }
+
     const task = runtime.getTask(req.params.id);
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
