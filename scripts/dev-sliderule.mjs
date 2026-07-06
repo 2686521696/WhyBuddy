@@ -19,6 +19,17 @@ const root = resolve(__dirname, "..");
 const children = [];
 let shuttingDown = false;
 
+// 与 dev-all.mjs 同步：把根目录与 slide-rule-python/.env 都装进进程环境，
+// python 子进程（uvicorn）继承后 LLM key / SLIDERULE_LLM_GENERATE_ENABLED
+// 等 os.environ 读取的配置才生效（pydantic 只覆盖自己声明的字段）。
+try {
+  const dotenv = (await import("dotenv")).default;
+  dotenv.config({ path: resolve(root, ".env"), override: true });
+  dotenv.config({ path: resolve(root, "slide-rule-python", ".env"), override: false });
+} catch {
+  /* dotenv 缺失时保持旧行为 */
+}
+
 function waitForPortListening(port, { timeoutMs = 800 } = {}) {
   return new Promise(resolve => {
     const deadline = Date.now() + timeoutMs;

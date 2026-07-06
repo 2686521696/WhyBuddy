@@ -37,6 +37,12 @@ function loadDevDotenv() {
   // any pre-existing system env (common on Windows with Clash etc.). This ensures child
   // processes see the correct NO_PROXY list for direct LLM calls.
   dotenv.config({ override: true });
+  // slide-rule-python/.env 也要进进程环境：python 侧的 LLM 客户端
+  // (sliderule_llm/config.py) 与 SLIDERULE_LLM_GENERATE_ENABLED 等开关读的是
+  // os.environ，pydantic 只读自己声明的字段——不导出则 key/开关静默丢失，
+  // 会重现 "publish blocked 0/6"。根目录 .env 优先（先加载的赢，override 下
+  // 后加载覆盖，故 python .env 用 override:false 仅补缺）。
+  dotenv.config({ path: resolve(__projectRoot, "slide-rule-python", ".env"), override: false });
 }
 
 export function resolvePythonReloadArgs(pythonDir, env = process.env) {
