@@ -160,20 +160,31 @@ export function AppBundleScreen({
               发布阻塞项 · {publishClosure?.blockerCount ?? topBlockers.length}
             </div>
             <ul className="mt-1.5 space-y-1">
-              {topBlockers.map((b, i) => (
-                <li key={`${b.code}-${i}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                  <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
-                    {b.code}
-                  </span>
-                  {b.affectedSkill && (
-                    <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
-                      skill={b.affectedSkill}
+              {topBlockers.map((b, i) => {
+                // LLM 生成诊断类 blocker：ref 是给人读的失败原因，用正文体渲染
+                const isLlmDiag =
+                  b.code === "LLM_GENERATE_DISABLED" ||
+                  b.code === "LLM_GENERATE_FAILED" ||
+                  b.code === "MODEL_GATE_BLOCKED";
+                return (
+                  <li key={`${b.code}-${i}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
+                      {b.code}
                     </span>
-                  )}
-                  {b.path && <span className="font-mono text-red-400">{b.path}</span>}
-                  {b.ref && <span className="font-mono text-red-400">ref={b.ref}</span>}
-                </li>
-              ))}
+                    {b.affectedSkill && (
+                      <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
+                        skill={b.affectedSkill}
+                      </span>
+                    )}
+                    {!isLlmDiag && b.path && <span className="font-mono text-red-400">{b.path}</span>}
+                    {isLlmDiag && b.ref ? (
+                      <span className="text-red-600">{b.ref}</span>
+                    ) : (
+                      b.ref && <span className="font-mono text-red-400">ref={b.ref}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

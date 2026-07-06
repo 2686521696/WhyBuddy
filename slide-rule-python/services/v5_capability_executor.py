@@ -19,6 +19,12 @@ def _llm_generate_enabled() -> bool:
     baseline; opt-in via env for LLM generation of novel intents."""
     return str(os.getenv("SLIDERULE_LLM_GENERATE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
 
+
+# 最近一次五系统 LLM 生成路径的诊断。仅用于 publish closure 的 blocker 面向
+# 用户透出"为什么 0/6"（未开启 / 调用失败 / 结构闸拦截）；fail-closed 判定
+# 与 trust/gate/closure hash 完全不读它。
+_llm_generate_diagnostic: Dict[str, str] = {}
+
 REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
 RUNTIME_CLOSURE_EDGES = [
@@ -159,19 +165,37 @@ def _try_llm_generate_evidence(
     Returns {skill: artifact} for all 6 skills if the LLM model PASSES the
     structural gate; otherwise None (fail-closed). Never raises.
     """
+    global _llm_generate_diagnostic
     try:
         from .v5_llm_generate import generate_five_system_model, model_to_linkage_artifacts
         from .v5_model_gate import validate_five_system_model
-    except Exception:
+    except Exception as exc:
+        _llm_generate_diagnostic = {
+            "code": "LLM_GENERATE_FAILED",
+            "detail": f"generate module unavailable: {str(exc)[:160]}",
+        }
         return None
 
     model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
     if model is None:
+        from .v5_llm_generate import last_generate_diagnostic as _diag
+
+        _llm_generate_diagnostic = {
+            "code": "LLM_GENERATE_FAILED",
+            "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
+        }
         return None
     gate = validate_five_system_model(model)
     if not gate.get("passed"):
         # Gate blocked — do NOT inject evidence. Caller stays fail-closed.
+        findings = gate.get("findings") or []
+        first = findings[0] if findings else {}
+        _llm_generate_diagnostic = {
+            "code": "MODEL_GATE_BLOCKED",
+            "detail": f"结构闸拦截（{len(findings)} 项）：{str(first)[:160]}",
+        }
         return None
+    _llm_generate_diagnostic = {}
     artifacts = model_to_linkage_artifacts(model, goal)
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
@@ -184,6 +208,8 @@ def _build_per_skill_evidence(
     llm_json_fn: Optional[Callable[[str], Any]] = None,
     force_llm: bool = False,
 ) -> Dict[str, Any]:
+    global _llm_generate_diagnostic
+    _llm_generate_diagnostic = {}
     matches: Dict[str, Dict[str, Any]] = {}
     for artifact in _artifact_dicts(state):
         haystack = " ".join(
@@ -210,6 +236,13 @@ def _build_per_skill_evidence(
             for skill in REQUIRED_EVIDENCE_KEYS:
                 if skill not in matches:
                     matches[skill] = llm_result[skill]
+    elif not blocked_signal and recognized_domain is None and (goal or "").strip():
+        # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
+        # 否则用户只看到笼统的 closure blocked，无从排查。
+        _llm_generate_diagnostic = {
+            "code": "LLM_GENERATE_DISABLED",
+            "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启：新颖意图不会调用 LLM 生成五系统模型",
+        }
 
     per_skill: Dict[str, Any] = {}
     for skill in REQUIRED_EVIDENCE_KEYS:
@@ -298,6 +331,30 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
         per_skill = _build_per_skill_evidence(state, blocked_signal, goal)
         blocked = any(not item.get("evidencePresent") for item in per_skill.values())
         closure_hash, stable_digest = _stable_closure_hash(per_skill, blocked, goal)
+        # LLM 生成路径的失败原因随 blocker 透出（诊断留痕，不参与 blocked/hash 判定）。
+        llm_diag = dict(_llm_generate_diagnostic) if _llm_generate_diagnostic.get("code") else None
+        blockers = (
+            [
+                {
+                    "code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+                    "path": "runtimeClosure.perSkillEvidence",
+                    "affectedSkill": "aigc" if blocked_signal else "",
+                    "ref": "",
+                }
+            ]
+            if blocked
+            else []
+        )
+        hard_findings = [{"code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"}] if blocked else []
+        if blocked and llm_diag:
+            diag_blocker = {
+                "code": llm_diag["code"],
+                "path": "llmGenerate.fiveSystemModel",
+                "affectedSkill": "",
+                "ref": llm_diag.get("detail", "")[:200],
+            }
+            blockers.append(diag_blocker)
+            hard_findings.append({"code": llm_diag["code"]})
         result = base.model_dump()
         result.update(
             {
@@ -328,21 +385,12 @@ def execute_v5_capability(capability_id: str, state: V5SessionState, input_ids: 
                 },
                 "perSkillEvidence": per_skill,
                 "blocked": blocked,
-                "blockers": [
-                    {
-                        "code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
-                        "path": "runtimeClosure.perSkillEvidence",
-                        "affectedSkill": "aigc" if blocked_signal else "",
-                        "ref": "",
-                    }
-                ]
-                if blocked
-                else [],
+                "blockers": blockers,
                 "closureId": "appbundle:app_purchase_approval@1.0.0:runtime-closure",
                 "closureHash": closure_hash,
                 "stableDigest": stable_digest,
                 "findingsByTier": {
-                    "hard_blocker": [{"code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"}] if blocked else [],
+                    "hard_blocker": hard_findings,
                     "warning": [],
                     "info": [],
                 },

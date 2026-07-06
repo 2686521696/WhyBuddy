@@ -294,6 +294,67 @@ def test_stream_skill_result_model_section_none_for_deterministic_domain():
         assert event["modelSection"] is None  # no LLM model — never fabricated
 
 
+def _closure_result_for(goal: str, monkey_env=None):
+    """Run appbundle.runtimeClosure via the real executor and return the report dict."""
+    from services.v5_capability_executor import execute_v5_capability
+
+    state = _empty_state(goal)
+    result = execute_v5_capability("appbundle.runtimeClosure", state, [], "appbundle", "t1")
+    return result if isinstance(result, dict) else result.model_dump()
+
+
+def test_blocked_closure_carries_llm_disabled_diagnostic(monkeypatch):
+    """新颖意图 + LLM 未开启 → blocker 明示 LLM_GENERATE_DISABLED（不再无解释 0/6）。"""
+    monkeypatch.delenv("SLIDERULE_LLM_GENERATE_ENABLED", raising=False)
+    report = _closure_result_for("星际殖民地物资调度系统")
+    assert report["blocked"] is True
+    codes = [b["code"] for b in report["blockers"]]
+    assert "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED" in codes
+    assert "LLM_GENERATE_DISABLED" in codes
+    diag = next(b for b in report["blockers"] if b["code"] == "LLM_GENERATE_DISABLED")
+    assert "SLIDERULE_LLM_GENERATE_ENABLED" in diag["ref"]
+    assert {"code": "LLM_GENERATE_DISABLED"} in report["findingsByTier"]["hard_blocker"]
+
+
+def test_blocked_closure_carries_llm_failed_diagnostic(monkeypatch):
+    """LLM 开启但调用失败 → blocker 明示 LLM_GENERATE_FAILED + 失败原因。"""
+    monkeypatch.setenv("SLIDERULE_LLM_GENERATE_ENABLED", "1")
+    import services.v5_llm_generate as v5_llm_generate
+
+    def _boom(goal, llm_json_fn=None):
+        v5_llm_generate.last_generate_diagnostic = {
+            "outcome": "failed",
+            "detail": "LlmError: connection refused to llm host",
+        }
+        return None
+
+    monkeypatch.setattr(v5_llm_generate, "generate_five_system_model", _boom)
+    report = _closure_result_for("星际殖民地物资调度系统")
+    assert report["blocked"] is True
+    diag = next(b for b in report["blockers"] if b["code"] == "LLM_GENERATE_FAILED")
+    assert "connection refused" in diag["ref"]
+
+
+def test_closed_closure_has_no_diagnostic_blocker():
+    """确定性域正常闭合 → 无诊断 blocker（诊断只在 blocked 时透出）。"""
+    report = _closure_result_for("采购审批平台")
+    assert report["blocked"] is False
+    assert report["blockers"] == []
+    assert report["findingsByTier"]["hard_blocker"] == []
+
+
+def test_diagnostic_never_affects_closure_hash(monkeypatch):
+    """诊断只是留痕：同一 per-skill 证据下，有无诊断 hash 一致（不参与判定）。"""
+    monkeypatch.delenv("SLIDERULE_LLM_GENERATE_ENABLED", raising=False)
+    r1 = _closure_result_for("星际殖民地物资调度系统")
+    monkeypatch.setenv("SLIDERULE_LLM_GENERATE_ENABLED", "1")
+    import services.v5_llm_generate as v5_llm_generate
+    monkeypatch.setattr(v5_llm_generate, "generate_five_system_model", lambda goal, llm_json_fn=None: None)
+    r2 = _closure_result_for("星际殖民地物资调度系统")
+    # 两次都是 0/6 blocked；诊断 code 不同（disabled vs failed）但 closureHash 相同
+    assert r1["closureHash"] == r2["closureHash"]
+
+
 if __name__ == "__main__":
     # Allow running directly without pytest (fixture-taking tests are pytest-only).
     import inspect

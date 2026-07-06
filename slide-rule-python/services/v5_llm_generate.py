@@ -79,11 +79,22 @@ Rules:
 """
 
 
+# 最近一次生成的诊断（供 publish closure 的 blocker 面向用户透出失败原因；
+# fail-closed 判定完全不读它——它只是留痕，不参与 trust/gate）。
+last_generate_diagnostic: Dict[str, Any] = {}
+
+# _default_llm_json_fn 内部最近一次调用失败的原因（LlmError / 异常文本）。
+_last_call_error: str = ""
+
+
 def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
     """Real LLM path — provider chain + JSON shape validation. None on any failure."""
+    global _last_call_error
+    _last_call_error = ""
     try:
         from sliderule_llm.client import call_llm_json_with_shape, LlmError
-    except Exception:
+    except Exception as exc:
+        _last_call_error = f"llm client unavailable: {str(exc)[:160]}"
         return None
     messages = [
         {"role": "system", "content": _SCHEMA_INSTRUCTION},
@@ -100,9 +111,11 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
         return parsed if isinstance(parsed, dict) else None
     except LlmError as exc:
         # No key / rate limit / parse failure / shape failure — fail-closed，但留痕便于诊断。
+        _last_call_error = f"LlmError: {str(exc)[:180]}"
         print(f"[v5_llm_generate] LlmError: {str(exc)[:200]}")
         return None
     except Exception as exc:  # noqa: BLE001
+        _last_call_error = f"{type(exc).__name__}: {str(exc)[:180]}"
         print(f"[v5_llm_generate] unexpected error: {str(exc)[:200]}")
         return None
 
@@ -121,28 +134,36 @@ def generate_five_system_model(
     `llm_json_fn(goal) -> dict|None` is injectable for tests (fake LLM),
     keeping generality proof decoupled from LLM reliability.
     """
+    global last_generate_diagnostic
+    last_generate_diagnostic = {}
     if not (goal or "").strip():
         return None
     fn = llm_json_fn or _default_llm_json_fn
     # 一次有界重试：并发/限流下的瞬时失败不该直接变成永久 publish blocked
     # （fail-closed 语义保留：两次都失败仍返回 None）。注入 fn 的测试不受影响。
     attempts = 2 if llm_json_fn is None else 1
+    last_detail = ""
     for attempt in range(attempts):
         try:
             model = fn(goal)
         except Exception as exc:  # noqa: BLE001
             print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} raised: {str(exc)[:200]}")
+            last_detail = f"{type(exc).__name__}: {str(exc)[:180]}"
             model = None
         if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
+            last_generate_diagnostic = {"outcome": "ok"}
             return model
         if model is not None:
             print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned incomplete model (missing sections)")
+            last_detail = "LLM 返回的模型缺少必需的五系统段"
         else:
             print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} returned no model")
+            last_detail = _last_call_error or last_detail or "LLM 未返回模型"
         if attempt + 1 < attempts:
             import time as _time
 
             _time.sleep(2.0)
+    last_generate_diagnostic = {"outcome": "failed", "detail": last_detail}
     return None
 
 
