@@ -15,6 +15,10 @@
 <strong>Progress note:</strong> The engineering app currently trails the SlideRule Skill. For the complete product rehearsal experience, use the <a href="./skills/sliderule.zip">SlideRule Skill</a> first; the engineered project is still moving forward.
 </blockquote>
 
+<blockquote>
+<strong>🧭 Direction (settled 2026-07):</strong> The single main line is <strong>SlideRule</strong> (<code>/sliderule</code>, intent → application). <code>/autopilot</code> is the legacy v4 demo (archived, no further investment); <code>/agent-loop/workbench</code> is the main line's execution-observation panel. See the <a href="./docs/NORTH_STAR.md">North Star doc</a>.
+</blockquote>
+
 <p align="center">
   <a href="./README.md"><strong>English</strong></a> ·
   <a href="./README.zh-CN.md"><strong>简体中文</strong></a>

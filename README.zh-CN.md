@@ -15,6 +15,10 @@
 <strong>进度说明：</strong>当前工程化项目进度暂时落后于 SlideRule Skill。如需完整产品预演体验，请优先使用 <a href="./skills/sliderule.zip">SlideRule Skill</a>；工程化项目仍在持续推进中。
 </blockquote>
 
+<blockquote>
+<strong>🧭 方向定案（2026-07）：</strong>项目唯一主线是 <strong>SlideRule</strong>（<code>/sliderule</code>，意图 → 应用）。<code>/autopilot</code> 为 legacy v4 演示（已封存，不再投入）；<code>/agent-loop/workbench</code> 为主线的执行观察面板。详见 <a href="./docs/NORTH_STAR.md">北极星文档</a>。
+</blockquote>
+
 <p align="center">
   <a href="./README.md"><strong>English</strong></a> ·
   <a href="./README.zh-CN.md"><strong>简体中文</strong></a>
