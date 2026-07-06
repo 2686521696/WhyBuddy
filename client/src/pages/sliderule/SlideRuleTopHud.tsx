@@ -4,7 +4,6 @@ import type { BrainstormGraphTelemetry } from "@shared/blueprint/brainstorm-reas
 import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
 import type { SlideRuleExecutorMode } from "./types";
-import type { ProjectionDensity } from "./sliderule-projection-constants";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { Layers, Settings2 } from "lucide-react";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
@@ -18,12 +17,6 @@ export function SlideRuleTopHud({
   telemetry,
   executorMode,
   publishClosure,
-  projectionDensity,
-  onProjectionDensityChange,
-  viewMode,
-  onViewModeChange,
-  surfaceMode = "reasoning",
-  onSurfaceModeChange,
   onResetSession,
   onOpenSettings,
   onOpenDeliverables,
@@ -37,18 +30,11 @@ export function SlideRuleTopHud({
   telemetry?: BrainstormGraphTelemetry | null;
   executorMode?: SlideRuleExecutorMode;
   publishClosure?: PublishClosureSummary | null;
-  projectionDensity?: ProjectionDensity;
-  onProjectionDensityChange?: (density: ProjectionDensity) => void;
-  viewMode?: "overview" | "collaboration" | "reasoning";
-  onViewModeChange?: (mode: "overview" | "collaboration" | "reasoning") => void;
-  surfaceMode?: "chat" | "reasoning";
-  onSurfaceModeChange?: (mode: "chat" | "reasoning") => void;
   onResetSession?: () => void;
   onOpenSettings?: () => void;
   onOpenDeliverables?: () => void;
   embedded?: boolean;
 }) {
-  const effectiveSurfaceMode = surfaceMode || "reasoning";
   const facts = deriveStatusBarFacts(state, {
     turnCount,
     isRunning,
@@ -100,53 +86,6 @@ export function SlideRuleTopHud({
             </span>
           </span>
 
-          {turnCount > 0 && onViewModeChange && (
-            <div
-              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
-              data-testid="sliderule-viewmode-toggle"
-            >
-              {(["overview", "collaboration", "reasoning"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={isRunning}
-                  onClick={() => onViewModeChange(mode)}
-                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
-                    viewMode === mode
-                      ? "bg-white text-stone-800 shadow-sm"
-                      : "text-stone-500 hover:text-stone-700"
-                  }`}
-                  title={mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "思考链"}
-                >
-                  {mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "链路"}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {onSurfaceModeChange && (
-            <div
-              className="ml-2 flex items-center gap-0.5 rounded-full bg-[#F3DCD0] p-0.5 ring-1 ring-[#EBCEC0]/80"
-              data-testid="sliderule-surfacemode-toggle"
-              title="界面模式"
-            >
-              {(["chat", "reasoning"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={isRunning}
-                  onClick={() => onSurfaceModeChange(mode)}
-                  className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
-                    effectiveSurfaceMode === mode
-                      ? "bg-white text-[#B0552F] shadow-sm"
-                      : "text-[#C4633F] hover:text-[#B0552F]"
-                  }`}
-                >
-                  {mode === "chat" ? "聊天" : "推演"}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div

@@ -11,8 +11,10 @@ import type {
 } from "./derive-cross-runtime-summary";
 
 /**
- * 右上透明浮层 — 完整 V5.1 架构树时间线（INTAKE / ORCH / C_* / ↩ 回边）。
- * 与画布左下 console、右下 minimap 互补，不重复 console 流。
+ * V5.1 架构树时间线（INTAKE / ORCH / C_* / ↩ 回边）+ SKILL LINKAGE 摘要。
+ *
+ * variant="overlay"（默认）：历史用法 — 右上透明浮层（?im=dev 工程视图等）。
+ * variant="rail"：统一页右栏「推演过程」视图 — 撑满容器宽度，空态给出诚实提示。
  */
 export function ArchitectureProcessPanel({
   liveAction,
@@ -25,6 +27,7 @@ export function ArchitectureProcessPanel({
   publishClosure,
   onSelectSkillLinkage,
   onSelectClosureBlocker,
+  variant = "overlay",
 }: {
   liveAction: LiveAction | null;
   latestTurn?: {
@@ -49,6 +52,7 @@ export function ArchitectureProcessPanel({
   publishClosure?: PublishClosureSummary | null;
   onSelectSkillLinkage?: (edge: CrossRuntimeGraphSummary["examples"][number]) => void;
   onSelectClosureBlocker?: (blocker: PublishClosureSummary["topBlockers"][number]) => void;
+  variant?: "overlay" | "rail";
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -108,14 +112,31 @@ export function ArchitectureProcessPanel({
   }, [scrollSignature, streaming, latestTurn]);
 
   if (!latestTurn && !crossRuntimeGraph && !publishClosure) {
+    if (variant === "rail") {
+      return (
+        <div
+          data-testid="sliderule-arch-process-panel"
+          data-variant="rail"
+          className="flex h-full items-center justify-center px-6 text-center text-xs text-stone-400"
+          aria-label="架构树节拍"
+        >
+          发送意图后，这里实时显示执行时间线（INTAKE → 六系统 → Commit Gate）与 SKILL LINKAGE。
+        </div>
+      );
+    }
     return null;
   }
 
   return (
     <div
       ref={scrollRef}
-      className={`${autopilotTheme.immersionHudRight} ${autopilotTheme.overlayTransparent} max-h-[min(78vh,720px)] overflow-y-auto`}
+      className={
+        variant === "rail"
+          ? "pointer-events-auto h-full w-full overflow-y-auto"
+          : `${autopilotTheme.immersionHudRight} ${autopilotTheme.overlayTransparent} max-h-[min(78vh,720px)] overflow-y-auto`
+      }
       data-testid="sliderule-arch-process-panel"
+      data-variant={variant}
       aria-label="架构树节拍"
     >
       {liveAction && streaming && (

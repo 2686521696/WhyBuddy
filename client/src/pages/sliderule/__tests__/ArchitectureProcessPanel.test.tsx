@@ -405,7 +405,11 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).not.toContain("publish blocked");
   });
 
-  // Root-level browser smoke: assert sliderule-root + python pass-through visibility after simulated /agent-loop/sliderule
+  // Root-level browser smoke: assert sliderule-root + python pass-through visibility after simulated /agent-loop/sliderule.
+  // Unified-surface contract (2026-07): the pan/zoom canvas + always-on overlay HUD are gone; python
+  // /drive-full pass-through surfaces at the root as data attributes, the AppBundle evidence board
+  // (default right-rail screen), and the reachable 推演过程 rail view (SKILL LINKAGE lives there;
+  // its markup is covered by the direct ArchitectureProcessPanel tests above).
   it("renders sliderule-root for embedded /agent-loop/sliderule entry and surfaces python /drive-full publishClosure (positive)", () => {
     const html = renderToStaticMarkup(React.createElement(EmbeddedSlideRule, { embedded: true }));
 
@@ -413,14 +417,62 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).toContain('data-paths="/agent-loop/sliderule /sliderule"');
     expect(html).toContain('data-backend="python-fullpath-e2e"');
     // pass-through from python publishClosure via sessionState seeds initial state visible at root entry
-    expect(html).toContain('data-testid="sliderule-publish-closure"');
-    expect(html).toContain("publish closed");
-    expect(html).toContain("6/6 evidence");
-    expect(html).toContain("pins checked");
+    expect(html).toContain('data-runtime-publish-closure="present"');
+    expect(html).toContain('data-runtime-skill-graph="present"');
+    // default rail screen = AppBundle evidence board fed by the python closure
+    expect(html).toContain("发布证据看板");
+    // the 推演过程 view (execution timeline + SKILL LINKAGE) is one tab away
+    expect(html).toContain('data-testid="sliderule-rail-tab-process"');
+    expect(html).toContain('data-testid="sliderule-rail-tab-screens"');
+  });
+
+  it("rail variant renders the same linkage/publish-closure drilldown targets for the unified right rail", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        variant="rail"
+        liveAction={null}
+        sessionId="arch-panel-rail"
+        isRunning={false}
+        latestTurn={baseTurn}
+        crossRuntimeGraph={{
+          edgeCount: 1,
+          allowedCount: 1,
+          blockedCount: 0,
+          skillCount: 2,
+          evidenceCount: 1,
+          examples: [
+            {
+              sourceSkill: "datamodel",
+              targetSkill: "page",
+              state: "allowed",
+              evidenceKey: "DM_PAGE_BINDING_IMPACT_EVIDENCE",
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(html).toContain('data-testid="sliderule-arch-process-panel"');
+    expect(html).toContain('data-variant="rail"');
     expect(html).toContain('data-testid="sliderule-skill-linkage-row"');
-    expect(html).toContain('data-source-skill="datamodel"');
-    expect(html).toContain('data-target-skill="page"');
     expect(html).toContain("DM_PAGE_BINDING_IMPACT_EVIDENCE");
+  });
+
+  it("rail variant shows an honest empty hint instead of vanishing when no run has happened", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureProcessPanel
+        variant="rail"
+        liveAction={null}
+        sessionId="arch-panel-rail-empty"
+        isRunning={false}
+        latestTurn={null}
+        crossRuntimeGraph={null}
+        publishClosure={null}
+      />
+    );
+
+    expect(html).toContain('data-testid="sliderule-arch-process-panel"');
+    expect(html).toContain("执行时间线");
   });
 
   it("renders sliderule-root for embedded path (negative: no stale when absent)", () => {
