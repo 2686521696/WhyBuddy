@@ -60,7 +60,7 @@ export function ActiveSystemScreen({
   // 16:9 aspect ratio wrapper
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`relative w-full overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-sm ${className}`}
       style={{ aspectRatio: "16 / 9" }}
     >
       <div className="absolute inset-0">

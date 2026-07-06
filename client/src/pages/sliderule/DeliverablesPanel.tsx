@@ -126,24 +126,24 @@ export function DeliverablesPanel({
 
   return (
     <>
-      <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={onClose}>
         <div
-          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgb(15_23_42/0.28)]"
+          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
           data-testid="sliderule-deliverables-panel"
           role="dialog"
           aria-label="交付物"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-[#E7E2D9] px-4 py-3">
             <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-indigo-600" />
-              <h3 className="text-sm font-bold text-slate-900">交付物</h3>
-              <span className="text-[11px] text-slate-400">推演收敛后的可交付产物</span>
+              <Layers className="h-4 w-4 text-[#C4633F]" />
+              <h3 className="text-sm font-bold text-[#1F1E1B]">交付物</h3>
+              <span className="text-[11px] text-stone-400">推演收敛后的可交付产物</span>
             </div>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
               data-testid="sliderule-deliverables-close"
             >
               <X className="h-4 w-4" />
@@ -152,18 +152,18 @@ export function DeliverablesPanel({
 
           {available.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-              <Layers className="h-10 w-10 text-slate-300" />
-              <p className="text-sm font-semibold text-slate-600">
+              <Layers className="h-10 w-10 text-stone-300" />
+              <p className="font-display text-base font-medium text-stone-700">
                 {isClear ? "推演已收敛 —— 可一键生成交付物" : "推演收敛(clear)后可生成交付物"}
               </p>
-              <p className="max-w-sm text-xs text-slate-400">
+              <p className="max-w-sm text-xs text-stone-400">
                 交付物含:规格树 · 需求/设计/任务文档 · 提示词包 · 架构图 · 工程交接包。
               </p>
               {isClear && (
                 <button
                   onClick={onGenerate}
                   disabled={isRunning}
-                  className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+                  className="mt-1 flex items-center gap-1.5 rounded-lg bg-[#D97757] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
                   data-testid="sliderule-deliverables-generate"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -173,14 +173,14 @@ export function DeliverablesPanel({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1">
-              <nav className="flex w-[180px] shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50/70 p-3">
+              <nav className="flex w-[180px] shrink-0 flex-col gap-1 border-r border-[#E7E2D9] bg-[#F5F1EA]/70 p-3">
                 {available.map((c) => (
                   <button
                     key={c}
                     onClick={() => setActive(c)}
                     data-testid={`sliderule-deliverables-nav-${c}`}
                     className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition ${
-                      active === c ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-white hover:text-slate-800"
+                      active === c ? "bg-[#F8E8E0] text-[#B0552F]" : "text-stone-600 hover:bg-white hover:text-stone-800"
                     }`}
                   >
                     {CATEGORY_META[c].icon}
@@ -198,14 +198,14 @@ export function DeliverablesPanel({
                     sessionState={sessionState}
                   />
                 ) : (
-                  <p className="text-sm text-slate-400">该分类暂无内容</p>
+                  <p className="text-sm text-stone-400">该分类暂无内容</p>
                 )}
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
-            <span className="text-[11px] text-slate-400">
+          <div className="flex items-center justify-between border-t border-[#E7E2D9] px-4 py-3">
+            <span className="text-[11px] text-stone-400">
               {isClear ? "已收敛 · 可生成 / 重新生成" : "未收敛"}
             </span>
             <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ export function DeliverablesPanel({
                 onClick={onExportMd}
                 disabled={available.length === 0}
                 title={available.length === 0 ? "尚无可导出的交付物" : "导出为 Markdown"}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:cursor-not-allowed disabled:opacity-40"
                 data-testid="sliderule-deliverables-export"
               >
                 <Download className="h-3.5 w-3.5" /> 导出 MD
@@ -222,7 +222,7 @@ export function DeliverablesPanel({
                 <button
                   onClick={onGenerate}
                   disabled={isRunning}
-                  className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded-lg bg-[#D97757] px-4 py-2 text-[13px] font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   {available.length > 0 ? "重新生成" : "生成交付物"}
@@ -262,11 +262,11 @@ function DeliverableViewer({
         : null;
     return (
       <div className="space-y-4">
-        <h2 className="text-base font-bold text-slate-900">{artifact.title || "可行性报告"}</h2>
+        <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || "可行性报告"}</h2>
         {closureSummary && (
           <div
             data-testid="report-export-closure-summary"
-            className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
+            className="rounded border border-[#E7E2D9] bg-[#F5F1EA] p-2 text-xs text-stone-700"
           >
             source={closureSummary.source} status={closureSummary.status} digest=
             {closureSummary.digest || "n/a"} evidence={closureSummary.evidencePresentCount}/
@@ -274,7 +274,7 @@ function DeliverableViewer({
           </div>
         )}
         {sections.map((sec) => (
-          <section key={sec.id} className="border-b border-slate-100 pb-4 last:border-0">
+          <section key={sec.id} className="border-b border-[#EFEBE2] pb-4 last:border-0">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-800">{sec.label}</h3>
             {sec.label.includes('多角色立场') ? (
               <div className="mt-2 space-y-3">
@@ -298,25 +298,25 @@ function DeliverableViewer({
                       {roles.length > 0 && (
                         <div className="grid grid-cols-1 gap-2">
                           {roles.map((r, idx) => (
-                            <div key={idx} className="rounded border border-slate-200 bg-slate-50 p-2 text-[12px]">
+                            <div key={idx} className="rounded border border-[#E7E2D9] bg-[#F5F1EA] p-2 text-[12px]">
                               <div className="font-semibold text-emerald-700">{r.role} · 立场</div>
-                              <div className="mt-1 whitespace-pre-wrap text-slate-700">{r.content}</div>
+                              <div className="mt-1 whitespace-pre-wrap text-stone-700">{r.content}</div>
                             </div>
                           ))}
                         </div>
                       )}
-                      {convergence && <div className="text-[12px] text-slate-600 font-medium">{convergence}</div>}
+                      {convergence && <div className="text-[12px] text-stone-600 font-medium">{convergence}</div>}
                       {dissent && <div className="text-[12px] text-amber-700">{dissent}</div>}
                     </>
                   );
                 })()}
               </div>
             ) : sec.body.trim() ? (
-              <div className="mt-2 text-[13px] leading-relaxed text-slate-700">
+              <div className="mt-2 text-[13px] leading-relaxed text-stone-700">
                 <MarkdownRenderer markdown={sec.body.trim()} isStreaming={false} locale={DEFAULT_LOCALE} />
               </div>
             ) : (
-              <p className="mt-2 text-[13px] text-slate-400">（空）</p>
+              <p className="mt-2 text-[13px] text-stone-400">（空）</p>
             )}
             {sec.evidenceRefs.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -324,7 +324,7 @@ function DeliverableViewer({
                   <button
                     key={refId}
                     onClick={() => onEvidenceRefClick?.(refId)}
-                    className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                    className="rounded-full border border-[#E7E2D9] bg-white px-2 py-0.5 text-[10px] font-medium text-stone-600 transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA]"
                   >
                     证据 {refId}
                   </button>
@@ -341,9 +341,9 @@ function DeliverableViewer({
     const mermaid = extractMermaid(content);
     return (
       <div className="space-y-2">
-        <h2 className="text-base font-bold text-slate-900">{artifact.title || "架构图"}</h2>
-        <p className="text-[11px] text-slate-400">Mermaid 源码（在支持 Mermaid 的查看器中渲染为图）</p>
-        <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[12px] leading-relaxed text-slate-700">
+        <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || "架构图"}</h2>
+        <p className="text-[11px] text-stone-400">Mermaid 源码（在支持 Mermaid 的查看器中渲染为图）</p>
+        <pre className="overflow-x-auto rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
           {mermaid || content || "（空）"}
         </pre>
       </div>
@@ -354,8 +354,8 @@ function DeliverableViewer({
     const tree = cleanSpecTree(content);
     return (
       <div className="space-y-2">
-        <h2 className="text-base font-bold text-slate-900">{artifact.title || "规格树"}</h2>
-        <pre className="overflow-x-auto whitespace-pre rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[12px] leading-relaxed text-slate-700">
+        <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || "规格树"}</h2>
+        <pre className="overflow-x-auto whitespace-pre rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
           {tree || "（空）"}
         </pre>
       </div>
@@ -364,12 +364,12 @@ function DeliverableViewer({
 
   // docs / prompt / handoff: Markdown 渲染(LLM/模板输出多为 markdown)
   return (
-    <div className="space-y-2 text-[13px] leading-relaxed text-slate-700">
-      <h2 className="text-base font-bold text-slate-900">{artifact.title || CATEGORY_META[category].label}</h2>
+    <div className="space-y-2 text-[13px] leading-relaxed text-stone-700">
+      <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || CATEGORY_META[category].label}</h2>
       {content.trim() ? (
         <MarkdownRenderer markdown={content.trim()} isStreaming={false} locale={DEFAULT_LOCALE} />
       ) : (
-        <p className="text-slate-400">（空）</p>
+        <p className="text-stone-400">（空）</p>
       )}
     </div>
   );

@@ -112,10 +112,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm" onClick={guardedClose} />
+      <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={guardedClose} />
       <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={guardedClose}>
         <div
-          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgb(15_23_42/0.28)]"
+          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
           data-testid="sliderule-settings-dialog"
           role="dialog"
           aria-label="设置"
@@ -123,7 +123,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         >
           <button
             onClick={guardedClose}
-            className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
             title="关闭"
             data-testid="sliderule-settings-close"
           >
@@ -132,7 +132,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
           <div className="flex min-h-0 flex-1">
             {/* 左栏：分类导航 */}
-            <nav className="flex w-[190px] shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50/70 p-3">
+            <nav className="flex w-[190px] shrink-0 flex-col gap-1 border-r border-[#E7E2D9] bg-[#F5F1EA]/70 p-3">
               <div className="mb-3 flex items-center gap-2 px-2 py-2">
                 <img
                   src="/assets/sliderule_logo_wordmark_transparent.png"
@@ -151,8 +151,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     data-testid={`sliderule-settings-nav-${item.id}`}
                     className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition ${
                       active
-                        ? "bg-indigo-50 text-indigo-700"
-                        : "text-slate-600 hover:bg-white hover:text-slate-800"
+                        ? "bg-[#F8E8E0] text-[#B0552F]"
+                        : "text-stone-600 hover:bg-white hover:text-stone-800"
                     }`}
                   >
                     {item.icon}
@@ -177,14 +177,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </div>
 
           {/* 底部操作 */}
-          <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-[#E7E2D9] px-4 py-3">
             {showUnsavedConfirm ? (
               <div className="flex w-full items-center justify-between gap-3 text-[12px]">
                 <span className="text-rose-600">有未保存的更改，关闭将丢失更改。</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={cancelUnsaved}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                    className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
                   >
                     取消
                   </button>
@@ -200,7 +200,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <>
                 <button
                   onClick={guardedClose}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                  className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
                   data-testid="sliderule-settings-close"
                 >
                   关闭
@@ -208,7 +208,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 <button
                   onClick={handleSave}
                   disabled={!isLlmDirty}
-                  className="rounded-lg bg-indigo-600 px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
+                  className="rounded-lg bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#C4633F]"
                   data-testid="sliderule-settings-save"
                 >
                   保存
@@ -234,7 +234,7 @@ function Segmented<T extends string>({
   onChange?: (v: T) => void;
 }) {
   return (
-    <div className="flex max-w-md gap-1 rounded-lg bg-slate-100 p-1">
+    <div className="flex max-w-md gap-1 rounded-lg bg-[#F0EDE5] p-1">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -243,7 +243,7 @@ function Segmented<T extends string>({
           onClick={() => onChange?.(opt.value)}
           title={opt.hint}
           className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
-            value === opt.value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            value === opt.value ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
           }`}
         >
           {opt.label}
@@ -263,7 +263,7 @@ function SystemPrefs(props: SettingsDialogProps) {
     setMarathonBudget,
   } = props;
   const budget = marathonBudget?.maxTokens ?? 12000;
-  const labelClass = "mb-1.5 block text-[12px] font-semibold text-slate-600";
+  const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
   return (
     <div className="max-w-xl space-y-6" data-testid="sliderule-settings-prefs">
@@ -277,7 +277,7 @@ function SystemPrefs(props: SettingsDialogProps) {
             { value: "detailed", label: "详", hint: "展开证据/阶段/树的溯源链" },
           ]}
         />
-        <p className="mt-1.5 text-[11px] text-slate-400">控制推演图节点展开的详略程度。</p>
+        <p className="mt-1.5 text-[11px] text-stone-400">控制推演图节点展开的详略程度。</p>
       </div>
 
       <div>
@@ -290,7 +290,7 @@ function SystemPrefs(props: SettingsDialogProps) {
             { value: "marathon", label: "持续推演", hint: "自动多轮推进，直到预算/前沿尽/需要人工介入" },
           ]}
         />
-        <p className="mt-1.5 text-[11px] text-slate-400">与底部输入框的模式选择同步。</p>
+        <p className="mt-1.5 text-[11px] text-stone-400">与底部输入框的模式选择同步。</p>
       </div>
 
       <div>
@@ -307,10 +307,10 @@ function SystemPrefs(props: SettingsDialogProps) {
               setMarathonBudget?.({ maxTokens: n, declaredAt: new Date().toISOString() });
             }
           }}
-          className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-[13px] text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          className="w-full max-w-md rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]"
           data-testid="sliderule-settings-budget"
         />
-        <p className="mt-1.5 text-[11px] text-slate-400">
+        <p className="mt-1.5 text-[11px] text-stone-400">
           持续推演模式单条消息的 token 上限，达到后停在等待人工介入。
         </p>
       </div>

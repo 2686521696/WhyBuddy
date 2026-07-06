@@ -66,10 +66,10 @@ export function PageScreen({
       data-skill="page"
       data-active={isActive}
     >
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-teal-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Page</span>
-        <span className="text-xs text-slate-400">页面 Wireframe</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">Page</span>
+        <span className="text-xs text-stone-400">页面 Wireframe</span>
         {hasEvidence && (
           <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
             evidence ✓
@@ -80,23 +80,23 @@ export function PageScreen({
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {pages.map((page) => (
-            <div key={page.title} className={`rounded-xl border border-slate-200 bg-slate-50 p-3 ${rawContent ? "" : "opacity-40"}`}>
+            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 ${rawContent ? "" : "opacity-40"}`}>
               {/* Page title bar */}
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 shadow-sm">
                 <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
-                <span className="text-xs font-semibold text-slate-700">{page.title}</span>
+                <span className="text-xs font-semibold text-stone-700">{page.title}</span>
               </div>
 
               {/* Fields */}
               <div className="space-y-1.5">
                 {page.fields.map((field) => (
                   <div key={field.name} className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-[10px] text-slate-500">{field.name}</span>
+                    <span className="w-20 shrink-0 text-[10px] text-stone-500">{field.name}</span>
                     <div
                       className={`h-5 flex-1 rounded border text-[10px] ${
                         field.editable
-                          ? "border-slate-300 bg-white"
-                          : "border-transparent bg-slate-100 text-slate-400"
+                          ? "border-[#D8D1C4] bg-white"
+                          : "border-transparent bg-[#F0EDE5] text-stone-400"
                       }`}
                     />
                     {field.required && (
@@ -114,7 +114,7 @@ export function PageScreen({
                     className={`rounded-md px-2.5 py-1 text-[10px] font-medium ${
                       i === 0
                         ? "bg-teal-500 text-white"
-                        : "border border-slate-200 bg-white text-slate-600"
+                        : "border border-[#E7E2D9] bg-white text-stone-600"
                     }`}
                   >
                     {action}
@@ -126,7 +126,7 @@ export function PageScreen({
         </div>
 
         {!rawContent && (
-          <div className="mt-4 text-center text-[10px] text-slate-300">
+          <div className="mt-4 text-center text-[10px] text-stone-300">
             推演完成后将显示真实页面字段绑定
           </div>
         )}

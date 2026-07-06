@@ -55,13 +55,13 @@ export function SlideRuleStudio({
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
       {/* Left panel — 38% — Chat */}
-      <div className="flex h-full shrink-0 flex-col border-r border-slate-200 bg-white"
+      <div className="flex h-full shrink-0 flex-col border-r border-[#E7E2D9] bg-[#FAF9F5]"
            style={{ width: "38%" }}>
         {chatSlot}
       </div>
 
       {/* Right panel — 62% — Skill visualisation */}
-      <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#f8fafc] p-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#F5F1EA] p-4">
         {/* Thumbnail bar */}
         <SkillThumbnailBar
           activeSkillId={displaySkillId}

@@ -121,13 +121,13 @@ export function ArchitectureProcessPanel({
       {liveAction && streaming && (
         <p
           className={`m-0 mb-2 px-1 text-xs ${
-            liveAction.external ? "text-violet-600" : "text-slate-600"
+            liveAction.external ? "text-[#C4633F]" : "text-stone-600"
           }`}
         >
           {!liveAction.external && (
             <span className="mr-1.5 inline-flex gap-0.5 align-middle">
-              <span className="size-1 animate-pulse rounded-full bg-slate-400" />
-              <span className="size-1 animate-pulse rounded-full bg-slate-400 [animation-delay:100ms]" />
+              <span className="size-1 animate-pulse rounded-full bg-stone-400" />
+              <span className="size-1 animate-pulse rounded-full bg-stone-400 [animation-delay:100ms]" />
             </span>
           )}
           {liveAction.label}
@@ -153,17 +153,17 @@ export function ArchitectureProcessPanel({
       )}
       {(crossRuntimeGraph || publishClosure) && (
         <section
-          className="mt-3 rounded-md border border-slate-200/80 bg-white/70 px-3 py-2 text-[10px] text-slate-600 shadow-sm"
+          className="mt-3 rounded-md border border-[#E7E2D9]/80 bg-white/70 px-3 py-2 text-[10px] text-stone-600 shadow-sm"
           data-testid="sliderule-cross-runtime-graph"
           aria-label="Skill runtime linkage"
         >
           {crossRuntimeGraph && (
             <>
               <div className="mb-1 flex items-center justify-between gap-3">
-                <span className="font-mono font-semibold uppercase tracking-wide text-slate-500">
+                <span className="font-mono font-semibold uppercase tracking-wide text-stone-500">
                   Skill linkage
                 </span>
-                <span className="font-mono text-slate-500">
+                <span className="font-mono text-stone-500">
                   {crossRuntimeGraph.edgeCount} edges / {crossRuntimeGraph.skillCount} skills
                 </span>
               </div>
@@ -174,7 +174,7 @@ export function ArchitectureProcessPanel({
                 {crossRuntimeGraph.blockedCount > 0 && (
                   <span className="text-rose-700">blocked {crossRuntimeGraph.blockedCount}</span>
                 )}
-                <span className="text-slate-500">evidence {crossRuntimeGraph.evidenceCount}</span>
+                <span className="text-stone-500">evidence {crossRuntimeGraph.evidenceCount}</span>
               </div>
               <div className="space-y-0.5">
                 {crossRuntimeGraph.examples.map((edge) => (
@@ -192,24 +192,24 @@ export function ArchitectureProcessPanel({
                       type="button"
                       data-testid="sliderule-skill-linkage-source"
                       data-skill={edge.sourceSkill}
-                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-slate-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-stone-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
                       aria-label={`Select source skill ${edge.sourceSkill}`}
                       onClick={() => onSelectSkillLinkage?.(edge)}
                     >
                       {edge.sourceSkill}
                     </button>
-                    <span className="px-1 text-slate-400">-&gt;</span>
+                    <span className="px-1 text-stone-400">-&gt;</span>
                     <button
                       type="button"
                       data-testid="sliderule-skill-linkage-target"
                       data-skill={edge.targetSkill}
-                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-slate-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                      className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-stone-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
                       aria-label={`Select target skill ${edge.targetSkill}`}
                       onClick={() => onSelectSkillLinkage?.(edge)}
                     >
                       {edge.targetSkill}
                     </button>
-                    <span className="pl-1 text-slate-400">{edge.state}</span>
+                    <span className="pl-1 text-stone-400">{edge.state}</span>
                   </div>
                 ))}
               </div>
@@ -217,7 +217,7 @@ export function ArchitectureProcessPanel({
           )}
           {publishClosure && (
             <div
-              className="mt-2 border-t border-slate-200/80 pt-2"
+              className="mt-2 border-t border-[#E7E2D9]/80 pt-2"
               data-testid="sliderule-publish-closure"
               data-state={publishClosure.blocked ? "blocked" : "closed"}
               data-fail-closed={publishClosureFailClosed ? "true" : "false"}
@@ -226,14 +226,14 @@ export function ArchitectureProcessPanel({
                 <span className={publishClosure.blocked ? "text-rose-700" : "text-emerald-700"}>
                   publish {publishClosure.blocked ? "blocked" : "closed"}
                 </span>
-                <span className="text-slate-500">
+                <span className="text-stone-500">
                   {publishClosure.evidencePresentCount}/{publishClosure.skillCount} evidence
                 </span>
-                <span className="text-slate-500">
+                <span className="text-stone-500">
                   pins {publishClosure.versionPinsChecked ? "checked" : "missing"}
                 </span>
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px] text-slate-500">
+              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[9px] text-stone-500">
                 {publishClosure.stableDigest && (
                   <span title={publishClosure.closureId ?? publishClosure.stableDigest}>
                     digest {publishClosure.stableDigest}
@@ -246,7 +246,7 @@ export function ArchitectureProcessPanel({
                   hard {publishClosure.tierCounts.hard_blocker}
                 </span>
                 <span className="text-amber-700">warn {publishClosure.tierCounts.warning}</span>
-                <span className="text-slate-500">info {publishClosure.tierCounts.info}</span>
+                <span className="text-stone-500">info {publishClosure.tierCounts.info}</span>
               </div>
               {publishClosureBlockers.length > 0 && (
                 <div className="mt-1 space-y-0.5">
@@ -275,7 +275,7 @@ export function ArchitectureProcessPanel({
                           type="button"
                           data-testid="sliderule-closure-blocker-skill"
                           data-skill={affectedSkill}
-                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
                           aria-label={`Select affected skill ${affectedSkill || "unknown"}`}
                           onClick={() => onSelectClosureBlocker?.(blocker)}
                         >
@@ -286,7 +286,7 @@ export function ArchitectureProcessPanel({
                           type="button"
                           data-testid="sliderule-closure-blocker-ref"
                           data-ref={blocker.ref ?? ""}
-                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-slate-400"
+                          className="m-0 inline cursor-pointer border-0 bg-transparent p-0 font-mono text-rose-700 focus-visible:outline focus-visible:outline-1 focus-visible:outline-stone-400"
                           aria-label={`Select ref ${blockerRef}`}
                           onClick={() => onSelectClosureBlocker?.(blocker)}
                         >

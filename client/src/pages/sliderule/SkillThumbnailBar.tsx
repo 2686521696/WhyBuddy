@@ -56,14 +56,14 @@ export function SkillThumbnailBar({
             className={`flex flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all duration-200 ${
               isActive
                 ? `opacity-100 ring-2 ${activeBorder} border-transparent bg-white shadow-sm`
-                : "border-slate-200 bg-white opacity-20 hover:opacity-50"
+                : "border-[#E7E2D9] bg-white opacity-20 hover:opacity-50"
             }`}
           >
             {/* Mini icon */}
             <div className={`h-6 w-6 rounded-lg ${iconBg} flex items-center justify-center`}>
               <span className="text-[9px] font-bold text-white">{abbr}</span>
             </div>
-            <span className="text-[9px] font-medium text-slate-600">{label}</span>
+            <span className="text-[9px] font-medium text-stone-600">{label}</span>
 
             {/* Evidence dot */}
             {hasEvidence && (

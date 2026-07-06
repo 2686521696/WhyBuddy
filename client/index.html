@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <!-- B5: CSP for GitHub Pages BYOK browser-llm (connect to LLM vendors only; no proxy). Injected via Vite for build too to avoid html-proxy transform issues. -->
     <!-- CSP meta is dynamically injected by Vite plugin during build (see vite.config.ts) for clean static output. For dev it falls back to this or the plugin. -->
-    <link rel="icon" type="image/png" href="%BASE_URL%assets/sliderule_icon_flat_transparent.png" />
+    <!-- Prefer the uploaded SlideRule mark; browsers fall back to /favicon.ico while the PNG is absent. -->
+    <link rel="icon" type="image/png" href="%BASE_URL%sliderule-mark.png" />
     <title>SlideRule · 任务自动驾驶</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

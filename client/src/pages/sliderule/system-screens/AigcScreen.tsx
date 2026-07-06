@@ -119,10 +119,10 @@ export function AigcScreen({
       data-skill="aigc"
       data-active={isActive}
     >
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-pink-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">AIGC</span>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AIGC</span>
+        <span className="text-xs text-stone-400">
           {hasModel ? `${capabilities.length} 项 AI 能力 · 字段绑定` : "Prompt 模板 · 触发条件"}
         </span>
         {hasEvidence && (
@@ -138,18 +138,18 @@ export function AigcScreen({
             {resolved.map(({ cap, inputs, output, roles }) => (
               <div
                 key={cap.id || cap.name}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                className="rounded-xl border border-[#E7E2D9] bg-white p-4 shadow-sm"
               >
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700 ring-1 ring-pink-200">
                     AI
                   </span>
-                  <span className="text-sm font-semibold text-slate-800">
+                  <span className="text-sm font-semibold text-stone-800">
                     {cap.name || cap.id}
                   </span>
                   {roles.length > 0 && (
                     <span className="ml-auto flex flex-wrap items-center gap-1">
-                      <span className="text-[10px] text-slate-400">可用角色</span>
+                      <span className="text-[10px] text-stone-400">可用角色</span>
                       {roles.map((r) => (
                         <RefChip key={r.ref} res={r} tone="role" />
                       ))}
@@ -159,22 +159,22 @@ export function AigcScreen({
 
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <div className="mb-1 font-medium text-slate-500">输入字段（DataModel）</div>
+                    <div className="mb-1 font-medium text-stone-500">输入字段（DataModel）</div>
                     <div className="flex flex-wrap gap-1">
                       {inputs.length > 0 ? (
                         inputs.map((res) => <RefChip key={res.ref} res={res} tone="field" />)
                       ) : (
-                        <span className="text-[10px] text-slate-300">无输入字段</span>
+                        <span className="text-[10px] text-stone-300">无输入字段</span>
                       )}
                     </div>
                   </div>
                   <div>
-                    <div className="mb-1 font-medium text-slate-500">输出字段（DataModel）</div>
+                    <div className="mb-1 font-medium text-stone-500">输出字段（DataModel）</div>
                     <div className="flex flex-wrap gap-1">
                       {output.ref ? (
                         <RefChip res={output} tone="output" />
                       ) : (
-                        <span className="text-[10px] text-slate-300">未声明输出</span>
+                        <span className="text-[10px] text-stone-300">未声明输出</span>
                       )}
                     </div>
                   </div>
@@ -195,38 +195,38 @@ export function AigcScreen({
               {PLACEHOLDER_FEATURES.map((feat) => (
                 <div
                   key={feat.name}
-                  className="rounded-xl border border-slate-200 bg-white p-4 opacity-40 shadow-sm"
+                  className="rounded-xl border border-[#E7E2D9] bg-white p-4 opacity-40 shadow-sm"
                 >
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700 ring-1 ring-pink-200">
                       AI
                     </span>
-                    <span className="text-sm font-semibold text-slate-800">{feat.name}</span>
+                    <span className="text-sm font-semibold text-stone-800">{feat.name}</span>
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <div className="mb-1 font-medium text-slate-500">触发时机</div>
-                      <div className="rounded-md bg-slate-50 px-2 py-1.5 text-slate-700">{feat.trigger}</div>
+                      <div className="mb-1 font-medium text-stone-500">触发时机</div>
+                      <div className="rounded-md bg-[#F5F1EA] px-2 py-1.5 text-stone-700">{feat.trigger}</div>
                     </div>
                     <div>
-                      <div className="mb-1 font-medium text-slate-500">输出字段</div>
+                      <div className="mb-1 font-medium text-stone-500">输出字段</div>
                       <div className="rounded-md bg-pink-50 px-2 py-1.5 text-pink-700">{feat.outputField}</div>
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs">
-                    <div className="mb-1 font-medium text-slate-500">输入字段</div>
+                    <div className="mb-1 font-medium text-stone-500">输入字段</div>
                     <div className="flex flex-wrap gap-1">
                       {feat.inputFields.map((f) => (
-                        <span key={f} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{f}</span>
+                        <span key={f} className="rounded bg-[#F0EDE5] px-1.5 py-0.5 text-stone-600">{f}</span>
                       ))}
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs">
-                    <div className="mb-1 font-medium text-slate-500">Prompt 预览</div>
-                    <div className="rounded-md bg-slate-900 px-3 py-2 font-mono text-[10px] leading-5 text-slate-300">
+                    <div className="mb-1 font-medium text-stone-500">Prompt 预览</div>
+                    <div className="rounded-md bg-[#2A2620] px-3 py-2 font-mono text-[10px] leading-5 text-stone-300">
                       {feat.promptPreview}
                     </div>
                   </div>
@@ -234,7 +234,7 @@ export function AigcScreen({
               ))}
             </div>
 
-            <div className="mt-4 text-center text-[10px] text-slate-300">
+            <div className="mt-4 text-center text-[10px] text-stone-300">
               推演完成后将显示真实 AIGC 功能设计
             </div>
           </>

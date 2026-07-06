@@ -106,17 +106,17 @@ function TypewriterText({ text, active }: { text: string; active: boolean }) {
   }, [text, active]);
 
   return (
-    <div className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{text.slice(0, shown)}</div>
+    <div className="whitespace-pre-wrap text-sm leading-7 text-stone-700">{text.slice(0, shown)}</div>
   );
 }
 
 function ImStreamingPlaceholder() {
   return (
-    <p className="m-0 flex items-center gap-2 text-sm text-slate-400">
+    <p className="m-0 flex items-center gap-2 text-sm text-stone-400">
       <span className="inline-flex gap-1">
-        <span className="size-1.5 animate-pulse rounded-full bg-slate-300" />
-        <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:120ms]" />
-        <span className="size-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:240ms]" />
+        <span className="size-1.5 animate-pulse rounded-full bg-stone-300" />
+        <span className="size-1.5 animate-pulse rounded-full bg-stone-300 [animation-delay:120ms]" />
+        <span className="size-1.5 animate-pulse rounded-full bg-stone-300 [animation-delay:240ms]" />
       </span>
       Architecture nodes advancing...
     </p>
@@ -132,9 +132,9 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
     >
       {!liveAction.external && (
         <span className="mr-2 inline-flex gap-1 align-middle">
-          <span className="size-1.5 animate-pulse rounded-full bg-slate-400" />
-          <span className="size-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms]" />
-          <span className="size-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms]" />
+          <span className="size-1.5 animate-pulse rounded-full bg-stone-400" />
+          <span className="size-1.5 animate-pulse rounded-full bg-stone-400 [animation-delay:120ms]" />
+          <span className="size-1.5 animate-pulse rounded-full bg-stone-400 [animation-delay:240ms]" />
         </span>
       )}
       {liveAction.label}
@@ -157,7 +157,7 @@ function TurnFootnote({
     <a
       key="evidence"
       href={`/sliderule/dev?session=${encodeURIComponent(sessionId)}`}
-      className="text-slate-500 hover:text-slate-700 hover:underline"
+      className="text-stone-500 hover:text-stone-700 hover:underline"
     >
       Evidence chain
     </a>
@@ -169,13 +169,13 @@ function TurnFootnote({
         key="challenge"
         type="button"
         onClick={() => onChallenge(turn.main!.artifactId)}
-        className="text-slate-500 hover:text-slate-700 hover:underline"
+        className="text-stone-500 hover:text-stone-700 hover:underline"
       >
         质疑这轮结论
       </button>
     );
     parts.push(
-      <span key="source" className="text-slate-400">
+      <span key="source" className="text-stone-400">
         {turn.main.realLlm ? "真实推演" : "规则推演"}
       </span>
     );
@@ -186,17 +186,17 @@ function TurnFootnote({
       narrationFallbackHint(turn.narrationReason) ||
       "叙述服务暂不可用，本条为系统模板回复（产物与结论状态不受影响）";
     parts.push(
-      <span key="fallback" className="text-slate-400" title={fallbackHint}>
+      <span key="fallback" className="text-stone-400" title={fallbackHint}>
         模板回复
       </span>
     );
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 text-[11px] text-stone-500">
       {parts.map((part, i) => (
         <React.Fragment key={i}>
-          {i > 0 && <span className="text-slate-300">·</span>}
+          {i > 0 && <span className="text-stone-300">·</span>}
           {part}
         </React.Fragment>
       ))}
@@ -264,14 +264,14 @@ function SlideRuleChatSurface({
   const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
 
   return (
-    <div className="absolute inset-x-0 bottom-[104px] top-[104px] z-0 overflow-hidden bg-[radial-gradient(circle_at_top_left,rgb(239_246_255),transparent_34%),linear-gradient(180deg,#ffffff,#f8fafc)]">
+    <div className="absolute inset-x-0 bottom-[104px] top-[104px] z-0 overflow-hidden bg-[radial-gradient(circle_at_top_left,#F8EFE7,transparent_34%),linear-gradient(180deg,#FDFCF9,#F5F1EA)]">
       <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 sm:px-6">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#E7E2D9]/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
               SlideRule Chat
             </div>
-            <div className="mt-0.5 truncate text-sm font-medium text-slate-800">
+            <div className="mt-0.5 truncate text-sm font-medium text-stone-800">
               {isRunning
                 ? liveAction?.label || latestStepText || "正在推演..."
                 : hasClosure
@@ -294,7 +294,7 @@ function SlideRuleChatSurface({
               </div>
             )}
             {crossRuntimeGraph && (
-              <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+              <div className="rounded-full bg-[#F0EDE5] px-2.5 py-1 text-[11px] font-medium text-stone-600 ring-1 ring-[#E7E2D9]">
                 edges {crossRuntimeGraph.edgeCount} · evidence {crossRuntimeGraph.evidenceCount}
               </div>
             )}
@@ -302,7 +302,7 @@ function SlideRuleChatSurface({
               <button
                 type="button"
                 onClick={onSwitchToReasoning}
-                className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                className="rounded-full bg-[#D97757] px-3 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#C4633F]"
               >
                 看推演链路
               </button>
@@ -310,17 +310,17 @@ function SlideRuleChatSurface({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-200/80 bg-white/75 px-3 py-4 shadow-sm backdrop-blur-xl sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[#E7E2D9]/80 bg-white/75 px-3 py-4 shadow-sm backdrop-blur-xl sm:px-5">
           {uiTurns.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="text-lg font-semibold text-slate-800">把应用意图发给 SlideRule</div>
-              <div className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
+              <div className="font-display text-xl font-medium text-[#1F1E1B]">把应用意图发给 SlideRule</div>
+              <div className="mt-2 max-w-lg text-sm leading-6 text-stone-500">
                 例如：做一个采购审批应用，包含采购单、经理审批、财务确认、字段权限和发布闭环。
               </div>
-              <div className="mt-4 grid max-w-2xl gap-2 text-left text-xs text-slate-500 sm:grid-cols-3">
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">DataModel 定义实体字段</div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">RBAC / Workflow 验证权限流程</div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">AppBundle 汇总发布证据</div>
+              <div className="mt-4 grid max-w-2xl gap-2 text-left text-xs text-stone-500 sm:grid-cols-3">
+                <div className="rounded-lg border border-[#E7E2D9] bg-white px-3 py-2">DataModel 定义实体字段</div>
+                <div className="rounded-lg border border-[#E7E2D9] bg-white px-3 py-2">RBAC / Workflow 验证权限流程</div>
+                <div className="rounded-lg border border-[#E7E2D9] bg-white px-3 py-2">AppBundle 汇总发布证据</div>
               </div>
             </div>
           ) : (
@@ -331,19 +331,19 @@ function SlideRuleChatSurface({
                 return (
                   <div key={turn.id} className="space-y-2">
                     <div className="flex justify-end">
-                      <div className="max-w-[82%] rounded-lg bg-slate-900 px-4 py-2 text-sm leading-6 text-white shadow-sm">
+                      <div className="max-w-[82%] rounded-lg bg-[#F8E8E0] px-4 py-2 text-sm leading-6 text-[#1F1E1B] shadow-sm">
                         {turn.user}
                       </div>
                     </div>
                     <div className="flex justify-start">
-                      <div className="max-w-[88%] rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+                      <div className="max-w-[88%] rounded-lg border border-[#E7E2D9] bg-white px-4 py-3 text-sm leading-6 text-stone-700 shadow-sm">
                         {turn.status === "streaming" ? (
                           <div className="space-y-2">
                             <ImStreamingPlaceholder />
                             {recentSteps.length > 0 && (
                               <div className="space-y-1">
                                 {recentSteps.map((stepText, index) => (
-                                  <div key={`${turn.id}-step-${index}`} className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+                                  <div key={`${turn.id}-step-${index}`} className="rounded-md bg-[#F5F1EA] px-2.5 py-1.5 text-xs text-stone-600">
                                     {stepText}
                                   </div>
                                 ))}
@@ -355,17 +355,17 @@ function SlideRuleChatSurface({
                         )}
 
                         {turn.status === "complete" && (
-                          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+                          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#EFEBE2] pt-2">
                             {turn.main && (
                               <button
                                 type="button"
                                 onClick={() => onChallenge(turn.main!.artifactId)}
-                                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+                                className="rounded-full bg-[#F0EDE5] px-2.5 py-1 text-[11px] font-medium text-stone-600 hover:bg-[#E7E2D9]"
                               >
                                 质疑本轮
                               </button>
                             )}
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-stone-400">
                               {turn.steps.length} steps · {turn.routeLitCount || 0} route refs
                             </span>
                           </div>
@@ -380,15 +380,15 @@ function SlideRuleChatSurface({
         </div>
 
         {hasClosure && (
-          <div className="mt-3 rounded-lg border border-slate-200/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
+          <div className="mt-3 rounded-lg border border-[#E7E2D9]/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-slate-700">
+              <div className="text-xs font-semibold text-stone-700">
                 AppBundle 发布证据 · {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
               </div>
               <button
                 type="button"
                 onClick={onOpenDeliverables}
-                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+                className="rounded-full bg-[#F0EDE5] px-2.5 py-1 text-[11px] font-medium text-stone-600 hover:bg-[#E7E2D9]"
               >
                 打开交付物
               </button>
@@ -398,7 +398,7 @@ function SlideRuleChatSurface({
                 <div
                   key={skill}
                   className={`rounded-md px-2 py-1 text-center text-[11px] font-medium ${
-                    present ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                    present ? "bg-emerald-50 text-emerald-700" : "bg-[#F0EDE5] text-stone-400"
                   }`}
                 >
                   {skill}
@@ -459,16 +459,16 @@ function ClaudeChatSurface({
       : "正在推演...");
 
   return (
-    <div className={`${embedded ? "relative h-full" : "absolute inset-0"} z-0 flex flex-col overflow-hidden bg-white text-slate-950`}>
+    <div className={`${embedded ? "relative h-full" : "absolute inset-0"} z-0 flex flex-col overflow-hidden bg-[#FAF9F5] text-[#1F1E1B]`}>
       {/* Top bar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <span className="text-sm font-semibold text-slate-800">SlideRule</span>
+      <div className="flex shrink-0 items-center justify-between border-b border-[#EFEBE2] px-4 py-2.5">
+        <span className="text-sm font-semibold text-stone-800">SlideRule</span>
         <div className="flex items-center gap-1">
           {onSwitchToReasoning && (
             <button
               type="button"
               onClick={onSwitchToReasoning}
-              className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-[#F0EDE5] hover:text-[#1F1E1B]"
             >
               推演
             </button>
@@ -477,14 +477,14 @@ function ClaudeChatSurface({
             type="button"
             onClick={onResetSession}
             disabled={isRunning}
-            className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+            className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-[#F0EDE5] hover:text-[#1F1E1B] disabled:opacity-40"
           >
             新对话
           </button>
           <button
             type="button"
             onClick={onOpenDeliverables}
-            className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            className="rounded-full p-1.5 text-stone-500 hover:bg-[#F0EDE5] hover:text-stone-800"
             title="交付物"
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -498,8 +498,8 @@ function ClaudeChatSurface({
           /* Empty state — 3 clickable example prompts */
           <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
             <div>
-              <div className="text-[22px] font-semibold text-slate-900">我能帮你把意图推演成应用闭环</div>
-              <div className="mt-2 text-sm text-slate-500">
+              <div className="font-display text-[26px] font-medium tracking-tight text-[#1F1E1B]">我能帮你把意图推演成应用闭环</div>
+              <div className="mt-2 text-sm text-stone-500">
                 发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
               </div>
             </div>
@@ -513,7 +513,7 @@ function ClaudeChatSurface({
                     // Dispatch a custom event so ComposerDock can pick it up
                     window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text: prompt } }));
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                  className="w-full rounded-xl border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 transition-colors hover:border-[#D8D1C4] hover:bg-[#F5F1EA] disabled:opacity-50"
                 >
                   {prompt}
                 </button>
@@ -527,9 +527,9 @@ function ClaudeChatSurface({
               const recentSteps = turn.steps.slice(-3).map(textFromStep).filter(Boolean);
               return (
                 <section key={turn.id} className="space-y-4">
-                  {/* User bubble — right, bg-slate-100, no border */}
+                  {/* User bubble — right, bg-[#F0EDE5], no border */}
                   <div className="flex justify-end">
-                    <div className="max-w-[520px] rounded-2xl bg-slate-100 px-4 py-2.5 text-[15px] leading-7 text-slate-900">
+                    <div className="max-w-[520px] rounded-2xl bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
                       {turn.user}
                     </div>
                   </div>
@@ -538,10 +538,10 @@ function ClaudeChatSurface({
                   <div className="max-w-[640px]">
                     {turn.status === "streaming" ? (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <div className="flex items-center gap-2 text-sm text-stone-500">
                           <span className="inline-flex gap-0.5">
                             {Array.from({ length: 3 }).map((_, i) => (
-                              <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300" style={{ animationDelay: `${i * 120}ms` }} />
+                              <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: `${i * 120}ms` }} />
                             ))}
                           </span>
                           {thinkingText}
@@ -549,17 +549,17 @@ function ClaudeChatSurface({
                         {recentSteps.length > 0 && (
                           <div className="space-y-1 pl-4">
                             {recentSteps.map((t, i) => (
-                              <div key={i} className="text-xs text-slate-400">{t}</div>
+                              <div key={i} className="text-xs text-stone-400">{t}</div>
                             ))}
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="space-y-2 text-[15px] leading-7 text-slate-800">
-                        <div className="prose prose-slate max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                      <div className="space-y-2 text-[15px] leading-7 text-stone-800">
+                        <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
                           {publishClosure && (
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                            <span className="rounded-full bg-[#F0EDE5] px-2 py-0.5">
                               {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
                             </span>
                           )}
@@ -567,7 +567,7 @@ function ClaudeChatSurface({
                             <button
                               type="button"
                               onClick={() => onChallenge(turn.main!.artifactId)}
-                              className="rounded-full bg-slate-100 px-2 py-0.5 hover:bg-slate-200"
+                              className="rounded-full bg-[#F0EDE5] px-2 py-0.5 hover:bg-[#E7E2D9]"
                             >
                               质疑本轮
                             </button>
@@ -585,21 +585,21 @@ function ClaudeChatSurface({
 
       {/* AppBundle closure bar */}
       {publishClosure && (
-        <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-2">
+        <div className="shrink-0 border-t border-[#EFEBE2] bg-[#FAF9F5] px-4 py-2">
           <div className="mx-auto flex max-w-[780px] items-center justify-between gap-2">
             <div className="flex flex-wrap gap-1">
               {skillRows.map(({ skill, present }) => (
                 <span
                   key={skill}
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    present ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                    present ? "bg-emerald-50 text-emerald-700" : "bg-[#F0EDE5] text-stone-400"
                   }`}
                 >
                   {skill}
                 </span>
               ))}
             </div>
-            <button type="button" onClick={onOpenDeliverables} className="shrink-0 text-xs text-slate-500 hover:text-slate-900">
+            <button type="button" onClick={onOpenDeliverables} className="shrink-0 text-xs text-stone-500 hover:text-[#1F1E1B]">
               交付物
             </button>
           </div>
@@ -867,7 +867,7 @@ function SlideRuleImmersion({
               <img
                 src="/assets/SlideRule_transparent_cropped.png"
                 alt="SlideRule"
-                className={`w-[min(82vw,360px)] object-contain drop-shadow-[0_14px_30px_rgb(15_23_42/0.12)] transition-opacity duration-500 ${
+                className={`w-[min(82vw,360px)] object-contain drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)] transition-opacity duration-500 ${
                   latestTurn || isRunning ? "opacity-0" : "opacity-[0.55]"
                 }`}
                 title="SlideRule"
@@ -1229,7 +1229,7 @@ function SlideRuleSplitEngineering({
         <div className="min-w-0 flex-1">
           <div className={autopilotTheme.label}>我的想法</div>
           <div
-            className={`${autopilotTheme.goal} ${!goal ? "text-slate-400" : ""}`}
+            className={`${autopilotTheme.goal} ${!goal ? "text-stone-400" : ""}`}
             data-testid="sliderule-goal-display"
           >
             {goal || "Enter an idea to start SlideRule."}
@@ -1284,7 +1284,7 @@ function SlideRuleSplitEngineering({
               {isRunning && liveAction ? (
                 <LiveActionIndicator liveAction={liveAction} />
               ) : (
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[10px] text-stone-400">
                   {graphNodeCount > 0
                     ? `${graphNodeCount} nodes - click to inspect`
                     : "发送消息后展开推理地图"}
@@ -1333,7 +1333,7 @@ function SlideRuleSplitEngineering({
                   <div className="flex justify-end">
                     <div className={autopilotTheme.userBubble}>{turn.user}</div>
                   </div>
-                  <div className="rounded-lg border border-slate-200/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+                  <div className="rounded-lg border border-[#E7E2D9]/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
                     {/* M7 close-out: turn-route is hidden by default in marathon mode; single mode remains visible and toggle can expand it. */}
                     {(driveMode !== "marathon" || turn.routeExpanded) && (
                       <TurnRouteTimeline
@@ -1357,7 +1357,7 @@ function SlideRuleSplitEngineering({
                       />
                     )}
                     {driveMode === "marathon" && !turn.routeExpanded && (
-                      <div className="cursor-pointer text-[10px] text-slate-400" onClick={() => toggleRouteExpanded(turn.id)} title="Marathon route details are hidden; click to expand.">Continuing SlideRule. Click to expand route.</div>
+                      <div className="cursor-pointer text-[10px] text-stone-400" onClick={() => toggleRouteExpanded(turn.id)} title="Marathon route details are hidden; click to expand.">Continuing SlideRule. Click to expand route.</div>
                     )}
                     {turn.status === "complete" && (
                       <TurnFootnote

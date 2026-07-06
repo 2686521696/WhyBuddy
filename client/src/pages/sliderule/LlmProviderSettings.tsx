@@ -39,8 +39,8 @@ import {
 const TOGGLEABLE_CAPS: ModelCapability[] = ["tools", "stream", "vision"];
 
 const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
-const labelClass = "mb-1.5 block text-[12px] font-semibold text-slate-600";
+  "w-full rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
 const CAP_LABELS: Record<ModelCapability, string> = {
   vision: "视觉",
@@ -52,7 +52,7 @@ function ProviderBadge({ glyph, active }: { glyph: string; active?: boolean }) {
   return (
     <span
       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ${
-        active ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"
+        active ? "bg-[#D97757] text-white" : "bg-[#F0EDE5] text-stone-500"
       }`}
     >
       {glyph}
@@ -66,7 +66,7 @@ function StatusDot({ status }: { status: ReturnType<typeof providerStatus> }) {
     ready: { cls: "bg-emerald-500", title: "已启用 · 下一轮生效" },
     configured: { cls: "bg-emerald-400/70", title: "已配密钥（未启用）" },
     "needs-key": { cls: "bg-amber-400", title: "需要 API 密钥" },
-    idle: { cls: "bg-slate-300", title: "未配置" },
+    idle: { cls: "bg-stone-300", title: "未配置" },
   };
   const { cls, title } = map[status];
   return <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cls}`} title={title} data-status={status} />;
@@ -86,11 +86,11 @@ function Section({
 }) {
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white/60 p-4 shadow-[0_1px_2px_rgb(15_23_42/0.04)]"
+      className="rounded-xl border border-[#E7E2D9] bg-white/60 p-4 shadow-[0_1px_2px_rgb(68_60_44/0.04)]"
       data-testid={testid}
     >
-      <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
-        <h3 className="text-[13px] font-bold text-slate-800">{title}</h3>
+      <div className="mb-3 flex items-center justify-between border-b border-[#EFEBE2] pb-2">
+        <h3 className="text-[13px] font-bold text-stone-800">{title}</h3>
         {action}
       </div>
       {children}
@@ -111,7 +111,7 @@ export function TestConnectionResult({ state }: { state: TestState }) {
   if (state.kind === "testing") {
     return (
       <p
-        className="mt-2 flex items-center gap-1.5 text-[12px] text-slate-500"
+        className="mt-2 flex items-center gap-1.5 text-[12px] text-stone-500"
         data-testid="sliderule-test-result"
         data-state="testing"
       >
@@ -338,7 +338,7 @@ export function LlmProviderSettings({
   return (
     <div className="flex h-full min-h-0 flex-col min-[900px]:flex-row">
       {/* 中栏：厂商列表（窄屏折到顶部，宽屏左侧） */}
-      <div className="flex shrink-0 flex-col border-b border-slate-200 bg-slate-50/60 min-[900px]:w-[210px] min-[900px]:border-b-0 min-[900px]:border-r">
+      <div className="flex shrink-0 flex-col border-b border-[#E7E2D9] bg-[#F5F1EA]/60 min-[900px]:w-[210px] min-[900px]:border-b-0 min-[900px]:border-r">
         <ul
           className="max-h-[148px] flex-1 overflow-y-auto p-2 min-[900px]:max-h-none"
           data-testid="sliderule-provider-list"
@@ -353,17 +353,17 @@ export function LlmProviderSettings({
                   data-provider={p.presetId}
                   aria-current={active}
                   className={`relative flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-left transition ${
-                    active ? "bg-white shadow-sm ring-1 ring-slate-200" : "hover:bg-white/70"
+                    active ? "bg-white shadow-sm ring-1 ring-[#E7E2D9]" : "hover:bg-white/70"
                   }`}
                 >
                   {/* 选中高亮条 */}
                   <span
                     className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full transition-colors ${
-                      active ? "bg-indigo-500" : "bg-transparent"
+                      active ? "bg-[#D97757]" : "bg-transparent"
                     }`}
                   />
                   <ProviderBadge glyph={presetGlyph(p.presetId)} active={active} />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-700">
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-stone-700">
                     {p.name}
                   </span>
                   <StatusDot status={providerStatus(p)} />
@@ -376,7 +376,7 @@ export function LlmProviderSettings({
                       onClick={() => reorderProvider(p.id, "up")}
                       disabled={idx === 0}
                       title="上移"
-                      className="rounded p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                      className="rounded p-0.5 text-stone-400 transition hover:bg-[#E7E2D9] hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
                       data-testid="sliderule-provider-move-up"
                     >
                       <ChevronUp className="h-3 w-3" />
@@ -386,7 +386,7 @@ export function LlmProviderSettings({
                       onClick={() => reorderProvider(p.id, "down")}
                       disabled={idx === draft.providers.length - 1}
                       title="下移"
-                      className="rounded p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                      className="rounded p-0.5 text-stone-400 transition hover:bg-[#E7E2D9] hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
                       data-testid="sliderule-provider-move-down"
                     >
                       <ChevronDown className="h-3 w-3" />
@@ -397,12 +397,12 @@ export function LlmProviderSettings({
             );
           })}
         </ul>
-        <div className="border-t border-slate-200 p-2">
+        <div className="border-t border-[#E7E2D9] p-2">
           <button
             type="button"
             onClick={addCustomProvider}
             data-testid="sliderule-provider-add"
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
           >
             <Plus className="h-4 w-4" /> 添加
           </button>
@@ -410,13 +410,13 @@ export function LlmProviderSettings({
       </div>
 
       {/* 右栏：厂商详情 */}
-      <div className="flex min-w-0 flex-1 flex-col bg-slate-50/30">
+      <div className="flex min-w-0 flex-1 flex-col bg-[#F5F1EA]/30">
         {!selected ? (
-          <p className="px-6 py-5 text-sm text-slate-400">左侧选择或添加一个厂商</p>
+          <p className="px-6 py-5 text-sm text-stone-400">左侧选择或添加一个厂商</p>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col" data-testid="sliderule-provider-detail">
             {/* header（固定在右栏顶部，不随内容滚动） */}
-            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-6 py-4">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#E7E2D9] px-6 py-4">
               <div className="flex items-center gap-2.5">
                 <ProviderBadge glyph={presetGlyph(selected.presetId)} active />
                 <div>
@@ -424,24 +424,24 @@ export function LlmProviderSettings({
                     <input
                       value={selected.name}
                       onChange={(e) => patchProvider({ name: e.target.value })}
-                      className="rounded border border-transparent px-1 text-base font-bold text-slate-900 outline-none hover:border-slate-200 focus:border-indigo-400"
+                      className="rounded border border-transparent px-1 text-base font-bold text-[#1F1E1B] outline-none hover:border-[#E7E2D9] focus:border-[#D97757]"
                     />
                   ) : (
-                    <h2 className="text-base font-bold text-slate-900">{selected.name}</h2>
+                    <h2 className="text-base font-bold text-[#1F1E1B]">{selected.name}</h2>
                   )}
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-stone-400">
                     {selected.protocol === "anthropic" ? "Anthropic 协议" : "OpenAI 协议"}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
+                <label className="flex items-center gap-1.5 text-[12px] text-stone-500">
                   <button
                     type="button"
                     onClick={() => patchProvider({ enabled: !selected.enabled })}
                     aria-pressed={selected.enabled}
                     className={`relative h-5 w-9 rounded-full transition-colors ${
-                      selected.enabled ? "bg-indigo-600" : "bg-slate-300"
+                      selected.enabled ? "bg-[#D97757]" : "bg-stone-300"
                     }`}
                   >
                     <span
@@ -456,7 +456,7 @@ export function LlmProviderSettings({
                   <button
                     type="button"
                     onClick={() => removeProvider(selected.id)}
-                    className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                    className="rounded-lg p-1.5 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
                     title="删除该厂商"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -490,7 +490,7 @@ export function LlmProviderSettings({
                     <button
                       type="button"
                       onClick={() => setShowKey((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-700"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-stone-400 hover:text-stone-700"
                       title={showKey ? "隐藏" : "显示"}
                     >
                       {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -500,7 +500,7 @@ export function LlmProviderSettings({
                     type="button"
                     onClick={() => runTest()}
                     disabled={testing}
-                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 text-[13px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:opacity-50"
                     data-testid="sliderule-provider-test"
                   >
                     <Zap className="h-3.5 w-3.5" />
@@ -514,16 +514,16 @@ export function LlmProviderSettings({
                 )}
                 {/* 测试连接三态内联反馈 */}
                 <TestConnectionResult state={testState} />
-                <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-500">
+                <label className="mt-2 flex items-center gap-2 text-[12px] text-stone-500">
                   <input
                     type="checkbox"
                     checked={selected.requiresApiKey}
                     onChange={(e) => patchProvider({ requiresApiKey: e.target.checked })}
-                    className="h-3.5 w-3.5 accent-indigo-600"
+                    className="h-3.5 w-3.5 accent-[#D97757]"
                   />
                   需要 API 密钥（本地服务可取消勾选）
                 </label>
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-stone-400">
                   密钥仅存本机，绝不进会话/导出/遥测。本地服务（如 Ollama/Lemonade）取消上面的勾选即可免密钥入池。
                 </p>
               </div>
@@ -545,11 +545,11 @@ export function LlmProviderSettings({
                     {validation.baseUrlError}
                   </p>
                 ) : (
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-stone-400">
                     请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
                   </p>
                 )}
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-stone-400">
                   仅在用代理/中转或自建网关时才改；官方直连保持默认即可。
                 </p>
               </div>
@@ -563,7 +563,7 @@ export function LlmProviderSettings({
                 <div className="flex items-center gap-2">
                   {confirmingReset ? (
                     <span className="flex items-center gap-1 text-[12px]" data-testid="sliderule-model-reset-confirm">
-                      <span className="text-slate-500">重置为预设？</span>
+                      <span className="text-stone-500">重置为预设？</span>
                       <button
                         type="button"
                         onClick={resetModels}
@@ -574,7 +574,7 @@ export function LlmProviderSettings({
                       <button
                         type="button"
                         onClick={() => setConfirmingReset(false)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
+                        className="rounded-lg border border-[#E7E2D9] bg-white px-2 py-1 text-[12px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
                       >
                         取消
                       </button>
@@ -583,7 +583,7 @@ export function LlmProviderSettings({
                     <button
                       type="button"
                       onClick={() => setConfirmingReset(true)}
-                      className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
+                      className="flex items-center gap-1 rounded-lg border border-[#E7E2D9] bg-white px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
                       data-testid="sliderule-model-reset"
                     >
                       <RotateCcw className="h-3.5 w-3.5" /> 重置
@@ -596,7 +596,7 @@ export function LlmProviderSettings({
                       setEditingOriginalModelId(null);
                       setModelModalOpen(true);
                     }}
-                    className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-indigo-500"
+                    className="flex items-center gap-1 rounded-lg bg-[#D97757] px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#C4633F]"
                     data-testid="sliderule-model-new"
                   >
                     <Plus className="h-3.5 w-3.5" /> 新建模型
@@ -606,15 +606,15 @@ export function LlmProviderSettings({
             >
               {selected.models.length === 0 ? (
                 <div
-                  className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center"
+                  className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-[#E7E2D9] px-3 py-6 text-center"
                   data-testid="sliderule-model-empty"
                 >
-                  <p className="text-[12px] text-slate-400">还没有模型 — 新建，或从该厂商拉取列表</p>
+                  <p className="text-[12px] text-stone-400">还没有模型 — 新建，或从该厂商拉取列表</p>
                   <button
                     type="button"
                     onClick={fetchModels}
                     disabled={fetchingModels || !selected.baseUrl.trim()}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[12px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:opacity-50"
                     data-testid="sliderule-model-fetch"
                   >
                     <DownloadCloud className="h-3.5 w-3.5" />
@@ -628,7 +628,7 @@ export function LlmProviderSettings({
                     return (
                       <li
                         key={m.id}
-                        className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className="flex items-center gap-2.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-2"
                       >
                         <input
                           type="checkbox"
@@ -640,7 +640,7 @@ export function LlmProviderSettings({
                               ),
                             })
                           }
-                          className="h-3.5 w-3.5 shrink-0 accent-indigo-600"
+                          className="h-3.5 w-3.5 shrink-0 accent-[#D97757]"
                           title={m.enabled ? "已启用" : "已停用"}
                         />
                         {/* 设为默认（单选，纯偏好） */}
@@ -658,13 +658,13 @@ export function LlmProviderSettings({
                           />
                           <Star
                             className={`h-3.5 w-3.5 transition ${
-                              isDefault ? "fill-amber-400 text-amber-400" : "text-slate-300 hover:text-slate-400"
+                              isDefault ? "fill-amber-400 text-amber-400" : "text-stone-300 hover:text-stone-400"
                             }`}
                           />
                         </label>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate font-mono text-[13px] text-slate-800">
+                            <span className="truncate font-mono text-[13px] text-stone-800">
                               {m.name?.trim() || m.id}
                             </span>
                             {isDefault && (
@@ -678,7 +678,7 @@ export function LlmProviderSettings({
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-1">
                             {m.name?.trim() && (
-                              <span className="font-mono text-[10px] text-slate-400">{m.id}</span>
+                              <span className="font-mono text-[10px] text-stone-400">{m.id}</span>
                             )}
                             {TOGGLEABLE_CAPS.map((c) => {
                               const on = m.capabilities.includes(c);
@@ -691,8 +691,8 @@ export function LlmProviderSettings({
                                   data-testid={`sliderule-model-cap-${m.id}-${c}`}
                                   className={`rounded px-1 py-0.5 text-[9px] font-medium transition ${
                                     on
-                                      ? "bg-indigo-100 text-indigo-700"
-                                      : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                                      ? "bg-[#F3DCD0] text-[#B0552F]"
+                                      : "bg-[#F0EDE5] text-stone-400 hover:bg-[#E7E2D9]"
                                   }`}
                                 >
                                   {CAP_LABELS[c]}
@@ -708,7 +708,7 @@ export function LlmProviderSettings({
                             setEditingOriginalModelId(m.id);
                             setModelModalOpen(true);
                           }}
-                          className="shrink-0 rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                          className="shrink-0 rounded p-1 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
                           title="编辑"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -725,7 +725,7 @@ export function LlmProviderSettings({
                             <button
                               type="button"
                               onClick={() => setConfirmingDeleteModelId(null)}
-                              className="rounded border border-slate-200 px-1.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+                              className="rounded border border-[#E7E2D9] px-1.5 py-1 text-[11px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
                             >
                               取消
                             </button>
@@ -734,7 +734,7 @@ export function LlmProviderSettings({
                           <button
                             type="button"
                             onClick={() => setConfirmingDeleteModelId(m.id)}
-                            className="shrink-0 rounded p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                            className="shrink-0 rounded p-1 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
                             title="删除"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -764,24 +764,24 @@ export function LlmProviderSettings({
                   <option value="least-busy">least-busy（优先空闲 key）</option>
                   <option value="round-robin">round-robin（轮流）</option>
                 </select>
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-stone-400">
                   同轮多能力并行时，如何在已启用的多个模型/key 间分摊请求。
                 </p>
               </div>
 
-              <label className="mt-4 flex items-center gap-2 text-[12px] text-slate-600">
+              <label className="mt-4 flex items-center gap-2 text-[12px] text-stone-600">
                 <input
                   type="checkbox"
                   checked={draft.raceMode}
                   onChange={(e) =>
                     setDraft((current) => (current ? { ...current, raceMode: e.target.checked } : current))
                   }
-                  className="h-3.5 w-3.5 accent-indigo-600"
+                  className="h-3.5 w-3.5 accent-[#D97757]"
                   data-testid="sliderule-race-mode"
                 />
                 竞速模式（同时打多个 key 取最快）
               </label>
-              <p className="mt-1 text-[11px] text-slate-400">
+              <p className="mt-1 text-[11px] text-stone-400">
                 更快但更费：默认关闭以对自己的账单诚实，按需开启。
               </p>
             </Section>
@@ -873,15 +873,15 @@ function ModelModal({
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-[#2A2620]/40 backdrop-blur-sm" />
       <div
-        className="relative flex w-[min(92vw,440px)] flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+        className="relative flex w-[min(92vw,440px)] flex-col gap-4 rounded-2xl border border-[#E7E2D9] bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         data-testid="sliderule-model-modal"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-900">{initial ? "编辑模型" : "新建模型"}</h3>
-          <button onClick={onCancel} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <h3 className="text-base font-bold text-[#1F1E1B]">{initial ? "编辑模型" : "新建模型"}</h3>
+          <button onClick={onCancel} className="rounded-lg p-1.5 text-stone-400 hover:bg-[#F0EDE5] hover:text-stone-700">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -933,8 +933,8 @@ function ModelModal({
                   onClick={() => toggleCap(c)}
                   className={`flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium transition ${
                     on
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                      ? "border-[#D97757] bg-[#F8E8E0] text-[#B0552F]"
+                      : "border-[#E7E2D9] bg-white text-stone-500 hover:border-[#D8D1C4]"
                   }`}
                 >
                   {on && <Check className="h-3 w-3" />}
@@ -949,7 +949,7 @@ function ModelModal({
           <label className={labelClass}>高级设置</label>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <span className="mb-1 block text-[11px] text-slate-400">上下文窗口</span>
+              <span className="mb-1 block text-[11px] text-stone-400">上下文窗口</span>
               <input
                 type="number"
                 value={contextWindow}
@@ -959,7 +959,7 @@ function ModelModal({
               />
             </div>
             <div>
-              <span className="mb-1 block text-[11px] text-slate-400">最大输出 Token 数</span>
+              <span className="mb-1 block text-[11px] text-stone-400">最大输出 Token 数</span>
               <input
                 type="number"
                 value={maxOutputTokens}
@@ -971,8 +971,8 @@ function ModelModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-          <span className="text-[13px] font-semibold text-slate-600">测试模型</span>
+        <div className="flex items-center justify-between border-t border-[#EFEBE2] pt-3">
+          <span className="text-[13px] font-semibold text-stone-600">测试模型</span>
           <button
             type="button"
             onClick={() => {
@@ -982,7 +982,7 @@ function ModelModal({
               }
               onTest(id.trim());
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[12px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA]"
           >
             <Zap className="h-3.5 w-3.5" /> 测试连接
           </button>
@@ -991,14 +991,14 @@ function ModelModal({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50"
+            className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
           >
             取消
           </button>
           <button
             onClick={save}
             disabled={!!idError}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-indigo-600"
+            className="rounded-lg bg-[#D97757] px-4 py-2 text-[13px] font-bold text-white transition hover:bg-[#C4633F] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#C4633F]"
             data-testid="sliderule-model-save"
           >
             保存

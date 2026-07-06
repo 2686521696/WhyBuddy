@@ -49,7 +49,7 @@ function BindingChip({ res }: { res: RefResolution }) {
     <span
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
         res.resolved
-          ? "bg-slate-100 text-slate-700"
+          ? "bg-[#F0EDE5] text-stone-700"
           : "bg-red-50 text-red-600 ring-1 ring-red-200"
       }`}
     >
@@ -97,10 +97,10 @@ export function AppBundleScreen({
       data-active={isActive}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-emerald-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">AppBundle</span>
-        <span className="text-xs text-slate-400">发布证据看板</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
+        <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
           <span
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
@@ -115,7 +115,7 @@ export function AppBundleScreen({
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 w-full bg-slate-100">
+      <div className="h-1 w-full bg-[#F0EDE5]">
         <div
           className={`h-1 transition-all duration-700 ${allDone ? "bg-emerald-400" : "bg-amber-400"}`}
           style={{ width: `${totalSkills > 0 ? Math.round((totalPresent / totalSkills) * 100) : 0}%` }}
@@ -162,7 +162,7 @@ export function AppBundleScreen({
                 className={`rounded-xl border p-4 transition-all ${
                   present
                     ? "border-emerald-200 bg-emerald-50/60"
-                    : "border-slate-200 bg-white opacity-60"
+                    : "border-[#E7E2D9] bg-white opacity-60"
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -176,13 +176,13 @@ export function AppBundleScreen({
                   </span>
                   <span className="ml-auto text-sm">{present ? "✓" : "○"}</span>
                 </div>
-                <div className="mt-2 text-[11px] text-slate-500">{desc}</div>
+                <div className="mt-2 text-[11px] text-stone-500">{desc}</div>
                 {present && ev?.summary && (
-                  <div className="mt-1.5 line-clamp-2 text-[10px] text-slate-400">{ev.summary}</div>
+                  <div className="mt-1.5 line-clamp-2 text-[10px] text-stone-400">{ev.summary}</div>
                 )}
                 {present && (ev?.artifactId || ev?.evidenceRef) && (
                   <div
-                    className="mt-1.5 truncate font-mono text-[9px] text-slate-400"
+                    className="mt-1.5 truncate font-mono text-[9px] text-stone-400"
                     title={ev?.evidenceRef || ev?.artifactId}
                   >
                     {ev?.artifactId || ev?.evidenceRef}
@@ -197,18 +197,18 @@ export function AppBundleScreen({
         {/* Model bindings — appbundle 段（pageBindings / roleRefs / dataModelRefs） */}
         {hasBindings && bindings && (
           <div
-            className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+            className="mt-3 rounded-xl border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3"
             data-testid="appbundle-bindings"
           >
-            <div className="text-[11px] font-semibold text-slate-600">应用装配绑定</div>
+            <div className="text-[11px] font-semibold text-stone-600">应用装配绑定</div>
             <div className="mt-2 space-y-2 text-[11px]">
               {bindings.pages.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-slate-400">页面 ↔ 流程</span>
+                  <span className="w-24 shrink-0 text-stone-400">页面 ↔ 流程</span>
                   {bindings.pages.map((b, i) => (
                     <span key={`${b.page.ref}-${i}`} className="inline-flex items-center gap-1">
                       <BindingChip res={b.page} />
-                      <span className="text-slate-300">→</span>
+                      <span className="text-stone-300">→</span>
                       <BindingChip res={b.workflow} />
                     </span>
                   ))}
@@ -216,7 +216,7 @@ export function AppBundleScreen({
               )}
               {bindings.roles.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-slate-400">角色（RBAC）</span>
+                  <span className="w-24 shrink-0 text-stone-400">角色（RBAC）</span>
                   {bindings.roles.map((r) => (
                     <BindingChip key={r.ref} res={r} />
                   ))}
@@ -224,7 +224,7 @@ export function AppBundleScreen({
               )}
               {bindings.entities.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-slate-400">实体（DataModel）</span>
+                  <span className="w-24 shrink-0 text-stone-400">实体（DataModel）</span>
                   {bindings.entities.map((e) => (
                     <BindingChip key={e.ref} res={e} />
                   ))}
@@ -236,7 +236,7 @@ export function AppBundleScreen({
 
         {/* Closure meta */}
         {publishClosure && (publishClosure.closureHash || publishClosure.stableDigest || publishClosure.generatedAt) && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-slate-400">
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-stone-400">
             {publishClosure.closureHash && <span>closureHash={publishClosure.closureHash}</span>}
             {publishClosure.stableDigest && <span>digest={publishClosure.stableDigest}</span>}
             {publishClosure.generatedAt && <span>generatedAt={publishClosure.generatedAt}</span>}
@@ -245,7 +245,7 @@ export function AppBundleScreen({
         )}
 
         {!publishClosure && (
-          <div className="mt-6 text-center text-xs text-slate-300">
+          <div className="mt-6 text-center text-xs text-stone-300">
             发送应用意图后，SlideRule 将逐系统填充发布证据
           </div>
         )}

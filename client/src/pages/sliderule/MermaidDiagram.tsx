@@ -83,8 +83,8 @@ export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
 
   if (error) {
     return (
-      <div className={`overflow-auto rounded-lg bg-slate-50 p-3 ${className}`}>
-        <pre className="text-xs text-slate-500 whitespace-pre-wrap">{chart}</pre>
+      <div className={`overflow-auto rounded-lg bg-[#F5F1EA] p-3 ${className}`}>
+        <pre className="text-xs text-stone-500 whitespace-pre-wrap">{chart}</pre>
         <div className="mt-2 text-xs text-red-400">{error}</div>
       </div>
     );
@@ -92,7 +92,7 @@ export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
 
   if (!chart?.trim()) {
     return (
-      <div className={`flex items-center justify-center text-xs text-slate-400 ${className}`}>
+      <div className={`flex items-center justify-center text-xs text-stone-400 ${className}`}>
         暂无图表数据
       </div>
     );
@@ -101,7 +101,7 @@ export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
   return (
     <div
       ref={containerRef}
-      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-slate-100 rounded-lg"} ${className}`}
+      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-[#F0EDE5] rounded-lg"} ${className}`}
     />
   );
 }

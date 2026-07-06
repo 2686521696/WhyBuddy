@@ -107,21 +107,21 @@ export function WorkflowScreen({
       data-skill="workflow"
       data-active={isActive}
     >
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-violet-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           Workflow
         </span>
         {sourceKind === "model" && (
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-stone-400">
             {nodes.length} 节点 · {transitions.length} 转移
           </span>
         )}
         {sourceKind === "sse" && (
-          <span className="text-xs text-slate-400">跨系统联动 · 实时</span>
+          <span className="text-xs text-stone-400">跨系统联动 · 实时</span>
         )}
         {sourceKind === "graph" && (
-          <span className="text-xs text-slate-400">跨系统联动 · 已持久化</span>
+          <span className="text-xs text-stone-400">跨系统联动 · 已持久化</span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {unresolvedRoleCount > 0 && (
@@ -145,14 +145,14 @@ export function WorkflowScreen({
 
         {/* Node/assignee table — only when the structured model is present */}
         {sourceKind === "model" && nodes.length > 0 && (
-          <div className="w-64 shrink-0 overflow-auto border-l border-slate-100">
-            <div className="sticky top-0 z-10 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          <div className="w-64 shrink-0 overflow-auto border-l border-[#EFEBE2]">
+            <div className="sticky top-0 z-10 bg-[#F5F1EA] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
               节点 → 审批人角色（RBAC）
             </div>
-            <ul className="divide-y divide-slate-100" data-testid="workflow-node-roles">
+            <ul className="divide-y divide-[#EFEBE2]" data-testid="workflow-node-roles">
               {roleResolutions.map(({ node, role }) => (
                 <li key={node.id} className="px-3 py-2 text-xs">
-                  <div className="font-medium text-slate-800">{node.name || node.id}</div>
+                  <div className="font-medium text-stone-800">{node.name || node.id}</div>
                   <div className="mt-1">
                     {role.ref ? (
                       <span
@@ -165,7 +165,7 @@ export function WorkflowScreen({
                         {role.resolved ? "✓" : "✗"} {role.label}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-slate-300">无审批人</span>
+                      <span className="text-[10px] text-stone-300">无审批人</span>
                     )}
                   </div>
                 </li>
@@ -176,7 +176,7 @@ export function WorkflowScreen({
       </div>
 
       {sourceKind === "placeholder" && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-slate-300">
+        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-300">
           推演完成后将显示真实业务流程
         </div>
       )}

@@ -83,10 +83,10 @@ export function RbacScreen({
       data-skill="rbac"
       data-active={isActive}
     >
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-orange-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">RBAC</span>
-        <span className="text-xs text-slate-400">角色 → 权限 · 菜单 · 数据规则</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">RBAC</span>
+        <span className="text-xs text-stone-400">角色 → 权限 · 菜单 · 数据规则</span>
         {hasEvidence && (
           <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
             evidence ✓
@@ -96,21 +96,21 @@ export function RbacScreen({
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 z-10 bg-slate-50">
+          <thead className="sticky top-0 z-10 bg-[#F5F1EA]">
             <tr>
-              <th className="px-4 py-2 text-left font-semibold text-slate-600">角色</th>
-              <th className="px-4 py-2 text-left font-semibold text-slate-600">权限</th>
-              <th className="px-4 py-2 text-left font-semibold text-slate-600">菜单</th>
-              <th className="px-4 py-2 text-left font-semibold text-slate-600">数据规则</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">角色</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">权限</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">菜单</th>
+              <th className="px-4 py-2 text-left font-semibold text-stone-600">数据规则</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[#EFEBE2]">
             {roles.map((entry) => (
               <tr
                 key={entry.role}
-                className={`transition-colors hover:bg-slate-50 ${isPlaceholder ? "opacity-40" : ""}`}
+                className={`transition-colors hover:bg-[#F5F1EA] ${isPlaceholder ? "opacity-40" : ""}`}
               >
-                <td className="px-4 py-2.5 font-medium text-slate-800">{entry.role}</td>
+                <td className="px-4 py-2.5 font-medium text-stone-800">{entry.role}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex flex-wrap gap-1">
                     {entry.permissions.map((p) => (
@@ -123,20 +123,20 @@ export function RbacScreen({
                 <td className="px-4 py-2.5">
                   <div className="flex flex-wrap gap-1">
                     {entry.menus.map((m) => (
-                      <span key={m} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
+                      <span key={m} className="rounded bg-[#F0EDE5] px-1.5 py-0.5 text-stone-600">
                         {m}
                       </span>
                     ))}
                   </div>
                 </td>
-                <td className="px-4 py-2.5 text-slate-500">{entry.dataRules ?? "—"}</td>
+                <td className="px-4 py-2.5 text-stone-500">{entry.dataRules ?? "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
         {isPlaceholder && (
-          <div className="mt-4 text-center text-[10px] text-slate-300">
+          <div className="mt-4 text-center text-[10px] text-stone-300">
             推演完成后将显示真实权限矩阵
           </div>
         )}

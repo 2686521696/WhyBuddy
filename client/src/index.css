@@ -44,6 +44,13 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* SlideRule 换肤 C — display serif for large headings / empty-state hero text.
+   System serif stack only (no external font downloads); generates the
+   Tailwind `font-display` utility used by sliderule surfaces. */
+@theme {
+  --font-display: Georgia, "Songti SC", "Noto Serif SC", serif;
+}
+
 :root {
   --primary: oklch(0.45 0.08 160);
   --primary-foreground: oklch(0.98 0 0);

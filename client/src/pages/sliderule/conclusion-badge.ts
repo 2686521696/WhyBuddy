@@ -34,6 +34,6 @@ export function projectConclusionBadge(state: V5SessionState): ConclusionBadgePr
   return {
     label: "待细化",
     tone: "idle",
-    className: "bg-slate-100 text-slate-600 ring-slate-200",
+    className: "bg-[#F0EDE5] text-stone-600 ring-[#E7E2D9]",
   };
 }

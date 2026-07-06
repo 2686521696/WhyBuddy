@@ -5,7 +5,7 @@
 }
 
 .native-dashboard {
-  background: #f6f9fd;
+  background: #FAF9F5;
   color: rgba(0, 0, 0, 0.88);
   height: 100%;
   min-height: 100vh;
@@ -17,7 +17,7 @@
 }
 
 .native-agent-shell {
-  background: #f6f9fd;
+  background: #FAF9F5;
   flex-direction: row;
   height: 100%;
   min-height: 0;
@@ -25,8 +25,8 @@
 }
 
 .native-agent-sidebar {
-  background: #fff;
-  border-right: 1px solid #dfe8f6;
+  background: #FAF9F5;
+  border-right: 1px solid #E7E2D9;
   display: flex;
   flex: 0 0 220px;
   flex-direction: column;
@@ -54,7 +54,7 @@
 
 .native-agent-brand-mark {
   align-items: center;
-  background: #1267ff;
+  background: #D97757;
   border-radius: 8px;
   color: #fff;
   display: inline-flex;
@@ -77,7 +77,7 @@
   background: transparent;
   border: 0;
   border-radius: 8px;
-  color: #1f2a44;
+  color: #34302A;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -91,19 +91,19 @@
 
 .native-agent-nav-item:hover,
 .native-agent-help:hover {
-  background: #f1f6ff;
-  color: #1267ff;
+  background: #F3EFE7;
+  color: #B0552F;
 }
 
 .native-agent-nav-item-active {
-  background: #eaf3ff;
-  box-shadow: inset 3px 0 0 #1267ff;
-  color: #1267ff;
+  background: #F8E8E0;
+  box-shadow: inset 3px 0 0 #D97757;
+  color: #B0552F;
   font-weight: 700;
 }
 
 .native-agent-help {
-  border-top: 1px solid #eef3fb;
+  border-top: 1px solid #EFEAE1;
   border-radius: 0;
   margin-top: auto;
   padding-top: 10px;
@@ -131,8 +131,8 @@
 
 .native-header {
   align-items: center;
-  background: #fff;
-  border-bottom: 1px solid #dbe6f5;
+  background: #FAF9F5;
+  border-bottom: 1px solid #E7E2D9;
   display: flex;
   flex: 0 0 auto;
   height: 48px;
@@ -917,7 +917,7 @@
 }
 
 .native-sliderule-content {
-  background: #f8fafc;
+  background: #FAF9F5;
 }
 
 .native-sliderule-workbench {
@@ -928,7 +928,7 @@
   /* background: #fff; */
   /* border: 1px solid #dfe8f6; */
   /* border-radius: 10px; */
-  box-shadow: 0 6px 18px rgba(28, 55, 100, 0.04);
+  box-shadow: 0 6px 18px rgba(68, 60, 44, 0.05);
   height: calc(100vh - 48px);
   min-height: 560px;
   overflow: hidden;
@@ -2007,7 +2007,7 @@
 }
 .native-topbar-brand {
   font-weight: 600;
-  color: #111827;
+  color: #1F1E1B;
   font-size: 14px;
 }
 .native-topbar-link {
@@ -2016,7 +2016,7 @@
   cursor: pointer;
 }
 .native-topbar-link:hover {
-  color: #1267ff;
+  color: #C4633F;
 }
 .native-topbar-runtime {
   color: #98a2b3;
@@ -2159,7 +2159,7 @@
 .native-task-table-card,
 .native-task-inspector {
   border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(28, 55, 100, 0.04);
+  box-shadow: 0 6px 18px rgba(68, 60, 44, 0.05);
 }
 .native-workbench-hero {
   border-radius: 10px;

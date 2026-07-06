@@ -73,36 +73,36 @@ export function SlideRuleTopHud({
               title="SlideRule"
             />
           )}
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
             STATUS
           </span>
           <span
             data-testid="sliderule-conclusion-badge"
-            className="text-[10px] text-slate-500"
+            className="text-[10px] text-stone-500"
           >
             {facts.conclusionLabel}
           </span>
-          <span className="font-mono text-[10px] text-slate-400">话题</span>
+          <span className="font-mono text-[10px] text-stone-400">话题</span>
           <span
-            className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-slate-800 sm:max-w-[min(38vw,420px)] ${
-              !goal ? "text-slate-400" : ""
+            className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-stone-800 sm:max-w-[min(38vw,420px)] ${
+              !goal ? "text-stone-400" : ""
             }`}
             data-testid="sliderule-goal-display"
             title={goal}
           >
             {goal || "尚未稳定话题"}
           </span>
-          <span className="hidden h-3 w-px bg-slate-300 md:inline-block" aria-hidden />
-          <span className="hidden text-slate-400 sm:inline">
+          <span className="hidden h-3 w-px bg-stone-300 md:inline-block" aria-hidden />
+          <span className="hidden text-stone-400 sm:inline">
             阶段{" "}
-            <span className="font-mono font-semibold text-slate-700">
+            <span className="font-mono font-semibold text-stone-700">
               {facts.phaseLabel || "就绪"}
             </span>
           </span>
 
           {turnCount > 0 && onViewModeChange && (
             <div
-              className="flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5 ring-1 ring-slate-200/80"
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
               data-testid="sliderule-viewmode-toggle"
             >
               {(["overview", "collaboration", "reasoning"] as const).map((mode) => (
@@ -113,8 +113,8 @@ export function SlideRuleTopHud({
                   onClick={() => onViewModeChange(mode)}
                   className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
                     viewMode === mode
-                      ? "bg-white text-slate-800 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
                   }`}
                   title={mode === "overview" ? "概览" : mode === "collaboration" ? "协作" : "思考链"}
                 >
@@ -126,7 +126,7 @@ export function SlideRuleTopHud({
 
           {onSurfaceModeChange && (
             <div
-              className="ml-2 flex items-center gap-0.5 rounded-full bg-indigo-100 p-0.5 ring-1 ring-indigo-200/80"
+              className="ml-2 flex items-center gap-0.5 rounded-full bg-[#F3DCD0] p-0.5 ring-1 ring-[#EBCEC0]/80"
               data-testid="sliderule-surfacemode-toggle"
               title="界面模式"
             >
@@ -138,8 +138,8 @@ export function SlideRuleTopHud({
                   onClick={() => onSurfaceModeChange(mode)}
                   className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition-colors ${
                     effectiveSurfaceMode === mode
-                      ? "bg-white text-indigo-700 shadow-sm"
-                      : "text-indigo-500 hover:text-indigo-700"
+                      ? "bg-white text-[#B0552F] shadow-sm"
+                      : "text-[#C4633F] hover:text-[#B0552F]"
                   }`}
                 >
                   {mode === "chat" ? "聊天" : "推演"}
@@ -202,9 +202,9 @@ export function SlideRuleTopHud({
 
 export function InlineMetric({ label, value }: { label: string; value: number }) {
   return (
-    <span className="tabular-nums text-slate-600">
-      <span className="text-slate-400">{label} </span>
-      <span className="font-mono font-semibold text-slate-800">{value}</span>
+    <span className="tabular-nums text-stone-600">
+      <span className="text-stone-400">{label} </span>
+      <span className="font-mono font-semibold text-stone-800">{value}</span>
     </span>
   );
 }

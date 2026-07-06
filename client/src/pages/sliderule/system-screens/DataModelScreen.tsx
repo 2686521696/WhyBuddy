@@ -73,9 +73,9 @@ export function DataModelScreen({
       data-active={isActive}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-blue-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           DataModel
         </span>
         {hasEvidence && (
@@ -94,7 +94,7 @@ export function DataModelScreen({
       </div>
 
       {!hasEvidence && !diagram && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-slate-300">
+        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-300">
           推演完成后将显示真实实体关系
         </div>
       )}

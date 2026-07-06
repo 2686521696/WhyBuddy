@@ -98,21 +98,21 @@ export function ClarificationCard({
 
   return (
     <div
-      className="pointer-events-auto mb-2 w-full max-w-2xl rounded-2xl border border-indigo-200/70 bg-white/95 shadow-[0_12px_40px_rgb(79_70_229/0.12)] backdrop-blur-xl"
+      className="pointer-events-auto mb-2 w-full max-w-2xl rounded-2xl border border-[#EBCEC0]/70 bg-white/95 shadow-[0_12px_40px_rgb(217_119_87/0.12)] backdrop-blur-xl"
       data-testid="sliderule-clarification-card"
     >
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+          <span className="rounded-full bg-[#F8E8E0] px-2 py-0.5 text-[11px] font-semibold text-[#B0552F]">
             待回答问题
           </span>
-          <span className="text-[11px] tabular-nums text-slate-400" data-testid="sliderule-clarification-pager">
+          <span className="text-[11px] tabular-nums text-stone-400" data-testid="sliderule-clarification-pager">
             {step + 1} / {total}
           </span>
         </div>
         <button
           onClick={onClose}
-          className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          className="rounded-lg p-1 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
           title="关闭（也可直接在下方输入框补充）"
           data-testid="sliderule-clarification-close"
         >
@@ -122,18 +122,18 @@ export function ClarificationCard({
 
       <div className="px-4 py-3">
         <div className="flex items-baseline gap-2">
-          <p className="text-sm font-semibold text-slate-800">{q.prompt}</p>
+          <p className="text-sm font-semibold text-stone-800">{q.prompt}</p>
           {q.kind && (
             <span className={`rounded px-1 py-0 text-[9px] font-mono ${
               q.kind.includes("audience") || q.kind.includes("users") ? "bg-blue-100 text-blue-700" :
               q.kind.includes("platform") ? "bg-green-100 text-green-700" :
               q.kind.includes("scope") ? "bg-amber-100 text-amber-700" :
               q.kind.includes("success") || q.kind.includes("scenario") ? "bg-purple-100 text-purple-700" :
-              "bg-indigo-100 text-indigo-700"
+              "bg-[#F3DCD0] text-[#B0552F]"
             }`}>{q.kind}</span>
           )}
         </div>
-        {q.context && <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{q.context}</p>}
+        {q.context && <p className="mt-1 text-[11px] leading-relaxed text-stone-400">{q.context}</p>}
 
         <div className="mt-3 space-y-1.5">
           {isChoice &&
@@ -149,14 +149,14 @@ export function ClarificationCard({
                   }
                   className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] transition ${
                     selected
-                      ? "border-indigo-400 bg-indigo-50/70 text-slate-800"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      ? "border-[#D97757] bg-[#F8E8E0]/70 text-stone-800"
+                      : "border-[#E7E2D9] bg-white text-stone-600 hover:border-[#D8D1C4]"
                   }`}
                 >
                   <span
                     className={`flex h-4 w-4 shrink-0 items-center justify-center border ${
                       isMulti ? "rounded-[5px]" : "rounded-full"
-                    } ${selected ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-300"}`}
+                    } ${selected ? "border-[#D97757] bg-[#D97757] text-white" : "border-[#D8D1C4]"}`}
                   >
                     {selected && <Check className="h-3 w-3" />}
                   </span>
@@ -182,8 +182,8 @@ export function ClarificationCard({
                   isMulti ? "rounded-[5px]" : "rounded-full"
                 } ${
                   (isMulti ? multi[q.id]?.has(OTHER) : picked[q.id] === OTHER)
-                    ? "border-indigo-500 bg-indigo-500 text-white"
-                    : "border-slate-300"
+                    ? "border-[#D97757] bg-[#D97757] text-white"
+                    : "border-[#D8D1C4]"
                 }`}
               >
                 {(isMulti ? multi[q.id]?.has(OTHER) : picked[q.id] === OTHER) && <Check className="h-3 w-3" />}
@@ -196,7 +196,7 @@ export function ClarificationCard({
                   if (!isMulti && e.target.value) setPicked((p) => ({ ...p, [q.id]: OTHER }));
                 }}
                 placeholder="其他（自定义回答）"
-                className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                className="flex-1 rounded-lg border border-[#E7E2D9] bg-white px-2.5 py-1.5 text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]"
                 data-testid="sliderule-clarification-other"
               />
             </div>
@@ -206,26 +206,26 @@ export function ClarificationCard({
               onChange={(e) => setOtherText((o) => ({ ...o, [q.id]: e.target.value }))}
               placeholder="输入你的回答…"
               rows={2}
-              className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full resize-none rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]"
               data-testid="sliderule-clarification-text"
             />
           )}
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
-        <span className="text-[11px] text-slate-400">已答 {answeredCount} / {total}</span>
+      <div className="flex items-center justify-between border-t border-[#EFEBE2] px-4 py-2.5">
+        <span className="text-[11px] text-stone-400">已答 {answeredCount} / {total}</span>
         <div className="flex items-center gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-500 transition hover:text-slate-700"
+            className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-stone-500 transition hover:text-stone-700"
           >
             取消
           </button>
           {step > 0 && (
             <button
               onClick={() => setStep((s) => Math.max(0, s - 1))}
-              className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50"
+              className="flex items-center gap-1 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
             >
               <ChevronLeft className="h-3.5 w-3.5" /> 上一步
             </button>
@@ -233,7 +233,7 @@ export function ClarificationCard({
           {step < total - 1 ? (
             <button
               onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
-              className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-indigo-500"
+              className="flex items-center gap-1 rounded-lg bg-[#D97757] px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#C4633F]"
               data-testid="sliderule-clarification-next"
             >
               下一步 <ChevronRight className="h-3.5 w-3.5" />
@@ -242,7 +242,7 @@ export function ClarificationCard({
             <button
               onClick={submit}
               disabled={answeredCount === 0}
-              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[12px] font-bold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg bg-[#D97757] px-4 py-1.5 text-[12px] font-bold text-white transition hover:bg-[#C4633F] disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="sliderule-clarification-submit"
             >
               提交补充
@@ -259,7 +259,7 @@ export function ClarificationCard({
                   .filter((a) => a.answer.length > 0);
                 if (answers.length > 0) onSubmit(answers);
               }}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+              className="rounded-lg border border-[#E7E2D9] bg-white px-2 py-1 text-[11px] text-stone-600 hover:bg-[#F5F1EA]"
               title={`批量提交同 kind (${q.kind})`}
             >
               批量 {q.kind}

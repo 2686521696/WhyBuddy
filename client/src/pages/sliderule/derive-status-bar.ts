@@ -185,11 +185,11 @@ export function deriveStatusBarFacts(
     groundingHint = "外部证据未接地 · 本轮为规则推演";
   } else if (state.coverageGate && !gcovGroundingOk) {
     groundingLabel = "待外部接地";
-    groundingClassName = "bg-slate-100 text-slate-600 ring-slate-200/80";
+    groundingClassName = "bg-[#F0EDE5] text-stone-600 ring-[#E7E2D9]/80";
     groundingHint = "证据未完全落地 · 需补充外部来源";
   } else {
     groundingLabel = "未接地";
-    groundingClassName = "bg-slate-100 text-slate-500 ring-slate-200/70";
+    groundingClassName = "bg-[#F0EDE5] text-stone-500 ring-[#E7E2D9]/70";
   }
 
   const executorMode = opts.executorMode ?? "server-llm";
@@ -210,7 +210,7 @@ export function deriveStatusBarFacts(
       ? "bg-sky-50 text-sky-800 ring-sky-200/80"
       : executorMode === "browser-llm"
       ? "bg-emerald-50 text-emerald-800 ring-emerald-200/80"
-      : "bg-violet-50 text-violet-800 ring-violet-200/80";
+      : "bg-[#F8E8E0] text-[#B0552F] ring-[#EBCEC0]/80";
 
   const publishClosure = opts.publishClosure;
   const publishClosureLabel = publishClosure

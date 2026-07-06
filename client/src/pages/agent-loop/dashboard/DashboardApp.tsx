@@ -824,6 +824,9 @@ function AgentLoopSidebar({
   getViewPath?: (next: ViewKey) => string | undefined;
 }) {
   const brandLogo = typeof window !== 'undefined' ? window.__AGENT_LOOP_ASSETS__?.brandLogo : undefined;
+  // Prefer the uploaded SlideRule mark (client/public/sliderule-mark.png); fall back
+  // gracefully to the bundled brand asset / letter mark while the file is absent.
+  const [brandMarkFailed, setBrandMarkFailed] = useState(false);
   const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
     { key: 'sliderule', label: '推演', icon: <BulbOutlined /> },
     { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
@@ -833,7 +836,17 @@ function AgentLoopSidebar({
   return (
     <aside className="native-agent-sidebar">
       <div className="native-agent-brand">
-        {brandLogo ? <img src={brandLogo} alt="SlideRule.ai" /> : <span className="native-agent-brand-mark">S</span>}
+        {!brandMarkFailed ? (
+          <img
+            src="/sliderule-mark.png"
+            alt="SlideRule.ai"
+            onError={() => setBrandMarkFailed(true)}
+          />
+        ) : brandLogo ? (
+          <img src={brandLogo} alt="SlideRule.ai" />
+        ) : (
+          <span className="native-agent-brand-mark">S</span>
+        )}
       </div>
       <nav className="native-agent-nav" aria-label="AgentLoop">
         {navItems.map((item) => (

@@ -50,7 +50,7 @@ const TONE_DOT: Record<RouteStationTone, string> = {
   pass: "bg-[#1D9E75]",
   partial: "bg-[#EF9F27]",
   fail: "bg-rose-500",
-  pending: "border-2 border-slate-300 bg-white",
+  pending: "border-2 border-[#D8D1C4] bg-white",
   active: "bg-[#888780] animate-pulse",
 };
 
@@ -218,7 +218,7 @@ function ExecutionSubsteps({
   if (execSteps.length === 0 && roundActions.length === 0) return null;
 
   return (
-    <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-slate-200 pl-2.5">
+    <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-[#E7E2D9] pl-2.5">
       {execSteps.map((step) => {
         if (step.kind === "chip") {
           return (
@@ -227,7 +227,7 @@ function ExecutionSubsteps({
               className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset ${
                 step.realLlm
                   ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                  : "bg-slate-50 text-slate-600 ring-slate-200"
+                  : "bg-[#F5F1EA] text-stone-600 ring-[#E7E2D9]"
               }`}
             >
               {step.label}
@@ -240,7 +240,7 @@ function ExecutionSubsteps({
           <p
             key={step.id}
             className={`m-0 text-xs leading-relaxed ${
-              step.realLlm ? "text-violet-600" : "text-slate-500"
+              step.realLlm ? "text-[#C4633F]" : "text-stone-500"
             }`}
           >
             {active ? step.text.slice(0, Math.min(step.text.length, 40)) : step.text}
@@ -313,14 +313,14 @@ function StationExpandedBody({
     return (
       <div className="mt-1.5 flex flex-col gap-1.5">
         {station.detail && (
-          <p className="m-0 text-xs text-slate-500">{station.detail}</p>
+          <p className="m-0 text-xs text-stone-500">{station.detail}</p>
         )}
         {picks.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {picks.map((p, i) => (
               <span
                 key={`${p.capabilityId}-${i}`}
-                className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-600"
+                className="inline-flex rounded-full bg-[#F0EDE5] px-2 py-0.5 font-mono text-[10px] text-stone-600"
               >
                 {p.roleId} · {p.capabilityId}
               </span>
@@ -333,7 +333,7 @@ function StationExpandedBody({
 
   if (station.kind === "trust_gate") {
     return (
-      <p className="m-0 mt-1 text-xs text-slate-500">
+      <p className="m-0 mt-1 text-xs text-stone-500">
         T_PROV · {facts.trustPassedCount ?? 0}/{facts.trustTotalCount ?? 0} 通过
         {(facts.trustGroundFailedCount ?? 0) > 0
           ? ` · ${facts.trustGroundFailedCount} 项接地未过`
@@ -351,7 +351,7 @@ function StationExpandedBody({
   }
 
   if (station.detail) {
-    return <p className="m-0 mt-1 text-xs text-slate-500">{station.detail}</p>;
+    return <p className="m-0 mt-1 text-xs text-stone-500">{station.detail}</p>;
   }
 
   return null;
@@ -444,7 +444,7 @@ function StationRow({
         {connector && (
           <span
             className={`mr-1 font-mono text-[11px] ${
-              isReentry ? "font-semibold text-amber-700" : "text-slate-400"
+              isReentry ? "font-semibold text-amber-700" : "text-stone-400"
             }`}
           >
             {connector}
@@ -452,32 +452,32 @@ function StationRow({
         )}
         {station.v51NodeId && (
           <span
-            className={`mr-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600 ${
-              immersionOverlay ? "bg-white/40 ring-1 ring-slate-900/5" : "bg-slate-100"
+            className={`mr-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-600 ${
+              immersionOverlay ? "bg-white/40 ring-1 ring-[#2A2620]/5" : "bg-[#F0EDE5]"
             }`}
           >
             {station.v51NodeId}
           </span>
         )}
         {planHref ? (
-          <a href={planHref} className="font-medium text-slate-800 hover:underline">
+          <a href={planHref} className="font-medium text-stone-800 hover:underline">
             {nodeLabel}
           </a>
         ) : (
           <span
             className={`font-medium ${
               station.kind === "await" && station.v51NodeId === "AWAIT"
-                ? "text-slate-500"
+                ? "text-stone-500"
                 : station.v51NodeId === "DONE"
                 ? "text-[#0F6E56]"
-                : "text-slate-800"
+                : "text-stone-800"
             }`}
           >
             {nodeLabel}
           </span>
         )}
         {time && station.kind === "intake" && (
-          <span className="ml-1.5 text-[11px] text-slate-400">{time}</span>
+          <span className="ml-1.5 text-[11px] text-stone-400">{time}</span>
         )}
         {phase === "completed" && (
           <span className="ml-1.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
@@ -485,16 +485,16 @@ function StationRow({
           </span>
         )}
         {phase === "active" && streaming && (
-          <span className="ml-1.5 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+          <span className="ml-1.5 rounded-full bg-[#F8E8E0] px-1.5 py-0.5 text-[10px] font-medium text-[#C4633F]">
             进行中
           </span>
         )}
       </p>
       {phase === "active" && detail && (
-        <p className="m-0 mt-0.5 text-xs text-slate-500">{detail}</p>
+        <p className="m-0 mt-0.5 text-xs text-stone-500">{detail}</p>
       )}
       {collapsedSummary && (
-        <p className="m-0 mt-0.5 text-xs text-slate-400">{collapsedSummary}</p>
+        <p className="m-0 mt-0.5 text-xs text-stone-400">{collapsedSummary}</p>
       )}
       {!collapsed && (
         <StationExpandedBody
@@ -513,7 +513,7 @@ function StationRow({
         <button
           type="button"
           onClick={onToggleExpand}
-          className="mt-1 text-[11px] font-medium text-blue-500 hover:text-blue-700 hover:underline"
+          className="mt-1 text-[11px] font-medium text-[#C4633F] hover:text-[#B0552F] hover:underline"
         >
           查看详情
         </button>
@@ -522,7 +522,7 @@ function StationRow({
         <button
           type="button"
           onClick={onToggleExpand}
-          className="mt-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 hover:underline"
+          className="mt-1 text-[11px] font-medium text-stone-400 hover:text-stone-600 hover:underline"
         >
           收起
         </button>
@@ -630,7 +630,7 @@ export function TurnRouteTimeline({
       <button
         type="button"
         onClick={onToggle}
-        className="mb-2 w-full rounded-md border border-transparent py-1 text-left text-xs text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+        className="mb-2 w-full rounded-md border border-transparent py-1 text-left text-xs text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
       >
         {summary}
       </button>
@@ -647,7 +647,7 @@ export function TurnRouteTimeline({
         <button
           type="button"
           onClick={onToggle}
-          className="mb-2 text-xs text-slate-400 hover:text-slate-600"
+          className="mb-2 text-xs text-stone-400 hover:text-stone-600"
         >
           {summary.replace(" ▸", " ▾")}
         </button>
@@ -687,7 +687,7 @@ export function TurnRouteTimeline({
                   key={`round-fold-${r}`}
                   type="button"
                   onClick={() => toggleRound(r!)}
-                  className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-slate-400 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-600"
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-stone-400 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-600"
                   data-testid={`sliderule-timeline-round-fold-${r}`}
                 >
                   <span className="font-mono">▸</span>
@@ -703,7 +703,7 @@ export function TurnRouteTimeline({
               <button
                 type="button"
                 onClick={() => toggleRound(r!)}
-                className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
                 data-testid={`sliderule-timeline-round-collapse-${r}`}
               >
                 <span className="font-mono">▾</span>
