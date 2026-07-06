@@ -215,6 +215,19 @@ describe("looksLikeNewAppIntent (自动新话题启发式)", () => {
     expect(looksLikeNewAppIntent("帮我做个宠物医院预约平台")).toBe(true);
   });
 
+  it("识别裸名词短语意图（无动词、以载体名词收尾）", () => {
+    expect(looksLikeNewAppIntent("智能财务自动化办公系统")).toBe(true);
+    expect(looksLikeNewAppIntent("宠物医院预约平台")).toBe(true);
+    expect(looksLikeNewAppIntent("小区物业报修小程序")).toBe(true);
+  });
+
+  it("裸名词短语不误伤 refine 指令（修改类动词开头 / 名词不收尾）", () => {
+    expect(looksLikeNewAppIntent("优化下单应用")).toBe(false);
+    expect(looksLikeNewAppIntent("把审批系统改成两级")).toBe(false);
+    expect(looksLikeNewAppIntent("调整权限系统")).toBe(false);
+    expect(looksLikeNewAppIntent("重新生成页面系统图")).toBe(false);
+  });
+
   it("不误伤追问/交付/挑战类输入（保持既有 refine 语义）", () => {
     expect(looksLikeNewAppIntent("打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包")).toBe(false);
     expect(looksLikeNewAppIntent("把审批改成两级")).toBe(false);

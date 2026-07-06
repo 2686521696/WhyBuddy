@@ -96,16 +96,23 @@ function isClosedSessionState(state: V5SessionState): boolean {
 }
 
 /**
- * 新应用意图启发式：动词（做/搭建/设计/构建/开发…）+ 载体名词（系统/应用/平台…）。
- * 用于"已闭环话题里输入新想法"的自动开新话题——intake 的 new_goal 只认空会话，
- * 否则新意图落进旧话题，gate 已通过会秒回 closed 6/6（零推演，用户误读为造假）。
+ * 新应用意图启发式。用于"已闭环话题里输入新想法"的自动开新话题——intake 的
+ * new_goal 只认空会话，否则新意图落进旧话题，gate 已通过会秒回 closed 6/6
+ * （零推演，用户误读为造假）。两种命中方式：
+ *   1. 动词（做/搭建/设计/构建/开发…）+ 载体名词（系统/应用/平台…）；
+ *   2. 裸名词短语（「智能财务自动化办公系统」）：无标点、以载体名词收尾、
+ *      不以修改类动词开头（把/改/优化…是对旧话题的 refine，不能误开新话题）。
  */
 export function looksLikeNewAppIntent(text: string): boolean {
   const t = (text || "").trim();
   if (t.length < 6) return false;
-  const verb = /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
   const noun = /(系统|应用|平台|工具|app|小程序|管理端|门户|网站)/i;
-  return verb.test(t) && noun.test(t);
+  if (!noun.test(t)) return false;
+  const verb = /(做一?个|搭建|设计一?个|构建|开发一?个|建一?个|来一?个|帮我做|我想要|我要做|create|build|design)/i;
+  if (verb.test(t)) return true;
+  // 裸名词短语：refine 动词开头的不算（那是对旧话题的修改指令）
+  if (/^(把|将|改|修改|调整|优化|完善|去掉|删除|增加|加上|补充|重新|再|请|帮我改)/.test(t)) return false;
+  return /^[一-龥A-Za-z0-9\s·\-]{3,38}(系统|应用|平台|门户|网站|小程序)$/.test(t);
 }
 
 function hasReadyByokPool(): boolean {
@@ -405,19 +412,23 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // 本地聊天流，并用可见 chip 明示切换。
       let workingState = loadedState;
       let autoNewTopic = false;
-      if (
-        !IS_GITHUB_PAGES &&
-        !intervention &&
-        isClosedSessionState(loadedState) &&
-        looksLikeNewAppIntent(userText) &&
-        userText.trim() !== (loadedState.goal?.text || "").trim()
-      ) {
-        workingState = await prepareVisibleResetSessionState(
-          loadedState.sessionId || sessionState.sessionId || sessionId,
-          SlideRuleRuntime.deleteSlideRuleSession,
-          persistSession
-        );
-        autoNewTopic = true;
+      let closedTopicFollowUp = false;
+      if (!IS_GITHUB_PAGES && !intervention && isClosedSessionState(loadedState)) {
+        if (
+          looksLikeNewAppIntent(userText) &&
+          userText.trim() !== (loadedState.goal?.text || "").trim()
+        ) {
+          workingState = await prepareVisibleResetSessionState(
+            loadedState.sessionId || sessionState.sessionId || sessionId,
+            SlideRuleRuntime.deleteSlideRuleSession,
+            persistSession
+          );
+          autoNewTopic = true;
+        } else {
+          // 识别不出新意图 → 留在旧话题，但必须明示，否则秒回 closed 6/6
+          // 会被读成"假装推演"。
+          closedTopicFollowUp = true;
+        }
       }
 
       const goalStatusBefore = workingState.goal?.status;
@@ -487,6 +498,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           capabilityId: "intent.parse" as any,
           roleId: "system",
           label: "上一话题已闭环 · 检测到新意图，已自动开启新话题",
+          realLlm: false,
+          loopTurnId: turnId,
+          progressType: "thinking",
+        });
+      }
+      if (closedTopicFollowUp) {
+        appendStep({
+          id: `${turnId}-closed-followup`,
+          kind: "chip",
+          capabilityId: "intent.parse" as any,
+          roleId: "system",
+          label: "本话题已闭环，此轮按旧话题追问处理 · 要开始新应用请说「做一个××系统」或点右上角重置会话",
           realLlm: false,
           loopTurnId: turnId,
           progressType: "thinking",
