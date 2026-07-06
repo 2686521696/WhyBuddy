@@ -5,7 +5,7 @@ This replaces the entire Node V5 loop with Python RAG-backed execution.
 All capabilities now produce real evidence via RAG, no templates, no degraded, no su8 issues.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
 from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
@@ -392,3 +392,380 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         persist_state(state)
     persist_state(state)
     return state
+
+
+# ---------------------------------------------------------------------------
+# Skill-ID mapping  (capability_id → one of the 6 front-end skill keys)
+# ---------------------------------------------------------------------------
+
+_CAP_SKILL_MAP: Dict[str, str] = {
+    "data.model": "dataModel", "entity.model": "dataModel", "schema.design": "dataModel",
+    "workflow.design": "workflow", "process.map": "workflow", "flow.chart": "workflow", "workflow.analyze": "workflow",
+    "rbac.design": "rbac", "role.design": "rbac", "permission.model": "rbac", "access.control": "rbac",
+    "page.design": "page", "ux.preview": "page", "ui.wireframe": "page", "page.layout": "page",
+    "aigc.design": "aigc", "prompt.design": "aigc", "ai.feature": "aigc", "outcome.visualize": "aigc",
+    "appbundle.runtimeClosure": "appBundle", "publish.bundle": "appBundle", "app.bundle": "appBundle",
+}
+
+_CAP_PREFIX_SKILL: list = [
+    ("data.", "dataModel"), ("entity.", "dataModel"), ("schema.", "dataModel"),
+    ("workflow.", "workflow"), ("process.", "workflow"), ("flow.", "workflow"),
+    ("rbac.", "rbac"), ("role.", "rbac"), ("permission.", "rbac"),
+    ("page.", "page"), ("ux.", "page"), ("ui.", "page"),
+    ("aigc.", "aigc"), ("prompt.", "aigc"),
+    ("appbundle.", "appBundle"), ("publish.", "appBundle"), ("bundle.", "appBundle"),
+]
+
+
+def _cap_to_skill_id(cap: str) -> str:
+    """Map a capability_id to one of the 6 skill keys. Defaults to 'appBundle'."""
+    direct = _CAP_SKILL_MAP.get(cap)
+    if direct:
+        return direct
+    cap_lower = cap.lower()
+    for prefix, skill in _CAP_PREFIX_SKILL:
+        if cap_lower.startswith(prefix):
+            return skill
+    return "appBundle"
+
+
+# Order in which the 5-system skills are emitted after closure (cross-skill
+# dependency order: datamodel is the SSOT root; appbundle is the assembly root).
+# Matches RUNTIME_CLOSURE_EDGES direction so the UI lights systems in causal order.
+_SKILL_EMIT_ORDER = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+
+# publishClosure.perSkillEvidence uses lowercase keys; the frontend SkillId type
+# uses camelCase. Map so skill_start/skill_result carry the frontend-facing id.
+_CLOSURE_KEY_TO_SKILL_ID = {
+    "datamodel": "dataModel",
+    "rbac": "rbac",
+    "workflow": "workflow",
+    "page": "page",
+    "aigc": "aigc",
+    "appbundle": "appBundle",
+}
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming driver
+# ---------------------------------------------------------------------------
+
+async def drive_full_v5_session_stream(
+    initial_state: "V5SessionState",
+    max_loops: int = 10,
+    user_instruction: str = "",
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """Async generator mirroring drive_full_v5_session but yielding SSE dicts.
+
+    Event shapes:
+        {"type": "phase_change",  "phase": str}
+        {"type": "skill_start",   "skill": str, "label": str}
+        {"type": "skill_result",  "skill": str, "label": str, "error": bool,
+                                  "model": dict|None, "mermaid": str|None}
+        {"type": "publish_closure", "data": dict}
+        {"type": "complete",      "state": dict}
+    """
+    import asyncio
+    import time as _time
+
+    state = initial_state
+    state.runtimePhase = "orchestrating"
+    append_replay_event(state, kind="decision", turnId="loop-0", decisionId="phase-orchestrating-full")
+    append_reasoning_event(
+        state, turnId="loop-0", capabilityRunId="phase-full-0",
+        capabilityId="driver", kind="think",
+        text="phase_changed: orchestrating (full drive)", order=0,
+    )
+    persist_state(state)
+    yield {"type": "phase_change", "phase": "orchestrating"}
+
+    loop = 0
+    picks: list = []
+    no_progress_streak = 0
+    MAX_REPEAT_PER_CAP = 2
+
+    try:
+        prev_art_count = len(getattr(state, "artifacts", []) or [])
+
+        def _count_resolved(st: "V5SessionState") -> int:
+            gaps = getattr(st, "coverageGaps", []) or []
+            return sum(
+                1 for g in gaps
+                if (g.get("status") if isinstance(g, dict) else getattr(g, "status", None)) == "resolved"
+            )
+
+        prev_resolved = _count_resolved(state)
+
+        while loop < max_loops:
+            ui = user_instruction or ""
+            await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
+            picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
+            state = await asyncio.to_thread(reconcile_coverage, state)
+            selected = picks
+
+            # max_repeat_guard
+            if picks:
+                filtered = [
+                    p for p in picks
+                    if sum(
+                        1 for r in (getattr(state, "capabilityRuns", []) or [])
+                        if (r.get("capabilityId") if isinstance(r, dict) else getattr(r, "capabilityId", "")) == p["capabilityId"]
+                    ) < MAX_REPEAT_PER_CAP
+                ]
+                if filtered:
+                    selected = filtered
+                else:
+                    # all repeats exhausted
+                    now = datetime.now(timezone.utc).isoformat()
+                    dec = SchedulingDecision(
+                        id=f"dec-{loop}-max_repeat_guard", turnId=f"loop-{loop}",
+                        saw=[p["capabilityId"] for p in picks], chose=[], skipped=[
+                            {"capabilityId": p["capabilityId"], "reason": "max_repeat_guard"} for p in picks
+                        ],
+                        rationale=f"max_repeat_guard at loop {loop}",
+                        createdAt=now, source="local_heuristic",
+                    )
+                    dl = getattr(state, "decisionLedger", []) or []
+                    dl.append(dec)
+                    state.decisionLedger = dl
+                    state.awaitReason = "max_repeat_guard"
+                    state.awaitDetail = f"max_repeat_guard: all candidates excluded after {MAX_REPEAT_PER_CAP} repeats"
+                    break
+
+            if not selected:
+                no_progress_streak += 1
+                if no_progress_streak >= 2:
+                    now = datetime.now(timezone.utc).isoformat()
+                    dec = SchedulingDecision(
+                        id=f"dec-{loop}-no_progress", turnId=f"loop-{loop}",
+                        saw=[p["capabilityId"] for p in (picks or [])],
+                        chose=[], skipped=[],
+                        rationale=f"no_progress: {no_progress_streak} loops",
+                        createdAt=now, source="local_heuristic",
+                    )
+                    dl = getattr(state, "decisionLedger", []) or []
+                    dl.append(dec)
+                    state.decisionLedger = dl
+                    state.awaitReason = "no_progress"
+                    state.awaitDetail = f"no_progress after {no_progress_streak} loops"
+                    break
+                picks = selected
+                break
+
+            # Execute selected
+            for sel in selected:
+                cap = sel["capabilityId"]
+                role = sel.get("roleId", "agent")
+                turn_id = f"loop-{loop}"
+                run_id = f"run-{loop}-{cap}"
+
+                append_reasoning_event(
+                    state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
+                    kind="capability_start", text=f"capability_started: {cap}", roleId=role, order=1,
+                )
+                append_replay_event(state, kind="capability_run", turnId=turn_id, capabilityId=cap, capabilityRunId=run_id)
+                persist_state(state)
+
+                # These are REASONING-engine capabilities (evidence.search, risk.analyze,
+                # synthesis.merge ...), NOT the 5 skill-system capabilities. Emit them as
+                # reasoning_step so the UI can show "thinking" progress without mislabeling
+                # them as skills. The real 5-system skill sequence is emitted after the
+                # closure computes (see per-skill emission below).
+                yield {"type": "reasoning_step", "label": cap, "loop": loop}
+
+                t0 = _time.time()
+                result_data: Dict[str, Any] = {}
+                cap_error = False
+                try:
+                    result = await asyncio.to_thread(execute_v5_capability, cap, state, [], role, turn_id)
+                    result_data = _result_to_dict(result)
+                    art_id = f"art-{loop}-{cap}"
+                    produced = ProducedBy(capabilityRunId=run_id, capabilityId=cap, roleId=role)
+                    kind_art = (
+                        "evidence" if ("evidence" in cap or cap in ["mcp.call", "skill.invoke"])
+                        else ("report" if "report" in cap else "risk")
+                    )
+                    commit_artifact(
+                        state, id=art_id, kind=kind_art,
+                        content=result_data.get("content", ""),
+                        summary=result_data.get("summary", ""),
+                        title=result_data.get("title"),
+                        provenance=result_data.get("provenance", "python-rag"),
+                        producedBy=produced, inputArtifactIds=[],
+                        turnId=turn_id, sources=result_data.get("sources", []),
+                    )
+                    dur = int((_time.time() - t0) * 1000)
+                    if getattr(state, "capabilityRuns", None):
+                        last = state.capabilityRuns[-1]
+                        if hasattr(last, "result"):
+                            last.result = result_data
+                        elif isinstance(last, dict):
+                            last["result"] = result_data
+                        if hasattr(last, "timing"):
+                            last.timing = {"durationMs": dur}
+                    append_reasoning_event(
+                        state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
+                        kind="capability_complete", text=f"capability_completed: {cap}", roleId=role, order=2,
+                    )
+                    persist_state(state)
+
+                except Exception as cap_exc:
+                    cap_error = True
+                    dur = int((_time.time() - t0) * 1000)
+                    err = {"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": cap}
+                    from .slide_rule_session import record_capability_run_error
+                    record_capability_run_error(
+                        state, capabilityId=cap, turnId=turn_id, error=err, roleId=role,
+                        timing={"durationMs": dur},
+                    )
+                    append_reasoning_event(
+                        state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
+                        kind="capability_complete", text=f"capability_completed: {cap} (error)", roleId=role, order=2,
+                    )
+                    persist_state(state)
+                    state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
+
+                yield {
+                    "type": "reasoning_step_result",
+                    "label": cap,
+                    "error": cap_error,
+                    "summary": result_data.get("summary") if not cap_error else None,
+                }
+
+            # progress tracking
+            now_art = len(getattr(state, "artifacts", []) or [])
+            now_res = _count_resolved(state)
+            if now_art > prev_art_count or now_res > prev_resolved:
+                no_progress_streak = 0
+            else:
+                no_progress_streak += 1
+            prev_art_count = now_art
+            prev_resolved = now_res
+
+            if no_progress_streak >= 2:
+                now = datetime.now(timezone.utc).isoformat()
+                dec = SchedulingDecision(
+                    id=f"dec-{loop}-no_progress", turnId=f"loop-{loop}",
+                    saw=[p["capabilityId"] for p in (picks or [])],
+                    chose=[p["capabilityId"] for p in selected],
+                    skipped=[],
+                    rationale=f"no_progress streak {no_progress_streak}",
+                    createdAt=now, source="local_heuristic",
+                )
+                dl = getattr(state, "decisionLedger", []) or []
+                dl.append(dec)
+                state.decisionLedger = dl
+                state.awaitReason = "no_progress"
+                state.awaitDetail = f"no_progress streak {no_progress_streak}"
+                break
+
+            gate = await asyncio.to_thread(evaluate_coverage_gate, state)
+            if gate.get("passed"):
+                state.goal["status"] = "clear"
+                break
+            loop += 1
+            persist_state(state)
+
+        state = await asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
+
+        gate = await asyncio.to_thread(evaluate_coverage_gate, state)
+        if gate.get("passed") or (state.goal or {}).get("status") == "clear":
+            state.runtimePhase = "done"
+            append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
+                capabilityId="driver", kind="think", text="phase_changed: done", order=10)
+            persist_state(state)
+        else:
+            state.runtimePhase = "awaiting"
+            if getattr(state, "awaitReason", None) not in ("no_progress", "max_repeat_guard"):
+                if loop >= max_loops:
+                    state.awaitReason = "max_loops"
+                elif not picks:
+                    state.awaitReason = "convergence"
+                else:
+                    state.awaitReason = "coverage"
+            append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
+                capabilityId="driver", kind="think",
+                text=f"phase_changed: awaiting ({state.awaitReason or 'coverage'})", order=10)
+            persist_state(state)
+
+    except Exception as exc:
+        state.runtimePhase = "failed"
+        state.awaitReason = "ready"
+        state.awaitDetail = f"drive error: {str(exc)[:120]}"
+        append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end",
+            capabilityId="driver", kind="think", text="phase_changed: failed", order=10)
+        persist_state(state)
+        yield {"type": "phase_change", "phase": "failed", "detail": state.awaitDetail}
+
+    persist_state(state)
+
+    # Compute publish closure + skill graph (the REAL 5-system evidence).
+    publish_closure = derive_publish_closure_response(state)
+    skill_graph = derive_skill_runtime_graph_response(state)
+
+    # Emit the real 5-system skill sequence, in cross-skill dependency order,
+    # derived from perSkillEvidence. THIS is the authentic "which system is
+    # being resolved" axis (the reasoning loop above is a different axis).
+    # Each skill: skill_start -> (brief pause for UI animation) -> skill_result
+    # carrying its evidence presence + graph edges + mermaid projection.
+    if publish_closure is not None:
+        per_skill = publish_closure.get("perSkillEvidence") or {}
+        graph_by_skill = (skill_graph or {}).get("bySkill") or {}
+        for closure_key in _SKILL_EMIT_ORDER:
+            skill_id = _CLOSURE_KEY_TO_SKILL_ID.get(closure_key, "appBundle")
+            ev = per_skill.get(closure_key) or {}
+            present = ev.get("evidencePresent") is True
+            edges = graph_by_skill.get(closure_key) or []
+
+            yield {"type": "skill_start", "skill": skill_id, "label": closure_key}
+            # Small yield-point so SSE consumers can animate the highlight in sequence.
+            await asyncio.sleep(0.12)
+            yield {
+                "type": "skill_result",
+                "skill": skill_id,
+                "label": closure_key,
+                "error": not present,
+                "evidencePresent": present,
+                "evidenceRef": ev.get("evidenceRef"),
+                "artifactId": ev.get("artifactId"),
+                "digest": ev.get("digest"),
+                "edges": edges,
+                "mermaid": _skill_edges_to_mermaid(closure_key, edges),
+            }
+
+    # Emit full closure payload after the per-skill walk.
+    if publish_closure is not None:
+        state.publishClosure = publish_closure
+        state.skillRuntimeGraph = skill_graph
+        state.lastTurnId = f"turn-stream-{loop}-drive-full"
+        persist_state(state)
+        yield {"type": "publish_closure", "data": publish_closure}
+
+    yield {"type": "phase_change", "phase": state.runtimePhase}
+    yield {"type": "complete", "state": state.model_dump()}
+
+
+def _skill_edges_to_mermaid(skill: str, edges: list) -> str:
+    """Render a skill's cross-system edges as a small mermaid flowchart.
+
+    Deterministic; used by the UI's per-system screen. Empty edges -> minimal node.
+    """
+    lines = ["flowchart LR"]
+    if not edges:
+        lines.append(f'  {skill}["{skill}"]')
+        return "\n".join(lines)
+    seen = set()
+    for e in edges:
+        src = e.get("sourceSkill") if isinstance(e, dict) else None
+        tgt = e.get("targetSkill") if isinstance(e, dict) else None
+        key = e.get("evidenceKey") if isinstance(e, dict) else None
+        state_lbl = e.get("state") if isinstance(e, dict) else None
+        if not src or not tgt:
+            continue
+        edge_sig = f"{src}->{tgt}"
+        if edge_sig in seen:
+            continue
+        seen.add(edge_sig)
+        label = (key or state_lbl or "").replace('"', "'")
+        lines.append(f'  {src}["{src}"] -->|{label}| {tgt}["{tgt}"]')
+    return "\n".join(lines)

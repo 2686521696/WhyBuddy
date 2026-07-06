@@ -7,10 +7,17 @@ Uses RAG for external evidence and stable Python-side execution.
 No Node LLM, no pool, no su8, no proxy issues, no template/degraded.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Callable, Optional
 import hashlib
+import os
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
+
+
+def _llm_generate_enabled() -> bool:
+    """T3 gate flag. Off by default so deterministic domains + fail-closed stay the
+    baseline; opt-in via env for LLM generation of novel intents."""
+    return str(os.getenv("SLIDERULE_LLM_GENERATE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
 
 REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
@@ -58,7 +65,54 @@ PURCHASE_APPROVAL_INTENT_MARKERS = [
     "purchase_request",
     "采购审批",
     "采购单",
+    "采购",
 ]
+
+# Deterministic domain recognizers (T1 generality proof — see
+# docs/Intent-to-App 五系统闭包样板 · SPEC.md). Each recognized domain closes
+# 6/6 with the SAME structural RUNTIME_CLOSURE_EDGES (the metamodel is
+# domain-agnostic); only the evidence flavour text differs. Unknown intents
+# stay fail-closed (0/6) until LLM generate() lands (T3). This proves the
+# five-system closure generalizes beyond purchase, without coupling to LLM.
+DOMAIN_INTENT_MARKERS: Dict[str, List[str]] = {
+    "purchase_approval": PURCHASE_APPROVAL_INTENT_MARKERS,
+    "leave_approval": [
+        "leave approval", "leave request", "请假审批", "请假单", "请假", "休假",
+    ],
+    "service_ticket": [
+        "service ticket", "工单", "客户服务", "客服", "服务台", "ticket", "sla", "升级",
+    ],
+    "employee_onboarding": [
+        "onboarding", "employee onboarding", "入职", "员工入职", "新员工", "报到",
+    ],
+}
+
+# Human-readable domain names for evidence flavour text (deterministic).
+DOMAIN_LABELS: Dict[str, str] = {
+    "purchase_approval": "purchase approval",
+    "leave_approval": "leave approval",
+    "service_ticket": "service ticket",
+    "employee_onboarding": "employee onboarding",
+}
+
+
+def _recognize_domain(goal: str) -> "str | None":
+    """Return the recognized deterministic domain key, or None (fail-closed).
+
+    Handles the latin1->utf8 mojibake repair the same way the legacy purchase
+    check did, so garbled Windows-shell goals still match.
+    """
+    variants = [(goal or "").lower()]
+    try:
+        repaired = (goal or "").encode("latin1").decode("utf-8")
+        if repaired and repaired.lower() not in variants:
+            variants.append(repaired.lower())
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    for domain, markers in DOMAIN_INTENT_MARKERS.items():
+        if any(marker.lower() in variant for variant in variants for marker in markers):
+            return domain
+    return None
 
 
 def _artifact_dicts(state: V5SessionState) -> List[Dict[str, Any]]:
@@ -72,37 +126,64 @@ def _artifact_dicts(state: V5SessionState) -> List[Dict[str, Any]]:
 
 
 def _is_purchase_approval_intent(goal: str) -> bool:
-    variants = [(goal or "").lower()]
-    try:
-        repaired = (goal or "").encode("latin1").decode("utf-8")
-        if repaired and repaired.lower() not in variants:
-            variants.append(repaired.lower())
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        pass
-    return any(
-        marker.lower() in variant
-        for variant in variants
-        for marker in PURCHASE_APPROVAL_INTENT_MARKERS
-    )
+    """Back-compat shim — true iff the goal is the purchase domain specifically.
+
+    Kept for any external callers; new code should use _recognize_domain().
+    """
+    return _recognize_domain(goal) == "purchase_approval"
 
 
-def _runtime_linkage_artifact_for_skill(skill: str, goal: str) -> Dict[str, Any]:
+def _runtime_linkage_artifact_for_skill(skill: str, goal: str, domain: str = "purchase_approval") -> Dict[str, Any]:
     evidence_keys = [
         edge["evidenceKey"]
         for edge in RUNTIME_CLOSURE_EDGES
         if edge["sourceSkill"] == skill or edge["targetSkill"] == skill
     ]
+    label = DOMAIN_LABELS.get(domain, domain)
     return {
         "id": f"runtime-linkage-{skill}",
         "title": f"{skill} runtime linkage evidence",
         "kind": "runtimeClosureEvidence",
-        "summary": "deterministic purchase approval six-Skill linkage evidence",
-        "content": f"{skill} evidence for purchase approval runtime closure: {','.join(evidence_keys)}",
+        "summary": f"deterministic {label} six-Skill linkage evidence",
+        "content": f"{skill} evidence for {label} runtime closure: {','.join(evidence_keys)}",
         "provenance": "python-runtime-linkage",
     }
 
 
-def _build_per_skill_evidence(state: V5SessionState, blocked_signal: bool, goal: str = "") -> Dict[str, Any]:
+def _try_llm_generate_evidence(
+    goal: str,
+    llm_json_fn: Optional[Callable[[str], Any]],
+) -> Optional[Dict[str, Dict[str, Any]]]:
+    """Generate + gate a five-system model for a novel intent.
+
+    Returns {skill: artifact} for all 6 skills if the LLM model PASSES the
+    structural gate; otherwise None (fail-closed). Never raises.
+    """
+    try:
+        from .v5_llm_generate import generate_five_system_model, model_to_linkage_artifacts
+        from .v5_model_gate import validate_five_system_model
+    except Exception:
+        return None
+
+    model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
+    if model is None:
+        return None
+    gate = validate_five_system_model(model)
+    if not gate.get("passed"):
+        # Gate blocked — do NOT inject evidence. Caller stays fail-closed.
+        return None
+    artifacts = model_to_linkage_artifacts(model, goal)
+    return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
+
+
+def _build_per_skill_evidence(
+    state: V5SessionState,
+    blocked_signal: bool,
+    goal: str = "",
+    *,
+    llm_json_fn: Optional[Callable[[str], Any]] = None,
+    force_llm: bool = False,
+) -> Dict[str, Any]:
     matches: Dict[str, Dict[str, Any]] = {}
     for artifact in _artifact_dicts(state):
         haystack = " ".join(
@@ -113,10 +194,22 @@ def _build_per_skill_evidence(state: V5SessionState, blocked_signal: bool, goal:
             if skill in haystack and skill not in matches:
                 matches[skill] = artifact
 
-    if not blocked_signal and _is_purchase_approval_intent(goal):
+    recognized_domain = _recognize_domain(goal)
+    if not blocked_signal and recognized_domain is not None:
+        # Deterministic domain (purchase/leave/ticket/onboarding) — fast fixture path,
+        # no LLM call. This is the T1 generality proof; unchanged.
         for skill in REQUIRED_EVIDENCE_KEYS:
             if skill not in matches:
-                matches[skill] = _runtime_linkage_artifact_for_skill(skill, goal)
+                matches[skill] = _runtime_linkage_artifact_for_skill(skill, goal, recognized_domain)
+    elif not blocked_signal and recognized_domain is None and (force_llm or _llm_generate_enabled() or llm_json_fn is not None):
+        # T3: novel intent — ask the LLM to generate a five-system model, then run
+        # it through the structural gate. Only gate-PASSED models inject evidence;
+        # gate failure / LLM unavailable stays fail-closed (0/6). "失败由 gate 拦截而非静默".
+        llm_result = _try_llm_generate_evidence(goal, llm_json_fn)
+        if llm_result is not None:
+            for skill in REQUIRED_EVIDENCE_KEYS:
+                if skill not in matches:
+                    matches[skill] = llm_result[skill]
 
     per_skill: Dict[str, Any] = {}
     for skill in REQUIRED_EVIDENCE_KEYS:
