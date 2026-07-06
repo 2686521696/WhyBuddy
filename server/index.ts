@@ -17,6 +17,7 @@ import {
 } from "../shared/mission/contracts.js";
 import type { ExecutorEvent } from "../shared/executor/contracts.js";
 import { isBlueprintExecutorMissionId } from "./core/executor-callback-routing.js";
+import { runExecutorEventPythonProjection } from "./routes/executor-events-python-projection.js";
 import type {
   ExecutorPreviewSession,
   ExecutorPreviewSessionStatus,
@@ -1963,6 +1964,85 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
 
     // ── HeartbeatMonitor: reset on every event ──
     heartbeatMonitor.resetHeartbeat(missionId);
+
+    // ── Python event→action projection (EXECUTOR_EVENTS_PYTHON_PROJECTION,
+    // default ON; explicit "false" opts out, vitest stays on the Node path).
+    // STATE-CHANGING events only; streaming events (job.log / job.log_stream /
+    // job.screenshot) always stay inline so the Socket.IO passthrough never
+    // gains an HTTP hop. On Python infra failure we fall through to the
+    // existing inline mapper below — byte-identical behavior.
+    const pythonProjectionHandled = await runExecutorEventPythonProjection({
+      event: {
+        version: event.version,
+        eventId: event.eventId,
+        missionId,
+        jobId: event.jobId.trim(),
+        executor: event.executor,
+        type: event.type,
+        status: event.status,
+        occurredAt: event.occurredAt,
+        stageKey: event.stageKey,
+        progress: event.progress,
+        message: event.message,
+        detail: event.detail,
+        summary: event.summary,
+        errorCode: event.errorCode,
+        waitingFor: event.waitingFor,
+        log: event.log,
+        delivery: (event as Record<string, unknown>).delivery,
+      },
+      mission: {
+        currentProgress: current.progress,
+        stageLabel: executorStageLabel(stageKey),
+      },
+      ctx: {
+        missionId,
+        stageKey,
+        executorName,
+        decision: normalizeExecutorDecision(event.decision),
+      },
+      deps: {
+        markMissionRunning: (id, stage, runningDetail, runningProgress, source) =>
+          void missionRuntime.markMissionRunning(
+            id,
+            stage,
+            runningDetail,
+            runningProgress,
+            source
+          ),
+        waitOnMission: (
+          id,
+          waitingFor,
+          waitingDetail,
+          waitingProgress,
+          decision,
+          source
+        ) =>
+          void missionRuntime.waitOnMission(
+            id,
+            waitingFor,
+            waitingDetail,
+            waitingProgress,
+            decision as MissionDecision | undefined,
+            source
+          ),
+        finishMission: (id, summary, source) =>
+          void missionRuntime.finishMission(id, summary, source),
+        failMission: (id, message, source) =>
+          void missionRuntime.failMission(id, message, source),
+        cancelMission: (id, input) => void missionRuntime.cancelMission(id, input),
+        clearHeartbeat: id => heartbeatMonitor.clearHeartbeat(id),
+      },
+    });
+    if (pythonProjectionHandled) {
+      return response.json({
+        ok: true,
+        accepted: true,
+        missionId,
+        jobId: event.jobId.trim(),
+        eventId: event.eventId.trim(),
+      });
+    }
 
     if (event.type === "job.started") {
       // Req 4.1: job.started → executor.status = running (handled above via effectiveExecutorStatus)

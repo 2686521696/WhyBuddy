@@ -33,6 +33,7 @@ from routes.audit import router as audit_router
 from routes.auth import router as auth_router
 from routes.blueprint_jobs import router as blueprint_jobs_router
 from routes.tasks import router as tasks_router
+from routes.executor_events import router as executor_events_router
 from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
@@ -104,6 +105,11 @@ app.include_router(audit_router, prefix="/api/audit")
 # (CRUD + events + cancel on services/task_store.py; executor dispatch,
 # projection/session views, decisions, operator-actions, artifacts stay Node-owned).
 app.include_router(tasks_router, prefix="/api/tasks")
+
+# Executor callback event -> mission action projection: first Python slice of
+# the Node POST /api/executor/events executor face (state-changing decisions
+# only; HMAC/heartbeat/persistence/Socket.IO streaming stay Node-owned).
+app.include_router(executor_events_router, prefix="/api/executor/events")
 
 # AgentLoop control plane (Python owned, bridge mode for workers)
 app.include_router(agent_loop_router, prefix="/api/agent-loop")
