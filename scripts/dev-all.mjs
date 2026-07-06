@@ -512,8 +512,35 @@ function shutdown(exitCode = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
+/**
+ * 启动前哨检查：dev 端口若已被占用，页面实际打到的会是那个"旧进程"，
+ * 而不是本次启动的新代码——这曾造成"源码已修好、HTTP 行为还是旧的"的
+ * 幽灵现场（占 9700 的 PID 甚至在 tasklist 里查不到 = 可能是 WSL 端口
+ * 转发或提权进程）。这里不代杀（dev:stop 负责），只把真相喊出来。
+ */
+async function warnOnOccupiedDevPorts() {
+  const ports = [
+    { port: Number(process.env.VITE_PORT || 3000), name: "vite" },
+    { port: 3001, name: "node server" },
+    { port: Number(process.env.SLIDE_RULE_PYTHON_PORT || 9700), name: "slide-rule-python" },
+    { port: Number(process.env.LOBSTER_EXECUTOR_PORT || 3031), name: "lobster-executor" },
+  ];
+  for (const { port, name } of ports) {
+    if (await waitForPortListening(port, { timeoutMs: 350 })) {
+      console.warn(
+        `[dev:all] !!! Port ${port} (${name}) is ALREADY occupied before startup. ` +
+          `Requests will hit that pre-existing process, NOT the one dev:all starts — ` +
+          `your code changes will appear to have no effect. ` +
+          `Run "npm run dev:stop" first; if the port stays busy and the owner PID is ` +
+          `unresolvable, it is likely a WSL relay — run "wsl --shutdown" (Windows) and retry.`
+      );
+    }
+  }
+}
+
 async function main() {
   loadDevDotenv();
+  await warnOnOccupiedDevPorts();
   const sharedDevEnv = await resolveDevEnvironment();
 
   // Explicit visibility: the server child will receive the resolved proxy env (if any).
