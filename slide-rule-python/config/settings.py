@@ -5,8 +5,13 @@ Replaces Node's su8 pool, proxy headaches, template fallbacks.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
+
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent  # slide-rule-python/
+_REPO_ROOT = _PACKAGE_DIR.parent
+
 
 class Settings(BaseSettings):
     PORT: int = 9700
@@ -76,7 +81,12 @@ class Settings(BaseSettings):
         return self.NODE_ENV == "development"
 
     class Config:
-        env_file = ".env"
+        # 与 CWD 无关的确定性 env 链（真实事故：uvicorn 以 slide-rule-python 为
+        # CWD 启动时，相对路径 ".env" 找不到根目录配置，静默落回 dashscope 默认，
+        # 新颖意图 LLM 生成拿不到 key → 发布闭环 fail-closed 0/6）。
+        # 元组靠后的文件优先级更高：根目录 .env 赢冲突（与 dev 脚本语义一致）；
+        # os.environ 永远最高优先（pydantic-settings 固有规则）。
+        env_file = (str(_PACKAGE_DIR / ".env"), str(_REPO_ROOT / ".env"))
         env_file_encoding = "utf-8"
         case_sensitive = True
         extra = "ignore"

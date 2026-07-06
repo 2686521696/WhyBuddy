@@ -4,6 +4,18 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const projectRoot = process.cwd();
 
+// 端口兜底清扫：命令行模式匹配抓不到的漂移进程（真实事故：一个手工/异目录
+// 启动的 uvicorn 常驻 9700，dev:stop 报 "No project dev processes found"，
+// 之后每次"重启"其实都没换掉它，且它没有继承 .env 的 LLM key）。
+// 只杀名字像 dev 栈的进程（node/npm/python/uvicorn），其他占用者只提示不动手。
+const DEV_PORTS = [
+  Number(process.env.VITE_PORT || 3000),
+  3001,
+  Number(process.env.SLIDE_RULE_PYTHON_PORT || 9700),
+  Number(process.env.LOBSTER_EXECUTOR_PORT || 3031),
+];
+const DEV_PROCESS_NAMES = ["node", "npm", "cmd", "python", "python3", "uvicorn"];
+
 function escapeForPowerShell(value) {
   return value.replace(/'/g, "''");
 }
@@ -90,10 +102,75 @@ async function stopUnixProjectProcesses() {
   }
 }
 
+async function sweepWindowsDevPorts() {
+  const names = DEV_PROCESS_NAMES.map((n) => `'${n}'`).join(",");
+  const command = [
+    `$selfPid = ${process.pid}`,
+    `$devNames = @(${names})`,
+    `foreach ($port in @(${DEV_PORTS.join(",")})) {`,
+    `  Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {`,
+    `    $ownerPid = $_.OwningProcess`,
+    `    if (-not $ownerPid -or $ownerPid -eq $selfPid) { return }`,
+    `    $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue`,
+    `    if (-not $proc) { return }`,
+    `    if ($devNames -contains $proc.ProcessName) {`,
+    `      Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue`,
+    `      Write-Output ("Stopped PID {0} (port {1}, {2})" -f $ownerPid, $port, $proc.ProcessName)`,
+    `    } else {`,
+    `      Write-Output ("Port {0} held by PID {1} ({2}) - not a dev process, left running" -f $port, $ownerPid, $proc.ProcessName)`,
+    `    }`,
+    `  }`,
+    `}`,
+  ].join("\n");
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", command], {
+      cwd: projectRoot,
+    });
+    if (stdout.trim()) process.stdout.write(stdout);
+  } catch {
+    /* port sweep is best-effort */
+  }
+}
+
+async function sweepUnixDevPorts() {
+  for (const port of DEV_PORTS) {
+    let pids = [];
+    try {
+      const { stdout } = await execFileAsync("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"]);
+      pids = stdout.split("\n").map((s) => Number(s.trim())).filter(Boolean);
+    } catch {
+      continue; // lsof missing or no listener
+    }
+    for (const pid of pids) {
+      if (pid === process.pid) continue;
+      let commandLine = "";
+      try {
+        const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "command="]);
+        commandLine = stdout.trim();
+      } catch {
+        continue;
+      }
+      const lower = commandLine.toLowerCase();
+      if (DEV_PROCESS_NAMES.some((name) => lower.includes(name))) {
+        try {
+          process.kill(pid, "SIGTERM");
+          console.log(`Stopped PID ${pid} (port ${port})`);
+        } catch {
+          /* already gone */
+        }
+      } else {
+        console.log(`Port ${port} held by PID ${pid} (${commandLine.slice(0, 60)}) - not a dev process, left running`);
+      }
+    }
+  }
+}
+
 if (process.platform === "win32") {
   await stopWindowsProjectProcesses();
+  await sweepWindowsDevPorts();
 } else {
   await stopUnixProjectProcesses();
+  await sweepUnixDevPorts();
 }
 
 console.log("dev:stop complete.");

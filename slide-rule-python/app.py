@@ -28,6 +28,39 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+def _hydrate_env_files() -> None:
+    """把根目录与包内 .env 装进 os.environ（不覆盖已有值），与 CWD 无关。
+
+    LLM 客户端（sliderule_llm）与 SLIDERULE_* 开关读的都是 os.environ。
+    以前只有 dev 脚本负责注入——绕过脚本手工起 uvicorn 时 key 会静默丢失，
+    表现为新颖意图 LLM 生成不可用、发布闭环 fail-closed 0/6（真实事故）。
+    根目录 .env 先装（冲突时赢，与 dev-all 的 override 语义一致），包内 .env 补缺。
+
+    pytest 下不水合：测试必须自己控制环境（否则本地 .env 的真 key/开关会
+    泄进测试，确定性用例开始真调 LLM——与 Node 侧 isVitestEnvironment 同款守卫）。
+    """
+    if "pytest" in sys.modules or os.getenv("SLIDERULE_DISABLE_ENV_HYDRATION") == "1":
+        return
+    package_dir = Path(__file__).resolve().parent
+    for env_path in (package_dir.parent / ".env", package_dir / ".env"):
+        try:
+            text = env_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+# 必须先于 config.settings / 各服务 import（它们在 import 期就读环境）。
+_hydrate_env_files()
+
 from config.settings import settings
 from routes.audit import router as audit_router
 from routes.auth import router as auth_router
@@ -43,10 +76,23 @@ from routes.rag import router as rag_router
 from services.persistence import load_all, save_all
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
+from services.v5_capability_executor import _llm_generate_enabled
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from models.v5_state import V5SessionState
+
+
+def _llm_readiness() -> dict:
+    """LLM 配置就绪度（不含任何密钥明文）——health 与启动日志共用。"""
+    key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+    return {
+        "keyPresent": bool(key),
+        "keyLength": len(key),
+        "baseUrl": os.getenv("LLM_BASE_URL") or "",
+        "model": os.getenv("LLM_MODEL") or "",
+        "generateEnabled": _llm_generate_enabled(),
+    }
 
 
 def _turn_seq_for_drive_full(value) -> int:
@@ -62,6 +108,20 @@ def _advance_drive_full_turn_id(value) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
+    # 启动即亮牌：LLM 配置就绪度一行可见（缺 key 时新颖意图必然 0/6，
+    # 这必须在启动日志里喊出来，而不是等用户撞上 blocked 再排查）。
+    llm = _llm_readiness()
+    print(
+        f"[startup] LLM readiness: keyPresent={llm['keyPresent']} (len={llm['keyLength']}) "
+        f"base={llm['baseUrl'] or '(unset)'} model={llm['model'] or '(unset)'} "
+        f"generateEnabled={llm['generateEnabled']}"
+    )
+    if llm["generateEnabled"] and not llm["keyPresent"]:
+        print(
+            "[startup] WARNING: SLIDERULE_LLM_GENERATE_ENABLED=1 but no LLM_API_KEY in this "
+            "process environment — novel intents WILL fail-closed to blocked 0/6. "
+            "Put LLM_API_KEY in the repo-root .env (or slide-rule-python/.env) and restart."
+        )
     # Load persisted V5 sessions
     app.state.sessions = load_all()
     print(f"Loaded {len(app.state.sessions)} V5 sessions.")
@@ -162,6 +222,9 @@ async def health():
         "migration": "v5-baseline",
         "source": "python",
         "provenance": "backend:slide-rule-python",
+        # LLM 配置就绪度（无密钥明文）：keyPresent=false + generateEnabled=true
+        # 意味着新颖意图必然 blocked 0/6 —— 让 health 一眼可诊断。
+        "llm": _llm_readiness(),
         "readiness": "ready",
         "probes": {
             "liveness": "/health",
