@@ -59,6 +59,12 @@ async def lifespan(app: FastAPI):
     # Load persisted V5 sessions
     app.state.sessions = load_all()
     print(f"Loaded {len(app.state.sessions)} V5 sessions.")
+    # skill.invoke / mcp.call production runtimes (node-bridge strangler; see
+    # services/node_bridge_runtime.py). Without this the executor degrades.
+    from services.node_bridge_runtime import configure_node_bridge_runtimes
+
+    if configure_node_bridge_runtimes():
+        print("[startup] node-bridge skill/mcp runtimes configured.")
     # TODO: init vector DB, knowledge like original Python project for RAG
     yield
     print("Persisting V5 sessions on shutdown...")

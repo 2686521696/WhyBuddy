@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # Internal key for SlideRule delegation (from Node)
     SLIDE_RULE_INTERNAL_KEY: str = "dev-slide-rule-internal"
 
+    # Node-bridge runtime for skill.invoke / mcp.call (strangler migration).
+    # Python owns the runtime boundary; execution is bridged to Node's existing
+    # /api/skills/:id/execute and /api/mcp/nodes/execute until native adapters land.
+    NODE_BRIDGE_RUNTIME_ENABLED: bool = True
+    NODE_BRIDGE_BASE_URL: str = "http://localhost:3001"
+
     # AgentLoop worker bridge (108): builds commands for existing Node queue runner.
     # Node remains execution owner; Python owns command construction + receipts.
     # Safe defaults; do not assume node present in dry-run.

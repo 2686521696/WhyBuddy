@@ -34,8 +34,8 @@
 | /drive-full /drive-marathon /coverage /drive-full-stream | ✅ 薄代理 | ✅（含 stream） | 迁移到Python（已完成） | Python 另有顶层 /api/sliderule/drive-full 宽松鉴权 |
 | /respond（legacy 会话应答） | 🗄️ legacy 路径 | 无 | 放弃删除 | 仅 legacy 分支可达 |
 | sessions/__clear、__reload 测试钩子 | ❌ 测试用 | 无 | 保留Node薄代理 | 仅测试环境 |
-| skills.ts（Skill 注册/版本/指标） | ❌ Node | services/v5_skill_runtime_graph.py、skill_runtime.py（无路由） | **迁移到Python（高优）** | skill.invoke 是金链路"Skill 联动"关键 |
-| mcp.ts（mcp.call） | ❌ Node（node-adapter） | services/mcp_runtime.py（无路由） | **迁移到Python（高优）** | 历史"外部工具调用失败"痛点来源 |
+| skills.ts（Skill 注册/版本/指标） | ❌ Node 注册面保留 | skill.invoke 运行时边界 ✅ Python 拥有（node_bridge_runtime.py，2026-07：启动时注入 node-bridge 适配器，执行暂桥接 Node /api/skills/:id/execute） | 进行中（下一步：Python 原生 skill 注册表替换桥接） | 绞杀者模式：换适配器即可切原生，调用方不感知 |
+| mcp.ts（mcp.call） | ❌ Node adapter 保留为桥接后端 | mcp.call 运行时边界 ✅ Python 拥有（node-bridge 适配器桥接 /api/mcp/nodes/execute；denied/approval 翻译回 Python 错误语义） | 进行中（下一步：Python 原生 MCP client） | NODE_BRIDGE_RUNTIME_ENABLED / NODE_BRIDGE_BASE_URL 可配 |
 | nl-command.ts | ❌ Node（直连 llm-client） | services/nl_command_runtime.py（无路由） | 迁移到Python | 一句话入口相关 |
 | health.ts / persistence-health.ts | ✅ health 已代理；persistence ❌ | /health /ready /api/observability | 保留Node薄代理 | persistence-health 可并入 Python observability |
 
