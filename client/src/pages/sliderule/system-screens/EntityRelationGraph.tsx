@@ -14,6 +14,7 @@ import {
   type ErGraphNode,
   type FiveSystemModel,
 } from "./five-system-model";
+import { useG6Graph } from "./use-g6";
 
 const CARD_W = 232;
 const ROW_H = 22;
@@ -57,28 +58,13 @@ export function EntityRelationGraph({
   datamodel: FiveSystemModel["datamodel"] | null | undefined;
   className?: string;
 }) {
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
   const data = React.useMemo(() => deriveErGraphData(datamodel), [datamodel]);
 
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !data) return;
-    // 屏可能以 hidden 状态常挂载（ActiveSystemScreen），尺寸为 0 时建图会
-    // 退化成 100×100 默认画布——延迟到容器真正有尺寸再创建，并随尺寸跟随。
-    let graph: Graph | null = null;
-    let destroyed = false;
-    const ensure = (w: number, h: number) => {
-      if (destroyed || w <= 0 || h <= 0) return;
-      if (graph) {
-        graph.setSize(w, h);
-        graph.fitView().catch(() => {});
-        return;
-      }
-      graph = createGraph(container, w, h);
-      graph.render();
-    };
-    const createGraph = (el: HTMLElement, width: number, height: number) => new Graph({
-      container: el,
+  const containerRef = useG6Graph(
+    data
+      ? (container, width, height) =>
+          new Graph({
+      container,
       width,
       height,
       autoFit: { type: "view", options: { when: "always" } },
@@ -127,20 +113,10 @@ export function EntityRelationGraph({
         ranksep: 64,
       },
       behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
-    });
-
-    ensure(container.clientWidth, container.clientHeight);
-    const ro =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => ensure(container.clientWidth, container.clientHeight))
-        : null;
-    ro?.observe(container);
-    return () => {
-      destroyed = true;
-      ro?.disconnect();
-      graph?.destroy();
-    };
-  }, [data]);
+          })
+      : null,
+    [data]
+  );
 
   if (!data) return null;
 

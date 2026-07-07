@@ -484,6 +484,53 @@ export function deriveErGraphData(
   return { nodes, edges };
 }
 
+// --- 流程图数据（G6 渲染路径） ---------------------------------------------
+
+export interface WfGraphNode {
+  id: string;
+  name: string;
+  /** assigneeRole 原文（未声明为 null） */
+  role: string | null;
+  /** 角色是否在 rbac.roles 里声明（未声明如实标红） */
+  roleResolved: boolean;
+  /** 无入边 = 流程起点（与 live-runtime.startNodeId 同一判定） */
+  isStart: boolean;
+  /** 无出边 = 终点（approve 到此即 completed） */
+  isTerminal: boolean;
+}
+
+export interface WfGraphEdge {
+  from: string;
+  to: string;
+  condition: string | null;
+}
+
+export function deriveWorkflowGraphData(
+  model: FiveSystemModel | null | undefined
+): { nodes: WfGraphNode[]; edges: WfGraphEdge[] } | null {
+  const wfNodes = model?.workflow?.nodes ?? [];
+  if (wfNodes.length === 0) return null;
+  const transitions = model?.workflow?.transitions ?? [];
+  const hasInbound = new Set(transitions.map((t) => t.to));
+  const hasOutbound = new Set(transitions.map((t) => t.from));
+  const declaredRoles = new Set(model?.rbac?.roles ?? []);
+  return {
+    nodes: wfNodes.map((n) => ({
+      id: n.id,
+      name: n.name || n.id,
+      role: n.assigneeRole || null,
+      roleResolved: !n.assigneeRole || declaredRoles.has(n.assigneeRole),
+      isStart: !hasInbound.has(n.id),
+      isTerminal: !hasOutbound.has(n.id),
+    })),
+    edges: transitions.map((t) => ({
+      from: t.from,
+      to: t.to,
+      condition: t.condition || null,
+    })),
+  };
+}
+
 export function datamodelToMermaid(
   datamodel: FiveSystemModel["datamodel"] | null | undefined
 ): string | null {

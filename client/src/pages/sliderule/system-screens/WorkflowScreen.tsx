@@ -15,6 +15,7 @@ import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
+import { WorkflowGraph } from "./WorkflowGraph";
 import {
   type FiveSystemModel,
   type SkillRuntimeGraphLike,
@@ -162,6 +163,11 @@ export function WorkflowScreen({
         {/* Diagram */}
         {sourceKind === "placeholder" ? (
           <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
+        ) : sourceKind === "model" && model ? (
+          // 结构化模型在手 → G6 活图（角色着色 + 试运行实例实时高亮）
+          <div className="min-h-0 min-w-0 flex-1">
+            <WorkflowGraph model={model} sessionId={sessionId} />
+          </div>
         ) : (
           <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
             <MermaidDiagram chart={diagram ?? ""} className="h-full w-full" />

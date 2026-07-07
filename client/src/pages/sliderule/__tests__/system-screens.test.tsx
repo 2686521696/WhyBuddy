@@ -31,6 +31,7 @@ import {
   crossSkillEdgesToMermaid,
   datamodelToMermaid,
   deriveErGraphData,
+  deriveWorkflowGraphData,
   evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
@@ -632,6 +633,19 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
       { source: "birth_info", target: "user_profile", label: "user_ref" },
     ]);
     expect(deriveErGraphData({ entities: [] })).toBeNull();
+  });
+
+  it("deriveWorkflowGraphData：始/终判定、角色解析、条件边（G6 活图路径）", () => {
+    const data = deriveWorkflowGraphData(MODEL)!;
+    const byId = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
+    expect(byId.submit.isStart).toBe(false); // approve→submit 退回边使其有入边
+    expect(byId.ghost.isStart).toBe(true); // 无入边
+    expect(byId.ghost.isTerminal).toBe(true); // 无出边
+    expect(byId.submit.roleResolved).toBe(true);
+    expect(byId.ghost.role).toBe("not_a_role");
+    expect(byId.ghost.roleResolved).toBe(false); // 未在 rbac.roles 声明 → 标红
+    expect(data.edges).toContainEqual({ from: "submit", to: "approve", condition: "容量未满" });
+    expect(deriveWorkflowGraphData({})).toBeNull();
   });
 
   // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，
