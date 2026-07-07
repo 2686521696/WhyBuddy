@@ -50,6 +50,7 @@ import {
 
 import { downloadSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
 import { deriveLatestTurnFromState } from "./sliderule/derive-persisted-turn";
+import { deriveTurnPhases } from "./sliderule/derive-turn-phases";
 import {
   PROJECTION_DENSITY_STORAGE_KEY,
   SLIDERULE_TERMINAL_NODE_ID,
@@ -167,7 +168,7 @@ function assistantTextForTurn(turn: UiTurn, publishClosure?: PublishClosureSumma
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
   if (finalStepText) return finalStepText;
   // 不再回退到最后一枚过程 chip（会把「指令已接收 · 启动推理」当成回答复读）；
-  // 过程细节由 TurnStepsDisclosure 折叠承载，这里只给结论句。
+  // 过程细节由 TurnPhaseTimeline 分阶段折叠承载，这里只给结论句。
   if (publishClosure) {
     const status = publishClosure.blocked ? "发布闭环被阻塞" : "五系统推演完成，发布闭环已收口";
     return `${status}：${publishClosure.evidencePresentCount}/${publishClosure.skillCount} 个系统证据可用，版本钉扎${publishClosure.versionPinsChecked ? "已检查" : "未完成"}。`;
@@ -176,35 +177,95 @@ function assistantTextForTurn(turn: UiTurn, publishClosure?: PublishClosureSumma
 }
 
 /**
- * TurnStepsDisclosure — Claude 式过程折叠。
- * 运行中：实时流出最近 3 步（部分可见），「展开」看全程；
- * 完成后：折叠成一行「推演过程 · N 步」，点开回看全部——过程不打扰结论。
+ * TurnPhaseTimeline — Claude 式分阶段过程叙事（V5.2 闭环的阶段结构）。
+ * 运行中：已完成阶段折叠成 ✓ 标题行，当前阶段展开、实时流出步骤；
+ * 完成后：整体折叠为一行「推演过程 · M 阶段 · N 步」，点开按阶段回放。
  */
-function TurnStepsDisclosure({ turn }: { turn: UiTurn }) {
-  const [expanded, setExpanded] = React.useState(false);
-  const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
-  if (stepTexts.length === 0) return null;
+function TurnPhaseTimeline({
+  turn,
+  llmDraft = "",
+  publishClosure,
+}: {
+  turn: UiTurn;
+  llmDraft?: string;
+  publishClosure?: PublishClosureSummary | null;
+}) {
   const streaming = turn.status === "streaming";
-  const visible = expanded ? stepTexts : streaming ? stepTexts.slice(-3) : [];
+  const [expanded, setExpanded] = React.useState(false);
+  // 手动展开的已完成阶段（运行中默认只展开当前阶段）
+  const [openPhases, setOpenPhases] = React.useState<Record<string, boolean>>({});
+  const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
+  const phases = React.useMemo(
+    () =>
+      deriveTurnPhases({
+        stepTexts,
+        streaming,
+        llmDraft,
+        closure: publishClosure
+          ? {
+              blocked: !!publishClosure.blocked,
+              evidencePresentCount: publishClosure.evidencePresentCount ?? 0,
+              skillCount: publishClosure.skillCount ?? 6,
+            }
+          : null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stepTexts.join("\n"), streaming, llmDraft, publishClosure]
+  );
+  if (phases.length === 0) return null;
+
+  const totalSteps = stepTexts.length;
+  const showBody = streaming || expanded;
 
   return (
-    <div className="mt-1" data-testid="sliderule-turn-steps">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
-        data-testid="sliderule-turn-steps-toggle"
-      >
-        <span className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
-        推演过程 · {stepTexts.length} 步{streaming && !expanded ? "（实时）" : ""}
-      </button>
-      {visible.length > 0 && (
-        <div className={`mt-1 space-y-1 border-l border-[#EFEBE2] pl-3 ${expanded ? "max-h-64 overflow-y-auto" : ""}`}>
-          {visible.map((t, i) => (
-            <div key={i} className="text-xs leading-5 text-stone-400">
-              {t}
-            </div>
-          ))}
+    <div className="mt-1" data-testid="sliderule-turn-phases">
+      {!streaming && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
+          data-testid="sliderule-turn-steps-toggle"
+        >
+          <span className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
+          推演过程 · {phases.length} 阶段 · {totalSteps} 步
+        </button>
+      )}
+      {showBody && (
+        <div className="mt-1.5 space-y-1.5">
+          {phases.map((phase) => {
+            const running = phase.status === "running";
+            const open = running || !!openPhases[phase.id] || (!streaming && expanded);
+            return (
+              <div key={phase.id} data-testid={`sliderule-phase-${phase.id}`}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenPhases((prev) => ({ ...prev, [phase.id]: !open }))
+                  }
+                  className="flex items-center gap-2 text-xs transition-colors hover:text-stone-700"
+                >
+                  {running ? (
+                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#D97757]" />
+                  ) : (
+                    <span className="shrink-0 text-emerald-500">✓</span>
+                  )}
+                  <span className={running ? "font-medium text-stone-700" : "text-stone-500"}>
+                    {phase.title}
+                  </span>
+                  <span className="text-[10px] text-stone-300">{phase.lines.length} 步</span>
+                </button>
+                {open && phase.lines.length > 0 && (
+                  <div className="ml-1 mt-1 space-y-1 border-l border-[#EFEBE2] pl-4">
+                    {(running ? phase.lines.slice(-4) : phase.lines).map((t, i) => (
+                      <div key={i} className="text-xs leading-5 text-stone-400">
+                        {t}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -320,7 +381,7 @@ function ClaudeChatSurface({
                           </span>
                           {thinkingText}
                         </div>
-                        <TurnStepsDisclosure turn={turn} />
+                        <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
                         {/* LLM 实时想法：五系统生成期间流式滚出原始草稿尾部
                             （新颖意图路径独有；确定性域秒出、无此窗口） */}
                         {llmDraft && (
@@ -339,7 +400,7 @@ function ClaudeChatSurface({
                     ) : (
                       <div className="space-y-2 text-[15px] leading-7 text-stone-800">
                         <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
-                        <TurnStepsDisclosure turn={turn} />
+                        <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
                         <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
                           {publishClosure && (
                             <span className="rounded-full bg-[#F0EDE5] px-2 py-0.5">
