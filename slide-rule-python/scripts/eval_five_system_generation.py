@@ -36,6 +36,7 @@ from services.v5_llm_generate import generate_five_system_model  # noqa: E402
 from services.v5_model_gate import validate_five_system_model, DANGLING  # noqa: E402
 from services.v5_content_quality import analyze_content_quality  # noqa: E402
 from services.v5_llm_judge import judge_content_quality  # noqa: E402
+from services.v5_eval_baseline import compare_eval_baseline  # noqa: E402
 
 REPO_ROOT = _HERE.parent.parent.parent
 DEFAULT_OUT = REPO_ROOT / "docs" / "five-system-generation-eval.md"
@@ -250,7 +251,36 @@ def _fmt_names(names: List[str], limit: int = 12) -> str:
     return "、".join(shown) + suffix
 
 
-def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
+def render_baseline_section(cmp: Dict[str, Any], baseline_meta: Dict[str, Any]) -> List[str]:
+    """基线对比节：只报回归（fail/warn/info），不为持平/变好发奖。"""
+    lines: List[str] = []
+    lines.append("## 基线对比")
+    lines.append("")
+    lines.append(f"- 基线：生成于 {baseline_meta.get('generatedAt') or '未知时间'}"
+                 f"，模型 `{baseline_meta.get('model') or 'unknown'}`"
+                 f"，覆盖 {cmp.get('comparedDomains', 0)} 个可比域")
+    findings = cmp.get("findings") or []
+    fails = cmp.get("regressionFailCount", 0)
+    warns = sum(1 for f in findings if f.get("severity") == "warn")
+    if not findings:
+        lines.append("- 结论：✅ 无回归（所有可比域均不差于基线）")
+    else:
+        lines.append(f"- 结论：{'❌' if fails else '⚠️' if warns else 'ℹ️'} "
+                     f"{fails} 项回归级 fail / {warns} 项趋势 warn"
+                     "（fail 参与 --content-gate 退出码）")
+        icon = {"fail": "❌", "warn": "⚠️", "info": "ℹ️"}
+        for f in findings:
+            lines.append(f"  - {icon.get(f.get('severity'), '·')} `{f.get('code')}` — {f.get('detail')}")
+    lines.append("")
+    return lines
+
+
+def render_report(
+    results: List[Dict[str, Any]],
+    model_id: str,
+    baseline_cmp: Optional[Dict[str, Any]] = None,
+    baseline_meta: Optional[Dict[str, Any]] = None,
+) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: List[str] = []
     lines.append("# 五系统模型多域生成质量评测（Five-System Generation Eval）")
@@ -380,6 +410,9 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
         for f in (r.get("content") or {}).get("findings", [])
         if f.get("severity") == "warn"
     )
+    if baseline_cmp is not None:
+        lines.extend(render_baseline_section(baseline_cmp, baseline_meta or {}))
+
     lines.append("## 结论（诚实版）")
     lines.append("")
     lines.append(f"- 生成成功 {generated}/{len(results)}，Gate 通过 {passed}/{len(results)}。")
@@ -403,6 +436,10 @@ def main() -> int:
                         help="内容质量回归门：任一领域出现 hard-fail 级 finding 则退出码 1")
     parser.add_argument("--judge", action="store_true",
                         help="附加 LLM-as-judge 三维评分（每域多一次真实 LLM 调用）")
+    parser.add_argument("--json-out", default=None,
+                        help="将机器可读结果写入 JSON（可作为下次运行的 --baseline 输入）")
+    parser.add_argument("--baseline", default=None,
+                        help="与基线 JSON 比对，报告附「基线对比」节；回归级 fail 参与 --content-gate 退出码")
     args = parser.parse_args()
 
     _load_env_file()
@@ -429,22 +466,50 @@ def main() -> int:
         if i + 1 < len(domains):
             time.sleep(args.sleep)
 
-    report = render_report(results, os.getenv("LLM_MODEL", ""))
+    payload = {
+        "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "model": os.getenv("LLM_MODEL", ""),
+        "domains": [{k: v for k, v in r.items() if k != "fit"} for r in results],
+    }
+
+    baseline_cmp: Optional[Dict[str, Any]] = None
+    baseline_meta: Dict[str, Any] = {}
+    if args.baseline:
+        try:
+            baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[eval] WARNING: baseline unreadable ({exc}) — skipping comparison")
+            baseline = None
+        if isinstance(baseline, dict):
+            baseline_cmp = compare_eval_baseline(payload, baseline)
+            baseline_meta = {"generatedAt": baseline.get("generatedAt"), "model": baseline.get("model")}
+            print(f"[eval] baseline comparison: {baseline_cmp['regressionFailCount']} regression fail(s), "
+                  f"{sum(1 for f in baseline_cmp['findings'] if f['severity'] == 'warn')} warn(s)")
+
+    report = render_report(results, os.getenv("LLM_MODEL", ""), baseline_cmp, baseline_meta)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report, encoding="utf-8")
     print(f"[eval] report written: {out_path}")
+
+    if args.json_out:
+        json_path = Path(args.json_out)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[eval] json written: {json_path}")
+    else:
+        # Dump raw JSON to stdout for debugging when no --json-out is given.
+        print(json.dumps(payload["domains"], ensure_ascii=False, indent=None))
+
     content_fails = sum((r.get("content") or {}).get("hardFailCount", 0) for r in results)
+    regression_fails = (baseline_cmp or {}).get("regressionFailCount", 0)
     if content_fails:
         print(f"[eval] content-quality hard fails: {content_fails}")
-    if args.content_gate and content_fails:
+    if regression_fails:
+        print(f"[eval] baseline regression fails: {regression_fails}")
+    if args.content_gate and (content_fails or regression_fails):
         print("[eval] CONTENT GATE FAILED (--content-gate)")
         return 1
-    # Also dump raw JSON next to the report for debugging (not committed by default).
-    print(json.dumps(
-        [{k: v for k, v in r.items() if k not in ("fit", "findings")} for r in results],
-        ensure_ascii=False, indent=None,
-    ))
     return 0
 
 
