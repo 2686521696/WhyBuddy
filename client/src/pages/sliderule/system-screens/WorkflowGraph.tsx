@@ -40,7 +40,8 @@ const HIGHLIGHT = "#D97757";
 const CARD_W = 208;
 const CARD_H = 66;
 
-function roleColor(role: string | null, roles: string[]): string {
+/** 角色 → 色板颜色（图例条与节点卡共用，保证一致）。 */
+export function roleColor(role: string | null, roles: string[]): string {
   if (!role) return ROLE_FALLBACK;
   const idx = roles.indexOf(role);
   return idx >= 0 ? ROLE_PALETTE[idx % ROLE_PALETTE.length] : ROLE_FALLBACK;
@@ -140,13 +141,24 @@ const NODE_TYPES = { wfNode: WfNodeCard };
 /** dagre TB 布局：返回 nodeId → 左上角坐标（React Flow 用左上角定位）。 */
 function layoutPositions(
   nodes: WfGraphNode[],
-  edges: Array<{ from: string; to: string }>
+  edges: Array<{ from: string; to: string; condition?: string | null }>
 ): Record<string, { x: number; y: number }> {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "TB", nodesep: 56, ranksep: 72, edgesep: 24 });
+  const g = new dagre.graphlib.Graph({ multigraph: true });
+  g.setGraph({ rankdir: "TB", nodesep: 56, ranksep: 48, edgesep: 24 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const n of nodes) g.setNode(n.id, { width: CARD_W, height: CARD_H });
-  for (const e of edges) g.setEdge(e.from, e.to);
+  // 条件标签尺寸喂给 dagre（中文≈10px/字）——层间距按标签自动撑开，不压卡
+  for (const [i, e] of edges.entries()) {
+    const cond = (e as { condition?: string | null }).condition ?? "";
+    g.setEdge(
+      e.from,
+      e.to,
+      cond
+        ? { width: cond.length * 10.5 + 16, height: 20, labelpos: "c" }
+        : { width: 8, height: 4 },
+      `t-${i}`
+    );
+  }
   dagre.layout(g);
   const pos: Record<string, { x: number; y: number }> = {};
   for (const n of nodes) {

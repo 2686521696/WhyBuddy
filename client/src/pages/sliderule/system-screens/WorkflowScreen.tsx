@@ -15,7 +15,7 @@ import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
-import { WorkflowGraph } from "./WorkflowGraph";
+import { WorkflowGraph, roleColor } from "./WorkflowGraph";
 import {
   type FiveSystemModel,
   type SkillRuntimeGraphLike,
@@ -97,6 +97,24 @@ export function WorkflowScreen({
     (r) => r.role.ref && !r.role.resolved
   ).length;
 
+  // 图例条数据：按角色聚合（color 与图上节点色条一致）
+  const roleLegend = useMemo(() => {
+    const declaredRoles = model?.rbac?.roles ?? [];
+    const byRole = new Map<string, { role: string; resolved: boolean; count: number; color: string }>();
+    for (const { role } of roleResolutions) {
+      if (!role.ref) continue;
+      const entry = byRole.get(role.ref) ?? {
+        role: role.ref,
+        resolved: role.resolved,
+        count: 0,
+        color: roleColor(role.ref, declaredRoles),
+      };
+      entry.count += 1;
+      byRole.set(role.ref, entry);
+    }
+    return [...byRole.values()];
+  }, [roleResolutions, model?.rbac?.roles]);
+
   const evidence = publishClosure?.perSkillEvidence?.["workflow"];
 
   return (
@@ -159,52 +177,58 @@ export function WorkflowScreen({
       {screenMode === "runtime" && sourceKind === "model" && model ? (
         <WorkflowRuntimePanel model={model} sessionId={sessionId} />
       ) : (
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Diagram */}
-        {sourceKind === "placeholder" ? (
-          <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
-        ) : sourceKind === "model" && model ? (
-          // 结构化模型在手 → G6 活图（角色着色 + 试运行实例实时高亮）
-          <div className="min-h-0 min-w-0 flex-1">
-            <WorkflowGraph model={model} sessionId={sessionId} />
-          </div>
-        ) : (
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
-            <MermaidDiagram chart={diagram ?? ""} className="h-full w-full" />
+      <>
+        {/* 角色图例条 — 取代早期的节点角色侧表（与节点卡信息重复且占 1/4 画布）。
+            色点与图上节点色条一致；未在 RBAC 声明的角色照旧 ✗ 标红（fail-closed）。 */}
+        {sourceKind === "model" && roleLegend.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 border-b border-[#EFEBE2] bg-[#FBF9F4] px-4 py-1.5"
+            data-testid="workflow-node-roles"
+          >
+            <span className="text-[10px] text-stone-400">审批人角色</span>
+            {roleLegend.map((entry) => (
+              <span
+                key={entry.role}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] ring-1 ${
+                  entry.resolved
+                    ? "bg-white text-stone-600 ring-[#E7E2D9]"
+                    : "bg-red-50 text-red-600 ring-red-200"
+                }`}
+                title={
+                  entry.resolved
+                    ? `${entry.count} 个节点由 ${entry.role} 审批`
+                    : `角色未在 RBAC 定义：${entry.role}`
+                }
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: entry.resolved ? entry.color : "#ff4d4f" }}
+                />
+                {`${entry.resolved ? "✓" : "✗"} ${entry.role}`}
+                <span className={entry.resolved ? "text-stone-400" : "text-red-400"}>×{entry.count}</span>
+              </span>
+            ))}
+            <span className="ml-auto hidden text-[10px] text-stone-300 sm:inline">
+              虚线 = 回退/驳回 · 珊瑚高亮 = 实例当前位置
+            </span>
           </div>
         )}
 
-        {/* Node/assignee table — only when the structured model is present */}
-        {sourceKind === "model" && nodes.length > 0 && (
-          <div className="w-64 shrink-0 overflow-auto border-l border-[#EFEBE2]">
-            <div className="sticky top-0 z-10 bg-[#F5F1EA] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
-              节点 → 审批人角色（RBAC）
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {sourceKind === "placeholder" ? (
+            <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
+          ) : sourceKind === "model" && model ? (
+            // 结构化模型在手 → 活图（角色着色 + 试运行实例实时高亮）
+            <div className="min-h-0 min-w-0 flex-1">
+              <WorkflowGraph model={model} sessionId={sessionId} />
             </div>
-            <ul className="divide-y divide-[#EFEBE2]" data-testid="workflow-node-roles">
-              {roleResolutions.map(({ node, role }) => (
-                <li key={node.id} className="px-3 py-2 text-xs">
-                  <div className="font-medium text-stone-800">{node.name || node.id}</div>
-                  <div className="mt-1">
-                    {role.ref ? (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
-                          role.resolved
-                            ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
-                            : "bg-red-50 text-red-600 ring-1 ring-red-200"
-                        }`}
-                      >
-                        {role.resolved ? "✓" : "✗"} {role.label}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-stone-300">无审批人</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
+              <MermaidDiagram chart={diagram ?? ""} className="h-full w-full" />
+            </div>
+          )}
+        </div>
+      </>
       )}
 
     </div>

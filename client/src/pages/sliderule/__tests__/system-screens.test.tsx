@@ -280,14 +280,13 @@ describe("five-system-model 解析", () => {
 // ---------------------------------------------------------------------------
 
 describe("WorkflowScreen", () => {
-  it("模型存在时渲染节点/转移计数 + 节点角色表", () => {
+  it("模型存在时渲染节点/转移计数 + 角色图例条", () => {
     const html = renderToStaticMarkup(
       <WorkflowScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />
     );
     expect(html).toContain("3 节点 · 2 转移");
-    expect(html).toContain("提交选课");
-    expect(html).toContain("教务审批");
     expect(html).toContain('data-testid="workflow-node-roles"');
+    expect(html).toContain("×1"); // 角色聚合计数
     expect(html).toContain("evidence ✓");
     // 占位提示不应出现
     expect(html).not.toContain("推演完成后将显示真实业务流程");
@@ -489,7 +488,7 @@ describe("ActiveSystemScreen 派发", () => {
       <ActiveSystemScreen activeSkillId="workflow" publishClosure={closureWithModel} />
     );
     expect(workflowHtml).toContain("3 节点 · 2 转移");
-    expect(workflowHtml).toContain("提交选课");
+    expect(workflowHtml).toContain("✓ student"); // 角色图例条（节点卡在画布内，静态渲染不含）
     const aigcHtml = renderToStaticMarkup(
       <ActiveSystemScreen activeSkillId="aigc" publishClosure={closureWithModel} />
     );
