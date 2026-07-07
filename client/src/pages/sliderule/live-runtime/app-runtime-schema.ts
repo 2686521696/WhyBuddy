@@ -6,7 +6,7 @@
  * 纯函数模块：模型进、schema 出，无副作用，便于单测。
  */
 
-import type { FiveSystemModel, FiveSystemField } from "../system-screens/five-system-model";
+import { guessRefEntityId, type FiveSystemModel, type FiveSystemField } from "../system-screens/five-system-model";
 
 export interface AppFormFieldSchema {
   id: string;
@@ -121,11 +121,11 @@ export function deriveAppRuntimeSchema(
     const entity = entityId ? entityById.get(entityId) : undefined;
     const allFields = (entity?.fields ?? []).map(toFieldSchema);
 
-    // ref 字段解析目标实体（"xxx_ref"/type ref → 猜同名实体），供下拉渲染。
+    // ref 字段解析目标实体（"xxx_ref"/type ref → 词干唯一匹配），供下拉渲染。
     for (const f of allFields) {
-      if (f.type === "ref") {
-        const guess = f.id.replace(/_ref$/, "").replace(/_id$/, "");
-        if (entityById.has(guess)) f.refEntityId = guess;
+      if (f.type === "ref" || /_ref$/.test(f.id)) {
+        const guess = guessRefEntityId(f.id, entityById.keys());
+        if (guess && guess !== entityId) f.refEntityId = guess;
       }
     }
 

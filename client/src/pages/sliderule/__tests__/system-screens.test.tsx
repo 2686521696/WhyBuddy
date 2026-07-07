@@ -583,6 +583,40 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(datamodelToMermaid(undefined)).toBeNull();
   });
 
+  it("datamodelToMermaid：ref/*_ref 字段生成关联边（词干唯一匹配，歧义不画线）", () => {
+    // 复现真实产出的命名形态：user_ref→user_profile（包含）、birth_ref→birth_info（前缀）、
+    // chart_ref→wuyun_liuqi_chart（后缀）
+    const diagram = datamodelToMermaid({
+      entities: [
+        { id: "user_profile", fields: [{ id: "user_id", type: "string" }] },
+        { id: "birth_info", fields: [{ id: "user_ref", type: "ref" }] },
+        { id: "wuyun_liuqi_chart", fields: [{ id: "birth_ref", type: "ref" }] },
+        {
+          id: "constitution_assessment",
+          fields: [
+            { id: "chart_ref", type: "ref" },
+            { id: "user_ref", type: "string" }, // 命名约定即可，不要求 type=ref
+          ],
+        },
+      ],
+    })!;
+    expect(diagram).toContain('user_profile ||--o{ birth_info : "user_ref"');
+    expect(diagram).toContain('birth_info ||--o{ wuyun_liuqi_chart : "birth_ref"');
+    expect(diagram).toContain('wuyun_liuqi_chart ||--o{ constitution_assessment : "chart_ref"');
+    expect(diagram).toContain('user_profile ||--o{ constitution_assessment : "user_ref"');
+    // user_profile 自己的 user_id 不产生自引用边
+    expect(diagram).not.toContain("user_profile ||--o{ user_profile");
+    // 歧义（两个候选）不画线
+    const ambiguous = datamodelToMermaid({
+      entities: [
+        { id: "order_item", fields: [] },
+        { id: "order_log", fields: [] },
+        { id: "shipment", fields: [{ id: "order_ref", type: "ref" }] },
+      ],
+    })!;
+    expect(ambiguous).not.toContain("||--o{ shipment");
+  });
+
   // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，
   // 否则其他隐藏屏的占位文案会串进同一份 HTML。
   it("DataModel 屏 reload 路径：模型实体重建真实 ER，不再显示采购占位", () => {

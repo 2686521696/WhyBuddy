@@ -405,11 +405,32 @@ export function workflowModelToMermaid(
  * （modelSection 持久化在 perSkillEvidence，SSE mermaid 已丢失时用它重建）。
  * entities 为空返回 null（调用方降级，不伪造）。
  */
+/**
+ * ref 字段 → 目标实体推断（"user_ref"/"chart_ref" 这类命名约定）。
+ * 去掉 _ref/_id 后缀得到词干，在实体 id 里找唯一匹配：精确 → 前/后缀 →
+ * 包含；多个候选（歧义）或零候选时返回 null——宁可不画线，不画错线。
+ */
+export function guessRefEntityId(
+  fieldId: string,
+  entityIds: Iterable<string>
+): string | null {
+  const base = fieldId.replace(/_ref$/, "").replace(/_id$/, "");
+  if (!base) return null;
+  const ids = [...entityIds];
+  if (ids.includes(base)) return base;
+  const affix = ids.filter((id) => id.startsWith(`${base}_`) || id.endsWith(`_${base}`));
+  if (affix.length === 1) return affix[0];
+  if (affix.length > 1) return null;
+  const contains = ids.filter((id) => id.includes(base));
+  return contains.length === 1 ? contains[0] : null;
+}
+
 export function datamodelToMermaid(
   datamodel: FiveSystemModel["datamodel"] | null | undefined
 ): string | null {
   const entities = datamodel?.entities ?? [];
   if (entities.length === 0) return null;
+  const entityIds = entities.map((e) => e.id);
   const lines = ["erDiagram"];
   for (const entity of entities) {
     lines.push(`  ${mermaidId(entity.id)} {`);
@@ -419,6 +440,20 @@ export function datamodelToMermaid(
       lines.push(`    ${type} ${name}${field.id === "id" ? " PK" : ""}`);
     }
     lines.push("  }");
+  }
+  // 关联边：ref 类型或 *_ref 命名的字段 → 目标实体（持 ref 的一侧是"多"）
+  const seen = new Set<string>();
+  for (const entity of entities) {
+    for (const field of entity.fields ?? []) {
+      const isRef = String(field.type || "").toLowerCase() === "ref" || /_ref$/.test(field.id);
+      if (!isRef) continue;
+      const target = guessRefEntityId(field.id, entityIds);
+      if (!target || target === entity.id) continue;
+      const key = `${entity.id}->${target}:${field.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`  ${mermaidId(target)} ||--o{ ${mermaidId(entity.id)} : "${mermaidId(field.id)}"`);
+    }
   }
   return lines.join("\n");
 }
