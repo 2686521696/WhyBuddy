@@ -10,9 +10,20 @@ import {
   formatClosureStatusAndTopBlockersForFinalReport,
   renderPublishClosureBlocker,
 } from "./derive-cross-runtime-summary";
+import { deriveRuntimeSnapshotMd } from "./live-runtime/runtime-snapshot";
+import { loadRuntimeRole, loadRuntimeState } from "./live-runtime/runtime-persistence";
+import { parseFiveSystemModelFromPerSkillEvidence } from "./system-screens/five-system-model";
+
+export interface SerializeDeliveryOpts {
+  /** 排练运行时快照 md（deriveRuntimeSnapshotMd 产出；null/缺省 → 不出段） */
+  runtimeSnapshotMd?: string | null;
+}
 
 /** Pure md serializer for Knife C delivery export — does not mutate state. */
-export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
+export function serializeSlideRuleDeliveryMd(
+  state: V5SessionState,
+  opts: SerializeDeliveryOpts = {}
+): string {
   const report = latestTrustedReport(state);
   const seal = deriveTrustSeal(state);
   const replay = replayCoverage(state);
@@ -106,6 +117,12 @@ export function serializeSlideRuleDeliveryMd(state: V5SessionState): string {
         "runtime closure evidence was not found; publish should remain blocked until version pins, runtime snapshot, and per-skill runtime evidence are present."
       );
     }
+    lines.push("");
+  }
+
+  // 排练运行时快照（M3）：有数据才出段，交付物固定格式不变，只多一个附录
+  if (opts.runtimeSnapshotMd) {
+    lines.push(opts.runtimeSnapshotMd.trim());
     lines.push("");
   }
 
@@ -354,8 +371,28 @@ export function enrichReportWriteWithRuntimeClosure(
   };
 }
 
+/**
+ * 装配排练运行时快照：localStorage 里的运行时状态 + 当前角色 + 模型（字段名标注）。
+ * 读不到/无数据 → null，交付物与从前逐字节一致。
+ */
+export function assembleRuntimeSnapshotMdForState(state: V5SessionState): string | null {
+  try {
+    const sessionId = state.sessionId || "";
+    if (!sessionId) return null;
+    const runtime = loadRuntimeState(sessionId);
+    const model = parseFiveSystemModelFromPerSkillEvidence(
+      (state as any).publishClosure?.perSkillEvidence
+    );
+    return deriveRuntimeSnapshotMd(model, runtime, loadRuntimeRole(sessionId));
+  } catch {
+    return null;
+  }
+}
+
 export function downloadSlideRuleDeliveryMd(state: V5SessionState, filename?: string): void {
-  const md = serializeSlideRuleDeliveryMd(state);
+  const md = serializeSlideRuleDeliveryMd(state, {
+    runtimeSnapshotMd: assembleRuntimeSnapshotMdForState(state),
+  });
   const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
