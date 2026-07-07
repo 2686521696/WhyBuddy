@@ -615,6 +615,107 @@ def _call_llm_once(
     )
 
 
+def _call_llm_once_streaming(
+    messages: list[Message],
+    *,
+    cfg: LlmConfig,
+    on_delta: Callable[[str], None],
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 2000,
+    reasoning_effort: str | None = None,
+    timeout_ms: int | None = None,
+) -> LlmResult:
+    """Streaming twin of _call_llm_once — consumes the provider SSE stream,
+    invoking on_delta per content chunk (推演可观测性：让 UI 实时看到 LLM 的
+    生成过程)。语义与非流式版一致：任何失败 raise LlmError，空内容 fail-closed。
+    """
+    if not cfg.api_key:
+        raise LlmError("LLM not configured (no api_key)", transient=False)
+    messages = _normalize_messages(messages)
+    if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
+        raise LlmError(
+            f"provider {cfg.provider_name or cfg.base_url} does not support image content parts",
+            transient=False,
+        )
+    model = model or cfg.model
+    reasoning = reasoning_effort if reasoning_effort is not None else cfg.reasoning_effort
+    timeout_s = (timeout_ms or cfg.timeout_ms) / 1000.0
+    wire = cfg.wire_api
+
+    if wire == "responses":
+        url = f"{cfg.base_url}/responses"
+        payload = _responses_payload(messages, model, temperature, max_tokens, reasoning, True)
+    else:
+        url = f"{cfg.base_url}/chat/completions"
+        payload = _chat_payload(messages, model, temperature, max_tokens, reasoning, True)
+
+    started = time.time()
+    content_parts: list[str] = []
+    usage: dict[str, Any] | None = None
+    finish: str | None = None
+    resolved_model = model
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            with client.stream("POST", url, headers=_headers(cfg.api_key), json=payload) as r:
+                if r.status_code >= 400:
+                    body = r.read().decode("utf-8", "replace")
+                    raise _normalize_error(r.status_code, body)
+                for line in r.iter_lines():
+                    line = (line or "").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        payload_obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(payload_obj, dict):
+                        continue
+                    error_event = _stream_error_from_payload(payload_obj)
+                    if error_event is not None and error_event.error is not None:
+                        raise error_event.error
+                    if isinstance(payload_obj.get("model"), str):
+                        resolved_model = payload_obj["model"]
+                    delta = _extract_stream_delta(payload_obj, wire)
+                    if delta:
+                        content_parts.append(delta)
+                        try:
+                            on_delta(delta)
+                        except Exception:
+                            pass  # observability hook must never break the call
+                    if wire == "responses":
+                        if payload_obj.get("type") == "response.completed":
+                            response = payload_obj.get("response") or {}
+                            if response.get("usage"):
+                                usage = response["usage"]
+                    else:
+                        choice = (payload_obj.get("choices") or [{}])[0]
+                        if isinstance(choice.get("finish_reason"), str):
+                            finish = choice["finish_reason"]
+                        if payload_obj.get("usage"):
+                            usage = payload_obj["usage"]
+    except httpx.TimeoutException as e:
+        raise LlmError(f"timeout after {timeout_s:.0f}s", transient=True) from e
+    except httpx.HTTPError as e:
+        raise LlmError(f"cannot reach {url}: {e}", transient=True) from e
+
+    latency = int((time.time() - started) * 1000)
+    content = "".join(content_parts)
+    if not content.strip():
+        raise LlmError("empty content from LLM (stream)", transient=False)
+    return LlmResult(
+        content=content,
+        usage=usage,
+        finish_reason=finish,
+        model=str(resolved_model),
+        latency_ms=latency,
+        provider=cfg.provider_name,
+    )
+
+
 def call_llm(
     messages: list[Message],
     *,
@@ -624,8 +725,12 @@ def call_llm(
     max_tokens: int = 2000,
     reasoning_effort: str | None = None,
     timeout_ms: int | None = None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> LlmResult:
-    """Provider-chain LLM call. Raises LlmError on any failure (never returns a stub)."""
+    """Provider-chain LLM call. Raises LlmError on any failure (never returns a stub).
+
+    on_delta 提供时走流式（逐块回调内容增量），否则保持既有非流式路径。
+    """
     providers = build_provider_configs(config)
     if not providers:
         raise LlmError("LLM not configured (no provider chain)", transient=False)
@@ -633,6 +738,19 @@ def call_llm(
     last_error: LlmError | None = None
     for _name, cfg in providers:
         try:
+            if on_delta is not None:
+                return _finalize_result(
+                    _call_llm_once_streaming(
+                        messages,
+                        cfg=cfg,
+                        on_delta=on_delta,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        reasoning_effort=reasoning_effort,
+                        timeout_ms=timeout_ms,
+                    )
+                )
             return _finalize_result(
                 _call_llm_once(
                     messages,

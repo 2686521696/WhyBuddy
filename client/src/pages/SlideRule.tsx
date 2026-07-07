@@ -231,6 +231,7 @@ function ClaudeChatSurface({
   liveAction,
   latestTurn,
   publishClosure,
+  llmDraft = "",
   onChallenge,
 }: {
   uiTurns: UiTurn[];
@@ -238,6 +239,8 @@ function ClaudeChatSurface({
   liveAction: LiveAction | null;
   latestTurn: UiTurn | null;
   publishClosure?: PublishClosureSummary | null;
+  /** 五系统 LLM 生成的实时草稿（llm_delta 累积；仅运行中展示尾部）。 */
+  llmDraft?: string;
   onChallenge: (id: string) => void;
 }) {
   const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
@@ -319,6 +322,20 @@ function ClaudeChatSurface({
                           {thinkingText}
                         </div>
                         <TurnStepsDisclosure turn={turn} />
+                        {/* LLM 实时想法：五系统生成期间流式滚出原始草稿尾部
+                            （新颖意图路径独有；确定性域秒出、无此窗口） */}
+                        {llmDraft && (
+                          <div data-testid="sliderule-llm-draft" className="rounded-xl border border-[#E7E2D9] bg-[#2A2620] px-3 py-2.5">
+                            <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-stone-400">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
+                              LLM 实时输出 · 五系统模型起草中 · {llmDraft.length} 字符
+                            </div>
+                            <pre className="max-h-40 overflow-hidden whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-stone-300">
+                              {llmDraft.length > 900 ? `...${llmDraft.slice(-900)}` : llmDraft}
+                              <span className="animate-pulse text-[#D97757]">▊</span>
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-2 text-[15px] leading-7 text-stone-800">
@@ -504,6 +521,7 @@ function SlideRuleUnified({
   activeSkillId = null,
   skillContents = {},
   latestMermaid = null,
+  llmDraft = "",
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -545,6 +563,8 @@ function SlideRuleUnified({
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
   skillContents?: Partial<Record<import("@/lib/sliderule-marathon-driver").SkillId, string>>;
   latestMermaid?: string | null;
+  /** 五系统 LLM 生成的实时草稿（llm_delta 累积）。 */
+  llmDraft?: string;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -610,6 +630,7 @@ function SlideRuleUnified({
               liveAction={liveAction}
               latestTurn={latestTurn}
               publishClosure={publishClosure}
+              llmDraft={isRunning ? llmDraft : ""}
               onChallenge={challengeTurn}
             />
           }
@@ -1067,6 +1088,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     activeSkillId,
     skillContents,
     latestMermaid,
+    llmDraft,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
@@ -1425,6 +1447,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     activeSkillId,
     skillContents,
     latestMermaid,
+    llmDraft,
   };
 
   if (isImmersion) {

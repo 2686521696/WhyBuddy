@@ -343,6 +343,37 @@ def test_closed_closure_has_no_diagnostic_blocker():
     assert report["findingsByTier"]["hard_blocker"] == []
 
 
+def test_stream_emits_llm_delta_during_generation(monkeypatch):
+    """新颖意图生成期间，SSE 流应携带 llm_delta 事件（LLM 实时输出可观测）。"""
+    monkeypatch.setenv("SLIDERULE_LLM_GENERATE_ENABLED", "1")
+    import asyncio
+    import services.v5_llm_generate as v5_llm_generate
+    from services.v5_full_driver import drive_full_v5_session_stream
+
+    def fake_generate(goal, llm_json_fn=None):
+        # 模拟流式：通过模块 sink 逐块吐增量（真实路径由 _default_llm_json_fn
+        # 的 on_delta 驱动），然后返回合法模型。
+        v5_llm_generate._emit_delta('{"datamodel"')
+        v5_llm_generate._emit_delta(": {...}")
+        return _valid_library_model()
+
+    monkeypatch.setattr(v5_llm_generate, "generate_five_system_model", fake_generate)
+    state = _empty_state("图书馆借阅系统")
+
+    async def _collect():
+        events = []
+        async for ev in drive_full_v5_session_stream(state, max_loops=2, user_instruction="图书馆借阅系统"):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(_collect())
+    deltas = [e for e in events if e.get("type") == "llm_delta"]
+    assert len(deltas) >= 1, "generation increments must surface as llm_delta events"
+    assert '"datamodel"' in "".join(d["text"] for d in deltas)
+    # sink 用完即卸载（不泄漏到后续会话）
+    assert v5_llm_generate._delta_sink is None
+
+
 def test_diagnostic_never_affects_closure_hash(monkeypatch):
     """诊断只是留痕：同一 per-skill 证据下，有无诊断 hash 一致（不参与判定）。"""
     monkeypatch.delenv("SLIDERULE_LLM_GENERATE_ENABLED", raising=False)

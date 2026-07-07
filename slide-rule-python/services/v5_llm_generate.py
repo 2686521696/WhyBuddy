@@ -83,6 +83,27 @@ Rules:
 # fail-closed 判定完全不读它——它只是留痕，不参与 trust/gate）。
 last_generate_diagnostic: Dict[str, Any] = {}
 
+# 实时增量回调（推演可观测性）：驱动层注册后，五系统 LLM 生成的内容增量会
+# 逐块推给它（SSE llm_delta → 前端左栏实时草稿）。只是观测钩子——不参与
+# 生成结果、gate、trust 判定；回调异常被吞掉，永不影响调用本身。
+# 注意：模块级单 sink，多会话并发时增量会交织（本地单人 dev 可接受）。
+_delta_sink: Optional[Callable[[str], None]] = None
+
+
+def set_generate_delta_sink(sink: "Optional[Callable[[str], None]]") -> None:
+    global _delta_sink
+    _delta_sink = sink
+
+
+def _emit_delta(chunk: str) -> None:
+    sink = _delta_sink
+    if sink is None:
+        return
+    try:
+        sink(chunk)
+    except Exception:
+        pass
+
 # _default_llm_json_fn 内部最近一次调用失败的原因（LlmError / 异常文本）。
 _last_call_error: str = ""
 
@@ -107,6 +128,8 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
             max_shape_retries=1,
             temperature=0.2,
             max_tokens=4000,
+            # sink 已注册时走流式：内容增量实时推给 UI（llm_delta）。
+            on_delta=_emit_delta if _delta_sink is not None else None,
         )
         return parsed if isinstance(parsed, dict) else None
     except LlmError as exc:

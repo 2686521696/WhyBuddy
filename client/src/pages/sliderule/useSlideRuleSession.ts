@@ -191,6 +191,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // Accumulated per-skill content from SSE skill_result events (raw model/mermaid).
   const [skillContents, setSkillContents] = useState<Partial<Record<SkillId, string>>>({});
   const [latestMermaid, setLatestMermaid] = useState<string | null>(null);
+  // 五系统 LLM 生成的实时草稿（llm_delta 累积）：运行中在左栏流式展示，
+  // 新一轮开始时清空。只是观测投影——真实模型仍以 gate 通过的闭环证据为准。
+  const [llmDraft, setLlmDraft] = useState<string>("");
 
   // M2: drive mode (persisted for session; default "single" per spec)
   const [driveMode, setDriveMode] = useState<SlideRuleRuntime.SlideRuleDriveMode>(() => {
@@ -664,9 +667,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               progressType: "thinking",
             });
           };
+          setLlmDraft("");
+          let llmDraftStarted = false;
           const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
             stopSignal: controller.signal,
             turnId,
+            onLlmDelta: (text) => {
+              if (!llmDraftStarted) {
+                llmDraftStarted = true;
+                appendStreamStep("🖋 LLM 正在起草五系统模型（实时输出见下方）...");
+                setLiveAction({ label: "LLM 正在起草五系统模型...", external: false });
+              }
+              setLlmDraft((prev) => prev + text);
+            },
             onReasoningStep: (capabilityId, loop) => {
               const human =
                 (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: string }>)[
@@ -1281,6 +1294,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // Accumulated per-skill content from SSE events (for system screen renderers).
     skillContents,
     latestMermaid,
+    // 五系统 LLM 生成的实时草稿（运行中流式累积；新一轮清空）。
+    llmDraft,
     sendMessage,
     runTurn,
     challengeTurn,

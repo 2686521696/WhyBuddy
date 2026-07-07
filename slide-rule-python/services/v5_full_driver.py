@@ -950,7 +950,38 @@ async def drive_full_v5_session_stream(
             loop += 1
             persist_state(state)
 
-        state = await asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
+        # 闭环证据重建里藏着最长的一步：新颖意图的五系统 LLM 生成（60~100s）。
+        # 注册 delta sink 并在等待线程期间持续排水，把 LLM 的实时输出以
+        # llm_delta 事件推给前端（Claude 式"看得见的想法"）。150ms 批量聚合，
+        # 避免逐 token 的事件风暴。
+        import queue as _queue
+
+        from . import v5_llm_generate as _gen
+
+        _delta_q: "_queue.Queue[str]" = _queue.Queue()
+        _gen.set_generate_delta_sink(_delta_q.put)
+        try:
+            closure_task = asyncio.ensure_future(
+                asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
+            )
+            while True:
+                # 先记完成标志再排水：保证任务结束瞬间到达的尾部增量也被冲出，
+                # 不会在 break 时滞留队列。
+                finished = closure_task.done()
+                pending: List[str] = []
+                try:
+                    while True:
+                        pending.append(_delta_q.get_nowait())
+                except _queue.Empty:
+                    pass
+                if pending:
+                    yield {"type": "llm_delta", "text": "".join(pending)}
+                if finished:
+                    break
+                await asyncio.sleep(0.15)
+            state = closure_task.result()
+        finally:
+            _gen.set_generate_delta_sink(None)
 
         state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
         gate = await asyncio.to_thread(evaluate_coverage_gate, state)
