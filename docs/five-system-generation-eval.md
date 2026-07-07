@@ -1,6 +1,6 @@
 # 五系统模型多域生成质量评测（Five-System Generation Eval）
 
-- 运行时间：2026-07-07 09:42 UTC
+- 运行时间：2026-07-07 09:55 UTC
 - 生成模型：`gpt-5.5`（真实 LLM，串行逐域，路由限流约束）
 - 管线：`generate_five_system_model(intent)` → `validate_five_system_model(model)`（结构闭包 gate，任何悬挂交叉引用即 fail）
 - 领域适配为启发式抽查信号（关键词命中 + 原始命名列表），供人工复核；不做打分粉饰。
@@ -9,161 +9,172 @@
 
 | 领域 | 生成 | Gate | 内容质量 | LLM评审(覆盖/常识/命名) | 耗时(s) | 实体 | 字段 | 角色 | 权限 | 流程节点 | 转移 | 页面 | AIGC能力 | 交叉引用(悬挂/总数) | 实体域命中 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 连锁健身房 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 4/4/4 (均4.0) | 54.8 | 8 | 51 | 5 | 18 | 6 | 7 | 6 | 3 | 0/178 | 8/8 |
-| 跨境物流报关 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 5/4/4 (均4.33) | 92.9 | 8 | 54 | 6 | 19 | 10 | 14 | 5 | 3 | 0/172 | 6/8 |
-| 医院药房库存 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 4/4/5 (均4.33) | 96.4 | 7 | 51 | 5 | 20 | 10 | 13 | 8 | 3 | 0/211 | 6/7 |
-| 餐饮加盟督导 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | ⚠️ 评审失败 | 145.9 | 9 | 62 | 5 | 13 | 9 | 13 | 6 | 3 | 0/165 | 9/9 |
-| 物业报修工单 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 5/4/5 (均4.67) | 50.9 | 7 | 47 | 6 | 16 | 9 | 10 | 6 | 3 | 0/168 | 7/7 |
+| 连锁健身房 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 4/4/5 (均4.33) | 76.1 | 7 | 37 | 5 | 15 | 8 | 10 | 4 | 3 | 0/139 | 7/7 |
+| 跨境物流报关 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 5/4/4 (均4.33) | 56.8 | 5 | 41 | 6 | 20 | 8 | 13 | 6 | 3 | 0/180 | 5/5 |
+| 医院药房库存 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 5/4/5 (均4.67) | 96.8 | 8 | 62 | 5 | 18 | 8 | 9 | 9 | 3 | 0/187 | 7/8 |
+| 餐饮加盟督导 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 4/4/5 (均4.33) | 96.1 | 8 | 53 | 6 | 16 | 8 | 12 | 8 | 3 | 0/183 | 8/8 |
+| 物业报修工单 | ✅ | ✅ PASS | ✅ 0 fail / 0 warn | 5/4/4 (均4.33) | 87.3 | 7 | 49 | 5 | 16 | 9 | 11 | 6 | 3 | 0/171 | 7/7 |
 
 ## 连锁健身房
 
 - 意图：做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养
-- 生成耗时：54.8s
+- 生成耗时：76.1s
 - Gate：**PASS**（0 悬挂引用）
-- 交叉引用完整性：共 178 条被检引用，悬挂 0 条（解析率 100.0%）
-- 规模：8 实体 / 51 字段 / 5 角色 / 18 权限 / 5 菜单 / 6 流程节点 / 7 转移 / 6 页面 / 3 AIGC 能力 / 6 装配绑定
+- 交叉引用完整性：共 139 条被检引用，悬挂 0 条（解析率 100.0%）
+- 规模：7 实体 / 37 字段 / 5 角色 / 15 权限 / 5 菜单 / 8 流程节点 / 10 转移 / 4 页面 / 3 AIGC 能力 / 4 装配绑定
 - 领域适配抽查：
-  - 实体命中 8/8：member 会员、membership_card 会员卡、personal_trainer 私教、training_session 私教课程排期、card_redemption 会员卡核销、equipment 健身器材、maintenance_request 器材保养申请、maintenance_task 保养工单
-  - 角色命中 3/5：front_desk、personal_trainer、gym_manager、maintenance_technician、finance_auditor
-  - 流程节点命中 5/6：submit_maintenance_request 提交器材保养申请、manager_review 店长审核保养申请、technician_service 维修技师执行保养、manager_acceptance 店长验收保养结果、closed 保养完成归档、rejected 申请驳回
-  - 页面命中 6/6：member_card_page 会员与会员卡管理、private_training_schedule_page 私教排期管理、card_redemption_page 会员卡核销台、equipment_inventory_page 器材台账、maintenance_request_page 器材保养申请与审批、operations_report_page 门店运营报表
-  - AIGC 能力命中 3/3：smart_private_training_scheduler AI私教智能排期、equipment_fault_diagnosis AI器材故障诊断与保养建议、member_retention_advisor AI会员续卡挽留建议
+  - 实体命中 7/7：member 会员、membership_card 会员卡、card_redemption 会员卡核销记录、personal_trainer 私教、training_session 私教课程排期、equipment 健身器材、maintenance_work_order 器材保养工单
+  - 角色命中 3/5：front_desk、personal_trainer、gym_manager、maintenance_staff、finance_auditor
+  - 流程节点命中 3/8：report_issue 提交器材保养申请、manager_triage 店长评估工单、routine_maintenance 常规保养安排、major_repair_approval 重大维修审批、repair_execution 执行保养维修、manager_acceptance 店长验收、closed 工单关闭、rejected 申请驳回
+  - 页面命中 4/4：member_card_redemption_page 会员卡核销台、trainer_schedule_page 私教排期看板、equipment_maintenance_page 器材保养工单、manager_operations_dashboard 门店运营仪表盘
+  - AIGC 能力命中 3/3：ai_trainer_schedule_optimizer AI私教排期优化、ai_maintenance_diagnosis AI器材故障诊断、ai_member_retention_advisor AI会员续卡建议
   - 泛化命名嫌疑：无
 - 内容质量（确定性启发式，零 LLM）：
-  - 流程形状：2 个分支节点 · 有回退边
+  - 流程形状：3 个分支节点 · 有回退边
   - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
   - 结论：✅ 无 finding
 - LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：
   - 需求覆盖度：**4/5**
-    - 明确覆盖了“私教排期”，包含实体“training_session”、页面“private_training_schedule_page”和能力“smart_private_training_scheduler”。
-    - 明确覆盖了“会员卡核销”，包含实体“card_redemption”、权限“card:redeem”和页面“card_redemption_page”。
-    - 明确覆盖了“器材保养”，包含“maintenance_request”“maintenance_task”和完整的保养审批/执行/验收流程。
-    - ❗漏建模：“连锁健身房”缺少门店/分店实体、跨门店数据隔离、门店维度排期/器材/会员卡归属等能力
+    - 已覆盖核心三项："training_session/私教课程排期"、"card_redemption/会员卡核销记录"、"maintenance_work_order/器材保养工单"。
+    - 页面与权限中有对应操作："card:redeem"、"session:schedule"、"maintenance:perform"。
+    - 连锁健身房只以"branch_name"字符串体现，缺少门店/分店主数据与跨店管理能力。
+    - ❗漏建模：连锁门店/分店管理实体及按门店维度的排期、核销、器材保养管理
   - 行业常识：**4/5**
-    - 角色划分“front_desk”“personal_trainer”“gym_manager”“maintenance_technician”“finance_auditor”基本符合健身房运营分工。
-    - 保养流程“提交申请->店长审核->技师执行->店长验收->归档”符合器材维护管理习惯。
-    - “submit_maintenance_request”只标注由“personal_trainer”提交偏窄，实际前台、巡检人员、店长也可能提交；“reported_by(string)”和“technician_id(string)”也缺少人员引用建模。
-  - 命名质量：**4/5**
-    - 实体命名如“membership_card”“personal_trainer”“training_session”“maintenance_task”清晰且领域相关。
-    - 页面命名如“card_redemption_page”“equipment_inventory_page”能直接表达业务用途。
-    - 权限命名前缀存在轻微不一致，如实体是“membership_card”但权限使用“card:redeem”，实体是“training_session”但权限使用“schedule:create”。
+    - 角色划分基本符合健身房运营："front_desk"负责核销/报修，"personal_trainer"负责课程，"gym_manager"审批验收，"maintenance_staff"执行保养。
+    - 器材保养流程从"report_issue"到"manager_acceptance"再到"closed"，符合门店维修工单闭环。
+    - "finance_auditor"角色存在但缺少对应财务审计流程或权限，显得未落地。
+  - 命名质量：**5/5**
+    - 实体命名具体且贴合领域，如"membership_card"、"card_redemption"、"training_session"、"maintenance_work_order"。
+    - 页面命名清晰，如"member_card_redemption_page"、"trainer_schedule_page"、"equipment_maintenance_page"。
+    - 权限命名风格一致，采用"card:redeem"、"session:schedule"、"maintenance:approve"等领域动作。
 
 ## 跨境物流报关
 
 - 意图：构建跨境物流报关平台，覆盖运单管理、报关单申报、关税核算与清关状态跟踪
-- 生成耗时：92.9s
+- 生成耗时：56.8s
 - Gate：**PASS**（0 悬挂引用）
-- 交叉引用完整性：共 172 条被检引用，悬挂 0 条（解析率 100.0%）
-- 规模：8 实体 / 54 字段 / 6 角色 / 19 权限 / 6 菜单 / 10 流程节点 / 14 转移 / 5 页面 / 3 AIGC 能力 / 5 装配绑定
+- 交叉引用完整性：共 180 条被检引用，悬挂 0 条（解析率 100.0%）
+- 规模：5 实体 / 41 字段 / 6 角色 / 20 权限 / 6 菜单 / 8 流程节点 / 13 转移 / 6 页面 / 3 AIGC 能力 / 6 装配绑定
 - 领域适配抽查：
-  - 实体命中 6/8：importer Importer、carrier Carrier、waybill Cross Border Waybill、shipment_item Shipment Item、customs_declaration Customs Declaration、tariff_assessment Tariff Assessment、clearance_event Clearance Event、customs_document Customs Document
-  - 角色命中 4/6：logistics_operator、customs_declarant、tariff_accountant、compliance_reviewer、clearance_manager、customer_service
-  - 流程节点命中 9/10：draft_waybill Draft Waybill、prepare_declaration Prepare Customs Declaration、compliance_review Compliance Review、declaration_rejected Declaration Rejected、tariff_calculation Tariff Calculation、tariff_approval Tariff Approval、customs_submission Submit to Customs、clearance_monitor Clearance Status Monitoring、inspection_followup Customs Inspection Follow-up、clearance_completed Clearance Completed
-  - 页面命中 4/5：page_waybill_management Waybill Management、page_declaration_preparation Customs Declaration Preparation、page_compliance_review Compliance Review Console、page_tariff_assessment Tariff Assessment、page_clearance_tracking Clearance Status Tracking
-  - AIGC 能力命中 3/3：generate_goods_declaration_summary Generate Goods Declaration Summary、explain_tariff_assessment Explain Tariff Assessment、compose_clearance_customer_update Compose Clearance Customer Update
-  - ⚠️ 泛化命名嫌疑（1）：shipment_item Shipment Item
+  - 实体命中 5/5：shipment 跨境货运批次、waybill 运单、customs_declaration 报关单、duty_calculation 关税核算、clearance_status 清关状态跟踪
+  - 角色命中 3/6：logistics_operator、customs_broker、duty_accountant、compliance_manager、warehouse_agent、customer_service
+  - 流程节点命中 6/8：draft_waybill 创建并校验运单、prepare_declaration 制作报关单、compliance_review 报关合规审核、calculate_duties 核算关税税费、submit_to_customs 向海关申报、inspection_coordination 海关查验协同、customer_status_update 客户清关状态通知、rejected_or_returned 退回或拒绝处理
+  - 页面命中 5/6：page_shipment_waybill 运单管理、page_customs_declaration 报关单申报、page_compliance_review 合规审核工作台、page_duty_calculation 关税核算、page_clearance_tracking 清关状态跟踪、page_customer_notification 客户清关通知
+  - AIGC 能力命中 3/3：ai_hs_code_risk_assistant HS编码与申报风险提示、ai_duty_estimation_summary 关税核算摘要生成、ai_clearance_exception_explainer 清关异常原因说明生成
+  - 泛化命名嫌疑：无
 - 内容质量（确定性启发式，零 LLM）：
-  - 流程形状：5 个分支节点 · 有回退边
+  - 流程形状：4 个分支节点 · 有回退边
   - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
   - 结论：✅ 无 finding
 - LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：
   - 需求覆盖度：**5/5**
-    - 显式覆盖“运单管理”，包括实体“waybill”“shipment_item”和页面“page_waybill_management”。
-    - 显式覆盖“报关单申报”，包括“customs_declaration”、权限“declaration:submit”和流程“customs_submission:Submit to Customs”。
-    - 显式覆盖“关税核算与清关状态跟踪”，包括“tariff_assessment”“clearance_event”和页面“page_clearance_tracking”。
+    - 显式要求的“运单管理”由实体“waybill”和页面“page_shipment_waybill”覆盖
+    - 显式要求的“报关单申报”由“customs_declaration”、权限“declaration:submit”和流程“submit_to_customs”覆盖
+    - 显式要求的“关税核算”与“清关状态跟踪”分别由“duty_calculation”和“clearance_status”覆盖
   - 行业常识：**4/5**
-    - 流程从“draft_waybill”到“prepare_declaration”“compliance_review”“customs_submission”“clearance_monitor”基本符合跨境报关作业链路。
-    - 角色划分“customs_declarant”“tariff_accountant”“compliance_reviewer”“clearance_manager”贴近报关、关务和清关协作实际。
-    - “tariff_calculation”放在“customs_submission”之前可用于预核算，但实际税费常依赖海关受理/审价结果，缺少海关回执与税单确认环节。
+    - 流程从“draft_waybill”到“prepare_declaration”“compliance_review”“calculate_duties”“submit_to_customs”基本符合跨境报关作业链路
+    - 角色“customs_broker”“duty_accountant”“warehouse_agent”“customer_service”分工合理，贴近物流报关协同场景
+    - 实体中“customs_declaration”直接放置“hs_code”偏粗，真实报关通常需要商品明细行、发票、箱单等资料结构
   - 命名质量：**4/5**
-    - 核心命名如“customs_declaration”“tariff_assessment”“clearance_event”“shipment_item”领域指向明确且一致。
-    - 页面命名“Customs Declaration Preparation”“Compliance Review Console”“Clearance Status Tracking”清晰表达业务用途。
-    - 权限“customer:update”较突兀，模型中没有对应“customer”实体，和“compose_clearance_customer_update”存在命名边界不清。
+    - 核心命名如“waybill”“customs_declaration”“duty_calculation”“clearance_status”清晰且领域相关
+    - 页面名“page_customs_declaration”“page_duty_calculation”“page_clearance_tracking”与业务能力对应一致
+    - 存在少量未建模或略突兀的权限名，如“party:view”“inspection:update”，对应实体不明确
 
 ## 医院药房库存
 
 - 意图：开发医院药房库存管理系统，支持药品入库出库、批号效期预警和处方调剂发药
-- 生成耗时：96.4s
+- 生成耗时：96.8s
 - Gate：**PASS**（0 悬挂引用）
-- 交叉引用完整性：共 211 条被检引用，悬挂 0 条（解析率 100.0%）
-- 规模：7 实体 / 51 字段 / 5 角色 / 20 权限 / 6 菜单 / 10 流程节点 / 13 转移 / 8 页面 / 3 AIGC 能力 / 8 装配绑定
+- 交叉引用完整性：共 187 条被检引用，悬挂 0 条（解析率 100.0%）
+- 规模：8 实体 / 62 字段 / 5 角色 / 18 权限 / 5 菜单 / 8 流程节点 / 9 转移 / 9 页面 / 3 AIGC 能力 / 9 装配绑定
 - 领域适配抽查：
-  - 实体命中 6/7：drug 药品目录、supplier 供应商、drug_batch 药品批号库存、inventory_transaction 出入库流水、prescription 处方、prescription_item 处方明细、dispensing_record 调剂发药记录
-  - 角色命中 2/5：inventory_clerk、pharmacist、pharmacy_manager、quality_controller、prescribing_doctor
-  - 流程节点命中 9/10：prescription_submitted 处方提交、pharmacist_review 药师审方、inventory_check 库存与批号效期核验、manager_controlled_approval 特殊管制或库存异常审批、prepare_dispensing 调剂配药、issue_medicine 确认发药并扣减库存、quality_expiry_review 效期质量复核、returned_for_correction 退回修改、dispensing_rejected 拒绝发药、dispensing_completed 发药完成
-  - 页面命中 7/8：drug_catalog_page 药品目录管理、supplier_qualification_page 供应商资质管理、stock_receiving_page 药品入库登记、stock_out_adjustment_page 出库与库存调整审批、expiry_warning_page 批号效期预警、prescription_entry_page 处方录入、dispensing_workbench_page 处方调剂发药工作台、controlled_dispensing_approval_page 管制药品发药审批
-  - AIGC 能力命中 3/3：expiry_risk_summary 批号效期风险摘要生成、dispensing_review_assistant 处方审方与发药提示、reorder_and_stockout_notice 补货与缺货说明生成
-  - ⚠️ 泛化命名嫌疑（2）：prescription_item 处方明细、dispensing_record 调剂发药记录
+  - 实体命中 7/8：drug 药品档案、supplier 供应商、inventory_batch 库存批次、inbound_order 药品入库单、outbound_order 药品出库单、prescription 处方、dispensing_record 调剂发药记录、expiry_alert 批号效期预警
+  - 角色命中 2/5：inventory_clerk、pharmacist、pharmacy_manager、quality_controller、finance_auditor
+  - 流程节点命中 7/8：prescription_received 接收处方、pharmacist_review 药师审方、doctor_return_required 退回医生修改、stock_and_batch_check 库存批号效期核验、manager_exception_approval 特殊药品或近效期发药审批、dispense_and_counsel 调剂发药并用药交代、dispensing_completed 发药完成、dispensing_rejected 处方拒绝发药
+  - 页面命中 8/9：drug_catalog_page 药品档案维护、supplier_qualification_page 供应商资质管理、inventory_batch_page 库存批次台账、inbound_receiving_page 药品入库验收、outbound_issue_page 药品出库管理、prescription_review_page 处方审方工作台、dispensing_counter_page 调剂发药窗口、expiry_alert_page 批号效期预警中心、inventory_report_page 库存报表与审计查询
+  - AIGC 能力命中 3/3：expiry_action_advisor 近效期批次处理建议生成、prescription_review_assistant 处方合理用药审查辅助、patient_counseling_generator 患者用药交代生成
+  - ⚠️ 泛化命名嫌疑（1）：dispensing_record 调剂发药记录
+- 内容质量（确定性启发式，零 LLM）：
+  - 流程形状：3 个分支节点 · 有回退边
+  - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
+  - 结论：✅ 无 finding
+- LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：
+  - 需求覆盖度：**5/5**
+    - 显式覆盖“药品入库出库”，包含实体“inbound_order”“outbound_order”和页面“inbound_receiving_page”“outbound_issue_page”。
+    - 显式覆盖“批号效期预警”，包含实体“inventory_batch”“expiry_alert”和页面“expiry_alert_page”。
+    - 显式覆盖“处方调剂发药”，包含“prescription”“dispensing_record”以及流程“pharmacist_review”“dispense_and_counsel”。
+  - 行业常识：**4/5**
+    - 流程包含“接收处方、药师审方、库存批号效期核验、调剂发药并用药交代”，符合医院药房实际业务主线。
+    - “stock_and_batch_check:库存批号效期核验@inventory_clerk”在处方发药流程中略显不自然，实际通常由药师或系统按先进先出/近效期优先规则完成批次选择。
+    - 实体有“供应商资质”“库存批次”“调剂发药记录”，但入库/出库单未体现明细行、库位、实收数量等医院库存常见结构。
+  - 命名质量：**5/5**
+    - 实体命名如“drug”“inventory_batch”“dispensing_record”“expiry_alert”清晰且贴合医院药房领域。
+    - 页面命名如“prescription_review_page”“dispensing_counter_page”“expiry_alert_page”与业务场景一致。
+    - 权限命名采用“resource:action”格式，如“inbound:create”“dispensing:confirm”“alert:handle”，整体一致性较好。
+
+## 餐饮加盟督导
+
+- 意图：搭建餐饮连锁加盟督导系统，包含巡店检查、整改跟踪和门店评分排名
+- 生成耗时：96.1s
+- Gate：**PASS**（0 悬挂引用）
+- 交叉引用完整性：共 183 条被检引用，悬挂 0 条（解析率 100.0%）
+- 规模：8 实体 / 53 字段 / 6 角色 / 16 权限 / 6 菜单 / 8 流程节点 / 12 转移 / 8 页面 / 3 AIGC 能力 / 8 装配绑定
+- 领域适配抽查：
+  - 实体命中 8/8：franchisee 加盟商、store 加盟门店、checklist_item 巡店检查项、inspection 巡店检查、inspection_finding 检查问题、corrective_action 整改任务、store_score 门店评分、ranking_snapshot 门店排名快照
+  - 角色命中 3/6：franchisee_manager、store_manager、field_supervisor、regional_manager、quality_admin、ops_director
+  - 流程节点命中 8/8：draft_inspection 督导创建巡店检查、store_acknowledge 门店确认问题、regional_review 区域经理复核巡店结果、corrective_plan 门店提交整改计划、supervisor_verify 督导复核整改、score_calculation 质量管理员计算评分、ranking_publish 运营总监发布排名、inspection_rejected 巡店结果退回
+  - 页面命中 8/8：store_directory_page 加盟门店档案、checklist_admin_page 巡店检查标准配置、inspection_form_page 现场巡店检查单、regional_review_page 巡店结果区域复核、corrective_tracking_page 整改跟踪台账、score_calculation_page 门店评分计算、ranking_dashboard_page 门店评分排名榜、ai_assistant_page AI巡店与整改助手
+  - AIGC 能力命中 3/3：inspection_summary_generator 巡店问题摘要生成、corrective_recommendation_generator 整改建议生成、ranking_insight_generator 门店排名洞察生成
+  - ⚠️ 泛化命名嫌疑（1）：checklist_item 巡店检查项
 - 内容质量（确定性启发式，零 LLM）：
   - 流程形状：4 个分支节点 · 有回退边
   - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
   - 结论：✅ 无 finding
 - LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：
   - 需求覆盖度：**4/5**
-    - 已覆盖核心能力："stock_receiving_page"支持入库，"stock_out_adjustment_page"和"inventory_transaction"支持出库/调整，"expiry_warning_page"支持批号效期预警，"dispensing_workbench_page"支持处方调剂发药。
-    - "workflow"包含从"prescription_submitted"到"issue_medicine"的审方、库存核验、配药、发药闭环。
-    - "drug_batch"字段中只明确看到"production_date"，未明确列出效期预警关键字段如失效日期/有效期至/预警阈值。
-    - ❗漏建模：批号效期预警所需的失效日期或有效期字段未在"drug_batch"中明确体现
+    - 已覆盖核心能力："inspection/巡店检查"、"corrective_action/整改任务"、"store_score/门店评分"和"ranking_dashboard_page/门店评分排名榜"均有建模。
+    - "ranking_snapshot"只有"top_store_ref"和"bottom_store_ref"，未明确每家门店的排名明细或名次字段，支撑完整排名榜略弱。
+    - ❗漏建模：完整门店排名明细/每店名次记录未明确建模
   - 行业常识：**4/5**
-    - 实体划分符合医院药房场景，包含"药品目录"、"药品批号库存"、"出入库流水"、"处方"、"调剂发药记录"。
-    - 角色设置较合理，"pharmacist"负责审方和发药，"quality_controller"负责效期质量复核，"pharmacy_manager"负责管制药品审批。
-    - "inventory_check->manager_controlled_approval[管制药品或库存低于安全线]"略不符合常规，库存低于安全线通常触发补货预警，不一定需要经理审批才能发药。
+    - 角色划分符合连锁加盟督导场景，如"field_supervisor"、"regional_manager"、"quality_admin"、"ops_director"。
+    - 流程包含门店确认、区域复核、整改计划、督导复核、评分发布，整体贴近餐饮连锁巡检闭环。
+    - "inspection.supervisor_name(string)"使用姓名字符串而非督导用户引用，不利于权限、绩效和责任追溯。
   - 命名质量：**5/5**
-    - 命名整体领域化且清晰，如"drug_batch"、"inventory_transaction"、"dispensing_record"、"expiry_warning_page"。
-    - 权限命名基本按资源和动作组织，如"batch:receive"、"prescription:review"、"dispensing:issue"，可读性好。
-    - 页面和工作流节点名称贴合业务语义，如"处方调剂发药工作台"、"库存与批号效期核验"、"确认发药并扣减库存"。
-
-## 餐饮加盟督导
-
-- 意图：搭建餐饮连锁加盟督导系统，包含巡店检查、整改跟踪和门店评分排名
-- 生成耗时：145.9s
-- Gate：**PASS**（0 悬挂引用）
-- 交叉引用完整性：共 165 条被检引用，悬挂 0 条（解析率 100.0%）
-- 规模：9 实体 / 62 字段 / 5 角色 / 13 权限 / 8 菜单 / 9 流程节点 / 13 转移 / 6 页面 / 3 AIGC 能力 / 6 装配绑定
-- 领域适配抽查：
-  - 实体命中 9/9：franchisee 加盟商、store 加盟门店、inspection_plan 巡店计划、checklist_item 巡检检查项、store_inspection 巡店检查记录、inspection_finding 巡检问题、corrective_action 整改任务、store_score 门店评分、ranking_snapshot 门店排名快照
-  - 角色命中 3/5：operations_director、regional_supervisor、store_manager、franchisee_owner、quality_admin
-  - 流程节点命中 9/9：plan_scheduled 制定巡店计划、onsite_inspection 现场巡店检查、inspection_submitted 提交巡检结果、rectification_required 门店整改、supervisor_verification 督导复核整改、quality_score_calculation 质量评分核算、director_ranking_review 运营总监审核排名、ranking_published 发布门店评分排名、inspection_rejected 巡检退回重填
-  - 页面命中 6/6：store_directory_page 加盟门店档案、inspection_plan_page 巡店计划排程、mobile_inspection_page 现场巡店检查、corrective_tracking_page 整改跟踪与复核、score_ranking_page 门店评分排名、score_admin_page 评分核算与排名发布
-  - AIGC 能力命中 3/3：generate_inspection_summary 生成巡检摘要、recommend_corrective_measure 生成整改建议、generate_score_commentary 生成评分点评
-  - ⚠️ 泛化命名嫌疑（1）：checklist_item 巡检检查项
-- 内容质量（确定性启发式，零 LLM）：
-  - 流程形状：4 个分支节点 · 有回退边
-  - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
-  - 结论：✅ 无 finding
-- LLM 评审：⚠️ 评审调用失败（fail-closed，不编分数）
+    - 实体命名如"checklist_item"、"inspection_finding"、"corrective_action"、"store_score"具有明确餐饮督导业务语义。
+    - 页面命名如"inspection_form_page"、"corrective_tracking_page"、"ranking_dashboard_page"清晰对应业务功能。
+    - 权限命名采用"inspections:submit"、"corrective:verify"、"rankings:publish"等一致的资源动作格式。
 
 ## 物业报修工单
 
 - 意图：做一个物业报修工单系统，业主提交报修、物业派单维修、完工验收与回访评价
-- 生成耗时：50.9s
+- 生成耗时：87.3s
 - Gate：**PASS**（0 悬挂引用）
-- 交叉引用完整性：共 168 条被检引用，悬挂 0 条（解析率 100.0%）
-- 规模：7 实体 / 47 字段 / 6 角色 / 16 权限 / 6 菜单 / 9 流程节点 / 10 转移 / 6 页面 / 3 AIGC 能力 / 6 装配绑定
+- 交叉引用完整性：共 171 条被检引用，悬挂 0 条（解析率 100.0%）
+- 规模：7 实体 / 49 字段 / 5 角色 / 16 权限 / 5 菜单 / 9 流程节点 / 11 转移 / 6 页面 / 3 AIGC 能力 / 6 装配绑定
 - 领域适配抽查：
-  - 实体命中 7/7：owner 业主、property_unit 房屋单元、repair_ticket 报修单、work_order 维修工单、technician 维修人员、inspection 完工验收、feedback 回访评价
-  - 角色命中 3/6：owner、dispatcher、technician、inspector、customer_service、property_manager
-  - 流程节点命中 9/9：submit_ticket 业主提交报修、triage_ticket 物业受理与分类、reject_ticket 无效报修退回、dispatch_work_order 派单维修人员、perform_repair 现场维修处理、complete_repair 维修完工提交、inspect_completion 完工验收、owner_feedback 业主回访评价、closed 工单关闭归档
-  - 页面命中 6/6：owner_ticket_submit_page 业主提交报修页、dispatcher_triage_page 物业受理派单页、technician_repair_page 维修处理页、inspection_page 完工验收页、feedback_page 回访评价页、manager_report_page 物业经理报修看板
-  - AIGC 能力命中 3/3：ai_ticket_classifier 报修内容智能分类与优先级建议、ai_repair_plan_generator 维修方案生成助手、ai_feedback_sentiment 回访评价情绪分析
+  - 实体命中 7/7：owner 业主、property_unit 房屋单元、maintenance_staff 维修人员、repair_ticket 报修工单、repair_assignment 派工维修、inspection 完工验收、callback_review 回访评价
+  - 角色命中 4/5：owner、property_dispatcher、maintenance_worker、property_inspector、customer_service_manager
+  - 流程节点命中 9/9：submit_ticket 业主提交报修、dispatcher_triage 物业受理与分类、ticket_rejected 报修不受理、assign_worker 派单给维修人员、repair_in_progress 上门维修处理、completion_inspection 物业完工验收、owner_acceptance 业主确认维修结果、callback_review 客服回访评价、closed 工单关闭归档
+  - 页面命中 6/6：owner_ticket_submit_page 业主报修提交页、dispatcher_workbench_page 物业派单工作台、worker_mobile_repair_page 维修人员移动处理页、completion_inspection_page 完工验收页、owner_acceptance_review_page 业主确认与评价页、service_quality_report_page 回访质量报表页
+  - AIGC 能力命中 3/3：repair_ticket_triage 报修内容智能分类与派单建议、repair_plan_generator 维修方案生成、review_sentiment_analyzer 回访评价情绪分析
   - 泛化命名嫌疑：无
 - 内容质量（确定性启发式，零 LLM）：
-  - 流程形状：2 个分支节点 · 有回退边
+  - 流程形状：3 个分支节点 · 有回退边
   - 可达性/权限：不可达页面 0 · 空页面 0 · 满权角色 0 · 孤儿权限 0 · 无用角色 0 · 孤儿实体 0
   - 结论：✅ 无 finding
 - LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：
   - 需求覆盖度：**5/5**
-    - 已覆盖“业主提交报修”，包含“owner_ticket_submit_page”和流程节点“submit_ticket:业主提交报修@owner”。
-    - 已覆盖“物业派单维修”，包含“dispatch_work_order:派单维修人员@dispatcher”和“perform_repair:现场维修处理@technician”。
-    - 已覆盖“完工验收与回访评价”，包含“inspect_completion:完工验收@inspector”和“owner_feedback:业主回访评价@customer_service”。
+    - 明确覆盖“业主提交报修”，如流程节点“submit_ticket:业主提交报修@owner”和页面“owner_ticket_submit_page”。
+    - 明确覆盖“物业派单维修”，如“dispatcher_triage”“assign_worker”“repair_in_progress”以及实体“repair_assignment”。
+    - 明确覆盖“完工验收与回访评价”，如“completion_inspection”“owner_acceptance”“callback_review”和实体“inspection”“callback_review”。
   - 行业常识：**4/5**
-    - 实体“repair_ticket”“work_order”“inspection”“feedback”的拆分符合物业报修从报修单到维修工单再到验收回访的常见流程。
-    - 流程支持“inspect_completion->perform_repair[验收不通过需返修]”，符合维修返工闭环。
-    - “owner_feedback:业主回访评价@customer_service”略显角色表达不清，若是业主评价应允许业主提交，若是客服回访应命名为客服回访记录。
-  - 命名质量：**5/5**
-    - 实体命名如“property_unit”“repair_ticket”“work_order”“technician”均具有物业报修领域含义。
-    - 权限命名如“ticket:triage”“work_order:assign”“inspection:approve”粒度清晰且一致。
-    - 页面命名如“dispatcher_triage_page”“technician_repair_page”“manager_report_page”与角色和业务场景匹配。
+    - 主流程从报修、受理分类、派单、维修、验收、业主确认到回访关闭，符合物业报修工单的常见业务闭环。
+    - “completion_inspection->repair_in_progress[验收不通过需返工]”和“owner_acceptance->assign_worker[业主不满意需重新派修]”体现了返工场景，符合实际运营。
+    - “callback_review:客服回访评价@customer_service_manager”由“customer_service_manager”执行略显不自然，实际更常见是客服专员或回访专员；“inspection.inspector_name(string)”也应更像人员引用。
+  - 命名质量：**4/5**
+    - 实体命名如“repair_ticket”“repair_assignment”“completion_inspection”“callback_review”具备明确物业报修语义，不是模板化占位名。
+    - 页面命名如“dispatcher_workbench_page”“worker_mobile_repair_page”“service_quality_report_page”与角色和场景匹配，整体一致。
+    - 少量命名可更精确，例如“customer_service_manager”偏管理岗，“owner_acceptance_review_page”同时包含确认与评价，和流程中的“callback_review”边界略混。
 
 ## 结论（诚实版）
 
