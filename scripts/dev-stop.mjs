@@ -28,9 +28,14 @@ async function stopWindowsProjectProcesses() {
     `$selfPid = ${escapedPid}`,
     `function Test-ProjectProcess([string] $name, [string] $commandLine) {`,
     `  if (-not $commandLine) { return $false }`,
-    `  if ($name -eq 'python.exe') {`,
-    `    # Only the slide-rule-python uvicorn dev server; never a stray pytest / LSP / worker.`,
-    `    return ($commandLine -match 'uvicorn\\s+app:app' -and $commandLine -like '*slide-rule-python*')`,
+    `  if ($name -like 'python*') {`,
+    `    # slide-rule-python 的 uvicorn dev server。注意 --reload 的 worker 是`,
+    `    # multiprocessing spawn 出来的：命令行里没有 'uvicorn' 字样（真实事故：`,
+    `    # 按命令行杀 uvicorn 全部漏掉 worker，死掉的 reloader 留下孤儿监听套接字，`,
+    `    # netstat 报一个已不存在的属主 PID）。按可执行文件路径兜底识别。`,
+    `    if ($commandLine -match 'uvicorn\\s+app:app' -and $commandLine -like '*slide-rule-python*') { return $true }`,
+    `    if ($commandLine -match 'spawn_main' -and $commandLine -like '*slide-rule-python*') { return $true }`,
+    `    return $false`,
     `  }`,
     `  if ($commandLine -like "*$root*") { return $true }`,
     `  if ($commandLine -match 'scripts[\\\\/]dev-all\\.mjs') { return $true }`,
@@ -45,7 +50,7 @@ async function stopWindowsProjectProcesses() {
     `}`,
     `$all = Get-CimInstance Win32_Process | Where-Object {`,
     `  $_.ProcessId -ne $selfPid -and`,
-    `  @('node.exe', 'npm.exe', 'cmd.exe', 'python.exe') -contains $_.Name`,
+    `  (@('node.exe', 'npm.exe', 'cmd.exe') -contains $_.Name -or $_.Name -like 'python*')`,
     `}`,
     `$matched = $all | Where-Object { Test-ProjectProcess $_.Name $_.CommandLine }`,
     `$processes = @($matched)`,
@@ -133,8 +138,11 @@ async function sweepWindowsDevPorts() {
       cwd: projectRoot,
     });
     if (stdout.trim()) process.stdout.write(stdout);
-  } catch {
-    /* port sweep is best-effort */
+  } catch (error) {
+    // 清扫失败必须出声（真实事故：这里静默吞错，幽灵端口占用零提示）。
+    console.warn(
+      `[dev:stop] port sweep failed: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
