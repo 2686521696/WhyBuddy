@@ -47,7 +47,7 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     const schema = deriveAppRuntimeSchema(MODEL, "健身房系统")!;
     expect(schema.appName).toBe("健身房系统");
     expect(schema.roles).toEqual(["member", "manager"]);
-    expect(schema.menus.map((m) => m.label)).toEqual(["会员卡核销", "无绑定页"]);
+    expect(schema.menus.map((m) => m.label)).toEqual(["工作台", "会员卡核销", "无绑定页"]);
 
     const page = schema.pages[0];
     expect(page.entityId).toBe("member_card");
@@ -55,6 +55,20 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(page.columns.map((f) => f.id)).toContain("coach_ref");
     expect(page.workflowLinked).toBe(true);
     expect(page.actions).toEqual(["card:create"]);
+  });
+
+  it("工作台（home）JSON 化：统计卡声明来源，菜单首项指向 home", () => {
+    const schema = deriveAppRuntimeSchema(MODEL)!;
+    expect(schema.home.id).toBe("home");
+    expect(schema.home.title).toBe("工作台");
+    expect(schema.menus[0].pageId).toBe("home");
+    // 前两实体行数 + 进行中/累计审批，共 4 张卡
+    expect(schema.home.stats.map((s) => s.source)).toEqual([
+      "entity:member_card",
+      "entity:coach",
+      "instances:running",
+      "instances:total",
+    ]);
   });
 
   it("ref 字段解析目标实体（coach_ref → coach）供下拉渲染", () => {

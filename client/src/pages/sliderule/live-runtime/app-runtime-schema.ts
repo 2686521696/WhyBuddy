@@ -32,9 +32,28 @@ export interface AppPageSchema {
   workflowLinked: boolean;
 }
 
+export interface AppStatCardSchema {
+  id: string;
+  label: string;
+  /**
+   * 取值来源（渲染器对着运行时状态求值）：
+   *   "entity:<id>"（该实体行数）| "instances:running" | "instances:total" | "roles"
+   */
+  source: string;
+  suffix: string;
+}
+
+/** 工作台（首页仪表盘）也 JSON 化：统计卡声明，渲染器照 schema 出 Pro 风格首页。 */
+export interface AppHomeSchema {
+  id: "home";
+  title: string;
+  stats: AppStatCardSchema[];
+}
+
 export interface AppRuntimeSchema {
   appName: string;
   roles: string[];
+  home: AppHomeSchema;
   menus: Array<{ id: string; label: string; pageId: string }>;
   pages: AppPageSchema[];
 }
@@ -117,10 +136,31 @@ export function deriveAppRuntimeSchema(
     };
   });
 
+  // 工作台统计卡：前两个实体行数 + 审批实例两项，凑不足 4 张时补角色数。
+  const stats: AppStatCardSchema[] = entities.slice(0, 2).map((e) => ({
+    id: `stat-entity-${e.id}`,
+    label: `${e.name || e.id}`,
+    source: `entity:${e.id}`,
+    suffix: "条",
+  }));
+  stats.push(
+    { id: "stat-running", label: "进行中审批", source: "instances:running", suffix: "件" },
+    { id: "stat-total", label: "累计流程实例", source: "instances:total", suffix: "件" }
+  );
+  if (stats.length < 4) {
+    stats.push({ id: "stat-roles", label: "系统角色", source: "roles", suffix: "个" });
+  }
+
+  const home: AppHomeSchema = { id: "home", title: "工作台", stats: stats.slice(0, 4) };
+
   return {
     appName,
     roles: model?.rbac?.roles ?? [],
-    menus: pageSchemas.map((p) => ({ id: `menu-${p.id}`, label: p.title, pageId: p.id })),
+    home,
+    menus: [
+      { id: "menu-home", label: home.title, pageId: home.id },
+      ...pageSchemas.map((p) => ({ id: `menu-${p.id}`, label: p.title, pageId: p.id })),
+    ],
     pages: pageSchemas,
   };
 }
