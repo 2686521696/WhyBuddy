@@ -11,6 +11,14 @@
   <sub>TRAE Skill 挑战赛作品 / 社区展示项目 · 原名 <strong>WhyBuddy</strong>（2026-06 改名 SlideRule）</sub>
 </p>
 
+<p align="center">
+  <a href="https://forum.trae.cn/t/topic/69450"><img alt="award" src="https://img.shields.io/badge/🏆_TRAE_SOLO_技能创作赛-先锋技能奖_2026--07-d97706?style=for-the-badge" /></a>
+</p>
+
+<p align="center">
+  <sub>🏆 TRAE「一切皆可 Skill · SOLO 技能创作赛」<strong>先锋技能奖</strong>获奖作品——评审语："作品在实用性、完成度上有出色表现，具有很强的推广价值"。参赛帖：<a href="https://forum.trae.cn/t/topic/17058">《从一句话到可执行规格：WhyBuddy × TRAE SOLO 产品预演全流程自动化》</a> · <a href="https://forum.trae.cn/t/topic/69450">获奖公示</a></sub>
+</p>
+
 <blockquote>
 <strong>进度说明（2026-07 更新）：</strong>工程化应用已跑通完整黄金路径——一句话意图 → LLM 五系统模型（确定性结构门校验）→ 发布闭环（6/6 证据）→ <strong>浏览器运行时把推演结果渲染成真正可操作的系统</strong>（多端 Pro 外壳、RBAC 角色预览、审批状态机、数据直改、AIGC 真试跑、五系统联动图）→ 可导出交付包并附排练数据快照。已在 10+ 个全新领域实测通过（<a href="./docs/five-system-generation-eval.md">生成质量评测报告</a>）；运行时设计见<a href="./docs/LIVE_SYSTEMS_BLUEPRINT.md">浏览器运行时蓝图</a>。便携版 <a href="./skills/sliderule.zip">SlideRule Skill</a> 继续可用于各 Agent 宿主。
 </blockquote>

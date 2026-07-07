@@ -11,6 +11,14 @@
   <sub>TRAE Skill Challenge / Community Showcase Project · formerly known as <strong>WhyBuddy</strong> (renamed 2026-06)</sub>
 </p>
 
+<p align="center">
+  <a href="https://forum.trae.cn/t/topic/69450"><img alt="award" src="https://img.shields.io/badge/🏆_TRAE_SOLO_Skill_Challenge-Pioneer_Skill_Award_2026--07-d97706?style=for-the-badge" /></a>
+</p>
+
+<p align="center">
+  <sub>🏆 Winner of the <strong>Pioneer Skill Award (先锋技能奖)</strong> at the TRAE「一切皆可 Skill · SOLO 技能创作赛」— judged "outstanding in practicality and completeness, with strong promotion value". Entry: <a href="https://forum.trae.cn/t/topic/17058">From one sentence to executable specs: WhyBuddy × TRAE SOLO full product-rehearsal automation</a> · <a href="https://forum.trae.cn/t/topic/69450">official announcement</a></sub>
+</p>
+
 <blockquote>
 <strong>Progress note (updated 2026-07):</strong> The engineered app now runs the full golden path end to end — one-sentence intent → LLM-generated five-system model (validated by deterministic gates) → publish closure (6/6 evidence) → <strong>a browser live runtime that actually operates the rehearsed app</strong> (multi-device Pro shell, RBAC role preview, approval state machine, editable data, real AIGC try-runs, a five-system linkage graph) → exportable delivery package with the rehearsal data snapshot attached. Verified across 10+ novel domains (<a href="./docs/five-system-generation-eval.md">generation eval report</a>); see the <a href="./docs/LIVE_SYSTEMS_BLUEPRINT.md">live-runtime blueprint</a>. The portable <a href="./skills/sliderule.zip">SlideRule Skill</a> remains available for agent hosts.
 </blockquote>
