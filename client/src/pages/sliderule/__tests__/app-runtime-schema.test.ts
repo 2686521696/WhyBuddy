@@ -69,6 +69,21 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
       "instances:running",
       "instances:total",
     ]);
+    // 图表也 JSON 声明：实体数据量条形 + 审批状态环图
+    expect(schema.home.charts.map((c) => `${c.type}:${c.source}`)).toEqual([
+      "bar:entities:rowcount",
+      "donut:instances:status",
+    ]);
+  });
+
+  it("详情抽屉字段 = 主实体全字段（不截断）", () => {
+    const schema = deriveAppRuntimeSchema(MODEL)!;
+    expect(schema.pages[0].detailFields.map((f) => f.id)).toEqual([
+      "id",
+      "holder",
+      "balance",
+      "coach_ref",
+    ]);
   });
 
   it("ref 字段解析目标实体（coach_ref → coach）供下拉渲染", () => {

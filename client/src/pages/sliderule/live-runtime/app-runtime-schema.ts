@@ -26,6 +26,8 @@ export interface AppPageSchema {
   columns: AppFormFieldSchema[];
   /** 新建/编辑表单项（页面绑定的字段；不足时回退主实体全字段） */
   formFields: AppFormFieldSchema[];
+  /** 详情抽屉字段（主实体全字段，不截断） */
+  detailFields: AppFormFieldSchema[];
   /** 操作权限标签（来自 page.actionPermissions，如 "life_goal:create"） */
   actions: string[];
   /** 本页是否挂了审批流（appbundle.pageBindings 里 pageRef→workflowRef） */
@@ -43,11 +45,21 @@ export interface AppStatCardSchema {
   suffix: string;
 }
 
-/** 工作台（首页仪表盘）也 JSON 化：统计卡声明，渲染器照 schema 出 Pro 风格首页。 */
+export interface AppChartSchema {
+  id: string;
+  /** bar（横向条形，单色 · 各类目一个度量）| donut（状态分布环图） */
+  type: "bar" | "donut";
+  label: string;
+  /** "entities:rowcount"（各实体行数）| "instances:status"（审批状态分布） */
+  source: string;
+}
+
+/** 工作台（首页仪表盘）也 JSON 化：统计卡/图表声明，渲染器照 schema 出 Pro 风格首页。 */
 export interface AppHomeSchema {
   id: "home";
   title: string;
   stats: AppStatCardSchema[];
+  charts: AppChartSchema[];
 }
 
 export interface AppRuntimeSchema {
@@ -130,6 +142,7 @@ export function deriveAppRuntimeSchema(
       title: page.name || id,
       entityId: entity ? entityId : null,
       columns: allFields.slice(0, 6),
+      detailFields: allFields,
       formFields: boundFields.length > 0 ? boundFields : allFields,
       actions: (page.actionPermissions ?? []).map(String),
       workflowLinked: workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
@@ -151,7 +164,15 @@ export function deriveAppRuntimeSchema(
     stats.push({ id: "stat-roles", label: "系统角色", source: "roles", suffix: "个" });
   }
 
-  const home: AppHomeSchema = { id: "home", title: "工作台", stats: stats.slice(0, 4) };
+  const home: AppHomeSchema = {
+    id: "home",
+    title: "工作台",
+    stats: stats.slice(0, 4),
+    charts: [
+      { id: "chart-entities", type: "bar", label: "各实体数据量", source: "entities:rowcount" },
+      { id: "chart-instances", type: "donut", label: "审批状态分布", source: "instances:status" },
+    ],
+  };
 
   return {
     appName,
