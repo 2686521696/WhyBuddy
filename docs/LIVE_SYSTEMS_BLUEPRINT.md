@@ -1,101 +1,113 @@
-# 活系统蓝图：把右栏从"示意图"升级为"真实可操作的六系统"
+# 活系统蓝图 v2：引擎优先——五系统模型直接"落地"为可运行的应用
 
-> 状态：方案定稿，待启动 M0。
-> 来源：对用户上传的 `beae028b-web.zip`（63MB，五个 UmiJS/qiankun 微前端）的全量摸底（2026-07-07）。
+> 状态：方案定稿（v2，引擎优先），待启动 M0。
+> 依据：对 `beae028b-web.zip`（五个 qiankun 微前端，63MB）与 `f7b6100b-backend.zip`
+> （rbac-backend 引擎，18MB）的全量摸底（2026-07-07/08）。
+> v1（五前端 iframe 方案）已被本版取代——用户定调：**"这是个引擎，不是每个系统都要跑端口，
+> 每个系统都是通过 JSON 维护的。"** 摸底证实了这个判断。
 
-## 愿景（用户原话）
+## 一、核心发现：后端就是那台"JSON → 活行为"引擎
 
-> 右侧的画面是固定形式的……能不能做到这种系统的实时画面并且可用操作的，全部打通，
-> 最后导出的时候是目前这种固定格式的内容。
+`rbac-backend`（Express + Sequelize + MySQL，Redis 可选）逐模块验证结果：
 
-即：推演闭环产出五系统模型后，右栏不再渲染示意卡片，而是**打开真实的
-权限 / 工作流 / 数据中台 / 页面设计器+应用中心 / AIGC 中台界面**，
-里面装着**这个话题生成的真实数据**，可以点、可以改；导出物保持现有固定格式不变。
+| 系统 | JSON 定义 | 引擎行为 | 判定 |
+|---|---|---|---|
+| 工作流 | `flow_schema`（X6 cells）| **真状态机**：`workflowEngine.ts` 按 schema 推进实例，网关/会签/或签/自动节点/子流程/审批人解析全有执行器 | ✅ 活 |
+| 数据中台 | DataModel/Field/Relation | **真动态建表**：`schemaManager.ts` 发 `CREATE TABLE dm_*`，`queryBuilder` 动态 SQL，`/api/data/{model}` 真 CRUD（含行列权限/校验/回收站） | ✅ 活 |
+| 页面设计器 | PageSchema | **真运行时**：`designerRenderService.renderPage()` 渲染已发布页 + 真执行数据源（api/database/workflow） | ✅ 活 |
+| 应用中心 | Application + 绑定 | **真发布**：`appVersionService.publishVersion()` 全应用快照（pages/workflows/dataModels/menu/permissions）+ 回滚 | ✅ 活 |
+| RBAC | roles/permissions/menus | 真鉴权链（JWT + 权限守卫 + 菜单树下发） | ✅ 活 |
+| AIGC | 编排定义/节点配置 | 混合：`ai/orchestration/FlowExecutor` 真执行简化编排（拓扑排序+LLM/HTTP/RAG 节点）；设计器大编排目前仅 CRUD | ⚠️ 半活 |
 
-## 一、zip 摸底结论（五应用）
+**契约核对**：五个前端点名的全部端点（`/api/auth`、`/api/roles`、`/api/menus/tree`、
+`/api/workflow/flow-templates|process-configs`、`/api/data-platform/models|fields|relations`、
+`/api/data/{model}`、`/api/designer/pages`、`/api/applications`、`/api/apps/:id/permissions`、
+AIGC `/v1/:tenantId/*`）在引擎里**全部命中**（另有 `/wk` 别名前缀）。
+响应包络以 `{success,data,message}` 为主；鉴权 JWT（Cookie `token` 或 Bearer）；
+seed 自带演示账号 `admin@demo.com / admin123`。
 
-| 应用 | 技术栈 | 核心能力 | 关键数据契约 | 独立可跑？ |
-|---|---|---|---|---|
-| web-main | Umi Max + qiankun **主应用**, React 19, antd 5 | RBAC 全套（用户/角色/权限/菜单/租户/数据权限）+ 门户 | `/api/auth/*` `/api/roles` `/api/permissions` `/api/menus/tree`（cookie 会话） | ❌ mock 是脚手架遗留，业务全靠 :3001 后端 |
-| web-workflow | Umi + **X6 v2** 设计器 + Formily | 流程模板设计器、审批工单 | `/api/workflow/flow-templates`（flow_schema = X6 `graph.toJSON()` cells）、`/api/workflow/process-configs`；审批人 `assigneeType`、`approval_mode: sequential/countersign/or_sign` | ❌ 同上（端口 8200） |
-| web-dataplatform | Umi Max + X6 ER 图 | 数据模型中台：实体/字段/关系/行列权限/动态数据 CRUD/ER 图 | `/api/data-platform/models`、`…/models/:id/fields`、`…/relations`；`/api/data/{modelName}` 动态 CRUD | ❌ 无 mock 目录（端口 8300） |
-| web-designer | Umi + 自研页面引擎 + Designable 表单 + **应用中心** | 页面设计器（自研 PageSchema）、Formily 表单设计器、应用装配/发布/版本快照 | `/api/designer/pages/:id/schema`；`/api/applications`（pageIds/workflowIds/dataModelIds/menuConfig/roleIds 绑定） | ❌（端口 8400） |
-| web-aigc | Umi Max + xyflow/X6 编排画布 | Agent 编排设计器、Prompt 模板库、知识库、~60 种节点 | `/api/v1/{tenantId}/…`；能力=NodeDefinition + FlowInput/OutputVariable + PromptTemplate | ❌（端口 8500） |
-
-**共同点**：全部是 qiankun slave（也支持 standalone，判 `__POWERED_BY_QIANKUN__`）；
-全部 `mock:false`，API 统一代理到 `http://localhost:3001`。
-
-## 二、关键缺口：后端不在 zip 里，也不（完整）在本仓库
-
-- 本仓库 `server/` 有同名概念但**契约不同**（角色在 `/api/permissions/roles` 而非 `/api/roles`；
-  auth 是 `/login /me` 而非 `/api/auth/login /profile`；无 `/api/workflow/*`、`/api/data-platform/*`、
-  `/api/designer/*`、`/api/applications`）。
-- 这套前端的原始后端（mysql `rbac_multitenant`）不在手上。
-
-**这反而是机会**：SlideRule 的核心资产——五系统模型——正好就是这些契约需要的数据。
-我们不需要还原一个企业后端，只需要一个**"推演租户"桥接层**：
-用每个会话的五系统模型作为唯一数据源，实现各前端"打开首屏 + 核心操作"所需的契约子集。
-
-## 三、目标架构
+## 二、目标架构（引擎优先）
 
 ```
-SlideRule 左栏（推演）── 五系统模型（gate 通过）
-                             │  写入
-                             ▼
-        slide-rule-python  /api/live/*  「推演租户」桥接层
-        （会话级内存/JSON 存储，模型 → 各系统契约的双向转换器）
-                             ▲  /api 代理
-   ┌───────────┬───────────┼───────────┬───────────┐
- web-main:8100  workflow:8200  dataplatform:8300  designer:8400  aigc:8500
-   （standalone 模式，右栏 iframe 按需嵌入，postMessage 联动）
-                             │  操作回写模型（M2）
-                             ▼
-        导出管线不变：closure 证据 + 交付包仍是现有固定格式
+SlideRule 左栏推演 ──► 五系统模型（结构闸通过）
+                          │
+                          ▼  「落地」= 模型 → 引擎 API 调用序列（python 转换器）
+              ┌───────────────────────────────┐
+              │   rbac-backend 引擎 · :3002    │   ← 唯一常驻新进程
+              │   MySQL（必需）· Redis（不配） │
+              │  数据中台=真表  工作流=真审批   │
+              │  RBAC=真权限   页面/应用=真发布 │
+              └───────────────────────────────┘
+                          ▲
+        SlideRule 右栏直接消费引擎 API 渲染「活画面」：
+        实体表格可增删改（/api/data/*）· 流程可发起实例真审批 ·
+        角色菜单是真的 · 应用可发布出版本快照
+                          │
+        五个微前端 = 可选的「专业编辑器」，需要深度设计时再单独起某一个
+
+导出：现有固定格式一字不变；附加引擎侧应用快照（M3）
 ```
 
-模型 → 契约转换器（桥接层的核心，双向）：
+与 v1 的区别：**不再以五个前端 dev server 为主体**（每个 1-2GB 内存、五个端口）。
+引擎是唯一新增常驻进程；右栏的"实时画面 + 可操作"由 SlideRule 自己的 UI 直连引擎 API 实现；
+前端套件降级为按需启动的专业编辑器。
 
-| 模型段 | 目标系统 | 转换 |
-|---|---|---|
-| datamodel.entities | 数据中台 | entity→DataModel，fields→DataModelField，`ref` 字段→DataModelRelation |
-| rbac.roles/permissions/menus | web-main 权限 | roles→`/api/roles`，menus→`/api/menus/tree`，permissions→权限树 |
-| workflow.nodes/transitions | 工作流设计器 | nodes→X6 `editor-node`（assigneeRole→审批节点 data），transitions→`edge` cells → `flow_schema` |
-| page.pages | 页面设计器 | fieldBindings→PageSchema components（M1 先只读渲染） |
-| aigc.capabilities | AIGC 中台 | capability→NodeDefinition + PromptTemplate 骨架 |
-| appbundle | 应用中心 | pageBindings/roleRefs/dataModelRefs→Application 资源绑定 + menuConfig |
+## 三、「落地」转换器（M0 的核心交付）
 
-鉴权策略：桥接层的 `/api/auth/profile`、`/api/menus/tree` 无条件返回"推演租户"演示用户
-（各前端 401 才跳登录；永远 200 就永远不跳）。
+python 侧新增 `slide-rule-python/services/engine_seeder.py`：
+输入 = 会话的五系统模型；输出 = 对引擎的幂等 API 调用序列（每话题一个命名空间前缀防冲突）：
 
-## 四、分阶段路线
+1. **datamodel** → `POST /api/data-platform/models` + `/fields`（+`ref`→`/relations`）+ 发布
+   → 引擎真建 `dm_*` 表，`/api/data/{model}` 立即可 CRUD
+2. **rbac** → `POST /api/roles`、`/api/permissions`、`/api/menus`
+3. **workflow** → 模型 nodes/transitions → X6 cells `flow_schema` → `POST /api/workflow/flow-templates`
+   → `process-configs` + `:id/deploy` → 可发起真实审批实例
+4. **page** → PageSchema（fieldBindings→组件）→ `POST /api/designer/pages` + `/schema` + 发布
+5. **aigc** → Prompt 模板 + 节点定义（真执行接 FlowExecutor 留 M2+）
+6. **appbundle** → `POST /api/applications` + 资源绑定 + `menuConfig` + `publishVersion`
+   → 一个带版本快照的**真应用**
 
-- **M0 · 工作流先活**（1 个系统端到端，验证全链路）
-  vendor zip 入仓（`web/` 目录）→ web-workflow standalone 跑通（proxy 改 :9700）→
-  桥接层实现 `flow-templates` GET + 模型→X6 转换器 → 右栏 Workflow 缩略图切到 iframe →
-  推演闭环后设计器里出现**可拖拽编辑的真实流程图**。
-- **M1 · 六系统全打通（只读→可操作）**
-  数据中台（实体/字段/ER 图）→ 权限（角色/菜单）→ AIGC（能力/Prompt）→
-  页面设计器与应用中心（PageSchema 生成 + Application 绑定）。逐个系统给"打开即见本话题数据"。
-- **M2 · 双向：操作回写模型**
-  设计器保存（PUT flow_schema / fields / schema）→ 桥接层反向转换回模型段 →
-  经结构闸重新验证 → 更新闭环证据（改坏了如实 blocked，防伪语义不变）。
+鉴权：seeder 用演示账号登录拿 JWT；右栏走同一 token。
+幂等：以 `sr-{sessionId}` 前缀命名资源，重复落地先清后建。
+
+## 四、分阶段路线（v2）
+
+- **M0 · 引擎入仓 + 数据中台先活**
+  vendor `engine/`（18MB 源码）→ 启动配方（本地 MySQL + 免 Redis + :3002 端口，避开本仓库
+  Node 的 :3001）→ seeder 实现 datamodel 落地 → 右栏 DataModel 屏新增「打开活数据」：
+  真实体表格 + 增删改行（直连 `/api/data/*`）。
+  验收：健身房话题闭环 → 落地 → 右栏能给 `dm_*` 表插一行真数据。
+- **M1 · 工作流 + RBAC + 应用中心落地**
+  flow_schema 转换器（模型→X6 cells）→ deploy → 右栏可发起实例、审批推进（真状态机）；
+  roles/menus 落地；application 绑定 + publishVersion。
+- **M2 · 双向 + 页面运行时**
+  引擎侧修改（如在专业编辑器里改了流程）→ 反向转换回模型段 → 重新过结构闸 →
+  闭环证据更新（改坏如实 blocked）。designer renderPage 输出嵌入右栏。
 - **M3 · 导出收口**
-  导出物格式不变；增量：把各系统的"当前真实配置"作为附件挂进交付包。
+  固定格式不变；交付包附加引擎应用快照（appVersion snapshot JSON）。
 
-## 五、风险与代价（诚实账）
+## 五、启动配方（M0 目标形态）
 
-1. **机器负载**：5 个 umi dev server ≈ 每个 1-2GB 内存。M0 只起 workflow 一个；
-   全量跑建议 `max build` 出静态产物由桥接层托管（去掉 dev server）。
-2. **依赖安装**：五应用 node_modules 各 ~1GB+，首次安装很慢；vendor 入仓只收源码（63MB）。
-3. **React 18/19、antd 4/5 混版**：iframe 隔离天然免疫（不走 qiankun 深度融合，主应用 web-main
-   仅作为独立门户可选启动）。
-4. **契约兜底**：各前端还会打一些我们不实现的接口（通知、日志、监控）；桥接层需要一个
-   catch-all 返回空成功，避免首屏报错雪崩。
-5. **登录态**：standalone 模式依赖 localStorage token——跨源 iframe 注入不进去，
-   靠桥接层"永远 200"策略绕开，需逐应用实测首屏守卫。
+```
+# 依赖：本地 MySQL（原 cube_pets_office 项目同款依赖，机器上大概率已有）
+engine/.env:  DB_HOST=127.0.0.1 DB_NAME=sliderule_engine DB_USER=... DB_PASSWORD=...
+              PORT=3002  JWT_SECRET=<随机>   # 不配任何 REDIS_*
+cd engine && npm i && npm run db:migrate && npm run db:seed   # admin@demo.com/admin123
+npm run dev                                                    # :3002
+# dev:all 增加 engine 可选启动（检测 engine/.env 存在才起），vite 代理 /api/engine → :3002
+```
 
-## 六、M0 验收标准
+已知代价与对策：
+- **MySQL 必需**（动态建表引擎的正当依赖）。SQLite 改造为数周级重构（107 模型、
+  两套共 98 个 MySQL 方言 migration、动态 DDL 全站），明确不做。
+- **Redis 不配**：代码已优雅降级；仅失去队列类功能（超时提醒/异步导入导出），可接受。
+  唯一小改：`config/redis.ts` 关掉启动即连（降噪）。
+- **端口**：引擎默认 3001 与本仓库 Node 冲突 → 统一 3002。
+- **AIGC 大编排只存不跑**：M0/M1 只落 Prompt/节点定义，不承诺编排执行。
 
-发送新颖意图 → 闭环 → 右栏点 Workflow → iframe 打开工作流设计器 →
-画布上是**本话题生成的审批流**（节点/连线/审批人角色与模型一致）→ 可拖动节点、改审批人 →
-点导出，交付包与现在逐字节同构。
+## 六、附：五前端套件（v1 遗产，按需使用）
+
+web-main(:8100 RBAC 门户) / web-workflow(:8200) / web-dataplatform(:8300) /
+web-designer(:8400) / web-aigc(:8500)，全部 qiankun slave + standalone 双模式，
+`/api` 代理指到引擎即可用。作为「专业编辑器」按需单个启动，不进常驻链路。
+调查细节（数据契约、schema 形状、挂载方式）见 git 历史中本文件的 v1 版本。
