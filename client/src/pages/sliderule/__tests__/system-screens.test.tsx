@@ -21,6 +21,7 @@ import { PageScreen } from "../system-screens/PageScreen";
 import { RbacScreen } from "../system-screens/RbacScreen";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
 import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
+import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
@@ -687,6 +688,23 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(withModel).toContain("数据表");
     const withoutModel = renderToStaticMarkup(<DataModelScreen />);
     expect(withoutModel).not.toContain('data-testid="datamodel-mode-toggle"');
+  });
+
+  it("AigcScreen 有能力清单时提供「能力清单⟷能力试跑」切换；无模型不显示", () => {
+    const withModel = renderToStaticMarkup(<AigcScreen model={MODEL} />);
+    expect(withModel).toContain('data-testid="aigc-mode-toggle"');
+    expect(withModel).toContain("能力试跑");
+    const withoutModel = renderToStaticMarkup(<AigcScreen />);
+    expect(withoutModel).not.toContain('data-testid="aigc-mode-toggle"');
+  });
+
+  it("AigcTryRunPanel 按能力切页、输入字段解析实体名、提供「试跑」", () => {
+    const html = renderToStaticMarkup(<AigcTryRunPanel model={MODEL} goal="选课系统" />);
+    expect(html).toContain('data-testid="aigc-tryrun-panel"');
+    expect(html).toContain('data-testid="aigc-tryrun-cap-cap_summary"');
+    expect(html).toContain('data-testid="aigc-tryrun-run"');
+    expect(html).toContain("试跑");
+    expect(html).toContain("课程"); // resolveFieldRef 解析出实体名
   });
 
   it("EntityDataPanel 按实体切页并提供「新增一行」（空表如实提示）", () => {

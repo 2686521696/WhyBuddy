@@ -10,10 +10,11 @@
  *   3. 占位骨架（降透明度 + 提示），不冒充真实产物。
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import {
   type FiveSystemModel,
   type RefResolution,
@@ -26,6 +27,8 @@ interface AigcScreenProps {
   rawContent?: string | null;
   /** 解析出的五系统模型（含 datamodel/rbac 段用于字段与角色交叉引用）。 */
   model?: FiveSystemModel | null;
+  /** 能力试跑时随 prompt 带上的产品意图（话题名） */
+  appTitle?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -89,11 +92,13 @@ export function AigcScreen({
   publishClosure,
   rawContent,
   model,
+  appTitle,
   isActive = false,
   className = "",
 }: AigcScreenProps) {
   const capabilities = model?.aigc?.capabilities ?? [];
   const hasModel = capabilities.length > 0;
+  const [screenMode, setScreenMode] = useState<"list" | "tryrun">("list");
 
   const resolved = useMemo(
     () =>
@@ -126,10 +131,40 @@ export function AigcScreen({
           {hasModel ? `${capabilities.length} 项 AI 能力 · 字段绑定` : "Prompt 模板 · 触发条件"}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
+          {hasModel && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              data-testid="aigc-mode-toggle"
+            >
+              {([
+                { id: "list" as const, label: "能力清单" },
+                { id: "tryrun" as const, label: "能力试跑" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`aigc-mode-${id}`}
+                  onClick={() => setScreenMode(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    screenMode === id
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <EvidenceBadges evidence={evidence} />
         </div>
       </div>
 
+      {screenMode === "tryrun" && hasModel && model ? (
+        <div className="min-h-0 flex-1">
+          <AigcTryRunPanel model={model} goal={appTitle} />
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {hasModel ? (
           <div className="space-y-4" data-testid="aigc-capabilities">
@@ -238,6 +273,7 @@ export function AigcScreen({
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

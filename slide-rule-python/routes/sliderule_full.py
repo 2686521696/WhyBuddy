@@ -705,3 +705,81 @@ async def drive_full_stream(
             "X-Accel-Buffering": "no",  # disable nginx buffering
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# AIGC 能力试跑（浏览器运行时 M2）：拿模型里声明的一项 AI 能力真跑一次 LLM。
+# 语义与五系统生成同一诚实边界：flag 关/无 key → fail-closed 结构化诊断，
+# 不返回伪造输出；失败原因如实透传（对齐 LLM_GENERATE_DISABLED/FAILED 口径）。
+# ---------------------------------------------------------------------------
+
+AIGC_TRYRUN_TIMEOUT_MS_ENV = "SLIDERULE_AIGC_TRYRUN_TIMEOUT_MS"
+DEFAULT_AIGC_TRYRUN_TIMEOUT_MS = 60_000
+
+
+@router.post("/aigc-tryrun")
+def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """Run one declared AIGC capability against the real LLM channel.
+
+    payload: {capability: {id?, name, inputFields?, outputField?}, inputs: {ref: value}, goal?}
+    Returns 200 always; honesty is in the body: {ok, output?|code+detail}.
+    """
+    import time as _time
+
+    from services.v5_capability_executor import _llm_generate_enabled
+    from sliderule_llm.client import call_llm
+
+    _auth(x_internal_key)
+
+    capability = payload.get("capability") or {}
+    name = str(capability.get("name") or capability.get("id") or "").strip()
+    if not name:
+        raise HTTPException(400, "capability.name required")
+    inputs: Dict[str, Any] = payload.get("inputs") or {}
+    output_field = str(capability.get("outputField") or "").strip()
+    goal = str(payload.get("goal") or "").strip()
+
+    if not _llm_generate_enabled():
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_DISABLED",
+            "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启（或运行时无 LLM key），"
+            "能力试跑不伪造输出",
+        }
+
+    filled = "\n".join(f"- {k}：{v}" for k, v in inputs.items() if str(v).strip()) or "（未提供输入值）"
+    system = (
+        "你是产品排练系统里的一项 AI 能力，正在被试跑验证。"
+        "根据能力定义和输入字段值，直接生成该能力的输出内容本身——"
+        "不要解释、不要客套、不要 markdown 标题，用简体中文，200 字以内。"
+    )
+    user = (
+        (f"产品意图：{goal}\n" if goal else "")
+        + f"能力名称：{name}\n"
+        + f"输入字段值：\n{filled}\n"
+        + (f"输出字段：{output_field}\n" if output_field else "")
+        + "请生成这项能力应产出的内容。"
+    )
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    started = _time.monotonic()
+    try:
+        result = call_llm(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.4,
+            max_tokens=600,
+            timeout_ms=timeout_ms,
+        )
+    except LlmError as exc:
+        return {
+            "ok": False,
+            "code": "LLM_GENERATE_FAILED",
+            "detail": str(exc)[:300],
+            "elapsedMs": int((_time.monotonic() - started) * 1000),
+        }
+
+    return {
+        "ok": True,
+        "output": result.content,
+        "elapsedMs": int((_time.monotonic() - started) * 1000),
+    }
