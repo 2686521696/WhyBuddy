@@ -34,6 +34,7 @@ sys.path.insert(0, str(_HERE.parent.parent))  # slide-rule-python/
 
 from services.v5_llm_generate import generate_five_system_model  # noqa: E402
 from services.v5_model_gate import validate_five_system_model, DANGLING  # noqa: E402
+from services.v5_content_quality import analyze_content_quality  # noqa: E402
 
 REPO_ROOT = _HERE.parent.parent.parent
 DEFAULT_OUT = REPO_ROOT / "docs" / "five-system-generation-eval.md"
@@ -222,6 +223,7 @@ def run_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
         "cross_refs_total": 0,
         "dangling": 0,
         "fit": None,
+        "content": None,
     }
     if model is None:
         return result
@@ -232,6 +234,7 @@ def run_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     result["cross_refs_total"] = _count_cross_refs(model)
     result["dangling"] = sum(1 for f in result["findings"] if f.get("code") == DANGLING)
     result["fit"] = _domain_fit(model, domain["keywords"])
+    result["content"] = analyze_content_quality(model)
     return result
 
 
@@ -256,18 +259,22 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
     lines.append("")
     lines.append("## 汇总")
     lines.append("")
-    lines.append("| 领域 | 生成 | Gate | 耗时(s) | 实体 | 字段 | 角色 | 权限 | 流程节点 | 转移 | 页面 | AIGC能力 | 交叉引用(悬挂/总数) | 实体域命中 |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| 领域 | 生成 | Gate | 内容质量 | 耗时(s) | 实体 | 字段 | 角色 | 权限 | 流程节点 | 转移 | 页面 | AIGC能力 | 交叉引用(悬挂/总数) | 实体域命中 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         c = r["counts"] or {}
         fit = r["fit"] or {}
         if not r["generated"]:
-            lines.append(f"| {r['name']} | ❌ 失败 | — | {r['latency_s']} | — | — | — | — | — | — | — | — | — | — |")
+            lines.append(f"| {r['name']} | ❌ 失败 | — | — | {r['latency_s']} | — | — | — | — | — | — | — | — | — | — |")
             continue
         gate = "✅ PASS" if r["gate_passed"] else "❌ FAIL"
+        content = r.get("content") or {}
+        c_fails = content.get("hardFailCount", 0)
+        c_warns = sum(1 for f in content.get("findings", []) if f.get("severity") == "warn")
+        content_cell = ("❌ " if c_fails else "✅ ") + f"{c_fails} fail / {c_warns} warn"
         ent_fit = f"{fit.get('entity_hits', 0)}/{c.get('entities', 0)}"
         lines.append(
-            f"| {r['name']} | ✅ | {gate} | {r['latency_s']} | {c.get('entities', 0)} | {c.get('fields', 0)} "
+            f"| {r['name']} | ✅ | {gate} | {content_cell} | {r['latency_s']} | {c.get('entities', 0)} | {c.get('fields', 0)} "
             f"| {c.get('roles', 0)} | {c.get('permissions', 0)} | {c.get('workflow_nodes', 0)} "
             f"| {c.get('transitions', 0)} | {c.get('pages', 0)} | {c.get('aigc_capabilities', 0)} "
             f"| {r['dangling']}/{r['cross_refs_total']} | {ent_fit} |"
@@ -306,6 +313,27 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
             lines.append(f"  - ⚠️ 泛化命名嫌疑（{len(generic)}）：{_fmt_names(generic, 8)}")
         else:
             lines.append("  - 泛化命名嫌疑：无")
+        content = r.get("content") or {}
+        cm = content.get("metrics") or {}
+        c_findings = content.get("findings") or []
+        c_fails = content.get("hardFailCount", 0)
+        lines.append("- 内容质量（确定性启发式，零 LLM）：")
+        shape = ("纯线性（无分支）" if cm.get("workflowLinear") else f"{cm.get('branchNodes', 0)} 个分支节点")
+        reject = "有回退边" if cm.get("hasBackEdge") else f"{cm.get('terminals', 0)} 个终态"
+        lines.append(f"  - 流程形状：{shape} · {reject}")
+        lines.append(
+            f"  - 可达性/权限：不可达页面 {cm.get('unreachablePages', 0)} · 空页面 {cm.get('emptyPages', 0)}"
+            f" · 满权角色 {cm.get('overPrivilegedRoles', 0)} · 孤儿权限 {cm.get('orphanPermissions', 0)}"
+            f" · 无用角色 {cm.get('unusedRoles', 0)} · 孤儿实体 {cm.get('orphanEntities', 0)}"
+        )
+        if c_findings:
+            lines.append(f"  - 结论：{'❌' if c_fails else '✅'} {c_fails} fail / "
+                         f"{sum(1 for f in c_findings if f.get('severity') == 'warn')} warn")
+            for f in c_findings[:10]:
+                icon = "❌" if f.get("severity") == "fail" else "⚠️"
+                lines.append(f"    - {icon} `{f.get('code')}` — {f.get('detail')}")
+        else:
+            lines.append("  - 结论：✅ 无 finding")
         if r["findings"]:
             lines.append(f"- Gate findings（前 {min(10, len(r['findings']))} 条）：")
             for f in r["findings"][:10]:
@@ -314,9 +342,18 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
 
     passed = sum(1 for r in results if r["gate_passed"])
     generated = sum(1 for r in results if r["generated"])
+    content_fails = sum((r.get("content") or {}).get("hardFailCount", 0) for r in results)
+    content_warns = sum(
+        1
+        for r in results
+        for f in (r.get("content") or {}).get("findings", [])
+        if f.get("severity") == "warn"
+    )
     lines.append("## 结论（诚实版）")
     lines.append("")
     lines.append(f"- 生成成功 {generated}/{len(results)}，Gate 通过 {passed}/{len(results)}。")
+    lines.append(f"- 内容质量回归门：hard-fail {content_fails} 条 / warn {content_warns} 条"
+                 "（fail = 用户一上手就撞墙，如页面全员不可达；warn = 深度短板，盯趋势）。")
     if passed < len(results):
         lines.append("- 未通过项如实保留在上表；gate 失败即 fail-closed（0/6，不注入证据、不降级伪造）。")
     lines.append("- 关键词命中是抽查下限而非上限：中文实体名可能用同义词（如“课程”对“排期”），"
@@ -331,6 +368,8 @@ def main() -> int:
                         help="Override domain intents (names default to the intent text)")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="Markdown report path")
     parser.add_argument("--sleep", type=float, default=2.0, help="Seconds between domains (rate-limit)")
+    parser.add_argument("--content-gate", action="store_true",
+                        help="内容质量回归门：任一领域出现 hard-fail 级 finding 则退出码 1")
     args = parser.parse_args()
 
     _load_env_file()
@@ -360,6 +399,12 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report, encoding="utf-8")
     print(f"[eval] report written: {out_path}")
+    content_fails = sum((r.get("content") or {}).get("hardFailCount", 0) for r in results)
+    if content_fails:
+        print(f"[eval] content-quality hard fails: {content_fails}")
+    if args.content_gate and content_fails:
+        print("[eval] CONTENT GATE FAILED (--content-gate)")
+        return 1
     # Also dump raw JSON next to the report for debugging (not committed by default).
     print(json.dumps(
         [{k: v for k, v in r.items() if k not in ("fit", "findings")} for r in results],
