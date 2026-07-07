@@ -110,12 +110,37 @@ def _str_list(v: Any, cap: int = 3) -> List[str]:
     return [str(x) for x in v if isinstance(x, (str, int, float))][:cap]
 
 
+def _parse_judge_response(raw: Any) -> Optional[Dict[str, Any]]:
+    """解析 judge 响应；任何维度缺失/越界即整体返回 None（不编分）。"""
+    if not isinstance(raw, dict):
+        return None
+    dims: Dict[str, Dict[str, Any]] = {}
+    for dim in DIMENSIONS:
+        section = raw.get(dim)
+        if not isinstance(section, dict):
+            return None  # 缺维度即整体 fail-closed，不编分
+        score = _clamp_score(section.get("score"))
+        if score is None:
+            return None
+        entry: Dict[str, Any] = {"score": score, "reasons": _str_list(section.get("reasons"))}
+        if dim == "requirement_coverage":
+            entry["missed"] = _str_list(section.get("missed"), cap=6)
+        dims[dim] = entry
+    avg = round(sum(d["score"] for d in dims.values()) / len(dims), 2)
+    return {"dims": dims, "avg": avg}
+
+
 def judge_content_quality(
     model: Dict[str, Any],
     intent: str,
     llm_json_fn: Optional[Callable[..., Any]] = None,
+    attempts: int = 2,
 ) -> Optional[Dict[str, Any]]:
-    """三维量表评分。返回 {dims: {dim: {score, reasons, missed?}}, avg}；失败返回 None。"""
+    """三维量表评分。返回 {dims: {dim: {score, reasons, missed?}}, avg}；失败返回 None。
+
+    瞬时错误（空响应/限流/坏形状）重试至多 attempts 次——与生成路径的
+    attempt 1/2 对齐；重试后仍失败才 fail-closed。
+    """
     if llm_json_fn is None:
         from sliderule_llm.client import call_llm_json
 
@@ -130,25 +155,12 @@ def judge_content_quality(
             "content": f"业务意图：{intent}\n\n五系统模型摘要（JSON）：\n{_digest_model(model)}",
         },
     ]
-    try:
-        raw = llm_json_fn(messages)
-    except Exception:
-        return None
-    if not isinstance(raw, dict):
-        return None
-
-    dims: Dict[str, Dict[str, Any]] = {}
-    for dim in DIMENSIONS:
-        section = raw.get(dim)
-        if not isinstance(section, dict):
-            return None  # 缺维度即整体 fail-closed，不编分
-        score = _clamp_score(section.get("score"))
-        if score is None:
-            return None
-        entry: Dict[str, Any] = {"score": score, "reasons": _str_list(section.get("reasons"))}
-        if dim == "requirement_coverage":
-            entry["missed"] = _str_list(section.get("missed"), cap=6)
-        dims[dim] = entry
-
-    avg = round(sum(d["score"] for d in dims.values()) / len(dims), 2)
-    return {"dims": dims, "avg": avg}
+    for _ in range(max(1, attempts)):
+        try:
+            raw = llm_json_fn(messages)
+        except Exception:
+            continue
+        parsed = _parse_judge_response(raw)
+        if parsed is not None:
+            return parsed
+    return None

@@ -58,10 +58,29 @@ def test_missing_dimension_fails_closed():
 
 
 def test_llm_exception_fails_closed():
+    calls = {"n": 0}
+
     def boom(messages):
+        calls["n"] += 1
         raise RuntimeError("provider down")
 
     assert judge_content_quality(MODEL, "x", llm_json_fn=boom) is None
+    assert calls["n"] == 2  # 默认重试一次后才 fail-closed
+
+
+def test_transient_failure_recovers_on_retry():
+    calls = {"n": 0}
+
+    def flaky(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("empty content from LLM")
+        return GOOD_RESPONSE
+
+    result = judge_content_quality(MODEL, "x", llm_json_fn=flaky)
+    assert result is not None
+    assert result["avg"] == 4.0
+    assert calls["n"] == 2
 
 
 def test_reasons_capped_and_coerced():
