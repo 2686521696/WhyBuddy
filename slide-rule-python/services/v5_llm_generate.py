@@ -47,7 +47,7 @@ Required shape (use these exact keys):
   },
   "workflow": {
     "id": "<workflow_id>",
-    "nodes": [{"id": "<id>", "name": "<label>", "assigneeRole": "<role_id>"}],
+    "nodes": [{"id": "<id>", "name": "<label>", "assigneeRole": "<role_id>", "phase": "<stage label>"}],
     "transitions": [{"from": "<node_id>", "to": "<node_id>", "condition": "<optional>"}]
   },
   "page": {
@@ -76,6 +76,9 @@ Rules:
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
 - Model the SPECIFIC business the intent describes (entities, roles, approval
   steps, pages that fit that domain). Do not emit a generic template.
+- PHASES (swimlanes): give EVERY workflow node a "phase" — a short stage label
+  in the intent's language (e.g. 申请 / 审核 / 执行 / 验收). Use 2-4 phases
+  total; nodes of the same phase must be consecutive along the main flow.
 
 Content-quality rules (checked by a deterministic regression gate):
 - REACHABILITY: every permission listed in a page's actionPermissions MUST be

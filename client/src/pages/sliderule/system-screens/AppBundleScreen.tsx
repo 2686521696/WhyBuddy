@@ -13,12 +13,14 @@
 import React, { useMemo, useState } from "react";
 import { AppRuntimeScreen } from "../live-runtime/AppRuntimeScreen";
 import { SystemLinkageGraph } from "./SystemLinkageGraph";
+import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
   type FiveSystemModel,
   type RefResolution,
   deriveSystemLinkageGraph,
   evidenceSourceOf,
+  linkageToMermaid,
   resolveEntityRef,
   resolvePageRef,
   resolveRoleRef,
@@ -76,9 +78,14 @@ export function AppBundleScreen({
 }: AppBundleScreenProps) {
   // 运行应用（JSON 渲染的"真系统"）：模型带页面+实体时可用
   const [screenMode, setScreenMode] = useState<"board" | "graph" | "app">("board");
+  // 联动图样式：Mermaid 整体架构图（默认，自动布线）⟷ React Flow 交互图
+  const [graphStyle, setGraphStyle] = useState<"mermaid" | "flow">("mermaid");
+  // 架构图缩放：适宽看全貌（默认）⟷ 原始尺寸滚动看细节
+  const [archFit, setArchFit] = useState(true);
   const canRunApp = (model?.page?.pages?.length ?? 0) > 0 && (model?.datamodel?.entities?.length ?? 0) > 0;
   // 联动图：至少两个非空系统段才有联动可画
   const canLinkage = useMemo(() => deriveSystemLinkageGraph(model) !== null, [model]);
+  const archMermaid = useMemo(() => linkageToMermaid(model), [model]);
   type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
   const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
     PublishClosureSummary["perSkillEvidence"]
@@ -194,8 +201,54 @@ export function AppBundleScreen({
           <AppRuntimeScreen model={model} sessionId={sessionId} appTitle={appTitle} />
         </div>
       ) : screenMode === "graph" && canLinkage ? (
-        <div className="min-h-0 flex-1">
-          <SystemLinkageGraph model={model} />
+        <div className="relative min-h-0 flex-1">
+          <div className="absolute right-3 top-2 z-10 flex items-center gap-1.5">
+            {graphStyle === "mermaid" && archMermaid && (
+              <button
+                type="button"
+                data-testid="appbundle-arch-fit"
+                onClick={() => setArchFit((v) => !v)}
+                className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-medium text-stone-500 shadow-sm ring-1 ring-[#E7E2D9] transition-colors hover:text-stone-700"
+                title={archFit ? "切到原始尺寸，滚动查看细节" : "缩放到容器宽度，看整体结构"}
+              >
+                {archFit ? "原始尺寸" : "适宽全貌"}
+              </button>
+            )}
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-sm ring-1 ring-[#E7E2D9]"
+              data-testid="appbundle-graph-style"
+            >
+              {([
+                { id: "mermaid" as const, label: "架构图" },
+                { id: "flow" as const, label: "交互图" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`appbundle-graph-${id}`}
+                  onClick={() => setGraphStyle(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    graphStyle === id
+                      ? "bg-[#F0EDE5] text-stone-800"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {graphStyle === "mermaid" && archMermaid ? (
+            <div className="h-full w-full overflow-auto p-4" data-testid="appbundle-arch-mermaid">
+              <MermaidDiagram chart={archMermaid} fit={archFit} />
+              <div className="mt-2 text-center text-[10px] text-stone-400">
+                五系统整体架构（Mermaid 自动布线）· 连线标签 = 引用语义 ·{" "}
+                {archFit ? "适宽全貌，切「原始尺寸」看细节" : "原始尺寸，滚动查看"}
+              </div>
+            </div>
+          ) : (
+            <SystemLinkageGraph model={model} />
+          )}
         </div>
       ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">

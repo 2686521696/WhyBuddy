@@ -43,6 +43,8 @@ export interface WorkflowNode {
   id: string;
   name?: string;
   assigneeRole?: string;
+  /** 阶段标签（生成侧泳道分组，如 申请/审核/执行；可选） */
+  phase?: string;
 }
 
 export interface WorkflowTransition {
@@ -612,6 +614,8 @@ export interface WfGraphNode {
   isStart: boolean;
   /** 无出边 = 终点（approve 到此即 completed） */
   isTerminal: boolean;
+  /** 阶段标签（泳道分组依据；未声明为 null） */
+  phase: string | null;
 }
 
 export interface WfGraphEdge {
@@ -637,6 +641,7 @@ export function deriveWorkflowGraphData(
       roleResolved: !n.assigneeRole || declaredRoles.has(n.assigneeRole),
       isStart: !hasInbound.has(n.id),
       isTerminal: !hasOutbound.has(n.id),
+      phase: (n.phase ?? "").trim() || null,
     })),
     edges: transitions.map((t) => ({
       from: t.from,
@@ -644,6 +649,108 @@ export function deriveWorkflowGraphData(
       condition: t.condition || null,
     })),
   };
+}
+
+/**
+ * 阶段泳道分组：全部节点都声明了 phase 且存在 ≥2 个不同阶段才启用
+ * （部分缺失宁可回退平铺布局，不猜阶段归属）。阶段顺序按节点列表首现序。
+ */
+export function derivePhaseLanes(
+  nodes: WfGraphNode[]
+): Array<{ phase: string; nodeIds: string[] }> | null {
+  if (nodes.length === 0 || nodes.some((n) => !n.phase)) return null;
+  const lanes: Array<{ phase: string; nodeIds: string[] }> = [];
+  const byPhase = new Map<string, string[]>();
+  for (const n of nodes) {
+    const phase = n.phase as string;
+    let ids = byPhase.get(phase);
+    if (!ids) {
+      ids = [];
+      byPhase.set(phase, ids);
+      lanes.push({ phase, nodeIds: ids });
+    }
+    ids.push(n.id);
+  }
+  return lanes.length >= 2 ? lanes : null;
+}
+
+// --- 五系统整体架构图（Mermaid flowchart，AppBundle 屏「架构图」视图） -------
+
+const LINKAGE_EDGE_LABEL: Record<LinkageEdge["kind"], string> = {
+  "page-entity": "字段绑定",
+  "page-workflow": "发起流程",
+  "node-role": "审批人",
+  "aigc-entity": "写回字段",
+  "aigc-role": "可用角色",
+};
+
+/**
+ * 五系统整体架构图：Mermaid flowchart —— 每个系统一个 subgraph 分组
+ * （全部成员展开成网格），跨系统引用**捆扎成组间边**（语义标签 + 条数）。
+ * 成员级逐条连线留给交互图；架构图管"哪个系统引用哪个系统、引用多重"
+ * ——39 条成员边画进 dagre 会把整图摊到 4000+px 宽，捆扎后才是架构图。
+ * 数据与 deriveSystemLinkageGraph 完全同源（悬空引用不入图）；
+ * 少于 2 个非空系统段返回 null。
+ */
+export function linkageToMermaid(model: FiveSystemModel | null | undefined): string | null {
+  const data = deriveSystemLinkageGraph(model);
+  if (!data) return null;
+
+  // key → mermaid 安全 id（中文/符号净化后可能撞车，撞车追加后缀保唯一）
+  const idMap = new Map<string, string>();
+  const used = new Set<string>();
+  const nid = (key: string): string => {
+    let v = idMap.get(key);
+    if (v) return v;
+    v = mermaidId(key.replace(":", "__"));
+    while (used.has(v)) v = `${v}_x`;
+    used.add(v);
+    idMap.set(key, v);
+    return v;
+  };
+
+  // 整体 TB：系统组按引用方向垂直分层。组内不给布局自由发挥——大组会被
+  // 摊成一整行（实测 6 角色的组被拉到 5000+px 宽）；用隐形链（~~~）把成员
+  // 折成约 4 列的网格，组块保持紧凑，整图宽高比贴合看板画面。
+  const lines = ["flowchart TB"];
+  lines.push("  classDef datamodel fill:#e6f4ff,stroke:#91caff,color:#0958d9");
+  lines.push("  classDef page fill:#e6fffb,stroke:#87e8de,color:#08979c");
+  lines.push("  classDef workflow fill:#f9f0ff,stroke:#d3adf7,color:#531dab");
+  lines.push("  classDef rbac fill:#fff7e6,stroke:#ffd591,color:#d46b08");
+  lines.push("  classDef aigc fill:#fff0f6,stroke:#ffadd2,color:#c41d7f");
+  for (const g of data.groups) {
+    lines.push(`  subgraph sg_${g.system}["${mermaidLabel(g.label)}"]`);
+    // TB 下无边成员同秩横排；>4 个时按隐形链竖排折列（每列 rows 个）
+    lines.push("    direction TB");
+    for (const item of g.items) {
+      lines.push(`    ${nid(item.key)}["${mermaidLabel(item.name)}"]`);
+    }
+    const rows = g.items.length > 4 ? Math.ceil(g.items.length / 4) : 1;
+    if (rows > 1) {
+      for (let k = 0; k * rows < g.items.length; k++) {
+        const chain = g.items.slice(k * rows, k * rows + rows);
+        if (chain.length > 1) {
+          lines.push(`    ${chain.map((i) => nid(i.key)).join(" ~~~ ")}`);
+        }
+      }
+    }
+    lines.push("  end");
+    lines.push(`  class ${g.items.map((i) => nid(i.key)).join(",")} ${g.system}`);
+  }
+  // 组间捆扎边：同 (来源系统, 目标系统, 语义) 聚合为一条，标注条数
+  const bundled = new Map<string, number>();
+  for (const e of data.edges) {
+    const fromSys = e.from.slice(0, e.from.indexOf(":"));
+    const toSys = e.to.slice(0, e.to.indexOf(":"));
+    const sig = `${fromSys}|${toSys}|${e.kind}`;
+    bundled.set(sig, (bundled.get(sig) ?? 0) + 1);
+  }
+  for (const [sig, count] of bundled) {
+    const [fromSys, toSys, kind] = sig.split("|");
+    const label = LINKAGE_EDGE_LABEL[kind as LinkageEdge["kind"]];
+    lines.push(`  sg_${fromSys} -->|"${mermaidLabel(label)} ×${count}"| sg_${toSys}`);
+  }
+  return lines.join("\n");
 }
 
 export function datamodelToMermaid(

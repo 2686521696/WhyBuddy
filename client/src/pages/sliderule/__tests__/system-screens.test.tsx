@@ -31,8 +31,10 @@ import {
   crossSkillEdgesToMermaid,
   datamodelToMermaid,
   deriveErGraphData,
+  derivePhaseLanes,
   deriveWorkflowGraphData,
   deriveSystemLinkageGraph,
+  linkageToMermaid,
   evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
@@ -666,6 +668,61 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     // 悬空引用不入图（ghost_role 未在 roles 声明）
     expect(data.edges.some((e) => e.to === "rbac:ghost_role")).toBe(false);
     expect(deriveSystemLinkageGraph({})).toBeNull();
+  });
+
+  it("derivePhaseLanes：全节点带 phase 且 ≥2 阶段才启用；缺失/单阶段回退 null", () => {
+    const data = deriveWorkflowGraphData({
+      workflow: {
+        nodes: [
+          { id: "a", name: "填写申请", phase: "申请" },
+          { id: "b", name: "初审", phase: "审核" },
+          { id: "c", name: "复审", phase: "审核" },
+          { id: "d", name: "归档", phase: "收尾" },
+        ],
+        transitions: [
+          { from: "a", to: "b" },
+          { from: "b", to: "c" },
+          { from: "c", to: "d" },
+        ],
+      },
+    })!;
+    expect(data.nodes[0].phase).toBe("申请");
+    const lanes = derivePhaseLanes(data.nodes)!;
+    expect(lanes.map((l) => l.phase)).toEqual(["申请", "审核", "收尾"]);
+    expect(lanes[1].nodeIds).toEqual(["b", "c"]);
+    // 有节点缺 phase → null（不猜归属，回退平铺布局）
+    const partial = deriveWorkflowGraphData({
+      workflow: { nodes: [{ id: "a", phase: "申请" }, { id: "b" }], transitions: [] },
+    })!;
+    expect(derivePhaseLanes(partial.nodes)).toBeNull();
+    // 只有一个阶段 → null（单泳道无意义）
+    const single = deriveWorkflowGraphData({
+      workflow: {
+        nodes: [{ id: "a", phase: "申请" }, { id: "b", phase: "申请" }],
+        transitions: [],
+      },
+    })!;
+    expect(derivePhaseLanes(single.nodes)).toBeNull();
+  });
+
+  it("linkageToMermaid：五系统 subgraph 分组 + 语义标签边 + 系统配色；空模型 null", () => {
+    const chart = linkageToMermaid(MODEL)!;
+    expect(chart).toContain("flowchart TB");
+    expect(chart).toContain('subgraph sg_datamodel["数据中台 · DataModel"]');
+    expect(chart).toContain('subgraph sg_rbac["权限 · RBAC"]');
+    // key 净化：page:enroll_page → page__enroll_page（成员全部展开在组内）
+    expect(chart).toContain("page__enroll_page");
+    // 组间捆扎边：语义标签 + 条数（成员级逐条边留给交互图）
+    expect(chart).toMatch(/sg_page -->\|"字段绑定 ×\d+"\| sg_datamodel/);
+    expect(chart).toMatch(/sg_workflow -->\|"审批人 ×\d+"\| sg_rbac/);
+    expect(chart).toMatch(/sg_aigc -->\|"写回字段 ×\d+"\| sg_datamodel/);
+    // 系统配色：classDef + class 绑定
+    expect(chart).toContain("classDef workflow");
+    expect(chart).toMatch(/class .*workflow__submit.* workflow/);
+    // 悬空引用不入图（与交互图一致）
+    expect(chart).not.toContain("ghost_role");
+    expect(linkageToMermaid({})).toBeNull();
+    expect(linkageToMermaid(undefined)).toBeNull();
   });
 
   // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，

@@ -25,6 +25,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 import {
+  derivePhaseLanes,
   deriveWorkflowGraphData,
   type FiveSystemModel,
   type WfGraphNode,
@@ -136,7 +137,44 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
   );
 }
 
-const NODE_TYPES = { wfNode: WfNodeCard };
+type WfLaneNode = Node<{ label: string; index: number; w: number; h: number }, "wfLane">;
+
+/** 阶段泳道背景卡（zIndex 置底、不可交互，节点浮于其上）。 */
+function WfLaneCard({ data }: NodeProps<WfLaneNode>) {
+  return (
+    <div
+      style={{
+        width: data.w,
+        height: data.h,
+        boxSizing: "border-box",
+        background: data.index % 2 ? "rgba(240,237,229,0.5)" : "rgba(250,248,243,0.65)",
+        border: "1px dashed #E3DED2",
+        borderRadius: 14,
+        position: "relative",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 10,
+          fontSize: 10,
+          fontWeight: 600,
+          color: "#8c8577",
+          background: "#fff",
+          border: "1px solid #E7E2D9",
+          borderRadius: 8,
+          padding: "1px 8px",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {data.label}
+      </span>
+    </div>
+  );
+}
+
+const NODE_TYPES = { wfNode: WfNodeCard, wfLane: WfLaneCard };
 
 /** dagre TB 布局：返回 nodeId → 左上角坐标（React Flow 用左上角定位）。 */
 function layoutPositions(
@@ -168,6 +206,76 @@ function layoutPositions(
   return pos;
 }
 
+export interface LaneRect {
+  phase: string;
+  index: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const LANE_PAD_X = 28;
+const LANE_PAD_TOP = 36;
+const LANE_PAD_BOTTOM = 20;
+const LANE_GAP = 46;
+
+/**
+ * 泳道布局：每个阶段的子图各自 dagre TB 排版（只含阶段内边），
+ * 泳道按阶段首现序垂直堆叠、内容水平居中；跨阶段边照常在泳道间隙路由。
+ */
+function layoutWithLanes(
+  nodes: WfGraphNode[],
+  edges: Array<{ from: string; to: string; condition?: string | null }>,
+  lanes: Array<{ phase: string; nodeIds: string[] }>
+): { positions: Record<string, { x: number; y: number }>; laneRects: LaneRect[] } {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const locals: Array<{
+    phase: string;
+    pos: Record<string, { x: number; y: number }>;
+    w: number;
+    h: number;
+  }> = [];
+  for (const lane of lanes) {
+    const inLane = new Set(lane.nodeIds);
+    const laneNodes = lane.nodeIds.map((id) => nodeById.get(id)!).filter(Boolean);
+    const laneEdges = edges.filter((e) => inLane.has(e.from) && inLane.has(e.to));
+    const pos = layoutPositions(laneNodes, laneEdges);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of lane.nodeIds) {
+      const p = pos[id];
+      if (!p) continue;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + CARD_W);
+      maxY = Math.max(maxY, p.y + CARD_H);
+    }
+    if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = CARD_W; maxY = CARD_H; }
+    // 归零到 (0,0)
+    const norm: Record<string, { x: number; y: number }> = {};
+    for (const id of lane.nodeIds) {
+      const p = pos[id];
+      if (p) norm[id] = { x: p.x - minX, y: p.y - minY };
+    }
+    locals.push({ phase: lane.phase, pos: norm, w: maxX - minX, h: maxY - minY });
+  }
+
+  const laneW = Math.max(...locals.map((l) => l.w)) + LANE_PAD_X * 2;
+  const positions: Record<string, { x: number; y: number }> = {};
+  const laneRects: LaneRect[] = [];
+  let y = 0;
+  for (const [i, l] of locals.entries()) {
+    const laneH = l.h + LANE_PAD_TOP + LANE_PAD_BOTTOM;
+    laneRects.push({ phase: l.phase, index: i, x: 0, y, w: laneW, h: laneH });
+    const xShift = (laneW - l.w) / 2;
+    for (const [id, p] of Object.entries(l.pos)) {
+      positions[id] = { x: p.x + xShift, y: y + LANE_PAD_TOP + p.y };
+    }
+    y += laneH + LANE_GAP;
+  }
+  return { positions, laneRects };
+}
+
 export function WorkflowGraph({
   model,
   sessionId,
@@ -197,22 +305,34 @@ export function WorkflowGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, runtimeVersion]);
 
-  // 布局只依赖结构；高亮变化不重排
-  const positions = React.useMemo(
-    () => (data ? layoutPositions(data.nodes, data.edges) : {}),
-    [data]
-  );
+  // 布局只依赖结构；高亮变化不重排。全节点带 phase 且 ≥2 阶段 → 泳道布局
+  const layout = React.useMemo(() => {
+    if (!data) return { positions: {} as Record<string, { x: number; y: number }>, laneRects: [] as LaneRect[] };
+    const lanes = derivePhaseLanes(data.nodes);
+    if (lanes) return layoutWithLanes(data.nodes, data.edges, lanes);
+    return { positions: layoutPositions(data.nodes, data.edges), laneRects: [] };
+  }, [data]);
+  const positions = layout.positions;
 
-  const flowNodes: WfFlowNode[] = React.useMemo(
-    () =>
-      (data?.nodes ?? []).map((n) => ({
-        id: n.id,
-        type: "wfNode" as const,
-        position: positions[n.id] ?? { x: 0, y: 0 },
-        data: { wf: n, color: roleColor(n.role, roles), running: runningByNode[n.id] ?? 0 },
-      })),
-    [data, positions, roles, runningByNode]
-  );
+  const flowNodes: Array<WfFlowNode | WfLaneNode> = React.useMemo(() => {
+    const laneNodes: WfLaneNode[] = layout.laneRects.map((r) => ({
+      id: `lane-${r.index}`,
+      type: "wfLane" as const,
+      position: { x: r.x, y: r.y },
+      data: { label: r.phase, index: r.index, w: r.w, h: r.h },
+      selectable: false,
+      draggable: false,
+      focusable: false,
+      zIndex: -1,
+    }));
+    const wfNodes: WfFlowNode[] = (data?.nodes ?? []).map((n) => ({
+      id: n.id,
+      type: "wfNode" as const,
+      position: positions[n.id] ?? { x: 0, y: 0 },
+      data: { wf: n, color: roleColor(n.role, roles), running: runningByNode[n.id] ?? 0 },
+    }));
+    return [...laneNodes, ...wfNodes];
+  }, [data, layout.laneRects, positions, roles, runningByNode]);
 
   const flowEdges: Edge[] = React.useMemo(
     () =>

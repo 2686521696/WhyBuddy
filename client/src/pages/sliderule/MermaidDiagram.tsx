@@ -11,6 +11,8 @@ import React, { useEffect, useRef, useState } from "react";
 interface MermaidDiagramProps {
   chart: string;
   className?: string;
+  /** false = 保留 SVG 原始尺寸（大图靠容器滚动看，不压缩到容器宽） */
+  fit?: boolean;
 }
 
 let mermaidReady = false;
@@ -41,7 +43,7 @@ function nextId() {
   return `mermaid-${++_idCounter}`;
 }
 
-export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
+export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -61,11 +63,16 @@ export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
           const { svg } = await mermaid.render(idRef.current, chart.trim());
           if (cancelled || !containerRef.current) return;
           containerRef.current.innerHTML = svg;
-          // Let the SVG fill its container width
           const svgEl = containerRef.current.querySelector("svg");
           if (svgEl) {
-            svgEl.style.maxWidth = "100%";
-            svgEl.style.height = "auto";
+            if (fit) {
+              // Let the SVG fill its container width
+              svgEl.style.maxWidth = "100%";
+              svgEl.style.height = "auto";
+            } else {
+              // Keep natural size — oversized diagrams scroll inside the container
+              svgEl.style.maxWidth = "none";
+            }
           }
           setRendered(true);
         } catch (e: any) {
@@ -79,7 +86,7 @@ export function MermaidDiagram({ chart, className = "" }: MermaidDiagramProps) {
     return () => {
       cancelled = true;
     };
-  }, [chart]);
+  }, [chart, fit]);
 
   if (error) {
     return (
