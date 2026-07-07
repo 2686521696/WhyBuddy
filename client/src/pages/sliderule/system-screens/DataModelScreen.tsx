@@ -5,11 +5,12 @@
  * 渲染成可视化实体关系图。无数据时展示骨架占位。
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { datamodelToMermaid, type FiveSystemModel } from "./five-system-model";
+import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 
 interface DataModelScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -17,6 +18,8 @@ interface DataModelScreenProps {
   mermaidSource?: string | null;
   /** 解析出的五系统模型（刷新路径：modelSection 重建真实实体关系）。 */
   model?: FiveSystemModel | null;
+  /** 数据表（浏览器运行时）状态的持久化命名空间 */
+  sessionId?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -57,6 +60,7 @@ export function DataModelScreen({
   publishClosure,
   mermaidSource,
   model,
+  sessionId = "sliderule-v51-product",
   isActive = false,
   className = "",
 }: DataModelScreenProps) {
@@ -73,6 +77,9 @@ export function DataModelScreen({
   const isPlaceholder = !diagram;
 
   const evidence = publishClosure?.perSkillEvidence?.["datamodel"];
+  // 数据表需要模型里有实体（编辑才有对象）
+  const canEditData = (model?.datamodel?.entities?.length ?? 0) > 0;
+  const [screenMode, setScreenMode] = useState<"diagram" | "table">("diagram");
 
   return (
     <div
@@ -87,22 +94,55 @@ export function DataModelScreen({
           DataModel
         </span>
         <div className="ml-auto flex items-center gap-1.5">
+          {canEditData && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              data-testid="datamodel-mode-toggle"
+            >
+              {([
+                { id: "diagram" as const, label: "模型图" },
+                { id: "table" as const, label: "数据表" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`datamodel-mode-${id}`}
+                  onClick={() => setScreenMode(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    screenMode === id
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <EvidenceBadges evidence={evidence} />
         </div>
       </div>
 
-      {/* Diagram area — 占位骨架降透明度并明示，不冒充真实产物 */}
-      <div className={`min-h-0 flex-1 overflow-auto p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
-        <MermaidDiagram
-          chart={diagram ?? PLACEHOLDER_ER}
-          className="h-full w-full"
-        />
-      </div>
-
-      {isPlaceholder && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
-          占位示意（非本话题数据）· 推演完成后将显示真实实体关系
+      {screenMode === "table" && canEditData && model ? (
+        <div className="min-h-0 flex-1">
+          <EntityDataPanel model={model} sessionId={sessionId} />
         </div>
+      ) : (
+        <>
+          {/* Diagram area — 占位骨架降透明度并明示，不冒充真实产物 */}
+          <div className={`min-h-0 flex-1 overflow-auto p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
+            <MermaidDiagram
+              chart={diagram ?? PLACEHOLDER_ER}
+              className="h-full w-full"
+            />
+          </div>
+
+          {isPlaceholder && (
+            <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
+              占位示意（非本话题数据）· 推演完成后将显示真实实体关系
+            </div>
+          )}
+        </>
       )}
     </div>
   );

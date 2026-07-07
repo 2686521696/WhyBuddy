@@ -20,6 +20,7 @@ import { DataModelScreen } from "../system-screens/DataModelScreen";
 import { PageScreen } from "../system-screens/PageScreen";
 import { RbacScreen } from "../system-screens/RbacScreen";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
+import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
@@ -678,5 +679,23 @@ describe("浏览器运行时（试运行）入口", () => {
     expect(html).toContain('data-testid="workflow-runtime-panel"');
     expect(html).toContain('data-testid="runtime-start"');
     expect(html).toContain("发起实例");
+  });
+
+  it("DataModelScreen 有实体时提供「模型图⟷数据表」切换；无模型不显示", () => {
+    const withModel = renderToStaticMarkup(<DataModelScreen model={MODEL} sessionId="t-dm" />);
+    expect(withModel).toContain('data-testid="datamodel-mode-toggle"');
+    expect(withModel).toContain("数据表");
+    const withoutModel = renderToStaticMarkup(<DataModelScreen />);
+    expect(withoutModel).not.toContain('data-testid="datamodel-mode-toggle"');
+  });
+
+  it("EntityDataPanel 按实体切页并提供「新增一行」（空表如实提示）", () => {
+    const html = renderToStaticMarkup(<EntityDataPanel model={MODEL} sessionId="t-dm" />);
+    expect(html).toContain('data-testid="datamodel-data-panel"');
+    expect(html).toContain('data-testid="datamodel-entity-course"');
+    expect(html).toContain('data-testid="datamodel-entity-enrollment"');
+    expect(html).toContain('data-testid="datamodel-add-row"');
+    expect(html).toContain("暂无数据");
+    expect(html).toContain("容量"); // 字段列头来自实体定义
   });
 });

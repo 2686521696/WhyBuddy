@@ -78,6 +78,7 @@ export function ActiveSystemScreen({
             publishClosure={publishClosure}
             mermaidSource={skillContents.dataModel ?? latestMermaid}
             model={fiveSystemModel}
+            sessionId={sessionId}
             isActive={activeSkillId === "dataModel"}
           />
         </div>
