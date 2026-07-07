@@ -425,6 +425,65 @@ export function guessRefEntityId(
   return contains.length === 1 ? contains[0] : null;
 }
 
+// --- ER 图数据（G6 渲染路径；与 datamodelToMermaid 同一套关联推断） --------
+
+export interface ErGraphField {
+  id: string;
+  name: string;
+  type: string;
+  /** ref 字段解析出的目标实体 id（唯一匹配才给，歧义为 null） */
+  refTarget: string | null;
+}
+
+export interface ErGraphNode {
+  id: string;
+  name: string;
+  fields: ErGraphField[];
+}
+
+export interface ErGraphEdge {
+  /** 持 ref 的实体（"多"侧） */
+  source: string;
+  /** 被引用实体（"一"侧） */
+  target: string;
+  /** ref 字段名 */
+  label: string;
+}
+
+export function deriveErGraphData(
+  datamodel: FiveSystemModel["datamodel"] | null | undefined
+): { nodes: ErGraphNode[]; edges: ErGraphEdge[] } | null {
+  const entities = datamodel?.entities ?? [];
+  if (entities.length === 0) return null;
+  const entityIds = entities.map((e) => e.id);
+  const nodes: ErGraphNode[] = [];
+  const edges: ErGraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const entity of entities) {
+    const fields: ErGraphField[] = [];
+    for (const field of entity.fields ?? []) {
+      const isRef = String(field.type || "").toLowerCase() === "ref" || /_ref$/.test(field.id);
+      const target = isRef ? guessRefEntityId(field.id, entityIds) : null;
+      const refTarget = target && target !== entity.id ? target : null;
+      fields.push({
+        id: field.id,
+        name: field.name || field.id,
+        type: String(field.type || "string"),
+        refTarget,
+      });
+      if (refTarget) {
+        const key = `${entity.id}->${refTarget}:${field.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          edges.push({ source: entity.id, target: refTarget, label: field.id });
+        }
+      }
+    }
+    nodes.push({ id: entity.id, name: entity.name || entity.id, fields });
+  }
+  return { nodes, edges };
+}
+
 export function datamodelToMermaid(
   datamodel: FiveSystemModel["datamodel"] | null | undefined
 ): string | null {

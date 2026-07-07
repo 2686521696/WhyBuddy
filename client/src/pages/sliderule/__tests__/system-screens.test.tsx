@@ -30,6 +30,7 @@ import {
   workflowModelToMermaid,
   crossSkillEdgesToMermaid,
   datamodelToMermaid,
+  deriveErGraphData,
   evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
@@ -615,6 +616,22 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
       ],
     })!;
     expect(ambiguous).not.toContain("||--o{ shipment");
+  });
+
+  it("deriveErGraphData：实体卡数据 + 关联边（G6 渲染路径，与 mermaid 同一套推断）", () => {
+    const data = deriveErGraphData({
+      entities: [
+        { id: "user_profile", name: "用户", fields: [{ id: "name", name: "姓名", type: "string" }] },
+        { id: "birth_info", fields: [{ id: "user_ref", name: "所属用户", type: "ref" }] },
+      ],
+    })!;
+    expect(data.nodes.map((n) => n.id)).toEqual(["user_profile", "birth_info"]);
+    expect(data.nodes[0].name).toBe("用户");
+    expect(data.nodes[1].fields[0].refTarget).toBe("user_profile");
+    expect(data.edges).toEqual([
+      { source: "birth_info", target: "user_profile", label: "user_ref" },
+    ]);
+    expect(deriveErGraphData({ entities: [] })).toBeNull();
   });
 
   // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，

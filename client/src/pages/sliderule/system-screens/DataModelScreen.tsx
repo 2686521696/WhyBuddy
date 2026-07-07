@@ -12,6 +12,7 @@ import { EvidenceBadges } from "./EvidenceBadges";
 import { datamodelToMermaid, type FiveSystemModel } from "./five-system-model";
 import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import { EmptyScreenHint } from "./EmptyScreenHint";
+import { EntityRelationGraph } from "./EntityRelationGraph";
 
 interface DataModelScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -107,10 +108,16 @@ export function DataModelScreen({
         <div className="min-h-0 flex-1">
           <EntityDataPanel model={model} sessionId={sessionId} />
         </div>
+      ) : canEditData ? (
+        // 结构化模型在手 → G6 实体关系图（卡片节点 + 关联边 + 拖拽缩放）
+        <div className="min-h-0 flex-1">
+          <EntityRelationGraph datamodel={model!.datamodel} />
+        </div>
       ) : isPlaceholder ? (
         // 空状态不渲染任何假域示例（曾被误读成真实数据），只说清将来出现什么
         <EmptyScreenHint title="实体关系图（ER）" desc="实体、字段与关联，来自五系统模型 datamodel 段" />
       ) : (
+        // 仅有 SSE 文本 mermaid（无结构化模型）时的降级渲染
         <div className="min-h-0 flex-1 overflow-auto p-3">
           <MermaidDiagram chart={diagram!} className="h-full w-full" />
         </div>
