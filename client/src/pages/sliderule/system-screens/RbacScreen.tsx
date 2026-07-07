@@ -9,10 +9,18 @@
  *   3. 占位骨架（降透明度 + 明示），不冒充真实产物。
  */
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import type { FiveSystemModel } from "./five-system-model";
+import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
+import { deriveRoleAccess, pageAccessForRole } from "../live-runtime/rbac-preview";
+import {
+  loadRuntimeRole,
+  saveRuntimeRole,
+  notifyRoleChanged,
+  subscribeRoleChanged,
+} from "../live-runtime/runtime-persistence";
 
 interface RbacScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -20,6 +28,8 @@ interface RbacScreenProps {
   rawContent?: string | null;
   /** 解析出的五系统模型（rbac 段：roles/permissions/menus）。 */
   model?: FiveSystemModel | null;
+  /** 角色预览与运行应用共享"当前角色"的持久化命名空间 */
+  sessionId?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -83,10 +93,148 @@ function rolesFromModel(rbac: FiveSystemModel["rbac"] | null | undefined): RoleE
   });
 }
 
+/** 角色预览：选角色 → 页面可见性/操作权即时判定，并同步到「运行应用」。 */
+function RolePreviewPanel({
+  model,
+  sessionId,
+}: {
+  model: FiveSystemModel;
+  sessionId: string;
+}) {
+  const roleAccess = useMemo(() => deriveRoleAccess(model), [model]);
+  const schema = useMemo(() => deriveAppRuntimeSchema(model), [model]);
+  const [role, setRole] = useState<string>(
+    () => loadRuntimeRole(sessionId) ?? roleAccess[0]?.role ?? ""
+  );
+  // 运行应用侧改了角色 → 这里跟随
+  useEffect(
+    () =>
+      subscribeRoleChanged(sessionId, () => {
+        const next = loadRuntimeRole(sessionId);
+        if (next) setRole(next);
+      }),
+    [sessionId]
+  );
+
+  const selectRole = (next: string) => {
+    setRole(next);
+    saveRuntimeRole(sessionId, next);
+    notifyRoleChanged(sessionId);
+  };
+
+  const selected = roleAccess.find((r) => r.role === role) ?? roleAccess[0];
+  const pageRows = pageAccessForRole(schema?.pages ?? [], selected);
+
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="rbac-role-preview">
+      <div className="rounded-lg bg-orange-50 px-3 py-2 text-[11px] text-orange-700 ring-1 ring-orange-200">
+        选中角色实时作用于 AppBundle 屏的「运行应用」—— 菜单与「新建」按钮按该角色权限锁定
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {roleAccess.map((r) => (
+          <button
+            key={r.role}
+            type="button"
+            data-testid={`rbac-preview-role-${r.role}`}
+            onClick={() => selectRole(r.role)}
+            className={`rounded-full px-3 py-1 text-[11px] font-medium ring-1 transition-colors ${
+              r.role === selected?.role
+                ? "bg-orange-500 text-white ring-orange-500"
+                : "bg-white text-stone-600 ring-[#E7E2D9] hover:bg-orange-50"
+            }`}
+          >
+            {r.role}
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <div className="rounded-xl border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3">
+          <div className="text-[11px] font-semibold text-stone-600">
+            {selected.role} · 持有权限 {selected.permissions.length} 项
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {selected.permissions.length > 0 ? (
+              selected.permissions.map((p) => (
+                <span key={p} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">
+                  {p}
+                </span>
+              ))
+            ) : (
+              <span className="text-[10px] text-stone-400">
+                模型未给该角色挂任何菜单权限 —— 声明了权限的页面将全部锁定（fail-closed）
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border border-[#E7E2D9]">
+        <table className="w-full text-xs">
+          <thead className="bg-[#F5F1EA]">
+            <tr>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">页面</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">可见</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">新建</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">动作权限</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBE2] bg-white">
+            {pageRows.map((row) => (
+              <tr key={row.pageId}>
+                <td className="px-3 py-2 font-medium text-stone-700">{row.title}</td>
+                <td className="px-3 py-2">
+                  {row.visible ? (
+                    <span className="text-emerald-600">✓ 可见</span>
+                  ) : (
+                    <span className="text-stone-400">🔒 锁定</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {row.createPermission === null ? (
+                    <span className="text-stone-300" title="页面未声明 *:create 动作，不设卡">
+                      未声明
+                    </span>
+                  ) : row.canCreate ? (
+                    <span className="text-emerald-600">✓ 允许</span>
+                  ) : (
+                    <span className="text-red-500" title={`需持有 ${row.createPermission}`}>
+                      ✗ 禁止
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {row.grantedActions.map((a) => (
+                      <span key={a} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                        ✓ {a}
+                      </span>
+                    ))}
+                    {row.deniedActions.map((a) => (
+                      <span key={a} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-500">
+                        ✗ {a}
+                      </span>
+                    ))}
+                    {row.grantedActions.length + row.deniedActions.length === 0 && (
+                      <span className="text-[10px] text-stone-300">公共页（未声明动作）</span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function RbacScreen({
   publishClosure,
   rawContent,
   model,
+  sessionId = "sliderule-v51-product",
   isActive = false,
   className = "",
 }: RbacScreenProps) {
@@ -108,6 +256,9 @@ export function RbacScreen({
   const evidence = publishClosure?.perSkillEvidence?.["rbac"];
   const isPlaceholder = !modelRoles && (!rawContent || !parseRolesFromContent(rawContent));
   const hasModel = !!modelRoles;
+  // 角色预览需要模型里同时有角色和页面（判定才有对象）
+  const canPreview = hasModel && (model?.page?.pages?.length ?? 0) > 0;
+  const [screenMode, setScreenMode] = useState<"matrix" | "preview">("matrix");
 
   return (
     <div
@@ -124,10 +275,40 @@ export function RbacScreen({
             : "角色 → 权限 · 菜单 · 数据规则"}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
+          {canPreview && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              data-testid="rbac-mode-toggle"
+            >
+              {([
+                { id: "matrix" as const, label: "权限矩阵" },
+                { id: "preview" as const, label: "角色预览" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`rbac-mode-${id}`}
+                  onClick={() => setScreenMode(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    screenMode === id
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <EvidenceBadges evidence={evidence} />
         </div>
       </div>
 
+      {screenMode === "preview" && canPreview && model ? (
+        <div className="min-h-0 flex-1">
+          <RolePreviewPanel model={model} sessionId={sessionId} />
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-[#F5F1EA]">
@@ -191,6 +372,7 @@ export function RbacScreen({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

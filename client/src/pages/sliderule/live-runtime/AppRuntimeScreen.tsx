@@ -40,6 +40,7 @@ import {
   AppstoreOutlined,
   UserOutlined,
   PlusOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import {
@@ -62,7 +63,12 @@ import {
   saveRuntimeState,
   notifyRuntimeChanged,
   subscribeRuntimeChanged,
+  loadRuntimeRole,
+  saveRuntimeRole,
+  notifyRoleChanged,
+  subscribeRoleChanged,
 } from "./runtime-persistence";
+import { accessForRole, pageAccessForRole, type PageAccess } from "./rbac-preview";
 
 // 固定设计分辨率：16:9（Ant Design Pro 的常见设计宽度 1440）
 const DESIGN_W = 1440;
@@ -175,7 +181,10 @@ export function AppRuntimeScreen({
     return loadRuntimeState(sessionId) ?? initRuntimeState(model);
   });
   const [activePageId, setActivePageId] = React.useState<string>("home");
-  const [role, setRole] = React.useState<string | undefined>(schema?.roles[0]);
+  // 当前角色与 RBAC 屏「角色预览」共享（localStorage + 事件），谁改都实时生效
+  const [role, setRole] = React.useState<string | undefined>(
+    () => loadRuntimeRole(sessionId) ?? schema?.roles[0]
+  );
   const [formOpen, setFormOpen] = React.useState(false);
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>({});
   const { ref: fitRef, scale } = useScaleToFit();
@@ -187,6 +196,37 @@ export function AppRuntimeScreen({
     () => subscribeRuntimeChanged(sessionId, () => setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))),
     [sessionId, model]
   );
+  React.useEffect(
+    () =>
+      subscribeRoleChanged(sessionId, () => {
+        const next = loadRuntimeRole(sessionId);
+        if (next) setRole(next);
+      }),
+    [sessionId]
+  );
+
+  const changeRole = (next: string) => {
+    setRole(next);
+    saveRuntimeRole(sessionId, next);
+    notifyRoleChanged(sessionId);
+  };
+
+  // 角色 → 页面可见性/操作权（RBAC 模型驱动；公共页恒可见）
+  const pageAccess = React.useMemo(() => {
+    const map = new Map<string, PageAccess>();
+    if (!schema) return map;
+    for (const a of pageAccessForRole(schema.pages, accessForRole(model, role))) {
+      map.set(a.pageId, a);
+    }
+    return map;
+  }, [schema, model, role]);
+
+  // 当前页对该角色不可见时回工作台（角色切换的直观反馈）
+  React.useEffect(() => {
+    if (activePageId !== "home" && pageAccess.get(activePageId)?.visible === false) {
+      setActivePageId("home");
+    }
+  }, [activePageId, pageAccess]);
 
   if (!schema) {
     return (
@@ -296,12 +336,28 @@ export function AppRuntimeScreen({
       <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
         <Card title="快速入口" size="small" style={{ flex: 1 }}>
           <Space wrap>
-            {schema.pages.map((p) => (
-              <Button key={p.id} onClick={() => setActivePageId(p.id)}>
-                {p.title}
-              </Button>
-            ))}
+            {schema.pages.map((p) => {
+              const locked = pageAccess.get(p.id)?.visible === false;
+              return (
+                <Button
+                  key={p.id}
+                  icon={locked ? <LockOutlined /> : undefined}
+                  disabled={locked}
+                  title={locked ? `当前角色（${role ?? "-"}）无本页权限` : undefined}
+                  onClick={() => setActivePageId(p.id)}
+                >
+                  {p.title}
+                </Button>
+              );
+            })}
           </Space>
+          {[...pageAccess.values()].some((a) => !a.visible) && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
+              <LockOutlined /> 当前角色不可见{" "}
+              {[...pageAccess.values()].filter((a) => !a.visible).length} 个页面 —
+              右上角切换角色试试（RBAC 权限实时生效）
+            </div>
+          )}
         </Card>
         <Card title="审批动态" size="small" style={{ flex: 1.4 }}>
           <List
@@ -343,12 +399,17 @@ export function AppRuntimeScreen({
           ))}
           <Button
             type="primary"
-            icon={<PlusOutlined />}
+            icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
             onClick={() => {
               setFormValues({});
               setFormOpen(true);
             }}
-            disabled={!page.entityId}
+            disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
+            title={
+              pageAccess.get(page.id)?.canCreate === false
+                ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
+                : undefined
+            }
             data-testid="app-runtime-create"
           >
             新建
@@ -414,8 +475,15 @@ export function AppRuntimeScreen({
                   selectedKeys={[activePageId]}
                   onClick={({ key }) => setActivePageId(String(key))}
                   items={schema.menus.map((m, i) => {
-                    const Icon = m.pageId === "home" ? DashboardOutlined : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
-                    return { key: m.pageId, icon: <Icon />, label: m.label };
+                    const locked = m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false;
+                    const Icon = m.pageId === "home" ? DashboardOutlined : locked ? LockOutlined : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
+                    return {
+                      key: m.pageId,
+                      icon: <Icon />,
+                      label: m.label,
+                      disabled: locked,
+                      title: locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label,
+                    };
                   })}
                 />
               </Layout.Sider>
@@ -440,7 +508,7 @@ export function AppRuntimeScreen({
                     size="small"
                     style={{ minWidth: 140 }}
                     value={role}
-                    onChange={setRole}
+                    onChange={changeRole}
                     options={schema.roles.map((r) => ({ value: r, label: r }))}
                     data-testid="app-runtime-role"
                   />
