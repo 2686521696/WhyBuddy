@@ -19,6 +19,7 @@ import { ActiveSystemScreen } from "../system-screens/ActiveSystemScreen";
 import { DataModelScreen } from "../system-screens/DataModelScreen";
 import { PageScreen } from "../system-screens/PageScreen";
 import { RbacScreen } from "../system-screens/RbacScreen";
+import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
@@ -656,5 +657,26 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(html).toContain("course:read");
     expect(html).not.toContain("占位示意");
     expect(html).not.toContain("采购申请表");
+  });
+});
+
+describe("浏览器运行时（试运行）入口", () => {
+  it("Workflow 屏有模型时显示 流程图/试运行 切换；无模型不显示", () => {
+    const withModel = renderToStaticMarkup(
+      <WorkflowScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(withModel).toContain('data-testid="workflow-mode-toggle"');
+    expect(withModel).toContain("试运行");
+    const withoutModel = renderToStaticMarkup(<WorkflowScreen />);
+    expect(withoutModel).not.toContain('data-testid="workflow-mode-toggle"');
+  });
+
+  it("WorkflowRuntimePanel 初始态提供「发起实例」", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowRuntimePanel model={MODEL} sessionId="t-runtime" />
+    );
+    expect(html).toContain('data-testid="workflow-runtime-panel"');
+    expect(html).toContain('data-testid="runtime-start"');
+    expect(html).toContain("发起实例");
   });
 });

@@ -27,6 +27,8 @@ interface SlideRuleStudioProps {
   skillContents?: Partial<Record<SkillId, string>>;
   /** Persisted cross-skill runtime graph (python /drive-full projection) */
   skillRuntimeGraph?: SkillRuntimeGraphLike | null;
+  /** 试运行（浏览器运行时）状态的持久化命名空间 */
+  sessionId?: string;
 
   className?: string;
 }
@@ -38,6 +40,7 @@ export function SlideRuleStudio({
   latestMermaid,
   skillContents,
   skillRuntimeGraph,
+  sessionId,
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail)
@@ -74,6 +77,7 @@ export function SlideRuleStudio({
           latestMermaid={latestMermaid}
           skillContents={skillContents}
           skillRuntimeGraph={skillRuntimeGraph}
+          sessionId={sessionId}
           className="min-h-0 flex-1"
         />
       </div>

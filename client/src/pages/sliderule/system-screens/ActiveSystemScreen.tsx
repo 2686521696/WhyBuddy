@@ -33,6 +33,8 @@ interface ActiveSystemScreenProps {
   skillContents?: Partial<Record<SkillId, string>>;
   /** Persisted cross-skill runtime graph (from python /drive-full, survives reload) */
   skillRuntimeGraph?: SkillRuntimeGraphLike | null;
+  /** 试运行（浏览器运行时）状态的持久化命名空间 */
+  sessionId?: string;
   className?: string;
 }
 
@@ -42,6 +44,7 @@ export function ActiveSystemScreen({
   latestMermaid,
   skillContents = {},
   skillRuntimeGraph = null,
+  sessionId,
   className = "",
 }: ActiveSystemScreenProps) {
   // 结构化五系统模型（一次解析，多屏共享做交叉引用）：
@@ -82,6 +85,7 @@ export function ActiveSystemScreen({
             mermaidSource={skillContents.workflow ?? latestMermaid}
             model={fiveSystemModel}
             skillRuntimeGraph={skillRuntimeGraph}
+            sessionId={sessionId}
             isActive={activeSkillId === "workflow"}
           />
         </div>

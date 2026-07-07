@@ -702,6 +702,7 @@ function SlideRuleUnified({
             (sessionState as { skillRuntimeGraph?: import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike | null })
               .skillRuntimeGraph ?? null
           }
+          sessionId={sessionId}
           className="h-full"
         />
         {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程

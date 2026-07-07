@@ -9,10 +9,11 @@
  *   4. 占位骨架（降透明度 + 提示），不冒充真实产物。
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
 import {
   type FiveSystemModel,
   type SkillRuntimeGraphLike,
@@ -29,6 +30,8 @@ interface WorkflowScreenProps {
   model?: FiveSystemModel | null;
   /** 持久化的跨系统运行时图（刷新后无 SSE mermaid 时的真实数据源）。 */
   skillRuntimeGraph?: SkillRuntimeGraphLike | null;
+  /** 试运行状态的持久化命名空间（浏览器运行时，零后端）。 */
+  sessionId?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -58,12 +61,16 @@ export function WorkflowScreen({
   mermaidSource,
   model,
   skillRuntimeGraph,
+  sessionId = "sliderule-v51-product",
   isActive = false,
   className = "",
 }: WorkflowScreenProps) {
   const workflow = model?.workflow;
   const nodes = workflow?.nodes ?? [];
   const transitions = workflow?.transitions ?? [];
+  // 试运行（浏览器运行时）：模型在场才可用——像 ECharts 一样把 workflow 段
+  // 渲染成可操作的审批状态机（发起/通过/驳回/分支/日志，零后端）。
+  const [screenMode, setScreenMode] = useState<"diagram" | "runtime">("diagram");
 
   const modelDiagram = useMemo(() => workflowModelToMermaid(workflow), [workflow]);
 
@@ -129,10 +136,38 @@ export function WorkflowScreen({
               {unresolvedRoleCount} 个角色未在 RBAC 定义
             </span>
           )}
+          {sourceKind === "model" && nodes.length > 0 && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              data-testid="workflow-mode-toggle"
+            >
+              {([
+                { id: "diagram" as const, label: "流程图" },
+                { id: "runtime" as const, label: "试运行" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`workflow-mode-${id}`}
+                  onClick={() => setScreenMode(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    screenMode === id
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <EvidenceBadges evidence={evidence} />
         </div>
       </div>
 
+      {screenMode === "runtime" && sourceKind === "model" && model ? (
+        <WorkflowRuntimePanel model={model} sessionId={sessionId} />
+      ) : (
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Diagram */}
         <div className={`min-h-0 min-w-0 flex-1 overflow-auto p-3 ${sourceKind === "placeholder" ? "opacity-40" : ""}`}>
@@ -170,6 +205,7 @@ export function WorkflowScreen({
           </div>
         )}
       </div>
+      )}
 
       {sourceKind === "placeholder" && (
         <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
