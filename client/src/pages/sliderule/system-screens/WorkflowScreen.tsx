@@ -13,6 +13,7 @@ import React, { useMemo, useState } from "react";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import { EmptyScreenHint } from "./EmptyScreenHint";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
 import {
   type FiveSystemModel,
@@ -35,17 +36,6 @@ interface WorkflowScreenProps {
   isActive?: boolean;
   className?: string;
 }
-
-const PLACEHOLDER_FLOW = `flowchart TD
-  A([提交采购申请]) --> B{金额判断}
-  B -->|≤5万| C[部门经理审批]
-  B -->|>5万| D[财务负责人审批]
-  C --> E{审批决定}
-  D --> E
-  E -->|批准| F[生成采购单]
-  E -->|拒绝| G([退回申请人])
-  F --> H[财务确认付款]
-  H --> I([流程结束])`;
 
 function extractFlow(text: string): string | null {
   if (!text) return null;
@@ -170,9 +160,13 @@ export function WorkflowScreen({
       ) : (
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Diagram */}
-        <div className={`min-h-0 min-w-0 flex-1 overflow-auto p-3 ${sourceKind === "placeholder" ? "opacity-40" : ""}`}>
-          <MermaidDiagram chart={diagram ?? PLACEHOLDER_FLOW} className="h-full w-full" />
-        </div>
+        {sourceKind === "placeholder" ? (
+          <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
+        ) : (
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
+            <MermaidDiagram chart={diagram ?? ""} className="h-full w-full" />
+          </div>
+        )}
 
         {/* Node/assignee table — only when the structured model is present */}
         {sourceKind === "model" && nodes.length > 0 && (
@@ -207,11 +201,6 @@ export function WorkflowScreen({
       </div>
       )}
 
-      {sourceKind === "placeholder" && (
-        <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
-          占位示意（非本话题数据）· 推演完成后将显示真实业务流程
-        </div>
-      )}
     </div>
   );
 }

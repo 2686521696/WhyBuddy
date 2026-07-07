@@ -10,6 +10,7 @@
 import React, { useMemo } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import { EmptyScreenHint } from "./EmptyScreenHint";
 import { resolveFieldRef, type FiveSystemModel } from "./five-system-model";
 
 interface PageScreenProps {
@@ -34,29 +35,6 @@ interface PageDef {
   actions: string[];
 }
 
-const PLACEHOLDER_PAGES: PageDef[] = [
-  {
-    title: "采购申请表",
-    fields: [
-      { name: "标题", type: "text", required: true, editable: true },
-      { name: "申请金额", type: "number", required: true, editable: true },
-      { name: "采购原因", type: "textarea", required: true, editable: true },
-      { name: "申请人", type: "readonly", required: false, editable: false },
-      { name: "状态", type: "readonly", required: false, editable: false },
-    ],
-    actions: ["提交申请", "保存草稿", "取消"],
-  },
-  {
-    title: "审批详情",
-    fields: [
-      { name: "采购标题", type: "readonly", required: false, editable: false },
-      { name: "申请金额", type: "readonly", required: false, editable: false },
-      { name: "审批意见", type: "textarea", required: true, editable: true },
-    ],
-    actions: ["批准", "拒绝"],
-  },
-];
-
 export function PageScreen({
   publishClosure,
   rawContent,
@@ -68,7 +46,7 @@ export function PageScreen({
   const modelPages = model?.page?.pages ?? [];
   const isPlaceholder = modelPages.length === 0;
   const pages = useMemo<PageDef[]>(() => {
-    if (modelPages.length === 0) return PLACEHOLDER_PAGES;
+    if (modelPages.length === 0) return [];
     return modelPages.map((p, i) => ({
       title: p.name || p.id || `页面 ${i + 1}`,
       fields: (p.fieldBindings ?? []).map((ref) => {
@@ -100,10 +78,13 @@ export function PageScreen({
         </div>
       </div>
 
+      {isPlaceholder ? (
+        <EmptyScreenHint title="页面字段绑定（Wireframe）" desc="页面、字段与操作权限，来自五系统模型 page 段" />
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {pages.map((page) => (
-            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
+            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 `}>
               {/* Page title bar */}
               <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 shadow-sm">
                 <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
@@ -156,12 +137,8 @@ export function PageScreen({
           ))}
         </div>
 
-        {isPlaceholder && (
-          <div className="mt-4 text-center text-[10px] text-stone-400">
-            占位示意（非本话题数据）· 推演完成后将显示真实页面字段绑定
-          </div>
-        )}
       </div>
+      )}
     </div>
   );
 }

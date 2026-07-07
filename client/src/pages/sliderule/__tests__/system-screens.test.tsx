@@ -323,10 +323,10 @@ describe("WorkflowScreen", () => {
     expect(html).not.toContain("推演完成后将显示真实业务流程");
   });
 
-  it("空态：无任何数据 → 占位降透明 + 诚实提示", () => {
+  it("空态：不渲染假域流程图，只显示诚实空状态提示", () => {
     const html = renderToStaticMarkup(<WorkflowScreen />);
-    expect(html).toContain("推演完成后将显示真实业务流程");
-    expect(html).toContain("opacity-40");
+    expect(html).toContain('data-testid="screen-empty-hint"');
+    expect(html).toContain("业务流程图");
     expect(html).not.toContain("跨系统联动");
   });
 });
@@ -371,11 +371,10 @@ describe("AigcScreen", () => {
     expect(html).not.toContain('data-testid="aigc-capabilities"');
   });
 
-  it("空态：占位卡片降透明 + 诚实提示", () => {
+  it("空态：不渲染假域 AI 能力卡，只显示诚实空状态提示", () => {
     const html = renderToStaticMarkup(<AigcScreen />);
-    expect(html).toContain("推演完成后将显示真实 AIGC 功能设计");
-    expect(html).toContain("opacity-40");
-    expect(html).toContain("采购描述生成"); // 占位（明确 40% 透明度呈现）
+    expect(html).toContain('data-testid="screen-empty-hint"');
+    expect(html).not.toContain("采购描述生成"); // 采购假域占位已移除
   });
 });
 
@@ -597,11 +596,14 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(html).not.toContain("PurchaseOrder");
   });
 
-  it("DataModel/Page 屏占位态明示「占位示意（非本话题数据）」", () => {
+  it("DataModel/Page 屏空态不再渲染假域示例，只显示诚实空状态提示", () => {
     const dmHtml = renderToStaticMarkup(<DataModelScreen />);
-    expect(dmHtml).toContain("占位示意（非本话题数据）");
+    expect(dmHtml).toContain('data-testid="screen-empty-hint"');
+    expect(dmHtml).toContain("实体关系图");
+    expect(dmHtml).not.toContain("PurchaseOrder"); // 采购假域示例已移除
     const pageHtml = renderToStaticMarkup(<PageScreen />);
-    expect(pageHtml).toContain("占位示意（非本话题数据）");
+    expect(pageHtml).toContain('data-testid="screen-empty-hint"');
+    expect(pageHtml).not.toContain("采购申请表");
   });
 
   it("RBAC 屏模型路径：roles/menus/permissions 真实渲染，未声明权限标红", () => {
@@ -628,9 +630,10 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(html).not.toContain("采购单:创建"); // 不再显示采购占位
   });
 
-  it("RBAC 屏无模型时仍走占位（明示），有模型时优先于 rawContent", () => {
+  it("RBAC 屏无模型时显示空状态提示，有模型时优先于 rawContent", () => {
     const placeholderHtml = renderToStaticMarkup(<RbacScreen />);
-    expect(placeholderHtml).toContain("占位示意（非本话题数据）");
+    expect(placeholderHtml).toContain('data-testid="screen-empty-hint"');
+    expect(placeholderHtml).not.toContain("采购单:创建"); // 采购假域占位已移除
     const modelHtml = renderToStaticMarkup(
       <RbacScreen model={MODEL} rawContent={"# 角色: 文本角色\n权限: something"} />
     );

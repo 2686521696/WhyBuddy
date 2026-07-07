@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import { EmptyScreenHint } from "./EmptyScreenHint";
 import type { FiveSystemModel } from "./five-system-model";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { deriveRoleAccess, pageAccessForRole } from "../live-runtime/rbac-preview";
@@ -40,13 +41,6 @@ interface RoleEntry {
   menus: string[];
   dataRules?: string;
 }
-
-const PLACEHOLDER_ROLES: RoleEntry[] = [
-  { role: "申请人", permissions: ["采购单:创建", "采购单:查看(自己)"], menus: ["我的申请", "采购单列表"], dataRules: "仅可见本人发起的单据" },
-  { role: "部门经理", permissions: ["采购单:审批", "采购单:查看(本部门)"], menus: ["待审批", "历史审批"], dataRules: "可见本部门所有单据" },
-  { role: "财务负责人", permissions: ["采购单:审批", "付款:确认", "采购单:查看(全部)"], menus: ["待审批", "付款管理", "报表"], dataRules: "可见全量单据" },
-  { role: "系统管理员", permissions: ["用户:管理", "角色:配置", "系统:配置"], menus: ["用户管理", "角色管理", "系统设置"], dataRules: "全量访问" },
-];
 
 function parseRolesFromContent(content: string): RoleEntry[] | null {
   // Try to find role definitions in the content
@@ -250,7 +244,7 @@ export function RbacScreen({
       const parsed = parseRolesFromContent(rawContent);
       if (parsed) return parsed;
     }
-    return PLACEHOLDER_ROLES;
+    return [];
   }, [modelRoles, rawContent]);
 
   const evidence = publishClosure?.perSkillEvidence?.["rbac"];
@@ -308,6 +302,8 @@ export function RbacScreen({
         <div className="min-h-0 flex-1">
           <RolePreviewPanel model={model} sessionId={sessionId} />
         </div>
+      ) : isPlaceholder ? (
+        <EmptyScreenHint title="角色权限矩阵" desc="角色、权限与菜单的授权关系，来自五系统模型 rbac 段" />
       ) : (
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-xs">
@@ -323,7 +319,7 @@ export function RbacScreen({
             {roles.map((entry) => (
               <tr
                 key={entry.role}
-                className={`transition-colors hover:bg-[#F5F1EA] ${isPlaceholder ? "opacity-40" : ""}`}
+                className={`transition-colors hover:bg-[#F5F1EA] `}
               >
                 <td className="px-4 py-2.5 font-medium text-stone-800">{entry.role}</td>
                 <td className="px-4 py-2.5">
@@ -366,11 +362,6 @@ export function RbacScreen({
           </tbody>
         </table>
 
-        {isPlaceholder && (
-          <div className="mt-4 text-center text-[10px] text-stone-400">
-            占位示意（非本话题数据）· 推演完成后将显示真实权限矩阵
-          </div>
-        )}
       </div>
       )}
     </div>

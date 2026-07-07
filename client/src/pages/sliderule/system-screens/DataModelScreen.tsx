@@ -11,6 +11,7 @@ import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { datamodelToMermaid, type FiveSystemModel } from "./five-system-model";
 import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
+import { EmptyScreenHint } from "./EmptyScreenHint";
 
 interface DataModelScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -23,27 +24,6 @@ interface DataModelScreenProps {
   isActive?: boolean;
   className?: string;
 }
-
-const PLACEHOLDER_ER = `erDiagram
-  PurchaseOrder {
-    string id PK
-    string title
-    string status
-    number amount
-    datetime createdAt
-  }
-  Approver {
-    string id PK
-    string name
-    string role
-  }
-  ApprovalRecord {
-    string id PK
-    string decision
-    datetime decidedAt
-  }
-  PurchaseOrder ||--o{ ApprovalRecord : "awaits"
-  Approver ||--o{ ApprovalRecord : "creates"`;
 
 function extractMermaid(text: string): string | null {
   if (!text) return null;
@@ -127,22 +107,13 @@ export function DataModelScreen({
         <div className="min-h-0 flex-1">
           <EntityDataPanel model={model} sessionId={sessionId} />
         </div>
+      ) : isPlaceholder ? (
+        // 空状态不渲染任何假域示例（曾被误读成真实数据），只说清将来出现什么
+        <EmptyScreenHint title="实体关系图（ER）" desc="实体、字段与关联，来自五系统模型 datamodel 段" />
       ) : (
-        <>
-          {/* Diagram area — 占位骨架降透明度并明示，不冒充真实产物 */}
-          <div className={`min-h-0 flex-1 overflow-auto p-3 ${isPlaceholder ? "opacity-40" : ""}`}>
-            <MermaidDiagram
-              chart={diagram ?? PLACEHOLDER_ER}
-              className="h-full w-full"
-            />
-          </div>
-
-          {isPlaceholder && (
-            <div className="absolute bottom-3 left-0 right-0 text-center text-[10px] text-stone-400">
-              占位示意（非本话题数据）· 推演完成后将显示真实实体关系
-            </div>
-          )}
-        </>
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          <MermaidDiagram chart={diagram!} className="h-full w-full" />
+        </div>
       )}
     </div>
   );
