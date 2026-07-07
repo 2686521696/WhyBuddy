@@ -76,6 +76,19 @@ Rules:
 - appbundle pageRef∈pages, workflowRef∈workflow, roleRefs∈roles, dataModelRefs∈entities.
 - Model the SPECIFIC business the intent describes (entities, roles, approval
   steps, pages that fit that domain). Do not emit a generic template.
+
+Content-quality rules (checked by a deterministic regression gate):
+- REACHABILITY: every permission listed in a page's actionPermissions MUST be
+  granted to at least one role via rbac.menus[].permissionRefs — a page whose
+  permissions no role holds is unreachable for everyone (hard failure).
+- LEAST PRIVILEGE: spread permissions across roles by duty; no single role
+  should hold (almost) all permissions. Every declared permission should be
+  granted to at least one role.
+- FLOW SHAPE: the workflow MUST contain at least one conditional branch and a
+  rejection/return path (e.g. a transition back to an earlier node or to a
+  terminal "rejected/cancelled" node) — never a single straight line.
+- NO ORPHANS: every entity should be referenced by at least one page
+  fieldBinding, aigc field, or another entity's ref field.
 """
 
 

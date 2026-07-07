@@ -35,6 +35,7 @@ sys.path.insert(0, str(_HERE.parent.parent))  # slide-rule-python/
 from services.v5_llm_generate import generate_five_system_model  # noqa: E402
 from services.v5_model_gate import validate_five_system_model, DANGLING  # noqa: E402
 from services.v5_content_quality import analyze_content_quality  # noqa: E402
+from services.v5_llm_judge import judge_content_quality  # noqa: E402
 
 REPO_ROOT = _HERE.parent.parent.parent
 DEFAULT_OUT = REPO_ROOT / "docs" / "five-system-generation-eval.md"
@@ -207,7 +208,7 @@ def _domain_fit(model: Dict[str, Any], keywords: List[str]) -> Dict[str, Any]:
     }
 
 
-def run_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
+def run_domain(domain: Dict[str, Any], judge: bool = False) -> Dict[str, Any]:
     intent = domain["intent"]
     t0 = time.time()
     model = generate_five_system_model(intent)  # real LLM; None on failure (fail-closed)
@@ -224,6 +225,7 @@ def run_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
         "dangling": 0,
         "fit": None,
         "content": None,
+        "judge": None,
     }
     if model is None:
         return result
@@ -235,6 +237,8 @@ def run_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     result["dangling"] = sum(1 for f in result["findings"] if f.get("code") == DANGLING)
     result["fit"] = _domain_fit(model, domain["keywords"])
     result["content"] = analyze_content_quality(model)
+    if judge:
+        result["judge"] = judge_content_quality(model, intent)  # None = 评审失败（如实标注）
     return result
 
 
@@ -259,22 +263,35 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
     lines.append("")
     lines.append("## 汇总")
     lines.append("")
-    lines.append("| 领域 | 生成 | Gate | 内容质量 | 耗时(s) | 实体 | 字段 | 角色 | 权限 | 流程节点 | 转移 | 页面 | AIGC能力 | 交叉引用(悬挂/总数) | 实体域命中 |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    has_judge = any(r.get("judge") is not None for r in results)
+    judge_head = " LLM评审(覆盖/常识/命名) |" if has_judge else ""
+    judge_sep = "---|" if has_judge else ""
+    lines.append(f"| 领域 | 生成 | Gate | 内容质量 |{judge_head} 耗时(s) | 实体 | 字段 | 角色 | 权限 | 流程节点 | 转移 | 页面 | AIGC能力 | 交叉引用(悬挂/总数) | 实体域命中 |")
+    lines.append(f"|---|---|---|---|{judge_sep}---|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         c = r["counts"] or {}
         fit = r["fit"] or {}
         if not r["generated"]:
-            lines.append(f"| {r['name']} | ❌ 失败 | — | — | {r['latency_s']} | — | — | — | — | — | — | — | — | — | — |")
+            fail_judge = " — |" if has_judge else ""
+            lines.append(f"| {r['name']} | ❌ 失败 | — | — |{fail_judge} {r['latency_s']} | — | — | — | — | — | — | — | — | — | — |")
             continue
         gate = "✅ PASS" if r["gate_passed"] else "❌ FAIL"
         content = r.get("content") or {}
         c_fails = content.get("hardFailCount", 0)
         c_warns = sum(1 for f in content.get("findings", []) if f.get("severity") == "warn")
         content_cell = ("❌ " if c_fails else "✅ ") + f"{c_fails} fail / {c_warns} warn"
+        judge_cell = ""
+        if has_judge:
+            j = r.get("judge")
+            if j:
+                d = j["dims"]
+                judge_cell = (f" {d['requirement_coverage']['score']}/{d['domain_sense']['score']}"
+                              f"/{d['naming_quality']['score']} (均{j['avg']}) |")
+            else:
+                judge_cell = " ⚠️ 评审失败 |"
         ent_fit = f"{fit.get('entity_hits', 0)}/{c.get('entities', 0)}"
         lines.append(
-            f"| {r['name']} | ✅ | {gate} | {content_cell} | {r['latency_s']} | {c.get('entities', 0)} | {c.get('fields', 0)} "
+            f"| {r['name']} | ✅ | {gate} | {content_cell} |{judge_cell} {r['latency_s']} | {c.get('entities', 0)} | {c.get('fields', 0)} "
             f"| {c.get('roles', 0)} | {c.get('permissions', 0)} | {c.get('workflow_nodes', 0)} "
             f"| {c.get('transitions', 0)} | {c.get('pages', 0)} | {c.get('aigc_capabilities', 0)} "
             f"| {r['dangling']}/{r['cross_refs_total']} | {ent_fit} |"
@@ -334,6 +351,20 @@ def render_report(results: List[Dict[str, Any]], model_id: str) -> str:
                 lines.append(f"    - {icon} `{f.get('code')}` — {f.get('detail')}")
         else:
             lines.append("  - 结论：✅ 无 finding")
+        judge = r.get("judge")
+        if judge:
+            d = judge["dims"]
+            lines.append(f"- LLM 评审（1-5 量表 · temperature 0 · 同模型自评有自恋偏差，用于回归比对而非绝对分）：")
+            zh = {"requirement_coverage": "需求覆盖度", "domain_sense": "行业常识", "naming_quality": "命名质量"}
+            for dim, label in zh.items():
+                entry = d[dim]
+                lines.append(f"  - {label}：**{entry['score']}/5**")
+                for reason in entry.get("reasons", []):
+                    lines.append(f"    - {reason}")
+                for miss in entry.get("missed", []) or []:
+                    lines.append(f"    - ❗漏建模：{miss}")
+        elif judge is None and r.get("judge_attempted"):
+            lines.append("- LLM 评审：⚠️ 评审调用失败（fail-closed，不编分数）")
         if r["findings"]:
             lines.append(f"- Gate findings（前 {min(10, len(r['findings']))} 条）：")
             for f in r["findings"][:10]:
@@ -370,6 +401,8 @@ def main() -> int:
     parser.add_argument("--sleep", type=float, default=2.0, help="Seconds between domains (rate-limit)")
     parser.add_argument("--content-gate", action="store_true",
                         help="内容质量回归门：任一领域出现 hard-fail 级 finding 则退出码 1")
+    parser.add_argument("--judge", action="store_true",
+                        help="附加 LLM-as-judge 三维评分（每域多一次真实 LLM 调用）")
     args = parser.parse_args()
 
     _load_env_file()
@@ -385,7 +418,9 @@ def main() -> int:
     results: List[Dict[str, Any]] = []
     for i, domain in enumerate(domains):
         print(f"[eval] ({i + 1}/{len(domains)}) {domain['name']} — generating (real LLM, sequential)…", flush=True)
-        result = run_domain(domain)
+        result = run_domain(domain, judge=args.judge)
+        if args.judge:
+            result["judge_attempted"] = True
         status = ("gate PASS" if result["gate_passed"] else
                   ("gate FAIL" if result["generated"] else "GENERATION FAILED"))
         print(f"[eval]   -> {status} in {result['latency_s']}s "
