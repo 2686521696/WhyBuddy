@@ -50,7 +50,9 @@ import {
 } from "@ant-design/icons";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import {
+  buildAiActionInputs,
   deriveAppRuntimeSchema,
+  type AppAiActionSchema,
   type AppChartSchema,
   type AppFormFieldSchema,
   type AppPageSchema,
@@ -62,6 +64,7 @@ import {
   initRuntimeState,
   addRow,
   deleteRow,
+  updateRow,
   validateRowValues,
   startInstance,
   nodeById,
@@ -304,6 +307,9 @@ export function AppRuntimeScreen({
   const [formOpen, setFormOpen] = React.useState(false);
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>({});
   const [detailRow, setDetailRow] = React.useState<RuntimeRow | null>(null);
+  // AI 生成：正在跑的能力 id + 最近一次失败诊断（fail-closed，不冒充输出）
+  const [aiRunningCapId, setAiRunningCapId] = React.useState<string | null>(null);
+  const [aiError, setAiError] = React.useState<{ code: string; detail: string } | null>(null);
   const spec = DEVICE_SPECS[device];
   const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h);
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
@@ -388,6 +394,47 @@ export function AppRuntimeScreen({
     setFormOpen(false);
     setFormValues({});
     message.success("已保存");
+  };
+
+  /** AI 生成：当前行喂给绑定能力（真 LLM），成功后把输出写回本行字段。 */
+  const runAiAction = async (action: AppAiActionSchema) => {
+    if (!page?.entityId || !detailRow || aiRunningCapId) return;
+    const entityId = page.entityId;
+    const rowId = detailRow.id;
+    setAiRunningCapId(action.capId);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/sliderule/aigc-tryrun", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capability: {
+            id: action.capId,
+            name: action.label,
+            inputFields: action.inputFields,
+            outputField: `${entityId}.${action.outputFieldId}`,
+          },
+          inputs: buildAiActionInputs(action, entityId, detailRow.values),
+          goal: appTitle,
+        }),
+      });
+      const body = res.ok
+        ? ((await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string })
+        : { ok: false, code: `HTTP_${res.status}`, detail: await res.text() };
+      if (!body.ok || body.output === undefined) {
+        setAiError({ code: body.code ?? "UNKNOWN", detail: body.detail ?? "" });
+        return;
+      }
+      const next = updateRow(state, entityId, rowId, { [action.outputFieldId]: body.output });
+      apply(next);
+      const updated = (next.entities[entityId] ?? []).find((r) => r.id === rowId);
+      if (updated) setDetailRow(updated);
+      message.success(`AI 已写回「${action.outputLabel}」`);
+    } catch (e) {
+      setAiError({ code: "NETWORK_ERROR", detail: String(e) });
+    } finally {
+      setAiRunningCapId(null);
+    }
   };
 
   const handleSubmitToWorkflow = (rowId: string, rowLabel: string) => {
@@ -839,7 +886,10 @@ export function AppRuntimeScreen({
             <Drawer
               title={`详情 · ${page?.title ?? currentTitle}`}
               open={detailRow !== null}
-              onClose={() => setDetailRow(null)}
+              onClose={() => {
+                setDetailRow(null);
+                setAiError(null);
+              }}
               placement={isPhone ? "bottom" : "right"}
               height={isPhone ? "72%" : undefined}
               width={isPhone ? undefined : 420}
@@ -861,6 +911,56 @@ export function AppRuntimeScreen({
                           : String(detailRow.values[f.id]),
                     }))}
                   />
+                  {page.aiActions.length > 0 && (
+                    <>
+                      <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
+                        AI 能力 · {page.aiActions.length}
+                      </div>
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {page.aiActions.map((action) => (
+                          <div key={action.capId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Button
+                              size="small"
+                              type="primary"
+                              ghost
+                              data-testid={`app-ai-action-${action.capId}`}
+                              loading={aiRunningCapId === action.capId}
+                              disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
+                              onClick={() => runAiAction(action)}
+                            >
+                              ✨ {action.label}
+                            </Button>
+                            <span style={{ fontSize: 11, color: INK.faint }}>
+                              → 写回「{action.outputLabel}」
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {aiRunningCapId && (
+                        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
+                          真 LLM 生成中……（与五系统生成同一通道）
+                        </div>
+                      )}
+                      {aiError && (
+                        <div
+                          data-testid="app-ai-error"
+                          style={{
+                            marginTop: 8,
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            background: "#fff2f0",
+                            border: "1px solid #ffccc7",
+                            fontSize: 11,
+                            color: "#cf1322",
+                          }}
+                        >
+                          <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{aiError.code}</span>
+                          <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
                     关联审批实例 · {detailInstances.length}
                   </div>

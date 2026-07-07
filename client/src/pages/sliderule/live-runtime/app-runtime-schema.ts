@@ -17,6 +17,18 @@ export interface AppFormFieldSchema {
   refEntityId?: string;
 }
 
+/** 页面可用的 AI 动作：outputField 落在本页主实体的 AIGC 能力。 */
+export interface AppAiActionSchema {
+  capId: string;
+  label: string;
+  /** 能力声明的输入引用（"entity.field"；同实体的从当前行预填） */
+  inputFields: string[];
+  /** 输出写回的字段（本页主实体的字段 id） */
+  outputFieldId: string;
+  /** 输出字段展示名 */
+  outputLabel: string;
+}
+
 export interface AppPageSchema {
   id: string;
   title: string;
@@ -32,6 +44,8 @@ export interface AppPageSchema {
   actions: string[];
   /** 本页是否挂了审批流（appbundle.pageBindings 里 pageRef→workflowRef） */
   workflowLinked: boolean;
+  /** 详情抽屉里的 AI 生成动作（无绑定能力时为空数组） */
+  aiActions: AppAiActionSchema[];
 }
 
 export interface AppStatCardSchema {
@@ -100,6 +114,27 @@ function dominantEntityId(fieldBindings: string[] | undefined): string | null {
   return best;
 }
 
+/**
+ * AI 动作的试跑输入：同实体的 inputFields 从当前行取值预填，
+ * 跨实体引用如实留空（不猜、不横跨行拼数据）。
+ */
+export function buildAiActionInputs(
+  action: AppAiActionSchema,
+  entityId: string,
+  rowValues: Record<string, unknown>
+): Record<string, string> {
+  const inputs: Record<string, string> = {};
+  for (const ref of action.inputFields) {
+    const dot = ref.indexOf(".");
+    if (dot <= 0) continue;
+    const refEntity = ref.slice(0, dot);
+    const refField = ref.slice(dot + 1);
+    const v = refEntity === entityId ? rowValues[refField] : undefined;
+    inputs[ref] = v === undefined || v === null ? "" : String(v);
+  }
+  return inputs;
+}
+
 export function deriveAppRuntimeSchema(
   model: FiveSystemModel | null | undefined,
   appName = "推演应用"
@@ -114,6 +149,28 @@ export function deriveAppRuntimeSchema(
       .filter((b) => b.workflowRef)
       .map((b) => b.pageRef)
   );
+
+  // AIGC 能力按 outputField 所属实体归组：outputField="entity.field" 且
+  // 字段真实存在才算数（悬空引用不进运行应用——各屏已负责标红）。
+  const aiActionsByEntity = new Map<string, AppAiActionSchema[]>();
+  for (const [i, cap] of (model?.aigc?.capabilities ?? []).entries()) {
+    const out = cap.outputField ?? "";
+    const dot = out.indexOf(".");
+    if (dot <= 0) continue;
+    const entityId = out.slice(0, dot);
+    const fieldId = out.slice(dot + 1);
+    const field = entityById.get(entityId)?.fields?.find((f) => f.id === fieldId);
+    if (!field) continue;
+    const list = aiActionsByEntity.get(entityId) ?? [];
+    list.push({
+      capId: cap.id || `cap-${i}`,
+      label: cap.name || cap.id || `能力 ${i + 1}`,
+      inputFields: (cap.inputFields ?? []).map(String),
+      outputFieldId: fieldId,
+      outputLabel: field.name || fieldId,
+    });
+    aiActionsByEntity.set(entityId, list);
+  }
 
   const pageSchemas: AppPageSchema[] = pages.map((page, index) => {
     const id = page.id || `page-${index + 1}`;
@@ -146,6 +203,7 @@ export function deriveAppRuntimeSchema(
       formFields: boundFields.length > 0 ? boundFields : allFields,
       actions: (page.actionPermissions ?? []).map(String),
       workflowLinked: workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
+      aiActions: entityId ? aiActionsByEntity.get(entityId) ?? [] : [],
     };
   });
 

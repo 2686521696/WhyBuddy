@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
+import { buildAiActionInputs, deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
 const MODEL: FiveSystemModel = {
@@ -34,7 +34,28 @@ const MODEL: FiveSystemModel = {
       { id: "empty_page", name: "无绑定页", fieldBindings: [] },
     ],
   },
-  aigc: { capabilities: [] },
+  aigc: {
+    capabilities: [
+      {
+        id: "cap_summary",
+        name: "余额提醒文案",
+        inputFields: ["member_card.holder", "member_card.balance", "coach.name"],
+        outputField: "member_card.balance",
+      },
+      {
+        id: "cap_write",
+        name: "持卡人画像",
+        inputFields: ["member_card.holder"],
+        outputField: "member_card.holder",
+      },
+      {
+        id: "cap_dangling",
+        name: "悬空输出",
+        inputFields: [],
+        outputField: "member_card.not_a_field",
+      },
+    ],
+  },
   appbundle: {
     pageBindings: [{ pageRef: "card_page", workflowRef: "wf" }],
     roleRefs: ["member"],
@@ -91,6 +112,34 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     const refField = schema.pages[0].columns.find((f) => f.id === "coach_ref")!;
     expect(refField.type).toBe("ref");
     expect(refField.refEntityId).toBe("coach");
+  });
+
+  it("AI 动作：outputField 落在本页主实体的能力进 aiActions；悬空输出不进", () => {
+    const schema = deriveAppRuntimeSchema(MODEL)!;
+    const page = schema.pages[0];
+    expect(page.aiActions.map((a) => a.capId)).toEqual(["cap_summary", "cap_write"]);
+    const summary = page.aiActions[0];
+    expect(summary.label).toBe("余额提醒文案");
+    expect(summary.outputFieldId).toBe("balance");
+    expect(summary.outputLabel).toBe("余额");
+    // 悬空 outputField（member_card.not_a_field）被诚实排除
+    expect(page.aiActions.some((a) => a.capId === "cap_dangling")).toBe(false);
+    // 无主实体的页面没有 AI 动作
+    expect(schema.pages[1].aiActions).toEqual([]);
+  });
+
+  it("buildAiActionInputs：同实体字段从行值预填，跨实体引用留空不猜", () => {
+    const schema = deriveAppRuntimeSchema(MODEL)!;
+    const action = schema.pages[0].aiActions[0]; // cap_summary
+    const inputs = buildAiActionInputs(action, "member_card", {
+      holder: "张三",
+      balance: 42,
+    });
+    expect(inputs).toEqual({
+      "member_card.holder": "张三",
+      "member_card.balance": "42",
+      "coach.name": "", // 跨实体 → 留空
+    });
   });
 
   it("无绑定页 entityId=null；缺页面/实体时整体返回 null（不伪造）", () => {
