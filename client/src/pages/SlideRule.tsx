@@ -703,6 +703,7 @@ function SlideRuleUnified({
               .skillRuntimeGraph ?? null
           }
           sessionId={sessionId}
+          appTitle={goal ? goal.slice(0, 24) : undefined}
           className="h-full"
         />
         {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程

@@ -10,7 +10,8 @@
  * 是整个 SlideRuleStudio 的"主页"进度锚点。
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { AppRuntimeScreen } from "../live-runtime/AppRuntimeScreen";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
   type FiveSystemModel,
@@ -26,6 +27,10 @@ interface AppBundleScreenProps {
   publishClosure?: PublishClosureSummary | null;
   /** 解析出的五系统模型（appbundle 段绑定 + 各段交叉引用目标）。 */
   model?: FiveSystemModel | null;
+  /** 运行应用（浏览器运行时）状态的持久化命名空间 */
+  sessionId?: string;
+  /** 运行应用的标题（话题名） */
+  appTitle?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -62,9 +67,14 @@ function BindingChip({ res }: { res: RefResolution }) {
 export function AppBundleScreen({
   publishClosure,
   model,
+  sessionId = "sliderule-v51-product",
+  appTitle,
   isActive = false,
   className = "",
 }: AppBundleScreenProps) {
+  // 运行应用（JSON 渲染的"真系统"）：模型带页面+实体时可用
+  const [screenMode, setScreenMode] = useState<"board" | "app">("board");
+  const canRunApp = (model?.page?.pages?.length ?? 0) > 0 && (model?.datamodel?.entities?.length ?? 0) > 0;
   type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
   const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
     PublishClosureSummary["perSkillEvidence"]
@@ -112,6 +122,31 @@ export function AppBundleScreen({
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
         <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
+          {canRunApp && (
+            <div
+              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              data-testid="appbundle-mode-toggle"
+            >
+              {([
+                { id: "board" as const, label: "证据看板" },
+                { id: "app" as const, label: "运行应用" },
+              ]).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`appbundle-mode-${id}`}
+                  onClick={() => setScreenMode(id)}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    screenMode === id
+                      ? "bg-white text-stone-800 shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {boardSource && (
             <span
               data-testid={`evidence-source-${boardSource.kind}`}
@@ -149,6 +184,11 @@ export function AppBundleScreen({
         />
       </div>
 
+      {screenMode === "app" && canRunApp && model ? (
+        <div className="min-h-0 flex-1">
+          <AppRuntimeScreen model={model} sessionId={sessionId} appTitle={appTitle} />
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {/* Blockers — fail-closed 如实展示 */}
         {blocked && topBlockers.length > 0 && (
@@ -288,6 +328,7 @@ export function AppBundleScreen({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -29,6 +29,8 @@ interface SlideRuleStudioProps {
   skillRuntimeGraph?: SkillRuntimeGraphLike | null;
   /** 试运行（浏览器运行时）状态的持久化命名空间 */
   sessionId?: string;
+  /** 运行应用标题（话题名） */
+  appTitle?: string;
 
   className?: string;
 }
@@ -41,6 +43,7 @@ export function SlideRuleStudio({
   skillContents,
   skillRuntimeGraph,
   sessionId,
+  appTitle,
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail)
@@ -78,6 +81,7 @@ export function SlideRuleStudio({
           skillContents={skillContents}
           skillRuntimeGraph={skillRuntimeGraph}
           sessionId={sessionId}
+          appTitle={appTitle}
           className="min-h-0 flex-1"
         />
       </div>

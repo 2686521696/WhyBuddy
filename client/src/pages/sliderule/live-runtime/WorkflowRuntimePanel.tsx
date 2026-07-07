@@ -17,7 +17,7 @@ import {
   outgoingTransitions,
   nodeById,
 } from "./live-runtime";
-import { loadRuntimeState, saveRuntimeState } from "./runtime-persistence";
+import { loadRuntimeState, saveRuntimeState, notifyRuntimeChanged, subscribeRuntimeChanged } from "./runtime-persistence";
 
 /** 持久化状态若引用了当前模型不存在的节点（换话题遗留），重建。 */
 function compatibleWithModel(state: RuntimeState, model: FiveSystemModel): boolean {
@@ -50,9 +50,20 @@ export function WorkflowRuntimePanel({
   });
   const [branchChoice, setBranchChoice] = React.useState(0);
 
+  // 与应用运行屏共享一份状态：对方（如页面表单提交发起实例）变更时重载
+  React.useEffect(
+    () =>
+      subscribeRuntimeChanged(sessionId, () => {
+        const persisted = loadRuntimeState(sessionId);
+        if (persisted && compatibleWithModel(persisted, model)) setState(persisted);
+      }),
+    [sessionId, model]
+  );
+
   const apply = (next: RuntimeState) => {
     setState(next);
     saveRuntimeState(sessionId, next);
+    notifyRuntimeChanged(sessionId);
   };
 
   const latest = state.instances.at(-1) ?? null;

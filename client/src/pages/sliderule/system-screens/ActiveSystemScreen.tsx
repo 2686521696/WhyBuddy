@@ -35,6 +35,8 @@ interface ActiveSystemScreenProps {
   skillRuntimeGraph?: SkillRuntimeGraphLike | null;
   /** 试运行（浏览器运行时）状态的持久化命名空间 */
   sessionId?: string;
+  /** 运行应用标题（话题名） */
+  appTitle?: string;
   className?: string;
 }
 
@@ -45,6 +47,7 @@ export function ActiveSystemScreen({
   skillContents = {},
   skillRuntimeGraph = null,
   sessionId,
+  appTitle,
   className = "",
 }: ActiveSystemScreenProps) {
   // 结构化五系统模型（一次解析，多屏共享做交叉引用）：
@@ -122,6 +125,8 @@ export function ActiveSystemScreen({
           <AppBundleScreen
             publishClosure={publishClosure}
             model={fiveSystemModel}
+            sessionId={sessionId}
+            appTitle={appTitle}
             isActive={!activeSkillId || activeSkillId === "appBundle"}
           />
         </div>

@@ -45,3 +45,30 @@ export function clearRuntimeState(sessionId: string): void {
     /* noop */
   }
 }
+
+// --- 多面板同步（应用运行 ⟷ 工作流试运行共用一份状态） ---------------------
+
+const CHANGE_EVENT = "sliderule:runtime-changed";
+
+export function notifyRuntimeChanged(sessionId: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { sessionId } }));
+  } catch {
+    /* SSR / 测试环境无 window */
+  }
+}
+
+export function subscribeRuntimeChanged(
+  sessionId: string,
+  onChange: () => void
+): () => void {
+  const handler = (e: Event) => {
+    if ((e as CustomEvent<{ sessionId: string }>).detail?.sessionId === sessionId) onChange();
+  };
+  try {
+    window.addEventListener(CHANGE_EVENT, handler);
+    return () => window.removeEventListener(CHANGE_EVENT, handler);
+  } catch {
+    return () => {};
+  }
+}
