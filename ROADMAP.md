@@ -1,5 +1,21 @@
 # 实现路径规划：从展示页面到多智能体编排系统
 
+## 2026-07-07 浏览器运行时时代（Live Runtime Era）收口
+
+> 主线：推演结果从"看图"升级为"可操作的系统"。五系统模型 JSON 即 schema，
+> 浏览器直接渲染运行，零后端零数据库；诚实边界（fail-closed、来源徽章）贯穿全程。
+
+- [x] 浏览器运行时内核（M0）：实体行 CRUD + 审批状态机（语义对齐 rbac-backend `moveToNextNode`），localStorage 按会话持久化，跨面板事件同步。
+- [x] 运行应用（M1/M1.6）：Ant Design Pro 外壳（深色侧栏 · 面包屑 · 工作台统计卡/图表/时间线），桌面/平板/手机三端 16:9 缩放画布，类型化表单、详情抽屉、提交审批联动。
+- [x] RBAC 角色预览（M2）：切角色 → 运行应用菜单/新建按钮实时锁定，双向同步；DataModel 数据表即改即存；AIGC 能力真试跑（python `/api/sliderule/aigc-tryrun`，与生成同一 LLM 通道，fail-closed 诊断）。
+- [x] 交付物附排练快照（M3）：实体行 md 表格 + 实例状态机日志 + 导出角色；无数据不出段，交付格式逐字节兼容。
+- [x] 图面升级：ER 图与流程图迁 React Flow（`@xyflow/react` + dagre）——实体卡节点、角色着色流程卡、条件边、试运行实例实时高亮；五系统联动图（分组容器全量展开 + 语义着色跨系统连线 + 图例）。
+- [x] 诚实空态：五系统屏假域占位（采购示例 ER 等）全部退役，空态只说"将来会出现什么"。
+- [x] 样式版：品牌侧栏 + 团队卡、系统胶囊按钮、图标示例卡、顶栏胶囊动作、悬浮输入条。
+- [x] 工程保障：客户端 sliderule 套件 242 用例、python 1539 用例全绿；playwright 全剧本实测截图（多端/角色/审批/试跑/导出）。
+- [ ] 下一步（候选）：workflow 生成侧输出分组/泳道结构（逼近复杂编排图）；联动图组间边捆扎；账号体系接入（侧栏团队卡变真切换器）；路线 3 内容质量评测常态化。
+
+
 ## 2026-04-26 Lane F：Task Autopilot 前端文档回补
 
 - [x] README / README.zh-CN 已补齐“如何触发任务自动驾驶”的最小目的地输入示例，并与前端六类 chips（analysis、generation、implementation、research、attachment、advanced-execution）对齐。

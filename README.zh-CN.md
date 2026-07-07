@@ -12,7 +12,7 @@
 </p>
 
 <blockquote>
-<strong>进度说明（2026-07 更新）：</strong>工程化应用已跑通完整黄金路径——一句话意图 → LLM 五系统模型（确定性结构门校验）→ 发布闭环（6/6 证据）→ 可导出交付包，并在 9+ 个全新领域实测通过（<a href="./docs/five-system-generation-eval.md">生成质量评测报告</a>）。便携版 <a href="./skills/sliderule.zip">SlideRule Skill</a> 继续可用于各 Agent 宿主。
+<strong>进度说明（2026-07 更新）：</strong>工程化应用已跑通完整黄金路径——一句话意图 → LLM 五系统模型（确定性结构门校验）→ 发布闭环（6/6 证据）→ <strong>浏览器运行时把推演结果渲染成真正可操作的系统</strong>（多端 Pro 外壳、RBAC 角色预览、审批状态机、数据直改、AIGC 真试跑、五系统联动图）→ 可导出交付包并附排练数据快照。已在 10+ 个全新领域实测通过（<a href="./docs/five-system-generation-eval.md">生成质量评测报告</a>）；运行时设计见<a href="./docs/LIVE_SYSTEMS_BLUEPRINT.md">浏览器运行时蓝图</a>。便携版 <a href="./skills/sliderule.zip">SlideRule Skill</a> 继续可用于各 Agent 宿主。
 </blockquote>
 
 <blockquote>
@@ -87,6 +87,28 @@
 [<img src="./docs/assets/LiveVideo.png" alt="基于 TRAE SOLO 的产品预演全流程自动化演示视频" width="100%" />](https://www.bilibili.com/video/BV1BbEA6RE8a/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=f07b7d222ea8a4494ad17a2a3911b1ae)
 
 点击上方视频封面即可跳转到 B 站演示视频。
+
+---
+
+## 🕹️ 浏览器运行时（新 · 2026-07）
+
+推演结果不再只是几张图——**浏览器把五系统模型直接渲染成可操作的系统**，ECharts 哲学：JSON 即 schema，零后端、零数据库。
+
+| | |
+|---|---|
+| <img src="./docs/assets/live-runtime/home.png" alt="新版工作室门面" /> <br/> <sub>新版门面 — 品牌侧栏 · 系统胶囊 · 引导示例卡</sub> | <img src="./docs/assets/live-runtime/linkage.png" alt="五系统联动图" /> <br/> <sub>**联动图** — 五系统分组全量展开，跨系统引用语义着色连线</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="流程活图" /> <br/> <sub>**流程活图** — 角色着色节点 + 条件边；试运行实例实时高亮当前节点</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="运行应用 Pro 外壳" /> <br/> <sub>**运行应用** — 模型渲染出 Ant Design Pro 后台：工作台图表、表格、表单、提交审批</sub> |
+
+话题闭环后你可以实际做的事（状态全在浏览器，按会话隔离）：
+
+- **运行应用** — 桌面 / 平板 / 手机三端画布（16:9 等比缩放），类型化表单新建数据，点行开详情抽屉，一键提交进审批流。
+- **切换角色** — RBAC 模型实时锁定菜单与按钮；RBAC 屏的角色预览与运行应用双向同步。
+- **推进审批** — 发起 / 通过 / 驳回 / 分支选择（状态机语义对齐真实工作流引擎），流程图同时是运行监视器。
+- **数据直改** — DataModel 屏的数据表和运行应用读写同一份运行时数据。
+- **AIGC 真试跑** — 模型声明的 AI 能力走与生成同一条 LLM 通道真跑一次，失败如实展示（`LLM_GENERATE_DISABLED` / `LLM_GENERATE_FAILED`）。
+- **带证据导出** — 交付包末尾附排练运行时快照（实体行、实例日志、导出角色），交付格式不变。
+
+**5 分钟演示脚本**：`npm run dev:all` → 发送「做一个连锁健身房管理系统…」→ 看 LLM 实时流推到 closed 6/6 → AppBundle ▸ *联动图* 看五系统全景 → *运行应用* 新建一条数据、提交审批、切手机端 → Workflow ▸ *试运行* 通过一步，看流程图高亮移动 → 交付物 ▸ 导出，文末就是快照附录。
 
 ---
 

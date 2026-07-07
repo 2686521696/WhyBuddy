@@ -12,7 +12,7 @@
 </p>
 
 <blockquote>
-<strong>Progress note (updated 2026-07):</strong> The engineered app now runs the full golden path end to end — one-sentence intent → LLM-generated five-system model (validated by deterministic gates) → publish closure (6/6 evidence) → exportable delivery package, verified across 9+ novel domains (<a href="./docs/five-system-generation-eval.md">generation eval report</a>). The portable <a href="./skills/sliderule.zip">SlideRule Skill</a> remains available for agent hosts.
+<strong>Progress note (updated 2026-07):</strong> The engineered app now runs the full golden path end to end — one-sentence intent → LLM-generated five-system model (validated by deterministic gates) → publish closure (6/6 evidence) → <strong>a browser live runtime that actually operates the rehearsed app</strong> (multi-device Pro shell, RBAC role preview, approval state machine, editable data, real AIGC try-runs, a five-system linkage graph) → exportable delivery package with the rehearsal data snapshot attached. Verified across 10+ novel domains (<a href="./docs/five-system-generation-eval.md">generation eval report</a>); see the <a href="./docs/LIVE_SYSTEMS_BLUEPRINT.md">live-runtime blueprint</a>. The portable <a href="./skills/sliderule.zip">SlideRule Skill</a> remains available for agent hosts.
 </blockquote>
 
 <blockquote>
@@ -85,6 +85,28 @@ TRAE SOLO-based product rehearsal automation: from a one-sentence idea to execut
 [<img src="./docs/assets/LiveVideo.png" alt="TRAE SOLO product rehearsal automation demo video" width="100%" />](https://www.bilibili.com/video/BV1BbEA6RE8a/?spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=f07b7d222ea8a4494ad17a2a3911b1ae)
 
 Click the video cover above to open the Bilibili demo.
+
+---
+
+## 🕹️ Browser Live Runtime (New · 2026-07)
+
+The rehearsed model is no longer just diagrams — **the browser renders it into an operable system**, ECharts-style: the five-system JSON is the schema, zero backend, zero database.
+
+| | |
+|---|---|
+| <img src="./docs/assets/live-runtime/home.png" alt="Restyled studio home" /> <br/> <sub>Restyled studio — brand sidebar, system pills, guided examples</sub> | <img src="./docs/assets/live-runtime/linkage.png" alt="Five-system linkage graph" /> <br/> <sub>**Linkage graph** — five grouped systems, every member expanded, semantic-colored cross-references</sub> |
+| <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes, condition edges; running instances light up their current node in real time</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Ant Design Pro shell rendered from the model: dashboard charts, tables, forms, approval submissions</sub> |
+
+What you can actually do after a topic closes (all state lives in the browser, per-session):
+
+- **Run the app** — desktop / tablet / phone frames (16:9 scaled canvas), create records with typed forms, click a row for the detail drawer, submit it into the approval flow.
+- **Switch roles** — the RBAC model locks menus and buttons live; the RBAC screen's role preview and the running app stay in sync both ways.
+- **Drive approvals** — start / approve / reject / branch on the workflow state machine (semantics aligned with a real workflow engine); the workflow diagram doubles as a live monitor.
+- **Edit data in place** — the DataModel screen's data table writes the same runtime rows the app reads.
+- **Try AIGC for real** — declared AI capabilities run once through the same LLM channel used for generation; failures surface honestly (`LLM_GENERATE_DISABLED` / `LLM_GENERATE_FAILED`).
+- **Export with evidence** — the delivery package appends a rehearsal-runtime snapshot (entity rows, instance logs, exporting role), format unchanged.
+
+**5-minute demo script**: `npm run dev:all` → send “做一个连锁健身房管理系统…” → watch the live LLM stream close 6/6 → AppBundle ▸ *联动图* for the full cross-system picture → *运行应用*, create a record, submit for approval, switch to the phone frame → Workflow ▸ *试运行*, approve a step and watch the diagram highlight move → 交付物 ▸ export, find the snapshot appendix at the bottom.
 
 ---
 
