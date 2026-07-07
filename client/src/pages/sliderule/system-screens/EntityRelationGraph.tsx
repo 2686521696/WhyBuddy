@@ -145,13 +145,25 @@ function ErNodeCard({ data }: NodeProps<ErFlowNode>) {
 
 const NODE_TYPES = { erNode: ErNodeCard };
 
-function layoutPositions(data: { nodes: ErGraphNode[]; edges: Array<{ source: string; target: string }> }) {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 36, ranksep: 90 });
+function layoutPositions(data: {
+  nodes: ErGraphNode[];
+  edges: Array<{ source: string; target: string; label: string }>;
+}) {
+  const g = new dagre.graphlib.Graph({ multigraph: true });
+  g.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 60 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const n of data.nodes) g.setNode(n.id, { width: CARD_W, height: cardHeight(n) });
-  // dagre 的 LR 秩沿边方向增长；ER 边是"多→一"，反着喂让被引用实体排前面
-  for (const e of data.edges) g.setEdge(e.target, e.source);
+  // dagre 的 LR 秩沿边方向增长；ER 边是"多→一"，反着喂让被引用实体排前面。
+  // 把标签实际尺寸喂给 dagre（labelpos:c）——列间距按最长字段名自动撑开，
+  // 标签不再钻进卡片底下（节点层在边层之上，盖住即不可读）。
+  for (const [i, e] of data.edges.entries()) {
+    g.setEdge(
+      e.target,
+      e.source,
+      { width: Math.max(e.label.length * 6.4 + 16, 40), height: 18, labelpos: "c" },
+      `e-${i}`
+    );
+  }
   dagre.layout(g);
   const pos: Record<string, { x: number; y: number }> = {};
   for (const n of data.nodes) {
@@ -195,7 +207,7 @@ export function EntityRelationGraph({
         label: e.label,
         style: { stroke: "#C9C2B2", strokeWidth: 1.5 },
         labelStyle: { fontSize: 10, fill: "#8c8577" },
-        labelBgStyle: { fill: "#FCFBF8", fillOpacity: 0.95 },
+        labelBgStyle: { fill: "#FCFBF8", fillOpacity: 1 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 4,
         markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
