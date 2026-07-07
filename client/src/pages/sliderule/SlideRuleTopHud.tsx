@@ -5,7 +5,7 @@ import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
 import type { SlideRuleExecutorMode } from "./types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
-import { Layers, Settings2 } from "lucide-react";
+import { Layers, RotateCw, Settings2 } from "lucide-react";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 
 export function SlideRuleTopHud({
@@ -49,43 +49,45 @@ export function SlideRuleTopHud({
       className={autopilotTheme.immersionOverlayHeader}
       data-testid="sliderule-status-bar"
     >
-      <div className="flex w-full items-start justify-between gap-4">
-        <div className={`${autopilotTheme.overlayBar} min-w-0 flex-1 pr-4`}>
+      <div className="flex w-full items-center justify-between gap-4">
+        {/* STATUS 组：装进描边圆角盒（样式版），信息项不变 */}
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {embedded ? null : (
             <img
               src="/assets/sliderule_logo_wordmark_transparent.png"
               alt="SlideRule"
-              className="mr-3 h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
+              className="h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
               title="SlideRule"
             />
           )}
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-            STATUS
-          </span>
-          <span
-            data-testid="sliderule-conclusion-badge"
-            className="text-[10px] text-stone-500"
-          >
-            {facts.conclusionLabel}
-          </span>
-          <span className="font-mono text-[10px] text-stone-400">话题</span>
-          <span
-            className={`min-w-0 max-w-[min(34vw,300px)] truncate font-medium text-stone-800 sm:max-w-[min(38vw,420px)] ${
-              !goal ? "text-stone-400" : ""
-            }`}
-            data-testid="sliderule-goal-display"
-            title={goal}
-          >
-            {goal || "尚未稳定话题"}
-          </span>
-          <span className="hidden h-3 w-px bg-stone-300 md:inline-block" aria-hidden />
-          <span className="hidden text-stone-400 sm:inline">
-            阶段{" "}
-            <span className="font-mono font-semibold text-stone-700">
-              {facts.phaseLabel || "就绪"}
+          <div className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-[#E7E2D9] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(68_60_44/0.05)]">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+              STATUS
             </span>
-          </span>
-
+            <span
+              data-testid="sliderule-conclusion-badge"
+              className="text-[10px] text-stone-500"
+            >
+              {facts.conclusionLabel}
+            </span>
+            <span className="font-mono text-[10px] text-stone-400">话题</span>
+            <span
+              className={`min-w-0 max-w-[min(30vw,280px)] truncate font-medium text-stone-800 sm:max-w-[min(34vw,380px)] ${
+                !goal ? "text-stone-400" : ""
+              }`}
+              data-testid="sliderule-goal-display"
+              title={goal}
+            >
+              {goal || "尚未稳定话题"}
+            </span>
+            <span className="hidden h-3 w-px bg-[#E7E2D9] md:inline-block" aria-hidden />
+            <span className="hidden text-stone-400 sm:inline">
+              阶段{" "}
+              <span className="font-mono font-semibold text-stone-700">
+                {facts.phaseLabel || "就绪"}
+              </span>
+            </span>
+          </div>
         </div>
 
         <div
@@ -97,10 +99,10 @@ export function SlideRuleTopHud({
               type="button"
               onClick={onOpenDeliverables}
               data-testid="sliderule-deliverables-open"
-              className={`${autopilotTheme.auditBtn} flex items-center gap-1`}
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#E7E2D9] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA]"
               title="交付物"
             >
-              <Layers className="h-3.5 w-3.5" />
+              <Layers className="h-4 w-4" />
               交付物
             </button>
           )}
@@ -109,11 +111,11 @@ export function SlideRuleTopHud({
               type="button"
               onClick={onOpenSettings}
               data-testid="sliderule-settings-open"
-              className={`${autopilotTheme.auditBtn} flex items-center justify-center`}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7E2D9] bg-white text-stone-600 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA]"
               title="设置"
               aria-label="设置"
             >
-              <Settings2 className="h-3.5 w-3.5" />
+              <Settings2 className="h-4 w-4" />
             </button>
           )}
           {onResetSession && (
@@ -122,9 +124,10 @@ export function SlideRuleTopHud({
               onClick={onResetSession}
               disabled={isRunning}
               data-testid="sliderule-reset-session"
-              className={autopilotTheme.auditBtn}
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#E7E2D9] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA] disabled:opacity-45"
               title={isRunning ? "推演进行中，稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
             >
+              <RotateCw className="h-4 w-4" />
               重置会话
             </button>
           )}

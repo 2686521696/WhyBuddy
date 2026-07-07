@@ -10,6 +10,7 @@ import {
   QuestionCircleOutlined,
   ReloadOutlined,
   RightOutlined,
+  DownOutlined,
   RobotOutlined,
   SettingOutlined,
   SnippetsOutlined,
@@ -838,7 +839,7 @@ function AgentLoopSidebar({
       <div className="native-agent-brand">
         {!brandMarkFailed ? (
           <img
-            src="/sliderule-mark.png"
+            src="/assets/sliderule-logo.png"
             alt="SlideRule.ai"
             onError={() => setBrandMarkFailed(true)}
           />
@@ -869,6 +870,14 @@ function AgentLoopSidebar({
         <span>帮助文档</span>
         <RightOutlined />
       </button>
+      <div className="native-agent-user" title="工作区（占位，账号体系接入后可切换）">
+        <span className="native-agent-user-avatar">SR</span>
+        <span className="native-agent-user-meta">
+          <span className="native-agent-user-name">SlideRule 团队</span>
+          <span className="native-agent-user-plan">企业版</span>
+        </span>
+        <DownOutlined className="native-agent-user-caret" />
+      </div>
     </aside>
   );
 }

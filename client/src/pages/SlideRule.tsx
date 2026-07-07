@@ -12,6 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, ClipboardCheck, Dumbbell, Users } from "lucide-react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
@@ -274,11 +275,31 @@ function TurnPhaseTimeline({
 
 // 前两条为内置演示域（确定性 fixture，秒出、不调 LLM）；
 // 第三条为新颖域，走真实 LLM 五系统生成——用户从 chips 就能体验两条路径。
-const EXAMPLE_PROMPTS = [
-  "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限",
-  "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
-  "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养",
-] as const;
+const EXAMPLE_PROMPTS: ReadonlyArray<{
+  text: string;
+  icon: React.ComponentType<{ className?: string }>;
+  iconBg: string;
+  iconColor: string;
+}> = [
+  {
+    text: "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限",
+    icon: ClipboardCheck,
+    iconBg: "bg-[#F8E8E0]",
+    iconColor: "text-[#C4633F]",
+  },
+  {
+    text: "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
+    icon: Users,
+    iconBg: "bg-[#E6F4FF]",
+    iconColor: "text-[#1677ff]",
+  },
+  {
+    text: "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养",
+    icon: Dumbbell,
+    iconBg: "bg-[#ECFDF3]",
+    iconColor: "text-[#16a34a]",
+  },
+];
 
 /**
  * ClaudeChatSurface — 统一页左栏对话区（Claude 风格轻量 prose 布局）。
@@ -315,6 +336,11 @@ function ClaudeChatSurface({
 
   return (
     <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[#FAF9F5] text-[#1F1E1B]">
+      {/* 底部暖色波纹（装饰，样式版）：不拦截事件、不参与布局 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-44 bg-[radial-gradient(120%_100%_at_20%_100%,rgb(243_231_220/0.85)_0%,rgb(243_231_220/0.35)_45%,transparent_75%)]"
+      />
       {/* Chat area */}
       <div className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6">
         {uiTurns.length === 0 ? (
@@ -335,19 +361,23 @@ function ClaudeChatSurface({
                 发一句业务目标，SlideRule 串起五系统，输出可校验的企业应用数字孪生。
               </div>
             </div>
-            <div className="flex flex-col gap-2 w-full max-w-[520px]">
-              {EXAMPLE_PROMPTS.map((prompt) => (
+            <div className="flex flex-col gap-2.5 w-full max-w-[560px]">
+              {EXAMPLE_PROMPTS.map(({ text, icon: Icon, iconBg, iconColor }) => (
                 <button
-                  key={prompt}
+                  key={text}
                   type="button"
                   disabled={isRunning}
                   onClick={() => {
                     // Dispatch a custom event so ComposerDock can pick it up
-                    window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text: prompt } }));
+                    window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
                   }}
-                  className="w-full rounded-xl border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 transition-colors hover:border-[#D8D1C4] hover:bg-[#F5F1EA] disabled:opacity-50"
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(68_60_44/0.05)] transition-all hover:border-[#D8D1C4] hover:shadow-[0_4px_16px_rgb(68_60_44/0.09)] disabled:opacity-50"
                 >
-                  {prompt}
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
+                    <Icon className={`h-4 w-4 ${iconColor}`} />
+                  </span>
+                  <span className="min-w-0 flex-1">{text}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
                 </button>
               ))}
             </div>

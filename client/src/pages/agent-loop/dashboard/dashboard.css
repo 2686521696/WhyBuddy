@@ -2234,3 +2234,75 @@
   font-size: 12px;
   padding: 0 10px;
 }
+
+/* --- 样式版：侧边栏品牌区放大 + 底部工作区卡（对齐效果图） --------------- */
+.native-agent-brand {
+  height: auto;
+  justify-content: center;
+  margin: 4px 4px 20px;
+}
+
+.native-agent-brand img {
+  height: 88px;
+  object-position: center;
+  width: 168px;
+}
+
+.native-agent-nav-item,
+.native-agent-help {
+  border-radius: 12px;
+  font-size: 15px;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+}
+
+.native-agent-user {
+  align-items: center;
+  border-top: 1px solid #efeae1;
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 6px 2px;
+}
+
+.native-agent-user-avatar {
+  align-items: center;
+  background: #f0ede5;
+  border-radius: 50%;
+  color: #6b6558;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.native-agent-user-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.native-agent-user-name {
+  color: #34302a;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-agent-user-plan {
+  color: #a49c8c;
+  font-size: 11px;
+}
+
+.native-agent-user-caret {
+  color: #a49c8c;
+  font-size: 10px;
+}

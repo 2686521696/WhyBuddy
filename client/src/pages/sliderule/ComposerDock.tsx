@@ -178,7 +178,7 @@ export function ComposerDock({
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       <div
-        className={`pointer-events-auto relative w-full rounded-[24px] border bg-white px-3 py-2 shadow-[0_6px_28px_rgb(68_60_44/0.08)] transition-colors ${
+        className={`pointer-events-auto relative w-full rounded-[28px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(68_60_44/0.12)] transition-colors ${
           isDragOver ? "border-[#D97757] bg-[#F8E8E0]/40" : "border-[#E7E2D9]"
         }`}
         data-testid="sliderule-composer-dock"
@@ -296,7 +296,7 @@ export function ComposerDock({
             type="button"
             onClick={isRunning ? (stop || (() => {})) : sendMessage}
             disabled={!isRunning && !input.trim()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#D97757] text-white shadow-sm transition hover:bg-[#C4633F] disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#E08663] to-[#D97757] text-white shadow-[0_4px_14px_rgb(217_119_87/0.45)] transition hover:from-[#D97757] hover:to-[#C4633F] disabled:cursor-not-allowed disabled:opacity-35"
             title={isRunning ? "停止" : "发送"}
           >
             {isRunning ? <Square className="h-4 w-4 fill-current" /> : <SendHorizontal className="h-4 w-4" />}

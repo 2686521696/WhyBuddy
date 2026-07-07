@@ -1,7 +1,8 @@
 /**
- * SkillThumbnailBar — 6 个 Skill 缩略图横排
+ * SkillThumbnailBar — 6 个系统的横向胶囊按钮（样式版：彩色圆图标 + 名称）。
  *
- * inactive 状态 opacity-20，active 时全亮 + 细边框高亮。
+ * active 高亮（品牌色描边 + 白底 + 投影），inactive 保持可读的弱化态
+ * （早期 20% 透明度被反馈"看不清有哪些系统"，已废弃）。
  * 点击可手动切换视图（可选）。
  */
 
@@ -42,7 +43,7 @@ export function SkillThumbnailBar({
   const perSkill = publishClosure?.perSkillEvidence ?? {} as Partial<Record<SkillKey, { evidencePresent?: boolean } | undefined>>;
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
       {SKILLS.map(({ id, label, abbr, iconBg, activeBorder, evidenceKey }) => {
         const isActive = activeSkillId === id || (!activeSkillId && id === "appBundle");
         const hasEvidence = perSkill[evidenceKey as keyof typeof perSkill]?.evidencePresent === true;
@@ -53,17 +54,22 @@ export function SkillThumbnailBar({
             type="button"
             onClick={() => onSelect?.(id)}
             title={label}
-            className={`flex flex-col items-center gap-1 rounded-xl border p-2 text-center transition-all duration-200 ${
+            className={`relative flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3.5 transition-all duration-200 ${
               isActive
-                ? `opacity-100 ring-2 ${activeBorder} border-transparent bg-white shadow-sm`
-                : "border-[#E7E2D9] bg-white opacity-20 hover:opacity-50"
+                ? `ring-2 ${activeBorder} border-transparent bg-white shadow-[0_2px_10px_rgb(68_60_44/0.10)]`
+                : "border-[#E7E2D9] bg-white/70 hover:border-[#D8D1C4] hover:bg-white"
             }`}
           >
-            {/* Mini icon */}
-            <div className={`h-6 w-6 rounded-lg ${iconBg} flex items-center justify-center`}>
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full ${iconBg} ${
+                isActive ? "" : "opacity-60"
+              }`}
+            >
               <span className="text-[9px] font-bold text-white">{abbr}</span>
-            </div>
-            <span className="text-[9px] font-medium text-stone-600">{label}</span>
+            </span>
+            <span className={`text-xs font-medium ${isActive ? "text-stone-800" : "text-stone-500"}`}>
+              {label}
+            </span>
 
             {/* Evidence dot */}
             {hasEvidence && (
