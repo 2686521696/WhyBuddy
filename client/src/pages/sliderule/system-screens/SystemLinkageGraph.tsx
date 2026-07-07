@@ -131,9 +131,11 @@ function SysItemCard({ data }: NodeProps<ItemNode>) {
       }}
       title={data.name}
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="t-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="t-right" type="target" position={Position.Right} style={{ opacity: 0 }} />
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.name}</span>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -142,19 +144,18 @@ const NODE_TYPES = { sysGroup: SysGroupCard, sysItem: SysItemCard };
 
 /**
  * 手排布局（组数固定为 ≤5，无需布局引擎）：
- *   第一行  Page → Workflow → RBAC （联动主方向从左到右）
- *   第二行  DataModel ← AIGC
- * 让"页面→实体/流程→角色/AIGC→实体"的跨行线尽量短。
+ * 主流向严格从左到右：数据中台 → 页面 → 工作流 → 权限（蓝/紫/橙边全部单向），
+ * AIGC 沉底行居中——向左上连实体（粉实线）、向右上连角色（粉虚线），互不穿组。
  */
 const GROUP_COLUMN: Record<LinkageSystem, { col: number; row: number }> = {
-  page: { col: 0, row: 0 },
-  workflow: { col: 1, row: 0 },
-  rbac: { col: 2, row: 0 },
-  datamodel: { col: 0, row: 1 },
-  aigc: { col: 1, row: 1 },
+  datamodel: { col: 0, row: 0 },
+  page: { col: 1, row: 0 },
+  workflow: { col: 2, row: 0 },
+  rbac: { col: 3, row: 0 },
+  aigc: { col: 1.5, row: 1 },
 };
-const COL_GAP = 120;
-const ROW_GAP = 72;
+const COL_GAP = 170;
+const ROW_GAP = 110;
 
 export function SystemLinkageGraph({
   model,
@@ -173,7 +174,7 @@ export function SystemLinkageGraph({
     const nodes: Node[] = [];
     for (const g of data.groups) {
       const { col, row } = GROUP_COLUMN[g.system];
-      const x = col * (GROUP_W + COL_GAP) + (row === 1 ? (GROUP_W + COL_GAP) / 2 : 0);
+      const x = col * (GROUP_W + COL_GAP);
       const y = row === 0 ? 0 : row0Height + ROW_GAP;
       nodes.push({ id: `g-${g.system}`, type: "sysGroup", position: { x, y }, data: { group: g }, draggable: true });
       g.items.forEach((item, i) => {
@@ -188,12 +189,16 @@ export function SystemLinkageGraph({
         });
       });
     }
+    const colOf = (key: string) => GROUP_COLUMN[key.split(":")[0] as LinkageSystem]?.col ?? 0;
     const edges: Edge[] = data.edges.map((e, i) => {
       const meta = EDGE_KIND_META[e.kind];
+      const rightward = colOf(e.to) >= colOf(e.from);
       return {
         id: `l-${i}`,
         source: e.from,
         target: e.to,
+        sourceHandle: rightward ? "s-right" : "s-left",
+        targetHandle: rightward ? "t-left" : "t-right",
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
         style: { stroke: meta.color, strokeWidth: 1.5, strokeDasharray: meta.dashed ? "6 4" : undefined, opacity: 0.8 },
