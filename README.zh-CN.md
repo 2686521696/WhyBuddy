@@ -33,6 +33,7 @@
 </p>
 
 <p align="center">
+  <a href="https://sliderule.ai"><img alt="website" src="https://img.shields.io/badge/🏠_sliderule.ai-0f766e?style=for-the-badge" /></a>
   <a href="https://github.com/xiaojilele-glitch/SlideRule"><img alt="repo" src="https://img.shields.io/badge/🌐_GitHub仓库-blue?style=for-the-badge" /></a>
   <a href="./ROADMAP.md"><img alt="roadmap" src="https://img.shields.io/badge/🗺️_路线图-111827?style=for-the-badge" /></a>
   <a href="./CONTRIBUTING.md"><img alt="contribute" src="https://img.shields.io/badge/🤝_参与贡献-16a34a?style=for-the-badge" /></a>
