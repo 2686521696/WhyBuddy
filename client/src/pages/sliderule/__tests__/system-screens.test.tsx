@@ -18,6 +18,7 @@ import { AppBundleScreen } from "../system-screens/AppBundleScreen";
 import { ActiveSystemScreen } from "../system-screens/ActiveSystemScreen";
 import { DataModelScreen } from "../system-screens/DataModelScreen";
 import { PageScreen } from "../system-screens/PageScreen";
+import { RbacScreen } from "../system-screens/RbacScreen";
 import {
   parseFiveSystemModel,
   parseFiveSystemModelFromContents,
@@ -598,6 +599,40 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(dmHtml).toContain("占位示意（非本话题数据）");
     const pageHtml = renderToStaticMarkup(<PageScreen />);
     expect(pageHtml).toContain("占位示意（非本话题数据）");
+  });
+
+  it("RBAC 屏模型路径：roles/menus/permissions 真实渲染，未声明权限标红", () => {
+    const modelWithUndeclaredPerm: FiveSystemModel = {
+      ...MODEL,
+      rbac: {
+        roles: ["student", "registrar"],
+        permissions: ["course:read"],
+        menus: [
+          { id: "m1", label: "选课", roleRefs: ["student"], permissionRefs: ["course:read"] },
+          { id: "m2", label: "审批台", roleRefs: ["registrar"], permissionRefs: ["course:approve"] }, // 未声明
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(<RbacScreen model={modelWithUndeclaredPerm} />);
+    expect(html).toContain("student");
+    expect(html).toContain("registrar");
+    expect(html).toContain("选课");
+    expect(html).toContain("审批台");
+    expect(html).toContain("2 角色 · 1 权限 · 2 菜单");
+    expect(html).toContain("course:read");
+    expect(html).toContain("✗ course:approve"); // 未在 permissions 清单声明 → 标红
+    expect(html).not.toContain("占位示意");
+    expect(html).not.toContain("采购单:创建"); // 不再显示采购占位
+  });
+
+  it("RBAC 屏无模型时仍走占位（明示），有模型时优先于 rawContent", () => {
+    const placeholderHtml = renderToStaticMarkup(<RbacScreen />);
+    expect(placeholderHtml).toContain("占位示意（非本话题数据）");
+    const modelHtml = renderToStaticMarkup(
+      <RbacScreen model={MODEL} rawContent={"# 角色: 文本角色\n权限: something"} />
+    );
+    expect(modelHtml).toContain("student"); // model 优先
+    expect(modelHtml).not.toContain("文本角色");
   });
 
   it("Page 屏模型路径：pages[].fieldBindings 交叉解析渲染，未解析绑定标红", () => {

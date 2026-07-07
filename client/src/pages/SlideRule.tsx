@@ -167,22 +167,49 @@ function assistantTextForTurn(turn: UiTurn, publishClosure?: PublishClosureSumma
   if (assistant) return assistant;
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
   if (finalStepText) return finalStepText;
-  const recentStepText = [...turn.steps].reverse().map(textFromStep).find(Boolean);
-  if (recentStepText) return recentStepText;
+  // 不再回退到最后一枚过程 chip（会把「指令已接收 · 启动推理」当成回答复读）；
+  // 过程细节由 TurnStepsDisclosure 折叠承载，这里只给结论句。
   if (publishClosure) {
-    const status = publishClosure.blocked ? "发布闭环被阻塞" : "发布闭环已完成";
-    return `${status}：${publishClosure.evidencePresentCount}/${publishClosure.skillCount} 个 Skill 证据可用，版本钉扎${publishClosure.versionPinsChecked ? "已检查" : "未完成"}。`;
+    const status = publishClosure.blocked ? "发布闭环被阻塞" : "五系统推演完成，发布闭环已收口";
+    return `${status}：${publishClosure.evidencePresentCount}/${publishClosure.skillCount} 个系统证据可用，版本钉扎${publishClosure.versionPinsChecked ? "已检查" : "未完成"}。`;
   }
   return turn.status === "streaming" ? "正在整理推演结果..." : "本轮已完成，但还没有生成可展示的回答。";
 }
 
-function closureSkillRows(publishClosure?: PublishClosureSummary | null) {
-  const evidence = publishClosure?.perSkillEvidence;
-  const skills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
-  return skills.map((skill) => ({
-    skill,
-    present: evidence?.[skill]?.evidencePresent === true,
-  }));
+/**
+ * TurnStepsDisclosure — Claude 式过程折叠。
+ * 运行中：实时流出最近 3 步（部分可见），「展开」看全程；
+ * 完成后：折叠成一行「推演过程 · N 步」，点开回看全部——过程不打扰结论。
+ */
+function TurnStepsDisclosure({ turn }: { turn: UiTurn }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
+  if (stepTexts.length === 0) return null;
+  const streaming = turn.status === "streaming";
+  const visible = expanded ? stepTexts : streaming ? stepTexts.slice(-3) : [];
+
+  return (
+    <div className="mt-1" data-testid="sliderule-turn-steps">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600"
+        data-testid="sliderule-turn-steps-toggle"
+      >
+        <span className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
+        推演过程 · {stepTexts.length} 步{streaming && !expanded ? "（实时）" : ""}
+      </button>
+      {visible.length > 0 && (
+        <div className={`mt-1 space-y-1 border-l border-[#EFEBE2] pl-3 ${expanded ? "max-h-64 overflow-y-auto" : ""}`}>
+          {visible.map((t, i) => (
+            <div key={i} className="text-xs leading-5 text-stone-400">
+              {t}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 前两条为内置演示域（确定性 fixture，秒出、不调 LLM）；
@@ -204,7 +231,6 @@ function ClaudeChatSurface({
   liveAction,
   latestTurn,
   publishClosure,
-  onOpenDeliverables,
   onChallenge,
 }: {
   uiTurns: UiTurn[];
@@ -212,10 +238,8 @@ function ClaudeChatSurface({
   liveAction: LiveAction | null;
   latestTurn: UiTurn | null;
   publishClosure?: PublishClosureSummary | null;
-  onOpenDeliverables: () => void;
   onChallenge: (id: string) => void;
 }) {
-  const skillRows = closureSkillRows(publishClosure);
   const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
   const thinkingText =
     liveAction?.label ||
@@ -269,7 +293,6 @@ function ClaudeChatSurface({
           <div className="space-y-6 py-2">
             {uiTurns.map((turn) => {
               const answer = assistantTextForTurn(turn, publishClosure);
-              const recentSteps = turn.steps.slice(-3).map(textFromStep).filter(Boolean);
               return (
                 <section key={turn.id} className="space-y-4">
                   {/* User bubble — right; hidden for turns restored from persisted state (no user text) */}
@@ -281,7 +304,9 @@ function ClaudeChatSurface({
                     </div>
                   )}
 
-                  {/* Assistant reply — left, prose, no card */}
+                  {/* Assistant reply — left, prose, no card.
+                      Claude 式：运行中流式吐最近几步（可展开全程）；
+                      完成后过程折叠为一行，只留结论句 + 状态。 */}
                   <div className="max-w-[640px]">
                     {turn.status === "streaming" ? (
                       <div className="space-y-2">
@@ -293,17 +318,12 @@ function ClaudeChatSurface({
                           </span>
                           {thinkingText}
                         </div>
-                        {recentSteps.length > 0 && (
-                          <div className="space-y-1 pl-4">
-                            {recentSteps.map((t, i) => (
-                              <div key={i} className="text-xs text-stone-400">{t}</div>
-                            ))}
-                          </div>
-                        )}
+                        <TurnStepsDisclosure turn={turn} />
                       </div>
                     ) : (
                       <div className="space-y-2 text-[15px] leading-7 text-stone-800">
                         <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
+                        <TurnStepsDisclosure turn={turn} />
                         <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
                           {publishClosure && (
                             <span className="rounded-full bg-[#F0EDE5] px-2 py-0.5">
@@ -330,28 +350,9 @@ function ClaudeChatSurface({
         )}
       </div>
 
-      {/* AppBundle closure bar */}
-      {publishClosure && (
-        <div className="shrink-0 border-t border-[#EFEBE2] bg-[#FAF9F5] px-4 py-2">
-          <div className="mx-auto flex max-w-[780px] items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-1">
-              {skillRows.map(({ skill, present }) => (
-                <span
-                  key={skill}
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    present ? "bg-emerald-50 text-emerald-700" : "bg-[#F0EDE5] text-stone-400"
-                  }`}
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-            <button type="button" onClick={onOpenDeliverables} className="shrink-0 text-xs text-stone-500 hover:text-[#1F1E1B]">
-              交付物
-            </button>
-          </div>
-        </div>
-      )}
+      {/* 底部六系统标签行已移除（用户反馈：终端用户不关心内部 skill 名，
+          只添乱）——闭环状态在每轮回答的 closed x/6 pill 与右栏看板已有，
+          交付物入口由顶栏承担。 */}
     </div>
   );
 }
@@ -609,7 +610,6 @@ function SlideRuleUnified({
               liveAction={liveAction}
               latestTurn={latestTurn}
               publishClosure={publishClosure}
-              onOpenDeliverables={openDeliverables}
               onChallenge={challengeTurn}
             />
           }
@@ -674,7 +674,7 @@ function SlideRuleUnified({
             sendMessage={sendMessage}
             isRunning={isRunning}
             goal={goal}
-            latestUserText={latestTurn?.user}
+
             hintChips={composerHints}
             driveMode={driveMode}
             setDriveMode={setDriveMode}

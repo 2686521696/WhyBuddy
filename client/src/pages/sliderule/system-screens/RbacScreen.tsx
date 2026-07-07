@@ -1,18 +1,25 @@
 /**
  * RbacScreen — 角色权限树 + 数据规则表
  *
- * 展示 RBAC Skill 产出的角色→权限映射。
- * 左侧角色树，右侧权限/菜单/数据规则表。
+ * 数据优先级（诚实降级链）：
+ *   1. 五系统模型 rbac 段：roles/permissions/menus 真实渲染——每个角色的
+ *      权限与菜单从 menus[].roleRefs/permissionRefs 反推；permissionRefs
+ *      未在 permissions 清单声明的如实标红（与 gate 的 fail-closed 一致）。
+ *   2. rawContent 文本解析（SSE 路径的角色定义文本）。
+ *   3. 占位骨架（降透明度 + 明示），不冒充真实产物。
  */
 
 import React, { useMemo } from "react";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
+import type { FiveSystemModel } from "./five-system-model";
 
 interface RbacScreenProps {
   publishClosure?: PublishClosureSummary | null;
   /** Raw text content from RBAC capability result */
   rawContent?: string | null;
+  /** 解析出的五系统模型（rbac 段：roles/permissions/menus）。 */
+  model?: FiveSystemModel | null;
   isActive?: boolean;
   className?: string;
 }
@@ -60,22 +67,47 @@ function parseRolesFromContent(content: string): RoleEntry[] | null {
   return roles.length >= 2 ? roles : null;
 }
 
+/** model.rbac → 角色行：权限/菜单从 menus 的 roleRefs/permissionRefs 反推。 */
+function rolesFromModel(rbac: FiveSystemModel["rbac"] | null | undefined): RoleEntry[] | null {
+  const roleIds = rbac?.roles ?? [];
+  if (roleIds.length === 0) return null;
+  const menus = rbac?.menus ?? [];
+  return roleIds.map((role) => {
+    const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
+    const permissions = [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))];
+    return {
+      role,
+      permissions,
+      menus: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
+    };
+  });
+}
+
 export function RbacScreen({
   publishClosure,
   rawContent,
+  model,
   isActive = false,
   className = "",
 }: RbacScreenProps) {
+  const modelRoles = useMemo(() => rolesFromModel(model?.rbac), [model?.rbac]);
+  // 未在 rbac.permissions 清单声明的 permissionRef 如实标红（不静默吞掉）。
+  const declaredPermissions = useMemo(
+    () => new Set(model?.rbac?.permissions ?? []),
+    [model?.rbac?.permissions]
+  );
   const roles = useMemo(() => {
+    if (modelRoles) return modelRoles;
     if (rawContent) {
       const parsed = parseRolesFromContent(rawContent);
       if (parsed) return parsed;
     }
     return PLACEHOLDER_ROLES;
-  }, [rawContent]);
+  }, [modelRoles, rawContent]);
 
   const evidence = publishClosure?.perSkillEvidence?.["rbac"];
-  const isPlaceholder = !rawContent || !parseRolesFromContent(rawContent);
+  const isPlaceholder = !modelRoles && (!rawContent || !parseRolesFromContent(rawContent));
+  const hasModel = !!modelRoles;
 
   return (
     <div
@@ -86,7 +118,11 @@ export function RbacScreen({
       <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-orange-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">RBAC</span>
-        <span className="text-xs text-stone-400">角色 → 权限 · 菜单 · 数据规则</span>
+        <span className="text-xs text-stone-400">
+          {hasModel
+            ? `${modelRoles!.length} 角色 · ${model?.rbac?.permissions?.length ?? 0} 权限 · ${model?.rbac?.menus?.length ?? 0} 菜单`
+            : "角色 → 权限 · 菜单 · 数据规则"}
+        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <EvidenceBadges evidence={evidence} />
         </div>
@@ -111,11 +147,27 @@ export function RbacScreen({
                 <td className="px-4 py-2.5 font-medium text-stone-800">{entry.role}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex flex-wrap gap-1">
-                    {entry.permissions.map((p) => (
-                      <span key={p} className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">
-                        {p}
-                      </span>
-                    ))}
+                    {entry.permissions.length > 0 ? (
+                      entry.permissions.map((p) => {
+                        const undeclared = hasModel && !declaredPermissions.has(p);
+                        return (
+                          <span
+                            key={p}
+                            className={
+                              undeclared
+                                ? "rounded bg-red-50 px-1.5 py-0.5 text-red-600 ring-1 ring-red-200"
+                                : "rounded bg-blue-50 px-1.5 py-0.5 text-blue-700"
+                            }
+                            title={undeclared ? `权限未在 rbac.permissions 清单声明：${p}` : p}
+                          >
+                            {undeclared ? "✗ " : ""}
+                            {p}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span className="text-[10px] text-stone-300">未挂权限</span>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-2.5">

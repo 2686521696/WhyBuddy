@@ -90,6 +90,7 @@ export function ActiveSystemScreen({
           <RbacScreen
             publishClosure={publishClosure}
             rawContent={skillContents.rbac}
+            model={fiveSystemModel}
             isActive={activeSkillId === "rbac"}
           />
         </div>

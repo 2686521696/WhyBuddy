@@ -25,7 +25,7 @@ export function ComposerDock({
   sendMessage,
   isRunning,
   goal,
-  latestUserText,
+
   driveMode: outerDriveMode,
   setDriveMode: outerSetDriveMode,
   marathonBudget: outerMarathonBudget,
@@ -37,7 +37,7 @@ export function ComposerDock({
   sendMessage: () => void;
   isRunning: boolean;
   goal: string;
-  latestUserText?: string;
+
   hintChips?: string[];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
@@ -175,13 +175,8 @@ export function ComposerDock({
 
   return (
     <div className="pointer-events-none flex w-[min(820px,calc(100vw-32px))] flex-col items-center gap-2">
-      {latestUserText && (
-        <div className="max-w-[min(760px,90vw)] truncate rounded-full border border-[#E7E2D9] bg-white/85 px-3 py-1.5 text-xs text-stone-500 shadow-sm">
-          本轮 · {latestUserText.slice(0, 72)}
-          {latestUserText.length > 72 ? "..." : ""}
-        </div>
-      )}
-
+      {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
+          （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       <div
         className={`pointer-events-auto relative w-full rounded-[24px] border bg-white px-3 py-2 shadow-[0_6px_28px_rgb(68_60_44/0.08)] transition-colors ${
           isDragOver ? "border-[#D97757] bg-[#F8E8E0]/40" : "border-[#E7E2D9]"
