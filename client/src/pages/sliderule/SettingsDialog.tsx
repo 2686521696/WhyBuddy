@@ -1,8 +1,15 @@
 import React from "react";
-import { Cpu, SlidersHorizontal, X } from "lucide-react";
+import { Cpu, Server, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectionDensity } from "./sliderule-projection-constants";
 import { LlmProviderSettings } from "./LlmProviderSettings";
+import { LlmChannelPanel } from "./LlmChannelPanel";
+import {
+  clearRuntimeRole,
+  clearRuntimeState,
+  loadRuntimeState,
+  notifyRuntimeChanged,
+} from "./live-runtime/runtime-persistence";
 import {
   isEnabledProviderReady,
   loadProvidersConfig,
@@ -10,13 +17,15 @@ import {
   type LlmProvidersConfig,
 } from "@/lib/sliderule-llm-providers";
 
-type CategoryId = "llm" | "system";
+type CategoryId = "channel" | "llm" | "system";
 
 type MarathonBudget = { maxTokens: number; declaredAt: string };
 
 export type SettingsDialogProps = {
   open: boolean;
   onClose: () => void;
+  /** 本话题运行时数据（行/实例/角色）的会话 id，供「数据管理」清理 */
+  sessionId?: string;
   projectionDensity?: ProjectionDensity;
   onProjectionDensityChange?: (density: ProjectionDensity) => void;
   driveMode?: "single" | "marathon";
@@ -26,25 +35,27 @@ export type SettingsDialogProps = {
 };
 
 const NAV_ITEMS: Array<{ id: CategoryId; label: string; icon: React.ReactNode }> = [
-  { id: "llm", label: "语言模型", icon: <Cpu className="h-4 w-4" /> },
+  { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
+  { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
   { id: "system", label: "系统设置", icon: <SlidersHorizontal className="h-4 w-4" /> },
 ];
 
 /**
  * SlideRule 设置中心（Cherry Studio 风格三栏）。
- * 语言模型分类 = provider-centric BYOK 配置（保存编译成执行器消费的扁平池）；
- * 系统设置分类 = 推演偏好（投影密度 / 默认模式 / 持续推演预算）。
+ * 推演通道分类 = 服务端真通道（五系统生成/评审/AI 写回实际走的 LLM）配置；
+ * 浏览器直连分类 = provider-centric BYOK 备用池（仅无服务端时的直连路径消费）；
+ * 系统设置分类 = 推演偏好（投影密度 / 默认模式 / 预算）+ 运行时数据管理。
  */
 export function SettingsDialog(props: SettingsDialogProps) {
   const { open, onClose } = props;
-  const [category, setCategory] = React.useState<CategoryId>("llm");
+  const [category, setCategory] = React.useState<CategoryId>("channel");
   const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(null);
   // Capture the snapshot we loaded when the dialog was opened (for dirty check + no-op Save guard).
   const initialLlmDraftRef = React.useRef<LlmProvidersConfig | null>(null);
 
   React.useEffect(() => {
     if (open) {
-      setCategory("llm");
+      setCategory("channel");
       setShowUnsavedConfirm(false);
       const loaded = loadProvidersConfig();
       setDraft(loaded);
@@ -164,9 +175,19 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
             {/* 内容区 */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {category === "llm" ? (
+              {category === "channel" ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <LlmChannelPanel />
+                </div>
+              ) : category === "llm" ? (
                 draft ? (
-                  <LlmProviderSettings draft={draft} setDraft={setDraft} />
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="mx-6 mt-4 rounded-xl bg-[#F5F1EA] px-4 py-2.5 text-[11px] leading-5 text-stone-500 ring-1 ring-[#E7E2D9]">
+                      备用通道：仅「浏览器直连」模式（本地无服务端时）消费这里的配置；
+                      服务端推演不读它——真通道在左侧「推演通道」里配。
+                    </div>
+                    <LlmProviderSettings draft={draft} setDraft={setDraft} />
+                  </div>
                 ) : null
               ) : (
                 <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -205,14 +226,17 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 >
                   关闭
                 </button>
-                <button
-                  onClick={handleSave}
-                  disabled={!isLlmDirty}
-                  className="rounded-lg bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#C4633F]"
-                  data-testid="sliderule-settings-save"
-                >
-                  保存
-                </button>
+                {/* 底部保存只管「浏览器直连」草稿；推演通道/系统设置各自即时生效 */}
+                {category === "llm" && (
+                  <button
+                    onClick={handleSave}
+                    disabled={!isLlmDirty}
+                    className="rounded-lg bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#C4633F]"
+                    data-testid="sliderule-settings-save"
+                  >
+                    保存
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -314,6 +338,57 @@ function SystemPrefs(props: SettingsDialogProps) {
           持续推演模式单条消息的 token 上限，达到后停在等待人工介入。
         </p>
       </div>
+
+      <RuntimeDataSection sessionId={props.sessionId} />
+    </div>
+  );
+}
+
+/** 数据管理：本话题运行时数据（实体行/流程实例/角色视角）的查看与清空。 */
+function RuntimeDataSection({ sessionId }: { sessionId?: string }) {
+  const [version, setVersion] = React.useState(0);
+  const summary = React.useMemo(() => {
+    if (!sessionId) return null;
+    const state = loadRuntimeState(sessionId);
+    if (!state) return { rows: 0, instances: 0 };
+    return {
+      rows: Object.values(state.entities).reduce((n, list) => n + list.length, 0),
+      instances: state.instances.length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, version]);
+
+  if (!sessionId) return null;
+
+  const clear = () => {
+    clearRuntimeState(sessionId);
+    clearRuntimeRole(sessionId);
+    notifyRuntimeChanged(sessionId);
+    setVersion((v) => v + 1);
+    toast.success("已清空本话题运行时数据", {
+      description: "实体行、流程实例与角色视角已重置；模型与推演过程不受影响。",
+    });
+  };
+
+  return (
+    <div className="border-t border-[#E7E2D9] pt-5">
+      <label className="mb-1.5 block text-[12px] font-semibold text-stone-600">运行时数据（本话题）</label>
+      <p className="text-[11px] text-stone-400">
+        运行应用/数据表/试运行产生的排练数据存在浏览器本机：当前
+        <span className="mx-1 font-mono text-stone-500">{summary?.rows ?? 0}</span>行数据 ·
+        <span className="mx-1 font-mono text-stone-500">{summary?.instances ?? 0}</span>个流程实例。
+      </p>
+      <button
+        type="button"
+        onClick={clear}
+        data-testid="sliderule-settings-clear-runtime"
+        className="mt-2.5 rounded-lg border border-rose-200 bg-rose-50/60 px-4 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-100"
+      >
+        清空本话题运行时数据
+      </button>
+      <p className="mt-1.5 text-[11px] text-stone-400">
+        只清排练数据（行/实例/角色视角），不动五系统模型与会话记录。
+      </p>
     </div>
   );
 }

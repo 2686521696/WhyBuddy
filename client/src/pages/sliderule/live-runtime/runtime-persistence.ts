@@ -66,6 +66,14 @@ export function saveRuntimeRole(sessionId: string, role: string): void {
   }
 }
 
+export function clearRuntimeRole(sessionId: string): void {
+  try {
+    localStorage.removeItem(ROLE_KEY_PREFIX + sessionId);
+  } catch {
+    /* noop */
+  }
+}
+
 const ROLE_EVENT = "sliderule:runtime-role-changed";
 
 export function notifyRoleChanged(sessionId: string): void {

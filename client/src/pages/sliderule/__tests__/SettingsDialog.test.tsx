@@ -1,0 +1,50 @@
+/**
+ * 设置中心重构（推演通道 / 浏览器直连 / 系统设置）的结构回归。
+ *
+ * 约定：renderToStaticMarkup（不跑 effect，推演通道面板呈加载骨架，
+ * 不发真实请求）。覆盖：三分类导航、默认落在推演通道、真通道面板
+ * 与诚实横幅在场、底部保存不出现在推演通道分类（各自即时生效）。
+ */
+
+import { describe, it, expect } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SettingsDialog } from "../SettingsDialog";
+
+// SystemPrefs 的数据管理区读 localStorage — node 环境补一个最小 shim
+(globalThis as unknown as { localStorage: Storage }).localStorage ??= {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+  clear: () => {},
+  key: () => null,
+  length: 0,
+} as unknown as Storage;
+
+describe("SettingsDialog（设置中心重构）", () => {
+  it("三分类导航：推演通道（默认）/ 浏览器直连 / 系统设置", () => {
+    const html = renderToStaticMarkup(
+      <SettingsDialog open onClose={() => {}} sessionId="s1" />
+    );
+    expect(html).toContain('data-testid="sliderule-settings-nav-channel"');
+    expect(html).toContain('data-testid="sliderule-settings-nav-llm"');
+    expect(html).toContain('data-testid="sliderule-settings-nav-system"');
+    expect(html).toContain("推演通道");
+    expect(html).toContain("浏览器直连");
+    // 默认分类 = 推演通道：真通道面板在场
+    expect(html).toContain('data-testid="llm-channel-panel"');
+    expect(html).toContain("服务端真通道");
+  });
+
+  it("推演通道分类不渲染底部「保存」（面板各自即时生效）", () => {
+    const html = renderToStaticMarkup(
+      <SettingsDialog open onClose={() => {}} sessionId="s1" />
+    );
+    expect(html).not.toContain('data-testid="sliderule-settings-save"');
+  });
+
+  it("关闭态不渲染任何内容", () => {
+    const html = renderToStaticMarkup(<SettingsDialog open={false} onClose={() => {}} />);
+    expect(html).toBe("");
+  });
+});

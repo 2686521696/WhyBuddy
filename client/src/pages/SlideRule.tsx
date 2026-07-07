@@ -769,6 +769,7 @@ function SlideRuleUnified({
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        sessionId={sessionId}
         projectionDensity={projectionDensity}
         onProjectionDensityChange={onProjectionDensityChange}
         driveMode={driveMode}

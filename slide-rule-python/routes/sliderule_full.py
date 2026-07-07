@@ -783,3 +783,38 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
         "output": result.content,
         "elapsedMs": int((_time.monotonic() - started) * 1000),
     }
+
+
+# ---------------------------------------------------------------------------
+# 推演 LLM 通道配置（设置中心「推演通道」）：查看/修改/测试真通道。
+# 密钥只回掩码；override 持久化在服务端本机 .llm-override.json（gitignored）。
+# ---------------------------------------------------------------------------
+
+from services.llm_channel import apply_override_to_env as _llm_apply_override
+from services.llm_channel import get_channel_status as _llm_channel_status
+from services.llm_channel import set_channel as _llm_channel_set
+from services.llm_channel import test_channel as _llm_channel_test
+
+# 启动时恢复持久化 override（.env 已由 app.py 装载，基线在首次应用前快照）
+_llm_apply_override()
+
+
+@router.get("/llm-channel")
+def llm_channel_status(x_internal_key: Optional[str] = Header(None)):
+    """当前推演通道配置（base/model/密钥掩码 + override 字段清单）。"""
+    _auth(x_internal_key)
+    return _llm_channel_status()
+
+
+@router.post("/llm-channel")
+def llm_channel_update(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+    """更新通道 override：非空字符串=覆盖，空串/null=清除回退 .env。"""
+    _auth(x_internal_key)
+    return _llm_channel_set(payload or {})
+
+
+@router.post("/llm-channel/test")
+def llm_channel_test(x_internal_key: Optional[str] = Header(None)):
+    """对真通道发一次极小请求，结果如实返回（不粉饰失败）。"""
+    _auth(x_internal_key)
+    return _llm_channel_test()
