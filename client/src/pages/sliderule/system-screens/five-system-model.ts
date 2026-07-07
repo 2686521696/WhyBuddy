@@ -507,16 +507,12 @@ export interface LinkageGroup {
   system: LinkageSystem;
   label: string;
   items: LinkageItem[];
-  /** 截断掉的成员数（联动图每组限量展示，如实标注） */
-  truncated: number;
 }
 
-const LINKAGE_GROUP_LIMIT = 8;
-
 /**
- * 五系统联动图：每个系统一组成员节点，跨系统引用连线。
- * 只画模型里真实存在且解析得到的引用（悬空引用不入图——各屏已负责标红），
- * 任一组成员被截断时如实计数。少于 2 个非空组返回 null（没得联动）。
+ * 五系统联动图：每个系统一组成员节点（全部展开，不截断——组内多列
+ * 排布由渲染器负责），跨系统引用连线。只画模型里真实存在且解析得到的
+ * 引用（悬空引用不入图——各屏已负责标红）。少于 2 个非空组返回 null。
  */
 export function deriveSystemLinkageGraph(
   model: FiveSystemModel | null | undefined
@@ -536,8 +532,7 @@ export function deriveSystemLinkageGraph(
   ): LinkageGroup => ({
     system,
     label,
-    items: all.slice(0, LINKAGE_GROUP_LIMIT).map((x) => ({ key: key(system, x.id), system, id: x.id, name: x.name })),
-    truncated: Math.max(0, all.length - LINKAGE_GROUP_LIMIT),
+    items: all.map((x) => ({ key: key(system, x.id), system, id: x.id, name: x.name })),
   });
 
   const groups: LinkageGroup[] = [
@@ -553,7 +548,7 @@ export function deriveSystemLinkageGraph(
   const edges: LinkageEdge[] = [];
   const seen = new Set<string>();
   const push = (from: string, to: string, kind: LinkageEdge["kind"]) => {
-    if (!present.has(from) || !present.has(to)) return; // 截断/悬空成员不画线
+    if (!present.has(from) || !present.has(to)) return; // 悬空成员不画线
     const sig = `${from}->${to}:${kind}`;
     if (seen.has(sig)) return;
     seen.add(sig);

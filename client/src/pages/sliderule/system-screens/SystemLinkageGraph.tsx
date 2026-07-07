@@ -51,10 +51,20 @@ const ITEM_H = 34;
 const ITEM_GAP = 8;
 const GROUP_PAD = 14;
 const GROUP_TITLE_H = 36;
-const GROUP_W = ITEM_W + GROUP_PAD * 2;
+// 全部成员展开：组内超过 12 个自动分内列（组变宽不变超高）
+const ITEMS_PER_INNER_COL = 12;
+
+function innerCols(g: LinkageGroup): number {
+  return Math.max(1, Math.ceil(g.items.length / ITEMS_PER_INNER_COL));
+}
+
+function groupWidth(g: LinkageGroup): number {
+  const cols = innerCols(g);
+  return GROUP_PAD * 2 + cols * ITEM_W + (cols - 1) * ITEM_GAP;
+}
 
 function groupHeight(g: LinkageGroup): number {
-  const rows = g.items.length + (g.truncated > 0 ? 1 : 0);
+  const rows = Math.min(g.items.length, ITEMS_PER_INNER_COL);
   return GROUP_TITLE_H + rows * (ITEM_H + ITEM_GAP) + GROUP_PAD;
 }
 
@@ -67,7 +77,7 @@ function SysGroupCard({ data }: NodeProps<GroupNode>) {
   return (
     <div
       style={{
-        width: GROUP_W,
+        width: groupWidth(group),
         height: groupHeight(group),
         boxSizing: "border-box",
         background: tint.bg,
@@ -82,29 +92,9 @@ function SysGroupCard({ data }: NodeProps<GroupNode>) {
           {group.label}
         </span>
         <span style={{ marginLeft: "auto", fontSize: 10, color: "#a49c8c" }}>
-          {group.items.length + group.truncated}
+          {group.items.length}
         </span>
       </div>
-      {group.truncated > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: GROUP_PAD - 4,
-            left: GROUP_PAD,
-            width: ITEM_W,
-            height: ITEM_H,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 10,
-            color: "#a49c8c",
-            border: "1px dashed #d8d1c4",
-            borderRadius: 8,
-          }}
-        >
-          … 还有 {group.truncated} 个未展示
-        </div>
-      )}
     </div>
   );
 }
@@ -171,20 +161,39 @@ export function SystemLinkageGraph({
     if (!data) return { flowNodes: [] as Node[], flowEdges: [] as Edge[], legendKinds: [] as string[] };
     const row0 = data.groups.filter((g) => GROUP_COLUMN[g.system].row === 0);
     const row0Height = Math.max(0, ...row0.map(groupHeight));
+    // 整列槽位：每个整数列取该列实际最宽组，槽位 x 累计（组可加宽不重叠）
+    const widthOfCol = (c: number) =>
+      Math.max(
+        ITEM_W + GROUP_PAD * 2,
+        ...data.groups.filter((g) => GROUP_COLUMN[g.system].col === c).map(groupWidth)
+      );
+    const slotX: number[] = [];
+    for (let c = 0; c <= 3; c++) slotX[c] = c === 0 ? 0 : slotX[c - 1] + widthOfCol(c - 1) + COL_GAP;
+    const xOfCol = (col: number) => {
+      if (Number.isInteger(col)) return slotX[col] ?? 0;
+      const lo = Math.floor(col);
+      const hi = Math.ceil(col);
+      return ((slotX[lo] ?? 0) + (slotX[hi] ?? 0)) / 2;
+    };
     const nodes: Node[] = [];
     for (const g of data.groups) {
       const { col, row } = GROUP_COLUMN[g.system];
-      const x = col * (GROUP_W + COL_GAP);
+      const x = xOfCol(col);
       const y = row === 0 ? 0 : row0Height + ROW_GAP;
       nodes.push({ id: `g-${g.system}`, type: "sysGroup", position: { x, y }, data: { group: g }, draggable: true });
       g.items.forEach((item, i) => {
+        const innerCol = Math.floor(i / ITEMS_PER_INNER_COL);
+        const innerRow = i % ITEMS_PER_INNER_COL;
         nodes.push({
           id: item.key,
           type: "sysItem",
           parentId: `g-${g.system}`,
           extent: "parent",
           draggable: false,
-          position: { x: GROUP_PAD, y: GROUP_TITLE_H + i * (ITEM_H + ITEM_GAP) },
+          position: {
+            x: GROUP_PAD + innerCol * (ITEM_W + ITEM_GAP),
+            y: GROUP_TITLE_H + innerRow * (ITEM_H + ITEM_GAP),
+          },
           data: { name: item.name, system: item.system },
         });
       });
