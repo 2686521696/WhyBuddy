@@ -32,6 +32,7 @@ import {
   datamodelToMermaid,
   deriveErGraphData,
   deriveWorkflowGraphData,
+  deriveSystemLinkageGraph,
   evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
@@ -645,6 +646,26 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(byId.ghost.roleResolved).toBe(false); // 未在 rbac.roles 声明 → 标红
     expect(data.edges).toContainEqual({ from: "submit", to: "approve", condition: "容量未满" });
     expect(deriveWorkflowGraphData({})).toBeNull();
+  });
+
+  it("deriveSystemLinkageGraph：五系统分组 + 跨系统边（联动图路径）", () => {
+    const data = deriveSystemLinkageGraph(MODEL)!;
+    expect(data.groups.map((g) => g.system)).toEqual([
+      "datamodel",
+      "page",
+      "workflow",
+      "rbac",
+      "aigc",
+    ]);
+    // 页面→主实体（course）、页面→流程起点（ghost 无入边为起点候选之一）、节点→角色、AIGC→输出实体/角色
+    expect(data.edges).toContainEqual({ from: "page:enroll_page", to: "datamodel:course", kind: "page-entity" });
+    expect(data.edges.some((e) => e.kind === "page-workflow" && e.from === "page:enroll_page")).toBe(true);
+    expect(data.edges).toContainEqual({ from: "workflow:submit", to: "rbac:student", kind: "node-role" });
+    expect(data.edges).toContainEqual({ from: "aigc:cap_summary", to: "datamodel:enrollment", kind: "aigc-entity" });
+    expect(data.edges).toContainEqual({ from: "aigc:cap_summary", to: "rbac:teacher", kind: "aigc-role" });
+    // 悬空引用不入图（ghost_role 未在 roles 声明）
+    expect(data.edges.some((e) => e.to === "rbac:ghost_role")).toBe(false);
+    expect(deriveSystemLinkageGraph({})).toBeNull();
   });
 
   // 注意：ActiveSystemScreen 全屏常挂载（hidden），负向断言必须直渲染目标屏，

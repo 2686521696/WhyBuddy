@@ -484,6 +484,126 @@ export function deriveErGraphData(
   return { nodes, edges };
 }
 
+// --- 五系统联动图数据（AppBundle 屏「联动图」视图） -------------------------
+
+export type LinkageSystem = "datamodel" | "page" | "workflow" | "rbac" | "aigc";
+
+export interface LinkageItem {
+  /** 全局唯一：`${system}:${id}` */
+  key: string;
+  system: LinkageSystem;
+  id: string;
+  name: string;
+}
+
+export interface LinkageEdge {
+  from: string;
+  to: string;
+  /** 语义类型（决定颜色与图例归类） */
+  kind: "page-entity" | "page-workflow" | "node-role" | "aigc-entity" | "aigc-role";
+}
+
+export interface LinkageGroup {
+  system: LinkageSystem;
+  label: string;
+  items: LinkageItem[];
+  /** 截断掉的成员数（联动图每组限量展示，如实标注） */
+  truncated: number;
+}
+
+const LINKAGE_GROUP_LIMIT = 8;
+
+/**
+ * 五系统联动图：每个系统一组成员节点，跨系统引用连线。
+ * 只画模型里真实存在且解析得到的引用（悬空引用不入图——各屏已负责标红），
+ * 任一组成员被截断时如实计数。少于 2 个非空组返回 null（没得联动）。
+ */
+export function deriveSystemLinkageGraph(
+  model: FiveSystemModel | null | undefined
+): { groups: LinkageGroup[]; edges: LinkageEdge[] } | null {
+  if (!model) return null;
+  const entities = model.datamodel?.entities ?? [];
+  const pages = model.page?.pages ?? [];
+  const wfNodes = model.workflow?.nodes ?? [];
+  const roles = model.rbac?.roles ?? [];
+  const caps = model.aigc?.capabilities ?? [];
+
+  const key = (system: LinkageSystem, id: string) => `${system}:${id}`;
+  const mkGroup = (
+    system: LinkageSystem,
+    label: string,
+    all: Array<{ id: string; name: string }>
+  ): LinkageGroup => ({
+    system,
+    label,
+    items: all.slice(0, LINKAGE_GROUP_LIMIT).map((x) => ({ key: key(system, x.id), system, id: x.id, name: x.name })),
+    truncated: Math.max(0, all.length - LINKAGE_GROUP_LIMIT),
+  });
+
+  const groups: LinkageGroup[] = [
+    mkGroup("datamodel", "数据中台 · DataModel", entities.map((e) => ({ id: e.id, name: e.name || e.id }))),
+    mkGroup("page", "页面设计器 · Page", pages.map((p, i) => ({ id: p.id || `page-${i}`, name: p.name || p.id || `page-${i}` }))),
+    mkGroup("workflow", "工作流 · Workflow", wfNodes.map((n) => ({ id: n.id, name: n.name || n.id }))),
+    mkGroup("rbac", "权限 · RBAC", roles.map((r) => ({ id: r, name: r }))),
+    mkGroup("aigc", "AIGC 中台", caps.map((c, i) => ({ id: c.id || `cap-${i}`, name: c.name || c.id || `cap-${i}` }))),
+  ].filter((g) => g.items.length > 0);
+  if (groups.length < 2) return null;
+
+  const present = new Set(groups.flatMap((g) => g.items.map((i) => i.key)));
+  const edges: LinkageEdge[] = [];
+  const seen = new Set<string>();
+  const push = (from: string, to: string, kind: LinkageEdge["kind"]) => {
+    if (!present.has(from) || !present.has(to)) return; // 截断/悬空成员不画线
+    const sig = `${from}->${to}:${kind}`;
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    edges.push({ from, to, kind });
+  };
+
+  const entityIds = entities.map((e) => e.id);
+  for (const [i, p] of pages.entries()) {
+    const pid = p.id || `page-${i}`;
+    const dominant = (() => {
+      const counts = new Map<string, number>();
+      for (const b of p.fieldBindings ?? []) {
+        const dot = b.indexOf(".");
+        if (dot > 0) counts.set(b.slice(0, dot), (counts.get(b.slice(0, dot)) ?? 0) + 1);
+      }
+      let best: string | null = null;
+      let n = 0;
+      for (const [id, c] of counts) if (c > n && entityIds.includes(id)) { best = id; n = c; }
+      return best;
+    })();
+    if (dominant) push(key("page", pid), key("datamodel", dominant), "page-entity");
+  }
+  for (const b of model.appbundle?.pageBindings ?? []) {
+    if (b.pageRef && b.workflowRef && wfNodes.length > 0) {
+      // workflowRef 指整条流程：连到流程起点节点（无入边）
+      const hasInbound = new Set((model.workflow?.transitions ?? []).map((t) => t.to));
+      const start = wfNodes.find((n) => !hasInbound.has(n.id)) ?? wfNodes[0];
+      push(key("page", b.pageRef), key("workflow", start.id), "page-workflow");
+    }
+  }
+  for (const n of wfNodes) {
+    if (n.assigneeRole && roles.includes(n.assigneeRole)) {
+      push(key("workflow", n.id), key("rbac", n.assigneeRole), "node-role");
+    }
+  }
+  for (const [i, c] of caps.entries()) {
+    const cid = c.id || `cap-${i}`;
+    const out = c.outputField ?? "";
+    const dot = out.indexOf(".");
+    if (dot > 0 && entityIds.includes(out.slice(0, dot))) {
+      push(key("aigc", cid), key("datamodel", out.slice(0, dot)), "aigc-entity");
+    }
+    for (const r of c.roleRefs ?? []) {
+      if (roles.includes(r)) push(key("aigc", cid), key("rbac", r), "aigc-role");
+    }
+  }
+
+  return { groups, edges };
+}
+
 // --- 流程图数据（G6 渲染路径） ---------------------------------------------
 
 export interface WfGraphNode {

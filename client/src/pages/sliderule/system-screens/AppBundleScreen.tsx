@@ -12,10 +12,12 @@
 
 import React, { useMemo, useState } from "react";
 import { AppRuntimeScreen } from "../live-runtime/AppRuntimeScreen";
+import { SystemLinkageGraph } from "./SystemLinkageGraph";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import {
   type FiveSystemModel,
   type RefResolution,
+  deriveSystemLinkageGraph,
   evidenceSourceOf,
   resolveEntityRef,
   resolvePageRef,
@@ -73,8 +75,10 @@ export function AppBundleScreen({
   className = "",
 }: AppBundleScreenProps) {
   // 运行应用（JSON 渲染的"真系统"）：模型带页面+实体时可用
-  const [screenMode, setScreenMode] = useState<"board" | "app">("board");
+  const [screenMode, setScreenMode] = useState<"board" | "graph" | "app">("board");
   const canRunApp = (model?.page?.pages?.length ?? 0) > 0 && (model?.datamodel?.entities?.length ?? 0) > 0;
+  // 联动图：至少两个非空系统段才有联动可画
+  const canLinkage = useMemo(() => deriveSystemLinkageGraph(model) !== null, [model]);
   type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
   const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
     PublishClosureSummary["perSkillEvidence"]
@@ -122,14 +126,15 @@ export function AppBundleScreen({
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
         <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
-          {canRunApp && (
+          {(canRunApp || canLinkage) && (
             <div
               className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
               data-testid="appbundle-mode-toggle"
             >
               {([
                 { id: "board" as const, label: "证据看板" },
-                { id: "app" as const, label: "运行应用" },
+                ...(canLinkage ? [{ id: "graph" as const, label: "联动图" }] : []),
+                ...(canRunApp ? [{ id: "app" as const, label: "运行应用" }] : []),
               ]).map(({ id, label }) => (
                 <button
                   key={id}
@@ -187,6 +192,10 @@ export function AppBundleScreen({
       {screenMode === "app" && canRunApp && model ? (
         <div className="min-h-0 flex-1">
           <AppRuntimeScreen model={model} sessionId={sessionId} appTitle={appTitle} />
+        </div>
+      ) : screenMode === "graph" && canLinkage ? (
+        <div className="min-h-0 flex-1">
+          <SystemLinkageGraph model={model} />
         </div>
       ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
