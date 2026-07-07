@@ -636,13 +636,62 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           } catch {
             // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
           }
+          // Claude 式左栏实时叙事：把 SSE 事件翻成人话喂进本轮 steps
+          // （TurnStepsDisclosure 流式显示最近几步，可展开全程）。
+          // 此前这些事件只点亮右栏缩略图，左栏推演全程只有一枚 intake chip。
+          const { CAPABILITY_PROCESS_LABELS } = await import(
+            "@shared/blueprint/capability-process-labels"
+          );
+          const SKILL_STREAM_LABELS: Record<string, string> = {
+            dataModel: "数据模型",
+            workflow: "工作流",
+            rbac: "角色权限",
+            page: "页面",
+            aigc: "AI 能力",
+            appBundle: "应用装配",
+          };
+          let streamStepSeq = 0;
+          const appendStreamStep = (label: string) => {
+            streamStepSeq += 1;
+            appendStep({
+              id: `${turnId}-stream-${streamStepSeq}`,
+              kind: "chip",
+              capabilityId: "intent.parse" as any,
+              roleId: "system",
+              label,
+              realLlm: false,
+              loopTurnId: turnId,
+              progressType: "thinking",
+            });
+          };
           const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
             stopSignal: controller.signal,
             turnId,
+            onReasoningStep: (capabilityId, loop) => {
+              const human =
+                (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: string }>)[
+                  capabilityId
+                ]?.liveLabel || `正在执行 ${capabilityId}`;
+              const label =
+                typeof loop === "number" ? `第 ${loop + 1} 轮 · ${human}` : human;
+              appendStreamStep(label);
+              setLiveAction({ label: human, external: false });
+            },
             onSkillActivated: (skillId, _label) => {
               setActiveSkillId(skillId);
+              const name = SKILL_STREAM_LABELS[skillId] || skillId;
+              appendStreamStep(`⚙ ${name} 系统画面生成中...`);
+              setLiveAction({ label: `${name} 系统生成中...`, external: false });
             },
             onSkillCompleted: (skillId, _hasError, detail) => {
+              const name = SKILL_STREAM_LABELS[skillId] || skillId;
+              appendStreamStep(
+                _hasError
+                  ? `✗ ${name} 证据缺失（fail-closed）`
+                  : `✓ ${name} 证据落地${
+                      detail?.artifactId?.startsWith("llm-linkage-") ? " · LLM 生成" : ""
+                    }`
+              );
               // Accumulate per-skill content for the right-panel screens:
               // mermaid (cross-skill edge projection) first, then the gate-PASSED
               // five-system model section as a fenced JSON block. The screens'
