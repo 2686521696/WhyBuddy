@@ -376,7 +376,7 @@ function ClaudeChatSurface({
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
                     <Icon className={`h-4 w-4 ${iconColor}`} />
                   </span>
-                  <span className="min-w-0 flex-1">{text}</span>
+                  <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-stone-300 transition-transform group-hover:translate-x-0.5" />
                 </button>
               ))}

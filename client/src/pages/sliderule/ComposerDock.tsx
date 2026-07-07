@@ -1,5 +1,5 @@
 import React from "react";
-import { Brain, Check, ChevronDown, FileText, Link, Mic, Plus, RefreshCw, SendHorizontal, Square, Zap } from "lucide-react";
+import { Brain, Check, FileText, Link, Mic, Plus, RefreshCw, SendHorizontal, Square, Zap } from "lucide-react";
 
 function formatBudgetTokens(n: number): string {
   if (n < 1000) return String(n);
@@ -303,15 +303,6 @@ export function ComposerDock({
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsModeOpen((open) => !open)}
-          disabled={isRunning}
-          className="absolute bottom-[-26px] left-4 hidden items-center gap-1 text-[10px] text-stone-400 hover:text-stone-700 sm:flex"
-        >
-          {driveMode === "marathon" ? "持续推演" : "深思一轮"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
       </div>
     </div>
   );
