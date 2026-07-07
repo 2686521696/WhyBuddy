@@ -30,6 +30,7 @@ import {
   type WfGraphNode,
 } from "./five-system-model";
 import { loadRuntimeState, subscribeRuntimeChanged } from "../live-runtime/runtime-persistence";
+import { useContainerSized } from "./use-sized";
 
 // 经 dataviz 校验的分类色板（低对比两色由角色名文字补偿）
 const ROLE_PALETTE = ["#1677ff", "#fa8c16", "#722ed1", "#13c2c2", "#c41d7f", "#5b8c00"];
@@ -67,7 +68,9 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
         fontFamily: "inherit",
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="t-top" type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="t-right" type="target" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="t-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span
           style={{
@@ -125,7 +128,9 @@ function WfNodeCard({ data }: NodeProps<WfFlowNode>) {
           </span>
         )}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle id="s-bottom" type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -138,7 +143,7 @@ function layoutPositions(
   edges: Array<{ from: string; to: string }>
 ): Record<string, { x: number; y: number }> {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "TB", nodesep: 36, ranksep: 56 });
+  g.setGraph({ rankdir: "TB", nodesep: 56, ranksep: 72, edgesep: 24 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const n of nodes) g.setNode(n.id, { width: CARD_W, height: CARD_H });
   for (const e of edges) g.setEdge(e.from, e.to);
@@ -199,37 +204,37 @@ export function WorkflowGraph({
 
   const flowEdges: Edge[] = React.useMemo(
     () =>
-      (data?.edges ?? []).map((e, i) => ({
-        id: `t-${i}`,
-        source: e.from,
-        target: e.to,
-        type: "smoothstep",
-        label: e.condition ?? undefined,
-        // 实例正停留的节点，出边流动动画——下一步会走向哪里一眼可见
-        animated: (runningByNode[e.from] ?? 0) > 0,
-        style: { stroke: "#C9C2B2", strokeWidth: 1.5 },
-        labelStyle: { fontSize: 10, fill: "#8c8577" },
-        labelBgStyle: { fill: "#FCFBF8", fillOpacity: 0.9 },
-        labelBgPadding: [4, 2] as [number, number],
-        labelBgBorderRadius: 4,
-        markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
-      })),
-    [data, runningByNode]
+      (data?.edges ?? []).map((e, i) => {
+        // 回边/同层边不穿过节点区：从源节点侧面出、靶节点侧面进，
+        // 左右交替分道，避免多条回边叠在同一侧搅成一团
+        const src = positions[e.from];
+        const tgt = positions[e.to];
+        const isBack = !!src && !!tgt && tgt.y <= src.y;
+        const sideRight = i % 2 === 0;
+        return {
+          id: `t-${i}`,
+          source: e.from,
+          target: e.to,
+          sourceHandle: isBack ? (sideRight ? "s-right" : "s-left") : "s-bottom",
+          targetHandle: isBack ? (sideRight ? "t-right" : "t-left") : "t-top",
+          type: "smoothstep",
+          pathOptions: { borderRadius: 12 },
+          label: e.condition ?? undefined,
+          // 实例正停留的节点，出边流动动画——下一步会走向哪里一眼可见
+          animated: (runningByNode[e.from] ?? 0) > 0,
+          style: { stroke: isBack ? "#D9CDB8" : "#C9C2B2", strokeWidth: 1.5, strokeDasharray: isBack ? "6 4" : undefined },
+          labelStyle: { fontSize: 10, fill: "#8c8577" },
+          labelBgStyle: { fill: "#FCFBF8", fillOpacity: 0.95 },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 4,
+          markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
+        };
+      }),
+    [data, positions, runningByNode]
   );
 
   // 屏常挂载（hidden）：容器有实际尺寸才挂 ReactFlow（否则空画布警告）
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const [sized, setSized] = React.useState(false);
-  React.useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const check = () => setSized(el.clientWidth > 0 && el.clientHeight > 0);
-    check();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const { ref: containerRef, sized } = useContainerSized();
 
   if (!data) return null;
 

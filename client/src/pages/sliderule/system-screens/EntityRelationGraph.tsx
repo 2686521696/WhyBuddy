@@ -1,22 +1,33 @@
 /**
- * EntityRelationGraph — G6 渲染的实体关系图（DataModel 屏主路径）。
+ * EntityRelationGraph — React Flow 渲染的实体关系图（DataModel 屏主路径）。
  *
- * 取代 mermaid 的静态 ER 输出：实体卡片节点（html 节点，字段行 + ref 高亮）、
- * antv-dagre 自动布局、正交连线带字段名标签，画布可拖拽/滚轮缩放/整图适配。
- * 数据来自 deriveErGraphData（与 mermaid 路径同一套 ref 关联推断）。
- * 图仅在浏览器 effect 里创建，SSR/静态渲染只输出容器（node 测试环境安全）。
+ * 实体卡是真 React 组件（标题栏 + 逐字段行，ref 字段珊瑚色标注 → 目标实体），
+ * @dagrejs/dagre 计算左→右布局，smoothstep 平滑边带字段名标签——标签是
+ * 纯 DOM，永远水平（取代 G6 版：其边标签随线段旋转导致文字倾斜）。
+ * 数据来自 deriveErGraphData（与 mermaid 降级路径同一套 ref 关联推断）。
  */
 
 import React from "react";
-import { Graph } from "@antv/g6";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Handle,
+  Position,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
 import {
   deriveErGraphData,
   type ErGraphNode,
   type FiveSystemModel,
 } from "./five-system-model";
-import { useG6Graph } from "./use-g6";
+import { useContainerSized } from "./use-sized";
 
-const CARD_W = 232;
+const CARD_W = 236;
 const ROW_H = 22;
 const TITLE_H = 30;
 const MAX_ROWS = 9;
@@ -25,30 +36,129 @@ function cardHeight(node: ErGraphNode): number {
   return TITLE_H + Math.min(node.fields.length, MAX_ROWS) * ROW_H + (node.fields.length > MAX_ROWS ? ROW_H : 0) + 6;
 }
 
-function cardHtml(node: ErGraphNode): string {
-  const rows = node.fields.slice(0, MAX_ROWS).map((f) => {
-    const ref = f.refTarget
-      ? `<span style="margin-left:auto;color:#C4633F;font-size:9px;white-space:nowrap">→ ${f.refTarget}</span>`
-      : "";
-    return `<div style="display:flex;align-items:center;gap:6px;height:${ROW_H}px;padding:0 10px;border-top:1px solid #f4f1ea">
-      <span style="color:#8c8c8c;font-size:9px;width:44px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.type}</span>
-      <span style="color:#3b3b3b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span>
-      ${ref}
-    </div>`;
-  });
-  const more =
-    node.fields.length > MAX_ROWS
-      ? `<div style="height:${ROW_H}px;line-height:${ROW_H}px;padding:0 10px;border-top:1px solid #f4f1ea;color:#bbb;font-size:10px">… 共 ${node.fields.length} 个字段</div>`
-      : "";
-  return `<div style="width:${CARD_W}px;background:#fff;border:1px solid #E3DED2;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(90,80,60,0.10);font-family:inherit">
-    <div style="height:${TITLE_H}px;display:flex;align-items:center;gap:7px;padding:0 10px;background:#F5F1EA">
-      <span style="width:7px;height:7px;border-radius:4px;background:#1677ff;flex-shrink:0"></span>
-      <span style="font-size:12px;font-weight:600;color:#33302a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.name}</span>
-      <span style="margin-left:auto;color:#b8b2a4;font-size:9px;font-family:monospace">${node.id}</span>
+type ErFlowNode = Node<{ er: ErGraphNode }, "erNode">;
+
+function ErNodeCard({ data }: NodeProps<ErFlowNode>) {
+  const { er } = data;
+  const rows = er.fields.slice(0, MAX_ROWS);
+  return (
+    <div
+      style={{
+        width: CARD_W,
+        boxSizing: "border-box",
+        background: "#fff",
+        border: "1px solid #E3DED2",
+        borderRadius: 10,
+        overflow: "hidden",
+        boxShadow: "0 2px 8px rgba(90,80,60,0.10)",
+        fontFamily: "inherit",
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <div
+        style={{
+          height: TITLE_H,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "0 10px",
+          background: "#F5F1EA",
+        }}
+      >
+        <span style={{ width: 7, height: 7, borderRadius: 4, background: "#1677ff", flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#33302a",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {er.name}
+        </span>
+        <span style={{ marginLeft: "auto", color: "#b8b2a4", fontSize: 9, fontFamily: "monospace" }}>{er.id}</span>
+      </div>
+      {rows.map((f) => (
+        <div
+          key={f.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            height: ROW_H,
+            padding: "0 10px",
+            borderTop: "1px solid #f4f1ea",
+          }}
+        >
+          <span
+            style={{
+              color: "#8c8c8c",
+              fontSize: 9,
+              width: 46,
+              flexShrink: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {f.type}
+          </span>
+          <span
+            style={{
+              color: "#3b3b3b",
+              fontSize: 11,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {f.name}
+          </span>
+          {f.refTarget && (
+            <span style={{ marginLeft: "auto", color: "#C4633F", fontSize: 9, whiteSpace: "nowrap" }}>
+              → {f.refTarget}
+            </span>
+          )}
+        </div>
+      ))}
+      {er.fields.length > MAX_ROWS && (
+        <div
+          style={{
+            height: ROW_H,
+            lineHeight: `${ROW_H}px`,
+            padding: "0 10px",
+            borderTop: "1px solid #f4f1ea",
+            color: "#bbb",
+            fontSize: 10,
+          }}
+        >
+          … 共 {er.fields.length} 个字段
+        </div>
+      )}
+      <div style={{ height: 4 }} />
     </div>
-    ${rows.join("")}${more}
-    <div style="height:4px"></div>
-  </div>`;
+  );
+}
+
+const NODE_TYPES = { erNode: ErNodeCard };
+
+function layoutPositions(data: { nodes: ErGraphNode[]; edges: Array<{ source: string; target: string }> }) {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 36, ranksep: 90 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const n of data.nodes) g.setNode(n.id, { width: CARD_W, height: cardHeight(n) });
+  // dagre 的 LR 秩沿边方向增长；ER 边是"多→一"，反着喂让被引用实体排前面
+  for (const e of data.edges) g.setEdge(e.target, e.source);
+  dagre.layout(g);
+  const pos: Record<string, { x: number; y: number }> = {};
+  for (const n of data.nodes) {
+    const p = g.node(n.id);
+    pos[n.id] = { x: p.x - CARD_W / 2, y: p.y - cardHeight(n) / 2 };
+  }
+  return pos;
 }
 
 export function EntityRelationGraph({
@@ -59,71 +169,61 @@ export function EntityRelationGraph({
   className?: string;
 }) {
   const data = React.useMemo(() => deriveErGraphData(datamodel), [datamodel]);
+  const { ref: containerRef, sized } = useContainerSized();
 
-  const containerRef = useG6Graph(
-    data
-      ? (container, width, height) =>
-          new Graph({
-      container,
-      width,
-      height,
-      autoFit: { type: "view", options: { when: "always" } },
-      padding: 24,
-      data: {
-        nodes: data.nodes.map((n) => ({
-          id: n.id,
-          data: {},
-          style: {
-            size: [CARD_W, cardHeight(n)],
-            innerHTML: cardHtml(n),
-          },
-        })),
-        edges: data.edges.map((e, i) => ({
-          id: `e-${i}`,
-          source: e.source,
-          target: e.target,
-          style: {
-            labelText: e.label,
-          },
-        })),
-      },
-      node: { type: "html" },
-      edge: {
-        type: "polyline",
-        style: {
-          router: { type: "orth" },
-          radius: 8,
-          stroke: "#C9C2B2",
-          lineWidth: 1.5,
-          endArrow: true,
-          endArrowType: "vee",
-          endArrowSize: 9,
-          labelFontSize: 10,
-          labelFill: "#8c8577",
-          labelBackground: true,
-          labelBackgroundFill: "#FCFBF8",
-          labelBackgroundRadius: 4,
-          labelPadding: [1, 4],
-        },
-      },
-      layout: {
-        type: "antv-dagre",
-        rankdir: "LR",
-        nodesep: 28,
-        ranksep: 64,
-      },
-      behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
-          })
-      : null,
+  const flowNodes: ErFlowNode[] = React.useMemo(() => {
+    if (!data) return [];
+    const positions = layoutPositions(data);
+    return data.nodes.map((n) => ({
+      id: n.id,
+      type: "erNode" as const,
+      position: positions[n.id] ?? { x: 0, y: 0 },
+      data: { er: n },
+    }));
+  }, [data]);
+
+  const flowEdges: Edge[] = React.useMemo(
+    () =>
+      (data?.edges ?? []).map((e, i) => ({
+        id: `r-${i}`,
+        // 视觉上从"一"侧指向"多"侧持 ref 的实体？不——箭头语义保持"多引用一"：
+        // 源 = 持 ref 实体，靶 = 被引用实体，与 er 图 crow-foot 阅读习惯一致
+        source: e.target,
+        target: e.source,
+        type: "smoothstep",
+        pathOptions: { borderRadius: 12 },
+        label: e.label,
+        style: { stroke: "#C9C2B2", strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fill: "#8c8577" },
+        labelBgStyle: { fill: "#FCFBF8", fillOpacity: 0.95 },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 4,
+        markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
+      })),
     [data]
   );
 
   if (!data) return null;
 
   return (
-    <div className={`relative h-full w-full ${className}`} data-testid="er-graph">
-      <div ref={containerRef} className="h-full w-full" />
-      <span className="pointer-events-none absolute bottom-2 right-3 rounded-full bg-black/20 px-2 py-0.5 text-[9px] text-white/90">
+    <div ref={containerRef} className={`relative h-full w-full ${className}`} data-testid="er-graph">
+      {sized && (
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={NODE_TYPES}
+          fitView
+          fitViewOptions={{ padding: 0.15 }}
+          minZoom={0.2}
+          proOptions={{ hideAttribution: true }}
+          nodesConnectable={false}
+          deleteKeyCode={null}
+        >
+          <Background gap={18} size={1} color="#E7E2D9" />
+          <Controls showInteractive={false} position="bottom-right" />
+        </ReactFlow>
+      )}
+      <span className="pointer-events-none absolute bottom-2 left-3 rounded-full bg-black/20 px-2 py-0.5 text-[9px] text-white/90">
         拖拽移动 · 滚轮缩放
       </span>
     </div>
