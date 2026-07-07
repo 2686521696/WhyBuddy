@@ -141,17 +141,19 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("Welcome to SlideRule V5.");
   });
 
-  it("right rail always offers the six skill thumbnails and the 系统画面/推演过程 tabs", () => {
+  it("right rail is 系统画面 only — six thumbnails, no 推演过程 tabs (左栏对话流即推演过程)", () => {
     const html = renderPage();
 
     for (const label of ["DataModel", "Workflow", "RBAC", "Page", "AIGC", "AppBundle"]) {
       expect(html).toContain(label);
     }
-    expect(html).toContain('data-testid="sliderule-rail-tab-screens"');
-    expect(html).toContain('data-testid="sliderule-rail-tab-process"');
+    // 「推演过程」右栏标签页已删（与左栏步骤流+LLM 实时草稿完全重复）
+    expect(html).not.toContain('data-testid="sliderule-rail-tab-screens"');
+    expect(html).not.toContain('data-testid="sliderule-rail-tab-process"');
+    expect(html).not.toContain('data-testid="sliderule-rail-process"');
   });
 
-  it("while running (before any skill activates) the rail defaults to the 推演过程 execution feed", () => {
+  it("while running the left column carries the live process; the rail stays on 系统画面", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",
       uiTurns: [streamingTurn],
@@ -162,15 +164,13 @@ describe("unified /sliderule surface (single mental model)", () => {
     // conversation shows the live turn + thinking feed
     expect(html).toContain("做一个采购审批应用");
     expect(html).toContain("正在解析意图并规划六系统推演");
-    // right rail folds the execution timeline in as 推演过程 (default during a run)
-    expect(html).toContain('data-testid="sliderule-rail-process"');
-    expect(html).toContain('data-testid="sliderule-arch-process-panel"');
-    expect(html).toContain('data-variant="rail"');
+    // rail is the system screens, never a duplicate process feed
+    expect(html).not.toContain('data-testid="sliderule-rail-process"');
     // no empty state while a run is on screen
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
   });
 
-  it("SSE skill activation shows the active system screen (rail switches to 系统画面)", () => {
+  it("SSE skill activation shows the active system screen", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",
       uiTurns: [streamingTurn],
@@ -179,7 +179,6 @@ describe("unified /sliderule surface (single mental model)", () => {
       liveAction: { label: "DataModel 建模中", external: false },
     });
 
-    // screens view (not the process feed) once a skill is live
     expect(html).not.toContain('data-testid="sliderule-rail-process"');
     expect(html).toContain("实体关系");
   });

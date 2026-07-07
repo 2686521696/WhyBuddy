@@ -34,7 +34,6 @@ import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { SettingsDialog } from "./sliderule/SettingsDialog";
 import { ClarificationCard, type ClarificationItem } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
-import { ArchitectureProcessPanel } from "./sliderule/ArchitectureProcessPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
 import type { UiTurn } from "./sliderule/types";
@@ -381,11 +380,11 @@ function DriveFullStatusBanner({
   status?: "idle" | "loading" | "python_success" | "timeout" | "python_unavailable" | "fallback";
   className?: string;
 }) {
-  if (!status || status === "idle" || status === "python_success") return null;
+  // "loading" 不再展示：正常运行时左栏已有思考行 + 实时步骤流，这条横幅
+  // 是纯重复（用户去重审查）；横幅只保留异常态（timeout/unavailable/fallback）。
+  if (!status || status === "idle" || status === "python_success" || status === "loading") return null;
   const text =
-    status === "loading"
-      ? "/drive-full loading Python..."
-      : status === "timeout"
+    status === "timeout"
       ? "/drive-full timeout"
       : status === "python_unavailable"
       ? "/drive-full Python unavailable"
@@ -642,40 +641,10 @@ function SlideRuleUnified({
             (sessionState as { skillRuntimeGraph?: import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike | null })
               .skillRuntimeGraph ?? null
           }
-          isRunning={isRunning}
-          processSlot={
-            <ArchitectureProcessPanel
-              variant="rail"
-              liveAction={isRunning ? liveAction : null}
-              latestTurn={
-                latestTurn
-                  ? {
-                      id: latestTurn.id,
-                      routeFacts: latestTurn.routeFacts,
-                      steps: latestTurn.steps,
-                      actions: latestTurn.actions,
-                      status: latestTurn.status,
-                      routeLitCount: latestTurn.routeLitCount,
-                      routeExpanded: latestTurn.routeExpanded,
-                    }
-                  : null
-              }
-              sessionId={sessionId}
-              isRunning={isRunning}
-              onToggleRoute={
-                latestTurn ? () => toggleRouteExpanded(latestTurn.id) : undefined
-              }
-              onRetryCapability={
-                latestTurn
-                  ? (params) => retryCapability(latestTurn.id, params)
-                  : undefined
-              }
-              crossRuntimeGraph={crossRuntimeGraph}
-              publishClosure={publishClosure}
-            />
-          }
           className="h-full"
         />
+        {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
+            （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
       </div>
 
       {/* Single bottom composer + clarification cards */}

@@ -421,9 +421,9 @@ describe("browser smoke: closure visibility after /agent-loop/sliderule (python 
     expect(html).toContain('data-runtime-skill-graph="present"');
     // default rail screen = AppBundle evidence board fed by the python closure
     expect(html).toContain("发布证据看板");
-    // the 推演过程 view (execution timeline + SKILL LINKAGE) is one tab away
-    expect(html).toContain('data-testid="sliderule-rail-tab-process"');
-    expect(html).toContain('data-testid="sliderule-rail-tab-screens"');
+    // 「推演过程」右栏标签页已删（左栏对话流即实时推演过程）：右栏只有系统画面
+    expect(html).not.toContain('data-testid="sliderule-rail-tab-process"');
+    expect(html).not.toContain('data-testid="sliderule-rail-tab-screens"');
   });
 
   it("rail variant renders the same linkage/publish-closure drilldown targets for the unified right rail", () => {
