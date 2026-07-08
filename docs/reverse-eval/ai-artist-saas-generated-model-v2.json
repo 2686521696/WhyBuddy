@@ -1,0 +1,1323 @@
+{
+  "datamodel": {
+    "entities": [
+      {
+        "id": "tenant",
+        "name": "租户",
+        "fields": [
+          {
+            "id": "tenant_code",
+            "name": "租户编码",
+            "type": "string"
+          },
+          {
+            "id": "name",
+            "name": "租户名称",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "租户状态",
+            "type": "enum"
+          },
+          {
+            "id": "current_plan_id",
+            "name": "当前套餐",
+            "type": "ref"
+          }
+        ]
+      },
+      {
+        "id": "user_account",
+        "name": "用户账号",
+        "fields": [
+          {
+            "id": "login_name",
+            "name": "登录名",
+            "type": "string"
+          },
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "role_code",
+            "name": "角色代码",
+            "type": "enum"
+          },
+          {
+            "id": "status",
+            "name": "账号状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "ai_provider_config",
+        "name": "AI接口配置",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "provider_type",
+            "name": "接口类型",
+            "type": "enum"
+          },
+          {
+            "id": "api_endpoint",
+            "name": "接口地址",
+            "type": "string"
+          },
+          {
+            "id": "api_key_secret",
+            "name": "密钥密文",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "配置状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "creative_request",
+        "name": "AI创作请求",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "user_id",
+            "name": "发起用户",
+            "type": "ref"
+          },
+          {
+            "id": "modality",
+            "name": "创作类型",
+            "type": "enum"
+          },
+          {
+            "id": "prompt",
+            "name": "原始提示词",
+            "type": "string"
+          },
+          {
+            "id": "prompt_enhanced",
+            "name": "优化提示词",
+            "type": "string"
+          },
+          {
+            "id": "conversation_answer",
+            "name": "AI对话回复",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "请求状态",
+            "type": "enum"
+          },
+          {
+            "id": "cost_units",
+            "name": "消耗点数",
+            "type": "number"
+          },
+          {
+            "id": "payment_order_id",
+            "name": "关联支付单",
+            "type": "ref"
+          }
+        ]
+      },
+      {
+        "id": "generated_asset",
+        "name": "生成作品",
+        "fields": [
+          {
+            "id": "request_id",
+            "name": "创作请求",
+            "type": "ref"
+          },
+          {
+            "id": "asset_url",
+            "name": "作品访问地址",
+            "type": "string"
+          },
+          {
+            "id": "storage_key",
+            "name": "自有存储键",
+            "type": "string"
+          },
+          {
+            "id": "review_status",
+            "name": "内容审核状态",
+            "type": "enum"
+          },
+          {
+            "id": "checksum",
+            "name": "文件校验值",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "id": "subscription_plan",
+        "name": "套餐",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "plan_name",
+            "name": "套餐名称",
+            "type": "string"
+          },
+          {
+            "id": "quota_units",
+            "name": "套餐点数",
+            "type": "number"
+          },
+          {
+            "id": "price",
+            "name": "套餐价格",
+            "type": "number"
+          },
+          {
+            "id": "status",
+            "name": "套餐状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "wallet_account",
+        "name": "租户点数钱包",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "balance_units",
+            "name": "可用点数",
+            "type": "number"
+          },
+          {
+            "id": "frozen_units",
+            "name": "冻结点数",
+            "type": "number"
+          },
+          {
+            "id": "status",
+            "name": "钱包状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "payment_order",
+        "name": "充值支付单",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "plan_id",
+            "name": "购买套餐",
+            "type": "ref"
+          },
+          {
+            "id": "amount",
+            "name": "支付金额",
+            "type": "number"
+          },
+          {
+            "id": "payment_status",
+            "name": "支付状态",
+            "type": "enum"
+          },
+          {
+            "id": "gateway_txn_id",
+            "name": "支付网关流水号",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "id": "ledger_entry",
+        "name": "点数流水",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "wallet_id",
+            "name": "钱包",
+            "type": "ref"
+          },
+          {
+            "id": "payment_order_id",
+            "name": "支付单",
+            "type": "ref"
+          },
+          {
+            "id": "change_units",
+            "name": "变动点数",
+            "type": "number"
+          },
+          {
+            "id": "direction",
+            "name": "收支方向",
+            "type": "enum"
+          },
+          {
+            "id": "created_at",
+            "name": "发生时间",
+            "type": "date"
+          }
+        ]
+      },
+      {
+        "id": "page_theme",
+        "name": "页面装修方案",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "theme_name",
+            "name": "方案名称",
+            "type": "string"
+          },
+          {
+            "id": "layout_json",
+            "name": "页面布局JSON",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "发布状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "plugin",
+        "name": "平台插件",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "适用租户",
+            "type": "ref"
+          },
+          {
+            "id": "plugin_type",
+            "name": "插件类型",
+            "type": "enum"
+          },
+          {
+            "id": "version",
+            "name": "插件版本",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "插件状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "storage_config",
+        "name": "支付与存储配置",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "适用租户",
+            "type": "ref"
+          },
+          {
+            "id": "bucket_name",
+            "name": "存储桶",
+            "type": "string"
+          },
+          {
+            "id": "region",
+            "name": "地域",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "配置状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "audit_log",
+        "name": "审计日志",
+        "fields": [
+          {
+            "id": "actor_user_id",
+            "name": "操作人",
+            "type": "ref"
+          },
+          {
+            "id": "tenant_id",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "action",
+            "name": "操作动作",
+            "type": "string"
+          },
+          {
+            "id": "target_ref",
+            "name": "目标对象",
+            "type": "string"
+          },
+          {
+            "id": "created_at",
+            "name": "操作时间",
+            "type": "date"
+          }
+        ]
+      }
+    ]
+  },
+  "rbac": {
+    "roles": [
+      "tenant_user",
+      "tenant_admin",
+      "platform_admin",
+      "finance_admin",
+      "content_reviewer",
+      "ops_engineer"
+    ],
+    "permissions": [
+      "creative_request:create",
+      "creative_request:view",
+      "creative_request:review",
+      "asset:view",
+      "asset:publish",
+      "wallet:view",
+      "payment:create",
+      "payment:confirm",
+      "payment:audit",
+      "plan:manage",
+      "ai_config:manage",
+      "ai_config:review",
+      "page_theme:manage",
+      "tenant:manage",
+      "plugin:manage",
+      "storage_config:manage",
+      "audit_log:view",
+      "user:manage",
+      "platform_config:manage"
+    ],
+    "menus": [
+      {
+        "id": "user_studio_menu",
+        "label": "用户创作工作台",
+        "roleRefs": [
+          "tenant_user"
+        ],
+        "permissionRefs": [
+          "creative_request:create",
+          "creative_request:view",
+          "asset:view",
+          "payment:create",
+          "wallet:view"
+        ]
+      },
+      {
+        "id": "tenant_admin_menu",
+        "label": "租户后台",
+        "roleRefs": [
+          "tenant_admin"
+        ],
+        "permissionRefs": [
+          "ai_config:manage",
+          "plan:manage",
+          "page_theme:manage",
+          "user:manage",
+          "wallet:view",
+          "payment:create",
+          "creative_request:review",
+          "asset:publish",
+          "audit_log:view"
+        ]
+      },
+      {
+        "id": "platform_admin_menu",
+        "label": "平台总后台",
+        "roleRefs": [
+          "platform_admin"
+        ],
+        "permissionRefs": [
+          "tenant:manage",
+          "plugin:manage",
+          "storage_config:manage",
+          "ai_config:review",
+          "platform_config:manage",
+          "audit_log:view"
+        ]
+      },
+      {
+        "id": "finance_menu",
+        "label": "财务对账台",
+        "roleRefs": [
+          "finance_admin"
+        ],
+        "permissionRefs": [
+          "payment:confirm",
+          "payment:audit",
+          "wallet:view",
+          "audit_log:view"
+        ]
+      },
+      {
+        "id": "content_review_menu",
+        "label": "内容审核台",
+        "roleRefs": [
+          "content_reviewer"
+        ],
+        "permissionRefs": [
+          "creative_request:review",
+          "asset:publish",
+          "audit_log:view"
+        ]
+      },
+      {
+        "id": "ops_recovery_menu",
+        "label": "异步任务恢复台",
+        "roleRefs": [
+          "ops_engineer"
+        ],
+        "permissionRefs": [
+          "storage_config:manage",
+          "plugin:manage",
+          "ai_config:review",
+          "audit_log:view"
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "id": "creative_request_lifecycle",
+    "name": "AI创作请求生命周期",
+    "nodes": [
+      {
+        "id": "cr_draft",
+        "name": "填写创作需求",
+        "assigneeRole": "tenant_user",
+        "phase": "申请"
+      },
+      {
+        "id": "cr_policy_check",
+        "name": "提示词与租户策略校验",
+        "assigneeRole": "tenant_admin",
+        "phase": "校验"
+      },
+      {
+        "id": "cr_quota_check",
+        "name": "点数余额校验",
+        "assigneeRole": "finance_admin",
+        "phase": "校验"
+      },
+      {
+        "id": "cr_wait_recharge",
+        "name": "等待充值补足点数",
+        "assigneeRole": "tenant_user",
+        "phase": "校验"
+      },
+      {
+        "id": "cr_rejected",
+        "name": "请求驳回",
+        "assigneeRole": "tenant_admin",
+        "phase": "校验"
+      },
+      {
+        "id": "cr_dispatch_generation",
+        "name": "调用AI接口生成",
+        "assigneeRole": "ops_engineer",
+        "phase": "生成"
+      },
+      {
+        "id": "cr_content_review",
+        "name": "作品内容审核",
+        "assigneeRole": "content_reviewer",
+        "phase": "生成"
+      },
+      {
+        "id": "cr_deliver_asset",
+        "name": "交付作品到用户工作台",
+        "assigneeRole": "tenant_user",
+        "phase": "交付"
+      },
+      {
+        "id": "cr_archive",
+        "name": "归档创作记录",
+        "assigneeRole": "tenant_admin",
+        "phase": "交付"
+      }
+    ],
+    "transitions": [
+      {
+        "from": "cr_draft",
+        "to": "cr_policy_check",
+        "condition": "用户提交创作请求"
+      },
+      {
+        "from": "cr_policy_check",
+        "to": "cr_quota_check",
+        "condition": "提示词与租户策略通过"
+      },
+      {
+        "from": "cr_policy_check",
+        "to": "cr_draft",
+        "condition": "提示词需用户修改"
+      },
+      {
+        "from": "cr_policy_check",
+        "to": "cr_rejected",
+        "condition": "命中禁止内容"
+      },
+      {
+        "from": "cr_quota_check",
+        "to": "cr_dispatch_generation",
+        "condition": "点数充足并冻结成功"
+      },
+      {
+        "from": "cr_quota_check",
+        "to": "cr_wait_recharge",
+        "condition": "点数不足"
+      },
+      {
+        "from": "cr_wait_recharge",
+        "to": "cr_quota_check",
+        "condition": "充值完成后重新校验"
+      },
+      {
+        "from": "cr_dispatch_generation",
+        "to": "cr_content_review",
+        "condition": "AI生成任务成功返回"
+      },
+      {
+        "from": "cr_content_review",
+        "to": "cr_deliver_asset",
+        "condition": "内容审核通过"
+      },
+      {
+        "from": "cr_content_review",
+        "to": "cr_draft",
+        "condition": "内容审核退回重新创作"
+      },
+      {
+        "from": "cr_deliver_asset",
+        "to": "cr_archive",
+        "condition": "用户可访问自有存储作品"
+      }
+    ],
+    "chains": [
+      {
+        "id": "recharge_money_chain",
+        "name": "套餐充值与点数入账链",
+        "kind": "money",
+        "nodes": [
+          {
+            "id": "pay_select_plan",
+            "name": "选择充值套餐",
+            "assigneeRole": "tenant_user",
+            "phase": "下单"
+          },
+          {
+            "id": "pay_create_order",
+            "name": "创建支付单",
+            "assigneeRole": "tenant_admin",
+            "phase": "下单"
+          },
+          {
+            "id": "pay_user_submit",
+            "name": "跳转支付并提交付款",
+            "assigneeRole": "tenant_user",
+            "phase": "支付"
+          },
+          {
+            "id": "pay_gateway_callback",
+            "name": "接收支付网关回调",
+            "assigneeRole": "finance_admin",
+            "phase": "支付"
+          },
+          {
+            "id": "pay_verify_callback",
+            "name": "服务端验签与金额校验",
+            "assigneeRole": "finance_admin",
+            "phase": "支付"
+          },
+          {
+            "id": "pay_rejected",
+            "name": "支付单关闭",
+            "assigneeRole": "finance_admin",
+            "phase": "支付"
+          },
+          {
+            "id": "pay_wallet_credit",
+            "name": "充值点数入钱包",
+            "assigneeRole": "finance_admin",
+            "phase": "入账"
+          },
+          {
+            "id": "pay_ledger_record",
+            "name": "写入点数流水",
+            "assigneeRole": "finance_admin",
+            "phase": "入账"
+          },
+          {
+            "id": "pay_finance_audit",
+            "name": "财务对账归档",
+            "assigneeRole": "finance_admin",
+            "phase": "审计"
+          }
+        ],
+        "transitions": [
+          {
+            "from": "pay_select_plan",
+            "to": "pay_create_order",
+            "condition": "租户确认套餐"
+          },
+          {
+            "from": "pay_create_order",
+            "to": "pay_user_submit",
+            "condition": "支付单创建成功"
+          },
+          {
+            "from": "pay_user_submit",
+            "to": "pay_gateway_callback",
+            "condition": "网关返回异步通知"
+          },
+          {
+            "from": "pay_gateway_callback",
+            "to": "pay_verify_callback",
+            "condition": "收到带签名回调"
+          },
+          {
+            "from": "pay_verify_callback",
+            "to": "pay_wallet_credit",
+            "condition": "验签成功且金额一致"
+          },
+          {
+            "from": "pay_verify_callback",
+            "to": "pay_user_submit",
+            "condition": "回调缺失或状态待定，等待用户重试"
+          },
+          {
+            "from": "pay_verify_callback",
+            "to": "pay_rejected",
+            "condition": "验签失败或金额不一致"
+          },
+          {
+            "from": "pay_wallet_credit",
+            "to": "pay_ledger_record",
+            "condition": "钱包余额更新成功"
+          },
+          {
+            "from": "pay_ledger_record",
+            "to": "pay_finance_audit",
+            "condition": "流水与支付单已关联"
+          }
+        ]
+      },
+      {
+        "id": "tenant_configuration_governance",
+        "name": "租户AI接口与插件配置治理链",
+        "kind": "governance",
+        "nodes": [
+          {
+            "id": "cfg_submit",
+            "name": "提交接口或插件配置",
+            "assigneeRole": "tenant_admin",
+            "phase": "提交"
+          },
+          {
+            "id": "cfg_security_review",
+            "name": "平台安全审查",
+            "assigneeRole": "platform_admin",
+            "phase": "审核"
+          },
+          {
+            "id": "cfg_business_review",
+            "name": "业务可用性审查",
+            "assigneeRole": "ops_engineer",
+            "phase": "审核"
+          },
+          {
+            "id": "cfg_return_modify",
+            "name": "退回修改配置",
+            "assigneeRole": "tenant_admin",
+            "phase": "审核"
+          },
+          {
+            "id": "cfg_rejected",
+            "name": "配置驳回",
+            "assigneeRole": "platform_admin",
+            "phase": "审核"
+          },
+          {
+            "id": "cfg_publish",
+            "name": "发布配置到租户",
+            "assigneeRole": "platform_admin",
+            "phase": "发布"
+          },
+          {
+            "id": "cfg_audit_log",
+            "name": "记录配置审计日志",
+            "assigneeRole": "platform_admin",
+            "phase": "发布"
+          }
+        ],
+        "transitions": [
+          {
+            "from": "cfg_submit",
+            "to": "cfg_security_review",
+            "condition": "租户管理员提交"
+          },
+          {
+            "from": "cfg_security_review",
+            "to": "cfg_business_review",
+            "condition": "密钥、域名与权限检查通过"
+          },
+          {
+            "from": "cfg_security_review",
+            "to": "cfg_return_modify",
+            "condition": "存在可修复安全问题"
+          },
+          {
+            "from": "cfg_security_review",
+            "to": "cfg_rejected",
+            "condition": "存在高危配置"
+          },
+          {
+            "from": "cfg_return_modify",
+            "to": "cfg_submit",
+            "condition": "租户完成修改后重新提交"
+          },
+          {
+            "from": "cfg_business_review",
+            "to": "cfg_publish",
+            "condition": "连通性和额度策略验证通过"
+          },
+          {
+            "from": "cfg_business_review",
+            "to": "cfg_return_modify",
+            "condition": "接口连通性失败需修改"
+          },
+          {
+            "from": "cfg_publish",
+            "to": "cfg_audit_log",
+            "condition": "配置生效"
+          }
+        ]
+      },
+      {
+        "id": "async_generation_recovery",
+        "name": "异步生成失败恢复链",
+        "kind": "recovery",
+        "nodes": [
+          {
+            "id": "rec_detect_failure",
+            "name": "发现生成任务失败",
+            "assigneeRole": "ops_engineer",
+            "phase": "发现"
+          },
+          {
+            "id": "rec_classify_error",
+            "name": "判定失败类型",
+            "assigneeRole": "ops_engineer",
+            "phase": "发现"
+          },
+          {
+            "id": "rec_retry_provider",
+            "name": "切换或重试AI接口",
+            "assigneeRole": "ops_engineer",
+            "phase": "重试"
+          },
+          {
+            "id": "rec_verify_result",
+            "name": "校验重试结果",
+            "assigneeRole": "content_reviewer",
+            "phase": "重试"
+          },
+          {
+            "id": "rec_compensate_credit",
+            "name": "补偿退还冻结点数",
+            "assigneeRole": "finance_admin",
+            "phase": "补偿"
+          },
+          {
+            "id": "rec_notify_tenant",
+            "name": "通知租户与用户",
+            "assigneeRole": "tenant_admin",
+            "phase": "补偿"
+          },
+          {
+            "id": "rec_close_incident",
+            "name": "关闭恢复事件",
+            "assigneeRole": "ops_engineer",
+            "phase": "关闭"
+          }
+        ],
+        "transitions": [
+          {
+            "from": "rec_detect_failure",
+            "to": "rec_classify_error",
+            "condition": "异步任务超时或上游报错"
+          },
+          {
+            "from": "rec_classify_error",
+            "to": "rec_retry_provider",
+            "condition": "临时故障可重试"
+          },
+          {
+            "from": "rec_classify_error",
+            "to": "rec_compensate_credit",
+            "condition": "不可重试或内容无法生成"
+          },
+          {
+            "from": "rec_retry_provider",
+            "to": "rec_verify_result",
+            "condition": "重试任务返回结果"
+          },
+          {
+            "from": "rec_verify_result",
+            "to": "rec_close_incident",
+            "condition": "作品可交付且校验通过"
+          },
+          {
+            "from": "rec_verify_result",
+            "to": "rec_retry_provider",
+            "condition": "仍为临时故障且未达最大次数"
+          },
+          {
+            "from": "rec_verify_result",
+            "to": "rec_compensate_credit",
+            "condition": "达到最大重试次数或结果无效"
+          },
+          {
+            "from": "rec_compensate_credit",
+            "to": "rec_notify_tenant",
+            "condition": "点数补偿流水写入成功"
+          },
+          {
+            "from": "rec_notify_tenant",
+            "to": "rec_close_incident",
+            "condition": "通知已送达"
+          }
+        ]
+      }
+    ]
+  },
+  "page": {
+    "pages": [
+      {
+        "id": "user_creation_studio",
+        "name": "用户AI创作工作台",
+        "fieldBindings": [
+          "creative_request.modality",
+          "creative_request.prompt",
+          "creative_request.prompt_enhanced",
+          "creative_request.conversation_answer",
+          "creative_request.status",
+          "creative_request.cost_units",
+          "generated_asset.asset_url",
+          "wallet_account.balance_units"
+        ],
+        "actionPermissions": [
+          "creative_request:create",
+          "creative_request:view",
+          "asset:view",
+          "wallet:view"
+        ]
+      },
+      {
+        "id": "recharge_center",
+        "name": "套餐充值中心",
+        "fieldBindings": [
+          "subscription_plan.plan_name",
+          "subscription_plan.quota_units",
+          "subscription_plan.price",
+          "payment_order.amount",
+          "payment_order.payment_status",
+          "wallet_account.balance_units"
+        ],
+        "actionPermissions": [
+          "payment:create",
+          "wallet:view"
+        ]
+      },
+      {
+        "id": "tenant_ai_config_console",
+        "name": "租户AI接口配置",
+        "fieldBindings": [
+          "ai_provider_config.provider_type",
+          "ai_provider_config.api_endpoint",
+          "ai_provider_config.api_key_secret",
+          "ai_provider_config.status",
+          "plugin.plugin_type",
+          "plugin.version"
+        ],
+        "actionPermissions": [
+          "ai_config:manage",
+          "plugin:manage"
+        ]
+      },
+      {
+        "id": "tenant_decoration_console",
+        "name": "租户页面装修",
+        "fieldBindings": [
+          "page_theme.theme_name",
+          "page_theme.layout_json",
+          "page_theme.status",
+          "tenant.name"
+        ],
+        "actionPermissions": [
+          "page_theme:manage"
+        ]
+      },
+      {
+        "id": "platform_admin_console",
+        "name": "平台总后台",
+        "fieldBindings": [
+          "tenant.tenant_code",
+          "tenant.name",
+          "tenant.status",
+          "plugin.plugin_type",
+          "plugin.status",
+          "storage_config.bucket_name",
+          "storage_config.region",
+          "ai_provider_config.status"
+        ],
+        "actionPermissions": [
+          "tenant:manage",
+          "plugin:manage",
+          "storage_config:manage",
+          "ai_config:review",
+          "platform_config:manage"
+        ]
+      },
+      {
+        "id": "finance_audit_console",
+        "name": "支付与点数审计",
+        "fieldBindings": [
+          "payment_order.gateway_txn_id",
+          "payment_order.amount",
+          "payment_order.payment_status",
+          "ledger_entry.change_units",
+          "ledger_entry.direction",
+          "ledger_entry.created_at",
+          "wallet_account.balance_units"
+        ],
+        "actionPermissions": [
+          "payment:confirm",
+          "payment:audit",
+          "wallet:view"
+        ]
+      },
+      {
+        "id": "content_review_console",
+        "name": "作品内容审核",
+        "fieldBindings": [
+          "creative_request.prompt",
+          "creative_request.modality",
+          "generated_asset.asset_url",
+          "generated_asset.review_status",
+          "generated_asset.checksum"
+        ],
+        "actionPermissions": [
+          "creative_request:review",
+          "asset:publish"
+        ]
+      },
+      {
+        "id": "audit_log_console",
+        "name": "平台审计日志",
+        "fieldBindings": [
+          "audit_log.actor_user_id",
+          "audit_log.tenant_id",
+          "audit_log.action",
+          "audit_log.target_ref",
+          "audit_log.created_at"
+        ],
+        "actionPermissions": [
+          "audit_log:view"
+        ]
+      }
+    ]
+  },
+  "aigc": {
+    "capabilities": [
+      {
+        "id": "prompt_enhancer",
+        "name": "提示词优化",
+        "inputFields": [
+          "creative_request.prompt",
+          "creative_request.modality"
+        ],
+        "outputField": "creative_request.prompt_enhanced",
+        "roleRefs": [
+          "tenant_user",
+          "tenant_admin"
+        ]
+      },
+      {
+        "id": "image_generator",
+        "name": "AI图片生成",
+        "inputFields": [
+          "creative_request.prompt_enhanced",
+          "ai_provider_config.api_endpoint",
+          "ai_provider_config.provider_type"
+        ],
+        "outputField": "generated_asset.asset_url",
+        "roleRefs": [
+          "tenant_user"
+        ]
+      },
+      {
+        "id": "video_generator",
+        "name": "AI视频生成",
+        "inputFields": [
+          "creative_request.prompt_enhanced",
+          "creative_request.modality",
+          "ai_provider_config.api_endpoint"
+        ],
+        "outputField": "generated_asset.storage_key",
+        "roleRefs": [
+          "tenant_user"
+        ]
+      },
+      {
+        "id": "ai_chat_assistant",
+        "name": "AI对话生成",
+        "inputFields": [
+          "creative_request.prompt",
+          "user_account.tenant_id"
+        ],
+        "outputField": "creative_request.conversation_answer",
+        "roleRefs": [
+          "tenant_user",
+          "tenant_admin"
+        ]
+      },
+      {
+        "id": "content_safety_reviewer",
+        "name": "作品内容安全判定",
+        "inputFields": [
+          "creative_request.prompt",
+          "generated_asset.asset_url"
+        ],
+        "outputField": "generated_asset.review_status",
+        "roleRefs": [
+          "content_reviewer",
+          "platform_admin"
+        ]
+      }
+    ]
+  },
+  "appbundle": {
+    "pageBindings": [
+      {
+        "pageRef": "user_creation_studio",
+        "workflowRef": "creative_request_lifecycle"
+      },
+      {
+        "pageRef": "recharge_center",
+        "workflowRef": "recharge_money_chain"
+      },
+      {
+        "pageRef": "tenant_ai_config_console",
+        "workflowRef": "tenant_configuration_governance"
+      },
+      {
+        "pageRef": "tenant_decoration_console",
+        "workflowRef": "cfg_submit"
+      },
+      {
+        "pageRef": "platform_admin_console",
+        "workflowRef": "tenant_configuration_governance"
+      },
+      {
+        "pageRef": "finance_audit_console",
+        "workflowRef": "recharge_money_chain"
+      },
+      {
+        "pageRef": "content_review_console",
+        "workflowRef": "cr_content_review"
+      },
+      {
+        "pageRef": "audit_log_console",
+        "workflowRef": "cfg_audit_log"
+      }
+    ],
+    "roleRefs": [
+      "tenant_user",
+      "tenant_admin",
+      "platform_admin",
+      "finance_admin",
+      "content_reviewer",
+      "ops_engineer"
+    ],
+    "dataModelRefs": [
+      "tenant",
+      "user_account",
+      "ai_provider_config",
+      "creative_request",
+      "generated_asset",
+      "subscription_plan",
+      "wallet_account",
+      "payment_order",
+      "ledger_entry",
+      "page_theme",
+      "plugin",
+      "storage_config",
+      "audit_log"
+    ],
+    "invariants": [
+      {
+        "id": "charge_before_upstream_generation",
+        "statement": "AI图片、视频或对话生成必须在点数校验和冻结成功后才能调用上游AI接口。",
+        "systems": [
+          "datamodel",
+          "workflow",
+          "rbac"
+        ],
+        "refs": [
+          "creative_request.cost_units",
+          "payment_order.payment_status",
+          "cr_quota_check",
+          "cr_dispatch_generation",
+          "payment:confirm"
+        ]
+      },
+      {
+        "id": "payment_status_from_verified_callback",
+        "statement": "支付状态只能由服务端验签通过的网关回调改变，用户端提交付款不得直接入账。",
+        "systems": [
+          "datamodel",
+          "workflow",
+          "rbac"
+        ],
+        "refs": [
+          "payment_order.payment_status",
+          "payment_order.gateway_txn_id",
+          "pay_gateway_callback",
+          "pay_verify_callback",
+          "payment:confirm"
+        ]
+      },
+      {
+        "id": "wallet_change_requires_ledger",
+        "statement": "任何租户点数余额变化必须同时生成一条关联支付单或补偿事件的点数流水。",
+        "systems": [
+          "datamodel",
+          "workflow",
+          "page"
+        ],
+        "refs": [
+          "wallet_account.balance_units",
+          "ledger_entry",
+          "ledger_entry.payment_order_id",
+          "pay_wallet_credit",
+          "pay_ledger_record",
+          "rec_compensate_credit"
+        ]
+      },
+      {
+        "id": "generated_media_rehosted_to_owned_storage",
+        "statement": "生成作品交付前必须从上游临时地址转存到平台自有存储并记录存储键。",
+        "systems": [
+          "datamodel",
+          "workflow",
+          "aigc"
+        ],
+        "refs": [
+          "generated_asset.asset_url",
+          "generated_asset.storage_key",
+          "storage_config.bucket_name",
+          "cr_deliver_asset",
+          "video_generator"
+        ]
+      },
+      {
+        "id": "tenant_data_isolation",
+        "statement": "创作请求、钱包、套餐、配置、装修和审计记录必须按租户字段隔离查询与写入。",
+        "systems": [
+          "datamodel",
+          "page",
+          "rbac"
+        ],
+        "refs": [
+          "tenant",
+          "creative_request.tenant_id",
+          "wallet_account.tenant_id",
+          "subscription_plan.tenant_id",
+          "ai_provider_config.tenant_id",
+          "page_theme.tenant_id",
+          "audit_log.tenant_id",
+          "tenant_admin"
+        ]
+      },
+      {
+        "id": "ai_config_publish_requires_platform_review",
+        "statement": "租户AI接口、插件和存储配置只有经过平台安全审查后才能发布为可用状态。",
+        "systems": [
+          "datamodel",
+          "workflow",
+          "rbac",
+          "page"
+        ],
+        "refs": [
+          "ai_provider_config.status",
+          "plugin.status",
+          "storage_config.status",
+          "cfg_security_review",
+          "cfg_publish",
+          "ai_config:review",
+          "platform_admin"
+        ]
+      },
+      {
+        "id": "async_failure_must_retry_or_compensate",
+        "statement": "异步生成失败必须进入恢复链，达到最大重试次数后必须补偿冻结点数并通知租户。",
+        "systems": [
+          "workflow",
+          "datamodel",
+          "rbac"
+        ],
+        "refs": [
+          "rec_detect_failure",
+          "rec_retry_provider",
+          "rec_compensate_credit",
+          "rec_notify_tenant",
+          "ledger_entry.change_units",
+          "finance_admin"
+        ]
+      }
+    ]
+  }
+}
