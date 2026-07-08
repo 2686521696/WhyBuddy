@@ -68,6 +68,9 @@ import {
 // ECharts 基建走独立 chunk（React.lazy）：主 bundle 不背 echarts，
 // 首个带图表声明的页面打开时才加载。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
+// 手机档 UI 基建（antd-mobile）同样独立 chunk：切到手机设备档才加载。
+const LazyPhonePageList = React.lazy(() => import("./phone-mobile/PhonePageList"));
+const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -573,49 +576,38 @@ export function AppRuntimeScreen({
   // 手机端业务页：卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span
-        {...probe({
-          kind: "action",
-          label: "新建",
-          pageId: page.id,
-          permission: pageAccess.get(page.id)?.createPermission ?? null,
-          granted: pageAccess.get(page.id)?.canCreate !== false,
-          role,
-        })}
+      <React.Suspense
+        fallback={
+          <div style={{ textAlign: "center", fontSize: 12, color: INK.faint, padding: "24px 0" }}>
+            移动端组件加载中…
+          </div>
+        }
       >
-        <Button
-          type="primary"
-          block
-          icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
-          disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
-          onClick={() => {
+        <LazyPhonePageList
+          rows={rows}
+          descFields={page.detailFields.slice(1, 4).map((f) => ({ id: f.id, label: f.label }))}
+          createProbeProps={probe({
+            kind: "action",
+            label: "新建",
+            pageId: page.id,
+            permission: pageAccess.get(page.id)?.createPermission ?? null,
+            granted: pageAccess.get(page.id)?.canCreate !== false,
+            role,
+          })}
+          canCreate={Boolean(page.entityId) && pageAccess.get(page.id)?.canCreate !== false}
+          createLockedHint={
+            pageAccess.get(page.id)?.canCreate === false
+              ? `当前角色（${role ?? "-"}）无新建权限`
+              : undefined
+          }
+          onCreate={() => {
             setFormValues({});
             setFormOpen(true);
           }}
-          data-testid="app-runtime-create"
-        >
-          新建
-        </Button>
-      </span>
-      {rows.length === 0 && (
-        <div style={{ textAlign: "center", fontSize: 12, color: INK.faint, padding: "24px 0" }}>
-          暂无数据 — 点「新建」写入第一条真实数据
-        </div>
-      )}
-      {rows.map((row) => (
-        <Card key={row.id} size="small" hoverable onClick={() => setDetailRow(row)} styles={{ body: { padding: "10px 12px" } }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: INK.value }}>
-            {String(Object.values(row.values)[0] ?? row.id)}
-          </div>
-          {page.detailFields.slice(1, 4).map((f) => (
-            <div key={f.id} style={{ display: "flex", fontSize: 12, marginTop: 4 }}>
-              <span style={{ color: INK.label, width: 88, flexShrink: 0 }}>{f.label}</span>
-              <span style={{ color: INK.value }}>{String(row.values[f.id] ?? "—")}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 6, textAlign: "right" }}>{rowActions(row)}</div>
-        </Card>
-      ))}
+          onOpenRow={(row) => setDetailRow(row as RuntimeRow)}
+          renderRowActions={(row) => rowActions(row as RuntimeRow)}
+        />
+      </React.Suspense>
     </div>
   );
 
@@ -810,48 +802,18 @@ export function AppRuntimeScreen({
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
         {isHome ? homeContent : phonePageContent}
       </div>
-      <div
-        style={{
-          height: 54,
-          flexShrink: 0,
-          background: "#fff",
-          borderTop: "1px solid #f0f0f0",
-          display: "flex",
-          overflowX: "auto",
-        }}
-        data-testid="app-runtime-tabbar"
-      >
-        {schema.menus.map((m, i) => {
-          const locked = m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false;
-          const active = activePageId === m.pageId;
-          const Icon = m.pageId === "home" ? DashboardOutlined : locked ? LockOutlined : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
-          return (
-            <button
-              key={m.pageId}
-              type="button"
-              disabled={locked}
-              onClick={() => setActivePageId(m.pageId)}
-              title={locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label}
-              style={{
-                minWidth: 64,
-                flex: "1 0 auto",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2,
-                border: "none",
-                background: "none",
-                cursor: locked ? "not-allowed" : "pointer",
-                color: locked ? "#bfbfbf" : active ? "#1677ff" : "#595959",
-                fontSize: 10,
-              }}
-            >
-              <Icon style={{ fontSize: 17 }} />
-              <span style={{ maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-            </button>
-          );
-        })}
+      <div style={{ flexShrink: 0 }} data-testid="app-runtime-tabbar">
+        <React.Suspense fallback={<div style={{ height: 54, background: "#fff", borderTop: "1px solid #f0f0f0" }} />}>
+          <LazyPhoneTabBar
+            items={schema.menus.map((m) => ({
+              pageId: m.pageId,
+              label: m.label,
+              locked: m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false,
+            }))}
+            activeId={activePageId}
+            onChange={setActivePageId}
+          />
+        </React.Suspense>
       </div>
     </div>
   );
