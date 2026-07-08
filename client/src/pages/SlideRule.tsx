@@ -30,6 +30,10 @@ import {
   type PublishClosureSummary,
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
+import {
+  parseFiveSystemModelFromPerSkillEvidence,
+  summarizeClosureForChat,
+} from "./sliderule/system-screens/five-system-model";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
@@ -163,16 +167,29 @@ function textFromStep(step: UiTurn["steps"][number] | null | undefined): string 
   return "";
 }
 
-function assistantTextForTurn(turn: UiTurn, publishClosure?: PublishClosureSummary | null): string {
+function assistantTextForTurn(
+  turn: UiTurn,
+  publishClosure?: PublishClosureSummary | null,
+  goalText?: string
+): string {
   const assistant = turn.assistant?.trim();
   if (assistant) return assistant;
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
   if (finalStepText) return finalStepText;
   // 不再回退到最后一枚过程 chip（会把「指令已接收 · 启动推理」当成回答复读）；
-  // 过程细节由 TurnPhaseTimeline 分阶段折叠承载，这里只给结论句。
+  // 过程细节由 TurnPhaseTimeline 分阶段折叠承载，这里给零 LLM 模板总结（方案 A）：
+  // 事实全部来自五系统模型 + 闭环证据，替换旧的机械状态行。
   if (publishClosure) {
-    const status = publishClosure.blocked ? "发布闭环被阻塞" : "五系统推演完成，发布闭环已收口";
-    return `${status}：${publishClosure.evidencePresentCount}/${publishClosure.skillCount} 个系统证据可用，版本钉扎${publishClosure.versionPinsChecked ? "已检查" : "未完成"}。`;
+    const model = parseFiveSystemModelFromPerSkillEvidence(
+      publishClosure.perSkillEvidence as Parameters<typeof parseFiveSystemModelFromPerSkillEvidence>[0]
+    );
+    return summarizeClosureForChat(model, {
+      goalText: turn.user || goalText,
+      blocked: !!publishClosure.blocked,
+      evidencePresentCount: publishClosure.evidencePresentCount ?? 0,
+      skillCount: publishClosure.skillCount ?? 6,
+      versionPinsChecked: !!publishClosure.versionPinsChecked,
+    });
   }
   return turn.status === "streaming" ? "正在整理推演结果..." : "本轮已完成，但还没有生成可展示的回答。";
 }
@@ -313,6 +330,7 @@ function ClaudeChatSurface({
   latestTurn,
   publishClosure,
   llmDraft = "",
+  goalText,
   onChallenge,
 }: {
   uiTurns: UiTurn[];
@@ -322,6 +340,8 @@ function ClaudeChatSurface({
   publishClosure?: PublishClosureSummary | null;
   /** 五系统 LLM 生成的实时草稿（llm_delta 累积；仅运行中展示尾部）。 */
   llmDraft?: string;
+  /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
+  goalText?: string;
   onChallenge: (id: string) => void;
 }) {
   const latestStepText = latestTurn ? textFromStep(latestTurn.steps.at(-1)) : "";
@@ -381,7 +401,7 @@ function ClaudeChatSurface({
         ) : (
           <div className="space-y-6 py-2">
             {uiTurns.map((turn) => {
-              const answer = assistantTextForTurn(turn, publishClosure);
+              const answer = assistantTextForTurn(turn, publishClosure, goalText);
               return (
                 <section key={turn.id} className="space-y-4">
                   {/* User bubble — right; hidden for turns restored from persisted state (no user text) */}
@@ -703,6 +723,7 @@ function SlideRuleUnified({
             <ClaudeChatSurface
               uiTurns={conversationTurns}
               isRunning={isRunning}
+              goalText={goal}
               liveAction={liveAction}
               latestTurn={latestTurn}
               publishClosure={publishClosure}

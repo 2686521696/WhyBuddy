@@ -840,3 +840,61 @@ export function crossSkillEdgesToMermaid(
   }
   return lines.join("\n");
 }
+
+/**
+ * 闭环后的对话总结（零 LLM 模板，方案 A）：全部事实来自五系统模型与
+ * 闭环证据，替换机械状态行——像 TRAE 那样"执行完说人话"，但不多花
+ * 一次 LLM 调用；LLM 增强总结（方案 B）落地后本函数退为兜底。
+ */
+export function summarizeClosureForChat(
+  model: FiveSystemModel | null,
+  opts: {
+    goalText?: string;
+    blocked: boolean;
+    evidencePresentCount: number;
+    skillCount: number;
+    versionPinsChecked?: boolean;
+  }
+): string {
+  const { goalText, blocked, evidencePresentCount, skillCount, versionPinsChecked } = opts;
+  const topic = (goalText || "").trim().slice(0, 24);
+  if (blocked || !model) {
+    const head = topic ? `「${topic}」的推演还未收口` : "本轮推演还未收口";
+    return `${head}：${evidencePresentCount}/${skillCount} 个系统证据可用。补齐缺口后再推一轮即可闭环。`;
+  }
+  const entities = model.datamodel?.entities ?? [];
+  const fieldCount = entities.reduce((n, e) => n + (e.fields?.length ?? 0), 0);
+  const nodes = model.workflow?.nodes ?? [];
+  const transitions = model.workflow?.transitions ?? [];
+  const phaseCount = new Set(nodes.map((n) => n.phase).filter(Boolean)).size;
+  const roles = model.rbac?.roles ?? [];
+  const perms = model.rbac?.permissions ?? [];
+  const pages = model.page?.pages ?? [];
+  const bindingCount = pages.reduce((n, p) => n + (p.fieldBindings?.length ?? 0), 0);
+  const caps = model.aigc?.capabilities ?? [];
+  const wfBindings = (model.appbundle?.pageBindings ?? []).filter(
+    (b) => b.pageRef && b.workflowRef
+  ).length;
+
+  const parts: string[] = [];
+  if (entities.length) parts.push(`数据模型 ${entities.length} 实体 · ${fieldCount} 字段`);
+  if (nodes.length) {
+    parts.push(
+      `工作流 ${nodes.length} 节点 · ${transitions.length} 转移${phaseCount > 1 ? ` · ${phaseCount} 阶段` : ""}`
+    );
+  }
+  if (roles.length) parts.push(`角色权限 ${roles.length} 角色 · ${perms.length} 权限`);
+  if (pages.length) parts.push(`页面 ${pages.length} 页 · ${bindingCount} 处字段绑定`);
+  if (caps.length) parts.push(`AI 能力 ${caps.length} 项可写回`);
+
+  const lines: string[] = [
+    `已为${topic ? `「${topic}」` : "本话题"}搭出可运行的应用闭环（证据 ${evidencePresentCount}/${skillCount}，版本${versionPinsChecked ? "已钉扎" : "待钉扎"}）：`,
+  ];
+  if (parts.length) {
+    lines.push(parts.join("；") + (wfBindings ? `；页面↔流程绑定 ${wfBindings} 处。` : "。"));
+  }
+  lines.push(
+    "右侧应用已在运行：可录入数据、提交审批、切换角色、试 AI 写回；开「游标」能透视每个界面背后的声明。"
+  );
+  return lines.join("\n");
+}
