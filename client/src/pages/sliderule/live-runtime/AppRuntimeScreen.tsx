@@ -80,6 +80,7 @@ import {
   subscribeRoleChanged,
 } from "./runtime-persistence";
 import { accessForRole, pageAccessForRole, type PageAccess } from "./rbac-preview";
+import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
 const DEVICE_SPECS = {
@@ -287,12 +288,17 @@ export function AppRuntimeScreen({
   sessionId,
   appTitle,
   onActivePageChange,
+  xrayActive = false,
+  onXrayTarget,
 }: {
   model: FiveSystemModel;
   sessionId: string;
   appTitle?: string;
   /** 当前页变化时上报（X 光透视栏跟随应用内导航） */
   onActivePageChange?: (pageId: string) => void;
+  /** 元素级 X 光：开启时被埋点的元素悬停上报目标 + 描边高亮 */
+  xrayActive?: boolean;
+  onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
   const schema = React.useMemo(
     () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
@@ -382,6 +388,16 @@ export function AppRuntimeScreen({
     notifyRuntimeChanged(sessionId);
   };
 
+  // 元素级 X 光探针：开着 X 光时，埋点元素悬停上报目标 + 类名描边（AR 焦点）
+  const probe = (t: XrayTarget): React.HTMLAttributes<HTMLElement> =>
+    xrayActive && onXrayTarget
+      ? {
+          className: "xray-el",
+          onMouseEnter: () => onXrayTarget(t),
+          onMouseLeave: () => onXrayTarget(null),
+        }
+      : {};
+
   const refRowsFor = (field: AppFormFieldSchema) => {
     if (!field.refEntityId) return [];
     return (state.entities[field.refEntityId] ?? []).map((r) => ({
@@ -463,16 +479,18 @@ export function AppRuntimeScreen({
   const rowActions = (row: RuntimeRow) => (
     <Space size="small">
       {page?.workflowLinked && (
-        <Button
-          size="small"
-          type="link"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSubmitToWorkflow(row.id, String(Object.values(row.values)[0] ?? row.id));
-          }}
-        >
-          提交审批
-        </Button>
+        <span {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}>
+          <Button
+            size="small"
+            type="link"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSubmitToWorkflow(row.id, String(Object.values(row.values)[0] ?? row.id));
+            }}
+          >
+            提交审批
+          </Button>
+        </span>
       )}
       <Button
         size="small"
@@ -494,6 +512,10 @@ export function AppRuntimeScreen({
       dataIndex: ["values", c.id],
       key: c.id,
       ellipsis: true,
+      onHeaderCell: () =>
+        page?.entityId
+          ? probe({ kind: "field", entityId: page.entityId, fieldId: c.id, label: c.label })
+          : {},
       render: (v: unknown) => (v === undefined || v === "" ? <span style={{ color: "#bbb" }}>—</span> : String(v)),
     })),
     {
@@ -607,19 +629,30 @@ export function AppRuntimeScreen({
   // 手机端业务页：卡片列表（前 3 字段 + 操作），Pro App 的移动端习惯
   const phonePageContent = page && (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <Button
-        type="primary"
-        block
-        icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
-        disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
-        onClick={() => {
-          setFormValues({});
-          setFormOpen(true);
-        }}
-        data-testid="app-runtime-create"
+      <span
+        {...probe({
+          kind: "action",
+          label: "新建",
+          pageId: page.id,
+          permission: pageAccess.get(page.id)?.createPermission ?? null,
+          granted: pageAccess.get(page.id)?.canCreate !== false,
+          role,
+        })}
       >
-        新建
-      </Button>
+        <Button
+          type="primary"
+          block
+          icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
+          disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
+          onClick={() => {
+            setFormValues({});
+            setFormOpen(true);
+          }}
+          data-testid="app-runtime-create"
+        >
+          新建
+        </Button>
+      </span>
       {rows.length === 0 && (
         <div style={{ textAlign: "center", fontSize: 12, color: INK.faint, padding: "24px 0" }}>
           暂无数据 — 点「新建」写入第一条真实数据
@@ -653,23 +686,34 @@ export function AppRuntimeScreen({
               {a}
             </Tag>
           ))}
-          <Button
-            type="primary"
-            icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
-            onClick={() => {
-              setFormValues({});
-              setFormOpen(true);
-            }}
-            disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
-            title={
-              pageAccess.get(page.id)?.canCreate === false
-                ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
-                : undefined
-            }
-            data-testid="app-runtime-create"
+          <span
+            {...probe({
+              kind: "action",
+              label: "新建",
+              pageId: page.id,
+              permission: pageAccess.get(page.id)?.createPermission ?? null,
+              granted: pageAccess.get(page.id)?.canCreate !== false,
+              role,
+            })}
           >
-            新建
-          </Button>
+            <Button
+              type="primary"
+              icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
+              onClick={() => {
+                setFormValues({});
+                setFormOpen(true);
+              }}
+              disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
+              title={
+                pageAccess.get(page.id)?.canCreate === false
+                  ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
+                  : undefined
+              }
+              data-testid="app-runtime-create"
+            >
+              新建
+            </Button>
+          </span>
         </Space>
       }
     >
@@ -716,7 +760,7 @@ export function AppRuntimeScreen({
             return {
               key: m.pageId,
               icon: <Icon />,
-              label: m.label,
+              label: <span {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}>{m.label}</span>,
               disabled: locked,
               title: locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label,
             };
@@ -849,6 +893,7 @@ export function AppRuntimeScreen({
       <div style={{ width: spec.w * scale, height: spec.h * scale, position: "relative" }}>
         <div
           ref={setCanvasEl}
+          className={xrayActive ? "xray-scan" : undefined}
           style={{
             width: spec.w,
             height: spec.h,
@@ -875,7 +920,12 @@ export function AppRuntimeScreen({
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
                 {(page?.formFields ?? []).map((f) => (
-                  <div key={f.id}>
+                  <div
+                    key={f.id}
+                    {...(page?.entityId
+                      ? probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })
+                      : {})}
+                  >
                     <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
                       {f.label}
                       <span style={{ color: "#bbb", marginLeft: 6 }}>{f.type}</span>
@@ -912,7 +962,13 @@ export function AppRuntimeScreen({
                     column={1}
                     items={page.detailFields.map((f) => ({
                       key: f.id,
-                      label: f.label,
+                      label: page.entityId ? (
+                        <span {...probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })}>
+                          {f.label}
+                        </span>
+                      ) : (
+                        f.label
+                      ),
                       children:
                         detailRow.values[f.id] === undefined || detailRow.values[f.id] === ""
                           ? "—"
@@ -927,17 +983,19 @@ export function AppRuntimeScreen({
                       <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
                         {page.aiActions.map((action) => (
                           <div key={action.capId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <Button
-                              size="small"
-                              type="primary"
-                              ghost
-                              data-testid={`app-ai-action-${action.capId}`}
-                              loading={aiRunningCapId === action.capId}
-                              disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
-                              onClick={() => runAiAction(action)}
-                            >
-                              ✨ {action.label}
-                            </Button>
+                            <span {...probe({ kind: "ai", capId: action.capId, label: action.label })}>
+                              <Button
+                                size="small"
+                                type="primary"
+                                ghost
+                                data-testid={`app-ai-action-${action.capId}`}
+                                loading={aiRunningCapId === action.capId}
+                                disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
+                                onClick={() => runAiAction(action)}
+                              >
+                                ✨ {action.label}
+                              </Button>
+                            </span>
                             <span style={{ fontSize: 11, color: INK.faint }}>
                               → 写回「{action.outputLabel}」
                             </span>

@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { derivePageXray, XrayPanel } from "../XrayPanel";
+import { derivePageXray, describeXrayTarget, XrayPanel } from "../XrayPanel";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { SlideRuleStudio } from "../SlideRuleStudio";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
@@ -81,6 +81,54 @@ describe("derivePageXray", () => {
     expect(html).toContain('data-testid="xray-section-dataModel"');
     expect(html).toContain('data-testid="xray-section-appBundle"');
     expect(html).toContain("宠物档案页");
+  });
+});
+
+describe("describeXrayTarget（元素级 AR 焦点解读）", () => {
+  const schema = deriveAppRuntimeSchema(MODEL, "测试应用")!;
+
+  it("field → 实体.字段 + 页面绑定 + AI 读写", () => {
+    const d = describeXrayTarget(MODEL, { kind: "field", entityId: "pet", fieldId: "species", label: "物种" });
+    expect(d.skill).toBe("dataModel");
+    expect(d.title).toContain("宠物档案");
+    expect(d.title).toContain("物种");
+    expect(d.lines.join()).toContain("宠物档案页"); // 被本页绑定
+    expect(d.lines.join()).toContain("生成护理建议"); // AI 读取 pet.species
+  });
+
+  it("action → 权限声明 + 当前角色判定 + 持有角色", () => {
+    const d = describeXrayTarget(MODEL, {
+      kind: "action", label: "新建", pageId: "pet_page",
+      permission: "pet:create", granted: false, role: "host",
+    });
+    expect(d.skill).toBe("rbac");
+    expect(d.lines.join()).toContain("pet:create");
+    expect(d.lines.join()).toContain("host 未持有");
+    expect(d.lines.join()).toContain("owner"); // 持有角色
+  });
+
+  it("menu → 页面声明 + 可见角色；ai → 输入/写回", () => {
+    const m = describeXrayTarget(MODEL, { kind: "menu", pageId: "pet_page", label: "宠物档案页" });
+    expect(m.skill).toBe("page");
+    expect(m.lines.join()).toContain("owner");
+    const a = describeXrayTarget(MODEL, { kind: "ai", capId: "cap1", label: "生成护理建议" });
+    expect(a.skill).toBe("aigc");
+    expect(a.lines.join()).toContain("pet.species");
+    expect(a.lines.join()).toContain("pet.name");
+  });
+
+  it("XrayPanel 带 target 渲染 AR 焦点卡", () => {
+    const html = renderToStaticMarkup(
+      <XrayPanel
+        model={MODEL}
+        schema={schema}
+        activePageId="pet_page"
+        target={{ kind: "field", entityId: "pet", fieldId: "name", label: "昵称" }}
+        onOpenSystem={() => {}}
+      />
+    );
+    expect(html).toContain('data-testid="xray-focus"');
+    expect(html).toContain("昵称");
   });
 });
 

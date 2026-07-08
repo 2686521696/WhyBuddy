@@ -1081,3 +1081,17 @@
     box-shadow: 0 0 4px 1px rgba(99, 102, 241, 0.15);
   }
 }
+
+/* ── X 光元素级（AR 焦点）：运行应用画布内被埋点元素的悬停描边 ── */
+.xray-scan .xray-el {
+  cursor: help;
+  border-radius: 4px;
+  transition: outline-color 0.12s ease;
+  outline: 2px dashed transparent;
+  outline-offset: 1px;
+}
+
+.xray-scan .xray-el:hover {
+  outline-color: #d97757;
+  background: rgba(217, 119, 87, 0.06);
+}

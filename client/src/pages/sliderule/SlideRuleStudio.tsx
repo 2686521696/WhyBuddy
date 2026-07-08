@@ -24,7 +24,7 @@ import {
 } from "./system-screens/five-system-model";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
-import { XrayPanel } from "./XrayPanel";
+import { XrayPanel, type XrayTarget } from "./XrayPanel";
 import { ScanEye, X } from "lucide-react";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
@@ -105,10 +105,13 @@ export function SlideRuleStudio({
       try {
         localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
       } catch {}
+      if (v) setXrayTarget(null); // 关 X 光时清掉残留焦点
       return !v;
     });
   }, []);
   const [appActivePageId, setAppActivePageId] = useState<string>("home");
+  // 元素级焦点：应用内被悬停元素的背后声明（AR）
+  const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
 
   // 系统屏抽屉（X 光深入 / 抽屉内六系统横向切换）
   const [drawerSkill, setDrawerSkill] = useState<SkillId | null>(null);
@@ -164,6 +167,8 @@ export function SlideRuleStudio({
                   sessionId={sessionId ?? "sliderule-v51-product"}
                   appTitle={appTitle}
                   onActivePageChange={setAppActivePageId}
+                  xrayActive={xrayOn}
+                  onXrayTarget={setXrayTarget}
                 />
               </div>
               {xrayOn && appSchema && (
@@ -171,6 +176,7 @@ export function SlideRuleStudio({
                   model={fiveSystemModel}
                   schema={appSchema}
                   activePageId={appActivePageId}
+                  target={xrayTarget}
                   onOpenSystem={setDrawerSkill}
                 />
               )}
