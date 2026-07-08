@@ -389,6 +389,22 @@ def _ensure_runtime_closure_evidence(state: V5SessionState, user_instruction: st
         persist_state(state)
     return state
 
+def _advance_turn_version(state: "V5SessionState") -> None:
+    """一次 drive = 一个 turn：把 state.lastTurnId 步进一格。
+
+    持久化守卫以 lastTurnId 为单调版本（同 turn 不可覆盖核心字段）。驱动器
+    若不推进它，drive 开始时那笔"goal 还没写进"的快照就成了该版本的终点，
+    之后所有含 goal/conversation/runtimePhase 的落盘全被静默拒绝——只剩
+    append-only 的 artifacts 进盘，重启后会话"失忆"。实测踩过，勿删。
+    """
+    import re as _re
+
+    raw = str(getattr(state, "lastTurnId", None) or "")
+    m = _re.search(r"(\d+)\s*$", raw)
+    seq = int(m.group(1)) + 1 if m else 1
+    state.lastTurnId = f"turn-{seq}"
+
+
 def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, user_instruction: str = "") -> V5SessionState:
     """
     Full replacement for Node's driveReasoningSession.
@@ -403,6 +419,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     Implements V5.2 phase transitions (idle/orchestrating/awaiting/failed/done) as PYTHON_AUTHORITY.
     """
     state = initial_state
+    _advance_turn_version(state)
     state.runtimePhase = "orchestrating"
     turn_base = f"full-{datetime.now(timezone.utc).strftime('%H%M%S')}"
     append_replay_event(state, kind="decision", turnId=f"loop-0", decisionId=f"phase-orchestrating-full")
@@ -715,6 +732,7 @@ async def drive_full_v5_session_stream(
     import time as _time
 
     state = initial_state
+    _advance_turn_version(state)
     state.runtimePhase = "orchestrating"
     append_replay_event(state, kind="decision", turnId="loop-0", decisionId="phase-orchestrating-full")
     append_reasoning_event(

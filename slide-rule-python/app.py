@@ -73,7 +73,7 @@ from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
-from services.persistence import load_all, save_all
+from services.persistence import load_all
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_capability_executor import _llm_generate_enabled
@@ -122,9 +122,10 @@ async def lifespan(app: FastAPI):
             "process environment — novel intents WILL fail-closed to blocked 0/6. "
             "Put LLM_API_KEY in the repo-root .env (or slide-rule-python/.env) and restart."
         )
-    # Load persisted V5 sessions
-    app.state.sessions = load_all()
-    print(f"Loaded {len(app.state.sessions)} V5 sessions.")
+    # Load persisted V5 sessions (readiness log only — this snapshot must never
+    # be written back: routes mutate services.slide_rule_session._sessions and
+    # every mutation already persists per-record at write time).
+    print(f"Loaded {len(load_all())} V5 sessions.")
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see
     # services/node_bridge_runtime.py). Without this the executor degrades.
     from services.node_bridge_runtime import configure_node_bridge_runtimes
@@ -133,8 +134,9 @@ async def lifespan(app: FastAPI):
         print("[startup] node-bridge skill/mcp runtimes configured.")
     # TODO: init vector DB, knowledge like original Python project for RAG
     yield
-    print("Persisting V5 sessions on shutdown...")
-    save_all(app.state.sessions)
+    # 关停时绝不 save_all：启动快照从不随运行更新，整体覆写会把运行期间
+    # 落盘的所有新会话回滚到启动时刻（实测踩过：每次重启丢当轮全部推演）。
+    # 所有写入已在变更时刻按单条守卫式落盘，关停无事可做。
 
 app = FastAPI(
     title="SlideRule V5 Python Backend (baseline)",

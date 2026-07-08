@@ -32,6 +32,7 @@ import {
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
+import { newSessionId, SessionSwitcher } from "./sliderule/SessionSwitcher";
 import { SettingsDialog } from "./sliderule/SettingsDialog";
 import { ClarificationCard, type ClarificationItem } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
@@ -612,6 +613,7 @@ function SlideRuleUnified({
   skillContents = {},
   latestMermaid = null,
   llmDraft = "",
+  sessionControl = null,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -655,6 +657,8 @@ function SlideRuleUnified({
   latestMermaid?: string | null;
   /** 五系统 LLM 生成的实时草稿（llm_delta 累积）。 */
   llmDraft?: string;
+  /** 会话切换器节点（Claude 式历史会话/新建） */
+  sessionControl?: React.ReactNode;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -696,6 +700,7 @@ function SlideRuleUnified({
           onResetSession={resetSession}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDeliverables={openDeliverables}
+          sessionControl={sessionControl}
           embedded={embedded}
         />
         {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2) */}
@@ -1123,7 +1128,53 @@ function SlideRuleSplitEngineering({
   );
 }
 
+const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
+
+/**
+ * 会话壳（Claude 式）：管理"当前会话 id"，切换/新建时以 key=sessionId
+ * 整树重挂——hook 对新 id 走 loadOrCreateSessionState 完整水合，
+ * 运行时排练数据（localStorage 按 id 分键）自动隔离，零状态串味。
+ */
 export default function SlideRule({ embedded = false }: { embedded?: boolean } = {}) {
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    if (IS_GITHUB_PAGES) return GITHUB_PAGES_DEMO_SESSION_ID;
+    try {
+      return localStorage.getItem(ACTIVE_SESSION_KEY) || "sliderule-v51-product";
+    } catch {
+      return "sliderule-v51-product";
+    }
+  });
+  const switchSession = useCallback((id: string) => {
+    try {
+      localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    } catch {
+      /* 隐私模式降级为内存态 */
+    }
+    setActiveSessionId(id);
+  }, []);
+
+  return (
+    <SlideRuleSessionBody
+      key={activeSessionId}
+      embedded={embedded}
+      activeSessionId={activeSessionId}
+      onSwitchSession={switchSession}
+      onNewSession={() => switchSession(newSessionId())}
+    />
+  );
+}
+
+function SlideRuleSessionBody({
+  embedded,
+  activeSessionId,
+  onSwitchSession,
+  onNewSession,
+}: {
+  embedded: boolean;
+  activeSessionId: string;
+  onSwitchSession: (id: string) => void;
+  onNewSession: () => void;
+}) {
   const {
     goal,
     uiTurns,
@@ -1153,10 +1204,19 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     latestMermaid,
     llmDraft,
   } = useSlideRuleSession({
-    sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : "sliderule-v51-product",
+    sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : activeSessionId,
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
     initialGoal: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_GOAL : undefined,
   });
+
+  // 会话切换器（Pages 演示是单会话，不显示）
+  const sessionControl = IS_GITHUB_PAGES ? null : (
+    <SessionSwitcher
+      activeSessionId={activeSessionId}
+      onSwitch={onSwitchSession}
+      onNew={onNewSession}
+    />
+  );
 
   // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
   const [pythonApiError, setPythonApiError] = useState<any>(null);
@@ -1511,6 +1571,7 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
     skillContents,
     latestMermaid,
     llmDraft,
+    sessionControl,
   };
 
   if (isImmersion) {

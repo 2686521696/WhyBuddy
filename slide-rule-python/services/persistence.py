@@ -11,7 +11,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import ValidationError
 
@@ -144,14 +144,20 @@ def _read_store(store_file: Optional[StorePath] = None) -> Tuple[Dict[str, V5Ses
         return {}, _store_error("read_failed", str(error))
 
     sessions: Dict[str, V5SessionState] = {}
+    unreadable: List[Tuple[str, Any]] = []
     if isinstance(data, list):
         for entry in data:
             if not isinstance(entry, list) or len(entry) != 2 or not isinstance(entry[0], str):
                 return {}, _store_error("invalid_shape", "expected [sessionId, state] entries")
             state, error = _coerce_state(entry[0], entry[1])
             if error:
-                return {}, error
+                # 单条读不回（旧 schema/字段漂移）：跳过但原样保留（写回时按
+                # 原字节带上），绝不因一条坏记录毒化整个存档（实测踩过：一条
+                # 旧 marathon 会话让所有增删改查 500）。也绝不静默删除。
+                unreadable.append((entry[0], entry[1]))
+                continue
             sessions[entry[0]] = state
+        _remember_unreadable(path, unreadable)
         return sessions, None
 
     if isinstance(data, dict):
@@ -160,11 +166,24 @@ def _read_store(store_file: Optional[StorePath] = None) -> Tuple[Dict[str, V5Ses
                 return {}, _store_error("invalid_shape", "expected string session ids")
             state, error = _coerce_state(session_id, payload)
             if error:
-                return {}, error
+                unreadable.append((session_id, payload))
+                continue
             sessions[session_id] = state
+        _remember_unreadable(path, unreadable)
         return sessions, None
 
     return {}, _store_error("invalid_shape", "expected array entries or mapping")
+
+
+# 读不回的条目按存档路径暂存（进程内），写回时原样带上——保数据不保解析。
+_unreadable_by_path: Dict[str, List[Tuple[str, Any]]] = {}
+
+
+def _remember_unreadable(path: Path, unreadable: List[Tuple[str, Any]]) -> None:
+    _unreadable_by_path[str(path)] = unreadable
+    if unreadable:
+        ids = ", ".join(sid for sid, _ in unreadable[:5])
+        print(f"[persistence] WARN: {len(unreadable)} unreadable session(s) skipped, preserved verbatim: {ids}")
 
 
 def _write_store(sessions: Dict[str, V5SessionState], store_file: Optional[StorePath] = None) -> StoreError:
@@ -173,6 +192,10 @@ def _write_store(sessions: Dict[str, V5SessionState], store_file: Optional[Store
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.tmp")
         payload = [[session_id, state.model_dump()] for session_id, state in sessions.items()]
+        # 读不回的旧条目原样写回（除非同 id 已被新状态取代），不静默丢数据
+        for sid, raw_payload in _unreadable_by_path.get(str(path), []):
+            if sid not in sessions:
+                payload.append([sid, raw_payload])
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, path)
     except OSError as error:

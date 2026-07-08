@@ -9,7 +9,7 @@ from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState,
 from datetime import datetime, timezone
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
-from .persistence import delete_session_record, load_all, load_session_record, save_all, save_session_record
+from .persistence import delete_session_record, load_all, load_session_record, save_session_record
 from .slide_rule_coverage import evaluate_coverage_gate
 from .slide_rule_interactive_gates import (
     open_human_question_gap_count,
@@ -32,8 +32,10 @@ def _load_sessions():
     _sessions = load_all()
     return _sessions
 
-def _save_sessions():
-    save_all(_sessions)
+# 注意：这里刻意没有"整体 dump 内存缓存到存档"的函数。历史上 create_session
+# 调 save_all(_sessions) 整体覆写存档文件——当缓存在别的写入者之后变陈旧时，
+# 一次 create 就会把其他会话从磁盘上抹掉（实测踩过：真实话题跨重启失忆的
+# 元凶之一）。一切落盘必须走 save_session_record 的单条守卫式合并。
 
 def create_session(goal_text: str, session_id: Optional[str] = None) -> V5SessionState:
     if not session_id:
@@ -48,7 +50,7 @@ def create_session(goal_text: str, session_id: Optional[str] = None) -> V5Sessio
         runtimePhase="idle"
     )
     _sessions[session_id] = state
-    _save_sessions()
+    save_session_record(state)  # 单条守卫式写入，绝不整体覆写存档
     return state
 
 def load_session(session_id: str) -> Optional[V5SessionState]:

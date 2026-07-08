@@ -271,8 +271,8 @@ async def create_sess(payload: Dict[str, Any], x_internal_key: Optional[str] = H
     state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), payload.get("sessionId"))
     state, changed = sanitize_session_state(state)
     # If sanitize mutated the state, persist via save_session so the authoritative
-    # store is consistent. create_session already called _save_sessions internally,
-    # but that was before the sanitize pass — re-save only when changed.
+    # store is consistent. create_session already persisted (guarded per-record
+    # save), but that was before the sanitize pass — re-save only when changed.
     if changed:
         state = save_session(state)
     return {"sessionId": state.sessionId, "state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
