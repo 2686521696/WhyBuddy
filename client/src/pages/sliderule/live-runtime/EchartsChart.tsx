@@ -10,7 +10,7 @@
 import React from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
-import { GridComponent, TooltipComponent, DatasetComponent } from "echarts/components";
+import { GridComponent, TooltipComponent, DatasetComponent, TitleComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 echarts.use([
@@ -20,6 +20,7 @@ echarts.use([
   GridComponent,
   TooltipComponent,
   DatasetComponent,
+  TitleComponent,
   CanvasRenderer,
 ]);
 

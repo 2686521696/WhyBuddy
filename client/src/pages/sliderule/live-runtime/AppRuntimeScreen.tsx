@@ -59,7 +59,11 @@ import {
   type AppPageSchema,
   type AppRuntimeSchema,
 } from "./app-runtime-schema";
-import { buildEchartsOption } from "./build-echarts-option";
+import {
+  buildEchartsOption,
+  buildEntityRowcountOption,
+  buildInstanceStatusOption,
+} from "./build-echarts-option";
 
 // ECharts 基建走独立 chunk（React.lazy）：主 bundle 不背 echarts，
 // 首个带图表声明的页面打开时才加载。
@@ -124,109 +128,12 @@ const MENU_ICONS = [TableOutlined, ProfileOutlined, FormOutlined, AppstoreOutlin
 
 // --- 图表（dataviz 规范：墨色文字、细标记、状态色已校验） --------------------
 const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
-const BAR_HUE = "#1677ff";
 const STATUS_META: Record<string, { color: string; label: string }> = {
   running: { color: "#1677ff", label: "进行中" },
   completed: { color: "#52c41a", label: "已完成" },
   rejected: { color: "#ff4d4f", label: "已驳回" },
 };
 
-function EntityBarChart({ items }: { items: Array<{ label: string; value: number }> }) {
-  const max = Math.max(...items.map((i) => i.value), 1);
-  const rowH = 26;
-  const labelW = 96;
-  const chartW = 300;
-  if (items.length === 0 || items.every((i) => i.value === 0)) {
-    return <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>暂无数据 — 到业务页面「新建」写入</div>;
-  }
-  return (
-    <svg
-      width="100%"
-      viewBox={`0 0 ${labelW + chartW + 44} ${items.length * rowH}`}
-      role="img"
-      aria-label="各实体数据量"
-    >
-      {items.map((item, i) => {
-        const w = Math.max((item.value / max) * chartW, item.value > 0 ? 6 : 0);
-        const y = i * rowH;
-        return (
-          <g key={item.label}>
-            <title>{`${item.label}：${item.value} 行`}</title>
-            <text x={labelW - 8} y={y + rowH / 2 + 4} textAnchor="end" fontSize={11} fill={INK.label}>
-              {item.label.length > 7 ? `${item.label.slice(0, 7)}…` : item.label}
-            </text>
-            <rect x={labelW} y={y + 6} width={Math.max(w, 2)} height={14} rx={4} fill={item.value > 0 ? BAR_HUE : "#f0f0f0"} />
-            <text x={labelW + Math.max(w, 2) + 6} y={y + rowH / 2 + 4} fontSize={11} fill={INK.value}>
-              {item.value}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function donutSector(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number): string {
-  const p = (r: number, a: number) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  const [x0, y0] = p(r1, a0);
-  const [x1, y1] = p(r1, a1);
-  const [x2, y2] = p(r0, a1);
-  const [x3, y3] = p(r0, a0);
-  const large = a1 - a0 > Math.PI ? 1 : 0;
-  return `M${x0},${y0} A${r1},${r1} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${r0},${r0} 0 ${large} 0 ${x3},${y3} Z`;
-}
-
-function StatusDonutChart({ counts }: { counts: Record<string, number> }) {
-  const entries = Object.entries(STATUS_META)
-    .map(([key, meta]) => ({ key, ...meta, value: counts[key] ?? 0 }))
-    .filter((e) => e.value > 0);
-  const total = entries.reduce((s, e) => s + e.value, 0);
-  if (total === 0) {
-    return <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>暂无流程实例 — 到业务页面「提交审批」发起</div>;
-  }
-  let angle = -Math.PI / 2;
-  const segs = entries.map((e) => {
-    const span = (e.value / total) * Math.PI * 2;
-    const seg = { ...e, a0: angle, a1: angle + span };
-    angle += span;
-    return seg;
-  });
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-      <svg width={116} height={116} viewBox="0 0 116 116" role="img" aria-label="审批状态分布">
-        {segs.length === 1 ? (
-          <g>
-            <title>{`${segs[0].label}：${segs[0].value} 件`}</title>
-            <circle cx={58} cy={58} r={46} fill="none" stroke={segs[0].color} strokeWidth={22} />
-          </g>
-        ) : (
-          segs.map((s) => (
-            <g key={s.key}>
-              <title>{`${s.label}：${s.value} 件`}</title>
-              {/* 2px 白描边 = 分段留缝，不靠颜色分界 */}
-              <path d={donutSector(58, 58, 35, 57, s.a0, s.a1)} fill={s.color} stroke="#fff" strokeWidth={2} />
-            </g>
-          ))
-        )}
-        <text x={58} y={55} textAnchor="middle" fontSize={18} fontWeight={600} fill={INK.value}>
-          {total}
-        </text>
-        <text x={58} y={71} textAnchor="middle" fontSize={10} fill={INK.label}>
-          实例
-        </text>
-      </svg>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {entries.map((e) => (
-          <div key={e.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: INK.label }}>
-            <span style={{ width: 8, height: 8, borderRadius: 4, background: e.color, flexShrink: 0 }} />
-            {e.label}
-            <span style={{ color: INK.value, fontWeight: 600 }}>{e.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function FieldInput({
   field,
@@ -534,25 +441,36 @@ export function AppRuntimeScreen({
 
   const recentInstances = [...state.instances].slice(-5).reverse();
 
+  // 工作台内置图：ECharts 基建（与页面级声明图表同一 lazy chunk / 同一套 dataviz 约定）
   const chartCard = (chart: AppChartSchema) => {
-    let body: React.ReactNode = null;
+    let option: Record<string, unknown> | null = null;
+    let emptyHint = "";
+    let ariaLabel = chart.label;
     if (chart.source === "entities:rowcount") {
-      body = (
-        <EntityBarChart
-          items={(model.datamodel?.entities ?? []).slice(0, 6).map((e) => ({
-            label: e.name || e.id,
-            value: (state.entities[e.id] ?? []).length,
-          }))}
-        />
+      option = buildEntityRowcountOption(
+        (model.datamodel?.entities ?? []).slice(0, 6).map((e) => ({
+          label: e.name || e.id,
+          value: (state.entities[e.id] ?? []).length,
+        }))
       );
+      emptyHint = "暂无数据 — 到业务页面「新建」写入";
     } else if (chart.source === "instances:status") {
       const counts: Record<string, number> = {};
       for (const inst of state.instances) counts[inst.status] = (counts[inst.status] ?? 0) + 1;
-      body = <StatusDonutChart counts={counts} />;
+      option = buildInstanceStatusOption(counts);
+      emptyHint = "暂无流程实例 — 到业务页面「提交审批」发起";
     }
     return (
       <Card key={chart.id} title={chart.label} size="small" style={{ flex: 1, minWidth: 0 }} data-testid={`app-runtime-${chart.id}`}>
-        {body}
+        {option ? (
+          <React.Suspense
+            fallback={<div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>图表加载中…</div>}
+          >
+            <LazyEchartsChart option={option} height={168} ariaLabel={ariaLabel} />
+          </React.Suspense>
+        ) : (
+          <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>{emptyHint}</div>
+        )}
       </Card>
     );
   };

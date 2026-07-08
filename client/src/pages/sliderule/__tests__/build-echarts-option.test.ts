@@ -6,6 +6,8 @@
 import { describe, it, expect } from "vitest";
 import {
   buildEchartsOption,
+  buildEntityRowcountOption,
+  buildInstanceStatusOption,
   groupRowsForChart,
   CATEGORICAL_ORDER,
 } from "../live-runtime/build-echarts-option";
@@ -113,5 +115,40 @@ describe("buildEchartsOption", () => {
     const label = (opt.series as any[])[0].label;
     expect(label.formatter).toBe("{b} {c}"); // 名称+数值直标（对比度 WARN 的补偿）
     expect(label.color).toBe("#262626");
+  });
+});
+
+describe("工作台内置图 builders（切 ECharts）", () => {
+  it("buildEntityRowcountOption：横向单色细条，大值在上，全零/空 → null", () => {
+    expect(buildEntityRowcountOption([])).toBeNull();
+    expect(buildEntityRowcountOption([{ label: "a", value: 0 }])).toBeNull();
+    const opt = buildEntityRowcountOption([
+      { label: "会员卡", value: 3 },
+      { label: "私教", value: 1 },
+    ])!;
+    expect((opt.yAxis as any).type).toBe("category"); // 横向：类目在 y 轴
+    expect((opt.yAxis as any).data).toEqual(["私教", "会员卡"]); // 倒序 → 大值在上
+    const series = (opt.series as any[])[0];
+    expect(series.data).toEqual([1, 3]);
+    expect(series.itemStyle.color).toBe("#1677ff");
+    expect(series.itemStyle.borderRadius).toEqual([0, 4, 4, 0]); // 数据端圆角
+    expect(series.label).toMatchObject({ show: true, position: "right", color: "#262626" });
+  });
+
+  it("buildInstanceStatusOption：保留状态色 + 中心合计 + 2px 白缝，无实例 → null", () => {
+    expect(buildInstanceStatusOption({})).toBeNull();
+    expect(buildInstanceStatusOption({ running: 0 })).toBeNull();
+    const opt = buildInstanceStatusOption({ running: 2, completed: 1, rejected: 1 })!;
+    expect((opt.title as any).text).toBe("4"); // 中心合计
+    const data = (opt.series as any[])[0].data as any[];
+    expect(data.map((d) => [d.name, d.itemStyle.color])).toEqual([
+      ["进行中", "#1677ff"],
+      ["已完成", "#52c41a"],
+      ["已驳回", "#ff4d4f"],
+    ]); // 状态色是保留色，不混分类色序
+    for (const d of data) expect(d.itemStyle.borderWidth).toBe(2);
+    // 值为 0 的状态不出片（不画空段）
+    const opt2 = buildInstanceStatusOption({ running: 5 })!;
+    expect(((opt2.series as any[])[0].data as any[]).map((d) => d.name)).toEqual(["进行中"]);
   });
 });
