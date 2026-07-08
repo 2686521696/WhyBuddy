@@ -263,86 +263,86 @@ export function XrayPanel({
     [model, target]
   );
 
+  // TRAE Work 式右栏：灰色小节标题 + 图标文字行，去卡片/胶囊，留白呼吸
   return (
     <div
-      className="flex h-full w-[264px] shrink-0 flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white/85"
+      className="flex h-full w-[276px] shrink-0 flex-col overflow-hidden rounded-xl border border-[#F0EDE5] bg-white"
       data-testid="sliderule-xray-panel"
     >
-      <div className="border-b border-[#F0EDE5] px-3.5 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-          游标 · 页面背后
-        </div>
-        <div className="mt-0.5 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+        <div className="text-[12px] text-stone-400">游标 · 页面背后</div>
+        <div className="mt-1 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
           {xray.pageTitle}
         </div>
-      </div>
-      {/* AR 焦点卡：悬停应用内元素时浮出其背后声明（点击深入对应系统屏） */}
-      {focus && (
-        <button
-          type="button"
-          onClick={() => onOpenSystem(focus.skill)}
-          data-testid="xray-focus"
-          className="mx-2 mt-2 block shrink-0 rounded-xl border border-[#EFD8CB] bg-[#FDF3EC] px-2.5 py-2 text-left shadow-sm transition hover:border-[#E5BFA9]"
-        >
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#B0552F]">
-            <span>{SECTION_ICON[focus.skill] ?? <Waypoints className="h-3.5 w-3.5" />}</span>
-            <span className="min-w-0 truncate">{focus.title}</span>
-            <span className="ml-auto font-normal text-[#D8B29E]">›</span>
-          </div>
-          <div className="mt-1 space-y-0.5">
-            {focus.lines.map((line, i) => (
-              <div key={i} className="text-[10.5px] leading-4 text-[#8a4a2b]">
-                {line}
-              </div>
-            ))}
-          </div>
-        </button>
-      )}
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-        {xray.sections.map((s) => (
+
+        {/* 对齐焦点：悬停应用内元素时浮出其背后声明（点击深入对应系统屏） */}
+        {focus && (
           <button
-            key={s.skill}
             type="button"
-            onClick={() => onOpenSystem(s.skill)}
-            data-testid={`xray-section-${s.skill}`}
-            className="block w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition hover:border-[#E7E2D9] hover:bg-[#FAF8F3]"
-            title={`深入${s.title}`}
+            onClick={() => onOpenSystem(focus.skill)}
+            data-testid="xray-focus"
+            className="mt-3 block w-full rounded-lg border-l-2 border-[#D97757] bg-[#FDF6F1] px-3 py-2 text-left transition hover:bg-[#FBEEE5]"
           >
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-stone-600">
-              <span className="text-[#B0552F]">{SECTION_ICON[s.skill]}</span>
-              {s.title}
-              <span className="ml-auto font-normal text-stone-300">›</span>
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-stone-800">
+              <span className="text-[#B0552F]">{SECTION_ICON[focus.skill] ?? <Waypoints className="h-3.5 w-3.5" />}</span>
+              <span className="min-w-0 truncate">{focus.title}</span>
             </div>
-            <div className="mt-0.5 text-[10px] text-stone-400">{s.relation}</div>
-            {s.items.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {s.items.slice(0, 4).map((it, i) => (
-                  <span
+            <div className="mt-1 space-y-0.5">
+              {focus.lines.map((line, i) => (
+                <div key={i} className="text-[11px] leading-4 text-stone-500">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </button>
+        )}
+
+        <div className="mt-5 space-y-5">
+          {xray.sections.map((s) => (
+            <div key={s.skill} data-testid={`xray-section-${s.skill}`}>
+              <button
+                type="button"
+                onClick={() => onOpenSystem(s.skill)}
+                title={`深入${s.title} · ${s.relation}`}
+                className="group flex w-full items-center gap-1.5 text-left text-[12px] text-stone-400 transition hover:text-stone-600"
+              >
+                {s.title}
+                <span className="opacity-0 transition group-hover:opacity-100">›</span>
+              </button>
+              <div className="mt-1.5">
+                {s.items.length === 0 && (
+                  <div className="px-0.5 py-0.5 text-[12px] text-stone-300">{s.relation}</div>
+                )}
+                {s.items.slice(0, 5).map((it, i) => (
+                  <button
                     key={i}
-                    className="max-w-full truncate rounded-md bg-[#F5F1EA] px-1.5 py-0.5 text-[10px] text-stone-600"
+                    type="button"
+                    onClick={() => onOpenSystem(s.skill)}
+                    className="flex w-full items-center gap-2 rounded-md px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
                   >
-                    {it}
-                  </span>
+                    <span className="shrink-0 text-stone-300">{SECTION_ICON[s.skill]}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-stone-700">{it}</span>
+                  </button>
                 ))}
-                {s.items.length > 4 && (
-                  <span className="rounded-md px-1 py-0.5 text-[10px] text-stone-400">
-                    +{s.items.length - 4}
-                  </span>
+                {s.items.length > 5 && (
+                  <div className="px-1 py-0.5 text-[11px] text-stone-300">还有 {s.items.length - 5} 项…</div>
                 )}
               </div>
-            )}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => onOpenSystem("appBundle")}
-          data-testid="xray-section-appBundle"
-          className="mt-1 flex w-full items-center gap-1.5 rounded-xl border border-dashed border-[#E7E2D9] px-2.5 py-2 text-[11px] font-semibold text-stone-500 transition hover:bg-[#FAF8F3]"
-        >
-          <Waypoints className="h-3.5 w-3.5 text-[#B0552F]" />
-          五系统联动总图
-          <span className="ml-auto font-normal text-stone-300">›</span>
-        </button>
+            </div>
+          ))}
+
+          <div data-testid="xray-section-appBundle">
+            <button
+              type="button"
+              onClick={() => onOpenSystem("appBundle")}
+              className="group flex w-full items-center gap-2 rounded-md px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
+            >
+              <Waypoints className="h-3.5 w-3.5 shrink-0 text-stone-300" />
+              <span className="text-[12.5px] text-stone-700">五系统联动总图</span>
+              <span className="ml-auto text-stone-300 opacity-0 transition group-hover:opacity-100">›</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
