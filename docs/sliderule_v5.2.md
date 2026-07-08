@@ -348,3 +348,104 @@ classDef runtime fill:#f5f5f4,stroke:#78716c,color:#292524
 **V5.3 增量（执行可见性 #4）**：P1 数据底座（ReasoningEvent + 透传）· P2 后端 emit（panel/dialogue/fallback + route + 脱敏）· P3 协作视图（默认展开 + challenges 非-depends_on 边 + verdict）· P4 思考链（子步链 + overview 角标 + viewMode）· P5 UI（三态 + 渲染新节点边 + streaming + 点击）· P6 打磨 + 文档 + 验证 + 合并。
 
 详见 `docs/sliderule_v5.3_*` 三件套。红线全守，DoD 满足（collaboration 默认立场+质疑边+裁决；reasoning 子步；三态/实时/点击；无额外 LLM；脱敏；兼容）。
+
+---
+
+## 完成度对账（2026-07-08 审查）
+
+上图是**推演引擎规格**（V5.1 脊柱 + V5.2 外环），逐块对照代码现状：
+
+| 图中区块 | 状态 | 备注 |
+|---|---|---|
+| DRIVE 驱动层（模式选择/马拉松/前沿/策略/会话预算/纪要） | ✅ 已落地 | marathon-driver + useSlideRuleSession 条件调用 |
+| SURF 交互面 | ✅ 已落地，**形态已大改** | 见下方 As-Built 全景：应用主舞台三态 + 游标 + 侧栏会话体系取代旧描述 |
+| CORE 控制平面（V5.1 脊柱） | ✅ 零改动保持 | |
+| ROLES 多角色面板接入 drive | ✅ 已落地 | resolveRoleMode + runPanelSession |
+| POOL 能力池 | ✅ 已落地 | |
+| TRUST 信任层（验真+验厚/基线/台账） | ✅ 已落地 | 生成侧另有 judge 量表 + 基线比对（图外，见全景） |
+| EXEC 执行层（执行器抽象/双端同源 prompt/KEYPOOL） | ✅ 已落地 | KEYPOOL 图注「待补：FIFO 排队 · per-key 计费」**仍未做**，标注继续有效 |
+| REENTRY / RUNTIME / OUT | ✅ 已落地 | |
+
+**引擎图未覆盖、已成为产品主线的部分**（本次审查新增下图补齐）：
+五系统生成主线（drive-full SSE → FiveSystemModel → 发布闭环 6/6 + closureHash）、
+浏览器运行时（schema 渲染真系统 + 角色联动 + AI 写回）、
+会话体系与持久化（Claude 式多会话 + 单条守卫式落盘，修复四个跨重启失忆 bug）、
+LLM 双通道（服务端真通道运行时覆盖 + 浏览器直连 BYOK 备用）、
+应用主舞台 + 游标透视（方向 B：五系统从并列切屏降为应用的透视层）。
+
+## As-Built 产品全景（2026-07-08 补图）
+
+```mermaid
+flowchart TB
+
+subgraph SHELL["产品外壳 / AgentLoop Shell"]
+  direction TB
+  SIDEBAR["侧栏：品牌(S型尺标) · 工作台 · 设置<br/>+ 新建会话 · 最近会话列表(两步删除)"]:::surface
+  SESSIONS_UI["会话壳：key=sessionId 整树重挂<br/>localStorage active-session-id + window 事件"]:::surface
+  SETTINGS["设置整页（三分类）<br/>推演通道(服务端) · 浏览器直连(BYOK+自定义) · 系统设置"]:::surface
+  WORKBENCH["工作台：服务健康 · 会话总览 · 质量基线"]:::surface
+end
+
+subgraph STAGE["右栏主舞台（方向 B：应用为主，五系统是游标透视层）"]
+  direction TB
+  THEATER["theater：推演剧场<br/>SSE 逐系统亮相（生成过程可见）"]:::runtime
+  APPSTAGE["app：运行应用整高主舞台<br/>AppRuntimeScreen（antd Pro 壳 · 多端画布缩放）"]:::runtime
+  BOARDF["board：证据看板回退<br/>（空会话/未闭环）"]:::runtime
+  CURSORP["游标透视栏（计算尺游标）<br/>页面级切片 + 元素级 AR 焦点<br/>(悬停列头/按钮/菜单 → 背后声明)"]:::surface
+  DRAWER["系统抽屉：单类别全幅<br/>DataModel/Workflow/RBAC/Page/AIGC/AppBundle 全保留"]:::surface
+end
+
+subgraph GEN["五系统生成主线 / drive-full"]
+  direction TB
+  SSE["python /drive-full-stream (SSE)<br/>skill_activated · skill_result · llm_delta"]:::core
+  FSM["五系统模型 / FiveSystemModel<br/>datamodel·workflow(phase泳道)·rbac·page·aigc·appbundle"]:::state
+  CLOSURE{"发布闭环 6/6<br/>perSkillEvidence · closureHash 版本钉扎"}:::gate
+  LINKAGE["联动图：分组容器+语义捆扎边<br/>React Flow / Mermaid 双态"]:::cap
+  JUDGE["生成质量：LLM-as-judge 量表(重试)<br/>+ 5 域基线比对（回归即 fail）"]:::trust
+end
+
+subgraph LIVERT["浏览器运行时 / Live Runtime（零后端）"]
+  direction TB
+  SCHEMA["deriveAppRuntimeSchema<br/>菜单/表格/表单/详情/工作台 全 JSON 化"]:::core
+  RTSTATE["运行时状态 localStorage(按会话分键)<br/>实体行·流程实例·当前角色(跨屏事件同步)"]:::state
+  AIWB["AI 写回：详情抽屉生成按钮<br/>→ /aigc-tryrun 真 LLM → 写回行字段"]:::cap
+end
+
+subgraph PERSIST["会话体系与持久化 / Python 权威"]
+  direction TB
+  SSTORE[("sessions.json 会话库<br/>save_session_record 单条守卫式合并<br/>(lastTurnId 单调版本闸)")]:::state
+  FIXES["跨重启失忆四修复：驱动器推进版本 ·<br/>create 不整体抹盘 · 坏记录跳过保留 ·<br/>关停不回滚快照"]:::trust
+  CHANNEL["LLM 真通道 llm_channel<br/>运行时覆盖(.llm-override) · 掩码 · 测试连接"]:::core
+end
+
+SIDEBAR --> SESSIONS_UI
+SESSIONS_UI -.整树重挂.-> STAGE
+SETTINGS -.通道配置.-> CHANNEL
+WORKBENCH -.只读拉取.-> SSTORE
+SSE --> FSM
+FSM --> CLOSURE
+FSM --> LINKAGE
+JUDGE -.生成侧质量闸.-> FSM
+CLOSURE -.闭环后落幕开演.-> APPSTAGE
+THEATER -.推演中.-> SSE
+APPSTAGE <--> CURSORP
+CURSORP -.深入.-> DRAWER
+FSM --> SCHEMA
+SCHEMA --> APPSTAGE
+APPSTAGE <--> RTSTATE
+AIWB --> RTSTATE
+CHANNEL -.五系统生成/评审/AI写回 同一通道.-> SSE
+SSE -.守卫式落盘.-> SSTORE
+FIXES -.保障.-> SSTORE
+SSTORE -.重启完整恢复.-> SESSIONS_UI
+
+classDef surface fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+classDef core fill:#e0e7ff,stroke:#6366f1,color:#312e81
+classDef cap fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+classDef gate fill:#fef3c7,stroke:#f59e0b,color:#78350f
+classDef trust fill:#cffafe,stroke:#06b6d4,color:#164e63
+classDef state fill:#f1f5f9,stroke:#64748b,color:#0f172a
+classDef runtime fill:#f5f5f4,stroke:#78716c,color:#292524
+```
+
+> 分工：上方引擎图管"怎么想清楚"（推演/闸门/台账），本图管"想清楚之后长成什么产品"（生成主线 → 闭环 → 可运行应用 → 游标透视）。两图共用 STATE/会话库为同一 authority。

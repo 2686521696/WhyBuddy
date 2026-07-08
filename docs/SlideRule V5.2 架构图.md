@@ -1,4 +1,6 @@
-%% SlideRule V5.2 架构图
+%% SlideRule V5.2 架构图（推演引擎规格）
+%% 2026-07-08 审查：本图各区块已全部落地（KEYPOOL 的 FIFO/per-key 计费仍如注待补）。
+%% 产品主线（五系统生成→闭环→运行应用→游标透视→会话持久化）见 docs/sliderule_v5.2.md 的「As-Built 产品全景」补图。
 %% V5.1 脊柱 (CORE 控制平面 + POOL 能力池 + 基础 REENTRY/RUNTIME/OUT) 零改动
 %% V5.2 外环 (◆) + U* 修订 (●)：Drive/Marathon 外层、U1 信任修订、U2 执行器拓扑 (browser-llm + KEYPOOL)、U4 用户语言化表面
 %% 符号说明:
