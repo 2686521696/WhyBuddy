@@ -468,15 +468,19 @@ function ClaudeChatSurface({
                       </div>
                     ) : (
                       <div className="space-y-2 text-[15px] leading-7 text-stone-800">
-                        <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
-                        <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
+                        {/* Claude 式顺序：折叠的推演过程 + 闭环徽标在前，总结正文在后
+                            （items-start：展开过程时徽标停在首行不跟着下坠） */}
+                        <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">
+                          <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
                           {publishClosure && (
-                            <span className="rounded-full bg-[#F0EDE5] px-2 py-0.5">
+                            <span className="mt-1 rounded-full bg-[#F0EDE5] px-2 py-0.5">
                               {publishClosure.blocked ? "blocked" : "closed"} {publishClosure.evidencePresentCount}/{publishClosure.skillCount}
                             </span>
                           )}
-                          {turn.main && (
+                        </div>
+                        <div className="prose prose-stone max-w-none prose-p:my-1 whitespace-pre-wrap">{answer}</div>
+                        {turn.main && (
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
                             <button
                               type="button"
                               onClick={() => onChallenge(turn.main!.artifactId)}
@@ -484,8 +488,8 @@ function ClaudeChatSurface({
                             >
                               质疑本轮
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

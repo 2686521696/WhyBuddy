@@ -27,15 +27,17 @@ export function LlmLiveOutput({
   const [collapsed, setCollapsed] = React.useState(false);
   const bodyRef = React.useRef<HTMLPreElement | null>(null);
 
-  // 流式 JSON 美化：每 +200 字符重解一次（容错解析未收尾 JSON），
-  // 拼不出对象时如实显示原始流。字符数统计始终按原文。
+  // 流式 JSON 美化：每 +200 字符重解一次（容错解析未收尾 JSON）。
+  // 只有"美化结果"走节流 memo；displayText 本身必须每帧跟随 text——
+  // 否则非 JSON 流会冻结在第一帧（曾踩过：正文停住、字符数还在涨）。
   const formatKey = formatJson ? Math.floor(text.length / 200) : -1;
-  const displayText = React.useMemo(() => {
-    if (!formatJson || !text) return text;
+  const pretty = React.useMemo(() => {
+    if (!formatJson || !text) return null;
     const parsed = repairPartialJson(text);
-    return parsed !== null ? JSON.stringify(parsed, null, 2) : text;
+    return parsed !== null ? JSON.stringify(parsed, null, 2) : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
   }, [formatJson, formatKey]);
+  const displayText = formatJson && pretty !== null ? pretty : text;
 
   // Claude 式跟随：新增量到达时自动滚到底（用户往回翻时不打扰）
   const stickToBottomRef = React.useRef(true);
