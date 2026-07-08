@@ -286,10 +286,13 @@ export function AppRuntimeScreen({
   model,
   sessionId,
   appTitle,
+  onActivePageChange,
 }: {
   model: FiveSystemModel;
   sessionId: string;
   appTitle?: string;
+  /** 当前页变化时上报（X 光透视栏跟随应用内导航） */
+  onActivePageChange?: (pageId: string) => void;
 }) {
   const schema = React.useMemo(
     () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
@@ -351,6 +354,11 @@ export function AppRuntimeScreen({
       setActivePageId("home");
     }
   }, [activePageId, pageAccess]);
+
+  React.useEffect(() => {
+    onActivePageChange?.(activePageId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePageId]);
 
   if (!schema) {
     return (

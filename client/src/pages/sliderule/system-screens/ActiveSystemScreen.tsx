@@ -15,6 +15,7 @@ import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
+  type FiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./five-system-model";
 import { DataModelScreen } from "./DataModelScreen";
@@ -37,6 +38,10 @@ interface ActiveSystemScreenProps {
   sessionId?: string;
   /** 运行应用标题（话题名） */
   appTitle?: string;
+  /** 已在上层解析好的五系统模型（传入则跳过内部解析，抽屉复用） */
+  model?: FiveSystemModel | null;
+  /** true = 填满父容器（抽屉形态），false = 16:9 主视图（默认） */
+  fill?: boolean;
   className?: string;
 }
 
@@ -48,26 +53,30 @@ export function ActiveSystemScreen({
   skillRuntimeGraph = null,
   sessionId,
   appTitle,
+  model,
+  fill = false,
   className = "",
 }: ActiveSystemScreenProps) {
   // 结构化五系统模型（一次解析，多屏共享做交叉引用）：
   //   live 路径 — SSE skill_result 累积的 skillContents（fenced JSON）；
   //   reload 路径 — 持久化 publishClosure.perSkillEvidence[*].modelSection。
   // 段级合并，live 段优先；两者皆空时各屏自行诚实降级。
-  const fiveSystemModel = useMemo(
+  const parsedModel = useMemo(
     () =>
-      mergeFiveSystemModels(
-        parseFiveSystemModelFromContents(skillContents),
-        parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
-      ),
-    [skillContents, publishClosure?.perSkillEvidence]
+      model !== undefined
+        ? null
+        : mergeFiveSystemModels(
+            parseFiveSystemModelFromContents(skillContents),
+            parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
+          ),
+    [model, skillContents, publishClosure?.perSkillEvidence]
   );
+  const fiveSystemModel = model !== undefined ? model : parsedModel;
 
-  // 16:9 aspect ratio wrapper
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-sm ${className}`}
-      style={{ aspectRatio: "16 / 9" }}
+      className={`relative w-full overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-sm ${fill ? "h-full" : ""} ${className}`}
+      style={fill ? undefined : { aspectRatio: "16 / 9" }}
     >
       <div className="absolute inset-0">
         {/* Each screen is mounted but only the active one is fully visible.
