@@ -29,6 +29,16 @@ import { Crosshair, X } from "lucide-react";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
+/** 抽屉标题：系统的中文名（游标语境下不再用英文胶囊） */
+const SKILL_LABELS: Record<SkillId, string> = {
+  dataModel: "数据模型",
+  workflow: "工作流",
+  rbac: "角色权限",
+  page: "页面",
+  aigc: "AI 能力",
+  appBundle: "应用装配 · 联动总图",
+};
+
 interface SlideRuleStudioProps {
   // --- Chat panel (left) ---
   chatSlot: React.ReactNode;
@@ -208,47 +218,40 @@ export function SlideRuleStudio({
           </>
         )}
 
-        {/* 系统屏抽屉：游标深入入口；六系统在抽屉头横向切换（全部保留，不再是主界面并列切屏） */}
+        {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
         {drawerSkill && (
-          <>
-            <div
-              className="absolute inset-0 z-30 bg-[#2A2620]/30 backdrop-blur-[2px]"
-              onClick={() => setDrawerSkill(null)}
-            />
-            <div
-              className="absolute bottom-0 right-0 top-0 z-40 flex w-[min(92%,1080px)] flex-col gap-2 border-l border-[#E7E2D9] bg-[#FAF9F5] p-3 shadow-[-18px_0_50px_rgb(68_60_44/0.25)]"
-              data-testid="sliderule-system-drawer"
-            >
-              <div className="flex shrink-0 items-center gap-2">
-                <SkillThumbnailBar
-                  activeSkillId={drawerSkill}
-                  publishClosure={publishClosure}
-                  onSelect={setDrawerSkill}
-                />
-                <button
-                  type="button"
-                  onClick={() => setDrawerSkill(null)}
-                  data-testid="sliderule-system-drawer-close"
-                  className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E7E2D9] bg-white text-stone-500 transition hover:bg-[#FAF8F3]"
-                  title="关闭（Esc）"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <ActiveSystemScreen
-                activeSkillId={drawerSkill}
-                publishClosure={publishClosure}
-                latestMermaid={latestMermaid}
-                skillContents={skillContents}
-                skillRuntimeGraph={skillRuntimeGraph}
-                sessionId={sessionId}
-                appTitle={appTitle}
-                model={fiveSystemModel}
-                fill
-                className="min-h-0 flex-1"
-              />
+          <div
+            className="absolute inset-0 z-40 flex flex-col bg-[#FAF9F5]"
+            data-testid="sliderule-system-drawer"
+          >
+            <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
+              <span className="text-[13px] font-semibold text-stone-800">
+                {SKILL_LABELS[drawerSkill]}
+              </span>
+              <span className="text-[11px] text-stone-400">游标透视 · 应用背后的声明</span>
+              <button
+                type="button"
+                onClick={() => setDrawerSkill(null)}
+                data-testid="sliderule-system-drawer-close"
+                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
+                title="关闭（Esc）"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          </>
+            <ActiveSystemScreen
+              activeSkillId={drawerSkill}
+              publishClosure={publishClosure}
+              latestMermaid={latestMermaid}
+              skillContents={skillContents}
+              skillRuntimeGraph={skillRuntimeGraph}
+              sessionId={sessionId}
+              appTitle={appTitle}
+              model={fiveSystemModel}
+              fill
+              className="min-h-0 flex-1"
+            />
+          </div>
         )}
       </div>
     </div>

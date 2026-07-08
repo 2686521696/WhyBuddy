@@ -1278,11 +1278,14 @@ export function DashboardApp({
           getViewPath={getViewPath}
         />
         <Layout className="native-main native-agent-main">
-          <AgentLoopTopbar
-            view={view}
-            showActions={view === 'workbench-legacy' || view === 'settings-legacy'}
-            pythonHealth={pythonHealth}
-          />
+          {/* 推演视图不渲染顶部栏（用户反馈：纯冗余，SlideRule HUD 已含话题/操作） */}
+          {view !== 'sliderule' && (
+            <AgentLoopTopbar
+              view={view}
+              showActions={view === 'workbench-legacy' || view === 'settings-legacy'}
+              pythonHealth={pythonHealth}
+            />
+          )}
           <Content className={contentClassName}>
             {view === 'workbench'
               ? <MainlineWorkbench />

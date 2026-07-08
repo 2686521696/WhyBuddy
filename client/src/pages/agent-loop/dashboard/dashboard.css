@@ -55,28 +55,31 @@
 
 .native-agent-brand-icon {
   display: block;
-  height: 40px;
-  width: 40px;
+  height: 46px;
+  width: 46px;
 }
 
 .native-agent-brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  gap: 1px;
+  line-height: 1.1;
   min-width: 0;
 }
 
 .native-agent-brand-name {
   color: #14295E;
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: 0.01em;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .native-agent-brand-domain {
-  color: #9a938a;
+  color: #a39c92;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
 }
 
 .native-agent-nav {
