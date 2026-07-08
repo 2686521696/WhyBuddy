@@ -36,6 +36,7 @@ import {
   Drawer,
   Descriptions,
   ConfigProvider,
+  theme as antdTheme,
   message,
 } from "antd";
 import {
@@ -311,6 +312,7 @@ export function AppRuntimeScreen({
   }
 
   const isPhone = device === "phone";
+  const isTablet = device === "tablet";
   const isHome = activePageId === "home";
   const page: AppPageSchema | null = isHome
     ? null
@@ -611,6 +613,106 @@ export function AppRuntimeScreen({
     </div>
   );
 
+  const detailInstances = detailRow
+    ? state.instances.filter((i) => i.entityRef?.rowId === detailRow.id)
+    : [];
+
+  // 详情内容块：桌面/手机走 Drawer，平板走右栏主从面板（同一 JSX 两处挂载）
+  const detailBody = detailRow && page && (
+                <>
+                  <Descriptions
+                    size="small"
+                    column={1}
+                    items={page.detailFields.map((f) => ({
+                      key: f.id,
+                      label: page.entityId ? (
+                        <span {...probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })}>
+                          {f.label}
+                        </span>
+                      ) : (
+                        f.label
+                      ),
+                      children:
+                        detailRow.values[f.id] === undefined || detailRow.values[f.id] === ""
+                          ? "—"
+                          : String(detailRow.values[f.id]),
+                    }))}
+                  />
+                  {page.aiActions.length > 0 && (
+                    <>
+                      <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
+                        AI 能力 · {page.aiActions.length}
+                      </div>
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {page.aiActions.map((action) => (
+                          <div key={action.capId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span {...probe({ kind: "ai", capId: action.capId, label: action.label })}>
+                              <Button
+                                size="small"
+                                type="primary"
+                                ghost
+                                data-testid={`app-ai-action-${action.capId}`}
+                                loading={aiRunningCapId === action.capId}
+                                disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
+                                onClick={() => runAiAction(action)}
+                              >
+                                ✨ {action.label}
+                              </Button>
+                            </span>
+                            <span style={{ fontSize: 11, color: INK.faint }}>
+                              → 写回「{action.outputLabel}」
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {aiRunningCapId && (
+                        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
+                          真 LLM 生成中……（与五系统生成同一通道）
+                        </div>
+                      )}
+                      {aiError && (
+                        <div
+                          data-testid="app-ai-error"
+                          style={{
+                            marginTop: 8,
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            background: "#fff2f0",
+                            border: "1px solid #ffccc7",
+                            fontSize: 11,
+                            color: "#cf1322",
+                          }}
+                        >
+                          <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{aiError.code}</span>
+                          <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
+                    关联审批实例 · {detailInstances.length}
+                  </div>
+                  {detailInstances.length === 0 ? (
+                    <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
+                      本行尚未提交审批
+                    </div>
+                  ) : (
+                    detailInstances.map((inst) => {
+                      const meta = STATUS_META[inst.status] ?? STATUS_META.running;
+                      return (
+                        <div key={inst.id} style={{ marginTop: 8, fontSize: 12, color: INK.label }}>
+                          {inst.title} · {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
+                          <Tag style={{ marginLeft: 8 }} color={inst.status === "running" ? "processing" : inst.status === "completed" ? "success" : "error"}>
+                            {meta.label}
+                          </Tag>
+                        </div>
+                      );
+                    })
+                  )}
+                </>
+              );
+
   const pageContent = page && (
     <Card
       size="small"
@@ -686,15 +788,48 @@ export function AppRuntimeScreen({
           })}
         </div>
       )}
-      <Table
-        size="middle"
-        rowKey="id"
-        columns={columns as any}
-        dataSource={rows}
-        onRow={(row) => ({ onClick: () => setDetailRow(row as RuntimeRow), style: { cursor: "pointer" } })}
-        pagination={rows.length > 8 ? { pageSize: 8 } : false}
-        locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
-      />
+      {isTablet ? (
+        // 平板范式：紧凑双栏（iPad 式主从视图）——左列表右详情，详情不走 Drawer
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }} data-testid="app-runtime-tablet-split">
+          <div style={{ flex: 3, minWidth: 0 }}>
+            <Table
+              size="small"
+              rowKey="id"
+              // 双栏下收窄列表：最多 4 个数据列 + 操作列（字段少时不重复操作列）
+              columns={columns.slice(0, Math.min(4, columns.length - 1)).concat(columns.slice(-1)) as any}
+              dataSource={rows}
+              onRow={(row) => ({ onClick: () => setDetailRow(row as RuntimeRow), style: { cursor: "pointer" } })}
+              rowClassName={(row) => ((row as RuntimeRow).id === detailRow?.id ? "ant-table-row-selected" : "")}
+              pagination={rows.length > 10 ? { pageSize: 10 } : false}
+              locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
+            />
+          </div>
+          <Card
+            size="small"
+            title={detailRow ? "详情" : "详情 · 未选中"}
+            style={{ flex: 2, minWidth: 0 }}
+            data-testid="app-runtime-tablet-detail"
+          >
+            {detailRow ? (
+              detailBody
+            ) : (
+              <div style={{ fontSize: 12, color: INK.faint, padding: "24px 0", textAlign: "center" }}>
+                点击左侧行查看详情与 AI 能力
+              </div>
+            )}
+          </Card>
+        </div>
+      ) : (
+        <Table
+          size="middle"
+          rowKey="id"
+          columns={columns as any}
+          dataSource={rows}
+          onRow={(row) => ({ onClick: () => setDetailRow(row as RuntimeRow), style: { cursor: "pointer" } })}
+          pagination={rows.length > 8 ? { pageSize: 8 } : false}
+          locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
+        />
+      )}
     </Card>
   );
 
@@ -818,9 +953,6 @@ export function AppRuntimeScreen({
     </div>
   );
 
-  const detailInstances = detailRow
-    ? state.instances.filter((i) => i.entityRef?.rowId === detailRow.id)
-    : [];
 
   return (
     <div
@@ -844,7 +976,10 @@ export function AppRuntimeScreen({
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
           }}
         >
-          <ConfigProvider getPopupContainer={() => canvasEl ?? document.body}>
+          <ConfigProvider
+              getPopupContainer={() => canvasEl ?? document.body}
+              theme={isTablet ? { algorithm: antdTheme.compactAlgorithm } : undefined}
+            >
             {isPhone ? phoneShell : desktopShell}
 
             <Modal
@@ -893,7 +1028,7 @@ export function AppRuntimeScreen({
 
             <Drawer
               title={`详情 · ${page?.title ?? currentTitle}`}
-              open={detailRow !== null}
+              open={detailRow !== null && !isTablet}
               onClose={() => {
                 setDetailRow(null);
                 setAiError(null);
@@ -905,100 +1040,7 @@ export function AppRuntimeScreen({
               getContainer={() => canvasEl ?? document.body}
               data-testid="app-runtime-detail"
             >
-              {detailRow && page && (
-                <>
-                  <Descriptions
-                    size="small"
-                    column={1}
-                    items={page.detailFields.map((f) => ({
-                      key: f.id,
-                      label: page.entityId ? (
-                        <span {...probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })}>
-                          {f.label}
-                        </span>
-                      ) : (
-                        f.label
-                      ),
-                      children:
-                        detailRow.values[f.id] === undefined || detailRow.values[f.id] === ""
-                          ? "—"
-                          : String(detailRow.values[f.id]),
-                    }))}
-                  />
-                  {page.aiActions.length > 0 && (
-                    <>
-                      <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
-                        AI 能力 · {page.aiActions.length}
-                      </div>
-                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                        {page.aiActions.map((action) => (
-                          <div key={action.capId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span {...probe({ kind: "ai", capId: action.capId, label: action.label })}>
-                              <Button
-                                size="small"
-                                type="primary"
-                                ghost
-                                data-testid={`app-ai-action-${action.capId}`}
-                                loading={aiRunningCapId === action.capId}
-                                disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
-                                onClick={() => runAiAction(action)}
-                              >
-                                ✨ {action.label}
-                              </Button>
-                            </span>
-                            <span style={{ fontSize: 11, color: INK.faint }}>
-                              → 写回「{action.outputLabel}」
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {aiRunningCapId && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
-                          真 LLM 生成中……（与五系统生成同一通道）
-                        </div>
-                      )}
-                      {aiError && (
-                        <div
-                          data-testid="app-ai-error"
-                          style={{
-                            marginTop: 8,
-                            padding: "6px 10px",
-                            borderRadius: 8,
-                            background: "#fff2f0",
-                            border: "1px solid #ffccc7",
-                            fontSize: 11,
-                            color: "#cf1322",
-                          }}
-                        >
-                          <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{aiError.code}</span>
-                          <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
-                    关联审批实例 · {detailInstances.length}
-                  </div>
-                  {detailInstances.length === 0 ? (
-                    <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
-                      本行尚未提交审批
-                    </div>
-                  ) : (
-                    detailInstances.map((inst) => {
-                      const meta = STATUS_META[inst.status] ?? STATUS_META.running;
-                      return (
-                        <div key={inst.id} style={{ marginTop: 8, fontSize: 12, color: INK.label }}>
-                          {inst.title} · {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
-                          <Tag style={{ marginLeft: 8 }} color={inst.status === "running" ? "processing" : inst.status === "completed" ? "success" : "error"}>
-                            {meta.label}
-                          </Tag>
-                        </div>
-                      );
-                    })
-                  )}
-                </>
-              )}
+              {detailBody}
             </Drawer>
           </ConfigProvider>
         </div>
