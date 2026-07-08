@@ -133,7 +133,8 @@ export function SlideRuleStudio({
       </div>
 
       {/* Right panel — 62% — 主舞台 */}
-      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#F5F1EA] p-4">
+      {/* 与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一） */}
+      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#FAF9F5] p-4">
         {stage === "app" && fiveSystemModel ? (
           <>
             {/* 应用主舞台：细头条（话题 + X 光开关），其下应用整高铺满 */}
@@ -161,7 +162,8 @@ export function SlideRuleStudio({
               </button>
             </div>
             <div className="flex min-h-0 flex-1 gap-3" data-testid="sliderule-app-stage">
-              <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-sm">
+              {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <AppRuntimeScreen
                   model={fiveSystemModel}
                   sessionId={sessionId ?? "sliderule-v51-product"}
@@ -214,7 +216,7 @@ export function SlideRuleStudio({
               onClick={() => setDrawerSkill(null)}
             />
             <div
-              className="absolute bottom-0 right-0 top-0 z-40 flex w-[min(92%,1080px)] flex-col gap-2 border-l border-[#E7E2D9] bg-[#F5F1EA] p-3 shadow-[-18px_0_50px_rgb(68_60_44/0.25)]"
+              className="absolute bottom-0 right-0 top-0 z-40 flex w-[min(92%,1080px)] flex-col gap-2 border-l border-[#E7E2D9] bg-[#FAF9F5] p-3 shadow-[-18px_0_50px_rgb(68_60_44/0.25)]"
               data-testid="sliderule-system-drawer"
             >
               <div className="flex shrink-0 items-center gap-2">

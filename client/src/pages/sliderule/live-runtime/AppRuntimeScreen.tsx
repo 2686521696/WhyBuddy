@@ -887,7 +887,7 @@ export function AppRuntimeScreen({
     <div
       ref={fitRef}
       className="relative flex h-full w-full items-center justify-center overflow-hidden"
-      style={{ background: "#E9E5DB" }}
+      style={{ background: "transparent" }}
       data-testid="app-runtime-screen"
     >
       <div style={{ width: spec.w * scale, height: spec.h * scale, position: "relative" }}>
