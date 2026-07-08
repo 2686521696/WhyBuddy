@@ -6,8 +6,9 @@
  */
 export const autopilotTheme = {
   /** Full-screen canvas host — graph under floating HUD layers. */
+  /* 纯平 #FAF9F5：与左右面板同底，底部指令条区域不再出现渐变异色带（用户反馈） */
   immersionPage:
-    "relative h-screen w-screen overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#FDFCF9_0,#FAF9F5_38%,#F3EFE7_100%)] text-[#1F1E1B]",
+    "relative h-screen w-screen overflow-hidden bg-[#FAF9F5] text-[#1F1E1B]",
   immersionCanvas: "absolute inset-0 z-0",
   immersionOverlayTop:
     "pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 px-2 pt-2 sm:gap-2.5 sm:px-3 sm:pt-2",

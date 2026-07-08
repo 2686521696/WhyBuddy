@@ -336,11 +336,7 @@ function ClaudeChatSurface({
 
   return (
     <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[#FAF9F5] text-[#1F1E1B]">
-      {/* 底部暖色波纹（装饰，样式版）：不拦截事件、不参与布局 */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-44 bg-[radial-gradient(120%_100%_at_20%_100%,rgb(243_231_220/0.85)_0%,rgb(243_231_220/0.35)_45%,transparent_75%)]"
-      />
+      {/* 底部暖色波纹装饰已移除：与指令条区域形成异色带（用户反馈颜色接不上） */}
       {/* Chat area */}
       <div className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 sm:px-6">
         {uiTurns.length === 0 ? (
