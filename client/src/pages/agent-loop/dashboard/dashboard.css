@@ -2442,3 +2442,11 @@
   color: #a49c8c;
   font-size: 10px;
 }
+
+/* 帮助文档行：分隔线以下内容严格垂直居中（10px 上间距进 padding，内容盒 44px 居中） */
+.native-agent-help {
+  border-radius: 0;
+  border-top: 1px solid #EFEAE1;
+  height: 54px;
+  padding: 10px 12px 0;
+}
