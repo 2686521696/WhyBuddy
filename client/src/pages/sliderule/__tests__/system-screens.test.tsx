@@ -276,6 +276,46 @@ describe("five-system-model 解析", () => {
     expect(resolveFieldRef("nonexistent.field", MODEL).resolved).toBe(false);
     expect(resolveFieldRef("noDotRef", MODEL).resolved).toBe(false);
   });
+
+  it("workflow.chains 与 appbundle.invariants 随段存活（解析 + reload 重建路径）", () => {
+    const withExtras: FiveSystemModel = {
+      ...MODEL,
+      workflow: {
+        ...MODEL.workflow,
+        chains: [
+          {
+            id: "wf_refund",
+            name: "退费链路",
+            kind: "money",
+            nodes: [{ id: "refund_apply", name: "申请退费", assigneeRole: "student" }],
+            transitions: [],
+          },
+        ],
+      },
+      appbundle: {
+        ...MODEL.appbundle,
+        invariants: [
+          {
+            id: "inv_refund",
+            statement: "退费只能由服务端回调确认",
+            systems: ["workflow"],
+            refs: ["refund_apply"],
+          },
+        ],
+      },
+    };
+    const parsed = parseFiveSystemModel(JSON.stringify(withExtras));
+    expect(parsed?.workflow?.chains?.[0]?.id).toBe("wf_refund");
+    expect(parsed?.appbundle?.invariants?.[0]?.statement).toContain("服务端回调");
+    const rebuilt = parseFiveSystemModelFromPerSkillEvidence({
+      workflow: { modelSection: withExtras.workflow },
+      appbundle: { modelSection: withExtras.appbundle },
+    });
+    expect(rebuilt?.workflow?.chains).toHaveLength(1);
+    expect(rebuilt?.appbundle?.invariants).toHaveLength(1);
+    // 链路与 WorkflowSection 同构 → mermaid 构建器直接复用
+    expect(workflowModelToMermaid(withExtras.workflow!.chains![0])).toContain("申请退费");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -332,6 +372,37 @@ describe("WorkflowScreen", () => {
     expect(html).toContain('data-testid="screen-empty-hint"');
     expect(html).toContain("业务流程图");
     expect(html).not.toContain("跨系统联动");
+  });
+
+  it("多链路：chains 在场渲染业务链路切换条（主链路 + 链路名 + kind 中文标签）", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      workflow: {
+        ...MODEL.workflow,
+        chains: [
+          {
+            id: "wf_refund",
+            name: "退费链路",
+            kind: "money",
+            nodes: [{ id: "refund_apply", name: "申请退费", assigneeRole: "student" }],
+            transitions: [],
+          },
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(<WorkflowScreen model={model} />);
+    expect(html).toContain('data-testid="workflow-chain-tabs"');
+    expect(html).toContain('data-testid="workflow-chain-primary"');
+    expect(html).toContain('data-testid="workflow-chain-wf_refund"');
+    expect(html).toContain("退费链路");
+    expect(html).toContain("资金"); // kind: money → 中文标签
+    // 默认选中主链路：计数仍是主链路的 3 节点 2 转移
+    expect(html).toContain("3 节点 · 2 转移");
+  });
+
+  it("无 chains → 不渲染链路切换条（老模型零变化）", () => {
+    const html = renderToStaticMarkup(<WorkflowScreen model={MODEL} />);
+    expect(html).not.toContain('data-testid="workflow-chain-tabs"');
   });
 });
 
@@ -425,6 +496,38 @@ describe("AppBundleScreen", () => {
     expect(html).toContain("✗ no_such_entity");
     // dataModelRefs resolved → 实体名
     expect(html).toContain("课程");
+  });
+
+  it("appbundle.invariants 在场渲染系统不变式面板（陈述 + 系统 + 落地引用）", () => {
+    const model: FiveSystemModel = {
+      ...MODEL,
+      appbundle: {
+        ...MODEL.appbundle,
+        invariants: [
+          {
+            id: "inv_pay",
+            statement: "支付状态只能由服务端验签回调修改",
+            systems: ["workflow", "datamodel"],
+            refs: ["course.title"],
+          },
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(
+      <AppBundleScreen model={model} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(html).toContain('data-testid="appbundle-invariants"');
+    expect(html).toContain("系统不变式");
+    expect(html).toContain("支付状态只能由服务端验签回调修改");
+    expect(html).toContain("course.title");
+    expect(html).toContain("workflow");
+  });
+
+  it("无 invariants → 不渲染不变式面板（老模型零变化）", () => {
+    const html = renderToStaticMarkup(
+      <AppBundleScreen model={MODEL} publishClosure={CLOSURE_CLOSED} />
+    );
+    expect(html).not.toContain('data-testid="appbundle-invariants"');
   });
 
   it("空态：无 publishClosure → 诚实提示，无绑定区", () => {

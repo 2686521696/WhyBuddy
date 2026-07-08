@@ -13,6 +13,7 @@ import {
 } from "../live-runtime/runtime-snapshot";
 import {
   assembleRuntimeSnapshotMdForState,
+  deriveInvariantsMdForState,
   serializeSlideRuleDeliveryMd,
 } from "../serialize-sliderule-delivery-md";
 import { saveRuntimeState, saveRuntimeRole } from "../live-runtime/runtime-persistence";
@@ -121,6 +122,48 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
     // 附录插在审计明细之前
     expect(withSnap.indexOf(RUNTIME_SNAPSHOT_HEADER)).toBeLessThan(
       withSnap.indexOf("## 审计明细")
+    );
+  });
+
+  it("系统不变式段：appbundle.invariants 在场才出段（陈述 + 约束系统 + 落地引用）", () => {
+    const stateWithInvariants = {
+      sessionId: "s-inv",
+      artifacts: [],
+      publishClosure: {
+        perSkillEvidence: {
+          appbundle: {
+            modelSection: {
+              pageBindings: [],
+              invariants: [
+                {
+                  id: "inv_pay_callback",
+                  statement: "支付状态只能由服务端验签回调修改",
+                  systems: ["workflow", "datamodel"],
+                  refs: ["recharge_order.payment_status"],
+                },
+                { id: "inv_bare", statement: "扣费先于上游请求" },
+              ],
+            },
+          },
+        },
+      },
+    } as any;
+
+    const md = deriveInvariantsMdForState(stateWithInvariants)!;
+    expect(md).toContain("## 系统不变式");
+    expect(md).toContain("1. 支付状态只能由服务端验签回调修改");
+    expect(md).toContain("约束系统: workflow/datamodel");
+    expect(md).toContain("`recharge_order.payment_status`");
+    expect(md).toContain("2. 扣费先于上游请求");
+
+    const delivery = serializeSlideRuleDeliveryMd(stateWithInvariants);
+    expect(delivery).toContain("## 系统不变式");
+    expect(delivery.indexOf("## 系统不变式")).toBeLessThan(delivery.indexOf("## 审计明细"));
+
+    // 无 invariants → null，交付物逐字节不变
+    expect(deriveInvariantsMdForState({ sessionId: "s1", artifacts: [] } as any)).toBeNull();
+    expect(serializeSlideRuleDeliveryMd({ sessionId: "s1", artifacts: [] } as any)).not.toContain(
+      "## 系统不变式"
     );
   });
 });

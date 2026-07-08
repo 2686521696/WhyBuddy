@@ -120,6 +120,15 @@ export function serializeSlideRuleDeliveryMd(
     lines.push("");
   }
 
+  // 系统不变式（总装约束层）：模型带 appbundle.invariants 才出段——
+  // 成熟系统的架构文档必然沉淀这一层（见 docs/reverse-eval-ai-artist-saas.md），
+  // 交付物如实透出：陈述 + 约束系统 + 落地引用（门禁已保证 refs 可解析）。
+  const invariantsMd = deriveInvariantsMdForState(state);
+  if (invariantsMd) {
+    lines.push(invariantsMd.trim());
+    lines.push("");
+  }
+
   // 排练运行时快照（M3）：有数据才出段，交付物固定格式不变，只多一个附录
   if (opts.runtimeSnapshotMd) {
     lines.push(opts.runtimeSnapshotMd.trim());
@@ -375,6 +384,32 @@ export function enrichReportWriteWithRuntimeClosure(
  * 装配排练运行时快照：localStorage 里的运行时状态 + 当前角色 + 模型（字段名标注）。
  * 读不到/无数据 → null，交付物与从前逐字节一致。
  */
+/**
+ * 系统不变式段（改进②）：从 perSkillEvidence 重建的模型里取 appbundle.invariants。
+ * 无模型/无不变式 → null，交付物与从前逐字节一致。
+ */
+export function deriveInvariantsMdForState(state: V5SessionState): string | null {
+  try {
+    const model = parseFiveSystemModelFromPerSkillEvidence(
+      (state as any).publishClosure?.perSkillEvidence
+    );
+    const invariants = model?.appbundle?.invariants ?? [];
+    if (invariants.length === 0) return null;
+    const lines: string[] = ["## 系统不变式（必须恒真的总装约束）", ""];
+    invariants.forEach((inv, i) => {
+      const systems = (inv.systems ?? []).join("/");
+      const refs = (inv.refs ?? []).join(", ");
+      const meta = [systems && `约束系统: ${systems}`, refs && `落地引用: \`${refs}\``]
+        .filter(Boolean)
+        .join(" · ");
+      lines.push(`${i + 1}. ${inv.statement || inv.id || "（未命名）"}${meta ? ` — ${meta}` : ""}`);
+    });
+    return lines.join("\n");
+  } catch {
+    return null;
+  }
+}
+
 export function assembleRuntimeSnapshotMdForState(state: V5SessionState): string | null {
   try {
     const sessionId = state.sessionId || "";

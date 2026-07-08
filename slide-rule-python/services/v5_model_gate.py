@@ -105,17 +105,32 @@ def _collect_page_ids(page: Dict[str, Any]) -> set:
     return ids
 
 
+def _iter_workflow_chains(workflow: Dict[str, Any]):
+    """Yield (path_label, chain_dict) for the primary chain + optional extra chains.
+
+    多链路（改进①，见 docs/reverse-eval-ai-artist-saas.md）：顶层 id/nodes/transitions
+    仍是主链路（老模型/老消费者零破坏），`chains` 携带资金/治理/补偿等附加链路，
+    结构与主链路同构。
+    """
+    yield "workflow", workflow
+    for i, chain in enumerate(_as_list(workflow.get("chains"))):
+        cd = _as_dict(chain)
+        label = str(cd.get("id") or cd.get("name") or i)
+        yield f"workflow.chains[{label}]", cd
+
+
 def _collect_workflow_ids(workflow: Dict[str, Any]) -> set:
-    """Workflow is referenced by its top-level id and/or node ids."""
+    """Workflow is referenced by its top-level id, chain ids, and/or node ids."""
     ids: set = set()
-    wid = str(workflow.get("id") or workflow.get("name") or "").strip()
-    if wid:
-        ids.add(wid)
-    for node in _as_list(workflow.get("nodes")):
-        nd = _as_dict(node)
-        nid = str(nd.get("id") or nd.get("name") or "").strip()
-        if nid:
-            ids.add(nid)
+    for _path, chain in _iter_workflow_chains(workflow):
+        wid = str(chain.get("id") or chain.get("name") or "").strip()
+        if wid:
+            ids.add(wid)
+        for node in _as_list(chain.get("nodes")):
+            nd = _as_dict(node)
+            nid = str(nd.get("id") or nd.get("name") or "").strip()
+            if nid:
+                ids.add(nid)
     return ids
 
 
@@ -160,16 +175,17 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
     if not page_ids:
         findings.append(_finding(EMPTY_SECTION, "page.pages", "page has no pages", skill="page"))
 
-    # 2. workflow node assigneeRole ∈ rbac.roles
-    for node in _as_list(workflow.get("nodes")):
-        nd = _as_dict(node)
-        role = str(nd.get("assigneeRole") or "").strip()
-        if role and role not in role_ids:
-            findings.append(_finding(
-                DANGLING, f"workflow.nodes[{nd.get('id') or nd.get('name')}].assigneeRole",
-                f"workflow node assignee role '{role}' not found in rbac.roles",
-                ref=role, skill="workflow",
-            ))
+    # 2. workflow node assigneeRole ∈ rbac.roles — 主链路与附加链路（chains）同一标准
+    for chain_path, chain in _iter_workflow_chains(workflow):
+        for node in _as_list(chain.get("nodes")):
+            nd = _as_dict(node)
+            role = str(nd.get("assigneeRole") or "").strip()
+            if role and role not in role_ids:
+                findings.append(_finding(
+                    DANGLING, f"{chain_path}.nodes[{nd.get('id') or nd.get('name')}].assigneeRole",
+                    f"workflow node assignee role '{role}' not found in rbac.roles",
+                    ref=role, skill="workflow",
+                ))
 
     # 3. page fieldBindings ∈ datamodel fields; actionPermissions ∈ rbac.permissions
     for p in _as_list(page.get("pages")):
@@ -263,5 +279,41 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                 DANGLING, "appbundle.dataModelRefs",
                 f"appbundle dataModelRef '{ref}' not found in datamodel entities", ref=ref, skill="appbundle",
             ))
+
+    # 7. appbundle.invariants（改进②，可选）：老模型没有该字段 → 不罚；出现即校验——
+    #    refs 必须解析到本模型内的实体/字段/角色/权限/流程节点，systems 必须是已知系统名。
+    #    宽泛口号（无 refs）也算失败：不变式的价值就在于可对照模型检查。
+    #    落在 appbundle（总装段）而非顶层：随 per-skill 证据通道原样到达客户端。
+    known_ref_ids = field_refs | role_ids | perm_ids | page_ids | workflow_ids
+    for inv in _as_list(appbundle.get("invariants")):
+        iv = _as_dict(inv)
+        iid = str(iv.get("id") or iv.get("statement") or "").strip()[:60] or "<unnamed>"
+        refs = [str(r).strip() for r in _as_list(iv.get("refs")) if str(r).strip()]
+        if not str(iv.get("statement") or "").strip():
+            findings.append(_finding(
+                EMPTY_SECTION, f"invariants[{iid}].statement",
+                "invariant has no statement", skill="invariants",
+            ))
+        if not refs:
+            findings.append(_finding(
+                DANGLING, f"invariants[{iid}].refs",
+                "invariant has no refs — ungrounded constraints are not checkable",
+                skill="invariants",
+            ))
+        for ref in refs:
+            if ref not in known_ref_ids:
+                findings.append(_finding(
+                    DANGLING, f"invariants[{iid}].refs",
+                    f"invariant ref '{ref}' not found in model (entity/field/role/permission/page/workflow node)",
+                    ref=ref, skill="invariants",
+                ))
+        for system in _as_list(iv.get("systems")):
+            sname = str(system).strip()
+            if sname and sname not in SKILL_KEYS:
+                findings.append(_finding(
+                    DANGLING, f"invariants[{iid}].systems",
+                    f"invariant system '{sname}' is not one of {SKILL_KEYS}",
+                    ref=sname, skill="invariants",
+                ))
 
     return {"passed": len(findings) == 0, "findings": findings}

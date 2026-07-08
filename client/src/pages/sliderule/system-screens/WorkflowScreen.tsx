@@ -47,6 +47,14 @@ function extractFlow(text: string): string | null {
   return null;
 }
 
+/** 链路 kind → 中文标签（未知 kind 原样透出，不猜） */
+const CHAIN_KIND_LABEL: Record<string, string> = {
+  money: "资金",
+  lifecycle: "生命周期",
+  governance: "治理",
+  recovery: "补偿",
+};
+
 export function WorkflowScreen({
   publishClosure,
   mermaidSource,
@@ -57,13 +65,31 @@ export function WorkflowScreen({
   className = "",
 }: WorkflowScreenProps) {
   const workflow = model?.workflow;
-  const nodes = workflow?.nodes ?? [];
-  const transitions = workflow?.transitions ?? [];
+  const chains = workflow?.chains ?? [];
+  // 多链路（改进②评测暴露的缺口）：顶层 nodes/transitions 是主链路，
+  // chains 携带资金/治理/补偿等附加链路；此处选中的链路驱动图面与图例。
+  const [chainId, setChainId] = useState<string>("primary");
+  const activeChain = useMemo(
+    () => (chainId === "primary" ? null : chains.find((c) => (c.id || c.name) === chainId) ?? null),
+    [chainId, chains]
+  );
+  const activeWorkflow = activeChain
+    ? { id: activeChain.id, nodes: activeChain.nodes, transitions: activeChain.transitions }
+    : workflow;
+  const nodes = activeWorkflow?.nodes ?? [];
+  const transitions = activeWorkflow?.transitions ?? [];
+  // 链路切换时给 WorkflowGraph 一个替身模型（rbac 等段保留做角色解析）；
+  // 试运行实例只挂主链路节点，附加链路上自然无高亮——不伪造。
+  const graphModel = useMemo(
+    () => (activeChain && model ? { ...model, workflow: activeWorkflow } : model),
+    [activeChain, model, activeWorkflow]
+  );
   // 试运行（浏览器运行时）：模型在场才可用——像 ECharts 一样把 workflow 段
   // 渲染成可操作的审批状态机（发起/通过/驳回/分支/日志，零后端）。
+  // 试运行内核只跑主链路（live-runtime 以 model.workflow 为准）。
   const [screenMode, setScreenMode] = useState<"diagram" | "runtime">("diagram");
 
-  const modelDiagram = useMemo(() => workflowModelToMermaid(workflow), [workflow]);
+  const modelDiagram = useMemo(() => workflowModelToMermaid(activeWorkflow), [activeWorkflow]);
 
   const sseDiagram = useMemo(() => {
     if (!mermaidSource) return null;
@@ -178,6 +204,43 @@ export function WorkflowScreen({
         <WorkflowRuntimePanel model={model} sessionId={sessionId} />
       ) : (
       <>
+        {/* 链路切换条：主链路（核心对象生命周期）+ 附加业务链路（资金/治理/补偿） */}
+        {sourceKind === "model" && chains.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 border-b border-[#EFEBE2] bg-white px-4 py-1.5"
+            data-testid="workflow-chain-tabs"
+          >
+            <span className="text-[10px] text-stone-400">业务链路</span>
+            {[
+              { key: "primary", label: workflow?.name || "主链路", kind: "" },
+              ...chains.map((c) => ({
+                key: c.id || c.name || "",
+                label: c.name || c.id || "未命名链路",
+                kind: c.kind ? CHAIN_KIND_LABEL[c.kind] ?? c.kind : "",
+              })),
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                data-testid={`workflow-chain-${tab.key}`}
+                onClick={() => setChainId(tab.key)}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 transition-colors ${
+                  chainId === tab.key
+                    ? "bg-violet-50 text-violet-700 ring-violet-200"
+                    : "bg-white text-stone-500 ring-[#E7E2D9] hover:text-stone-700"
+                }`}
+              >
+                {tab.label}
+                {tab.kind && (
+                  <span className={chainId === tab.key ? "text-violet-400" : "text-stone-300"}>
+                    {tab.kind}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* 角色图例条 — 取代早期的节点角色侧表（与节点卡信息重复且占 1/4 画布）。
             色点与图上节点色条一致；未在 RBAC 声明的角色照旧 ✗ 标红（fail-closed）。 */}
         {sourceKind === "model" && roleLegend.length > 0 && (
@@ -217,10 +280,11 @@ export function WorkflowScreen({
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {sourceKind === "placeholder" ? (
             <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
-          ) : sourceKind === "model" && model ? (
+          ) : sourceKind === "model" && graphModel ? (
             // 结构化模型在手 → 活图（角色着色 + 试运行实例实时高亮）
             <div className="min-h-0 min-w-0 flex-1">
-              <WorkflowGraph model={model} sessionId={sessionId} />
+              {/* key=chainId：切链路时整图重挂，dagre 重排干净不残留 */}
+              <WorkflowGraph key={chainId} model={graphModel} sessionId={sessionId} />
             </div>
           ) : (
             <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">

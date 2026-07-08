@@ -112,6 +112,70 @@ def test_missing_section_blocked():
     assert any(f["code"] == MISSING_SECTION and f["affectedSkill"] == "aigc" for f in result["findings"])
 
 
+def _with_chain_and_invariants(model):
+    """扩展有效模型：附加一条 money 链路 + 两条落地的不变式（改进①②）。"""
+    model["workflow"]["chains"] = [
+        {
+            "id": "wf_fine",
+            "name": "逾期罚款链路",
+            "kind": "money",
+            "nodes": [
+                {"id": "fine_assess", "name": "核定罚款", "assigneeRole": "librarian"},
+                {"id": "fine_pay", "name": "缴纳罚款", "assigneeRole": "member"},
+            ],
+            "transitions": [{"from": "fine_assess", "to": "fine_pay"}],
+        }
+    ]
+    model["appbundle"]["invariants"] = [
+        {
+            "id": "inv_loan_status_ledger",
+            "statement": "借阅状态变更必须落借阅记录，不允许只改内存",
+            "systems": ["datamodel", "workflow"],
+            "refs": ["loan.status", "review"],
+        },
+        {
+            "id": "inv_fine_before_next_loan",
+            "statement": "有未缴罚款的会员不能发起新借阅",
+            "systems": ["workflow", "rbac"],
+            "refs": ["fine_pay", "member"],
+        },
+    ]
+    return model
+
+
+def test_chains_and_invariants_valid_model_passes():
+    m = _with_chain_and_invariants(_valid_library_model())
+    # appbundle 可以引用附加链路的 id / 节点 id
+    m["appbundle"]["pageBindings"].append({"pageRef": "p_review", "workflowRef": "wf_fine"})
+    m["appbundle"]["pageBindings"].append({"pageRef": "p_review", "workflowRef": "fine_pay"})
+    result = validate_five_system_model(m)
+    assert result["passed"] is True, result["findings"]
+
+
+def test_chain_dangling_assignee_blocked():
+    m = _with_chain_and_invariants(_valid_library_model())
+    m["workflow"]["chains"][0]["nodes"][0]["assigneeRole"] = "ghost_role"
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    hits = [f for f in result["findings"] if f["ref"] == "ghost_role"]
+    assert hits and "workflow.chains[wf_fine]" in hits[0]["path"]
+
+
+def test_invariant_dangling_ref_and_bad_system_blocked():
+    m = _with_chain_and_invariants(_valid_library_model())
+    m["appbundle"]["invariants"][0]["refs"] = ["loan.nonexistent_field"]
+    m["appbundle"]["invariants"][1]["systems"] = ["blockchain"]
+    m["appbundle"]["invariants"].append(
+        {"id": "inv_vague", "statement": "系统应当安全", "systems": [], "refs": []}
+    )
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    refs = {f["ref"] for f in result["findings"]}
+    assert "loan.nonexistent_field" in refs
+    assert "blockchain" in refs
+    assert any("inv_vague" in f["path"] and "no refs" in f["message"] for f in result["findings"])
+
+
 def test_generate_with_fake_llm_returns_model():
     fake = lambda goal: _valid_library_model()
     model = generate_five_system_model("我要一个图书馆借阅系统", llm_json_fn=fake)

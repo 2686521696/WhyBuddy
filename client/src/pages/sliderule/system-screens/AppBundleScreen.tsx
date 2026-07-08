@@ -374,6 +374,47 @@ export function AppBundleScreen({
           </div>
         )}
 
+        {/* 系统不变式 — appbundle.invariants（总装约束层）：陈述性约束 + 落地引用，
+            门禁已保证 refs 可解析；此处如实罗列，refs 用等宽体便于对照模型。 */}
+        {(bundle?.invariants?.length ?? 0) > 0 && (
+          <div
+            className="mt-3 rounded-md border border-[#E7E2D9] bg-white p-3"
+            data-testid="appbundle-invariants"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-stone-600">系统不变式</span>
+              <span className="text-[10px] text-stone-400">
+                {bundle!.invariants!.length} 条 · 必须恒真的总装约束
+              </span>
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {bundle!.invariants!.map((inv, i) => (
+                <li
+                  key={inv.id || i}
+                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px]"
+                  data-testid={`appbundle-invariant-${inv.id || i}`}
+                >
+                  <span className="text-stone-300">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="text-stone-700">{inv.statement || inv.id}</span>
+                  {(inv.systems ?? []).map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-full bg-[#F0EDE5] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-stone-500"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                  {(inv.refs ?? []).map((r) => (
+                    <span key={r} className="font-mono text-[9px] text-stone-400">
+                      {r}
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Closure meta */}
         {publishClosure && (publishClosure.closureHash || publishClosure.stableDigest || publishClosure.generatedAt) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-stone-400">

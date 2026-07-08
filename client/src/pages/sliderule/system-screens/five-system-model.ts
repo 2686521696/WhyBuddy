@@ -55,6 +55,18 @@ export interface WorkflowTransition {
 
 export interface WorkflowSection {
   id?: string;
+  name?: string;
+  nodes?: WorkflowNode[];
+  transitions?: WorkflowTransition[];
+  /** 附加业务链路（资金/治理/补偿等）；顶层 nodes/transitions 是主链路（核心对象生命周期） */
+  chains?: WorkflowChain[];
+}
+
+export interface WorkflowChain {
+  id?: string;
+  name?: string;
+  /** 链路类型：money 资金 / lifecycle 生命周期 / governance 治理 / recovery 补偿 */
+  kind?: string;
   nodes?: WorkflowNode[];
   transitions?: WorkflowTransition[];
 }
@@ -79,10 +91,22 @@ export interface AppBundlePageBinding {
   workflowRef?: string;
 }
 
+export interface ModelInvariant {
+  id?: string;
+  /** 一句话陈述性约束（如「支付状态只能由服务端验签回调修改」） */
+  statement?: string;
+  /** 该不变式约束到的系统段名 */
+  systems?: string[];
+  /** 落地引用：实体/字段/角色/权限/流程节点 id（门禁校验必须可解析） */
+  refs?: string[];
+}
+
 export interface AppBundleSection {
   pageBindings?: AppBundlePageBinding[];
   roleRefs?: string[];
   dataModelRefs?: string[];
+  /** 系统不变式（总装约束层，改进②） */
+  invariants?: ModelInvariant[];
 }
 
 export interface FiveSystemModel {

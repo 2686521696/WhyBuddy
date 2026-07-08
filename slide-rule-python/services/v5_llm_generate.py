@@ -47,8 +47,14 @@ Required shape (use these exact keys):
   },
   "workflow": {
     "id": "<workflow_id>",
+    "name": "<label of the PRIMARY chain — the core business object lifecycle>",
     "nodes": [{"id": "<id>", "name": "<label>", "assigneeRole": "<role_id>", "phase": "<stage label>"}],
-    "transitions": [{"from": "<node_id>", "to": "<node_id>", "condition": "<optional>"}]
+    "transitions": [{"from": "<node_id>", "to": "<node_id>", "condition": "<optional>"}],
+    "chains": [
+      {"id": "<chain_id>", "name": "<label>", "kind": "money|lifecycle|governance|recovery",
+       "nodes": [{"id": "<id>", "name": "<label>", "assigneeRole": "<role_id>", "phase": "<stage label>"}],
+       "transitions": [{"from": "<node_id>", "to": "<node_id>", "condition": "<optional>"}]}
+    ]
   },
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
@@ -64,7 +70,12 @@ Required shape (use these exact keys):
   "appbundle": {
     "pageBindings": [{"pageRef": "<page_id>", "workflowRef": "<workflow_id_or_node_id>"}],
     "roleRefs": ["<role_id>"],
-    "dataModelRefs": ["<entity_id>"]
+    "dataModelRefs": ["<entity_id>"],
+    "invariants": [
+      {"id": "<snake_case>", "statement": "<one-sentence declarative constraint>",
+       "systems": ["datamodel|rbac|workflow|page|aigc"],
+       "refs": ["<entity_id or entity_id.field_id or role_id or permission or workflow/chain node_id>"]}
+    ]
   }
 }
 
@@ -92,6 +103,28 @@ Content-quality rules (checked by a deterministic regression gate):
   terminal "rejected/cancelled" node) — never a single straight line.
 - NO ORPHANS: every entity should be referenced by at least one page
   fieldBinding, aigc field, or another entity's ref field.
+- MULTI-CHAIN COVERAGE: real systems run on SEVERAL business chains, not one
+  approval flow. The top-level workflow (id/nodes/transitions) is the PRIMARY
+  chain: the lifecycle of the core business object (e.g. order/task/case:
+  create → validate/charge → execute → archive). Then add 1-3 more chains in
+  "chains", each with a distinct kind:
+    * "money"      — funds movement (order → pay → server-side confirm → credit
+                     account → audit trail), if the intent involves payment/billing;
+    * "governance" — approval/review flow, if the domain needs one;
+    * "recovery"   — compensation/retry/cleanup for failures, when async work exists.
+  Every chain follows the same node/transition rules (assigneeRole ∈ rbac.roles,
+  phase labels, at least one branch or return path). Node ids must be unique
+  ACROSS all chains. Do NOT duplicate the primary chain inside "chains".
+- INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
+  must always hold, the kind an architect writes after a production incident
+  (ordering: "charge before calling the upstream provider"; source of truth:
+  "payment status changes only via server-side verified callback"; durability:
+  "generated remote media must be re-hosted to owned storage"; traceability:
+  "every balance change must have a ledger row"). Each invariant MUST ground
+  itself via "refs" pointing at ids that exist in THIS model (entity, field,
+  role, permission, or workflow/chain node) and "systems" naming the sections
+  it constrains. Write statements in the intent's language. No vague platitudes
+  ("system should be secure") — each must be checkable against the model.
 """
 
 
