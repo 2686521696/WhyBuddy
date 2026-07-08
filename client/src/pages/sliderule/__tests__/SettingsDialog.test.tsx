@@ -22,15 +22,15 @@ import { SettingsDialog } from "../SettingsDialog";
 } as unknown as Storage;
 
 describe("SettingsDialog（设置中心重构）", () => {
-  it("三分类导航：推演通道（默认）/ 浏览器直连 / 系统设置", () => {
+  it("导航：推演通道（默认）+ 系统设置；浏览器直连默认隐藏（非 Pages 且无启用厂商）", () => {
     const html = renderToStaticMarkup(
       <SettingsDialog open onClose={() => {}} sessionId="s1" />
     );
     expect(html).toContain('data-testid="sliderule-settings-nav-channel"');
-    expect(html).toContain('data-testid="sliderule-settings-nav-llm"');
     expect(html).toContain('data-testid="sliderule-settings-nav-system"');
     expect(html).toContain("推演通道");
-    expect(html).toContain("浏览器直连");
+    // 浏览器直连只服务 GitHub Pages 纯浏览器 Demo / 存量启用配置——本地默认不见
+    expect(html).not.toContain('data-testid="sliderule-settings-nav-llm"');
     // 默认分类 = 推演通道：真通道面板在场
     expect(html).toContain('data-testid="llm-channel-panel"');
     expect(html).toContain("服务端真通道");

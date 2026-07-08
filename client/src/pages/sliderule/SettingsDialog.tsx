@@ -16,6 +16,7 @@ import {
   saveProvidersConfig,
   type LlmProvidersConfig,
 } from "@/lib/sliderule-llm-providers";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 
 type CategoryId = "channel" | "llm" | "system";
 
@@ -39,6 +40,20 @@ const NAV_ITEMS: Array<{ id: CategoryId; label: string; icon: React.ReactNode }>
   { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
   { id: "system", label: "系统设置", icon: <SlidersHorizontal className="h-4 w-4" /> },
 ];
+
+/**
+ * 浏览器直连分类的显隐：它是 GitHub Pages 纯浏览器 Demo（无服务端）的唯一
+ * LLM 通道，那里必须有；本地/服务端场景是噪音，默认隐藏——除非用户曾经
+ * 启用过厂商（老配置仍在生效，必须留入口可见可关，不做暗门）。
+ */
+function showBrowserDirectTab(): boolean {
+  if (IS_GITHUB_PAGES) return true;
+  try {
+    return loadProvidersConfig()?.providers.some((p) => p.enabled) ?? false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * SlideRule 设置中心（Cherry Studio 风格三栏）。
@@ -152,7 +167,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   title="SlideRule 设置"
                 />
               </div>
-              {NAV_ITEMS.map((item) => {
+              {NAV_ITEMS.filter((item) => item.id !== "llm" || showBrowserDirectTab()).map((item) => {
                 const active = category === item.id;
                 return (
                   <button
