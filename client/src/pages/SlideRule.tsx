@@ -394,7 +394,7 @@ function ClaudeChatSurface({
             data-testid="sliderule-empty-state"
           >
             <img
-              src="/assets/sliderule-logo.png"
+              src={`${import.meta.env.BASE_URL}assets/sliderule-logo.png`}
               alt="SlideRule"
               className="w-[min(56%,220px)] object-contain opacity-[0.9] drop-shadow-[0_14px_30px_rgb(68_60_44/0.12)]"
               title="SlideRule"
@@ -733,8 +733,9 @@ function SlideRuleUnified({
           onOpenDeliverables={openDeliverables}
           embedded={embedded}
         />
-        {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2) */}
-        {(pythonApiError || pythonStatusMsg) && (
+        {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2)。
+            GitHub Pages 静态演示本就无后端：降级横幅是预期内噪音，不展示。 */}
+        {!IS_GITHUB_PAGES && (pythonApiError || pythonStatusMsg) && (
           <div className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm" title={pythonStatusMsg}>
             Python backend: {pythonStatusMsg || "degraded/timeout"} ·
             <button type="button" onClick={retryPythonBackend} className="ml-2 underline">Retry</button>
@@ -951,7 +952,7 @@ function SlideRuleSplitEngineering({
     <div className={autopilotTheme.page}>
       <header className={autopilotTheme.header}>
         <img
-          src="/assets/sliderule_icon_flat_transparent.png"
+          src={`${import.meta.env.BASE_URL}assets/sliderule_icon_flat_transparent.png`}
           alt="SlideRule"
           className="mr-2 h-5 w-5 shrink-0 self-center opacity-70"
           title="SlideRule"

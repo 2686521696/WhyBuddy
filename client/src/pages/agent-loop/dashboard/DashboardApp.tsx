@@ -850,7 +850,8 @@ function AgentLoopSidebar({
       >
         <img
           className="native-agent-brand-icon"
-          src="/assets/sliderule-mark.svg"
+          // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
+          src={`${import.meta.env.BASE_URL}assets/sliderule-mark.svg`}
           alt="SlideRule"
         />
         <span className="native-agent-brand-text">

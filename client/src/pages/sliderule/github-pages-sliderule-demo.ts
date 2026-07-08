@@ -22,7 +22,9 @@ export const GITHUB_PAGES_DEMO_SESSION_ID = "github-pages-sliderule-demo";
 export const GITHUB_PAGES_DEMO_GOAL =
   "做一个权限管理系统（支持 RBAC + 数据范围）";
 
-const STORAGE_KEY_PREFIX = "sliderule:github-pages-demo:v2:";
+// v3：种子带发布闭环 + 五系统模型（右侧直接渲染运行应用）。升版本号让老访客的
+// 旧缓存失效、重播新种子。
+const STORAGE_KEY_PREFIX = "sliderule:github-pages-demo:v3:";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -157,7 +159,184 @@ export function createGithubPagesSlideRuleSeedSession(): V5SessionState {
     deliveryPhase: "shipped",
   };
 
+  // 静态演示的发布闭环载荷：带完整五系统模型段（modelSection），让右侧舞台
+  // 直接渲染可运行应用 + 游标透视可用。artifactId 用 runtime-linkage- 前缀
+  // ——evidenceSourceOf 识别为「内置演示域」，诚实标注非 LLM 生成。
+  (state as V5SessionState & { publishClosure?: unknown }).publishClosure =
+    createGithubPagesDemoPublishClosure();
+
   return deriveNodeStatus(state);
+}
+
+/** 五系统模型（权限管理系统演示域）：实体/流程/角色/页面/AI 交叉引用全部闭合。 */
+export function createGithubPagesDemoFiveSystemModel() {
+  return {
+    datamodel: {
+      entities: [
+        {
+          id: "user",
+          name: "用户",
+          fields: [
+            { id: "user_id", name: "工号", type: "string" },
+            { id: "name", name: "姓名", type: "string" },
+            { id: "department", name: "部门", type: "string" },
+            { id: "status", name: "在职状态", type: "enum" },
+            { id: "risk_level", name: "越权风险等级", type: "string" },
+          ],
+        },
+        {
+          id: "role",
+          name: "角色",
+          fields: [
+            { id: "role_id", name: "角色编号", type: "string" },
+            { id: "name", name: "角色名", type: "string" },
+            { id: "data_scope", name: "数据范围", type: "enum" },
+          ],
+        },
+        {
+          id: "grant_request",
+          name: "授权申请",
+          fields: [
+            { id: "request_id", name: "申请编号", type: "string" },
+            { id: "applicant", name: "申请人", type: "string" },
+            { id: "target_role", name: "目标角色", type: "string" },
+            { id: "reason", name: "申请理由", type: "string" },
+            { id: "status", name: "审批状态", type: "enum" },
+            { id: "risk_note", name: "AI 风险提示", type: "string" },
+          ],
+        },
+      ],
+    },
+    rbac: {
+      roles: ["employee", "security_auditor", "sys_admin"],
+      permissions: [
+        "user:read",
+        "user:manage",
+        "role:manage",
+        "grant:submit",
+        "grant:approve",
+        "audit:read",
+      ],
+      menus: [
+        { id: "menu_users", label: "用户管理", roleRefs: ["sys_admin", "security_auditor"], permissionRefs: ["user:read", "user:manage"] },
+        { id: "menu_roles", label: "角色与数据范围", roleRefs: ["sys_admin"], permissionRefs: ["role:manage"] },
+        { id: "menu_grants", label: "授权申请", roleRefs: ["employee", "security_auditor", "sys_admin"], permissionRefs: ["grant:submit", "grant:approve"] },
+      ],
+    },
+    workflow: {
+      id: "wf_grant",
+      nodes: [
+        { id: "n_submit", name: "提交授权申请", assigneeRole: "employee", phase: "申请" },
+        { id: "n_review", name: "安全审核", assigneeRole: "security_auditor", phase: "审核" },
+        { id: "n_apply", name: "授权生效", assigneeRole: "sys_admin", phase: "生效" },
+      ],
+      transitions: [
+        { from: "n_submit", to: "n_review" },
+        { from: "n_review", to: "n_apply", condition: "审核通过" },
+        { from: "n_review", to: "n_submit", condition: "驳回补充理由" },
+      ],
+    },
+    page: {
+      pages: [
+        {
+          id: "user_admin_page",
+          name: "用户管理页",
+          fieldBindings: ["user.user_id", "user.name", "user.department", "user.status", "user.risk_level"],
+          actionPermissions: ["user:manage"],
+        },
+        {
+          id: "grant_request_page",
+          name: "授权申请页",
+          fieldBindings: [
+            "grant_request.request_id",
+            "grant_request.applicant",
+            "grant_request.target_role",
+            "grant_request.reason",
+            "grant_request.status",
+            "grant_request.risk_note",
+          ],
+          actionPermissions: ["grant:submit", "grant:approve"],
+        },
+        {
+          id: "role_scope_page",
+          name: "角色与数据范围页",
+          fieldBindings: ["role.role_id", "role.name", "role.data_scope"],
+          actionPermissions: ["role:manage"],
+        },
+      ],
+    },
+    aigc: {
+      capabilities: [
+        {
+          id: "cap_grant_risk_scan",
+          name: "越权风险扫描",
+          inputFields: ["grant_request.applicant", "grant_request.target_role", "grant_request.reason"],
+          outputField: "grant_request.risk_note",
+          roleRefs: ["security_auditor"],
+        },
+        {
+          id: "cap_user_risk_score",
+          name: "用户风险评级",
+          inputFields: ["user.department", "user.status"],
+          outputField: "user.risk_level",
+          roleRefs: ["security_auditor", "sys_admin"],
+        },
+      ],
+    },
+    appbundle: {
+      pageBindings: [
+        { pageRef: "grant_request_page", workflowRef: "wf_grant" },
+        { pageRef: "user_admin_page", workflowRef: "wf_grant" },
+      ],
+      roleRefs: ["employee", "security_auditor", "sys_admin"],
+      dataModelRefs: ["user", "role", "grant_request"],
+    },
+  };
+}
+
+/** 发布闭环载荷（PublishClosureSummary 形状）：证据 6/6 + 每系统 modelSection。 */
+export function createGithubPagesDemoPublishClosure() {
+  const model = createGithubPagesDemoFiveSystemModel();
+  const skills = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"] as const;
+  const perSkillEvidence = Object.fromEntries(
+    skills.map((skill) => [
+      skill,
+      {
+        evidencePresent: true,
+        evidenceRef: `runtime-linkage-${skill}-demo`,
+        artifactId: `runtime-linkage-${skill}-demo`,
+        digest: `demo-${skill}`,
+        modelSection: model[skill],
+      },
+    ])
+  );
+  return {
+    blocked: false,
+    blockerCount: 0,
+    evidencePresentCount: skills.length,
+    skillCount: skills.length,
+    versionPinsChecked: true,
+    closureId: "pages-demo-closure",
+    closureHash: "demo0000",
+    stableDigest: "demo0000",
+    generatedAt: "2026-07-01T00:00:00Z",
+    tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+    topBlockers: [],
+    perSkillEvidence,
+    chatSummary: [
+      "闭环状态：**closed，证据 6/6**（演示数据，展示推演收口后的形态）。",
+      "",
+      "现在右侧就是这套「权限管理系统」的可运行数字孪生：",
+      "- **3 类角色**（员工 / 安全审计员 / 系统管理员）协作，右上角可切换角色看权限联动；",
+      "- **3 个核心实体**（用户、角色、授权申请）支撑用户管理、角色与数据范围、授权申请 3 个页面，可直接录入数据；",
+      "- **授权申请 → 安全审核 → 授权生效** 的审批流可实际提交推进；",
+      "- **2 项 AI 能力**（越权风险扫描、用户风险评级）可试跑并把结果写回字段。",
+      "",
+      "建议体验：打开右上角「游标」，悬停任意字段或按钮，透视它背后的实体、权限与流程声明；顶栏「交付物」可导出结构化 Markdown。",
+      "",
+      "完整版（连接后端 + 真 LLM）支持任意一句话意图的全程实时推演：每一步 LLM 想法直播、五系统模型边生成边渲染。",
+    ].join("\n"),
+  };
 }
 
 /**

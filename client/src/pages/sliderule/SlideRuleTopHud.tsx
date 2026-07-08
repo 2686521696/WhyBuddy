@@ -52,7 +52,7 @@ export function SlideRuleTopHud({
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {embedded ? null : (
             <img
-              src="/assets/sliderule_logo_wordmark_transparent.png"
+              src={`${import.meta.env.BASE_URL}assets/sliderule_logo_wordmark_transparent.png`}
               alt="SlideRule"
               className="h-[42px] w-auto max-w-[156px] shrink-0 object-contain opacity-95 sm:h-[46px]"
               title="SlideRule"

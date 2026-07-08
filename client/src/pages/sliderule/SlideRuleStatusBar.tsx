@@ -38,7 +38,7 @@ export function SlideRuleStatusBar({
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-stone-600">
         <img
-          src="/assets/sliderule_icon_flat_transparent.png"
+          src={`${import.meta.env.BASE_URL}assets/sliderule_icon_flat_transparent.png`}
           alt="SlideRule"
           className="mr-1 inline-block h-3.5 w-3.5 opacity-60 align-middle"
           title="SlideRule"
