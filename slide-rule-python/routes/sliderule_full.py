@@ -818,3 +818,28 @@ def llm_channel_test(x_internal_key: Optional[str] = Header(None)):
     """对真通道发一次极小请求，结果如实返回（不粉饰失败）。"""
     _auth(x_internal_key)
     return _llm_channel_test()
+
+
+# ---------------------------------------------------------------------------
+# 生成质量基线（主线观察台）：读 docs/five-system-generation-baseline.json。
+# 文件由 eval_five_system_generation.py --json-out 固化；缺失/损坏如实 404。
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path
+
+EVAL_BASELINE_PATH = _Path(__file__).resolve().parent.parent.parent / "docs" / "five-system-generation-baseline.json"
+
+
+@router.get("/eval-baseline")
+def eval_baseline(x_internal_key: Optional[str] = Header(None)):
+    """机器可读评测基线原文（观察台摘要卡的数据源）。"""
+    import json as _json
+
+    _auth(x_internal_key)
+    try:
+        payload = _json.loads(EVAL_BASELINE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return JSONResponse({"error": "BASELINE_NOT_FOUND"}, status_code=404)
+    if not isinstance(payload, dict):
+        return JSONResponse({"error": "BASELINE_NOT_FOUND"}, status_code=404)
+    return payload

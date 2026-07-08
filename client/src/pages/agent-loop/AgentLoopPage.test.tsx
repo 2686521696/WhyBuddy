@@ -68,6 +68,7 @@ describe("AgentLoopPage", () => {
     expect(parseAgentLoopLocation("/agent-loop")).toEqual({ kind: "sliderule" });
     expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({ kind: "sliderule" });
     expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
+    expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({ kind: "workbench-legacy" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
   });
@@ -76,13 +77,13 @@ describe("AgentLoopPage", () => {
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { runId: "legacy-state-run", backgroundRunId: null }, tasks: [], counts: {} },
-        { kind: "workbench" },
+        { kind: "workbench-legacy" },
       ),
     ).toBeNull();
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { runId: "legacy-state-run", backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
-        { kind: "workbench" },
+        { kind: "workbench-legacy" },
       ),
     ).toBe("bridge-run");
     expect(resolveAgentLoopLiveEventRunId(null, { kind: "detail", runId: "detail-run" })).toBe("detail-run");
@@ -101,7 +102,9 @@ describe("AgentLoopPage", () => {
   it("does not preload task overview or settings while only viewing the SlideRule surface", () => {
     expect(shouldLoadAgentLoopOverview({ kind: "sliderule" })).toBe(false);
     expect(shouldLoadAgentLoopOverview({ kind: "settings" })).toBe(false);
-    expect(shouldLoadAgentLoopOverview({ kind: "workbench" })).toBe(true);
+    // 新工作台（主线观察台）自行拉取数据；legacy 驾驶舱才消费队列 overview
+    expect(shouldLoadAgentLoopOverview({ kind: "workbench" })).toBe(false);
+    expect(shouldLoadAgentLoopOverview({ kind: "workbench-legacy" })).toBe(true);
     expect(shouldLoadAgentLoopOverview({ kind: "detail", runId: "run-1" })).toBe(false);
 
     expect(
@@ -120,12 +123,13 @@ describe("AgentLoopPage", () => {
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
-        { kind: "workbench" },
+        { kind: "workbench-legacy" },
       ),
     ).toBe("bridge-run");
 
     expect(shouldRequestSettingsForView("sliderule")).toBe(false);
-    expect(shouldRequestSettingsForView("workbench")).toBe(true);
+    expect(shouldRequestSettingsForView("workbench")).toBe(false);
+    expect(shouldRequestSettingsForView("workbench-legacy")).toBe(true);
     expect(shouldRequestSettingsForView("settings")).toBe(true);
   });
 
@@ -141,7 +145,7 @@ describe("AgentLoopPage", () => {
       counts: {},
     };
 
-    expect(resolveAgentLoopLiveEventRunId(stoppedOverview, { kind: "workbench" })).toBeNull();
+    expect(resolveAgentLoopLiveEventRunId(stoppedOverview, { kind: "workbench-legacy" })).toBeNull();
     expect(shouldPollAgentLoopOverview(stoppedOverview, { kind: "workbench" }, "bridge-run")).toBe(false);
   });
 
@@ -161,7 +165,7 @@ describe("AgentLoopPage", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
-        view="workbench"
+        view="workbench-legacy"
         onViewChange={vi.fn()}
         getViewPath={(view) => view === "sliderule" ? getAgentLoopSliderulePath() : `#${view}`}
       />,
@@ -202,7 +206,7 @@ describe("AgentLoopPage", () => {
     const workbenchHtml = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
-        view="workbench"
+        view="workbench-legacy"
         onViewChange={vi.fn()}
       />,
     );
@@ -214,6 +218,7 @@ describe("AgentLoopPage", () => {
   it("renders task detail entries as first-class run route links", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: {},
           tasks: [{ id: "task-1", task: "agent-loop/tasks/foo.md", lastRunId: "run 1" }],
@@ -229,6 +234,7 @@ describe("AgentLoopPage", () => {
   it("renders the workbench as a queue cockpit with metrics, toolbar, and task inspector", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: {
             queueTotal: 56,
@@ -290,7 +296,7 @@ describe("AgentLoopPage", () => {
             } as any,
           ],
         }}
-        view="workbench"
+        view="workbench-legacy"
       />,
     );
 
@@ -303,6 +309,7 @@ describe("AgentLoopPage", () => {
   it("keeps queue metrics scoped to queue entries while all tasks includes task files", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: {},
           tasks: [
@@ -330,6 +337,7 @@ describe("AgentLoopPage", () => {
   it("keeps the workbench main grid gutter aligned with metric cards", () => {
     const html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: {
             queueTotal: 56,
@@ -368,6 +376,7 @@ describe("AgentLoopPage", () => {
 
     const html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: {
             queueTotal: 56,
@@ -718,7 +727,8 @@ describe("agentloop web bridge interaction 111", () => {
 
     const captured = (globalThis as any).__AGENT_LOOP_CAPTURED_EFFECT__;
     expect(typeof captured).toBe("function");
-    (global.fetch as any).mockResolvedValueOnce(jsonResponse([]));
+    // 新语义：workbench 路由（主线观察台）不再预载队列 overview——
+    // legacy 驾驶舱才会——因此这里不再垫 overview 的 fetch mock。
     captured();
     expect(setSpy).toHaveBeenCalled();
     const handler = setSpy.mock.calls.find((call) => typeof call[0] === "function")?.[0] as
@@ -1351,6 +1361,7 @@ it("agentloop overview surfaces stale queue path and latest queue candidate", ()
   try {
     html = renderToStaticMarkup(
       <DashboardApp
+        view="workbench-legacy"
         payload={{
           counts: { total: 16, queueTotal: 16 },
           queuePath: "agent-loop/scripts/sliderule-v2-skills-113-queue.json",
@@ -1721,7 +1732,7 @@ it("agentloop dashboard topbar renders normalized python health status", () => {
   const html = renderToStaticMarkup(
     <DashboardApp
       payload={{ tasks: [], counts: {} }}
-      view="workbench"
+      view="workbench-legacy"
     />,
   );
 
@@ -1765,7 +1776,7 @@ it("agentloop workbench 105 shows manual queue landing as applied", () => {
         },
         tasks: [],
       }}
-      view="workbench"
+      view="workbench-legacy"
     />,
   );
 

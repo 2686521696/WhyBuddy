@@ -26,11 +26,12 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "settings";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "settings";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
   | { kind: "workbench" }
+  | { kind: "workbench-legacy" }
   | { kind: "settings" }
   | { kind: "detail"; runId: string };
 
@@ -40,6 +41,11 @@ export function getAgentLoopSliderulePath(): string {
 
 export function getAgentLoopWorkbenchPath(): string {
   return "/agent-loop/workbench";
+}
+
+/** legacy 任务队列驾驶舱：摘除导航、保留 URL 直达。 */
+export function getAgentLoopWorkbenchLegacyPath(): string {
+  return "/agent-loop/workbench/legacy";
 }
 
 export function getAgentLoopSettingsPath(): string {
@@ -61,6 +67,9 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/workbench") {
     return { kind: "workbench" };
   }
+  if (normalized === "/agent-loop/workbench/legacy") {
+    return { kind: "workbench-legacy" };
+  }
   if (normalized === "/agent-loop/settings") {
     return { kind: "settings" };
   }
@@ -80,7 +89,8 @@ export function resolveAgentLoopLiveEventRunId(
   overview: OverviewPayload | null,
   route: AgentLoopRouteState,
 ): string | null {
-  if (route.kind === "sliderule" || route.kind === "settings") return null;
+  // 新工作台（主线观察台）自行拉取数据，不参与 legacy run 事件流
+  if (route.kind === "sliderule" || route.kind === "settings" || route.kind === "workbench") return null;
   const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
   const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
   if (!runtimeActive) return route.kind === "detail" ? route.runId : null;
@@ -90,7 +100,8 @@ export function resolveAgentLoopLiveEventRunId(
 }
 
 export function shouldLoadAgentLoopOverview(route: AgentLoopRouteState): boolean {
-  return route.kind === "workbench";
+  // legacy 驾驶舱才消费队列 overview；新工作台（主线观察台）自行拉取
+  return route.kind === "workbench-legacy";
 }
 
 export function shouldPollAgentLoopOverview(
@@ -98,7 +109,7 @@ export function shouldPollAgentLoopOverview(
   route: AgentLoopRouteState,
   currentRunId: string | null,
 ): boolean {
-  if (route.kind !== "workbench" && route.kind !== "detail") return false;
+  if (route.kind !== "workbench-legacy" && route.kind !== "detail") return false;
   const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
   const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
   if (!runtimeActive) return false;
@@ -181,14 +192,18 @@ export default function AgentLoopPage() {
   function showDashboardView(next: DashboardRouteView) {
     detailRunIdRef.current = null;
     setDetail(null);
-    if (next === "sliderule" || next === "settings") {
+    if (next !== "workbench-legacy") {
       setOverview(null);
     }
-    if (next === "sliderule") {
-      setLocation(getAgentLoopSliderulePath());
-    } else {
-      setLocation(next === "settings" ? getAgentLoopSettingsPath() : getAgentLoopWorkbenchPath());
-    }
+    const path =
+      next === "sliderule"
+        ? getAgentLoopSliderulePath()
+        : next === "settings"
+          ? getAgentLoopSettingsPath()
+          : next === "workbench-legacy"
+            ? getAgentLoopWorkbenchLegacyPath()
+            : getAgentLoopWorkbenchPath();
+    setLocation(path);
   }
 
   function openTaskRoute(taskPath: string, runId?: string | null) {
@@ -516,7 +531,13 @@ export default function AgentLoopPage() {
   }, []);
 
   const dashboardView: DashboardRouteView =
-    route.kind === "settings" ? "settings" : route.kind === "sliderule" ? "sliderule" : "workbench";
+    route.kind === "settings"
+      ? "settings"
+      : route.kind === "sliderule"
+        ? "sliderule"
+        : route.kind === "workbench-legacy"
+          ? "workbench-legacy"
+          : "workbench";
 
   return (
     <main data-testid="agent-loop-page" className="agent-loop-root">
@@ -541,7 +562,9 @@ export default function AgentLoopPage() {
               ? getAgentLoopSliderulePath()
               : next === "settings"
                 ? getAgentLoopSettingsPath()
-                : getAgentLoopWorkbenchPath()
+                : next === "workbench-legacy"
+                  ? getAgentLoopWorkbenchLegacyPath()
+                  : getAgentLoopWorkbenchPath()
           )}
           getTaskRunPath={getAgentLoopRunPath}
           onOpenTask={openTaskRoute}

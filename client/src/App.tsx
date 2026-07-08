@@ -153,6 +153,7 @@ function Router() {
       </Route>
       <Route path={`${AGENT_LOOP_PATH}/sliderule`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/workbench`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/workbench/legacy`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
       <Route path={AGENT_LOOP_PATH} component={AgentLoopPage} />

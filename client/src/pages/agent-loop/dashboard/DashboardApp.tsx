@@ -49,12 +49,16 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export type ViewKey = 'sliderule' | 'workbench' | 'settings';
+export type ViewKey = 'sliderule' | 'workbench' | 'workbench-legacy' | 'settings';
 
 export function shouldRequestSettingsForView(view: ViewKey): boolean {
-  return view !== 'sliderule';
+  // legacy 驾驶舱/legacy 设置页才消费 AgentLoop settings payload；
+  // 新工作台（主线观察台）与推演页都不需要。
+  return view === 'settings' || view === 'workbench-legacy';
 }
 import SlideRulePage from '@/pages/SlideRule';
+import { SettingsDialog } from '@/pages/sliderule/SettingsDialog';
+import { MainlineWorkbench } from './MainlineWorkbench';
 import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask, PythonHealthViewModel } from './dashboardTypes';
 import { postCommand } from './bridge';
 import { fetchPythonHealth, filterSupportedQueuePatch, normalizePythonHealthViewModel } from './agentLoopApi';
@@ -819,10 +823,13 @@ function AgentLoopSidebar({
   view,
   onViewChange,
   getViewPath,
+  onOpenSettings,
 }: {
   view: ViewKey;
   onViewChange: (next: ViewKey) => void;
   getViewPath?: (next: ViewKey) => string | undefined;
+  /** 「设置」不再路由跳转，改为打开 SlideRule 设置中心弹窗 */
+  onOpenSettings?: () => void;
 }) {
   const brandLogo = typeof window !== 'undefined' ? window.__AGENT_LOOP_ASSETS__?.brandLogo : undefined;
   // Prefer the uploaded SlideRule mark (client/public/sliderule-mark.png); fall back
@@ -850,20 +857,41 @@ function AgentLoopSidebar({
         )}
       </div>
       <nav className="native-agent-nav" aria-label="AgentLoop">
-        {navItems.map((item) => (
-          <a
-            href={getViewPath?.(item.key)}
-            className={`native-agent-nav-item${view === item.key ? ' native-agent-nav-item-active' : ''}`}
-            onClick={(event) => {
-              if (getViewPath?.(item.key)) event.preventDefault();
-              onViewChange(item.key);
-            }}
-            key={item.key}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </a>
-        ))}
+        {navItems.map((item) => {
+          // 「设置」打开统一的 SlideRule 设置中心（推演通道/浏览器直连/系统设置），
+          // 不再路由到 legacy AgentLoop 设置页（URL 直达仍可用）。
+          if (item.key === 'settings' && onOpenSettings) {
+            return (
+              <a
+                href="#settings"
+                className="native-agent-nav-item"
+                data-testid="agent-nav-settings"
+                onClick={(event) => {
+                  event.preventDefault();
+                  onOpenSettings();
+                }}
+                key={item.key}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </a>
+            );
+          }
+          return (
+            <a
+              href={getViewPath?.(item.key)}
+              className={`native-agent-nav-item${view === item.key ? ' native-agent-nav-item-active' : ''}`}
+              onClick={(event) => {
+                if (getViewPath?.(item.key)) event.preventDefault();
+                onViewChange(item.key);
+              }}
+              key={item.key}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </a>
+          );
+        })}
       </nav>
       <button type="button" className="native-agent-help">
         <QuestionCircleOutlined />
@@ -892,7 +920,13 @@ function AgentLoopTopbar({
   pythonHealth?: PythonHealthViewModel | null;
 }) {
   const title =
-    view === 'sliderule' ? 'AgentLoop / 推演' : view === 'settings' ? 'AgentLoop / 设置' : 'AgentLoop / 工作台';
+    view === 'sliderule'
+      ? 'AgentLoop / 推演'
+      : view === 'settings'
+        ? 'AgentLoop / 设置（legacy）'
+        : view === 'workbench-legacy'
+          ? 'AgentLoop / 任务队列（legacy）'
+          : 'AgentLoop / 工作台';
 
   const pythonStatus = pythonHealth?.service?.status || 'unknown';
   const pythonTone = pythonStatus === 'ready' ? 'success' : pythonStatus === 'offline' ? 'error' : 'warning';
@@ -1230,20 +1264,43 @@ export function DashboardApp({
     view === 'sliderule' ? 'native-sliderule-content' : '',
   ].filter(Boolean).join(' ');
 
+  // 侧栏「设置」→ 统一的 SlideRule 设置中心弹窗（全产品唯一一套设置）
+  const [slideruleSettingsOpen, setSlideruleSettingsOpen] = useState(false);
+
   return (
     <ConfigProvider
       prefixCls="agent-ant"
       csp={typeof window !== 'undefined' && window.__AGENT_LOOP_CSP_NONCE__ ? { nonce: window.__AGENT_LOOP_CSP_NONCE__ } : undefined}
     >
       <Layout className="native-dashboard native-agent-shell">
-        <AgentLoopSidebar view={view} onViewChange={handleViewChange} getViewPath={getViewPath} />
+        <AgentLoopSidebar
+          view={view}
+          onViewChange={handleViewChange}
+          getViewPath={getViewPath}
+          onOpenSettings={() => setSlideruleSettingsOpen(true)}
+        />
         <Layout className="native-main native-agent-main">
-          <AgentLoopTopbar view={view} showActions={view !== 'sliderule'} pythonHealth={pythonHealth} />
+          <AgentLoopTopbar
+            view={view}
+            showActions={view === 'workbench-legacy' || view === 'settings'}
+            pythonHealth={pythonHealth}
+          />
           <Content className={contentClassName}>
-            {view === 'workbench' ? workbenchContent : view === 'sliderule' ? slideruleContent : settingsContent}
+            {view === 'workbench'
+              ? <MainlineWorkbench />
+              : view === 'workbench-legacy'
+                ? workbenchContent
+                : view === 'sliderule'
+                  ? slideruleContent
+                  : settingsContent}
           </Content>
         </Layout>
       </Layout>
+      <SettingsDialog
+        open={slideruleSettingsOpen}
+        onClose={() => setSlideruleSettingsOpen(false)}
+        sessionId="sliderule-v51-product"
+      />
     </ConfigProvider>
   );
 }
