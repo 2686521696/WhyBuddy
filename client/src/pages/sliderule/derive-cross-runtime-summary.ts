@@ -25,6 +25,9 @@ export type PublishClosureSummary = {
   evidencePresentCount: number;
   skillCount: number;
   versionPinsChecked: boolean;
+  /** 真 LLM 收口总结（方案 B，python v5_closure_summary 生成；失败缺失，
+   *  客户端回落零 LLM 模板 A）。纯展示载荷，不参与 trust/closure 判定。 */
+  chatSummary?: string;
   closureId?: string;
   closureHash?: string;
   generatedAt?: string;
@@ -152,12 +155,14 @@ export function derivePublishClosureSummary(
     info: [],
   };
 
+  const chatSummary = (report as { chatSummary?: unknown }).chatSummary;
   return {
     blocked: report.blocked,
     blockerCount: report.blockers.length,
     evidencePresentCount,
     skillCount: report.runtimeClosure.skillsChecked.length,
     versionPinsChecked: report.runtimeClosure.versionPinsChecked,
+    chatSummary: typeof chatSummary === "string" && chatSummary.trim() ? chatSummary : undefined,
     closureId: report.closureId,
     closureHash: report.closureHash,
     generatedAt: report.generatedAt,

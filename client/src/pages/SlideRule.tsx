@@ -21,9 +21,10 @@ import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
 
-/** llm_delta 来源标签 → 实时块标题（能力 id 或 "five-system-model"）。 */
+/** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
   if (!label || label === "five-system-model") return "五系统模型起草中";
+  if (label === "closure.summary") return "正在整理推演总结";
   const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[label];
   const live =
     typeof entry?.liveLabel === "function"
@@ -193,6 +194,9 @@ function assistantTextForTurn(
   // 过程细节由 TurnPhaseTimeline 分阶段折叠承载，这里给零 LLM 模板总结（方案 A）：
   // 事实全部来自五系统模型 + 闭环证据，替换旧的机械状态行。
   if (publishClosure) {
+    // 方案 B 优先：python 真 LLM 收口总结（结合推演全程上下文）；
+    // 缺失（未配通道/上游失败）回落零 LLM 模板 A——总结永远有，但从不编造。
+    if (publishClosure.chatSummary?.trim()) return publishClosure.chatSummary.trim();
     const model = parseFiveSystemModelFromPerSkillEvidence(
       publishClosure.perSkillEvidence as Parameters<typeof parseFiveSystemModelFromPerSkillEvidence>[0]
     );
@@ -273,7 +277,7 @@ function TurnPhaseTimeline({
                   onClick={() =>
                     setOpenPhases((prev) => ({ ...prev, [phase.id]: !open }))
                   }
-                  className="flex items-center gap-2 text-xs transition-colors hover:text-stone-700"
+                  className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs transition-colors hover:bg-[#F5F1E8] hover:text-stone-700"
                 >
                   {running ? (
                     <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#D97757]" />
@@ -284,6 +288,14 @@ function TurnPhaseTimeline({
                     {phase.title}
                   </span>
                   <span className="text-[10px] text-stone-300">{phase.lines.length} 步</span>
+                  {/* 可展开暗示（用户反馈：完成阶段看不出能点开）——箭头随展开态旋转 */}
+                  {!running && phase.lines.length > 0 && (
+                    <span
+                      className={`inline-block text-[10px] text-stone-300 transition-transform ${open ? "rotate-90" : ""}`}
+                    >
+                      ›
+                    </span>
+                  )}
                 </button>
                 {open && phase.lines.length > 0 && (
                   <div className="ml-1 mt-1 space-y-1 border-l border-[#EFEBE2] pl-4">
@@ -447,7 +459,11 @@ function ClaudeChatSurface({
                         {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
                             五系统起草…）期间实时流出。Claude 式浅色块——超高滚动 + 可折叠 */}
                         {llmDraft && (
-                          <LlmLiveOutput title={llmDraftTitle(llmDraftLabel)} text={llmDraft} />
+                          <LlmLiveOutput
+                            title={llmDraftTitle(llmDraftLabel)}
+                            text={llmDraft}
+                            formatJson={llmDraftLabel === "five-system-model"}
+                          />
                         )}
                       </div>
                     ) : (

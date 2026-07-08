@@ -681,6 +681,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const llmDraftBuffers = new Map<string, string>();
           const humanLlmLabel = (key: string): string => {
             if (key === "five-system-model") return "LLM 正在起草五系统模型";
+            if (key === "closure.summary") return "LLM 正在整理推演总结";
             const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[key];
             const live = typeof entry?.liveLabel === "function"
               ? (entry.liveLabel as (ctx: object) => string)({})

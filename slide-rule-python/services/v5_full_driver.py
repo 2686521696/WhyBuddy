@@ -1147,6 +1147,26 @@ async def drive_full_v5_session_stream(
 
     # Emit full closure payload after the per-skill walk.
     if publish_closure is not None:
+        # 方案 B：真 LLM 收口总结——结合推演全程上下文（意图、五系统模型、
+        # 风险/反方/综合等真实产出）生成对话总结，增量以 llm_delta
+        # label "closure.summary" 实时流出；失败静默回落客户端模板（方案 A）。
+        if _llm_round_caps_enabled():
+            def _summarize() -> Optional[str]:
+                from .v5_closure_summary import generate_closure_chat_summary
+
+                return generate_closure_chat_summary(
+                    state,
+                    publish_closure,
+                    on_delta=lambda chunk: _delta_q.put(("closure.summary", chunk)),
+                )
+
+            summary_task = asyncio.ensure_future(asyncio.to_thread(_summarize))
+            async for _delta_event in _pump_llm_deltas(summary_task):
+                yield _delta_event
+            chat_summary = summary_task.result()
+            if chat_summary:
+                publish_closure["chatSummary"] = chat_summary
+
         state.publishClosure = publish_closure
         state.skillRuntimeGraph = skill_graph
         state.lastTurnId = f"turn-stream-{loop}-drive-full"
