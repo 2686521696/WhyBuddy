@@ -854,7 +854,7 @@ function AgentLoopSidebar({
           alt="SlideRule"
         />
         <span className="native-agent-brand-text">
-          <span className="native-agent-brand-name">滑尺</span>
+          <span className="native-agent-brand-name">SlideRule</span>
           <span className="native-agent-brand-domain">sliderule.ai</span>
         </span>
       </a>
