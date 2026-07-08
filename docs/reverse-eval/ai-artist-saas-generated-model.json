@@ -1,0 +1,982 @@
+{
+  "datamodel": {
+    "entities": [
+      {
+        "id": "tenant",
+        "name": "租户",
+        "fields": [
+          {
+            "id": "tenant_id",
+            "name": "租户ID",
+            "type": "string"
+          },
+          {
+            "id": "name",
+            "name": "租户名称",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "租户状态",
+            "type": "enum"
+          },
+          {
+            "id": "domain",
+            "name": "自定义域名",
+            "type": "string"
+          },
+          {
+            "id": "created_at",
+            "name": "创建时间",
+            "type": "date"
+          }
+        ]
+      },
+      {
+        "id": "user_account",
+        "name": "用户账号",
+        "fields": [
+          {
+            "id": "user_id",
+            "name": "用户ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "所属租户",
+            "type": "ref"
+          },
+          {
+            "id": "nickname",
+            "name": "昵称",
+            "type": "string"
+          },
+          {
+            "id": "email",
+            "name": "邮箱",
+            "type": "string"
+          },
+          {
+            "id": "role_type",
+            "name": "账号类型",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "ai_provider_config",
+        "name": "AI接口配置",
+        "fields": [
+          {
+            "id": "config_id",
+            "name": "配置ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "provider_name",
+            "name": "供应商名称",
+            "type": "string"
+          },
+          {
+            "id": "api_endpoint",
+            "name": "接口地址",
+            "type": "string"
+          },
+          {
+            "id": "api_key_masked",
+            "name": "密钥脱敏值",
+            "type": "string"
+          },
+          {
+            "id": "enabled",
+            "name": "是否启用",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "ai_model",
+        "name": "AI模型",
+        "fields": [
+          {
+            "id": "model_id",
+            "name": "模型ID",
+            "type": "string"
+          },
+          {
+            "id": "provider_config_ref",
+            "name": "接口配置",
+            "type": "ref"
+          },
+          {
+            "id": "model_name",
+            "name": "模型名称",
+            "type": "string"
+          },
+          {
+            "id": "capability_type",
+            "name": "能力类型",
+            "type": "enum"
+          },
+          {
+            "id": "unit_cost",
+            "name": "单次成本",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "generation_job",
+        "name": "生成任务",
+        "fields": [
+          {
+            "id": "job_id",
+            "name": "任务ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "user_ref",
+            "name": "提交用户",
+            "type": "ref"
+          },
+          {
+            "id": "model_ref",
+            "name": "使用模型",
+            "type": "ref"
+          },
+          {
+            "id": "generation_type",
+            "name": "生成类型",
+            "type": "enum"
+          },
+          {
+            "id": "prompt",
+            "name": "提示词",
+            "type": "string"
+          },
+          {
+            "id": "status",
+            "name": "任务状态",
+            "type": "enum"
+          },
+          {
+            "id": "credit_cost",
+            "name": "消耗次数",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "media_asset",
+        "name": "媒体作品",
+        "fields": [
+          {
+            "id": "asset_id",
+            "name": "作品ID",
+            "type": "string"
+          },
+          {
+            "id": "job_ref",
+            "name": "生成任务",
+            "type": "ref"
+          },
+          {
+            "id": "asset_type",
+            "name": "作品类型",
+            "type": "enum"
+          },
+          {
+            "id": "asset_url",
+            "name": "作品地址",
+            "type": "string"
+          },
+          {
+            "id": "thumbnail_url",
+            "name": "缩略图地址",
+            "type": "string"
+          },
+          {
+            "id": "created_at",
+            "name": "生成时间",
+            "type": "date"
+          }
+        ]
+      },
+      {
+        "id": "conversation_session",
+        "name": "AI对话会话",
+        "fields": [
+          {
+            "id": "session_id",
+            "name": "会话ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "user_ref",
+            "name": "用户",
+            "type": "ref"
+          },
+          {
+            "id": "last_prompt",
+            "name": "最近提问",
+            "type": "string"
+          },
+          {
+            "id": "last_response",
+            "name": "最近回复",
+            "type": "string"
+          },
+          {
+            "id": "token_cost",
+            "name": "消耗Token",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "billing_plan",
+        "name": "套餐",
+        "fields": [
+          {
+            "id": "plan_id",
+            "name": "套餐ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "plan_name",
+            "name": "套餐名称",
+            "type": "string"
+          },
+          {
+            "id": "credit_amount",
+            "name": "包含次数",
+            "type": "number"
+          },
+          {
+            "id": "price",
+            "name": "售价",
+            "type": "number"
+          },
+          {
+            "id": "valid_days",
+            "name": "有效天数",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "credit_wallet",
+        "name": "次数钱包",
+        "fields": [
+          {
+            "id": "wallet_id",
+            "name": "钱包ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "user_ref",
+            "name": "用户",
+            "type": "ref"
+          },
+          {
+            "id": "balance",
+            "name": "剩余次数",
+            "type": "number"
+          },
+          {
+            "id": "expires_at",
+            "name": "到期时间",
+            "type": "date"
+          }
+        ]
+      },
+      {
+        "id": "recharge_order",
+        "name": "充值订单",
+        "fields": [
+          {
+            "id": "order_id",
+            "name": "订单ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "user_ref",
+            "name": "用户",
+            "type": "ref"
+          },
+          {
+            "id": "plan_ref",
+            "name": "购买套餐",
+            "type": "ref"
+          },
+          {
+            "id": "amount",
+            "name": "支付金额",
+            "type": "number"
+          },
+          {
+            "id": "payment_status",
+            "name": "支付状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "payment_channel",
+        "name": "支付通道",
+        "fields": [
+          {
+            "id": "channel_id",
+            "name": "通道ID",
+            "type": "string"
+          },
+          {
+            "id": "channel_name",
+            "name": "通道名称",
+            "type": "string"
+          },
+          {
+            "id": "merchant_id",
+            "name": "商户号",
+            "type": "string"
+          },
+          {
+            "id": "enabled",
+            "name": "是否启用",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "storage_config",
+        "name": "存储配置",
+        "fields": [
+          {
+            "id": "storage_id",
+            "name": "存储ID",
+            "type": "string"
+          },
+          {
+            "id": "provider",
+            "name": "存储供应商",
+            "type": "string"
+          },
+          {
+            "id": "bucket",
+            "name": "存储桶",
+            "type": "string"
+          },
+          {
+            "id": "cdn_domain",
+            "name": "CDN域名",
+            "type": "string"
+          },
+          {
+            "id": "enabled",
+            "name": "是否启用",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "page_theme",
+        "name": "页面装修方案",
+        "fields": [
+          {
+            "id": "theme_id",
+            "name": "装修ID",
+            "type": "string"
+          },
+          {
+            "id": "tenant_ref",
+            "name": "租户",
+            "type": "ref"
+          },
+          {
+            "id": "theme_name",
+            "name": "主题名称",
+            "type": "string"
+          },
+          {
+            "id": "layout_json",
+            "name": "布局配置",
+            "type": "string"
+          },
+          {
+            "id": "publish_status",
+            "name": "发布状态",
+            "type": "enum"
+          }
+        ]
+      },
+      {
+        "id": "plugin",
+        "name": "平台插件",
+        "fields": [
+          {
+            "id": "plugin_id",
+            "name": "插件ID",
+            "type": "string"
+          },
+          {
+            "id": "plugin_name",
+            "name": "插件名称",
+            "type": "string"
+          },
+          {
+            "id": "plugin_type",
+            "name": "插件类型",
+            "type": "enum"
+          },
+          {
+            "id": "version",
+            "name": "版本号",
+            "type": "string"
+          },
+          {
+            "id": "enabled",
+            "name": "是否启用",
+            "type": "enum"
+          }
+        ]
+      }
+    ]
+  },
+  "rbac": {
+    "roles": [
+      "end_user",
+      "tenant_admin",
+      "tenant_designer",
+      "finance_operator",
+      "platform_admin"
+    ],
+    "permissions": [
+      "ai_image:create",
+      "ai_image:view",
+      "ai_video:create",
+      "ai_video:view",
+      "ai_chat:create",
+      "ai_chat:view",
+      "wallet:view",
+      "recharge_order:create",
+      "recharge_order:approve",
+      "tenant_ai_config:view",
+      "tenant_ai_config:edit",
+      "billing_plan:manage",
+      "page_theme:edit",
+      "page_theme:publish",
+      "tenant:manage",
+      "tenant:view",
+      "plugin:manage",
+      "payment_channel:manage",
+      "storage_config:manage",
+      "generation_job:view"
+    ],
+    "menus": [
+      {
+        "id": "menu_user_creation",
+        "label": "用户创作中心",
+        "roleRefs": [
+          "end_user"
+        ],
+        "permissionRefs": [
+          "ai_image:create",
+          "ai_image:view",
+          "ai_video:create",
+          "ai_video:view",
+          "ai_chat:create",
+          "ai_chat:view"
+        ]
+      },
+      {
+        "id": "menu_user_wallet",
+        "label": "我的次数与充值",
+        "roleRefs": [
+          "end_user"
+        ],
+        "permissionRefs": [
+          "wallet:view",
+          "recharge_order:create"
+        ]
+      },
+      {
+        "id": "menu_tenant_ai_ops",
+        "label": "租户AI运营配置",
+        "roleRefs": [
+          "tenant_admin"
+        ],
+        "permissionRefs": [
+          "tenant_ai_config:view",
+          "tenant_ai_config:edit",
+          "billing_plan:manage",
+          "generation_job:view",
+          "tenant:view"
+        ]
+      },
+      {
+        "id": "menu_tenant_design",
+        "label": "页面装修工作台",
+        "roleRefs": [
+          "tenant_designer",
+          "tenant_admin"
+        ],
+        "permissionRefs": [
+          "page_theme:edit",
+          "page_theme:publish"
+        ]
+      },
+      {
+        "id": "menu_finance_recharge_review",
+        "label": "充值与对账审核",
+        "roleRefs": [
+          "finance_operator"
+        ],
+        "permissionRefs": [
+          "recharge_order:approve",
+          "tenant:view"
+        ]
+      },
+      {
+        "id": "menu_platform_operations",
+        "label": "平台总后台",
+        "roleRefs": [
+          "platform_admin"
+        ],
+        "permissionRefs": [
+          "tenant:manage",
+          "tenant:view",
+          "plugin:manage",
+          "payment_channel:manage",
+          "storage_config:manage",
+          "tenant_ai_config:view"
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "id": "tenant_configuration_publish_workflow",
+    "nodes": [
+      {
+        "id": "submit_configuration",
+        "name": "提交租户配置变更",
+        "assigneeRole": "tenant_admin",
+        "phase": "配置"
+      },
+      {
+        "id": "review_ai_interface",
+        "name": "审核AI接口与模型",
+        "assigneeRole": "platform_admin",
+        "phase": "审核"
+      },
+      {
+        "id": "review_recharge_plan",
+        "name": "审核套餐充值规则",
+        "assigneeRole": "finance_operator",
+        "phase": "审核"
+      },
+      {
+        "id": "review_page_theme",
+        "name": "审核页面装修合规",
+        "assigneeRole": "platform_admin",
+        "phase": "审核"
+      },
+      {
+        "id": "activate_configuration",
+        "name": "发布并启用配置",
+        "assigneeRole": "tenant_admin",
+        "phase": "发布"
+      }
+    ],
+    "transitions": [
+      {
+        "from": "submit_configuration",
+        "to": "review_ai_interface",
+        "condition": "包含AI接口、模型或插件变更"
+      },
+      {
+        "from": "submit_configuration",
+        "to": "review_recharge_plan",
+        "condition": "仅包含套餐充值或计费规则变更"
+      },
+      {
+        "from": "review_ai_interface",
+        "to": "review_page_theme",
+        "condition": "AI接口审核通过"
+      },
+      {
+        "from": "review_ai_interface",
+        "to": "submit_configuration",
+        "condition": "AI接口审核驳回，退回修改"
+      },
+      {
+        "from": "review_recharge_plan",
+        "to": "review_page_theme",
+        "condition": "套餐计费审核通过"
+      },
+      {
+        "from": "review_recharge_plan",
+        "to": "submit_configuration",
+        "condition": "套餐计费审核驳回，退回修改"
+      },
+      {
+        "from": "review_page_theme",
+        "to": "activate_configuration",
+        "condition": "页面装修审核通过"
+      },
+      {
+        "from": "review_page_theme",
+        "to": "submit_configuration",
+        "condition": "页面装修审核驳回，退回修改"
+      }
+    ]
+  },
+  "page": {
+    "pages": [
+      {
+        "id": "page_ai_image_studio",
+        "name": "AI图片创作页",
+        "fieldBindings": [
+          "generation_job.prompt",
+          "generation_job.generation_type",
+          "generation_job.credit_cost",
+          "media_asset.asset_url",
+          "media_asset.thumbnail_url",
+          "ai_model.model_name"
+        ],
+        "actionPermissions": [
+          "ai_image:create",
+          "ai_image:view"
+        ]
+      },
+      {
+        "id": "page_ai_video_studio",
+        "name": "AI视频创作页",
+        "fieldBindings": [
+          "generation_job.prompt",
+          "generation_job.status",
+          "generation_job.credit_cost",
+          "media_asset.asset_url",
+          "media_asset.asset_type",
+          "ai_model.capability_type"
+        ],
+        "actionPermissions": [
+          "ai_video:create",
+          "ai_video:view"
+        ]
+      },
+      {
+        "id": "page_ai_chat",
+        "name": "AI对话页",
+        "fieldBindings": [
+          "conversation_session.last_prompt",
+          "conversation_session.last_response",
+          "conversation_session.token_cost",
+          "user_account.nickname"
+        ],
+        "actionPermissions": [
+          "ai_chat:create",
+          "ai_chat:view"
+        ]
+      },
+      {
+        "id": "page_wallet_recharge",
+        "name": "次数钱包与套餐充值页",
+        "fieldBindings": [
+          "credit_wallet.balance",
+          "credit_wallet.expires_at",
+          "billing_plan.plan_name",
+          "billing_plan.credit_amount",
+          "billing_plan.price",
+          "recharge_order.amount",
+          "recharge_order.payment_status"
+        ],
+        "actionPermissions": [
+          "wallet:view",
+          "recharge_order:create"
+        ]
+      },
+      {
+        "id": "page_tenant_ai_config",
+        "name": "租户AI接口配置页",
+        "fieldBindings": [
+          "tenant.name",
+          "ai_provider_config.provider_name",
+          "ai_provider_config.api_endpoint",
+          "ai_provider_config.api_key_masked",
+          "ai_provider_config.enabled",
+          "ai_model.model_name",
+          "ai_model.unit_cost"
+        ],
+        "actionPermissions": [
+          "tenant_ai_config:view",
+          "tenant_ai_config:edit"
+        ]
+      },
+      {
+        "id": "page_tenant_billing_admin",
+        "name": "租户套餐管理页",
+        "fieldBindings": [
+          "billing_plan.plan_name",
+          "billing_plan.credit_amount",
+          "billing_plan.price",
+          "billing_plan.valid_days",
+          "recharge_order.order_id",
+          "recharge_order.payment_status"
+        ],
+        "actionPermissions": [
+          "billing_plan:manage",
+          "generation_job:view"
+        ]
+      },
+      {
+        "id": "page_theme_designer",
+        "name": "页面装修设计器",
+        "fieldBindings": [
+          "page_theme.theme_name",
+          "page_theme.layout_json",
+          "page_theme.publish_status",
+          "tenant.domain"
+        ],
+        "actionPermissions": [
+          "page_theme:edit",
+          "page_theme:publish"
+        ]
+      },
+      {
+        "id": "page_platform_tenant_admin",
+        "name": "平台租户管理页",
+        "fieldBindings": [
+          "tenant.tenant_id",
+          "tenant.name",
+          "tenant.status",
+          "tenant.created_at",
+          "user_account.email",
+          "user_account.role_type"
+        ],
+        "actionPermissions": [
+          "tenant:manage",
+          "tenant:view"
+        ]
+      },
+      {
+        "id": "page_platform_plugin_admin",
+        "name": "平台插件管理页",
+        "fieldBindings": [
+          "plugin.plugin_name",
+          "plugin.plugin_type",
+          "plugin.version",
+          "plugin.enabled"
+        ],
+        "actionPermissions": [
+          "plugin:manage"
+        ]
+      },
+      {
+        "id": "page_platform_payment_storage",
+        "name": "支付与存储配置页",
+        "fieldBindings": [
+          "payment_channel.channel_name",
+          "payment_channel.merchant_id",
+          "payment_channel.enabled",
+          "storage_config.provider",
+          "storage_config.bucket",
+          "storage_config.cdn_domain",
+          "storage_config.enabled"
+        ],
+        "actionPermissions": [
+          "payment_channel:manage",
+          "storage_config:manage"
+        ]
+      },
+      {
+        "id": "page_finance_recharge_review",
+        "name": "充值审核页",
+        "fieldBindings": [
+          "tenant.name",
+          "recharge_order.order_id",
+          "recharge_order.amount",
+          "recharge_order.payment_status",
+          "billing_plan.plan_name"
+        ],
+        "actionPermissions": [
+          "recharge_order:approve",
+          "tenant:view"
+        ]
+      }
+    ]
+  },
+  "aigc": {
+    "capabilities": [
+      {
+        "id": "capability_generate_image",
+        "name": "AI图片生成",
+        "inputFields": [
+          "generation_job.prompt",
+          "generation_job.generation_type",
+          "ai_model.model_name",
+          "credit_wallet.balance"
+        ],
+        "outputField": "media_asset.asset_url",
+        "roleRefs": [
+          "end_user"
+        ]
+      },
+      {
+        "id": "capability_generate_video",
+        "name": "AI视频生成",
+        "inputFields": [
+          "generation_job.prompt",
+          "ai_model.model_name",
+          "ai_provider_config.provider_name",
+          "credit_wallet.balance"
+        ],
+        "outputField": "media_asset.asset_url",
+        "roleRefs": [
+          "end_user"
+        ]
+      },
+      {
+        "id": "capability_ai_chat_reply",
+        "name": "AI对话回复",
+        "inputFields": [
+          "conversation_session.last_prompt",
+          "ai_model.model_name",
+          "user_account.nickname"
+        ],
+        "outputField": "conversation_session.last_response",
+        "roleRefs": [
+          "end_user"
+        ]
+      },
+      {
+        "id": "capability_prompt_optimization",
+        "name": "创作提示词优化",
+        "inputFields": [
+          "generation_job.prompt",
+          "generation_job.generation_type",
+          "page_theme.theme_name"
+        ],
+        "outputField": "generation_job.prompt",
+        "roleRefs": [
+          "end_user",
+          "tenant_designer"
+        ]
+      },
+      {
+        "id": "capability_theme_copy_suggestion",
+        "name": "装修文案建议",
+        "inputFields": [
+          "page_theme.theme_name",
+          "page_theme.layout_json",
+          "tenant.name"
+        ],
+        "outputField": "page_theme.layout_json",
+        "roleRefs": [
+          "tenant_designer",
+          "tenant_admin"
+        ]
+      }
+    ]
+  },
+  "appbundle": {
+    "pageBindings": [
+      {
+        "pageRef": "page_ai_image_studio",
+        "workflowRef": "tenant_configuration_publish_workflow"
+      },
+      {
+        "pageRef": "page_ai_video_studio",
+        "workflowRef": "tenant_configuration_publish_workflow"
+      },
+      {
+        "pageRef": "page_ai_chat",
+        "workflowRef": "tenant_configuration_publish_workflow"
+      },
+      {
+        "pageRef": "page_wallet_recharge",
+        "workflowRef": "review_recharge_plan"
+      },
+      {
+        "pageRef": "page_tenant_ai_config",
+        "workflowRef": "review_ai_interface"
+      },
+      {
+        "pageRef": "page_tenant_billing_admin",
+        "workflowRef": "review_recharge_plan"
+      },
+      {
+        "pageRef": "page_theme_designer",
+        "workflowRef": "review_page_theme"
+      },
+      {
+        "pageRef": "page_platform_tenant_admin",
+        "workflowRef": "activate_configuration"
+      },
+      {
+        "pageRef": "page_platform_plugin_admin",
+        "workflowRef": "review_ai_interface"
+      },
+      {
+        "pageRef": "page_platform_payment_storage",
+        "workflowRef": "activate_configuration"
+      },
+      {
+        "pageRef": "page_finance_recharge_review",
+        "workflowRef": "review_recharge_plan"
+      }
+    ],
+    "roleRefs": [
+      "end_user",
+      "tenant_admin",
+      "tenant_designer",
+      "finance_operator",
+      "platform_admin"
+    ],
+    "dataModelRefs": [
+      "tenant",
+      "user_account",
+      "ai_provider_config",
+      "ai_model",
+      "generation_job",
+      "media_asset",
+      "conversation_session",
+      "billing_plan",
+      "credit_wallet",
+      "recharge_order",
+      "payment_channel",
+      "storage_config",
+      "page_theme",
+      "plugin"
+    ]
+  }
+}
