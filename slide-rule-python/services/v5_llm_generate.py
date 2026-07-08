@@ -59,7 +59,12 @@ Required shape (use these exact keys):
   "page": {
     "pages": [{"id": "<id>", "name": "<label>",
                "fieldBindings": ["<entity_id>.<field_id>"],
-               "actionPermissions": ["<resource>:<action>"]}]
+               "actionPermissions": ["<resource>:<action>"],
+               "charts": [
+                 {"id": "<id>", "name": "<label>", "type": "bar|line|pie",
+                  "dimension": "<entity_id>.<field_id>",
+                  "metric": "count|sum:<entity_id>.<field_id>"}
+               ]}]
   },
   "aigc": {
     "capabilities": [{"id": "<id>", "name": "<label>",
@@ -115,6 +120,15 @@ Content-quality rules (checked by a deterministic regression gate):
   Every chain follows the same node/transition rules (assigneeRole ∈ rbac.roles,
   phase labels, at least one branch or return path). Node ids must be unique
   ACROSS all chains. Do NOT duplicate the primary chain inside "chains".
+- CHARTS (library-agnostic): pages whose job includes monitoring/analytics
+  (dashboards, finance, audit, ops) should declare 1-2 "charts". A chart is a
+  SEMANTIC declaration — what to visualize, never which UI library renders it:
+  "dimension" is the grouping field (enum/status/category/date fields work
+  best), "metric" is either "count" (rows per group) or "sum:<entity.field>"
+  over a number field. Both MUST reference real datamodel fields. "type" picks
+  the form by the data's job: bar = compare magnitudes across categories,
+  line = change over an ordered/date dimension, pie = share of a whole with
+  FEW (≤5) categories. Pure CRUD pages need no charts.
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
   must always hold, the kind an architect writes after a production incident
   (ordering: "charge before calling the upstream provider"; source of truth:

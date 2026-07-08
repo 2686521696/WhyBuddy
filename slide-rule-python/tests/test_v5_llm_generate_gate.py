@@ -161,6 +161,36 @@ def test_chain_dangling_assignee_blocked():
     assert hits and "workflow.chains[wf_fine]" in hits[0]["path"]
 
 
+def test_page_charts_valid_and_dangling():
+    m = _valid_library_model()
+    # 合法图表：count 按状态分布 + sum 指标
+    m["page"]["pages"][0]["charts"] = [
+        {"id": "c_status", "name": "借阅状态分布", "type": "pie",
+         "dimension": "loan.status", "metric": "count"},
+    ]
+    result = validate_five_system_model(m)
+    assert result["passed"] is True, result["findings"]
+
+    # 悬挂 dimension / 非法 type / 非法 metric 全部拦下
+    m["page"]["pages"][0]["charts"] = [
+        {"id": "c_bad", "type": "radar", "dimension": "loan.nonexistent", "metric": "avg:loan.id"},
+    ]
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    refs = {f["ref"] for f in result["findings"]}
+    assert "radar" in refs
+    assert "loan.nonexistent" in refs
+    assert "avg:loan.id" in refs
+
+    # sum 指标引用不存在的字段
+    m["page"]["pages"][0]["charts"] = [
+        {"id": "c_sum", "type": "bar", "dimension": "loan.status", "metric": "sum:loan.ghost"},
+    ]
+    result = validate_five_system_model(m)
+    assert result["passed"] is False
+    assert any(f["ref"] == "loan.ghost" for f in result["findings"])
+
+
 def test_invariant_dangling_ref_and_bad_system_blocked():
     m = _with_chain_and_invariants(_valid_library_model())
     m["appbundle"]["invariants"][0]["refs"] = ["loan.nonexistent_field"]

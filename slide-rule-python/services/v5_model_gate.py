@@ -207,6 +207,40 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     f"page action permission '{ref}' not found in rbac.permissions",
                     ref=ref, skill="page",
                 ))
+        # 库无关图表声明（schema 丰富一期，可选字段）：dimension / sum 指标
+        # 必须解析到 datamodel 字段；type 限定在渲染层支持的形态集合。
+        for chart in _as_list(pd.get("charts")):
+            cd = _as_dict(chart)
+            cid = cd.get("id") or cd.get("name") or "<unnamed>"
+            ctype = str(cd.get("type") or "").strip()
+            if ctype and ctype not in ("bar", "line", "pie"):
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].charts[{cid}].type",
+                    f"chart type '{ctype}' is not one of bar/line/pie",
+                    ref=ctype, skill="page",
+                ))
+            dim = str(cd.get("dimension") or "").strip()
+            if not dim or dim not in field_refs:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].charts[{cid}].dimension",
+                    f"chart dimension '{dim or '<missing>'}' not found in datamodel fields",
+                    ref=dim, skill="page",
+                ))
+            metric = str(cd.get("metric") or "").strip()
+            if metric.startswith("sum:"):
+                mref = metric[4:].strip()
+                if mref not in field_refs:
+                    findings.append(_finding(
+                        DANGLING, f"page.pages[{pid}].charts[{cid}].metric",
+                        f"chart sum metric '{mref}' not found in datamodel fields",
+                        ref=mref, skill="page",
+                    ))
+            elif metric and metric != "count":
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].charts[{cid}].metric",
+                    f"chart metric '{metric}' must be 'count' or 'sum:<entity.field>'",
+                    ref=metric, skill="page",
+                ))
 
     # 4. aigc inputFields/outputField ∈ datamodel fields; roleRefs ∈ rbac.roles
     for cap in _as_list(aigc.get("capabilities")):

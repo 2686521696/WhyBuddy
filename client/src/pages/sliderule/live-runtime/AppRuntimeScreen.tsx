@@ -55,9 +55,15 @@ import {
   type AppAiActionSchema,
   type AppChartSchema,
   type AppFormFieldSchema,
+  type AppPageChartSchema,
   type AppPageSchema,
   type AppRuntimeSchema,
 } from "./app-runtime-schema";
+import { buildEchartsOption } from "./build-echarts-option";
+
+// ECharts 基建走独立 chunk（React.lazy）：主 bundle 不背 echarts，
+// 首个带图表声明的页面打开时才加载。
+const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 import {
   type RuntimeState,
   type RuntimeRow,
@@ -717,6 +723,39 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
+      {page.charts.length > 0 && (
+        <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }} data-testid="app-runtime-page-charts">
+          {page.charts.map((chart: AppPageChartSchema) => {
+            const chartRows = state.entities[chart.entityId] ?? [];
+            const option = buildEchartsOption(chart, chartRows);
+            return (
+              <Card
+                key={chart.id}
+                size="small"
+                title={chart.label}
+                style={{ flex: 1, minWidth: 220 }}
+                data-testid={`app-runtime-page-chart-${chart.id}`}
+              >
+                {option ? (
+                  <React.Suspense
+                    fallback={<div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>图表加载中…</div>}
+                  >
+                    <LazyEchartsChart
+                      option={option}
+                      height={180}
+                      ariaLabel={`${chart.label}：按${chart.dimensionLabel}统计${chart.metricLabel}`}
+                    />
+                  </React.Suspense>
+                ) : (
+                  <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+                    暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
       <Table
         size="middle"
         rowKey="id"

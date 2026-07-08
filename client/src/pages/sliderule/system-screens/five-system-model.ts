@@ -71,11 +71,25 @@ export interface WorkflowChain {
   transitions?: WorkflowTransition[];
 }
 
+/**
+ * 库无关图表声明（schema 丰富一期）：声明"可视化什么"，不声明用哪个图表库——
+ * dimension 是分组字段，metric 是 "count" 或 "sum:<entity.field>"，
+ * 渲染层（运行应用）负责映射到具体图表基建（当前为 ECharts）。
+ */
+export interface PageChartSpec {
+  id?: string;
+  name?: string;
+  type?: "bar" | "line" | "pie" | string;
+  dimension?: string;
+  metric?: string;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
   fieldBindings?: string[];
   actionPermissions?: string[];
+  charts?: PageChartSpec[];
 }
 
 export interface AigcCapability {

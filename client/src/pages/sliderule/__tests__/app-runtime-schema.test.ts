@@ -142,6 +142,31 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     });
   });
 
+  it("页面级图表：合法声明派生成 AppPageChartSchema，悬空/跨实体 sum 丢弃，未知 type 回退 bar", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].charts = [
+      { id: "c1", name: "余额分布", type: "pie", dimension: "member_card.holder", metric: "count" },
+      { id: "c2", name: "按人合计余额", type: "bar", dimension: "member_card.holder", metric: "sum:member_card.balance" },
+      { id: "c3", name: "坏维度", type: "bar", dimension: "member_card.ghost", metric: "count" },
+      { id: "c4", name: "跨实体求和", type: "bar", dimension: "member_card.holder", metric: "sum:coach.name" },
+      { id: "c5", name: "未知形态", type: "radar" as never, dimension: "member_card.holder", metric: "count" },
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    const charts = schema.pages[0].charts;
+    expect(charts.map((c) => c.id)).toEqual(["c1", "c2", "c5"]); // c3/c4 悬空丢弃
+    expect(charts[0]).toMatchObject({
+      type: "pie",
+      entityId: "member_card",
+      dimensionFieldId: "holder",
+      metric: "count",
+      metricLabel: "数量",
+    });
+    expect(charts[1]).toMatchObject({ metric: "sum", metricFieldId: "balance", metricLabel: "余额" });
+    expect(charts[2].type).toBe("bar"); // radar 回退 bar
+    // 无 charts 声明的页 → 空数组（老模型零变化）
+    expect(schema.pages[1].charts).toEqual([]);
+  });
+
   it("无绑定页 entityId=null；缺页面/实体时整体返回 null（不伪造）", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
     expect(schema.pages[1].entityId).toBeNull();

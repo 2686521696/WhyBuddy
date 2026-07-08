@@ -29,6 +29,29 @@ export interface AppAiActionSchema {
   outputLabel: string;
 }
 
+/**
+ * 页面级图表（模型 page.charts 声明 → 渲染器对着运行时行数据求值）。
+ * 与 AppChartSchema（工作台内置图）不同：这里的维度/指标绑定 datamodel 字段，
+ * 悬空引用在派生时被丢弃（门禁负责标红，运行应用不渲染坏图）。
+ */
+export interface AppPageChartSchema {
+  id: string;
+  label: string;
+  type: "bar" | "line" | "pie";
+  /** 分组维度所在实体（= 取行数据的实体） */
+  entityId: string;
+  /** 分组维度字段 id */
+  dimensionFieldId: string;
+  /** 维度字段展示名 */
+  dimensionLabel: string;
+  /** "count" 或 "sum" */
+  metric: "count" | "sum";
+  /** metric === "sum" 时的求和字段 id（同实体） */
+  metricFieldId?: string;
+  /** 指标展示名（count → "数量"；sum → 字段名） */
+  metricLabel: string;
+}
+
 export interface AppPageSchema {
   id: string;
   title: string;
@@ -46,6 +69,8 @@ export interface AppPageSchema {
   workflowLinked: boolean;
   /** 详情抽屉里的 AI 生成动作（无绑定能力时为空数组） */
   aiActions: AppAiActionSchema[];
+  /** 模型声明的页面级图表（库无关声明 → 运行应用用 ECharts 渲染） */
+  charts: AppPageChartSchema[];
 }
 
 export interface AppStatCardSchema {
@@ -194,6 +219,48 @@ export function deriveAppRuntimeSchema(
     );
     const boundFields = allFields.filter((f) => boundFieldIds.has(f.id));
 
+    // 页面级图表：维度/求和字段必须真实存在（悬空的丢弃——门禁负责标红，
+    // 运行应用不渲染坏图）；type 未知回退 bar（形态降级，不丢声明）。
+    const charts: AppPageChartSchema[] = [];
+    for (const [ci, chart] of (page.charts ?? []).entries()) {
+      const dim = String(chart.dimension ?? "");
+      const dot = dim.indexOf(".");
+      if (dot <= 0) continue;
+      const dimEntityId = dim.slice(0, dot);
+      const dimFieldId = dim.slice(dot + 1);
+      const dimEntity = entityById.get(dimEntityId);
+      const dimField = dimEntity?.fields?.find((f) => f.id === dimFieldId);
+      if (!dimField) continue;
+      const rawMetric = String(chart.metric ?? "count");
+      let metric: "count" | "sum" = "count";
+      let metricFieldId: string | undefined;
+      let metricLabel = "数量";
+      if (rawMetric.startsWith("sum:")) {
+        const mref = rawMetric.slice(4);
+        const mdot = mref.indexOf(".");
+        const mField =
+          mdot > 0 && mref.slice(0, mdot) === dimEntityId
+            ? dimEntity?.fields?.find((f) => f.id === mref.slice(mdot + 1))
+            : undefined;
+        if (!mField) continue;
+        metric = "sum";
+        metricFieldId = mField.id;
+        metricLabel = mField.name || mField.id;
+      }
+      const rawType = String(chart.type ?? "bar");
+      charts.push({
+        id: chart.id || `chart-${id}-${ci}`,
+        label: chart.name || chart.id || `图表 ${ci + 1}`,
+        type: rawType === "line" || rawType === "pie" ? rawType : "bar",
+        entityId: dimEntityId,
+        dimensionFieldId: dimFieldId,
+        dimensionLabel: dimField.name || dimFieldId,
+        metric,
+        metricFieldId,
+        metricLabel,
+      });
+    }
+
     return {
       id,
       title: page.name || id,
@@ -204,6 +271,7 @@ export function deriveAppRuntimeSchema(
       actions: (page.actionPermissions ?? []).map(String),
       workflowLinked: workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
       aiActions: entityId ? aiActionsByEntity.get(entityId) ?? [] : [],
+      charts,
     };
   });
 
