@@ -191,9 +191,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // Accumulated per-skill content from SSE skill_result events (raw model/mermaid).
   const [skillContents, setSkillContents] = useState<Partial<Record<SkillId, string>>>({});
   const [latestMermaid, setLatestMermaid] = useState<string | null>(null);
-  // 五系统 LLM 生成的实时草稿（llm_delta 累积）：运行中在左栏流式展示，
-  // 新一轮开始时清空。只是观测投影——真实模型仍以 gate 通过的闭环证据为准。
+  // LLM 实时草稿（llm_delta 累积）：运行中在左栏流式展示，新一轮开始时清空。
+  // 每一步（risk.analyze / report.write / 五系统起草…）各自一份缓冲，展示最近
+  // 更新的那份；label 记录当前来源。只是观测投影——真实模型仍以闭环证据为准。
   const [llmDraft, setLlmDraft] = useState<string>("");
+  const [llmDraftLabel, setLlmDraftLabel] = useState<string | null>(null);
 
   // M2: drive mode (persisted for session; default "single" per spec)
   const [driveMode, setDriveMode] = useState<SlideRuleRuntime.SlideRuleDriveMode>(() => {
@@ -668,17 +670,32 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             });
           };
           setLlmDraft("");
-          let llmDraftStarted = false;
+          setLlmDraftLabel(null);
+          // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
+          // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
+          const llmDraftBuffers = new Map<string, string>();
+          const humanLlmLabel = (key: string): string => {
+            if (key === "five-system-model") return "LLM 正在起草五系统模型";
+            const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[key];
+            const live = typeof entry?.liveLabel === "function"
+              ? (entry.liveLabel as (ctx: object) => string)({})
+              : (entry?.liveLabel as string | undefined);
+            return live ? `LLM ${live.replace(/^⚡\s*/, "")}` : `LLM 正在执行 ${key}`;
+          };
           const pythonDrive = await driveFullViaPythonStream(preparedState, userText.trim(), {
             stopSignal: controller.signal,
             turnId,
-            onLlmDelta: (text) => {
-              if (!llmDraftStarted) {
-                llmDraftStarted = true;
-                appendStreamStep("🖋 LLM 正在起草五系统模型（实时输出见下方）...");
-                setLiveAction({ label: "LLM 正在起草五系统模型...", external: false });
+            onLlmDelta: (text, label) => {
+              const key = label || "five-system-model";
+              const firstSight = !llmDraftBuffers.has(key);
+              llmDraftBuffers.set(key, (llmDraftBuffers.get(key) || "") + text);
+              if (firstSight) {
+                const human = humanLlmLabel(key);
+                appendStreamStep(`🖋 ${human}（实时输出见下方）...`);
+                setLiveAction({ label: `${human}...`, external: false });
               }
-              setLlmDraft((prev) => prev + text);
+              setLlmDraftLabel(key);
+              setLlmDraft(llmDraftBuffers.get(key) || "");
             },
             onReasoningStep: (capabilityId, loop) => {
               const human =
@@ -1294,8 +1311,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // Accumulated per-skill content from SSE events (for system screen renderers).
     skillContents,
     latestMermaid,
-    // 五系统 LLM 生成的实时草稿（运行中流式累积；新一轮清空）。
+    // LLM 实时草稿（运行中流式累积；新一轮清空）+ 当前来源标签
+    //（能力 id 或 "five-system-model"，用于左栏实时块的动态标题）。
     llmDraft,
+    llmDraftLabel,
     sendMessage,
     runTurn,
     challengeTurn,

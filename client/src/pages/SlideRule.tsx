@@ -18,6 +18,18 @@ import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurfac
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
 import { autopilotTheme } from "./sliderule/autopilot-theme";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
+import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
+
+/** llm_delta 来源标签 → 实时块标题（能力 id 或 "five-system-model"）。 */
+function llmDraftTitle(label: string | null | undefined): string {
+  if (!label || label === "five-system-model") return "五系统模型起草中";
+  const entry = (CAPABILITY_PROCESS_LABELS as Record<string, { liveLabel?: unknown }>)[label];
+  const live =
+    typeof entry?.liveLabel === "function"
+      ? (entry.liveLabel as (ctx: object) => string)({})
+      : (entry?.liveLabel as string | undefined);
+  return live ? live.replace(/^⚡\s*/, "") : `正在执行 ${label}`;
+}
 import { narrationFallbackHint } from "@/lib/sliderule-narrator";
 import { TurnRouteTimeline } from "./sliderule/TurnRouteTimeline";
 import { finalNarrationStep } from "./sliderule/turn-route-steps";
@@ -330,6 +342,7 @@ function ClaudeChatSurface({
   latestTurn,
   publishClosure,
   llmDraft = "",
+  llmDraftLabel = null,
   goalText,
   onChallenge,
 }: {
@@ -338,8 +351,10 @@ function ClaudeChatSurface({
   liveAction: LiveAction | null;
   latestTurn: UiTurn | null;
   publishClosure?: PublishClosureSummary | null;
-  /** 五系统 LLM 生成的实时草稿（llm_delta 累积；仅运行中展示尾部）。 */
+  /** LLM 实时草稿（llm_delta 累积；仅运行中展示尾部）。 */
   llmDraft?: string;
+  /** 当前草稿来源：能力 id 或 "five-system-model"（决定实时块标题）。 */
+  llmDraftLabel?: string | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -428,13 +443,13 @@ function ClaudeChatSurface({
                           {thinkingText}
                         </div>
                         <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
-                        {/* LLM 实时想法：五系统生成期间流式滚出原始草稿尾部
-                            （新颖意图路径独有；确定性域秒出、无此窗口） */}
+                        {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
+                            五系统起草…）期间流式滚出原始输出尾部，标题随来源切换 */}
                         {llmDraft && (
                           <div data-testid="sliderule-llm-draft" className="rounded-md border border-[#E7E2D9] bg-[#2A2620] px-3 py-2.5">
                             <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-stone-400">
                               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
-                              LLM 实时输出 · 五系统模型起草中 · {llmDraft.length} 字符
+                              LLM 实时输出 · {llmDraftTitle(llmDraftLabel)} · {llmDraft.length} 字符
                             </div>
                             <pre className="max-h-40 overflow-hidden whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-stone-300">
                               {llmDraft.length > 900 ? `...${llmDraft.slice(-900)}` : llmDraft}
@@ -624,6 +639,7 @@ function SlideRuleUnified({
   skillContents = {},
   latestMermaid = null,
   llmDraft = "",
+  llmDraftLabel = null,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -661,8 +677,9 @@ function SlideRuleUnified({
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
   skillContents?: Partial<Record<import("@/lib/sliderule-marathon-driver").SkillId, string>>;
   latestMermaid?: string | null;
-  /** 五系统 LLM 生成的实时草稿（llm_delta 累积）。 */
+  /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
+  llmDraftLabel?: string | null;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const composerHints = useMemo(
@@ -728,6 +745,7 @@ function SlideRuleUnified({
               latestTurn={latestTurn}
               publishClosure={publishClosure}
               llmDraft={isRunning ? llmDraft : ""}
+              llmDraftLabel={llmDraftLabel}
               onChallenge={challengeTurn}
             />
           }
@@ -1191,6 +1209,7 @@ function SlideRuleSessionBody({
     skillContents,
     latestMermaid,
     llmDraft,
+    llmDraftLabel,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : activeSessionId,
     documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : undefined,
@@ -1558,6 +1577,7 @@ function SlideRuleSessionBody({
     skillContents,
     latestMermaid,
     llmDraft,
+    llmDraftLabel,
   };
 
   if (isImmersion) {

@@ -179,8 +179,9 @@ export interface DriveFullStreamOpts {
   ) => void;
   /** Called for each reasoning-engine step (evidence.search, risk.analyze ...). */
   onReasoningStep?: (label: string, loop?: number) => void;
-  /** 五系统 LLM 生成的实时内容增量（新颖意图路径；确定性域不触发）。 */
-  onLlmDelta?: (text: string) => void;
+  /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
+   *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
+  onLlmDelta?: (text: string, label?: string) => void;
 }
 
 /**
@@ -241,8 +242,8 @@ export async function driveFullViaPythonStream(
             opts.onReasoningStep?.(event.label as string, event.loop as number | undefined);
             break;
           case "llm_delta":
-            // 五系统 LLM 生成的实时内容增量（后端 150ms 批量聚合）。
-            opts.onLlmDelta?.(event.text as string);
+            // LLM 实时内容增量（后端 150ms 批量聚合，带来源标签）。
+            opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
             break;
           case "skill_start":
             opts.onSkillActivated?.(event.skill as SkillId, event.label as string);

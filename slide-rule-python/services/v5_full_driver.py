@@ -174,12 +174,57 @@ def _split_parallel_segments(selected: List[Dict[str, Any]]) -> List[List[Dict[s
     return segments
 
 
+def _llm_round_caps_enabled() -> bool:
+    """轮内推理能力（risk.analyze / counter.argue / synthesis.merge / report.write…）
+    是否走真 LLM。显式 SLIDERULE_LLM_ROUND_CAPS=0/false 关闭；默认跟随"是否配置了
+    LLM 通道"——配置了就真调（每一步的想法可流式观测），没配置走确定性 RAG。"""
+    env = os.getenv("SLIDERULE_LLM_ROUND_CAPS")
+    if env is not None and str(env).strip() != "":
+        return str(env).strip().lower() not in ("0", "false", "no", "off")
+    try:
+        from sliderule_llm.config import get_llm_config
+
+        return bool(get_llm_config().api_key)
+    except Exception:
+        return False
+
+
+def _execute_round_capability(cap: str, state: V5SessionState, role: str, turn_id: str) -> Any:
+    """执行一个轮内能力：LLM 通道已配置且能力原生支持时走真 LLM（内容增量经
+    capabilities 模块的 delta sink 实时流出），任何失败回落确定性 RAG 路径。
+    回落结果 provenance 保持 python-rag（诚实标注），真 LLM 结果是 python-llm。"""
+    if _llm_round_caps_enabled():
+        try:
+            from sliderule_llm.capabilities import (
+                execute_capability as _native_execute,
+                is_python_native_capability,
+            )
+
+            if is_python_native_capability(cap):
+                goal = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal or "")
+                payload = {
+                    "capabilityId": cap,
+                    "state": {"goal": {"text": goal}},
+                    "userText": goal,
+                    "roleId": role,
+                    "turnId": turn_id,
+                }
+                if cap == "evidence.search":
+                    from sliderule_llm.evidence import execute_evidence_runtime
+
+                    return _native_execute(payload, evidence_retriever=execute_evidence_runtime)
+                return _native_execute(payload)
+        except Exception as exc:  # noqa: BLE001 — LlmError/transport 都回落，一步失败不许沉掉整场推演
+            print(f"[v5_full_driver] native LLM cap {cap} failed, fallback to RAG: {str(exc)[:160]}")
+    return execute_v5_capability(cap, state, [], role, turn_id)
+
+
 def _timed_execute(cap: str, state: V5SessionState, role: str, turn_id: str) -> Dict[str, Any]:
     """Execute one capability, catching its error (per-cap try/except identical
     to the serial path — one failure must not sink the batch). Read-only on state."""
     t0 = time.time()
     try:
-        result = execute_v5_capability(cap, state, [], role, turn_id)
+        result = _execute_round_capability(cap, state, role, turn_id)
         return {
             "ok": True,
             "result_data": _result_to_dict(result),
@@ -525,8 +570,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 # Immediate persist before execute: cap_start visible to session GET pollers during long capability exec (review finding 2)
                 persist_state(state)
                 try:
-                    # Execute via full migrated executor - always real
-                    result = execute_v5_capability(cap, state, [], role, turn_id)
+                    # Execute via full migrated executor - always real（LLM 通道配置时轮内能力走真 LLM）
+                    result = _execute_round_capability(cap, state, role, turn_id)
                     result_data = _result_to_dict(result)
                     # Use Python-owned commitArtifact (artifact+run+gate+dependencyGraph updates)
                     art_id = f"art-{loop}-{cap}"
@@ -729,7 +774,42 @@ async def drive_full_v5_session_stream(
         {"type": "complete",      "state": dict}
     """
     import asyncio
+    import queue as _queue
     import time as _time
+
+    from sliderule_llm import capabilities as _caps
+
+    from . import v5_llm_generate as _gen
+
+    # 全程共享的带标签 LLM 增量队列（label, chunk）：轮内能力（risk.analyze /
+    # counter.argue / report.write…）与五系统起草的实时输出都汇到这里，由各
+    # 执行点旁边的排水循环冲成 SSE llm_delta 事件。sink 是模块级单例——本次
+    # 流注册、finally 注销；并发多会话时增量会交织（本地单人 dev 可接受）。
+    _delta_q: "_queue.Queue[tuple[str, str]]" = _queue.Queue()
+    _caps.set_capability_delta_sink(lambda cap_id, chunk: _delta_q.put((cap_id, chunk)))
+    _gen.set_generate_delta_sink(lambda chunk: _delta_q.put(("five-system-model", chunk)))
+
+    async def _pump_llm_deltas(task: "asyncio.Task"):
+        """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
+        llm_delta 事件（150ms 批量，防逐 token 事件风暴）。先记完成标志再排水，
+        保证任务结束瞬间到达的尾部增量也被冲出，不会滞留队列。"""
+        while True:
+            finished = task.done()
+            batches: List[tuple] = []
+            try:
+                while True:
+                    label, chunk = _delta_q.get_nowait()
+                    if batches and batches[-1][0] == label:
+                        batches[-1][1].append(chunk)
+                    else:
+                        batches.append((label, [chunk]))
+            except _queue.Empty:
+                pass
+            for label, chunks in batches:
+                yield {"type": "llm_delta", "text": "".join(chunks), "label": label}
+            if finished:
+                break
+            await asyncio.sleep(0.15)
 
     state = initial_state
     _advance_turn_version(state)
@@ -831,12 +911,17 @@ async def drive_full_v5_session_stream(
                 for sel in selected:
                     yield {"type": "reasoning_step", "label": sel["capabilityId"], "loop": loop}
                 for group in _split_parallel_segments(selected):
-                    outcomes = await asyncio.gather(*[
+                    batch_task = asyncio.ensure_future(asyncio.gather(*[
                         asyncio.to_thread(
                             _timed_execute, sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id
                         )
                         for sel in group
-                    ])
+                    ]))
+                    # 并行批执行期间排水：各能力的 LLM 想法带标签实时流出
+                    #（并发时不同能力的增量按标签分事件，前端各自归位）。
+                    async for _delta_event in _pump_llm_deltas(batch_task):
+                        yield _delta_event
+                    outcomes = batch_task.result()
                     for sel, outcome in zip(group, outcomes):
                         await asyncio.to_thread(
                             _commit_executed_outcome, state, sel=sel, loop=loop, outcome=outcome, parallel=True
@@ -873,7 +958,13 @@ async def drive_full_v5_session_stream(
                 result_data: Dict[str, Any] = {}
                 cap_error = False
                 try:
-                    result = await asyncio.to_thread(execute_v5_capability, cap, state, [], role, turn_id)
+                    exec_task = asyncio.ensure_future(
+                        asyncio.to_thread(_execute_round_capability, cap, state, role, turn_id)
+                    )
+                    # 串行执行期间排水：这一步的 LLM 想法带标签实时流出。
+                    async for _delta_event in _pump_llm_deltas(exec_task):
+                        yield _delta_event
+                    result = exec_task.result()
                     result_data = _result_to_dict(result)
                     art_id = f"art-{loop}-{cap}"
                     produced = ProducedBy(capabilityRunId=run_id, capabilityId=cap, roleId=role)
@@ -969,37 +1060,14 @@ async def drive_full_v5_session_stream(
             persist_state(state)
 
         # 闭环证据重建里藏着最长的一步：新颖意图的五系统 LLM 生成（60~100s）。
-        # 注册 delta sink 并在等待线程期间持续排水，把 LLM 的实时输出以
-        # llm_delta 事件推给前端（Claude 式"看得见的想法"）。150ms 批量聚合，
-        # 避免逐 token 的事件风暴。
-        import queue as _queue
-
-        from . import v5_llm_generate as _gen
-
-        _delta_q: "_queue.Queue[str]" = _queue.Queue()
-        _gen.set_generate_delta_sink(_delta_q.put)
-        try:
-            closure_task = asyncio.ensure_future(
-                asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
-            )
-            while True:
-                # 先记完成标志再排水：保证任务结束瞬间到达的尾部增量也被冲出，
-                # 不会在 break 时滞留队列。
-                finished = closure_task.done()
-                pending: List[str] = []
-                try:
-                    while True:
-                        pending.append(_delta_q.get_nowait())
-                except _queue.Empty:
-                    pass
-                if pending:
-                    yield {"type": "llm_delta", "text": "".join(pending)}
-                if finished:
-                    break
-                await asyncio.sleep(0.15)
-            state = closure_task.result()
-        finally:
-            _gen.set_generate_delta_sink(None)
+        # 等待线程期间持续排水（共享带标签队列），把 LLM 的实时输出以
+        # llm_delta 事件推给前端（Claude 式"看得见的想法"）。
+        closure_task = asyncio.ensure_future(
+            asyncio.to_thread(_ensure_runtime_closure_evidence, state, user_instruction, loop)
+        )
+        async for _delta_event in _pump_llm_deltas(closure_task):
+            yield _delta_event
+        state = closure_task.result()
 
         state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
         gate = await asyncio.to_thread(evaluate_coverage_gate, state)
@@ -1032,6 +1100,10 @@ async def drive_full_v5_session_stream(
             capabilityId="driver", kind="think", text="phase_changed: failed", order=10)
         persist_state(state)
         yield {"type": "phase_change", "phase": "failed", "detail": state.awaitDetail}
+    finally:
+        # 注销模块级 sink：本次流之后的 LLM 调用不再往（已废弃的）队列里灌。
+        _caps.set_capability_delta_sink(None)
+        _gen.set_generate_delta_sink(None)
 
     persist_state(state)
 

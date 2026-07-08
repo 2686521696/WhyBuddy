@@ -26,6 +26,34 @@ class UnsupportedCapability(Exception):
     pass
 
 
+# 实时增量回调（推演可观测性）：驱动层注册后，每个能力的 LLM 内容增量会带
+# capability 标签逐块推给它（SSE llm_delta → 前端左栏实时输出）。只是观测
+# 钩子——不参与结果/gate/trust；回调异常被吞掉，永不影响调用本身。
+# 注意：模块级单 sink，多会话并发时增量会交织（本地单人 dev 可接受）。
+_delta_sink: Callable[[str, str], None] | None = None
+
+
+def set_capability_delta_sink(sink: Callable[[str, str], None] | None) -> None:
+    global _delta_sink
+    _delta_sink = sink
+
+
+def _delta_emitter(capability_id: str) -> Callable[[str], None] | None:
+    if _delta_sink is None:
+        return None
+
+    def _emit(chunk: str, _cap: str = capability_id) -> None:
+        sink = _delta_sink
+        if sink is None:
+            return
+        try:
+            sink(_cap, chunk)
+        except Exception:
+            pass
+
+    return _emit
+
+
 CAPABILITY_PROMPTS: dict[str, str] = {
     "intent.clarify": (
         "You are SlideRule V5's intent-clarification role. Given the user's goal and message, write a "
@@ -274,11 +302,18 @@ def _execute_report_write(
 ) -> dict[str, Any]:
     messages = build_report_write_messages(body)
     caller = json_caller or call_llm_json_with_shape
+    kwargs: dict[str, Any] = {}
+    # on_delta 只在默认 caller 上传（注入的测试替身不认识这个参数）
+    if json_caller is None:
+        emitter = _delta_emitter("report.write")
+        if emitter is not None:
+            kwargs["on_delta"] = emitter
     parsed, result = caller(
         messages,
         required_keys=REPORT_WRITE_REQUIRED_KEYS,
         max_shape_retries=1,
         max_tokens=max_tokens,
+        **kwargs,
     )
     title = _clean(str(parsed.get("title") or ""))
     summary = _clean(str(parsed.get("summary") or ""))
@@ -316,7 +351,12 @@ def execute_capability(
 
     messages = build_messages(capability_id, body)
     llm_caller = caller or call_llm_with_retry
-    result = llm_caller(messages, max_tokens=max_tokens)
+    kwargs: dict[str, Any] = {}
+    if caller is None:
+        emitter = _delta_emitter(str(capability_id))
+        if emitter is not None:
+            kwargs["on_delta"] = emitter
+    result = llm_caller(messages, max_tokens=max_tokens, **kwargs)
 
     content = _clean(result.content)
     if not content:
