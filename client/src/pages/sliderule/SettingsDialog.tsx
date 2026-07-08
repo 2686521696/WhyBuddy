@@ -1,7 +1,7 @@
 import React from "react";
 import { Cpu, Server, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
-import type { ProjectionDensity } from "./sliderule-projection-constants";
+import { PROJECTION_DENSITY_STORAGE_KEY, type ProjectionDensity } from "./sliderule-projection-constants";
 import { LlmProviderSettings } from "./LlmProviderSettings";
 import { LlmChannelPanel } from "./LlmChannelPanel";
 import {
@@ -16,15 +16,12 @@ import {
   saveProvidersConfig,
   type LlmProvidersConfig,
 } from "@/lib/sliderule-llm-providers";
-import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 
 type CategoryId = "channel" | "llm" | "system";
 
 type MarathonBudget = { maxTokens: number; declaredAt: string };
 
-export type SettingsDialogProps = {
-  open: boolean;
-  onClose: () => void;
+export type SettingsSurfaceProps = {
   /** 本话题运行时数据（行/实例/角色）的会话 id，供「数据管理」清理 */
   sessionId?: string;
   projectionDensity?: ProjectionDensity;
@@ -35,6 +32,11 @@ export type SettingsDialogProps = {
   setMarathonBudget?: (b: MarathonBudget) => void;
 };
 
+export type SettingsDialogProps = SettingsSurfaceProps & {
+  open: boolean;
+  onClose: () => void;
+};
+
 const NAV_ITEMS: Array<{ id: CategoryId; label: string; icon: React.ReactNode }> = [
   { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
   { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
@@ -42,45 +44,96 @@ const NAV_ITEMS: Array<{ id: CategoryId; label: string; icon: React.ReactNode }>
 ];
 
 /**
- * 浏览器直连分类的显隐：它是 GitHub Pages 纯浏览器 Demo（无服务端）的唯一
- * LLM 通道，那里必须有；本地/服务端场景是噪音，默认隐藏——除非用户曾经
- * 启用过厂商（老配置仍在生效，必须留入口可见可关，不做暗门）。
+ * SlideRule 设置中心（Cherry Studio 风格三栏）。
+ * 推演通道分类 = 服务端真通道（五系统生成/评审/AI 写回实际走的 LLM）配置；
+ * 浏览器直连分类 = provider-centric BYOK 备用池（仅无服务端时的直连路径消费，
+ * 自定义厂商重要，常驻可见）；
+ * 系统设置分类 = 推演偏好（投影密度 / 默认模式 / 预算）+ 运行时数据管理。
+ *
+ * 弹窗形态保留给需要就地配置的场景；主入口是侧栏「设置」整页（SettingsPage）。
  */
-function showBrowserDirectTab(): boolean {
-  if (IS_GITHUB_PAGES) return true;
-  try {
-    return loadProvidersConfig()?.providers.some((p) => p.enabled) ?? false;
-  } catch {
-    return false;
-  }
+export function SettingsDialog(props: SettingsDialogProps) {
+  const { open, onClose, ...surface } = props;
+  if (!open) return null;
+  return <SettingsSurface mode="dialog" onClose={onClose} {...surface} />;
 }
 
 /**
- * SlideRule 设置中心（Cherry Studio 风格三栏）。
- * 推演通道分类 = 服务端真通道（五系统生成/评审/AI 写回实际走的 LLM）配置；
- * 浏览器直连分类 = provider-centric BYOK 备用池（仅无服务端时的直连路径消费）；
- * 系统设置分类 = 推演偏好（投影密度 / 默认模式 / 预算）+ 运行时数据管理。
+ * 侧栏「设置」的整页形态：铺满内容区，无遮罩/关闭按钮。
+ * 推演偏好（投影密度/默认模式/预算）直接落 localStorage——与推演页
+ * 底部输入条共用同一存储键，切回推演视图重挂载后即生效。
  */
-export function SettingsDialog(props: SettingsDialogProps) {
-  const { open, onClose } = props;
-  const [category, setCategory] = React.useState<CategoryId>("channel");
-  const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(null);
-  // Capture the snapshot we loaded when the dialog was opened (for dirty check + no-op Save guard).
-  const initialLlmDraftRef = React.useRef<LlmProvidersConfig | null>(null);
-
-  React.useEffect(() => {
-    if (open) {
-      setCategory("channel");
-      setShowUnsavedConfirm(false);
-      const loaded = loadProvidersConfig();
-      setDraft(loaded);
-      // Deep copy for comparison (simple + sufficient for this config shape).
-      initialLlmDraftRef.current = loaded ? JSON.parse(JSON.stringify(loaded)) : null;
-    } else {
-      initialLlmDraftRef.current = null;
-      setShowUnsavedConfirm(false);
+export function SettingsPage() {
+  const [density, setDensity] = React.useState<ProjectionDensity>(() => {
+    try {
+      return localStorage.getItem(PROJECTION_DENSITY_STORAGE_KEY) === "detailed" ? "detailed" : "compact";
+    } catch {
+      return "compact";
     }
-  }, [open]);
+  });
+  const [driveMode, setDriveMode] = React.useState<"single" | "marathon">(() => {
+    try {
+      return localStorage.getItem("sliderule:driveMode") === "marathon" ? "marathon" : "single";
+    } catch {
+      return "single";
+    }
+  });
+  const [budget, setBudget] = React.useState<MarathonBudget>(() => {
+    try {
+      const raw = localStorage.getItem("sliderule:marathonBudget");
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && Number.isFinite(parsed.maxTokens)) return parsed;
+    } catch {}
+    return { maxTokens: 12000, declaredAt: new Date().toISOString() };
+  });
+  const sessionId = React.useMemo(() => {
+    try {
+      return localStorage.getItem("sliderule:active-session-id") || "sliderule-v51-product";
+    } catch {
+      return "sliderule-v51-product";
+    }
+  }, []);
+
+  return (
+    <SettingsSurface
+      mode="page"
+      sessionId={sessionId}
+      projectionDensity={density}
+      onProjectionDensityChange={(d) => {
+        setDensity(d);
+        try {
+          localStorage.setItem(PROJECTION_DENSITY_STORAGE_KEY, d);
+        } catch {}
+      }}
+      driveMode={driveMode}
+      setDriveMode={(m) => {
+        setDriveMode(m);
+        try {
+          localStorage.setItem("sliderule:driveMode", m);
+        } catch {}
+      }}
+      marathonBudget={budget}
+      setMarathonBudget={(b) => {
+        setBudget(b);
+        try {
+          localStorage.setItem("sliderule:marathonBudget", JSON.stringify(b));
+        } catch {}
+      }}
+    />
+  );
+}
+
+function SettingsSurface(
+  props: SettingsSurfaceProps & { mode: "dialog" | "page"; onClose?: () => void }
+) {
+  const { mode, onClose } = props;
+  const isDialog = mode === "dialog";
+  const [category, setCategory] = React.useState<CategoryId>("channel");
+  const [draft, setDraft] = React.useState<LlmProvidersConfig | null>(() => loadProvidersConfig());
+  // Snapshot loaded at mount (for dirty check + no-op Save guard).
+  const initialLlmDraftRef = React.useRef<LlmProvidersConfig | null>(
+    draft ? JSON.parse(JSON.stringify(draft)) : null
+  );
 
   const isLlmDirty = React.useMemo(() => {
     if (!draft || !initialLlmDraftRef.current) return false;
@@ -89,9 +142,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   const [showUnsavedConfirm, setShowUnsavedConfirm] = React.useState(false);
 
-  if (!open) return null;
-
   const guardedClose = () => {
+    if (!isDialog) return;
     if (showUnsavedConfirm) {
       // Click outside / X while confirm is shown → cancel the confirm (common UX)
       setShowUnsavedConfirm(false);
@@ -101,13 +153,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
       setShowUnsavedConfirm(true);
       return;
     }
-    onClose();
+    onClose?.();
   };
 
   const cancelUnsaved = () => setShowUnsavedConfirm(false);
   const forceClose = () => {
     setShowUnsavedConfirm(false);
-    onClose();
+    onClose?.();
   };
 
   const handleSave = () => {
@@ -115,7 +167,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     // Only persist + toast when there is a meaningful change (avoids "设置已保存" spam on no-op).
     if (!isLlmDirty) {
       setShowUnsavedConfirm(false);
-      onClose();
+      if (isDialog) onClose?.();
       return;
     }
     // 阻塞非法配置：启用的厂商必须密钥就绪 + Base URL 合法（否则进池会失败）。
@@ -136,25 +188,28 @@ export function SettingsDialog(props: SettingsDialogProps) {
     });
   };
 
-  return (
-    <>
-      <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={guardedClose} />
-      <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={guardedClose}>
-        <div
-          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
-          data-testid="sliderule-settings-dialog"
-          role="dialog"
-          aria-label="设置"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={guardedClose}
-            className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
-            title="关闭"
-            data-testid="sliderule-settings-close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+  const card = (
+    <div
+      className={
+        isDialog
+          ? "relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
+          : "relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_1px_8px_rgb(68_60_44/0.06)]"
+      }
+      data-testid={isDialog ? "sliderule-settings-dialog" : "sliderule-settings-page"}
+      role={isDialog ? "dialog" : undefined}
+      aria-label="设置"
+      onClick={isDialog ? (e) => e.stopPropagation() : undefined}
+    >
+          {isDialog && (
+            <button
+              onClick={guardedClose}
+              className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
+              title="关闭"
+              data-testid="sliderule-settings-close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
 
           <div className="flex min-h-0 flex-1">
             {/* 左栏：分类导航 */}
@@ -167,7 +222,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   title="SlideRule 设置"
                 />
               </div>
-              {NAV_ITEMS.filter((item) => item.id !== "llm" || showBrowserDirectTab()).map((item) => {
+              {NAV_ITEMS.map((item) => {
                 const active = category === item.id;
                 return (
                   <button
@@ -214,7 +269,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
           {/* 底部操作 */}
           <div className="flex items-center justify-end gap-2 border-t border-[#E7E2D9] px-4 py-3">
-            {showUnsavedConfirm ? (
+            {isDialog && showUnsavedConfirm ? (
               <div className="flex w-full items-center justify-between gap-3 text-[12px]">
                 <span className="text-rose-600">有未保存的更改，关闭将丢失更改。</span>
                 <div className="flex shrink-0 items-center gap-2">
@@ -234,13 +289,15 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             ) : (
               <>
-                <button
-                  onClick={guardedClose}
-                  className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
-                  data-testid="sliderule-settings-close"
-                >
-                  关闭
-                </button>
+                {isDialog && (
+                  <button
+                    onClick={guardedClose}
+                    className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
+                    data-testid="sliderule-settings-close"
+                  >
+                    关闭
+                  </button>
+                )}
                 {/* 底部保存只管「浏览器直连」草稿；推演通道/系统设置各自即时生效 */}
                 {category === "llm" && (
                   <button
@@ -255,7 +312,15 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </>
             )}
           </div>
-        </div>
+    </div>
+  );
+
+  if (!isDialog) return card;
+  return (
+    <>
+      <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={guardedClose} />
+      <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={guardedClose}>
+        {card}
       </div>
     </>
   );
@@ -292,7 +357,7 @@ function Segmented<T extends string>({
   );
 }
 
-function SystemPrefs(props: SettingsDialogProps) {
+function SystemPrefs(props: SettingsSurfaceProps) {
   const {
     projectionDensity,
     onProjectionDensityChange,

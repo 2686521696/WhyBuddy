@@ -70,6 +70,7 @@ describe("AgentLoopPage", () => {
     expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
     expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({ kind: "workbench-legacy" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
+    expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({ kind: "settings-legacy" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
   });
 
@@ -130,7 +131,9 @@ describe("AgentLoopPage", () => {
     expect(shouldRequestSettingsForView("sliderule")).toBe(false);
     expect(shouldRequestSettingsForView("workbench")).toBe(false);
     expect(shouldRequestSettingsForView("workbench-legacy")).toBe(true);
-    expect(shouldRequestSettingsForView("settings")).toBe(true);
+    // 设置整页（SettingsPage）自管本地配置，不消费 AgentLoop settings payload
+    expect(shouldRequestSettingsForView("settings")).toBe(false);
+    expect(shouldRequestSettingsForView("settings-legacy")).toBe(true);
   });
 
   it("stops overview fallback polling once the background queue runtime is stopped", () => {
@@ -149,16 +152,27 @@ describe("AgentLoopPage", () => {
     expect(shouldPollAgentLoopOverview(stoppedOverview, { kind: "workbench" }, "bridge-run")).toBe(false);
   });
 
-  it("allows the shell router to control DashboardApp settings view", () => {
-    const html = renderToStaticMarkup(
+  it("allows the shell router to control DashboardApp settings views (整页 + legacy)", () => {
+    // 侧栏「设置」= SlideRule 设置整页
+    const settingsHtml = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
         view="settings"
         onViewChange={vi.fn()}
       />,
     );
+    expect(settingsHtml).toContain('data-testid="sliderule-settings-page"');
+    expect(settingsHtml).not.toContain("native-settings-content");
 
-    expect(html).toContain("native-settings-content");
+    // legacy AgentLoop 设置页保留 URL 直达
+    const legacyHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="settings-legacy"
+        onViewChange={vi.fn()}
+      />,
+    );
+    expect(legacyHtml).toContain("native-settings-content");
   });
 
   it("renders a first-class SlideRule navigation entry inside the AgentLoop shell", () => {
@@ -869,7 +883,7 @@ it("agentloop setting layout 112 renders summary cards and five tabs", () => {
   try {
     // force settings view for static layout contract test; prop only affects initial render state for test
     html = renderToStaticMarkup(
-      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -914,7 +928,7 @@ it("agentloop setting cli config 112 renders two column worker form", () => {
   let html: string = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1208,7 +1222,7 @@ it("agentloop setting component split 112 preserves settings render contract", (
   try {
     // primary render contract via DashboardApp (orchestrator)
     html = renderToStaticMarkup(
-      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
 
     // must still contain core settings UI contract elements (preserved behavior)
@@ -1318,7 +1332,7 @@ it("agentloop setting visual readiness 112 covers five reference tabs", () => {
   let html: string = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {
@@ -1401,7 +1415,7 @@ it("agentloop setting center visual shell matches SlideRule reference", () => {
   let html = "";
   try {
     html = renderToStaticMarkup(
-      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings" />
+      <DashboardApp payload={{ tasks: [], counts: {} }} initialView="settings-legacy" />
     );
   } finally {
     if (typeof origWindow === "undefined") {

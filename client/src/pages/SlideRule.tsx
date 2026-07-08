@@ -33,7 +33,6 @@ import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { newSessionId, SessionSwitcher } from "./sliderule/SessionSwitcher";
-import { SettingsDialog } from "./sliderule/SettingsDialog";
 import { ClarificationCard, type ClarificationItem } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
@@ -586,14 +585,10 @@ function SlideRuleUnified({
   retryCapability,
   toggleRouteExpanded,
   onEvidenceRefClick,
-  projectionDensity,
-  onProjectionDensityChange,
   latestTurn,
   executorMode,
   driveMode,
   setDriveMode,
-  marathonBudget,
-  setMarathonBudget,
   pendingClarifications,
   answerClarifications,
   generateDeliverables,
@@ -628,14 +623,10 @@ function SlideRuleUnified({
   retryCapability: ReturnType<typeof useSlideRuleSession>["retryCapability"];
   toggleRouteExpanded: (turnId: string) => void;
   onEvidenceRefClick: (artifactId: string) => void;
-  projectionDensity: ProjectionDensity;
-  onProjectionDensityChange: (density: ProjectionDensity) => void;
   latestTurn: UiTurn | null;
   executorMode: ReturnType<typeof useSlideRuleSession>["executorMode"];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
-  marathonBudget?: { maxTokens: number; declaredAt: string };
-  setMarathonBudget?: (b: { maxTokens: number; declaredAt: string }) => void;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (answers: Array<{ gapId: string; answer: string }>) => void;
   generateDeliverables: () => void;
@@ -661,7 +652,6 @@ function SlideRuleUnified({
   sessionControl?: React.ReactNode;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const composerHints = useMemo(
     () => deriveComposerHintChips(sessionState),
     [sessionState]
@@ -698,7 +688,6 @@ function SlideRuleUnified({
           executorMode={executorMode}
           publishClosure={publishClosure}
           onResetSession={resetSession}
-          onOpenSettings={() => setSettingsOpen(true)}
           onOpenDeliverables={openDeliverables}
           sessionControl={sessionControl}
           embedded={embedded}
@@ -771,18 +760,7 @@ function SlideRuleUnified({
         </div>
       </div>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        sessionId={sessionId}
-        projectionDensity={projectionDensity}
-        onProjectionDensityChange={onProjectionDensityChange}
-        driveMode={driveMode}
-        setDriveMode={setDriveMode}
-        marathonBudget={marathonBudget}
-        setMarathonBudget={setMarathonBudget}
-      />
-
+      {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
       <DeliverablesPanel
         open={deliverablesOpen}
         onClose={() => setDeliverablesOpen(false)}

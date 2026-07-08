@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SettingsDialog } from "../SettingsDialog";
+import { SettingsDialog, SettingsPage } from "../SettingsDialog";
 
 // SystemPrefs 的数据管理区读 localStorage — node 环境补一个最小 shim
 (globalThis as unknown as { localStorage: Storage }).localStorage ??= {
@@ -22,18 +22,29 @@ import { SettingsDialog } from "../SettingsDialog";
 } as unknown as Storage;
 
 describe("SettingsDialog（设置中心重构）", () => {
-  it("导航：推演通道（默认）+ 系统设置；浏览器直连默认隐藏（非 Pages 且无启用厂商）", () => {
+  it("导航：推演通道（默认）+ 浏览器直连（常驻，自定义厂商重要）+ 系统设置", () => {
     const html = renderToStaticMarkup(
       <SettingsDialog open onClose={() => {}} sessionId="s1" />
     );
     expect(html).toContain('data-testid="sliderule-settings-nav-channel"');
     expect(html).toContain('data-testid="sliderule-settings-nav-system"');
     expect(html).toContain("推演通道");
-    // 浏览器直连只服务 GitHub Pages 纯浏览器 Demo / 存量启用配置——本地默认不见
-    expect(html).not.toContain('data-testid="sliderule-settings-nav-llm"');
+    // 用户反馈：浏览器直连的自定义厂商很重要——本地也常驻可见，不再按启用状态隐藏
+    expect(html).toContain('data-testid="sliderule-settings-nav-llm"');
     // 默认分类 = 推演通道：真通道面板在场
     expect(html).toContain('data-testid="llm-channel-panel"');
     expect(html).toContain("服务端真通道");
+  });
+
+  it("SettingsPage 整页形态：无遮罩/关闭按钮，三分类导航在场", () => {
+    const html = renderToStaticMarkup(<SettingsPage />);
+    expect(html).toContain('data-testid="sliderule-settings-page"');
+    expect(html).toContain('data-testid="sliderule-settings-nav-channel"');
+    expect(html).toContain('data-testid="sliderule-settings-nav-llm"');
+    expect(html).toContain('data-testid="sliderule-settings-nav-system"');
+    // 整页无对话框化装置
+    expect(html).not.toContain('data-testid="sliderule-settings-dialog"');
+    expect(html).not.toContain('data-testid="sliderule-settings-close"');
   });
 
   it("推演通道分类不渲染底部「保存」（面板各自即时生效）", () => {

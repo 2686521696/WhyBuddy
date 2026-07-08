@@ -5,7 +5,7 @@ import { deriveStatusBarFacts } from "./derive-status-bar";
 import { autopilotTheme } from "./autopilot-theme";
 import type { SlideRuleExecutorMode } from "./types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
-import { Layers, RotateCw, Settings2 } from "lucide-react";
+import { Layers, RotateCw } from "lucide-react";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 
 export function SlideRuleTopHud({
@@ -18,7 +18,6 @@ export function SlideRuleTopHud({
   executorMode,
   publishClosure,
   onResetSession,
-  onOpenSettings,
   onOpenDeliverables,
   sessionControl,
   embedded = false,
@@ -32,7 +31,6 @@ export function SlideRuleTopHud({
   executorMode?: SlideRuleExecutorMode;
   publishClosure?: PublishClosureSummary | null;
   onResetSession?: () => void;
-  onOpenSettings?: () => void;
   onOpenDeliverables?: () => void;
   /** 会话切换器（Claude 式历史会话/新建），由页面装配后传入 */
   sessionControl?: React.ReactNode;
@@ -110,18 +108,7 @@ export function SlideRuleTopHud({
               交付物
             </button>
           )}
-          {onOpenSettings && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              data-testid="sliderule-settings-open"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E7E2D9] bg-white text-stone-600 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA]"
-              title="设置"
-              aria-label="设置"
-            >
-              <Settings2 className="h-4 w-4" />
-            </button>
-          )}
+          {/* 设置入口收敛到侧栏「设置」整页（用户反馈：与侧栏重复） */}
           {onResetSession && (
             <button
               type="button"

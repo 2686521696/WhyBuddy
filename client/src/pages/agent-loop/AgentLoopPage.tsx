@@ -26,13 +26,14 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "settings";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "settings" | "settings-legacy";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
   | { kind: "workbench" }
   | { kind: "workbench-legacy" }
   | { kind: "settings" }
+  | { kind: "settings-legacy" }
   | { kind: "detail"; runId: string };
 
 export function getAgentLoopSliderulePath(): string {
@@ -50,6 +51,11 @@ export function getAgentLoopWorkbenchLegacyPath(): string {
 
 export function getAgentLoopSettingsPath(): string {
   return "/agent-loop/settings";
+}
+
+/** legacy AgentLoop 设置页：摘除导航、保留 URL 直达。 */
+export function getAgentLoopSettingsLegacyPath(): string {
+  return "/agent-loop/settings/legacy";
 }
 
 export function getAgentLoopRunPath(runId: string): string {
@@ -70,6 +76,9 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/workbench/legacy") {
     return { kind: "workbench-legacy" };
   }
+  if (normalized === "/agent-loop/settings/legacy") {
+    return { kind: "settings-legacy" };
+  }
   if (normalized === "/agent-loop/settings") {
     return { kind: "settings" };
   }
@@ -89,8 +98,15 @@ export function resolveAgentLoopLiveEventRunId(
   overview: OverviewPayload | null,
   route: AgentLoopRouteState,
 ): string | null {
-  // 新工作台（主线观察台）自行拉取数据，不参与 legacy run 事件流
-  if (route.kind === "sliderule" || route.kind === "settings" || route.kind === "workbench") return null;
+  // 新工作台（主线观察台）/设置整页自行拉取数据，不参与 legacy run 事件流
+  if (
+    route.kind === "sliderule" ||
+    route.kind === "settings" ||
+    route.kind === "settings-legacy" ||
+    route.kind === "workbench"
+  ) {
+    return null;
+  }
   const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
   const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
   if (!runtimeActive) return route.kind === "detail" ? route.runId : null;
@@ -200,9 +216,11 @@ export default function AgentLoopPage() {
         ? getAgentLoopSliderulePath()
         : next === "settings"
           ? getAgentLoopSettingsPath()
-          : next === "workbench-legacy"
-            ? getAgentLoopWorkbenchLegacyPath()
-            : getAgentLoopWorkbenchPath();
+          : next === "settings-legacy"
+            ? getAgentLoopSettingsLegacyPath()
+            : next === "workbench-legacy"
+              ? getAgentLoopWorkbenchLegacyPath()
+              : getAgentLoopWorkbenchPath();
     setLocation(path);
   }
 
@@ -533,11 +551,13 @@ export default function AgentLoopPage() {
   const dashboardView: DashboardRouteView =
     route.kind === "settings"
       ? "settings"
-      : route.kind === "sliderule"
-        ? "sliderule"
-        : route.kind === "workbench-legacy"
-          ? "workbench-legacy"
-          : "workbench";
+      : route.kind === "settings-legacy"
+        ? "settings-legacy"
+        : route.kind === "sliderule"
+          ? "sliderule"
+          : route.kind === "workbench-legacy"
+            ? "workbench-legacy"
+            : "workbench";
 
   return (
     <main data-testid="agent-loop-page" className="agent-loop-root">
@@ -562,9 +582,11 @@ export default function AgentLoopPage() {
               ? getAgentLoopSliderulePath()
               : next === "settings"
                 ? getAgentLoopSettingsPath()
-                : next === "workbench-legacy"
-                  ? getAgentLoopWorkbenchLegacyPath()
-                  : getAgentLoopWorkbenchPath()
+                : next === "settings-legacy"
+                  ? getAgentLoopSettingsLegacyPath()
+                  : next === "workbench-legacy"
+                    ? getAgentLoopWorkbenchLegacyPath()
+                    : getAgentLoopWorkbenchPath()
           )}
           getTaskRunPath={getAgentLoopRunPath}
           onOpenTask={openTaskRoute}
