@@ -432,8 +432,8 @@ function StationRow({
       className={`relative mb-3.5 last:mb-0 ${
         isReentry
           ? immersionOverlay
-            ? "rounded-md bg-amber-500/[0.07] py-0.5 pr-1"
-            : "rounded-md bg-amber-50/80 py-1 pr-1"
+            ? "rounded-sm bg-amber-500/[0.07] py-0.5 pr-1"
+            : "rounded-sm bg-amber-50/80 py-1 pr-1"
           : ""
       } ${dimmed ? "opacity-40" : ""}`}
       style={{ marginLeft: indent }}
@@ -546,7 +546,7 @@ function StationRow({
               runIndex: failStep.runIndex,
             })
           }
-          className="mt-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+          className="mt-1.5 rounded-sm border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
         >
           {retrying ? "重试中…" : "重试"}
         </button>
@@ -630,7 +630,7 @@ export function TurnRouteTimeline({
       <button
         type="button"
         onClick={onToggle}
-        className="mb-2 w-full rounded-md border border-transparent py-1 text-left text-xs text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
+        className="mb-2 w-full rounded-sm border border-transparent py-1 text-left text-xs text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
       >
         {summary}
       </button>
@@ -687,7 +687,7 @@ export function TurnRouteTimeline({
                   key={`round-fold-${r}`}
                   type="button"
                   onClick={() => toggleRound(r!)}
-                  className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-stone-400 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-600"
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-400 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-600"
                   data-testid={`sliderule-timeline-round-fold-${r}`}
                 >
                   <span className="font-mono">▸</span>
@@ -703,7 +703,7 @@ export function TurnRouteTimeline({
               <button
                 type="button"
                 onClick={() => toggleRound(r!)}
-                className="mb-1 flex w-full items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 text-left text-[11px] text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
+                className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
                 data-testid={`sliderule-timeline-round-collapse-${r}`}
               >
                 <span className="font-mono">▾</span>

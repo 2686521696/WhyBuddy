@@ -84,9 +84,9 @@ export function PageScreen({
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {pages.map((page) => (
-            <div key={page.title} className={`rounded-xl border border-[#E7E2D9] bg-[#F5F1EA] p-3 `}>
+            <div key={page.title} className={`rounded-md border border-[#E7E2D9] bg-[#F5F1EA] p-3 `}>
               {/* Page title bar */}
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 rounded border border-[#E7E2D9] bg-white px-3 py-1.5 shadow-sm">
                 <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
                 <span className="text-xs font-semibold text-stone-700">{page.title}</span>
               </div>
@@ -123,7 +123,7 @@ export function PageScreen({
                 {page.actions.map((action, i) => (
                   <div
                     key={action}
-                    className={`rounded-md px-2.5 py-1 text-[10px] font-medium ${
+                    className={`rounded-sm px-2.5 py-1 text-[10px] font-medium ${
                       i === 0
                         ? "bg-teal-500 text-white"
                         : "border border-[#E7E2D9] bg-white text-stone-600"

@@ -192,8 +192,8 @@ function SettingsSurface(
     <div
       className={
         isDialog
-          ? "relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
-          : "relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_1px_8px_rgb(68_60_44/0.06)]"
+          ? "relative flex h-[min(86vh,760px)] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-lg border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
+          : "relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-[#E7E2D9] bg-white shadow-[0_1px_8px_rgb(68_60_44/0.06)]"
       }
       data-testid={isDialog ? "sliderule-settings-dialog" : "sliderule-settings-page"}
       role={isDialog ? "dialog" : undefined}
@@ -203,7 +203,7 @@ function SettingsSurface(
           {isDialog && (
             <button
               onClick={guardedClose}
-              className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
+              className="absolute right-3 top-3 z-10 rounded p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
               title="关闭"
               data-testid="sliderule-settings-close"
             >
@@ -223,7 +223,7 @@ function SettingsSurface(
                     type="button"
                     onClick={() => setCategory(item.id)}
                     data-testid={`sliderule-settings-nav-${item.id}`}
-                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition ${
+                    className={`flex items-center gap-2.5 rounded px-3 py-2 text-[13px] font-semibold transition ${
                       active
                         ? "bg-[#F8E8E0] text-[#B0552F]"
                         : "text-stone-600 hover:bg-white hover:text-stone-800"
@@ -245,7 +245,7 @@ function SettingsSurface(
               ) : category === "llm" ? (
                 draft ? (
                   <div className="flex min-h-0 flex-1 flex-col">
-                    <div className="mx-6 mt-4 rounded-xl bg-[#F5F1EA] px-4 py-2.5 text-[11px] leading-5 text-stone-500 ring-1 ring-[#E7E2D9]">
+                    <div className="mx-6 mt-4 rounded-md bg-[#F5F1EA] px-4 py-2.5 text-[11px] leading-5 text-stone-500 ring-1 ring-[#E7E2D9]">
                       备用通道：仅「浏览器直连」模式（本地无服务端时）消费这里的配置；
                       服务端推演不读它——真通道在左侧「推演通道」里配。
                     </div>
@@ -269,13 +269,13 @@ function SettingsSurface(
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={cancelUnsaved}
-                    className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
+                    className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
                   >
                     取消
                   </button>
                   <button
                     onClick={forceClose}
-                    className="rounded-lg bg-rose-600 px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-rose-500"
+                    className="rounded bg-rose-600 px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-rose-500"
                   >
                     确认关闭
                   </button>
@@ -286,7 +286,7 @@ function SettingsSurface(
                 {isDialog && (
                   <button
                     onClick={guardedClose}
-                    className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
+                    className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
                     data-testid="sliderule-settings-close"
                   >
                     关闭
@@ -297,7 +297,7 @@ function SettingsSurface(
                   <button
                     onClick={handleSave}
                     disabled={!isLlmDirty}
-                    className="rounded-lg bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#C4633F]"
+                    className="rounded bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#C4633F]"
                     data-testid="sliderule-settings-save"
                   >
                     保存
@@ -333,7 +333,7 @@ function Segmented<T extends string>({
   onChange?: (v: T) => void;
 }) {
   return (
-    <div className="flex max-w-md gap-1 rounded-lg bg-[#F0EDE5] p-1">
+    <div className="flex max-w-md gap-1 rounded bg-[#F0EDE5] p-1">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -341,7 +341,7 @@ function Segmented<T extends string>({
           disabled={!onChange}
           onClick={() => onChange?.(opt.value)}
           title={opt.hint}
-          className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
+          className={`flex-1 rounded-sm px-3 py-1.5 text-[13px] font-medium transition-colors ${
             value === opt.value ? "bg-white text-stone-800 shadow-sm" : "text-stone-500 hover:text-stone-700"
           }`}
         >
@@ -406,7 +406,7 @@ function SystemPrefs(props: SettingsSurfaceProps) {
               setMarathonBudget?.({ maxTokens: n, declaredAt: new Date().toISOString() });
             }
           }}
-          className="w-full max-w-md rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]"
+          className="w-full max-w-md rounded border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]"
           data-testid="sliderule-settings-budget"
         />
         <p className="mt-1.5 text-[11px] text-stone-400">
@@ -457,7 +457,7 @@ function RuntimeDataSection({ sessionId }: { sessionId?: string }) {
         type="button"
         onClick={clear}
         data-testid="sliderule-settings-clear-runtime"
-        className="mt-2.5 rounded-lg border border-rose-200 bg-rose-50/60 px-4 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-100"
+        className="mt-2.5 rounded border border-rose-200 bg-rose-50/60 px-4 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-100"
       >
         清空本话题运行时数据
       </button>

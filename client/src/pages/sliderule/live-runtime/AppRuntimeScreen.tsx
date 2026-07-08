@@ -900,7 +900,7 @@ export function AppRuntimeScreen({
             transform: `scale(${scale})`,
             transformOrigin: "top left",
             background: "#f0f2f5",
-            borderRadius: isPhone ? 24 : 10,
+            borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
             boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
           }}

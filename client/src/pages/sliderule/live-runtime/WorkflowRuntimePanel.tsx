@@ -104,14 +104,14 @@ export function WorkflowRuntimePanel({
     <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="workflow-runtime-panel">
       {/* 当前实例操作区 */}
       {running && currentNode ? (
-        <div className="rounded-xl border border-[#E7E2D9] bg-white p-4 shadow-sm">
+        <div className="rounded-md border border-[#E7E2D9] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-stone-800">{running.title}</span>
             <StatusPill status={running.status} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="text-stone-500">当前节点</span>
-            <span className="rounded-lg bg-[#F5F1EA] px-2.5 py-1 font-medium text-stone-800">
+            <span className="rounded bg-[#F5F1EA] px-2.5 py-1 font-medium text-stone-800">
               {currentNode.name || currentNode.id}
             </span>
             {currentNode.assigneeRole && (
@@ -144,7 +144,7 @@ export function WorkflowRuntimePanel({
               type="button"
               onClick={() => handleAdvance("approve")}
               data-testid="runtime-approve"
-              className="rounded-lg bg-[#D97757] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#C4633F]"
+              className="rounded bg-[#D97757] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#C4633F]"
             >
               通过（{currentNode.assigneeRole || "当前角色"}）
             </button>
@@ -152,14 +152,14 @@ export function WorkflowRuntimePanel({
               type="button"
               onClick={() => handleAdvance("reject")}
               data-testid="runtime-reject"
-              className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-1.5 text-sm text-stone-600 transition-colors hover:bg-red-50 hover:text-red-600"
+              className="rounded border border-[#E7E2D9] bg-white px-4 py-1.5 text-sm text-stone-600 transition-colors hover:bg-red-50 hover:text-red-600"
             >
               驳回
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-[#D8D1C4] bg-[#FAF9F5] p-5">
+        <div className="flex flex-col items-start gap-3 rounded-md border border-dashed border-[#D8D1C4] bg-[#FAF9F5] p-5">
           <div className="text-sm text-stone-600">
             这是模型驱动的真实状态机：发起一个实例，按节点审批人逐步推进，走完整个业务闭环。
           </div>
@@ -167,7 +167,7 @@ export function WorkflowRuntimePanel({
             type="button"
             onClick={handleStart}
             data-testid="runtime-start"
-            className="rounded-lg bg-[#D97757] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#C4633F]"
+            className="rounded bg-[#D97757] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#C4633F]"
           >
             发起实例
           </button>
@@ -176,7 +176,7 @@ export function WorkflowRuntimePanel({
 
       {/* 实例列表 + 日志 */}
       {state.instances.length > 0 && (
-        <div className="rounded-xl border border-[#E7E2D9] bg-white p-4 shadow-sm">
+        <div className="rounded-md border border-[#E7E2D9] bg-white p-4 shadow-sm">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
             实例与日志
           </div>

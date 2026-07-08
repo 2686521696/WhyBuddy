@@ -129,7 +129,7 @@ export function DeliverablesPanel({
       <div className="fixed inset-0 z-[80] bg-[#2A2620]/40 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed inset-0 z-[81] flex items-center justify-center p-4" onClick={onClose}>
         <div
-          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
+          className="relative flex h-[min(86vh,760px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-lg border border-[#E7E2D9] bg-white shadow-[0_24px_70px_rgb(68_60_44/0.28)]"
           data-testid="sliderule-deliverables-panel"
           role="dialog"
           aria-label="交付物"
@@ -143,7 +143,7 @@ export function DeliverablesPanel({
             </div>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
+              className="rounded p-1.5 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
               data-testid="sliderule-deliverables-close"
             >
               <X className="h-4 w-4" />
@@ -163,7 +163,7 @@ export function DeliverablesPanel({
                 <button
                   onClick={onGenerate}
                   disabled={isRunning}
-                  className="mt-1 flex items-center gap-1.5 rounded-lg bg-[#D97757] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
+                  className="mt-1 flex items-center gap-1.5 rounded bg-[#D97757] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
                   data-testid="sliderule-deliverables-generate"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -179,7 +179,7 @@ export function DeliverablesPanel({
                     key={c}
                     onClick={() => setActive(c)}
                     data-testid={`sliderule-deliverables-nav-${c}`}
-                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition ${
+                    className={`flex items-center gap-2.5 rounded px-3 py-2 text-[13px] font-semibold transition ${
                       active === c ? "bg-[#F8E8E0] text-[#B0552F]" : "text-stone-600 hover:bg-white hover:text-stone-800"
                     }`}
                   >
@@ -213,7 +213,7 @@ export function DeliverablesPanel({
                 onClick={onExportMd}
                 disabled={available.length === 0}
                 title={available.length === 0 ? "尚无可导出的交付物" : "导出为 Markdown"}
-                className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:cursor-not-allowed disabled:opacity-40"
                 data-testid="sliderule-deliverables-export"
               >
                 <Download className="h-3.5 w-3.5" /> 导出 MD
@@ -222,7 +222,7 @@ export function DeliverablesPanel({
                 <button
                   onClick={onGenerate}
                   disabled={isRunning}
-                  className="flex items-center gap-1.5 rounded-lg bg-[#D97757] px-4 py-2 text-[13px] font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded bg-[#D97757] px-4 py-2 text-[13px] font-bold text-white transition hover:bg-[#C4633F] disabled:opacity-40"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   {available.length > 0 ? "重新生成" : "生成交付物"}
@@ -343,7 +343,7 @@ function DeliverableViewer({
       <div className="space-y-2">
         <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || "架构图"}</h2>
         <p className="text-[11px] text-stone-400">Mermaid 源码（在支持 Mermaid 的查看器中渲染为图）</p>
-        <pre className="overflow-x-auto rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
+        <pre className="overflow-x-auto rounded border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
           {mermaid || content || "（空）"}
         </pre>
       </div>
@@ -355,7 +355,7 @@ function DeliverableViewer({
     return (
       <div className="space-y-2">
         <h2 className="font-display text-lg font-semibold text-[#1F1E1B]">{artifact.title || "规格树"}</h2>
-        <pre className="overflow-x-auto whitespace-pre rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
+        <pre className="overflow-x-auto whitespace-pre rounded border border-[#E7E2D9] bg-[#F5F1EA] p-3 font-mono text-[12px] leading-relaxed text-stone-700">
           {tree || "（空）"}
         </pre>
       </div>

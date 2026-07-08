@@ -367,7 +367,7 @@ function ClaudeChatSurface({
                     // Dispatch a custom event so ComposerDock can pick it up
                     window.dispatchEvent(new CustomEvent("sliderule:fill-prompt", { detail: { text } }));
                   }}
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(68_60_44/0.05)] transition-all hover:border-[#D8D1C4] hover:shadow-[0_4px_16px_rgb(68_60_44/0.09)] disabled:opacity-50"
+                  className="group flex w-full items-center gap-3 rounded-lg border border-[#E7E2D9] bg-white px-4 py-3 text-left text-sm text-stone-700 shadow-[0_2px_10px_rgb(68_60_44/0.05)] transition-all hover:border-[#D8D1C4] hover:shadow-[0_4px_16px_rgb(68_60_44/0.09)] disabled:opacity-50"
                 >
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
                     <Icon className={`h-4 w-4 ${iconColor}`} />
@@ -387,7 +387,7 @@ function ClaudeChatSurface({
                   {/* User bubble — right; hidden for turns restored from persisted state (no user text) */}
                   {turn.user && (
                     <div className="flex justify-end">
-                      <div className="max-w-[520px] rounded-2xl bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
+                      <div className="max-w-[520px] rounded-lg bg-[#F8E8E0] px-4 py-2.5 text-[15px] leading-7 text-[#1F1E1B]">
                         {turn.user}
                       </div>
                     </div>
@@ -411,7 +411,7 @@ function ClaudeChatSurface({
                         {/* LLM 实时想法：五系统生成期间流式滚出原始草稿尾部
                             （新颖意图路径独有；确定性域秒出、无此窗口） */}
                         {llmDraft && (
-                          <div data-testid="sliderule-llm-draft" className="rounded-xl border border-[#E7E2D9] bg-[#2A2620] px-3 py-2.5">
+                          <div data-testid="sliderule-llm-draft" className="rounded-md border border-[#E7E2D9] bg-[#2A2620] px-3 py-2.5">
                             <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-stone-400">
                               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
                               LLM 实时输出 · 五系统模型起草中 · {llmDraft.length} 字符
@@ -1006,7 +1006,7 @@ function SlideRuleSplitEngineering({
                   <div className="flex justify-end">
                     <div className={autopilotTheme.userBubble}>{turn.user}</div>
                   </div>
-                  <div className="rounded-lg border border-[#E7E2D9]/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+                  <div className="rounded border border-[#E7E2D9]/80 bg-white px-4 py-4 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
                     {/* M7 close-out: turn-route is hidden by default in marathon mode; single mode remains visible and toggle can expand it. */}
                     {(driveMode !== "marathon" || turn.routeExpanded) && (
                       <TurnRouteTimeline

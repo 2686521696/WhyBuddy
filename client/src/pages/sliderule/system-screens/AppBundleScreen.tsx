@@ -255,7 +255,7 @@ export function AppBundleScreen({
         {/* Blockers — fail-closed 如实展示 */}
         {blocked && topBlockers.length > 0 && (
           <div
-            className="mb-3 rounded-xl border border-red-200 bg-red-50/60 p-3"
+            className="mb-3 rounded-md border border-red-200 bg-red-50/60 p-3"
             data-testid="appbundle-blockers"
           >
             <div className="text-[11px] font-semibold text-red-700">
@@ -299,7 +299,7 @@ export function AppBundleScreen({
             return (
               <div
                 key={key}
-                className={`rounded-xl border p-4 transition-all ${
+                className={`rounded-md border p-4 transition-all ${
                   present
                     ? "border-emerald-200 bg-emerald-50/60"
                     : "border-[#E7E2D9] bg-white opacity-60"
@@ -337,7 +337,7 @@ export function AppBundleScreen({
         {/* Model bindings — appbundle 段（pageBindings / roleRefs / dataModelRefs） */}
         {hasBindings && bindings && (
           <div
-            className="mt-3 rounded-xl border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3"
+            className="mt-3 rounded-md border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3"
             data-testid="appbundle-bindings"
           >
             <div className="text-[11px] font-semibold text-stone-600">应用装配绑定</div>

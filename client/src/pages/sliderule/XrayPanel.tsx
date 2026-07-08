@@ -266,7 +266,7 @@ export function XrayPanel({
   // TRAE Work 式右栏：灰色小节标题 + 图标文字行，去卡片/胶囊，留白呼吸
   return (
     <div
-      className="flex h-full w-[276px] shrink-0 flex-col overflow-hidden rounded-xl border border-[#F0EDE5] bg-white"
+      className="flex h-full w-[276px] shrink-0 flex-col overflow-hidden rounded-md border border-[#F0EDE5] bg-white"
       data-testid="sliderule-xray-panel"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
@@ -281,7 +281,7 @@ export function XrayPanel({
             type="button"
             onClick={() => onOpenSystem(focus.skill)}
             data-testid="xray-focus"
-            className="mt-3 block w-full rounded-lg border-l-2 border-[#D97757] bg-[#FDF6F1] px-3 py-2 text-left transition hover:bg-[#FBEEE5]"
+            className="mt-3 block w-full rounded border-l-2 border-[#D97757] bg-[#FDF6F1] px-3 py-2 text-left transition hover:bg-[#FBEEE5]"
           >
             <div className="flex items-center gap-1.5 text-[12px] font-semibold text-stone-800">
               <span className="text-[#B0552F]">{SECTION_ICON[focus.skill] ?? <Waypoints className="h-3.5 w-3.5" />}</span>
@@ -318,7 +318,7 @@ export function XrayPanel({
                     key={i}
                     type="button"
                     onClick={() => onOpenSystem(s.skill)}
-                    className="flex w-full items-center gap-2 rounded-md px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
+                    className="flex w-full items-center gap-2 rounded-sm px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
                   >
                     <span className="shrink-0 text-stone-300">{SECTION_ICON[s.skill]}</span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-stone-700">{it}</span>
@@ -335,7 +335,7 @@ export function XrayPanel({
             <button
               type="button"
               onClick={() => onOpenSystem("appBundle")}
-              className="group flex w-full items-center gap-2 rounded-md px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
+              className="group flex w-full items-center gap-2 rounded-sm px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
             >
               <Waypoints className="h-3.5 w-3.5 shrink-0 text-stone-300" />
               <span className="text-[12.5px] text-stone-700">五系统联动总图</span>

@@ -174,7 +174,7 @@ export function ArchitectureProcessPanel({
       )}
       {(crossRuntimeGraph || publishClosure) && (
         <section
-          className="mt-3 rounded-md border border-[#E7E2D9]/80 bg-white/70 px-3 py-2 text-[10px] text-stone-600 shadow-sm"
+          className="mt-3 rounded-sm border border-[#E7E2D9]/80 bg-white/70 px-3 py-2 text-[10px] text-stone-600 shadow-sm"
           data-testid="sliderule-cross-runtime-graph"
           aria-label="Skill runtime linkage"
         >

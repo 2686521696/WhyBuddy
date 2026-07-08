@@ -122,7 +122,7 @@ export function RoleProgressLog({
 
   return (
     <div
-      className="mt-1.5 flex flex-col gap-1 rounded-md bg-transparent px-0.5 py-1 font-mono text-[10px] leading-relaxed"
+      className="mt-1.5 flex flex-col gap-1 rounded-sm bg-transparent px-0.5 py-1 font-mono text-[10px] leading-relaxed"
       data-testid="role-progress-log"
     >
       {lines.slice(-8).map((line) => (

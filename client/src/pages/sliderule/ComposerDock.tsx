@@ -178,7 +178,7 @@ export function ComposerDock({
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       <div
-        className={`pointer-events-auto relative w-full rounded-[28px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(68_60_44/0.12)] transition-colors ${
+        className={`pointer-events-auto relative w-full rounded-[14px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(68_60_44/0.12)] transition-colors ${
           isDragOver ? "border-[#D97757] bg-[#F8E8E0]/40" : "border-[#E7E2D9]"
         }`}
         data-testid="sliderule-composer-dock"
@@ -188,7 +188,7 @@ export function ComposerDock({
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#F8E8E0]/60">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[12px] bg-[#F8E8E0]/60">
             <div className="flex items-center gap-2 text-sm font-medium text-[#C4633F]">
               <FileText className="h-4 w-4" />
               拖拽文件到这里
@@ -209,14 +209,14 @@ export function ComposerDock({
 
             <div
               data-testid="sliderule-mode-menu"
-              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[18px] border border-[#E7E2D9] bg-white p-1.5 shadow-[0_18px_48px_rgb(68_60_44/0.16)] transition-all duration-150 ${
+              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[9px] border border-[#E7E2D9] bg-white p-1.5 shadow-[0_18px_48px_rgb(68_60_44/0.16)] transition-all duration-150 ${
                 isModeOpen ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-2 scale-95 opacity-0"
               }`}
             >
               <button
                 type="button"
                 onClick={() => selectMode("single")}
-                className={`flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
+                className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
                   driveMode === "single" ? "bg-[#F0EDE5]" : ""
                 }`}
               >
@@ -233,7 +233,7 @@ export function ComposerDock({
               <button
                 type="button"
                 onClick={() => selectMode("marathon")}
-                className={`mt-1 flex w-full items-center gap-2 rounded-[14px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
+                className={`mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
                   driveMode === "marathon" ? "bg-[#F8E8E0]" : ""
                 }`}
               >

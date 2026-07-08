@@ -147,7 +147,7 @@ export function AigcScreen({
             {resolved.map(({ cap, inputs, output, roles }) => (
               <div
                 key={cap.id || cap.name}
-                className="rounded-xl border border-[#E7E2D9] bg-white p-4 shadow-sm"
+                className="rounded-md border border-[#E7E2D9] bg-white p-4 shadow-sm"
               >
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[11px] font-semibold text-pink-700 ring-1 ring-pink-200">
@@ -193,7 +193,7 @@ export function AigcScreen({
           </div>
         ) : degradedMermaid ? (
           <div data-testid="aigc-degraded">
-            <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-200">
+            <div className="mb-2 rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-200">
               本轮产物未携带结构化 AIGC 能力清单，以下为该系统的跨系统联动证据。
             </div>
             <MermaidDiagram chart={degradedMermaid} className="w-full" />

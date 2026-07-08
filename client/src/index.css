@@ -1085,7 +1085,7 @@
 /* ── X 光元素级（AR 焦点）：运行应用画布内被埋点元素的悬停描边 ── */
 .xray-scan .xray-el {
   cursor: help;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: outline-color 0.12s ease;
   outline: 2px dashed transparent;
   outline-offset: 1px;

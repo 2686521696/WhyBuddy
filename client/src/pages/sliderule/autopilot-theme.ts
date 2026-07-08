@@ -26,11 +26,11 @@ export const autopilotTheme = {
   immersionOverlayBottom:
     "pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-5 pb-[max(28px,env(safe-area-inset-bottom))] pt-1 sm:px-6 sm:pb-[max(34px,env(safe-area-inset-bottom))]",
   glassPanel:
-    "pointer-events-auto max-h-[min(70vh,520px)] w-[min(100%,340px)] overflow-hidden rounded-2xl border border-[#F0EBE2]/80 bg-[#FDFCF9]/80 px-3 py-3 shadow-[0_8px_32px_rgb(68_60_44/0.10)] backdrop-blur-xl sm:px-4 sm:py-3.5",
+    "pointer-events-auto max-h-[min(70vh,520px)] w-[min(100%,340px)] overflow-hidden rounded-lg border border-[#F0EBE2]/80 bg-[#FDFCF9]/80 px-3 py-3 shadow-[0_8px_32px_rgb(68_60_44/0.10)] backdrop-blur-xl sm:px-4 sm:py-3.5",
   glassPanelWide:
-    "pointer-events-auto max-w-[min(100%,560px)] rounded-2xl border border-[#F0EBE2]/80 bg-[#FDFCF9]/80 px-3 py-3 shadow-[0_8px_32px_rgb(68_60_44/0.10)] backdrop-blur-xl sm:px-4 sm:py-3.5",
+    "pointer-events-auto max-w-[min(100%,560px)] rounded-lg border border-[#F0EBE2]/80 bg-[#FDFCF9]/80 px-3 py-3 shadow-[0_8px_32px_rgb(68_60_44/0.10)] backdrop-blur-xl sm:px-4 sm:py-3.5",
   composerDock:
-    "rounded-2xl border border-[#EFEAE0]/90 bg-[#FFFEFB]/90 px-3 py-3 shadow-[0_12px_40px_rgb(68_60_44/0.12)] backdrop-blur-2xl sm:px-4",
+    "rounded-lg border border-[#EFEAE0]/90 bg-[#FFFEFB]/90 px-3 py-3 shadow-[0_12px_40px_rgb(68_60_44/0.12)] backdrop-blur-2xl sm:px-4",
   composerDockWidth: "w-full max-w-[min(100%,760px)]",
 
   page: "relative flex h-screen flex-col bg-[#F5F1EA] text-[#1F1E1B]",
@@ -53,27 +53,27 @@ export const autopilotTheme = {
   footer: "shrink-0 border-t border-[#E7E2D9] bg-[#FAF9F5] px-4 py-3",
 
   emptyState:
-    "rounded-lg border border-dashed border-[#D8D1C4] bg-[#F5F1EA] px-6 py-12 text-center text-sm font-medium text-stone-500",
+    "rounded border border-dashed border-[#D8D1C4] bg-[#F5F1EA] px-6 py-12 text-center text-sm font-medium text-stone-500",
   emptyHint: "mt-4 text-xs font-normal text-stone-400",
 
   userBubble:
-    "max-w-[85%] rounded-lg border border-[#E7E2D9] bg-[#FFFEFB] px-4 py-2.5 text-sm font-semibold leading-6 text-stone-700 shadow-[0_1px_2px_rgb(68_60_44,0.05)]",
+    "max-w-[85%] rounded border border-[#E7E2D9] bg-[#FFFEFB] px-4 py-2.5 text-sm font-semibold leading-6 text-stone-700 shadow-[0_1px_2px_rgb(68_60_44,0.05)]",
 
   artifactCard:
-    "group rounded-lg border border-[#E7E2D9] bg-[#FFFEFB] p-3 text-sm shadow-[0_1px_2px_rgb(68_60_44,0.05)]",
+    "group rounded border border-[#E7E2D9] bg-[#FFFEFB] p-3 text-sm shadow-[0_1px_2px_rgb(68_60_44,0.05)]",
   artifactTitle: "font-semibold text-stone-800",
   artifactBody: "mt-3 whitespace-pre-wrap text-xs leading-relaxed text-stone-600",
   artifactMeta:
-    "rounded-md bg-[#F0EDE5] px-2 py-0.5 text-stone-600 ring-1 ring-inset ring-[#E7E2D9]",
+    "rounded-sm bg-[#F0EDE5] px-2 py-0.5 text-stone-600 ring-1 ring-inset ring-[#E7E2D9]",
   artifactExpand: "text-[11px] text-stone-400",
 
   actionVerify: "text-stone-600 hover:text-[#1F1E1B] hover:underline",
   actionChallenge: "text-amber-700 hover:text-amber-900 hover:underline",
 
   input:
-    "flex-1 rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] px-3 py-2.5 text-sm font-semibold leading-6 text-stone-700 outline-none transition placeholder:text-stone-400 focus:border-[#D97757]/50 focus:ring-2 focus:ring-[#D97757]/15",
+    "flex-1 rounded border border-[#E7E2D9] bg-[#F5F1EA] px-3 py-2.5 text-sm font-semibold leading-6 text-stone-700 outline-none transition placeholder:text-stone-400 focus:border-[#D97757]/50 focus:ring-2 focus:ring-[#D97757]/15",
   sendBtn:
-    "rounded-lg bg-[#D97757] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#C4633F] active:scale-[0.98]",
+    "rounded bg-[#D97757] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#C4633F] active:scale-[0.98]",
   hintChip:
     "rounded-full border border-[#E7E2D9] bg-[#FFFEFB] px-2 py-0.5 text-[10px] font-medium text-stone-600 transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA] hover:text-stone-800",
 
@@ -100,16 +100,16 @@ export const autopilotTheme = {
     "rounded border border-rose-200 px-2 py-1 text-rose-700 transition hover:bg-rose-50",
   drawerBtnAccent:
     "rounded border border-[#D8D1C4] px-2 py-1 font-medium text-stone-800 transition hover:bg-[#F5F1EA]",
-  drawerPanel: "rounded-lg border border-[#E7E2D9] bg-[#F5F1EA] p-2",
+  drawerPanel: "rounded border border-[#E7E2D9] bg-[#F5F1EA] p-2",
 
   latestUserBubble:
     "pointer-events-auto max-w-full truncate rounded-full border border-[#E7E2D9] bg-[#FFFEFB]/90 px-3 py-1 text-[11px] text-stone-600 shadow-sm backdrop-blur",
   latestUserBubbleMarathon:
     "pointer-events-auto max-w-full truncate rounded-full border border-[#EBCEC0] bg-[#F8E8E0]/90 px-3 py-1 text-[11px] text-[#B0552F] shadow-sm backdrop-blur",
   grokInputBar:
-    "pointer-events-auto flex min-h-[64px] w-full items-center gap-0 rounded-[32px] border border-[#F0EBE2]/90 bg-[#FFFEFB]/95 px-4 py-2.5 shadow-[0_18px_52px_rgb(68_60_44/0.10)] ring-1 ring-[#E7E2D9]/50 backdrop-blur-xl",
+    "pointer-events-auto flex min-h-[64px] w-full items-center gap-0 rounded-[8px] border border-[#F0EBE2]/90 bg-[#FFFEFB]/95 px-4 py-2.5 shadow-[0_18px_52px_rgb(68_60_44/0.10)] ring-1 ring-[#E7E2D9]/50 backdrop-blur-xl",
   grokInputBarMarathon:
-    "pointer-events-auto flex min-h-[64px] w-full items-center gap-0 rounded-[32px] border border-[#F3DCD0]/85 bg-[#FFFEFB]/95 px-4 py-2.5 shadow-[0_18px_52px_rgb(217_119_87/0.13)] ring-1 ring-[#F3DCD0]/70 backdrop-blur-xl",
+    "pointer-events-auto flex min-h-[64px] w-full items-center gap-0 rounded-[8px] border border-[#F3DCD0]/85 bg-[#FFFEFB]/95 px-4 py-2.5 shadow-[0_18px_52px_rgb(217_119_87/0.13)] ring-1 ring-[#F3DCD0]/70 backdrop-blur-xl",
   grokInput:
     "h-11 max-h-[116px] w-full min-w-0 resize-none overflow-y-auto bg-transparent px-4 py-[9px] text-[14px] leading-[22px] text-stone-800 outline-none placeholder:text-stone-400",
   grokSendBtn:

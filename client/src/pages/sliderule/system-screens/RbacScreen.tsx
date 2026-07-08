@@ -121,7 +121,7 @@ function RolePreviewPanel({
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="rbac-role-preview">
-      <div className="rounded-lg bg-orange-50 px-3 py-2 text-[11px] text-orange-700 ring-1 ring-orange-200">
+      <div className="rounded bg-orange-50 px-3 py-2 text-[11px] text-orange-700 ring-1 ring-orange-200">
         选中角色实时作用于 AppBundle 屏的「运行应用」—— 菜单与「新建」按钮按该角色权限锁定
       </div>
 
@@ -144,7 +144,7 @@ function RolePreviewPanel({
       </div>
 
       {selected && (
-        <div className="rounded-xl border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3">
+        <div className="rounded-md border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3">
           <div className="text-[11px] font-semibold text-stone-600">
             {selected.role} · 持有权限 {selected.permissions.length} 项
           </div>
@@ -164,7 +164,7 @@ function RolePreviewPanel({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-[#E7E2D9]">
+      <div className="overflow-hidden rounded-md border border-[#E7E2D9]">
         <table className="w-full text-xs">
           <thead className="bg-[#F5F1EA]">
             <tr>

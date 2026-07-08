@@ -120,13 +120,13 @@ export function LlmChannelPanel() {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+    "w-full rounded border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
   const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
   if (loadError) {
     return (
       <div className="p-6" data-testid="llm-channel-panel">
-        <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600">
+        <div className="rounded-md border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600">
           无法读取服务端通道配置：{loadError}
           <div className="mt-1 text-stone-500">python 服务（:9700）未启动时此面板不可用——如实不可用，不显示假配置。</div>
         </div>
@@ -136,16 +136,16 @@ export function LlmChannelPanel() {
 
   return (
     <div className="max-w-2xl space-y-5 overflow-y-auto p-6" data-testid="llm-channel-panel">
-      <div className="rounded-xl bg-[#F8E8E0]/70 px-4 py-3 text-[12px] leading-5 text-[#8a4a2b] ring-1 ring-[#EFD8CB]">
+      <div className="rounded-md bg-[#F8E8E0]/70 px-4 py-3 text-[12px] leading-5 text-[#8a4a2b] ring-1 ring-[#EFD8CB]">
         这是<strong>服务端真通道</strong>——五系统生成、LLM 评审、运行应用的 AI 写回全走这一条。
         密钥仅保存在服务端本机（gitignored 覆盖文件），页面只显示掩码，明文不回传。
       </div>
 
       {!status ? (
         <div className="animate-pulse space-y-3">
-          <div className="h-9 rounded-lg bg-[#F0EDE5]" />
-          <div className="h-9 rounded-lg bg-[#F0EDE5]" />
-          <div className="h-9 rounded-lg bg-[#F0EDE5]" />
+          <div className="h-9 rounded bg-[#F0EDE5]" />
+          <div className="h-9 rounded bg-[#F0EDE5]" />
+          <div className="h-9 rounded bg-[#F0EDE5]" />
         </div>
       ) : (
         <>
@@ -211,7 +211,7 @@ export function LlmChannelPanel() {
               type="button"
               onClick={save}
               disabled={saving}
-              className="rounded-lg bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] disabled:opacity-50"
+              className="rounded bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] disabled:opacity-50"
               data-testid="llm-channel-save"
             >
               {saving ? "保存中…" : "保存并生效"}
@@ -220,7 +220,7 @@ export function LlmChannelPanel() {
               type="button"
               onClick={runTest}
               disabled={testing}
-              className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
+              className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
               data-testid="llm-channel-test"
             >
               {testing ? "真连测试中…" : "⚡ 测试连接"}
@@ -228,13 +228,13 @@ export function LlmChannelPanel() {
           </div>
 
           {testResult && testResult.ok && (
-            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-[12px] text-emerald-700 ring-1 ring-emerald-200" data-testid="llm-channel-test-ok">
+            <div className="rounded-md bg-emerald-50 px-4 py-3 text-[12px] text-emerald-700 ring-1 ring-emerald-200" data-testid="llm-channel-test-ok">
               连接正常 · 模型 <span className="font-mono">{testResult.model}</span> · 往返{" "}
               {((testResult.latencyMs ?? 0) / 1000).toFixed(1)}s（真实请求，非 mock）
             </div>
           )}
           {testResult && !testResult.ok && (
-            <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600" data-testid="llm-channel-test-fail">
+            <div className="rounded-md border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600" data-testid="llm-channel-test-fail">
               <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">{testResult.code}</span>
               <span className="ml-2">{testResult.detail}</span>
             </div>

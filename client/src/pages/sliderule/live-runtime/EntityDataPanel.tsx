@@ -105,7 +105,7 @@ export function EntityDataPanel({
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="datamodel-data-panel">
-      <div className="rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-700 ring-1 ring-blue-200">
+      <div className="rounded bg-blue-50 px-3 py-2 text-[11px] text-blue-700 ring-1 ring-blue-200">
         单元格即改即存 —— 与「运行应用」「工作流试运行」共享同一份运行时数据
       </div>
 
@@ -132,12 +132,12 @@ export function EntityDataPanel({
       </div>
 
       {problem && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600 ring-1 ring-red-200">
+        <div className="rounded bg-red-50 px-3 py-2 text-[11px] text-red-600 ring-1 ring-red-200">
           未保存：{problem}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-[#E7E2D9]">
+      <div className="overflow-hidden rounded-md border border-[#E7E2D9]">
         <table className="w-full text-xs">
           <thead className="bg-[#F5F1EA]">
             <tr>

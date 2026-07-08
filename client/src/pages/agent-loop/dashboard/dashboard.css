@@ -40,7 +40,7 @@
 /* 品牌区（可点击 → 推演视图）：S 型尺标（左）+ 产品名（上）+ 域名（下） */
 .native-agent-brand {
   align-items: center;
-  border-radius: 10px;
+  border-radius: 5px;
   cursor: pointer;
   display: flex;
   gap: 10px;
@@ -93,7 +93,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   color: #34302A;
   cursor: pointer;
   display: flex;
@@ -139,7 +139,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 10px;
+  border-radius: 5px;
   color: #B0552F;
   cursor: pointer;
   display: flex;
@@ -187,7 +187,7 @@
 
 .native-agent-session-row {
   align-items: center;
-  border-radius: 8px;
+  border-radius: 4px;
   display: flex;
   min-width: 0;
 }
@@ -227,7 +227,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: 3px;
   color: #b9b2a7;
   cursor: pointer;
   display: none;
@@ -2386,7 +2386,7 @@
 
 .native-agent-nav-item,
 .native-agent-help {
-  border-radius: 12px;
+  border-radius: 6px;
   font-size: 15px;
   gap: 12px;
   height: 44px;

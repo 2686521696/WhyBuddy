@@ -58,7 +58,7 @@ export function SlideRuleTopHud({
               title="SlideRule"
             />
           )}
-          <div className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-[#E7E2D9] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(68_60_44/0.05)]">
+          <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#E7E2D9] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(68_60_44/0.05)]">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
               STATUS
             </span>

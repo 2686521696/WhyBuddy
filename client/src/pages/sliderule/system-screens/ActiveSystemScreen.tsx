@@ -79,7 +79,7 @@ export function ActiveSystemScreen({
         fill
           ? // 抽屉全幅形态：无白卡边框/圆角/投影，与页面底色统一（用户反馈去嵌套）
             `relative h-full w-full overflow-hidden ${className}`
-          : `relative w-full overflow-hidden rounded-2xl border border-[#E7E2D9] bg-white shadow-sm ${className}`
+          : `relative w-full overflow-hidden rounded-lg border border-[#E7E2D9] bg-white shadow-sm ${className}`
       }
       style={fill ? undefined : { aspectRatio: "16 / 9" }}
     >

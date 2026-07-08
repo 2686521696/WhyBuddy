@@ -22,7 +22,7 @@ import {
 } from "@/lib/sliderule-llm-providers";
 
 const inputClass =
-  "w-full rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+  "w-full rounded border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
 const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
 /** 测试连接的三态（idle 不渲染）。 */
@@ -179,7 +179,7 @@ export function LlmProviderSettings({
                   setSelectedId(p.id);
                   setTestState({ kind: "idle" });
                 }}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition ${
+                className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-[13px] transition ${
                   active ? "bg-[#F8E8E0] font-semibold text-[#B0552F]" : "text-stone-600 hover:bg-[#F5F1EA]"
                 }`}
               >
@@ -202,7 +202,7 @@ export function LlmProviderSettings({
             type="button"
             onClick={addCustom}
             data-testid="sliderule-provider-add-custom"
-            className="w-full rounded-lg border border-dashed border-[#D9D3C7] px-3 py-1.5 text-[12px] text-stone-500 transition hover:border-[#D97757] hover:text-[#B0552F]"
+            className="w-full rounded border border-dashed border-[#D9D3C7] px-3 py-1.5 text-[12px] text-stone-500 transition hover:border-[#D97757] hover:text-[#B0552F]"
           >
             ＋ 添加自定义
           </button>
@@ -216,7 +216,7 @@ export function LlmProviderSettings({
             <div className="flex items-center justify-between gap-3">
               {isCustom ? (
                 <input
-                  className="min-w-0 flex-1 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[14px] font-semibold text-stone-800 outline-none transition focus:border-[#D97757]"
+                  className="min-w-0 flex-1 rounded border border-[#E7E2D9] bg-white px-3 py-1.5 text-[14px] font-semibold text-stone-800 outline-none transition focus:border-[#D97757]"
                   value={selected.name}
                   onChange={(e) => patch({ name: e.target.value })}
                   placeholder="厂商名称"
@@ -232,7 +232,7 @@ export function LlmProviderSettings({
                       value={selected.protocol}
                       onChange={(e) => patch({ protocol: e.target.value as LlmProviderConfig["protocol"] })}
                       data-testid="sliderule-provider-protocol"
-                      className="rounded-lg border border-[#E7E2D9] bg-white px-2 py-1.5 text-[12px] text-stone-600 outline-none"
+                      className="rounded border border-[#E7E2D9] bg-white px-2 py-1.5 text-[12px] text-stone-600 outline-none"
                     >
                       <option value="openai">OpenAI 协议</option>
                       <option value="anthropic">Anthropic 协议</option>
@@ -242,7 +242,7 @@ export function LlmProviderSettings({
                       onClick={removeCustom}
                       data-testid="sliderule-provider-remove"
                       title="删除该自定义厂商"
-                      className="rounded-lg px-2 py-1.5 text-[12px] text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
+                      className="rounded px-2 py-1.5 text-[12px] text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
                     >
                       删除
                     </button>
@@ -315,7 +315,7 @@ export function LlmProviderSettings({
                 type="button"
                 onClick={runTest}
                 disabled={testState.kind === "testing"}
-                className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
+                className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
                 data-testid="sliderule-provider-test"
               >
                 {testState.kind === "testing" ? "测试中…" : "测试连接"}

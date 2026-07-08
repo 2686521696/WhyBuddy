@@ -22,7 +22,7 @@ export function EmptyScreenHint({
       className="flex h-full min-h-32 flex-1 items-center justify-center p-6"
       data-testid="screen-empty-hint"
     >
-      <div className="flex max-w-sm flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[#E7E2D9] px-8 py-10 text-center">
+      <div className="flex max-w-sm flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[#E7E2D9] px-8 py-10 text-center">
         <div className="text-2xl text-stone-300">⌁</div>
         <div className="text-xs font-medium text-stone-500">
           发送意图并推演闭环后，这里将显示本话题的{title}

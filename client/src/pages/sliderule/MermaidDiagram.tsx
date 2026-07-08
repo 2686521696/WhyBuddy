@@ -90,7 +90,7 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
 
   if (error) {
     return (
-      <div className={`overflow-auto rounded-lg bg-[#F5F1EA] p-3 ${className}`}>
+      <div className={`overflow-auto rounded bg-[#F5F1EA] p-3 ${className}`}>
         <pre className="text-xs text-stone-500 whitespace-pre-wrap">{chart}</pre>
         <div className="mt-2 text-xs text-red-400">{error}</div>
       </div>
@@ -108,7 +108,7 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
   return (
     <div
       ref={containerRef}
-      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-[#F0EDE5] rounded-lg"} ${className}`}
+      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-[#F0EDE5] rounded"} ${className}`}
     />
   );
 }

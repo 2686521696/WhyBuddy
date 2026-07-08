@@ -82,7 +82,7 @@ export function AigcTryRunPanel({
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="aigc-tryrun-panel">
-      <div className="rounded-lg bg-pink-50 px-3 py-2 text-[11px] text-pink-700 ring-1 ring-pink-200">
+      <div className="rounded bg-pink-50 px-3 py-2 text-[11px] text-pink-700 ring-1 ring-pink-200">
         真跑一次：走与五系统生成同一条 LLM 通道，输出/失败均如实展示
       </div>
 
@@ -106,7 +106,7 @@ export function AigcTryRunPanel({
       </div>
 
       {cap && (
-        <div className="rounded-xl border border-[#E7E2D9] bg-white p-3">
+        <div className="rounded-md border border-[#E7E2D9] bg-white p-3">
           <div className="text-[11px] font-semibold text-stone-600">输入字段</div>
           <div className="mt-2 flex flex-col gap-2">
             {(cap.inputFields ?? []).map((ref) => {
@@ -159,17 +159,17 @@ export function AigcTryRunPanel({
       )}
 
       {running && (
-        <div className="rounded-xl bg-[#2A2620] px-3 py-2 font-mono text-[10px] text-stone-400">
+        <div className="rounded-md bg-[#2A2620] px-3 py-2 font-mono text-[10px] text-stone-400">
           ▍等待 LLM 返回……（同一通道，真实调用）
         </div>
       )}
       {result && result.ok && (
-        <div className="rounded-xl bg-[#2A2620] px-3 py-2.5 font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre-wrap" data-testid="aigc-tryrun-output">
+        <div className="rounded-md bg-[#2A2620] px-3 py-2.5 font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre-wrap" data-testid="aigc-tryrun-output">
           {result.output}
         </div>
       )}
       {result && !result.ok && (
-        <div className="rounded-xl border border-red-200 bg-red-50/60 px-3 py-2 text-[11px] text-red-600" data-testid="aigc-tryrun-error">
+        <div className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-[11px] text-red-600" data-testid="aigc-tryrun-error">
           <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">{result.code}</span>
           <span className="ml-2">{result.detail}</span>
         </div>
