@@ -7,6 +7,7 @@
  * Validates: Requirements 3.1, 3.6, 3.7, 5.4
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { resetA2ASessionStore } from "./a2a-session-store-test-utils";
 import {
   A2A_ERROR_CODES,
   createEnvelope,
@@ -345,6 +346,9 @@ describe("A2A API Route Unit Tests", () => {
     });
 
     it("getActiveSessions returns empty array for fresh client", () => {
+      // 会话存档是 Python 拥有的跨进程共享文件：先清零，
+      // 否则同文件早前用例（invoke 成功路径）落的会话会泄漏进来。
+      resetA2ASessionStore();
       const client = new A2AClient();
       const sessions = client.getActiveSessions();
       expect(Array.isArray(sessions)).toBe(true);

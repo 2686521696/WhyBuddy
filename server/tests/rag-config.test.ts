@@ -239,6 +239,8 @@ describe('RAG query/search thin compatibility shell (PYTHON_FIRST_COMPAT)', () =
   }
 
   it('delegates /api/rag/search to Python and does not execute Node retriever (thin shell proof)', async () => {
+    // 委托在 vitest 环境默认关（防真打本机 :9700）；本用例专证委托行为，显式打开。
+    vi.stubEnv('RAG_PYTHON_DELEGATE', 'true');
     const pyResult = {
       results: [{ id: 'py1' }],
       totalCandidates: 1,
@@ -274,10 +276,13 @@ describe('RAG query/search thin compatibility shell (PYTHON_FIRST_COMPAT)', () =
       );
     } finally {
       (globalThis as any).fetch = origFetch;
+      vi.unstubAllEnvs();
     }
   });
 
   it('delegates /api/rag/ingest to Python and does not execute Node ingestionPipeline (thin shell proof)', async () => {
+    // 同上：显式打开测试环境默认关闭的 Python 委托。
+    vi.stubEnv('RAG_PYTHON_DELEGATE', 'true');
     const pyResult = { success: true, provenance: 'python-rag-query', backend: 'slide-rule-python', source: 'python' };
     const deps = createDeps();
     const origFetch = globalThis.fetch;
@@ -306,6 +311,7 @@ describe('RAG query/search thin compatibility shell (PYTHON_FIRST_COMPAT)', () =
       );
     } finally {
       (globalThis as any).fetch = origFetch;
+      vi.unstubAllEnvs();
     }
   });
 });

@@ -26,7 +26,8 @@ describe("BlueprintWallTexture Stage 2 reasoning graph wiring", () => {
     expect(source).toContain("edge.label");
     expect(source).toContain("edgeColor(edge)");
     expect(source).toContain("telemetryText(layout.telemetry)");
-    expect(source).toContain("Thinking Console");
+    // 思考控制台标题已本地化为「讨论轨迹 / Reasoning Trace」（原 "Thinking Console"）
+    expect(source).toContain("讨论轨迹 / Reasoning Trace");
     expect(source).toContain("node.roleLabel");
   });
 

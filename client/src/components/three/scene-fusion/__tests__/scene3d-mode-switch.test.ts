@@ -49,16 +49,18 @@ describe("Scene3D / blueprint-vs-mission-first mode switch (source guards)", () 
     expect(source.includes("<SandboxMonitor")).toBe(true);
   });
 
-  it("blueprint 路径经由动态 import() 懒加载 BlueprintWallProcessGraphHud（Req 1.1 / 10.1）", () => {
-    // 组件被引用，且引用方式是对 ./three/scene-fusion/BlueprintWallProcessGraphHud
-    // 的动态 import()（而非顶层静态 import），并包在 lazy() 中形成代码分割边界。
-    expect(source.includes("BlueprintWallProcessGraphHud")).toBe(true);
+  it("blueprint 路径渲染 BlueprintWallTexture（纹理方案，旧 HUD 已替代）（Req 1.1 / 10.1）", () => {
+    // 2026-06 起 blueprint 墙面改为 Canvas 纹理渲染（BlueprintWallTexture），
+    // 不再经由 <Html> DOM HUD——重型 @ant-design/graphs 依赖随之彻底退出该路径，
+    // 旧的 lazy(import()) 代码分割护栏由下面的「无静态 graphs import」护栏承接。
     expect(
-      /import\(\s*["']\.\/three\/scene-fusion\/BlueprintWallProcessGraphHud["']\s*\)/.test(
-        source
-      )
+      codeWithoutComments.includes("import { BlueprintWallTexture }")
     ).toBe(true);
-    expect(/lazy\(/.test(source)).toBe(true);
+    expect(source.includes("<BlueprintWallTexture")).toBe(true);
+    // 旧 HUD 不得回潮为静态 import（历史上它会拖入重型图依赖）。
+    expect(
+      codeWithoutComments.includes("import { BlueprintWallProcessGraphHud }")
+    ).toBe(false);
   });
 
   it("blueprint 分支不挂载 SandboxMonitor，模式分支存在（Req 1.1 / 1.2）", () => {

@@ -494,6 +494,16 @@ function normalizeNetworkError(
     );
   }
 
+  // llmHttpPost 的裸 HTTP 错误（带 .status）统一走 normalizeLLMError 分类：
+  // 403 配额类必须归一成 "rate limited or out of quota"，否则
+  // shouldTryNextProvider 认不出、跨 provider 回退整条链路失效
+  //（曾因此 billing_error/daily quota 403 直接抛出而不试 fallback provider）。
+  const status = (error as { status?: unknown })?.status;
+  if (typeof status === "number") {
+    const bodyMatch = message.match(/^LLM HTTP \d+:\s*([\s\S]*)$/);
+    return normalizeLLMError(provider, status, bodyMatch?.[1] ?? message);
+  }
+
   return error instanceof Error ? error : new Error(message);
 }
 

@@ -216,6 +216,8 @@ describe("blueprint specs route", () => {
   });
 
   afterEach(async () => {
+    // 统一回收 env stub（个别用例的 try/finally 之外的兜底），防止跨用例泄漏。
+    vi.unstubAllEnvs();
     if (tempRoot) {
       await rm(tempRoot, { recursive: true, force: true });
     }
@@ -1392,6 +1394,9 @@ describe("blueprint specs route", () => {
   });
 
   it("reuses the NL command clarification preview planner for default LLM blueprint questions", async () => {
+    // generateClarificationQuestionsWithLlm 以 getAIConfig().apiKey 判定 LLM 可用；
+    // 无 key（CI/干净环境）会直接模板回落、mock 不会被调用——按本文件惯例 stub。
+    vi.stubEnv("LLM_API_KEY", "sk-test-clarification-preview");
     llmMocks.callLLMJson.mockResolvedValueOnce({
       needsClarification: true,
       questions: [
@@ -1440,7 +1445,8 @@ describe("blueprint specs route", () => {
         );
         expect(options).toMatchObject({
           temperature: 0.2,
-          maxTokens: 800,
+          // judge 模式预算已提到 2000（resolvePreviewMaxTokens），re-lock 当前值
+          maxTokens: 2000,
         });
         expect(session).toMatchObject({
           generationSource: "llm",
@@ -7907,6 +7913,9 @@ describe("blueprint engineering-handoff llm �� e2e", () => {
 
   it("buildEngineeringLandingPlan produces LLM-driven title/summary/steps/handoffs when engineering-handoff llm is enabled", async () => {
     vi.stubEnv(ENG_HANDOFF_ENABLED_ENV, "true");
+    // 无 apiKey 时服务按设计直接 template（见 engineering-handoff/service.test 14.4）——
+    // 本用例测的是 LLM 幸福路径，须 stub key 才会走到被 mock 的 callLLMJson。
+    vi.stubEnv("LLM_API_KEY", "sk-test-engineering-handoff");
 
     llmMocks.callLLMJson.mockImplementation(async messages => {
       if (!isEngineeringHandoffCall(messages)) {
@@ -8010,6 +8019,9 @@ describe("blueprint engineering-handoff llm �� e2e", () => {
 
   it("buildEngineeringLandingPlan falls back to template when engineering-handoff llm call throws", async () => {
     vi.stubEnv(ENG_HANDOFF_ENABLED_ENV, "true");
+    // llm_fallback 语义要求真的发起过 LLM 调用再失败——无 key 会跳过调用直接
+    // template，断言的是另一条路径，故同样 stub key。
+    vi.stubEnv("LLM_API_KEY", "sk-test-engineering-handoff");
 
     llmMocks.callLLMJson.mockImplementation(async messages => {
       if (isEngineeringHandoffCall(messages)) {

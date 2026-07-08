@@ -40,12 +40,15 @@ const MISSION_FIRST_MONITOR_DISTANCE_FACTOR = 4.0;
 
 describe("blueprint wall placement constants (Task 6.1, Req 8.1-8.7)", () => {
   it("locks the formalized design target values (stable, no drift)", () => {
-    // design「### 3D Wall Placement」起始目标值。
-    expect(BLUEPRINT_WALL_GRAPH_POSITION).toEqual([0, 3.85, -4.87]);
-    expect(BLUEPRINT_WALL_GRAPH_WIDTH).toBe(1680);
-    expect(BLUEPRINT_WALL_GRAPH_HEIGHT).toBe(760);
+    // 当前正式值（演进史见 blueprint-wall-placement.ts 模块文档：
+    // 位置对齐高墙竖直中心 y=4.1；画布 3x 分辨率 5280×2490 追求清晰；
+    // panelZ=0.1 保证 HTML 面在背板正面之外）。守卫目的不变：值一旦再调，
+    // 必须连同此处一起显式 re-lock，不允许静默漂移。
+    expect(BLUEPRINT_WALL_GRAPH_POSITION).toEqual([0, 4.1, -4.81]);
+    expect(BLUEPRINT_WALL_GRAPH_WIDTH).toBe(5280);
+    expect(BLUEPRINT_WALL_GRAPH_HEIGHT).toBe(2490);
     expect(BLUEPRINT_WALL_GRAPH_DISTANCE_FACTOR).toBe(4.0);
-    expect(BLUEPRINT_WALL_GRAPH_PANEL_Z).toBe(0.002);
+    expect(BLUEPRINT_WALL_GRAPH_PANEL_Z).toBe(0.1);
   });
 
   it("places the wall on the back wall, horizontally centered (Req 8.2)", () => {
@@ -54,9 +57,9 @@ describe("blueprint wall placement constants (Task 6.1, Req 8.1-8.7)", () => {
     expect(x).toBe(0);
     // 抬高到后墙公告板区域（高于 monitor 的 1.5）。
     expect(y).toBeGreaterThan(1.5);
-    // z<0 即贴后墙；与 monitor 的 -4.88 实质同一墙面（仅微偏移避免 z-fighting）。
+    // z<0 即贴后墙；与高墙前墙面 -4.81 齐平贴合（见 placement 模块文档）。
     expect(z).toBeLessThan(0);
-    expect(Math.abs(z - -4.88)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(z - -4.81)).toBeLessThanOrEqual(0.05);
   });
 
   it("is substantially taller/larger than the mission-first monitor strip (Req 8.1)", () => {
@@ -113,8 +116,10 @@ describe("BlueprintWallProcessGraphHud consumes the placement module (source gua
     );
   });
 
-  it("uses 3D depth blending so foreground roles can occlude the wall graph", () => {
-    expect(moduleSource).toContain('occlude="blending"');
+  it("uses 3D depth occlusion so foreground roles can occlude the wall graph", () => {
+    // occlude（布尔形态，深度遮挡）：blending 模式后来因贴合背板的 z-fighting
+    // 问题改回布尔 occlude（见 HUD 源码注释）——守卫要求深度遮挡仍然开启。
+    expect(/\n\s+occlude\b/.test(moduleSource)).toBe(true);
     expect(moduleSource).not.toContain("0 22px 46px rgba");
   });
 });

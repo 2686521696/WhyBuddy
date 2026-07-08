@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import fc from "fast-check";
+import {
+  resetA2ASessionStore,
+  seedA2ASessionStore,
+} from "./a2a-session-store-test-utils";
 import {
   type A2AEnvelope,
   type A2AInvokeParams,
@@ -29,6 +33,11 @@ import type {
   ExternalAgentNode,
   WorkflowOrganizationSnapshot,
 } from "../../shared/organization-schema";
+
+// 会话存档是跨进程共享的文件（Python 拥有）：每个用例清零，杜绝跨测试残留。
+beforeEach(() => {
+  resetA2ASessionStore();
+});
 
 // ─── Generators ──────────────────────────────────────────────────────
 
@@ -347,52 +356,41 @@ describe("A2A Protocol Property Tests", () => {
 
   // Feature: a2a-protocol, Property 4: 会话失败状态标记
   // **Validates: Requirements 2.5, 9.4**
+  // 会话状态是 Python 拥有的文件存档（a2a_runtime.py），Node 侧无内存 Map；
+  // 每次谓词以 seedA2ASessionStore 整体重写存档保证 run 间隔离。
+  // numRuns 收敛到 12：每次 run 经由 python 子进程 terminate+list（~百毫秒级），
+  // 输入域只有 (0..5)×(0..5)，12 次足以覆盖代表性组合。
   it("Property 4: terminateTimedOutSessions marks timed-out sessions as failed and leaves active sessions untouched", () => {
+    const makeSession = (startedAt: number): A2ASession => {
+      const envelope = createEnvelope("a2a.invoke", {
+        targetAgent: "t",
+        task: "t",
+        context: "",
+        capabilities: [],
+        streamMode: false,
+      });
+      return {
+        sessionId: envelope.id,
+        requestEnvelope: envelope,
+        status: "running",
+        frameworkType: "crewai",
+        startedAt,
+        streamChunks: [],
+      };
+    };
+
     fc.assert(
       fc.property(
         fc.nat({ max: 5 }),
         fc.nat({ max: 5 }),
         (timedOutCount, activeCount) => {
           const client = new A2AClient({ defaultTimeoutMs: 1000 });
-          const sessions = (client as any).sessions as Map<string, A2ASession>;
-
-          // Add timed-out sessions (startedAt far in the past)
-          for (let i = 0; i < timedOutCount; i++) {
-            const envelope = createEnvelope("a2a.invoke", {
-              targetAgent: "t",
-              task: "t",
-              context: "",
-              capabilities: [],
-              streamMode: false,
-            });
-            sessions.set(envelope.id, {
-              sessionId: envelope.id,
-              requestEnvelope: envelope,
-              status: "running",
-              frameworkType: "crewai",
-              startedAt: Date.now() - 2000,
-              streamChunks: [],
-            });
-          }
-
-          // Add active sessions (startedAt now)
-          for (let i = 0; i < activeCount; i++) {
-            const envelope = createEnvelope("a2a.invoke", {
-              targetAgent: "t",
-              task: "t",
-              context: "",
-              capabilities: [],
-              streamMode: false,
-            });
-            sessions.set(envelope.id, {
-              sessionId: envelope.id,
-              requestEnvelope: envelope,
-              status: "running",
-              frameworkType: "crewai",
-              startedAt: Date.now(),
-              streamChunks: [],
-            });
-          }
+          seedA2ASessionStore([
+            // timed-out sessions (startedAt far in the past)
+            ...Array.from({ length: timedOutCount }, () => makeSession(Date.now() - 2000)),
+            // active sessions (startedAt now)
+            ...Array.from({ length: activeCount }, () => makeSession(Date.now())),
+          ]);
 
           const terminated = client.terminateTimedOutSessions();
           expect(terminated).toHaveLength(timedOutCount);
@@ -403,36 +401,39 @@ describe("A2A Protocol Property Tests", () => {
           expect(active).toHaveLength(activeCount);
         },
       ),
-      { numRuns: 100 },
+      { numRuns: 12 },
     );
   });
 
   // Feature: a2a-protocol, Property 5: 并发会话数量限制
   // **Validates: Requirements 2.6**
+  // 同 Property 4：经 Python 文件存档种满 running 会话（Node 内存 Map 已删除），
+  // numRuns 收敛到 8（输入域仅 1..5，子进程调用较慢）。
   it("Property 5: A2AClient rejects new invocations when active sessions reach maxConcurrentSessions", async () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async (maxSessions) => {
         const client = new A2AClient({ maxConcurrentSessions: maxSessions });
-        const sessions = (client as any).sessions as Map<string, A2ASession>;
 
         // Fill up to limit with running sessions
-        for (let i = 0; i < maxSessions; i++) {
-          const envelope = createEnvelope("a2a.invoke", {
-            targetAgent: "t",
-            task: "t",
-            context: "",
-            capabilities: [],
-            streamMode: false,
-          });
-          sessions.set(envelope.id, {
-            sessionId: envelope.id,
-            requestEnvelope: envelope,
-            status: "running",
-            frameworkType: "crewai",
-            startedAt: Date.now(),
-            streamChunks: [],
-          });
-        }
+        seedA2ASessionStore(
+          Array.from({ length: maxSessions }, () => {
+            const envelope = createEnvelope("a2a.invoke", {
+              targetAgent: "t",
+              task: "t",
+              context: "",
+              capabilities: [],
+              streamMode: false,
+            });
+            return {
+              sessionId: envelope.id,
+              requestEnvelope: envelope,
+              status: "running",
+              frameworkType: "crewai",
+              startedAt: Date.now(),
+              streamChunks: [],
+            } satisfies A2ASession;
+          })
+        );
 
         expect(client.getActiveSessions()).toHaveLength(maxSessions);
 
@@ -451,7 +452,7 @@ describe("A2A Protocol Property Tests", () => {
         expect(result.error).toBeDefined();
         expect(result.error!.message).toContain("Concurrent session limit");
       }),
-      { numRuns: 100 },
+      { numRuns: 8 },
     );
   });
 

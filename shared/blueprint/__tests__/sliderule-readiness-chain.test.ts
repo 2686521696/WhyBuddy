@@ -45,8 +45,13 @@ describe("sliderule-readiness-chain (P0 / S11)", () => {
 
   it("pickNextCapabilities routes vague cold start to readiness chain", () => {
     const picks = pickNextCapabilities(stub("做一个系统"), "做一个系统");
-    expect(picks[0]?.capabilityId).toBe("gap.ask");
-    expect(picks.some((p) => p.capabilityId === "question.expand")).toBe(true);
+    const ids = picks.map((p) => p.capabilityId);
+    // V5.2/V5.3 对账（见 pick-heuristic 注释）：complex 目标（含「系统」）在
+    // readiness 前会前置 brainstorm primers，因此不再锁「首位必是 gap.ask」；
+    // 锁的是 readiness 链仍完整在场，且 gap.ask 先于 question.expand。
+    expect(ids).toContain("gap.ask");
+    expect(ids).toContain("question.expand");
+    expect(ids.indexOf("gap.ask")).toBeLessThan(ids.indexOf("question.expand"));
   });
 
   it("extractBlockingQuestions parses bullet questions", () => {

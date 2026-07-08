@@ -5298,7 +5298,10 @@ describe("WorkflowRuntimeEngine", () => {
 
     const waitingState = await engine.runToCheckpoint({ workflowId: workflow.id });
     expect(waitingState.instance.status).toBe("WAITING_INPUT");
-    expect(waitingState.instance.checkpoint?.waitingFor).toContain("请确认是否执行高风险事务");
+    // 提示文案已英文化（transaction-flow-node-adapter buildConfirmationPrompt），re-lock 当前值
+    expect(waitingState.instance.checkpoint?.waitingFor).toContain(
+      "Confirm whether to approve this high-risk transaction",
+    );
     expect(waitingState.instance.checkpoint?.payload).toMatchObject({
       nodeType: "transaction_flow",
       decisionId: "decision_runtime-transaction-id",

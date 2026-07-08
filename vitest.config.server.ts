@@ -14,6 +14,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@shared": path.resolve(import.meta.dirname, "shared"),
+      // shared/blueprint 的部分测试（如 sliderule-graph-projection）经由
+      // @/lib/* 引 client 侧运行时——与根配置同款的 @ 别名在此也要可解析。
+      "@": path.resolve(import.meta.dirname, "client", "src"),
     },
   },
   test: {

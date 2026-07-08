@@ -106,6 +106,9 @@ describe("sliderule-graph-projection", () => {
     const w = enrichGraphNodesAfterCommit(updatedState, "en");
     const enriched = (w.graph.nodes || []).find((n) => n.id === node.id);
     expect(enriched?.title).not.toMatch(/ · /);
-    expect(enriched?.type).toBe("risk");
+    // 节点 type 来自 capabilityId 映射且 enrich 不改写它——此前硬编码 "risk"
+    // 只是碰巧首个编排能力是 risk.analyze；readiness 链上线后首发是 gap.ask，
+    // 改为锁「enrich 保持节点自身类型不变」这个真正的不变量。
+    expect(enriched?.type).toBe(node.type);
   });
 });

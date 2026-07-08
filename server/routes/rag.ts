@@ -136,6 +136,15 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
     ).replace(/\/+$/, "");
   }
 
+  function isVitestEnvironment(): boolean {
+    return (
+      process.env.NODE_ENV === "test" ||
+      process.env.VITEST === "true" ||
+      process.env.VITEST_WORKER_ID !== undefined ||
+      process.env.VITEST_POOL_ID !== undefined
+    );
+  }
+
   async function tryDelegateToPythonRag(
     operation: "ingest" | "search" | "upsert" | "delete" | "batch",
     payload: any,
@@ -145,6 +154,13 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
     // Any response from Python (ok or error body) -> delegated:true and use it verbatim (Python owns).
     // Signals from Python: backend/slide-rule-python + provenance:python-rag-query expected.
     // Degraded visible from Python path.
+    //
+    // 测试环境默认关（与 blueprint 的 python 代理同款守卫）：路由测试注入的是
+    // mock retriever，本机若恰好跑着 :9700 会把请求真委托出去、断言随环境漂移。
+    // 需要验证委托行为的测试用 RAG_PYTHON_DELEGATE=true 显式打开。
+    if (isVitestEnvironment() && process.env.RAG_PYTHON_DELEGATE !== "true") {
+      return { delegated: false };
+    }
     const base = resolvePythonRagBase();
     const internalKey = process.env.PYTHON_SLIDE_RULE_INTERNAL_KEY || "dev-slide-rule-internal";
     const url = `${base}/api/rag/${operation === "search" ? "search" : "ingest"}`;
@@ -354,9 +370,13 @@ export function createRAGRouter(deps: RAGRouteDeps): Router {
       const start = Date.now();
       const results = await deps.retriever.search(query, options || {});
       const latencyMs = Date.now() - start;
+      const totalCandidates = Array.isArray(results) ? results.length : 0;
+      // 与 web-aigc 搜索分支同口径：本地检索路径同样记录检索指标
+      //（此前只有 web-aigc 分支记，通用 /search 的 Node 路径漏记）。
+      recordRetrievalMetric(latencyMs, totalCandidates);
       return res.json({
         results: results || [],
-        totalCandidates: Array.isArray(results) ? results.length : 0,
+        totalCandidates,
         latencyMs,
         mode: options?.mode ?? 'hybrid',
       });

@@ -101,9 +101,9 @@ Click the video cover above to open the Bilibili demo.
 
 The rehearsed model is no longer just diagrams — **the browser renders it into an operable system**, ECharts-style: the five-system JSON is the schema, zero backend, zero database.
 
-| | |
-|---|---|
-| <img src="./docs/assets/live-runtime/home.png" alt="Restyled studio home" /> <br/> <sub>Restyled studio — brand sidebar, system pills, guided examples</sub> | <img src="./docs/assets/live-runtime/linkage.png" alt="Five-system linkage graph" /> <br/> <sub>**Linkage graph** — five grouped systems, every member expanded, semantic-colored cross-references</sub> |
+|                                                                                                                                                                                                                           |                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="./docs/assets/live-runtime/home.png" alt="Restyled studio home" /> <br/> <sub>Restyled studio — brand sidebar, system pills, guided examples</sub>                                                              | <img src="./docs/assets/live-runtime/linkage.png" alt="Five-system linkage graph" /> <br/> <sub>**Linkage graph** — five grouped systems, every member expanded, semantic-colored cross-references</sub>                  |
 | <img src="./docs/assets/live-runtime/workflow-live.png" alt="Live workflow graph" /> <br/> <sub>**Live workflow** — role-colored nodes, condition edges; running instances light up their current node in real time</sub> | <img src="./docs/assets/live-runtime/app-pro.png" alt="Runnable app, Pro shell" /> <br/> <sub>**Run the app** — Ant Design Pro shell rendered from the model: dashboard charts, tables, forms, approval submissions</sub> |
 
 What you can actually do after a topic closes (all state lives in the browser, per-session):
@@ -115,7 +115,7 @@ What you can actually do after a topic closes (all state lives in the browser, p
 - **Try AIGC for real** — declared AI capabilities run once through the same LLM channel used for generation; failures surface honestly (`LLM_GENERATE_DISABLED` / `LLM_GENERATE_FAILED`).
 - **Export with evidence** — the delivery package appends a rehearsal-runtime snapshot (entity rows, instance logs, exporting role), format unchanged.
 
-**5-minute demo script**: `npm run dev:all` → send “做一个连锁健身房管理系统…” → watch the live LLM stream close 6/6 → AppBundle ▸ *联动图* for the full cross-system picture → *运行应用*, create a record, submit for approval, switch to the phone frame → Workflow ▸ *试运行*, approve a step and watch the diagram highlight move → 交付物 ▸ export, find the snapshot appendix at the bottom.
+**5-minute demo script**: `npm run dev:all` → send “做一个连锁健身房管理系统…” → watch the live LLM stream close 6/6 → AppBundle ▸ _联动图_ for the full cross-system picture → _运行应用_, create a record, submit for approval, switch to the phone frame → Workflow ▸ _试运行_, approve a step and watch the diagram highlight move → 交付物 ▸ export, find the snapshot appendix at the bottom.
 
 ---
 

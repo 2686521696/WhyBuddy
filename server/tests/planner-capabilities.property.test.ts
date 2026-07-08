@@ -132,11 +132,23 @@ const ceoTemplate: fc.Arbitrary<RoleTemplate> = fc
     execution: { mode: "sequential", strategy: "default", maxConcurrency: 1 },
   }));
 
-/** Mixed array of templates */
-const mixedTemplates = fc.array(
-  fc.oneof(templateWithCapabilities, templateWithoutCapabilities, ceoTemplate),
-  { minLength: 1, maxLength: 8 },
-);
+/** Mixed array of templates.
+ *
+ * id 必须去重后缀化：断言按 `- ${id} (` 前缀找"该模板的行"，若生成两个同 id
+ * 模板（一个带 capabilities 一个不带），无 caps 的那个会命中带 caps 模板的行
+ * 而误报（fast-check 曾缩小出该反例）。属性口径是"每模板一行"，生成器须满足
+ * id 唯一这个前置条件。 */
+const mixedTemplates = fc
+  .array(
+    fc.oneof(templateWithCapabilities, templateWithoutCapabilities, ceoTemplate),
+    { minLength: 1, maxLength: 8 },
+  )
+  .map((templates) =>
+    templates.map((template, index) => ({
+      ...template,
+      id: `${template.id}__${index}`,
+    })),
+  );
 
 // ── Tests ────────────────────────────────────────────────────────────────
 

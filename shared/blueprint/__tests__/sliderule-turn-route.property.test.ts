@@ -38,7 +38,7 @@ const roundArb = fc.record({
  * Validates: Requirements 14.1
  */
 describe("Property 33: multi-round station sequence", () => {
-  it("N rounds yield planning → execution pairs in order (until park)", () => {
+  it("N rounds yield BUDGET → ORCH plan stations in order, execution fanned out per pick", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 5 }), roundArb, (n, roundTpl) => {
         const rounds: TurnRoundFacts[] = Array.from({ length: n }, (_, i) => ({
@@ -46,18 +46,24 @@ describe("Property 33: multi-round station sequence", () => {
           ...roundTpl,
           planReason: undefined,
           parkReason: undefined,
+          selectedCapabilities: Array.from(
+            { length: roundTpl.planSelectedCount },
+            (_, j) => ({ capabilityId: "risk.analyze", roleId: `role-${j}` })
+          ),
         }));
         const stations = deriveTurnRoute(baseFacts("turn-p33", rounds));
         const kinds = stations.map((s) => s.kind);
         expect(kinds[0]).toBe("intake");
-        let planCount = 0;
-        let execCount = 0;
-        for (const k of kinds) {
-          if (k === "plan") planCount++;
-          if (k === "execution") execCount++;
-        }
-        expect(planCount).toBe(n);
-        expect(execCount).toBe(n);
+        // V5.1 架构投影：每轮一个 BUDGET 放行站 + 一个 ORCH plan 站（按轮序），
+        // 旧版整轮一个 "execution" 站已被按池节点展开的 capability 站取代。
+        const planIds = stations.filter((s) => s.kind === "plan").map((s) => s.id);
+        expect(planIds).toEqual(
+          Array.from({ length: n }, (_, i) => `turn-p33-r${i + 1}-plan`)
+        );
+        expect(stations.filter((s) => s.kind === "budget_pass").length).toBe(n);
+        expect(stations.filter((s) => s.kind === "capability").length).toBe(
+          n * roundTpl.planSelectedCount
+        );
       }),
       PBT_OPTS
     );
@@ -130,7 +136,8 @@ describe("Property 36: collapsed summary tokens match expanded route", () => {
           .map((s) => s.summaryToken)
           .filter((t): t is string => Boolean(t));
         for (const token of tokens) {
-          if (token !== "等待你" && token !== "收到") {
+          // AWAIT / DONE 是终点站 token，折叠摘要按设计不含终点（见 buildRouteSummary）。
+          if (token !== "AWAIT" && token !== "DONE") {
             expect(summary).toContain(token);
           }
         }

@@ -95,6 +95,19 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      # a2a 会话/注册中心已是 Python 拥有（services/a2a_runtime.py），Node 端
+      # A2AClient 是跨进程 thin proxy——server 测试里这些子进程需要 pydantic 等
+      # Python 依赖，否则 a2a 路由测试全部 degraded 失败。
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: slide-rule-python/requirements.txt
+
+      - name: Install Python Dependencies
+        run: pip install -r slide-rule-python/requirements.txt
+
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 

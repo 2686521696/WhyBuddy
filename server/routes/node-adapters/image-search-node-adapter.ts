@@ -395,6 +395,10 @@ export async function executeImageSearchNode(
     const fallback = buildMockImageSearchResponse(normalizedRequest);
     response = {
       ...fallback,
+      // 显式覆盖 status：mock 兜底自身可能是 "completed"，但执行器异常的
+      // 回退必须如实呈现 degraded（normalizeStatus 优先信任显式 status，
+      // 不覆盖会把降级吞成 completed）。
+      status: "degraded",
       degraded: true,
       fallbackReason: `Image search backend unavailable: ${
         error instanceof Error ? error.message : String(error)

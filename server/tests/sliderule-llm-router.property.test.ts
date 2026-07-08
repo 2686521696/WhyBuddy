@@ -45,7 +45,7 @@ describe("Property 11: resolveRouterModel", () => {
     );
   });
 
-  it("executeOrchestratePlan passes resolved model to LLM client", async () => {
+  it("executeOrchestratePlan routes the planner call to the primary (5+1 high) model", async () => {
     const spy = vi.spyOn(llmClient, "callLLMJsonWithUsage").mockResolvedValue({
       json: {
         selected: [{ capabilityId: "risk.analyze", roleId: "安全" }],
@@ -75,7 +75,10 @@ describe("Property 11: resolveRouterModel", () => {
 
     expect(spy).toHaveBeenCalled();
     const callOpts = spy.mock.calls[0]?.[1] as { model?: string };
-    expect(callOpts?.model).toBe("router-fast");
+    // 5+1 架构（见 orchestrate-plan.ts）：规划器（orchestrate.plan）固定走
+    // 高档主模型保证分配质量，不再用低价 routerModel——resolveRouterModel
+    // 仍是纯函数真相（上面的 property 锁它），但 planner 调用锁 primary。
+    expect(callOpts?.model).toBe("primary-model");
     spy.mockRestore();
   });
 });
@@ -176,7 +179,7 @@ describe("Property 13: mechanical convergence signal", () => {
     });
 
     it("empty + converged true → llm source with converged, not heuristic_fallback", async () => {
-      fc.assert(
+      await fc.assert(
         fc.asyncProperty(fc.string({ minLength: 0, maxLength: 120 }), async (rationale) => {
           vi.spyOn(llmClient, "callLLMJsonWithUsage").mockResolvedValueOnce({
             json: { selected: [], converged: true, rationale },
@@ -199,7 +202,7 @@ describe("Property 13: mechanical convergence signal", () => {
     });
 
     it("empty without converged === true → heuristic_fallback", async () => {
-      fc.assert(
+      await fc.assert(
         fc.asyncProperty(
           fc.oneof(fc.constant(undefined), fc.constant(false), fc.constant(true)),
           fc.string({ minLength: 1, maxLength: 80 }),

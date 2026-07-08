@@ -49,7 +49,11 @@ const arbAuditEvent = fc.record({
       nil: undefined,
     }),
   }),
-  action: fc.string({ minLength: 1, maxLength: 50 }),
+  // 契约按 trim 校验非空：纯空白串会被 assertValidAuditEventDraft 拒绝，
+  // 生成器必须满足前置条件（fast-check 偶发生成 " " 曾导致 P-8 间歇失败）。
+  action: fc
+    .string({ minLength: 1, maxLength: 50 })
+    .map((s) => (s.trim().length > 0 ? s : `a${s}`)),
   resource: fc.record({
     type: fc.string({ minLength: 1, maxLength: 20 }).map(
       (s) => s.replace(/[^a-zA-Z0-9_-]/g, "x"),
@@ -408,7 +412,10 @@ describe("P-8: CRITICAL 事件必录", () => {
         fc.string({ minLength: 1, maxLength: 20 }).map(
           (s) => s.replace(/[^a-zA-Z0-9_-]/g, "x"),
         ),
-        fc.string({ minLength: 1, maxLength: 30 }),
+        // 同 arbAuditEvent.action：契约 trim 后非空，纯空白串须修补
+        fc
+          .string({ minLength: 1, maxLength: 30 })
+          .map((s) => (s.trim().length > 0 ? s : `a${s}`)),
         (eventType, actorId, action) => {
           const keys = generateTestKeys();
           const c = new AuditChain({
