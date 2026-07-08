@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SlideRule">
+  <!-- SlideRule 品牌标：S 型折叠尺。上下两段深蓝刻度尺 + 中段蓝色渐变滑轨（白色滑钮 + 游标箭头）。 -->
+  <defs>
+    <linearGradient id="srSlide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2B59FF"/>
+      <stop offset="1" stop-color="#27CBF2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 上段尺身 + 右下折角（衔接中段滑轨） -->
+  <rect x="60" y="88" width="388" height="86" rx="26" fill="#14295E"/>
+  <path d="M198 172 L285 172 L198 205 Z" fill="#14295E"/>
+  <!-- 上段刻度 -->
+  <g fill="#FFFFFF">
+    <rect x="102" y="108" width="10" height="36" rx="5"/>
+    <rect x="152" y="108" width="10" height="36" rx="5"/>
+    <rect x="202" y="108" width="10" height="36" rx="5"/>
+    <rect x="251" y="100" width="10" height="52" rx="5"/>
+    <rect x="300" y="108" width="10" height="36" rx="5"/>
+    <rect x="350" y="108" width="10" height="36" rx="5"/>
+    <rect x="400" y="108" width="10" height="36" rx="5"/>
+  </g>
+
+  <!-- 中段滑轨（渐变）+ 白色滑钮 + 游标箭头 -->
+  <rect x="60" y="212" width="352" height="88" rx="44" fill="url(#srSlide)"/>
+  <circle cx="366" cy="256" r="28" fill="#FFFFFF"/>
+  <path d="M432 230 L474 256 L432 282 Z" fill="#27CBF2"/>
+
+  <!-- 下段尺身 + 左上折角（衔接中段滑轨） -->
+  <path d="M290 340 L226 340 L290 307 Z" fill="#14295E"/>
+  <rect x="60" y="338" width="388" height="86" rx="26" fill="#14295E"/>
+  <!-- 下段刻度 -->
+  <g fill="#FFFFFF">
+    <rect x="102" y="368" width="10" height="36" rx="5"/>
+    <rect x="152" y="368" width="10" height="36" rx="5"/>
+    <rect x="202" y="368" width="10" height="36" rx="5"/>
+    <rect x="251" y="360" width="10" height="52" rx="5"/>
+    <rect x="300" y="368" width="10" height="36" rx="5"/>
+    <rect x="350" y="368" width="10" height="36" rx="5"/>
+    <rect x="400" y="368" width="10" height="36" rx="5"/>
+  </g>
+</svg>

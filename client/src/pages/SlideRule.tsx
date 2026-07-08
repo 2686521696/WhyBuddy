@@ -32,7 +32,7 @@ import {
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
-import { newSessionId, SessionSwitcher } from "./sliderule/SessionSwitcher";
+import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import { ClarificationCard, type ClarificationItem } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
@@ -608,7 +608,6 @@ function SlideRuleUnified({
   skillContents = {},
   latestMermaid = null,
   llmDraft = "",
-  sessionControl = null,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -648,8 +647,6 @@ function SlideRuleUnified({
   latestMermaid?: string | null;
   /** 五系统 LLM 生成的实时草稿（llm_delta 累积）。 */
   llmDraft?: string;
-  /** 会话切换器节点（Claude 式历史会话/新建） */
-  sessionControl?: React.ReactNode;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const composerHints = useMemo(
@@ -689,7 +686,6 @@ function SlideRuleUnified({
           publishClosure={publishClosure}
           onResetSession={resetSession}
           onOpenDeliverables={openDeliverables}
-          sessionControl={sessionControl}
           embedded={embedded}
         />
         {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2) */}
@@ -1112,6 +1108,7 @@ const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
  * 会话壳（Claude 式）：管理"当前会话 id"，切换/新建时以 key=sessionId
  * 整树重挂——hook 对新 id 走 loadOrCreateSessionState 完整水合，
  * 运行时排练数据（localStorage 按 id 分键）自动隔离，零状态串味。
+ * 会话选择入口在侧栏（SidebarSessions），通过 window 事件通知这里。
  */
 export default function SlideRule({ embedded = false }: { embedded?: boolean } = {}) {
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
@@ -1122,13 +1119,15 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
       return "sliderule-v51-product";
     }
   });
-  const switchSession = useCallback((id: string) => {
-    try {
-      localStorage.setItem(ACTIVE_SESSION_KEY, id);
-    } catch {
-      /* 隐私模式降级为内存态 */
-    }
-    setActiveSessionId(id);
+
+  useEffect(() => {
+    if (IS_GITHUB_PAGES) return;
+    const onChanged = (ev: Event) => {
+      const id = (ev as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (id) setActiveSessionId(id);
+    };
+    window.addEventListener(SESSION_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
   }, []);
 
   return (
@@ -1136,8 +1135,6 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
       key={activeSessionId}
       embedded={embedded}
       activeSessionId={activeSessionId}
-      onSwitchSession={switchSession}
-      onNewSession={() => switchSession(newSessionId())}
     />
   );
 }
@@ -1145,13 +1142,9 @@ export default function SlideRule({ embedded = false }: { embedded?: boolean } =
 function SlideRuleSessionBody({
   embedded,
   activeSessionId,
-  onSwitchSession,
-  onNewSession,
 }: {
   embedded: boolean;
   activeSessionId: string;
-  onSwitchSession: (id: string) => void;
-  onNewSession: () => void;
 }) {
   const {
     goal,
@@ -1183,18 +1176,17 @@ function SlideRuleSessionBody({
     llmDraft,
   } = useSlideRuleSession({
     sessionId: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_SESSION_ID : activeSessionId,
-    documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : "SlideRule",
+    documentTitle: IS_GITHUB_PAGES ? "SlideRule · 演示" : undefined,
     initialGoal: IS_GITHUB_PAGES ? GITHUB_PAGES_DEMO_GOAL : undefined,
   });
 
-  // 会话切换器（Pages 演示是单会话，不显示）
-  const sessionControl = IS_GITHUB_PAGES ? null : (
-    <SessionSwitcher
-      activeSessionId={activeSessionId}
-      onSwitch={onSwitchSession}
-      onNew={onNewSession}
-    />
-  );
+  // 浏览器标签标题跟随当前会话话题（像 Claude 的标签页那样一眼识别会话）
+  useEffect(() => {
+    if (IS_GITHUB_PAGES) return;
+    document.title = goal
+      ? `${goal.slice(0, 24)} · SlideRule`
+      : "新会话 · SlideRule";
+  }, [goal]);
 
   // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
   const [pythonApiError, setPythonApiError] = useState<any>(null);
@@ -1549,7 +1541,6 @@ function SlideRuleSessionBody({
     skillContents,
     latestMermaid,
     llmDraft,
-    sessionControl,
   };
 
   if (isImmersion) {

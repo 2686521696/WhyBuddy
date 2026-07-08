@@ -37,32 +37,38 @@
   width: 220px;
 }
 
+/* 品牌区：S 型尺标（左）+ 产品名（上）+ 域名（下） */
 .native-agent-brand {
   align-items: center;
   display: flex;
-  height: 36px;
-  margin: 0 4px 16px;
+  gap: 10px;
+  margin: 2px 6px 16px;
 }
 
-.native-agent-brand img {
+.native-agent-brand-icon {
   display: block;
-  height: 64px;
-  object-fit: contain;
-  object-position: left center;
-  width: 150px;
+  height: 40px;
+  width: 40px;
 }
 
-.native-agent-brand-mark {
-  align-items: center;
-  background: #D97757;
-  border-radius: 8px;
-  color: #fff;
-  display: inline-flex;
-  font-size: 20px;
+.native-agent-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.native-agent-brand-name {
+  color: #14295E;
+  font-size: 17px;
   font-weight: 800;
-  height: 36px;
-  justify-content: center;
-  width: 36px;
+  letter-spacing: 0.01em;
+}
+
+.native-agent-brand-domain {
+  color: #9a938a;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
 }
 
 .native-agent-nav {
@@ -107,6 +113,92 @@
   border-radius: 0;
   margin-top: auto;
   padding-top: 10px;
+}
+
+/* --- Claude 式会话区：新建会话 + 最近列表（占据侧栏弹性空间，内部滚动） --- */
+.native-agent-sessions {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 14px;
+  min-height: 0;
+}
+
+.native-agent-session-new {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: #B0552F;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.native-agent-session-new:hover {
+  background: #F8E8E0;
+}
+
+.native-agent-session-new-plus {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.native-agent-sessions-label {
+  color: #9a938a;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+  padding: 0 12px;
+}
+
+.native-agent-sessions-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.native-agent-sessions-hint {
+  color: #b9b2a7;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.native-agent-session-item {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #4a453d;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  font-size: 13px;
+  overflow: hidden;
+  padding: 7px 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.native-agent-session-item:hover {
+  background: #F3EFE7;
+}
+
+.native-agent-session-item-active {
+  background: #F8E8E0;
+  color: #B0552F;
+  font-weight: 600;
 }
 
 .native-agent-help .anticon-right,
@@ -2235,18 +2327,7 @@
   padding: 0 10px;
 }
 
-/* --- 样式版：侧边栏品牌区放大 + 底部工作区卡（对齐效果图） --------------- */
-.native-agent-brand {
-  height: auto;
-  justify-content: center;
-  margin: 4px 4px 20px;
-}
-
-.native-agent-brand img {
-  height: 88px;
-  object-position: center;
-  width: 168px;
-}
+/* --- 样式版：底部工作区卡（对齐效果图） --------------- */
 
 .native-agent-nav-item,
 .native-agent-help {

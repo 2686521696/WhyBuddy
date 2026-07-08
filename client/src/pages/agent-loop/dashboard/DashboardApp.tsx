@@ -58,6 +58,8 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
 }
 import SlideRulePage from '@/pages/SlideRule';
 import { SettingsPage } from '@/pages/sliderule/SettingsDialog';
+import { SidebarSessions } from './SidebarSessions';
+import { IS_GITHUB_PAGES } from '@/lib/deploy-target';
 import { MainlineWorkbench } from './MainlineWorkbench';
 import type { AgentLoopSettingsViewModel, DetailPayload, OverviewPayload, OverviewTask, PythonHealthViewModel } from './dashboardTypes';
 import { postCommand } from './bridge';
@@ -828,10 +830,6 @@ function AgentLoopSidebar({
   onViewChange: (next: ViewKey) => void;
   getViewPath?: (next: ViewKey) => string | undefined;
 }) {
-  const brandLogo = typeof window !== 'undefined' ? window.__AGENT_LOOP_ASSETS__?.brandLogo : undefined;
-  // Prefer the uploaded SlideRule mark (client/public/sliderule-mark.png); fall back
-  // gracefully to the bundled brand asset / letter mark while the file is absent.
-  const [brandMarkFailed, setBrandMarkFailed] = useState(false);
   const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
     { key: 'sliderule', label: '推演', icon: <BulbOutlined /> },
     { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
@@ -840,18 +838,17 @@ function AgentLoopSidebar({
 
   return (
     <aside className="native-agent-sidebar">
-      <div className="native-agent-brand">
-        {!brandMarkFailed ? (
-          <img
-            src="/assets/sliderule-logo.png"
-            alt="SlideRule.ai"
-            onError={() => setBrandMarkFailed(true)}
-          />
-        ) : brandLogo ? (
-          <img src={brandLogo} alt="SlideRule.ai" />
-        ) : (
-          <span className="native-agent-brand-mark">S</span>
-        )}
+      {/* 品牌区：S 型尺标（左）+ 产品名（上）+ 域名（下） */}
+      <div className="native-agent-brand" data-testid="agent-brand">
+        <img
+          className="native-agent-brand-icon"
+          src="/assets/sliderule-mark.svg"
+          alt="SlideRule"
+        />
+        <span className="native-agent-brand-text">
+          <span className="native-agent-brand-name">SlideRule</span>
+          <span className="native-agent-brand-domain">sliderule.ai</span>
+        </span>
       </div>
       <nav className="native-agent-nav" aria-label="AgentLoop">
         {navItems.map((item) => (
@@ -870,6 +867,10 @@ function AgentLoopSidebar({
           </a>
         ))}
       </nav>
+      {/* Claude 式会话区：新建会话 + 最近列表（Pages 纯浏览器演示是单会话，不显示） */}
+      {!IS_GITHUB_PAGES && (
+        <SidebarSessions onOpenSliderule={() => onViewChange('sliderule')} />
+      )}
       <button type="button" className="native-agent-help">
         <QuestionCircleOutlined />
         <span>帮助文档</span>
@@ -982,6 +983,20 @@ export function DashboardApp({
     if (shouldRequestSettingsForView(view)) {
       postCommand('getSettings');
     }
+  }, [view]);
+
+  // 浏览器标签标题：推演页由会话话题驱动（SlideRule 内部 effect），其余视图按视图名
+  useEffect(() => {
+    if (view === 'sliderule') return;
+    const label =
+      view === 'workbench'
+        ? '工作台'
+        : view === 'settings'
+          ? '设置'
+          : view === 'settings-legacy'
+            ? '设置（legacy）'
+            : '任务队列（legacy）';
+    document.title = `${label} · SlideRule`;
   }, [view]);
 
   // Load additional settings-tab data when switching to the legacy settings view

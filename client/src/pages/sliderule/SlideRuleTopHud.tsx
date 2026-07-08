@@ -19,7 +19,6 @@ export function SlideRuleTopHud({
   publishClosure,
   onResetSession,
   onOpenDeliverables,
-  sessionControl,
   embedded = false,
 }: {
   state: V5SessionState;
@@ -32,8 +31,6 @@ export function SlideRuleTopHud({
   publishClosure?: PublishClosureSummary | null;
   onResetSession?: () => void;
   onOpenDeliverables?: () => void;
-  /** 会话切换器（Claude 式历史会话/新建），由页面装配后传入 */
-  sessionControl?: React.ReactNode;
   embedded?: boolean;
 }) {
   const facts = deriveStatusBarFacts(state, {
@@ -95,7 +92,6 @@ export function SlideRuleTopHud({
           className="flex shrink-0 items-center justify-end gap-2 py-1"
           data-testid="sliderule-header-actions"
         >
-          {sessionControl}
           {onOpenDeliverables && (
             <button
               type="button"

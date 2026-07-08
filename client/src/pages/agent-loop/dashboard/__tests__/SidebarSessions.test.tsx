@@ -1,11 +1,11 @@
 /**
- * SessionSwitcher（Claude 式会话管理）单测：纯函数 + 静态结构。
- * 面板数据靠 effect 拉取，静态渲染只断言闭合态骨架。
+ * SidebarSessions（Claude 式侧栏会话区）单测：纯函数 + 静态结构。
+ * 列表数据靠 effect 拉取，静态渲染只断言骨架（新建按钮 + 最近标签 + 列表容器）。
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { newSessionId, SessionSwitcher, sortSessionsByRecency } from "../SessionSwitcher";
+import { newSessionId, SidebarSessions, sortSessionsByRecency } from "../SidebarSessions";
 
 describe("newSessionId", () => {
   it("sr- 前缀且两次生成不同", () => {
@@ -30,13 +30,13 @@ describe("sortSessionsByRecency", () => {
   });
 });
 
-describe("SessionSwitcher 静态渲染", () => {
-  it("闭合态只有「会话」按钮，不渲染面板", () => {
-    const html = renderToStaticMarkup(
-      <SessionSwitcher activeSessionId="s1" onSwitch={() => {}} onNew={() => {}} />
-    );
-    expect(html).toContain('data-testid="sliderule-session-switcher"');
-    expect(html).toContain("会话");
-    expect(html).not.toContain('data-testid="sliderule-session-list"');
+describe("SidebarSessions 静态渲染", () => {
+  it("骨架：新建会话按钮 + 「最近」标签 + 列表容器", () => {
+    const html = renderToStaticMarkup(<SidebarSessions />);
+    expect(html).toContain('data-testid="sidebar-sessions"');
+    expect(html).toContain('data-testid="sidebar-session-new"');
+    expect(html).toContain("新建会话");
+    expect(html).toContain("最近");
+    expect(html).toContain('data-testid="sidebar-session-list"');
   });
 });
