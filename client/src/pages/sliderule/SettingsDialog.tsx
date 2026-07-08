@@ -213,15 +213,8 @@ function SettingsSurface(
 
           <div className="flex min-h-0 flex-1">
             {/* 左栏：分类导航 */}
+            {/* 分类导航不放品牌 logo：侧栏已有品牌位，这里重复是噪音（用户反馈） */}
             <nav className="flex w-[190px] shrink-0 flex-col gap-1 border-r border-[#E7E2D9] bg-[#F5F1EA]/70 p-3">
-              <div className="mb-3 flex items-center gap-2 px-2 py-2">
-                <img
-                  src="/assets/sliderule_logo_wordmark_transparent.png"
-                  alt="SlideRule"
-                  className="h-8"
-                  title="SlideRule 设置"
-                />
-              </div>
               {NAV_ITEMS.map((item) => {
                 const active = category === item.id;
                 return (
