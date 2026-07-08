@@ -122,6 +122,37 @@ describe("LlmProviderSettings 极简面板", () => {
     const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
     expect(html).toContain("请填写密钥");
   });
+
+  it("自定义厂商：列表带添加按钮；custom-* 项可改名/选协议/删除，预设项不可", () => {
+    const draft = makeDraft();
+    draft.providers.unshift({
+      id: "custom-abc123",
+      presetId: "custom",
+      name: "我的中转",
+      protocol: "openai",
+      apiKey: "sk-relay",
+      requiresApiKey: true,
+      baseUrl: "https://relay.example.com/v1",
+      enabled: true,
+      models: [{ id: "gpt-4o", capabilities: ["tools", "stream"], enabled: true }],
+    });
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toContain('data-testid="sliderule-provider-add-custom"');
+    // 首项（自定义）默认选中 → 改名输入框 + 协议选择 + 删除按钮
+    expect(html).toContain('data-testid="sliderule-provider-name"');
+    expect(html).toContain('data-testid="sliderule-provider-protocol"');
+    expect(html).toContain('data-testid="sliderule-provider-remove"');
+    expect(html).toContain("我的中转");
+    // 预设厂商渲染（未选中态）无删除入口——只有一处 remove testid
+    expect(html.match(/sliderule-provider-remove/g)?.length).toBe(1);
+  });
+
+  it("预设厂商选中时不渲染改名/协议/删除控件", () => {
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    expect(html).not.toContain('data-testid="sliderule-provider-name"');
+    expect(html).not.toContain('data-testid="sliderule-provider-protocol"');
+    expect(html).not.toContain('data-testid="sliderule-provider-remove"');
+  });
 });
 
 describe("TestConnectionResult 三态", () => {

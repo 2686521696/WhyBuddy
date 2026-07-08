@@ -88,6 +88,39 @@ export function LlmProviderSettings({
     });
   };
 
+  // 自定义厂商（中转/聚合商场景）：id 约定 custom-xxx，可改名/选协议/删除
+  const isCustom = !!selected && selected.id.startsWith("custom-");
+  const addCustom = () => {
+    const id = `custom-${Math.random().toString(36).slice(2, 8)}`;
+    const count = draft.providers.filter((p) => p.id.startsWith("custom-")).length;
+    setDraft({
+      ...draft,
+      providers: [
+        ...draft.providers,
+        {
+          id,
+          presetId: "custom",
+          name: `自定义厂商 ${count + 1}`,
+          protocol: "openai",
+          apiKey: "",
+          requiresApiKey: true,
+          baseUrl: "",
+          enabled: false,
+          models: [],
+        },
+      ],
+    });
+    setSelectedId(id);
+    setTestState({ kind: "idle" });
+  };
+  const removeCustom = () => {
+    if (!selected || !isCustom) return;
+    const rest = draft.providers.filter((p) => p.id !== selected.id);
+    setDraft({ ...draft, providers: rest });
+    setSelectedId(rest[0]?.id);
+    setTestState({ kind: "idle" });
+  };
+
   const modelValue =
     selected?.defaultModelId ||
     selected?.models.find((m) => m.enabled)?.id ||
@@ -131,12 +164,10 @@ export function LlmProviderSettings({
 
   return (
     <div className="flex h-full min-h-0">
-      {/* 左：厂商列表（纯文字 + 启用状态点） */}
-      <ul
-        className="w-[170px] shrink-0 overflow-y-auto border-r border-[#E7E2D9] p-2"
-        data-testid="sliderule-provider-list"
-      >
-        {draft.providers.map((p) => {
+      {/* 左：厂商列表（纯文字 + 启用状态点）+ 添加自定义 */}
+      <div className="flex w-[170px] shrink-0 flex-col border-r border-[#E7E2D9]">
+        <ul className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="sliderule-provider-list">
+          {draft.providers.map((p) => {
           const active = p.id === selected?.id;
           const status = providerStatus(p);
           return (
@@ -165,24 +196,69 @@ export function LlmProviderSettings({
             </li>
           );
         })}
-      </ul>
+        </ul>
+        <div className="border-t border-[#E7E2D9] p-2">
+          <button
+            type="button"
+            onClick={addCustom}
+            data-testid="sliderule-provider-add-custom"
+            className="w-full rounded-lg border border-dashed border-[#D9D3C7] px-3 py-1.5 text-[12px] text-stone-500 transition hover:border-[#D97757] hover:text-[#B0552F]"
+          >
+            ＋ 添加自定义
+          </button>
+        </div>
+      </div>
 
       {/* 右：选中厂商的最小表单 */}
       {selected && (
         <div className="min-w-0 flex-1 overflow-y-auto p-6">
           <div className="max-w-xl space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="text-[15px] font-semibold text-stone-800">{selected.name}</div>
-              <label className="flex cursor-pointer items-center gap-2 text-[12px] text-stone-500">
-                启用
+            <div className="flex items-center justify-between gap-3">
+              {isCustom ? (
                 <input
-                  type="checkbox"
-                  checked={selected.enabled}
-                  onChange={(e) => patch({ enabled: e.target.checked })}
-                  data-testid="sliderule-provider-enabled"
-                  className="h-4 w-4 accent-[#D97757]"
+                  className="min-w-0 flex-1 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[14px] font-semibold text-stone-800 outline-none transition focus:border-[#D97757]"
+                  value={selected.name}
+                  onChange={(e) => patch({ name: e.target.value })}
+                  placeholder="厂商名称"
+                  data-testid="sliderule-provider-name"
                 />
-              </label>
+              ) : (
+                <div className="text-[15px] font-semibold text-stone-800">{selected.name}</div>
+              )}
+              <div className="flex shrink-0 items-center gap-3">
+                {isCustom && (
+                  <>
+                    <select
+                      value={selected.protocol}
+                      onChange={(e) => patch({ protocol: e.target.value as LlmProviderConfig["protocol"] })}
+                      data-testid="sliderule-provider-protocol"
+                      className="rounded-lg border border-[#E7E2D9] bg-white px-2 py-1.5 text-[12px] text-stone-600 outline-none"
+                    >
+                      <option value="openai">OpenAI 协议</option>
+                      <option value="anthropic">Anthropic 协议</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={removeCustom}
+                      data-testid="sliderule-provider-remove"
+                      title="删除该自定义厂商"
+                      className="rounded-lg px-2 py-1.5 text-[12px] text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
+                <label className="flex cursor-pointer items-center gap-2 text-[12px] text-stone-500">
+                  启用
+                  <input
+                    type="checkbox"
+                    checked={selected.enabled}
+                    onChange={(e) => patch({ enabled: e.target.checked })}
+                    data-testid="sliderule-provider-enabled"
+                    className="h-4 w-4 accent-[#D97757]"
+                  />
+                </label>
+              </div>
             </div>
 
             <div>
