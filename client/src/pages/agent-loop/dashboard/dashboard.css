@@ -1074,11 +1074,9 @@
 }
 
 .native-sliderule-shell {
-  /* background: #fff; */
-  /* border: 1px solid #dfe8f6; */
-  /* border-radius: 10px; */
   box-shadow: 0 6px 18px rgba(68, 60, 44, 0.05);
-  height: calc(100vh - 48px);
+  /* 推演视图已无顶栏：占满整个视口高度（原 -48px 是顶栏高度，删除后会露底） */
+  height: 100vh;
   min-height: 560px;
   overflow: hidden;
   width: 100%;
@@ -2024,7 +2022,7 @@
   }
 
   .native-sliderule-shell {
-    height: calc(100vh - 120px);
+    height: calc(100vh - 72px);
     min-height: 620px;
   }
 
