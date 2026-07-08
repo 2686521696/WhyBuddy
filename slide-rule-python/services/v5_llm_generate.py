@@ -176,7 +176,9 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
             required_keys=_REQUIRED_SECTIONS,
             max_shape_retries=1,
             temperature=0.2,
-            max_tokens=4000,
+            # 多链路 + 不变式后契约变大（原 4000 面向单链路模型）；截断会直接
+            # 变成 shape 失败 → 重试 → fail-closed，宁可放宽。
+            max_tokens=8000,
             # sink 已注册时走流式：内容增量实时推给 UI（llm_delta）。
             on_delta=_emit_delta if _delta_sink is not None else None,
         )
