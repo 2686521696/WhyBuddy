@@ -23,7 +23,6 @@ import {
   parsePartialFiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./system-screens/five-system-model";
-import { LlmLiveOutput } from "./LlmLiveOutput";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
@@ -65,12 +64,11 @@ interface SlideRuleStudioProps {
 
   /** 推演进行中（驱动一轮消息期间）。 */
   isRunning?: boolean;
-  /** LLM 实时输出（llm_delta 累积）+ 来源标签 + 人话标题。推演中右侧舞台
-   *  实时消费：五系统起草的部分 JSON 能拼出页面时应用实时长出来，
-   *  拼不出时展示流式想法本身。 */
+  /** LLM 实时输出（llm_delta 累积）+ 来源标签。推演中右侧舞台实时消费：
+   *  五系统起草的部分 JSON 能拼出页面时应用实时长出来；拼不出时只报
+   *  "推演中"（实时想法由左栏流出，不重复）。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
-  llmDraftTitle?: string;
 
   className?: string;
 }
@@ -88,7 +86,6 @@ export function SlideRuleStudio({
   isRunning = false,
   llmDraft = "",
   llmDraftLabel = null,
-  llmDraftTitle = "",
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
@@ -248,22 +245,24 @@ export function SlideRuleStudio({
             </div>
           </>
         ) : stage === "live" ? (
-          <>
-            {/* 推演想法直播：模型还没成形（轮内步骤 / 起草早期），右侧实时
-                展示 LLM 正在写的内容——用户全程看得见"正在做什么"。 */}
-            <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-live-stage-bar">
-              <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
-                {appTitle || "推演进行中"}
-              </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
-                推演中 · 想法直播
-              </span>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col" data-testid="sliderule-live-stage">
-              <LlmLiveOutput title={llmDraftTitle || llmDraftLabel || "推演中"} text={llmDraft} fill />
-            </div>
-          </>
+          /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
+             已在左栏流出（用户反馈：右侧别重复直播内容），应用成形后接管舞台。 */
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+            data-testid="sliderule-live-stage"
+          >
+            <span className="inline-flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="h-2 w-2 animate-pulse rounded-full bg-[#D97757]/60"
+                  style={{ animationDelay: `${i * 150}ms` }}
+                />
+              ))}
+            </span>
+            <div className="text-[13px] font-medium text-stone-500">推演中</div>
+            <div className="text-[11px] text-stone-400">应用成形后将在这里实时渲染</div>
+          </div>
         ) : (
           <>
             {/* 推演剧场 / 证据看板：沿用六系统缩略 + 16:9 系统屏 */}
