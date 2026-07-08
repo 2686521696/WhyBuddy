@@ -1,8 +1,8 @@
 /**
- * XrayPanel — 应用主舞台的「X 光」透视栏。
+ * XrayPanel — 应用主舞台的「游标」透视栏（计算尺游标：对齐读数）。
  *
  * 融合哲学（方向 B）：运行应用是主角，五系统不是六个并列模块，而是应用
- * 背后的骨架。开 X 光后，本栏跟随你在应用里的当前页面，实时透视它背后的
+ * 背后的骨架。开游标后，本栏跟随你在应用里的当前页面，实时透视它背后的
  * 实体/流程/角色/AI 能力/页面蓝图；点任何一节侧滑抽屉进入对应系统屏深看。
  * 纯派生渲染：模型进、透视出，不持有任何状态。
  */
@@ -22,7 +22,7 @@ export interface XraySection {
   relation: string;
 }
 
-/** 元素级 X 光目标：应用内被悬停的具体元素（AR 焦点）。 */
+/** 元素级游标目标：应用内被悬停的具体元素（对齐焦点）。 */
 export type XrayTarget =
   | { kind: "field"; entityId: string; fieldId: string; label: string }
   | { kind: "action"; label: string; pageId: string; permission: string | null; granted: boolean; role?: string }
@@ -118,7 +118,7 @@ export function describeXrayTarget(
   };
 }
 
-/** 当前页面（或 home 全景）的 X 光切片：每个系统与这一页的真实关联。 */
+/** 当前页面（或 home 全景）的游标切片：每个系统与这一页的真实关联。 */
 export function derivePageXray(
   model: FiveSystemModel,
   schema: AppRuntimeSchema,
@@ -270,7 +270,7 @@ export function XrayPanel({
     >
       <div className="border-b border-[#F0EDE5] px-3.5 py-2.5">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-          X 光 · 页面背后
+          游标 · 页面背后
         </div>
         <div className="mt-0.5 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
           {xray.pageTitle}

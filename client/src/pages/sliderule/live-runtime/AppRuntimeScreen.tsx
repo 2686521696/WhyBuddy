@@ -294,9 +294,9 @@ export function AppRuntimeScreen({
   model: FiveSystemModel;
   sessionId: string;
   appTitle?: string;
-  /** 当前页变化时上报（X 光透视栏跟随应用内导航） */
+  /** 当前页变化时上报（游标透视栏跟随应用内导航） */
   onActivePageChange?: (pageId: string) => void;
-  /** 元素级 X 光：开启时被埋点的元素悬停上报目标 + 描边高亮 */
+  /** 元素级游标：开启时被埋点的元素悬停上报目标 + 描边高亮 */
   xrayActive?: boolean;
   onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
@@ -388,7 +388,7 @@ export function AppRuntimeScreen({
     notifyRuntimeChanged(sessionId);
   };
 
-  // 元素级 X 光探针：开着 X 光时，埋点元素悬停上报目标 + 类名描边（AR 焦点）
+  // 元素级游标探针：开着游标时，埋点元素悬停上报目标 + 类名描边（对齐焦点）
   const probe = (t: XrayTarget): React.HTMLAttributes<HTMLElement> =>
     xrayActive && onXrayTarget
       ? {

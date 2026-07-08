@@ -3,9 +3,9 @@
  *
  * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：logo 水印 + hero 文案 + 示例 chips）。
  *
- * 右侧主舞台（方向 B：应用为主，五系统是 X 光）——三态：
+ * 右侧主舞台（方向 B：应用为主，五系统是游标透视层）——三态：
  *   theater — 推演进行中（SSE activeSkillId 驱动），系统屏生成剧场逐屏亮相；
- *   app     — 闭环出应用后，运行应用整高铺满为默认舞台；「X 光」开关透视
+ *   app     — 闭环出应用后，运行应用整高铺满为默认舞台；「游标」开关透视
  *             当前页面背后的实体/流程/角色/AI，点任何一节侧滑抽屉深入系统屏；
  *   board   — 尚无可运行应用（空会话/未闭环），保留六系统缩略 + 证据看板。
  * 六系统屏不再是并列切屏，而是应用的透视层（抽屉承载，全部保留）。
@@ -25,7 +25,7 @@ import {
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
-import { ScanEye, X } from "lucide-react";
+import { Crosshair, X } from "lucide-react";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -71,7 +71,7 @@ export function SlideRuleStudio({
     setManualSkill(id);
   }, []);
 
-  // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/X 光共享
+  // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
   const fiveSystemModel = useMemo(
     () =>
       mergeFiveSystemModels(
@@ -92,7 +92,7 @@ export function SlideRuleStudio({
       ? "app"
       : "board";
 
-  // X 光开关（偏好持久化）+ 跟随应用内当前页
+  // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化）+ 跟随应用内当前页
   const [xrayOn, setXrayOn] = useState<boolean>(() => {
     try {
       return localStorage.getItem(XRAY_PREF_KEY) === "1";
@@ -105,7 +105,7 @@ export function SlideRuleStudio({
       try {
         localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
       } catch {}
-      if (v) setXrayTarget(null); // 关 X 光时清掉残留焦点
+      if (v) setXrayTarget(null); // 关游标时清掉残留焦点
       return !v;
     });
   }, []);
@@ -113,7 +113,7 @@ export function SlideRuleStudio({
   // 元素级焦点：应用内被悬停元素的背后声明（AR）
   const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
 
-  // 系统屏抽屉（X 光深入 / 抽屉内六系统横向切换）
+  // 系统屏抽屉（游标深入 / 抽屉内六系统横向切换）
   const [drawerSkill, setDrawerSkill] = useState<SkillId | null>(null);
   useEffect(() => {
     if (!drawerSkill) return;
@@ -137,7 +137,7 @@ export function SlideRuleStudio({
       <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#FAF9F5] p-4">
         {stage === "app" && fiveSystemModel ? (
           <>
-            {/* 应用主舞台：细头条（话题 + X 光开关），其下应用整高铺满 */}
+            {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
             <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-app-stage-bar">
               <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                 {appTitle || "推演应用"}
@@ -155,10 +155,10 @@ export function SlideRuleStudio({
                     ? "border-transparent bg-[#D97757] text-white shadow-sm"
                     : "border-[#E7E2D9] bg-white text-stone-600 hover:border-[#D8D1C4] hover:bg-[#FAF8F3]"
                 }`}
-                title="透视当前页面背后的实体/流程/角色/AI"
+                title="计算尺的游标：对齐到元素，读出它在五系统刻度上的对应声明"
               >
-                <ScanEye className="h-4 w-4" />
-                X 光
+                <Crosshair className="h-4 w-4" />
+                游标
               </button>
             </div>
             <div className="flex min-h-0 flex-1 gap-3" data-testid="sliderule-app-stage">
@@ -208,7 +208,7 @@ export function SlideRuleStudio({
           </>
         )}
 
-        {/* 系统屏抽屉：X 光深入入口；六系统在抽屉头横向切换（全部保留，不再是主界面并列切屏） */}
+        {/* 系统屏抽屉：游标深入入口；六系统在抽屉头横向切换（全部保留，不再是主界面并列切屏） */}
         {drawerSkill && (
           <>
             <div
