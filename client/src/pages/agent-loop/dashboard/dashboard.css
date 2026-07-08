@@ -37,12 +37,20 @@
   width: 220px;
 }
 
-/* 品牌区：S 型尺标（左）+ 产品名（上）+ 域名（下） */
+/* 品牌区（可点击 → 推演视图）：S 型尺标（左）+ 产品名（上）+ 域名（下） */
 .native-agent-brand {
   align-items: center;
+  border-radius: 10px;
+  cursor: pointer;
   display: flex;
   gap: 10px;
-  margin: 2px 6px 16px;
+  margin: 2px 2px 14px;
+  padding: 4px;
+  text-decoration: none;
+}
+
+.native-agent-brand:hover {
+  background: #F3EFE7;
 }
 
 .native-agent-brand-icon {
@@ -174,31 +182,77 @@
   padding: 6px 12px;
 }
 
-.native-agent-session-item {
-  background: transparent;
-  border: 0;
+.native-agent-session-row {
+  align-items: center;
   border-radius: 8px;
-  color: #4a453d;
-  cursor: pointer;
-  display: block;
-  font: inherit;
-  font-size: 13px;
-  overflow: hidden;
-  padding: 7px 12px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 100%;
+  display: flex;
+  min-width: 0;
 }
 
-.native-agent-session-item:hover {
+.native-agent-session-row:hover {
   background: #F3EFE7;
 }
 
-.native-agent-session-item-active {
+.native-agent-session-row-active {
   background: #F8E8E0;
+}
+
+.native-agent-session-item {
+  background: transparent;
+  border: 0;
+  color: #4a453d;
+  cursor: pointer;
+  display: block;
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 4px 7px 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-agent-session-row-active .native-agent-session-item {
   color: #B0552F;
   font-weight: 600;
+}
+
+/* 删除钮：行悬浮才出现；两步确认时变红字「确认」 */
+.native-agent-session-delete {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #b9b2a7;
+  cursor: pointer;
+  display: none;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 11px;
+  height: 24px;
+  justify-content: center;
+  margin-right: 6px;
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+.native-agent-session-row:hover .native-agent-session-delete,
+.native-agent-session-delete-confirm {
+  display: inline-flex;
+}
+
+.native-agent-session-delete:hover {
+  background: #ECE7DD;
+  color: #6b6558;
+}
+
+.native-agent-session-delete-confirm,
+.native-agent-session-delete-confirm:hover {
+  background: #FDE8E8;
+  color: #dc2626;
+  font-weight: 700;
 }
 
 .native-agent-help .anticon-right,

@@ -54,6 +54,8 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
   const [sessions, setSessions] = React.useState<SessionMeta[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [activeId, setActiveId] = React.useState<string>(() => readActiveSessionId());
+  // 两步删除确认：第一次点垃圾桶进入待确认（变红），再点才真删；点别处/超时复位
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(() => {
     fetch("/api/sliderule/sessions")
@@ -76,10 +78,35 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
+  React.useEffect(() => {
+    if (!confirmDeleteId) return;
+    const t = window.setTimeout(() => setConfirmDeleteId(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [confirmDeleteId]);
+
   const pick = (id: string) => {
     if (id !== activeId) activateSession(id);
     setActiveId(id);
     onOpenSliderule?.();
+  };
+
+  const remove = async (id: string) => {
+    setConfirmDeleteId(null);
+    try {
+      const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
+    const remaining = (sessions ?? []).filter((s) => s.sessionId !== id);
+    setSessions(remaining);
+    // 删的是当前会话：切到最近的剩余会话；一个不剩就开新会话
+    if (id === activeId) {
+      const next = remaining[0]?.sessionId ?? newSessionId();
+      activateSession(next);
+      setActiveId(next);
+    }
   };
 
   return (
@@ -103,17 +130,40 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
         {sessions?.length === 0 && <div className="native-agent-sessions-hint">暂无历史会话</div>}
         {sessions?.map((s) => {
           const active = s.sessionId === activeId;
+          const confirming = confirmDeleteId === s.sessionId;
           return (
-            <button
+            <div
               key={s.sessionId}
-              type="button"
-              title={s.goal || s.sessionId}
-              data-testid={`sidebar-session-item-${s.sessionId}`}
-              className={`native-agent-session-item${active ? " native-agent-session-item-active" : ""}`}
-              onClick={() => pick(s.sessionId)}
+              className={`native-agent-session-row${active ? " native-agent-session-row-active" : ""}`}
             >
-              {s.goal || "新会话"}
-            </button>
+              <button
+                type="button"
+                title={s.goal || s.sessionId}
+                data-testid={`sidebar-session-item-${s.sessionId}`}
+                className="native-agent-session-item"
+                onClick={() => pick(s.sessionId)}
+              >
+                {s.goal || "新会话"}
+              </button>
+              <button
+                type="button"
+                title={confirming ? "再点一次确认删除" : "删除会话"}
+                aria-label={confirming ? "确认删除" : "删除会话"}
+                data-testid={`sidebar-session-delete-${s.sessionId}`}
+                className={`native-agent-session-delete${confirming ? " native-agent-session-delete-confirm" : ""}`}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (confirming) void remove(s.sessionId);
+                  else setConfirmDeleteId(s.sessionId);
+                }}
+              >
+                {confirming ? "确认" : (
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  </svg>
+                )}
+              </button>
+            </div>
           );
         })}
       </div>

@@ -4,7 +4,6 @@ import {
   DownloadOutlined,
   FileDoneOutlined,
   AppstoreOutlined,
-  BulbOutlined,
   LeftOutlined,
   PlayCircleFilled,
   QuestionCircleOutlined,
@@ -830,16 +829,25 @@ function AgentLoopSidebar({
   onViewChange: (next: ViewKey) => void;
   getViewPath?: (next: ViewKey) => string | undefined;
 }) {
+  // 「推演」不再单列菜单项：点品牌 logo / 点会话 / 新建会话都通向推演视图
   const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
-    { key: 'sliderule', label: '推演', icon: <BulbOutlined /> },
     { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
     { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   ];
 
   return (
     <aside className="native-agent-sidebar">
-      {/* 品牌区：S 型尺标（左）+ 产品名（上）+ 域名（下） */}
-      <div className="native-agent-brand" data-testid="agent-brand">
+      {/* 品牌区（可点击 → 推演视图）：S 型尺标（左）+ 产品名（上）+ 域名（下） */}
+      <a
+        className="native-agent-brand"
+        data-testid="agent-brand"
+        href={getViewPath?.('sliderule')}
+        title="回到推演"
+        onClick={(event) => {
+          if (getViewPath?.('sliderule')) event.preventDefault();
+          onViewChange('sliderule');
+        }}
+      >
         <img
           className="native-agent-brand-icon"
           src="/assets/sliderule-mark.svg"
@@ -849,7 +857,7 @@ function AgentLoopSidebar({
           <span className="native-agent-brand-name">SlideRule</span>
           <span className="native-agent-brand-domain">sliderule.ai</span>
         </span>
-      </div>
+      </a>
       <nav className="native-agent-nav" aria-label="AgentLoop">
         {navItems.map((item) => (
           <a
