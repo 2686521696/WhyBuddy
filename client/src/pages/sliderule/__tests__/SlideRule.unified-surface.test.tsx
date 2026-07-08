@@ -141,8 +141,21 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("Welcome to SlideRule V5.");
   });
 
-  it("right rail is 系统画面 only — six thumbnails, no 推演过程 tabs (左栏对话流即推演过程)", () => {
+  it("empty session hides the right stage entirely（欢迎页独占全宽，不摆空壳看板）", () => {
     const html = renderPage();
+
+    for (const label of ["DataModel", "Workflow", "RBAC", "Page", "AIGC", "AppBundle"]) {
+      expect(html).not.toContain(`>${label}<`);
+    }
+    expect(html).not.toContain("发布证据看板");
+  });
+
+  it("right rail is 系统画面 only — six thumbnails once conversation exists, no 推演过程 tabs", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      isRunning: true,
+    });
 
     for (const label of ["DataModel", "Workflow", "RBAC", "Page", "AIGC", "AppBundle"]) {
       expect(html).toContain(label);

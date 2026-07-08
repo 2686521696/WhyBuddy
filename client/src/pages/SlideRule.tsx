@@ -759,6 +759,8 @@ function SlideRuleUnified({
           }
           sessionId={sessionId}
           appTitle={goal ? goal.slice(0, 24) : undefined}
+          // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
+          stageVisible={conversationTurns.length > 0 || isRunning}
           className="h-full"
         />
         {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程

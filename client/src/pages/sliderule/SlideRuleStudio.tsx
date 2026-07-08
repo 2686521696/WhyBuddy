@@ -57,6 +57,10 @@ interface SlideRuleStudioProps {
   /** 运行应用标题（话题名） */
   appTitle?: string;
 
+  /** 右侧主舞台是否显示。空会话（用户还没输入）时隐藏——欢迎页独占全宽，
+   *  不摆一排空壳看板；首条消息发出后舞台才登场。默认 true。 */
+  stageVisible?: boolean;
+
   className?: string;
 }
 
@@ -69,6 +73,7 @@ export function SlideRuleStudio({
   skillRuntimeGraph,
   sessionId,
   appTitle,
+  stageVisible = true,
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
@@ -133,6 +138,15 @@ export function SlideRuleStudio({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerSkill]);
+
+  // 空会话：欢迎页独占全宽，右侧舞台整体不渲染（用户还没输入，没内容可看）
+  if (!stageVisible) {
+    return (
+      <div className={`flex h-full w-full overflow-hidden ${className}`}>
+        <div className="flex h-full w-full flex-col bg-[#FAF9F5]">{chatSlot}</div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
