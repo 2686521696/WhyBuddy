@@ -260,7 +260,8 @@ function SettingsSurface(
             </div>
           </div>
 
-          {/* 底部操作 */}
+          {/* 底部操作：整页形态只有「浏览器直连」有保存钮，其余分类无按钮就不渲染空条 */}
+          {(isDialog || category === "llm") && (
           <div className="flex items-center justify-end gap-2 border-t border-[#E7E2D9] px-4 py-3">
             {isDialog && showUnsavedConfirm ? (
               <div className="flex w-full items-center justify-between gap-3 text-[12px]">
@@ -305,6 +306,7 @@ function SettingsSurface(
               </>
             )}
           </div>
+          )}
     </div>
   );
 
