@@ -203,6 +203,51 @@ def _write_store(sessions: Dict[str, V5SessionState], store_file: Optional[Store
     return {"ok": True, "count": len(sessions)}
 
 
+# ── 会话活跃时间 sidecar ─────────────────────────────────────────────────────
+# 存档条目是 [sessionId, state]，state 模型没有时间字段（加字段会动全量
+# schema/version 语义）。侧栏"最近"排序需要 lastActive，用旁路 meta 文件
+# （<store>.meta.json：sessionId → {"lastActive": iso}）每次成功落盘时盖章。
+# 纯观测元数据：读写全容错，坏了/丢了只影响排序，绝不影响会话数据本身。
+
+
+def _meta_path(store_file: Optional[StorePath] = None) -> Path:
+    path = _resolve_store_file(store_file)
+    return path.with_name(path.name + ".meta.json")
+
+
+def read_session_meta(store_file: Optional[StorePath] = None) -> Dict[str, Dict[str, Any]]:
+    try:
+        raw = json.loads(_meta_path(store_file).read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _stamp_session_meta(session_id: str, store_file: Optional[StorePath] = None) -> None:
+    from datetime import datetime, timezone
+
+    try:
+        meta = read_session_meta(store_file)
+        entry = meta.get(session_id) if isinstance(meta.get(session_id), dict) else {}
+        now = datetime.now(timezone.utc).isoformat()
+        entry = {**entry, "lastActive": now}
+        entry.setdefault("createdAt", now)
+        meta[session_id] = entry
+        _meta_path(store_file).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _drop_session_meta(session_id: str, store_file: Optional[StorePath] = None) -> None:
+    try:
+        meta = read_session_meta(store_file)
+        if session_id in meta:
+            meta.pop(session_id, None)
+            _meta_path(store_file).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def load_all(store_file: Optional[StorePath] = None) -> Dict[str, V5SessionState]:
     sessions, error = _read_store(store_file)
     if error:
@@ -302,6 +347,7 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
             return result
+        _stamp_session_meta(write_state.sessionId, store_file)
         return {"ok": True, "sessionId": write_state.sessionId}
 
 
@@ -319,14 +365,15 @@ def list_session_records(store_file: Optional[StorePath] = None) -> StoreError:
     sessions, error = _read_store(store_file)
     if error:
         return error
+    meta = read_session_meta(store_file)
     return {
         "ok": True,
         "sessions": [
             {
                 "sessionId": state.sessionId,
                 "goal": state.goal.get("text", "") if isinstance(state.goal, dict) else "",
-                "createdAt": getattr(state, "createdAt", None),
-                "lastActive": getattr(state, "lastActive", None),
+                "createdAt": (meta.get(state.sessionId) or {}).get("createdAt"),
+                "lastActive": (meta.get(state.sessionId) or {}).get("lastActive"),
                 "artifactCount": len(state.artifacts or []),
                 "phase": getattr(state, "runtimePhase", None),
             }
@@ -343,6 +390,7 @@ def delete_session_record(session_id: str, store_file: Optional[StorePath] = Non
     result = _write_store(sessions, store_file)
     if not result.get("ok"):
         return result
+    _drop_session_meta(session_id, store_file)
     return {"ok": True, "sessionId": session_id}
 
 

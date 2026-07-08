@@ -107,18 +107,16 @@ def test_save_load_and_list_use_node_compatible_store_shape(tmp_path):
     assert loaded["session"].sessionId == "py-contract-001"
 
     listed = list_session_records(store_file=store_file)
-    assert listed == {
-        "ok": True,
-        "sessions": [
-            {
-                "sessionId": "py-contract-001",
-                "goal": "persist contract",
-                "createdAt": None,
-                "lastActive": None,
-                "artifactCount": 0,
-                "phase": None,
-            }
-        ],
+    assert listed["ok"] is True
+    assert len(listed["sessions"]) == 1
+    entry = listed["sessions"][0]
+    # 落盘时 sidecar meta 盖 createdAt/lastActive 章（侧栏"最近"排序数据源）
+    assert entry["createdAt"] and entry["lastActive"]
+    assert {k: v for k, v in entry.items() if k not in ("createdAt", "lastActive")} == {
+        "sessionId": "py-contract-001",
+        "goal": "persist contract",
+        "artifactCount": 0,
+        "phase": None,
     }
 
     deleted = delete_session_record("py-contract-001", store_file=store_file)

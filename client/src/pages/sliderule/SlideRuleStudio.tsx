@@ -20,8 +20,10 @@ import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
+  parsePartialFiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./system-screens/five-system-model";
+import { LlmLiveOutput } from "./LlmLiveOutput";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
@@ -61,6 +63,15 @@ interface SlideRuleStudioProps {
    *  不摆一排空壳看板；首条消息发出后舞台才登场。默认 true。 */
   stageVisible?: boolean;
 
+  /** 推演进行中（驱动一轮消息期间）。 */
+  isRunning?: boolean;
+  /** LLM 实时输出（llm_delta 累积）+ 来源标签 + 人话标题。推演中右侧舞台
+   *  实时消费：五系统起草的部分 JSON 能拼出页面时应用实时长出来，
+   *  拼不出时展示流式想法本身。 */
+  llmDraft?: string;
+  llmDraftLabel?: string | null;
+  llmDraftTitle?: string;
+
   className?: string;
 }
 
@@ -74,6 +85,10 @@ export function SlideRuleStudio({
   sessionId,
   appTitle,
   stageVisible = true,
+  isRunning = false,
+  llmDraft = "",
+  llmDraftLabel = null,
+  llmDraftTitle = "",
   className = "",
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
@@ -87,7 +102,7 @@ export function SlideRuleStudio({
   }, []);
 
   // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
-  const fiveSystemModel = useMemo(
+  const settledModel = useMemo(
     () =>
       mergeFiveSystemModels(
         parseFiveSystemModelFromContents(skillContents ?? {}),
@@ -95,17 +110,32 @@ export function SlideRuleStudio({
       ),
     [skillContents, publishClosure?.perSkillEvidence]
   );
+
+  // 起草中的部分模型：五系统 JSON 还在流式生成时容错解析（每 +300 字符重解一次，
+  // 避免逐 delta 重渲染）。仅实时预览——最终真实模型仍以闭环证据为准。
+  const isDraftingModel = isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
+  const draftParseKey = isDraftingModel ? Math.floor(llmDraft.length / 300) : -1;
+  const draftModel = useMemo(
+    () => (isDraftingModel ? parsePartialFiveSystemModel(llmDraft) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
+    [isDraftingModel, draftParseKey]
+  );
+
+  const fiveSystemModel = settledModel ?? draftModel;
+  const modelIsDraft = !settledModel && !!draftModel;
   const appSchema = useMemo(
     () => deriveAppRuntimeSchema(fiveSystemModel, appTitle || "推演应用"),
     [fiveSystemModel, appTitle]
   );
 
-  // 三态舞台：推演剧场 > 应用主舞台 > 证据看板
-  const stage: "theater" | "app" | "board" = activeSkillId
+  // 舞台：推演剧场 > 应用主舞台（含起草实时预览）> 推演想法直播 > 证据看板
+  const stage: "theater" | "app" | "live" | "board" = activeSkillId
     ? "theater"
     : appSchema && fiveSystemModel
       ? "app"
-      : "board";
+      : isRunning && llmDraft
+        ? "live"
+        : "board";
 
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化）+ 跟随应用内当前页
   const [xrayOn, setXrayOn] = useState<boolean>(() => {
@@ -166,9 +196,16 @@ export function SlideRuleStudio({
               <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                 {appTitle || "推演应用"}
               </span>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                运行中
-              </span>
+              {modelIsDraft ? (
+                <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
+                  生成中 · 实时渲染
+                </span>
+              ) : (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  运行中
+                </span>
+              )}
               <button
                 type="button"
                 onClick={toggleXray}
@@ -189,6 +226,8 @@ export function SlideRuleStudio({
               {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
               <div className="min-w-0 flex-1 overflow-hidden">
                 <AppRuntimeScreen
+                  // 起草预览：模型每 +300 字符长一截，重挂让新页面/字段即刻上屏
+                  key={modelIsDraft ? `draft-${draftParseKey}` : "settled"}
                   model={fiveSystemModel}
                   sessionId={sessionId ?? "sliderule-v51-product"}
                   appTitle={appTitle}
@@ -206,6 +245,23 @@ export function SlideRuleStudio({
                   onOpenSystem={setDrawerSkill}
                 />
               )}
+            </div>
+          </>
+        ) : stage === "live" ? (
+          <>
+            {/* 推演想法直播：模型还没成形（轮内步骤 / 起草早期），右侧实时
+                展示 LLM 正在写的内容——用户全程看得见"正在做什么"。 */}
+            <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-live-stage-bar">
+              <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
+                {appTitle || "推演进行中"}
+              </span>
+              <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
+                推演中 · 想法直播
+              </span>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col" data-testid="sliderule-live-stage">
+              <LlmLiveOutput title={llmDraftTitle || llmDraftLabel || "推演中"} text={llmDraft} fill />
             </div>
           </>
         ) : (

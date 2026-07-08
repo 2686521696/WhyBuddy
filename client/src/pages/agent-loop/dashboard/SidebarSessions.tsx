@@ -10,6 +10,13 @@ import React from "react";
 
 export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
 export const SESSION_CHANGED_EVENT = "sliderule:active-session-changed";
+/** 会话库内容有更新（话题落盘/推演完成）——侧栏收到后重拉列表，
+ *  标题从"新会话"实时变成话题文案。 */
+export const SESSIONS_UPDATED_EVENT = "sliderule:sessions-updated";
+
+export function notifySessionsUpdated(): void {
+  window.dispatchEvent(new CustomEvent(SESSIONS_UPDATED_EVENT));
+}
 
 export interface SessionMeta {
   sessionId: string;
@@ -75,7 +82,12 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
       refresh();
     };
     window.addEventListener(SESSION_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
+    // 话题落盘/推演完成后重拉：当前会话标题从"新会话"实时变成话题
+    window.addEventListener(SESSIONS_UPDATED_EVENT, refresh);
+    return () => {
+      window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
+      window.removeEventListener(SESSIONS_UPDATED_EVENT, refresh);
+    };
   }, [refresh]);
 
   React.useEffect(() => {

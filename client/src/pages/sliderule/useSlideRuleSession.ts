@@ -638,6 +638,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 落盘，否则 Python 侧以旧的空 goal 推演，闭环 fail-closed 成 0/6。
           try {
             await persistSession(preparedState);
+            // 话题刚落盘：通知侧栏重拉列表，标题从"新会话"实时变成话题
+            const { notifySessionsUpdated } = await import(
+              "@/pages/agent-loop/dashboard/SidebarSessions"
+            );
+            notifySessionsUpdated();
           } catch {
             // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
           }
@@ -806,6 +811,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // non-fatal for UI
         applyPersistedState(final);
       }
+      // 推演落定：侧栏列表刷新（话题/最近活跃时间）
+      import("@/pages/agent-loop/dashboard/SidebarSessions")
+        .then((m) => m.notifySessionsUpdated())
+        .catch(() => {});
 
       // M1 cleanup
       abortControllerRef.current = null;

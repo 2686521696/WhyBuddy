@@ -249,15 +249,21 @@ async def _run_orchestrate_plan(payload: Any):
 async def list_sess(x_internal_key: Optional[str] = Header(None)):
     """Thin list for Node thin-proxy compat. Returns slim list shape matching prior Node contract."""
     _auth(x_internal_key)
+    from services.persistence import read_session_meta
+
     states = list((load_all() or {}).values()) or list(_sessions.values())
+    meta = read_session_meta()
     items = []
     for s in states:
         g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
+        sid = getattr(s, "sessionId", "")
+        m = meta.get(sid) if isinstance(meta.get(sid), dict) else {}
         items.append({
-            "sessionId": getattr(s, "sessionId", ""),
+            "sessionId": sid,
             "goal": g.get("text", "") if isinstance(g, dict) else "",
-            "createdAt": getattr(s, "createdAt", None),
-            "lastActive": getattr(s, "lastActive", None),
+            # 时间戳来自落盘 sidecar meta（模型本身无时间字段）——侧栏"最近"排序用
+            "createdAt": m.get("createdAt"),
+            "lastActive": m.get("lastActive"),
             "artifactCount": len(getattr(s, "artifacts", []) or []),
             "phase": getattr(s, "runtimePhase", None),
         })

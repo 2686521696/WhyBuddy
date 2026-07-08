@@ -19,6 +19,7 @@ import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
 import { autopilotTheme } from "./sliderule/autopilot-theme";
 import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
+import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id 或 "five-system-model"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
@@ -444,18 +445,9 @@ function ClaudeChatSurface({
                         </div>
                         <TurnPhaseTimeline turn={turn} llmDraft={llmDraft} publishClosure={publishClosure} />
                         {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
-                            五系统起草…）期间流式滚出原始输出尾部，标题随来源切换 */}
+                            五系统起草…）期间实时流出。Claude 式浅色块——超高滚动 + 可折叠 */}
                         {llmDraft && (
-                          <div data-testid="sliderule-llm-draft" className="rounded-md border border-[#E7E2D9] bg-[#2A2620] px-3 py-2.5">
-                            <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-stone-400">
-                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
-                              LLM 实时输出 · {llmDraftTitle(llmDraftLabel)} · {llmDraft.length} 字符
-                            </div>
-                            <pre className="max-h-40 overflow-hidden whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-stone-300">
-                              {llmDraft.length > 900 ? `...${llmDraft.slice(-900)}` : llmDraft}
-                              <span className="animate-pulse text-[#D97757]">▊</span>
-                            </pre>
-                          </div>
+                          <LlmLiveOutput title={llmDraftTitle(llmDraftLabel)} text={llmDraft} />
                         )}
                       </div>
                     ) : (
@@ -761,6 +753,11 @@ function SlideRuleUnified({
           appTitle={goal ? goal.slice(0, 24) : undefined}
           // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
           stageVisible={conversationTurns.length > 0 || isRunning}
+          // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没模型时流式想法
+          isRunning={isRunning}
+          llmDraft={isRunning ? llmDraft : ""}
+          llmDraftLabel={llmDraftLabel}
+          llmDraftTitle={llmDraftTitle(llmDraftLabel)}
           className="h-full"
         />
         {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程

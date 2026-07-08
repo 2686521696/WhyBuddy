@@ -240,6 +240,118 @@ export function parseFiveSystemModelFromPerSkillEvidence(
 }
 
 /**
+ * 容错解析"正在流式生成、尚未收尾"的 JSON：截到最后一个语法安全位置
+ * （完整的值/闭合括号后），剪掉悬空的 key / 逗号 / 未闭合字符串，再按
+ * 括号栈补齐收尾符后 JSON.parse。返回 null 表示当前前缀还拼不出对象。
+ *
+ * 只用于推演过程的实时预览（右侧舞台"应用长出来"）——不参与 gate/trust，
+ * 最终真实模型仍以闭环证据为准。
+ */
+export function repairPartialJson(raw: string): unknown | null {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  const text = raw.slice(start);
+
+  // 字符串感知的前向扫描：括号栈 + 是否停在未闭合字符串里（及其起点）。
+  const scan = (upto: string): { stack: string[]; inStr: boolean; strStart: number } => {
+    const stack: string[] = [];
+    let inStr = false;
+    let esc = false;
+    let strStart = -1;
+    for (let i = 0; i < upto.length; i++) {
+      const ch = upto[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        strStart = i;
+      } else if (ch === "{" || ch === "[") stack.push(ch);
+      else if (ch === "}" || ch === "]") stack.pop();
+    }
+    return { stack, inStr, strStart };
+  };
+
+  // 候选截断点：完整值结束处（闭合引号/闭合括号/数字与字面量尾字符）。
+  const cuts: number[] = [];
+  {
+    let inStr = false;
+    let esc = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') {
+          inStr = false;
+          cuts.push(i + 1);
+        }
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "}" || ch === "]") cuts.push(i + 1);
+      else if (/[0-9el]/.test(ch)) cuts.push(i + 1); // 数字 / true/false/null 尾字符近似
+    }
+  }
+  cuts.push(text.length);
+
+  // 从最靠后的候选点往回试（最多 ~40 个）：剪悬空结构 → 补括号 → parse。
+  const tried = new Set<string>();
+  for (let c = cuts.length - 1; c >= 0 && c >= cuts.length - 40; c--) {
+    let t = text.slice(0, cuts[c]);
+    // 停在字符串中间：连同开引号一起剪掉（是否在字符串内以扫描态为准，
+    // 不能用正则猜——闭合字符串后面跟 }] 时正则会误伤）。
+    const st = scan(t);
+    if (st.inStr && st.strStart >= 0) t = t.slice(0, st.strStart);
+    // 悬空的 "key": / 尾逗号冒号空白剪到稳定
+    for (let pass = 0; pass < 4; pass++) {
+      const before = t;
+      t = t
+        .replace(/,?\s*"(?:[^"\\]|\\.)*"\s*:\s*$/, "") // 悬空 key:
+        .replace(/[,:\s]+$/, ""); // 尾逗号/冒号/空白
+      if (t === before) break;
+    }
+    if (!t || tried.has(t)) continue;
+    tried.add(t);
+    const closers = scan(t)
+      .stack.reverse()
+      .map((b) => (b === "{" ? "}" : "]"))
+      .join("");
+    try {
+      return JSON.parse(t + closers);
+    } catch {
+      /* 该截断点拼不成，回退更早的候选点 */
+    }
+  }
+  return null;
+}
+
+/**
+ * 从流式生成中的原始 LLM 输出解析"部分五系统模型"（实时预览用）。
+ * 已流完的段如实返回；没流到的段缺失。拼不出任何段返回 null。
+ */
+export function parsePartialFiveSystemModel(
+  raw: string | null | undefined
+): FiveSystemModel | null {
+  if (!raw || !raw.trim()) return null;
+  const candidate = repairPartialJson(raw);
+  if (!isPlainObject(candidate)) return null;
+  const sections: FiveSystemModel = {};
+  let found = false;
+  for (const key of MODEL_KEYS) {
+    const section = candidate[key];
+    if (isPlainObject(section)) {
+      (sections as Record<string, unknown>)[key] = section;
+      found = true;
+    }
+  }
+  return found ? sections : null;
+}
+
+/**
  * 段级合并两个模型来源（primary 段优先，缺段由 fallback 补齐）。
  * 两者皆空返回 null —— 保持 fail-closed 语义。
  */
