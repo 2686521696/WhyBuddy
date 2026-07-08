@@ -1404,9 +1404,13 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
       const base = `http://127.0.0.1:${port}/api/sliderule`;
 
       try {
-        // Public 4-endpoint surface must still be registered and functional regardless of guard
+        // Public 4-endpoint surface must still be registered and functional regardless of guard.
+        // Thin-proxy contract (041b264): GET /sessions delegates to the Python backend —
+        // 200 {sessions:[...]} when python (:9700) is up, 502 {sessions:[], error:"python_unavailable"}
+        // when it isn't (e.g. CI test-client job runs without python). Both prove the route is
+        // registered and answers JSON; python availability is NOT what this guard test locks.
         const listRes = await fetch(`${base}/sessions`);
-        expect(listRes.status).toBe(200);
+        expect([200, 502]).toContain(listRes.status);
         const listBody = await listRes.json().catch(() => ({} as any));
         expect(listBody).toHaveProperty('sessions');
 
@@ -1422,9 +1426,10 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
         const getMissingBody = await getMissing.json().catch(() => null);
         expect(getMissingBody).not.toBeNull(); // handler responded with JSON → route exists
 
-        // DELETE route active (returns 204 even for unknown id)
+        // DELETE route active — 204/200 via python, 502 python_unavailable without it;
+        // any of those proves the handler is registered (vs unmatched-route 404).
         const delRes = await fetch(`${base}/sessions/__guard-test-del`, { method: 'DELETE' });
-        expect([204, 200]).toContain(delRes.status);
+        expect([204, 200, 502]).toContain(delRes.status);
 
         // The test-only helpers must 404 (not registered because if(enable) was false at eval)
         const clearRes = await fetch(`${base}/sessions/__clear`, { method: 'POST' });
