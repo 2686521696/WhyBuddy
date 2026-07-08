@@ -96,8 +96,8 @@
 }
 
 .native-agent-nav-item-active {
+  /* 激活态只靠背景胶囊 + 文字色；左缘竖条去除（用户反馈：不需要） */
   background: #F8E8E0;
-  box-shadow: inset 3px 0 0 #D97757;
   color: #B0552F;
   font-weight: 700;
 }
