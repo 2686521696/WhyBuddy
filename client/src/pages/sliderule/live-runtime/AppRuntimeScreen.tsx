@@ -139,11 +139,14 @@ function FieldInput({
   field,
   value,
   refRows,
+  enumOptions = [],
   onChange,
 }: {
   field: AppFormFieldSchema;
   value: unknown;
   refRows: Array<{ id: string; label: string }>;
+  /** enum 字段的既有取值（来自已写入的行，去重）——有历史值时变成真下拉 */
+  enumOptions?: string[];
   onChange: (v: unknown) => void;
 }) {
   if (field.type === "number") {
@@ -162,6 +165,7 @@ function FieldInput({
     );
   }
   if (field.type === "enum") {
+    // 已有历史取值 → 真枚举下拉（仍允许输入新值）；无数据时保持自由输入
     return (
       <Select
         style={{ width: "100%" }}
@@ -169,7 +173,10 @@ function FieldInput({
         maxCount={1}
         value={value ? [String(value)] : []}
         onChange={(v) => onChange(v.at(-1) ?? "")}
-        placeholder={`${field.label}（输入后回车）`}
+        options={enumOptions.map((o) => ({ value: o, label: o }))}
+        placeholder={
+          enumOptions.length > 0 ? `选择或输入${field.label}` : `${field.label}（输入后回车）`
+        }
       />
     );
   }
@@ -181,6 +188,19 @@ function FieldInput({
         onChange={(v) => onChange(v)}
         options={refRows.map((r) => ({ value: r.id, label: r.label }))}
         placeholder={`选择${field.label}`}
+        showSearch
+        optionFilterProp="label"
+      />
+    );
+  }
+  if (field.type === "text") {
+    // 长文本（描述/备注/正文类）→ 多行输入
+    return (
+      <Input.TextArea
+        value={(value as string) ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={field.label}
+        autoSize={{ minRows: 2, maxRows: 5 }}
       />
     );
   }
@@ -891,6 +911,17 @@ export function AppRuntimeScreen({
                       field={f}
                       value={formValues[f.id]}
                       refRows={refRowsFor(f)}
+                      enumOptions={
+                        f.type === "enum" && page?.entityId
+                          ? [
+                              ...new Set(
+                                (state.entities[page.entityId] ?? [])
+                                  .map((r) => String(r.values[f.id] ?? "").trim())
+                                  .filter(Boolean)
+                              ),
+                            ]
+                          : []
+                      }
                       onChange={(v) => setFormValues((prev) => ({ ...prev, [f.id]: v }))}
                     />
                   </div>

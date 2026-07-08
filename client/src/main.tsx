@@ -1,3 +1,6 @@
+// antd v5 官方 React 19 兼容补丁（message/Modal 静态方法、wave 效果等
+// 依赖的 ReactDOM render 适配）——必须在任何 antd 组件渲染前引入一次。
+import "@ant-design/v5-patch-for-react-19";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
