@@ -1,102 +1,29 @@
+/**
+ * LlmProviderSettings — 浏览器直连（BYOK 备用池）的极简配置面板。
+ *
+ * 它只是 GitHub Pages 纯浏览器 Demo（无服务端）场景的备用通道，按这个
+ * 定位收敛到功能骨架：选厂商 → 启用 → 密钥 / Base URL / 模型 → 测试连接。
+ * 模型 CRUD、能力标签、排序、拉取模型列表、多 key 调度策略等重装饰一律
+ * 移除（调度字段仍保留在 draft 里原样保存，不在 UI 暴露）。
+ *
+ * 密钥只写本机 localStorage，绝不进会话/导出/遥测。
+ */
+
 import React from "react";
-import {
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  DownloadCloud,
-  Eye,
-  EyeOff,
-  Key,
-  Loader2,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Star,
-  Trash2,
-  X,
-  XCircle,
-  Zap,
-} from "lucide-react";
+import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
-  deriveEndpoint,
-  fetchProviderModels,
-  modelSuggestionsFor,
-  moveProvider,
   pingLlmEndpoint,
-  presetGlyph,
   providerStatus,
   SEED_PRESETS,
   validateProviderConfig,
-  type LlmModelDef,
   type LlmProviderConfig,
   type LlmProvidersConfig,
-  type ModelCapability,
 } from "@/lib/sliderule-llm-providers";
 
-/** 列表行内可点切换的能力标签（工具/流式/视觉）。 */
-const TOGGLEABLE_CAPS: ModelCapability[] = ["tools", "stream", "vision"];
-
 const inputClass =
-  "w-full rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+  "w-full rounded-lg border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
 const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
-
-const CAP_LABELS: Record<ModelCapability, string> = {
-  vision: "视觉",
-  tools: "工具",
-  stream: "流式",
-};
-
-function ProviderBadge({ glyph, active }: { glyph: string; active?: boolean }) {
-  return (
-    <span
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ${
-        active ? "bg-[#D97757] text-white" : "bg-[#F0EDE5] text-stone-500"
-      }`}
-    >
-      {glyph}
-    </span>
-  );
-}
-
-/** 列表项右侧的配置状态点：绿=已配/就绪，琥珀=缺密钥，灰=未配。 */
-function StatusDot({ status }: { status: ReturnType<typeof providerStatus> }) {
-  const map: Record<ReturnType<typeof providerStatus>, { cls: string; title: string }> = {
-    ready: { cls: "bg-emerald-500", title: "已启用 · 下一轮生效" },
-    configured: { cls: "bg-emerald-400/70", title: "已配密钥（未启用）" },
-    "needs-key": { cls: "bg-amber-400", title: "需要 API 密钥" },
-    idle: { cls: "bg-stone-300", title: "未配置" },
-  };
-  const { cls, title } = map[status];
-  return <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cls}`} title={title} data-status={status} />;
-}
-
-/** 右栏分区卡片：标题 + 细分隔线，收拢留白。 */
-function Section({
-  title,
-  action,
-  children,
-  testid,
-}: {
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-  testid?: string;
-}) {
-  return (
-    <section
-      className="rounded-xl border border-[#E7E2D9] bg-white/60 p-4 shadow-[0_1px_2px_rgb(68_60_44/0.04)]"
-      data-testid={testid}
-    >
-      <div className="mb-3 flex items-center justify-between border-b border-[#EFEBE2] pb-2">
-        <h3 className="text-[13px] font-bold text-stone-800">{title}</h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 /** 测试连接的三态（idle 不渲染）。 */
 export type TestState =
@@ -147,173 +74,40 @@ export function LlmProviderSettings({
   setDraft,
 }: {
   draft: LlmProvidersConfig;
-  setDraft: (next: LlmProvidersConfig | null | ((prev: LlmProvidersConfig | null) => LlmProvidersConfig | null)) => void;
+  setDraft: (next: LlmProvidersConfig) => void;
 }) {
-  const [selectedId, setSelectedId] = React.useState<string>(draft.providers[0]?.id ?? "");
-  const selected =
-    draft.providers.find((p) => p.id === selectedId) ?? draft.providers[0] ?? null;
-
-  const [showKey, setShowKey] = React.useState(false);
+  const [selectedId, setSelectedId] = React.useState<string | undefined>(draft.providers[0]?.id);
   const [testState, setTestState] = React.useState<TestState>({ kind: "idle" });
-  const testing = testState.kind === "testing";
-  const [modelModalOpen, setModelModalOpen] = React.useState(false);
-  const [editingModel, setEditingModel] = React.useState<LlmModelDef | null>(null);
-  // Track the *original* model.id when we started editing (so rename of id doesn't leave a stale entry behind).
-  const [editingOriginalModelId, setEditingOriginalModelId] = React.useState<string | null>(null);
-  // Inline-confirm state (避免 window.confirm，与其它面板一致)。
-  const [confirmingReset, setConfirmingReset] = React.useState(false);
-  const [confirmingDeleteModelId, setConfirmingDeleteModelId] = React.useState<string | null>(null);
-  const [fetchingModels, setFetchingModels] = React.useState(false);
+  const selected = draft.providers.find((p) => p.id === selectedId) ?? draft.providers[0] ?? null;
 
-  const patchProvider = (patch: Partial<LlmProviderConfig>) => {
-    // 改了连接相关字段 → 旧的测试结果作废，回到 idle，避免误导。
-    if ("apiKey" in patch || "baseUrl" in patch || "protocol" in patch) {
-      setTestState({ kind: "idle" });
-    }
-    setDraft((current: LlmProvidersConfig | null) => {
-      if (!current) return current;
-      const targetId = selectedId;
-      if (!targetId) return current;
-      return {
-        ...current,
-        providers: current.providers.map((p: LlmProviderConfig) => (p.id === targetId ? { ...p, ...patch } : p)),
-      };
-    });
-  };
-
-  // 切换厂商时清掉上一个厂商的测试结果。
-  React.useEffect(() => {
-    setTestState({ kind: "idle" });
-  }, [selectedId]);
-
-  const addCustomProvider = () => {
-    const id = `custom-${Date.now()}`;
-    const provider: LlmProviderConfig = {
-      id,
-      presetId: "custom",
-      name: "自定义",
-      protocol: "openai",
-      apiKey: "",
-      requiresApiKey: true,
-      baseUrl: "",
-      enabled: false,
-      models: [],
-    };
-    setDraft((current: LlmProvidersConfig | null) => {
-      if (!current) return current;
-      return { ...current, providers: [...current.providers, provider] };
-    });
-    setSelectedId(id);
-  };
-
-  const reorderProvider = (id: string, dir: "up" | "down") => {
-    setDraft((current: LlmProvidersConfig | null) => {
-      if (!current) return current;
-      return { ...current, providers: moveProvider(current.providers, id, dir) };
-    });
-  };
-
-  const removeProvider = (id: string) => {
-    setDraft((current: LlmProvidersConfig | null) => {
-      if (!current) return current;
-      const nextProviders = current.providers.filter((p: LlmProviderConfig) => p.id !== id);
-      return { ...current, providers: nextProviders };
-    });
-    if (selectedId === id) {
-      // After removal, pick the first remaining provider (the setState for draft is async,
-      // so we just clear and let the next render pick [0] via the selected derivation).
-      setSelectedId("");
-    }
-  };
-
-  const resetModels = () => {
+  const patch = (updates: Partial<LlmProviderConfig>) => {
     if (!selected) return;
-    const preset = SEED_PRESETS.find((p) => p.presetId === selected.presetId);
-    patchProvider({
-      models: preset
-        ? [{ id: preset.defaultModel, capabilities: ["tools", "stream"], enabled: true }]
-        : [],
-      defaultModelId: preset?.defaultModel,
-    });
-    setConfirmingReset(false);
-  };
-
-  /** 设为默认（纯偏好/展示，不改变进池集合与 executor 注入）。 */
-  const setDefaultModel = (modelId: string) => patchProvider({ defaultModelId: modelId });
-
-  /** 行内点切能力标签（工具/流式/视觉）。 */
-  const toggleModelCap = (modelId: string, cap: ModelCapability) => {
-    if (!selected) return;
-    patchProvider({
-      models: selected.models.map((x) =>
-        x.id === modelId
-          ? {
-              ...x,
-              capabilities: x.capabilities.includes(cap)
-                ? x.capabilities.filter((c) => c !== cap)
-                : [...x.capabilities, cap],
-            }
-          : x
-      ),
+    setDraft({
+      ...draft,
+      providers: draft.providers.map((p) => (p.id === selected.id ? { ...p, ...updates } : p)),
     });
   };
 
-  const deleteModel = (modelId: string) => {
-    if (!selected) return;
-    patchProvider({
-      models: selected.models.filter((x) => x.id !== modelId),
-      // 删掉默认模型时清空默认标记，避免悬空引用。
-      defaultModelId: selected.defaultModelId === modelId ? undefined : selected.defaultModelId,
-    });
-    setConfirmingDeleteModelId(null);
-  };
+  const modelValue =
+    selected?.defaultModelId ||
+    selected?.models.find((m) => m.enabled)?.id ||
+    selected?.models[0]?.id ||
+    "";
+  const setModel = (id: string) =>
+    patch(
+      id.trim()
+        ? {
+            models: [{ id: id.trim(), capabilities: ["tools", "stream"], enabled: true }],
+            defaultModelId: id.trim(),
+          }
+        : { models: [], defaultModelId: undefined }
+    );
 
-  /** 从厂商 `/models` 真实拉取并并入（去重，保留已有能力/启用状态）。 */
-  const fetchModels = async () => {
-    if (!selected || fetchingModels) return;
-    setFetchingModels(true);
-    const r = await fetchProviderModels({
-      protocol: selected.protocol,
-      baseUrl: selected.baseUrl,
-      apiKey: selected.apiKey,
-    });
-    setFetchingModels(false);
-    if (!r.ok || !r.models) {
-      toast.error("拉取模型失败", { description: r.message });
-      return;
-    }
-    const existing = new Set(selected.models.map((m) => m.id));
-    const added = r.models
-      .filter((id) => !existing.has(id))
-      .map<LlmModelDef>((id) => ({ id, capabilities: ["tools", "stream"], enabled: false }));
-    if (added.length === 0) {
-      toast.info("没有新模型", { description: "列表已是最新" });
-      return;
-    }
-    patchProvider({ models: [...selected.models, ...added] });
-    toast.success("已拉取模型", { description: `新增 ${added.length} 个（默认未启用，按需勾选）` });
-  };
-
-  const upsertModel = (model: LlmModelDef, originalId?: string) => {
-    if (!selected) return;
-    const targetOldId = originalId ?? model.id;
-    // Remove the entry that was being edited (important when user *renames* the model id).
-    let models = selected.models.filter((x) => x.id !== targetOldId);
-    // Insert/replace under the (possibly new) id.
-    const idx = models.findIndex((x) => x.id === model.id);
-    if (idx >= 0) {
-      models = models.map((x, i) => (i === idx ? model : x));
-    } else {
-      models = [...models, model];
-    }
-    patchProvider({ models });
-  };
-
-  const runTest = async (modelId?: string) => {
-    if (!selected) return;
-    const model = modelId || selected.models.find((m) => m.enabled)?.id || selected.models[0]?.id || "";
+  const runTest = async () => {
+    if (!selected || testState.kind === "testing") return;
+    const model =
+      modelValue || SEED_PRESETS.find((s) => s.presetId === selected.presetId)?.defaultModel || "";
     setTestState({ kind: "testing" });
-    // 复用真实 ping（不 mock），三态内联反馈 + toast（兼顾 modal 内触发）。
     const r = await pingLlmEndpoint({
       protocol: selected.protocol,
       baseUrl: selected.baseUrl,
@@ -322,9 +116,6 @@ export function LlmProviderSettings({
     });
     if (r.ok) {
       setTestState({ kind: "ok", model, latencyMs: r.latencyMs });
-      toast.success("连接成功", {
-        description: `${selected.name} · ${model}${typeof r.latencyMs === "number" ? ` · ${r.latencyMs}ms` : ""}`,
-      });
     } else {
       setTestState({ kind: "error", message: r.message });
       toast.error("连接失败", { description: r.message });
@@ -334,677 +125,134 @@ export function LlmProviderSettings({
   const validation = selected
     ? validateProviderConfig(selected)
     : { keyError: null, baseUrlError: null };
+  const presetDefaultModel = selected
+    ? SEED_PRESETS.find((s) => s.presetId === selected.presetId)?.defaultModel ?? ""
+    : "";
 
   return (
-    <div className="flex h-full min-h-0 flex-col min-[900px]:flex-row">
-      {/* 中栏：厂商列表（窄屏折到顶部，宽屏左侧） */}
-      <div className="flex shrink-0 flex-col border-b border-[#E7E2D9] bg-[#F5F1EA]/60 min-[900px]:w-[210px] min-[900px]:border-b-0 min-[900px]:border-r">
-        <ul
-          className="max-h-[148px] flex-1 overflow-y-auto p-2 min-[900px]:max-h-none"
-          data-testid="sliderule-provider-list"
-        >
-          {draft.providers.map((p, idx) => {
-            const active = p.id === selected?.id;
-            return (
-              <li key={p.id} className="mb-0.5 flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(p.id)}
-                  data-provider={p.presetId}
-                  aria-current={active}
-                  className={`relative flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-left transition ${
-                    active ? "bg-white shadow-sm ring-1 ring-[#E7E2D9]" : "hover:bg-white/70"
-                  }`}
-                >
-                  {/* 选中高亮条 */}
+    <div className="flex h-full min-h-0">
+      {/* 左：厂商列表（纯文字 + 启用状态点） */}
+      <ul
+        className="w-[170px] shrink-0 overflow-y-auto border-r border-[#E7E2D9] p-2"
+        data-testid="sliderule-provider-list"
+      >
+        {draft.providers.map((p) => {
+          const active = p.id === selected?.id;
+          const status = providerStatus(p);
+          return (
+            <li key={p.id}>
+              <button
+                type="button"
+                aria-current={active || undefined}
+                onClick={() => {
+                  setSelectedId(p.id);
+                  setTestState({ kind: "idle" });
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition ${
+                  active ? "bg-[#F8E8E0] font-semibold text-[#B0552F]" : "text-stone-600 hover:bg-[#F5F1EA]"
+                }`}
+              >
+                <span className="truncate">{p.name}</span>
+                {p.enabled && (
                   <span
-                    className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full transition-colors ${
-                      active ? "bg-[#D97757]" : "bg-transparent"
+                    data-status={status}
+                    className={`ml-2 h-1.5 w-1.5 shrink-0 rounded-full ${
+                      status === "ready" ? "bg-emerald-500" : "bg-amber-400"
                     }`}
                   />
-                  <ProviderBadge glyph={presetGlyph(p.presetId)} active={active} />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-stone-700">
-                    {p.name}
-                  </span>
-                  <StatusDot status={providerStatus(p)} />
-                </button>
-                {/* 上移/下移（仅当前选中项显示，减少噪音） */}
-                {active && (
-                  <span className="flex shrink-0 flex-col" data-testid="sliderule-provider-reorder">
-                    <button
-                      type="button"
-                      onClick={() => reorderProvider(p.id, "up")}
-                      disabled={idx === 0}
-                      title="上移"
-                      className="rounded p-0.5 text-stone-400 transition hover:bg-[#E7E2D9] hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
-                      data-testid="sliderule-provider-move-up"
-                    >
-                      <ChevronUp className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => reorderProvider(p.id, "down")}
-                      disabled={idx === draft.providers.length - 1}
-                      title="下移"
-                      className="rounded p-0.5 text-stone-400 transition hover:bg-[#E7E2D9] hover:text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent"
-                      data-testid="sliderule-provider-move-down"
-                    >
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </span>
                 )}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="border-t border-[#E7E2D9] p-2">
-          <button
-            type="button"
-            onClick={addCustomProvider}
-            data-testid="sliderule-provider-add"
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
-          >
-            <Plus className="h-4 w-4" /> 添加
-          </button>
-        </div>
-      </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
 
-      {/* 右栏：厂商详情 */}
-      <div className="flex min-w-0 flex-1 flex-col bg-[#F5F1EA]/30">
-        {!selected ? (
-          <p className="px-6 py-5 text-sm text-stone-400">左侧选择或添加一个厂商</p>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col" data-testid="sliderule-provider-detail">
-            {/* header（固定在右栏顶部，不随内容滚动） */}
-            <div className="flex shrink-0 items-center justify-between border-b border-[#E7E2D9] px-6 py-4">
-              <div className="flex items-center gap-2.5">
-                <ProviderBadge glyph={presetGlyph(selected.presetId)} active />
-                <div>
-                  {selected.presetId === "custom" ? (
-                    <input
-                      value={selected.name}
-                      onChange={(e) => patchProvider({ name: e.target.value })}
-                      className="rounded border border-transparent px-1 text-base font-bold text-[#1F1E1B] outline-none hover:border-[#E7E2D9] focus:border-[#D97757]"
-                    />
-                  ) : (
-                    <h2 className="text-base font-bold text-[#1F1E1B]">{selected.name}</h2>
-                  )}
-                  <p className="text-[11px] text-stone-400">
-                    {selected.protocol === "anthropic" ? "Anthropic 协议" : "OpenAI 协议"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-[12px] text-stone-500">
-                  <button
-                    type="button"
-                    onClick={() => patchProvider({ enabled: !selected.enabled })}
-                    aria-pressed={selected.enabled}
-                    className={`relative h-5 w-9 rounded-full transition-colors ${
-                      selected.enabled ? "bg-[#D97757]" : "bg-stone-300"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
-                        selected.enabled ? "left-4" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                  启用
-                </label>
-                {selected.presetId === "custom" && (
-                  <button
-                    type="button"
-                    onClick={() => removeProvider(selected.id)}
-                    className="rounded-lg p-1.5 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
-                    title="删除该厂商"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* 可滚动内容区（header 固定，仅此区域滚动） */}
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            {/* 连接 */}
-            <Section title="连接" testid="sliderule-section-connection">
-              <div>
-                <label className={labelClass}>
-                  <Key className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
-                  API 密钥
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showKey ? "text" : "password"}
-                      value={selected.apiKey}
-                      onChange={(e) => patchProvider({ apiKey: e.target.value })}
-                      placeholder="sk-..."
-                      aria-invalid={!!validation.keyError}
-                      className={`${inputClass} pr-9 font-mono ${
-                        validation.keyError ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""
-                      }`}
-                      data-testid="sliderule-provider-apikey"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-stone-400 hover:text-stone-700"
-                      title={showKey ? "隐藏" : "显示"}
-                    >
-                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => runTest()}
-                    disabled={testing}
-                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 text-[13px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:opacity-50"
-                    data-testid="sliderule-provider-test"
-                  >
-                    <Zap className="h-3.5 w-3.5" />
-                    {testing ? "测试中…" : "测试连接"}
-                  </button>
-                </div>
-                {validation.keyError && (
-                  <p className="mt-1 text-[11px] font-medium text-rose-500" data-testid="sliderule-key-error">
-                    {validation.keyError}
-                  </p>
-                )}
-                {/* 测试连接三态内联反馈 */}
-                <TestConnectionResult state={testState} />
-                <label className="mt-2 flex items-center gap-2 text-[12px] text-stone-500">
-                  <input
-                    type="checkbox"
-                    checked={selected.requiresApiKey}
-                    onChange={(e) => patchProvider({ requiresApiKey: e.target.checked })}
-                    className="h-3.5 w-3.5 accent-[#D97757]"
-                  />
-                  需要 API 密钥（本地服务可取消勾选）
-                </label>
-                <p className="mt-1 text-[11px] text-stone-400">
-                  密钥仅存本机，绝不进会话/导出/遥测。本地服务（如 Ollama/Lemonade）取消上面的勾选即可免密钥入池。
-                </p>
-              </div>
-
-              <div className="mt-4">
-                <label className={labelClass}>Base URL</label>
-                <input
-                  value={selected.baseUrl}
-                  onChange={(e) => patchProvider({ baseUrl: e.target.value })}
-                  placeholder="https://api.openai.com/v1"
-                  aria-invalid={!!validation.baseUrlError}
-                  className={`${inputClass} font-mono ${
-                    validation.baseUrlError ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""
-                  }`}
-                  data-testid="sliderule-provider-baseurl"
-                />
-                {validation.baseUrlError ? (
-                  <p className="mt-1 text-[11px] font-medium text-rose-500" data-testid="sliderule-baseurl-error">
-                    {validation.baseUrlError}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[11px] text-stone-400">
-                    请求地址：{deriveEndpoint(selected.baseUrl, selected.protocol) || "（待填写 Base URL）"}
-                  </p>
-                )}
-                <p className="mt-1 text-[11px] text-stone-400">
-                  仅在用代理/中转或自建网关时才改；官方直连保持默认即可。
-                </p>
-              </div>
-            </Section>
-
-            {/* 模型 */}
-            <Section
-              title="模型"
-              testid="sliderule-section-models"
-              action={
-                <div className="flex items-center gap-2">
-                  {confirmingReset ? (
-                    <span className="flex items-center gap-1 text-[12px]" data-testid="sliderule-model-reset-confirm">
-                      <span className="text-stone-500">重置为预设？</span>
-                      <button
-                        type="button"
-                        onClick={resetModels}
-                        className="rounded-lg bg-rose-600 px-2 py-1 text-[12px] font-semibold text-white transition hover:bg-rose-500"
-                      >
-                        确认
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmingReset(false)}
-                        className="rounded-lg border border-[#E7E2D9] bg-white px-2 py-1 text-[12px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
-                      >
-                        取消
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingReset(true)}
-                      className="flex items-center gap-1 rounded-lg border border-[#E7E2D9] bg-white px-2.5 py-1.5 text-[12px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
-                      data-testid="sliderule-model-reset"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> 重置
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingModel(null);
-                      setEditingOriginalModelId(null);
-                      setModelModalOpen(true);
-                    }}
-                    className="flex items-center gap-1 rounded-lg bg-[#D97757] px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#C4633F]"
-                    data-testid="sliderule-model-new"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> 新建模型
-                  </button>
-                </div>
-              }
-            >
-              {selected.models.length === 0 ? (
-                <div
-                  className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-[#E7E2D9] px-3 py-6 text-center"
-                  data-testid="sliderule-model-empty"
-                >
-                  <p className="text-[12px] text-stone-400">还没有模型 — 新建，或从该厂商拉取列表</p>
-                  <button
-                    type="button"
-                    onClick={fetchModels}
-                    disabled={fetchingModels || !selected.baseUrl.trim()}
-                    className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[12px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA] disabled:opacity-50"
-                    data-testid="sliderule-model-fetch"
-                  >
-                    <DownloadCloud className="h-3.5 w-3.5" />
-                    {fetchingModels ? "拉取中…" : "拉取模型列表"}
-                  </button>
-                </div>
-              ) : (
-                <ul className="space-y-1.5" data-testid="sliderule-model-list">
-                  {selected.models.map((m) => {
-                    const isDefault = selected.defaultModelId === m.id;
-                    return (
-                      <li
-                        key={m.id}
-                        className="flex items-center gap-2.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={m.enabled}
-                          onChange={() =>
-                            patchProvider({
-                              models: selected.models.map((x) =>
-                                x.id === m.id ? { ...x, enabled: !x.enabled } : x
-                              ),
-                            })
-                          }
-                          className="h-3.5 w-3.5 shrink-0 accent-[#D97757]"
-                          title={m.enabled ? "已启用" : "已停用"}
-                        />
-                        {/* 设为默认（单选，纯偏好） */}
-                        <label
-                          className="flex shrink-0 cursor-pointer items-center"
-                          title={isDefault ? "默认模型" : "设为默认"}
-                        >
-                          <input
-                            type="radio"
-                            name={`default-model-${selected.id}`}
-                            checked={isDefault}
-                            onChange={() => setDefaultModel(m.id)}
-                            className="peer sr-only"
-                            data-testid={`sliderule-model-default-${m.id}`}
-                          />
-                          <Star
-                            className={`h-3.5 w-3.5 transition ${
-                              isDefault ? "fill-amber-400 text-amber-400" : "text-stone-300 hover:text-stone-400"
-                            }`}
-                          />
-                        </label>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate font-mono text-[13px] text-stone-800">
-                              {m.name?.trim() || m.id}
-                            </span>
-                            {isDefault && (
-                              <span
-                                className="shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700"
-                                data-testid="sliderule-model-default-badge"
-                              >
-                                默认
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                            {m.name?.trim() && (
-                              <span className="font-mono text-[10px] text-stone-400">{m.id}</span>
-                            )}
-                            {TOGGLEABLE_CAPS.map((c) => {
-                              const on = m.capabilities.includes(c);
-                              return (
-                                <button
-                                  key={c}
-                                  type="button"
-                                  onClick={() => toggleModelCap(m.id, c)}
-                                  aria-pressed={on}
-                                  data-testid={`sliderule-model-cap-${m.id}-${c}`}
-                                  className={`rounded px-1 py-0.5 text-[9px] font-medium transition ${
-                                    on
-                                      ? "bg-[#F3DCD0] text-[#B0552F]"
-                                      : "bg-[#F0EDE5] text-stone-400 hover:bg-[#E7E2D9]"
-                                  }`}
-                                >
-                                  {CAP_LABELS[c]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingModel(m);
-                            setEditingOriginalModelId(m.id);
-                            setModelModalOpen(true);
-                          }}
-                          className="shrink-0 rounded p-1 text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
-                          title="编辑"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        {confirmingDeleteModelId === m.id ? (
-                          <span className="flex shrink-0 items-center gap-1" data-testid="sliderule-model-delete-confirm">
-                            <button
-                              type="button"
-                              onClick={() => deleteModel(m.id)}
-                              className="rounded bg-rose-600 px-1.5 py-1 text-[11px] font-semibold text-white transition hover:bg-rose-500"
-                            >
-                              删除
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmingDeleteModelId(null)}
-                              className="rounded border border-[#E7E2D9] px-1.5 py-1 text-[11px] font-medium text-stone-600 transition hover:bg-[#F5F1EA]"
-                            >
-                              取消
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmingDeleteModelId(m.id)}
-                            className="shrink-0 rounded p-1 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
-                            title="删除"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Section>
-
-            {/* 高级 · 调度（全局，作用于整个 BYOK 池） */}
-            <Section title="高级 · 调度（全局）" testid="sliderule-section-advanced">
-              <div>
-                <label className={labelClass}>多 key 分发策略</label>
-                <select
-                  value={draft.dispatch}
-                  onChange={(e) =>
-                    setDraft((current) =>
-                      current ? { ...current, dispatch: e.target.value as LlmProvidersConfig["dispatch"] } : current
-                    )
-                  }
-                  className={inputClass}
-                  data-testid="sliderule-dispatch"
-                >
-                  <option value="least-busy">least-busy（优先空闲 key）</option>
-                  <option value="round-robin">round-robin（轮流）</option>
-                </select>
-                <p className="mt-1 text-[11px] text-stone-400">
-                  同轮多能力并行时，如何在已启用的多个模型/key 间分摊请求。
-                </p>
-              </div>
-
-              <label className="mt-4 flex items-center gap-2 text-[12px] text-stone-600">
+      {/* 右：选中厂商的最小表单 */}
+      {selected && (
+        <div className="min-w-0 flex-1 overflow-y-auto p-6">
+          <div className="max-w-xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="text-[15px] font-semibold text-stone-800">{selected.name}</div>
+              <label className="flex cursor-pointer items-center gap-2 text-[12px] text-stone-500">
+                启用
                 <input
                   type="checkbox"
-                  checked={draft.raceMode}
-                  onChange={(e) =>
-                    setDraft((current) => (current ? { ...current, raceMode: e.target.checked } : current))
-                  }
-                  className="h-3.5 w-3.5 accent-[#D97757]"
-                  data-testid="sliderule-race-mode"
+                  checked={selected.enabled}
+                  onChange={(e) => patch({ enabled: e.target.checked })}
+                  data-testid="sliderule-provider-enabled"
+                  className="h-4 w-4 accent-[#D97757]"
                 />
-                竞速模式（同时打多个 key 取最快）
               </label>
-              <p className="mt-1 text-[11px] text-stone-400">
-                更快但更费：默认关闭以对自己的账单诚实，按需开启。
-              </p>
-            </Section>
             </div>
-          </div>
-        )}
-      </div>
 
-      {modelModalOpen && selected && (
-        <ModelModal
-          initial={editingModel}
-          suggestions={modelSuggestionsFor(selected.presetId)}
-          existingIds={selected.models.map((m) => m.id)}
-          editingId={editingOriginalModelId}
-          onCancel={() => {
-            setModelModalOpen(false);
-            setEditingOriginalModelId(null);
-          }}
-          onSave={(m) => {
-            upsertModel(m, editingOriginalModelId ?? undefined);
-            setModelModalOpen(false);
-            setEditingOriginalModelId(null);
-          }}
-          onTest={(modelId) => runTest(modelId)}
-        />
-      )}
-    </div>
-  );
-}
+            <div>
+              <label className={labelClass}>API 密钥</label>
+              <input
+                type="password"
+                className={inputClass}
+                value={selected.apiKey}
+                onChange={(e) => patch({ apiKey: e.target.value })}
+                placeholder={selected.requiresApiKey ? "sk-…" : "本地服务可留空"}
+                data-testid="sliderule-provider-key"
+              />
+              {validation.keyError && selected.enabled && (
+                <p className="mt-1 text-[11px] text-rose-600">{validation.keyError}</p>
+              )}
+              <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[11px] text-stone-400">
+                <input
+                  type="checkbox"
+                  checked={!selected.requiresApiKey}
+                  onChange={(e) => patch({ requiresApiKey: !e.target.checked })}
+                  className="h-3 w-3 accent-[#D97757]"
+                />
+                本地服务，免密钥（如 Ollama）
+              </label>
+            </div>
 
-// ─────────────────────────────────── 新建/编辑模型 子弹窗 ───────────────────────────────────
+            <div>
+              <label className={labelClass}>Base URL</label>
+              <input
+                className={inputClass}
+                value={selected.baseUrl}
+                onChange={(e) => patch({ baseUrl: e.target.value })}
+                placeholder="https://api.openai.com/v1"
+                data-testid="sliderule-provider-baseurl"
+              />
+              {validation.baseUrlError && selected.enabled && (
+                <p className="mt-1 text-[11px] text-rose-600">{validation.baseUrlError}</p>
+              )}
+            </div>
 
-function ModelModal({
-  initial,
-  suggestions = [],
-  existingIds = [],
-  editingId = null,
-  onCancel,
-  onSave,
-  onTest,
-}: {
-  initial: LlmModelDef | null;
-  /** 该厂商常见模型名建议（datalist 下拉，可自由输入）。 */
-  suggestions?: string[];
-  /** 该厂商已有模型 id（用于重名校验）。 */
-  existingIds?: string[];
-  /** 正在编辑的原始 id（重名校验时排除自身）。 */
-  editingId?: string | null;
-  onCancel: () => void;
-  onSave: (m: LlmModelDef) => void;
-  onTest: (modelId: string) => void;
-}) {
-  const [id, setId] = React.useState(initial?.id ?? "");
-  const [name, setName] = React.useState(initial?.name ?? "");
-  const [caps, setCaps] = React.useState<ModelCapability[]>(
-    initial?.capabilities ?? ["tools", "stream"]
-  );
-  const [contextWindow, setContextWindow] = React.useState(
-    initial?.contextWindow != null ? String(initial.contextWindow) : ""
-  );
-  const [maxOutputTokens, setMaxOutputTokens] = React.useState(
-    initial?.maxOutputTokens != null ? String(initial.maxOutputTokens) : ""
-  );
+            <div>
+              <label className={labelClass}>模型</label>
+              <input
+                className={inputClass}
+                value={modelValue}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={presetDefaultModel || "模型 id"}
+                data-testid="sliderule-provider-model"
+              />
+            </div>
 
-  const trimmedId = id.trim();
-  // 非空 + 不与同厂商其它模型重名（编辑时排除自身）。
-  const duplicate =
-    trimmedId.length > 0 &&
-    existingIds.some((x) => x === trimmedId && x !== (editingId ?? initial?.id));
-  const idError = trimmedId.length === 0 ? "模型 ID 不能为空" : duplicate ? "该厂商已有同名模型" : null;
+            <div>
+              <button
+                type="button"
+                onClick={runTest}
+                disabled={testState.kind === "testing"}
+                className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
+                data-testid="sliderule-provider-test"
+              >
+                {testState.kind === "testing" ? "测试中…" : "测试连接"}
+              </button>
+              <TestConnectionResult state={testState} />
+            </div>
 
-  const toggleCap = (c: ModelCapability) =>
-    setCaps((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
-
-  const save = () => {
-    if (idError) {
-      toast.error(idError);
-      return;
-    }
-    onSave({
-      id: trimmedId,
-      name: name.trim() || undefined,
-      capabilities: caps,
-      contextWindow: contextWindow ? Number(contextWindow) : undefined,
-      maxOutputTokens: maxOutputTokens ? Number(maxOutputTokens) : undefined,
-      enabled: initial?.enabled ?? true,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="absolute inset-0 bg-[#2A2620]/40 backdrop-blur-sm" />
-      <div
-        className="relative flex w-[min(92vw,440px)] flex-col gap-4 rounded-2xl border border-[#E7E2D9] bg-white p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        data-testid="sliderule-model-modal"
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-[#1F1E1B]">{initial ? "编辑模型" : "新建模型"}</h3>
-          <button onClick={onCancel} className="rounded-lg p-1.5 text-stone-400 hover:bg-[#F0EDE5] hover:text-stone-700">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div>
-          <label className={labelClass}>模型 ID</label>
-          <input
-            value={id}
-            onChange={(e) => setId(e.target.value)}
-            placeholder="例如: gpt-4o"
-            list={suggestions.length > 0 ? "sliderule-model-suggestions" : undefined}
-            aria-invalid={!!idError}
-            className={`${inputClass} font-mono ${idError ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""}`}
-            data-testid="sliderule-model-id"
-            autoFocus
-          />
-          {suggestions.length > 0 && (
-            <datalist id="sliderule-model-suggestions">
-              {suggestions.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          )}
-          {idError && (
-            <p className="mt-1 text-[11px] font-medium text-rose-500" data-testid="sliderule-model-id-error">
-              {idError}
+            <p className="text-[11px] text-stone-400">
+              密钥仅存本机浏览器，不进会话/导出/遥测。改完点右下角「保存」生效。
             </p>
-          )}
-        </div>
-        <div>
-          <label className={labelClass}>显示名称</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="可选"
-            className={inputClass}
-          />
-        </div>
-
-        <div>
-          <label className={labelClass}>能力</label>
-          <div className="flex gap-2">
-            {(["vision", "tools", "stream"] as ModelCapability[]).map((c) => {
-              const on = caps.includes(c);
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => toggleCap(c)}
-                  className={`flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium transition ${
-                    on
-                      ? "border-[#D97757] bg-[#F8E8E0] text-[#B0552F]"
-                      : "border-[#E7E2D9] bg-white text-stone-500 hover:border-[#D8D1C4]"
-                  }`}
-                >
-                  {on && <Check className="h-3 w-3" />}
-                  {CAP_LABELS[c]}
-                </button>
-              );
-            })}
           </div>
         </div>
-
-        <div>
-          <label className={labelClass}>高级设置</label>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="mb-1 block text-[11px] text-stone-400">上下文窗口</span>
-              <input
-                type="number"
-                value={contextWindow}
-                onChange={(e) => setContextWindow(e.target.value)}
-                placeholder="例如 128000"
-                className={`${inputClass} font-mono`}
-              />
-            </div>
-            <div>
-              <span className="mb-1 block text-[11px] text-stone-400">最大输出 Token 数</span>
-              <input
-                type="number"
-                value={maxOutputTokens}
-                onChange={(e) => setMaxOutputTokens(e.target.value)}
-                placeholder="例如 4096"
-                className={`${inputClass} font-mono`}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-[#EFEBE2] pt-3">
-          <span className="text-[13px] font-semibold text-stone-600">测试模型</span>
-          <button
-            type="button"
-            onClick={() => {
-              if (!id.trim()) {
-                toast.error("请先填写模型 ID");
-                return;
-              }
-              onTest(id.trim());
-            }}
-            className="flex items-center gap-1.5 rounded-lg border border-[#E7E2D9] bg-white px-3 py-1.5 text-[12px] font-semibold text-stone-700 transition hover:bg-[#F5F1EA]"
-          >
-            <Zap className="h-3.5 w-3.5" /> 测试连接
-          </button>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-lg border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA]"
-          >
-            取消
-          </button>
-          <button
-            onClick={save}
-            disabled={!!idError}
-            className="rounded-lg bg-[#D97757] px-4 py-2 text-[13px] font-bold text-white transition hover:bg-[#C4633F] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#C4633F]"
-            data-testid="sliderule-model-save"
-          >
-            保存
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

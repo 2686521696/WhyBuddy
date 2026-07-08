@@ -1,8 +1,12 @@
 /**
- * LlmProviderSettings 组件回归测试（/sliderule → 设置 → 语言模型 配置面板）。
+ * LlmProviderSettings（极简版）组件回归测试。
  *
- * 本仓库 React 组件测试约定：用 react-dom/server renderToStaticMarkup，不引入 jsdom/RTL。
- * 因此只断言「给定 draft 的初始静态渲染」，交互逻辑改测纯函数（providerStatus 等）。
+ * 定位：浏览器直连是备用通道，UI 收敛到功能骨架——选厂商/启用/密钥/
+ * Base URL/模型/测试连接。本文件同时守住"重装饰不回潮"的负向断言
+ * （无模型 CRUD、无能力标签、无调度策略）。
+ *
+ * 本仓库 React 组件测试约定：react-dom/server renderToStaticMarkup，
+ * 只断言初始静态渲染；交互逻辑测纯函数（providerStatus 等）。
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
@@ -10,8 +14,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { LlmProviderSettings, TestConnectionResult } from "../LlmProviderSettings";
 import {
   isEnabledProviderReady,
-  modelSuggestionsFor,
-  moveProvider,
   providerStatus,
   validateProviderConfig,
   type LlmProvidersConfig,
@@ -68,133 +70,73 @@ describe("providerStatus（状态点派生）", () => {
   });
 });
 
-describe("LlmProviderSettings 视觉/布局（Aspect ①）", () => {
-  it("分区卡片：连接 + 模型 两组都渲染", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-section-connection"');
-    expect(html).toContain('data-testid="sliderule-section-models"');
-    expect(html).toContain("连接");
-  });
-
-  it("厂商列表项带配置状态点：已配 key=ready，缺 key=needs-key", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    expect(html).toContain('data-status="ready"'); // OpenAI: enabled + key
-    expect(html).toContain('data-status="needs-key"'); // Claude: requiresApiKey + 空 key
-  });
-
-  it("当前选中厂商有 aria-current 高亮", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    // 默认选中第一个（OpenAI）
-    expect(html).toMatch(/data-provider="openai"[^>]*aria-current="true"/);
-  });
-});
-
-describe("LlmProviderSettings 模型管理 UX（Aspect ②）", () => {
-  it("默认模型显示「默认」徽章 + 选中的单选", () => {
-    const draft = makeDraft();
-    draft.providers[0].defaultModelId = "gpt-4o-mini";
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-model-default-badge"');
-    expect(html).toContain("默认");
-    expect(html).toMatch(/data-testid="sliderule-model-default-gpt-4o-mini"[^>]*checked/);
-  });
-
-  it("能力标签是可点切换的按钮（aria-pressed 反映 on/off）", () => {
-    const draft = makeDraft();
-    draft.providers[0].models[0].capabilities = ["tools"]; // 有 tools，没 stream
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
-    expect(html).toMatch(/aria-pressed="true"[^>]*data-testid="sliderule-model-cap-gpt-4o-mini-tools"/);
-    expect(html).toMatch(/aria-pressed="false"[^>]*data-testid="sliderule-model-cap-gpt-4o-mini-stream"/);
-  });
-
-  it("模型为空时给空态 + 「拉取模型列表」按钮", () => {
-    const draft = makeDraft();
-    draft.providers[0].models = [];
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-model-empty"');
-    expect(html).toContain('data-testid="sliderule-model-fetch"');
-    expect(html).toContain("拉取模型列表");
-  });
-
-  it("modelSuggestionsFor 给出该预设的常见模型名", () => {
-    expect(modelSuggestionsFor("openai")).toContain("gpt-4o");
-    expect(modelSuggestionsFor("anthropic")[0]).toMatch(/^claude-/);
-    expect(modelSuggestionsFor("custom")).toEqual([]);
-  });
-});
-
-describe("测试连接 / 校验（Aspect ③）", () => {
+describe("校验纯函数（保存守卫复用）", () => {
+  const p = makeDraft().providers[0];
   it("validateProviderConfig：缺密钥 / 非 http(s) Base URL", () => {
-    const v1 = validateProviderConfig(makeDraft().providers[1]); // Claude: requiresApiKey + 空 key
-    expect(v1.keyError).toBeTruthy();
-    const p = { ...makeDraft().providers[0], baseUrl: "api.openai.com/v1" };
-    expect(validateProviderConfig(p).baseUrlError).toBeTruthy();
-    // 合法配置无错
-    expect(validateProviderConfig(makeDraft().providers[0])).toEqual({ keyError: null, baseUrlError: null });
+    expect(validateProviderConfig({ ...p, apiKey: "" }).keyError).toContain("密钥");
+    expect(validateProviderConfig({ ...p, baseUrl: "ftp://x" }).baseUrlError).toContain("http");
+    expect(validateProviderConfig(p)).toEqual({ keyError: null, baseUrlError: null });
   });
-
   it("isEnabledProviderReady：空 Base URL 的启用厂商不可保存", () => {
-    const p = { ...makeDraft().providers[0], baseUrl: "" };
-    expect(isEnabledProviderReady(p)).toBe(false);
-    expect(isEnabledProviderReady(makeDraft().providers[0])).toBe(true);
+    expect(isEnabledProviderReady({ ...p, baseUrl: "" })).toBe(false);
+    expect(isEnabledProviderReady(p)).toBe(true);
+  });
+});
+
+describe("LlmProviderSettings 极简面板", () => {
+  it("功能骨架都在：厂商列表 / 启用 / 密钥 / Base URL / 模型 / 测试连接", () => {
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    expect(html).toContain('data-testid="sliderule-provider-list"');
+    expect(html).toContain("OpenAI");
+    expect(html).toContain("Claude");
+    expect(html).toContain('data-testid="sliderule-provider-enabled"');
+    expect(html).toContain('data-testid="sliderule-provider-key"');
+    expect(html).toContain('data-testid="sliderule-provider-baseurl"');
+    expect(html).toContain('data-testid="sliderule-provider-model"');
+    expect(html).toContain('data-testid="sliderule-provider-test"');
+    // 模型输入预填当前启用模型
+    expect(html).toContain("gpt-4o-mini");
+    // 密钥安全承诺文案保留
+    expect(html).toContain("仅存本机浏览器");
   });
 
-  it("TestConnectionResult 三态：idle 不渲染 / 成功带模型+延迟 / 失败带脱敏原因", () => {
+  it("首个厂商默认选中（aria-current），启用厂商带状态点", () => {
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain('data-status="ready"'); // OpenAI: enabled + key
+  });
+
+  it("重装饰不回潮：无模型 CRUD / 能力标签 / 调度策略 / 排序控件", () => {
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    expect(html).not.toContain("新建模型");
+    expect(html).not.toContain("拉取模型列表");
+    expect(html).not.toContain("aria-pressed");
+    expect(html).not.toContain("分发策略");
+    expect(html).not.toContain("raceMode");
+    expect(html).not.toContain("上移");
+  });
+
+  it("启用但缺密钥时行内标红提示", () => {
+    const draft = makeDraft();
+    draft.providers[0].apiKey = "";
+    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    expect(html).toContain("请填写密钥");
+  });
+});
+
+describe("TestConnectionResult 三态", () => {
+  it("idle 不渲染 / 成功带模型+延迟 / 失败带原因", () => {
     expect(renderToStaticMarkup(<TestConnectionResult state={{ kind: "idle" }} />)).toBe("");
-
-    const testing = renderToStaticMarkup(<TestConnectionResult state={{ kind: "testing" }} />);
-    expect(testing).toContain('data-state="testing"');
-
     const ok = renderToStaticMarkup(
-      <TestConnectionResult state={{ kind: "ok", model: "gpt-4o", latencyMs: 123 }} />
+      <TestConnectionResult state={{ kind: "ok", model: "gpt-4o-mini", latencyMs: 820 }} />
     );
-    expect(ok).toContain('data-state="ok"');
-    expect(ok).toContain("gpt-4o");
-    expect(ok).toContain("123ms");
-
+    expect(ok).toContain("连接成功");
+    expect(ok).toContain("gpt-4o-mini");
+    expect(ok).toContain("820ms");
     const err = renderToStaticMarkup(
-      <TestConnectionResult state={{ kind: "error", message: "鉴权失败（401）：检查 API Key" }} />
+      <TestConnectionResult state={{ kind: "error", message: "401 未授权（密钥无效）" }} />
     );
     expect(err).toContain('data-state="error"');
-    expect(err).toContain("鉴权失败（401）");
-  });
-
-  it("即时校验：缺密钥/非法 Base URL 在面板内标红", () => {
-    const draft = makeDraft();
-    // 选中第一个厂商：勾了需要密钥但清空 key，且 Base URL 非 http(s)
-    draft.providers[0].apiKey = "";
-    draft.providers[0].baseUrl = "ftp://x";
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-key-error"');
-    expect(html).toContain('data-testid="sliderule-baseurl-error"');
-  });
-});
-
-describe("字段 / 信息架构（Aspect ④）", () => {
-  it("moveProvider：上移/下移/越界保持", () => {
-    const ps = makeDraft().providers; // [openai, anthropic]
-    expect(moveProvider(ps, "anthropic", "up").map((p) => p.id)).toEqual(["anthropic", "openai"]);
-    expect(moveProvider(ps, "openai", "down").map((p) => p.id)).toEqual(["anthropic", "openai"]);
-    expect(moveProvider(ps, "openai", "up").map((p) => p.id)).toEqual(["openai", "anthropic"]); // 越界原样
-    expect(moveProvider(ps, "missing", "up")).toBe(ps);
-  });
-
-  it("当前选中项渲染上移/下移控件（首项 上移 disabled）", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-provider-reorder"');
-    expect(html).toMatch(/disabled[^>]*data-testid="sliderule-provider-move-up"/);
-  });
-
-  it("高级·调度（全局）暴露 dispatch + raceMode", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    expect(html).toContain('data-testid="sliderule-section-advanced"');
-    expect(html).toContain('data-testid="sliderule-dispatch"');
-    expect(html).toContain('data-testid="sliderule-race-mode"');
-  });
-
-  it("字段带 helper 文案（密钥安全 / Base URL 何时改）", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
-    expect(html).toContain("密钥仅存本机");
-    expect(html).toContain("仅在用代理");
+    expect(err).toContain("401");
   });
 });
