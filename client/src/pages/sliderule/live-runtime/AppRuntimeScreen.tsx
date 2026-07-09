@@ -94,6 +94,16 @@ import {
   subscribeRoleChanged,
 } from "./runtime-persistence";
 import { accessForRole, pageAccessForRole, type PageAccess } from "./rbac-preview";
+import {
+  applyPageDesignOverrides,
+  clearPageDesignOverrides,
+  countOverrideEdits,
+  loadPageDesignOverrides,
+  savePageDesignOverrides,
+  type PageDesignOverride,
+  type PageDesignOverrides,
+} from "./page-design-overrides";
+import { PageDesignPanel } from "./PageDesignPanel";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -237,9 +247,19 @@ export function AppRuntimeScreen({
   xrayActive?: boolean;
   onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
+  // 页面设计器一期：本地设计覆盖层（属性面板改动 → 渲染前叠加，不动模型本体）
+  const [designOverrides, setDesignOverrides] = React.useState<PageDesignOverrides>(() =>
+    loadPageDesignOverrides(sessionId)
+  );
+  const [designMode, setDesignMode] = React.useState(false);
+  const effectiveModel = React.useMemo(
+    () => applyPageDesignOverrides(model, designOverrides),
+    [model, designOverrides]
+  );
+
   const schema = React.useMemo(
-    () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
-    [model, appTitle]
+    () => deriveAppRuntimeSchema(effectiveModel, appTitle || "推演应用"),
+    [effectiveModel, appTitle]
   );
   const [state, setState] = React.useState<RuntimeState>(() => {
     return loadRuntimeState(sessionId) ?? initRuntimeState(model);
@@ -1061,7 +1081,49 @@ export function AppRuntimeScreen({
             {DEVICE_SPECS[key].label}
           </button>
         ))}
+        {/* 页面设计器一期：属性面板开关（业务页可用；工作台/无主实体页无可编辑面） */}
+        <button
+          type="button"
+          data-testid="app-design-toggle"
+          onClick={() => setDesignMode((v) => !v)}
+          className={`ml-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+            designMode ? "bg-amber-300 text-stone-900 shadow-sm" : "text-white/85 hover:text-white"
+          }`}
+          title="设计模式：右侧属性面板改页面标题/表格列/表单字段/图表，即改即渲染（本地覆盖，可重置）"
+        >
+          设计{countOverrideEdits(designOverrides) > 0 ? ` ·${countOverrideEdits(designOverrides)}` : ""}
+        </button>
       </div>
+
+      {/* 设计属性面板（画布外右栏，对标 web-designer 属性面板范式） */}
+      {designMode && !isHome && page && page.entityId && (
+        <div className="absolute bottom-2 right-3 top-10 z-10 flex">
+          <PageDesignPanel
+            page={page}
+            entityId={page.entityId}
+            entityFields={page.detailFields}
+            override={(page.id && designOverrides[page.id]) || {}}
+            editCount={countOverrideEdits(designOverrides)}
+            onChange={(next: PageDesignOverride) => {
+              if (!page.id) return;
+              setDesignOverrides((prev) => {
+                const merged = { ...prev, [page.id]: next };
+                savePageDesignOverrides(sessionId, merged);
+                return merged;
+              });
+            }}
+            onResetAll={() => {
+              clearPageDesignOverrides(sessionId);
+              setDesignOverrides({});
+            }}
+          />
+        </div>
+      )}
+      {designMode && (isHome || !page?.entityId) && (
+        <div className="absolute right-3 top-10 z-10 rounded bg-black/40 px-2.5 py-1.5 text-[10px] text-white/90">
+          切到业务页面开始设计（工作台与无主实体页暂无可编辑面）
+        </div>
+      )}
       <span
         className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
         title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}
