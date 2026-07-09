@@ -26,12 +26,13 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "settings" | "settings-legacy";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "settings" | "settings-legacy";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
   | { kind: "workbench" }
   | { kind: "workbench-legacy" }
+  | { kind: "skills" }
   | { kind: "settings" }
   | { kind: "settings-legacy" }
   | { kind: "detail"; runId: string };
@@ -47,6 +48,11 @@ export function getAgentLoopWorkbenchPath(): string {
 /** legacy 任务队列驾驶舱：摘除导航、保留 URL 直达。 */
 export function getAgentLoopWorkbenchLegacyPath(): string {
   return "/agent-loop/workbench/legacy";
+}
+
+/** 技能库（TRAE 论坛技能索引，回链原帖） */
+export function getAgentLoopSkillsPath(): string {
+  return "/agent-loop/skills";
 }
 
 export function getAgentLoopSettingsPath(): string {
@@ -76,6 +82,9 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/workbench/legacy") {
     return { kind: "workbench-legacy" };
   }
+  if (normalized === "/agent-loop/skills") {
+    return { kind: "skills" };
+  }
   if (normalized === "/agent-loop/settings/legacy") {
     return { kind: "settings-legacy" };
   }
@@ -103,6 +112,7 @@ export function resolveAgentLoopLiveEventRunId(
     route.kind === "sliderule" ||
     route.kind === "settings" ||
     route.kind === "settings-legacy" ||
+    route.kind === "skills" ||
     route.kind === "workbench"
   ) {
     return null;
@@ -218,9 +228,11 @@ export default function AgentLoopPage() {
           ? getAgentLoopSettingsPath()
           : next === "settings-legacy"
             ? getAgentLoopSettingsLegacyPath()
-            : next === "workbench-legacy"
-              ? getAgentLoopWorkbenchLegacyPath()
-              : getAgentLoopWorkbenchPath();
+            : next === "skills"
+              ? getAgentLoopSkillsPath()
+              : next === "workbench-legacy"
+                ? getAgentLoopWorkbenchLegacyPath()
+                : getAgentLoopWorkbenchPath();
     setLocation(path);
   }
 
@@ -555,9 +567,11 @@ export default function AgentLoopPage() {
         ? "settings-legacy"
         : route.kind === "sliderule"
           ? "sliderule"
-          : route.kind === "workbench-legacy"
-            ? "workbench-legacy"
-            : "workbench";
+          : route.kind === "skills"
+            ? "skills"
+            : route.kind === "workbench-legacy"
+              ? "workbench-legacy"
+              : "workbench";
 
   return (
     <main data-testid="agent-loop-page" className="agent-loop-root">
@@ -584,9 +598,11 @@ export default function AgentLoopPage() {
                 ? getAgentLoopSettingsPath()
                 : next === "settings-legacy"
                   ? getAgentLoopSettingsLegacyPath()
-                  : next === "workbench-legacy"
-                    ? getAgentLoopWorkbenchLegacyPath()
-                    : getAgentLoopWorkbenchPath()
+                  : next === "skills"
+                    ? getAgentLoopSkillsPath()
+                    : next === "workbench-legacy"
+                      ? getAgentLoopWorkbenchLegacyPath()
+                      : getAgentLoopWorkbenchPath()
           )}
           getTaskRunPath={getAgentLoopRunPath}
           onOpenTask={openTaskRoute}

@@ -69,6 +69,7 @@ describe("AgentLoopPage", () => {
     expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({ kind: "sliderule" });
     expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
     expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({ kind: "workbench-legacy" });
+    expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({ kind: "skills" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
     expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({ kind: "settings-legacy" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });

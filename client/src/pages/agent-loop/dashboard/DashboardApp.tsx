@@ -7,6 +7,7 @@ import {
   LeftOutlined,
   PlayCircleFilled,
   QuestionCircleOutlined,
+  ReadOutlined,
   ReloadOutlined,
   RightOutlined,
   DownOutlined,
@@ -46,9 +47,12 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export type ViewKey = 'sliderule' | 'workbench' | 'workbench-legacy' | 'settings' | 'settings-legacy';
+export type ViewKey = 'sliderule' | 'workbench' | 'workbench-legacy' | 'skills' | 'settings' | 'settings-legacy';
+
+// 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
+const LazySkillsLibraryPage = React.lazy(() => import('@/pages/sliderule/SkillsLibraryPage'));
 
 export function shouldRequestSettingsForView(view: ViewKey): boolean {
   // legacy 驾驶舱/legacy 设置页才消费 AgentLoop settings payload；
@@ -832,6 +836,7 @@ function AgentLoopSidebar({
   // 「推演」不再单列菜单项：点品牌 logo / 点会话 / 新建会话都通向推演视图
   const navItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
     { key: 'workbench', label: '工作台', icon: <AppstoreOutlined /> },
+    { key: 'skills', label: '技能库', icon: <ReadOutlined /> },
     { key: 'settings', label: '设置', icon: <SettingOutlined /> },
   ];
 
@@ -913,9 +918,11 @@ function AgentLoopTopbar({
         ? 'AgentLoop / 设置'
         : view === 'settings-legacy'
           ? 'AgentLoop / 设置（legacy）'
-          : view === 'workbench-legacy'
-            ? 'AgentLoop / 任务队列（legacy）'
-            : 'AgentLoop / 工作台';
+          : view === 'skills'
+            ? 'AgentLoop / 技能库'
+            : view === 'workbench-legacy'
+              ? 'AgentLoop / 任务队列（legacy）'
+              : 'AgentLoop / 工作台';
 
   const pythonStatus = pythonHealth?.service?.status || 'unknown';
   const pythonTone = pythonStatus === 'ready' ? 'success' : pythonStatus === 'offline' ? 'error' : 'warning';
@@ -1000,11 +1007,13 @@ export function DashboardApp({
     const label =
       view === 'workbench'
         ? '工作台'
-        : view === 'settings'
-          ? '设置'
-          : view === 'settings-legacy'
-            ? '设置（legacy）'
-            : '任务队列（legacy）';
+        : view === 'skills'
+          ? '技能库'
+          : view === 'settings'
+            ? '设置'
+            : view === 'settings-legacy'
+              ? '设置（legacy）'
+              : '任务队列（legacy）';
     document.title = `${label} · SlideRule`;
   }, [view]);
 
@@ -1294,9 +1303,17 @@ export function DashboardApp({
                 ? workbenchContent
                 : view === 'sliderule'
                   ? slideruleContent
-                  : view === 'settings'
-                    ? <SettingsPage />
-                    : settingsContent}
+                  : view === 'skills'
+                    ? (
+                      <React.Suspense
+                        fallback={<div style={{ padding: 24, fontSize: 12, color: '#999' }}>技能库加载中…</div>}
+                      >
+                        <LazySkillsLibraryPage />
+                      </React.Suspense>
+                    )
+                    : view === 'settings'
+                      ? <SettingsPage />
+                      : settingsContent}
           </Content>
         </Layout>
       </Layout>
