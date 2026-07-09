@@ -133,6 +133,7 @@ export function ActiveSystemScreen({
             rawContent={skillContents.aigc}
             model={fiveSystemModel}
             appTitle={appTitle}
+            sessionId={sessionId}
             isActive={activeSkillId === "aigc"}
           />
         </div>

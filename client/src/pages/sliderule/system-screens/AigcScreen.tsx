@@ -16,6 +16,7 @@ import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
 import { AigcTryRunPanel } from "../live-runtime/AigcTryRunPanel";
 import { AigcPipelinePanel } from "../live-runtime/AigcPipelinePanel";
+import { AigcFlowCanvas } from "../live-runtime/AigcFlowCanvas";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import {
   type FiveSystemModel,
@@ -31,6 +32,8 @@ interface AigcScreenProps {
   model?: FiveSystemModel | null;
   /** 能力试跑时随 prompt 带上的产品意图（话题名） */
   appTitle?: string;
+  /** 自由画布设计的本地持久化命名空间 */
+  sessionId?: string;
   isActive?: boolean;
   className?: string;
 }
@@ -70,13 +73,14 @@ export function AigcScreen({
   rawContent,
   model,
   appTitle,
+  sessionId = "sliderule-v51-product",
   isActive = false,
   className = "",
 }: AigcScreenProps) {
   const capabilities = model?.aigc?.capabilities ?? [];
   const pipelines = model?.aigc?.pipelines ?? [];
   const hasModel = capabilities.length > 0;
-  const [screenMode, setScreenMode] = useState<"list" | "tryrun" | "pipeline">("list");
+  const [screenMode, setScreenMode] = useState<"list" | "tryrun" | "pipeline" | "canvas">("list");
 
   const resolved = useMemo(
     () =>
@@ -117,10 +121,12 @@ export function AigcScreen({
               {([
                 { id: "list" as const, label: "能力清单" },
                 { id: "tryrun" as const, label: "能力试跑" },
-                // 编排档只在模型声明了管线时出现（不造空壳入口）
+                // 声明管线档只在模型产出了管线时出现（不造空壳入口）
                 ...(pipelines.length > 0
                   ? [{ id: "pipeline" as const, label: "能力编排" }]
                   : []),
+                // 自由画布：有能力节点即可编排（对标 web-aigc 编排设计器）
+                { id: "canvas" as const, label: "自由画布" },
               ]).map(({ id, label }) => (
                 <button
                   key={id}
@@ -142,7 +148,11 @@ export function AigcScreen({
         </div>
       </div>
 
-      {screenMode === "pipeline" && hasModel && model ? (
+      {screenMode === "canvas" && hasModel && model ? (
+        <div className="min-h-0 flex-1">
+          <AigcFlowCanvas model={model} sessionId={sessionId} goal={appTitle} />
+        </div>
+      ) : screenMode === "pipeline" && hasModel && model ? (
         <div className="min-h-0 flex-1">
           <AigcPipelinePanel model={model} goal={appTitle} />
         </div>
