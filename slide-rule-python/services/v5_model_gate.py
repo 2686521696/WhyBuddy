@@ -41,6 +41,13 @@ DANGLING = "PUBLISH_DANGLING_CROSSREF"
 MISSING_SECTION = "PUBLISH_MISSING_SKILL_SECTION"
 EMPTY_SECTION = "PUBLISH_EMPTY_SKILL_SECTION"
 
+# 字段语义（加厚 schema 一期）的合法域。与客户端 field-display.ts 对齐——
+# 渲染层只认这些值；门禁在生成侧就把非法声明拦下（出现即校验，缺省不罚）。
+FIELD_TONES = ("success", "processing", "warning", "danger", "default")
+NUMBER_FORMATS = ("money", "percent", "progress", "score", "rating")
+STRING_FORMATS = ("masked",)
+STAT_FORMATS = ("number", "money", "percent")
+
 
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
@@ -202,6 +209,68 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
     if not page_ids:
         findings.append(_finding(EMPTY_SECTION, "page.pages", "page has no pages", skill="page"))
 
+    # 1.5 datamodel 字段语义（加厚 schema 一期，可选字段）：出现即校验、缺省不罚
+    #     （老模型零破坏）。enum options：非空、id 非空且唯一、tone ∈ 合法域、
+    #     只允许出现在 enum 字段上；format：合法域且与字段类型匹配
+    #     （number → money/percent/progress/score/rating；string/text → masked）。
+    for entity in _as_list(datamodel.get("entities")):
+        ed = _as_dict(entity)
+        eid = ed.get("id") or ed.get("name") or "<unnamed>"
+        for field in _as_list(ed.get("fields")):
+            fd = _as_dict(field)
+            fid = fd.get("id") or fd.get("name") or "<unnamed>"
+            fpath = f"datamodel.entities[{eid}].fields[{fid}]"
+            ftype = str(fd.get("type") or "string").strip().lower()
+            if "options" in fd:
+                if ftype != "enum":
+                    findings.append(_finding(
+                        DANGLING, f"{fpath}.options",
+                        f"options declared on non-enum field (type '{ftype}')",
+                        ref=ftype, skill="datamodel",
+                    ))
+                opts = [_as_dict(o) for o in _as_list(fd.get("options"))]
+                if not opts:
+                    findings.append(_finding(
+                        EMPTY_SECTION, f"{fpath}.options",
+                        "enum options declared but empty", skill="datamodel",
+                    ))
+                seen_option_ids: set = set()
+                for od in opts:
+                    oid = str(od.get("id") or "").strip()
+                    if not oid:
+                        findings.append(_finding(
+                            EMPTY_SECTION, f"{fpath}.options",
+                            "enum option has no id", skill="datamodel",
+                        ))
+                        continue
+                    if oid in seen_option_ids:
+                        findings.append(_finding(
+                            DANGLING, f"{fpath}.options",
+                            f"duplicate enum option id '{oid}'",
+                            ref=oid, skill="datamodel",
+                        ))
+                    seen_option_ids.add(oid)
+                    tone = str(od.get("tone") or "").strip()
+                    if tone and tone not in FIELD_TONES:
+                        findings.append(_finding(
+                            DANGLING, f"{fpath}.options[{oid}].tone",
+                            f"option tone '{tone}' is not one of {'/'.join(FIELD_TONES)}",
+                            ref=tone, skill="datamodel",
+                        ))
+            fmt = str(fd.get("format") or "").strip()
+            if fmt:
+                allowed = (
+                    NUMBER_FORMATS if ftype == "number"
+                    else STRING_FORMATS if ftype in ("string", "text")
+                    else ()
+                )
+                if fmt not in allowed:
+                    findings.append(_finding(
+                        DANGLING, f"{fpath}.format",
+                        f"field format '{fmt}' is not valid for type '{ftype}'",
+                        ref=fmt, skill="datamodel",
+                    ))
+
     # 2. workflow node assigneeRole ∈ rbac.roles — 主链路与附加链路（chains）同一标准
     for chain_path, chain in _iter_workflow_chains(workflow):
         for node in _as_list(chain.get("nodes")):
@@ -267,6 +336,40 @@ def validate_five_system_model(model: Any) -> Dict[str, Any]:
                     DANGLING, f"page.pages[{pid}].charts[{cid}].metric",
                     f"chart metric '{metric}' must be 'count' or 'sum:<entity.field>'",
                     ref=metric, skill="page",
+                ))
+        # KPI 统计卡声明（加厚 schema 一期，可选字段）：entity 必须是真实实体；
+        # sum/avg 指标必须解析到 datamodel 字段；format 限定渲染层支持的集合。
+        for stat in _as_list(pd.get("stats")):
+            sd = _as_dict(stat)
+            sid = sd.get("id") or sd.get("name") or "<unnamed>"
+            entity_ref = str(sd.get("entity") or "").strip()
+            if not entity_ref or entity_ref not in entity_ids:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].stats[{sid}].entity",
+                    f"stat entity '{entity_ref or '<missing>'}' not found in datamodel entities",
+                    ref=entity_ref, skill="page",
+                ))
+            metric = str(sd.get("metric") or "").strip()
+            if metric.startswith("sum:") or metric.startswith("avg:"):
+                mref = metric[4:].strip()
+                if mref not in field_refs:
+                    findings.append(_finding(
+                        DANGLING, f"page.pages[{pid}].stats[{sid}].metric",
+                        f"stat {metric[:3]} metric '{mref}' not found in datamodel fields",
+                        ref=mref, skill="page",
+                    ))
+            elif metric != "count":
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].stats[{sid}].metric",
+                    f"stat metric '{metric or '<missing>'}' must be 'count', 'sum:<entity.field>' or 'avg:<entity.field>'",
+                    ref=metric, skill="page",
+                ))
+            sfmt = str(sd.get("format") or "").strip()
+            if sfmt and sfmt not in STAT_FORMATS:
+                findings.append(_finding(
+                    DANGLING, f"page.pages[{pid}].stats[{sid}].format",
+                    f"stat format '{sfmt}' is not one of {'/'.join(STAT_FORMATS)}",
+                    ref=sfmt, skill="page",
                 ))
 
     # 4. aigc inputFields/outputField ∈ datamodel fields; roleRefs ∈ rbac.roles

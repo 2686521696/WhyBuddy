@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildAiActionInputs, deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
+import {
+  buildAiActionInputs,
+  deriveAppRuntimeSchema,
+} from "../live-runtime/app-runtime-schema";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
 const MODEL: FiveSystemModel = {
@@ -15,12 +18,23 @@ const MODEL: FiveSystemModel = {
           { id: "coach_ref", name: "私教", type: "ref" },
         ],
       },
-      { id: "coach", name: "私教", fields: [{ id: "name", name: "姓名", type: "string" }] },
+      {
+        id: "coach",
+        name: "私教",
+        fields: [{ id: "name", name: "姓名", type: "string" }],
+      },
     ],
   },
-  rbac: { roles: ["member", "manager"], permissions: ["card:create"], menus: [] },
+  rbac: {
+    roles: ["member", "manager"],
+    permissions: ["card:create"],
+    menus: [],
+  },
   workflow: {
-    nodes: [{ id: "submit", name: "提交核销" }, { id: "approve", name: "经理审批" }],
+    nodes: [
+      { id: "submit", name: "提交核销" },
+      { id: "approve", name: "经理审批" },
+    ],
     transitions: [{ from: "submit", to: "approve" }],
   },
   page: {
@@ -28,7 +42,11 @@ const MODEL: FiveSystemModel = {
       {
         id: "card_page",
         name: "会员卡核销",
-        fieldBindings: ["member_card.holder", "member_card.balance", "coach.name"],
+        fieldBindings: [
+          "member_card.holder",
+          "member_card.balance",
+          "coach.name",
+        ],
         actionPermissions: ["card:create"],
       },
       { id: "empty_page", name: "无绑定页", fieldBindings: [] },
@@ -39,7 +57,11 @@ const MODEL: FiveSystemModel = {
       {
         id: "cap_summary",
         name: "余额提醒文案",
-        inputFields: ["member_card.holder", "member_card.balance", "coach.name"],
+        inputFields: [
+          "member_card.holder",
+          "member_card.balance",
+          "coach.name",
+        ],
         outputField: "member_card.balance",
       },
       {
@@ -68,12 +90,16 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     const schema = deriveAppRuntimeSchema(MODEL, "健身房系统")!;
     expect(schema.appName).toBe("健身房系统");
     expect(schema.roles).toEqual(["member", "manager"]);
-    expect(schema.menus.map((m) => m.label)).toEqual(["工作台", "会员卡核销", "无绑定页"]);
+    expect(schema.menus.map(m => m.label)).toEqual([
+      "工作台",
+      "会员卡核销",
+      "无绑定页",
+    ]);
 
     const page = schema.pages[0];
     expect(page.entityId).toBe("member_card");
-    expect(page.formFields.map((f) => f.id)).toEqual(["holder", "balance"]);
-    expect(page.columns.map((f) => f.id)).toContain("coach_ref");
+    expect(page.formFields.map(f => f.id)).toEqual(["holder", "balance"]);
+    expect(page.columns.map(f => f.id)).toContain("coach_ref");
     expect(page.workflowLinked).toBe(true);
     expect(page.actions).toEqual(["card:create"]);
   });
@@ -84,14 +110,14 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(schema.home.title).toBe("工作台");
     expect(schema.menus[0].pageId).toBe("home");
     // 前两实体行数 + 进行中/累计审批，共 4 张卡
-    expect(schema.home.stats.map((s) => s.source)).toEqual([
+    expect(schema.home.stats.map(s => s.source)).toEqual([
       "entity:member_card",
       "entity:coach",
       "instances:running",
       "instances:total",
     ]);
     // 图表也 JSON 声明：实体数据量条形 + 审批状态环图
-    expect(schema.home.charts.map((c) => `${c.type}:${c.source}`)).toEqual([
+    expect(schema.home.charts.map(c => `${c.type}:${c.source}`)).toEqual([
       "bar:entities:rowcount",
       "donut:instances:status",
     ]);
@@ -99,7 +125,7 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
 
   it("详情抽屉字段 = 主实体全字段（不截断）", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
-    expect(schema.pages[0].detailFields.map((f) => f.id)).toEqual([
+    expect(schema.pages[0].detailFields.map(f => f.id)).toEqual([
       "id",
       "holder",
       "balance",
@@ -109,7 +135,7 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
 
   it("ref 字段解析目标实体（coach_ref → coach）供下拉渲染", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
-    const refField = schema.pages[0].columns.find((f) => f.id === "coach_ref")!;
+    const refField = schema.pages[0].columns.find(f => f.id === "coach_ref")!;
     expect(refField.type).toBe("ref");
     expect(refField.refEntityId).toBe("coach");
   });
@@ -117,13 +143,16 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
   it("AI 动作：outputField 落在本页主实体的能力进 aiActions；悬空输出不进", () => {
     const schema = deriveAppRuntimeSchema(MODEL)!;
     const page = schema.pages[0];
-    expect(page.aiActions.map((a) => a.capId)).toEqual(["cap_summary", "cap_write"]);
+    expect(page.aiActions.map(a => a.capId)).toEqual([
+      "cap_summary",
+      "cap_write",
+    ]);
     const summary = page.aiActions[0];
     expect(summary.label).toBe("余额提醒文案");
     expect(summary.outputFieldId).toBe("balance");
     expect(summary.outputLabel).toBe("余额");
     // 悬空 outputField（member_card.not_a_field）被诚实排除
-    expect(page.aiActions.some((a) => a.capId === "cap_dangling")).toBe(false);
+    expect(page.aiActions.some(a => a.capId === "cap_dangling")).toBe(false);
     // 无主实体的页面没有 AI 动作
     expect(schema.pages[1].aiActions).toEqual([]);
   });
@@ -145,15 +174,45 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
   it("页面级图表：合法声明派生成 AppPageChartSchema，悬空/跨实体 sum 丢弃，未知 type 回退 bar", () => {
     const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
     model.page!.pages![0].charts = [
-      { id: "c1", name: "余额分布", type: "pie", dimension: "member_card.holder", metric: "count" },
-      { id: "c2", name: "按人合计余额", type: "bar", dimension: "member_card.holder", metric: "sum:member_card.balance" },
-      { id: "c3", name: "坏维度", type: "bar", dimension: "member_card.ghost", metric: "count" },
-      { id: "c4", name: "跨实体求和", type: "bar", dimension: "member_card.holder", metric: "sum:coach.name" },
-      { id: "c5", name: "未知形态", type: "radar" as never, dimension: "member_card.holder", metric: "count" },
+      {
+        id: "c1",
+        name: "余额分布",
+        type: "pie",
+        dimension: "member_card.holder",
+        metric: "count",
+      },
+      {
+        id: "c2",
+        name: "按人合计余额",
+        type: "bar",
+        dimension: "member_card.holder",
+        metric: "sum:member_card.balance",
+      },
+      {
+        id: "c3",
+        name: "坏维度",
+        type: "bar",
+        dimension: "member_card.ghost",
+        metric: "count",
+      },
+      {
+        id: "c4",
+        name: "跨实体求和",
+        type: "bar",
+        dimension: "member_card.holder",
+        metric: "sum:coach.name",
+      },
+      {
+        id: "c5",
+        name: "未知形态",
+        type: "radar" as never,
+        dimension: "member_card.holder",
+        metric: "count",
+      },
     ];
     const schema = deriveAppRuntimeSchema(model)!;
     const charts = schema.pages[0].charts;
-    expect(charts.map((c) => c.id)).toEqual(["c1", "c2", "c5"]); // c3/c4 悬空丢弃
+    expect(charts.map(c => c.id)).toEqual(["c1", "c2", "c5"]); // c3/c4 悬空丢弃
     expect(charts[0]).toMatchObject({
       type: "pie",
       entityId: "member_card",
@@ -161,10 +220,93 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
       metric: "count",
       metricLabel: "数量",
     });
-    expect(charts[1]).toMatchObject({ metric: "sum", metricFieldId: "balance", metricLabel: "余额" });
+    expect(charts[1]).toMatchObject({
+      metric: "sum",
+      metricFieldId: "balance",
+      metricLabel: "余额",
+    });
     expect(charts[2].type).toBe("bar"); // radar 回退 bar
     // 无 charts 声明的页 → 空数组（老模型零变化）
     expect(schema.pages[1].charts).toEqual([]);
+  });
+
+  it("字段语义透传（加厚 schema 一期）：enum options 归一化、format 类型校验", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.datamodel!.entities![0].fields = [
+      { id: "id", name: "编号", type: "string" },
+      {
+        id: "status",
+        name: "状态",
+        type: "enum",
+        options: [
+          { id: "待跟进", tone: "warning" },
+          { id: "已成交", label: "已成交 ✓", tone: "success" },
+          { id: "", tone: "danger" }, // 空 id 剔除
+          { id: "待跟进", tone: "danger" }, // 重复保首个
+          { id: "异常", tone: "rainbow" }, // 非法 tone 降级 default
+        ],
+      },
+      { id: "amount", name: "金额", type: "number", format: "money" },
+      { id: "phone", name: "电话", type: "string", format: "masked" },
+      { id: "bad_fmt", name: "坏格式", type: "string", format: "money" }, // 类型不匹配丢弃
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    const fields = Object.fromEntries(
+      schema.pages[0].detailFields.map(f => [f.id, f])
+    );
+    expect(fields.status.options).toEqual([
+      { id: "待跟进", label: "待跟进", tone: "warning" },
+      { id: "已成交", label: "已成交 ✓", tone: "success" },
+      { id: "异常", label: "异常", tone: "default" },
+    ]);
+    expect(fields.amount.format).toBe("money");
+    expect(fields.phone.format).toBe("masked");
+    expect(fields.bad_fmt.format).toBeUndefined();
+    expect(fields.id.options).toBeUndefined();
+  });
+
+  it("页面级 KPI 卡：count/sum/avg 派生，悬空实体与字段丢弃，未知 format 回退 number", () => {
+    const model: FiveSystemModel = JSON.parse(JSON.stringify(MODEL));
+    model.page!.pages![0].stats = [
+      { id: "s1", name: "会员卡总数", entity: "member_card", metric: "count" },
+      {
+        id: "s2",
+        name: "余额合计",
+        entity: "member_card",
+        metric: "sum:member_card.balance",
+        format: "money",
+      },
+      {
+        id: "s3",
+        name: "平均余额",
+        entity: "member_card",
+        metric: "avg:member_card.balance",
+        format: "hex",
+      },
+      { id: "s4", name: "坏实体", entity: "ghost", metric: "count" },
+      {
+        id: "s5",
+        name: "坏字段",
+        entity: "member_card",
+        metric: "sum:member_card.ghost",
+      },
+    ];
+    const schema = deriveAppRuntimeSchema(model)!;
+    const stats = schema.pages[0].stats;
+    expect(stats.map(s => s.id)).toEqual(["s1", "s2", "s3"]); // s4/s5 悬空丢弃
+    expect(stats[0]).toMatchObject({
+      entityId: "member_card",
+      metric: "count",
+      format: "number",
+    });
+    expect(stats[1]).toMatchObject({
+      metric: "sum",
+      metricFieldId: "balance",
+      format: "money",
+    });
+    expect(stats[2]).toMatchObject({ metric: "avg", format: "number" }); // hex 回退 number
+    // 无 stats 声明的页 → 空数组（老模型零变化）
+    expect(schema.pages[1].stats).toEqual([]);
   });
 
   it("无绑定页 entityId=null；缺页面/实体时整体返回 null（不伪造）", () => {
@@ -172,6 +314,8 @@ describe("deriveAppRuntimeSchema（应用运行 option）", () => {
     expect(schema.pages[1].entityId).toBeNull();
     expect(schema.pages[1].workflowLinked).toBe(false);
     expect(deriveAppRuntimeSchema({})).toBeNull();
-    expect(deriveAppRuntimeSchema({ ...MODEL, page: { pages: [] } })).toBeNull();
+    expect(
+      deriveAppRuntimeSchema({ ...MODEL, page: { pages: [] } })
+    ).toBeNull();
   });
 });

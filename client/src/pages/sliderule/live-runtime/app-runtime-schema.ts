@@ -6,7 +6,17 @@
  * 纯函数模块：模型进、schema 出，无副作用，便于单测。
  */
 
-import { guessRefEntityId, type FiveSystemModel, type FiveSystemField } from "../system-screens/five-system-model";
+import {
+  guessRefEntityId,
+  type FiveSystemModel,
+  type FiveSystemField,
+} from "../system-screens/five-system-model";
+import {
+  normalizeFieldFormat,
+  normalizeFieldOptions,
+  type FieldFormat,
+  type NormalizedFieldOption,
+} from "./field-display";
 
 export interface AppFormFieldSchema {
   id: string;
@@ -15,6 +25,10 @@ export interface AppFormFieldSchema {
   type: string;
   /** ref 字段指向的实体 id（type==="ref" 时给出，供渲染器做下拉） */
   refEntityId?: string;
+  /** enum 字段的声明取值（已归一化：非法 tone 降级 default）；无声明为空数组省略 */
+  options?: NormalizedFieldOption[];
+  /** 展示格式（已按字段类型校验；非法声明在派生时丢弃——门禁负责标红） */
+  format?: FieldFormat;
 }
 
 /** 页面可用的 AI 动作：outputField 落在本页主实体的 AIGC 能力。 */
@@ -52,6 +66,21 @@ export interface AppPageChartSchema {
   metricLabel: string;
 }
 
+/**
+ * 页面级 KPI 统计卡（模型 page.stats 声明 → 渲染器对着运行时行数据求值）。
+ * count 的行来源是声明的 entity；sum/avg 的行来源是指标字段所属实体
+ * （数据在哪就从哪取）。悬空引用派生时丢弃——门禁标红，运行应用不渲染坏卡。
+ */
+export interface AppPageStatSchema {
+  id: string;
+  label: string;
+  entityId: string;
+  metric: "count" | "sum" | "avg";
+  /** metric 为 sum/avg 时的取数字段 id */
+  metricFieldId?: string;
+  format: "number" | "money" | "percent";
+}
+
 export interface AppPageSchema {
   id: string;
   title: string;
@@ -69,6 +98,8 @@ export interface AppPageSchema {
   workflowLinked: boolean;
   /** 详情抽屉里的 AI 生成动作（无绑定能力时为空数组） */
   aiActions: AppAiActionSchema[];
+  /** 模型声明的页面级 KPI 统计卡（表格上方的指标带） */
+  stats: AppPageStatSchema[];
   /** 模型声明的页面级图表（库无关声明 → 运行应用用 ECharts 渲染） */
   charts: AppPageChartSchema[];
 }
@@ -116,6 +147,11 @@ function toFieldSchema(field: FiveSystemField): AppFormFieldSchema {
     label: field.name || field.id,
     type,
   };
+  // 字段语义（加厚 schema 一期）：归一化后透传，坏声明在这里丢弃
+  const options = normalizeFieldOptions(type, field.options);
+  if (options.length > 0) schema.options = options;
+  const format = normalizeFieldFormat(type, field.format);
+  if (format) schema.format = format;
   return schema;
 }
 
@@ -168,11 +204,11 @@ export function deriveAppRuntimeSchema(
   const entities = model?.datamodel?.entities ?? [];
   if (pages.length === 0 || entities.length === 0) return null;
 
-  const entityById = new Map(entities.map((e) => [e.id, e] as const));
+  const entityById = new Map(entities.map(e => [e.id, e] as const));
   const workflowLinkedPages = new Set(
     (model?.appbundle?.pageBindings ?? [])
-      .filter((b) => b.workflowRef)
-      .map((b) => b.pageRef)
+      .filter(b => b.workflowRef)
+      .map(b => b.pageRef)
   );
 
   // AIGC 能力按 outputField 所属实体归组：outputField="entity.field" 且
@@ -184,7 +220,7 @@ export function deriveAppRuntimeSchema(
     if (dot <= 0) continue;
     const entityId = out.slice(0, dot);
     const fieldId = out.slice(dot + 1);
-    const field = entityById.get(entityId)?.fields?.find((f) => f.id === fieldId);
+    const field = entityById.get(entityId)?.fields?.find(f => f.id === fieldId);
     if (!field) continue;
     const list = aiActionsByEntity.get(entityId) ?? [];
     list.push({
@@ -214,10 +250,53 @@ export function deriveAppRuntimeSchema(
     // 表单项 = 页面绑定到主实体的字段；一个都对不上时回退实体全字段。
     const boundFieldIds = new Set(
       (page.fieldBindings ?? [])
-        .filter((b) => entityId && b.startsWith(`${entityId}.`))
-        .map((b) => b.slice((entityId as string).length + 1))
+        .filter(b => entityId && b.startsWith(`${entityId}.`))
+        .map(b => b.slice((entityId as string).length + 1))
     );
-    const boundFields = allFields.filter((f) => boundFieldIds.has(f.id));
+    const boundFields = allFields.filter(f => boundFieldIds.has(f.id));
+
+    // 页面级 KPI 统计卡：count 的 entity、sum/avg 的指标字段必须真实存在
+    //（悬空的丢弃——门禁负责标红，运行应用不渲染坏卡）；format 未知回退 number。
+    const stats: AppPageStatSchema[] = [];
+    for (const [si, stat] of (page.stats ?? []).entries()) {
+      const sid = stat.id || `stat-${id}-${si}`;
+      const label = stat.name || stat.id || `指标 ${si + 1}`;
+      const rawFormat = String(stat.format ?? "number");
+      const format =
+        rawFormat === "money" || rawFormat === "percent" ? rawFormat : "number";
+      const rawMetric = String(stat.metric ?? "count");
+      if (rawMetric === "count") {
+        const statEntityId = String(stat.entity ?? "");
+        if (!entityById.has(statEntityId)) continue;
+        stats.push({
+          id: sid,
+          label,
+          entityId: statEntityId,
+          metric: "count",
+          format,
+        });
+        continue;
+      }
+      if (rawMetric.startsWith("sum:") || rawMetric.startsWith("avg:")) {
+        const mref = rawMetric.slice(4);
+        const mdot = mref.indexOf(".");
+        if (mdot <= 0) continue;
+        const mEntityId = mref.slice(0, mdot);
+        const mField = entityById
+          .get(mEntityId)
+          ?.fields?.find(f => f.id === mref.slice(mdot + 1));
+        if (!mField) continue;
+        stats.push({
+          id: sid,
+          label,
+          // 数据在指标字段所属实体——从那里取行（声明的 entity 只圈定 count）
+          entityId: mEntityId,
+          metric: rawMetric.startsWith("sum:") ? "sum" : "avg",
+          metricFieldId: mField.id,
+          format,
+        });
+      }
+    }
 
     // 页面级图表：维度/求和字段必须真实存在（悬空的丢弃——门禁负责标红，
     // 运行应用不渲染坏图）；type 未知回退 bar（形态降级，不丢声明）。
@@ -229,7 +308,7 @@ export function deriveAppRuntimeSchema(
       const dimEntityId = dim.slice(0, dot);
       const dimFieldId = dim.slice(dot + 1);
       const dimEntity = entityById.get(dimEntityId);
-      const dimField = dimEntity?.fields?.find((f) => f.id === dimFieldId);
+      const dimField = dimEntity?.fields?.find(f => f.id === dimFieldId);
       if (!dimField) continue;
       const rawMetric = String(chart.metric ?? "count");
       let metric: "count" | "sum" = "count";
@@ -240,7 +319,7 @@ export function deriveAppRuntimeSchema(
         const mdot = mref.indexOf(".");
         const mField =
           mdot > 0 && mref.slice(0, mdot) === dimEntityId
-            ? dimEntity?.fields?.find((f) => f.id === mref.slice(mdot + 1))
+            ? dimEntity?.fields?.find(f => f.id === mref.slice(mdot + 1))
             : undefined;
         if (!mField) continue;
         metric = "sum";
@@ -269,25 +348,42 @@ export function deriveAppRuntimeSchema(
       detailFields: allFields,
       formFields: boundFields.length > 0 ? boundFields : allFields,
       actions: (page.actionPermissions ?? []).map(String),
-      workflowLinked: workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
-      aiActions: entityId ? aiActionsByEntity.get(entityId) ?? [] : [],
+      workflowLinked:
+        workflowLinkedPages.has(id) || workflowLinkedPages.has(page.id ?? ""),
+      aiActions: entityId ? (aiActionsByEntity.get(entityId) ?? []) : [],
+      stats,
       charts,
     };
   });
 
   // 工作台统计卡：前两个实体行数 + 审批实例两项，凑不足 4 张时补角色数。
-  const stats: AppStatCardSchema[] = entities.slice(0, 2).map((e) => ({
+  const stats: AppStatCardSchema[] = entities.slice(0, 2).map(e => ({
     id: `stat-entity-${e.id}`,
     label: `${e.name || e.id}`,
     source: `entity:${e.id}`,
     suffix: "条",
   }));
   stats.push(
-    { id: "stat-running", label: "进行中审批", source: "instances:running", suffix: "件" },
-    { id: "stat-total", label: "累计流程实例", source: "instances:total", suffix: "件" }
+    {
+      id: "stat-running",
+      label: "进行中审批",
+      source: "instances:running",
+      suffix: "件",
+    },
+    {
+      id: "stat-total",
+      label: "累计流程实例",
+      source: "instances:total",
+      suffix: "件",
+    }
   );
   if (stats.length < 4) {
-    stats.push({ id: "stat-roles", label: "系统角色", source: "roles", suffix: "个" });
+    stats.push({
+      id: "stat-roles",
+      label: "系统角色",
+      source: "roles",
+      suffix: "个",
+    });
   }
 
   const home: AppHomeSchema = {
@@ -295,8 +391,18 @@ export function deriveAppRuntimeSchema(
     title: "工作台",
     stats: stats.slice(0, 4),
     charts: [
-      { id: "chart-entities", type: "bar", label: "各实体数据量", source: "entities:rowcount" },
-      { id: "chart-instances", type: "donut", label: "审批状态分布", source: "instances:status" },
+      {
+        id: "chart-entities",
+        type: "bar",
+        label: "各实体数据量",
+        source: "entities:rowcount",
+      },
+      {
+        id: "chart-instances",
+        type: "donut",
+        label: "审批状态分布",
+        source: "instances:status",
+      },
     ],
   };
 
@@ -306,7 +412,11 @@ export function deriveAppRuntimeSchema(
     home,
     menus: [
       { id: "menu-home", label: home.title, pageId: home.id },
-      ...pageSchemas.map((p) => ({ id: `menu-${p.id}`, label: p.title, pageId: p.id })),
+      ...pageSchemas.map(p => ({
+        id: `menu-${p.id}`,
+        label: p.title,
+        pageId: p.id,
+      })),
     ],
     pages: pageSchemas,
   };

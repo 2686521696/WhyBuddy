@@ -40,6 +40,7 @@ import {
   message,
   Popover,
   Checkbox,
+  Rate,
 } from "antd";
 import {
   DashboardOutlined,
@@ -73,7 +74,9 @@ import {
 // 首个带图表声明的页面打开时才加载。
 const LazyEchartsChart = React.lazy(() => import("./EchartsChart"));
 // 手机档 UI 基建（antd-mobile）同样独立 chunk：切到手机设备档才加载。
-const LazyPhonePageList = React.lazy(() => import("./phone-mobile/PhonePageList"));
+const LazyPhonePageList = React.lazy(
+  () => import("./phone-mobile/PhonePageList")
+);
 const LazyPhoneTabBar = React.lazy(() => import("./phone-mobile/PhoneTabBar"));
 import {
   type RuntimeState,
@@ -96,8 +99,14 @@ import {
   notifyRoleChanged,
   subscribeRoleChanged,
 } from "./runtime-persistence";
-import { accessForRole, pageAccessForRole, type PageAccess } from "./rbac-preview";
+import {
+  accessForRole,
+  pageAccessForRole,
+  type PageAccess,
+} from "./rbac-preview";
 import { buildColumnFeatures } from "./table-features";
+import { FieldValue } from "./FieldValue";
+import type { AppPageStatSchema } from "./app-runtime-schema";
 import type { XrayTarget } from "../XrayPanel";
 
 // 多端设计分辨率（固定渲染 + 等比缩放）
@@ -109,7 +118,10 @@ const DEVICE_SPECS = {
 type DeviceKey = keyof typeof DEVICE_SPECS;
 
 /** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
-function useScaleToFit(designW: number, designH: number): {
+function useScaleToFit(
+  designW: number,
+  designH: number
+): {
   ref: React.RefObject<HTMLDivElement | null>;
   scale: number;
 } {
@@ -132,7 +144,12 @@ function useScaleToFit(designW: number, designH: number): {
   return { ref, scale };
 }
 
-const MENU_ICONS = [TableOutlined, ProfileOutlined, FormOutlined, AppstoreOutlined];
+const MENU_ICONS = [
+  TableOutlined,
+  ProfileOutlined,
+  FormOutlined,
+  AppstoreOutlined,
+];
 
 // --- 图表（dataviz 规范：墨色文字、细标记、状态色已校验） --------------------
 const INK = { label: "#595959", value: "#262626", faint: "#bfbfbf" };
@@ -141,7 +158,6 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   completed: { color: "#52c41a", label: "已完成" },
   rejected: { color: "#ff4d4f", label: "已驳回" },
 };
-
 
 function FieldInput({
   field,
@@ -158,32 +174,74 @@ function FieldInput({
   onChange: (v: unknown) => void;
 }) {
   if (field.type === "number") {
+    // format 富化（加厚 schema 一期）：星级用 Rate；金额/百分比/进度/评分
+    // 给量纲前后缀与合理边界——录入界面直接长出字段语义。
+    if (field.format === "rating") {
+      return (
+        <Rate
+          allowHalf
+          value={Number(value) || 0}
+          onChange={v => onChange(v)}
+        />
+      );
+    }
+    const bounded =
+      field.format === "percent" ||
+      field.format === "progress" ||
+      field.format === "score";
     return (
       <InputNumber
         style={{ width: "100%" }}
         value={value as number | undefined}
-        onChange={(v) => onChange(v)}
+        onChange={v => onChange(v)}
         placeholder={field.label}
+        prefix={field.format === "money" ? "¥" : undefined}
+        suffix={
+          field.format === "percent" || field.format === "progress"
+            ? "%"
+            : undefined
+        }
+        min={bounded ? 0 : undefined}
+        max={bounded ? 100 : undefined}
       />
     );
   }
   if (field.type === "date" || field.type === "datetime") {
     return (
-      <Input type={field.type === "date" ? "date" : "datetime-local"} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        type={field.type === "date" ? "date" : "datetime-local"}
+        value={(value as string) ?? ""}
+        onChange={e => onChange(e.target.value)}
+      />
     );
   }
   if (field.type === "enum") {
-    // 已有历史取值 → 真枚举下拉（仍允许输入新值）；无数据时保持自由输入
+    // 声明取值（加厚 schema 一期）→ 严格下拉（schema 即真相，不再自由输入）
+    if (field.options && field.options.length > 0) {
+      return (
+        <Select
+          style={{ width: "100%" }}
+          value={(value as string) || undefined}
+          onChange={v => onChange(v ?? "")}
+          options={field.options.map(o => ({ value: o.id, label: o.label }))}
+          placeholder={`选择${field.label}`}
+          allowClear
+        />
+      );
+    }
+    // 无声明：已有历史取值 → 真枚举下拉（仍允许输入新值）；无数据时保持自由输入
     return (
       <Select
         style={{ width: "100%" }}
         mode="tags"
         maxCount={1}
         value={value ? [String(value)] : []}
-        onChange={(v) => onChange(v.at(-1) ?? "")}
-        options={enumOptions.map((o) => ({ value: o, label: o }))}
+        onChange={v => onChange(v.at(-1) ?? "")}
+        options={enumOptions.map(o => ({ value: o, label: o }))}
         placeholder={
-          enumOptions.length > 0 ? `选择或输入${field.label}` : `${field.label}（输入后回车）`
+          enumOptions.length > 0
+            ? `选择或输入${field.label}`
+            : `${field.label}（输入后回车）`
         }
       />
     );
@@ -193,8 +251,8 @@ function FieldInput({
       <Select
         style={{ width: "100%" }}
         value={(value as string) || undefined}
-        onChange={(v) => onChange(v)}
-        options={refRows.map((r) => ({ value: r.id, label: r.label }))}
+        onChange={v => onChange(v)}
+        options={refRows.map(r => ({ value: r.id, label: r.label }))}
         placeholder={`选择${field.label}`}
         showSearch
         optionFilterProp="label"
@@ -206,19 +264,49 @@ function FieldInput({
     return (
       <Input.TextArea
         value={(value as string) ?? ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={field.label}
         autoSize={{ minRows: 2, maxRows: 5 }}
       />
     );
   }
-  return <Input value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={field.label} />;
+  return (
+    <Input
+      value={(value as string) ?? ""}
+      onChange={e => onChange(e.target.value)}
+      placeholder={field.label}
+    />
+  );
+}
+
+/**
+ * 页面级 KPI 卡取值（加厚 schema 一期）：对着运行时行数据求值声明的
+ * metric。sum/avg 只统计能解析成数值的行（脏值跳过，不猜）；
+ * avg 无可统计行时返回 null——渲染层如实显示"—"，不冒充 0。
+ */
+function pageStatValue(
+  stat: AppPageStatSchema,
+  rows: Array<{ values: Record<string, unknown> }>
+): number | null {
+  if (stat.metric === "count") return rows.length;
+  const nums = rows
+    .map(r => Number(r.values[stat.metricFieldId ?? ""]))
+    .filter(n => Number.isFinite(n));
+  if (stat.metric === "sum") return nums.reduce((a, b) => a + b, 0);
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
 /** 工作台统计卡取值：对着运行时状态求值 schema 声明的 source。 */
-function statValue(state: RuntimeState, schema: AppRuntimeSchema, source: string): number {
-  if (source.startsWith("entity:")) return (state.entities[source.slice("entity:".length)] ?? []).length;
-  if (source === "instances:running") return state.instances.filter((i) => i.status === "running").length;
+function statValue(
+  state: RuntimeState,
+  schema: AppRuntimeSchema,
+  source: string
+): number {
+  if (source.startsWith("entity:"))
+    return (state.entities[source.slice("entity:".length)] ?? []).length;
+  if (source === "instances:running")
+    return state.instances.filter(i => i.status === "running").length;
   if (source === "instances:total") return state.instances.length;
   if (source === "roles") return schema.roles.length;
   return 0;
@@ -242,7 +330,9 @@ export function AppRuntimeScreen({
   onXrayTarget?: (target: XrayTarget | null) => void;
 }) {
   // 表格列设置（表格自带能力）：按 pageId 记用户勾选的列；undefined = 默认列
-  const [tableColPrefs, setTableColPrefs] = React.useState<Record<string, string[]>>({});
+  const [tableColPrefs, setTableColPrefs] = React.useState<
+    Record<string, string[]>
+  >({});
 
   const schema = React.useMemo(
     () => deriveAppRuntimeSchema(model, appTitle || "推演应用"),
@@ -258,11 +348,18 @@ export function AppRuntimeScreen({
     () => loadRuntimeRole(sessionId) ?? schema?.roles[0]
   );
   const [formOpen, setFormOpen] = React.useState(false);
-  const [formValues, setFormValues] = React.useState<Record<string, unknown>>({});
+  const [formValues, setFormValues] = React.useState<Record<string, unknown>>(
+    {}
+  );
   const [detailRow, setDetailRow] = React.useState<RuntimeRow | null>(null);
   // AI 生成：正在跑的能力 id + 最近一次失败诊断（fail-closed，不冒充输出）
-  const [aiRunningCapId, setAiRunningCapId] = React.useState<string | null>(null);
-  const [aiError, setAiError] = React.useState<{ code: string; detail: string } | null>(null);
+  const [aiRunningCapId, setAiRunningCapId] = React.useState<string | null>(
+    null
+  );
+  const [aiError, setAiError] = React.useState<{
+    code: string;
+    detail: string;
+  } | null>(null);
   const spec = DEVICE_SPECS[device];
   const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h);
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
@@ -270,7 +367,10 @@ export function AppRuntimeScreen({
 
   // 与工作流试运行面共享一份状态：对方变更时重载
   React.useEffect(
-    () => subscribeRuntimeChanged(sessionId, () => setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))),
+    () =>
+      subscribeRuntimeChanged(sessionId, () =>
+        setState(loadRuntimeState(sessionId) ?? initRuntimeState(model))
+      ),
     [sessionId, model]
   );
   React.useEffect(
@@ -292,7 +392,10 @@ export function AppRuntimeScreen({
   const pageAccess = React.useMemo(() => {
     const map = new Map<string, PageAccess>();
     if (!schema) return map;
-    for (const a of pageAccessForRole(schema.pages, accessForRole(model, role))) {
+    for (const a of pageAccessForRole(
+      schema.pages,
+      accessForRole(model, role)
+    )) {
       map.set(a.pageId, a);
     }
     return map;
@@ -300,7 +403,10 @@ export function AppRuntimeScreen({
 
   // 当前页对该角色不可见时回工作台（角色切换的直观反馈）
   React.useEffect(() => {
-    if (activePageId !== "home" && pageAccess.get(activePageId)?.visible === false) {
+    if (
+      activePageId !== "home" &&
+      pageAccess.get(activePageId)?.visible === false
+    ) {
       setActivePageId("home");
     }
   }, [activePageId, pageAccess]);
@@ -323,9 +429,11 @@ export function AppRuntimeScreen({
   const isHome = activePageId === "home";
   const page: AppPageSchema | null = isHome
     ? null
-    : schema.pages.find((p) => p.id === activePageId) ?? schema.pages[0] ?? null;
-  const currentTitle = isHome ? schema.home.title : page?.title ?? "";
-  const rows = page?.entityId ? state.entities[page.entityId] ?? [] : [];
+    : (schema.pages.find(p => p.id === activePageId) ??
+      schema.pages[0] ??
+      null);
+  const currentTitle = isHome ? schema.home.title : (page?.title ?? "");
+  const rows = page?.entityId ? (state.entities[page.entityId] ?? []) : [];
 
   const apply = (next: RuntimeState) => {
     setState(next);
@@ -345,7 +453,7 @@ export function AppRuntimeScreen({
 
   const refRowsFor = (field: AppFormFieldSchema) => {
     if (!field.refEntityId) return [];
-    return (state.entities[field.refEntityId] ?? []).map((r) => ({
+    return (state.entities[field.refEntityId] ?? []).map(r => ({
       id: r.id,
       label: String(Object.values(r.values)[0] ?? r.id),
     }));
@@ -358,7 +466,12 @@ export function AppRuntimeScreen({
       message.warning(problems.join("；"));
       return;
     }
-    const { state: next } = addRow(state, page.entityId, formValues, new Date().toISOString());
+    const { state: next } = addRow(
+      state,
+      page.entityId,
+      formValues,
+      new Date().toISOString()
+    );
     apply(next);
     setFormOpen(false);
     setFormValues({});
@@ -388,15 +501,22 @@ export function AppRuntimeScreen({
         }),
       });
       const body = res.ok
-        ? ((await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string })
+        ? ((await res.json()) as {
+            ok: boolean;
+            output?: string;
+            code?: string;
+            detail?: string;
+          })
         : { ok: false, code: `HTTP_${res.status}`, detail: await res.text() };
       if (!body.ok || body.output === undefined) {
         setAiError({ code: body.code ?? "UNKNOWN", detail: body.detail ?? "" });
         return;
       }
-      const next = updateRow(state, entityId, rowId, { [action.outputFieldId]: body.output });
+      const next = updateRow(state, entityId, rowId, {
+        [action.outputFieldId]: body.output,
+      });
       apply(next);
-      const updated = (next.entities[entityId] ?? []).find((r) => r.id === rowId);
+      const updated = (next.entities[entityId] ?? []).find(r => r.id === rowId);
       if (updated) setDetailRow(updated);
       message.success(`AI 已写回「${action.outputLabel}」`);
     } catch (e) {
@@ -417,20 +537,27 @@ export function AppRuntimeScreen({
     );
     if (instance) {
       apply(next);
-      message.success(`已提交审批：${instance.title}（到 Workflow 试运行里推进）`);
+      message.success(
+        `已提交审批：${instance.title}（到 Workflow 试运行里推进）`
+      );
     }
   };
 
   const rowActions = (row: RuntimeRow) => (
     <Space size="small">
       {page?.workflowLinked && (
-        <span {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}>
+        <span
+          {...probe({ kind: "workflow", label: "提交审批", pageId: page.id })}
+        >
           <Button
             size="small"
             type="link"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
-              handleSubmitToWorkflow(row.id, String(Object.values(row.values)[0] ?? row.id));
+              handleSubmitToWorkflow(
+                row.id,
+                String(Object.values(row.values)[0] ?? row.id)
+              );
             }}
           >
             提交审批
@@ -441,7 +568,7 @@ export function AppRuntimeScreen({
         size="small"
         type="link"
         danger
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           apply(deleteRow(state, page!.entityId!, row.id));
         }}
@@ -455,10 +582,10 @@ export function AppRuntimeScreen({
   // 每列自带排序（按字段类型）与筛选（enum/低基数真实取值）——表格自带能力，不走设计面板。
   const chosenColIds = page ? tableColPrefs[page.id] : undefined;
   const shownColumns = chosenColIds
-    ? (page?.detailFields ?? []).filter((f) => chosenColIds.includes(f.id))
-    : page?.columns ?? [];
+    ? (page?.detailFields ?? []).filter(f => chosenColIds.includes(f.id))
+    : (page?.columns ?? []);
   const columns = [
-    ...shownColumns.map((c) => ({
+    ...shownColumns.map(c => ({
       title: c.label,
       dataIndex: ["values", c.id],
       key: c.id,
@@ -466,9 +593,15 @@ export function AppRuntimeScreen({
       ...buildColumnFeatures(c, rows),
       onHeaderCell: () =>
         page?.entityId
-          ? probe({ kind: "field", entityId: page.entityId, fieldId: c.id, label: c.label })
+          ? probe({
+              kind: "field",
+              entityId: page.entityId,
+              fieldId: c.id,
+              label: c.label,
+            })
           : {},
-      render: (v: unknown) => (v === undefined || v === "" ? <span style={{ color: "#bbb" }}>—</span> : String(v)),
+      // 字段语义渲染（加厚 schema 一期）：enum tone 徽标 / 金额 / 进度条 / 星级 / 脱敏
+      render: (v: unknown) => <FieldValue field={c} value={v} />,
     })),
     {
       title: "操作",
@@ -484,21 +617,33 @@ export function AppRuntimeScreen({
       trigger="click"
       placement="bottomRight"
       content={
-        <div style={{ maxHeight: 260, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-          {page.detailFields.map((f) => {
-            const current = tableColPrefs[page.id] ?? page.columns.map((c) => c.id);
+        <div
+          style={{
+            maxHeight: 260,
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {page.detailFields.map(f => {
+            const current =
+              tableColPrefs[page.id] ?? page.columns.map(c => c.id);
             const checked = current.includes(f.id);
             return (
               <Checkbox
                 key={f.id}
                 checked={checked}
-                onChange={(e) => {
+                onChange={e => {
                   const next = e.target.checked
                     ? [...current, f.id]
-                    : current.filter((id) => id !== f.id);
+                    : current.filter(id => id !== f.id);
                   // 保实体字段声明序 + 至少保留一列
-                  const ordered = page.detailFields.map((d) => d.id).filter((id) => next.includes(id));
-                  if (ordered.length > 0) setTableColPrefs((prev) => ({ ...prev, [page.id]: ordered }));
+                  const ordered = page.detailFields
+                    .map(d => d.id)
+                    .filter(id => next.includes(id));
+                  if (ordered.length > 0)
+                    setTableColPrefs(prev => ({ ...prev, [page.id]: ordered }));
                 }}
               >
                 {f.label}
@@ -508,7 +653,13 @@ export function AppRuntimeScreen({
         </div>
       }
     >
-      <Button size="small" type="text" icon={<SettingOutlined />} title="列设置" data-testid="app-table-col-settings" />
+      <Button
+        size="small"
+        type="text"
+        icon={<SettingOutlined />}
+        title="列设置"
+        data-testid="app-table-col-settings"
+      />
     </Popover>
   );
 
@@ -521,7 +672,7 @@ export function AppRuntimeScreen({
     let ariaLabel = chart.label;
     if (chart.source === "entities:rowcount") {
       option = buildEntityRowcountOption(
-        (model.datamodel?.entities ?? []).slice(0, 6).map((e) => ({
+        (model.datamodel?.entities ?? []).slice(0, 6).map(e => ({
           label: e.name || e.id,
           value: (state.entities[e.id] ?? []).length,
         }))
@@ -529,20 +680,39 @@ export function AppRuntimeScreen({
       emptyHint = "暂无数据 — 到业务页面「新建」写入";
     } else if (chart.source === "instances:status") {
       const counts: Record<string, number> = {};
-      for (const inst of state.instances) counts[inst.status] = (counts[inst.status] ?? 0) + 1;
+      for (const inst of state.instances)
+        counts[inst.status] = (counts[inst.status] ?? 0) + 1;
       option = buildInstanceStatusOption(counts);
       emptyHint = "暂无流程实例 — 到业务页面「提交审批」发起";
     }
     return (
-      <Card key={chart.id} title={chart.label} size="small" style={{ flex: 1, minWidth: 0 }} data-testid={`app-runtime-${chart.id}`}>
+      <Card
+        key={chart.id}
+        title={chart.label}
+        size="small"
+        style={{ flex: 1, minWidth: 0 }}
+        data-testid={`app-runtime-${chart.id}`}
+      >
         {option ? (
           <React.Suspense
-            fallback={<div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>图表加载中…</div>}
+            fallback={
+              <div
+                style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}
+              >
+                图表加载中…
+              </div>
+            }
           >
-            <LazyEchartsChart option={option} height={168} ariaLabel={ariaLabel} />
+            <LazyEchartsChart
+              option={option}
+              height={168}
+              ariaLabel={ariaLabel}
+            />
           </React.Suspense>
         ) : (
-          <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>{emptyHint}</div>
+          <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+            {emptyHint}
+          </div>
         )}
       </Card>
     );
@@ -551,21 +721,46 @@ export function AppRuntimeScreen({
   const timelineCard = (
     <Card title="审批动态" size="small" style={{ flex: 1.2, minWidth: 0 }}>
       {recentInstances.length === 0 ? (
-        <div style={{ fontSize: 11, color: INK.faint }}>暂无流程实例 — 到业务页面「提交审批」发起</div>
+        <div style={{ fontSize: 11, color: INK.faint }}>
+          暂无流程实例 — 到业务页面「提交审批」发起
+        </div>
       ) : (
         <Timeline
-          items={recentInstances.map((inst) => {
+          items={recentInstances.map(inst => {
             const meta = STATUS_META[inst.status] ?? STATUS_META.running;
             return {
-              color: inst.status === "running" ? "blue" : inst.status === "completed" ? "green" : "red",
+              color:
+                inst.status === "running"
+                  ? "blue"
+                  : inst.status === "completed"
+                    ? "green"
+                    : "red",
               children: (
                 <div style={{ fontSize: 12 }}>
-                  <div style={{ color: INK.value, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div
+                    style={{
+                      color: INK.value,
+                      fontWeight: 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {inst.title}
                   </div>
                   <div style={{ color: INK.label, marginTop: 2 }}>
-                    {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
-                    <Tag style={{ marginLeft: 8 }} color={meta.color === "#1677ff" ? "processing" : inst.status === "completed" ? "success" : "error"}>
+                    {nodeById(model, inst.currentNodeId)?.name ??
+                      inst.currentNodeId}
+                    <Tag
+                      style={{ marginLeft: 8 }}
+                      color={
+                        meta.color === "#1677ff"
+                          ? "processing"
+                          : inst.status === "completed"
+                            ? "success"
+                            : "error"
+                      }
+                    >
                       {meta.label}
                     </Tag>
                   </div>
@@ -580,28 +775,61 @@ export function AppRuntimeScreen({
 
   const homeContent = (
     <>
-      <div style={{ display: isPhone ? "grid" : "flex", gridTemplateColumns: "1fr 1fr", gap: isPhone ? 8 : 16 }}>
-        {schema.home.stats.map((s) => (
-          <Card key={s.id} size="small" style={{ flex: 1 }} styles={{ body: { padding: isPhone ? "10px 14px" : "16px 20px" } }}>
-            <Statistic title={s.label} value={statValue(state, schema, s.source)} suffix={s.suffix} />
+      <div
+        style={{
+          display: isPhone ? "grid" : "flex",
+          gridTemplateColumns: "1fr 1fr",
+          gap: isPhone ? 8 : 16,
+        }}
+      >
+        {schema.home.stats.map(s => (
+          <Card
+            key={s.id}
+            size="small"
+            style={{ flex: 1 }}
+            styles={{ body: { padding: isPhone ? "10px 14px" : "16px 20px" } }}
+          >
+            <Statistic
+              title={s.label}
+              value={statValue(state, schema, s.source)}
+              suffix={s.suffix}
+            />
           </Card>
         ))}
       </div>
-      <div style={{ display: "flex", flexDirection: isPhone ? "column" : "row", gap: isPhone ? 8 : 16, marginTop: isPhone ? 8 : 16 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isPhone ? "column" : "row",
+          gap: isPhone ? 8 : 16,
+          marginTop: isPhone ? 8 : 16,
+        }}
+      >
         {schema.home.charts.map(chartCard)}
       </div>
-      <div style={{ display: "flex", flexDirection: isPhone ? "column" : "row", gap: isPhone ? 8 : 16, marginTop: isPhone ? 8 : 16 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isPhone ? "column" : "row",
+          gap: isPhone ? 8 : 16,
+          marginTop: isPhone ? 8 : 16,
+        }}
+      >
         {!isPhone && (
           <Card title="快速入口" size="small" style={{ flex: 1 }}>
             <Space wrap>
-              {schema.pages.map((p) => {
+              {schema.pages.map(p => {
                 const locked = pageAccess.get(p.id)?.visible === false;
                 return (
                   <Button
                     key={p.id}
                     icon={locked ? <LockOutlined /> : undefined}
                     disabled={locked}
-                    title={locked ? `当前角色（${role ?? "-"}）无本页权限` : undefined}
+                    title={
+                      locked
+                        ? `当前角色（${role ?? "-"}）无本页权限`
+                        : undefined
+                    }
                     onClick={() => setActivePageId(p.id)}
                   >
                     {p.title}
@@ -609,11 +837,11 @@ export function AppRuntimeScreen({
                 );
               })}
             </Space>
-            {[...pageAccess.values()].some((a) => !a.visible) && (
+            {[...pageAccess.values()].some(a => !a.visible) && (
               <div style={{ marginTop: 10, fontSize: 12, color: "#999" }}>
                 <LockOutlined /> 当前角色不可见{" "}
-                {[...pageAccess.values()].filter((a) => !a.visible).length} 个页面 —
-                右上角切换角色试试（RBAC 权限实时生效）
+                {[...pageAccess.values()].filter(a => !a.visible).length} 个页面
+                — 右上角切换角色试试（RBAC 权限实时生效）
               </div>
             )}
           </Card>
@@ -628,14 +856,23 @@ export function AppRuntimeScreen({
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <React.Suspense
         fallback={
-          <div style={{ textAlign: "center", fontSize: 12, color: INK.faint, padding: "24px 0" }}>
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: 12,
+              color: INK.faint,
+              padding: "24px 0",
+            }}
+          >
             移动端组件加载中…
           </div>
         }
       >
         <LazyPhonePageList
           rows={rows}
-          descFields={page.detailFields.slice(1, 4).map((f) => ({ id: f.id, label: f.label }))}
+          descFields={page.detailFields
+            .slice(1, 4)
+            .map(f => ({ id: f.id, label: f.label }))}
           createProbeProps={probe({
             kind: "action",
             label: "新建",
@@ -644,7 +881,10 @@ export function AppRuntimeScreen({
             granted: pageAccess.get(page.id)?.canCreate !== false,
             role,
           })}
-          canCreate={Boolean(page.entityId) && pageAccess.get(page.id)?.canCreate !== false}
+          canCreate={
+            Boolean(page.entityId) &&
+            pageAccess.get(page.id)?.canCreate !== false
+          }
           createLockedHint={
             pageAccess.get(page.id)?.canCreate === false
               ? `当前角色（${role ?? "-"}）无新建权限`
@@ -654,112 +894,163 @@ export function AppRuntimeScreen({
             setFormValues({});
             setFormOpen(true);
           }}
-          onOpenRow={(row) => setDetailRow(row as RuntimeRow)}
-          renderRowActions={(row) => rowActions(row as RuntimeRow)}
+          onOpenRow={row => setDetailRow(row as RuntimeRow)}
+          renderRowActions={row => rowActions(row as RuntimeRow)}
         />
       </React.Suspense>
     </div>
   );
 
   const detailInstances = detailRow
-    ? state.instances.filter((i) => i.entityRef?.rowId === detailRow.id)
+    ? state.instances.filter(i => i.entityRef?.rowId === detailRow.id)
     : [];
 
   // 详情内容块：桌面/手机走 Drawer，平板走右栏主从面板（同一 JSX 两处挂载）
   const detailBody = detailRow && page && (
-                <>
-                  <Descriptions
+    <>
+      <Descriptions
+        size="small"
+        column={1}
+        items={page.detailFields.map(f => ({
+          key: f.id,
+          label: page.entityId ? (
+            <span
+              {...probe({
+                kind: "field",
+                entityId: page.entityId,
+                fieldId: f.id,
+                label: f.label,
+              })}
+            >
+              {f.label}
+            </span>
+          ) : (
+            f.label
+          ),
+          children: <FieldValue field={f} value={detailRow.values[f.id]} />,
+        }))}
+      />
+      {page.aiActions.length > 0 && (
+        <>
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: 12,
+              fontWeight: 600,
+              color: INK.value,
+            }}
+          >
+            AI 能力 · {page.aiActions.length}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {page.aiActions.map(action => (
+              <div
+                key={action.capId}
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <span
+                  {...probe({
+                    kind: "ai",
+                    capId: action.capId,
+                    label: action.label,
+                  })}
+                >
+                  <Button
                     size="small"
-                    column={1}
-                    items={page.detailFields.map((f) => ({
-                      key: f.id,
-                      label: page.entityId ? (
-                        <span {...probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })}>
-                          {f.label}
-                        </span>
-                      ) : (
-                        f.label
-                      ),
-                      children:
-                        detailRow.values[f.id] === undefined || detailRow.values[f.id] === ""
-                          ? "—"
-                          : String(detailRow.values[f.id]),
-                    }))}
-                  />
-                  {page.aiActions.length > 0 && (
-                    <>
-                      <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
-                        AI 能力 · {page.aiActions.length}
-                      </div>
-                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                        {page.aiActions.map((action) => (
-                          <div key={action.capId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span {...probe({ kind: "ai", capId: action.capId, label: action.label })}>
-                              <Button
-                                size="small"
-                                type="primary"
-                                ghost
-                                data-testid={`app-ai-action-${action.capId}`}
-                                loading={aiRunningCapId === action.capId}
-                                disabled={aiRunningCapId !== null && aiRunningCapId !== action.capId}
-                                onClick={() => runAiAction(action)}
-                              >
-                                ✨ {action.label}
-                              </Button>
-                            </span>
-                            <span style={{ fontSize: 11, color: INK.faint }}>
-                              → 写回「{action.outputLabel}」
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {aiRunningCapId && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
-                          真 LLM 生成中……（与五系统生成同一通道）
-                        </div>
-                      )}
-                      {aiError && (
-                        <div
-                          data-testid="app-ai-error"
-                          style={{
-                            marginTop: 8,
-                            padding: "6px 10px",
-                            borderRadius: 8,
-                            background: "#fff2f0",
-                            border: "1px solid #ffccc7",
-                            fontSize: 11,
-                            color: "#cf1322",
-                          }}
-                        >
-                          <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{aiError.code}</span>
-                          <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
+                    type="primary"
+                    ghost
+                    data-testid={`app-ai-action-${action.capId}`}
+                    loading={aiRunningCapId === action.capId}
+                    disabled={
+                      aiRunningCapId !== null && aiRunningCapId !== action.capId
+                    }
+                    onClick={() => runAiAction(action)}
+                  >
+                    ✨ {action.label}
+                  </Button>
+                </span>
+                <span style={{ fontSize: 11, color: INK.faint }}>
+                  → 写回「{action.outputLabel}」
+                </span>
+              </div>
+            ))}
+          </div>
+          {aiRunningCapId && (
+            <div style={{ marginTop: 8, fontSize: 11, color: INK.faint }}>
+              真 LLM 生成中……（与五系统生成同一通道）
+            </div>
+          )}
+          {aiError && (
+            <div
+              data-testid="app-ai-error"
+              style={{
+                marginTop: 8,
+                padding: "6px 10px",
+                borderRadius: 8,
+                background: "#fff2f0",
+                border: "1px solid #ffccc7",
+                fontSize: 11,
+                color: "#cf1322",
+              }}
+            >
+              <span style={{ fontFamily: "monospace", fontWeight: 600 }}>
+                {aiError.code}
+              </span>
+              <span style={{ marginLeft: 6 }}>{aiError.detail}</span>
+            </div>
+          )}
+        </>
+      )}
 
-                  <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: INK.value }}>
-                    关联审批实例 · {detailInstances.length}
-                  </div>
-                  {detailInstances.length === 0 ? (
-                    <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
-                      本行尚未提交审批
-                    </div>
-                  ) : (
-                    detailInstances.map((inst) => {
-                      const meta = STATUS_META[inst.status] ?? STATUS_META.running;
-                      return (
-                        <div key={inst.id} style={{ marginTop: 8, fontSize: 12, color: INK.label }}>
-                          {inst.title} · {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
-                          <Tag style={{ marginLeft: 8 }} color={inst.status === "running" ? "processing" : inst.status === "completed" ? "success" : "error"}>
-                            {meta.label}
-                          </Tag>
-                        </div>
-                      );
-                    })
-                  )}
-                </>
-              );
+      <div
+        style={{
+          marginTop: 16,
+          fontSize: 12,
+          fontWeight: 600,
+          color: INK.value,
+        }}
+      >
+        关联审批实例 · {detailInstances.length}
+      </div>
+      {detailInstances.length === 0 ? (
+        <div style={{ fontSize: 12, color: INK.faint, marginTop: 6 }}>
+          本行尚未提交审批
+        </div>
+      ) : (
+        detailInstances.map(inst => {
+          const meta = STATUS_META[inst.status] ?? STATUS_META.running;
+          return (
+            <div
+              key={inst.id}
+              style={{ marginTop: 8, fontSize: 12, color: INK.label }}
+            >
+              {inst.title} ·{" "}
+              {nodeById(model, inst.currentNodeId)?.name ?? inst.currentNodeId}
+              <Tag
+                style={{ marginLeft: 8 }}
+                color={
+                  inst.status === "running"
+                    ? "processing"
+                    : inst.status === "completed"
+                      ? "success"
+                      : "error"
+                }
+              >
+                {meta.label}
+              </Tag>
+            </div>
+          );
+        })
+      )}
+    </>
+  );
 
   const defaultPageContent = page && (
     <Card
@@ -767,7 +1058,7 @@ export function AppRuntimeScreen({
       title={page.title}
       extra={
         <Space size="small">
-          {page.actions.slice(0, 3).map((a) => (
+          {page.actions.slice(0, 3).map(a => (
             <Tag key={a} color="blue" style={{ marginInlineEnd: 0 }}>
               {a}
             </Tag>
@@ -785,12 +1076,20 @@ export function AppRuntimeScreen({
           >
             <Button
               type="primary"
-              icon={pageAccess.get(page.id)?.canCreate === false ? <LockOutlined /> : <PlusOutlined />}
+              icon={
+                pageAccess.get(page.id)?.canCreate === false ? (
+                  <LockOutlined />
+                ) : (
+                  <PlusOutlined />
+                )
+              }
               onClick={() => {
                 setFormValues({});
                 setFormOpen(true);
               }}
-              disabled={!page.entityId || pageAccess.get(page.id)?.canCreate === false}
+              disabled={
+                !page.entityId || pageAccess.get(page.id)?.canCreate === false
+              }
               title={
                 pageAccess.get(page.id)?.canCreate === false
                   ? `当前角色（${role ?? "-"}）未持有 ${pageAccess.get(page.id)?.createPermission ?? ""}`
@@ -804,8 +1103,54 @@ export function AppRuntimeScreen({
         </Space>
       }
     >
+      {page.stats.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 12,
+            flexWrap: "wrap",
+          }}
+          data-testid="app-runtime-page-stats"
+        >
+          {page.stats.map(stat => {
+            const v = pageStatValue(stat, state.entities[stat.entityId] ?? []);
+            return (
+              <Card
+                key={stat.id}
+                size="small"
+                style={{ flex: 1, minWidth: 140 }}
+                styles={{ body: { padding: "12px 16px" } }}
+                data-testid={`app-runtime-page-stat-${stat.id}`}
+              >
+                {v === null ? (
+                  <Statistic title={stat.label} value="—" />
+                ) : (
+                  <Statistic
+                    title={stat.label}
+                    value={v}
+                    precision={
+                      Number.isInteger(v) ? 0 : stat.format === "money" ? 2 : 1
+                    }
+                    prefix={stat.format === "money" ? "¥" : undefined}
+                    suffix={stat.format === "percent" ? "%" : undefined}
+                  />
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
       {page.charts.length > 0 && (
-        <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }} data-testid="app-runtime-page-charts">
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 12,
+            flexWrap: "wrap",
+          }}
+          data-testid="app-runtime-page-charts"
+        >
           {page.charts.map((chart: AppPageChartSchema) => {
             const chartRows = state.entities[chart.entityId] ?? [];
             const option = buildEchartsOption(chart, chartRows);
@@ -819,7 +1164,17 @@ export function AppRuntimeScreen({
               >
                 {option ? (
                   <React.Suspense
-                    fallback={<div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>图表加载中…</div>}
+                    fallback={
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: INK.faint,
+                          padding: "16px 0",
+                        }}
+                      >
+                        图表加载中…
+                      </div>
+                    }
                   >
                     <LazyEchartsChart
                       option={option}
@@ -828,7 +1183,13 @@ export function AppRuntimeScreen({
                     />
                   </React.Suspense>
                 ) : (
-                  <div style={{ fontSize: 11, color: INK.faint, padding: "16px 0" }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: INK.faint,
+                      padding: "16px 0",
+                    }}
+                  >
                     暂无数据 — 写入「{chart.dimensionLabel}」后自动出图
                   </div>
                 )}
@@ -839,16 +1200,30 @@ export function AppRuntimeScreen({
       )}
       {isTablet ? (
         // 平板范式：紧凑双栏（iPad 式主从视图）——左列表右详情，详情不走 Drawer
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }} data-testid="app-runtime-tablet-split">
+        <div
+          style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+          data-testid="app-runtime-tablet-split"
+        >
           <div style={{ flex: 3, minWidth: 0 }}>
             <Table
               size="small"
               rowKey="id"
               // 双栏下收窄列表：最多 4 个数据列 + 操作列（字段少时不重复操作列）
-              columns={columns.slice(0, Math.min(4, columns.length - 1)).concat(columns.slice(-1)) as any}
+              columns={
+                columns
+                  .slice(0, Math.min(4, columns.length - 1))
+                  .concat(columns.slice(-1)) as any
+              }
               dataSource={rows}
-              onRow={(row) => ({ onClick: () => setDetailRow(row as RuntimeRow), style: { cursor: "pointer" } })}
-              rowClassName={(row) => ((row as RuntimeRow).id === detailRow?.id ? "ant-table-row-selected" : "")}
+              onRow={row => ({
+                onClick: () => setDetailRow(row as RuntimeRow),
+                style: { cursor: "pointer" },
+              })}
+              rowClassName={row =>
+                (row as RuntimeRow).id === detailRow?.id
+                  ? "ant-table-row-selected"
+                  : ""
+              }
               pagination={rows.length > 10 ? { pageSize: 10 } : false}
               locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
             />
@@ -862,7 +1237,14 @@ export function AppRuntimeScreen({
             {detailRow ? (
               detailBody
             ) : (
-              <div style={{ fontSize: 12, color: INK.faint, padding: "24px 0", textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: INK.faint,
+                  padding: "24px 0",
+                  textAlign: "center",
+                }}
+              >
                 点击左侧行查看详情与 AI 能力
               </div>
             )}
@@ -874,7 +1256,10 @@ export function AppRuntimeScreen({
           rowKey="id"
           columns={columns as any}
           dataSource={rows}
-          onRow={(row) => ({ onClick: () => setDetailRow(row as RuntimeRow), style: { cursor: "pointer" } })}
+          onRow={row => ({
+            onClick: () => setDetailRow(row as RuntimeRow),
+            style: { cursor: "pointer" },
+          })}
           pagination={rows.length > 8 ? { pageSize: 8 } : false}
           locale={{ emptyText: "暂无数据 — 点「新建」写入第一条真实数据" }}
         />
@@ -887,7 +1272,15 @@ export function AppRuntimeScreen({
   const desktopShell = (
     <Layout style={{ height: "100%" }}>
       <Layout.Sider width={device === "tablet" ? 176 : 208} theme="dark">
-        <div style={{ height: 56, display: "flex", alignItems: "center", gap: 10, padding: "0 16px" }}>
+        <div
+          style={{
+            height: 56,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "0 16px",
+          }}
+        >
           <div
             style={{
               width: 28,
@@ -898,7 +1291,14 @@ export function AppRuntimeScreen({
             }}
           />
           <span
-            style={{ color: "#fff", fontWeight: 600, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+            style={{
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: 15,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
             title={schema.appName}
           >
             {schema.appName}
@@ -910,12 +1310,25 @@ export function AppRuntimeScreen({
           selectedKeys={[activePageId]}
           onClick={({ key }) => setActivePageId(String(key))}
           items={schema.menus.map((m, i) => {
-            const locked = m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false;
-            const Icon = m.pageId === "home" ? DashboardOutlined : locked ? LockOutlined : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
+            const locked =
+              m.pageId !== "home" &&
+              pageAccess.get(m.pageId)?.visible === false;
+            const Icon =
+              m.pageId === "home"
+                ? DashboardOutlined
+                : locked
+                  ? LockOutlined
+                  : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
             return {
               key: m.pageId,
               icon: <Icon />,
-              label: <span {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}>{m.label}</span>,
+              label: (
+                <span
+                  {...probe({ kind: "menu", pageId: m.pageId, label: m.label })}
+                >
+                  {m.label}
+                </span>
+              ),
               disabled: locked,
               title: locked ? `当前角色（${role ?? "-"}）无本页权限` : m.label,
             };
@@ -936,7 +1349,9 @@ export function AppRuntimeScreen({
             zIndex: 1,
           }}
         >
-          <Breadcrumb items={[{ title: schema.appName }, { title: currentTitle }]} />
+          <Breadcrumb
+            items={[{ title: schema.appName }, { title: currentTitle }]}
+          />
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 13, color: "#999" }}>当前角色</span>
           <Select
@@ -944,10 +1359,14 @@ export function AppRuntimeScreen({
             style={{ minWidth: 140 }}
             value={role}
             onChange={changeRole}
-            options={schema.roles.map((r) => ({ value: r, label: r }))}
+            options={schema.roles.map(r => ({ value: r, label: r }))}
             data-testid="app-runtime-role"
           />
-          <Avatar size={30} style={{ background: "#1677ff" }} icon={<UserOutlined />} />
+          <Avatar
+            size={30}
+            style={{ background: "#1677ff" }}
+            icon={<UserOutlined />}
+          />
         </Layout.Header>
         <Layout.Content style={{ padding: 20, overflow: "auto" }}>
           {isHome ? homeContent : pageContent}
@@ -957,7 +1376,14 @@ export function AppRuntimeScreen({
   );
 
   const phoneShell = (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f0f2f5" }}>
+    <div
+      style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        background: "#f0f2f5",
+      }}
+    >
       <div
         style={{
           height: 48,
@@ -971,8 +1397,24 @@ export function AppRuntimeScreen({
           zIndex: 1,
         }}
       >
-        <div style={{ width: 22, height: 22, borderRadius: 6, background: "linear-gradient(135deg,#1677ff,#69b1ff)", flexShrink: 0 }} />
-        <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            background: "linear-gradient(135deg,#1677ff,#69b1ff)",
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontWeight: 600,
+            fontSize: 14,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {currentTitle}
         </span>
         <span style={{ flex: 1 }} />
@@ -981,7 +1423,7 @@ export function AppRuntimeScreen({
           style={{ minWidth: 104 }}
           value={role}
           onChange={changeRole}
-          options={schema.roles.map((r) => ({ value: r, label: r }))}
+          options={schema.roles.map(r => ({ value: r, label: r }))}
           data-testid="app-runtime-role"
         />
       </div>
@@ -989,12 +1431,24 @@ export function AppRuntimeScreen({
         {isHome ? homeContent : phonePageContent}
       </div>
       <div style={{ flexShrink: 0 }} data-testid="app-runtime-tabbar">
-        <React.Suspense fallback={<div style={{ height: 54, background: "#fff", borderTop: "1px solid #f0f0f0" }} />}>
+        <React.Suspense
+          fallback={
+            <div
+              style={{
+                height: 54,
+                background: "#fff",
+                borderTop: "1px solid #f0f0f0",
+              }}
+            />
+          }
+        >
           <LazyPhoneTabBar
-            items={schema.menus.map((m) => ({
+            items={schema.menus.map(m => ({
               pageId: m.pageId,
               label: m.label,
-              locked: m.pageId !== "home" && pageAccess.get(m.pageId)?.visible === false,
+              locked:
+                m.pageId !== "home" &&
+                pageAccess.get(m.pageId)?.visible === false,
             }))}
             activeId={activePageId}
             onChange={setActivePageId}
@@ -1004,7 +1458,6 @@ export function AppRuntimeScreen({
     </div>
   );
 
-
   return (
     <div
       ref={fitRef}
@@ -1012,7 +1465,13 @@ export function AppRuntimeScreen({
       style={{ background: "transparent" }}
       data-testid="app-runtime-screen"
     >
-      <div style={{ width: spec.w * scale, height: spec.h * scale, position: "relative" }}>
+      <div
+        style={{
+          width: spec.w * scale,
+          height: spec.h * scale,
+          position: "relative",
+        }}
+      >
         <div
           ref={setCanvasEl}
           className={xrayActive ? "xray-scan" : undefined}
@@ -1028,9 +1487,11 @@ export function AppRuntimeScreen({
           }}
         >
           <ConfigProvider
-              getPopupContainer={() => canvasEl ?? document.body}
-              theme={isTablet ? { algorithm: antdTheme.compactAlgorithm } : undefined}
-            >
+            getPopupContainer={() => canvasEl ?? document.body}
+            theme={
+              isTablet ? { algorithm: antdTheme.compactAlgorithm } : undefined
+            }
+          >
             {isPhone ? phoneShell : desktopShell}
 
             <Modal
@@ -1043,17 +1504,33 @@ export function AppRuntimeScreen({
               destroyOnHidden
               getContainer={() => canvasEl ?? document.body}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
-                {(page?.formFields ?? []).map((f) => (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  paddingTop: 8,
+                }}
+              >
+                {(page?.formFields ?? []).map(f => (
                   <div
                     key={f.id}
                     {...(page?.entityId
-                      ? probe({ kind: "field", entityId: page.entityId, fieldId: f.id, label: f.label })
+                      ? probe({
+                          kind: "field",
+                          entityId: page.entityId,
+                          fieldId: f.id,
+                          label: f.label,
+                        })
                       : {})}
                   >
-                    <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
+                    <div
+                      style={{ fontSize: 12, color: "#666", marginBottom: 4 }}
+                    >
                       {f.label}
-                      <span style={{ color: "#bbb", marginLeft: 6 }}>{f.type}</span>
+                      <span style={{ color: "#bbb", marginLeft: 6 }}>
+                        {f.type}
+                      </span>
                     </div>
                     <FieldInput
                       field={f}
@@ -1064,13 +1541,15 @@ export function AppRuntimeScreen({
                           ? [
                               ...new Set(
                                 (state.entities[page.entityId] ?? [])
-                                  .map((r) => String(r.values[f.id] ?? "").trim())
+                                  .map(r => String(r.values[f.id] ?? "").trim())
                                   .filter(Boolean)
                               ),
                             ]
                           : []
                       }
-                      onChange={(v) => setFormValues((prev) => ({ ...prev, [f.id]: v }))}
+                      onChange={v =>
+                        setFormValues(prev => ({ ...prev, [f.id]: v }))
+                      }
                     />
                   </div>
                 ))}
@@ -1099,14 +1578,16 @@ export function AppRuntimeScreen({
 
       {/* 设备切换（画布外的排练控制，不属于被渲染的系统本身） */}
       <div className="absolute left-3 top-2 flex items-center gap-0.5 rounded-full bg-black/25 p-0.5">
-        {(Object.keys(DEVICE_SPECS) as DeviceKey[]).map((key) => (
+        {(Object.keys(DEVICE_SPECS) as DeviceKey[]).map(key => (
           <button
             key={key}
             type="button"
             data-testid={`app-device-${key}`}
             onClick={() => setDevice(key)}
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-              device === key ? "bg-white text-stone-800 shadow-sm" : "text-white/85 hover:text-white"
+              device === key
+                ? "bg-white text-stone-800 shadow-sm"
+                : "text-white/85 hover:text-white"
             }`}
           >
             {DEVICE_SPECS[key].label}

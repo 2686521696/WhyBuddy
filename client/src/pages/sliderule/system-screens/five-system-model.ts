@@ -20,10 +20,25 @@
 // Types (mirror _SCHEMA_INSTRUCTION)
 // ---------------------------------------------------------------------------
 
+/**
+ * enum 字段取值声明（加厚 schema 一期）：tone 是颜色语义——
+ * success 正向/完成 · processing 进行中 · warning 等待/注意 ·
+ * danger 风险/失败 · default 中性。渲染层据此出徽标/筛选/看板列。
+ */
+export interface FieldOption {
+  id: string;
+  label?: string;
+  tone?: string;
+}
+
 export interface FiveSystemField {
   id: string;
   name?: string;
   type?: string;
+  /** enum 字段的取值声明；非 enum 字段出现会被门禁标红 */
+  options?: FieldOption[];
+  /** 展示格式：number → money|percent|progress|score|rating；string → masked */
+  format?: string;
 }
 
 export interface FiveSystemEntity {
@@ -84,11 +99,25 @@ export interface PageChartSpec {
   metric?: string;
 }
 
+/**
+ * KPI 统计卡声明（加厚 schema 一期）：entity 圈定 count 的行来源，
+ * metric 支持 count / sum:<e.f> / avg:<e.f>（sum·avg 必须指向 number 字段），
+ * format 决定渲染（number 裸数字 / money ¥ / percent %）。
+ */
+export interface PageStatSpec {
+  id?: string;
+  name?: string;
+  entity?: string;
+  metric?: string;
+  format?: string;
+}
+
 export interface PageModelDef {
   id?: string;
   name?: string;
   fieldBindings?: string[];
   actionPermissions?: string[];
+  stats?: PageStatSpec[];
   charts?: PageChartSpec[];
 }
 
@@ -129,7 +158,11 @@ export interface ModelInvariant {
 /** 门禁前确定性修复留痕（v5_model_repair：近邻改写 + 悬挂不变式剔除） */
 export interface InvariantNotes {
   repaired?: Array<{ invariantId?: string; from?: string; to?: string }>;
-  dropped?: Array<{ invariantId?: string; statement?: string; unresolvedRefs?: string[] }>;
+  dropped?: Array<{
+    invariantId?: string;
+    statement?: string;
+    unresolvedRefs?: string[];
+  }>;
 }
 
 export interface AppBundleSection {
@@ -201,12 +234,16 @@ function jsonCandidates(raw: string): unknown[] {
 }
 
 /** Detect a bare section object (e.g. `{nodes, transitions}` without the "workflow" wrapper). */
-function detectBareSection(obj: Record<string, unknown>): FiveSystemModel | null {
+function detectBareSection(
+  obj: Record<string, unknown>
+): FiveSystemModel | null {
   if (Array.isArray(obj.nodes) && Array.isArray(obj.transitions)) {
     return { workflow: obj as WorkflowSection };
   }
   if (Array.isArray(obj.capabilities)) {
-    return { aigc: obj as FiveSystemModel["aigc"] & { capabilities: AigcCapability[] } };
+    return {
+      aigc: obj as FiveSystemModel["aigc"] & { capabilities: AigcCapability[] },
+    };
   }
   if (Array.isArray(obj.pageBindings) || Array.isArray(obj.dataModelRefs)) {
     return { appbundle: obj as AppBundleSection };
@@ -228,7 +265,9 @@ function detectBareSection(obj: Record<string, unknown>): FiveSystemModel | null
  * fenced JSON, or a bare single-section JSON). Returns null when nothing
  * structurally recognizable is found — callers must degrade honestly.
  */
-export function parseFiveSystemModel(raw: string | null | undefined): FiveSystemModel | null {
+export function parseFiveSystemModel(
+  raw: string | null | undefined
+): FiveSystemModel | null {
   if (!raw || !raw.trim()) return null;
   for (const candidate of jsonCandidates(raw)) {
     if (!isPlainObject(candidate)) continue;
@@ -310,7 +349,9 @@ export function repairPartialJson(raw: string): unknown | null {
   const text = raw.slice(start);
 
   // 字符串感知的前向扫描：括号栈 + 是否停在未闭合字符串里（及其起点）。
-  const scan = (upto: string): { stack: string[]; inStr: boolean; strStart: number } => {
+  const scan = (
+    upto: string
+  ): { stack: string[]; inStr: boolean; strStart: number } => {
     const stack: string[] = [];
     let inStr = false;
     let esc = false;
@@ -375,7 +416,7 @@ export function repairPartialJson(raw: string): unknown | null {
     tried.add(t);
     const closers = scan(t)
       .stack.reverse()
-      .map((b) => (b === "{" ? "}" : "]"))
+      .map(b => (b === "{" ? "}" : "]"))
       .join("");
     try {
       return JSON.parse(t + closers);
@@ -441,14 +482,12 @@ export interface EvidenceSourceInfo {
  * 识别不了时返回 null（不猜、不冒充）。
  */
 export function evidenceSourceOf(
-  evidence:
-    | { artifactId?: string; evidenceRef?: string }
-    | null
-    | undefined
+  evidence: { artifactId?: string; evidenceRef?: string } | null | undefined
 ): EvidenceSourceInfo | null {
   const id = String(evidence?.artifactId || evidence?.evidenceRef || "");
   if (id.startsWith("llm-linkage-")) return { kind: "llm", label: "LLM 生成" };
-  if (id.startsWith("runtime-linkage-")) return { kind: "builtin", label: "内置演示域" };
+  if (id.startsWith("runtime-linkage-"))
+    return { kind: "builtin", label: "内置演示域" };
   return null;
 }
 
@@ -472,7 +511,11 @@ export function resolveRoleRef(
 ): RefResolution {
   const ref = String(role ?? "").trim();
   const roles = model?.rbac?.roles ?? [];
-  return { ref, resolved: ref.length > 0 && roles.includes(ref), label: ref || "—" };
+  return {
+    ref,
+    resolved: ref.length > 0 && roles.includes(ref),
+    label: ref || "—",
+  };
 }
 
 /** "entityId.fieldId" → datamodel.entities[].fields[] */
@@ -485,8 +528,10 @@ export function resolveFieldRef(
   if (!ref || dot <= 0) return { ref, resolved: false, label: ref || "—" };
   const entityId = ref.slice(0, dot);
   const fieldId = ref.slice(dot + 1);
-  const entity = (model?.datamodel?.entities ?? []).find((e) => e.id === entityId);
-  const field = entity?.fields?.find((f) => f.id === fieldId);
+  const entity = (model?.datamodel?.entities ?? []).find(
+    e => e.id === entityId
+  );
+  const field = entity?.fields?.find(f => f.id === fieldId);
   if (!entity || !field) return { ref, resolved: false, label: ref };
   return {
     ref,
@@ -501,7 +546,7 @@ export function resolveEntityRef(
   model: FiveSystemModel | null | undefined
 ): RefResolution {
   const ref = String(entityRef ?? "").trim();
-  const entity = (model?.datamodel?.entities ?? []).find((e) => e.id === ref);
+  const entity = (model?.datamodel?.entities ?? []).find(e => e.id === ref);
   if (!entity) return { ref, resolved: false, label: ref || "—" };
   return { ref, resolved: true, label: entity.name || entity.id };
 }
@@ -512,7 +557,7 @@ export function resolvePageRef(
   model: FiveSystemModel | null | undefined
 ): RefResolution {
   const ref = String(pageRef ?? "").trim();
-  const page = (model?.page?.pages ?? []).find((p) => p.id === ref);
+  const page = (model?.page?.pages ?? []).find(p => p.id === ref);
   if (!page) return { ref, resolved: false, label: ref || "—" };
   return { ref, resolved: true, label: page.name || page.id || ref };
 }
@@ -526,7 +571,7 @@ export function resolveWorkflowRef(
   const wf = model?.workflow;
   if (!ref || !wf) return { ref, resolved: false, label: ref || "—" };
   if (wf.id === ref) return { ref, resolved: true, label: wf.id };
-  const node = (wf.nodes ?? []).find((n) => n.id === ref);
+  const node = (wf.nodes ?? []).find(n => n.id === ref);
   if (node) return { ref, resolved: true, label: node.name || node.id };
   return { ref, resolved: false, label: ref };
 }
@@ -541,7 +586,10 @@ function mermaidId(id: string): string {
 }
 
 function mermaidLabel(text: string): string {
-  return String(text).replace(/"/g, "'").replace(/[\[\]{}|]/g, " ").trim();
+  return String(text)
+    .replace(/"/g, "'")
+    .replace(/[\[\]{}|]/g, " ")
+    .trim();
 }
 
 /**
@@ -561,7 +609,7 @@ export function workflowModelToMermaid(
     const label = role ? `${name}<br/>@${role}` : name;
     lines.push(`  ${mermaidId(node.id)}["${label}"]`);
   }
-  const nodeIds = new Set(nodes.map((n) => n.id));
+  const nodeIds = new Set(nodes.map(n => n.id));
   for (const t of workflow?.transitions ?? []) {
     if (!t?.from || !t?.to) continue;
     if (!nodeIds.has(t.from) || !nodeIds.has(t.to)) continue; // dangling — gate should reject; skip honestly
@@ -589,10 +637,12 @@ export function guessRefEntityId(
   if (!base) return null;
   const ids = [...entityIds];
   if (ids.includes(base)) return base;
-  const affix = ids.filter((id) => id.startsWith(`${base}_`) || id.endsWith(`_${base}`));
+  const affix = ids.filter(
+    id => id.startsWith(`${base}_`) || id.endsWith(`_${base}`)
+  );
   if (affix.length === 1) return affix[0];
   if (affix.length > 1) return null;
-  const contains = ids.filter((id) => id.includes(base));
+  const contains = ids.filter(id => id.includes(base));
   return contains.length === 1 ? contains[0] : null;
 }
 
@@ -626,14 +676,16 @@ export function deriveErGraphData(
 ): { nodes: ErGraphNode[]; edges: ErGraphEdge[] } | null {
   const entities = datamodel?.entities ?? [];
   if (entities.length === 0) return null;
-  const entityIds = entities.map((e) => e.id);
+  const entityIds = entities.map(e => e.id);
   const nodes: ErGraphNode[] = [];
   const edges: ErGraphEdge[] = [];
   const seen = new Set<string>();
   for (const entity of entities) {
     const fields: ErGraphField[] = [];
     for (const field of entity.fields ?? []) {
-      const isRef = String(field.type || "").toLowerCase() === "ref" || /_ref$/.test(field.id);
+      const isRef =
+        String(field.type || "").toLowerCase() === "ref" ||
+        /_ref$/.test(field.id);
       const target = isRef ? guessRefEntityId(field.id, entityIds) : null;
       const refTarget = target && target !== entity.id ? target : null;
       fields.push({
@@ -671,7 +723,12 @@ export interface LinkageEdge {
   from: string;
   to: string;
   /** 语义类型（决定颜色与图例归类） */
-  kind: "page-entity" | "page-workflow" | "node-role" | "aigc-entity" | "aigc-role";
+  kind:
+    | "page-entity"
+    | "page-workflow"
+    | "node-role"
+    | "aigc-entity"
+    | "aigc-role";
 }
 
 export interface LinkageGroup {
@@ -703,19 +760,50 @@ export function deriveSystemLinkageGraph(
   ): LinkageGroup => ({
     system,
     label,
-    items: all.map((x) => ({ key: key(system, x.id), system, id: x.id, name: x.name })),
+    items: all.map(x => ({
+      key: key(system, x.id),
+      system,
+      id: x.id,
+      name: x.name,
+    })),
   });
 
   const groups: LinkageGroup[] = [
-    mkGroup("datamodel", "数据中台 · DataModel", entities.map((e) => ({ id: e.id, name: e.name || e.id }))),
-    mkGroup("page", "页面设计器 · Page", pages.map((p, i) => ({ id: p.id || `page-${i}`, name: p.name || p.id || `page-${i}` }))),
-    mkGroup("workflow", "工作流 · Workflow", wfNodes.map((n) => ({ id: n.id, name: n.name || n.id }))),
-    mkGroup("rbac", "权限 · RBAC", roles.map((r) => ({ id: r, name: r }))),
-    mkGroup("aigc", "AIGC 中台", caps.map((c, i) => ({ id: c.id || `cap-${i}`, name: c.name || c.id || `cap-${i}` }))),
-  ].filter((g) => g.items.length > 0);
+    mkGroup(
+      "datamodel",
+      "数据中台 · DataModel",
+      entities.map(e => ({ id: e.id, name: e.name || e.id }))
+    ),
+    mkGroup(
+      "page",
+      "页面设计器 · Page",
+      pages.map((p, i) => ({
+        id: p.id || `page-${i}`,
+        name: p.name || p.id || `page-${i}`,
+      }))
+    ),
+    mkGroup(
+      "workflow",
+      "工作流 · Workflow",
+      wfNodes.map(n => ({ id: n.id, name: n.name || n.id }))
+    ),
+    mkGroup(
+      "rbac",
+      "权限 · RBAC",
+      roles.map(r => ({ id: r, name: r }))
+    ),
+    mkGroup(
+      "aigc",
+      "AIGC 中台",
+      caps.map((c, i) => ({
+        id: c.id || `cap-${i}`,
+        name: c.name || c.id || `cap-${i}`,
+      }))
+    ),
+  ].filter(g => g.items.length > 0);
   if (groups.length < 2) return null;
 
-  const present = new Set(groups.flatMap((g) => g.items.map((i) => i.key)));
+  const present = new Set(groups.flatMap(g => g.items.map(i => i.key)));
   const edges: LinkageEdge[] = [];
   const seen = new Set<string>();
   const push = (from: string, to: string, kind: LinkageEdge["kind"]) => {
@@ -726,27 +814,35 @@ export function deriveSystemLinkageGraph(
     edges.push({ from, to, kind });
   };
 
-  const entityIds = entities.map((e) => e.id);
+  const entityIds = entities.map(e => e.id);
   for (const [i, p] of pages.entries()) {
     const pid = p.id || `page-${i}`;
     const dominant = (() => {
       const counts = new Map<string, number>();
       for (const b of p.fieldBindings ?? []) {
         const dot = b.indexOf(".");
-        if (dot > 0) counts.set(b.slice(0, dot), (counts.get(b.slice(0, dot)) ?? 0) + 1);
+        if (dot > 0)
+          counts.set(b.slice(0, dot), (counts.get(b.slice(0, dot)) ?? 0) + 1);
       }
       let best: string | null = null;
       let n = 0;
-      for (const [id, c] of counts) if (c > n && entityIds.includes(id)) { best = id; n = c; }
+      for (const [id, c] of counts)
+        if (c > n && entityIds.includes(id)) {
+          best = id;
+          n = c;
+        }
       return best;
     })();
-    if (dominant) push(key("page", pid), key("datamodel", dominant), "page-entity");
+    if (dominant)
+      push(key("page", pid), key("datamodel", dominant), "page-entity");
   }
   for (const b of model.appbundle?.pageBindings ?? []) {
     if (b.pageRef && b.workflowRef && wfNodes.length > 0) {
       // workflowRef 指整条流程：连到流程起点节点（无入边）
-      const hasInbound = new Set((model.workflow?.transitions ?? []).map((t) => t.to));
-      const start = wfNodes.find((n) => !hasInbound.has(n.id)) ?? wfNodes[0];
+      const hasInbound = new Set(
+        (model.workflow?.transitions ?? []).map(t => t.to)
+      );
+      const start = wfNodes.find(n => !hasInbound.has(n.id)) ?? wfNodes[0];
       push(key("page", b.pageRef), key("workflow", start.id), "page-workflow");
     }
   }
@@ -760,10 +856,15 @@ export function deriveSystemLinkageGraph(
     const out = c.outputField ?? "";
     const dot = out.indexOf(".");
     if (dot > 0 && entityIds.includes(out.slice(0, dot))) {
-      push(key("aigc", cid), key("datamodel", out.slice(0, dot)), "aigc-entity");
+      push(
+        key("aigc", cid),
+        key("datamodel", out.slice(0, dot)),
+        "aigc-entity"
+      );
     }
     for (const r of c.roleRefs ?? []) {
-      if (roles.includes(r)) push(key("aigc", cid), key("rbac", r), "aigc-role");
+      if (roles.includes(r))
+        push(key("aigc", cid), key("rbac", r), "aigc-role");
     }
   }
 
@@ -799,11 +900,11 @@ export function deriveWorkflowGraphData(
   const wfNodes = model?.workflow?.nodes ?? [];
   if (wfNodes.length === 0) return null;
   const transitions = model?.workflow?.transitions ?? [];
-  const hasInbound = new Set(transitions.map((t) => t.to));
-  const hasOutbound = new Set(transitions.map((t) => t.from));
+  const hasInbound = new Set(transitions.map(t => t.to));
+  const hasOutbound = new Set(transitions.map(t => t.from));
   const declaredRoles = new Set(model?.rbac?.roles ?? []);
   return {
-    nodes: wfNodes.map((n) => ({
+    nodes: wfNodes.map(n => ({
       id: n.id,
       name: n.name || n.id,
       role: n.assigneeRole || null,
@@ -812,7 +913,7 @@ export function deriveWorkflowGraphData(
       isTerminal: !hasOutbound.has(n.id),
       phase: (n.phase ?? "").trim() || null,
     })),
-    edges: transitions.map((t) => ({
+    edges: transitions.map(t => ({
       from: t.from,
       to: t.to,
       condition: t.condition || null,
@@ -827,7 +928,7 @@ export function deriveWorkflowGraphData(
 export function derivePhaseLanes(
   nodes: WfGraphNode[]
 ): Array<{ phase: string; nodeIds: string[] }> | null {
-  if (nodes.length === 0 || nodes.some((n) => !n.phase)) return null;
+  if (nodes.length === 0 || nodes.some(n => !n.phase)) return null;
   const lanes: Array<{ phase: string; nodeIds: string[] }> = [];
   const byPhase = new Map<string, string[]>();
   for (const n of nodes) {
@@ -861,7 +962,9 @@ const LINKAGE_EDGE_LABEL: Record<LinkageEdge["kind"], string> = {
  * 数据与 deriveSystemLinkageGraph 完全同源（悬空引用不入图）；
  * 少于 2 个非空系统段返回 null。
  */
-export function linkageToMermaid(model: FiveSystemModel | null | undefined): string | null {
+export function linkageToMermaid(
+  model: FiveSystemModel | null | undefined
+): string | null {
   const data = deriveSystemLinkageGraph(model);
   if (!data) return null;
 
@@ -899,12 +1002,12 @@ export function linkageToMermaid(model: FiveSystemModel | null | undefined): str
       for (let k = 0; k * rows < g.items.length; k++) {
         const chain = g.items.slice(k * rows, k * rows + rows);
         if (chain.length > 1) {
-          lines.push(`    ${chain.map((i) => nid(i.key)).join(" ~~~ ")}`);
+          lines.push(`    ${chain.map(i => nid(i.key)).join(" ~~~ ")}`);
         }
       }
     }
     lines.push("  end");
-    lines.push(`  class ${g.items.map((i) => nid(i.key)).join(",")} ${g.system}`);
+    lines.push(`  class ${g.items.map(i => nid(i.key)).join(",")} ${g.system}`);
   }
   // 组间捆扎边：同 (来源系统, 目标系统, 语义) 聚合为一条，标注条数
   const bundled = new Map<string, number>();
@@ -917,7 +1020,9 @@ export function linkageToMermaid(model: FiveSystemModel | null | undefined): str
   for (const [sig, count] of bundled) {
     const [fromSys, toSys, kind] = sig.split("|");
     const label = LINKAGE_EDGE_LABEL[kind as LinkageEdge["kind"]];
-    lines.push(`  sg_${fromSys} -->|"${mermaidLabel(label)} ×${count}"| sg_${toSys}`);
+    lines.push(
+      `  sg_${fromSys} -->|"${mermaidLabel(label)} ×${count}"| sg_${toSys}`
+    );
   }
   return lines.join("\n");
 }
@@ -927,7 +1032,7 @@ export function datamodelToMermaid(
 ): string | null {
   const entities = datamodel?.entities ?? [];
   if (entities.length === 0) return null;
-  const entityIds = entities.map((e) => e.id);
+  const entityIds = entities.map(e => e.id);
   const lines = ["erDiagram"];
   for (const entity of entities) {
     lines.push(`  ${mermaidId(entity.id)} {`);
@@ -942,14 +1047,18 @@ export function datamodelToMermaid(
   const seen = new Set<string>();
   for (const entity of entities) {
     for (const field of entity.fields ?? []) {
-      const isRef = String(field.type || "").toLowerCase() === "ref" || /_ref$/.test(field.id);
+      const isRef =
+        String(field.type || "").toLowerCase() === "ref" ||
+        /_ref$/.test(field.id);
       if (!isRef) continue;
       const target = guessRefEntityId(field.id, entityIds);
       if (!target || target === entity.id) continue;
       const key = `${entity.id}->${target}:${field.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      lines.push(`  ${mermaidId(target)} ||--o{ ${mermaidId(entity.id)} : "${mermaidId(field.id)}"`);
+      lines.push(
+        `  ${mermaidId(target)} ||--o{ ${mermaidId(entity.id)} : "${mermaidId(field.id)}"`
+      );
     }
   }
   return lines.join("\n");
@@ -979,7 +1088,9 @@ export function edgesForSkill(
   const bySkill = graph?.bySkill;
   if (bySkill && Array.isArray(bySkill[closureKey])) return bySkill[closureKey];
   const all = graph?.edges ?? [];
-  return all.filter((e) => e.sourceSkill === closureKey || e.targetSkill === closureKey);
+  return all.filter(
+    e => e.sourceSkill === closureKey || e.targetSkill === closureKey
+  );
 }
 
 /**
@@ -1005,7 +1116,9 @@ export function crossSkillEdgesToMermaid(
     if (seen.has(sig)) continue;
     seen.add(sig);
     const label = mermaidLabel(e.evidenceKey || e.state || "");
-    lines.push(`  ${mermaidId(src)}["${mermaidLabel(src)}"] -->|${label}| ${mermaidId(tgt)}["${mermaidLabel(tgt)}"]`);
+    lines.push(
+      `  ${mermaidId(src)}["${mermaidLabel(src)}"] -->|${label}| ${mermaidId(tgt)}["${mermaidLabel(tgt)}"]`
+    );
   }
   return lines.join("\n");
 }
@@ -1025,7 +1138,13 @@ export function summarizeClosureForChat(
     versionPinsChecked?: boolean;
   }
 ): string {
-  const { goalText, blocked, evidencePresentCount, skillCount, versionPinsChecked } = opts;
+  const {
+    goalText,
+    blocked,
+    evidencePresentCount,
+    skillCount,
+    versionPinsChecked,
+  } = opts;
   const topic = (goalText || "").trim().slice(0, 24);
   if (blocked || !model) {
     const head = topic ? `「${topic}」的推演还未收口` : "本轮推演还未收口";
@@ -1035,32 +1154,41 @@ export function summarizeClosureForChat(
   const fieldCount = entities.reduce((n, e) => n + (e.fields?.length ?? 0), 0);
   const nodes = model.workflow?.nodes ?? [];
   const transitions = model.workflow?.transitions ?? [];
-  const phaseCount = new Set(nodes.map((n) => n.phase).filter(Boolean)).size;
+  const phaseCount = new Set(nodes.map(n => n.phase).filter(Boolean)).size;
   const roles = model.rbac?.roles ?? [];
   const perms = model.rbac?.permissions ?? [];
   const pages = model.page?.pages ?? [];
-  const bindingCount = pages.reduce((n, p) => n + (p.fieldBindings?.length ?? 0), 0);
+  const bindingCount = pages.reduce(
+    (n, p) => n + (p.fieldBindings?.length ?? 0),
+    0
+  );
   const caps = model.aigc?.capabilities ?? [];
   const wfBindings = (model.appbundle?.pageBindings ?? []).filter(
-    (b) => b.pageRef && b.workflowRef
+    b => b.pageRef && b.workflowRef
   ).length;
 
   const parts: string[] = [];
-  if (entities.length) parts.push(`数据模型 ${entities.length} 实体 · ${fieldCount} 字段`);
+  if (entities.length)
+    parts.push(`数据模型 ${entities.length} 实体 · ${fieldCount} 字段`);
   if (nodes.length) {
     parts.push(
       `工作流 ${nodes.length} 节点 · ${transitions.length} 转移${phaseCount > 1 ? ` · ${phaseCount} 阶段` : ""}`
     );
   }
-  if (roles.length) parts.push(`角色权限 ${roles.length} 角色 · ${perms.length} 权限`);
-  if (pages.length) parts.push(`页面 ${pages.length} 页 · ${bindingCount} 处字段绑定`);
+  if (roles.length)
+    parts.push(`角色权限 ${roles.length} 角色 · ${perms.length} 权限`);
+  if (pages.length)
+    parts.push(`页面 ${pages.length} 页 · ${bindingCount} 处字段绑定`);
   if (caps.length) parts.push(`AI 能力 ${caps.length} 项可写回`);
 
   const lines: string[] = [
     `已为${topic ? `「${topic}」` : "本话题"}搭出可运行的应用闭环（证据 ${evidencePresentCount}/${skillCount}，版本${versionPinsChecked ? "已钉扎" : "待钉扎"}）：`,
   ];
   if (parts.length) {
-    lines.push(parts.join("；") + (wfBindings ? `；页面↔流程绑定 ${wfBindings} 处。` : "。"));
+    lines.push(
+      parts.join("；") +
+        (wfBindings ? `；页面↔流程绑定 ${wfBindings} 处。` : "。")
+    );
   }
   lines.push(
     "右侧应用已在运行：可录入数据、提交审批、切换角色、试 AI 写回；开「游标」能透视每个界面背后的声明。"

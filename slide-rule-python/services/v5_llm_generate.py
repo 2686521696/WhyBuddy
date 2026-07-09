@@ -36,7 +36,9 @@ Required shape (use these exact keys):
   "datamodel": {
     "entities": [
       {"id": "<snake_case>", "name": "<label>", "fields": [
-        {"id": "<snake_case>", "name": "<label>", "type": "string|number|date|ref|enum"}
+        {"id": "<snake_case>", "name": "<label>", "type": "string|number|date|ref|enum",
+         "options": [{"id": "<value>", "label": "<label>", "tone": "success|processing|warning|danger|default"}],
+         "format": "money|percent|progress|score|rating|masked"}
       ]}
     ]
   },
@@ -60,6 +62,11 @@ Required shape (use these exact keys):
     "pages": [{"id": "<id>", "name": "<label>",
                "fieldBindings": ["<entity_id>.<field_id>"],
                "actionPermissions": ["<resource>:<action>"],
+               "stats": [
+                 {"id": "<id>", "name": "<label>", "entity": "<entity_id>",
+                  "metric": "count|sum:<entity_id>.<field_id>|avg:<entity_id>.<field_id>",
+                  "format": "number|money|percent"}
+               ],
                "charts": [
                  {"id": "<id>", "name": "<label>", "type": "bar|line|pie",
                   "dimension": "<entity_id>.<field_id>",
@@ -140,6 +147,24 @@ Content-quality rules (checked by a deterministic regression gate):
   the form by the data's job: bar = compare magnitudes across categories,
   line = change over an ordered/date dimension, pie = share of a whole with
   FEW (≤5) categories. Pure CRUD pages need no charts.
+- ENUM OPTIONS (status semantics): EVERY enum field MUST declare "options" —
+  2-6 concrete values in the intent's language, each with a "tone" carrying
+  its color semantics: success = positive/done (已通过/已完成), processing =
+  in-flight (进行中/审核中), warning = waiting/attention (待审批/即将到期),
+  danger = risk/failure (已驳回/高风险), default = neutral (草稿/未开始).
+  Status-machine fields (审批状态/优先级/风险等级/阶段) matter most — the
+  runtime renders these as colored badges, kanban columns and filters.
+  Never declare "options" on a non-enum field.
+- FIELD FORMAT (display semantics, optional): declare "format" only when a
+  field has one canonical rendering — number fields: "money" (amounts, ¥),
+  "percent" (rates 0-100), "progress" (completion 0-100 → progress bar),
+  "score" (0-100 evaluation), "rating" (1-5 stars); string fields: "masked"
+  (phone/ID-card — sensitive, rendered partially hidden). Omit for plain
+  values; NEVER put a format on date/ref/enum fields.
+- STATS (KPI cards): pages whose job includes overview/monitoring should
+  declare 2-4 "stats" — headline metric cards rendered above the page table.
+  "entity" scopes count; sum/avg must target a number field. Same
+  field-existence rules as charts. Pure CRUD pages need none.
 - INVARIANTS: emit 5-8 entries in "appbundle.invariants" — declarative constraints that
   must always hold, the kind an architect writes after a production incident
   (ordering: "charge before calling the upstream provider"; source of truth:
