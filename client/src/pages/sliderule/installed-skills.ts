@@ -68,3 +68,14 @@ export function uninstallSkill(list: InstalledSkill[], key: string): InstalledSk
 export function isInstalled(list: InstalledSkill[], key: string): boolean {
   return list.some((s) => installKeyOf(s) === key);
 }
+
+/**
+ * 推演注入载荷（技能库六期）：已安装技能瘦身为 {name, description}，
+ * 上限 6 条（prompt 预算）——随 /drive-full 请求进服务端，生成契约要求
+ * 每项落成一条 aigc.capabilities（字段绑定仍过门禁硬校验）。
+ */
+export function installedSkillsDrivePayload(): Array<{ name: string; description: string }> {
+  return loadInstalledSkills()
+    .slice(0, 6)
+    .map((s) => ({ name: s.name.slice(0, 60), description: s.description.slice(0, 160) }));
+}

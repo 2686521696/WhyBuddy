@@ -55,3 +55,27 @@ describe("installed-skills 本地层", () => {
     expect(loadInstalledSkills()).toEqual([]);
   });
 });
+
+describe("推演注入载荷（技能库六期）", () => {
+  beforeEach(() => memStore.clear());
+
+  it("瘦身为 {name, description}、上限 6 条、超长截断", async () => {
+    const { installedSkillsDrivePayload } = await import("../installed-skills");
+    expect(installedSkillsDrivePayload()).toEqual([]);
+
+    let list: ReturnType<typeof loadInstalledSkills> = [];
+    for (let i = 0; i < 8; i++) {
+      list = installSkill(list, {
+        ...SKILL,
+        repo: `github.com/x/skill-${i}`,
+        name: `技能${i}`.padEnd(80, "长"),
+        description: "d".repeat(300),
+      });
+    }
+    const payload = installedSkillsDrivePayload();
+    expect(payload).toHaveLength(6);
+    expect(payload[0].name.length).toBeLessThanOrEqual(60);
+    expect(payload[0].description.length).toBe(160);
+    expect(Object.keys(payload[0])).toEqual(["name", "description"]);
+  });
+});

@@ -13,6 +13,8 @@ import type { ReentryStopReason } from "./sliderule-runtime";
 import * as SlideRuleRuntime from "./sliderule-runtime";
 import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builder";
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
+// 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
+import { installedSkillsDrivePayload } from "@/pages/sliderule/installed-skills";
 
 export type MarathonStopReason =
   | "user_interrupted" // M1
@@ -121,6 +123,7 @@ export async function driveFullViaPython(
         userText,
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
+        installedSkills: installedSkillsDrivePayload(),
       }),
     });
     if (!res.ok) return null;
@@ -208,6 +211,7 @@ export async function driveFullViaPythonStream(
         userText,
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
+        installedSkills: installedSkillsDrivePayload(),
       }),
     });
     if (!res.ok || !res.body) return null;

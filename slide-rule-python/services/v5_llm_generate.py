@@ -169,6 +169,30 @@ def set_generate_delta_sink(sink: "Optional[Callable[[str], None]]") -> None:
     _delta_sink = sink
 
 
+# 已安装技能（技能库六期"推演注入"）：/drive-full(-stream) 在请求进入时设置、
+# 结束后清空——与 _delta_sink 同一请求域上下文模式（同样的单进程并发注意事项）。
+_installed_skills: List[Dict[str, str]] = []
+
+
+def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
+    """设置本轮推演要注入的已安装技能（清洗：上限 6 条，name/description 截断）。
+
+    传 None / 空列表即清空——无安装时生成 prompt 与历史逐字节一致。
+    """
+    global _installed_skills
+    cleaned: List[Dict[str, str]] = []
+    for raw in skills or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()[:60]
+        if not name:
+            continue
+        cleaned.append({"name": name, "description": str(raw.get("description") or "").strip()[:160]})
+        if len(cleaned) >= 6:
+            break
+    _installed_skills = cleaned
+
+
 def _emit_delta(chunk: str) -> None:
     sink = _delta_sink
     if sink is None:
@@ -190,6 +214,19 @@ def _build_user_content(goal: str) -> str:
     语料缺失或与意图无关时不加块，prompt 与从前逐字节一致。
     """
     parts = [f"Business intent:\n{goal}"]
+    # ①已安装技能（硬要求）：每项必须落成一条 aigc.capabilities，字段绑定
+    # 到真实 datamodel 实体字段——门禁仍然硬校验，绑不上会被拦（不豁免）。
+    if _installed_skills:
+        lines = [
+            "User-installed skills (REQUIRED: for EACH one below, include a matching "
+            "entry in aigc.capabilities with inputFields/outputField bound to real "
+            "datamodel entity fields of this app):"
+        ]
+        for skill in _installed_skills:
+            desc = f" — {skill['description']}" if skill["description"] else ""
+            lines.append(f"- {skill['name']}{desc}")
+        parts.append("\n".join(lines))
+    # ②业界参考技能（软参考）：只借命名与 IO 风格
     try:
         from .v5_skill_reference import reference_prompt_block
 

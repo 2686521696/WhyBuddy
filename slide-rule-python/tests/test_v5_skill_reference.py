@@ -77,3 +77,46 @@ def test_build_user_content_appends_block_between_intent_and_task() -> None:
         assert content.index("Industry reference skills") < content.index(
             "Produce the five-system JSON now."
         )
+
+
+def test_installed_skills_injection_and_cleanup() -> None:
+    """技能库六期"推演注入"：设置已安装技能 → prompt 出 REQUIRED 块；
+    清空后与历史 prompt 逐字节一致（增强项不留残余）。"""
+    from services.v5_llm_generate import set_installed_skills
+
+    goal = "qqxxyyzz zkqjwp vvbnmr"
+    baseline = _build_user_content(goal)
+
+    set_installed_skills(
+        [
+            {"name": "网络小说创作技能", "description": "长篇小说大纲与章节生成"},
+            {"name": "", "description": "无名跳过"},
+            {"name": "X" * 200, "description": "Y" * 500},
+        ]
+    )
+    try:
+        content = _build_user_content(goal)
+        assert "User-installed skills (REQUIRED" in content
+        assert "网络小说创作技能 — 长篇小说大纲与章节生成" in content
+        assert "aigc.capabilities" in content
+        # 清洗：无名剔除、超长截断（60/160）
+        assert "X" * 61 not in content
+        assert "Y" * 161 not in content
+        # 顺序：意图 → 已安装块 → 任务指令
+        assert content.index("Business intent") < content.index("User-installed skills")
+        assert content.index("User-installed skills") < content.index("Produce the five-system JSON now.")
+    finally:
+        set_installed_skills(None)
+
+    assert _build_user_content(goal) == baseline
+
+
+def test_installed_skills_capped_at_six() -> None:
+    from services.v5_llm_generate import set_installed_skills
+
+    set_installed_skills([{"name": f"技能{i}", "description": ""} for i in range(10)])
+    try:
+        content = _build_user_content("qqxxyyzz zkqjwp")
+        assert "技能5" in content and "技能6" not in content
+    finally:
+        set_installed_skills(None)

@@ -839,6 +839,12 @@ export function SkillsLibraryPage({
       {/* 已安装层 */}
       {tab === "installed" && (
         <div className="space-y-2.5" data-testid="skills-installed-list">
+          {installed.length > 0 && (
+            <div className="rounded bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700 ring-1 ring-blue-200">
+              已安装技能会注入新推演（最多前 6 个）：下次推演产出的应用会把它们设计成对应的
+              AIGC 能力（字段绑定仍过门禁硬校验）。
+            </div>
+          )}
           {installed.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}

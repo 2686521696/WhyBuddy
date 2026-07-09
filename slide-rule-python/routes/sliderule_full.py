@@ -576,7 +576,14 @@ async def drive_full(payload: Dict[str, Any], x_internal_key: Optional[str] = He
     state = persisted if persisted is not None else V5SessionState(**raw_state)
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
-    new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+    # 技能库六期"推演注入"：已安装技能进生成契约（setter 内清洗；结束必清空）
+    from services.v5_llm_generate import set_installed_skills
+
+    set_installed_skills(payload.get("installedSkills"))
+    try:
+        new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+    finally:
+        set_installed_skills(None)
     # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
     # Normalize them to plain dicts BEFORE sanitize/derive/persist so json persistence and the
     # response envelope never see a non-serializable result object.
@@ -688,7 +695,13 @@ async def drive_full_stream(
         {"text": payload.get("userText", "") or payload.get("user_text", "")}
     )[0].get("text", "")
 
+    # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
+    from services.v5_llm_generate import set_installed_skills
+
+    installed_skills = payload.get("installedSkills")
+
     async def event_generator():
+        set_installed_skills(installed_skills)
         try:
             async for event in drive_full_v5_session_stream(
                 state, max_loops=max_loops, user_instruction=user_text
@@ -702,6 +715,8 @@ async def drive_full_stream(
         except Exception as exc:
             error_event = {"type": "error", "message": str(exc)[:300]}
             yield f"data: {json.dumps(error_event)}\n\n"
+        finally:
+            set_installed_skills(None)
 
     return StreamingResponse(
         event_generator(),
