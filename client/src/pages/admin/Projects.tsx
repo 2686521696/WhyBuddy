@@ -69,7 +69,9 @@ export function AdminProjectsPage() {
             {!projects.length ? (
               <EmptyTableRow
                 colSpan={6}
-                label={loading ? "Loading projects..." : "No projects returned."}
+                label={
+                  loading ? "Loading projects..." : "No projects returned."
+                }
               />
             ) : null}
           </TableBody>

@@ -223,7 +223,9 @@ function makeStats(
 describe("deriveMiroFishStreamEntries / helpers", () => {
   it("artifactTypeToStageId 全 known type 映射", () => {
     expect(artifactTypeToStageId("intake")).toBe("intake_created");
-    expect(artifactTypeToStageId("clarification_session")).toBe("clarification");
+    expect(artifactTypeToStageId("clarification_session")).toBe(
+      "clarification"
+    );
     expect(artifactTypeToStageId("route_set")).toBe("route_generation");
     expect(artifactTypeToStageId("route_selection")).toBe("route_selection");
     expect(artifactTypeToStageId("spec_tree")).toBe("spec_tree");
@@ -233,8 +235,12 @@ describe("deriveMiroFishStreamEntries / helpers", () => {
     expect(artifactTypeToStageId("effect_preview")).toBe("effect_preview");
     expect(artifactTypeToStageId("prompt_pack")).toBe("prompt_packaging");
     expect(artifactTypeToStageId("agent_crew")).toBe("agent_crew_fabric");
-    expect(artifactTypeToStageId("engineering_plan")).toBe("engineering_handoff");
-    expect(artifactTypeToStageId("capability_registry")).toBe("runtime_capability");
+    expect(artifactTypeToStageId("engineering_plan")).toBe(
+      "engineering_handoff"
+    );
+    expect(artifactTypeToStageId("capability_registry")).toBe(
+      "runtime_capability"
+    );
   });
 
   it("artifactTypeToStageId unknown 返回 undefined", () => {
@@ -273,7 +279,9 @@ describe("deriveMiroFishStreamEntries / helpers", () => {
   it("combineGenerationSource template > fallback > llm", () => {
     expect(combineGenerationSource(["llm", "llm"])).toBe("llm");
     expect(combineGenerationSource(["llm", "llm_fallback"])).toBe("fallback");
-    expect(combineGenerationSource(["llm_fallback", "template"])).toBe("template");
+    expect(combineGenerationSource(["llm_fallback", "template"])).toBe(
+      "template"
+    );
     expect(combineGenerationSource(["template", "llm", "llm_fallback"])).toBe(
       "template"
     );
@@ -413,7 +421,9 @@ describe("deriveMiroFishStreamEntries", () => {
         "missing-cap": "invoking",
       } as Record<string, CapabilityStatus>,
     });
-    expect(entries.filter(e => e.kind === "capability_invocation")).toHaveLength(0);
+    expect(
+      entries.filter(e => e.kind === "capability_invocation")
+    ).toHaveLength(0);
   });
 
   it("capabilityStatuses idle 不入流", () => {
@@ -429,7 +439,9 @@ describe("deriveMiroFishStreamEntries", () => {
         "cap-1": "idle",
       } as Record<string, CapabilityStatus>,
     });
-    expect(entries.filter(e => e.kind === "capability_invocation")).toHaveLength(0);
+    expect(
+      entries.filter(e => e.kind === "capability_invocation")
+    ).toHaveLength(0);
   });
 
   it("artifacts 派生 artifact_created entry", () => {
@@ -489,7 +501,12 @@ describe("deriveMiroFishStreamEntries", () => {
       "n-3": {
         lifecycle: "complete",
         documents: [
-          makeDoc("n-3", "requirements", "template", "2026-05-17T07:12:00.000Z"),
+          makeDoc(
+            "n-3",
+            "requirements",
+            "template",
+            "2026-05-17T07:12:00.000Z"
+          ),
           makeDoc("n-3", "design", "template", "2026-05-17T07:12:01.000Z"),
           makeDoc("n-3", "tasks", "template", "2026-05-17T07:12:02.000Z"),
         ],

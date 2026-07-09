@@ -1,6 +1,9 @@
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
-import type { TaskAutopilotSummary, MissionTaskDetail } from "@/lib/tasks-store";
+import type {
+  TaskAutopilotSummary,
+  MissionTaskDetail,
+} from "@/lib/tasks-store";
 
 /* ─── i18n helper ─── */
 
@@ -19,7 +22,7 @@ export interface RouteStepItem {
 }
 
 export interface RouteCardProps {
-  title: string;                       // i18n: "路线" / "Route"
+  title: string; // i18n: "路线" / "Route"
   steps: RouteStepItem[];
   currentStepIndex: number;
   locale: string;
@@ -37,7 +40,7 @@ export interface RouteCardProps {
 export function buildRouteCardData(
   autopilotSummary: TaskAutopilotSummary | null | undefined,
   selectedDetail: Pick<MissionTaskDetail, "stages"> | null | undefined,
-  locale: string,
+  locale: string
 ): Pick<RouteCardProps, "title" | "steps" | "currentStepIndex"> {
   const title = t(locale, "路线", "Route");
 
@@ -64,7 +67,7 @@ export function buildRouteCardData(
   const detailStages = selectedDetail?.stages;
   if (Array.isArray(detailStages) && detailStages.length > 0) {
     // Filter out stages with empty labels
-    const filtered = detailStages.filter((s) => s.label && s.label.trim() !== "");
+    const filtered = detailStages.filter(s => s.label && s.label.trim() !== "");
     if (filtered.length > 0) {
       let currentStepIndex = -1;
       const steps: RouteStepItem[] = filtered.map((stage, idx) => {
@@ -97,7 +100,7 @@ export function RouteCard({
     <div
       className={cn(
         "bg-card text-card-foreground border rounded-lg p-4",
-        "flex flex-col gap-3",
+        "flex flex-col gap-3"
       )}
     >
       {/* Card title */}
@@ -112,20 +115,23 @@ export function RouteCard({
         <div
           className={cn(
             "flex items-start gap-0 py-2",
-            steps.length > 6 && "overflow-x-auto",
+            steps.length > 6 && "overflow-x-auto"
           )}
         >
           {steps.map((step, idx) => (
             <div key={step.index} className="flex items-start">
               {/* Step node + label */}
-              <div className="flex flex-col items-center" style={{ minWidth: 64 }}>
+              <div
+                className="flex flex-col items-center"
+                style={{ minWidth: 64 }}
+              >
                 <StepNode step={step} />
                 <span
                   className={cn(
                     "text-xs mt-1.5 text-center leading-tight max-w-[72px] truncate",
                     step.status === "pending"
                       ? "text-muted-foreground"
-                      : "text-card-foreground",
+                      : "text-card-foreground"
                   )}
                 >
                   {step.label}
@@ -210,7 +216,7 @@ function ConnectorLine({
         "w-6 h-0.5",
         isGreen
           ? "bg-emerald-500"
-          : "border-t-2 border-dashed border-muted-foreground/40 bg-transparent",
+          : "border-t-2 border-dashed border-muted-foreground/40 bg-transparent"
       )}
     />
   );

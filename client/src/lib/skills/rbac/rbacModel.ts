@@ -155,7 +155,11 @@ export interface PolicyDecision {
 export type PolicyEffect = "allow" | "deny";
 
 /** 115.10.08: RBAC policy lifecycle states. Effective policies (used by PDP) are published and not retired. */
-export type PolicyLifecycleState = "draft" | "published" | "effective" | "retired";
+export type PolicyLifecycleState =
+  | "draft"
+  | "published"
+  | "effective"
+  | "retired";
 
 /** 117: supported field access outcomes for evaluateRbacFieldAccess; denied must map to fail-closed (hidden). */
 export type RbacFieldAccessLevel = "hidden" | "read" | "readonly" | "editable";

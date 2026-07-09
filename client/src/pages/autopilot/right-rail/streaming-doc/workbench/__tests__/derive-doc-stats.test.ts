@@ -6,11 +6,15 @@
  */
 import { describe, it, expect } from "vitest";
 import { deriveDocStats } from "../derive-doc-stats";
-import type { BlueprintSpecDocument, BlueprintSpecTree } from "@shared/blueprint/contracts";
+import type {
+  BlueprintSpecDocument,
+  BlueprintSpecTree,
+} from "@shared/blueprint/contracts";
 
 /** 辅助：创建最小 BlueprintSpecDocument 桩。 */
 function makeDoc(
-  overrides: Partial<BlueprintSpecDocument> & Pick<BlueprintSpecDocument, "type">
+  overrides: Partial<BlueprintSpecDocument> &
+    Pick<BlueprintSpecDocument, "type">
 ): BlueprintSpecDocument {
   return {
     id: overrides.id ?? `doc-${Math.random().toString(36).slice(2, 8)}`,
@@ -40,11 +44,17 @@ function makeDoc(
 describe("deriveDocStats", () => {
   describe("空输入", () => {
     it("specDocuments 为 undefined 时返回全零", () => {
-      const result = deriveDocStats({ specDocuments: undefined, specTree: null });
+      const result = deriveDocStats({
+        specDocuments: undefined,
+        specTree: null,
+      });
       expect(result.totalDocs).toBe(0);
       expect(result.totalTasks).toBe(0);
       expect(result.completionRate).toBe(0);
-      expect(result.byType.requirements).toEqual({ generated: 0, completed: 0 });
+      expect(result.byType.requirements).toEqual({
+        generated: 0,
+        completed: 0,
+      });
       expect(result.byType.design).toEqual({ generated: 0, completed: 0 });
       expect(result.byType.tasks).toEqual({ generated: 0, completed: 0 });
     });
@@ -54,7 +64,10 @@ describe("deriveDocStats", () => {
       expect(result.totalDocs).toBe(0);
       expect(result.totalTasks).toBe(0);
       expect(result.completionRate).toBe(0);
-      expect(result.byType.requirements).toEqual({ generated: 0, completed: 0 });
+      expect(result.byType.requirements).toEqual({
+        generated: 0,
+        completed: 0,
+      });
       expect(result.byType.design).toEqual({ generated: 0, completed: 0 });
       expect(result.byType.tasks).toEqual({ generated: 0, completed: 0 });
     });
@@ -67,7 +80,10 @@ describe("deriveDocStats", () => {
       expect(result.totalDocs).toBe(1);
       expect(result.totalTasks).toBe(0);
       expect(result.completionRate).toBe(0);
-      expect(result.byType.requirements).toEqual({ generated: 1, completed: 0 });
+      expect(result.byType.requirements).toEqual({
+        generated: 1,
+        completed: 0,
+      });
       expect(result.byType.design).toEqual({ generated: 0, completed: 0 });
       expect(result.byType.tasks).toEqual({ generated: 0, completed: 0 });
     });
@@ -84,7 +100,10 @@ describe("deriveDocStats", () => {
       expect(result.totalDocs).toBe(3);
       expect(result.totalTasks).toBe(1);
       expect(result.completionRate).toBe(1);
-      expect(result.byType.requirements).toEqual({ generated: 1, completed: 1 });
+      expect(result.byType.requirements).toEqual({
+        generated: 1,
+        completed: 1,
+      });
       expect(result.byType.design).toEqual({ generated: 1, completed: 1 });
       expect(result.byType.tasks).toEqual({ generated: 1, completed: 1 });
     });
@@ -102,7 +121,10 @@ describe("deriveDocStats", () => {
       expect(result.totalTasks).toBe(0);
       // completionRate = (1 + 1 + 0) / (2 + 1 + 0) = 2/3
       expect(result.completionRate).toBeCloseTo(2 / 3);
-      expect(result.byType.requirements).toEqual({ generated: 2, completed: 1 });
+      expect(result.byType.requirements).toEqual({
+        generated: 2,
+        completed: 1,
+      });
       expect(result.byType.design).toEqual({ generated: 1, completed: 1 });
       expect(result.byType.tasks).toEqual({ generated: 0, completed: 0 });
     });
@@ -127,7 +149,10 @@ describe("deriveDocStats", () => {
         );
       }
 
-      expect(result.byType.requirements).toEqual({ generated: 2, completed: 2 });
+      expect(result.byType.requirements).toEqual({
+        generated: 2,
+        completed: 2,
+      });
       expect(result.byType.design).toEqual({ generated: 1, completed: 1 });
       expect(result.byType.tasks).toEqual({ generated: 1, completed: 0 });
     });
@@ -140,7 +165,10 @@ describe("deriveDocStats", () => {
     });
 
     it("specDocuments 为 undefined 时 completionRate 为 0", () => {
-      const result = deriveDocStats({ specDocuments: undefined, specTree: undefined });
+      const result = deriveDocStats({
+        specDocuments: undefined,
+        specTree: undefined,
+      });
       expect(result.completionRate).toBe(0);
     });
   });
@@ -158,7 +186,10 @@ describe("deriveDocStats", () => {
 
     it("specTree 为 undefined 时正常工作", () => {
       const docs = [makeDoc({ type: "tasks", status: "accepted" })];
-      const result = deriveDocStats({ specDocuments: docs, specTree: undefined });
+      const result = deriveDocStats({
+        specDocuments: docs,
+        specTree: undefined,
+      });
       expect(result.totalDocs).toBe(1);
       expect(result.totalTasks).toBe(1);
       expect(result.completionRate).toBe(1);
@@ -176,7 +207,13 @@ describe("deriveDocStats", () => {
         routeSetId: "rs-1",
         nodes: [
           { id: "node-1", title: "Root", type: "topic", children: ["node-2"] },
-          { id: "node-2", parentId: "node-1", title: "Child", type: "topic", children: [] },
+          {
+            id: "node-2",
+            parentId: "node-1",
+            title: "Child",
+            type: "topic",
+            children: [],
+          },
         ],
       } as unknown as BlueprintSpecTree;
       const result = deriveDocStats({ specDocuments: docs, specTree });
@@ -219,7 +256,10 @@ describe("deriveDocStats", () => {
       expect(result.targetDocs).toBe(30);
       expect(result.totalTasks).toBe(10);
       expect(result.targetTasks).toBe(10);
-      expect(result.byType.requirements).toEqual({ generated: 10, completed: 0 });
+      expect(result.byType.requirements).toEqual({
+        generated: 10,
+        completed: 0,
+      });
       expect(result.byType.design).toEqual({ generated: 10, completed: 0 });
       expect(result.byType.tasks).toEqual({ generated: 10, completed: 0 });
       expect(result.completionRate).toBe(0);

@@ -139,22 +139,20 @@ function agentRoleStateLabel(state: string, locale: AppLocale): string {
 }
 
 function agentRoleStateClass(state: string): string {
-  if (
-    state === "active" ||
-    state === "watching" ||
-    state === "reviewing"
-  ) {
+  if (state === "active" || state === "watching" || state === "reviewing") {
     return "border-[#CCCCCC] bg-white text-black";
   }
   return "border-[#CCCCCC] bg-white text-[#666]";
 }
 
 function agentRoleStateDetail(state: string, locale: AppLocale): string {
-  if (state === "active") return panelText("驱动当前工作", "driving current work", locale);
+  if (state === "active")
+    return panelText("驱动当前工作", "driving current work", locale);
   if (state === "watching") {
     return panelText("观察交接信号", "watching handoff signals", locale);
   }
-  if (state === "reviewing") return panelText("评审证据", "reviewing evidence", locale);
+  if (state === "reviewing")
+    return panelText("评审证据", "reviewing evidence", locale);
   if (state === "sleeping") return panelText("待命", "standing by", locale);
   return panelText("角色在线状态", "role presence", locale);
 }
@@ -234,10 +232,7 @@ export const AgentCrewFabricPanel: FC<AgentCrewFabricPanelProps> = ({
   if (!agentCrew && roleTimelines.length === 0) return null;
 
   return (
-    <div
-      className="grid gap-3"
-      data-testid="blueprint-agent-crew-surface"
-    >
+    <div className="grid gap-3" data-testid="blueprint-agent-crew-surface">
       {/* Header chrome removed: SubStageCard 已提供标题 / apiPath / summary / 状态胶囊 */}
 
       {roleEventProjection ? (
@@ -341,7 +336,10 @@ export const AgentCrewFabricPanel: FC<AgentCrewFabricPanelProps> = ({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-black text-slate-950">
-                        {blueprintCopy(role.displayLabel || role.displayName, locale)}
+                        {blueprintCopy(
+                          role.displayLabel || role.displayName,
+                          locale
+                        )}
                       </div>
                       <Badge
                         variant="outline"
@@ -356,7 +354,7 @@ export const AgentCrewFabricPanel: FC<AgentCrewFabricPanelProps> = ({
                         variant="outline"
                         className="rounded-none border-[#CCCCCC] bg-white text-[10px] font-black text-black font-mono uppercase"
                       >
-                          {artifactTokenLabel(role.group, "Role", locale)}
+                        {artifactTokenLabel(role.group, "Role", locale)}
                       </Badge>
                     </div>
                     <div className="mt-2 text-sm font-semibold leading-6 text-slate-600">
@@ -364,7 +362,11 @@ export const AgentCrewFabricPanel: FC<AgentCrewFabricPanelProps> = ({
                     </div>
                   </div>
                   <div className="text-right text-[10px] font-black uppercase tracking-normal text-slate-400">
-                    {artifactTokenLabel(role.stage, "runtime_capability", locale)}
+                    {artifactTokenLabel(
+                      role.stage,
+                      "runtime_capability",
+                      locale
+                    )}
                   </div>
                 </div>
 
@@ -401,7 +403,11 @@ export const AgentCrewFabricPanel: FC<AgentCrewFabricPanelProps> = ({
                       {blueprintCopy(
                         latestLog ||
                           latestEvent?.summary ||
-                          panelText("等待运行时日志", "Awaiting runtime log", locale),
+                          panelText(
+                            "等待运行时日志",
+                            "Awaiting runtime log",
+                            locale
+                          ),
                         locale
                       )}
                     </div>

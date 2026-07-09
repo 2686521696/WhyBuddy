@@ -58,12 +58,15 @@ export class SceneCommandClient {
   private readonly pending = new Map<string, PendingRequest>();
   private connected = false;
 
-  constructor(transport: IClientTransport, options?: SceneCommandClientOptions) {
+  constructor(
+    transport: IClientTransport,
+    options?: SceneCommandClientOptions
+  ) {
     this.transport = transport;
     this.timeout = options?.timeout ?? DEFAULT_TIMEOUT;
 
     // 注册消息接收处理
-    this.transport.onMessage((data) => {
+    this.transport.onMessage(data => {
       this.handleMessage(data);
     });
   }
@@ -83,7 +86,9 @@ export class SceneCommandClient {
     // 拒绝所有待处理请求
     for (const [id, req] of this.pending) {
       clearTimeout(req.timer);
-      req.reject(new Error(`Disconnected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`));
+      req.reject(
+        new Error(`Disconnected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`)
+      );
     }
     this.pending.clear();
 
@@ -99,46 +104,72 @@ export class SceneCommandClient {
 
   /** 角色移动 */
   moveTo(params: MoveToParams): Promise<SceneCommandResult> {
-    return this.send("character.moveTo", params as unknown as Record<string, unknown>);
+    return this.send(
+      "character.moveTo",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 播放动画 */
   playAnimation(params: PlayAnimationParams): Promise<SceneCommandResult> {
-    return this.send("character.playAnimation", params as unknown as Record<string, unknown>);
+    return this.send(
+      "character.playAnimation",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 设置镜头预设 */
   setCamera(params: SetPresetParams): Promise<SceneCommandResult> {
-    return this.send("camera.setPreset", params as unknown as Record<string, unknown>);
+    return this.send(
+      "camera.setPreset",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 镜头过渡 */
-  transitionCamera(params: CameraTransitionParams): Promise<SceneCommandResult> {
-    return this.send("camera.transition", params as unknown as Record<string, unknown>);
+  transitionCamera(
+    params: CameraTransitionParams
+  ): Promise<SceneCommandResult> {
+    return this.send(
+      "camera.transition",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 设置场景状态 */
   setSceneState(params: SetStateParams): Promise<SceneCommandResult> {
-    return this.send("scene.setState", params as unknown as Record<string, unknown>);
+    return this.send(
+      "scene.setState",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 播放特效 */
   playEffect(params: EffectPlayParams): Promise<SceneCommandResult> {
-    return this.send("effect.play", params as unknown as Record<string, unknown>);
+    return this.send(
+      "effect.play",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   /** 停止特效 */
   stopEffect(params: EffectStopParams): Promise<SceneCommandResult> {
-    return this.send("effect.stop", params as unknown as Record<string, unknown>);
+    return this.send(
+      "effect.stop",
+      params as unknown as Record<string, unknown>
+    );
   }
 
   // ─── 通用发送方法 ─────────────────────────────────────────────
 
   /** 发送单条指令（支持自定义扩展指令） */
-  send(method: string, params: Record<string, unknown>): Promise<SceneCommandResult> {
+  send(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<SceneCommandResult> {
     if (!this.connected) {
       return Promise.reject(
-        new Error(`Not connected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`),
+        new Error(`Not connected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`)
       );
     }
 
@@ -153,7 +184,11 @@ export class SceneCommandClient {
     return new Promise<SceneCommandResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Request ${id} timed out after ${this.timeout}ms (code: ${SCENE_ERROR_CODES.TIMEOUT})`));
+        reject(
+          new Error(
+            `Request ${id} timed out after ${this.timeout}ms (code: ${SCENE_ERROR_CODES.TIMEOUT})`
+          )
+        );
       }, this.timeout);
 
       this.pending.set(id, { resolve, reject, timer });
@@ -165,7 +200,7 @@ export class SceneCommandClient {
   sendBatch(commands: SceneCommand[]): Promise<SceneCommandResult[]> {
     if (!this.connected) {
       return Promise.reject(
-        new Error(`Not connected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`),
+        new Error(`Not connected (code: ${SCENE_ERROR_CODES.NOT_CONNECTED})`)
       );
     }
 
@@ -174,11 +209,15 @@ export class SceneCommandClient {
     }
 
     // 为每条指令创建独立的 Promise 追踪
-    const promises = commands.map((cmd) => {
+    const promises = commands.map(cmd => {
       return new Promise<SceneCommandResult>((resolve, reject) => {
         const timer = setTimeout(() => {
           this.pending.delete(cmd.id);
-          reject(new Error(`Request ${cmd.id} timed out after ${this.timeout}ms (code: ${SCENE_ERROR_CODES.TIMEOUT})`));
+          reject(
+            new Error(
+              `Request ${cmd.id} timed out after ${this.timeout}ms (code: ${SCENE_ERROR_CODES.TIMEOUT})`
+            )
+          );
         }, this.timeout);
 
         this.pending.set(cmd.id, { resolve, reject, timer });

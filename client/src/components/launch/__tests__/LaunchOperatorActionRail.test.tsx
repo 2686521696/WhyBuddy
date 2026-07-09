@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { missionOperatorActionLabel, missionOperatorStateLabel } from "@/components/tasks/task-helpers";
+import {
+  missionOperatorActionLabel,
+  missionOperatorStateLabel,
+} from "@/components/tasks/task-helpers";
 import type { MissionTaskDetail } from "@/lib/tasks-store";
 import { useAppStore } from "@/lib/store";
 import type { MissionOperatorActionRecord } from "@shared/mission/contracts";
@@ -81,7 +84,8 @@ function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
       socket: {
         status: "connected",
         label: "Socket connected",
-        detail: "Mission socket is connected and can receive live runtime updates.",
+        detail:
+          "Mission socket is connected and can receive live runtime updates.",
       },
       callback: {
         status: "idle",

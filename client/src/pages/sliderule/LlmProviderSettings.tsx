@@ -22,7 +22,7 @@ import {
 } from "@/lib/sliderule-llm-providers";
 
 const inputClass =
-  "w-full rounded border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+  "w-full rounded border border-[#e5e7eb] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#1677ff] focus:ring-2 focus:ring-[#F3DCD0]";
 const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
 /** 测试连接的三态（idle 不渲染）。 */
@@ -64,7 +64,8 @@ export function TestConnectionResult({ state }: { state: TestState }) {
       data-testid="sliderule-test-result"
       data-state="error"
     >
-      <XCircle className="h-3.5 w-3.5 shrink-0" /> <span className="min-w-0">{state.message}</span>
+      <XCircle className="h-3.5 w-3.5 shrink-0" />{" "}
+      <span className="min-w-0">{state.message}</span>
     </p>
   );
 }
@@ -76,15 +77,22 @@ export function LlmProviderSettings({
   draft: LlmProvidersConfig;
   setDraft: (next: LlmProvidersConfig) => void;
 }) {
-  const [selectedId, setSelectedId] = React.useState<string | undefined>(draft.providers[0]?.id);
+  const [selectedId, setSelectedId] = React.useState<string | undefined>(
+    draft.providers[0]?.id
+  );
   const [testState, setTestState] = React.useState<TestState>({ kind: "idle" });
-  const selected = draft.providers.find((p) => p.id === selectedId) ?? draft.providers[0] ?? null;
+  const selected =
+    draft.providers.find(p => p.id === selectedId) ??
+    draft.providers[0] ??
+    null;
 
   const patch = (updates: Partial<LlmProviderConfig>) => {
     if (!selected) return;
     setDraft({
       ...draft,
-      providers: draft.providers.map((p) => (p.id === selected.id ? { ...p, ...updates } : p)),
+      providers: draft.providers.map(p =>
+        p.id === selected.id ? { ...p, ...updates } : p
+      ),
     });
   };
 
@@ -92,7 +100,9 @@ export function LlmProviderSettings({
   const isCustom = !!selected && selected.id.startsWith("custom-");
   const addCustom = () => {
     const id = `custom-${Math.random().toString(36).slice(2, 8)}`;
-    const count = draft.providers.filter((p) => p.id.startsWith("custom-")).length;
+    const count = draft.providers.filter(p =>
+      p.id.startsWith("custom-")
+    ).length;
     setDraft({
       ...draft,
       providers: [
@@ -115,7 +125,7 @@ export function LlmProviderSettings({
   };
   const removeCustom = () => {
     if (!selected || !isCustom) return;
-    const rest = draft.providers.filter((p) => p.id !== selected.id);
+    const rest = draft.providers.filter(p => p.id !== selected.id);
     setDraft({ ...draft, providers: rest });
     setSelectedId(rest[0]?.id);
     setTestState({ kind: "idle" });
@@ -123,14 +133,20 @@ export function LlmProviderSettings({
 
   const modelValue =
     selected?.defaultModelId ||
-    selected?.models.find((m) => m.enabled)?.id ||
+    selected?.models.find(m => m.enabled)?.id ||
     selected?.models[0]?.id ||
     "";
   const setModel = (id: string) =>
     patch(
       id.trim()
         ? {
-            models: [{ id: id.trim(), capabilities: ["tools", "stream"], enabled: true }],
+            models: [
+              {
+                id: id.trim(),
+                capabilities: ["tools", "stream"],
+                enabled: true,
+              },
+            ],
             defaultModelId: id.trim(),
           }
         : { models: [], defaultModelId: undefined }
@@ -139,7 +155,9 @@ export function LlmProviderSettings({
   const runTest = async () => {
     if (!selected || testState.kind === "testing") return;
     const model =
-      modelValue || SEED_PRESETS.find((s) => s.presetId === selected.presetId)?.defaultModel || "";
+      modelValue ||
+      SEED_PRESETS.find(s => s.presetId === selected.presetId)?.defaultModel ||
+      "";
     setTestState({ kind: "testing" });
     const r = await pingLlmEndpoint({
       protocol: selected.protocol,
@@ -159,50 +177,56 @@ export function LlmProviderSettings({
     ? validateProviderConfig(selected)
     : { keyError: null, baseUrlError: null };
   const presetDefaultModel = selected
-    ? SEED_PRESETS.find((s) => s.presetId === selected.presetId)?.defaultModel ?? ""
+    ? (SEED_PRESETS.find(s => s.presetId === selected.presetId)?.defaultModel ??
+      "")
     : "";
 
   return (
     <div className="flex h-full min-h-0">
       {/* 左：厂商列表（纯文字 + 启用状态点）+ 添加自定义 */}
-      <div className="flex w-[170px] shrink-0 flex-col border-r border-[#E7E2D9]">
-        <ul className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="sliderule-provider-list">
-          {draft.providers.map((p) => {
-          const active = p.id === selected?.id;
-          const status = providerStatus(p);
-          return (
-            <li key={p.id}>
-              <button
-                type="button"
-                aria-current={active || undefined}
-                onClick={() => {
-                  setSelectedId(p.id);
-                  setTestState({ kind: "idle" });
-                }}
-                className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-[13px] transition ${
-                  active ? "bg-[#F8E8E0] font-semibold text-[#B0552F]" : "text-stone-600 hover:bg-[#F5F1EA]"
-                }`}
-              >
-                <span className="truncate">{p.name}</span>
-                {p.enabled && (
-                  <span
-                    data-status={status}
-                    className={`ml-2 h-1.5 w-1.5 shrink-0 rounded-full ${
-                      status === "ready" ? "bg-emerald-500" : "bg-amber-400"
-                    }`}
-                  />
-                )}
-              </button>
-            </li>
-          );
-        })}
+      <div className="flex w-[170px] shrink-0 flex-col border-r border-[#e5e7eb]">
+        <ul
+          className="min-h-0 flex-1 overflow-y-auto p-2"
+          data-testid="sliderule-provider-list"
+        >
+          {draft.providers.map(p => {
+            const active = p.id === selected?.id;
+            const status = providerStatus(p);
+            return (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  aria-current={active || undefined}
+                  onClick={() => {
+                    setSelectedId(p.id);
+                    setTestState({ kind: "idle" });
+                  }}
+                  className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-[13px] transition ${
+                    active
+                      ? "bg-[#e6f4ff] font-semibold text-[#1677ff]"
+                      : "text-stone-600 hover:bg-[#eef0f4]"
+                  }`}
+                >
+                  <span className="truncate">{p.name}</span>
+                  {p.enabled && (
+                    <span
+                      data-status={status}
+                      className={`ml-2 h-1.5 w-1.5 shrink-0 rounded-full ${
+                        status === "ready" ? "bg-emerald-500" : "bg-amber-400"
+                      }`}
+                    />
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
-        <div className="border-t border-[#E7E2D9] p-2">
+        <div className="border-t border-[#e5e7eb] p-2">
           <button
             type="button"
             onClick={addCustom}
             data-testid="sliderule-provider-add-custom"
-            className="w-full rounded border border-dashed border-[#D9D3C7] px-3 py-1.5 text-[12px] text-stone-500 transition hover:border-[#D97757] hover:text-[#B0552F]"
+            className="w-full rounded border border-dashed border-[#D9D3C7] px-3 py-1.5 text-[12px] text-stone-500 transition hover:border-[#1677ff] hover:text-[#1677ff]"
           >
             ＋ 添加自定义
           </button>
@@ -216,23 +240,30 @@ export function LlmProviderSettings({
             <div className="flex items-center justify-between gap-3">
               {isCustom ? (
                 <input
-                  className="min-w-0 flex-1 rounded border border-[#E7E2D9] bg-white px-3 py-1.5 text-[14px] font-semibold text-stone-800 outline-none transition focus:border-[#D97757]"
+                  className="min-w-0 flex-1 rounded border border-[#e5e7eb] bg-white px-3 py-1.5 text-[14px] font-semibold text-stone-800 outline-none transition focus:border-[#1677ff]"
                   value={selected.name}
-                  onChange={(e) => patch({ name: e.target.value })}
+                  onChange={e => patch({ name: e.target.value })}
                   placeholder="厂商名称"
                   data-testid="sliderule-provider-name"
                 />
               ) : (
-                <div className="text-[15px] font-semibold text-stone-800">{selected.name}</div>
+                <div className="text-[15px] font-semibold text-stone-800">
+                  {selected.name}
+                </div>
               )}
               <div className="flex shrink-0 items-center gap-3">
                 {isCustom && (
                   <>
                     <select
                       value={selected.protocol}
-                      onChange={(e) => patch({ protocol: e.target.value as LlmProviderConfig["protocol"] })}
+                      onChange={e =>
+                        patch({
+                          protocol: e.target
+                            .value as LlmProviderConfig["protocol"],
+                        })
+                      }
                       data-testid="sliderule-provider-protocol"
-                      className="rounded border border-[#E7E2D9] bg-white px-2 py-1.5 text-[12px] text-stone-600 outline-none"
+                      className="rounded border border-[#e5e7eb] bg-white px-2 py-1.5 text-[12px] text-stone-600 outline-none"
                     >
                       <option value="openai">OpenAI 协议</option>
                       <option value="anthropic">Anthropic 协议</option>
@@ -253,9 +284,9 @@ export function LlmProviderSettings({
                   <input
                     type="checkbox"
                     checked={selected.enabled}
-                    onChange={(e) => patch({ enabled: e.target.checked })}
+                    onChange={e => patch({ enabled: e.target.checked })}
                     data-testid="sliderule-provider-enabled"
-                    className="h-4 w-4 accent-[#D97757]"
+                    className="h-4 w-4 accent-[#1677ff]"
                   />
                 </label>
               </div>
@@ -267,19 +298,23 @@ export function LlmProviderSettings({
                 type="password"
                 className={inputClass}
                 value={selected.apiKey}
-                onChange={(e) => patch({ apiKey: e.target.value })}
-                placeholder={selected.requiresApiKey ? "sk-…" : "本地服务可留空"}
+                onChange={e => patch({ apiKey: e.target.value })}
+                placeholder={
+                  selected.requiresApiKey ? "sk-…" : "本地服务可留空"
+                }
                 data-testid="sliderule-provider-key"
               />
               {validation.keyError && selected.enabled && (
-                <p className="mt-1 text-[11px] text-rose-600">{validation.keyError}</p>
+                <p className="mt-1 text-[11px] text-rose-600">
+                  {validation.keyError}
+                </p>
               )}
               <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[11px] text-stone-400">
                 <input
                   type="checkbox"
                   checked={!selected.requiresApiKey}
-                  onChange={(e) => patch({ requiresApiKey: !e.target.checked })}
-                  className="h-3 w-3 accent-[#D97757]"
+                  onChange={e => patch({ requiresApiKey: !e.target.checked })}
+                  className="h-3 w-3 accent-[#1677ff]"
                 />
                 本地服务，免密钥（如 Ollama）
               </label>
@@ -290,12 +325,14 @@ export function LlmProviderSettings({
               <input
                 className={inputClass}
                 value={selected.baseUrl}
-                onChange={(e) => patch({ baseUrl: e.target.value })}
+                onChange={e => patch({ baseUrl: e.target.value })}
                 placeholder="https://api.openai.com/v1"
                 data-testid="sliderule-provider-baseurl"
               />
               {validation.baseUrlError && selected.enabled && (
-                <p className="mt-1 text-[11px] text-rose-600">{validation.baseUrlError}</p>
+                <p className="mt-1 text-[11px] text-rose-600">
+                  {validation.baseUrlError}
+                </p>
               )}
             </div>
 
@@ -304,7 +341,7 @@ export function LlmProviderSettings({
               <input
                 className={inputClass}
                 value={modelValue}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={e => setModel(e.target.value)}
                 placeholder={presetDefaultModel || "模型 id"}
                 data-testid="sliderule-provider-model"
               />
@@ -315,7 +352,7 @@ export function LlmProviderSettings({
                 type="button"
                 onClick={runTest}
                 disabled={testState.kind === "testing"}
-                className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
+                className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4] disabled:opacity-50"
                 data-testid="sliderule-provider-test"
               >
                 {testState.kind === "testing" ? "测试中…" : "测试连接"}

@@ -17,7 +17,9 @@ interface HistoryEntryPointProps {
 }
 
 export function withHistorySearchParam(search: string, open: boolean): string {
-  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const params = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search
+  );
   if (open) {
     params.set("history", "1");
   } else {
@@ -88,7 +90,9 @@ export function HistoryEntryPoint({
       <span>{copy.label}</span>
       <span className="text-xs text-[#4b5563]">{familyCount}</span>
       {staleCount > 0 ? (
-        <span className="text-xs font-semibold text-[#b45309]">{copy.stale}</span>
+        <span className="text-xs font-semibold text-[#b45309]">
+          {copy.stale}
+        </span>
       ) : null}
       {staticPreview ? (
         <span className="text-xs text-[#4b5563]">{copy.staticPreview}</span>

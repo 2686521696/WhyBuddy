@@ -29,8 +29,7 @@ const DYNAMIC_ZH_COPY: Record<string, string> = {
   // ─── Route descriptions / summaries ───────────────────────────────────────
   "Primary and alternative routes prepared for SPEC tree derivation.":
     "已为 SPEC 树推导准备主路线与备选路线。",
-  "Use executor-backed role agent runtime.":
-    "使用执行器支撑的角色代理运行时。",
+  "Use executor-backed role agent runtime.": "使用执行器支撑的角色代理运行时。",
   "Keep lite mode available for degraded execution.":
     "保留轻量模式以支持降级执行。",
   "Clarify the requested product direction, derive the durable SPEC tree, then expand documents, preview, and implementation prompts.":
@@ -71,7 +70,10 @@ const DYNAMIC_ZH_COPY: Record<string, string> = {
     "是否有需要集成的现有系统？",
 };
 
-export function copyDynamic(locale: AppLocale, value: string | undefined): string {
+export function copyDynamic(
+  locale: AppLocale,
+  value: string | undefined
+): string {
   if (!value) return "";
   if (locale === "en-US") return value;
 

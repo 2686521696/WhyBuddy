@@ -24,7 +24,7 @@ import { useTraceabilityMatrix } from "../use-traceability-matrix";
 function finding(
   id: string,
   severity: CompanionFinding["severity"],
-  stage: CompanionFinding["stage"],
+  stage: CompanionFinding["stage"]
 ): CompanionFinding {
   return {
     id,
@@ -45,10 +45,12 @@ function CompanionProbe({ job }: { job: unknown }) {
     "div",
     {
       "data-empty": String(isEmpty),
-      "data-order": sorted.map((f) => `${f.id}:${f.severity}`).join(","),
-      "data-groups": groups.map((g) => `${g.stage}=${g.findings.length}`).join(","),
+      "data-order": sorted.map(f => `${f.id}:${f.severity}`).join(","),
+      "data-groups": groups
+        .map(g => `${g.stage}=${g.findings.length}`)
+        .join(","),
     },
-    null,
+    null
   );
 }
 
@@ -64,11 +66,11 @@ function MatrixProbe({ jobId }: { jobId: string | null }) {
 
 describe("useCompanionFindings (pure selector, SSR probe)", () => {
   it("returns empty for missing/empty companionFindings", () => {
-    expect(renderToStaticMarkup(createElement(CompanionProbe, { job: null }))).toContain(
-      'data-empty="true"',
-    );
     expect(
-      renderToStaticMarkup(createElement(CompanionProbe, { job: {} })),
+      renderToStaticMarkup(createElement(CompanionProbe, { job: null }))
+    ).toContain('data-empty="true"');
+    expect(
+      renderToStaticMarkup(createElement(CompanionProbe, { job: {} }))
     ).toContain('data-empty="true"');
   });
 
@@ -91,13 +93,13 @@ describe("useCompanionFindings (pure selector, SSR probe)", () => {
 describe("trust fetch hooks — synchronous initial contract (SSR probe)", () => {
   it("useChecksLedger is idle when jobId is null", () => {
     expect(
-      renderToStaticMarkup(createElement(ChecksLedgerProbe, { jobId: null })),
+      renderToStaticMarkup(createElement(ChecksLedgerProbe, { jobId: null }))
     ).toContain('data-status="idle"');
   });
 
   it("useTraceabilityMatrix is idle when jobId is null", () => {
     expect(
-      renderToStaticMarkup(createElement(MatrixProbe, { jobId: null })),
+      renderToStaticMarkup(createElement(MatrixProbe, { jobId: null }))
     ).toContain('data-status="idle"');
   });
 });

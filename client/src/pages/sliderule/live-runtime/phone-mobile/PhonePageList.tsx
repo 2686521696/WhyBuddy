@@ -56,34 +56,57 @@ export default function PhonePageList({
           onClick={onCreate}
           data-testid="app-runtime-create"
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
             {canCreate ? <PlusOutlined /> : <LockOutlined />}
             {canCreate ? "新建" : createLockedHint || "无新建权限"}
           </span>
         </MobileButton>
       </span>
       {rows.length === 0 ? (
-        <div style={{ textAlign: "center", fontSize: 12, color: "#bfbfbf", padding: "24px 0" }}>
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 12,
+            color: "#bfbfbf",
+            padding: "24px 0",
+          }}
+        >
           暂无数据 — 点「新建」写入第一条真实数据
         </div>
       ) : (
-        <List style={{ "--border-top": "none", "--border-bottom": "none", borderRadius: 8, overflow: "hidden" }}>
-          {rows.map((row) => (
+        <List
+          style={{
+            "--border-top": "none",
+            "--border-bottom": "none",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          {rows.map(row => (
             <List.Item
               key={row.id}
               onClick={() => onOpenRow(row)}
               description={
                 <div>
-                  {descFields.map((f) => (
-                    <div key={f.id} style={{ display: "flex", fontSize: 12, marginTop: 2 }}>
-                      <span style={{ color: "#999", width: 84, flexShrink: 0 }}>{f.label}</span>
-                      <span style={{ color: "#262626" }}>{String(row.values[f.id] ?? "—")}</span>
+                  {descFields.map(f => (
+                    <div
+                      key={f.id}
+                      style={{ display: "flex", fontSize: 12, marginTop: 2 }}
+                    >
+                      <span style={{ color: "#999", width: 84, flexShrink: 0 }}>
+                        {f.label}
+                      </span>
+                      <span style={{ color: "#262626" }}>
+                        {String(row.values[f.id] ?? "—")}
+                      </span>
                     </div>
                   ))}
                   {renderRowActions && (
                     <div
                       style={{ marginTop: 6, textAlign: "right" }}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
                     >
                       {renderRowActions(row)}
                     </div>

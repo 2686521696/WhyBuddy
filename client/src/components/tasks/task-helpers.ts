@@ -187,8 +187,7 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
       resume: "让任务回到活跃执行路径。",
       retry: attempt =>
         `保留交付物、时间线和操作历史，排队开始新一轮尝试。当前为第 ${attempt} 次。`,
-      escalate:
-        "将失败收口为人工跟进，先审阅原因再决定是否重试。",
+      escalate: "将失败收口为人工跟进，先审阅原因再决定是否重试。",
       markBlocked:
         "将任务标记为阻塞，但不结束它，让团队知道需要先处理什么依赖。",
       terminate: "复用取消链路停止任务。这是一个终态操作。",
@@ -265,7 +264,8 @@ const TASK_HELPER_COPY: Record<AppLocale, TaskHelperCopy> = {
       queuedFallback: "任务正在排队等待下一个可用运行时。",
       runningExecutorTitle: "让执行器继续推进当前阶段",
       runningStageTitle: "让当前阶段继续推进",
-      runningExecutorFallback: "执行器仍在工作，会继续推进当前阶段并产出后续交付。",
+      runningExecutorFallback:
+        "执行器仍在工作，会继续推进当前阶段并产出后续交付。",
       runningStageFallback: "任务会沿当前阶段自动继续推进。",
       reviewFailureTitle: "审阅失败原因并决定是否重试",
       failureFallback: "任务在完成前提前中断。",
@@ -793,29 +793,29 @@ function hasMissionStepFlowDecision(
 function fallbackMissionStages(
   mission: MissionStepFlowSource | null
 ): MissionStage[] {
-    const currentStageKey =
-      mission?.currentStageKey ||
-      MISSION_CORE_STAGE_BLUEPRINT[0]?.key ||
-      "receive";
+  const currentStageKey =
+    mission?.currentStageKey ||
+    MISSION_CORE_STAGE_BLUEPRINT[0]?.key ||
+    "receive";
   const currentStageIndex = MISSION_CORE_STAGE_BLUEPRINT.findIndex(
     stage => stage.key === currentStageKey
   );
 
-    return MISSION_CORE_STAGE_BLUEPRINT.map((stage, index) => ({
-      key: stage.key,
-      label: stage.label,
-      status:
-        mission?.status === "failed" && stage.key === currentStageKey
+  return MISSION_CORE_STAGE_BLUEPRINT.map((stage, index) => ({
+    key: stage.key,
+    label: stage.label,
+    status:
+      mission?.status === "failed" && stage.key === currentStageKey
+        ? "failed"
+        : mission?.status === "cancelled" && stage.key === currentStageKey
           ? "failed"
-          : mission?.status === "cancelled" && stage.key === currentStageKey
-            ? "failed"
           : mission?.status === "done"
             ? "done"
             : index < currentStageIndex
               ? "done"
-            : index === currentStageIndex && mission?.status !== "queued"
-              ? "running"
-              : "pending",
+              : index === currentStageIndex && mission?.status !== "queued"
+                ? "running"
+                : "pending",
   }));
 }
 
@@ -874,11 +874,12 @@ export function deriveMissionStepFlow(
         stage.status,
         mission?.status,
         timeoutDetected &&
-          ((mission?.currentStageKey && stage.key === mission.currentStageKey) ||
+          ((mission?.currentStageKey &&
+            stage.key === mission.currentStageKey) ||
             stage.status === "failed")
       ) === "waiting"
         ? waitingDetail || stage.detail || null
-        : stage.detail ?? null,
+        : (stage.detail ?? null),
   }));
 
   return {

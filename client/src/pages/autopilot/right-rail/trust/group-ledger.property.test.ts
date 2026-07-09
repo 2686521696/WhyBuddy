@@ -16,7 +16,14 @@ import {
   sortWarnFailFirst,
 } from "./group-ledger";
 
-const STAGES = ["input", "clarification", "route_generation", "spec_tree", "spec_docs", "effect_preview"] as const;
+const STAGES = [
+  "input",
+  "clarification",
+  "route_generation",
+  "spec_tree",
+  "spec_docs",
+  "effect_preview",
+] as const;
 const STATUSES: BlueprintCheckStatus[] = ["pass", "fail", "warn", "skip"];
 const CHECK_TYPES: BlueprintCheckType[] = [
   "schema",
@@ -46,37 +53,40 @@ const isFirstBucket = (s: BlueprintCheckStatus) => s === "fail" || s === "warn";
 describe("group-ledger property tests", () => {
   it("Property 1: groupLedgerByStage partition integrity (no drop, no dup)", () => {
     fc.assert(
-      fc.property(arbEntries, (entries) => {
+      fc.property(arbEntries, entries => {
         const groups = groupLedgerByStage(entries);
-        const flat = groups.flatMap((g) => g.entries);
+        const flat = groups.flatMap(g => g.entries);
         expect(flat.length).toBe(entries.length);
         // every output entry is an input entry (same reference)
         for (const e of flat) expect(entries.includes(e)).toBe(true);
         // each group is homogeneous by stage
-        for (const g of groups) for (const e of g.entries) expect(e.stage).toBe(g.stage);
-      }),
+        for (const g of groups)
+          for (const e of g.entries) expect(e.stage).toBe(g.stage);
+      })
     );
   });
 
   it("Property 2: sortWarnFailFirst is a stable status-priority permutation, idempotent", () => {
     fc.assert(
-      fc.property(arbEntries, (entries) => {
+      fc.property(arbEntries, entries => {
         const sorted = sortWarnFailFirst(entries);
         // permutation
         expect(sorted.length).toBe(entries.length);
         // every warn/fail precedes every pass/skip
         const lastFirstBucket = sorted.reduce(
           (acc, e, i) => (isFirstBucket(e.status) ? i : acc),
-          -1,
+          -1
         );
-        const firstSecondBucket = sorted.findIndex((e) => !isFirstBucket(e.status));
+        const firstSecondBucket = sorted.findIndex(
+          e => !isFirstBucket(e.status)
+        );
         if (lastFirstBucket >= 0 && firstSecondBucket >= 0) {
           expect(lastFirstBucket).toBeLessThan(firstSecondBucket);
         }
         // idempotent
         const twice = sortWarnFailFirst(sorted);
         expect(twice).toEqual(sorted);
-      }),
+      })
     );
   });
 
@@ -91,18 +101,18 @@ describe("group-ledger property tests", () => {
           // order-independent: filter by checkType then status === reverse
           const byTypeThenStatus = applyLedgerFilters(
             applyLedgerFilters(entries, { checkType }),
-            { status },
+            { status }
           );
           const byStatusThenType = applyLedgerFilters(
             applyLedgerFilters(entries, { status }),
-            { checkType },
+            { checkType }
           );
           expect(byTypeThenStatus).toEqual(byStatusThenType);
           expect(both).toEqual(byTypeThenStatus);
           // idempotent
           expect(applyLedgerFilters(both, { checkType, status })).toEqual(both);
-        },
-      ),
+        }
+      )
     );
   });
 });

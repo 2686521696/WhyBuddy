@@ -43,7 +43,11 @@ function nextId() {
   return `mermaid-${++_idCounter}`;
 }
 
-export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDiagramProps) {
+export function MermaidDiagram({
+  chart,
+  className = "",
+  fit = true,
+}: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -79,7 +83,7 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
           if (!cancelled) setError(String(e?.message || e));
         }
       })
-      .catch((e) => {
+      .catch(e => {
         if (!cancelled) setError(String(e?.message || e));
       });
 
@@ -90,8 +94,10 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
 
   if (error) {
     return (
-      <div className={`overflow-auto rounded bg-[#F5F1EA] p-3 ${className}`}>
-        <pre className="text-xs text-stone-500 whitespace-pre-wrap">{chart}</pre>
+      <div className={`overflow-auto rounded bg-[#eef0f4] p-3 ${className}`}>
+        <pre className="text-xs text-stone-500 whitespace-pre-wrap">
+          {chart}
+        </pre>
         <div className="mt-2 text-xs text-red-400">{error}</div>
       </div>
     );
@@ -99,7 +105,9 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
 
   if (!chart?.trim()) {
     return (
-      <div className={`flex items-center justify-center text-xs text-stone-400 ${className}`}>
+      <div
+        className={`flex items-center justify-center text-xs text-stone-400 ${className}`}
+      >
         暂无图表数据
       </div>
     );
@@ -108,7 +116,7 @@ export function MermaidDiagram({ chart, className = "", fit = true }: MermaidDia
   return (
     <div
       ref={containerRef}
-      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-[#F0EDE5] rounded"} ${className}`}
+      className={`overflow-auto [&_svg]:mx-auto ${rendered ? "" : "animate-pulse bg-[#e9edf2] rounded"} ${className}`}
     />
   );
 }

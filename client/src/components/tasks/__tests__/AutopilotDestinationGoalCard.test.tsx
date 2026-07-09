@@ -48,9 +48,7 @@ describe("buildAutopilotDestinationGoalViewModel", () => {
     expect(model.lockState).toBe("locked");
     expect(model.lockLabel).toBe("Goal locked");
     expect(model.lockPrompt).toContain("destination is confirmed");
-    expect(model.sourceSummary).toBe(
-      "Sources: User input, Destination parser"
-    );
+    expect(model.sourceSummary).toBe("Sources: User input, Destination parser");
     expect(model.subGoals).toEqual([
       "Summarize launch scope",
       "Confirm approval gates",
@@ -246,7 +244,9 @@ describe("AutopilotDestinationGoalCard", () => {
       'data-testid="autopilot-destination-route-impact"'
     );
     expect(markup).toContain("Route replan needed");
-    expect(markup).toContain("New compliance constraint changes the safer route.");
+    expect(markup).toContain(
+      "New compliance constraint changes the safer route."
+    );
     expect(markup).toContain("Route route-fast -&gt; route-safe");
     expect(markup).toContain("3 stage(s) affected");
     expect(markup).toContain(

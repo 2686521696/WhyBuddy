@@ -25,7 +25,14 @@
  *   promptId / API 字段名一律使用英文标识（R6.4）。
  */
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { FC } from "react";
 
 import { exportSpecDocumentsToDownload } from "@/lib/blueprint-api/exportSpecDocuments";
@@ -155,7 +162,7 @@ export function resolveWorkbenchGridLayout(
  */
 export const AutopilotSpecDocumentsWorkbench: FC<
   AutopilotSpecDocumentsWorkbenchProps
-> = (props) => {
+> = props => {
   const {
     entries,
     specDocuments,
@@ -168,10 +175,10 @@ export const AutopilotSpecDocumentsWorkbench: FC<
   // R2.4 / R7.3：`generating` 缺省时归一为 `null`，与现有 specDocsGenerating 一致。
   const generating = props.generating ?? null;
   const realtimeSpecDocsProgress = useBlueprintRealtimeStore(
-    (s) => s.specDocsProgress
+    s => s.specDocsProgress
   );
   const realtimeSubscribedJobId = useBlueprintRealtimeStore(
-    (s) => s.subscribedJobId
+    s => s.subscribedJobId
   );
 
   // -------------------------------------------------------------------------
@@ -259,13 +266,13 @@ export const AutopilotSpecDocumentsWorkbench: FC<
 
   /** 仅存在于流式 reducer 中、尚未出现在 specDocuments 的 id 集合。 */
   const streamingOnlyIds = useMemo(() => {
-    const docIdSet = new Set(specDocuments?.map((d) => d.id) ?? []);
-    return streamState.documentIds.filter((id) => !docIdSet.has(id));
+    const docIdSet = new Set(specDocuments?.map(d => d.id) ?? []);
+    return streamState.documentIds.filter(id => !docIdSet.has(id));
   }, [specDocuments, streamState.documentIds]);
 
   /** 所有可选文档 id（specDocuments + streamingOnly）。 */
   const allDocIds = useMemo(() => {
-    const ids = (specDocuments ?? []).map((d) => d.id);
+    const ids = (specDocuments ?? []).map(d => d.id);
     for (const sid of streamingOnlyIds) {
       if (!ids.includes(sid)) ids.push(sid);
     }
@@ -330,7 +337,7 @@ export const AutopilotSpecDocumentsWorkbench: FC<
         setActiveNodeId(doc.nodeId);
         return;
       }
-      if (specTree?.nodes.some((node) => node.id === docId)) {
+      if (specTree?.nodes.some(node => node.id === docId)) {
         setActiveDocId(null);
         setActiveNodeId(docId);
       }
@@ -340,7 +347,7 @@ export const AutopilotSpecDocumentsWorkbench: FC<
 
   // 当前文档的缓存滚动位置
   const currentScrollTop = activeDocId
-    ? scrollPositionsRef.current.get(activeDocId) ?? 0
+    ? (scrollPositionsRef.current.get(activeDocId) ?? 0)
     : 0;
 
   // R2.3 / R7.4：导出按钮桥接到 `exportSpecDocumentsToDownload`，granularity 沿用
@@ -425,7 +432,14 @@ export const AutopilotSpecDocumentsWorkbench: FC<
       };
     }
     return null;
-  }, [activeDocId, docById, streamState.documents, specDocuments, locale, nodeTitleByNodeId]);
+  }, [
+    activeDocId,
+    docById,
+    streamState.documents,
+    specDocuments,
+    locale,
+    nodeTitleByNodeId,
+  ]);
 
   /** 渲染用 Markdown：流式 chunks 优先，否则回退到 SpecDocument.content。 */
   const renderedMarkdown = useMemo<string>(() => {
@@ -458,7 +472,7 @@ export const AutopilotSpecDocumentsWorkbench: FC<
   const relatedRefs = useMemo(
     () =>
       deriveRelatedRefs({
-        activeDoc: activeDocId ? docById.get(activeDocId) ?? null : null,
+        activeDoc: activeDocId ? (docById.get(activeDocId) ?? null) : null,
         specDocuments,
         specTree,
       }),
@@ -469,7 +483,11 @@ export const AutopilotSpecDocumentsWorkbench: FC<
   const aiSummary = useMemo<string | null>(() => {
     if (!activeDocId) return null;
     const doc = docById.get(activeDocId);
-    if (doc && typeof (doc as { summary?: string }).summary === "string" && ((doc as { summary?: string }).summary ?? "").length > 0) {
+    if (
+      doc &&
+      typeof (doc as { summary?: string }).summary === "string" &&
+      ((doc as { summary?: string }).summary ?? "").length > 0
+    ) {
       return (doc as { summary?: string }).summary!;
     }
     return null;
@@ -579,7 +597,7 @@ export const AutopilotSpecDocumentsWorkbench: FC<
           relatedRefs={relatedRefs}
           aiSummary={aiSummary}
           staleArtifact={
-            activeDocId ? staleDocumentsById.get(activeDocId) ?? null : null
+            activeDocId ? (staleDocumentsById.get(activeDocId) ?? null) : null
           }
           onSelectDocument={handleSelectDocument}
           expanded={docExpanded}
@@ -599,7 +617,11 @@ export const AutopilotSpecDocumentsWorkbench: FC<
           overflow: "hidden",
         }}
       >
-        <WorkbenchExecutionPanel job={props.job} locale={locale} reasoningEntries={entries} />
+        <WorkbenchExecutionPanel
+          job={props.job}
+          locale={locale}
+          reasoningEntries={entries}
+        />
       </div>
     </div>
   );
@@ -623,8 +645,7 @@ function deriveSpecTreeStale(
   artifacts: readonly BlueprintGenerationArtifact[]
 ): WorkbenchStaleArtifactState | null {
   const artifact = artifacts.find(
-    (item) =>
-      item.staleSince && SPEC_TREE_STALE_ARTIFACT_TYPES.has(item.type)
+    item => item.staleSince && SPEC_TREE_STALE_ARTIFACT_TYPES.has(item.type)
   );
   return artifact ? toStaleState(artifact) : null;
 }
@@ -682,7 +703,7 @@ function resolveWorkbenchTitle(
   if (direct) return direct;
 
   const rootNode =
-    specTree?.nodes.find((node) => node.id === specTree.rootNodeId) ??
+    specTree?.nodes.find(node => node.id === specTree.rootNodeId) ??
     specTree?.nodes[0];
   if (rootNode?.title) return rootNode.title;
 
@@ -696,6 +717,8 @@ function resolveWorkbenchSubtitle(
   return (
     readStringField(job, "summary") ??
     readStringField(job?.request, "mode") ??
-    (locale === "zh-CN" ? "Spec 文档与评审驾驶舱" : "Spec documents review cockpit")
+    (locale === "zh-CN"
+      ? "Spec 文档与评审驾驶舱"
+      : "Spec documents review cockpit")
   );
 }

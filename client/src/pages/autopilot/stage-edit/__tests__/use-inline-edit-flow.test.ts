@@ -13,7 +13,7 @@ describe("runInlineEditFlow", () => {
       calls.push("refresh");
     });
     const coordinator = {
-      submit: vi.fn(async (submission) => {
+      submit: vi.fn(async submission => {
         calls.push("coordinate");
         await submission.apply();
         return { ok: true };
@@ -38,10 +38,14 @@ describe("runInlineEditFlow", () => {
           level: "info",
           message: "Saved edit. 2 downstream artifacts marked stale.",
         },
-      }),
+      })
     );
-    expect(coordinator.submit.mock.calls[0][0]).not.toHaveProperty("pageTransition");
-    expect(coordinator.submit.mock.calls[0][0]).not.toHaveProperty("stageTransition");
+    expect(coordinator.submit.mock.calls[0][0]).not.toHaveProperty(
+      "pageTransition"
+    );
+    expect(coordinator.submit.mock.calls[0][0]).not.toHaveProperty(
+      "stageTransition"
+    );
     expect(toastQueue.push).not.toHaveBeenCalled();
   });
 
@@ -49,7 +53,7 @@ describe("runInlineEditFlow", () => {
     const result = { staleEdit: { newlyStaleArtifactCount: 3 } };
     const refreshJob = vi.fn();
     const coordinator = {
-      submit: vi.fn((submission) => {
+      submit: vi.fn(submission => {
         submission.apply();
         return { ok: true };
       }),

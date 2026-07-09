@@ -64,9 +64,7 @@ export function mapRolePhaseToAnimation(phase: RolePhase): AgentAnimationType {
 /**
  * 将 RolePhase 映射到 StatusCategory（影响光效和边框样式）。
  */
-export function mapRolePhaseToStatusCategory(
-  phase: RolePhase
-): StatusCategory {
+export function mapRolePhaseToStatusCategory(phase: RolePhase): StatusCategory {
   switch (phase) {
     case "thinking":
     case "activated":

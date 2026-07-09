@@ -36,12 +36,12 @@ describe("parseReportSections AppBundle closure boundary", () => {
       )
     );
 
-    expect(sections.map((section) => section.label)).toEqual([
+    expect(sections.map(section => section.label)).toEqual([
       "支撑证据",
       "风险",
       "收敛决策",
     ]);
-    expect(sections.map((section) => section.body).join("\n")).not.toContain(
+    expect(sections.map(section => section.body).join("\n")).not.toContain(
       "runtimeClosure"
     );
   });
@@ -60,10 +60,10 @@ describe("parseReportSections AppBundle closure boundary", () => {
       )
     );
 
-    expect(sections.map((section) => section.label)).toEqual(
+    expect(sections.map(section => section.label)).toEqual(
       expect.arrayContaining(["结论", "支撑证据", "风险", "收敛决策"])
     );
-    expect(sections.map((section) => section.body).join("\n")).not.toContain(
+    expect(sections.map(section => section.body).join("\n")).not.toContain(
       "art-appbundle-closure"
     );
   });
@@ -82,7 +82,7 @@ describe("parseReportSections AppBundle closure boundary", () => {
       )
     );
 
-    expect(sections.map((section) => section.body).join("\n")).not.toContain(
+    expect(sections.map(section => section.body).join("\n")).not.toContain(
       "stableDigest"
     );
   });

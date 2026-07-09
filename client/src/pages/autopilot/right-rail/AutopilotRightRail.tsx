@@ -369,7 +369,7 @@ function isAtOrBeyondSpecDocuments(jobStage: string | undefined): boolean {
 }
 
 function mapWorkbenchStageToGenerationStage(
-  stage: WorkbenchStage,
+  stage: WorkbenchStage
 ): ReplannableGenerationStage {
   switch (stage) {
     case "input":
@@ -390,7 +390,7 @@ function mapWorkbenchStageToGenerationStage(
 }
 
 function mapGenerationStageToLocalStage(
-  stage: BlueprintGenerationStage | ReplanStage,
+  stage: BlueprintGenerationStage | ReplanStage
 ): AutopilotLocalStage {
   switch (stage) {
     case "spec_docs":
@@ -403,7 +403,7 @@ function mapGenerationStageToLocalStage(
 }
 
 function mapReplanStageToBlueprintStage(
-  stage: ReplanStage,
+  stage: ReplanStage
 ): BlueprintGenerationStage {
   switch (stage) {
     case "agent_crew_fabric":
@@ -431,7 +431,7 @@ function normalizeReplanStatus(status: string | undefined): ReplanStatus {
 
 function findStaleArtifactForStage(
   job: BlueprintGenerationJob | null,
-  currentStage: AutopilotLocalStage,
+  currentStage: AutopilotLocalStage
 ): RightRailStaleArtifact | null {
   if (!job?.artifacts) return null;
 
@@ -515,8 +515,9 @@ type BlueprintSpecTreeWithDocuments = BlueprintSpecTree & {
 function extractSpecTreeDocuments(
   specTree: BlueprintSpecTree | null | undefined
 ): BlueprintSpecDocument[] | undefined {
-  const documents = (specTree as BlueprintSpecTreeWithDocuments | null | undefined)
-    ?.documents;
+  const documents = (
+    specTree as BlueprintSpecTreeWithDocuments | null | undefined
+  )?.documents;
   return Array.isArray(documents) && documents.length > 0
     ? documents
     : undefined;
@@ -550,7 +551,7 @@ function resolvePersistedSpecDocuments(input: {
 
 function renderFabricSubStageContent(
   activeSubStage: AutopilotRailSubStage,
-  props: AutopilotRightRailProps,
+  props: AutopilotRightRailProps
 ): ReactNode {
   const specTree = props.specTree ?? EMPTY_FABRIC_SPEC_TREE;
   const persistedSpecDocuments = resolvePersistedSpecDocuments({
@@ -609,7 +610,9 @@ function renderFabricSubStageContent(
         />
       );
     case "engineering_handoff":
-      return <EngineeringHandoffPanel jobId={props.jobId} locale={props.locale} />;
+      return (
+        <EngineeringHandoffPanel jobId={props.jobId} locale={props.locale} />
+      );
     case "artifact_memory":
       return <ArtifactMemoryPanel jobId={props.jobId} locale={props.locale} />;
     default:
@@ -672,14 +675,16 @@ function ActiveNodeContent({
             className="flex-shrink-0 rounded-md bg-slate-900 px-3 py-1 text-[11px] font-bold text-white transition hover:bg-slate-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
           >
             {generatingAll
-              ? (isZh ? "生成中..." : "Generating...")
-              : (isZh ? "生成全部" : "Generate All")}
+              ? isZh
+                ? "生成中..."
+                : "Generating..."
+              : isZh
+                ? "生成全部"
+                : "Generate All"}
           </button>
         )}
       </div>
-      <div className="text-xs leading-5 text-slate-600">
-        {summary.summary}
-      </div>
+      <div className="text-xs leading-5 text-slate-600">{summary.summary}</div>
 
       {/* spec_tree 阶段:挂载 SpecTreeWorkbench(顶部双 CTA + 节点行展开式预览) */}
       {isSpecTreeStage && (
@@ -707,12 +712,11 @@ function ActiveNodeContent({
           autopilot-mirofish-stream（2026-05-17）：组件内部委托给 MiroFishCardStream，
           job prop 让流能合并 artifact / route / node_completed entry。 */}
       <AgentReasoningSubTimeline locale={locale} job={job} />
-
     </div>
   );
 }
 
-export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
+export const AutopilotRightRail: FC<AutopilotRightRailProps> = props => {
   const {
     currentStage,
     currentSubStage: currentSubStageFromProps,
@@ -762,9 +766,8 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   // 的 `activeSubStage`（spec_tree / agent_crew_fabric / ...）以及 fabric 派发
   // 测试断言的 `data-autopilot-sub-stage` 仍然继续走 RAIL_SUB_STAGE_ORDER，
   // 保持 fabric-dispatch.property.test.tsx 等既有 PBT 不被破坏。
-  const baseStageIndex = activeSubStage !== undefined
-    ? mapSubStageToStageIndex(activeSubStage)
-    : 0;
+  const baseStageIndex =
+    activeSubStage !== undefined ? mapSubStageToStageIndex(activeSubStage) : 0;
   const manualStageOverride = isManualWorkbenchStageOverrideValid(
     manualWorkbenchStageOverride,
     { activeSubStage, jobStage: job?.stage }
@@ -779,8 +782,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   const canEnterEffectPreviewFromCurrentStage =
     activeStageKey === "spec_documents";
   const showFabricObservability =
-    activeStageKey !== "spec_tree" &&
-    activeStageKey !== "spec_documents";
+    activeStageKey !== "spec_tree" && activeStageKey !== "spec_documents";
   const showTrustSection = activeStageKey !== "spec_tree";
   const currentGenerationStage =
     mapWorkbenchStageToGenerationStage(activeStageKey);
@@ -788,16 +790,14 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
     state: stageAnimatorState,
     transition: triggerStageAnimatorTransition,
   } = useStageTransitionAnimator();
-  const currentLocalStage =
-    mapGenerationStageToLocalStage(currentGenerationStage);
+  const currentLocalStage = mapGenerationStageToLocalStage(
+    currentGenerationStage
+  );
   const replanImpact = deriveReplanDownstreamImpact({
     fromStage: currentGenerationStage,
     artifacts: props.job?.artifacts ?? [],
   });
-  const staleArtifact = findStaleArtifactForStage(
-    props.job,
-    currentLocalStage,
-  );
+  const staleArtifact = findStaleArtifactForStage(props.job, currentLocalStage);
   const [replanOpen, setReplanOpen] = useState(false);
   const [replanMode, setReplanMode] = useState<ReplanMode>("in_place");
   const [replanReason, setReplanReason] = useState("");
@@ -812,7 +812,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           mode: request.mode,
           reason: request.reason.trim() || undefined,
         },
-        { signal: options?.signal },
+        { signal: options?.signal }
       );
       if (!result.ok) {
         throw result.error;
@@ -825,7 +825,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       return replanResult;
     },
     applyNavigation: {
-      applyInPlace: (result) => {
+      applyInPlace: result => {
         props.onJobUpdated?.(result.job as BlueprintGenerationJob);
         props.onStageAdvanced?.();
       },
@@ -862,7 +862,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       };
     },
     toastQueue: {
-      push: (notification) => {
+      push: notification => {
         if (notification.tone === "success") {
           showToast.success(notification.title, {
             description: notification.message,
@@ -901,7 +901,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   // 重新渲染；空态由 store INITIAL_AGENT_REASONING 自带的 `entries: []` 兜底，
   // 避免 SSR 路径下出现 undefined。
   const reasoningEntries = useBlueprintRealtimeStore(
-    (state) => state.agentReasoning.entries
+    state => state.agentReasoning.entries
   );
 
   // sliderule-spec-tree-progress-merge-2026-05-29 §6：把 specDocsProgress.nodes
@@ -915,10 +915,10 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
   // 至少一份持久化文档，基线就是 completed；live progress 再覆盖（in-flight
   // 重试时显示 processing 而不是 completed），保证刷新后 ✓ 不丢、live retry 优先。
   const specDocsNodes = useBlueprintRealtimeStore(
-    (state) => state.specDocsProgress.nodes
+    state => state.specDocsProgress.nodes
   );
   const specDocsBatchStatus = useBlueprintRealtimeStore(
-    (state) => state.specDocsProgress.batchStatus
+    state => state.specDocsProgress.batchStatus
   );
   const persistedSpecDocuments = useMemo(
     () =>
@@ -970,11 +970,16 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
    * 对应需求 1.4：保留已完成阶段的数据快照，允许用户通过进度指示器回看已完成阶段。
    */
   const completedStageSnapshotRef = useRef<
-    Map<string, { summary: { apiPath: string; summary: string; dataReady: boolean } }>
+    Map<
+      string,
+      { summary: { apiPath: string; summary: string; dataReady: boolean } }
+    >
   >(new Map());
 
   // 当 activeSubStage 推进时，将前一个子阶段的摘要快照缓存
-  const prevActiveSubStageRef = useRef<AutopilotRailSubStage | undefined>(undefined);
+  const prevActiveSubStageRef = useRef<AutopilotRailSubStage | undefined>(
+    undefined
+  );
   useEffect(() => {
     const prev = prevActiveSubStageRef.current;
     if (
@@ -1013,13 +1018,16 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
    * TODO: 当 autopilot-stage-progress-indicator spec 实现后，
    * 由进度指示器的 onClick 设置此值。
    */
-  const [viewingCompletedStageIndex, setViewingCompletedStageIndex] = useState<number | null>(null);
+  const [viewingCompletedStageIndex, setViewingCompletedStageIndex] = useState<
+    number | null
+  >(null);
 
   /** 用户是否正在回看已完成阶段 */
   const isViewingCompletedStage = viewingCompletedStageIndex !== null;
   const isReplanCompletedView = resolveReplanCompletedViewFlag({
     isViewingCompletedStage,
-    isCurrentJobCompleted: normalizeReplanStatus(props.job?.status) === "completed",
+    isCurrentJobCompleted:
+      normalizeReplanStatus(props.job?.status) === "completed",
     manualStageOverride,
     coercedStaleRoutePin,
     isViewingEarlierGenerationStage: isViewingEarlierGenerationStage({
@@ -1238,7 +1246,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       // 向真相源（onSpecDocumentsGenerated → latestJob）写入部分结果。
       const TIMEOUT = Symbol("spec-docs-generation-timeout");
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      const timeoutPromise = new Promise<typeof TIMEOUT>((resolve) => {
+      const timeoutPromise = new Promise<typeof TIMEOUT>(resolve => {
         timeoutHandle = setTimeout(
           () => resolve(TIMEOUT),
           SPEC_DOCS_GENERATION_TIMEOUT_MS
@@ -1295,7 +1303,9 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         // 让 deriveNodeStatusById 的 !isBatchActive 守门生效，停止 spinner。
         // 使用语言无关的 machine marker，这样 isFrontendTimeoutFailed 能可靠识别，
         // 并且后端真实 "agent timeout" 等不会被误判为前端保护失败。
-        useBlueprintRealtimeStore.getState().failSpecDocsProgress(FRONTEND_TIMEOUT_MARKER);
+        useBlueprintRealtimeStore
+          .getState()
+          .failSpecDocsProgress(FRONTEND_TIMEOUT_MARKER);
 
         // 不向真相源写入部分结果：不调用 onSpecDocumentsGenerated。
         return;
@@ -1351,7 +1361,9 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         // 翻回"生成"后页面看起来毫无反应（specDocsError 此前只入 state、从不渲染）。
         // 复用 rail 既有的 sonner toast 通道，与 replan 失败提示一致。
         showToast.error(
-          locale === "zh-CN" ? "生成规格文档失败" : "Spec document generation failed",
+          locale === "zh-CN"
+            ? "生成规格文档失败"
+            : "Spec document generation failed",
           {
             description:
               result.error.detail ||
@@ -1434,7 +1446,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       }
       props.onStageAdvanced?.();
     },
-    [handleGenerateAllSpecDocs, props.onStageAdvanced],
+    [handleGenerateAllSpecDocs, props.onStageAdvanced]
   );
 
   if (currentStage !== "fabric") {
@@ -1446,7 +1458,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
         data-autopilot-stage={currentStage}
         data-autopilot-sub-stage=""
       >
-        {TIMELINE_STAGE_ORDER.map((stage) => (
+        {TIMELINE_STAGE_ORDER.map(stage => (
           <div
             key={stage}
             data-stage-placeholder={stage}
@@ -1480,7 +1492,11 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
       }}
     >
       {/* fabric 阶段的 placeholder 保留(供测试断言) */}
-      <div data-stage-placeholder="fabric" data-active="true" className="hidden" />
+      <div
+        data-stage-placeholder="fabric"
+        data-active="true"
+        className="hidden"
+      />
 
       <div
         className="mb-2 flex flex-shrink-0 flex-wrap items-center gap-2 px-1"
@@ -1549,67 +1565,70 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           stageKey={activeStageKey}
           direction={stageAnimatorDirection ?? transitionDirection}
         >
-        <StageViewport
-          stageIndex={activeStageIndex}
-          stageKey={activeStageKey}
-          header={
-            <StageHeader
-              stageIndex={activeStageIndex}
-              englishLabel={currentStageConfig.englishLabel}
-              chineseTitle={currentStageConfig.chineseTitle}
-              isActive={true}
-              locale={locale}
-              completedStages={stageProgress.completedStages}
-              activeStage={stageProgress.activeStage}
-              stageProgress={stageProgress.stageProgress}
-              isIndeterminate={stageProgress.isIndeterminate}
-              onNavigatePreviousStage={
-                previousNavigationAction.type !== "none"
-                  ? handleNavigatePreviousStage
-                  : undefined
-              }
-              previousStageLabel={previousStageLabel}
-              previousSubStage={previousSubStage}
-              previousWorkbenchStage={previousWorkbenchStage}
-              previousWorkflowStage={previousWorkflowStage}
-              previousTargetKind={previousTargetKind}
-              onNavigateNextStage={
-                manualAdvanceAction.type !== "none"
-                  ? handleStageAdvance
-                  : undefined
-              }
-              nextStageLabel={
-                locale === "zh-CN" ? "继续下一步" : "Continue to next step"
-              }
-              nextSubStage={
-                manualAdvanceAction.type === "sub-stage"
-                  ? manualAdvanceAction.nextSubStage
-                  : manualAdvanceAction.type === "workbench-stage"
-                    ? manualAdvanceAction.nextSubStage
+          <StageViewport
+            stageIndex={activeStageIndex}
+            stageKey={activeStageKey}
+            header={
+              <StageHeader
+                stageIndex={activeStageIndex}
+                englishLabel={currentStageConfig.englishLabel}
+                chineseTitle={currentStageConfig.chineseTitle}
+                isActive={true}
+                locale={locale}
+                completedStages={stageProgress.completedStages}
+                activeStage={stageProgress.activeStage}
+                stageProgress={stageProgress.stageProgress}
+                isIndeterminate={stageProgress.isIndeterminate}
+                onNavigatePreviousStage={
+                  previousNavigationAction.type !== "none"
+                    ? handleNavigatePreviousStage
                     : undefined
-              }
-              nextWorkbenchStage={
-                manualAdvanceAction.type === "workbench-stage"
-                  ? manualAdvanceAction.nextStage
-                  : undefined
-              }
-              nextTargetKind={
-                manualAdvanceAction.type === "none"
-                  ? undefined
-                  : manualAdvanceAction.type
-              }
-            />
-          }
-          cta={
-            isViewingCompletedStage ? (
-              <StageCTA
-                label={locale === "zh-CN" ? "返回当前阶段" : "Return to current stage"}
-                loading={false}
-                disabled={false}
-                onAction={handleReturnToActiveStage}
+                }
+                previousStageLabel={previousStageLabel}
+                previousSubStage={previousSubStage}
+                previousWorkbenchStage={previousWorkbenchStage}
+                previousWorkflowStage={previousWorkflowStage}
+                previousTargetKind={previousTargetKind}
+                onNavigateNextStage={
+                  manualAdvanceAction.type !== "none"
+                    ? handleStageAdvance
+                    : undefined
+                }
+                nextStageLabel={
+                  locale === "zh-CN" ? "继续下一步" : "Continue to next step"
+                }
+                nextSubStage={
+                  manualAdvanceAction.type === "sub-stage"
+                    ? manualAdvanceAction.nextSubStage
+                    : manualAdvanceAction.type === "workbench-stage"
+                      ? manualAdvanceAction.nextSubStage
+                      : undefined
+                }
+                nextWorkbenchStage={
+                  manualAdvanceAction.type === "workbench-stage"
+                    ? manualAdvanceAction.nextStage
+                    : undefined
+                }
+                nextTargetKind={
+                  manualAdvanceAction.type === "none"
+                    ? undefined
+                    : manualAdvanceAction.type
+                }
               />
-            ) : (
-              // 2026-05-19：所有非回看分支不再渲染底部 StageCTA。
+            }
+            cta={
+              isViewingCompletedStage ? (
+                <StageCTA
+                  label={
+                    locale === "zh-CN"
+                      ? "返回当前阶段"
+                      : "Return to current stage"
+                  }
+                  loading={false}
+                  disabled={false}
+                  onAction={handleReturnToActiveStage}
+                />
+              ) : // 2026-05-19：所有非回看分支不再渲染底部 StageCTA。
               // - autoAdvance 阶段（spec_documents）：流式状态由 StreamingDocRenderer
               //   头部"生成中"指示器承载，底部白色提示条挤压主区高度。
               // - spec_tree 等其它阶段：CTA 已经由 SpecTreeWorkbench 顶部双 CTA
@@ -1630,10 +1649,9 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
                   testId="autopilot-stage-continue-button"
                 />
               ) : null
-            )
-          }
-        >
-          {/* autopilot-streaming-doc-renderer 任务 6.1：
+            }
+          >
+            {/* autopilot-streaming-doc-renderer 任务 6.1：
               当活跃阶段为 `spec_documents` 时，由 StreamingDocRenderer 占据
               StageContent 主区域，替代原 SpecTreeWorkbench accordion 折叠面板。
               StageCTA 已通过 STAGE_CONFIG.spec_documents.autoAdvance = true 走只读
@@ -1641,79 +1659,80 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
 
               data-sub-stage-placeholder / data-timeline-status / aria-current 等
               既有断点保留，避免破坏 fabric-dispatch.property.test.tsx 等回归。 */}
-          {/* spec_tree 与 spec_documents 合并为同一界面：
+            {/* spec_tree 与 spec_documents 合并为同一界面：
               左侧节点导航 + 右侧文档渲染，由 StreamingDocRenderer 统一承载。 */}
-          {activeStageKey === "spec_tree" ||
-          activeStageKey === "spec_documents" ? (
-            <div
-              data-sub-stage-placeholder={activeSubStage ?? ""}
-              data-timeline-status="active"
-              aria-current="step"
-              className="h-full min-h-0"
-            >
-              <StreamingDocRenderer
-                entries={reasoningEntries}
-                specDocuments={persistedSpecDocuments}
-                specTree={props.specTree}
-                nodeStatusById={nodeStatusById}
-                locale={locale}
-                onGenerateAll={handleGenerateAllSpecDocs}
-                onGenerateNode={handleGenerateNodeSpecDocs}
-                generating={specDocsGenerating}
-                jobId={props.jobId}
-                job={props.job}
-                onEnterEffectPreview={
-                  canEnterEffectPreviewFromCurrentStage &&
-                  (persistedSpecDocuments?.length ?? 0) > 0
-                    ? handleEnterEffectPreview
-                    : undefined
-                }
-                effectPreviewState={effectPreviewState}
-                effectPreviewDisabled={
-                  !canEnterEffectPreviewFromCurrentStage ||
-                  !props.jobId ||
-                  (persistedSpecDocuments?.length ?? 0) === 0
-                }
-              />
-            </div>
-          ) : currentStage === "fabric" && activeSubStage !== undefined ? (
-            <div
-              data-sub-stage-placeholder={activeSubStage}
-              data-timeline-status="active"
-              aria-current="step"
-            >
-              {renderFabricSubStageContent(activeSubStage, props)}
-            </div>
-          ) : (
-            /* 当前活跃阶段的内容 — 保留 data-sub-stage-placeholder 供测试断言 */
-            activeSubStage !== undefined && (
+            {activeStageKey === "spec_tree" ||
+            activeStageKey === "spec_documents" ? (
+              <div
+                data-sub-stage-placeholder={activeSubStage ?? ""}
+                data-timeline-status="active"
+                aria-current="step"
+                className="h-full min-h-0"
+              >
+                <StreamingDocRenderer
+                  entries={reasoningEntries}
+                  specDocuments={persistedSpecDocuments}
+                  specTree={props.specTree}
+                  nodeStatusById={nodeStatusById}
+                  locale={locale}
+                  onGenerateAll={handleGenerateAllSpecDocs}
+                  onGenerateNode={handleGenerateNodeSpecDocs}
+                  generating={specDocsGenerating}
+                  jobId={props.jobId}
+                  job={props.job}
+                  onEnterEffectPreview={
+                    canEnterEffectPreviewFromCurrentStage &&
+                    (persistedSpecDocuments?.length ?? 0) > 0
+                      ? handleEnterEffectPreview
+                      : undefined
+                  }
+                  effectPreviewState={effectPreviewState}
+                  effectPreviewDisabled={
+                    !canEnterEffectPreviewFromCurrentStage ||
+                    !props.jobId ||
+                    (persistedSpecDocuments?.length ?? 0) === 0
+                  }
+                />
+              </div>
+            ) : currentStage === "fabric" && activeSubStage !== undefined ? (
               <div
                 data-sub-stage-placeholder={activeSubStage}
                 data-timeline-status="active"
                 aria-current="step"
               >
-                <ActiveNodeContent
-                  summary={
-                    completedStageSnapshotRef.current.has(activeSubStage)
-                      ? completedStageSnapshotRef.current.get(activeSubStage)!.summary
-                      : deriveSubStageSummary(activeSubStage, props, locale)
-                  }
-                  locale={locale}
-                  subStage={activeSubStage}
-                  specTree={props.specTree}
-                  job={props.job}
-                  jobId={props.jobId}
-                  generating={specDocsGenerating}
-                  onGenerateAll={handleGenerateAllSpecDocs}
-                  onGenerateNode={handleGenerateNodeSpecDocs}
-                  generationError={specDocsError}
-                  onRetry={handleRetrySpecDocs}
-                />
+                {renderFabricSubStageContent(activeSubStage, props)}
               </div>
-            )
-          )}
-        </StageViewport>
-      </StageTransitionWrapper>
+            ) : (
+              /* 当前活跃阶段的内容 — 保留 data-sub-stage-placeholder 供测试断言 */
+              activeSubStage !== undefined && (
+                <div
+                  data-sub-stage-placeholder={activeSubStage}
+                  data-timeline-status="active"
+                  aria-current="step"
+                >
+                  <ActiveNodeContent
+                    summary={
+                      completedStageSnapshotRef.current.has(activeSubStage)
+                        ? completedStageSnapshotRef.current.get(activeSubStage)!
+                            .summary
+                        : deriveSubStageSummary(activeSubStage, props, locale)
+                    }
+                    locale={locale}
+                    subStage={activeSubStage}
+                    specTree={props.specTree}
+                    job={props.job}
+                    jobId={props.jobId}
+                    generating={specDocsGenerating}
+                    onGenerateAll={handleGenerateAllSpecDocs}
+                    onGenerateNode={handleGenerateNodeSpecDocs}
+                    generationError={specDocsError}
+                    onRetry={handleRetrySpecDocs}
+                  />
+                </div>
+              )
+            )}
+          </StageViewport>
+        </StageTransitionWrapper>
       </div>
 
       {showFabricObservability ? (
@@ -1736,7 +1755,7 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           job={props.job as unknown as CompanionFindingsSource | null}
           locale={locale}
           hasSpecTree={
-            ((props.specTree?.nodes?.length ?? 0) > 0) ||
+            (props.specTree?.nodes?.length ?? 0) > 0 ||
             isAtOrBeyondSpecDocuments(props.job?.stage) ||
             props.job?.stage === "spec_tree"
           }
@@ -1746,7 +1765,6 @@ export const AutopilotRightRail: FC<AutopilotRightRailProps> = (props) => {
           }
         />
       ) : null}
-
     </aside>
   );
 };

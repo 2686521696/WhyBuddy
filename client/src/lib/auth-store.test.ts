@@ -83,7 +83,10 @@ describe("auth-store", () => {
 
   it("returns false and records the server error when login fails", async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ success: false, error: "Email or password is invalid" }, 401)
+      jsonResponse(
+        { success: false, error: "Email or password is invalid" },
+        401
+      )
     );
 
     const ok = await useAuthStore.getState().login({
@@ -97,7 +100,9 @@ describe("auth-store", () => {
   });
 
   it("requests an email login code with normalized email", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, expiresInSeconds: 600 }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ success: true, expiresInSeconds: 600 })
+    );
 
     const ok = await useAuthStore.getState().sendEmailLoginCode({
       email: "  USER@Example.COM ",

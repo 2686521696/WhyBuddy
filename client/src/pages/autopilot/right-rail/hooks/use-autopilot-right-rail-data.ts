@@ -132,7 +132,9 @@ export interface RightRailDataView {
   // Wave 2：fabric 基础
   agentCrew: RightRailDataFieldStatus<BlueprintAgentCrewSnapshot>;
   capabilities: RightRailDataFieldStatus<BlueprintRuntimeCapability[]>;
-  capabilityInvocations: RightRailDataFieldStatus<BlueprintCapabilityInvocation[]>;
+  capabilityInvocations: RightRailDataFieldStatus<
+    BlueprintCapabilityInvocation[]
+  >;
   capabilityEvidence: RightRailDataFieldStatus<BlueprintCapabilityEvidence[]>;
 
   // Wave 3：fabric 中层
@@ -231,7 +233,9 @@ export interface UseAutopilotRightRailDataOptions {
   onSpecTreeChange?: (next: BlueprintSpecTree | null) => void;
   onAgentCrewChange?: (next: BlueprintAgentCrewSnapshot | null) => void;
   onCapabilitiesChange?: (next: BlueprintRuntimeCapability[]) => void;
-  onCapabilityInvocationsChange?: (next: BlueprintCapabilityInvocation[]) => void;
+  onCapabilityInvocationsChange?: (
+    next: BlueprintCapabilityInvocation[]
+  ) => void;
   onCapabilityEvidenceChange?: (next: BlueprintCapabilityEvidence[]) => void;
   onEffectPreviewsChange?: (next: BlueprintEffectPreviewSnapshot[]) => void;
   onPromptPackagesChange?: (next: BlueprintPromptPackage[]) => void;
@@ -327,9 +331,7 @@ type ReducerAction =
  * 部分字段 → data 的 map，用于 `FETCH_FULFILLED` 批量应用多个字段（W1 一次 fetch 会填充 4 个字段）。
  * 使用 `any` 是因为各字段的 payload 类型不同；reducer 在应用时会按 key 逐一写入，运行期安全。
  */
-type PartialFieldDataMap = Partial<
-  Record<RightRailFieldName, unknown>
->;
+type PartialFieldDataMap = Partial<Record<RightRailFieldName, unknown>>;
 
 /**
  * per-jobId cache 条目（存放在 `useRef<Map>` 中，跨 `JOB_CHANGED` 切换复用）。
@@ -445,11 +447,13 @@ export function rightRailDataReducer(
       if (action.jobId !== state.currentJobId) return state;
       const next = { ...state } as ReducerState;
       let changed = false;
-      for (const key of Object.keys(action.fieldUpdates) as RightRailFieldName[]) {
+      for (const key of Object.keys(
+        action.fieldUpdates
+      ) as RightRailFieldName[]) {
         const prev = state[key] as InternalFieldState<unknown>;
         if (prev.pendingRequestId !== action.requestId) continue; // ignore stale
         (next[key] as InternalFieldState<unknown>) = {
-          data: action.fieldUpdates[key] as unknown ?? null,
+          data: (action.fieldUpdates[key] as unknown) ?? null,
           loading: false,
           error: null,
           pendingRequestId: null,
@@ -1004,15 +1008,12 @@ export function useAutopilotRightRailData(
   // 字段不进入 cache，其值在切回时会由同一 W1 job 快照重新派生出来）。
   const cacheRef = useRef<Map<string, PartialCacheEntry>>(new Map());
 
-  const [state, dispatch] = useReducer(
-    rightRailDataReducer,
-    undefined,
-    () =>
-      buildInitialReducerState(
-        trimmedJobId,
-        initialData,
-        disableRemoteFetch ? null : cacheRef.current.get(trimmedJobId) ?? null
-      )
+  const [state, dispatch] = useReducer(rightRailDataReducer, undefined, () =>
+    buildInitialReducerState(
+      trimmedJobId,
+      initialData,
+      disableRemoteFetch ? null : (cacheRef.current.get(trimmedJobId) ?? null)
+    )
   );
 
   // `jobId` 变化：重置 reducer 到新 jobId，从 cacheRef 读取可能的历史 cache seed。
@@ -1025,7 +1026,7 @@ export function useAutopilotRightRailData(
       initialData,
       cachedFields: disableRemoteFetch
         ? null
-        : cacheRef.current.get(trimmedJobId) ?? null,
+        : (cacheRef.current.get(trimmedJobId) ?? null),
     });
     // 仅依赖 trimmedJobId：initialData 的身份变化不应触发整体 reset（避免父组件每 render
     // 都重建 initialData object 时频繁 reset）。
@@ -1121,7 +1122,8 @@ export function useAutopilotRightRailData(
         options?.onSpecTreeChange?.(result.data.specTree ?? null);
 
         // 写入 cache（用于 Requirement 4.3 切回复用）。
-        const entry: PartialCacheEntry = cacheRef.current.get(trimmedJobId) ?? {};
+        const entry: PartialCacheEntry =
+          cacheRef.current.get(trimmedJobId) ?? {};
         entry.job = result.data.job ?? null;
         entry.routeSet = result.data.routeSet ?? null;
         entry.selection = result.data.selection ?? null;
@@ -1257,7 +1259,7 @@ export function useAutopilotRightRailData(
       const rejectedFields: RightRailFieldName[] = [];
       let primaryError: ApiRequestError | null = null;
 
-      const extractResult = <T,>(
+      const extractResult = <T>(
         entry: (typeof settled)[number],
         endpoint: string
       ):
@@ -1270,16 +1272,19 @@ export function useAutopilotRightRailData(
             | { ok: true; data: T }
             | { ok: false; error: ApiRequestError };
         }
-        return { ok: false, error: coerceApiRequestError(entry.reason, endpoint) };
+        return {
+          ok: false,
+          error: coerceApiRequestError(entry.reason, endpoint),
+        };
       };
 
       if (wantCapabilities) {
-        const registryResult = extractResult<
-          { capabilities: BlueprintRuntimeCapability[] }
-        >(registrySettled, "/api/blueprint/capabilities");
-        const jobResult = extractResult<
-          { capabilities: BlueprintRuntimeCapability[] }
-        >(
+        const registryResult = extractResult<{
+          capabilities: BlueprintRuntimeCapability[];
+        }>(registrySettled, "/api/blueprint/capabilities");
+        const jobResult = extractResult<{
+          capabilities: BlueprintRuntimeCapability[];
+        }>(
           jobCapabilitiesSettled,
           `/api/blueprint/jobs/${trimmedJobId}/capabilities`
         );
@@ -1352,7 +1357,8 @@ export function useAutopilotRightRailData(
         });
 
         // 写入 W2 cache 条目，供历史 jobId 切回复用。
-        const entry: PartialCacheEntry = cacheRef.current.get(trimmedJobId) ?? {};
+        const entry: PartialCacheEntry =
+          cacheRef.current.get(trimmedJobId) ?? {};
         if ("capabilities" in fieldUpdates) {
           entry.capabilities = fieldUpdates.capabilities;
         }
@@ -1486,7 +1492,7 @@ export function useAutopilotRightRailData(
       const rejectedFields: RightRailFieldName[] = [];
       let primaryError: ApiRequestError | null = null;
 
-      const extractResult = <T,>(
+      const extractResult = <T>(
         entry: (typeof settled)[number],
         endpoint: string
       ):
@@ -1499,7 +1505,10 @@ export function useAutopilotRightRailData(
             | { ok: true; data: T }
             | { ok: false; error: ApiRequestError };
         }
-        return { ok: false, error: coerceApiRequestError(entry.reason, endpoint) };
+        return {
+          ok: false,
+          error: coerceApiRequestError(entry.reason, endpoint),
+        };
       };
 
       if (wantEffectPreviews) {
@@ -1575,7 +1584,8 @@ export function useAutopilotRightRailData(
         });
 
         // 写入 W3 cache 条目，供历史 jobId 切回复用。
-        const entry: PartialCacheEntry = cacheRef.current.get(trimmedJobId) ?? {};
+        const entry: PartialCacheEntry =
+          cacheRef.current.get(trimmedJobId) ?? {};
         if ("effectPreviews" in fieldUpdates) {
           entry.effectPreviews = fieldUpdates.effectPreviews;
         }
@@ -1701,7 +1711,7 @@ export function useAutopilotRightRailData(
       const rejectedFields: RightRailFieldName[] = [];
       let primaryError: ApiRequestError | null = null;
 
-      const extractResult = <T,>(
+      const extractResult = <T>(
         entry: (typeof settled)[number],
         endpoint: string
       ):
@@ -1714,7 +1724,10 @@ export function useAutopilotRightRailData(
             | { ok: true; data: T }
             | { ok: false; error: ApiRequestError };
         }
-        return { ok: false, error: coerceApiRequestError(entry.reason, endpoint) };
+        return {
+          ok: false,
+          error: coerceApiRequestError(entry.reason, endpoint),
+        };
       };
 
       if (wantArtifactEntries) {
@@ -1947,10 +1960,7 @@ export function useAutopilotRightRailData(
           cacheRef.current.set(trimmedJobId, entry);
         } catch (rawError) {
           if (closed) return;
-          const error = coerceApiRequestError(
-            rawError,
-            endpoint
-          );
+          const error = coerceApiRequestError(rawError, endpoint);
           dispatch({
             type: "FETCH_REJECTED",
             jobId: trimmedJobId,
@@ -2096,9 +2106,7 @@ export function useAutopilotRightRailData(
   //  - gate 关闭（非 fabric 阶段且未强制 skipLazyLoad）→ 暴露 `initialData.agentCrew ?? null`，
   //    `loading=false`、`error=null`。
   const initialAgentCrewFallback = initialData?.agentCrew ?? null;
-  const derivedAgentCrew = useMemo<
-    BlueprintAgentCrewSnapshot | null
-  >(() => {
+  const derivedAgentCrew = useMemo<BlueprintAgentCrewSnapshot | null>(() => {
     if (!wave2GateOpen) {
       return initialAgentCrewFallback;
     }
@@ -2137,9 +2145,9 @@ export function useAutopilotRightRailData(
     useRef<UseAutopilotRightRailDataOptions["onAgentCrewChange"]>(undefined);
   onAgentCrewChangeRef.current = options?.onAgentCrewChange;
   const onArtifactFeedbackChangeRef =
-    useRef<
-      UseAutopilotRightRailDataOptions["onArtifactFeedbackChange"]
-    >(undefined);
+    useRef<UseAutopilotRightRailDataOptions["onArtifactFeedbackChange"]>(
+      undefined
+    );
   onArtifactFeedbackChangeRef.current = options?.onArtifactFeedbackChange;
 
   const lastNotifiedAgentCrewRef = useRef<BlueprintAgentCrewSnapshot | null>(
@@ -2250,7 +2258,7 @@ export function useAutopilotRightRailData(
 
   // 把 reducer state 映射为 public `RightRailDataView`：剥离 `pendingRequestId`，挂接 retry。
   return useMemo<RightRailDataView>(() => {
-    const toPublic = <T,>(
+    const toPublic = <T>(
       internal: InternalFieldState<T>,
       retry: () => void
     ): RightRailDataFieldStatus<T> => ({
@@ -2373,7 +2381,10 @@ function nextRequestId(): number {
  * `ApiRequestError`。hook 规约：async 异常不得穿透到 React render path，全部转为 field
  * status 中的 `error`。
  */
-function coerceApiRequestError(raw: unknown, endpoint: string): ApiRequestError {
+function coerceApiRequestError(
+  raw: unknown,
+  endpoint: string
+): ApiRequestError {
   if (
     raw &&
     typeof raw === "object" &&

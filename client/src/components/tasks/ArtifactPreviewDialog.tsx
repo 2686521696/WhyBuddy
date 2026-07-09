@@ -67,7 +67,9 @@ function t(locale: string, zh: string, en: string): string {
   return locale === "zh-CN" ? zh : en;
 }
 
-function getPreviewIcon(mode: "html" | "image" | "json" | "markdown" | "pdf" | "text") {
+function getPreviewIcon(
+  mode: "html" | "image" | "json" | "markdown" | "pdf" | "text"
+) {
   if (mode === "image") {
     return Image;
   }
@@ -103,7 +105,13 @@ export function ArtifactPreviewDialog({
 
   useEffect(() => {
     const mode = resolveArtifactPreviewMode(format, null, previewType);
-    if (!open || artifactIndex === null || mode === "html" || mode === "image" || mode === "pdf") {
+    if (
+      !open ||
+      artifactIndex === null ||
+      mode === "html" ||
+      mode === "image" ||
+      mode === "pdf"
+    ) {
       setState({
         status: open && artifactIndex !== null ? "ready" : "idle",
         content: "",
@@ -158,7 +166,12 @@ export function ArtifactPreviewDialog({
   const PreviewIcon = getPreviewIcon(previewMode);
   const renderedContent = useMemo(
     () =>
-      formatArtifactPreviewContent(state.content, format, state.contentType, previewType),
+      formatArtifactPreviewContent(
+        state.content,
+        format,
+        state.contentType,
+        previewType
+      ),
     [format, previewType, state.content, state.contentType]
   );
 
@@ -171,13 +184,21 @@ export function ArtifactPreviewDialog({
             {artifactName}
           </DialogTitle>
           <DialogDescription className="text-sm leading-6 text-stone-500">
-            {t(locale, "正在预览任务产物内容。", "Previewing mission artifact content.")}
+            {t(
+              locale,
+              "正在预览任务产物内容。",
+              "Previewing mission artifact content."
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {state.truncated ? (
           <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800">
-            {t(locale, "预览已截断到前 1 MB。", "Preview truncated to the first 1 MB.")}
+            {t(
+              locale,
+              "预览已截断到前 1 MB。",
+              "Preview truncated to the first 1 MB."
+            )}
           </div>
         ) : null}
 

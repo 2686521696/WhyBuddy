@@ -16,7 +16,7 @@ const APPBUNDLE_CLOSURE_APPENDIX_HEADER =
 
 function stripAppBundleClosureAppendix(content: string): string {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const appendixIndex = lines.findIndex((line) => {
+  const appendixIndex = lines.findIndex(line => {
     const normalized = line.trim().toLowerCase();
     return (
       normalized.startsWith("#") &&
@@ -45,11 +45,22 @@ function labelFromMatch(raw: string): string {
 
 // LLM「扩写」报告常用 Markdown 段标(## 支撑证据 / **支撑证据** / **支撑证据：**),
 // 也有模板的冒号式(支撑证据：…)。三种形式都要识别成段标,否则整篇塞进一段→排版乱。
-const MD_HEADING_HEADER = new RegExp(`^\\s*#{1,4}\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]?\\s*(.*)$`, "i");
-const BOLD_HEADER = new RegExp(`^\\s*\\*\\*\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]?\\s*\\*\\*\\s*[：:]?\\s*(.*)$`, "i");
-const COLON_HEADER = new RegExp(`^\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]\\s*(.*)$`, "i");
+const MD_HEADING_HEADER = new RegExp(
+  `^\\s*#{1,4}\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]?\\s*(.*)$`,
+  "i"
+);
+const BOLD_HEADER = new RegExp(
+  `^\\s*\\*\\*\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]?\\s*\\*\\*\\s*[：:]?\\s*(.*)$`,
+  "i"
+);
+const COLON_HEADER = new RegExp(
+  `^\\s*(${SECTION_LABEL_PATTERN})\\s*[：:]\\s*(.*)$`,
+  "i"
+);
 
-function matchSectionHeader(line: string): { label: string; rest: string } | null {
+function matchSectionHeader(
+  line: string
+): { label: string; rest: string } | null {
   for (const re of [MD_HEADING_HEADER, BOLD_HEADER, COLON_HEADER]) {
     const m = line.match(re);
     if (m) return { label: m[1], rest: (m[2] || "").trim() };
@@ -91,7 +102,7 @@ export function parseReportSections(report: Artifact): ReportSection[] {
   const normalizedContent = normalizeReportContent(content);
   const fromHeaders = splitByHeaders(normalizedContent);
   if (fromHeaders.length >= 3) {
-    return fromHeaders.map((s) => ({
+    return fromHeaders.map(s => ({
       ...s,
       evidenceRefs: [...(report.evidenceRefs || [])],
     }));

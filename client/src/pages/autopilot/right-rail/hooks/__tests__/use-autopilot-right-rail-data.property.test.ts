@@ -73,7 +73,7 @@ function makeJob(
  */
 const arbJobId = fc
   .string({ minLength: 1, maxLength: 12 })
-  .filter((value) => value.trim().length > 0);
+  .filter(value => value.trim().length > 0);
 
 /**
  * 从 `{ "a", "b", "c", "d" }` 中取值构造 jobId 序列，便于 P2 生成含重复元素的切换序列。
@@ -122,7 +122,7 @@ describe("Spec 4 PBT · P1 Idempotent fetch dedupe (reducer-level)", () => {
             minLength: 2,
             maxLength: 5,
           })
-          .filter((ids) => ids.length >= 2),
+          .filter(ids => ids.length >= 2),
         (jobId, requestIds) => {
           let state = buildInitialReducerState(jobId, undefined, null);
 
@@ -183,7 +183,7 @@ describe("Spec 4 PBT · P2 Cache coherence on jobId change", () => {
     fc.assert(
       fc.property(
         fc.array(arbJobIdShort, { minLength: 4, maxLength: 8 }),
-        (jobIdSeq) => {
+        jobIdSeq => {
           // 构造一个可复用的 Map，模拟 hook 的 `useRef<Map<jobId, CacheEntry>>`
           const cache = new Map<
             string,
@@ -309,10 +309,7 @@ describe("Spec 4 PBT · P3 Race safety on rapid job.stage updates", () => {
 
           // 乱序 dispatch FETCH_FULFILLED（模拟各 stage 对应 fetch 的 resolve 顺序与触发顺序
           // 无关：用一个固定 reversal + 旋转混合打乱）。
-          const shuffled = [
-            ...requests.slice(1),
-            requests[0],
-          ].reverse();
+          const shuffled = [...requests.slice(1), requests[0]].reverse();
           for (const { requestId, stage } of shuffled) {
             state = rightRailDataReducer(state, {
               type: "FETCH_FULFILLED",
@@ -340,7 +337,7 @@ describe("Spec 4 PBT · P3 Race safety on rapid job.stage updates", () => {
     fc.assert(
       fc.property(
         arbJobIdShort,
-        arbJobIdShort.filter((id) => id !== "a"),
+        arbJobIdShort.filter(id => id !== "a"),
         (firstJobId, secondJobId) => {
           fc.pre(firstJobId !== secondJobId);
           let state = buildInitialReducerState(firstJobId, undefined, null);

@@ -46,7 +46,7 @@ describe("useReplanFlow", () => {
         reason: "Regenerate docs after route edits",
         impactArtifactIds: ["requirements", "preview"],
       },
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal) }
     );
     expect(refreshJob).toHaveBeenCalledWith("job-1");
     expect(applyInPlace).toHaveBeenCalledWith(result);
@@ -83,7 +83,7 @@ describe("useReplanFlow", () => {
         reason: "Explore safer branch",
         impactArtifactIds: ["requirements", "preview"],
       },
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal) }
     );
     expect(activeJob).toHaveBeenCalledWith("job-branch", result);
     expect(applyInPlace).not.toHaveBeenCalled();
@@ -94,7 +94,7 @@ describe("useReplanFlow", () => {
       mode: "in_place",
       job: { id: "job-1", stage: "effect_preview" },
     });
-    const submit = vi.fn((submission) => {
+    const submit = vi.fn(submission => {
       submission.apply();
       return { ok: true };
     });
@@ -127,7 +127,7 @@ describe("useReplanFlow", () => {
         impactArtifactIds: ["requirements", "preview"],
         triggerSource: "replan",
       },
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal) }
     );
     expect(submit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -137,7 +137,7 @@ describe("useReplanFlow", () => {
           level: "info",
           message: "2 downstream artifacts queued for regeneration.",
         },
-      }),
+      })
     );
     expect(toastQueue.push).not.toHaveBeenCalled();
   });
@@ -147,7 +147,7 @@ describe("useReplanFlow", () => {
       mode: "branch",
       job: { id: "job-branch", stage: "spec_tree" },
     });
-    const submit = vi.fn((submission) => {
+    const submit = vi.fn(submission => {
       submission.apply();
       return { ok: true };
     });
@@ -177,7 +177,7 @@ describe("useReplanFlow", () => {
           key: "replan.branch.job-branch",
           level: "info",
         }),
-      }),
+      })
     );
     expect(branchIndex.append).toHaveBeenCalledWith("job-parent", "job-branch");
     expect(activeJob).toHaveBeenCalledWith("job-branch", result);
@@ -188,7 +188,7 @@ describe("useReplanFlow", () => {
       mode: "branch",
       job: { id: "job-branch", stage: "spec_tree" },
     });
-    const submit = vi.fn((submission) => {
+    const submit = vi.fn(submission => {
       submission.apply();
       return { ok: true };
     });
@@ -220,7 +220,7 @@ describe("useReplanFlow", () => {
 
     expect(getCoordinationTransitions).toHaveBeenCalledWith(
       expect.objectContaining({ fromStage: "effect_preview", mode: "branch" }),
-      result,
+      result
     );
     expect(submit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -233,7 +233,7 @@ describe("useReplanFlow", () => {
           fromPage: 3,
           toPage: 2,
         },
-      }),
+      })
     );
   });
 
@@ -242,7 +242,7 @@ describe("useReplanFlow", () => {
       mode: "branch",
       job: { id: "job-branch", stage: "spec_tree" },
     });
-    const submit = vi.fn((submission) => {
+    const submit = vi.fn(submission => {
       const applyResult = submission.apply();
       expect(applyResult).toBeUndefined();
       return { ok: true };
@@ -274,7 +274,8 @@ describe("useReplanFlow", () => {
       source: "http",
       endpoint: "/api/blueprint/jobs/job-1/replan",
       message: "running downstream",
-      detail: "The request completed, but the server reported an application error.",
+      detail:
+        "The request completed, but the server reported an application error.",
       retryable: false,
       status: 409,
     });
@@ -294,7 +295,7 @@ describe("useReplanFlow", () => {
         mode: "in_place",
         reason: "",
         impact,
-      }),
+      })
     ).rejects.toBe(error);
 
     expect(applyInPlace).not.toHaveBeenCalled();
@@ -307,9 +308,11 @@ describe("useReplanFlow", () => {
       (_request, options?: { signal?: AbortSignal }) =>
         new Promise((_, reject) => {
           options?.signal?.addEventListener("abort", () => {
-            reject(new DOMException("The operation was aborted.", "AbortError"));
+            reject(
+              new DOMException("The operation was aborted.", "AbortError")
+            );
           });
-        }),
+        })
     );
     const flow = useReplanFlow({
       postReplan,

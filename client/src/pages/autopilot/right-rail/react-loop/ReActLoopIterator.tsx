@@ -66,8 +66,7 @@ export const ReActLoopIterator: FC<ReActLoopIteratorProps> = ({
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     userScrolledRef.current = !atBottom;
   }, []);
 
@@ -85,9 +84,7 @@ export const ReActLoopIterator: FC<ReActLoopIteratorProps> = ({
   const collapsedCount = shouldCollapse ? loops.length - 2 : 0;
 
   /** 获取要渲染的循环列表 */
-  const visibleLoops = shouldCollapse
-    ? [loops[0], ...loops.slice(-1)]
-    : loops;
+  const visibleLoops = shouldCollapse ? [loops[0], ...loops.slice(-1)] : loops;
 
   if (loops.length === 0) return null;
 
@@ -147,7 +144,7 @@ interface LoopSectionProps {
  */
 const LoopSection: FC<LoopSectionProps> = ({ loop, locale }) => (
   <div className="flex flex-col gap-1">
-    {loop.phases.map((phase) => (
+    {loop.phases.map(phase => (
       <ReActPhaseBlock key={phase.id} phase={phase} locale={locale} />
     ))}
   </div>

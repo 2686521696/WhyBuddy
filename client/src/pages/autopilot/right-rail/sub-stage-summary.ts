@@ -59,19 +59,18 @@ const isZh = (locale: AppLocale): boolean => locale === "zh-CN";
 
 function deriveAgentCrewFabric(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const { agentCrew } = props;
   const timelines = agentCrew?.roleTimelines ?? agentCrew?.presence ?? [];
   const events = timelines.reduce(
     (sum, role) => sum + (role.entries?.length ?? 0),
-    0,
+    0
   );
-  const active = timelines.filter((role) => role.state === "active").length;
-  const watching = timelines.filter((role) => role.state === "watching").length;
-  const reviewing = timelines.filter((role) => role.state === "reviewing")
-    .length;
+  const active = timelines.filter(role => role.state === "active").length;
+  const watching = timelines.filter(role => role.state === "watching").length;
+  const reviewing = timelines.filter(role => role.state === "reviewing").length;
   const dataReady = timelines.length > 0;
 
   return {
@@ -115,7 +114,7 @@ function deriveAgentCrewFabric(
 
 function deriveSpecTree(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const { specTree } = props;
@@ -123,7 +122,7 @@ function deriveSpecTree(
   const nodes = specTree?.nodes ?? [];
   const leaves = dataReady
     ? nodes.filter(
-        (node) => !nodes.some((maybeChild) => maybeChild.parentId === node.id),
+        node => !nodes.some(maybeChild => maybeChild.parentId === node.id)
       ).length
     : 0;
   const documentStats = deriveSpecDocumentTreeStats(props.job, specTree);
@@ -175,7 +174,7 @@ type SpecTreeWithDocuments = {
 
 function deriveSpecDocuments(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const specTreeWithDocs = props.specTree as
@@ -214,7 +213,7 @@ function deriveSpecDocuments(
 
 function deriveEffectPreview(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const previews = props.effectPreviews ?? [];
@@ -252,7 +251,7 @@ function deriveEffectPreview(
 
 function derivePromptPackage(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const dataReady = props.specTree != null;
@@ -278,7 +277,7 @@ function derivePromptPackage(
 
 function deriveRuntimeCapability(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const capabilities = props.capabilities ?? [];
@@ -317,7 +316,7 @@ function deriveRuntimeCapability(
 
 function deriveEngineeringHandoff(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const dataReady = props.selection != null;
@@ -343,7 +342,7 @@ function deriveEngineeringHandoff(
 
 function deriveArtifactMemory(
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   const zh = isZh(locale);
   const dataReady = props.selection != null;
@@ -376,7 +375,7 @@ function deriveArtifactMemory(
 export function deriveSubStageSummary(
   subStage: AutopilotRailSubStage,
   props: AutopilotRightRailProps,
-  locale: AppLocale,
+  locale: AppLocale
 ): SubStageSummary {
   switch (subStage) {
     case "agent_crew_fabric":

@@ -61,14 +61,22 @@ export interface CreateImageGalleryCacheOptions {
   readonly databaseName?: string;
 }
 
-function resolveIndexedDB(options?: CreateImageGalleryCacheOptions): IDBFactory | null {
+function resolveIndexedDB(
+  options?: CreateImageGalleryCacheOptions
+): IDBFactory | null {
   if (options?.indexedDB) {
     return options.indexedDB;
   }
-  if (typeof globalThis !== "undefined" && (globalThis as { indexedDB?: IDBFactory }).indexedDB) {
+  if (
+    typeof globalThis !== "undefined" &&
+    (globalThis as { indexedDB?: IDBFactory }).indexedDB
+  ) {
     return (globalThis as { indexedDB?: IDBFactory }).indexedDB ?? null;
   }
-  if (typeof window !== "undefined" && typeof window.indexedDB !== "undefined") {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.indexedDB !== "undefined"
+  ) {
     return window.indexedDB;
   }
   return null;
@@ -90,7 +98,7 @@ function transactionToPromise(tx: IDBTransaction): Promise<void> {
 }
 
 export function createImageGalleryCache(
-  options?: CreateImageGalleryCacheOptions,
+  options?: CreateImageGalleryCacheOptions
 ): ImageGalleryCache {
   const factory = resolveIndexedDB(options);
   const clock = options?.clock ?? Date.now;
@@ -129,7 +137,8 @@ export function createImageGalleryCache(
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
-        request.onblocked = () => reject(new Error("IndexedDB upgrade blocked"));
+        request.onblocked = () =>
+          reject(new Error("IndexedDB upgrade blocked"));
       });
     }
     return dbPromise;
@@ -145,14 +154,17 @@ export function createImageGalleryCache(
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const existing = await requestToPromise(
-      store.get(key) as IDBRequest<ImageGalleryCacheEntry | undefined>,
+      store.get(key) as IDBRequest<ImageGalleryCacheEntry | undefined>
     );
     if (!existing) {
       // 仍需等待 tx 完成以释放 transaction 资源。
       await transactionToPromise(tx);
       return null;
     }
-    const refreshed: ImageGalleryCacheEntry = { ...existing, storedAt: clock() };
+    const refreshed: ImageGalleryCacheEntry = {
+      ...existing,
+      storedAt: clock(),
+    };
     store.put(refreshed);
     await transactionToPromise(tx);
     return refreshed;

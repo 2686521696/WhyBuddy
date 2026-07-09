@@ -103,15 +103,20 @@ export function SlideRuleStudio({
     () =>
       mergeFiveSystemModels(
         parseFiveSystemModelFromContents(skillContents ?? {}),
-        parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
+        parseFiveSystemModelFromPerSkillEvidence(
+          publishClosure?.perSkillEvidence
+        )
       ),
     [skillContents, publishClosure?.perSkillEvidence]
   );
 
   // 起草中的部分模型：五系统 JSON 还在流式生成时容错解析（每 +300 字符重解一次，
   // 避免逐 delta 重渲染）。仅实时预览——最终真实模型仍以闭环证据为准。
-  const isDraftingModel = isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
-  const draftParseKey = isDraftingModel ? Math.floor(llmDraft.length / 300) : -1;
+  const isDraftingModel =
+    isRunning && llmDraftLabel === "five-system-model" && !!llmDraft;
+  const draftParseKey = isDraftingModel
+    ? Math.floor(llmDraft.length / 300)
+    : -1;
   const draftModel = useMemo(
     () => (isDraftingModel ? parsePartialFiveSystemModel(llmDraft) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 按长度桶节流重解
@@ -143,7 +148,7 @@ export function SlideRuleStudio({
     }
   });
   const toggleXray = useCallback(() => {
-    setXrayOn((v) => {
+    setXrayOn(v => {
       try {
         localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
       } catch {}
@@ -170,7 +175,9 @@ export function SlideRuleStudio({
   if (!stageVisible) {
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
-        <div className="flex h-full w-full flex-col bg-[#FAF9F5]">{chatSlot}</div>
+        <div className="flex h-full w-full flex-col bg-[#f7f8fa]">
+          {chatSlot}
+        </div>
       </div>
     );
   }
@@ -178,24 +185,29 @@ export function SlideRuleStudio({
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
       {/* Left panel — 38% — Chat（对话 + 实时推演过程） */}
-      <div className="flex h-full shrink-0 flex-col border-r border-[#E7E2D9] bg-[#FAF9F5]"
-           style={{ width: "38%" }}>
+      <div
+        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[#f7f8fa]"
+        style={{ width: "38%" }}
+      >
         {chatSlot}
       </div>
 
       {/* Right panel — 62% — 主舞台 */}
       {/* 与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一） */}
-      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#FAF9F5] p-4">
+      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[#f7f8fa] p-4">
         {stage === "app" && fiveSystemModel ? (
           <>
             {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
-            <div className="flex shrink-0 items-center gap-2" data-testid="sliderule-app-stage-bar">
+            <div
+              className="flex shrink-0 items-center gap-2"
+              data-testid="sliderule-app-stage-bar"
+            >
               <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                 {appTitle || "推演应用"}
               </span>
               {modelIsDraft ? (
                 <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D97757]" />
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1677ff]" />
                   生成中 · 实时渲染
                 </span>
               ) : (
@@ -210,8 +222,8 @@ export function SlideRuleStudio({
                 aria-pressed={xrayOn}
                 className={`ml-auto flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
                   xrayOn
-                    ? "border-transparent bg-[#D97757] text-white shadow-sm"
-                    : "border-[#E7E2D9] bg-white text-stone-600 hover:border-[#D8D1C4] hover:bg-[#FAF8F3]"
+                    ? "border-transparent bg-[#1677ff] text-white shadow-sm"
+                    : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
                 }`}
                 title="计算尺的游标：对齐到元素，读出它在五系统刻度上的对应声明"
               >
@@ -219,7 +231,10 @@ export function SlideRuleStudio({
                 游标
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 gap-3" data-testid="sliderule-app-stage">
+            <div
+              className="flex min-h-0 flex-1 gap-3"
+              data-testid="sliderule-app-stage"
+            >
               {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
               <div className="min-w-0 flex-1 overflow-hidden">
                 <AppRuntimeScreen
@@ -252,16 +267,18 @@ export function SlideRuleStudio({
             data-testid="sliderule-live-stage"
           >
             <span className="inline-flex gap-1">
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2].map(i => (
                 <span
                   key={i}
-                  className="h-2 w-2 animate-pulse rounded-full bg-[#D97757]/60"
+                  className="h-2 w-2 animate-pulse rounded-full bg-[#1677ff]/60"
                   style={{ animationDelay: `${i * 150}ms` }}
                 />
               ))}
             </span>
             <div className="text-[13px] font-medium text-stone-500">推演中</div>
-            <div className="text-[11px] text-stone-400">应用成形后将在这里实时渲染</div>
+            <div className="text-[11px] text-stone-400">
+              应用成形后将在这里实时渲染
+            </div>
           </div>
         ) : (
           <>
@@ -290,19 +307,21 @@ export function SlideRuleStudio({
         {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
         {drawerSkill && (
           <div
-            className="absolute inset-0 z-40 flex flex-col bg-[#FAF9F5]"
+            className="absolute inset-0 z-40 flex flex-col bg-[#f7f8fa]"
             data-testid="sliderule-system-drawer"
           >
             <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
               <span className="text-[13px] font-semibold text-stone-800">
                 {SKILL_LABELS[drawerSkill]}
               </span>
-              <span className="text-[11px] text-stone-400">游标透视 · 应用背后的声明</span>
+              <span className="text-[11px] text-stone-400">
+                游标透视 · 应用背后的声明
+              </span>
               <button
                 type="button"
                 onClick={() => setDrawerSkill(null)}
                 data-testid="sliderule-system-drawer-close"
-                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#F0EDE5] hover:text-stone-700"
+                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#e9edf2] hover:text-stone-700"
                 title="关闭（Esc）"
               >
                 <X className="h-4 w-4" />

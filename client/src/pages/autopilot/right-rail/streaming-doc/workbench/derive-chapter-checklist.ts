@@ -29,7 +29,9 @@ export interface ChapterChecklistItem {
  * `completed` 判定为：从当前 `##` 标题行的下一行开始，到下一个 `##` 标题行（或文件末尾）之间，
  * 是否存在至少一行非空白文本。
  */
-export function deriveChapterChecklist(markdown: string): ChapterChecklistItem[] {
+export function deriveChapterChecklist(
+  markdown: string
+): ChapterChecklistItem[] {
   if (!markdown) {
     return [];
   }
@@ -51,7 +53,8 @@ export function deriveChapterChecklist(markdown: string): ChapterChecklistItem[]
   for (let h = 0; h < headings.length; h++) {
     const { title, lineIndex } = headings[h];
     const startLine = lineIndex + 1;
-    const endLine = h + 1 < headings.length ? headings[h + 1].lineIndex : lines.length;
+    const endLine =
+      h + 1 < headings.length ? headings[h + 1].lineIndex : lines.length;
 
     // 判断章节内是否存在非空内容
     let hasContent = false;

@@ -19,9 +19,7 @@ import type {
   AgentReasoningEntry,
   CapabilityStatus,
 } from "@/lib/blueprint-realtime-store";
-import type {
-  BlueprintGenerationJob,
-} from "@shared/blueprint/contracts";
+import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
 
 // ─── store mock ───────────────────────────────────────────────────────────
 
@@ -93,9 +91,7 @@ describe("MiroFishCardStream", () => {
   });
 
   it("空态:返回 null（无 testid）", () => {
-    const markup = renderToStaticMarkup(
-      <MiroFishCardStream locale="zh-CN" />
-    );
+    const markup = renderToStaticMarkup(<MiroFishCardStream locale="zh-CN" />);
     expect(markup).toBe("");
   });
 
@@ -115,9 +111,7 @@ describe("MiroFishCardStream", () => {
         stageId: "spec_tree",
       }),
     ];
-    const markup = renderToStaticMarkup(
-      <MiroFishCardStream locale="zh-CN" />
-    );
+    const markup = renderToStaticMarkup(<MiroFishCardStream locale="zh-CN" />);
     expect(markup).toContain('data-testid="mirofish-card-stream"');
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
     // 应该出现两次 reasoning 卡片
@@ -135,9 +129,7 @@ describe("MiroFishCardStream", () => {
         stageId: "spec_tree",
       }),
     ];
-    const markup = renderToStaticMarkup(
-      <MiroFishCardStream locale="zh-CN" />
-    );
+    const markup = renderToStaticMarkup(<MiroFishCardStream locale="zh-CN" />);
     expect(markup).not.toContain("grid-cols-[1fr_2px_1fr]");
   });
 
@@ -160,7 +152,7 @@ describe("MiroFishCardStream", () => {
       <MiroFishCardStream locale="zh-CN" stageFilter="spec_tree" />
     );
     expect(markup).toContain("S");
-    expect(markup).not.toContain('thought>C');
+    expect(markup).not.toContain("thought>C");
   });
 
   it("filters store reasoning entries to the current job when job is provided", () => {
@@ -294,9 +286,7 @@ describe("MiroFishCardStream", () => {
       "docker-analysis-sandbox": "completed",
       "mcp-github-source": "invoking", // 没有 acting,被跳过
     };
-    const markup = renderToStaticMarkup(
-      <MiroFishCardStream locale="zh-CN" />
-    );
+    const markup = renderToStaticMarkup(<MiroFishCardStream locale="zh-CN" />);
     expect(markup).toContain("docker-analysis-sandbox");
     expect(markup).not.toContain("mcp-github-source");
   });

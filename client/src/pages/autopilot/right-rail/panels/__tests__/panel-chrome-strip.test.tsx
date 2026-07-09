@@ -183,27 +183,29 @@ describe("sub-stage panel chrome strip (Spec 5)", () => {
       const markup = renderToStaticMarkup(
         <EffectPreviewPanel
           jobId="job-1"
-          job={{
-            id: "job-1",
-            artifacts: [
-              {
-                id: "artifact-preview-stale-1",
-                type: "effect_preview",
-                title: "Effect preview",
-                summary: "Preview summary",
-                createdAt: "2026-05-23T07:00:00.000Z",
-                payload: { id: "preview-stale-1" },
-                staleSince: "2026-05-23T11:00:00.000Z",
-                invalidatedBy: {
-                  stage: "spec_docs",
-                  artifactId: "doc-1",
-                  artifactType: "requirements",
-                  reason: "upstream_spec_documents_changed",
-                  triggeredAt: "2026-05-23T11:00:00.000Z",
+          job={
+            {
+              id: "job-1",
+              artifacts: [
+                {
+                  id: "artifact-preview-stale-1",
+                  type: "effect_preview",
+                  title: "Effect preview",
+                  summary: "Preview summary",
+                  createdAt: "2026-05-23T07:00:00.000Z",
+                  payload: { id: "preview-stale-1" },
+                  staleSince: "2026-05-23T11:00:00.000Z",
+                  invalidatedBy: {
+                    stage: "spec_docs",
+                    artifactId: "doc-1",
+                    artifactType: "requirements",
+                    reason: "upstream_spec_documents_changed",
+                    triggeredAt: "2026-05-23T11:00:00.000Z",
+                  },
                 },
-              },
-            ],
-          } as any}
+              ],
+            } as any
+          }
           specTree={stubSpecTree}
           effectPreviews={[preview]}
           initialPreviews={[preview]}

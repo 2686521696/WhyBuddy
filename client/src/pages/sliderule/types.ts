@@ -30,7 +30,12 @@ export type TurnStep =
       label: string;
       realLlm: boolean;
       loopTurnId?: string;
-      progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
+      progressType?:
+        | "thinking"
+        | "acting"
+        | "observing"
+        | "completed"
+        | "failed";
     }
   | {
       id: string;
@@ -71,7 +76,12 @@ export type UiTurn = {
   actions: ActionTrace[];
 };
 
-export type SlideRuleExecutorMode = "pilot" | "server-llm" | "default" | "demo" | "browser-llm";
+export type SlideRuleExecutorMode =
+  | "pilot"
+  | "server-llm"
+  | "default"
+  | "demo"
+  | "browser-llm";
 
 /** Extended persisted session state including publishClosure evidence (for frontend session store adapter).
  *  publishClosure?: PublishClosureSummary | null is carried explicitly by useSlideRuleSession adapter + python schema.

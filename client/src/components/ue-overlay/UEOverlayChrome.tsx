@@ -55,7 +55,7 @@ export function UEOverlayChrome({
           <div
             className={cn(
               "pointer-events-auto absolute bottom-0 left-0 top-0 z-40",
-              layout === "desktop" ? "w-[248px]" : "w-[64px]",
+              layout === "desktop" ? "w-[248px]" : "w-[64px]"
             )}
             data-testid="ue-overlay-sidebar-slot"
           >
@@ -67,7 +67,7 @@ export function UEOverlayChrome({
           className={cn(
             "pointer-events-none absolute inset-0 min-h-0",
             sidebar && layout === "desktop" && "pl-[248px]",
-            sidebar && layout === "narrow" && "pl-[64px]",
+            sidebar && layout === "narrow" && "pl-[64px]"
           )}
           data-testid="ue-overlay-panel-slot"
         >

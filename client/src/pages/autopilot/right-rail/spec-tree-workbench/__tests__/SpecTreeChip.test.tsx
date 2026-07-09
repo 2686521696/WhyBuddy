@@ -32,7 +32,9 @@ function makeDescriptor(
 describe("SpecTreeChip", () => {
   it("neutral '未生成' 渲染 label + tone class,无 sourceTag", () => {
     const markup = renderToStaticMarkup(
-      <SpecTreeChip descriptor={makeDescriptor({ label: "未生成", tone: "neutral" })} />
+      <SpecTreeChip
+        descriptor={makeDescriptor({ label: "未生成", tone: "neutral" })}
+      />
     );
     expect(markup).toContain('data-testid="spec-tree-chip"');
     expect(markup).toContain('data-tone="neutral"');

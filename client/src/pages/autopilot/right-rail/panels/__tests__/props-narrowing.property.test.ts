@@ -51,7 +51,10 @@ type PanelKey =
 /**
  * design.md「面板抽离总表」8 行的权威来源。PBT 以此常量为 expected 集合断言 narrow 结果。
  */
-const PANEL_FIELDS: Record<PanelKey, ReadonlyArray<keyof AutopilotRightRailProps>> = {
+const PANEL_FIELDS: Record<
+  PanelKey,
+  ReadonlyArray<keyof AutopilotRightRailProps>
+> = {
   AgentCrewFabricPanel: [
     "jobId",
     "job",
@@ -107,7 +110,7 @@ const PANEL_KEYS: PanelKey[] = [
  */
 function narrowPropsFor<K extends PanelKey>(
   panelKey: K,
-  fullProps: AutopilotRightRailProps,
+  fullProps: AutopilotRightRailProps
 ): Record<string, unknown> {
   const fields = PANEL_FIELDS[panelKey];
   const result: Record<string, unknown> = {};
@@ -138,7 +141,7 @@ const arbProps: fc.Arbitrary<AutopilotRightRailProps> = fc
       "clarification",
       "routeset",
       "selection",
-      "fabric",
+      "fabric"
     ),
     currentSubStage: fc.option(
       fc.constantFrom(
@@ -148,9 +151,9 @@ const arbProps: fc.Arbitrary<AutopilotRightRailProps> = fc
         "prompt_package",
         "runtime_capability",
         "engineering_handoff",
-        "artifact_memory",
+        "artifact_memory"
       ),
-      { nil: undefined },
+      { nil: undefined }
     ),
     job: fc.oneof(fc.constant(null), fc.record({ id: fc.string() })),
     routeSet: fc.oneof(fc.constant(null), fc.record({ id: fc.string() })),
@@ -158,13 +161,17 @@ const arbProps: fc.Arbitrary<AutopilotRightRailProps> = fc
     specTree: fc.oneof(fc.constant(null), fc.record({ id: fc.string() })),
     agentCrew: fc.oneof(fc.constant(null), fc.record({ id: fc.string() })),
     capabilities: fc.array(fc.record({ id: fc.string() }), { maxLength: 3 }),
-    capabilityInvocations: fc.array(fc.record({ id: fc.string() }), { maxLength: 3 }),
-    capabilityEvidence: fc.array(fc.record({ id: fc.string() }), { maxLength: 3 }),
+    capabilityInvocations: fc.array(fc.record({ id: fc.string() }), {
+      maxLength: 3,
+    }),
+    capabilityEvidence: fc.array(fc.record({ id: fc.string() }), {
+      maxLength: 3,
+    }),
     effectPreviews: fc.array(fc.record({ id: fc.string() }), { maxLength: 3 }),
     locale: fc.constantFrom("zh-CN", "en-US"),
     onSubStageChange: fc.constant(() => {}),
   })
-  .map((value) => value as unknown as AutopilotRightRailProps);
+  .map(value => value as unknown as AutopilotRightRailProps);
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -179,13 +186,13 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
       // -------------------------------------------------------------------
       it("P1 - keys strictly equal to the declared slice", () => {
         fc.assert(
-          fc.property(arbProps, (fullProps) => {
+          fc.property(arbProps, fullProps => {
             const narrowed = narrowPropsFor(panelKey, fullProps);
             const keys = Object.keys(narrowed).sort();
             const expected = [...PANEL_FIELDS[panelKey]].sort();
             expect(keys).toEqual(expected);
           }),
-          { numRuns: 200 },
+          { numRuns: 200 }
         );
       });
 
@@ -195,13 +202,13 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
       // -------------------------------------------------------------------
       it("P2 - each field value is referentially equal to source (===)", () => {
         fc.assert(
-          fc.property(arbProps, (fullProps) => {
+          fc.property(arbProps, fullProps => {
             const narrowed = narrowPropsFor(panelKey, fullProps);
             for (const field of PANEL_FIELDS[panelKey]) {
               expect(narrowed[field]).toBe(fullProps[field]);
             }
           }),
-          { numRuns: 100 },
+          { numRuns: 100 }
         );
       });
 
@@ -211,7 +218,7 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
       // -------------------------------------------------------------------
       it("P3 - null source fields remain null (not undefined)", () => {
         fc.assert(
-          fc.property(arbProps, (fullProps) => {
+          fc.property(arbProps, fullProps => {
             const narrowed = narrowPropsFor(panelKey, fullProps);
             for (const field of PANEL_FIELDS[panelKey]) {
               if (fullProps[field] === null) {
@@ -220,7 +227,7 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
               }
             }
           }),
-          { numRuns: 200 },
+          { numRuns: 200 }
         );
       });
 
@@ -230,7 +237,7 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
       // -------------------------------------------------------------------
       it("P4 - no extra fields like onSubStageChange or currentStage leak in", () => {
         fc.assert(
-          fc.property(arbProps, (fullProps) => {
+          fc.property(arbProps, fullProps => {
             const narrowed = narrowPropsFor(panelKey, fullProps);
             // 这 4 个字段在 8 个面板的 slice 中从未出现
             expect("onSubStageChange" in narrowed).toBe(false);
@@ -238,7 +245,7 @@ describe("panels props narrowing (Spec 2 PBT)", () => {
             expect("currentSubStage" in narrowed).toBe(false);
             expect("routeSet" in narrowed).toBe(false);
           }),
-          { numRuns: 100 },
+          { numRuns: 100 }
         );
       });
     });

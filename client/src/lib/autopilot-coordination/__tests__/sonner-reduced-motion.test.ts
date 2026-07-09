@@ -8,7 +8,7 @@ describe("sonner reduced motion stylesheet", () => {
   it("disables transitions and animations inside the reduced-motion media query", async () => {
     const cssPath = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      "../../../../../node_modules/sonner/dist/styles.css",
+      "../../../../../node_modules/sonner/dist/styles.css"
     );
     const css = await readFile(cssPath, "utf-8");
 

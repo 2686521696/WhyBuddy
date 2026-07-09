@@ -105,9 +105,9 @@ describe("BlueprintWallProcessGraphHud consumes the placement module (source gua
 
   it("no longer defines the placement constants inline as local consts", () => {
     // 正式化后这些常量来自独立模块，宿主组件里不应再有 `const BLUEPRINT_WALL_GRAPH_* =`。
-    expect(/const\s+BLUEPRINT_WALL_GRAPH_POSITION\s*[:=]/.test(moduleSource)).toBe(
-      false
-    );
+    expect(
+      /const\s+BLUEPRINT_WALL_GRAPH_POSITION\s*[:=]/.test(moduleSource)
+    ).toBe(false);
     expect(/const\s+BLUEPRINT_WALL_GRAPH_WIDTH\s*=/.test(moduleSource)).toBe(
       false
     );

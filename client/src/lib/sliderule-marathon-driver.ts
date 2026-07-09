@@ -8,7 +8,10 @@
  * Mode: "single" (current default, bypass) vs "marathon" (autopilot).
  */
 
-import type { V5SessionState, CapabilityCostRecord } from "@shared/blueprint/v5-reasoning-state";
+import type {
+  V5SessionState,
+  CapabilityCostRecord,
+} from "@shared/blueprint/v5-reasoning-state";
 import type { ReentryStopReason } from "./sliderule-runtime";
 import * as SlideRuleRuntime from "./sliderule-runtime";
 import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builder";
@@ -73,13 +76,21 @@ async function driveMarathonViaPython(
     });
     if (!res.ok) return null;
     const body = await res.json();
-    if (body?.backend !== "python" || body?.budgetAuthority !== "python" || !body?.state) return null;
+    if (
+      body?.backend !== "python" ||
+      body?.budgetAuthority !== "python" ||
+      !body?.state
+    )
+      return null;
     const rounds = Array.isArray(body.rounds) ? body.rounds : [];
     for (const round of rounds) {
       opts.onRoundComplete?.({}, round);
     }
     const finalState = body.publishClosure
-      ? { ...(body.state as V5SessionState), publishClosure: body.publishClosure }
+      ? {
+          ...(body.state as V5SessionState),
+          publishClosure: body.publishClosure,
+        }
       : (body.state as V5SessionState);
     return {
       finalState,
@@ -94,7 +105,11 @@ async function driveMarathonViaPython(
 
 export function classifyDriveFullStatus(
   result:
-    | { finalState?: V5SessionState | null; error?: string | null; status?: number | null }
+    | {
+        finalState?: V5SessionState | null;
+        error?: string | null;
+        status?: number | null;
+      }
     | null
     | undefined
 ): DriveFullStatus {
@@ -111,7 +126,12 @@ export async function driveFullViaPython(
   state: V5SessionState,
   userText: string,
   opts: { stopSignal?: AbortSignal; maxLoops?: number; turnId?: string } = {}
-): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+): Promise<{
+  finalState: V5SessionState;
+  stopReason?: string;
+  loops?: any[];
+  publishClosure?: any;
+} | null> {
   if (typeof fetch !== "function") return null;
   try {
     const res = await fetch("/api/sliderule/drive-full", {
@@ -144,7 +164,11 @@ export async function driveFullViaPython(
         ? [
             {
               loopTurnId: opts.turnId,
-              plan: { selected: [], reason: "python_drive_full", expectedArtifacts: [] },
+              plan: {
+                selected: [],
+                reason: "python_drive_full",
+                expectedArtifacts: [],
+              },
               committedArtifactIds: [],
               stopSignal: "drive_full",
             },
@@ -157,7 +181,13 @@ export async function driveFullViaPython(
 }
 
 /** Skill IDs emitted by the Python SSE stream. */
-export type SkillId = "dataModel" | "workflow" | "rbac" | "page" | "aigc" | "appBundle";
+export type SkillId =
+  | "dataModel"
+  | "workflow"
+  | "rbac"
+  | "page"
+  | "aigc"
+  | "appBundle";
 
 export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
@@ -199,7 +229,12 @@ export async function driveFullViaPythonStream(
   state: V5SessionState,
   userText: string,
   opts: DriveFullStreamOpts = {}
-): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+): Promise<{
+  finalState: V5SessionState;
+  stopReason?: string;
+  loops?: any[];
+  publishClosure?: any;
+} | null> {
   if (typeof fetch !== "function") return null;
   try {
     const res = await fetch("/api/sliderule/drive-full-stream", {
@@ -230,7 +265,7 @@ export async function driveFullViaPythonStream(
 
       // SSE lines: "data: {...}\n\n"
       const lines = buf.split("\n");
-      buf = lines.pop() ?? "";  // keep incomplete last line
+      buf = lines.pop() ?? ""; // keep incomplete last line
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -239,29 +274,48 @@ export async function driveFullViaPythonStream(
         if (!jsonStr) continue;
 
         let event: any;
-        try { event = JSON.parse(jsonStr); } catch { continue; }
+        try {
+          event = JSON.parse(jsonStr);
+        } catch {
+          continue;
+        }
 
         switch (event.type) {
           case "reasoning_step":
-            opts.onReasoningStep?.(event.label as string, event.loop as number | undefined);
+            opts.onReasoningStep?.(
+              event.label as string,
+              event.loop as number | undefined
+            );
             break;
           case "llm_delta":
             // LLM 实时内容增量（后端 150ms 批量聚合，带来源标签）。
-            opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
+            opts.onLlmDelta?.(
+              event.text as string,
+              event.label as string | undefined
+            );
             break;
           case "skill_start":
-            opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
+            opts.onSkillActivated?.(
+              event.skill as SkillId,
+              event.label as string
+            );
             break;
           case "skill_result":
-            opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
-              mermaid: (event.mermaid as string | null) ?? null,
-              evidencePresent: event.evidencePresent as boolean | undefined,
-              evidenceRef: (event.evidenceRef as string | null) ?? null,
-              artifactId: (event.artifactId as string | null) ?? null,
-              digest: (event.digest as string | null) ?? null,
-              edges: (event.edges as Array<Record<string, any>> | null) ?? null,
-              modelSection: (event.modelSection as Record<string, any> | null) ?? null,
-            });
+            opts.onSkillCompleted?.(
+              event.skill as SkillId,
+              Boolean(event.error),
+              {
+                mermaid: (event.mermaid as string | null) ?? null,
+                evidencePresent: event.evidencePresent as boolean | undefined,
+                evidenceRef: (event.evidenceRef as string | null) ?? null,
+                artifactId: (event.artifactId as string | null) ?? null,
+                digest: (event.digest as string | null) ?? null,
+                edges:
+                  (event.edges as Array<Record<string, any>> | null) ?? null,
+                modelSection:
+                  (event.modelSection as Record<string, any> | null) ?? null,
+              }
+            );
             break;
           case "publish_closure":
             publishClosure = event.data;
@@ -289,7 +343,11 @@ export async function driveFullViaPythonStream(
         ? [
             {
               loopTurnId: opts.turnId,
-              plan: { selected: [], reason: "python_drive_full_stream", expectedArtifacts: [] },
+              plan: {
+                selected: [],
+                reason: "python_drive_full_stream",
+                expectedArtifacts: [],
+              },
               committedArtifactIds: [],
               stopSignal: "drive_full_stream",
             },
@@ -336,8 +394,12 @@ export async function proposeFrontier(
   const basePrompt = `${promptRes.systemPrompt}\n\n${promptRes.userPrompt}`;
 
   // Derive concrete next frontier seed from the *real* digest (K1 supply priority: front-load the last report content)
-  const branchMatch = (digest.content || "").match(/下一步工程化分支[:：]\s*([\s\S]{20,400}?)(?:\n\n|provenance|收敛|$)/i);
-  const branchText = branchMatch ? branchMatch[1].trim().replace(/\n+/g, " ") : "";
+  const branchMatch = (digest.content || "").match(
+    /下一步工程化分支[:：]\s*([\s\S]{20,400}?)(?:\n\n|provenance|收敛|$)/i
+  );
+  const branchText = branchMatch
+    ? branchMatch[1].trim().replace(/\n+/g, " ")
+    : "";
   const goalText = (state.goal?.text || "当前目标").slice(0, 80);
   // Produce a focused, deduped question seed (userText style for next drive)
   let proposedSeed = `基于上轮收敛「${digest.title}」继续：${branchText ? branchText.slice(0, 180) : "探索下一可执行闭环与证据补强"}？（目标：${goalText}）`;
@@ -349,14 +411,16 @@ export async function proposeFrontier(
   const deDupeChecked = previousFrontiers.includes(proposedSeed);
   if (deDupeChecked || previousFrontiers.length >= 3) {
     // still return a proposal; caller decides exhausted
-    proposedSeed = proposedSeed + " [variant-" + (previousFrontiers.length + 1) + "]";
+    proposedSeed =
+      proposedSeed + " [variant-" + (previousFrontiers.length + 1) + "]";
   }
 
   const ledgerEntry = {
     type: "frontier_propose" as const,
     proposedSeed,
     rationale,
-    promptSnippet: basePrompt.slice(0, 600) + (basePrompt.length > 600 ? "..." : ""),
+    promptSnippet:
+      basePrompt.slice(0, 600) + (basePrompt.length > 600 ? "..." : ""),
     at: new Date().toISOString(),
     deDupeChecked,
   };
@@ -369,12 +433,26 @@ export async function proposeFrontier(
   };
 }
 
-export function createRoundDigest(state: V5SessionState, recentArtifactIds: string[]): { title: string; summary: string; content: string; supersededIds: string[] } {
+export function createRoundDigest(
+  state: V5SessionState,
+  recentArtifactIds: string[]
+): {
+  title: string;
+  summary: string;
+  content: string;
+  supersededIds: string[];
+} {
   // M6 真实 digest: 直接使用 buildStructuredReport（生产 baseline 9段 schema）
-  const inputIds = recentArtifactIds.length > 0
-    ? recentArtifactIds
-    : (state.artifacts || []).slice(-5).map((a: any) => a.id);
-  const built = buildStructuredReport({ state, inputArtifactIds: inputIds, roleId: "digest-autopilot", turnLabel: "marathon-round" });
+  const inputIds =
+    recentArtifactIds.length > 0
+      ? recentArtifactIds
+      : (state.artifacts || []).slice(-5).map((a: any) => a.id);
+  const built = buildStructuredReport({
+    state,
+    inputArtifactIds: inputIds,
+    roleId: "digest-autopilot",
+    turnLabel: "marathon-round",
+  });
 
   // M6 superseded (独立于 stale): 标记本轮参与 digest 的 artifacts（供画布分组/K1 压缩）
   const supersededIds = [...new Set(inputIds)];
@@ -426,7 +504,9 @@ export async function driveMarathon(
     });
 
     const lastStop = driveRes.stopReason;
-    const loopTurnId = driveRes.loops[driveRes.loops.length - 1]?.loopTurnId || `m-${Date.now()}`;
+    const loopTurnId =
+      driveRes.loops[driveRes.loops.length - 1]?.loopTurnId ||
+      `m-${Date.now()}`;
     rounds.push({ loopTurnId, stopReason: lastStop });
 
     working = driveRes.finalState;
@@ -435,20 +515,34 @@ export async function driveMarathon(
 
     // M6: 真实 digest (buildStructuredReport 9段) + 质量门概念（digest 本身由 report 契约保证，内层 drive 已过 gates）
     let digestForRound: any = { title: "轮次小结", summary: "", content: "" };
-    if (lastStop === "convergence_signal" || lastStop === "coverage_sufficient") {
-      const recentIds = (working.artifacts || []).slice(-6).map((a: any) => a.id);
+    if (
+      lastStop === "convergence_signal" ||
+      lastStop === "coverage_sufficient"
+    ) {
+      const recentIds = (working.artifacts || [])
+        .slice(-6)
+        .map((a: any) => a.id);
       const digest = createRoundDigest(working, recentIds);
       digestForRound = digest;
 
       // M6: 应用 superseded（画布分组/优先供给依据）
       if (!working.supersededArtifactIds) working.supersededArtifactIds = [];
-      working.supersededArtifactIds = [...new Set([...(working.supersededArtifactIds || []), ...digest.supersededIds])];
+      working.supersededArtifactIds = [
+        ...new Set([
+          ...(working.supersededArtifactIds || []),
+          ...digest.supersededIds,
+        ]),
+      ];
 
       // K1 供给优先：把 digest 内容前置到下一 seed（截断 24000 char 保护上下文预算）
       const k1DigestSupply = (digest.content || "").slice(0, 24000);
 
       // M3: 真实 frontier.propose（prompt + rationale + ledger）
-      const proposal = await proposeFrontier(working, digest, previousFrontiers);
+      const proposal = await proposeFrontier(
+        working,
+        digest,
+        previousFrontiers
+      );
       const frontierLedger = proposal.ledgerEntry;
 
       // 记录到 decisionLedger（append-only，M3/M4/M6 可审计）
@@ -473,22 +567,40 @@ export async function driveMarathon(
 
       previousFrontiers.push(proposal.seed);
 
-      const exhausted = previousFrontiers.length > 4 || previousFrontiers.filter((f, i, a) => a.indexOf(f) !== i).length > 0;
+      const exhausted =
+        previousFrontiers.length > 4 ||
+        previousFrontiers.filter((f, i, a) => a.indexOf(f) !== i).length > 0;
       if (exhausted) {
         stopReason = "frontier_exhausted";
-        if (opts.onRoundComplete) opts.onRoundComplete({ ...digest, frontier: proposal, k1Supply: k1DigestSupply.slice(0, 1200) }, rounds[rounds.length - 1]);
+        if (opts.onRoundComplete)
+          opts.onRoundComplete(
+            {
+              ...digest,
+              frontier: proposal,
+              k1Supply: k1DigestSupply.slice(0, 1200),
+            },
+            rounds[rounds.length - 1]
+          );
         break;
       }
 
       // 下一轮 seed = K1 优先 digest supply + frontier 问题
       currentSeed = `${k1DigestSupply.slice(0, 1800)}\n\n${proposal.seed}`;
       if (opts.onRoundComplete) {
-        opts.onRoundComplete({ ...digest, frontier: proposal, k1Supply: k1DigestSupply.slice(0, 1200) }, rounds[rounds.length - 1]);
+        opts.onRoundComplete(
+          {
+            ...digest,
+            frontier: proposal,
+            k1Supply: k1DigestSupply.slice(0, 1200),
+          },
+          rounds[rounds.length - 1]
+        );
       }
       // continue to next marathon round
     } else if (lastStop === "await_ready") {
       stopReason = "await_human"; // M4 human-only
-      if (opts.onRoundComplete) opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
+      if (opts.onRoundComplete)
+        opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
       break;
     } else if (lastStop === "await_confirm") {
       // M4: policy 代答（显式 ledger trace）
@@ -502,14 +614,16 @@ export async function driveMarathon(
         autopilotPolicy: policy,
         at: new Date().toISOString(),
       });
-      if (opts.onRoundComplete) opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
+      if (opts.onRoundComplete)
+        opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
     } else if (lastStop === "user_interrupted") {
       stopReason = "user_interrupted";
       break;
     } else if (lastStop === "budget_exhausted") {
       currentSeed = "继续基于前轮（内层 budget 后回 marathon session 预算）";
     } else {
-      if (opts.onRoundComplete) opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
+      if (opts.onRoundComplete)
+        opts.onRoundComplete(digestForRound, rounds[rounds.length - 1]);
       break;
     }
 

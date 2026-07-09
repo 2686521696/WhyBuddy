@@ -81,19 +81,21 @@ export function buildPreflightExecutionFallbackEntries({
   if (sub === "clarification" && clarificationSession) {
     const requiredTotal =
       readiness?.requiredTotal ??
-      clarificationSession.questions.filter((question) => question.required).length;
+      clarificationSession.questions.filter(question => question.required)
+        .length;
     const answeredRequired =
       readiness?.answeredRequired ??
-      clarificationSession.answers.filter((answer) =>
+      clarificationSession.answers.filter(answer =>
         clarificationSession.questions.some(
-          (question) => question.required && question.id === answer.questionId
+          question => question.required && question.id === answer.questionId
         )
       ).length;
     return [
       {
         id: `preflight-clarification-${clarificationSession.id}`,
         stageId: "clarification",
-        timestamp: clarificationSession.updatedAt ?? clarificationSession.createdAt,
+        timestamp:
+          clarificationSession.updatedAt ?? clarificationSession.createdAt,
         text: t(
           locale,
           `澄清已提交，已回答 ${clarificationSession.answers.length}/${clarificationSession.questions.length}，必答 ${answeredRequired}/${requiredTotal}。`,

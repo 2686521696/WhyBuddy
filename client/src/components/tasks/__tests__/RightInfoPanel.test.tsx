@@ -38,9 +38,7 @@ function makeTimelineEvent(
   };
 }
 
-function makeDetail(
-  overrides?: Partial<MissionTaskDetail>
-): MissionTaskDetail {
+function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
   return {
     id: "task-1",
     title: "Test Task",
@@ -123,8 +121,24 @@ function makeAutopilot(
         estimatedDuration: "2h 30m",
       },
       stages: [
-        { key: "s1", label: "Planning", status: "done", progress: 100, arcStart: 0, arcEnd: 90, midAngle: 45 },
-        { key: "s2", label: "Execution", status: "running", progress: 50, arcStart: 90, arcEnd: 180, midAngle: 135 },
+        {
+          key: "s1",
+          label: "Planning",
+          status: "done",
+          progress: 100,
+          arcStart: 0,
+          arcEnd: 90,
+          midAngle: 45,
+        },
+        {
+          key: "s2",
+          label: "Execution",
+          status: "running",
+          progress: 50,
+          arcStart: 90,
+          arcEnd: 180,
+          midAngle: 135,
+        },
       ],
       candidateRoutes: [],
     },
@@ -403,7 +417,15 @@ describe("LiveProgressSection", () => {
   it("renders sub-metrics from detail stages when autopilot not available", () => {
     const detail = makeDetail({
       stages: [
-        { key: "s1", label: "Review", status: "done", progress: 80, arcStart: 0, arcEnd: 90, midAngle: 45 },
+        {
+          key: "s1",
+          label: "Review",
+          status: "done",
+          progress: 80,
+          arcStart: 0,
+          arcEnd: 90,
+          midAngle: 45,
+        },
       ],
     });
     const markup = renderToStaticMarkup(

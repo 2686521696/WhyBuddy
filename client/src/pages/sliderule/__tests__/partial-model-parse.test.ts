@@ -19,7 +19,11 @@ const FULL_MODEL = {
           { id: "price", name: "定价", type: "number" },
         ],
       },
-      { id: "order", name: "寄卖单", fields: [{ id: "status", name: "状态", type: "enum" }] },
+      {
+        id: "order",
+        name: "寄卖单",
+        fields: [{ id: "status", name: "状态", type: "enum" }],
+      },
     ],
   },
   rbac: { roles: ["seller", "appraiser"], permissions: ["p1"], menus: [] },
@@ -27,7 +31,9 @@ const FULL_MODEL = {
     nodes: [{ id: "n1", name: "提交", assigneeRole: "seller" }],
     transitions: [{ from: "n1", to: "n1" }],
   },
-  page: { pages: [{ id: "home", name: "首页", fieldBindings: ["instrument.title"] }] },
+  page: {
+    pages: [{ id: "home", name: "首页", fieldBindings: ["instrument.title"] }],
+  },
   aigc: { capabilities: [] },
   appbundle: { pageBindings: [{ pageRef: "home", workflowRef: "wf" }] },
 };
@@ -55,7 +61,9 @@ describe("repairPartialJson", () => {
   });
 
   it("非 JSON 前言（markdown 说明）后跟 JSON 也能定位解析", () => {
-    const parsed = repairPartialJson("以下是模型：\n" + FULL_JSON.slice(0, 120)) as any;
+    const parsed = repairPartialJson(
+      "以下是模型：\n" + FULL_JSON.slice(0, 120)
+    ) as any;
     expect(parsed).not.toBeNull();
   });
 
@@ -83,7 +91,9 @@ describe("parsePartialFiveSystemModel", () => {
     const model = parsePartialFiveSystemModel(FULL_JSON.slice(0, cut));
     expect(model?.datamodel?.entities?.length).toBe(2);
     expect(model?.page?.pages?.length).toBe(1);
-    const { deriveAppRuntimeSchema } = await import("../live-runtime/app-runtime-schema");
+    const { deriveAppRuntimeSchema } = await import(
+      "../live-runtime/app-runtime-schema"
+    );
     expect(deriveAppRuntimeSchema(model, "测试应用")).not.toBeNull();
   });
 });

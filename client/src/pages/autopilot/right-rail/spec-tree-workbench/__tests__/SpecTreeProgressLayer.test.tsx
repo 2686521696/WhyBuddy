@@ -36,7 +36,9 @@ describe("SpecTreeProgressLayer", () => {
       expect(markup).toContain('data-testid="spec-tree-progress-layer"');
       expect(markup).toContain('data-progress-kind="determinate"');
       // determinate 下渲染真实进度条 + 计数
-      expect(markup).toContain('data-testid="spec-tree-progress-bar-determinate"');
+      expect(markup).toContain(
+        'data-testid="spec-tree-progress-bar-determinate"'
+      );
       expect(markup).toContain('data-testid="spec-tree-progress-count"');
       expect(markup).toContain("2 / 5");
       // 40% 进度宽度
@@ -54,9 +56,13 @@ describe("SpecTreeProgressLayer", () => {
       expect(markup).toContain('data-testid="spec-tree-progress-layer"');
       expect(markup).toContain('data-progress-kind="skeleton"');
       // skeleton 退化为 indeterminate 条，不渲染 determinate 条 / 计数
-      expect(markup).not.toContain('data-testid="spec-tree-progress-bar-determinate"');
+      expect(markup).not.toContain(
+        'data-testid="spec-tree-progress-bar-determinate"'
+      );
       expect(markup).not.toContain('data-testid="spec-tree-progress-count"');
-      expect(markup).toContain('data-testid="spec-tree-progress-bar-indeterminate"');
+      expect(markup).toContain(
+        'data-testid="spec-tree-progress-bar-indeterminate"'
+      );
     });
 
     it("progress 缺失（undefined）→ indeterminate", () => {
@@ -65,8 +71,12 @@ describe("SpecTreeProgressLayer", () => {
       );
       expect(markup).toContain('data-testid="spec-tree-progress-layer"');
       expect(markup).toContain('data-progress-kind="indeterminate"');
-      expect(markup).toContain('data-testid="spec-tree-progress-bar-indeterminate"');
-      expect(markup).not.toContain('data-testid="spec-tree-progress-bar-determinate"');
+      expect(markup).toContain(
+        'data-testid="spec-tree-progress-bar-indeterminate"'
+      );
+      expect(markup).not.toContain(
+        'data-testid="spec-tree-progress-bar-determinate"'
+      );
     });
 
     it("progress 为 null → indeterminate", () => {
@@ -74,7 +84,9 @@ describe("SpecTreeProgressLayer", () => {
         <SpecTreeProgressLayer locale="zh-CN" scope="single" progress={null} />
       );
       expect(markup).toContain('data-progress-kind="indeterminate"');
-      expect(markup).toContain('data-testid="spec-tree-progress-bar-indeterminate"');
+      expect(markup).toContain(
+        'data-testid="spec-tree-progress-bar-indeterminate"'
+      );
     });
 
     it("骨架占位行始终渲染（不 blank-out 既有内容，R2.11）", () => {

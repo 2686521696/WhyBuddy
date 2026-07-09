@@ -21,10 +21,7 @@ import { describe, expect, it } from "vitest";
 async function readSource(): Promise<string> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
-  return fs.readFile(
-    path.resolve(__dirname, "../use-auto-advance.ts"),
-    "utf8"
-  );
+  return fs.readFile(path.resolve(__dirname, "../use-auto-advance.ts"), "utf8");
 }
 
 describe("use-auto-advance · stage 3 unblock contract", () => {
@@ -36,7 +33,10 @@ describe("use-auto-advance · stage 3 unblock contract", () => {
     const forceAdvanceMatch = source.match(
       /if\s*\(\s*stage\s*===\s*"spec_tree"\s*\)\s*\{[\s\S]*?actions\.generateSpecDocuments\(jobId,\s*\{([\s\S]*?)\}\s*\)/
     );
-    expect(forceAdvanceMatch, "spec_tree force-advance branch missing").not.toBeNull();
+    expect(
+      forceAdvanceMatch,
+      "spec_tree force-advance branch missing"
+    ).not.toBeNull();
     const optsBlock = forceAdvanceMatch![1];
     expect(optsBlock).toMatch(/types\s*:\s*\[\s*"requirements"\s*\]/);
     expect(optsBlock).not.toMatch(/"design"/);

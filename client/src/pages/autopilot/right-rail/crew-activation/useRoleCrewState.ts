@@ -57,9 +57,7 @@ function mapPhaseToCrewStatus(phase: RolePhase): RoleCrewStatus {
  */
 function deriveRoleName(roleId: string): string {
   if (!roleId) return "Unknown";
-  return roleId
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return roleId.replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------
@@ -73,8 +71,8 @@ function deriveRoleName(roleId: string): string {
  */
 export function useRoleCrewState(): UseRoleCrewStateReturn {
   // 从 store 订阅 rolePhases 与 logEntries
-  const rolePhases = useBlueprintRealtimeStore((s) => s.rolePhases);
-  const logEntries = useBlueprintRealtimeStore((s) => s.logEntries);
+  const rolePhases = useBlueprintRealtimeStore(s => s.rolePhases);
+  const logEntries = useBlueprintRealtimeStore(s => s.logEntries);
 
   // 派生角色列表
   const roles: RoleCrewEntry[] = useMemo(() => {
@@ -95,7 +93,7 @@ export function useRoleCrewState(): UseRoleCrewStateReturn {
 
   // 派生活跃角色
   const activeRoles: RoleCrewEntry[] = useMemo(
-    () => roles.filter((r) => r.status === "active"),
+    () => roles.filter(r => r.status === "active"),
     [roles]
   );
 

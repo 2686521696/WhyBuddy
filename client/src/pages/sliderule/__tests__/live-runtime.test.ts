@@ -27,7 +27,11 @@ const MODEL: FiveSystemModel = {
       },
     ],
   },
-  rbac: { roles: ["employee", "manager", "finance"], permissions: [], menus: [] },
+  rbac: {
+    roles: ["employee", "manager", "finance"],
+    permissions: [],
+    menus: [],
+  },
   workflow: {
     id: "wf_expense",
     nodes: [
@@ -50,7 +54,12 @@ describe("live-runtime · 行 CRUD（动态表浏览器版）", () => {
     const s0 = initRuntimeState(MODEL);
     expect(s0.entities.expense_claim).toEqual([]);
 
-    const { state: s1, row } = addRow(s0, "expense_claim", { title: "打车", amount: 30 }, NOW);
+    const { state: s1, row } = addRow(
+      s0,
+      "expense_claim",
+      { title: "打车", amount: 30 },
+      NOW
+    );
     expect(s1.entities.expense_claim).toHaveLength(1);
     expect(s0.entities.expense_claim).toHaveLength(0); // 不可变
 
@@ -63,8 +72,12 @@ describe("live-runtime · 行 CRUD（动态表浏览器版）", () => {
   });
 
   it("validateRowValues：number 字段非数字如实报错", () => {
-    expect(validateRowValues(MODEL, "expense_claim", { amount: "abc" })).toHaveLength(1);
-    expect(validateRowValues(MODEL, "expense_claim", { amount: "42" })).toEqual([]);
+    expect(
+      validateRowValues(MODEL, "expense_claim", { amount: "abc" })
+    ).toHaveLength(1);
+    expect(validateRowValues(MODEL, "expense_claim", { amount: "42" })).toEqual(
+      []
+    );
     expect(validateRowValues(MODEL, "no_such_entity", {})).toEqual([]);
   });
 });
@@ -77,14 +90,28 @@ describe("live-runtime · 审批状态机（语义对齐引擎 moveToNextNode）
   });
 
   it("单出边 approve 自动推进；无出边 approve 即 completed", () => {
-    let { state, instance } = startInstance(initRuntimeState(MODEL), MODEL, "报销-1", NOW);
+    let { state, instance } = startInstance(
+      initRuntimeState(MODEL),
+      MODEL,
+      "报销-1",
+      NOW
+    );
     expect(instance!.currentNodeId).toBe("submit");
 
-    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, { byRole: "employee" }));
+    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, {
+      byRole: "employee",
+    }));
     expect(state.instances[0].currentNodeId).toBe("mgr");
 
     // mgr 有两条出边：不选分支必须报错（不静默走错路）
-    const branchless = advanceInstance(state, MODEL, instance!.id, "approve", NOW, { byRole: "manager" });
+    const branchless = advanceInstance(
+      state,
+      MODEL,
+      instance!.id,
+      "approve",
+      NOW,
+      { byRole: "manager" }
+    );
     expect(branchless.error).toContain("分支");
 
     ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, {
@@ -93,9 +120,11 @@ describe("live-runtime · 审批状态机（语义对齐引擎 moveToNextNode）
     }));
     expect(state.instances[0].currentNodeId).toBe("fin");
 
-    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, { byRole: "finance" }));
+    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, {
+      byRole: "finance",
+    }));
     expect(state.instances[0].status).toBe("completed");
-    expect(state.instances[0].log.map((l) => l.action)).toEqual([
+    expect(state.instances[0].log.map(l => l.action)).toEqual([
       "start",
       "approve",
       "approve",
@@ -105,17 +134,31 @@ describe("live-runtime · 审批状态机（语义对齐引擎 moveToNextNode）
   });
 
   it("reject 即终态；终态实例不可再推进", () => {
-    let { state, instance } = startInstance(initRuntimeState(MODEL), MODEL, "报销-2", NOW);
-    ({ state } = advanceInstance(state, MODEL, instance!.id, "reject", NOW, { byRole: "employee" }));
+    let { state, instance } = startInstance(
+      initRuntimeState(MODEL),
+      MODEL,
+      "报销-2",
+      NOW
+    );
+    ({ state } = advanceInstance(state, MODEL, instance!.id, "reject", NOW, {
+      byRole: "employee",
+    }));
     expect(state.instances[0].status).toBe("rejected");
     const after = advanceInstance(state, MODEL, instance!.id, "approve", NOW);
     expect(after.error).toContain("终态");
   });
 
   it("回环分支可走通（mgr → rework → mgr）", () => {
-    let { state, instance } = startInstance(initRuntimeState(MODEL), MODEL, "报销-3", NOW);
+    let { state, instance } = startInstance(
+      initRuntimeState(MODEL),
+      MODEL,
+      "报销-3",
+      NOW
+    );
     ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW)); // submit→mgr
-    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, { viaTransitionIndex: 1 })); // mgr→rework
+    ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW, {
+      viaTransitionIndex: 1,
+    })); // mgr→rework
     expect(state.instances[0].currentNodeId).toBe("rework");
     ({ state } = advanceInstance(state, MODEL, instance!.id, "approve", NOW)); // rework→mgr（单出边）
     expect(state.instances[0].currentNodeId).toBe("mgr");

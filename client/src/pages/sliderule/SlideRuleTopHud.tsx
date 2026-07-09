@@ -58,7 +58,7 @@ export function SlideRuleTopHud({
               title="SlideRule"
             />
           )}
-          <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#E7E2D9] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(68_60_44/0.05)]">
+          <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#e5e7eb] bg-white/80 px-3.5 py-2 text-xs shadow-[0_1px_6px_rgb(15_23_42/0.05)]">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-stone-400">
               STATUS
             </span>
@@ -78,7 +78,10 @@ export function SlideRuleTopHud({
             >
               {goal || "尚未稳定话题"}
             </span>
-            <span className="hidden h-3 w-px bg-[#E7E2D9] md:inline-block" aria-hidden />
+            <span
+              className="hidden h-3 w-px bg-[#e5e7eb] md:inline-block"
+              aria-hidden
+            />
             <span className="hidden text-stone-400 sm:inline">
               阶段{" "}
               <span className="font-mono font-semibold text-stone-700">
@@ -97,7 +100,7 @@ export function SlideRuleTopHud({
               type="button"
               onClick={onOpenDeliverables}
               data-testid="sliderule-deliverables-open"
-              className="flex h-9 items-center gap-1.5 rounded-full border border-[#E7E2D9] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA]"
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(15_23_42/0.06)] transition hover:border-[#d3d8e0] hover:bg-[#eef0f4]"
               title="交付物"
             >
               <Layers className="h-4 w-4" />
@@ -111,8 +114,12 @@ export function SlideRuleTopHud({
               onClick={onResetSession}
               disabled={isRunning}
               data-testid="sliderule-reset-session"
-              className="flex h-9 items-center gap-1.5 rounded-full border border-[#E7E2D9] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(68_60_44/0.06)] transition hover:border-[#D8D1C4] hover:bg-[#F5F1EA] disabled:opacity-45"
-              title={isRunning ? "推演进行中，稍后再重置" : "清空本轮对话与持久化状态，重新开始"}
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-stone-700 shadow-[0_1px_6px_rgb(15_23_42/0.06)] transition hover:border-[#d3d8e0] hover:bg-[#eef0f4] disabled:opacity-45"
+              title={
+                isRunning
+                  ? "推演进行中，稍后再重置"
+                  : "清空本轮对话与持久化状态，重新开始"
+              }
             >
               <RotateCw className="h-4 w-4" />
               重置会话
@@ -129,7 +136,13 @@ export function SlideRuleTopHud({
   );
 }
 
-export function InlineMetric({ label, value }: { label: string; value: number }) {
+export function InlineMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
   return (
     <span className="tabular-nums text-stone-600">
       <span className="text-stone-400">{label} </span>

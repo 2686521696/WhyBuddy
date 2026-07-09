@@ -13,7 +13,9 @@ import { describe, expect, it, vi } from "vitest";
 let mockReasoningEntries: unknown[] = [];
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: unknown) => unknown
+  ) => {
     const snapshot = {
       agentReasoning: { entries: mockReasoningEntries },
       rolePhases: {} as Record<string, unknown>,
@@ -99,7 +101,9 @@ describe("WorkbenchExecutionPanel regression (P9)", () => {
       );
 
       // Both lane testids present
-      expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-execution-lane"'
+      );
       expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
 
       // Execution lane appears before artifact lane (ordered card list)
@@ -113,11 +117,17 @@ describe("WorkbenchExecutionPanel regression (P9)", () => {
       expect(markup).toContain('data-testid="mirofish-card-reasoning"');
 
       // At least one artifact card rendered
-      expect(markup).toContain('data-testid="autopilot-process-artifact-card-frame"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-artifact-card-frame"'
+      );
 
       // No placeholder cards rendered (because lanes have content)
-      expect(markup).not.toContain('data-testid="autopilot-process-execution-placeholder"');
-      expect(markup).not.toContain('data-testid="autopilot-process-artifact-placeholder"');
+      expect(markup).not.toContain(
+        'data-testid="autopilot-process-execution-placeholder"'
+      );
+      expect(markup).not.toContain(
+        'data-testid="autopilot-process-artifact-placeholder"'
+      );
     });
 
     it("preserves className tokens for bounded scrolling and grid layout", () => {
@@ -168,20 +178,30 @@ describe("WorkbenchExecutionPanel regression (P9)", () => {
       mockReasoningEntries = [];
 
       const markup = renderToStaticMarkup(
-        <WorkbenchExecutionPanel {...makeProps({ job: null, reasoningEntries: [] })} />
+        <WorkbenchExecutionPanel
+          {...makeProps({ job: null, reasoningEntries: [] })}
+        />
       );
 
       // Both lane testids still present
-      expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-execution-lane"'
+      );
       expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
 
       // NEW BASELINE: placeholder cards ARE present
-      expect(markup).toContain('data-testid="autopilot-process-execution-placeholder"');
-      expect(markup).toContain('data-testid="autopilot-process-artifact-placeholder"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-execution-placeholder"'
+      );
+      expect(markup).toContain(
+        'data-testid="autopilot-process-artifact-placeholder"'
+      );
 
       // No real content cards
       expect(markup).not.toContain('data-testid="mirofish-card-reasoning"');
-      expect(markup).not.toContain('data-testid="autopilot-process-artifact-card-frame"');
+      expect(markup).not.toContain(
+        'data-testid="autopilot-process-artifact-card-frame"'
+      );
     });
 
     it("renders placeholder cards when job has empty artifacts array", () => {
@@ -193,23 +213,33 @@ describe("WorkbenchExecutionPanel regression (P9)", () => {
       } as unknown as WorkbenchExecutionPanelProps["job"];
 
       const markup = renderToStaticMarkup(
-        <WorkbenchExecutionPanel {...makeProps({ job, reasoningEntries: [] })} />
+        <WorkbenchExecutionPanel
+          {...makeProps({ job, reasoningEntries: [] })}
+        />
       );
 
       // Both lane testids present
-      expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-execution-lane"'
+      );
       expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
 
       // Placeholder cards present (new baseline)
-      expect(markup).toContain('data-testid="autopilot-process-execution-placeholder"');
-      expect(markup).toContain('data-testid="autopilot-process-artifact-placeholder"');
+      expect(markup).toContain(
+        'data-testid="autopilot-process-execution-placeholder"'
+      );
+      expect(markup).toContain(
+        'data-testid="autopilot-process-artifact-placeholder"'
+      );
     });
 
     it("placeholder cards have aria-busy for accessibility", () => {
       mockReasoningEntries = [];
 
       const markup = renderToStaticMarkup(
-        <WorkbenchExecutionPanel {...makeProps({ job: null, reasoningEntries: [] })} />
+        <WorkbenchExecutionPanel
+          {...makeProps({ job: null, reasoningEntries: [] })}
+        />
       );
 
       expect(markup).toContain('aria-busy="true"');

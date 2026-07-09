@@ -300,13 +300,19 @@ def _default_llm_json_fn(goal: str) -> Optional[Dict[str, Any]]:
             # 多链路 + 不变式后契约变大（原 4000 面向单链路模型）；截断会直接
             # 变成 shape 失败 → 重试 → fail-closed，宁可放宽。
             max_tokens=8000,
+            # 瞬时错误（网关 502/503/超时）退避拉长：默认 200ms 扛不过几秒级
+            # 的网关抖动（线上案例：blackaicoding 502 连吃三发）。
+            backoff_ms=2000,
             # sink 已注册时走流式：内容增量实时推给 UI（llm_delta）。
             on_delta=_emit_delta if _delta_sink is not None else None,
         )
         return parsed if isinstance(parsed, dict) else None
     except LlmError as exc:
         # No key / rate limit / parse failure / shape failure — fail-closed，但留痕便于诊断。
-        _last_call_error = f"LlmError: {str(exc)[:180]}"
+        # 展示层人话化：剥 HTML 错误页、5xx 标注瞬时故障（不改 fail-closed 语义）。
+        from services.llm_error_text import humanize_llm_error
+
+        _last_call_error = f"LlmError: {humanize_llm_error(str(exc))[:180]}"
         print(f"[v5_llm_generate] LlmError: {str(exc)[:200]}")
         return None
     except Exception as exc:  # noqa: BLE001

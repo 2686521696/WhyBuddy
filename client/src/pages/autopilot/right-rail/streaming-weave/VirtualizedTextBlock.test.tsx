@@ -19,9 +19,7 @@ import { VirtualizedTextBlock } from "./VirtualizedTextBlock";
 describe("VirtualizedTextBlock", () => {
   it("短文本不应用虚拟化样式", () => {
     const shortText = "Hello World";
-    const html = renderToString(
-      <VirtualizedTextBlock text={shortText} />
-    );
+    const html = renderToString(<VirtualizedTextBlock text={shortText} />);
 
     // 不应包含 content-visibility 样式
     expect(html).not.toContain("content-visibility");
@@ -30,9 +28,7 @@ describe("VirtualizedTextBlock", () => {
 
   it("超过 1000 字符的文本应用虚拟化样式", () => {
     const longText = "a".repeat(1001);
-    const html = renderToString(
-      <VirtualizedTextBlock text={longText} />
-    );
+    const html = renderToString(<VirtualizedTextBlock text={longText} />);
 
     // 应包含 content-visibility 样式
     expect(html).toContain("content-visibility:auto");
@@ -41,9 +37,7 @@ describe("VirtualizedTextBlock", () => {
 
   it("恰好 1000 字符不应用虚拟化样式", () => {
     const exactText = "b".repeat(1000);
-    const html = renderToString(
-      <VirtualizedTextBlock text={exactText} />
-    );
+    const html = renderToString(<VirtualizedTextBlock text={exactText} />);
 
     expect(html).not.toContain("content-visibility");
   });

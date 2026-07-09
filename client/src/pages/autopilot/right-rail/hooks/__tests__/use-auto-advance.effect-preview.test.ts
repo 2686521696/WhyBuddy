@@ -10,7 +10,10 @@ function extractAutoAdvanceEffectBody(source: string): string {
   const match = source.match(
     /\/\/ 监听 job\.stage 变化,自动触发下一阶段[\s\S]*?useEffect\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*,\s*\[jobId,\s*job,\s*specTree,\s*advancing,\s*advance,\s*actions\]\s*\);/
   );
-  expect(match, "auto-advance useEffect body should be extractable").not.toBeNull();
+  expect(
+    match,
+    "auto-advance useEffect body should be extractable"
+  ).not.toBeNull();
   return match![1];
 }
 

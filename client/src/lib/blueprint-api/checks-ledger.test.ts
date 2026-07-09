@@ -39,7 +39,7 @@ describe("fetchChecksLedger", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/blueprint/jobs/job%20one%2Fbranch/checks-ledger",
-      undefined,
+      undefined
     );
     expect(result).toEqual({ ok: true, data: SAMPLE_LEDGER });
   });
@@ -56,7 +56,7 @@ describe("fetchChecksLedger", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toBe(
-      "/api/blueprint/jobs/job-1/checks-ledger?status=warn&checkType=preview_audit",
+      "/api/blueprint/jobs/job-1/checks-ledger?status=warn&checkType=preview_audit"
     );
     expect(calledUrl).toContain("checkType=preview_audit");
     expect(calledUrl).toContain("status=warn");
@@ -70,14 +70,14 @@ describe("fetchChecksLedger", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/blueprint/jobs/job-1/checks-ledger",
-      undefined,
+      undefined
     );
   });
 
   it("returns a structured error without throwing for non-2xx responses", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ error: "job_not_found" }, 404)),
+      vi.fn(async () => jsonResponse({ error: "job_not_found" }, 404))
     );
 
     const result = await fetchChecksLedger("missing-job");
@@ -97,7 +97,7 @@ describe("fetchChecksLedger", () => {
       "fetch",
       vi.fn(async () => {
         throw new TypeError("network down");
-      }),
+      })
     );
 
     const result = await fetchChecksLedger("job-1");

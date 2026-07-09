@@ -9,7 +9,9 @@ import {
   readLatestJobArtifactPayload,
 } from "./blueprint-job-artifacts";
 
-function makeGraph(overrides: Partial<BrainstormReasoningGraph> = {}): BrainstormReasoningGraph {
+function makeGraph(
+  overrides: Partial<BrainstormReasoningGraph> = {}
+): BrainstormReasoningGraph {
   return {
     id: "graph-1",
     jobId: "job-1",
@@ -41,7 +43,9 @@ function makeGraph(overrides: Partial<BrainstormReasoningGraph> = {}): Brainstor
   };
 }
 
-function makeJob(artifacts: BlueprintGenerationJob["artifacts"]): BlueprintGenerationJob {
+function makeJob(
+  artifacts: BlueprintGenerationJob["artifacts"]
+): BlueprintGenerationJob {
   return {
     id: "job-1",
     request: {},
@@ -76,7 +80,9 @@ describe("blueprint job artifact readers", () => {
       { version: 1 },
       { version: 2 },
     ]);
-    expect(readLatestJobArtifactPayload(job, "spec_tree")).toEqual({ version: 2 });
+    expect(readLatestJobArtifactPayload(job, "spec_tree")).toEqual({
+      version: 2,
+    });
   });
 
   it("returns valid brainstorm reasoning graph artifacts", () => {

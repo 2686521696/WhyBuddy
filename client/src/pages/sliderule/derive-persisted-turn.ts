@@ -1,5 +1,8 @@
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
-import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
+import {
+  deriveTurnRoute,
+  type TurnRouteFacts,
+} from "@shared/blueprint/sliderule-turn-route";
 import type { UiTurn } from "./types";
 
 /**
@@ -45,7 +48,7 @@ export function deriveLatestTurnFromState(
     return s === turnId || s === base || s.startsWith(`${base}-r`);
   };
 
-  const turnRuns = runs.filter((r) => belongs(r.turnId));
+  const turnRuns = runs.filter(r => belongs(r.turnId));
   const effectiveRuns = turnRuns.length > 0 ? turnRuns : runs;
 
   let dledger: any = null;
@@ -66,15 +69,15 @@ export function deriveLatestTurnFromState(
       roleId: "agent", // role often not stored per chose in ledger; sufficient for C_ bucket grouping
     }));
   } else {
-    selectedCapabilities = effectiveRuns.map((r) => ({
+    selectedCapabilities = effectiveRuns.map(r => ({
       capabilityId: String(r.capabilityId),
       roleId: String(r.roleId || "agent"),
     }));
   }
   const trustTotalCount = effectiveRuns.length;
-  const trustPassedCount = effectiveRuns.filter((r) => {
+  const trustPassedCount = effectiveRuns.filter(r => {
     const gates = r.gateResults || [];
-    return gates.length === 0 ? true : gates.every((g) => g.status === "passed");
+    return gates.length === 0 ? true : gates.every(g => g.status === "passed");
   }).length;
 
   const routeFacts = {

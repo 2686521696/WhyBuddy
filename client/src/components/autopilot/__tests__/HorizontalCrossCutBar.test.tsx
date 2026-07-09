@@ -48,7 +48,7 @@ describe("<HorizontalCrossCutBar>", () => {
         nodes={THREE_NODES}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
 
     // Container shell mounts with the stable testid.
@@ -66,9 +66,7 @@ describe("<HorizontalCrossCutBar>", () => {
     }
 
     // N-1 = 2 connector SVGs are rendered between the nodes.
-    const connectorMatches = markup.match(
-      /data-testid="cross-cut-connector"/g,
-    );
+    const connectorMatches = markup.match(/data-testid="cross-cut-connector"/g);
     expect(connectorMatches).not.toBeNull();
     expect(connectorMatches).toHaveLength(2);
   });
@@ -85,7 +83,7 @@ describe("<HorizontalCrossCutBar>", () => {
         nodes={THREE_NODES}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
 
     // Light theme: container reports its theme attribute and node inline style uses the
@@ -100,7 +98,7 @@ describe("<HorizontalCrossCutBar>", () => {
         nodes={THREE_NODES}
         visualTokens={visualTokens}
         theme="dark"
-      />,
+      />
     );
 
     // After switching theme, the inline color must equal resolveToken("business-loop", "dark").

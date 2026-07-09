@@ -26,7 +26,7 @@ import { SubStageCard, type SubStageCardProps } from "../sub-stage-card";
 function invokeSubStageCard(props: SubStageCardProps): ReactElement {
   // SubStageCard 是纯 FC（无 hooks / state），可直接调用拿到 ReactElement 树
   return (SubStageCard as unknown as (p: SubStageCardProps) => ReactElement)(
-    props,
+    props
   );
 }
 
@@ -40,7 +40,7 @@ describe("<SubStageCard>", () => {
         locale="zh-CN"
       >
         <div data-testid="body-slot">body</div>
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     expect(markup).toContain('data-testid="autopilot-sub-stage-card"');
@@ -57,14 +57,9 @@ describe("<SubStageCard>", () => {
 
   it("renders the active status with a 2px orange border", () => {
     const markup = renderToStaticMarkup(
-      <SubStageCard
-        index={1}
-        title="SpecTree"
-        status="active"
-        locale="zh-CN"
-      >
+      <SubStageCard index={1} title="SpecTree" status="active" locale="zh-CN">
         <div>body</div>
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     expect(markup).toContain('data-sub-stage-status="active"');
@@ -82,7 +77,7 @@ describe("<SubStageCard>", () => {
         locale="zh-CN"
       >
         <div>body</div>
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     expect(markup).toContain('data-sub-stage-status="pending"');
@@ -93,9 +88,14 @@ describe("<SubStageCard>", () => {
 
   it("pads the sequence number to two digits (index=4 → 05)", () => {
     const markup = renderToStaticMarkup(
-      <SubStageCard index={4} title="PromptPackage" status="pending" locale="zh-CN">
+      <SubStageCard
+        index={4}
+        title="PromptPackage"
+        status="pending"
+        locale="zh-CN"
+      >
         <div />
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     expect(markup).toContain(">05<");
@@ -113,10 +113,12 @@ describe("<SubStageCard>", () => {
         expanded={false}
       >
         <div />
-      </SubStageCard>,
+      </SubStageCard>
     );
 
-    expect(collapsedMarkup).toContain('data-testid="autopilot-sub-stage-card-toggle"');
+    expect(collapsedMarkup).toContain(
+      'data-testid="autopilot-sub-stage-card-toggle"'
+    );
     expect(collapsedMarkup).toContain("展开 ↓");
     expect(collapsedMarkup).not.toContain("收起 ↑");
 
@@ -130,7 +132,7 @@ describe("<SubStageCard>", () => {
         expanded={true}
       >
         <div />
-      </SubStageCard>,
+      </SubStageCard>
     );
     expect(expandedMarkup).toContain("收起 ↑");
     expect(expandedMarkup).not.toContain("展开 ↓");
@@ -148,14 +150,13 @@ describe("<SubStageCard>", () => {
     });
 
     // Root children is an array; find the footer containing the toggle button
-    const rootChildren = (
-      element.props as { children: ReactElement[] }
-    ).children;
+    const rootChildren = (element.props as { children: ReactElement[] })
+      .children;
     const footer = rootChildren.find(
-      (child) =>
+      child =>
         child !== null &&
         typeof child === "object" &&
-        (child as ReactElement).type === "footer",
+        (child as ReactElement).type === "footer"
     ) as ReactElement | undefined;
     expect(footer).toBeDefined();
 
@@ -172,12 +173,10 @@ describe("<SubStageCard>", () => {
         title="协作角色"
         status="active"
         locale="zh-CN"
-        headerRight={
-          <span data-testid="custom-header-right">CUSTOM</span>
-        }
+        headerRight={<span data-testid="custom-header-right">CUSTOM</span>}
       >
         <div />
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     expect(markup).toContain('data-testid="custom-header-right"');
@@ -200,7 +199,7 @@ describe("<SubStageCard>", () => {
         ariaCurrentStep
       >
         <div />
-      </SubStageCard>,
+      </SubStageCard>
     );
 
     // Must contain both attributes
@@ -211,7 +210,7 @@ describe("<SubStageCard>", () => {
     // `data-sub-stage-placeholder="X"` must appear before `aria-current="step"`
     // on the same element.
     expect(markup).toMatch(
-      /data-sub-stage-placeholder="agent_crew_fabric"[^>]*aria-current="step"/,
+      /data-sub-stage-placeholder="agent_crew_fabric"[^>]*aria-current="step"/
     );
   });
 });

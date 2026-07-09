@@ -55,10 +55,7 @@ import fs from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-const HOOK_SOURCE_PATH = path.resolve(
-  __dirname,
-  "../use-auto-advance.ts"
-);
+const HOOK_SOURCE_PATH = path.resolve(__dirname, "../use-auto-advance.ts");
 
 async function loadHookSource(): Promise<string> {
   return fs.readFile(HOOK_SOURCE_PATH, "utf8");
@@ -73,9 +70,7 @@ describe("useAutoAdvance forceAdvance 5-minute timeout (source-level contract)",
     // 5 分钟 = 5 * 60 * 1000 ms。如果未来有人把它改成不同写法（比如
     // 300_000 / 60_000 * 5 / hard-coded 300000），需要在本回归内显式
     // 更新断言，避免“悄悄缩短或拉长超时窗口”。
-    expect(source).toMatch(
-      /FRONTEND_TIMEOUT_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/
-    );
+    expect(source).toMatch(/FRONTEND_TIMEOUT_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/);
   });
 
   it("schedules the timeout with setTimeout and binds it to a cancelable timeoutId", async () => {
@@ -83,9 +78,7 @@ describe("useAutoAdvance forceAdvance 5-minute timeout (source-level contract)",
 
     // setTimeout 的句柄必须能在成功分支 / catch 分支取消，否则就退化成
     // “超时一定会触发”的死锁兜底反例。
-    expect(source).toMatch(
-      /const\s+timeoutId\s*=\s*setTimeout\(/
-    );
+    expect(source).toMatch(/const\s+timeoutId\s*=\s*setTimeout\(/);
     expect(source).toMatch(/FRONTEND_TIMEOUT_MS\s*\)\s*;/);
   });
 

@@ -42,7 +42,9 @@ function extractFlow(text: string): string | null {
   if (!text) return null;
   const fenced = text.match(/```mermaid\s*([\s\S]*?)```/i);
   if (fenced) return fenced[1].trim();
-  const bare = text.match(/(flowchart|graph|sequenceDiagram)([\s\S]*?)(?=\n\n|\n[A-Z#]|$)/i);
+  const bare = text.match(
+    /(flowchart|graph|sequenceDiagram)([\s\S]*?)(?=\n\n|\n[A-Z#]|$)/i
+  );
   if (bare) return bare[0].trim();
   return null;
 }
@@ -70,26 +72,39 @@ export function WorkflowScreen({
   // chains 携带资金/治理/补偿等附加链路；此处选中的链路驱动图面与图例。
   const [chainId, setChainId] = useState<string>("primary");
   const activeChain = useMemo(
-    () => (chainId === "primary" ? null : chains.find((c) => (c.id || c.name) === chainId) ?? null),
+    () =>
+      chainId === "primary"
+        ? null
+        : (chains.find(c => (c.id || c.name) === chainId) ?? null),
     [chainId, chains]
   );
   const activeWorkflow = activeChain
-    ? { id: activeChain.id, nodes: activeChain.nodes, transitions: activeChain.transitions }
+    ? {
+        id: activeChain.id,
+        nodes: activeChain.nodes,
+        transitions: activeChain.transitions,
+      }
     : workflow;
   const nodes = activeWorkflow?.nodes ?? [];
   const transitions = activeWorkflow?.transitions ?? [];
   // 链路切换时给 WorkflowGraph 一个替身模型（rbac 等段保留做角色解析）；
   // 试运行实例只挂主链路节点，附加链路上自然无高亮——不伪造。
   const graphModel = useMemo(
-    () => (activeChain && model ? { ...model, workflow: activeWorkflow } : model),
+    () =>
+      activeChain && model ? { ...model, workflow: activeWorkflow } : model,
     [activeChain, model, activeWorkflow]
   );
   // 试运行（浏览器运行时）：模型在场才可用——像 ECharts 一样把 workflow 段
   // 渲染成可操作的审批状态机（发起/通过/驳回/分支/日志，零后端）。
   // 试运行内核只跑主链路（live-runtime 以 model.workflow 为准）。
-  const [screenMode, setScreenMode] = useState<"diagram" | "runtime">("diagram");
+  const [screenMode, setScreenMode] = useState<"diagram" | "runtime">(
+    "diagram"
+  );
 
-  const modelDiagram = useMemo(() => workflowModelToMermaid(activeWorkflow), [activeWorkflow]);
+  const modelDiagram = useMemo(
+    () => workflowModelToMermaid(activeWorkflow),
+    [activeWorkflow]
+  );
 
   const sseDiagram = useMemo(() => {
     if (!mermaidSource) return null;
@@ -101,7 +116,10 @@ export function WorkflowScreen({
     [skillRuntimeGraph]
   );
   const graphDiagram = useMemo(
-    () => (graphEdges.length > 0 ? crossSkillEdgesToMermaid("workflow", graphEdges) : null),
+    () =>
+      graphEdges.length > 0
+        ? crossSkillEdgesToMermaid("workflow", graphEdges)
+        : null,
     [graphEdges]
   );
 
@@ -110,23 +128,30 @@ export function WorkflowScreen({
   const sourceKind: "model" | "sse" | "graph" | "placeholder" = modelDiagram
     ? "model"
     : sseDiagram
-    ? "sse"
-    : graphDiagram
-    ? "graph"
-    : "placeholder";
+      ? "sse"
+      : graphDiagram
+        ? "graph"
+        : "placeholder";
 
   const roleResolutions = useMemo(
-    () => nodes.map((node) => ({ node, role: resolveRoleRef(node.assigneeRole, model) })),
+    () =>
+      nodes.map(node => ({
+        node,
+        role: resolveRoleRef(node.assigneeRole, model),
+      })),
     [nodes, model]
   );
   const unresolvedRoleCount = roleResolutions.filter(
-    (r) => r.role.ref && !r.role.resolved
+    r => r.role.ref && !r.role.resolved
   ).length;
 
   // 图例条数据：按角色聚合（color 与图上节点色条一致）
   const roleLegend = useMemo(() => {
     const declaredRoles = model?.rbac?.roles ?? [];
-    const byRole = new Map<string, { role: string; resolved: boolean; count: number; color: string }>();
+    const byRole = new Map<
+      string,
+      { role: string; resolved: boolean; count: number; color: string }
+    >();
     for (const { role } of roleResolutions) {
       if (!role.ref) continue;
       const entry = byRole.get(role.ref) ?? {
@@ -149,7 +174,7 @@ export function WorkflowScreen({
       data-skill="workflow"
       data-active={isActive}
     >
-      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-violet-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           Workflow
@@ -173,13 +198,13 @@ export function WorkflowScreen({
           )}
           {sourceKind === "model" && nodes.length > 0 && (
             <div
-              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
               data-testid="workflow-mode-toggle"
             >
-              {([
+              {[
                 { id: "diagram" as const, label: "流程图" },
                 { id: "runtime" as const, label: "试运行" },
-              ]).map(({ id, label }) => (
+              ].map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -203,98 +228,121 @@ export function WorkflowScreen({
       {screenMode === "runtime" && sourceKind === "model" && model ? (
         <WorkflowRuntimePanel model={model} sessionId={sessionId} />
       ) : (
-      <>
-        {/* 链路切换条：主链路（核心对象生命周期）+ 附加业务链路（资金/治理/补偿） */}
-        {sourceKind === "model" && chains.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-1.5 border-b border-[#EFEBE2] bg-white px-4 py-1.5"
-            data-testid="workflow-chain-tabs"
-          >
-            <span className="text-[10px] text-stone-400">业务链路</span>
-            {[
-              { key: "primary", label: workflow?.name || "主链路", kind: "" },
-              ...chains.map((c) => ({
-                key: c.id || c.name || "",
-                label: c.name || c.id || "未命名链路",
-                kind: c.kind ? CHAIN_KIND_LABEL[c.kind] ?? c.kind : "",
-              })),
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                data-testid={`workflow-chain-${tab.key}`}
-                onClick={() => setChainId(tab.key)}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 transition-colors ${
-                  chainId === tab.key
-                    ? "bg-violet-50 text-violet-700 ring-violet-200"
-                    : "bg-white text-stone-500 ring-[#E7E2D9] hover:text-stone-700"
-                }`}
-              >
-                {tab.label}
-                {tab.kind && (
-                  <span className={chainId === tab.key ? "text-violet-400" : "text-stone-300"}>
-                    {tab.kind}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* 角色图例条 — 取代早期的节点角色侧表（与节点卡信息重复且占 1/4 画布）。
-            色点与图上节点色条一致；未在 RBAC 声明的角色照旧 ✗ 标红（fail-closed）。 */}
-        {sourceKind === "model" && roleLegend.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-1.5 border-b border-[#EFEBE2] bg-[#FBF9F4] px-4 py-1.5"
-            data-testid="workflow-node-roles"
-          >
-            <span className="text-[10px] text-stone-400">审批人角色</span>
-            {roleLegend.map((entry) => (
-              <span
-                key={entry.role}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] ring-1 ${
-                  entry.resolved
-                    ? "bg-white text-stone-600 ring-[#E7E2D9]"
-                    : "bg-red-50 text-red-600 ring-red-200"
-                }`}
-                title={
-                  entry.resolved
-                    ? `${entry.count} 个节点由 ${entry.role} 审批`
-                    : `角色未在 RBAC 定义：${entry.role}`
-                }
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: entry.resolved ? entry.color : "#ff4d4f" }}
-                />
-                {`${entry.resolved ? "✓" : "✗"} ${entry.role}`}
-                <span className={entry.resolved ? "text-stone-400" : "text-red-400"}>×{entry.count}</span>
-              </span>
-            ))}
-            <span className="ml-auto hidden text-[10px] text-stone-300 sm:inline">
-              虚线 = 回退/驳回 · 珊瑚高亮 = 实例当前位置
-            </span>
-          </div>
-        )}
-
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {sourceKind === "placeholder" ? (
-            <EmptyScreenHint title="业务流程图" desc="节点、转移与审批人角色，来自五系统模型 workflow 段" />
-          ) : sourceKind === "model" && graphModel ? (
-            // 结构化模型在手 → 活图（角色着色 + 试运行实例实时高亮）
-            <div className="min-h-0 min-w-0 flex-1">
-              {/* key=chainId：切链路时整图重挂，dagre 重排干净不残留 */}
-              <WorkflowGraph key={chainId} model={graphModel} sessionId={sessionId} />
-            </div>
-          ) : (
-            <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
-              <MermaidDiagram chart={diagram ?? ""} className="h-full w-full" />
+        <>
+          {/* 链路切换条：主链路（核心对象生命周期）+ 附加业务链路（资金/治理/补偿） */}
+          {sourceKind === "model" && chains.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-1.5 border-b border-[#e8eaee] bg-white px-4 py-1.5"
+              data-testid="workflow-chain-tabs"
+            >
+              <span className="text-[10px] text-stone-400">业务链路</span>
+              {[
+                { key: "primary", label: workflow?.name || "主链路", kind: "" },
+                ...chains.map(c => ({
+                  key: c.id || c.name || "",
+                  label: c.name || c.id || "未命名链路",
+                  kind: c.kind ? (CHAIN_KIND_LABEL[c.kind] ?? c.kind) : "",
+                })),
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  data-testid={`workflow-chain-${tab.key}`}
+                  onClick={() => setChainId(tab.key)}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 transition-colors ${
+                    chainId === tab.key
+                      ? "bg-violet-50 text-violet-700 ring-violet-200"
+                      : "bg-white text-stone-500 ring-[#e5e7eb] hover:text-stone-700"
+                  }`}
+                >
+                  {tab.label}
+                  {tab.kind && (
+                    <span
+                      className={
+                        chainId === tab.key
+                          ? "text-violet-400"
+                          : "text-stone-300"
+                      }
+                    >
+                      {tab.kind}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           )}
-        </div>
-      </>
-      )}
 
+          {/* 角色图例条 — 取代早期的节点角色侧表（与节点卡信息重复且占 1/4 画布）。
+            色点与图上节点色条一致；未在 RBAC 声明的角色照旧 ✗ 标红（fail-closed）。 */}
+          {sourceKind === "model" && roleLegend.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-1.5 border-b border-[#e8eaee] bg-[#FBF9F4] px-4 py-1.5"
+              data-testid="workflow-node-roles"
+            >
+              <span className="text-[10px] text-stone-400">审批人角色</span>
+              {roleLegend.map(entry => (
+                <span
+                  key={entry.role}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] ring-1 ${
+                    entry.resolved
+                      ? "bg-white text-stone-600 ring-[#e5e7eb]"
+                      : "bg-red-50 text-red-600 ring-red-200"
+                  }`}
+                  title={
+                    entry.resolved
+                      ? `${entry.count} 个节点由 ${entry.role} 审批`
+                      : `角色未在 RBAC 定义：${entry.role}`
+                  }
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      background: entry.resolved ? entry.color : "#ff4d4f",
+                    }}
+                  />
+                  {`${entry.resolved ? "✓" : "✗"} ${entry.role}`}
+                  <span
+                    className={
+                      entry.resolved ? "text-stone-400" : "text-red-400"
+                    }
+                  >
+                    ×{entry.count}
+                  </span>
+                </span>
+              ))}
+              <span className="ml-auto hidden text-[10px] text-stone-300 sm:inline">
+                虚线 = 回退/驳回 · 珊瑚高亮 = 实例当前位置
+              </span>
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            {sourceKind === "placeholder" ? (
+              <EmptyScreenHint
+                title="业务流程图"
+                desc="节点、转移与审批人角色，来自五系统模型 workflow 段"
+              />
+            ) : sourceKind === "model" && graphModel ? (
+              // 结构化模型在手 → 活图（角色着色 + 试运行实例实时高亮）
+              <div className="min-h-0 min-w-0 flex-1">
+                {/* key=chainId：切链路时整图重挂，dagre 重排干净不残留 */}
+                <WorkflowGraph
+                  key={chainId}
+                  model={graphModel}
+                  sessionId={sessionId}
+                />
+              </div>
+            ) : (
+              <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
+                <MermaidDiagram
+                  chart={diagram ?? ""}
+                  className="h-full w-full"
+                />
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

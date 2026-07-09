@@ -86,7 +86,8 @@ const HEADING_PATTERN = /^(#{1,4})\s+(.+?)\s*$/;
 const UL_PATTERN = /^[-*]\s+(.*)$/;
 const OL_PATTERN = /^\d+\.\s+(.*)$/;
 const CODE_FENCE_PATTERN = /^```\s*([A-Za-z0-9_+-]*)\s*$/;
-const TABLE_DIVIDER_PATTERN = /^\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/;
+const TABLE_DIVIDER_PATTERN =
+  /^\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/;
 
 /**
  * 把一段表格行（以 `|` 分隔的字符串）切分成 cell 数组。
@@ -100,7 +101,7 @@ function splitTableRow(line: string): string[] {
   let inner = line.trim();
   if (inner.startsWith("|")) inner = inner.slice(1);
   if (inner.endsWith("|")) inner = inner.slice(0, -1);
-  return inner.split("|").map((cell) => cell.trim());
+  return inner.split("|").map(cell => cell.trim());
 }
 
 /**
@@ -108,7 +109,10 @@ function splitTableRow(line: string): string[] {
  * - 第一行至少包含一个 `|`；
  * - 第二行匹配 `| --- | --- |` 这种分隔模式。
  */
-function looksLikeTableHeader(headerLine: string, dividerLine: string): boolean {
+function looksLikeTableHeader(
+  headerLine: string,
+  dividerLine: string
+): boolean {
   if (!headerLine.includes("|")) return false;
   return TABLE_DIVIDER_PATTERN.test(dividerLine);
 }
@@ -127,9 +131,8 @@ export function tokenizeMarkdown(markdown: string): MarkdownToken[] {
     // 1. 代码块：``` 开始 ... ``` 结束（流式中允许未闭合）
     const fenceMatch = line.match(CODE_FENCE_PATTERN);
     if (fenceMatch) {
-      const language = fenceMatch[1] && fenceMatch[1].length > 0
-        ? fenceMatch[1]
-        : undefined;
+      const language =
+        fenceMatch[1] && fenceMatch[1].length > 0 ? fenceMatch[1] : undefined;
       const codeLines: string[] = [];
       let closed = false;
       i += 1;
@@ -227,10 +230,7 @@ export function tokenizeMarkdown(markdown: string): MarkdownToken[] {
         break;
       }
       const lookahead = lines[i + 1];
-      if (
-        lookahead !== undefined &&
-        looksLikeTableHeader(next, lookahead)
-      ) {
+      if (lookahead !== undefined && looksLikeTableHeader(next, lookahead)) {
         break;
       }
       paragraphLines.push(next);
@@ -272,10 +272,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     // 链接：[text](url)
     if (ch === "[") {
       const closeBracket = text.indexOf("]", i + 1);
-      if (
-        closeBracket !== -1 &&
-        text[closeBracket + 1] === "("
-      ) {
+      if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
         const closeParen = text.indexOf(")", closeBracket + 2);
         if (closeParen !== -1) {
           const linkText = text.slice(i + 1, closeBracket);
@@ -375,7 +372,9 @@ function normalizeFlattenedMermaidCode(input: string): string {
 function looksLikeFlattenedMermaidParagraph(text: string): boolean {
   const trimmed = text.trimStart();
   if (!/^mermaid[\s\b]+/i.test(trimmed)) return false;
-  return /^(mermaid\s+)?(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/i.test(trimmed);
+  return /^(mermaid\s+)?(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/i.test(
+    trimmed
+  );
 }
 
 /**
@@ -480,18 +479,20 @@ function renderToken(
       // one line: "mermaid graph TD A[...] --> B[...]").
       const langLower = token.language?.toLowerCase().trim();
       const trimmedCode = token.code.trimStart();
-      const startsWithMermaidKeyword = /^mermaid[\s\b]/i.test(trimmedCode) ||
+      const startsWithMermaidKeyword =
+        /^mermaid[\s\b]/i.test(trimmedCode) ||
         trimmedCode.toLowerCase() === "mermaid";
-      const isMermaid = langLower === "mermaid" ||
-        (!langLower && startsWithMermaidKeyword);
+      const isMermaid =
+        langLower === "mermaid" || (!langLower && startsWithMermaidKeyword);
 
       if (isMermaid) {
         // Strip leading "mermaid" keyword when detected via content fallback.
         // - "```\nmermaid\ngraph TD\n..." → "graph TD\n..."
         // - "```\nmermaid graph TD A --> B" → "graph TD A --> B"
-        let mermaidCode = langLower === "mermaid"
-          ? token.code
-          : normalizeFlattenedMermaidCode(trimmedCode);
+        let mermaidCode =
+          langLower === "mermaid"
+            ? token.code
+            : normalizeFlattenedMermaidCode(trimmedCode);
 
         // Heuristic: if mermaid code is collapsed onto one line (LLMs sometimes
         // emit malformed blocks like "graph TD A --> B B --> C"), insert

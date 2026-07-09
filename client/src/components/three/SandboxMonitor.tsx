@@ -105,7 +105,11 @@ function replayTimestamp(
   return value ? new Date(value).toISOString() : new Date().toISOString();
 }
 
-export function SandboxMonitor({ projectId = null }: { projectId?: string | null }) {
+export function SandboxMonitor({
+  projectId = null,
+}: {
+  projectId?: string | null;
+}) {
   const { locale } = useI18n();
 
   const tasks = useTasksStore(s => s.tasks);
@@ -135,7 +139,8 @@ export function SandboxMonitor({ projectId = null }: { projectId?: string | null
   );
 
   const { displayMission, missionDetail } = useMemo(
-    () => resolveSandboxMonitorMission(scopedTasks, detailsById, selectedTaskId),
+    () =>
+      resolveSandboxMonitorMission(scopedTasks, detailsById, selectedTaskId),
     [detailsById, selectedTaskId, scopedTasks]
   );
   const replayScreenshotArtifact = useMemo(
@@ -247,12 +252,15 @@ export function SandboxMonitor({ projectId = null }: { projectId?: string | null
           .map(line => line.trimEnd())
           .filter(Boolean)
           .slice(-80)
-          .map((line, index) => ({
-            stepIndex: index,
-            stream: line.includes("[stderr]") ? "stderr" : "stdout",
-            data: line,
-            timestamp: replayTimestamp(missionDetail),
-          }) satisfies LogLine);
+          .map(
+            (line, index) =>
+              ({
+                stepIndex: index,
+                stream: line.includes("[stderr]") ? "stderr" : "stdout",
+                data: line,
+                timestamp: replayTimestamp(missionDetail),
+              }) satisfies LogLine
+          );
         setReplayLogLines(lines);
       })
       .catch(() => {

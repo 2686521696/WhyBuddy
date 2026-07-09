@@ -80,7 +80,7 @@ function writePersistedMode(mode: "collapsed" | "expanded"): void {
     if (!storage) return;
     storage.setItem(
       CONSOLE_COLLAPSE_STORAGE_KEY,
-      mode === "collapsed" ? "true" : "false",
+      mode === "collapsed" ? "true" : "false"
     );
   } catch {
     // 隐私模式下写入失败：忽略，保持内存态行为一致。

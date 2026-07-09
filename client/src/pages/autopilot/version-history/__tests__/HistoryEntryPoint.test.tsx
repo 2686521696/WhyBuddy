@@ -2,12 +2,15 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { HistoryEntryPoint, withHistorySearchParam } from "../HistoryEntryPoint";
+import {
+  HistoryEntryPoint,
+  withHistorySearchParam,
+} from "../HistoryEntryPoint";
 
 describe("<HistoryEntryPoint>", () => {
   it("renders a semantic right-rail top entry with a stable test id", () => {
     const markup = renderToStaticMarkup(
-      <HistoryEntryPoint jobId="job-1" familyCount={3} staleCount={1} />,
+      <HistoryEntryPoint jobId="job-1" familyCount={3} staleCount={1} />
     );
 
     expect(markup).toContain('data-testid="autopilot-history-entry"');
@@ -24,7 +27,7 @@ describe("<HistoryEntryPoint>", () => {
         familyCount={3}
         staleCount={2}
         locale="zh-CN"
-      />,
+      />
     );
 
     expect(markup).toContain('aria-label="打开版本历史"');
@@ -57,7 +60,9 @@ describe("<HistoryEntryPoint>", () => {
     const markup = renderToStaticMarkup(element);
 
     expect(markup).toContain("disabled");
-    expect(markup).toContain("Static preview does not support version history.");
+    expect(markup).toContain(
+      "Static preview does not support version history."
+    );
     element.props.onClick();
     expect(navigate).not.toHaveBeenCalled();
   });
@@ -71,7 +76,7 @@ describe("<HistoryEntryPoint>", () => {
         navigate={navigate}
         lastSocketEvent={{ type: "job.updated" }}
         lastReplanSuccess={{ jobId: "job-1" }}
-      />,
+      />
     );
 
     expect(navigate).not.toHaveBeenCalled();
@@ -81,10 +86,10 @@ describe("<HistoryEntryPoint>", () => {
 describe("withHistorySearchParam", () => {
   it("sets history without dropping existing params", () => {
     expect(withHistorySearchParam("?activeJob=job-1", true)).toBe(
-      "?activeJob=job-1&history=1",
+      "?activeJob=job-1&history=1"
     );
     expect(withHistorySearchParam("?activeJob=job-1&history=0", true)).toBe(
-      "?activeJob=job-1&history=1",
+      "?activeJob=job-1&history=1"
     );
   });
 });

@@ -10,7 +10,7 @@ describe("<InlineConfirmation>", () => {
         downstreamCount={3}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
-      />,
+      />
     );
 
     expect(markup).toContain("3 downstream items will become stale");
@@ -25,7 +25,7 @@ describe("<InlineConfirmation>", () => {
         downstreamCount={0}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
-      />,
+      />
     );
 
     expect(markup).toContain("No downstream items; this will save directly");
@@ -37,7 +37,7 @@ describe("<InlineConfirmation>", () => {
         downstreamCount={1}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
-      />,
+      />
     );
 
     expect(markup).not.toContain("autopilot-replan-from-stage-divider");

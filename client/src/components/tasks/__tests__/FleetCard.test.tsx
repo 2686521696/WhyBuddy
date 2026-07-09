@@ -46,9 +46,27 @@ describe("FleetCard", () => {
 
   describe("normal members rendering", () => {
     const sampleMembers: FleetMemberItem[] = [
-      { id: "r-1", role: "Planner", roleType: "planner", status: "running", label: "Planner" },
-      { id: "r-2", role: "Executor", roleType: "executor", status: "idle", label: "Executor" },
-      { id: "r-3", role: "Reviewer", roleType: "reviewer", status: "waiting", label: "Reviewer" },
+      {
+        id: "r-1",
+        role: "Planner",
+        roleType: "planner",
+        status: "running",
+        label: "Planner",
+      },
+      {
+        id: "r-2",
+        role: "Executor",
+        roleType: "executor",
+        status: "idle",
+        label: "Executor",
+      },
+      {
+        id: "r-3",
+        role: "Reviewer",
+        roleType: "reviewer",
+        status: "waiting",
+        label: "Reviewer",
+      },
     ];
 
     it("renders all member labels", () => {
@@ -76,8 +94,16 @@ describe("FleetCard", () => {
     it("renders green dot for running status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "running", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "running",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-emerald-500");
     });
@@ -85,8 +111,16 @@ describe("FleetCard", () => {
     it("renders gray dot for idle status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "idle", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "idle",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-slate-300");
     });
@@ -94,8 +128,16 @@ describe("FleetCard", () => {
     it("renders amber dot for waiting status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "waiting", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "waiting",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-amber-400");
     });
@@ -103,8 +145,16 @@ describe("FleetCard", () => {
     it("renders red dot for blocked status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "blocked", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "blocked",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-red-500");
     });
@@ -112,8 +162,16 @@ describe("FleetCard", () => {
     it("renders red dot for failed status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "failed", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "failed",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-red-500");
     });
@@ -121,8 +179,16 @@ describe("FleetCard", () => {
     it("renders gray dot for done status", () => {
       const markup = render(
         makeProps({
-          members: [{ id: "1", role: "R", roleType: "planner", status: "done", label: "R" }],
-        }),
+          members: [
+            {
+              id: "1",
+              role: "R",
+              roleType: "planner",
+              status: "done",
+              label: "R",
+            },
+          ],
+        })
       );
       expect(markup).toContain("bg-slate-400");
     });
@@ -131,8 +197,20 @@ describe("FleetCard", () => {
   describe("layout", () => {
     it("uses flex-wrap for horizontal layout", () => {
       const members: FleetMemberItem[] = [
-        { id: "1", role: "A", roleType: "planner", status: "running", label: "A" },
-        { id: "2", role: "B", roleType: "executor", status: "idle", label: "B" },
+        {
+          id: "1",
+          role: "A",
+          roleType: "planner",
+          status: "running",
+          label: "A",
+        },
+        {
+          id: "2",
+          role: "B",
+          roleType: "executor",
+          status: "idle",
+          label: "B",
+        },
       ];
       const markup = render(makeProps({ members }));
       expect(markup).toContain("flex-wrap");

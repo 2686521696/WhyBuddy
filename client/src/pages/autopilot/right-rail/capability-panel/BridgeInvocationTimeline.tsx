@@ -103,10 +103,10 @@ export const BridgeInvocationTimeline: FC<BridgeInvocationTimelineProps> = ({
   // 分离活跃和已完成记录
   const { activeGroups, collapsedCount } = useMemo(() => {
     const completed = invocations.filter(
-      (inv) => inv.status === "completed" || inv.status === "failed"
+      inv => inv.status === "completed" || inv.status === "failed"
     );
     const active = invocations.filter(
-      (inv) =>
+      inv =>
         inv.status === "pending" ||
         inv.status === "running" ||
         inv.status === "retrying"
@@ -154,7 +154,7 @@ export const BridgeInvocationTimeline: FC<BridgeInvocationTimelineProps> = ({
 
       {/* 时间线条目 */}
       <AnimatePresence initial={false}>
-        {activeGroups.map((group) => (
+        {activeGroups.map(group => (
           <motion.div
             key={`stage-${group.stageIndex}`}
             variants={itemVariants}
@@ -171,7 +171,7 @@ export const BridgeInvocationTimeline: FC<BridgeInvocationTimelineProps> = ({
               <BridgeInvocationCard invocation={group.items[0]} compact />
             ) : (
               <div className="flex flex-row gap-1 flex-wrap">
-                {group.items.map((inv) => (
+                {group.items.map(inv => (
                   <div key={inv.id} className="flex-1 min-w-0">
                     <BridgeInvocationCard invocation={inv} compact />
                   </div>

@@ -29,12 +29,10 @@ function isZhLocale(locale: string) {
 function compactRecentMessages(
   messages: AutopilotPromptOptimizationInput["recentMessages"]
 ) {
-  return (messages ?? [])
-    .slice(-4)
-    .map(message => ({
-      kind: message.kind ?? "message",
-      content: message.content.slice(0, 240),
-    }));
+  return (messages ?? []).slice(-4).map(message => ({
+    kind: message.kind ?? "message",
+    content: message.content.slice(0, 240),
+  }));
 }
 
 export function buildAutopilotPromptOptimizationMessages(
@@ -108,7 +106,9 @@ export async function optimizeAutopilotPrompt(
   const isZh = isZhLocale(input.locale);
 
   if (!rawText) {
-    throw new Error(isZh ? "先输入一点任务想法再优化。" : "Add a task idea first.");
+    throw new Error(
+      isZh ? "先输入一点任务想法再优化。" : "Add a task idea first."
+    );
   }
 
   const result = await fetchJsonSafe<{ content?: string }>("/api/chat", {

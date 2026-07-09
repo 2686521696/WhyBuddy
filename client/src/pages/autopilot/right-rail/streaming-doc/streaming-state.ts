@@ -185,14 +185,10 @@ export function isSpecDocumentContentEntry(
     pickString(extended.stage) ??
     pickString(extended.stageId) ??
     pickString(extended.payload?.stage);
-  if (
-    stage !== SPEC_DOCUMENTS_STAGE &&
-    stage !== SPEC_DOCUMENTS_LEGACY_STAGE
-  ) {
+  if (stage !== SPEC_DOCUMENTS_STAGE && stage !== SPEC_DOCUMENTS_LEGACY_STAGE) {
     return false;
   }
-  const type =
-    pickString(extended.type) ?? pickString(extended.payload?.type);
+  const type = pickString(extended.type) ?? pickString(extended.payload?.type);
   if (type !== undefined && type !== CONTENT_TYPE) {
     return false;
   }
@@ -238,8 +234,12 @@ export function deriveDocumentTitle(
   specDocuments: readonly BlueprintSpecDocument[] | undefined,
   locale: AppLocale
 ): string {
-  const matched = specDocuments?.find((doc) => doc.id === documentId);
-  if (matched && typeof matched.title === "string" && matched.title.length > 0) {
+  const matched = specDocuments?.find(doc => doc.id === documentId);
+  if (
+    matched &&
+    typeof matched.title === "string" &&
+    matched.title.length > 0
+  ) {
     return matched.title;
   }
   if (documentId === DEFAULT_DOCUMENT_ID) {
@@ -283,8 +283,7 @@ export function groupDocumentsByNode(
   }
   for (const group of map.values()) {
     group.documents.sort(
-      (a, b) =>
-        (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99)
+      (a, b) => (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99)
     );
   }
   return Array.from(map.values());

@@ -1,4 +1,11 @@
-import { Zap, Target, Layers, Search, Settings2, type LucideIcon } from "lucide-react";
+import {
+  Zap,
+  Target,
+  Layers,
+  Search,
+  Settings2,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import type { LaunchRouteCandidateId } from "@/lib/launch-router";

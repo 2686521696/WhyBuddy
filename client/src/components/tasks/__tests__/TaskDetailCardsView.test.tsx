@@ -12,9 +12,7 @@ import type {
 
 /* ─── Minimal detail fixture ─── */
 
-function makeDetail(
-  overrides?: Partial<MissionTaskDetail>,
-): MissionTaskDetail {
+function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
   return {
     id: "task-1",
     title: "Deploy service",
@@ -103,7 +101,7 @@ function makeDetail(
 /* ─── Autopilot summary fixture ─── */
 
 function makeAutopilotSummary(
-  overrides?: Partial<TaskAutopilotSummary>,
+  overrides?: Partial<TaskAutopilotSummary>
 ): TaskAutopilotSummary {
   return {
     version: "1",
@@ -156,7 +154,7 @@ function makeAutopilotSummary(
 /* ─── Props helper ─── */
 
 function makeProps(
-  overrides?: Partial<TaskDetailCardsViewProps>,
+  overrides?: Partial<TaskDetailCardsViewProps>
 ): TaskDetailCardsViewProps {
   return {
     taskId: "task-1",
@@ -258,40 +256,30 @@ describe("TaskDetailCardsView", () => {
 
   describe("with null autopilotSummary (degraded mode)", () => {
     it("renders the task title from detail", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       expect(markup).toContain("Deploy service");
     });
 
     it("renders the task status badge from detail", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       expect(markup).toContain("bg-emerald-100");
     });
 
     it("renders goal card with fallback from detail summary", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       // Should fall back to detail.summary
       expect(markup).toContain("Deploying backend service");
     });
 
     it("renders route card with fallback from detail stages", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       // Should fall back to detail.stages
       expect(markup).toContain("Planning");
       expect(markup).toContain("Execution");
     });
 
     it("renders fleet card with fallback from departmentLabels", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       // Should fall back to detail.departmentLabels
       expect(markup).toContain("Engineering");
       expect(markup).toContain("DevOps");
@@ -299,36 +287,30 @@ describe("TaskDetailCardsView", () => {
 
     it("renders takeover card with empty state when no decision", () => {
       const markup = render(
-        makeProps({ autopilotSummary: null, locale: "en-US" }),
+        makeProps({ autopilotSummary: null, locale: "en-US" })
       );
       expect(markup).toContain("No takeover needed");
     });
 
     it("does not render estimated duration when autopilotSummary is null", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       expect(markup).not.toContain("30min");
     });
 
     it("does not render drive state when autopilotSummary is null", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       expect(markup).not.toContain("executing");
     });
 
     it("renders the command input bar even without autopilotSummary", () => {
       const markup = render(
-        makeProps({ autopilotSummary: null, locale: "en-US" }),
+        makeProps({ autopilotSummary: null, locale: "en-US" })
       );
       expect(markup).toContain("Enter task command...");
     });
 
     it("renders progress from detail", () => {
-      const markup = render(
-        makeProps({ autopilotSummary: null }),
-      );
+      const markup = render(makeProps({ autopilotSummary: null }));
       expect(markup).toContain("40%");
     });
   });
@@ -398,9 +380,7 @@ describe("TaskDetailCardsView", () => {
 
     it("does not use the full page background as its cockpit surface", () => {
       const markup = render(makeProps());
-      expect(markup).toMatch(
-        /^<div class="[^"]*bg-white\/38/
-      );
+      expect(markup).toMatch(/^<div class="[^"]*bg-white\/38/);
     });
 
     it("marks the cards surface as a lightweight cockpit auxiliary layer", () => {

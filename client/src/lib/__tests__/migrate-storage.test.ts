@@ -9,7 +9,9 @@ import {
   type StorageLike,
 } from "../migrate-storage";
 
-function makeStorage(initial: Record<string, string> = {}): StorageLike & { dump(): Record<string, string> } {
+function makeStorage(
+  initial: Record<string, string> = {}
+): StorageLike & { dump(): Record<string, string> } {
   const map = new Map<string, string>(Object.entries(initial));
   return {
     get length() {
@@ -36,8 +38,18 @@ function makeStorage(initial: Record<string, string> = {}): StorageLike & { dump
 const BYOK_POOL = JSON.stringify({
   version: 1,
   entries: [
-    { id: "k1", baseUrl: "https://api.example.com/v1", apiKey: "sk-user-key-001", model: "m1" },
-    { id: "k2", baseUrl: "https://api.other.com/v1", apiKey: "sk-user-key-002", model: "m2" },
+    {
+      id: "k1",
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-user-key-001",
+      model: "m1",
+    },
+    {
+      id: "k2",
+      baseUrl: "https://api.other.com/v1",
+      apiKey: "sk-user-key-002",
+      model: "m2",
+    },
   ],
 });
 
@@ -66,8 +78,12 @@ describe("migrateLegacyStorage (whybuddy:* → sliderule:*)", () => {
 
     expect(store.getItem("sliderule:projection-density:v1")).toBe("compact");
     expect(store.getItem("sliderule:driveMode")).toBe("marathon");
-    expect(JSON.parse(store.getItem("sliderule:marathonBudget")!)).toEqual({ maxTokens: 24000 });
-    expect(store.getItem("sliderule:autopilot:pages-blueprint-demo")).toBe("demo-state");
+    expect(JSON.parse(store.getItem("sliderule:marathonBudget")!)).toEqual({
+      maxTokens: 24000,
+    });
+    expect(store.getItem("sliderule:autopilot:pages-blueprint-demo")).toBe(
+      "demo-state"
+    );
     expect(store.getItem("unrelated:key")).toBe("untouched");
   });
 
@@ -77,9 +93,15 @@ describe("migrateLegacyStorage (whybuddy:* → sliderule:*)", () => {
       "whybuddy:github-pages-demo:v2:session-def": "[1]",
     });
     expect(migrateLegacyStorage(store)).toBe(2);
-    expect(store.getItem("sliderule:github-pages-demo:v2:session-abc")).toBe("{}");
-    expect(store.getItem("sliderule:github-pages-demo:v2:session-def")).toBe("[1]");
-    expect(store.getItem("whybuddy:github-pages-demo:v2:session-abc")).toBeNull();
+    expect(store.getItem("sliderule:github-pages-demo:v2:session-abc")).toBe(
+      "{}"
+    );
+    expect(store.getItem("sliderule:github-pages-demo:v2:session-def")).toBe(
+      "[1]"
+    );
+    expect(
+      store.getItem("whybuddy:github-pages-demo:v2:session-abc")
+    ).toBeNull();
   });
 
   it("is idempotent and never overwrites a newer sliderule:* value", () => {

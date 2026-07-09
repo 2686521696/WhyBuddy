@@ -40,28 +40,30 @@ describe("mermaid-loader", () => {
       expect(svg).toBe("<svg>mock</svg>");
       expect(mockRender).toHaveBeenCalledWith(
         expect.stringMatching(/^mermaid-diagram-\d+$/),
-        "graph TD; A-->B",
+        "graph TD; A-->B"
       );
     });
 
     it("throws for invalid mermaid syntax when render rejects", async () => {
-      mockRender.mockRejectedValueOnce(new Error("Parse error: invalid syntax"));
+      mockRender.mockRejectedValueOnce(
+        new Error("Parse error: invalid syntax")
+      );
       await expect(
-        renderMermaidDiagram("invalid%%%diagram", "light"),
+        renderMermaidDiagram("invalid%%%diagram", "light")
       ).rejects.toThrow("Parse error: invalid syntax");
     });
 
     it("maps light theme to mermaid 'default' theme", async () => {
       await renderMermaidDiagram("graph TD; A-->B", "light");
       expect(mockInitialize).toHaveBeenCalledWith(
-        expect.objectContaining({ theme: "default" }),
+        expect.objectContaining({ theme: "default" })
       );
     });
 
     it("maps dark theme to mermaid 'dark' theme", async () => {
       await renderMermaidDiagram("graph TD; A-->B", "dark");
       expect(mockInitialize).toHaveBeenCalledWith(
-        expect.objectContaining({ theme: "dark" }),
+        expect.objectContaining({ theme: "dark" })
       );
     });
 
@@ -71,7 +73,7 @@ describe("mermaid-loader", () => {
         expect.objectContaining({
           securityLevel: "strict",
           startOnLoad: false,
-        }),
+        })
       );
     });
 

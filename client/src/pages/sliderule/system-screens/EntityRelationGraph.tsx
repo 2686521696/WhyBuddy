@@ -33,7 +33,12 @@ const TITLE_H = 30;
 const MAX_ROWS = 9;
 
 function cardHeight(node: ErGraphNode): number {
-  return TITLE_H + Math.min(node.fields.length, MAX_ROWS) * ROW_H + (node.fields.length > MAX_ROWS ? ROW_H : 0) + 6;
+  return (
+    TITLE_H +
+    Math.min(node.fields.length, MAX_ROWS) * ROW_H +
+    (node.fields.length > MAX_ROWS ? ROW_H : 0) +
+    6
+  );
 }
 
 type ErFlowNode = Node<{ er: ErGraphNode }, "erNode">;
@@ -63,10 +68,18 @@ function ErNodeCard({ data }: NodeProps<ErFlowNode>) {
           alignItems: "center",
           gap: 7,
           padding: "0 10px",
-          background: "#F5F1EA",
+          background: "#eef0f4",
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: 4, background: "#1677ff", flexShrink: 0 }} />
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 4,
+            background: "#1677ff",
+            flexShrink: 0,
+          }}
+        />
         <span
           style={{
             fontSize: 12,
@@ -79,9 +92,18 @@ function ErNodeCard({ data }: NodeProps<ErFlowNode>) {
         >
           {er.name}
         </span>
-        <span style={{ marginLeft: "auto", color: "#b8b2a4", fontSize: 9, fontFamily: "monospace" }}>{er.id}</span>
+        <span
+          style={{
+            marginLeft: "auto",
+            color: "#b8b2a4",
+            fontSize: 9,
+            fontFamily: "monospace",
+          }}
+        >
+          {er.id}
+        </span>
       </div>
-      {rows.map((f) => (
+      {rows.map(f => (
         <div
           key={f.id}
           style={{
@@ -118,7 +140,14 @@ function ErNodeCard({ data }: NodeProps<ErFlowNode>) {
             {f.name}
           </span>
           {f.refTarget && (
-            <span style={{ marginLeft: "auto", color: "#C4633F", fontSize: 9, whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                marginLeft: "auto",
+                color: "#0958d9",
+                fontSize: 9,
+                whiteSpace: "nowrap",
+              }}
+            >
               → {f.refTarget}
             </span>
           )}
@@ -152,7 +181,8 @@ function layoutPositions(data: {
   const g = new dagre.graphlib.Graph({ multigraph: true });
   g.setGraph({ rankdir: "LR", nodesep: 44, ranksep: 60 });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const n of data.nodes) g.setNode(n.id, { width: CARD_W, height: cardHeight(n) });
+  for (const n of data.nodes)
+    g.setNode(n.id, { width: CARD_W, height: cardHeight(n) });
   // dagre 的 LR 秩沿边方向增长；ER 边是"多→一"，反着喂让被引用实体排前面。
   // 把标签实际尺寸喂给 dagre（labelpos:c）——列间距按最长字段名自动撑开，
   // 标签不再钻进卡片底下（节点层在边层之上，盖住即不可读）。
@@ -160,7 +190,11 @@ function layoutPositions(data: {
     g.setEdge(
       e.target,
       e.source,
-      { width: Math.max(e.label.length * 6.4 + 16, 40), height: 18, labelpos: "c" },
+      {
+        width: Math.max(e.label.length * 6.4 + 16, 40),
+        height: 18,
+        labelpos: "c",
+      },
       `e-${i}`
     );
   }
@@ -186,7 +220,7 @@ export function EntityRelationGraph({
   const flowNodes: ErFlowNode[] = React.useMemo(() => {
     if (!data) return [];
     const positions = layoutPositions(data);
-    return data.nodes.map((n) => ({
+    return data.nodes.map(n => ({
       id: n.id,
       type: "erNode" as const,
       position: positions[n.id] ?? { x: 0, y: 0 },
@@ -210,7 +244,12 @@ export function EntityRelationGraph({
         labelBgStyle: { fill: "#FCFBF8", fillOpacity: 1 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 4,
-        markerEnd: { type: "arrowclosed" as const, color: "#C9C2B2", width: 18, height: 18 },
+        markerEnd: {
+          type: "arrowclosed" as const,
+          color: "#C9C2B2",
+          width: 18,
+          height: 18,
+        },
       })),
     [data]
   );
@@ -218,7 +257,11 @@ export function EntityRelationGraph({
   if (!data) return null;
 
   return (
-    <div ref={containerRef} className={`relative h-full w-full ${className}`} data-testid="er-graph">
+    <div
+      ref={containerRef}
+      className={`relative h-full w-full ${className}`}
+      data-testid="er-graph"
+    >
       {sized && (
         <ReactFlow
           nodes={flowNodes}
@@ -231,7 +274,7 @@ export function EntityRelationGraph({
           nodesConnectable={false}
           deleteKeyCode={null}
         >
-          <Background gap={18} size={1} color="#E7E2D9" />
+          <Background gap={18} size={1} color="#e5e7eb" />
           <Controls showInteractive={false} position="bottom-right" />
         </ReactFlow>
       )}

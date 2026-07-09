@@ -34,10 +34,7 @@ function isDegradedCapabilityMessage(message: string): boolean {
   return /未接地|规则推演|未引入外部证据|ground/i.test(message);
 }
 
-function stepMatchesCapability(
-  step: TurnStep,
-  capabilityId?: string
-): boolean {
+function stepMatchesCapability(step: TurnStep, capabilityId?: string): boolean {
   if (!capabilityId) return true;
   return "capabilityId" in step && step.capabilityId === capabilityId;
 }
@@ -46,7 +43,7 @@ function stepsForLoop(steps: TurnStep[], loopTurnId?: string): TurnStep[] {
   if (!loopTurnId) return steps;
   const prefix = `${loopTurnId}-`;
   return steps.filter(
-    (s) =>
+    s =>
       s.id.startsWith(prefix) ||
       ("loopTurnId" in s && s.loopTurnId === loopTurnId)
   );
@@ -64,14 +61,14 @@ export function RoleProgressLog({
   /** When set, only show progress for this pool capability (avoids duplicating across C_* stations). */
   capabilityId?: string;
 }) {
-  const scopedSteps = stepsForLoop(steps, loopTurnId).filter((s) =>
+  const scopedSteps = stepsForLoop(steps, loopTurnId).filter(s =>
     stepMatchesCapability(s, capabilityId)
   );
   const scopedActions = capabilityId
     ? []
     : loopTurnId
-    ? actions.filter((a) => !a.turnId || a.turnId === loopTurnId)
-    : actions;
+      ? actions.filter(a => !a.turnId || a.turnId === loopTurnId)
+      : actions;
 
   const lines: Array<{
     id: string;
@@ -125,10 +122,12 @@ export function RoleProgressLog({
       className="mt-1.5 flex flex-col gap-1 rounded-sm bg-transparent px-0.5 py-1 font-mono text-[10px] leading-relaxed"
       data-testid="role-progress-log"
     >
-      {lines.slice(-8).map((line) => (
+      {lines.slice(-8).map(line => (
         <div key={line.id} className="flex gap-1.5">
           <span className="shrink-0 text-slate-400">{line.role}</span>
-          <span className={`shrink-0 uppercase ${progressColor(line.type, line.ok)}`}>
+          <span
+            className={`shrink-0 uppercase ${progressColor(line.type, line.ok)}`}
+          >
             {line.type}
           </span>
           <span className="min-w-0 text-slate-600">{line.text}</span>
@@ -138,10 +137,13 @@ export function RoleProgressLog({
   );
 }
 
-function hasProgressContent(steps: TurnStep[], actions: ActionTrace[]): boolean {
+function hasProgressContent(
+  steps: TurnStep[],
+  actions: ActionTrace[]
+): boolean {
   return (
     steps.some(
-      (s) =>
+      s =>
         s.kind === "chip" ||
         s.kind === "step_narration" ||
         s.kind === "capability_fail"
@@ -212,11 +214,18 @@ export function RoleProgressBar({
       className="flex gap-4 overflow-x-auto whitespace-nowrap px-0.5 font-mono text-[10px] leading-relaxed text-slate-600 [scrollbar-width:thin]"
       data-testid="role-progress-bar"
     >
-      {lines.slice(-12).map((line) => (
-        <span key={line.id} className="inline-flex shrink-0 items-center gap-1.5">
+      {lines.slice(-12).map(line => (
+        <span
+          key={line.id}
+          className="inline-flex shrink-0 items-center gap-1.5"
+        >
           <span className="text-slate-400">{line.role}</span>
-          <span className={`uppercase ${progressColor(line.type, line.ok)}`}>{line.type}</span>
-          <span className="max-w-[200px] truncate text-slate-600">{line.text}</span>
+          <span className={`uppercase ${progressColor(line.type, line.ok)}`}>
+            {line.type}
+          </span>
+          <span className="max-w-[200px] truncate text-slate-600">
+            {line.text}
+          </span>
         </span>
       ))}
     </div>
@@ -236,7 +245,10 @@ export function TurnFleetProgressLog({
   if (!hasProgressContent(steps, actions)) return null;
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-2" data-testid="turn-fleet-progress">
+    <div
+      className="mt-3 border-t border-slate-100 pt-2"
+      data-testid="turn-fleet-progress"
+    >
       <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
         {title}
       </p>

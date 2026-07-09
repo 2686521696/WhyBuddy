@@ -35,7 +35,11 @@ vi.mock("framer-motion", () => ({
     div: React.forwardRef(
       (props: Record<string, unknown>, ref: React.Ref<HTMLDivElement>) => {
         const { initial, animate, transition, children, ...rest } = props;
-        return React.createElement("div", { ...rest, ref }, children as React.ReactNode);
+        return React.createElement(
+          "div",
+          { ...rest, ref },
+          children as React.ReactNode
+        );
       }
     ),
   },
@@ -60,7 +64,9 @@ import { AgentReasoningTimeline } from "../AgentReasoningTimeline.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeEntry(overrides: Partial<AgentReasoningEntry> = {}): AgentReasoningEntry {
+function makeEntry(
+  overrides: Partial<AgentReasoningEntry> = {}
+): AgentReasoningEntry {
   return {
     id: `test-${Math.random().toString(36).slice(2)}`,
     jobId: "job-test",
@@ -105,7 +111,9 @@ describe("AgentReasoningTimeline", () => {
   });
 
   it("thinking entry 渲染 data-column='left'", () => {
-    storeState.agentReasoning.entries = [makeEntry({ phase: "thinking", thought: "分析代码" })];
+    storeState.agentReasoning.entries = [
+      makeEntry({ phase: "thinking", thought: "分析代码" }),
+    ];
     storeState.agentReasoning.status = "streaming";
     const html = renderTimeline();
     expect(html).toContain('data-column="left"');
@@ -126,7 +134,12 @@ describe("AgentReasoningTimeline", () => {
 
   it("error entry 渲染为 banner 含红系 class；completed 含绿系 class", () => {
     storeState.agentReasoning.entries = [
-      makeEntry({ phase: "error", error: "超时", degraded: true, reason: "执行异常" }),
+      makeEntry({
+        phase: "error",
+        error: "超时",
+        degraded: true,
+        reason: "执行异常",
+      }),
     ];
     storeState.agentReasoning.status = "failed";
     let html = renderTimeline();

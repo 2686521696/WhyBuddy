@@ -20,7 +20,7 @@ import type { BlueprintPreviewProvenance, ProvenanceClass } from "./types";
  * - 防御式：undefined / null / 缺字段 → `failed`（最保守，不冒充成功）。
  */
 export function classifyProvenance(
-  provenance: BlueprintPreviewProvenance | null | undefined,
+  provenance: BlueprintPreviewProvenance | null | undefined
 ): ProvenanceClass {
   if (!provenance || typeof provenance !== "object") return "failed";
   const { source, ok } = provenance;

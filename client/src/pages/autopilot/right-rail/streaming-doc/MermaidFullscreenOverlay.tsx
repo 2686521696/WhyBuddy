@@ -28,7 +28,7 @@ export const MermaidFullscreenOverlay: FC<MermaidFullscreenOverlayProps> = ({
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(isOpen) => {
+      onOpenChange={isOpen => {
         if (!isOpen) onClose();
       }}
     >

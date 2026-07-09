@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
-import { deriveLatestTurnFromState, mergePublishClosureForPersistedTurn } from "../derive-persisted-turn";
-import { __sessionEvidenceTestHelpers, looksLikeNewAppIntent } from "../useSlideRuleSession";
+import {
+  deriveLatestTurnFromState,
+  mergePublishClosureForPersistedTurn,
+} from "../derive-persisted-turn";
+import {
+  __sessionEvidenceTestHelpers,
+  looksLikeNewAppIntent,
+} from "../useSlideRuleSession";
 
 /**
  * 修复:刷新后 uiTurns 为空 → 右上角架构执行记录消失。
@@ -10,7 +16,12 @@ import { __sessionEvidenceTestHelpers, looksLikeNewAppIntent } from "../useSlide
  */
 describe("deriveLatestTurnFromState (执行记录刷新后重建)", () => {
   it("returns null when no runs/ledger", () => {
-    expect(deriveLatestTurnFromState({ capabilityRuns: [], decisionLedger: [] } as any)).toBeNull();
+    expect(
+      deriveLatestTurnFromState({
+        capabilityRuns: [],
+        decisionLedger: [],
+      } as any)
+    ).toBeNull();
     expect(deriveLatestTurnFromState(null)).toBeNull();
   });
 
@@ -20,9 +31,27 @@ describe("deriveLatestTurnFromState (执行记录刷新后重建)", () => {
       runtimePhase: "done",
       lastTurnId: "t1",
       capabilityRuns: [
-        { id: "t1-run-0", capabilityId: "evidence.search", roleId: "接地", turnId: "t1", gateResults: [{ status: "passed" }] },
-        { id: "t1-run-1", capabilityId: "synthesis.merge", roleId: "综合", turnId: "t1", gateResults: [{ status: "passed" }] },
-        { id: "t1-run-2", capabilityId: "report.write", roleId: "综合", turnId: "t1-r2", gateResults: [{ status: "failed" }] },
+        {
+          id: "t1-run-0",
+          capabilityId: "evidence.search",
+          roleId: "接地",
+          turnId: "t1",
+          gateResults: [{ status: "passed" }],
+        },
+        {
+          id: "t1-run-1",
+          capabilityId: "synthesis.merge",
+          roleId: "综合",
+          turnId: "t1",
+          gateResults: [{ status: "passed" }],
+        },
+        {
+          id: "t1-run-2",
+          capabilityId: "report.write",
+          roleId: "综合",
+          turnId: "t1-r2",
+          gateResults: [{ status: "failed" }],
+        },
       ],
       decisionLedger: [{ id: "t1-dledger", turnId: "t1", source: "llm" }],
     } as unknown as V5SessionState;
@@ -32,8 +61,14 @@ describe("deriveLatestTurnFromState (执行记录刷新后重建)", () => {
     expect(turn!.id).toBe("t1");
     expect(turn!.status).toBe("complete");
     // 跨 t1 + t1-r2 的运行都归并到本轮
-    expect(turn!.routeFacts.selectedCapabilities?.map((c) => c.capabilityId)).toEqual(
-      expect.arrayContaining(["evidence.search", "synthesis.merge", "report.write"])
+    expect(
+      turn!.routeFacts.selectedCapabilities?.map(c => c.capabilityId)
+    ).toEqual(
+      expect.arrayContaining([
+        "evidence.search",
+        "synthesis.merge",
+        "report.write",
+      ])
     );
     expect(turn!.routeFacts.trustTotalCount).toBe(3);
     expect(turn!.routeFacts.trustPassedCount).toBe(2); // 第三个 gate failed
@@ -96,7 +131,11 @@ describe("publishClosure frontend session persistence (119)", () => {
   });
 
   it("explicit attach on drive-final state keeps publishClosure for persist", () => {
-    const pre: any = { sessionId: "pc-attach", goal: { text: "attach" }, artifacts: [] };
+    const pre: any = {
+      sessionId: "pc-attach",
+      goal: { text: "attach" },
+      artifacts: [],
+    };
     const withPc = { ...pre, publishClosure: samplePublishClosure };
     // simulate what marathon python attach + preserve does
     const after = { ...(withPc as any) } as any;
@@ -108,7 +147,9 @@ describe("publishClosure frontend session persistence (119)", () => {
 
   it("preserves Python closure and skill runtime graph projections together", () => {
     const graph = {
-      edges: [{ sourceSkill: "datamodel", targetSkill: "page", state: "allowed" }],
+      edges: [
+        { sourceSkill: "datamodel", targetSkill: "page", state: "allowed" },
+      ],
       evidenceBySkill: { datamodel: ["DM_PAGE_BINDING_IMPACT_EVIDENCE"] },
     };
     const state = {
@@ -120,22 +161,28 @@ describe("publishClosure frontend session persistence (119)", () => {
       skillRuntimeGraph: graph,
     } as any;
 
-    const preserved = __sessionEvidenceTestHelpers.preservePythonEvidenceProjection(state) as any;
+    const preserved =
+      __sessionEvidenceTestHelpers.preservePythonEvidenceProjection(
+        state
+      ) as any;
 
     expect(preserved.publishClosure).toBe(samplePublishClosure);
     expect(preserved.skillRuntimeGraph).toBe(graph);
   });
 
   it("prepares a visible empty reset state when backend reset or save fails", async () => {
-    const fresh = await __sessionEvidenceTestHelpers.prepareVisibleResetSessionState(
-      "reset-fallback-session",
-      async () => {
-        throw new Error("DELETE /api/sliderule/sessions/reset-fallback-session returned 405");
-      },
-      async () => {
-        throw new Error("save failed");
-      }
-    );
+    const fresh =
+      await __sessionEvidenceTestHelpers.prepareVisibleResetSessionState(
+        "reset-fallback-session",
+        async () => {
+          throw new Error(
+            "DELETE /api/sliderule/sessions/reset-fallback-session returned 405"
+          );
+        },
+        async () => {
+          throw new Error("save failed");
+        }
+      );
 
     expect(fresh.sessionId).toBe("reset-fallback-session");
     expect(fresh.goal?.text).toBe("");
@@ -180,7 +227,10 @@ describe("persisted turn publishClosure merge order (120)", () => {
       publishClosure: previewOnly,
     } as any;
 
-    const merged = mergePublishClosureForPersistedTurn(stateWithPreview, pythonClosed) as any;
+    const merged = mergePublishClosureForPersistedTurn(
+      stateWithPreview,
+      pythonClosed
+    ) as any;
 
     expect(merged.publishClosure?.closureHash).toBe("python-authoritative-120");
     expect(merged.publishClosure?.evidencePresentCount).toBe(6);
@@ -195,7 +245,10 @@ describe("persisted turn publishClosure merge order (120)", () => {
       publishClosure: previewOnly,
     } as any;
 
-    const merged = mergePublishClosureForPersistedTurn(stateWithPreview, undefined) as any;
+    const merged = mergePublishClosureForPersistedTurn(
+      stateWithPreview,
+      undefined
+    ) as any;
 
     expect("publishClosure" in merged).toBe(false);
     expect(merged.publishClosure).toBeUndefined();
@@ -209,9 +262,21 @@ describe("persisted turn publishClosure merge order (120)", () => {
  */
 describe("looksLikeNewAppIntent (自动新话题启发式)", () => {
   it("识别内置 chips 与常见新应用表述", () => {
-    expect(looksLikeNewAppIntent("做一个采购审批应用，含采购单、经理审批、财务确认和字段权限")).toBe(true);
-    expect(looksLikeNewAppIntent("设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理")).toBe(true);
-    expect(looksLikeNewAppIntent("做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养")).toBe(true);
+    expect(
+      looksLikeNewAppIntent(
+        "做一个采购审批应用，含采购单、经理审批、财务确认和字段权限"
+      )
+    ).toBe(true);
+    expect(
+      looksLikeNewAppIntent(
+        "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理"
+      )
+    ).toBe(true);
+    expect(
+      looksLikeNewAppIntent(
+        "做一个连锁健身房管理系统，包含私教排期、会员卡核销和器材保养"
+      )
+    ).toBe(true);
     expect(looksLikeNewAppIntent("帮我做个宠物医院预约平台")).toBe(true);
   });
 
@@ -229,9 +294,15 @@ describe("looksLikeNewAppIntent (自动新话题启发式)", () => {
   });
 
   it("不误伤追问/交付/挑战类输入（保持既有 refine 语义）", () => {
-    expect(looksLikeNewAppIntent("打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包")).toBe(false);
+    expect(
+      looksLikeNewAppIntent(
+        "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包"
+      )
+    ).toBe(false);
     expect(looksLikeNewAppIntent("把审批改成两级")).toBe(false);
-    expect(looksLikeNewAppIntent("这个结论的依据不够充分，请重新推演。")).toBe(false);
+    expect(looksLikeNewAppIntent("这个结论的依据不够充分，请重新推演。")).toBe(
+      false
+    );
     expect(looksLikeNewAppIntent("好的")).toBe(false);
     expect(looksLikeNewAppIntent("")).toBe(false);
   });

@@ -41,7 +41,9 @@ describe("TrustSection", () => {
     // ledger + companion gated on spec_tree; matrix gated on spec docs
     const ledger = html.match(/trust-tab-ledger"[^>]*data-available="false"/);
     const matrix = html.match(/trust-tab-matrix"[^>]*data-available="false"/);
-    const companion = html.match(/trust-tab-companion"[^>]*data-available="false"/);
+    const companion = html.match(
+      /trust-tab-companion"[^>]*data-available="false"/
+    );
     expect(ledger).not.toBeNull();
     expect(matrix).not.toBeNull();
     expect(companion).not.toBeNull();
@@ -58,7 +60,11 @@ describe("TrustSection", () => {
   });
 
   it("renders the companion gated empty state when spec tree is absent", () => {
-    const html = render({ ...base, hasSpecTree: false, initialTab: "companion" });
+    const html = render({
+      ...base,
+      hasSpecTree: false,
+      initialTab: "companion",
+    });
     expect(html).toContain('data-testid="trust-companion-gated"');
   });
 

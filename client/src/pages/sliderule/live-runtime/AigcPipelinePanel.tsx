@@ -17,13 +17,17 @@ import {
   resolveFieldRef,
 } from "../system-screens/five-system-model";
 import { derivePipelineFlow, makeAigcNodeRunner } from "./flow-definition";
-import { executeFlow, type FlowResult, type NodeRunStatus } from "./flow-executor";
+import {
+  executeFlow,
+  type FlowResult,
+  type NodeRunStatus,
+} from "./flow-executor";
 
 const STATUS_RING: Record<NodeRunStatus, string> = {
   running: "border-pink-400 ring-2 ring-pink-100",
   success: "border-emerald-300 bg-emerald-50/40",
   failed: "border-red-300 bg-red-50/60",
-  skipped: "border-[#E7E2D9] opacity-50",
+  skipped: "border-[#e5e7eb] opacity-50",
 };
 
 export function AigcPipelinePanel({
@@ -39,16 +43,23 @@ export function AigcPipelinePanel({
   const [activeIdx, setActiveIdx] = React.useState(0);
   const [inputs, setInputs] = React.useState<Record<string, string>>({});
   const [running, setRunning] = React.useState(false);
-  const [statuses, setStatuses] = React.useState<Record<string, NodeRunStatus>>({});
+  const [statuses, setStatuses] = React.useState<Record<string, NodeRunStatus>>(
+    {}
+  );
   const [result, setResult] = React.useState<FlowResult | null>(null);
 
-  const pipeline: AigcPipeline | null = pipelines[activeIdx] ?? pipelines[0] ?? null;
+  const pipeline: AigcPipeline | null =
+    pipelines[activeIdx] ?? pipelines[0] ?? null;
   const projection = React.useMemo(
     () => derivePipelineFlow(pipeline, capabilities),
     [pipeline, capabilities]
   );
-  const steps = projection.flow.nodes.map((n) => projection.capByNodeId.get(n.node_id)!);
-  const handoffRefs = new Set(projection.flow.edges.map((e) => e.source_port ?? ""));
+  const steps = projection.flow.nodes.map(
+    n => projection.capByNodeId.get(n.node_id)!
+  );
+  const handoffRefs = new Set(
+    projection.flow.edges.map(e => e.source_port ?? "")
+  );
 
   const run = async () => {
     if (projection.reason || running) return;
@@ -57,10 +68,14 @@ export function AigcPipelinePanel({
     setStatuses({});
     try {
       const flow = { ...projection.flow, variables: { ...inputs } };
-      const res = await executeFlow(flow, makeAigcNodeRunner(projection.capByNodeId, goal), {
-        onNodeStatus: (nodeId, status) =>
-          setStatuses((prev) => ({ ...prev, [nodeId]: status })),
-      });
+      const res = await executeFlow(
+        flow,
+        makeAigcNodeRunner(projection.capByNodeId, goal),
+        {
+          onNodeStatus: (nodeId, status) =>
+            setStatuses(prev => ({ ...prev, [nodeId]: status })),
+        }
+      );
       setResult(res);
     } finally {
       setRunning(false);
@@ -80,7 +95,10 @@ export function AigcPipelinePanel({
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="aigc-pipeline-panel">
+    <div
+      className="flex h-full flex-col gap-3 overflow-auto p-4"
+      data-testid="aigc-pipeline-panel"
+    >
       {/* 管线选择 */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[10px] text-stone-400">能力编排</span>
@@ -98,7 +116,7 @@ export function AigcPipelinePanel({
             className={`rounded-full px-2 py-0.5 text-[11px] ring-1 transition-colors ${
               i === activeIdx
                 ? "bg-pink-50 text-pink-700 ring-pink-200"
-                : "bg-white text-stone-500 ring-[#E7E2D9] hover:text-stone-700"
+                : "bg-white text-stone-500 ring-[#e5e7eb] hover:text-stone-700"
             }`}
           >
             {p.name || p.id || `管线 ${i + 1}`}
@@ -107,7 +125,10 @@ export function AigcPipelinePanel({
       </div>
 
       {/* 步骤链：能力卡（执行状态实时点亮）+ 衔接字段标注 */}
-      <div className="flex flex-wrap items-stretch gap-2" data-testid="aigc-pipeline-chain">
+      <div
+        className="flex flex-wrap items-stretch gap-2"
+        data-testid="aigc-pipeline-chain"
+      >
         {steps.map((cap, i) => {
           const status = statuses[cap.id ?? ""];
           return (
@@ -125,7 +146,7 @@ export function AigcPipelinePanel({
               )}
               <div
                 className={`min-w-[150px] flex-1 rounded-md border bg-white p-2.5 transition-all ${
-                  status ? STATUS_RING[status] : "border-[#E7E2D9]"
+                  status ? STATUS_RING[status] : "border-[#e5e7eb]"
                 }`}
                 data-testid={`aigc-pipeline-node-${cap.id}`}
                 data-status={status ?? "idle"}
@@ -134,17 +155,28 @@ export function AigcPipelinePanel({
                   {status === "running" && (
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-pink-500" />
                   )}
-                  {status === "success" && <span className="text-emerald-600">✓</span>}
-                  {status === "failed" && <span className="text-red-600">✗</span>}
+                  {status === "success" && (
+                    <span className="text-emerald-600">✓</span>
+                  )}
+                  {status === "failed" && (
+                    <span className="text-red-600">✗</span>
+                  )}
                   {i + 1}. {cap.name || cap.id}
                 </div>
                 <div className="mt-1 space-y-0.5">
-                  {(cap.inputFields ?? []).map((ref) => {
+                  {(cap.inputFields ?? []).map(ref => {
                     const res = resolveFieldRef(ref, model);
                     const isHandoff = handoffRefs.has(ref);
                     return (
-                      <div key={ref} className="flex items-center gap-1 text-[9px]">
-                        <span className={res.resolved ? "text-stone-400" : "text-red-500"}>
+                      <div
+                        key={ref}
+                        className="flex items-center gap-1 text-[9px]"
+                      >
+                        <span
+                          className={
+                            res.resolved ? "text-stone-400" : "text-red-500"
+                          }
+                        >
                           ← {res.resolved ? res.label : `✗ ${ref}`}
                         </span>
                         {isHandoff && (
@@ -157,7 +189,9 @@ export function AigcPipelinePanel({
                   })}
                   {cap.outputField && (
                     <div className="text-[9px] text-stone-500">
-                      → {resolveFieldRef(cap.outputField, model).label || cap.outputField}
+                      →{" "}
+                      {resolveFieldRef(cap.outputField, model).label ||
+                        cap.outputField}
                     </div>
                   )}
                 </div>
@@ -168,22 +202,27 @@ export function AigcPipelinePanel({
       </div>
 
       {/* 手工输入 + 试跑（图执行器：拓扑序逐节点真跑，状态实时点亮） */}
-      <div className="rounded-md border border-[#E7E2D9] bg-[#FBF9F4] p-3">
+      <div className="rounded-md border border-[#e5e7eb] bg-[#FBF9F4] p-3">
         <div className="text-[11px] font-semibold text-stone-600">链路试跑</div>
         {projection.manualInputRefs.length > 0 && (
           <div className="mt-2 space-y-1.5">
-            {projection.manualInputRefs.map((ref) => {
+            {projection.manualInputRefs.map(ref => {
               const res = resolveFieldRef(ref, model);
               return (
                 <div key={ref} className="flex items-center gap-2">
-                  <span className="w-40 shrink-0 truncate text-[10px] text-stone-500" title={ref}>
+                  <span
+                    className="w-40 shrink-0 truncate text-[10px] text-stone-500"
+                    title={ref}
+                  >
                     {res.resolved ? res.label : ref}
                   </span>
                   <input
                     value={inputs[ref] ?? ""}
-                    onChange={(e) => setInputs((prev) => ({ ...prev, [ref]: e.target.value }))}
+                    onChange={e =>
+                      setInputs(prev => ({ ...prev, [ref]: e.target.value }))
+                    }
                     placeholder="输入值"
-                    className="min-w-0 flex-1 rounded border border-[#E7E2D9] bg-white px-2 py-1 text-[11px] outline-none focus:border-pink-300"
+                    className="min-w-0 flex-1 rounded border border-[#e5e7eb] bg-white px-2 py-1 text-[11px] outline-none focus:border-pink-300"
                   />
                 </div>
               );
@@ -198,7 +237,9 @@ export function AigcPipelinePanel({
           className="mt-2 rounded-full bg-pink-500 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
           title={projection.reason ?? undefined}
         >
-          {running ? "链路运行中…（逐节点真跑 LLM）" : `试跑整条链（${steps.length} 步）`}
+          {running
+            ? "链路运行中…（逐节点真跑 LLM）"
+            : `试跑整条链（${steps.length} 步）`}
         </button>
       </div>
 
@@ -218,10 +259,10 @@ export function AigcPipelinePanel({
                 key={log.node_id || i}
                 className={`rounded-md border p-2.5 ${
                   log.status === "success"
-                    ? "border-[#E7E2D9] bg-white"
+                    ? "border-[#e5e7eb] bg-white"
                     : log.status === "skipped"
-                    ? "border-[#E7E2D9] bg-white opacity-50"
-                    : "border-red-200 bg-red-50/60"
+                      ? "border-[#e5e7eb] bg-white opacity-50"
+                      : "border-red-200 bg-red-50/60"
                 }`}
               >
                 <div className="flex items-center gap-2 text-[10px]">
@@ -230,17 +271,23 @@ export function AigcPipelinePanel({
                       log.status === "success"
                         ? "text-emerald-600"
                         : log.status === "skipped"
-                        ? "text-stone-400"
-                        : "text-red-600"
+                          ? "text-stone-400"
+                          : "text-red-600"
                     }
                   >
-                    {log.status === "success" ? "✓" : log.status === "skipped" ? "⊘" : "✗"}
+                    {log.status === "success"
+                      ? "✓"
+                      : log.status === "skipped"
+                        ? "⊘"
+                        : "✗"}
                   </span>
                   <span className="font-semibold text-stone-700">
                     {i + 1}. {cap?.name || log.node_id}
                   </span>
                   {typeof log.duration_ms === "number" && (
-                    <span className="text-stone-300">{(log.duration_ms / 1000).toFixed(1)}s</span>
+                    <span className="text-stone-300">
+                      {(log.duration_ms / 1000).toFixed(1)}s
+                    </span>
                   )}
                 </div>
                 {log.status === "success" && (
@@ -249,14 +296,17 @@ export function AigcPipelinePanel({
                   </div>
                 )}
                 {log.status === "failed" && (
-                  <div className="mt-1 text-[10px] text-red-600">{log.error}</div>
+                  <div className="mt-1 text-[10px] text-red-600">
+                    {log.error}
+                  </div>
                 )}
               </div>
             );
           })}
           {result.status === "failed" && result.logs.length > 0 && (
             <div className="text-[10px] text-stone-400">
-              链路中断（fail-fast：下游缺上游产物，不伪造后续节点；失败节点已重试 1 次）
+              链路中断（fail-fast：下游缺上游产物，不伪造后续节点；失败节点已重试
+              1 次）
             </div>
           )}
         </div>

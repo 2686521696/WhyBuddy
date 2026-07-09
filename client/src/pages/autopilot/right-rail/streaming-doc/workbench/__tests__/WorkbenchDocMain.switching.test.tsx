@@ -35,7 +35,10 @@ vi.mock("../../StreamCursor", () => ({
 }));
 
 import { WorkbenchDocMainView } from "../WorkbenchDocMain";
-import type { WorkbenchDocMainViewProps, ActiveDocMeta } from "../WorkbenchDocMain";
+import type {
+  WorkbenchDocMainViewProps,
+  ActiveDocMeta,
+} from "../WorkbenchDocMain";
 import type { ChapterChecklistItem } from "../derive-chapter-checklist";
 
 // ---------------------------------------------------------------------------
@@ -188,7 +191,9 @@ describe("WorkbenchDocMain.switching", () => {
       aiSummary: "This is a test summary",
       renderedMarkdown: "## Section\nContent here",
     });
-    expect(markup).toContain('data-testid="autopilot-workbench-doc-ai-summary"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-doc-ai-summary"'
+    );
     expect(markup).toContain("This is a test summary");
   });
 
@@ -197,7 +202,9 @@ describe("WorkbenchDocMain.switching", () => {
       aiSummary: null,
       renderedMarkdown: "## Section\nContent here",
     });
-    expect(markup).toContain('data-testid="autopilot-workbench-doc-ai-summary"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-doc-ai-summary"'
+    );
     expect(markup).toContain("AI 摘要尚未生成");
   });
 
@@ -219,7 +226,9 @@ describe("WorkbenchDocMain.switching", () => {
       chapterChecklist: checklist,
       renderedMarkdown: "## Introduction\nSome text\n## Details\n",
     });
-    expect(markup).toContain('data-testid="autopilot-workbench-doc-chapter-checklist"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-doc-chapter-checklist"'
+    );
     expect(markup).toContain("Introduction");
     expect(markup).toContain("Details");
     // checked checkbox for completed item
@@ -246,7 +255,9 @@ describe("WorkbenchDocMain.switching", () => {
       ],
       renderedMarkdown: "## Section\nContent",
     });
-    expect(markup).not.toContain('data-testid="autopilot-workbench-doc-related-refs"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-doc-related-refs"'
+    );
     expect(markup).not.toContain("autopilot-workbench-doc-related-ref-");
     expect(markup).not.toContain("Design Doc (design)");
     expect(markup).not.toContain("Tasks Doc (tasks)");
@@ -257,7 +268,9 @@ describe("WorkbenchDocMain.switching", () => {
       relatedRefs: [],
       renderedMarkdown: "## Section\nContent",
     });
-    expect(markup).not.toContain('data-testid="autopilot-workbench-doc-related-refs"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-doc-related-refs"'
+    );
     expect(markup).not.toContain("暂无关联文档");
     expect(markup).not.toContain("No related documents");
     expect(markup).not.toContain("autopilot-workbench-doc-related-ref-");
@@ -279,15 +292,21 @@ describe("WorkbenchDocMain.switching", () => {
         },
       ],
     });
-    expect(markup).not.toContain('data-testid="autopilot-workbench-doc-ai-summary"');
-    expect(markup).not.toContain('data-testid="autopilot-workbench-doc-chapter-checklist"');
-    expect(markup).not.toContain('data-testid="autopilot-workbench-doc-related-refs"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-doc-ai-summary"'
+    );
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-doc-chapter-checklist"'
+    );
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-doc-related-refs"'
+    );
   });
 
   it("(l) applies compact body padding and long-content wrap guards inside the scroll area", () => {
     const markup = renderView({
       renderedMarkdown:
-        "```json\n{\"veryLongKey\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n```",
+        '```json\n{"veryLongKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n```',
     });
 
     expect(markup).toContain('data-testid="autopilot-workbench-doc-scroll"');

@@ -15,30 +15,33 @@
  * Validates: Requirements 1.3, 2.4
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, it, expect, vi } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 // Stub the heavy reasoning surface so SSR focuses on the STATUS bar.
-vi.mock('@/components/autopilot/ReasoningFlowSurface', () => ({
+vi.mock("@/components/autopilot/ReasoningFlowSurface", () => ({
   ReasoningFlowSurface: () => null,
 }));
 
-vi.mock('./sliderule/useSlideRuleSession', async () => {
-  const rt = await vi.importActual<typeof import('@/lib/sliderule-runtime')>(
-    '@/lib/sliderule-runtime'
+vi.mock("./sliderule/useSlideRuleSession", async () => {
+  const rt = await vi.importActual<typeof import("@/lib/sliderule-runtime")>(
+    "@/lib/sliderule-runtime"
   );
   const base = rt.createInitialSessionState(
-    '做一个权限管理系统（支持 RBAC + 数据范围）',
-    'sliderule-main-proto'
+    "做一个权限管理系统（支持 RBAC + 数据范围）",
+    "sliderule-main-proto"
   );
-  const sessionState = { ...base, goal: { ...base.goal, status: 'clear' as const } };
+  const sessionState = {
+    ...base,
+    goal: { ...base.goal, status: "clear" as const },
+  };
   return {
     useSlideRuleSession: () => ({
-      goal: '做一个权限管理系统（支持 RBAC + 数据范围）',
+      goal: "做一个权限管理系统（支持 RBAC + 数据范围）",
       sessionState,
       uiTurns: [],
-      input: '',
+      input: "",
       setInput: () => {},
       isRunning: false,
       liveAction: null,
@@ -51,22 +54,22 @@ vi.mock('./sliderule/useSlideRuleSession', async () => {
 
 // Make the page's initial sessionState a GCOV-passed one (goal.status === "clear")
 // by overriding only createInitialSessionState; everything else stays real.
-vi.mock('@/lib/sliderule-runtime', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/sliderule-runtime')>(
-    '@/lib/sliderule-runtime'
-  );
+vi.mock("@/lib/sliderule-runtime", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/sliderule-runtime")
+  >("@/lib/sliderule-runtime");
   return {
     ...actual,
     createInitialSessionState: (goalText: string, sessionId?: string) => {
       const base = actual.createInitialSessionState(goalText, sessionId);
-      return { ...base, goal: { ...base.goal, status: 'clear' as const } };
+      return { ...base, goal: { ...base.goal, status: "clear" as const } };
     },
   };
 });
 
-import SlideRule from './SlideRule';
+import SlideRule from "./SlideRule";
 
-describe('BUG: SlideRule STATUS bar never surfaces sessionState.goal.status (Property 1 edge case — EXPECTED TO FAIL on unfixed code)', () => {
+describe("BUG: SlideRule STATUS bar never surfaces sessionState.goal.status (Property 1 edge case — EXPECTED TO FAIL on unfixed code)", () => {
   it('renders a conclusion badge sourced from sessionState.goal.status showing the "clear" label', () => {
     const html = renderToStaticMarkup(React.createElement(SlideRule));
 

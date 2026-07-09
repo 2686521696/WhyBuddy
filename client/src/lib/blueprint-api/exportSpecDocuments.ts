@@ -36,7 +36,7 @@ export interface ExportSpecDocumentsArgs {
  * - 紧接着 `URL.revokeObjectURL` 清理；finally 中移除临时 `<a>`
  */
 export async function exportSpecDocumentsToDownload(
-  args: ExportSpecDocumentsArgs,
+  args: ExportSpecDocumentsArgs
 ): Promise<void> {
   const params = new URLSearchParams();
   params.set("granularity", args.granularity);
@@ -58,13 +58,13 @@ export async function exportSpecDocumentsToDownload(
       bodySnippet = "<unreadable response body>";
     }
     throw new Error(
-      `Export failed: HTTP ${response.status} ${response.statusText}. ${bodySnippet}`,
+      `Export failed: HTTP ${response.status} ${response.statusText}. ${bodySnippet}`
     );
   }
 
   const filename = parseFilenameFromContentDisposition(
     response.headers.get("content-disposition"),
-    args,
+    args
   );
   const blob = await response.blob();
   triggerBlobDownload(blob, filename);
@@ -86,7 +86,7 @@ export async function exportSpecDocumentsToDownload(
  */
 function parseFilenameFromContentDisposition(
   disposition: string | null,
-  args: ExportSpecDocumentsArgs,
+  args: ExportSpecDocumentsArgs
 ): string {
   if (disposition) {
     // 1. RFC 5987：filename*=UTF-8''<percent-encoded>

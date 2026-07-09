@@ -18,7 +18,7 @@ import { StatusCapsule } from "../status-capsule";
 describe("<StatusCapsule>", () => {
   it("renders the zh-CN completed label '构建完成' with green background", () => {
     const markup = renderToStaticMarkup(
-      <StatusCapsule status="completed" locale="zh-CN" />,
+      <StatusCapsule status="completed" locale="zh-CN" />
     );
 
     expect(markup).toContain('data-testid="autopilot-status-capsule"');
@@ -31,7 +31,7 @@ describe("<StatusCapsule>", () => {
 
   it("renders the en-US active label 'RUNNING' with pulse dot and orange background", () => {
     const markup = renderToStaticMarkup(
-      <StatusCapsule status="active" locale="en-US" />,
+      <StatusCapsule status="active" locale="en-US" />
     );
 
     expect(markup).toContain('data-status="active"');
@@ -43,7 +43,7 @@ describe("<StatusCapsule>", () => {
 
   it("renders the pending label with gray surface color and pending data-status", () => {
     const markup = renderToStaticMarkup(
-      <StatusCapsule status="pending" locale="zh-CN" />,
+      <StatusCapsule status="pending" locale="zh-CN" />
     );
 
     expect(markup).toContain('data-status="pending"');

@@ -40,7 +40,7 @@ const SESSION_ID = "S-123";
  *   避免依赖 `parseSessionFromArtifactId` 兜底路径）。
  */
 function buildLocalClarificationArtifact(
-  payloadOverride?: Record<string, unknown>,
+  payloadOverride?: Record<string, unknown>
 ): BlueprintGenerationArtifact {
   return {
     id: `clarification-session-${SESSION_ID}`,
@@ -70,7 +70,7 @@ function buildLocalClarificationArtifact(
  *   覆盖 Case B 的 payload-key 合并语义。
  */
 function buildServerClarificationArtifact(
-  payloadOverride?: Record<string, unknown>,
+  payloadOverride?: Record<string, unknown>
 ): BlueprintGenerationArtifact {
   return {
     id: "blueprint-artifact-9f2c",

@@ -17,7 +17,7 @@ function hasStaleMarker(node: VersionTreeLayoutNode): boolean {
     return true;
   }
 
-  return node.job.artifacts.some((artifact) => {
+  return node.job.artifacts.some(artifact => {
     const staleArtifact = artifact as StaleAwareArtifact;
     return Boolean(staleArtifact.staleSince || staleArtifact.invalidatedBy);
   });
@@ -60,7 +60,11 @@ export function TreeNode({
   const select = onSelectJob ?? onSelect;
   const handleSelect = () => select?.(node.job.id);
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "Spacebar"
+    ) {
       event.preventDefault();
       handleSelect();
     }
@@ -95,12 +99,18 @@ export function TreeNode({
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
     >
-      <span className="block text-sm font-semibold">{shortJobId(node.job.id)}</span>
+      <span className="block text-sm font-semibold">
+        {shortJobId(node.job.id)}
+      </span>
       <span className="block text-xs text-[#4b5563]">
         {stageLabel(node.job.stage, locale)} / {node.job.status}
       </span>
-      {isActive ? <span className="text-xs font-semibold">{activeMarker}</span> : null}
-      {isStale ? <span className="text-xs font-semibold">{staleMarker}</span> : null}
+      {isActive ? (
+        <span className="text-xs font-semibold">{activeMarker}</span>
+      ) : null}
+      {isStale ? (
+        <span className="text-xs font-semibold">{staleMarker}</span>
+      ) : null}
       {node.job.parentJobId ? (
         <span className="block text-xs text-[#4b5563]">
           {branchPrefix} {branchedFromStageLabel} {branchAt}{" "}

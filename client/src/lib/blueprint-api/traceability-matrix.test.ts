@@ -47,7 +47,7 @@ describe("fetchTraceabilityMatrix", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/blueprint/jobs/job%20one%2Fbranch/traceability-matrix",
-      undefined,
+      undefined
     );
     expect(result).toEqual({ ok: true, kind: "json", data: SAMPLE_MATRIX });
   });
@@ -59,7 +59,7 @@ describe("fetchTraceabilityMatrix", () => {
         new Response(markdown, {
           status: 200,
           headers: { "content-type": "text/markdown" },
-        }),
+        })
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -68,7 +68,7 @@ describe("fetchTraceabilityMatrix", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toBe(
-      "/api/blueprint/jobs/job-1/traceability-matrix?format=markdown",
+      "/api/blueprint/jobs/job-1/traceability-matrix?format=markdown"
     );
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected markdown fetch to succeed");
@@ -79,7 +79,7 @@ describe("fetchTraceabilityMatrix", () => {
   it("flags notGenerated when the endpoint returns 404 matrix_not_generated", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ error: "matrix_not_generated" }, 404)),
+      vi.fn(async () => jsonResponse({ error: "matrix_not_generated" }, 404))
     );
 
     const result = await fetchTraceabilityMatrix("job-1");
@@ -97,7 +97,7 @@ describe("fetchTraceabilityMatrix", () => {
   it("flags notGenerated for 404 job_not_found", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ error: "job_not_found" }, 404)),
+      vi.fn(async () => jsonResponse({ error: "job_not_found" }, 404))
     );
 
     const result = await fetchTraceabilityMatrix("missing-job");
@@ -112,7 +112,7 @@ describe("fetchTraceabilityMatrix", () => {
       "fetch",
       vi.fn(async () => {
         throw new TypeError("network down");
-      }),
+      })
     );
 
     const result = await fetchTraceabilityMatrix("job-1");
@@ -128,7 +128,7 @@ describe("fetchTraceabilityMatrix", () => {
       "fetch",
       vi.fn(async () => {
         throw new TypeError("network down");
-      }),
+      })
     );
 
     const result = await fetchTraceabilityMatrix("job-1", "markdown");

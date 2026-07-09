@@ -1,10 +1,10 @@
-import { useThree } from '@react-three/fiber';
-import { useEffect } from 'react';
-import { PerspectiveCamera } from 'three';
+import { useThree } from "@react-three/fiber";
+import { useEffect } from "react";
+import { PerspectiveCamera } from "three";
 
-import type { ViewportTier } from '@/hooks/useViewportTier';
+import type { ViewportTier } from "@/hooks/useViewportTier";
 
-import { computeFovCompensation } from './camera-compensation';
+import { computeFovCompensation } from "./camera-compensation";
 
 export interface CameraControllerProps {
   /** Actual available width of the Scene3D container in pixels. */
@@ -36,7 +36,10 @@ const BASE_FOV: Record<ViewportTier, number> = {
  *
  * Must be rendered inside an R3F `<Canvas>`.
  */
-export function CameraController({ effectiveWidth, tier }: CameraControllerProps) {
+export function CameraController({
+  effectiveWidth,
+  tier,
+}: CameraControllerProps) {
   const { camera } = useThree();
 
   useEffect(() => {

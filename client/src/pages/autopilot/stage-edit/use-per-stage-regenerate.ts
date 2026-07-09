@@ -31,7 +31,7 @@ export interface PerStageRegenerateSkippedResult {
 }
 
 export async function runPerStageRegenerate(
-  input: PerStageRegenerateInput,
+  input: PerStageRegenerateInput
 ): Promise<PerStageRegenerateResult> {
   switch (input.stage) {
     case "route_generation": {
@@ -62,7 +62,7 @@ export function createPerStageRegenerateController() {
       return inFlight;
     },
     async trigger(
-      input: PerStageRegenerateInput,
+      input: PerStageRegenerateInput
     ): Promise<PerStageRegenerateResult | PerStageRegenerateSkippedResult> {
       if (input.disabled) {
         return { skipped: true, reason: "disabled" };

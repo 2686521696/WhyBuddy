@@ -60,7 +60,7 @@ const EMPTY_PROPS: AutopilotRightRailProps = {
  * 避免每个用例重复声明完整契约。
  */
 function makeProps(
-  overrides: Partial<AutopilotRightRailProps>,
+  overrides: Partial<AutopilotRightRailProps>
 ): AutopilotRightRailProps {
   return { ...EMPTY_PROPS, ...overrides };
 }
@@ -72,7 +72,7 @@ describe("deriveSubStageSummary", () => {
 
   it.each(SUB_STAGES)(
     "returns a well-formed summary for %s when props are empty",
-    (subStage) => {
+    subStage => {
       const result = deriveSubStageSummary(subStage, EMPTY_PROPS, "zh-CN");
 
       expect(result.metrics).toHaveLength(3);
@@ -84,7 +84,7 @@ describe("deriveSubStageSummary", () => {
       // 如果未来某个派生函数的 dataReady 判定从 props 以外的地方获取信号，这条断言
       // 会先被打破提醒我们更新用例。
       expect(result.dataReady).toBe(false);
-    },
+    }
   );
 
   // -------------------------------------------------------------------------
@@ -129,10 +129,7 @@ describe("deriveSubStageSummary", () => {
 
   it("spec_tree: counts generated documents from job artifacts per tree node", () => {
     const specTree = {
-      nodes: [
-        { id: "root" },
-        { id: "n1", parentId: "root" },
-      ],
+      nodes: [{ id: "root" }, { id: "n1", parentId: "root" }],
     } as unknown as BlueprintSpecTree;
     const job = {
       artifacts: [
@@ -177,7 +174,9 @@ describe("deriveSubStageSummary", () => {
       { version: 3 },
       { version: 2 },
     ] as unknown as AutopilotRightRailProps["effectPreviews"];
-    const job = { stage: "effect_preview" } as unknown as BlueprintGenerationJob;
+    const job = {
+      stage: "effect_preview",
+    } as unknown as BlueprintGenerationJob;
 
     const props = makeProps({ effectPreviews: previews, job });
     const result = deriveSubStageSummary("effect_preview", props, "zh-CN");

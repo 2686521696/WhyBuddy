@@ -133,8 +133,9 @@ export const FINDING_CODE_PREFIXES = {
 
 export type FindingCodePrefixCategory = keyof typeof FINDING_CODE_PREFIXES;
 
-export const ALLOWED_FINDING_CODE_PREFIXES: readonly string[] =
-  Object.values(FINDING_CODE_PREFIXES);
+export const ALLOWED_FINDING_CODE_PREFIXES: readonly string[] = Object.values(
+  FINDING_CODE_PREFIXES
+);
 
 /** Extract the leading prefix (before first "_") for taxonomy classification. */
 export function getFindingCodePrefix(code: string): string | null {
@@ -156,15 +157,20 @@ export function isValidFindingCode(code: string): boolean {
 // source-compatible and do not require edits for basic use.
 
 export type KernelRole =
-  | "pdp"           // RBAC = Kernel 1, the PDP host
-  | "pdp-host"      // V2 diagram wording for the PDP host
-  | "ssot"          // DataModel = Kernel 2, the SSOT host
-  | "ssot-host"     // V2 diagram wording for the SSOT host
-  | "pep"           // Workflow and Page are PEP execution points that delegate to PDP and bind to SSOT
+  | "pdp" // RBAC = Kernel 1, the PDP host
+  | "pdp-host" // V2 diagram wording for the PDP host
+  | "ssot" // DataModel = Kernel 2, the SSOT host
+  | "ssot-host" // V2 diagram wording for the SSOT host
+  | "pep" // Workflow and Page are PEP execution points that delegate to PDP and bind to SSOT
   | "assembly-root" // AppBundle = Kernel 6, the assembly root that checks closure and pins versions
   | "orchestrator";
 
-export type SkillRuntimeRole = "kernel" | "pep" | "pep-execution" | "assembly" | "delegated";
+export type SkillRuntimeRole =
+  | "kernel"
+  | "pep"
+  | "pep-execution"
+  | "assembly"
+  | "delegated";
 
 export interface DependencyRef {
   skill?: string;

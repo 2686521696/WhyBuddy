@@ -40,7 +40,10 @@ import {
   PAGE_WORKFLOW_TASK_VIEW_INVALID,
   tracePageRouteBindingToAppBundleClosureEvidence,
 } from "../page/pageSkill";
-import { dataModelSkill, purchaseApprovalDataModel } from "../datamodel/dataModelSkill";
+import {
+  dataModelSkill,
+  purchaseApprovalDataModel,
+} from "../datamodel/dataModelSkill";
 import { rbacSkill, purchaseApprovalRbac } from "../rbac/rbacSkill";
 import {
   traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence,
@@ -71,7 +74,11 @@ function menuNodeId(menuId: string): string {
   return `menu_${sanitizeId(menuId)}`;
 }
 
-function bindingNodeId(pageRef: string, workflowRef: string | undefined, mode: string): string {
+function bindingNodeId(
+  pageRef: string,
+  workflowRef: string | undefined,
+  mode: string
+): string {
   return `bind_${sanitizeId(pageRef)}_${sanitizeId(workflowRef ?? "none")}_${sanitizeId(mode)}`;
 }
 
@@ -97,7 +104,7 @@ function pushPreciseMissingSurfaceFindings(
   labeledRefs: Array<{ ref: string; path: string }>,
   surface: string[] | undefined,
   missingCode: string,
-  label: string,
+  label: string
 ): void {
   labeledRefs.forEach(({ ref, path }) => {
     if (surface === undefined) {
@@ -133,7 +140,15 @@ interface ClosureRef {
 }
 
 export interface AppBundleClosureMatrixRow {
-  family: "entities" | "fields" | "roles" | "permissions" | "workflows" | "pages" | "aigcCapabilities" | "versionPins";
+  family:
+    | "entities"
+    | "fields"
+    | "roles"
+    | "permissions"
+    | "workflows"
+    | "pages"
+    | "aigcCapabilities"
+    | "versionPins";
   skillId: AppBundleSkillId;
   kind: string;
   label: string;
@@ -143,8 +158,14 @@ export interface AppBundleClosureMatrixRow {
   surface(ctx?: ValidateContext): string[] | undefined;
 }
 
-function refsFromList(refs: string[] | undefined, pathPrefix: string): ClosureRef[] {
-  return (refs ?? []).map((ref, index) => ({ ref, path: `${pathPrefix}[${index}]` }));
+function refsFromList(
+  refs: string[] | undefined,
+  pathPrefix: string
+): ClosureRef[] {
+  return (refs ?? []).map((ref, index) => ({
+    ref,
+    path: `${pathPrefix}[${index}]`,
+  }));
 }
 
 export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
@@ -178,7 +199,10 @@ export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
     collect: model => [
       ...refsFromList(model.roleRefs, "roleRefs"),
       ...model.menuEntries.flatMap((menu, menuIndex) =>
-        menu.roleRefs.map((ref, roleIndex) => ({ ref, path: `menuEntries[${menuIndex}].roleRefs[${roleIndex}]` })),
+        menu.roleRefs.map((ref, roleIndex) => ({
+          ref,
+          path: `menuEntries[${menuIndex}].roleRefs[${roleIndex}]`,
+        }))
       ),
     ],
     surface: ctx => ctx?.external?.rbac?.role,
@@ -203,7 +227,14 @@ export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
     collect: model => [
       ...refsFromList(model.workflowRefs, "workflowRefs"),
       ...model.pageBindings.flatMap((binding, bindingIndex) =>
-        binding.workflowRef ? [{ ref: binding.workflowRef, path: `pageBindings[${bindingIndex}].workflowRef` }] : [],
+        binding.workflowRef
+          ? [
+              {
+                ref: binding.workflowRef,
+                path: `pageBindings[${bindingIndex}].workflowRef`,
+              },
+            ]
+          : []
       ),
     ],
     surface: ctx => ctx?.external?.workflow?.workflow,
@@ -217,8 +248,14 @@ export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
     missingCode: "APPBUNDLE_REF_MISSING_PAGE",
     collect: model => [
       ...refsFromList(model.pageRefs, "pageRefs"),
-      ...model.menuEntries.map((menu, menuIndex) => ({ ref: menu.pageRef, path: `menuEntries[${menuIndex}].pageRef` })),
-      ...model.pageBindings.map((binding, bindingIndex) => ({ ref: binding.pageRef, path: `pageBindings[${bindingIndex}].pageRef` })),
+      ...model.menuEntries.map((menu, menuIndex) => ({
+        ref: menu.pageRef,
+        path: `menuEntries[${menuIndex}].pageRef`,
+      })),
+      ...model.pageBindings.map((binding, bindingIndex) => ({
+        ref: binding.pageRef,
+        path: `pageBindings[${bindingIndex}].pageRef`,
+      })),
     ],
     surface: ctx => ctx?.external?.page?.page,
   },
@@ -229,7 +266,8 @@ export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
     label: "AIGC capability",
     unresolvedCode: "APPBUNDLE_AIGC_UNRESOLVED",
     missingCode: "APPBUNDLE_REF_MISSING_AIGC",
-    collect: model => refsFromList(model.aigcCapabilityRefs, "aigcCapabilityRefs"),
+    collect: model =>
+      refsFromList(model.aigcCapabilityRefs, "aigcCapabilityRefs"),
     surface: ctx => ctx?.external?.aigc?.capability,
   },
   {
@@ -244,7 +282,11 @@ export const APPBUNDLE_CLOSURE_MATRIX: AppBundleClosureMatrixRow[] = [
   },
 ];
 
-function pushClosureMatrixFindings(f: Finding[], model: AppBundleModel, ctx?: ValidateContext): void {
+function pushClosureMatrixFindings(
+  f: Finding[],
+  model: AppBundleModel,
+  ctx?: ValidateContext
+): void {
   APPBUNDLE_CLOSURE_MATRIX.forEach(row => {
     if (row.family === "versionPins") return;
     pushPreciseMissingSurfaceFindings(
@@ -253,14 +295,24 @@ function pushClosureMatrixFindings(f: Finding[], model: AppBundleModel, ctx?: Va
       row.collect(model),
       row.surface(ctx),
       row.missingCode,
-      row.label,
+      row.label
     );
   });
 }
 
-const REQUIRED_PIN_SKILLS: AppBundleSkillId[] = ["datamodel", "rbac", "workflow", "page", "appbundle"];
+const REQUIRED_PIN_SKILLS: AppBundleSkillId[] = [
+  "datamodel",
+  "rbac",
+  "workflow",
+  "page",
+  "appbundle",
+];
 
-function pinnedRef(skillId: AppBundleSkillId, ref: string, version: string): string {
+function pinnedRef(
+  skillId: AppBundleSkillId,
+  ref: string,
+  version: string
+): string {
   return `${skillId}:${ref}@${version}`;
 }
 
@@ -280,21 +332,46 @@ function isFixedPinVersion(version: string): boolean {
   return /^\d+\.\d+(\.\d+)?([.-][A-Za-z0-9]+)*$/.test(v);
 }
 
-function expectedVersionPinRefs(model: AppBundleModel): Array<{ skillId: AppBundleSkillId; ref: string }> {
+function expectedVersionPinRefs(
+  model: AppBundleModel
+): Array<{ skillId: AppBundleSkillId; ref: string }> {
   return [
-    ...unique(model.entityRefs).map(ref => ({ skillId: "datamodel" as const, ref })),
-    ...unique(model.fieldRefs ?? []).map(ref => ({ skillId: "datamodel" as const, ref })),
-    ...unique([...model.roleRefs, ...menuRoleRefs(model.menuEntries)]).map(ref => ({ skillId: "rbac" as const, ref })),
-    ...unique(model.permissionRefs ?? []).map(ref => ({ skillId: "rbac" as const, ref })),
-    ...unique([...model.workflowRefs, ...model.pageBindings.flatMap(binding => (binding.workflowRef ? [binding.workflowRef] : []))]).map(ref => ({
+    ...unique(model.entityRefs).map(ref => ({
+      skillId: "datamodel" as const,
+      ref,
+    })),
+    ...unique(model.fieldRefs ?? []).map(ref => ({
+      skillId: "datamodel" as const,
+      ref,
+    })),
+    ...unique([...model.roleRefs, ...menuRoleRefs(model.menuEntries)]).map(
+      ref => ({ skillId: "rbac" as const, ref })
+    ),
+    ...unique(model.permissionRefs ?? []).map(ref => ({
+      skillId: "rbac" as const,
+      ref,
+    })),
+    ...unique([
+      ...model.workflowRefs,
+      ...model.pageBindings.flatMap(binding =>
+        binding.workflowRef ? [binding.workflowRef] : []
+      ),
+    ]).map(ref => ({
       skillId: "workflow" as const,
       ref,
     })),
-    ...unique([...model.pageRefs, ...model.menuEntries.map(menu => menu.pageRef), ...model.pageBindings.map(binding => binding.pageRef)]).map(ref => ({
+    ...unique([
+      ...model.pageRefs,
+      ...model.menuEntries.map(menu => menu.pageRef),
+      ...model.pageBindings.map(binding => binding.pageRef),
+    ]).map(ref => ({
       skillId: "page" as const,
       ref,
     })),
-    ...unique(model.aigcCapabilityRefs ?? []).map(ref => ({ skillId: "aigc" as const, ref })),
+    ...unique(model.aigcCapabilityRefs ?? []).map(ref => ({
+      skillId: "aigc" as const,
+      ref,
+    })),
     { skillId: "appbundle" as const, ref: model.id },
   ];
 }
@@ -306,7 +383,10 @@ export interface AppBundlePublishGateContext extends ValidateContext {
 export interface AppBundlePublishGateReport {
   publishable: boolean;
   blockers: Finding[];
-  perSkillSummaries?: Record<string, { skillId: string; blockers: Finding[]; unresolvedCount: number }>;
+  perSkillSummaries?: Record<
+    string,
+    { skillId: string; blockers: Finding[]; unresolvedCount: number }
+  >;
   unresolvedRefs?: Array<{
     sourceSkill: string;
     path: string;
@@ -320,7 +400,8 @@ function publishBlocker(code: string, path: string, message: string): Finding {
   return { code, severity: "error", path, message };
 }
 
-export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> = {
+export const appBundleSkill: Skill<AppBundleModel> &
+  CrossSkill<AppBundleModel> = {
   id: "appbundle",
   title: "应用中心",
 
@@ -329,25 +410,67 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
     const fromNode = appNodeId(model.id);
 
     model.entityRefs.forEach(entity =>
-      refs.push({ fromNode, toSkill: "datamodel", toKind: "entity", toValue: entity, label: "实体" }),
+      refs.push({
+        fromNode,
+        toSkill: "datamodel",
+        toKind: "entity",
+        toValue: entity,
+        label: "实体",
+      })
     );
     (model.fieldRefs ?? []).forEach(field =>
-      refs.push({ fromNode, toSkill: "datamodel", toKind: "field", toValue: field, label: "field" }),
+      refs.push({
+        fromNode,
+        toSkill: "datamodel",
+        toKind: "field",
+        toValue: field,
+        label: "field",
+      })
     );
     model.roleRefs.forEach(role =>
-      refs.push({ fromNode, toSkill: "rbac", toKind: "role", toValue: role, label: "角色" }),
+      refs.push({
+        fromNode,
+        toSkill: "rbac",
+        toKind: "role",
+        toValue: role,
+        label: "角色",
+      })
     );
     (model.permissionRefs ?? []).forEach(permission =>
-      refs.push({ fromNode, toSkill: "rbac", toKind: "permission", toValue: permission, label: "permission" }),
+      refs.push({
+        fromNode,
+        toSkill: "rbac",
+        toKind: "permission",
+        toValue: permission,
+        label: "permission",
+      })
     );
     model.workflowRefs.forEach(workflow =>
-      refs.push({ fromNode, toSkill: "workflow", toKind: "workflow", toValue: workflow, label: "流程" }),
+      refs.push({
+        fromNode,
+        toSkill: "workflow",
+        toKind: "workflow",
+        toValue: workflow,
+        label: "流程",
+      })
     );
     model.pageRefs.forEach(page =>
-      refs.push({ fromNode, toSkill: "page", toKind: "page", toValue: page, label: "页面" }),
+      refs.push({
+        fromNode,
+        toSkill: "page",
+        toKind: "page",
+        toValue: page,
+        label: "页面",
+      })
     );
     (model.aigcCapabilityRefs ?? []).forEach(capability =>
-      refs.push({ fromNode, toSkill: "aigc", toKind: "capability", toValue: capability, label: "AIGC" }),
+      refs.push({
+        fromNode,
+        toSkill: "aigc",
+        toKind: "capability",
+        toValue: capability,
+        label: "AIGC",
+      })
     );
 
     model.menuEntries.forEach(menu => {
@@ -365,13 +488,23 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
           toKind: "role",
           toValue: role,
           label: "可见角色",
-        }),
+        })
       );
     });
 
     model.pageBindings.forEach(binding => {
-      const source = bindingNodeId(binding.pageRef, binding.workflowRef, binding.mode);
-      refs.push({ fromNode: source, toSkill: "page", toKind: "page", toValue: binding.pageRef, label: "表单" });
+      const source = bindingNodeId(
+        binding.pageRef,
+        binding.workflowRef,
+        binding.mode
+      );
+      refs.push({
+        fromNode: source,
+        toSkill: "page",
+        toKind: "page",
+        toValue: binding.pageRef,
+        label: "表单",
+      });
       if (binding.workflowRef) {
         refs.push({
           fromNode: source,
@@ -392,7 +525,10 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
     return null;
   },
 
-  validate(model: AppBundleModel, ctx?: ValidateContext): ReturnType<Skill<AppBundleModel>["validate"]> {
+  validate(
+    model: AppBundleModel,
+    ctx?: ValidateContext
+  ): ReturnType<Skill<AppBundleModel>["validate"]> {
     const f: Finding[] = [];
 
     for (const dup of findDuplicates(model.menuEntries.map(menu => menu.id))) {
@@ -444,7 +580,10 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
         message: `Publish manifest app id ${model.publishManifest.appId} does not match bundle id ${model.id}.`,
       });
     }
-    if (model.publishManifest?.closureEvidenceDigest != null && !/^[0-9a-f]{6,}$/i.test(model.publishManifest.closureEvidenceDigest)) {
+    if (
+      model.publishManifest?.closureEvidenceDigest != null &&
+      !/^[0-9a-f]{6,}$/i.test(model.publishManifest.closureEvidenceDigest)
+    ) {
       f.push({
         code: "APPBUNDLE_PUBLISH_MANIFEST_ILLEGAL_CLOSURE_DIGEST",
         severity: "error",
@@ -454,7 +593,11 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
     }
 
     if (model.runtimeSnapshot) {
-      const pinnedRefs = new Set(model.versionPins?.map(pin => pinnedRef(pin.skillId, pin.ref, pin.version)) ?? []);
+      const pinnedRefs = new Set(
+        model.versionPins?.map(pin =>
+          pinnedRef(pin.skillId, pin.ref, pin.version)
+        ) ?? []
+      );
       model.runtimeSnapshot.pinnedRefs.forEach((ref, refIndex) => {
         if (!pinnedRefs.has(ref)) {
           f.push({
@@ -490,7 +633,10 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
           message: `Release artifact app id ${model.releaseArtifact.appId} does not match bundle id ${model.id}.`,
         });
       }
-      if (!model.releaseArtifact.traceId || model.releaseArtifact.traceId.trim() === "") {
+      if (
+        !model.releaseArtifact.traceId ||
+        model.releaseArtifact.traceId.trim() === ""
+      ) {
         f.push({
           code: "APPBUNDLE_RELEASE_ARTIFACT_MISSING_TRACE",
           severity: "error",
@@ -498,7 +644,10 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
           message: `Release artifact requires a non-empty traceId.`,
         });
       }
-      if (!model.releaseArtifact.publishGateEvidence || !model.releaseArtifact.publishGateEvidence.status) {
+      if (
+        !model.releaseArtifact.publishGateEvidence ||
+        !model.releaseArtifact.publishGateEvidence.status
+      ) {
         f.push({
           code: "APPBUNDLE_RELEASE_ARTIFACT_MISSING_GATE_EVIDENCE",
           severity: "error",
@@ -509,10 +658,15 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
     }
 
     if (model.rollbackTargets) {
-      const currentVer = model.publishManifest?.appVersion ?? model.releaseArtifact?.appVersion;
+      const currentVer =
+        model.publishManifest?.appVersion ?? model.releaseArtifact?.appVersion;
       model.rollbackTargets.forEach((target, idx) => {
         const p = `rollbackTargets[${idx}]`;
-        if (!target.appVersion || typeof target.exists !== "boolean" || typeof target.immutable !== "boolean") {
+        if (
+          !target.appVersion ||
+          typeof target.exists !== "boolean" ||
+          typeof target.immutable !== "boolean"
+        ) {
           f.push({
             code: "APPBUNDLE_ROLLBACK_TARGET_INCOMPLETE",
             severity: "error",
@@ -569,26 +723,48 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
   project(model: AppBundleModel): Projection {
     const nodes: Projection["nodes"] = [
       { id: appNodeId(model.id), label: model.name, kind: "app" },
-      ...model.menuEntries.map(menu => ({ id: menuNodeId(menu.id), label: menu.label, kind: "menu" })),
+      ...model.menuEntries.map(menu => ({
+        id: menuNodeId(menu.id),
+        label: menu.label,
+        kind: "menu",
+      })),
       ...model.pageBindings.map(binding => ({
         id: bindingNodeId(binding.pageRef, binding.workflowRef, binding.mode),
         label: `${binding.mode}: ${binding.pageRef}`,
         kind: "binding",
       })),
       ...(model.publishManifest
-        ? [{ id: publishGateNodeId(model.id), label: `publish gate: ${model.publishManifest.gateStatus}`, kind: "publishGate" }]
+        ? [
+            {
+              id: publishGateNodeId(model.id),
+              label: `publish gate: ${model.publishManifest.gateStatus}`,
+              kind: "publishGate",
+            },
+          ]
         : []),
       ...(model.runtimeSnapshot
-        ? [{ id: runtimeSnapshotNodeId(model.id), label: `runtime snapshot: ${model.runtimeSnapshot.appVersion}`, kind: "runtimeSnapshot" }]
+        ? [
+            {
+              id: runtimeSnapshotNodeId(model.id),
+              label: `runtime snapshot: ${model.runtimeSnapshot.appVersion}`,
+              kind: "runtimeSnapshot",
+            },
+          ]
         : []),
       ...(model.releaseArtifact
-        ? [{ id: releaseArtifactNodeId(model.id), label: `release artifact: ${model.releaseArtifact.appVersion} (${model.releaseArtifact.traceId})`, kind: "releaseArtifact" }]
+        ? [
+            {
+              id: releaseArtifactNodeId(model.id),
+              label: `release artifact: ${model.releaseArtifact.appVersion} (${model.releaseArtifact.traceId})`,
+              kind: "releaseArtifact",
+            },
+          ]
         : []),
-      ...((model.rollbackTargets ?? []).map(t => ({
+      ...(model.rollbackTargets ?? []).map(t => ({
         id: rollbackTargetNodeId(model.id, t.appVersion),
         label: `rollback target: ${t.appVersion} exists:${t.exists} immutable:${t.immutable}`,
         kind: "rollbackTarget",
-      }))),
+      })),
     ];
     const edges: Projection["edges"] = [
       ...model.menuEntries.map(menu => ({
@@ -604,25 +780,49 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
         kind: "binding",
       })),
       ...(model.publishManifest
-        ? [{ from: appNodeId(model.id), to: publishGateNodeId(model.id), label: "closure", kind: "publishGate" }]
+        ? [
+            {
+              from: appNodeId(model.id),
+              to: publishGateNodeId(model.id),
+              label: "closure",
+              kind: "publishGate",
+            },
+          ]
         : []),
       ...(model.publishManifest && model.runtimeSnapshot
-        ? [{ from: publishGateNodeId(model.id), to: runtimeSnapshotNodeId(model.id), label: "pins", kind: "runtimeSnapshot" }]
+        ? [
+            {
+              from: publishGateNodeId(model.id),
+              to: runtimeSnapshotNodeId(model.id),
+              label: "pins",
+              kind: "runtimeSnapshot",
+            },
+          ]
         : []),
       ...(model.releaseArtifact
-        ? [{ from: appNodeId(model.id), to: releaseArtifactNodeId(model.id), label: "release", kind: "releaseArtifact" }]
+        ? [
+            {
+              from: appNodeId(model.id),
+              to: releaseArtifactNodeId(model.id),
+              label: "release",
+              kind: "releaseArtifact",
+            },
+          ]
         : []),
-      ...((model.rollbackTargets ?? []).map(t => ({
-        from: model.releaseArtifact ? releaseArtifactNodeId(model.id) : appNodeId(model.id),
+      ...(model.rollbackTargets ?? []).map(t => ({
+        from: model.releaseArtifact
+          ? releaseArtifactNodeId(model.id)
+          : appNodeId(model.id),
         to: rollbackTargetNodeId(model.id, t.appVersion),
         label: "rollback",
         kind: "rollbackTarget",
-      }))),
+      })),
     ];
 
     const lines: string[] = ["flowchart LR"];
     for (const n of nodes) lines.push(`  ${n.id}["${n.label}"]`);
-    for (const e of edges) lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
+    for (const e of edges)
+      lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
     return { nodes, edges, mermaid: lines.join("\n") };
   },
 
@@ -631,36 +831,71 @@ export const appBundleSkill: Skill<AppBundleModel> & CrossSkill<AppBundleModel> 
     return {
       app: [model.id],
       menu: model.menuEntries.map(menu => menu.id),
-      pageBinding: model.pageBindings.map(binding => `${binding.pageRef}->${binding.workflowRef ?? "none"}`),
+      pageBinding: model.pageBindings.map(
+        binding => `${binding.pageRef}->${binding.workflowRef ?? "none"}`
+      ),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
-      crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
-      ...(model.runtimeSnapshot?.pinnedRefs ? { pinnedRefs: [...model.runtimeSnapshot.pinnedRefs] } : {}),
-      ...(model.releaseArtifact ? { releaseArtifact: [model.releaseArtifact.appVersion, model.releaseArtifact.traceId] } : {}),
-      ...(model.rollbackTargets ? { rollbackTargets: model.rollbackTargets.map(t => `${t.appVersion}:${t.exists}:${t.immutable}`) } : {}),
+      crossSkillRuntimeEdges: crossRuntime.map(
+        edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`
+      ),
+      ...(model.runtimeSnapshot?.pinnedRefs
+        ? { pinnedRefs: [...model.runtimeSnapshot.pinnedRefs] }
+        : {}),
+      ...(model.releaseArtifact
+        ? {
+            releaseArtifact: [
+              model.releaseArtifact.appVersion,
+              model.releaseArtifact.traceId,
+            ],
+          }
+        : {}),
+      ...(model.rollbackTargets
+        ? {
+            rollbackTargets: model.rollbackTargets.map(
+              t => `${t.appVersion}:${t.exists}:${t.immutable}`
+            ),
+          }
+        : {}),
     } as ResolvableSurface;
   },
 
   async generate(intent: string): Promise<AppBundleModel> {
-    if (/purchase|procurement|采购/i.test(intent)) return purchaseApprovalAppBundle;
+    if (/purchase|procurement|采购/i.test(intent))
+      return purchaseApprovalAppBundle;
     if (/请假|leave|审批/i.test(intent)) return leaveApprovalAppBundle;
-    throw new Error(`appBundleSkill.generate: needs the reasoning engine to package an app bundle for intent: "${intent}"`);
+    throw new Error(
+      `appBundleSkill.generate: needs the reasoning engine to package an app bundle for intent: "${intent}"`
+    );
   },
 };
 
 export function validateAppBundlePublishGate(
   model: AppBundleModel,
-  ctx: AppBundlePublishGateContext = {},
+  ctx: AppBundlePublishGateContext = {}
 ): AppBundlePublishGateReport {
   const blockers: Finding[] = [];
   const report = appBundleSkill.validate(model, ctx);
 
   report.errors.forEach(error => {
     if (error.code.startsWith("APPBUNDLE_REF_MISSING_")) {
-      blockers.push(publishBlocker("APPBUNDLE_PUBLISH_REF_MISSING", error.path, error.message));
+      blockers.push(
+        publishBlocker(
+          "APPBUNDLE_PUBLISH_REF_MISSING",
+          error.path,
+          error.message
+        )
+      );
       return;
     }
-    if (error.code === "APPBUNDLE_SNAPSHOT_REF_NOT_PINNED" || error.code === "APPBUNDLE_VERSION_PIN_MISSING" || error.code === "APPBUNDLE_VERSION_PIN_MOVABLE" || error.code === "APPBUNDLE_SNAPSHOT_INCOMPLETE") {
-      blockers.push(publishBlocker("APPBUNDLE_VERSION_UNPINNED", error.path, error.message));
+    if (
+      error.code === "APPBUNDLE_SNAPSHOT_REF_NOT_PINNED" ||
+      error.code === "APPBUNDLE_VERSION_PIN_MISSING" ||
+      error.code === "APPBUNDLE_VERSION_PIN_MOVABLE" ||
+      error.code === "APPBUNDLE_SNAPSHOT_INCOMPLETE"
+    ) {
+      blockers.push(
+        publishBlocker("APPBUNDLE_VERSION_UNPINNED", error.path, error.message)
+      );
       return;
     }
     blockers.push(error);
@@ -668,48 +903,81 @@ export function validateAppBundlePublishGate(
 
   report.warnings.forEach(warning => {
     if (warning.code === "APPBUNDLE_AIGC_UNRESOLVED") {
-      blockers.push(publishBlocker("APPBUNDLE_AIGC_UNRESOLVED", warning.path, warning.message));
+      blockers.push(
+        publishBlocker(
+          "APPBUNDLE_AIGC_UNRESOLVED",
+          warning.path,
+          warning.message
+        )
+      );
       return;
     }
     if (warning.code.endsWith("_UNRESOLVED")) {
-      blockers.push(publishBlocker("APPBUNDLE_GHOST_REF", warning.path, warning.message));
+      blockers.push(
+        publishBlocker("APPBUNDLE_GHOST_REF", warning.path, warning.message)
+      );
     }
   });
 
   expectedVersionPinRefs(model).forEach(expected => {
-    const pin = (model.versionPins ?? []).find(pin => pin.skillId === expected.skillId && pin.ref === expected.ref);
+    const pin = (model.versionPins ?? []).find(
+      pin => pin.skillId === expected.skillId && pin.ref === expected.ref
+    );
     if (!pin) {
       blockers.push(
         publishBlocker(
           "APPBUNDLE_VERSION_UNPINNED",
           `versionPins.${expected.skillId}.${expected.ref}`,
-          `AppBundle publish gate requires a pinned version for ${expected.skillId}:${expected.ref}.`,
-        ),
+          `AppBundle publish gate requires a pinned version for ${expected.skillId}:${expected.ref}.`
+        )
       );
     } else if (!isFixedPinVersion(pin.version)) {
       blockers.push(
         publishBlocker(
           "APPBUNDLE_VERSION_UNPINNED",
           `versionPins.${expected.skillId}.${expected.ref}`,
-          `AppBundle publish gate requires a pinned version for ${expected.skillId}:${expected.ref}; "${pin.version}" is a movable/latest-style version and is not allowed.`,
-        ),
+          `AppBundle publish gate requires a pinned version for ${expected.skillId}:${expected.ref}; "${pin.version}" is a movable/latest-style version and is not allowed.`
+        )
       );
     }
   });
 
   (ctx.skillFindings ?? []).forEach(finding => {
-    if (finding.code === "PAGE_PEP_BYPASS" || finding.code === "WF_PEP_BYPASS") {
-      blockers.push(publishBlocker("APPBUNDLE_PEP_BYPASS", finding.path, finding.message));
+    if (
+      finding.code === "PAGE_PEP_BYPASS" ||
+      finding.code === "WF_PEP_BYPASS"
+    ) {
+      blockers.push(
+        publishBlocker("APPBUNDLE_PEP_BYPASS", finding.path, finding.message)
+      );
     }
   });
 
   // Build per-skill summaries and unresolved cross-refs (with source skill, precise path, kind, targetValue)
-  const perSkillSummaries: Record<string, { skillId: string; blockers: Finding[]; unresolvedCount: number }> = {};
-  const unresolvedRefs: Array<{ sourceSkill: string; path: string; kind: string; targetValue: string; code: string }> = [];
+  const perSkillSummaries: Record<
+    string,
+    { skillId: string; blockers: Finding[]; unresolvedCount: number }
+  > = {};
+  const unresolvedRefs: Array<{
+    sourceSkill: string;
+    path: string;
+    kind: string;
+    targetValue: string;
+    code: string;
+  }> = [];
 
-  function recordForSkill(skillId: string, blocker: Finding, kind: string, targetValue: string) {
+  function recordForSkill(
+    skillId: string,
+    blocker: Finding,
+    kind: string,
+    targetValue: string
+  ) {
     if (!perSkillSummaries[skillId]) {
-      perSkillSummaries[skillId] = { skillId, blockers: [], unresolvedCount: 0 };
+      perSkillSummaries[skillId] = {
+        skillId,
+        blockers: [],
+        unresolvedCount: 0,
+      };
     }
     perSkillSummaries[skillId].blockers.push(blocker);
     perSkillSummaries[skillId].unresolvedCount += 1;
@@ -722,24 +990,88 @@ export function validateAppBundlePublishGate(
     });
   }
 
-  function inferKindAndTargetFromCodeAndPath(code: string, path: string, message: string): { skillId: string; kind: string; target: string } {
-    if (code.includes("AIGC") || path.includes("aigcCapabilityRefs") || path.includes("aigc")) return { skillId: "aigc", kind: "capability", target: extractTargetFromMessage(message) };
-    if (code.includes("FIELD") || path.includes("fieldRefs")) return { skillId: "datamodel", kind: "field", target: extractTargetFromMessage(message) };
-    if (code.includes("PERMISSION") || path.includes("permissionRefs")) return { skillId: "rbac", kind: "permission", target: extractTargetFromMessage(message) };
-    if (code.includes("ROLE") || path.includes("roleRefs")) return { skillId: "rbac", kind: "role", target: extractTargetFromMessage(message) };
-    if (code.includes("PAGE") || path.includes("pageRef") || path.includes("pageRefs")) return { skillId: "page", kind: "page", target: extractTargetFromMessage(message) };
-    if (code.includes("WORKFLOW") || path.includes("workflowRef") || path.includes("workflowRefs")) return { skillId: "workflow", kind: "workflow", target: extractTargetFromMessage(message) };
-    if (code.includes("ENTITY") || path.includes("entityRefs")) return { skillId: "datamodel", kind: "entity", target: extractTargetFromMessage(message) };
+  function inferKindAndTargetFromCodeAndPath(
+    code: string,
+    path: string,
+    message: string
+  ): { skillId: string; kind: string; target: string } {
+    if (
+      code.includes("AIGC") ||
+      path.includes("aigcCapabilityRefs") ||
+      path.includes("aigc")
+    )
+      return {
+        skillId: "aigc",
+        kind: "capability",
+        target: extractTargetFromMessage(message),
+      };
+    if (code.includes("FIELD") || path.includes("fieldRefs"))
+      return {
+        skillId: "datamodel",
+        kind: "field",
+        target: extractTargetFromMessage(message),
+      };
+    if (code.includes("PERMISSION") || path.includes("permissionRefs"))
+      return {
+        skillId: "rbac",
+        kind: "permission",
+        target: extractTargetFromMessage(message),
+      };
+    if (code.includes("ROLE") || path.includes("roleRefs"))
+      return {
+        skillId: "rbac",
+        kind: "role",
+        target: extractTargetFromMessage(message),
+      };
+    if (
+      code.includes("PAGE") ||
+      path.includes("pageRef") ||
+      path.includes("pageRefs")
+    )
+      return {
+        skillId: "page",
+        kind: "page",
+        target: extractTargetFromMessage(message),
+      };
+    if (
+      code.includes("WORKFLOW") ||
+      path.includes("workflowRef") ||
+      path.includes("workflowRefs")
+    )
+      return {
+        skillId: "workflow",
+        kind: "workflow",
+        target: extractTargetFromMessage(message),
+      };
+    if (code.includes("ENTITY") || path.includes("entityRefs"))
+      return {
+        skillId: "datamodel",
+        kind: "entity",
+        target: extractTargetFromMessage(message),
+      };
     if (path.includes("versionPins")) {
       const m = path.match(/versionPins\.([^.]+)\.(.+)$/);
       const sk = m ? m[1] : "appbundle";
-      return { skillId: sk, kind: "versionPin", target: m ? `${m[1]}:${m[2]}` : extractTargetFromMessage(message) };
+      return {
+        skillId: sk,
+        kind: "versionPin",
+        target: m ? `${m[1]}:${m[2]}` : extractTargetFromMessage(message),
+      };
     }
     if (code.includes("PEP")) {
-      const sk = code.includes("PAGE") || path.includes("page") ? "page" : "workflow";
-      return { skillId: sk, kind: "pepBypass", target: extractTargetFromMessage(message) };
+      const sk =
+        code.includes("PAGE") || path.includes("page") ? "page" : "workflow";
+      return {
+        skillId: sk,
+        kind: "pepBypass",
+        target: extractTargetFromMessage(message),
+      };
     }
-    return { skillId: "appbundle", kind: "ref", target: extractTargetFromMessage(message) };
+    return {
+      skillId: "appbundle",
+      kind: "ref",
+      target: extractTargetFromMessage(message),
+    };
   }
 
   // Record from transformed blockers for refs, ghosts, versions, peps
@@ -753,12 +1085,20 @@ export function validateAppBundlePublishGate(
     ) {
       const info = inferKindAndTargetFromCodeAndPath(b.code, b.path, b.message);
       // for ref-missings and ghosts use source from model, but record only ref-like
-      if (b.code === "APPBUNDLE_PUBLISH_REF_MISSING" || b.code === "APPBUNDLE_GHOST_REF" || b.code === "APPBUNDLE_AIGC_UNRESOLVED") {
+      if (
+        b.code === "APPBUNDLE_PUBLISH_REF_MISSING" ||
+        b.code === "APPBUNDLE_GHOST_REF" ||
+        b.code === "APPBUNDLE_AIGC_UNRESOLVED"
+      ) {
         recordForSkill(info.skillId, b, info.kind, info.target);
       } else if (b.code === "APPBUNDLE_VERSION_UNPINNED") {
         // record pins separately under per-skill but also to unresolvedRefs
         if (!perSkillSummaries[info.skillId]) {
-          perSkillSummaries[info.skillId] = { skillId: info.skillId, blockers: [], unresolvedCount: 0 };
+          perSkillSummaries[info.skillId] = {
+            skillId: info.skillId,
+            blockers: [],
+            unresolvedCount: 0,
+          };
         }
         perSkillSummaries[info.skillId].blockers.push(b);
         perSkillSummaries[info.skillId].unresolvedCount += 1;
@@ -771,7 +1111,11 @@ export function validateAppBundlePublishGate(
         });
       } else if (b.code === "APPBUNDLE_PEP_BYPASS") {
         if (!perSkillSummaries[info.skillId]) {
-          perSkillSummaries[info.skillId] = { skillId: info.skillId, blockers: [], unresolvedCount: 0 };
+          perSkillSummaries[info.skillId] = {
+            skillId: info.skillId,
+            blockers: [],
+            unresolvedCount: 0,
+          };
         }
         perSkillSummaries[info.skillId].blockers.push(b);
         perSkillSummaries[info.skillId].unresolvedCount += 1;
@@ -786,7 +1130,11 @@ export function validateAppBundlePublishGate(
     } else if (b.severity === "error") {
       // other appbundle errors go to appbundle summary
       if (!perSkillSummaries.appbundle) {
-        perSkillSummaries.appbundle = { skillId: "appbundle", blockers: [], unresolvedCount: 0 };
+        perSkillSummaries.appbundle = {
+          skillId: "appbundle",
+          blockers: [],
+          unresolvedCount: 0,
+        };
       }
       perSkillSummaries.appbundle.blockers.push(b);
     }
@@ -795,12 +1143,16 @@ export function validateAppBundlePublishGate(
   return {
     publishable: blockers.length === 0,
     blockers,
-    perSkillSummaries: Object.keys(perSkillSummaries).length > 0 ? perSkillSummaries : undefined,
+    perSkillSummaries:
+      Object.keys(perSkillSummaries).length > 0 ? perSkillSummaries : undefined,
     unresolvedRefs: unresolvedRefs.length > 0 ? unresolvedRefs : undefined,
   };
 }
 
-export type AppBundleRuntimeTargetSkill = Exclude<AppBundleSkillId, "appbundle">;
+export type AppBundleRuntimeTargetSkill = Exclude<
+  AppBundleSkillId,
+  "appbundle"
+>;
 
 export type AppBundleRuntimeEvidenceState = "allowed" | "blocked";
 
@@ -828,15 +1180,34 @@ export interface NormalizedAppBundleRuntimeContext {
   evidence: AppBundleCrossRuntimeEvidence;
 }
 
-export const APPBUNDLE_CROSS_RUNTIME_EVIDENCE = "APPBUNDLE_CROSS_RUNTIME_EVIDENCE";
-export const APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH = "APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH";
-export const APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH = "APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH";
-export const APPBUNDLE_AIGC_NEGATIVE_RUNTIME_PATH = "APPBUNDLE_AIGC_NEGATIVE_RUNTIME_PATH";
+export const APPBUNDLE_CROSS_RUNTIME_EVIDENCE =
+  "APPBUNDLE_CROSS_RUNTIME_EVIDENCE";
+export const APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH =
+  "APPBUNDLE_PAGE_NEGATIVE_RUNTIME_PATH";
+export const APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH =
+  "APPBUNDLE_AIGC_POSITIVE_RUNTIME_PATH";
+export const APPBUNDLE_AIGC_NEGATIVE_RUNTIME_PATH =
+  "APPBUNDLE_AIGC_NEGATIVE_RUNTIME_PATH";
 
-function declaredRefsForTarget(model: AppBundleModel, targetSkill: AppBundleRuntimeTargetSkill): string[] {
-  if (targetSkill === "datamodel") return [...model.entityRefs, ...(model.fieldRefs ?? [])].sort();
-  if (targetSkill === "rbac") return [...model.roleRefs, ...(model.permissionRefs ?? []), ...menuRoleRefs(model.menuEntries)].sort();
-  if (targetSkill === "workflow") return [...model.workflowRefs, ...model.pageBindings.flatMap(binding => binding.workflowRef ? [binding.workflowRef] : [])].sort();
+function declaredRefsForTarget(
+  model: AppBundleModel,
+  targetSkill: AppBundleRuntimeTargetSkill
+): string[] {
+  if (targetSkill === "datamodel")
+    return [...model.entityRefs, ...(model.fieldRefs ?? [])].sort();
+  if (targetSkill === "rbac")
+    return [
+      ...model.roleRefs,
+      ...(model.permissionRefs ?? []),
+      ...menuRoleRefs(model.menuEntries),
+    ].sort();
+  if (targetSkill === "workflow")
+    return [
+      ...model.workflowRefs,
+      ...model.pageBindings.flatMap(binding =>
+        binding.workflowRef ? [binding.workflowRef] : []
+      ),
+    ].sort();
   if (targetSkill === "page") {
     return [
       ...model.pageRefs,
@@ -857,7 +1228,10 @@ function targetSurfaceHasEvidence(surface: unknown): boolean {
   });
 }
 
-function pinnedRefsForTarget(snapshot: AppBundleRuntimeSnapshot, targetSkill: AppBundleRuntimeTargetSkill): string[] {
+function pinnedRefsForTarget(
+  snapshot: AppBundleRuntimeSnapshot,
+  targetSkill: AppBundleRuntimeTargetSkill
+): string[] {
   const prefix = `${targetSkill}:`;
   return snapshot.pinnedRefs.filter(ref => ref.startsWith(prefix)).sort();
 }
@@ -865,7 +1239,7 @@ function pinnedRefsForTarget(snapshot: AppBundleRuntimeSnapshot, targetSkill: Ap
 export function createAppBundleCrossRuntimeEvidence(
   model: AppBundleModel,
   targetSkill: AppBundleRuntimeTargetSkill,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): AppBundleCrossRuntimeEvidence {
   const snapshot = createAppBundleRuntimeSnapshot(model);
   const declaredRefs = declaredRefsForTarget(model, targetSkill);
@@ -897,9 +1271,13 @@ export function createAppBundleCrossRuntimeEvidence(
 export function normalizeAppBundleRuntimeContextForSkill(
   model: AppBundleModel,
   targetSkill: AppBundleRuntimeTargetSkill,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): NormalizedAppBundleRuntimeContext {
-  const evidence = createAppBundleCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
+  const evidence = createAppBundleCrossRuntimeEvidence(
+    model,
+    targetSkill,
+    upstreamSurface
+  );
   return {
     sourceSkill: "appbundle",
     targetSkill,
@@ -912,14 +1290,28 @@ export function normalizeAppBundleRuntimeContextForSkill(
   };
 }
 
-export function buildAppBundleCrossRuntimeEdges(model: AppBundleModel): AppBundleCrossRuntimeEvidence[] {
-  const targets: AppBundleRuntimeTargetSkill[] = ["datamodel", "rbac", "workflow", "page", "aigc"];
+export function buildAppBundleCrossRuntimeEdges(
+  model: AppBundleModel
+): AppBundleCrossRuntimeEvidence[] {
+  const targets: AppBundleRuntimeTargetSkill[] = [
+    "datamodel",
+    "rbac",
+    "workflow",
+    "page",
+    "aigc",
+  ];
   return targets
     .filter(target => declaredRefsForTarget(model, target).length > 0)
-    .map(target => createAppBundleCrossRuntimeEvidence(model, target, { declared: declaredRefsForTarget(model, target) }));
+    .map(target =>
+      createAppBundleCrossRuntimeEvidence(model, target, {
+        declared: declaredRefsForTarget(model, target),
+      })
+    );
 }
 
-export function createAppBundlePageNegativePathSample(model: AppBundleModel = leaveApprovalAppBundle): NormalizedAppBundleRuntimeContext {
+export function createAppBundlePageNegativePathSample(
+  model: AppBundleModel = leaveApprovalAppBundle
+): NormalizedAppBundleRuntimeContext {
   const ctx = normalizeAppBundleRuntimeContextForSkill(model, "page");
   return {
     ...ctx,
@@ -935,9 +1327,13 @@ export function createAppBundlePageNegativePathSample(model: AppBundleModel = le
 
 export function createAppBundleAigcPositivePathSample(
   model: AppBundleModel = purchaseApprovalAppBundle,
-  upstreamSurface: unknown = { capability: model.aigcCapabilityRefs ?? [] },
+  upstreamSurface: unknown = { capability: model.aigcCapabilityRefs ?? [] }
 ): NormalizedAppBundleRuntimeContext {
-  const ctx = normalizeAppBundleRuntimeContextForSkill(model, "aigc", upstreamSurface);
+  const ctx = normalizeAppBundleRuntimeContextForSkill(
+    model,
+    "aigc",
+    upstreamSurface
+  );
   return {
     ...ctx,
     evidence: {
@@ -947,8 +1343,10 @@ export function createAppBundleAigcPositivePathSample(
   };
 }
 
-export const APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE = "APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE";
-export const APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE = "APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE";
+export const APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE =
+  "APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE";
+export const APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE =
+  "APPBUNDLE_WORKFLOW_TASK_VIEW_NEGATIVE";
 
 /** 119 positive evidence path sample: AppBundle pageBinding + Page + Workflow instance yields valid task view. */
 export function createAppBundleWorkflowTaskViewPositiveSample(
@@ -958,10 +1356,15 @@ export function createAppBundleWorkflowTaskViewPositiveSample(
   const binding = (model.pageBindings ?? [])[0];
   const page = (pageModels as any)[binding?.pageRef] || leaveApprovalPage;
   const inst = { workflowId: binding?.workflowRef, currentNodeId: "a_mgr" };
-  const ev = createWorkflowTaskViewAppBundleBindingEvidence(page, binding, inst);
+  const ev = createWorkflowTaskViewAppBundleBindingEvidence(
+    page,
+    binding,
+    inst
+  );
   return {
     state: "allowed",
-    consistency: ev.state === "allowed" && ev.result !== PAGE_WORKFLOW_TASK_VIEW_INVALID,
+    consistency:
+      ev.state === "allowed" && ev.result !== PAGE_WORKFLOW_TASK_VIEW_INVALID,
     evidenceKey: APPBUNDLE_WORKFLOW_TASK_VIEW_POSITIVE,
   };
 }
@@ -973,7 +1376,11 @@ export function createAppBundleWorkflowTaskViewNegativeSample(
   const binding = (model.pageBindings ?? [])[0];
   // mismatch wf
   const badInst = { workflowId: "wf_ghost", currentNodeId: "" };
-  const ev = createWorkflowTaskViewAppBundleBindingEvidence({} as any, binding, badInst as any);
+  const ev = createWorkflowTaskViewAppBundleBindingEvidence(
+    {} as any,
+    binding,
+    badInst as any
+  );
   return {
     state: "blocked",
     consistency: false,
@@ -1019,7 +1426,8 @@ export function createMultiSkillNegativeBlockedSample() {
 
 // 119: AppBundle aggregate edge validation across all six Skill runtime evidence surfaces.
 // Pure, deterministic, no IO. Positive paths yield "allowed"; absent/missing upstreams yield explicit "blocked" fail-closed.
-export const APPBUNDLE_AGGREGATE_EDGE_VALIDATION = "APPBUNDLE_AGGREGATE_EDGE_VALIDATION";
+export const APPBUNDLE_AGGREGATE_EDGE_VALIDATION =
+  "APPBUNDLE_AGGREGATE_EDGE_VALIDATION";
 
 export interface AppBundleAggregateEdgeValidation {
   surfacesChecked: AppBundleSkillId[];
@@ -1027,22 +1435,46 @@ export interface AppBundleAggregateEdgeValidation {
   positiveAllowedEdges: number;
   failClosedBlockedEdges: number;
   appbundleCrossEdges: AppBundleCrossRuntimeEvidence[];
-  perSurfaceValidation: Record<string, { positive: boolean; failClosedSampled: boolean; edgeStates: string[] }>;
+  perSurfaceValidation: Record<
+    string,
+    { positive: boolean; failClosedSampled: boolean; edgeStates: string[] }
+  >;
   closureEvidencePresent: boolean;
 }
 
-export function validateAppBundleAggregateEdges(models: Record<string, unknown>): AppBundleAggregateEdgeValidation {
-  const surfacesChecked: AppBundleSkillId[] = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"];
-  const appBundleModel = (models.appbundle || models["appBundle"]) as AppBundleModel | undefined;
-  const appbundleCrossEdges = appBundleModel ? buildAppBundleCrossRuntimeEdges(appBundleModel) : [];
+export function validateAppBundleAggregateEdges(
+  models: Record<string, unknown>
+): AppBundleAggregateEdgeValidation {
+  const surfacesChecked: AppBundleSkillId[] = [
+    "datamodel",
+    "rbac",
+    "workflow",
+    "page",
+    "aigc",
+    "appbundle",
+  ];
+  const appBundleModel = (models.appbundle || models["appBundle"]) as
+    | AppBundleModel
+    | undefined;
+  const appbundleCrossEdges = appBundleModel
+    ? buildAppBundleCrossRuntimeEdges(appBundleModel)
+    : [];
 
-  const collected: Array<{ source: string; target: string; state: string }> = [];
-  const perSurfaceValidation: Record<string, { positive: boolean; failClosedSampled: boolean; edgeStates: string[] }> = {};
+  const collected: Array<{ source: string; target: string; state: string }> =
+    [];
+  const perSurfaceValidation: Record<
+    string,
+    { positive: boolean; failClosedSampled: boolean; edgeStates: string[] }
+  > = {};
 
   for (const sid of surfacesChecked) {
     const m = (models as any)[sid];
     if (!m) {
-      perSurfaceValidation[sid] = { positive: false, failClosedSampled: true, edgeStates: [] };
+      perSurfaceValidation[sid] = {
+        positive: false,
+        failClosedSampled: true,
+        edgeStates: [],
+      };
       continue;
     }
     let surf: any = {};
@@ -1063,13 +1495,15 @@ export function validateAppBundleAggregateEdges(models: Record<string, unknown>)
     } catch {
       // deterministic: missing surface shape yields empty (fail-closed path covered in tests)
     }
-    const rawEdges: string[] = Array.isArray(surf.crossSkillRuntimeEdges) ? surf.crossSkillRuntimeEdges : [];
+    const rawEdges: string[] = Array.isArray(surf.crossSkillRuntimeEdges)
+      ? surf.crossSkillRuntimeEdges
+      : [];
     const edgeStates: string[] = rawEdges.map((raw: string) => {
       const mm = String(raw).match(/->[^:]+:(.+)$/);
       return mm ? mm[1] : "";
     });
-    const hasPositive = edgeStates.some((s) => s === "allowed");
-    const hasBlocked = edgeStates.some((s) => s === "blocked");
+    const hasPositive = edgeStates.some(s => s === "allowed");
+    const hasBlocked = edgeStates.some(s => s === "blocked");
     perSurfaceValidation[sid] = {
       positive: hasPositive,
       failClosedSampled: hasBlocked || rawEdges.length === 0,
@@ -1077,15 +1511,21 @@ export function validateAppBundleAggregateEdges(models: Record<string, unknown>)
     };
     rawEdges.forEach((raw: string) => {
       const match = String(raw).match(/^([^:]+?)->([^:]+?):(.+)$/);
-      if (match) collected.push({ source: match[1], target: match[2], state: match[3] });
+      if (match)
+        collected.push({ source: match[1], target: match[2], state: match[3] });
     });
   }
 
   const totalAggregateEdges = collected.length;
-  const positiveAllowedEdges = collected.filter((e) => e.state === "allowed").length;
+  const positiveAllowedEdges = collected.filter(
+    e => e.state === "allowed"
+  ).length;
   const failClosedBlockedEdges = totalAggregateEdges - positiveAllowedEdges;
-  const allSixPresent = surfacesChecked.every((s) => !!(models as any)[s]);
-  const closureEvidencePresent = allSixPresent && positiveAllowedEdges > 0 && appbundleCrossEdges.length >= 0;
+  const allSixPresent = surfacesChecked.every(s => !!(models as any)[s]);
+  const closureEvidencePresent =
+    allSixPresent &&
+    positiveAllowedEdges > 0 &&
+    appbundleCrossEdges.length >= 0;
 
   return {
     surfacesChecked,
@@ -1098,24 +1538,28 @@ export function validateAppBundleAggregateEdges(models: Record<string, unknown>)
   };
 }
 
-export const APPBUNDLE_RUNTIME_CLOSURE_BLOCKED = "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED";
+export const APPBUNDLE_RUNTIME_CLOSURE_BLOCKED =
+  "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED";
 
 export interface AppBundleRuntimeClosureReport {
   blocked: boolean;
   blockers: Finding[];
-  perSkillEvidence: Record<string, {
-    skillId: string;
-    versionPin: { pinned: boolean; version?: string };
-    runtimePolicyEvidence: boolean;
-    dataModelBindings: boolean;
-    rbacPdpDecisions: boolean;
-    workflowPageTaskViewConsistency: boolean;
-    aigcInvocationOutputPolicy: boolean;
-    unresolvedRefs: boolean;
-    evidencePresent: boolean;
-    dataModelFieldBindingEvidence?: any;
-    pageRbacPermissionEvidence?: any;
-  }>;
+  perSkillEvidence: Record<
+    string,
+    {
+      skillId: string;
+      versionPin: { pinned: boolean; version?: string };
+      runtimePolicyEvidence: boolean;
+      dataModelBindings: boolean;
+      rbacPdpDecisions: boolean;
+      workflowPageTaskViewConsistency: boolean;
+      aigcInvocationOutputPolicy: boolean;
+      unresolvedRefs: boolean;
+      evidencePresent: boolean;
+      dataModelFieldBindingEvidence?: any;
+      pageRbacPermissionEvidence?: any;
+    }
+  >;
   runtimeClosure?: {
     skillsChecked: string[];
     versionPinsChecked: boolean;
@@ -1129,13 +1573,18 @@ export interface AppBundleRuntimeClosureReport {
   classifiedFindings?: ClassifiedAppBundleClosureFinding[];
 }
 
-export function classifyAppBundleRuntimeClosureFinding(finding: Finding): AppBundleClosureTier {
+export function classifyAppBundleRuntimeClosureFinding(
+  finding: Finding
+): AppBundleClosureTier {
   // Deterministic tier mapping for AppBundle runtime closure findings (task 119):
   // - APPBUNDLE_RUNTIME_CLOSURE_BLOCKED or any error severity -> hard_blocker (fail-closed)
   // - APPBUNDLE_RUNTIME_EVIDENCE_PRESENT -> info (positive evidence)
   // - other warnings -> warning
   // - default -> info
-  if (finding.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED || finding.severity === "error") {
+  if (
+    finding.code === APPBUNDLE_RUNTIME_CLOSURE_BLOCKED ||
+    finding.severity === "error"
+  ) {
     return "hard_blocker";
   }
   if (finding.code === "APPBUNDLE_RUNTIME_EVIDENCE_PRESENT") {
@@ -1147,7 +1596,7 @@ export function classifyAppBundleRuntimeClosureFinding(finding: Finding): AppBun
 
 function classifyAppBundleRuntimeClosureFindings(
   blockers: Finding[],
-  info: Finding[],
+  info: Finding[]
 ): {
   findingsByTier: Record<AppBundleClosureTier, Finding[]>;
   classifiedFindings: ClassifiedAppBundleClosureFinding[];
@@ -1158,31 +1607,42 @@ function classifyAppBundleRuntimeClosureFindings(
     warning: [],
     info: [],
   };
-  const classifiedFindings: ClassifiedAppBundleClosureFinding[] = all.map((finding) => {
-    const tier = classifyAppBundleRuntimeClosureFinding(finding);
-    findingsByTier[tier].push(finding);
-    return { ...finding, tier } as ClassifiedAppBundleClosureFinding;
-  });
+  const classifiedFindings: ClassifiedAppBundleClosureFinding[] = all.map(
+    finding => {
+      const tier = classifyAppBundleRuntimeClosureFinding(finding);
+      findingsByTier[tier].push(finding);
+      return { ...finding, tier } as ClassifiedAppBundleClosureFinding;
+    }
+  );
   return { findingsByTier, classifiedFindings };
 }
 
 const DM_RBAC_POLICY_IMPACT_EVIDENCE_KEY = "DM_RBAC_POLICY_IMPACT_EVIDENCE";
 const DM_PAGE_BINDING_IMPACT_EVIDENCE_KEY = "DM_PAGE_BINDING_IMPACT_EVIDENCE";
-const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY = "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
+const DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY =
+  "DM_WORKFLOW_BINDING_IMPACT_EVIDENCE";
 const RBAC_PDP_EXPLAIN_EVIDENCE_KEY = "RBAC_PDP_EXPLAIN_EVIDENCE";
 
-function collectPositiveRuntimeEvidenceKeys(value: unknown, keys = new Set<string>()): Set<string> {
+function collectPositiveRuntimeEvidenceKeys(
+  value: unknown,
+  keys = new Set<string>()
+): Set<string> {
   if (!value || typeof value !== "object") return keys;
   if (Array.isArray(value)) {
-    value.forEach((item) => collectPositiveRuntimeEvidenceKeys(item, keys));
+    value.forEach(item => collectPositiveRuntimeEvidenceKeys(item, keys));
     return keys;
   }
 
   const record = value as Record<string, unknown>;
-  const evidenceKey = typeof record.evidenceKey === "string" ? record.evidenceKey : undefined;
+  const evidenceKey =
+    typeof record.evidenceKey === "string" ? record.evidenceKey : undefined;
   if (evidenceKey) {
-    const state = typeof record.state === "string" ? record.state.toLowerCase() : "";
-    const reasonCode = typeof record.reasonCode === "string" ? record.reasonCode.toLowerCase() : "";
+    const state =
+      typeof record.state === "string" ? record.state.toLowerCase() : "";
+    const reasonCode =
+      typeof record.reasonCode === "string"
+        ? record.reasonCode.toLowerCase()
+        : "";
     const hasPositiveEvidence = record.hasPositiveEvidence;
     const allow = record.allow;
     const isExplicitNegative =
@@ -1200,7 +1660,9 @@ function collectPositiveRuntimeEvidenceKeys(value: unknown, keys = new Set<strin
     }
   }
 
-  Object.values(record).forEach((item) => collectPositiveRuntimeEvidenceKeys(item, keys));
+  Object.values(record).forEach(item =>
+    collectPositiveRuntimeEvidenceKeys(item, keys)
+  );
   return keys;
 }
 
@@ -1211,39 +1673,143 @@ function hasEvidenceKey(keys: Set<string>, expected: string): boolean {
   return false;
 }
 
-function hasRuntimeEvidenceFields(m: any, skillId: string): { policy: boolean; bindings: boolean; taskView: boolean; aigcPolicy: boolean; present: boolean } {
-  if (!m || typeof m !== "object") return { policy: false, bindings: false, taskView: false, aigcPolicy: false, present: false };
+function hasRuntimeEvidenceFields(
+  m: any,
+  skillId: string
+): {
+  policy: boolean;
+  bindings: boolean;
+  taskView: boolean;
+  aigcPolicy: boolean;
+  present: boolean;
+} {
+  if (!m || typeof m !== "object")
+    return {
+      policy: false,
+      bindings: false,
+      taskView: false,
+      aigcPolicy: false,
+      present: false,
+    };
   const keys = Object.keys(m);
   const kset = new Set(keys.map((k: string) => k.toLowerCase()));
   const evidenceKeys = collectPositiveRuntimeEvidenceKeys(m);
-  const hasDataModelRbacImpact = hasEvidenceKey(evidenceKeys, DM_RBAC_POLICY_IMPACT_EVIDENCE_KEY);
-  const hasDataModelPageImpact = hasEvidenceKey(evidenceKeys, DM_PAGE_BINDING_IMPACT_EVIDENCE_KEY);
-  const hasDataModelWorkflowImpact = hasEvidenceKey(evidenceKeys, DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY);
-  const hasRbacPdpExplain = hasEvidenceKey(evidenceKeys, RBAC_PDP_EXPLAIN_EVIDENCE_KEY);
-  const hasPolicy = kset.has("pep") || kset.has("actorroleref") || kset.has("policycheckrefs") || kset.has("failclosed") || kset.has("permissions") || kset.has("roles") || kset.has("dualcontrolpolicies") || kset.has("datarules") || kset.has("policydefinitions") || !!m.publishManifest || !!m.runtimeSnapshot || !!m.releaseArtifact || !!m.publishGateEvidence || hasDataModelRbacImpact || hasRbacPdpExplain;
-  const hasBindings = kset.has("entities") || kset.has("entityrefs") || kset.has("fieldrefs") || kset.has("relations") || kset.has("components") || kset.has("bindings") || hasDataModelRbacImpact || hasDataModelPageImpact || hasDataModelWorkflowImpact;
-  const hasTaskView = kset.has("components") || kset.has("published") || kset.has("pageversion") || kset.has("snapshotrefs") || kset.has("pagebindings") || kset.has("workflowrefs") || kset.has("menuentries") || kset.has("tasks") || hasDataModelPageImpact || hasDataModelWorkflowImpact;
-  const hasAigcPolicy = kset.has("capabilities") || kset.has("outputschemas") || kset.has("retrievalpolicies") || kset.has("citationpolicies") || kset.has("prompttemplates") || kset.has("aigccapabilityrefs") || kset.has("pep");
-  const present = hasPolicy || hasBindings || hasTaskView || hasAigcPolicy || (skillId === "appbundle" && (kset.has("versionpins") || kset.has("runtimesnapshot")));
-  return { policy: hasPolicy, bindings: hasBindings, taskView: hasTaskView, aigcPolicy: hasAigcPolicy, present };
+  const hasDataModelRbacImpact = hasEvidenceKey(
+    evidenceKeys,
+    DM_RBAC_POLICY_IMPACT_EVIDENCE_KEY
+  );
+  const hasDataModelPageImpact = hasEvidenceKey(
+    evidenceKeys,
+    DM_PAGE_BINDING_IMPACT_EVIDENCE_KEY
+  );
+  const hasDataModelWorkflowImpact = hasEvidenceKey(
+    evidenceKeys,
+    DM_WORKFLOW_BINDING_IMPACT_EVIDENCE_KEY
+  );
+  const hasRbacPdpExplain = hasEvidenceKey(
+    evidenceKeys,
+    RBAC_PDP_EXPLAIN_EVIDENCE_KEY
+  );
+  const hasPolicy =
+    kset.has("pep") ||
+    kset.has("actorroleref") ||
+    kset.has("policycheckrefs") ||
+    kset.has("failclosed") ||
+    kset.has("permissions") ||
+    kset.has("roles") ||
+    kset.has("dualcontrolpolicies") ||
+    kset.has("datarules") ||
+    kset.has("policydefinitions") ||
+    !!m.publishManifest ||
+    !!m.runtimeSnapshot ||
+    !!m.releaseArtifact ||
+    !!m.publishGateEvidence ||
+    hasDataModelRbacImpact ||
+    hasRbacPdpExplain;
+  const hasBindings =
+    kset.has("entities") ||
+    kset.has("entityrefs") ||
+    kset.has("fieldrefs") ||
+    kset.has("relations") ||
+    kset.has("components") ||
+    kset.has("bindings") ||
+    hasDataModelRbacImpact ||
+    hasDataModelPageImpact ||
+    hasDataModelWorkflowImpact;
+  const hasTaskView =
+    kset.has("components") ||
+    kset.has("published") ||
+    kset.has("pageversion") ||
+    kset.has("snapshotrefs") ||
+    kset.has("pagebindings") ||
+    kset.has("workflowrefs") ||
+    kset.has("menuentries") ||
+    kset.has("tasks") ||
+    hasDataModelPageImpact ||
+    hasDataModelWorkflowImpact;
+  const hasAigcPolicy =
+    kset.has("capabilities") ||
+    kset.has("outputschemas") ||
+    kset.has("retrievalpolicies") ||
+    kset.has("citationpolicies") ||
+    kset.has("prompttemplates") ||
+    kset.has("aigccapabilityrefs") ||
+    kset.has("pep");
+  const present =
+    hasPolicy ||
+    hasBindings ||
+    hasTaskView ||
+    hasAigcPolicy ||
+    (skillId === "appbundle" &&
+      (kset.has("versionpins") || kset.has("runtimesnapshot")));
+  return {
+    policy: hasPolicy,
+    bindings: hasBindings,
+    taskView: hasTaskView,
+    aigcPolicy: hasAigcPolicy,
+    present,
+  };
 }
 
-export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>): AppBundleRuntimeClosureReport {
+export function evaluateAppBundleRuntimeClosure(
+  models: Record<string, unknown>
+): AppBundleRuntimeClosureReport {
   const blockers: Finding[] = [];
   const infoFindings: Finding[] = [];
-  const perSkillEvidence: AppBundleRuntimeClosureReport["perSkillEvidence"] = {} as any;
-  const appBundleModel = (models.appbundle || models["appBundle"]) as AppBundleModel | undefined;
+  const perSkillEvidence: AppBundleRuntimeClosureReport["perSkillEvidence"] =
+    {} as any;
+  const appBundleModel = (models.appbundle || models["appBundle"]) as
+    | AppBundleModel
+    | undefined;
 
-  const skillsToCheck: AppBundleSkillId[] = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"];
+  const skillsToCheck: AppBundleSkillId[] = [
+    "datamodel",
+    "rbac",
+    "workflow",
+    "page",
+    "aigc",
+    "appbundle",
+  ];
 
   for (const skillId of skillsToCheck) {
     const skillModel = models[skillId] as any;
     const ev = hasRuntimeEvidenceFields(skillModel, skillId);
-    const pin = (appBundleModel?.versionPins ?? []).find(p => p.skillId === skillId);
-    const versionPin = pin && isFixedPinVersion(pin.version) ? { pinned: true, version: pin.version } : { pinned: !!pin };
+    const pin = (appBundleModel?.versionPins ?? []).find(
+      p => p.skillId === skillId
+    );
+    const versionPin =
+      pin && isFixedPinVersion(pin.version)
+        ? { pinned: true, version: pin.version }
+        : { pinned: !!pin };
 
     let taskViewConsistent = ev.taskView;
-    if (skillId === "page" && appBundleModel && Array.isArray(appBundleModel.pageBindings) && appBundleModel.pageBindings.length > 0 && skillModel) {
+    if (
+      skillId === "page" &&
+      appBundleModel &&
+      Array.isArray(appBundleModel.pageBindings) &&
+      appBundleModel.pageBindings.length > 0 &&
+      skillModel
+    ) {
       // 119: executable Workflow task view closure against Page task surfaces + AppBundle pageBindings.
       // Always use adapter when bindings declared: positive only on exact pageRef match + adapter allowed; else fail-closed (no retain of ev.taskView on mismatch).
       const pageModel = skillModel as PageModel;
@@ -1253,9 +1819,19 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
         let matched = false;
         for (const b of appBundleModel.pageBindings) {
           if (b.pageRef === pageModel.id) {
-            const sampleInst = { id: "inst_119", workflowId: b.workflowRef, currentNodeId: b.mode === "approve" ? "a_mgr" : "start" };
-            const bindingEv = createWorkflowTaskViewAppBundleBindingEvidence(pageModel, b, sampleInst);
-            taskViewConsistent = bindingEv.state === "allowed" && bindingEv.result !== PAGE_WORKFLOW_TASK_VIEW_INVALID;
+            const sampleInst = {
+              id: "inst_119",
+              workflowId: b.workflowRef,
+              currentNodeId: b.mode === "approve" ? "a_mgr" : "start",
+            };
+            const bindingEv = createWorkflowTaskViewAppBundleBindingEvidence(
+              pageModel,
+              b,
+              sampleInst
+            );
+            taskViewConsistent =
+              bindingEv.state === "allowed" &&
+              bindingEv.result !== PAGE_WORKFLOW_TASK_VIEW_INVALID;
             matched = true;
             break;
           }
@@ -1272,7 +1848,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
     // with the real datamodel (resolved SSOT surface) from models. This provides the read
     // path inside runtimeClosure so evidence participates (positive when dm present, fail-closed blocked when absent).
     let dataModelFieldBindingEvidence: any = undefined;
-    if (skillId === "page" && skillModel && Array.isArray(skillModel.components)) {
+    if (
+      skillId === "page" &&
+      skillModel &&
+      Array.isArray(skillModel.components)
+    ) {
       const dmM = models["datamodel"] || models["dataModel"];
       let dmUpstream: any = undefined;
       if (dmM) {
@@ -1283,7 +1863,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
           dmUpstream = dmM;
         }
       }
-      dataModelFieldBindingEvidence = createPageCrossRuntimeEvidence(skillModel as any, "datamodel", dmUpstream);
+      dataModelFieldBindingEvidence = createPageCrossRuntimeEvidence(
+        skillModel as any,
+        "datamodel",
+        dmUpstream
+      );
     }
 
     // Close Page permission rendering evidence against RBAC policy surfaces (119 task):
@@ -1291,7 +1875,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
     // createPageRbacRuntimeEvidence with real rbac upstream surface (when present).
     // Positive: allowed + refs when RBAC surface supplied; fail-closed: blocked when absent.
     let pageRbacPermissionEvidence: any = undefined;
-    if (skillId === "page" && skillModel && Array.isArray(skillModel.components)) {
+    if (
+      skillId === "page" &&
+      skillModel &&
+      Array.isArray(skillModel.components)
+    ) {
       const rbM = models["rbac"] || models["rbac"];
       let rbacUpstream: any = undefined;
       if (rbM) {
@@ -1302,17 +1890,32 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
           rbacUpstream = rbM;
         }
       }
-      pageRbacPermissionEvidence = createPageRbacRuntimeEvidence(skillModel as any, rbacUpstream);
+      pageRbacPermissionEvidence = createPageRbacRuntimeEvidence(
+        skillModel as any,
+        rbacUpstream
+      );
     }
 
     let pageRouteBindingEvidence: any = undefined;
-    if (skillId === "page" && skillModel && Array.isArray(skillModel.components)) {
-      pageRouteBindingEvidence = tracePageRouteBindingToAppBundleClosureEvidence(skillModel as any, appBundleModel);
+    if (
+      skillId === "page" &&
+      skillModel &&
+      Array.isArray(skillModel.components)
+    ) {
+      pageRouteBindingEvidence =
+        tracePageRouteBindingToAppBundleClosureEvidence(
+          skillModel as any,
+          appBundleModel
+        );
     }
 
     let workflowRuntimeToAppBundleEvidence: any = undefined;
     if (skillId === "workflow" && skillModel) {
-      workflowRuntimeToAppBundleEvidence = traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(skillModel as any, appBundleModel);
+      workflowRuntimeToAppBundleEvidence =
+        traceWorkflowRuntimeEvidenceToAppBundleClosureEvidence(
+          skillModel as any,
+          appBundleModel
+        );
     }
 
     const evidence = {
@@ -1320,11 +1923,38 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       versionPin,
       runtimePolicyEvidence: ev.policy,
       workflowPageTaskViewConsistency: taskViewConsistent,
-      dataModelBindings: Boolean(ev.bindings) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed"),
-      rbacPdpDecisions: ev.policy || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed"),
+      dataModelBindings:
+        Boolean(ev.bindings) ||
+        Boolean(
+          dataModelFieldBindingEvidence &&
+            dataModelFieldBindingEvidence.state === "allowed"
+        ),
+      rbacPdpDecisions:
+        ev.policy ||
+        Boolean(
+          pageRbacPermissionEvidence &&
+            pageRbacPermissionEvidence.state === "allowed"
+        ),
       aigcInvocationOutputPolicy: ev.aigcPolicy,
       unresolvedRefs: false,
-      evidencePresent: Boolean(ev.present) || Boolean(dataModelFieldBindingEvidence && dataModelFieldBindingEvidence.state === "allowed") || Boolean(pageRbacPermissionEvidence && pageRbacPermissionEvidence.state === "allowed") || Boolean(pageRouteBindingEvidence && pageRouteBindingEvidence.state === "closed") || Boolean(workflowRuntimeToAppBundleEvidence && workflowRuntimeToAppBundleEvidence.state === "closed"),
+      evidencePresent:
+        Boolean(ev.present) ||
+        Boolean(
+          dataModelFieldBindingEvidence &&
+            dataModelFieldBindingEvidence.state === "allowed"
+        ) ||
+        Boolean(
+          pageRbacPermissionEvidence &&
+            pageRbacPermissionEvidence.state === "allowed"
+        ) ||
+        Boolean(
+          pageRouteBindingEvidence &&
+            pageRouteBindingEvidence.state === "closed"
+        ) ||
+        Boolean(
+          workflowRuntimeToAppBundleEvidence &&
+            workflowRuntimeToAppBundleEvidence.state === "closed"
+        ),
       dataModelFieldBindingEvidence,
       pageRbacPermissionEvidence,
       pageRouteBindingEvidence,
@@ -1335,8 +1965,12 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
     if (appBundleModel && !pin && skillId !== "appbundle") {
       // only block if the appbundle model declares use of the skill (always for core, conditional for aigc)
       const declaresUse =
-        skillId === "datamodel" || skillId === "rbac" || skillId === "workflow" || skillId === "page" ||
-        (skillId === "aigc" && (appBundleModel.aigcCapabilityRefs?.length ?? 0) > 0);
+        skillId === "datamodel" ||
+        skillId === "rbac" ||
+        skillId === "workflow" ||
+        skillId === "page" ||
+        (skillId === "aigc" &&
+          (appBundleModel.aigcCapabilityRefs?.length ?? 0) > 0);
       if (declaresUse) {
         blockers.push({
           code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
@@ -1357,11 +1991,11 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       });
     }
 
-    const declaresPage = !!appBundleModel && (
-      (appBundleModel.pageRefs?.length ?? 0) > 0 ||
-      (appBundleModel.pageBindings?.length ?? 0) > 0 ||
-      (appBundleModel.menuEntries?.length ?? 0) > 0
-    );
+    const declaresPage =
+      !!appBundleModel &&
+      ((appBundleModel.pageRefs?.length ?? 0) > 0 ||
+        (appBundleModel.pageBindings?.length ?? 0) > 0 ||
+        (appBundleModel.menuEntries?.length ?? 0) > 0);
     if (skillId === "page" && declaresPage && !taskViewConsistent) {
       blockers.push({
         code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
@@ -1390,8 +2024,12 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
       }
     } else if (appBundleModel) {
       const requiresModel =
-        skillId === "datamodel" || skillId === "rbac" || skillId === "workflow" || skillId === "page" ||
-        (skillId === "aigc" && declaresAigc) || skillId === "appbundle";
+        skillId === "datamodel" ||
+        skillId === "rbac" ||
+        skillId === "workflow" ||
+        skillId === "page" ||
+        (skillId === "aigc" && declaresAigc) ||
+        skillId === "appbundle";
       if (requiresModel) {
         blockers.push({
           code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
@@ -1407,12 +2045,17 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
 
   // AppBundle own runtime requirements: pins + snapshot
   if (appBundleModel) {
-    if (!appBundleModel.runtimeSnapshot || !appBundleModel.runtimeSnapshot.pinnedRefs || appBundleModel.runtimeSnapshot.pinnedRefs.length === 0) {
+    if (
+      !appBundleModel.runtimeSnapshot ||
+      !appBundleModel.runtimeSnapshot.pinnedRefs ||
+      appBundleModel.runtimeSnapshot.pinnedRefs.length === 0
+    ) {
       blockers.push({
         code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
         severity: "error",
         path: "runtimeSnapshot",
-        message: "AppBundle runtime closure requires runtimeSnapshot with pinnedRefs evidence.",
+        message:
+          "AppBundle runtime closure requires runtimeSnapshot with pinnedRefs evidence.",
       });
     } else {
       infoFindings.push({
@@ -1422,7 +2065,10 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
         message: "Runtime evidence present for runtimeSnapshot.",
       });
     }
-    if (!appBundleModel.versionPins || appBundleModel.versionPins.length === 0) {
+    if (
+      !appBundleModel.versionPins ||
+      appBundleModel.versionPins.length === 0
+    ) {
       blockers.push({
         code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
         severity: "error",
@@ -1466,19 +2112,31 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
   // 119: explicit fail-closed for version pin vs runtime snapshot mismatch using dedicated pure helper.
   // Ensures bidirectional check even if snapshot supplied independently at runtime closure time.
   if (appBundleModel) {
-    const mismatchReport = validateAppBundleVersionPinVsRuntimeSnapshot(appBundleModel);
-    mismatchReport.blockers.forEach((b) => {
-      if (!blockers.some((bb) => bb.code === b.code && bb.path === b.path && bb.message === b.message)) {
+    const mismatchReport =
+      validateAppBundleVersionPinVsRuntimeSnapshot(appBundleModel);
+    mismatchReport.blockers.forEach(b => {
+      if (
+        !blockers.some(
+          bb =>
+            bb.code === b.code && bb.path === b.path && bb.message === b.message
+        )
+      ) {
         blockers.push(b);
       }
     });
   }
 
   const appId = appBundleModel?.id ?? "unknown-app";
-  const appVersion = appBundleModel?.runtimeSnapshot?.appVersion ?? appBundleModel?.publishManifest?.appVersion ?? "0.0.0";
+  const appVersion =
+    appBundleModel?.runtimeSnapshot?.appVersion ??
+    appBundleModel?.publishManifest?.appVersion ??
+    "0.0.0";
   const skillsChecked = Object.keys(perSkillEvidence).sort();
   const evidenceBits = skillsChecked
-    .map((skillId) => `${skillId}:${perSkillEvidence[skillId]?.evidencePresent ? "1" : "0"}`)
+    .map(
+      skillId =>
+        `${skillId}:${perSkillEvidence[skillId]?.evidencePresent ? "1" : "0"}`
+    )
     .join("|");
   const digestInput = [
     appId,
@@ -1491,7 +2149,8 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
   const closureId = `appbundle:${appId}@${appVersion}:runtime-closure`;
   const closureHash = simpleStableHash(digestInput);
   const stableDigest = simpleStableHash(`v119||${digestInput}`);
-  const { findingsByTier, classifiedFindings } = classifyAppBundleRuntimeClosureFindings(blockers, infoFindings);
+  const { findingsByTier, classifiedFindings } =
+    classifyAppBundleRuntimeClosureFindings(blockers, infoFindings);
 
   return {
     blocked: blockers.length > 0,
@@ -1514,69 +2173,172 @@ export function evaluateAppBundleRuntimeClosure(models: Record<string, unknown>)
 // 119-appbundle-runtime-closure: deterministic fixtures for closed (blocked:false, full positive evidence) and blocked (fail-closed with APPBUNDLE_RUNTIME_CLOSURE_BLOCKED) AppBundle runtime closure reports.
 // Pure data; both cases included per required implementation. Stable for cross-runtime and aggregator tests.
 // No network/DB/etc. Defined before use in runtimeClosure export.
-export const closedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport = Object.freeze({
-  blocked: false,
-  blockers: [],
-  perSkillEvidence: {
-    datamodel: { skillId: "datamodel", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: true, rbacPdpDecisions: true, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-    rbac: { skillId: "rbac", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: false, rbacPdpDecisions: true, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-    workflow: { skillId: "workflow", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: true, dataModelBindings: false, rbacPdpDecisions: true, workflowPageTaskViewConsistency: true, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-    page: { skillId: "page", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: true, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-    aigc: { skillId: "aigc", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: true, unresolvedRefs: false, evidencePresent: true },
-    appbundle: { skillId: "appbundle", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-  },
-  runtimeClosure: {
-    skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
-    versionPinsChecked: true,
-    perSkill: {},
-  },
-  closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
-  closureHash: "a1b2c3d4",
-  generatedAt: "2026-01-01T00:00:00.000Z",
-  stableDigest: "e5f6a7b8",
-  findingsByTier: { hard_blocker: [], warning: [], info: [] },
-  classifiedFindings: [],
-});
+export const closedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport =
+  Object.freeze({
+    blocked: false,
+    blockers: [],
+    perSkillEvidence: {
+      datamodel: {
+        skillId: "datamodel",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: true,
+        dataModelBindings: true,
+        rbacPdpDecisions: true,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+      rbac: {
+        skillId: "rbac",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: true,
+        dataModelBindings: false,
+        rbacPdpDecisions: true,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+      workflow: {
+        skillId: "workflow",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: true,
+        dataModelBindings: false,
+        rbacPdpDecisions: true,
+        workflowPageTaskViewConsistency: true,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+      page: {
+        skillId: "page",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: false,
+        dataModelBindings: false,
+        rbacPdpDecisions: false,
+        workflowPageTaskViewConsistency: true,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+      aigc: {
+        skillId: "aigc",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: false,
+        dataModelBindings: false,
+        rbacPdpDecisions: false,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: true,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+      appbundle: {
+        skillId: "appbundle",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: false,
+        dataModelBindings: false,
+        rbacPdpDecisions: false,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+    },
+    runtimeClosure: {
+      skillsChecked: [
+        "datamodel",
+        "rbac",
+        "workflow",
+        "page",
+        "aigc",
+        "appbundle",
+      ],
+      versionPinsChecked: true,
+      perSkill: {},
+    },
+    closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+    closureHash: "a1b2c3d4",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    stableDigest: "e5f6a7b8",
+    findingsByTier: { hard_blocker: [], warning: [], info: [] },
+    classifiedFindings: [],
+  });
 
-export const blockedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport = Object.freeze({
-  blocked: true,
-  blockers: [{
-    code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
-    severity: "error" as const,
-    path: "aigc",
-    message: "Missing AIGC runtime evidence for invocation/output policy.",
-  }],
-  perSkillEvidence: {
-    aigc: { skillId: "aigc", versionPin: { pinned: false }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: false },
-    appbundle: { skillId: "appbundle", versionPin: { pinned: true, version: "1.0.0" }, runtimePolicyEvidence: false, dataModelBindings: false, rbacPdpDecisions: false, workflowPageTaskViewConsistency: false, aigcInvocationOutputPolicy: false, unresolvedRefs: false, evidencePresent: true },
-  },
-  runtimeClosure: {
-    skillsChecked: ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
-    versionPinsChecked: true,
-    perSkill: {},
-  },
-  closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
-  closureHash: "badbad01",
-  generatedAt: "2026-01-01T00:00:00.000Z",
-  stableDigest: "badc0ded",
-  findingsByTier: {
-    hard_blocker: [{
-      code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
-      severity: "error" as const,
-      path: "aigc",
-      message: "Missing AIGC runtime evidence for invocation/output policy.",
-    }],
-    warning: [],
-    info: [],
-  },
-  classifiedFindings: [{
-    code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
-    severity: "error" as const,
-    path: "aigc",
-    message: "Missing AIGC runtime evidence for invocation/output policy.",
-    tier: "hard_blocker" as const,
-  }],
-});
+export const blockedAppBundleRuntimeClosureReport: AppBundleRuntimeClosureReport =
+  Object.freeze({
+    blocked: true,
+    blockers: [
+      {
+        code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+        severity: "error" as const,
+        path: "aigc",
+        message: "Missing AIGC runtime evidence for invocation/output policy.",
+      },
+    ],
+    perSkillEvidence: {
+      aigc: {
+        skillId: "aigc",
+        versionPin: { pinned: false },
+        runtimePolicyEvidence: false,
+        dataModelBindings: false,
+        rbacPdpDecisions: false,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: false,
+      },
+      appbundle: {
+        skillId: "appbundle",
+        versionPin: { pinned: true, version: "1.0.0" },
+        runtimePolicyEvidence: false,
+        dataModelBindings: false,
+        rbacPdpDecisions: false,
+        workflowPageTaskViewConsistency: false,
+        aigcInvocationOutputPolicy: false,
+        unresolvedRefs: false,
+        evidencePresent: true,
+      },
+    },
+    runtimeClosure: {
+      skillsChecked: [
+        "datamodel",
+        "rbac",
+        "workflow",
+        "page",
+        "aigc",
+        "appbundle",
+      ],
+      versionPinsChecked: true,
+      perSkill: {},
+    },
+    closureId: "appbundle:app_purchase_approval@1.0.0:runtime-closure",
+    closureHash: "badbad01",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    stableDigest: "badc0ded",
+    findingsByTier: {
+      hard_blocker: [
+        {
+          code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+          severity: "error" as const,
+          path: "aigc",
+          message:
+            "Missing AIGC runtime evidence for invocation/output policy.",
+        },
+      ],
+      warning: [],
+      info: [],
+    },
+    classifiedFindings: [
+      {
+        code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
+        severity: "error" as const,
+        path: "aigc",
+        message: "Missing AIGC runtime evidence for invocation/output policy.",
+        tier: "hard_blocker" as const,
+      },
+    ],
+  });
 
 export const runtimeClosure = {
   evaluateAppBundleRuntimeClosure,
@@ -1593,24 +2355,76 @@ export const runtimeClosure = {
 export const leaveApprovalAppBundle: AppBundleModel = {
   id: "app_leave_approval",
   name: "请假审批平台",
-  description: "A runtime-less application package for leave request submission and manager approval.",
+  description:
+    "A runtime-less application package for leave request submission and manager approval.",
   entityRefs: ["employee", "leave_request"],
   fieldRefs: ["leave_request.approved"],
   roleRefs: ["employee", "manager"],
   permissionRefs: ["leave:approve"],
   workflowRefs: ["wf_leave_approval"],
   pageRefs: ["page_leave_request"],
-  pageBindings: [{ pageRef: "page_leave_request", workflowRef: "wf_leave_approval", mode: "approve" }],
+  pageBindings: [
+    {
+      pageRef: "page_leave_request",
+      workflowRef: "wf_leave_approval",
+      mode: "approve",
+    },
+  ],
   versionPins: [
-    { skillId: "datamodel", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "leave_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "leave_request.approved", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "manager", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "leave:approve", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "workflow", ref: "wf_leave_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "page", ref: "page_leave_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "appbundle", ref: "app_leave_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    {
+      skillId: "datamodel",
+      ref: "employee",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "leave_request",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "leave_request.approved",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "employee",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "manager",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "leave:approve",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "workflow",
+      ref: "wf_leave_approval",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "page",
+      ref: "page_leave_request",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "appbundle",
+      ref: "app_leave_approval",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
   ],
   publishManifest: {
     appId: "app_leave_approval",
@@ -1664,14 +2478,20 @@ export const leaveApprovalAppBundle: AppBundleModel = {
     },
   ],
   menuEntries: [
-    { id: "menu_leave_request", label: "请假申请", pageRef: "page_leave_request", roleRefs: ["employee", "manager"] },
+    {
+      id: "menu_leave_request",
+      label: "请假申请",
+      pageRef: "page_leave_request",
+      roleRefs: ["employee", "manager"],
+    },
   ],
 };
 
 export const purchaseApprovalAppBundle: AppBundleModel = {
   id: "app_purchase_approval",
   name: "Purchase Approval Platform",
-  description: "A runtime-less application package for purchase requests, finance approval, and procurement fulfillment.",
+  description:
+    "A runtime-less application package for purchase requests, finance approval, and procurement fulfillment.",
   entityRefs: ["employee", "department", "vendor", "purchase_request"],
   fieldRefs: [
     "purchase_request.amount",
@@ -1681,34 +2501,156 @@ export const purchaseApprovalAppBundle: AppBundleModel = {
     "purchase_request.procurementFulfilled",
   ],
   roleRefs: ["requester", "department_manager", "finance", "procurement"],
-  permissionRefs: ["purchase:create", "purchase:view", "purchase:manager_approve", "purchase:finance_approve", "purchase:fulfill"],
+  permissionRefs: [
+    "purchase:create",
+    "purchase:view",
+    "purchase:manager_approve",
+    "purchase:finance_approve",
+    "purchase:fulfill",
+  ],
   workflowRefs: ["wf_purchase_approval"],
   pageRefs: ["page_purchase_request"],
   aigcCapabilityRefs: ["budget_risk_summary"],
-  pageBindings: [{ pageRef: "page_purchase_request", workflowRef: "wf_purchase_approval", mode: "approve" }],
+  pageBindings: [
+    {
+      pageRef: "page_purchase_request",
+      workflowRef: "wf_purchase_approval",
+      mode: "approve",
+    },
+  ],
   versionPins: [
-    { skillId: "datamodel", ref: "employee", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "department", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "vendor", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request.amount", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request.budgetChecked", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request.managerApproved", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request.financeApproved", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "datamodel", ref: "purchase_request.procurementFulfilled", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "requester", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "department_manager", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "finance", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "procurement", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "purchase:create", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "purchase:view", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "purchase:manager_approve", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "purchase:finance_approve", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "rbac", ref: "purchase:fulfill", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "workflow", ref: "wf_purchase_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "page", ref: "page_purchase_request", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "aigc", ref: "budget_risk_summary", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
-    { skillId: "appbundle", ref: "app_purchase_approval", version: "1.0.0", pinnedAt: "PUBLISH_TIME" },
+    {
+      skillId: "datamodel",
+      ref: "employee",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "department",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "vendor",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request.amount",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request.budgetChecked",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request.managerApproved",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request.financeApproved",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "datamodel",
+      ref: "purchase_request.procurementFulfilled",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "requester",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "department_manager",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "finance",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "procurement",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "purchase:create",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "purchase:view",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "purchase:manager_approve",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "purchase:finance_approve",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "rbac",
+      ref: "purchase:fulfill",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "workflow",
+      ref: "wf_purchase_approval",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "page",
+      ref: "page_purchase_request",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "aigc",
+      ref: "budget_risk_summary",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
+    {
+      skillId: "appbundle",
+      ref: "app_purchase_approval",
+      version: "1.0.0",
+      pinnedAt: "PUBLISH_TIME",
+    },
   ],
   publishManifest: {
     appId: "app_purchase_approval",
@@ -1726,7 +2668,13 @@ export const purchaseApprovalAppBundle: AppBundleModel = {
         "purchase_request.procurementFulfilled",
       ],
       roles: ["requester", "department_manager", "finance", "procurement"],
-      permissions: ["purchase:create", "purchase:view", "purchase:manager_approve", "purchase:finance_approve", "purchase:fulfill"],
+      permissions: [
+        "purchase:create",
+        "purchase:view",
+        "purchase:manager_approve",
+        "purchase:finance_approve",
+        "purchase:fulfill",
+      ],
       workflows: ["wf_purchase_approval"],
       pages: ["page_purchase_request"],
       aigcCapabilities: ["budget_risk_summary"],
@@ -1812,7 +2760,8 @@ function simpleStableHash(input: string): string {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    hash +=
+      (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
@@ -1828,7 +2777,9 @@ export function createAppBundleRuntimeSnapshot(
   const pins = uniqueByKey(rawPins, (p: any) => `${p.skillId}:${p.ref}`);
 
   const pinnedRefs = pins
-    .filter((p: any) => typeof p.version === "string" && isFixedPinVersion(p.version))
+    .filter(
+      (p: any) => typeof p.version === "string" && isFixedPinVersion(p.version)
+    )
     .map((p: any) => pinnedRef(p.skillId, p.ref, p.version))
     .sort();
 
@@ -1841,7 +2792,10 @@ export function createAppBundleRuntimeSnapshot(
     ? {
         status: model.publishManifest.gateStatus,
         passedAt: model.publishManifest.createdAt,
-        evidenceSummary: model.publishManifest.gateStatus === "passed" ? "captured" : undefined,
+        evidenceSummary:
+          model.publishManifest.gateStatus === "passed"
+            ? "captured"
+            : undefined,
       }
     : undefined;
 
@@ -1901,7 +2855,8 @@ export function planAppBundleRollback(
     fromVersion: currentSnapshot.appVersion,
     toVersion: targetSnapshot.appVersion,
     changedRefs: [...new Set(changed)].sort(),
-    closureHashMatch: currentSnapshot.closureHash === targetSnapshot.closureHash,
+    closureHashMatch:
+      currentSnapshot.closureHash === targetSnapshot.closureHash,
   };
 }
 
@@ -1948,15 +2903,16 @@ export function validateAppBundleVersionPinVsRuntimeSnapshot(
         code: APPBUNDLE_RUNTIME_CLOSURE_BLOCKED,
         severity: "error",
         path: "runtimeSnapshot",
-        message: "Version pins present but runtimeSnapshot missing or invalid (version pin vs runtime snapshot mismatch).",
+        message:
+          "Version pins present but runtimeSnapshot missing or invalid (version pin vs runtime snapshot mismatch).",
       });
     }
     return { matched: blockers.length === 0, blockers };
   }
   const snapSet = new Set(snap.pinnedRefs);
   const pinRefs = pins
-    .filter((p) => isFixedPinVersion(p.version))
-    .map((p) => pinnedRef(p.skillId, p.ref, p.version));
+    .filter(p => isFixedPinVersion(p.version))
+    .map(p => pinnedRef(p.skillId, p.ref, p.version));
   const pinSet = new Set(pinRefs);
 
   // pins must be present in snapshot
@@ -1987,7 +2943,7 @@ export function validateAppBundleVersionPinVsRuntimeSnapshot(
 
 export function attachRuntimeClosureSummaryToReleaseArtifact(
   artifact: AppBundleReleaseArtifact,
-  report: AppBundleRuntimeClosureReport | undefined,
+  report: AppBundleRuntimeClosureReport | undefined
 ): AppBundleReleaseArtifact {
   if (!report) return artifact;
   const summary: AppBundleReleaseArtifactRuntimeClosureSummary = {
@@ -1997,7 +2953,9 @@ export function attachRuntimeClosureSummaryToReleaseArtifact(
     stableDigest: report.stableDigest,
     blocked: report.blocked,
     blockerCount: report.blockers.length,
-    evidencePresentCount: Object.values(report.perSkillEvidence).filter((e) => e.evidencePresent).length,
+    evidencePresentCount: Object.values(report.perSkillEvidence).filter(
+      e => e.evidencePresent
+    ).length,
     skillCount: report.runtimeClosure?.skillsChecked.length,
   };
   return {
@@ -2008,7 +2966,7 @@ export function attachRuntimeClosureSummaryToReleaseArtifact(
 
 export function attachClosureEvidenceDigestToPublishManifest(
   manifest: AppBundlePublishManifest,
-  digest: string | undefined,
+  digest: string | undefined
 ): AppBundlePublishManifest {
   if (!digest) return manifest;
   return {
@@ -2019,33 +2977,58 @@ export function attachClosureEvidenceDigestToPublishManifest(
 
 export function comparePublishArtifactsForRollbackClosureDiff(
   currentPublishArtifact: any,
-  targetPublishArtifact: any,
+  targetPublishArtifact: any
 ): AppBundleRollbackClosureDiffEvidence | typeof APPBUNDLE_ROLLBACK_UNPINNED {
-  const currentSummary = currentPublishArtifact?.runtimeClosureSummary || currentPublishArtifact || {};
-  const targetSummary = targetPublishArtifact?.runtimeClosureSummary || targetPublishArtifact || {};
-  const currentDigest = currentSummary.stableDigest || currentSummary.closureHash;
+  const currentSummary =
+    currentPublishArtifact?.runtimeClosureSummary ||
+    currentPublishArtifact ||
+    {};
+  const targetSummary =
+    targetPublishArtifact?.runtimeClosureSummary || targetPublishArtifact || {};
+  const currentDigest =
+    currentSummary.stableDigest || currentSummary.closureHash;
   const targetDigest = targetSummary.stableDigest || targetSummary.closureHash;
 
   if (!currentDigest || !targetDigest) {
     return APPBUNDLE_ROLLBACK_UNPINNED;
   }
 
-  const currentEvidence = (currentPublishArtifact?.perSkillEvidence || currentSummary.perSkillEvidence || {}) as Record<string, any>;
-  const targetEvidence = (targetPublishArtifact?.perSkillEvidence || targetSummary.perSkillEvidence || {}) as Record<string, any>;
+  const currentEvidence = (currentPublishArtifact?.perSkillEvidence ||
+    currentSummary.perSkillEvidence ||
+    {}) as Record<string, any>;
+  const targetEvidence = (targetPublishArtifact?.perSkillEvidence ||
+    targetSummary.perSkillEvidence ||
+    {}) as Record<string, any>;
   const changedPerSkillRefs = new Set<string>();
 
-  for (const skill of new Set([...Object.keys(currentEvidence), ...Object.keys(targetEvidence)])) {
-    const currentRef = currentEvidence[skill]?.digest || currentEvidence[skill]?.evidenceRef || currentEvidence[skill]?.artifactId;
-    const targetRef = targetEvidence[skill]?.digest || targetEvidence[skill]?.evidenceRef || targetEvidence[skill]?.artifactId;
+  for (const skill of new Set([
+    ...Object.keys(currentEvidence),
+    ...Object.keys(targetEvidence),
+  ])) {
+    const currentRef =
+      currentEvidence[skill]?.digest ||
+      currentEvidence[skill]?.evidenceRef ||
+      currentEvidence[skill]?.artifactId;
+    const targetRef =
+      targetEvidence[skill]?.digest ||
+      targetEvidence[skill]?.evidenceRef ||
+      targetEvidence[skill]?.artifactId;
     if (currentRef !== targetRef) {
       changedPerSkillRefs.add(skill);
     }
   }
 
   return {
-    appId: currentSummary.appId || currentPublishArtifact?.appId || targetSummary.appId || targetPublishArtifact?.appId || "app",
-    currentVersion: currentPublishArtifact?.appVersion || currentSummary.appVersion,
-    targetVersion: targetPublishArtifact?.appVersion || targetSummary.appVersion,
+    appId:
+      currentSummary.appId ||
+      currentPublishArtifact?.appId ||
+      targetSummary.appId ||
+      targetPublishArtifact?.appId ||
+      "app",
+    currentVersion:
+      currentPublishArtifact?.appVersion || currentSummary.appVersion,
+    targetVersion:
+      targetPublishArtifact?.appVersion || targetSummary.appVersion,
     currentStableDigest: currentDigest,
     targetStableDigest: targetDigest,
     digestMatch: currentDigest === targetDigest,

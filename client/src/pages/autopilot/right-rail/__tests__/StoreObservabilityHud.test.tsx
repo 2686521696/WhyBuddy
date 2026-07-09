@@ -66,13 +66,12 @@ function setMockedSlices(next: Partial<MockedSlices>): void {
     rolePhases: next.rolePhases ?? {},
     capabilityStatuses: next.capabilityStatuses ?? {},
     agentProgress: next.agentProgress ?? [],
-    agentReasoning:
-      next.agentReasoning ?? {
-        jobId: null,
-        entries: [],
-        currentIteration: 0,
-        status: "idle",
-      },
+    agentReasoning: next.agentReasoning ?? {
+      jobId: null,
+      entries: [],
+      currentIteration: 0,
+      status: "idle",
+    },
   };
 }
 
@@ -91,7 +90,9 @@ function resetMockedSlices(): void {
 }
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: MockedSlices) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: MockedSlices) => unknown
+  ) => {
     return selector ? selector(mockedSlices) : mockedSlices;
   }) as unknown as typeof import("@/lib/blueprint-realtime-store").useBlueprintRealtimeStore;
 

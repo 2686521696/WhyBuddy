@@ -1,6 +1,9 @@
 import React, { useCallback, useState } from "react";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
-import type { ActionTrace, LiveAction } from "@shared/blueprint/capability-process-labels";
+import type {
+  ActionTrace,
+  LiveAction,
+} from "@shared/blueprint/capability-process-labels";
 import {
   buildRouteSummary,
   deriveTurnRoute,
@@ -41,7 +44,7 @@ function filterStationsForSurface(
   mode: TurnRouteSurfaceMode
 ): RouteStation[] {
   if (mode === "engineering" || mode === "minimal") return stations;
-  return stations.filter((s) => PRODUCT_STATION_KINDS.has(s.kind));
+  return stations.filter(s => PRODUCT_STATION_KINDS.has(s.kind));
 }
 
 const TONE_DOT: Record<RouteStationTone, string> = {
@@ -50,7 +53,7 @@ const TONE_DOT: Record<RouteStationTone, string> = {
   pass: "bg-[#1D9E75]",
   partial: "bg-[#EF9F27]",
   fail: "bg-rose-500",
-  pending: "border-2 border-[#D8D1C4] bg-white",
+  pending: "border-2 border-[#d3d8e0] bg-white",
   active: "bg-[#888780] animate-pulse",
 };
 
@@ -111,12 +114,15 @@ function treeIndentPx(station: RouteStation): number {
 function stepsForLoop(steps: TurnStep[], loopTurnId?: string): TurnStep[] {
   if (!loopTurnId) return steps;
   const prefix = `${loopTurnId}-`;
-  return steps.filter((s) => s.id.startsWith(prefix));
+  return steps.filter(s => s.id.startsWith(prefix));
 }
 
-function actionsForLoop(actions: ActionTrace[], loopTurnId?: string): ActionTrace[] {
+function actionsForLoop(
+  actions: ActionTrace[],
+  loopTurnId?: string
+): ActionTrace[] {
   if (!loopTurnId) return actions;
-  return actions.filter((a) => a.turnId === loopTurnId);
+  return actions.filter(a => a.turnId === loopTurnId);
 }
 
 function picksForPlanStation(
@@ -125,7 +131,9 @@ function picksForPlanStation(
 ): SelectedCapabilityPick[] {
   const roundMatch = station.id.match(/-r(\d+)-plan/);
   if (roundMatch && facts.rounds?.length) {
-    const round = facts.rounds.find((r) => r.roundIndex === Number(roundMatch[1]));
+    const round = facts.rounds.find(
+      r => r.roundIndex === Number(roundMatch[1])
+    );
     return round?.selectedCapabilities ?? [];
   }
   return facts.selectedCapabilities ?? [];
@@ -158,7 +166,9 @@ function capabilityPickForStation(
   const capIndex = Number(capMatch[1]);
   const roundMatch = station.id.match(/-r(\d+)-cap-/);
   if (roundMatch && facts.rounds?.length) {
-    const round = facts.rounds.find((r) => r.roundIndex === Number(roundMatch[1]));
+    const round = facts.rounds.find(
+      r => r.roundIndex === Number(roundMatch[1])
+    );
     return round?.selectedCapabilities?.[capIndex];
   }
   return facts.selectedCapabilities?.[capIndex];
@@ -187,10 +197,13 @@ function loopTurnIdForStation(
   if (station.loopTurnId) return station.loopTurnId;
   const multi = station.id.match(/-r(\d+)-cap-/);
   if (multi && facts.rounds?.length) {
-    const round = facts.rounds.find((r) => r.roundIndex === Number(multi[1]));
+    const round = facts.rounds.find(r => r.roundIndex === Number(multi[1]));
     return round?.loopTurnId;
   }
-  if (station.kind === "capability" && station.id.startsWith(`${facts.turnId}-cap-`)) {
+  if (
+    station.kind === "capability" &&
+    station.id.startsWith(`${facts.turnId}-cap-`)
+  ) {
     return facts.turnId;
   }
   return undefined;
@@ -212,14 +225,14 @@ function ExecutionSubsteps({
   loopTurnId?: string;
 }) {
   const execSteps = executionTurnSteps(stepsForLoop(steps, loopTurnId)).filter(
-    (s) => s.kind !== "narration"
+    s => s.kind !== "narration"
   );
   const roundActions = actionsForLoop(actions, loopTurnId);
   if (execSteps.length === 0 && roundActions.length === 0) return null;
 
   return (
-    <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-[#E7E2D9] pl-2.5">
-      {execSteps.map((step) => {
+    <div className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-[#e5e7eb] pl-2.5">
+      {execSteps.map(step => {
         if (step.kind === "chip") {
           return (
             <span
@@ -227,7 +240,7 @@ function ExecutionSubsteps({
               className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset ${
                 step.realLlm
                   ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                  : "bg-[#F5F1EA] text-stone-600 ring-[#E7E2D9]"
+                  : "bg-[#eef0f4] text-stone-600 ring-[#e5e7eb]"
               }`}
             >
               {step.label}
@@ -240,10 +253,12 @@ function ExecutionSubsteps({
           <p
             key={step.id}
             className={`m-0 text-xs leading-relaxed ${
-              step.realLlm ? "text-[#C4633F]" : "text-stone-500"
+              step.realLlm ? "text-[#0958d9]" : "text-stone-500"
             }`}
           >
-            {active ? step.text.slice(0, Math.min(step.text.length, 40)) : step.text}
+            {active
+              ? step.text.slice(0, Math.min(step.text.length, 40))
+              : step.text}
             {active && step.text.length > 40 ? "…" : ""}
           </p>
         );
@@ -320,7 +335,7 @@ function StationExpandedBody({
             {picks.map((p, i) => (
               <span
                 key={`${p.capabilityId}-${i}`}
-                className="inline-flex rounded-full bg-[#F0EDE5] px-2 py-0.5 font-mono text-[10px] text-stone-600"
+                className="inline-flex rounded-full bg-[#e9edf2] px-2 py-0.5 font-mono text-[10px] text-stone-600"
               >
                 {p.roleId} · {p.capabilityId}
               </span>
@@ -345,7 +360,8 @@ function StationExpandedBody({
   if (station.kind === "reentry" && station.reentryTargetV51) {
     return (
       <p className="m-0 mt-1 text-xs text-amber-700">
-        回边再入 {station.reentryTargetV51} · {station.detail || "GCOV 后预算放行续跑"}
+        回边再入 {station.reentryTargetV51} ·{" "}
+        {station.detail || "GCOV 后预算放行续跑"}
       </p>
     );
   }
@@ -403,10 +419,7 @@ function StationRow({
   const nodeLabel = station.title.includes("·")
     ? station.title.split("·").slice(1).join("·").trim()
     : station.title;
-  const detail =
-    active && liveAction
-      ? liveAction.label
-      : station.detail;
+  const detail = active && liveAction ? liveAction.label : station.detail;
 
   const planHref =
     surfaceMode === "engineering" &&
@@ -421,7 +434,9 @@ function StationRow({
   const collapsed = phase === "completed" && !expanded && !immersionOverlay;
   const dimmed = phase === "future";
   const failStep =
-    station.kind === "capability" ? failStepForStation(steps, station, facts) : undefined;
+    station.kind === "capability"
+      ? failStepForStation(steps, station, facts)
+      : undefined;
   const collapsedSummary =
     collapsed && phase === "completed"
       ? stationCollapsedSummary(station, facts)
@@ -453,14 +468,19 @@ function StationRow({
         {station.v51NodeId && (
           <span
             className={`mr-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-600 ${
-              immersionOverlay ? "bg-white/40 ring-1 ring-[#2A2620]/5" : "bg-[#F0EDE5]"
+              immersionOverlay
+                ? "bg-white/40 ring-1 ring-[#2A2620]/5"
+                : "bg-[#e9edf2]"
             }`}
           >
             {station.v51NodeId}
           </span>
         )}
         {planHref ? (
-          <a href={planHref} className="font-medium text-stone-800 hover:underline">
+          <a
+            href={planHref}
+            className="font-medium text-stone-800 hover:underline"
+          >
             {nodeLabel}
           </a>
         ) : (
@@ -469,8 +489,8 @@ function StationRow({
               station.kind === "await" && station.v51NodeId === "AWAIT"
                 ? "text-stone-500"
                 : station.v51NodeId === "DONE"
-                ? "text-[#0F6E56]"
-                : "text-stone-800"
+                  ? "text-[#0F6E56]"
+                  : "text-stone-800"
             }`}
           >
             {nodeLabel}
@@ -485,7 +505,7 @@ function StationRow({
           </span>
         )}
         {phase === "active" && streaming && (
-          <span className="ml-1.5 rounded-full bg-[#F8E8E0] px-1.5 py-0.5 text-[10px] font-medium text-[#C4633F]">
+          <span className="ml-1.5 rounded-full bg-[#e6f4ff] px-1.5 py-0.5 text-[10px] font-medium text-[#0958d9]">
             进行中
           </span>
         )}
@@ -513,7 +533,7 @@ function StationRow({
         <button
           type="button"
           onClick={onToggleExpand}
-          className="mt-1 text-[11px] font-medium text-[#C4633F] hover:text-[#B0552F] hover:underline"
+          className="mt-1 text-[11px] font-medium text-[#0958d9] hover:text-[#1677ff] hover:underline"
         >
           查看详情
         </button>
@@ -532,7 +552,11 @@ function StationRow({
         surfaceMode !== "minimal" &&
         station.kind !== "capability" &&
         station.kind !== "plan" && (
-          <RoleProgressLog steps={steps} actions={actions} loopTurnId={loopTurnId} />
+          <RoleProgressLog
+            steps={steps}
+            actions={actions}
+            loopTurnId={loopTurnId}
+          />
         )}
       {failStep && onRetryCapability && loopTurnId && (
         <button
@@ -584,9 +608,12 @@ export function TurnRouteTimeline({
   activeStepId?: string | null;
   /** product: IM 操纵杆；engineering: dev 驾驶舱完整路径 */
   surfaceMode?: TurnRouteSurfaceMode;
-  onRetryCapability?: (
-    params: { loopTurnId: string; capabilityId: V5CapabilityId; roleId: string; runIndex: number }
-  ) => void;
+  onRetryCapability?: (params: {
+    loopTurnId: string;
+    capabilityId: V5CapabilityId;
+    roleId: string;
+    runIndex: number;
+  }) => void;
   retrying?: boolean;
   immersionOverlay?: boolean;
   reasoningEvents?: any[]; // V5.3 P5.4 for streaming sub steps from events
@@ -596,7 +623,7 @@ export function TurnRouteTimeline({
   );
 
   const toggleStationExpand = useCallback((stationId: string) => {
-    setExpandedStationIds((prev) => {
+    setExpandedStationIds(prev => {
       const next = new Set(prev);
       if (next.has(stationId)) next.delete(stationId);
       else next.add(stationId);
@@ -606,9 +633,11 @@ export function TurnRouteTimeline({
 
   // ① 多轮折叠:静态(非 streaming)沉浸浮层下,历史轮默认折叠成一行,只展开最新轮,
   // 减少 BUDGET/GCOV/ORCH 每轮重复刷屏。纯渲染层,不动 deriveTurnRoute。
-  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(() => new Set());
+  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(
+    () => new Set()
+  );
   const toggleRound = useCallback((r: number) => {
-    setExpandedRounds((prev) => {
+    setExpandedRounds(prev => {
       const next = new Set(prev);
       if (next.has(r)) next.delete(r);
       else next.add(r);
@@ -630,7 +659,7 @@ export function TurnRouteTimeline({
       <button
         type="button"
         onClick={onToggle}
-        className="mb-2 w-full rounded-sm border border-transparent py-1 text-left text-xs text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
+        className="mb-2 w-full rounded-sm border border-transparent py-1 text-left text-xs text-stone-500 transition hover:border-[#e5e7eb] hover:bg-[#eef0f4] hover:text-stone-700"
       >
         {summary}
       </button>
@@ -638,7 +667,9 @@ export function TurnRouteTimeline({
   }
 
   const activeIndex =
-    streaming && litCount > 0 ? Math.min(litCount - 1, visibleStations.length - 1) : -1;
+    streaming && litCount > 0
+      ? Math.min(litCount - 1, visibleStations.length - 1)
+      : -1;
   const highlightActive = streaming;
 
   return (
@@ -659,12 +690,15 @@ export function TurnRouteTimeline({
             return m ? Number(m[1]) : null;
           };
           const roundIdxs = visibleStations
-            .map((s) => roundOf(s.id))
+            .map(s => roundOf(s.id))
             .filter((r): r is number => r != null);
           const maxRound = roundIdxs.length ? Math.max(...roundIdxs) : null;
           // 仅静态、沉浸浮层、且 ≥2 轮时折叠(streaming 实时观看时全展开)。
           const foldRounds =
-            !streaming && immersionOverlay && maxRound != null && new Set(roundIdxs).size >= 2;
+            !streaming &&
+            immersionOverlay &&
+            maxRound != null &&
+            new Set(roundIdxs).size >= 2;
           const emittedHeaders = new Set<number>();
 
           return visibleStations.map((station, idx) => {
@@ -672,8 +706,8 @@ export function TurnRouteTimeline({
               ? idx < activeIndex
                 ? "completed"
                 : idx === activeIndex
-                ? "active"
-                : "future"
+                  ? "active"
+                  : "future"
               : "completed";
 
             const r = roundOf(station.id);
@@ -681,68 +715,73 @@ export function TurnRouteTimeline({
             if (isFoldableRound && !expandedRounds.has(r!)) {
               if (emittedHeaders.has(r!)) return null;
               emittedHeaders.add(r!);
-              const stepsInRound = visibleStations.filter((s) => roundOf(s.id) === r).length;
+              const stepsInRound = visibleStations.filter(
+                s => roundOf(s.id) === r
+              ).length;
               return (
                 <button
                   key={`round-fold-${r}`}
                   type="button"
                   onClick={() => toggleRound(r!)}
-                  className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-400 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-600"
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-400 transition hover:border-[#e5e7eb] hover:bg-[#eef0f4] hover:text-stone-600"
                   data-testid={`sliderule-timeline-round-fold-${r}`}
                 >
-                  <span className="font-mono">▸</span>
-                  第 {r} 轮 · {stepsInRound} 步（已折叠 · 点击展开）
+                  <span className="font-mono">▸</span>第 {r} 轮 · {stepsInRound}{" "}
+                  步（已折叠 · 点击展开）
                 </button>
               );
             }
-          // 展开的历史轮:在该轮第一步前插一个「收起」入口(此前展开后无法再折叠)。
-          let collapseHeader: React.ReactNode = null;
-          if (isFoldableRound && expandedRounds.has(r!) && !emittedHeaders.has(r!)) {
-            emittedHeaders.add(r!);
-            collapseHeader = (
-              <button
-                type="button"
-                onClick={() => toggleRound(r!)}
-                className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-500 transition hover:border-[#E7E2D9] hover:bg-[#F5F1EA] hover:text-stone-700"
-                data-testid={`sliderule-timeline-round-collapse-${r}`}
-              >
-                <span className="font-mono">▾</span>
-                第 {r} 轮 · 点击收起
-              </button>
+            // 展开的历史轮:在该轮第一步前插一个「收起」入口(此前展开后无法再折叠)。
+            let collapseHeader: React.ReactNode = null;
+            if (
+              isFoldableRound &&
+              expandedRounds.has(r!) &&
+              !emittedHeaders.has(r!)
+            ) {
+              emittedHeaders.add(r!);
+              collapseHeader = (
+                <button
+                  type="button"
+                  onClick={() => toggleRound(r!)}
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-sm border border-transparent py-1 pl-1 text-left text-[11px] text-stone-500 transition hover:border-[#e5e7eb] hover:bg-[#eef0f4] hover:text-stone-700"
+                  data-testid={`sliderule-timeline-round-collapse-${r}`}
+                >
+                  <span className="font-mono">▾</span>第 {r} 轮 · 点击收起
+                </button>
+              );
+            }
+            const stationRow = (
+              <StationRow
+                station={station}
+                steps={steps}
+                actions={actions}
+                sessionId={sessionId}
+                active={highlightActive && idx === activeIndex}
+                liveAction={liveAction}
+                activeStepId={activeStepId}
+                streaming={streaming}
+                facts={facts}
+                surfaceMode={surfaceMode}
+                phase={phase}
+                expanded={expandedStationIds.has(station.id)}
+                onToggleExpand={
+                  phase === "completed"
+                    ? () => toggleStationExpand(station.id)
+                    : undefined
+                }
+                onRetryCapability={onRetryCapability}
+                retrying={retrying}
+                immersionOverlay={immersionOverlay}
+              />
             );
-          }
-          const stationRow = (
-            <StationRow
-              station={station}
-              steps={steps}
-              actions={actions}
-              sessionId={sessionId}
-              active={highlightActive && idx === activeIndex}
-              liveAction={liveAction}
-              activeStepId={activeStepId}
-              streaming={streaming}
-              facts={facts}
-              surfaceMode={surfaceMode}
-              phase={phase}
-              expanded={expandedStationIds.has(station.id)}
-              onToggleExpand={
-                phase === "completed"
-                  ? () => toggleStationExpand(station.id)
-                  : undefined
-              }
-              onRetryCapability={onRetryCapability}
-              retrying={retrying}
-              immersionOverlay={immersionOverlay}
-            />
-          );
-          return collapseHeader ? (
-            <React.Fragment key={station.id}>
-              {collapseHeader}
-              {stationRow}
-            </React.Fragment>
-          ) : (
-            <React.Fragment key={station.id}>{stationRow}</React.Fragment>
-          );
+            return collapseHeader ? (
+              <React.Fragment key={station.id}>
+                {collapseHeader}
+                {stationRow}
+              </React.Fragment>
+            ) : (
+              <React.Fragment key={station.id}>{stationRow}</React.Fragment>
+            );
           });
         })()}
       </div>

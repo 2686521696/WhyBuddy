@@ -15,7 +15,7 @@ export function deriveLineageHighlightNodeIds(state: V5SessionState): string[] {
     if (seenArt.has(id)) continue;
     seenArt.add(id);
     artifactIds.add(id);
-    const art = (state.artifacts || []).find((a) => a.id === id);
+    const art = (state.artifacts || []).find(a => a.id === id);
     for (const ref of art?.evidenceRefs || []) {
       if (!seenArt.has(ref)) queue.push(ref);
     }
@@ -43,15 +43,16 @@ function graphNodeForArtifactDirect(
   artifactId: string
 ): string | undefined {
   const direct = (state.graph?.nodes || []).find(
-    (n) => (n as { producedArtifactId?: string }).producedArtifactId === artifactId
+    n =>
+      (n as { producedArtifactId?: string }).producedArtifactId === artifactId
   );
   if (direct) return direct.id;
 
-  const art = (state.artifacts || []).find((a) => a.id === artifactId);
+  const art = (state.artifacts || []).find(a => a.id === artifactId);
   const runId = art?.producedBy?.capabilityRunId;
   if (runId) {
     const byRun = (state.graph?.nodes || []).find(
-      (n) => (n as { capabilityRunId?: string }).capabilityRunId === runId
+      n => (n as { capabilityRunId?: string }).capabilityRunId === runId
     );
     if (byRun) return byRun.id;
   }

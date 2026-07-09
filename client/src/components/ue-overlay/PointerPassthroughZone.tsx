@@ -26,16 +26,16 @@ export function PointerPassthroughZone({
     <div
       className={cn(
         "absolute inset-0",
-        defaultPassthrough ? "pointer-events-none" : "pointer-events-auto",
+        defaultPassthrough ? "pointer-events-none" : "pointer-events-auto"
       )}
       data-testid="ue-passthrough-zone-container"
     >
-      {passthroughZones.map((zone) => (
+      {passthroughZones.map(zone => (
         <div
           key={zone.id}
           className={cn(
             "absolute",
-            zone.passthrough ? "pointer-events-none" : "pointer-events-auto",
+            zone.passthrough ? "pointer-events-none" : "pointer-events-auto"
           )}
           style={{
             top: zone.bounds.top,

@@ -91,7 +91,10 @@ import type { AppLocale } from "@/lib/locale";
 import { BlueprintWallConsoleOverlay } from "./BlueprintWallConsoleOverlay";
 import { BlueprintWallEmptyState } from "./BlueprintWallEmptyState";
 import { BlueprintWallGraphControls } from "./BlueprintWallGraphControls";
-import { BlueprintWallGraphNodeCard, CARD_WIDTH } from "./BlueprintWallGraphNodeCard";
+import {
+  BlueprintWallGraphNodeCard,
+  CARD_WIDTH,
+} from "./BlueprintWallGraphNodeCard";
 import { BlueprintWallMetricsRail } from "./BlueprintWallMetricsRail";
 import {
   BLUEPRINT_WALL_FLOW_GRAPH_LAYOUT,
@@ -171,15 +174,13 @@ function makeNodeComponent(
   previewSummary: BlueprintWallProcessData["previewSummary"],
   locale: AppLocale | undefined
 ): (datum: { data?: BlueprintFlowGraphNodeData }) => ReactElement {
-  return (datum) => {
+  return datum => {
     // datum.data 由 mapper 保证存在；防御性兜底避免回调在异常数据下抛错冒泡进 G6。
     const data = datum.data as BlueprintFlowGraphNodeData;
     return (
       <BlueprintWallGraphNodeCard
         data={data}
-        previewSummary={
-          data?.type === "preview" ? previewSummary : undefined
-        }
+        previewSummary={data?.type === "preview" ? previewSummary : undefined}
         locale={locale}
       />
     );
@@ -280,8 +281,7 @@ export function BlueprintWallProcessGraphHud({
     if (!graph) return;
     // 以当前缩放为基准乘以步进倍率，再夹紧到 wall-safe 区间后绝对设值（zoomTo），
     // 比 zoomBy 更可控：任何路径都不会越过 min/max（Req 9.7）。
-    const current =
-      typeof graph.getZoom === "function" ? graph.getZoom() : 1;
+    const current = typeof graph.getZoom === "function" ? graph.getZoom() : 1;
     const target = clampWallZoom(current * ratio);
     void graph.zoomTo?.(target);
   }, []);

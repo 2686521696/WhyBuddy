@@ -36,11 +36,23 @@ export const ROLE_LABELS: Record<string, Record<AppLocale, string>> = {
   "review-auditor": { "zh-CN": "评审审计员", "en-US": "Review Auditor" },
 
   // Real runtime roleIds (from server/routes/blueprint.ts role definitions)
-  "role-product-decision": { "zh-CN": "产品决策者", "en-US": "Product Decision Lead" },
-  "role-architecture-planner": { "zh-CN": "架构规划师", "en-US": "Architecture Planner" },
-  "role-runtime-executor": { "zh-CN": "执行工程师", "en-US": "Runtime Executor" },
+  "role-product-decision": {
+    "zh-CN": "产品决策者",
+    "en-US": "Product Decision Lead",
+  },
+  "role-architecture-planner": {
+    "zh-CN": "架构规划师",
+    "en-US": "Architecture Planner",
+  },
+  "role-runtime-executor": {
+    "zh-CN": "执行工程师",
+    "en-US": "Runtime Executor",
+  },
   "role-quality-auditor": { "zh-CN": "质量审计员", "en-US": "Quality Auditor" },
-  "role-experience-presenter": { "zh-CN": "表现导演", "en-US": "Experience Presenter" },
+  "role-experience-presenter": {
+    "zh-CN": "表现导演",
+    "en-US": "Experience Presenter",
+  },
   "role-memory-curator": { "zh-CN": "记忆管理员", "en-US": "Memory Curator" },
 
   // Real autopilot job role ids (from role-id-bridge + role timelines).
@@ -48,18 +60,33 @@ export const ROLE_LABELS: Record<string, Record<AppLocale, string>> = {
   // they would render as raw machine ids in both the right rail and the 3D
   // nameplate. Listing them here makes them KNOWN/canonical so the shared
   // displayLabel shows full human-readable names instead of abbreviations.
-  "intake-coordinator": { "zh-CN": "需求协调员", "en-US": "Intake Coordinator" },
-  "product-strategist": { "zh-CN": "产品策略师", "en-US": "Product Strategist" },
-  "repository-analyst": { "zh-CN": "仓库分析师", "en-US": "Repository Analyst" },
+  "intake-coordinator": {
+    "zh-CN": "需求协调员",
+    "en-US": "Intake Coordinator",
+  },
+  "product-strategist": {
+    "zh-CN": "产品策略师",
+    "en-US": "Product Strategist",
+  },
+  "repository-analyst": {
+    "zh-CN": "仓库分析师",
+    "en-US": "Repository Analyst",
+  },
   "spec-architect": { "zh-CN": "规格架构师", "en-US": "Spec Architect" },
   "spec-author": { "zh-CN": "规格作者", "en-US": "Spec Author" },
-  "executor-architect": { "zh-CN": "执行架构师", "en-US": "Executor Architect" },
+  "executor-architect": {
+    "zh-CN": "执行架构师",
+    "en-US": "Executor Architect",
+  },
   "runtime-quality-auditor": {
     "zh-CN": "运行时质量审计员",
     "en-US": "Runtime Quality Auditor",
   },
   "repo-engineer": { "zh-CN": "仓库工程师", "en-US": "Repo Engineer" },
-  "product-researcher": { "zh-CN": "产品研究员", "en-US": "Product Researcher" },
+  "product-researcher": {
+    "zh-CN": "产品研究员",
+    "en-US": "Product Researcher",
+  },
 
   // Legacy short-form roleIds (from tests and older event sources)
   planner: { "zh-CN": "规划师", "en-US": "Planner" },
@@ -110,5 +137,7 @@ const STAGE_LABELS: Record<AppLocale, Record<number, string>> = {
  */
 export function resolveStageLabel(index: number, locale: AppLocale): string {
   const labels = STAGE_LABELS[locale] ?? STAGE_LABELS["en-US"];
-  return labels[index] ?? (locale === "zh-CN" ? `阶段 ${index}` : `Stage ${index}`);
+  return (
+    labels[index] ?? (locale === "zh-CN" ? `阶段 ${index}` : `Stage ${index}`)
+  );
 }

@@ -115,11 +115,13 @@ function expandPanelRoleChildren(
   let critiquesSrc: any[] = [];
   if (runId) {
     const evs = eventsByRun(state).get(runId) || [];
-    critiquesSrc = evs.filter((e: any) => e.kind === "role_critique").map((e: any) => ({
-      fromRole: e.roleId,
-      targetRole: e.targetRoleId,
-      content: e.text,
-    }));
+    critiquesSrc = evs
+      .filter((e: any) => e.kind === "role_critique")
+      .map((e: any) => ({
+        fromRole: e.roleId,
+        targetRole: e.targetRoleId,
+        content: e.text,
+      }));
   }
   if (critiquesSrc.length === 0 && Array.isArray(pl?.critiques)) {
     critiquesSrc = pl.critiques;
@@ -136,7 +138,7 @@ function expandPanelRoleChildren(
         id: `${parent.id}-challenge-${from}-to-${to}`,
         source: fromId,
         target: toId,
-        type: "challenges" as any,  // non-depends_on !
+        type: "challenges" as any, // non-depends_on !
         label: "质疑",
       });
     }
@@ -151,7 +153,9 @@ export function expandReasoningChain(
   events: ReasoningEvent[]
 ): { nodes: BrainstormReasoningNode[]; edges: BrainstormReasoningEdge[] } {
   const subEvents = (events || [])
-    .filter((e: any) => ["think", "observe", "tool_call", "subtask"].includes(e.kind))
+    .filter((e: any) =>
+      ["think", "observe", "tool_call", "subtask"].includes(e.kind)
+    )
     .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
 
   const nodes: BrainstormReasoningNode[] = [];
@@ -165,7 +169,7 @@ export function expandReasoningChain(
       title: ev.kind,
       body: String(ev.text || "").slice(0, 200),
       // projection-only derived fields
-      ...( { eventKind: ev.kind } as any ),
+      ...({ eventKind: ev.kind } as any),
       derivedFrom: [parent.id],
     });
     edges.push({
@@ -189,16 +193,21 @@ function artifactForNode(
 ) {
   const id = node.producedArtifactId;
   if (id) {
-    return (state.artifacts || []).find((a) => a.id === id);
+    return (state.artifacts || []).find(a => a.id === id);
   }
   const runId = node.capabilityRunId;
   if (!runId) return undefined;
-  return (state.artifacts || []).find((a) => a.producedBy?.capabilityRunId === runId);
+  return (state.artifacts || []).find(
+    a => a.producedBy?.capabilityRunId === runId
+  );
 }
 
 function resolveCapabilityRunId(
   state: V5SessionState,
-  parent: BrainstormReasoningNode & { capabilityRunId?: string; producedArtifactId?: string }
+  parent: BrainstormReasoningNode & {
+    capabilityRunId?: string;
+    producedArtifactId?: string;
+  }
 ): string | undefined {
   if (parent.capabilityRunId) return parent.capabilityRunId;
   const art = artifactForNode(state, parent);
@@ -293,7 +302,10 @@ function derivePhaseFacts(
     for (const trace of latestUiTurn.actions as ActionTrace[]) {
       if (trace.turnId && trace.turnId !== turnId) continue;
       let kind: PhaseKind = trace.ok ? "completed" : "observing";
-      if (!trace.ok && /fail|error|失败|reject|打回/i.test(String(trace.label || ""))) {
+      if (
+        !trace.ok &&
+        /fail|error|失败|reject|打回/i.test(String(trace.label || ""))
+      ) {
         kind = "failed";
       }
       push({
@@ -311,13 +323,16 @@ function derivePhaseFacts(
   // instead of only the short chip label from latestUiTurn.steps.
   // K6.3: strict - only use exact runId, no capId fallback for phase/ledger (宁缺毋滥)
   const run = runId
-    ? (state.capabilityRuns || []).find((r) => r.id === runId)
+    ? (state.capabilityRuns || []).find(r => r.id === runId)
     : undefined;
 
   if (run) {
-    const ground = run.gateResults?.find((g) => g.gateId === "ground" || g.gateId === "G-GROUND");
+    const ground = run.gateResults?.find(
+      g => g.gateId === "ground" || g.gateId === "G-GROUND"
+    );
     if (ground) {
-      const checked = ground.checkedArtifactIds?.length || run.inputs?.length || 0;
+      const checked =
+        ground.checkedArtifactIds?.length || run.inputs?.length || 0;
       const ev = ground.evidenceRefs?.length || 0;
       const detail = ground.detail || ground.reason || "";
       const obsBody = detail
@@ -330,7 +345,9 @@ function derivePhaseFacts(
         sourceKey: `run:${run.id}:ground`,
       });
     }
-    const commitGate = run.gateResults?.find((g) => g.gateId === "commit" || g.gateId === "T_GATE");
+    const commitGate = run.gateResults?.find(
+      g => g.gateId === "commit" || g.gateId === "T_GATE"
+    );
     if (commitGate) {
       const detail = commitGate.detail || commitGate.reason || "";
       const thkBody = detail
@@ -347,7 +364,7 @@ function derivePhaseFacts(
     // Rich completed: resolve real artifacts for summary instead of raw ids (core of content thickness fix)
     if (run.outputs?.length > 0) {
       const arts = run.outputs
-        .map((oid) => (state.artifacts || []).find((a) => a.id === oid))
+        .map(oid => (state.artifacts || []).find(a => a.id === oid))
         .filter(Boolean) as any[];
       if (arts.length > 0) {
         const a0 = arts[0];
@@ -360,9 +377,15 @@ function derivePhaseFacts(
           // risk specific: list first risks
           const risks = (a0?.payload as any)?.risks || [];
           const riskLines = Array.isArray(risks)
-            ? risks.slice(0, 3).map((r: any) => `• ${String(r.title || r.label || r).slice(0, 48)}`).join("\n")
+            ? risks
+                .slice(0, 3)
+                .map(
+                  (r: any) =>
+                    `• ${String(r.title || r.label || r).slice(0, 48)}`
+                )
+                .join("\n")
             : "";
-          compBody = `完成 · 风险分析\n${t || "识别风险"}\n${riskLines || (s ? s.slice(0, 120) : (c ? c.split("\n").slice(0, 3).join(" ") : ""))}`;
+          compBody = `完成 · 风险分析\n${t || "识别风险"}\n${riskLines || (s ? s.slice(0, 120) : c ? c.split("\n").slice(0, 3).join(" ") : "")}`;
         } else if (k === "report" || k === "synthesis") {
           compBody = `完成 · ${k === "report" ? "报告" : "综合"}\n${t || "产出"}\n${(s || c.split("\n")[0] || "").slice(0, 140)}`;
         } else if (k === "evidence") {
@@ -390,9 +413,15 @@ function derivePhaseFacts(
 
   if (runId) {
     // decisionLedger rationale for "思考" depth (prefer over thin gate)
-    const ledgers = (state.decisionLedger || []).filter((d: any) =>
-      ledgerMatchesRun(String(d.rationale || d.id || ""), runId, capId, run?.turnId) ||
-      (d.turnId && d.turnId === run?.turnId)
+    const ledgers = (state.decisionLedger || []).filter(
+      (d: any) =>
+        ledgerMatchesRun(
+          String(d.rationale || d.id || ""),
+          runId,
+          capId,
+          run?.turnId
+        ) ||
+        (d.turnId && d.turnId === run?.turnId)
     );
     for (const ld of ledgers.slice(0, 1)) {
       const rat = String(ld.rationale || "").trim();
@@ -410,7 +439,9 @@ function derivePhaseFacts(
       const text = String(c.text || "");
       if (!/\[T_LEDGER\]|\[G-GROUND\]/i.test(text)) continue;
       if (!ledgerMatchesRun(text, runId, capId, run?.turnId)) continue;
-      const kind: PhaseKind = /\[G-GROUND\]/i.test(text) ? "observing" : "thinking";
+      const kind: PhaseKind = /\[G-GROUND\]/i.test(text)
+        ? "observing"
+        : "thinking";
       push({
         kind,
         label: PHASE_LABEL[kind],
@@ -426,7 +457,9 @@ function derivePhaseFacts(
   const bestByKind = new Map<PhaseKind, PhaseFact>();
   for (const f of facts) {
     const prev = bestByKind.get(f.kind);
-    const isRich = /风险|报告|综合|证据|非空|title|引用|检查对象|调度判断/i.test(f.body) || f.body.length > 35;
+    const isRich =
+      /风险|报告|综合|证据|非空|title|引用|检查对象|调度判断/i.test(f.body) ||
+      f.body.length > 35;
     if (!prev || isRich || f.body.length > prev.body.length) {
       bestByKind.set(f.kind, f);
     }
@@ -446,7 +479,7 @@ function expandEvidenceChildren(
   const edges: BrainstormReasoningEdge[] = [];
 
   for (const refId of refs) {
-    const upstream = (state.artifacts || []).find((a) => a.id === refId);
+    const upstream = (state.artifacts || []).find(a => a.id === refId);
     const childId = `${parent.id}::ev-${refId}`;
     nodes.push({
       id: childId,
@@ -484,7 +517,9 @@ function isSpecTreeMetaLine(trimmed: string): boolean {
  * 跳过 gateNote + 头行； [root] 明确 depth=1；├─ =2；│  └─ =3。
  * 保留原 markdown - 兜底（其他来源的树序列化）。
  */
-function parseSpecTreeLines(content: string): Array<{ id: string; title: string; depth: number }> {
+function parseSpecTreeLines(
+  content: string
+): Array<{ id: string; title: string; depth: number }> {
   const rows: Array<{ id: string; title: string; depth: number }> = [];
   const typeCounts = new Map<string, number>();
 
@@ -496,7 +531,9 @@ function parseSpecTreeLines(content: string): Array<{ id: string; title: string;
 
     // 优先：真实 formatTreeContent 产出格式（[type] title: summary）
     // 显式识别 root / ├─ / │  └─ 前缀来决定 depth
-    const fmt = rawLine.match(/^(\s*(?:├─\s*|│\s*└─\s*)?)\[([^\]]+)\]\s*([^:]+):\s*(.+)$/);
+    const fmt = rawLine.match(
+      /^(\s*(?:├─\s*|│\s*└─\s*)?)\[([^\]]+)\]\s*([^:]+):\s*(.+)$/
+    );
     if (fmt) {
       const prefix = fmt[1] || "";
       let depth = 1;
@@ -509,7 +546,8 @@ function parseSpecTreeLines(content: string): Array<{ id: string; title: string;
       const title = fmt[3].trim().slice(0, 80);
       const count = (typeCounts.get(nodeType) ?? 0) + 1;
       typeCounts.set(nodeType, count);
-      const id = nodeType === "root" && count === 1 ? "root" : `${nodeType}-${count}`;
+      const id =
+        nodeType === "root" && count === 1 ? "root" : `${nodeType}-${count}`;
 
       rows.push({ id, title, depth: Math.min(MAX_TREE_DEPTH, depth) });
       if (rows.length >= 12) break;
@@ -544,7 +582,10 @@ function expandSpecTreeChildren(
   ];
 
   for (const row of rows) {
-    while (parentStack.length > 1 && parentStack[parentStack.length - 1].depth >= row.depth) {
+    while (
+      parentStack.length > 1 &&
+      parentStack[parentStack.length - 1].depth >= row.depth
+    ) {
       parentStack.pop();
     }
     const parentEntry = parentStack[parentStack.length - 1];
@@ -612,28 +653,41 @@ export function expandProjectionNodes(
   const extraNodes: BrainstormReasoningNode[] = [];
   const extraEdges: BrainstormReasoningEdge[] = [];
 
-  const mains = baseNodes.filter((n) => !isProjectionChildId(n.id));
+  const mains = baseNodes.filter(n => !isProjectionChildId(n.id));
 
   for (const parent of mains) {
     if (parent.type === "question") continue;
 
-    const { nodes: evNodes, edges: evEdges } = expandEvidenceChildren(state, parent);
+    const { nodes: evNodes, edges: evEdges } = expandEvidenceChildren(
+      state,
+      parent
+    );
     extraNodes.push(...evNodes);
     extraEdges.push(...evEdges);
 
-    const { nodes: treeNodes, edges: treeEdges } = expandSpecTreeChildren(state, parent);
+    const { nodes: treeNodes, edges: treeEdges } = expandSpecTreeChildren(
+      state,
+      parent
+    );
     extraNodes.push(...treeNodes);
     extraEdges.push(...treeEdges);
 
     // V5.3 P3.1: default expand for collaboration view (pass flag; derive/viewMode will drive in full)
-    const { nodes: panelNodes, edges: panelEdges } = expandPanelRoleChildren(state, parent, { defaultExpanded: true });
+    const { nodes: panelNodes, edges: panelEdges } = expandPanelRoleChildren(
+      state,
+      parent,
+      { defaultExpanded: true }
+    );
     extraNodes.push(...panelNodes);
     extraEdges.push(...panelEdges);
 
     // Relaxed: phases for resolved or completed capability nodes (fresh new topics after reset
     // often have status "completed" from enrichNodeStatus once art is gated_pass, not "resolved").
     // This ensures after 重置 + new topic, the ::phase- children still get generated.
-    const isFinished = (parent.status as any) === "resolved" || (parent.status as any) === "completed" || (parent.status as any) === "done";
+    const isFinished =
+      (parent.status as any) === "resolved" ||
+      (parent.status as any) === "completed" ||
+      (parent.status as any) === "done";
     if (parent.capabilityId && isFinished) {
       const phaseFacts = derivePhaseFacts(state, parent, latestUiTurn);
       for (const fact of phaseFacts) {

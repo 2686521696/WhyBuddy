@@ -38,7 +38,7 @@ function prep(turnId: string, goal = "对比运维成本") {
 describe("Property 1: re-entry when budget allows", () => {
   it("produces multiple loops before a guard stops the drive", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 2, max: 4 }), async (maxLoops) => {
+      fc.asyncProperty(fc.integer({ min: 2, max: 4 }), async maxLoops => {
         const { preparedState } = prep("p1");
         const router = createDeterministicRouter((_req, i) => ({
           selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
@@ -69,7 +69,7 @@ describe("Property 1: re-entry when budget allows", () => {
 describe("Property 5: maxLoopsPerMessage stops with budget_exhausted", () => {
   it("loop count equals cap and stopReason is budget_exhausted", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async (maxLoops) => {
+      fc.asyncProperty(fc.integer({ min: 1, max: 5 }), async maxLoops => {
         const { preparedState } = prep("p5");
         // Evolved contract: route.compare now parks the drive at G_CONFIRM (await_confirm,
         // S12 interactive gate — the user must pick a branch; see
@@ -109,27 +109,37 @@ describe("Property 8: maxRepeatPerCapability guard", () => {
     await fc.assert(
       fc.asyncProperty(
         fc.constantFrom(...ALL_V5_CAPABILITIES.slice(0, 12)),
-        async (cap) => {
+        async cap => {
           const policy = getDefaultBudgetPolicy();
           let s = createInitialSessionState("repeat", "s-p8");
           s = {
             ...s,
-            capabilityRuns: Array.from({ length: policy.maxRepeatPerCapability }, (_, i) => ({
-              id: `run-${i}`,
-              capabilityId: cap,
-              turnId: "prior",
-              inputs: [],
-              outputs: [],
-              gateResults: [],
-            })) as any,
+            capabilityRuns: Array.from(
+              { length: policy.maxRepeatPerCapability },
+              (_, i) => ({
+                id: `run-${i}`,
+                capabilityId: cap,
+                turnId: "prior",
+                inputs: [],
+                outputs: [],
+                gateResults: [],
+              })
+            ) as any,
           };
-          const { preparedState } = intakeMessage(s, { turnId: "p8", userText: "继续" });
+          const { preparedState } = intakeMessage(s, {
+            turnId: "p8",
+            userText: "继续",
+          });
 
           const result = await driveReasoningSession(preparedState, {
             turnSeedId: "p8",
             userText: "继续",
             router: createDeterministicRouter([
-              { selected: [{ capabilityId: cap, roleId: "角色" }], rationale: "retry", source: "llm" },
+              {
+                selected: [{ capabilityId: cap, roleId: "角色" }],
+                rationale: "retry",
+                source: "llm",
+              },
             ]),
             executor: createDeterministicCapabilityExecutor(),
           });
@@ -149,7 +159,7 @@ describe("Property 8: maxRepeatPerCapability guard", () => {
 describe("Property 9: capabilityRun id shape", () => {
   it("every committed run id matches ${loopTurnId}-run-${i}", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (loops) => {
+      fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async loops => {
         const { preparedState } = prep("p9");
         const script = Array.from({ length: loops }, (_, i) => ({
           selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
@@ -167,7 +177,7 @@ describe("Property 9: capabilityRun id shape", () => {
 
         for (const loop of result.loops) {
           const runs = (result.finalState.capabilityRuns || []).filter(
-            (r) => r.turnId === loop.loopTurnId
+            r => r.turnId === loop.loopTurnId
           );
           runs.forEach((run, i) => {
             expect(run.id).toBe(`${loop.loopTurnId}-run-${i}`);
@@ -190,7 +200,11 @@ describe("Property 3: per-loop DLEDGER", () => {
       turnSeedId: "p3",
       userText: "对比运维成本",
       router: createDeterministicRouter([
-        { selected: [{ capabilityId: "intent.clarify", roleId: "规划" }], rationale: "a", source: "llm" },
+        {
+          selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
+          rationale: "a",
+          source: "llm",
+        },
         { selected: [], rationale: "done", source: "llm", converged: true },
       ]),
       executor: createDeterministicCapabilityExecutor(),
@@ -199,7 +213,7 @@ describe("Property 3: per-loop DLEDGER", () => {
     const ledger = getDecisionLedger(result.finalState);
     for (const loop of result.loops) {
       if (loop.plan.selected?.length) {
-        expect(ledger.some((d) => d.turnId === loop.loopTurnId)).toBe(true);
+        expect(ledger.some(d => d.turnId === loop.loopTurnId)).toBe(true);
       }
     }
   });
@@ -213,7 +227,10 @@ describe("Property 2: budget re-evaluated before each loop", () => {
   it("stops early when session maxTurns would be exceeded on next loop", async () => {
     const policy = getDefaultBudgetPolicy();
     let s = createInitialSessionState("budget", "s-p2");
-    const turnIds = Array.from({ length: policy.maxTurns }, (_, i) => `prior-${i}`);
+    const turnIds = Array.from(
+      { length: policy.maxTurns },
+      (_, i) => `prior-${i}`
+    );
     s = {
       ...s,
       capabilityRuns: turnIds.map((tid, i) => ({
@@ -225,13 +242,20 @@ describe("Property 2: budget re-evaluated before each loop", () => {
         gateResults: [],
       })) as any,
     };
-    const { preparedState } = intakeMessage(s, { turnId: "p2-new", userText: "继续" });
+    const { preparedState } = intakeMessage(s, {
+      turnId: "p2-new",
+      userText: "继续",
+    });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "p2-new",
       userText: "继续",
       router: createDeterministicRouter([
-        { selected: [{ capabilityId: "intent.clarify", roleId: "规划" }], rationale: "x", source: "llm" },
+        {
+          selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
+          rationale: "x",
+          source: "llm",
+        },
       ]),
       executor: createDeterministicCapabilityExecutor(),
       maxLoopsPerMessage: 5,
@@ -265,28 +289,57 @@ describe("Property 4: coverage_sufficient parking", () => {
           kind: "risk",
           trustLevel: "gated_pass",
           content: "风险已识别",
-          producedBy: { capabilityId: "risk.analyze", capabilityRunId: "r1", roleId: "安全" },
+          producedBy: {
+            capabilityId: "risk.analyze",
+            capabilityRunId: "r1",
+            roleId: "安全",
+          },
         },
         {
           id: "rep-1",
           kind: "report",
           trustLevel: "gated_pass",
           content: "报告结论",
-          producedBy: { capabilityId: "report.write", capabilityRunId: "r2", roleId: "综合" },
+          producedBy: {
+            capabilityId: "report.write",
+            capabilityRunId: "r2",
+            roleId: "综合",
+          },
         },
       ] as any,
       capabilityRuns: [
-        { id: "r1", capabilityId: "risk.analyze", turnId: "t0", inputs: [], outputs: [], gateResults: [] },
-        { id: "r2", capabilityId: "report.write", turnId: "t0", inputs: [], outputs: [], gateResults: [] },
+        {
+          id: "r1",
+          capabilityId: "risk.analyze",
+          turnId: "t0",
+          inputs: [],
+          outputs: [],
+          gateResults: [],
+        },
+        {
+          id: "r2",
+          capabilityId: "report.write",
+          turnId: "t0",
+          inputs: [],
+          outputs: [],
+          gateResults: [],
+        },
       ] as any,
     };
-    const { preparedState } = intakeMessage(s, { turnId: "p4", userText: "再报告" });
+    const { preparedState } = intakeMessage(s, {
+      turnId: "p4",
+      userText: "再报告",
+    });
 
     const result = await driveReasoningSession(preparedState, {
       turnSeedId: "p4",
       userText: "再报告",
       router: createDeterministicRouter([
-        { selected: [{ capabilityId: "report.write", roleId: "综合" }], rationale: "more", source: "llm" },
+        {
+          selected: [{ capabilityId: "report.write", roleId: "综合" }],
+          rationale: "more",
+          source: "llm",
+        },
       ]),
       executor: createDeterministicCapabilityExecutor(),
     });
@@ -303,30 +356,26 @@ describe("Property 4: coverage_sufficient parking", () => {
 describe("Property 7: no_progress parking", () => {
   it("evaluatePostRoundGuards returns no_progress when streak >= 2", () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: 2, max: 10 }),
-        (streak) => {
-          const accumulator: ReentryAccumulator = {
-            prevArtifactCount: 5,
-            prevResolvedGapIds: new Set(),
-            perCapabilityRunCount: new Map(),
-            loopCount: streak,
-            noProgressStreak: streak,
-          };
-          const state = createInitialSessionState("无进展", "s-p7");
-          const guard = evaluatePostRoundGuards(state, accumulator, {
-            maxLoops: 10,
-            budgetPolicy: getDefaultBudgetPolicy(),
-            turnId: "p7-loop-1",
-            userText: "继续",
-          });
-          expect(guard).toBe("no_progress");
-        }
-      ),
+      fc.property(fc.integer({ min: 2, max: 10 }), streak => {
+        const accumulator: ReentryAccumulator = {
+          prevArtifactCount: 5,
+          prevResolvedGapIds: new Set(),
+          perCapabilityRunCount: new Map(),
+          loopCount: streak,
+          noProgressStreak: streak,
+        };
+        const state = createInitialSessionState("无进展", "s-p7");
+        const guard = evaluatePostRoundGuards(state, accumulator, {
+          maxLoops: 10,
+          budgetPolicy: getDefaultBudgetPolicy(),
+          turnId: "p7-loop-1",
+          userText: "继续",
+        });
+        expect(guard).toBe("no_progress");
+      }),
       PBT_OPTS
     );
   });
-
 });
 
 /**
@@ -336,7 +385,7 @@ describe("Property 7: no_progress parking", () => {
 describe("Property 10: single reasoning state truth source", () => {
   it("driveReasoningSession produces globally unique artifact and capabilityRun ids", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 2, max: 4 }), async (maxLoops) => {
+      fc.asyncProperty(fc.integer({ min: 2, max: 4 }), async maxLoops => {
         const { preparedState } = prep("p10");
         const result = await driveReasoningSession(preparedState, {
           turnSeedId: "p10",
@@ -350,8 +399,8 @@ describe("Property 10: single reasoning state truth source", () => {
           maxLoopsPerMessage: maxLoops,
         });
 
-        const artIds = (result.finalState.artifacts || []).map((a) => a.id);
-        const runIds = (result.finalState.capabilityRuns || []).map((r) => r.id);
+        const artIds = (result.finalState.artifacts || []).map(a => a.id);
+        const runIds = (result.finalState.capabilityRuns || []).map(r => r.id);
         expect(new Set(artIds).size).toBe(artIds.length);
         expect(new Set(runIds).size).toBe(runIds.length);
       }),
@@ -363,8 +412,8 @@ describe("Property 10: single reasoning state truth source", () => {
     clearSlideRuleSessionStore();
     const memStore = new Map<string, V5SessionState>();
     setSlideRuleSessionStore({
-      load: async (sid) => memStore.get(sid),
-      save: async (state) => {
+      load: async sid => memStore.get(sid),
+      save: async state => {
         memStore.set(state.sessionId, state);
         return state;
       },
@@ -372,7 +421,10 @@ describe("Property 10: single reasoning state truth source", () => {
 
     const sessionId = "p10-store";
     let s = await loadOrCreateSessionState(sessionId, "权限系统");
-    const { preparedState, context } = intakeMessage(s, { turnId: "p10-single", userText: "分析" });
+    const { preparedState, context } = intakeMessage(s, {
+      turnId: "p10-single",
+      userText: "分析",
+    });
     const { newState: afterSingle } = orchestrateReasoningTurn(preparedState, {
       ...context,
       proposedPlan: {
@@ -384,12 +436,19 @@ describe("Property 10: single reasoning state truth source", () => {
     await saveSessionState(afterSingle);
 
     const loaded = await loadOrCreateSessionState(sessionId, "权限系统");
-    const { preparedState: prep2 } = intakeMessage(loaded, { turnId: "p10-multi", userText: "继续" });
+    const { preparedState: prep2 } = intakeMessage(loaded, {
+      turnId: "p10-multi",
+      userText: "继续",
+    });
     const driven = await driveReasoningSession(prep2, {
       turnSeedId: "p10-multi",
       userText: "继续",
       router: createDeterministicRouter([
-        { selected: [{ capabilityId: "intent.clarify", roleId: "规划" }], rationale: "m", source: "llm" },
+        {
+          selected: [{ capabilityId: "intent.clarify", roleId: "规划" }],
+          rationale: "m",
+          source: "llm",
+        },
         { selected: [], rationale: "done", source: "llm", converged: true },
       ]),
       executor: createDeterministicCapabilityExecutor(),
@@ -397,8 +456,8 @@ describe("Property 10: single reasoning state truth source", () => {
     await saveSessionState(driven.finalState);
 
     const final = await loadOrCreateSessionState(sessionId, "权限系统");
-    const artIds = (final.artifacts || []).map((a) => a.id);
-    const runIds = (final.capabilityRuns || []).map((r) => r.id);
+    const artIds = (final.artifacts || []).map(a => a.id);
+    const runIds = (final.capabilityRuns || []).map(r => r.id);
     expect(new Set(artIds).size).toBe(artIds.length);
     expect(new Set(runIds).size).toBe(runIds.length);
     clearSlideRuleSessionStore();
@@ -416,8 +475,16 @@ describe("Property 6: upstream visibility next loop", () => {
       turnSeedId: "p6",
       userText: "分析风险并写报告",
       router: createDeterministicRouter([
-        { selected: [{ capabilityId: "risk.analyze", roleId: "安全" }], rationale: "risk", source: "llm" },
-        { selected: [{ capabilityId: "report.write", roleId: "综合" }], rationale: "report", source: "llm" },
+        {
+          selected: [{ capabilityId: "risk.analyze", roleId: "安全" }],
+          rationale: "risk",
+          source: "llm",
+        },
+        {
+          selected: [{ capabilityId: "report.write", roleId: "综合" }],
+          rationale: "report",
+          source: "llm",
+        },
         { selected: [], rationale: "done", source: "llm", converged: true },
       ]),
       executor: createDeterministicCapabilityExecutor(),
@@ -425,12 +492,12 @@ describe("Property 6: upstream visibility next loop", () => {
     });
 
     fc.assert(
-      fc.property(fc.constant(result), (res) => {
+      fc.property(fc.constant(result), res => {
         if (res.loops.length < 2) return true;
         const firstArts = res.loops[0].committedArtifactIds;
         if (!firstArts.length) return true;
         const inputs = findInputsForCapability(res.finalState, "report.write");
-        return firstArts.some((id) => inputs.includes(id)) || inputs.length >= 0;
+        return firstArts.some(id => inputs.includes(id)) || inputs.length >= 0;
       }),
       { numRuns: 1 }
     );

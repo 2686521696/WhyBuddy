@@ -30,12 +30,15 @@ const NUM_RUNS = 200;
 // Arbitraries
 // ---------------------------------------------------------------------------
 
-const scopeArb: fc.Arbitrary<GenerationScope> = fc.constantFrom("all", "single");
+const scopeArb: fc.Arbitrary<GenerationScope> = fc.constantFrom(
+  "all",
+  "single"
+);
 
 const inFlightArb: fc.Arbitrary<GenerationScope | null> = fc.constantFrom(
   "all",
   "single",
-  null,
+  null
 );
 
 const optionalString = fc.option(fc.string(), { nil: undefined });
@@ -43,7 +46,7 @@ const optionalString = fc.option(fc.string(), { nil: undefined });
 const errorArb: fc.Arbitrary<{ message?: string; detail?: string } | null> =
   fc.oneof(
     fc.constant<{ message?: string; detail?: string } | null>(null),
-    fc.record({ message: optionalString, detail: optionalString }),
+    fc.record({ message: optionalString, detail: optionalString })
   );
 
 /**
@@ -66,18 +69,14 @@ const inputArb: fc.Arbitrary<DeriveGenerationStateInput> = fc
     hasOptimistic: fc.boolean(),
     optimisticScope: scopeArb,
   })
-  .chain((base) =>
+  .chain(base =>
     fc
       .oneof(
         fc.integer({ min: -2_000, max: base.timeoutMs - 1 }),
         fc.integer({ min: base.timeoutMs, max: base.timeoutMs + 100_000 }),
-        fc.constantFrom(
-          base.timeoutMs - 1,
-          base.timeoutMs,
-          base.timeoutMs + 1,
-        ),
+        fc.constantFrom(base.timeoutMs - 1, base.timeoutMs, base.timeoutMs + 1)
       )
-      .map((elapsed) => {
+      .map(elapsed => {
         const optimistic = base.hasOptimistic
           ? { scope: base.optimisticScope, startedAt: base.startedAt }
           : null;
@@ -91,7 +90,7 @@ const inputArb: fc.Arbitrary<DeriveGenerationStateInput> = fc
           now: base.startedAt + elapsed,
           timeoutMs: base.timeoutMs,
         } satisfies DeriveGenerationStateInput;
-      }),
+      })
   );
 
 // ---------------------------------------------------------------------------
@@ -123,12 +122,12 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 1.1, 4.1
   it("Property 1: un-timed-out optimistic mark with no error always yields pending", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         fc.pre(input.error === null && hasUntimedOptimistic(input));
         const result = deriveGenerationState(input);
         expect(result.phase).toBe("pending");
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -136,10 +135,10 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 4.2, 4.4
   it("Property 2: in-flight bracket with no error never flickers to idle/empty (and is pending while not timed out)", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         fc.pre(
           input.error === null &&
-            (hasUntimedOptimistic(input) || input.inFlight !== null),
+            (hasUntimedOptimistic(input) || input.inFlight !== null)
         );
         const result = deriveGenerationState(input);
         // Anti-flicker core: never silently fall back to idle or empty.
@@ -150,7 +149,7 @@ describe("deriveGenerationState — correctness properties", () => {
           expect(result.phase).toBe("pending");
         }
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -158,12 +157,12 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 2.3, 2.5, 4.6, 5.6
   it("Property 3: error present always yields failure regardless of other fields", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         fc.pre(input.error !== null);
         const result = deriveGenerationState(input);
         expect(result.phase).toBe("failure");
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -171,12 +170,12 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 2.1, 2.2, 2.8, 4.3, 5.4
   it("Property 4: settled never yields idle and uniquely determines the terminal phase", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         fc.pre(input.authoritativeSettled === true);
         const result = deriveGenerationState(input);
         expect(result.phase).not.toBe("idle");
         expect(["pending", "success", "failure", "empty"]).toContain(
-          result.phase,
+          result.phase
         );
         // No in-flight, no optimistic at all, no error → terminal decided by docs.
         if (
@@ -185,11 +184,11 @@ describe("deriveGenerationState — correctness properties", () => {
           input.inFlight === null
         ) {
           expect(result.phase).toBe(
-            input.authoritativeHasDocs ? "success" : "empty",
+            input.authoritativeHasDocs ? "success" : "empty"
           );
         }
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -197,7 +196,7 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 4.5, 5.5
   it("Property 5: timeout boundary drives failure with timedOut, below boundary does not", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         fc.pre(input.optimistic !== null && input.error === null);
         const elapsed = input.now - input.optimistic!.startedAt;
         const result = deriveGenerationState(input);
@@ -210,7 +209,7 @@ describe("deriveGenerationState — correctness properties", () => {
           expect(result.phase).not.toBe("failure");
         }
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -218,7 +217,7 @@ describe("deriveGenerationState — correctness properties", () => {
   // Validates: Requirements 2.9
   it("Property 6: phase is pending iff in the active (non-timed-out) in-flight bracket", () => {
     fc.assert(
-      fc.property(inputArb, (input) => {
+      fc.property(inputArb, input => {
         const result = deriveGenerationState(input);
         const inActiveBracket =
           input.error === null &&
@@ -226,7 +225,7 @@ describe("deriveGenerationState — correctness properties", () => {
           !hasTimedOutOptimistic(input);
         expect(result.phase === "pending").toBe(inActiveBracket);
       }),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 
@@ -269,9 +268,9 @@ describe("deriveGenerationState — correctness properties", () => {
           const retried = deriveGenerationState(retryInput);
           expect(retried.phase).toBe("pending");
           expect(retried.scope).toBe(s);
-        },
+        }
       ),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 });

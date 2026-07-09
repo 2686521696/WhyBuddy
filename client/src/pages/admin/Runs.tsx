@@ -58,7 +58,9 @@ export function AdminRunsPage() {
                 </TableCell>
                 <TableCell>{formatAdminValue(run.projectId)}</TableCell>
                 <TableCell>{formatAdminValue(run.userId)}</TableCell>
-                <TableCell>{formatAdminDate(run.startedAt ?? run.createdAt)}</TableCell>
+                <TableCell>
+                  {formatAdminDate(run.startedAt ?? run.createdAt)}
+                </TableCell>
                 <TableCell>{formatAdminDate(run.completedAt)}</TableCell>
               </TableRow>
             ))}

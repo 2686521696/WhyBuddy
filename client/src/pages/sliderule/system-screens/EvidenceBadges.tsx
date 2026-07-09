@@ -11,13 +11,11 @@ import React from "react";
 import { evidenceSourceOf } from "./five-system-model";
 
 interface EvidenceBadgesProps {
-  evidence?:
-    | {
-        evidencePresent?: boolean;
-        artifactId?: string;
-        evidenceRef?: string;
-      }
-    | null;
+  evidence?: {
+    evidencePresent?: boolean;
+    artifactId?: string;
+    evidenceRef?: string;
+  } | null;
 }
 
 export function EvidenceBadges({ evidence }: EvidenceBadgesProps) {
@@ -30,7 +28,7 @@ export function EvidenceBadges({ evidence }: EvidenceBadgesProps) {
           data-testid={`evidence-source-${source.kind}`}
           className={
             source.kind === "llm"
-              ? "rounded-full bg-[#F8E8E0] px-2 py-0.5 text-[10px] font-medium text-[#C4633F]"
+              ? "rounded-full bg-[#e6f4ff] px-2 py-0.5 text-[10px] font-medium text-[#0958d9]"
               : "rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600"
           }
           title={

@@ -18,7 +18,8 @@ function isHealthyArtifact(
   staleSet: Set<string>
 ): boolean {
   return (
-    (artifact.trustLevel === "gated_pass" || artifact.trustLevel === "audited") &&
+    (artifact.trustLevel === "gated_pass" ||
+      artifact.trustLevel === "audited") &&
     !staleSet.has(artifact.id)
   );
 }
@@ -38,9 +39,9 @@ function countCommitGatesForReportRun(
   reportCapId: string
 ): { passed: number; total: number } {
   if (reportRunId) {
-    const run = (state.capabilityRuns || []).find((r) => r.id === reportRunId);
+    const run = (state.capabilityRuns || []).find(r => r.id === reportRunId);
     if (run?.gateResults?.length) {
-      const passed = run.gateResults.filter((g) => g.status === "passed").length;
+      const passed = run.gateResults.filter(g => g.status === "passed").length;
       return { passed, total: run.gateResults.length };
     }
   }
@@ -48,28 +49,26 @@ function countCommitGatesForReportRun(
   const snapshot = evaluateCommitGates(reportCapId, {
     groundingOk: hasGroundedExternalEvidence(state),
   });
-  const passed = snapshot.filter((g) => g.status === "passed").length;
+  const passed = snapshot.filter(g => g.status === "passed").length;
   return { passed, total: snapshot.length };
 }
 
 /** Read-only trust seal for Knife C terminal node header. */
 export function deriveTrustSeal(state: V5SessionState): TrustSealFacts {
   const stale = new Set(state.staleArtifactIds || []);
-  const trustedArtifacts = (state.artifacts || []).filter((a) =>
+  const trustedArtifacts = (state.artifacts || []).filter(a =>
     isHealthyArtifact(a, stale)
   );
   const groundedN = trustedArtifacts.filter(
-    (a) => a.kind === "evidence" && isGroundedProvenance(String(a.provenance || ""))
+    a =>
+      a.kind === "evidence" && isGroundedProvenance(String(a.provenance || ""))
   ).length;
 
   const report = latestTrustedReport(state);
   const reportCap = report?.producedBy?.capabilityId || "report.write";
   const reportRunId = report?.producedBy?.capabilityRunId;
-  const { passed: commitPassed, total: commitTotal } = countCommitGatesForReportRun(
-    state,
-    reportRunId,
-    reportCap
-  );
+  const { passed: commitPassed, total: commitTotal } =
+    countCommitGatesForReportRun(state, reportRunId, reportCap);
 
   const gcov = evaluateCoverageGate(state, [], state.coverageContract);
   const gcovLabel = gcov.passed ? "✓" : "缺口";

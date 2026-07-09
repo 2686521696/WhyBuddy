@@ -21,7 +21,7 @@ export const REPLAN_STAGE_ORDER: readonly ReplanStage[] = [
 ] as const;
 
 const STAGE_INDEX = new Map<ReplanStage, number>(
-  REPLAN_STAGE_ORDER.map((stage, index) => [stage, index]),
+  REPLAN_STAGE_ORDER.map((stage, index) => [stage, index])
 );
 
 function normalizeStage(raw: string | undefined): ReplanStage | undefined {
@@ -95,7 +95,7 @@ function stageFromArtifactType(type: string): ReplanStage | undefined {
 }
 
 export function getReplanArtifactStage(
-  artifact: ReplanArtifact,
+  artifact: ReplanArtifact
 ): ReplanStage | undefined {
   return normalizeStage(artifact.stage) ?? stageFromArtifactType(artifact.type);
 }
@@ -124,7 +124,7 @@ export function deriveDownstreamImpact({
   }
 
   const stages = Array.from(downstreamStages).sort(
-    (a, b) => STAGE_INDEX.get(a)! - STAGE_INDEX.get(b)!,
+    (a, b) => STAGE_INDEX.get(a)! - STAGE_INDEX.get(b)!
   );
 
   return {

@@ -68,11 +68,11 @@ describe("brainstormGraph store", () => {
       expect(state.sessionStatus).toBe("active");
       // handleSessionStarted now seeds one anchor node per role so that
       // challenge/support edges always have existing endpoint nodes.
-      expect(state.nodes.map((n) => n.id)).toEqual([
+      expect(state.nodes.map(n => n.id)).toEqual([
         "role:planner",
         "role:architect",
       ]);
-      expect(state.nodes.every((n) => n.status === "completed")).toBe(true);
+      expect(state.nodes.every(n => n.status === "completed")).toBe(true);
       expect(state.edges).toEqual([
         { sourceNodeId: "role:planner", targetNodeId: "role:architect" },
       ]);
@@ -226,9 +226,7 @@ describe("brainstormGraph store", () => {
       });
 
       // Reuses handleChallengeIssued: responder → challenger, kind "support".
-      expect(
-        selectChallengeEdges(useBrainstormGraphStore.getState()),
-      ).toEqual([
+      expect(selectChallengeEdges(useBrainstormGraphStore.getState())).toEqual([
         {
           challengerRoleId: "architect",
           targetRoleId: "planner",
@@ -254,9 +252,9 @@ describe("brainstormGraph store", () => {
         },
       });
 
-      expect(
-        selectChallengeEdges(useBrainstormGraphStore.getState()),
-      ).toEqual([]);
+      expect(selectChallengeEdges(useBrainstormGraphStore.getState())).toEqual(
+        []
+      );
     });
 
     it("combines a challenge then its rebuttal into challenge + support edges", () => {
@@ -282,9 +280,7 @@ describe("brainstormGraph store", () => {
         },
       });
 
-      expect(
-        selectChallengeEdges(useBrainstormGraphStore.getState()),
-      ).toEqual([
+      expect(selectChallengeEdges(useBrainstormGraphStore.getState())).toEqual([
         {
           challengerRoleId: "planner",
           targetRoleId: "architect",
@@ -325,14 +321,14 @@ describe("brainstormGraph store", () => {
       // The gate evaluation seeds one anchor node per required role
       // (decider, planner, architect) and then appends the gate decision node.
       expect(state.nodes).toHaveLength(4);
-      expect(state.nodes.map((n) => n.id)).toEqual([
+      expect(state.nodes.map(n => n.id)).toEqual([
         "role:decider",
         "role:planner",
         "role:architect",
         "gate:job-1:route_generation",
       ]);
       const gateNode = state.nodes.find(
-        (n) => n.id === "gate:job-1:route_generation",
+        n => n.id === "gate:job-1:route_generation"
       );
       expect(gateNode).toMatchObject({
         id: "gate:job-1:route_generation",
@@ -529,7 +525,7 @@ describe("brainstormGraph store", () => {
       const state = useBrainstormGraphStore.getState();
       // Edge from node-0 → node-1 should be removed
       const edgesFromDropped = state.edges.filter(
-        (e) => e.sourceNodeId === "node-0" || e.targetNodeId === "node-0"
+        e => e.sourceNodeId === "node-0" || e.targetNodeId === "node-0"
       );
       expect(edgesFromDropped).toHaveLength(0);
     });
@@ -588,7 +584,11 @@ describe("brainstormGraph store", () => {
   describe("selectors", () => {
     beforeEach(() => {
       const store = useBrainstormGraphStore.getState();
-      store.handleSessionStarted({ sessionId: "sess-1", mode: "discussion", roles: ["planner", "architect"] });
+      store.handleSessionStarted({
+        sessionId: "sess-1",
+        mode: "discussion",
+        roles: ["planner", "architect"],
+      });
       store.handleNodeCreated({
         sessionId: "sess-1",
         nodeId: "n1",

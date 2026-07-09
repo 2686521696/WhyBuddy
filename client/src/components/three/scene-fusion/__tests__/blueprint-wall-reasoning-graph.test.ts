@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
-import type { BlueprintGenerationJob, BlueprintSpecTree } from "@shared/blueprint/contracts";
+import type {
+  BlueprintGenerationJob,
+  BlueprintSpecTree,
+} from "@shared/blueprint/contracts";
 import type { BrainstormReasoningGraph } from "@shared/blueprint";
 
 import { deriveBlueprintWallReasoningGraph } from "../blueprint-wall-reasoning-graph";
 
-function makeJob(overrides: Partial<BlueprintGenerationJob> = {}): BlueprintGenerationJob {
+function makeJob(
+  overrides: Partial<BlueprintGenerationJob> = {}
+): BlueprintGenerationJob {
   return {
     id: "job-1",
     request: {
@@ -40,7 +45,9 @@ function makeEntry(
   } as AgentReasoningEntry;
 }
 
-function makeStructuredGraph(overrides: Partial<BrainstormReasoningGraph> = {}): BrainstormReasoningGraph {
+function makeStructuredGraph(
+  overrides: Partial<BrainstormReasoningGraph> = {}
+): BrainstormReasoningGraph {
   return {
     id: "graph-1",
     jobId: "job-1",
@@ -167,8 +174,12 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     });
 
     expect(result.mode).toBe("fallback");
-    expect(result.visibleNodes.some(node => node.roleLabel === "Runtime Executor")).toBe(true);
-    expect(result.visibleNodes.some(node => node.title.includes("hypothesis"))).toBe(true);
+    expect(
+      result.visibleNodes.some(node => node.roleLabel === "Runtime Executor")
+    ).toBe(true);
+    expect(
+      result.visibleNodes.some(node => node.title.includes("hypothesis"))
+    ).toBe(true);
   });
 
   it("uses selected SPEC node as the fallback central question", () => {
@@ -231,9 +242,15 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     expect(result.mode).toBe("fallback");
     expect(result.visibleNodes.map(node => node.type)).toContain("hypothesis");
     expect(result.visibleNodes.map(node => node.type)).toContain("risk");
-    expect(result.visibleNodes.map(node => node.roleLabel)).toContain("Market Scout");
-    expect(result.visibleNodes.map(node => node.roleLabel)).toContain("Risk Cartographer");
-    expect(result.visibleNodes.some(node => node.title === "Market Scout")).toBe(false);
+    expect(result.visibleNodes.map(node => node.roleLabel)).toContain(
+      "Market Scout"
+    );
+    expect(result.visibleNodes.map(node => node.roleLabel)).toContain(
+      "Risk Cartographer"
+    );
+    expect(
+      result.visibleNodes.some(node => node.title === "Market Scout")
+    ).toBe(false);
   });
 
   it("omits invalid structured graphs with edges that reference missing nodes", () => {
@@ -327,11 +344,38 @@ describe("deriveBlueprintWallReasoningGraph", () => {
         },
       ],
       edges: [
-        { id: "e1", source: "question-1", target: "evidence-1", type: "supports", label: "", sourceKind: "llm" },
-        { id: "e2", source: "evidence-1", target: "critique-1", type: "conflicts", label: "", sourceKind: "llm" },
-        { id: "e3", source: "critique-1", target: "rebuttal-1", type: "supports", label: "", sourceKind: "llm" },
+        {
+          id: "e1",
+          source: "question-1",
+          target: "evidence-1",
+          type: "supports",
+          label: "",
+          sourceKind: "llm",
+        },
+        {
+          id: "e2",
+          source: "evidence-1",
+          target: "critique-1",
+          type: "conflicts",
+          label: "",
+          sourceKind: "llm",
+        },
+        {
+          id: "e3",
+          source: "critique-1",
+          target: "rebuttal-1",
+          type: "supports",
+          label: "",
+          sourceKind: "llm",
+        },
       ],
-      consoleLines: [{ id: "c1", kind: "Report", text: "debate console should be ignored by Effect wall" }],
+      consoleLines: [
+        {
+          id: "c1",
+          kind: "Report",
+          text: "debate console should be ignored by Effect wall",
+        },
+      ],
     });
 
     const result = deriveBlueprintWallReasoningGraph({
@@ -340,14 +384,25 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     });
 
     // Must refuse debate nodes for the Effect path.
-    const types = result.visibleNodes.map((n) => n.type);
+    const types = result.visibleNodes.map(n => n.type);
     expect(types).not.toContain("critique");
     expect(types).not.toContain("rebuttal");
-    expect(result.visibleNodes.map((n) => n.id)).toEqual(["question-1", "evidence-1"]);
+    expect(result.visibleNodes.map(n => n.id)).toEqual([
+      "question-1",
+      "evidence-1",
+    ]);
 
     // Edges involving debate nodes must also be dropped.
-    expect(result.visibleEdges.some((e) => e.source === "critique-1" || e.target === "critique-1")).toBe(false);
-    expect(result.visibleEdges.some((e) => e.source === "rebuttal-1" || e.target === "rebuttal-1")).toBe(false);
+    expect(
+      result.visibleEdges.some(
+        e => e.source === "critique-1" || e.target === "critique-1"
+      )
+    ).toBe(false);
+    expect(
+      result.visibleEdges.some(
+        e => e.source === "rebuttal-1" || e.target === "rebuttal-1"
+      )
+    ).toBe(false);
 
     // The graph is still accepted as "structured" (after stripping), not forced to fallback.
     expect(result.mode).toBe("structured");
@@ -355,6 +410,8 @@ describe("deriveBlueprintWallReasoningGraph", () => {
     // Console isolation: debate-sourced consoleLines must not leak into the Effect/Reasoning
     // wall's consoleLines (they are dropped in stripDebateProtocolNodes when debate nodes present).
     expect(result.consoleLines).toHaveLength(0);
-    expect(result.consoleLines.some((l) => l.text.includes("debate console"))).toBe(false);
+    expect(
+      result.consoleLines.some(l => l.text.includes("debate console"))
+    ).toBe(false);
   });
 });

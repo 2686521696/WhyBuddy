@@ -750,9 +750,10 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     """
     import time as _time
 
+    from services.llm_error_text import humanize_llm_error
     from services.v5_capability_executor import _llm_generate_enabled
     from services.v5_explainable import EXPLAIN_INSTRUCTION, parse_explained_output
-    from sliderule_llm.client import call_llm
+    from sliderule_llm.client import call_llm_with_retry
 
     _auth(x_internal_key)
 
@@ -792,8 +793,11 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
     timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
     started = _time.monotonic()
     try:
-        result = call_llm(
+        # 瞬时错误（网关 5xx/超时/限流）带退避重试 3 次；非瞬时（鉴权/404）立即失败。
+        result = call_llm_with_retry(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_attempts=3,
+            backoff_ms=1500,
             temperature=0.4,
             max_tokens=600,
             timeout_ms=timeout_ms,
@@ -802,7 +806,8 @@ def aigc_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(
         return {
             "ok": False,
             "code": "LLM_GENERATE_FAILED",
-            "detail": str(exc)[:300],
+            # 展示层人话化：剥 HTML 错误页、5xx 标注瞬时故障（原因仍如实保留）
+            "detail": humanize_llm_error(str(exc))[:300],
             "elapsedMs": int((_time.monotonic() - started) * 1000),
         }
 
@@ -842,8 +847,9 @@ def skill_package_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] 
     import time as _time
 
     from services.v5_capability_executor import _llm_generate_enabled
+    from services.llm_error_text import humanize_llm_error
     from services.v5_skill_packages import build_skill_messages, get_skill_package
-    from sliderule_llm.client import call_llm
+    from sliderule_llm.client import call_llm_with_retry
 
     _auth(x_internal_key)
 
@@ -874,9 +880,11 @@ def skill_package_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] 
     started = _time.monotonic()
     try:
         # 原版 SKILL.md 全文做 system prompt；产出上限放宽（技能输出普遍比
-        # 单能力试跑长——章节草稿/研报段落级别）
-        result = call_llm(
+        # 单能力试跑长——章节草稿/研报段落级别）。瞬时错误带退避重试。
+        result = call_llm_with_retry(
             build_skill_messages(pkg, user_input),
+            max_attempts=3,
+            backoff_ms=1500,
             temperature=0.5,
             max_tokens=1600,
             timeout_ms=timeout_ms,
@@ -885,7 +893,7 @@ def skill_package_tryrun(payload: Dict[str, Any], x_internal_key: Optional[str] 
         return {
             "ok": False,
             "code": "LLM_GENERATE_FAILED",
-            "detail": str(exc)[:300],
+            "detail": humanize_llm_error(str(exc))[:300],
             "elapsedMs": int((_time.monotonic() - started) * 1000),
         }
 

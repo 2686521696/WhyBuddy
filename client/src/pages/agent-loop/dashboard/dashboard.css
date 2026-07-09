@@ -5,7 +5,7 @@
 }
 
 .native-dashboard {
-  background: #FAF9F5;
+  background: #f7f8fa;
   color: rgba(0, 0, 0, 0.88);
   height: 100%;
   min-height: 100vh;
@@ -17,7 +17,7 @@
 }
 
 .native-agent-shell {
-  background: #FAF9F5;
+  background: #f7f8fa;
   flex-direction: row;
   height: 100%;
   min-height: 0;
@@ -25,8 +25,9 @@
 }
 
 .native-agent-sidebar {
-  background: #FAF9F5;
-  border-right: 1px solid #E7E2D9;
+  /* 冷调壳体：侧栏白底与 #f7f8fa 主区分层（用户裁决：对齐 TRAE/Linear） */
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
   display: flex;
   flex: 0 0 220px;
   flex-direction: column;
@@ -50,7 +51,7 @@
 }
 
 .native-agent-brand:hover {
-  background: #F3EFE7;
+  background: #eef1f5;
 }
 
 .native-agent-brand-icon {
@@ -68,16 +69,16 @@
 }
 
 .native-agent-brand-name {
-  color: #14295E;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #14295e;
+  font-family: "DM Sans", system-ui, sans-serif;
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .native-agent-brand-domain {
-  color: #8f887d;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: #8c8c8c;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
 }
@@ -94,7 +95,7 @@
   background: transparent;
   border: 0;
   border-radius: 4px;
-  color: #34302A;
+  color: #262626;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -108,19 +109,19 @@
 
 .native-agent-nav-item:hover,
 .native-agent-help:hover {
-  background: #F3EFE7;
-  color: #B0552F;
+  background: #eef1f5;
+  color: #1677ff;
 }
 
 .native-agent-nav-item-active {
   /* 激活态只靠背景胶囊 + 文字色；左缘竖条去除（用户反馈：不需要） */
-  background: #F8E8E0;
-  color: #B0552F;
+  background: #e6f4ff;
+  color: #1677ff;
   font-weight: 700;
 }
 
 .native-agent-help {
-  border-top: 1px solid #EFEAE1;
+  border-top: 1px solid #e8eaee;
   border-radius: 0;
   margin-top: auto;
   padding-top: 10px;
@@ -140,7 +141,7 @@
   background: transparent;
   border: 0;
   border-radius: 5px;
-  color: #B0552F;
+  color: #1677ff;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -154,7 +155,7 @@
 }
 
 .native-agent-session-new:hover {
-  background: #F8E8E0;
+  background: #e6f4ff;
 }
 
 .native-agent-session-new-plus {
@@ -180,7 +181,7 @@
 }
 
 .native-agent-sessions-hint {
-  color: #b9b2a7;
+  color: #b1b7c0;
   font-size: 12px;
   padding: 6px 12px;
 }
@@ -193,11 +194,11 @@
 }
 
 .native-agent-session-row:hover {
-  background: #F3EFE7;
+  background: #eef1f5;
 }
 
 .native-agent-session-row-active {
-  background: #F8E8E0;
+  background: #e6f4ff;
 }
 
 .native-agent-session-item {
@@ -218,7 +219,7 @@
 }
 
 .native-agent-session-row-active .native-agent-session-item {
-  color: #B0552F;
+  color: #1677ff;
   font-weight: 600;
 }
 
@@ -228,7 +229,7 @@
   background: transparent;
   border: 0;
   border-radius: 3px;
-  color: #b9b2a7;
+  color: #b1b7c0;
   cursor: pointer;
   display: none;
   flex-shrink: 0;
@@ -247,13 +248,13 @@
 }
 
 .native-agent-session-delete:hover {
-  background: #ECE7DD;
-  color: #6b6558;
+  background: #ece7dd;
+  color: #667085;
 }
 
 .native-agent-session-delete-confirm,
 .native-agent-session-delete-confirm:hover {
-  background: #FDE8E8;
+  background: #fde8e8;
   color: #dc2626;
   font-weight: 700;
 }
@@ -280,8 +281,8 @@
 
 .native-header {
   align-items: center;
-  background: #FAF9F5;
-  border-bottom: 1px solid #E7E2D9;
+  background: #f7f8fa;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   flex: 0 0 auto;
   height: 48px;
@@ -1066,7 +1067,7 @@
 }
 
 .native-sliderule-content {
-  background: #FAF9F5;
+  background: #f7f8fa;
 }
 
 .native-sliderule-workbench {
@@ -1242,10 +1243,6 @@
   flex-direction: column;
 }
 
-
-
-
-
 .native-task-table-card .agent-ant-card-body {
   padding: 12px 6px 12px 12px;
 }
@@ -1378,8 +1375,6 @@
   color: #c4c9d2 !important;
   border-color: #e6edf7 !important;
 }
-
-
 
 .native-task-inspector .agent-ant-card-head {
   border-bottom-color: #edf2f9;
@@ -1696,7 +1691,11 @@
 }
 
 .native-flow-legend-redo {
-  background: repeating-linear-gradient(90deg, #ff4d4f 0 6px, transparent 6px 10px);
+  background: repeating-linear-gradient(
+    90deg,
+    #ff4d4f 0 6px,
+    transparent 6px 10px
+  );
 }
 
 .native-flow-legend-dot {
@@ -1800,7 +1799,10 @@
   --timeline-dot-size: 16px;
   display: grid;
   gap: var(--timeline-gap);
-  grid-template-columns: var(--timeline-col1) var(--timeline-dot-size) minmax(0, 1fr);
+  grid-template-columns: var(--timeline-col1) var(--timeline-dot-size) minmax(
+      0,
+      1fr
+    );
   min-height: 54px;
   position: relative;
 }
@@ -1809,7 +1811,10 @@
   background: #d6e5ff;
   bottom: -2px;
   content: "";
-  left: calc(var(--timeline-col1) + var(--timeline-gap) + (var(--timeline-dot-size) / 2) - 1px);
+  left: calc(
+    var(--timeline-col1) + var(--timeline-gap) +
+      (var(--timeline-dot-size) / 2) - 1px
+  );
   position: absolute;
   top: 18px;
   width: 2px;
@@ -1880,7 +1885,9 @@
 .native-code {
   background: transparent;
   color: rgba(232, 241, 255, 0.92);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
   font-size: 12px;
   line-height: 1.6;
   margin: 0;
@@ -2139,7 +2146,9 @@
 }
 
 /* profile crud UI 107 */
-.profile-actions button { margin-left: 4px; }
+.profile-actions button {
+  margin-left: 4px;
+}
 
 /* === Workbench polish to match effect diagrams === */
 
@@ -2154,7 +2163,7 @@
 }
 .native-topbar-brand {
   font-weight: 600;
-  color: #1F1E1B;
+  color: #1f2329;
   font-size: 14px;
 }
 .native-topbar-link {
@@ -2163,7 +2172,7 @@
   cursor: pointer;
 }
 .native-topbar-link:hover {
-  color: #C4633F;
+  color: #0958d9;
 }
 .native-topbar-runtime {
   color: #98a2b3;
@@ -2395,7 +2404,7 @@
 
 .native-agent-user {
   align-items: center;
-  border-top: 1px solid #efeae1;
+  border-top: 1px solid #e8eaee;
   display: flex;
   gap: 10px;
   margin-top: 10px;
@@ -2404,9 +2413,9 @@
 
 .native-agent-user-avatar {
   align-items: center;
-  background: #f0ede5;
+  background: #e9edf2;
   border-radius: 50%;
-  color: #6b6558;
+  color: #667085;
   display: inline-flex;
   flex-shrink: 0;
   font-size: 12px;
@@ -2425,7 +2434,7 @@
 }
 
 .native-agent-user-name {
-  color: #34302a;
+  color: #262626;
   font-size: 13px;
   font-weight: 600;
   overflow: hidden;
@@ -2434,19 +2443,19 @@
 }
 
 .native-agent-user-plan {
-  color: #a49c8c;
+  color: #98a2b3;
   font-size: 11px;
 }
 
 .native-agent-user-caret {
-  color: #a49c8c;
+  color: #98a2b3;
   font-size: 10px;
 }
 
 /* 帮助文档行：分隔线以下内容严格垂直居中（10px 上间距进 padding，内容盒 44px 居中） */
 .native-agent-help {
   border-radius: 0;
-  border-top: 1px solid #EFEAE1;
+  border-top: 1px solid #e8eaee;
   height: 54px;
   padding: 10px 12px 0;
 }

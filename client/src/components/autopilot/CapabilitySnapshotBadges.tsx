@@ -114,12 +114,9 @@ export function CapabilitySnapshotBadges({
       role="list"
       data-testid="capability-snapshot-badges"
       data-theme={theme}
-      className={
-        className ??
-        "flex flex-wrap items-center gap-2"
-      }
+      className={className ?? "flex flex-wrap items-center gap-2"}
     >
-      {badges.map((badge) => {
+      {badges.map(badge => {
         const tokenKey: VisualTokenKey =
           BADGE_TOKEN_KEY[badge.id] ?? FALLBACK_TOKEN_KEY;
         // background 使用语义 key 的 `light` 变体（深底），text 使用 `dark` 变体（亮字）。

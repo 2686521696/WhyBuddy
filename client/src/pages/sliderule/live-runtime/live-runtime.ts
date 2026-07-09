@@ -13,7 +13,10 @@
  * 纯函数模块：所有变更返回新对象，无副作用，便于单测与撤销。
  */
 
-import type { FiveSystemModel, WorkflowTransition } from "../system-screens/five-system-model";
+import type {
+  FiveSystemModel,
+  WorkflowTransition,
+} from "../system-screens/five-system-model";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,7 +59,9 @@ export interface RuntimeState {
 // Init
 // ---------------------------------------------------------------------------
 
-export function initRuntimeState(model: FiveSystemModel | null | undefined): RuntimeState {
+export function initRuntimeState(
+  model: FiveSystemModel | null | undefined
+): RuntimeState {
   const entities: Record<string, RuntimeRow[]> = {};
   for (const entity of model?.datamodel?.entities ?? []) {
     if (entity.id) entities[entity.id] = [];
@@ -89,14 +94,18 @@ export function updateRow(
   rowId: string,
   values: Record<string, unknown>
 ): RuntimeState {
-  const rows = (state.entities[entityId] ?? []).map((r) =>
+  const rows = (state.entities[entityId] ?? []).map(r =>
     r.id === rowId ? { ...r, values: { ...r.values, ...values } } : r
   );
   return { ...state, entities: { ...state.entities, [entityId]: rows } };
 }
 
-export function deleteRow(state: RuntimeState, entityId: string, rowId: string): RuntimeState {
-  const rows = (state.entities[entityId] ?? []).filter((r) => r.id !== rowId);
+export function deleteRow(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string
+): RuntimeState {
+  const rows = (state.entities[entityId] ?? []).filter(r => r.id !== rowId);
   return { ...state, entities: { ...state.entities, [entityId]: rows } };
 }
 
@@ -106,11 +115,18 @@ export function validateRowValues(
   entityId: string,
   values: Record<string, unknown>
 ): string[] {
-  const entity = (model?.datamodel?.entities ?? []).find((e) => e.id === entityId);
+  const entity = (model?.datamodel?.entities ?? []).find(
+    e => e.id === entityId
+  );
   const problems: string[] = [];
   for (const field of entity?.fields ?? []) {
     const v = values[field.id];
-    if (field.type === "number" && v !== undefined && v !== "" && Number.isNaN(Number(v))) {
+    if (
+      field.type === "number" &&
+      v !== undefined &&
+      v !== "" &&
+      Number.isNaN(Number(v))
+    ) {
       problems.push(`${field.name || field.id} 应为数字`);
     }
   }
@@ -122,11 +138,15 @@ export function validateRowValues(
 // ---------------------------------------------------------------------------
 
 /** 流程起点：没有任何入边的节点（多个则取模型顺序第一个）。 */
-export function startNodeId(model: FiveSystemModel | null | undefined): string | null {
+export function startNodeId(
+  model: FiveSystemModel | null | undefined
+): string | null {
   const nodes = model?.workflow?.nodes ?? [];
   if (nodes.length === 0) return null;
-  const hasInbound = new Set((model?.workflow?.transitions ?? []).map((t) => t.to));
-  return nodes.find((n) => !hasInbound.has(n.id))?.id ?? nodes[0].id;
+  const hasInbound = new Set(
+    (model?.workflow?.transitions ?? []).map(t => t.to)
+  );
+  return nodes.find(n => !hasInbound.has(n.id))?.id ?? nodes[0].id;
 }
 
 /** 当前节点的出边（分支时由 UI 给用户选择）。 */
@@ -134,11 +154,14 @@ export function outgoingTransitions(
   model: FiveSystemModel | null | undefined,
   nodeId: string
 ): WorkflowTransition[] {
-  return (model?.workflow?.transitions ?? []).filter((t) => t.from === nodeId);
+  return (model?.workflow?.transitions ?? []).filter(t => t.from === nodeId);
 }
 
-export function nodeById(model: FiveSystemModel | null | undefined, nodeId: string) {
-  return (model?.workflow?.nodes ?? []).find((n) => n.id === nodeId) ?? null;
+export function nodeById(
+  model: FiveSystemModel | null | undefined,
+  nodeId: string
+) {
+  return (model?.workflow?.nodes ?? []).find(n => n.id === nodeId) ?? null;
 }
 
 export function startInstance(
@@ -177,7 +200,7 @@ export function advanceInstance(
   now: string,
   opts: { byRole?: string; viaTransitionIndex?: number } = {}
 ): { state: RuntimeState; error?: string } {
-  const idx = state.instances.findIndex((i) => i.id === instanceId);
+  const idx = state.instances.findIndex(i => i.id === instanceId);
   if (idx < 0) return { state, error: "实例不存在" };
   const instance = state.instances[idx];
   if (instance.status !== "running") return { state, error: "实例已终态" };
@@ -186,11 +209,21 @@ export function advanceInstance(
   let next: WorkflowInstance;
 
   if (action === "reject") {
-    log.push({ at: now, nodeId: instance.currentNodeId, action: "reject", byRole: opts.byRole });
+    log.push({
+      at: now,
+      nodeId: instance.currentNodeId,
+      action: "reject",
+      byRole: opts.byRole,
+    });
     next = { ...instance, status: "rejected", log };
   } else {
     const outs = outgoingTransitions(model, instance.currentNodeId);
-    log.push({ at: now, nodeId: instance.currentNodeId, action: "approve", byRole: opts.byRole });
+    log.push({
+      at: now,
+      nodeId: instance.currentNodeId,
+      action: "approve",
+      byRole: opts.byRole,
+    });
     if (outs.length === 0) {
       log.push({ at: now, nodeId: instance.currentNodeId, action: "complete" });
       next = { ...instance, status: "completed", log };

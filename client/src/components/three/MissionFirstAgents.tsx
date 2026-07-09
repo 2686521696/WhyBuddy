@@ -396,16 +396,13 @@ function animateWorker(
       // 加 yaw 摇摆 0.12 让躯干侧倾。1.5Hz × 10cm 在默认相机下肉眼明显。
       group.position.y = basePosition[1] + Math.sin(time * 4 * motion) * 0.1;
       group.rotation.z = Math.sin(time * 2 * motion) * 0.12;
-      group.rotation.y =
-        baseRotation[1] + Math.sin(time * 1.5 * motion) * 0.08;
+      group.rotation.y = baseRotation[1] + Math.sin(time * 1.5 * motion) * 0.08;
       break;
     case "reading":
       // 阅读：呼吸 + 低头。amplitude 0.03 → 0.08（8cm），加 yaw 摇摆。
-      group.position.y =
-        basePosition[1] + Math.sin(time * 1.5 * motion) * 0.08;
+      group.position.y = basePosition[1] + Math.sin(time * 1.5 * motion) * 0.08;
       group.rotation.z = Math.sin(time * 0.8 * motion) * 0.1;
-      group.rotation.y =
-        baseRotation[1] + Math.sin(time * 1.2 * motion) * 0.1;
+      group.rotation.y = baseRotation[1] + Math.sin(time * 1.2 * motion) * 0.1;
       break;
     case "organizing": {
       const walkCycle = Math.sin(time * 0.8 * motion);
@@ -427,8 +424,7 @@ function animateWorker(
       // 记笔记：快速点头 + 上下浮动。y 0.025 → 0.07。
       group.position.y = basePosition[1] + Math.sin(time * 5 * motion) * 0.07;
       group.rotation.x = baseRotation[0] + Math.sin(time * 2.5 * motion) * 0.18;
-      group.rotation.y =
-        baseRotation[1] + Math.sin(time * 1.0 * motion) * 0.08;
+      group.rotation.y = baseRotation[1] + Math.sin(time * 1.0 * motion) * 0.08;
       break;
     case "examining":
       // 仔细查看：前倾 + 左右扫视。y 0.025 → 0.06。转头幅度也加大。
@@ -696,13 +692,7 @@ function MessageFlowPath({
   );
 }
 
-function AgentMotionCue({
-  color,
-  active,
-}: {
-  color: string;
-  active: boolean;
-}) {
+function AgentMotionCue({ color, active }: { color: string; active: boolean }) {
   const dotRefs = useRef<Array<THREE.Mesh | null>>([]);
 
   useFrame(({ clock }) => {
@@ -816,10 +806,7 @@ function AgentWorker({
   // mission agent id；mission-first 模式保持原有 selector 不变。
   const rolePhase = useBlueprintRealtimeStore(state =>
     mode === "blueprint"
-      ? readBlueprintRolePhase(
-          state.rolePhases,
-          config.id as MissionAgentId
-        )
+      ? readBlueprintRolePhase(state.rolePhases, config.id as MissionAgentId)
       : (state.rolePhases[config.id] as RolePhase | undefined)
   );
   const roleRuntimeState = useBlueprintRealtimeStore(state =>
@@ -1237,7 +1224,10 @@ export function MissionFirstAgents({
 
   const { configs, departmentMarkers } = useMemo(() => {
     if (mode === "blueprint") {
-      const sceneData = createBlueprintSceneData(locale, blueprintSceneRolePhases);
+      const sceneData = createBlueprintSceneData(
+        locale,
+        blueprintSceneRolePhases
+      );
       return {
         configs: sceneData.sceneAgents,
         departmentMarkers: sceneData.markers,
@@ -1405,10 +1395,8 @@ export function MissionFirstAgents({
                   )
               );
 
-    return routes.filter(
-      (
-        route
-      ): route is BlueprintSceneFlowRoute => Boolean(route.from && route.to)
+    return routes.filter((route): route is BlueprintSceneFlowRoute =>
+      Boolean(route.from && route.to)
     );
   }, [
     mode,

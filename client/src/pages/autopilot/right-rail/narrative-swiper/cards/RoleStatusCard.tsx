@@ -69,7 +69,9 @@ export const RoleStatusCard: FC<RoleStatusCardProps> = ({ card, locale }) => {
         </p>
         {stageLabel && (
           <span className="mt-0.5 inline-block rounded bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-800/30 dark:text-amber-300">
-            {locale === "zh-CN" ? `阶段：${stageLabel}` : `Stage: ${stageLabel}`}
+            {locale === "zh-CN"
+              ? `阶段：${stageLabel}`
+              : `Stage: ${stageLabel}`}
           </span>
         )}
       </div>

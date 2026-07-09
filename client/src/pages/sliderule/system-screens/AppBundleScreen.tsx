@@ -46,12 +46,48 @@ const SKILL_META: Array<{
   color: string;
   dot: string;
 }> = [
-  { key: "datamodel", label: "DataModel", desc: "实体字段 · SSOT", color: "bg-blue-50 text-blue-700 ring-blue-200", dot: "bg-blue-400" },
-  { key: "rbac", label: "RBAC", desc: "角色 · 权限 · 菜单", color: "bg-orange-50 text-orange-700 ring-orange-200", dot: "bg-orange-400" },
-  { key: "workflow", label: "Workflow", desc: "流程 · 审批链", color: "bg-violet-50 text-violet-700 ring-violet-200", dot: "bg-violet-400" },
-  { key: "page", label: "Page", desc: "页面 · 字段绑定", color: "bg-teal-50 text-teal-700 ring-teal-200", dot: "bg-teal-400" },
-  { key: "aigc", label: "AIGC", desc: "Prompt · 触发条件", color: "bg-pink-50 text-pink-700 ring-pink-200", dot: "bg-pink-400" },
-  { key: "appbundle", label: "AppBundle", desc: "发布闭环 · 版本钉扎", color: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-400" },
+  {
+    key: "datamodel",
+    label: "DataModel",
+    desc: "实体字段 · SSOT",
+    color: "bg-blue-50 text-blue-700 ring-blue-200",
+    dot: "bg-blue-400",
+  },
+  {
+    key: "rbac",
+    label: "RBAC",
+    desc: "角色 · 权限 · 菜单",
+    color: "bg-orange-50 text-orange-700 ring-orange-200",
+    dot: "bg-orange-400",
+  },
+  {
+    key: "workflow",
+    label: "Workflow",
+    desc: "流程 · 审批链",
+    color: "bg-violet-50 text-violet-700 ring-violet-200",
+    dot: "bg-violet-400",
+  },
+  {
+    key: "page",
+    label: "Page",
+    desc: "页面 · 字段绑定",
+    color: "bg-teal-50 text-teal-700 ring-teal-200",
+    dot: "bg-teal-400",
+  },
+  {
+    key: "aigc",
+    label: "AIGC",
+    desc: "Prompt · 触发条件",
+    color: "bg-pink-50 text-pink-700 ring-pink-200",
+    dot: "bg-pink-400",
+  },
+  {
+    key: "appbundle",
+    label: "AppBundle",
+    desc: "发布闭环 · 版本钉扎",
+    color: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    dot: "bg-emerald-400",
+  },
 ];
 
 function BindingChip({ res }: { res: RefResolution }) {
@@ -59,7 +95,7 @@ function BindingChip({ res }: { res: RefResolution }) {
     <span
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
         res.resolved
-          ? "bg-[#F0EDE5] text-stone-700"
+          ? "bg-[#e9edf2] text-stone-700"
           : "bg-red-50 text-red-600 ring-1 ring-red-200"
       }`}
     >
@@ -77,16 +113,29 @@ export function AppBundleScreen({
   className = "",
 }: AppBundleScreenProps) {
   // 运行应用（JSON 渲染的"真系统"）：模型带页面+实体时可用
-  const [screenMode, setScreenMode] = useState<"board" | "graph" | "app">("board");
+  const [screenMode, setScreenMode] = useState<"board" | "graph" | "app">(
+    "board"
+  );
   // 联动图样式：Mermaid 整体架构图（默认，自动布线）⟷ React Flow 交互图
   const [graphStyle, setGraphStyle] = useState<"mermaid" | "flow">("mermaid");
   // 架构图缩放：适宽看全貌（默认）⟷ 原始尺寸滚动看细节
   const [archFit, setArchFit] = useState(true);
-  const canRunApp = (model?.page?.pages?.length ?? 0) > 0 && (model?.datamodel?.entities?.length ?? 0) > 0;
+  const canRunApp =
+    (model?.page?.pages?.length ?? 0) > 0 &&
+    (model?.datamodel?.entities?.length ?? 0) > 0;
   // 联动图：至少两个非空系统段才有联动可画
-  const canLinkage = useMemo(() => deriveSystemLinkageGraph(model) !== null, [model]);
+  const canLinkage = useMemo(
+    () => deriveSystemLinkageGraph(model) !== null,
+    [model]
+  );
   const archMermaid = useMemo(() => linkageToMermaid(model), [model]);
-  type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
+  type SkillKey =
+    | "datamodel"
+    | "rbac"
+    | "workflow"
+    | "page"
+    | "aigc"
+    | "appbundle";
   const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
     PublishClosureSummary["perSkillEvidence"]
   >;
@@ -100,17 +149,21 @@ export function AppBundleScreen({
   const bindings = useMemo(() => {
     if (!bundle) return null;
     return {
-      pages: (bundle.pageBindings ?? []).map((b) => ({
+      pages: (bundle.pageBindings ?? []).map(b => ({
         page: resolvePageRef(b.pageRef, model),
         workflow: resolveWorkflowRef(b.workflowRef, model),
       })),
-      roles: (bundle.roleRefs ?? []).map((r) => resolveRoleRef(r, model)),
-      entities: (bundle.dataModelRefs ?? []).map((e) => resolveEntityRef(e, model)),
+      roles: (bundle.roleRefs ?? []).map(r => resolveRoleRef(r, model)),
+      entities: (bundle.dataModelRefs ?? []).map(e =>
+        resolveEntityRef(e, model)
+      ),
     };
   }, [bundle, model]);
   const hasBindings =
     !!bindings &&
-    (bindings.pages.length > 0 || bindings.roles.length > 0 || bindings.entities.length > 0);
+    (bindings.pages.length > 0 ||
+      bindings.roles.length > 0 ||
+      bindings.entities.length > 0);
 
   // 看板级来源徽章：取首个可识别来源的证据条目（同一话题六证据同路径产出）。
   const boardSource = useMemo(() => {
@@ -128,21 +181,27 @@ export function AppBundleScreen({
       data-active={isActive}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-emerald-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">AppBundle</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+          AppBundle
+        </span>
         <span className="text-xs text-stone-400">发布证据看板</span>
         <div className="ml-auto flex items-center gap-2">
           {(canRunApp || canLinkage) && (
             <div
-              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
               data-testid="appbundle-mode-toggle"
             >
-              {([
+              {[
                 { id: "board" as const, label: "证据看板" },
-                ...(canLinkage ? [{ id: "graph" as const, label: "联动图" }] : []),
-                ...(canRunApp ? [{ id: "app" as const, label: "运行应用" }] : []),
-              ]).map(({ id, label }) => (
+                ...(canLinkage
+                  ? [{ id: "graph" as const, label: "联动图" }]
+                  : []),
+                ...(canRunApp
+                  ? [{ id: "app" as const, label: "运行应用" }]
+                  : []),
+              ].map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -164,7 +223,7 @@ export function AppBundleScreen({
               data-testid={`evidence-source-${boardSource.kind}`}
               className={
                 boardSource.kind === "llm"
-                  ? "rounded-full bg-[#F8E8E0] px-2 py-0.5 text-[10px] font-medium text-[#C4633F]"
+                  ? "rounded-full bg-[#e6f4ff] px-2 py-0.5 text-[10px] font-medium text-[#0958d9]"
                   : "rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600"
               }
               title={
@@ -189,16 +248,22 @@ export function AppBundleScreen({
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 w-full bg-[#F0EDE5]">
+      <div className="h-1 w-full bg-[#e9edf2]">
         <div
           className={`h-1 transition-all duration-700 ${allDone ? "bg-emerald-400" : "bg-amber-400"}`}
-          style={{ width: `${totalSkills > 0 ? Math.round((totalPresent / totalSkills) * 100) : 0}%` }}
+          style={{
+            width: `${totalSkills > 0 ? Math.round((totalPresent / totalSkills) * 100) : 0}%`,
+          }}
         />
       </div>
 
       {screenMode === "app" && canRunApp && model ? (
         <div className="min-h-0 flex-1">
-          <AppRuntimeScreen model={model} sessionId={sessionId} appTitle={appTitle} />
+          <AppRuntimeScreen
+            model={model}
+            sessionId={sessionId}
+            appTitle={appTitle}
+          />
         </div>
       ) : screenMode === "graph" && canLinkage ? (
         <div className="relative min-h-0 flex-1">
@@ -207,21 +272,25 @@ export function AppBundleScreen({
               <button
                 type="button"
                 data-testid="appbundle-arch-fit"
-                onClick={() => setArchFit((v) => !v)}
-                className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-medium text-stone-500 shadow-sm ring-1 ring-[#E7E2D9] transition-colors hover:text-stone-700"
-                title={archFit ? "切到原始尺寸，滚动查看细节" : "缩放到容器宽度，看整体结构"}
+                onClick={() => setArchFit(v => !v)}
+                className="rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-medium text-stone-500 shadow-sm ring-1 ring-[#e5e7eb] transition-colors hover:text-stone-700"
+                title={
+                  archFit
+                    ? "切到原始尺寸，滚动查看细节"
+                    : "缩放到容器宽度，看整体结构"
+                }
               >
                 {archFit ? "原始尺寸" : "适宽全貌"}
               </button>
             )}
             <div
-              className="flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-sm ring-1 ring-[#E7E2D9]"
+              className="flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-sm ring-1 ring-[#e5e7eb]"
               data-testid="appbundle-graph-style"
             >
-              {([
+              {[
                 { id: "mermaid" as const, label: "架构图" },
                 { id: "flow" as const, label: "交互图" },
-              ]).map(({ id, label }) => (
+              ].map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -229,7 +298,7 @@ export function AppBundleScreen({
                   onClick={() => setGraphStyle(id)}
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
                     graphStyle === id
-                      ? "bg-[#F0EDE5] text-stone-800"
+                      ? "bg-[#e9edf2] text-stone-800"
                       : "text-stone-500 hover:text-stone-700"
                   }`}
                 >
@@ -239,11 +308,16 @@ export function AppBundleScreen({
             </div>
           </div>
           {graphStyle === "mermaid" && archMermaid ? (
-            <div className="h-full w-full overflow-auto p-4" data-testid="appbundle-arch-mermaid">
+            <div
+              className="h-full w-full overflow-auto p-4"
+              data-testid="appbundle-arch-mermaid"
+            >
               <MermaidDiagram chart={archMermaid} fit={archFit} />
               <div className="mt-2 text-center text-[10px] text-stone-400">
                 五系统整体架构（Mermaid 自动布线）· 连线标签 = 引用语义 ·{" "}
-                {archFit ? "适宽全貌，切「原始尺寸」看细节" : "原始尺寸，滚动查看"}
+                {archFit
+                  ? "适宽全貌，切「原始尺寸」看细节"
+                  : "原始尺寸，滚动查看"}
               </div>
             </div>
           ) : (
@@ -251,213 +325,268 @@ export function AppBundleScreen({
           )}
         </div>
       ) : (
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {/* Blockers — fail-closed 如实展示 */}
-        {blocked && topBlockers.length > 0 && (
-          <div
-            className="mb-3 rounded-md border border-red-200 bg-red-50/60 p-3"
-            data-testid="appbundle-blockers"
-          >
-            <div className="text-[11px] font-semibold text-red-700">
-              发布阻塞项 · {publishClosure?.blockerCount ?? topBlockers.length}
-            </div>
-            <ul className="mt-1.5 space-y-1">
-              {topBlockers.map((b, i) => {
-                // LLM 生成诊断类 blocker：ref 是给人读的失败原因，用正文体渲染
-                const isLlmDiag =
-                  b.code === "LLM_GENERATE_DISABLED" ||
-                  b.code === "LLM_GENERATE_FAILED" ||
-                  b.code === "MODEL_GATE_BLOCKED";
-                return (
-                  <li key={`${b.code}-${i}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                    <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
-                      {b.code}
-                    </span>
-                    {b.affectedSkill && (
-                      <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
-                        skill={b.affectedSkill}
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {/* Blockers — fail-closed 如实展示 */}
+          {blocked && topBlockers.length > 0 && (
+            <div
+              className="mb-3 rounded-md border border-red-200 bg-red-50/60 p-3"
+              data-testid="appbundle-blockers"
+            >
+              <div className="text-[11px] font-semibold text-red-700">
+                发布阻塞项 ·{" "}
+                {publishClosure?.blockerCount ?? topBlockers.length}
+              </div>
+              <ul className="mt-1.5 space-y-1">
+                {topBlockers.map((b, i) => {
+                  // LLM 生成诊断类 blocker：ref 是给人读的失败原因，用正文体渲染
+                  const isLlmDiag =
+                    b.code === "LLM_GENERATE_DISABLED" ||
+                    b.code === "LLM_GENERATE_FAILED" ||
+                    b.code === "MODEL_GATE_BLOCKED";
+                  return (
+                    <li
+                      key={`${b.code}-${i}`}
+                      className="flex flex-wrap items-center gap-1.5 text-[10px]"
+                    >
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium text-red-700">
+                        {b.code}
                       </span>
-                    )}
-                    {!isLlmDiag && b.path && <span className="font-mono text-red-400">{b.path}</span>}
-                    {isLlmDiag && b.ref ? (
-                      <span className="text-red-600">{b.ref}</span>
-                    ) : (
-                      b.ref && <span className="font-mono text-red-400">ref={b.ref}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                      {b.affectedSkill && (
+                        <span className="rounded bg-white px-1.5 py-0.5 text-red-600 ring-1 ring-red-200">
+                          skill={b.affectedSkill}
+                        </span>
+                      )}
+                      {!isLlmDiag && b.path && (
+                        <span className="font-mono text-red-400">{b.path}</span>
+                      )}
+                      {isLlmDiag && b.ref ? (
+                        <span className="text-red-600">{b.ref}</span>
+                      ) : (
+                        b.ref && (
+                          <span className="font-mono text-red-400">
+                            ref={b.ref}
+                          </span>
+                        )
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
-        {/* Six skill cards */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {SKILL_META.map(({ key, label, desc, color, dot }) => {
-            const ev = perSkill[key as SkillKey];
-            const present = ev?.evidencePresent === true;
-            return (
-              <div
-                key={key}
-                className={`rounded-md border p-4 transition-all ${
-                  present
-                    ? "border-emerald-200 bg-emerald-50/60"
-                    : "border-[#E7E2D9] bg-white opacity-60"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${present ? "bg-emerald-400" : dot}`} />
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
-                      present ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : color
-                    }`}
-                  >
-                    {label}
-                  </span>
-                  <span className="ml-auto text-sm">{present ? "✓" : "○"}</span>
+          {/* Six skill cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {SKILL_META.map(({ key, label, desc, color, dot }) => {
+              const ev = perSkill[key as SkillKey];
+              const present = ev?.evidencePresent === true;
+              return (
+                <div
+                  key={key}
+                  className={`rounded-md border p-4 transition-all ${
+                    present
+                      ? "border-emerald-200 bg-emerald-50/60"
+                      : "border-[#e5e7eb] bg-white opacity-60"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`h-2 w-2 rounded-full ${present ? "bg-emerald-400" : dot}`}
+                    />
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+                        present
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                          : color
+                      }`}
+                    >
+                      {label}
+                    </span>
+                    <span className="ml-auto text-sm">
+                      {present ? "✓" : "○"}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-stone-500">{desc}</div>
+                  {present && ev?.summary && (
+                    <div className="mt-1.5 line-clamp-2 text-[10px] text-stone-400">
+                      {ev.summary}
+                    </div>
+                  )}
+                  {present && (ev?.artifactId || ev?.evidenceRef) && (
+                    <div
+                      className="mt-1.5 truncate font-mono text-[9px] text-stone-400"
+                      title={ev?.evidenceRef || ev?.artifactId}
+                    >
+                      {ev?.artifactId || ev?.evidenceRef}
+                      {ev?.digest ? ` · ${ev.digest.slice(0, 8)}` : ""}
+                    </div>
+                  )}
                 </div>
-                <div className="mt-2 text-[11px] text-stone-500">{desc}</div>
-                {present && ev?.summary && (
-                  <div className="mt-1.5 line-clamp-2 text-[10px] text-stone-400">{ev.summary}</div>
+              );
+            })}
+          </div>
+
+          {/* Model bindings — appbundle 段（pageBindings / roleRefs / dataModelRefs） */}
+          {hasBindings && bindings && (
+            <div
+              className="mt-3 rounded-md border border-[#e5e7eb] bg-[#eef0f4]/60 p-3"
+              data-testid="appbundle-bindings"
+            >
+              <div className="text-[11px] font-semibold text-stone-600">
+                应用装配绑定
+              </div>
+              <div className="mt-2 space-y-2 text-[11px]">
+                {bindings.pages.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="w-24 shrink-0 text-stone-400">
+                      页面 ↔ 流程
+                    </span>
+                    {bindings.pages.map((b, i) => (
+                      <span
+                        key={`${b.page.ref}-${i}`}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <BindingChip res={b.page} />
+                        <span className="text-stone-300">→</span>
+                        <BindingChip res={b.workflow} />
+                      </span>
+                    ))}
+                  </div>
                 )}
-                {present && (ev?.artifactId || ev?.evidenceRef) && (
-                  <div
-                    className="mt-1.5 truncate font-mono text-[9px] text-stone-400"
-                    title={ev?.evidenceRef || ev?.artifactId}
-                  >
-                    {ev?.artifactId || ev?.evidenceRef}
-                    {ev?.digest ? ` · ${ev.digest.slice(0, 8)}` : ""}
+                {bindings.roles.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="w-24 shrink-0 text-stone-400">
+                      角色（RBAC）
+                    </span>
+                    {bindings.roles.map(r => (
+                      <BindingChip key={r.ref} res={r} />
+                    ))}
+                  </div>
+                )}
+                {bindings.entities.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="w-24 shrink-0 text-stone-400">
+                      实体（DataModel）
+                    </span>
+                    {bindings.entities.map(e => (
+                      <BindingChip key={e.ref} res={e} />
+                    ))}
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-
-        {/* Model bindings — appbundle 段（pageBindings / roleRefs / dataModelRefs） */}
-        {hasBindings && bindings && (
-          <div
-            className="mt-3 rounded-md border border-[#E7E2D9] bg-[#F5F1EA]/60 p-3"
-            data-testid="appbundle-bindings"
-          >
-            <div className="text-[11px] font-semibold text-stone-600">应用装配绑定</div>
-            <div className="mt-2 space-y-2 text-[11px]">
-              {bindings.pages.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-stone-400">页面 ↔ 流程</span>
-                  {bindings.pages.map((b, i) => (
-                    <span key={`${b.page.ref}-${i}`} className="inline-flex items-center gap-1">
-                      <BindingChip res={b.page} />
-                      <span className="text-stone-300">→</span>
-                      <BindingChip res={b.workflow} />
-                    </span>
-                  ))}
-                </div>
-              )}
-              {bindings.roles.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-stone-400">角色（RBAC）</span>
-                  {bindings.roles.map((r) => (
-                    <BindingChip key={r.ref} res={r} />
-                  ))}
-                </div>
-              )}
-              {bindings.entities.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-24 shrink-0 text-stone-400">实体（DataModel）</span>
-                  {bindings.entities.map((e) => (
-                    <BindingChip key={e.ref} res={e} />
-                  ))}
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 系统不变式 — appbundle.invariants（总装约束层）：陈述性约束 + 落地引用，
+          {/* 系统不变式 — appbundle.invariants（总装约束层）：陈述性约束 + 落地引用，
             门禁已保证 refs 可解析；此处如实罗列，refs 用等宽体便于对照模型。 */}
-        {((bundle?.invariants?.length ?? 0) > 0 || bundle?.invariantNotes) && (
-          <div
-            className="mt-3 rounded-md border border-[#E7E2D9] bg-white p-3"
-            data-testid="appbundle-invariants"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-stone-600">系统不变式</span>
-              <span className="text-[10px] text-stone-400">
-                {bundle!.invariants?.length ?? 0} 条 · 必须恒真的总装约束
-              </span>
+          {((bundle?.invariants?.length ?? 0) > 0 ||
+            bundle?.invariantNotes) && (
+            <div
+              className="mt-3 rounded-md border border-[#e5e7eb] bg-white p-3"
+              data-testid="appbundle-invariants"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-stone-600">
+                  系统不变式
+                </span>
+                <span className="text-[10px] text-stone-400">
+                  {bundle!.invariants?.length ?? 0} 条 · 必须恒真的总装约束
+                </span>
+              </div>
+              {/* 修复/剔除留痕（v5_model_repair）：诚实透出，不静默 */}
+              {bundle?.invariantNotes &&
+                ((bundle.invariantNotes.repaired?.length ?? 0) > 0 ||
+                  (bundle.invariantNotes.dropped?.length ?? 0) > 0) && (
+                  <div
+                    className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
+                    data-testid="appbundle-invariant-notes"
+                  >
+                    {(bundle.invariantNotes.repaired?.length ?? 0) > 0 && (
+                      <span>
+                        自动修复 {bundle.invariantNotes.repaired!.length} 处引用
+                        （
+                        {bundle.invariantNotes
+                          .repaired!.map(r => `${r.from} → ${r.to}`)
+                          .join("；")}
+                        ）
+                      </span>
+                    )}
+                    {(bundle.invariantNotes.dropped?.length ?? 0) > 0 && (
+                      <span className="ml-1">
+                        剔除 {bundle.invariantNotes.dropped!.length}{" "}
+                        条引用无效的不变式 （
+                        {bundle.invariantNotes
+                          .dropped!.map(d => d.invariantId || d.statement || "")
+                          .filter(Boolean)
+                          .join("；")}
+                        ）
+                      </span>
+                    )}
+                  </div>
+                )}
+              <ul className="mt-2 space-y-1.5">
+                {(bundle!.invariants ?? []).map((inv, i) => (
+                  <li
+                    key={inv.id || i}
+                    className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px]"
+                    data-testid={`appbundle-invariant-${inv.id || i}`}
+                  >
+                    <span className="text-stone-300">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span className="text-stone-700">
+                      {inv.statement || inv.id}
+                    </span>
+                    {(inv.systems ?? []).map(s => (
+                      <span
+                        key={s}
+                        className="rounded-full bg-[#e9edf2] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-stone-500"
+                      >
+                        {s}
+                      </span>
+                    ))}
+                    {(inv.refs ?? []).map(r => (
+                      <span
+                        key={r}
+                        className="font-mono text-[9px] text-stone-400"
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
             </div>
-            {/* 修复/剔除留痕（v5_model_repair）：诚实透出，不静默 */}
-            {bundle?.invariantNotes &&
-              ((bundle.invariantNotes.repaired?.length ?? 0) > 0 ||
-                (bundle.invariantNotes.dropped?.length ?? 0) > 0) && (
-                <div
-                  className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700 ring-1 ring-amber-200"
-                  data-testid="appbundle-invariant-notes"
-                >
-                  {(bundle.invariantNotes.repaired?.length ?? 0) > 0 && (
-                    <span>
-                      自动修复 {bundle.invariantNotes.repaired!.length} 处引用
-                      （{bundle.invariantNotes.repaired!
-                        .map((r) => `${r.from} → ${r.to}`)
-                        .join("；")}）
-                    </span>
-                  )}
-                  {(bundle.invariantNotes.dropped?.length ?? 0) > 0 && (
-                    <span className="ml-1">
-                      剔除 {bundle.invariantNotes.dropped!.length} 条引用无效的不变式
-                      （{bundle.invariantNotes.dropped!
-                        .map((d) => d.invariantId || d.statement || "")
-                        .filter(Boolean)
-                        .join("；")}）
-                    </span>
-                  )}
-                </div>
-              )}
-            <ul className="mt-2 space-y-1.5">
-              {(bundle!.invariants ?? []).map((inv, i) => (
-                <li
-                  key={inv.id || i}
-                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px]"
-                  data-testid={`appbundle-invariant-${inv.id || i}`}
-                >
-                  <span className="text-stone-300">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="text-stone-700">{inv.statement || inv.id}</span>
-                  {(inv.systems ?? []).map((s) => (
-                    <span
-                      key={s}
-                      className="rounded-full bg-[#F0EDE5] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-stone-500"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                  {(inv.refs ?? []).map((r) => (
-                    <span key={r} className="font-mono text-[9px] text-stone-400">
-                      {r}
-                    </span>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          )}
 
-        {/* Closure meta */}
-        {publishClosure && (publishClosure.closureHash || publishClosure.stableDigest || publishClosure.generatedAt) && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-stone-400">
-            {publishClosure.closureHash && <span>closureHash={publishClosure.closureHash}</span>}
-            {publishClosure.stableDigest && <span>digest={publishClosure.stableDigest}</span>}
-            {publishClosure.generatedAt && <span>generatedAt={publishClosure.generatedAt}</span>}
-            <span>versionPins={publishClosure.versionPinsChecked ? "checked" : "unchecked"}</span>
-          </div>
-        )}
+          {/* Closure meta */}
+          {publishClosure &&
+            (publishClosure.closureHash ||
+              publishClosure.stableDigest ||
+              publishClosure.generatedAt) && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono text-stone-400">
+                {publishClosure.closureHash && (
+                  <span>closureHash={publishClosure.closureHash}</span>
+                )}
+                {publishClosure.stableDigest && (
+                  <span>digest={publishClosure.stableDigest}</span>
+                )}
+                {publishClosure.generatedAt && (
+                  <span>generatedAt={publishClosure.generatedAt}</span>
+                )}
+                <span>
+                  versionPins=
+                  {publishClosure.versionPinsChecked ? "checked" : "unchecked"}
+                </span>
+              </div>
+            )}
 
-        {!publishClosure && (
-          <div className="mt-6 text-center text-xs text-stone-300">
-            发送应用意图后，SlideRule 将逐系统填充发布证据
-          </div>
-        )}
-      </div>
+          {!publishClosure && (
+            <div className="mt-6 text-center text-xs text-stone-300">
+              发送应用意图后，SlideRule 将逐系统填充发布证据
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

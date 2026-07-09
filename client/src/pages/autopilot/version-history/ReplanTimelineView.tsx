@@ -32,7 +32,11 @@ function eventCount(payload: ReplanTimelinePayload): number | null {
   if (payload.mode === "in_place") {
     return payload.markedStaleArtifactCount ?? null;
   }
-  return payload.markedStaleArtifactCount ?? payload.inheritedUpstreamArtifactCount ?? null;
+  return (
+    payload.markedStaleArtifactCount ??
+    payload.inheritedUpstreamArtifactCount ??
+    null
+  );
 }
 
 function truncateReason(reason: string): string {
@@ -43,7 +47,10 @@ function shortJobId(jobId: string): string {
   return jobId.length > 12 ? `${jobId.slice(0, 8)}...` : jobId;
 }
 
-function modeLabel(mode: ReplanTimelinePayload["mode"], locale: AppLocale): string {
+function modeLabel(
+  mode: ReplanTimelinePayload["mode"],
+  locale: AppLocale
+): string {
   if (locale === "zh-CN") {
     if (mode === "branch") return "创建分支";
     if (mode === "in_place") return "原地重规划";
@@ -80,21 +87,28 @@ export function ReplanTimelineView({
   locale = "en-US",
 }: ReplanTimelineViewProps) {
   const replanEvents = events
-    .filter((event) => event.type === ("replan.triggered" as BlueprintGenerationEvent["type"]))
+    .filter(
+      event =>
+        event.type === ("replan.triggered" as BlueprintGenerationEvent["type"])
+    )
     .sort((a, b) => {
       const byTime = Date.parse(eventTime(b)) - Date.parse(eventTime(a));
       return byTime === 0 ? a.jobId.localeCompare(b.jobId) : byTime;
     });
 
-  const emptyText = locale === "zh-CN" ? "暂无重规划记录。" : "No replan events.";
+  const emptyText =
+    locale === "zh-CN" ? "暂无重规划记录。" : "No replan events.";
 
   return (
-    <section data-testid="replan-timeline-view" data-state={replanEvents.length ? "ready" : "empty"}>
+    <section
+      data-testid="replan-timeline-view"
+      data-state={replanEvents.length ? "ready" : "empty"}
+    >
       {replanEvents.length === 0 ? (
         <p>{emptyText}</p>
       ) : (
         <ol>
-          {replanEvents.map((event) => {
+          {replanEvents.map(event => {
             const payload = replanPayload(event);
             const count = eventCount(payload);
             return (
@@ -103,14 +117,18 @@ export function ReplanTimelineView({
                 <span>{modeLabel(payload.mode, locale)}</span>
                 <span title={event.jobId}>{shortJobId(event.jobId)}</span>
                 {payload.parentJobId ? (
-                  <span title={payload.parentJobId}>{shortJobId(payload.parentJobId)}</span>
+                  <span title={payload.parentJobId}>
+                    {shortJobId(payload.parentJobId)}
+                  </span>
                 ) : null}
                 {payload.fromStage ? (
                   <span>{stageLabel(payload.fromStage, locale)}</span>
                 ) : null}
                 {count === null ? null : <span>{count}</span>}
                 <span>{event.message}</span>
-                {payload.reason ? <p>{truncateReason(payload.reason)}</p> : null}
+                {payload.reason ? (
+                  <p>{truncateReason(payload.reason)}</p>
+                ) : null}
               </li>
             );
           })}

@@ -176,7 +176,8 @@ export function LineageWorkspaceContent({
       <WorkspacePanel
         className={cn(
           "workspace-panel workspace-panel-inset rounded-[28px] p-4 md:p-5",
-          embedded && "border border-[var(--workspace-panel-border)] bg-white/55"
+          embedded &&
+            "border border-[var(--workspace-panel-border)] bg-white/55"
         )}
       >
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

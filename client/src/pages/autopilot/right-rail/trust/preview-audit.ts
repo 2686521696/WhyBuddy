@@ -7,15 +7,15 @@
  * 纪律：纯、无 IO、确定、全、不抛错。
  */
 
-import type {
-  BlueprintChecksLedgerEntry,
-  PreviewAuditVerdict,
-} from "./types";
+import type { BlueprintChecksLedgerEntry, PreviewAuditVerdict } from "./types";
 
 type FraudReason = "fallback_pretending" | "fake_success" | "duplicate_content";
 
 const FRAUD_KEYWORDS: ReadonlyArray<[FraudReason, readonly string[]]> = [
-  ["fallback_pretending", ["fallback_pretending", "fallback pretend", "兜底冒充"]],
+  [
+    "fallback_pretending",
+    ["fallback_pretending", "fallback pretend", "兜底冒充"],
+  ],
   ["fake_success", ["fake_success", "fake success", "假成功"]],
   ["duplicate_content", ["duplicate_content", "duplicate", "复制充数", "重复"]],
 ];
@@ -28,7 +28,7 @@ function readText(entry: BlueprintChecksLedgerEntry): string {
 function parseFraudReasons(text: string): FraudReason[] {
   const reasons: FraudReason[] = [];
   for (const [reason, keywords] of FRAUD_KEYWORDS) {
-    if (keywords.some((kw) => text.includes(kw.toLowerCase()))) {
+    if (keywords.some(kw => text.includes(kw.toLowerCase()))) {
       reasons.push(reason);
     }
   }
@@ -38,7 +38,11 @@ function parseFraudReasons(text: string): FraudReason[] {
 function readRetryCount(entry: BlueprintChecksLedgerEntry): number {
   // 优先从 metadata.retryCount 读取，其次从 output 中解析 "retry(Count)? = N"。
   const meta = entry.metadata as { retryCount?: unknown } | undefined;
-  if (meta && typeof meta.retryCount === "number" && Number.isFinite(meta.retryCount)) {
+  if (
+    meta &&
+    typeof meta.retryCount === "number" &&
+    Number.isFinite(meta.retryCount)
+  ) {
     return Math.max(0, Math.trunc(meta.retryCount));
   }
   const match = (entry.output ?? "").match(/retry(?:count)?\s*[=:]\s*(\d+)/i);
@@ -57,11 +61,11 @@ function readRetryCount(entry: BlueprintChecksLedgerEntry): number {
  * 对缺失可选字段不抛错。
  */
 export function derivePreviewAuditVerdict(
-  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
+  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined
 ): PreviewAuditVerdict {
   const auditEntries = (entries ?? []).filter(
     (entry): entry is BlueprintChecksLedgerEntry =>
-      !!entry && entry.checkType === "preview_audit",
+      !!entry && entry.checkType === "preview_audit"
   );
 
   let hasFail = false;

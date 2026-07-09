@@ -4,21 +4,17 @@
 
 /** Connection lifecycle states exposed to consumers. */
 export type ConnectionState =
-  | 'connecting'
-  | 'connected'
-  | 'disconnected'
-  | 'failed';
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "failed";
 
 /** Video quality levels that can be requested from the UE stream. */
-export type QualityLevel = 'high' | 'medium' | 'low';
+export type QualityLevel = "high" | "medium" | "low";
 
 /** Structured error produced by the connection manager. */
 export interface StreamError {
-  code:
-    | 'CONNECTION_FAILED'
-    | 'STREAM_LOST'
-    | 'SIGNALING_ERROR'
-    | 'TIMEOUT';
+  code: "CONNECTION_FAILED" | "STREAM_LOST" | "SIGNALING_ERROR" | "TIMEOUT";
   message: string;
   retryable: boolean;
 }
@@ -39,9 +35,9 @@ export interface ConnectionManagerEvents {
  *   3. Both sides exchange `{ type: 'iceCandidate', candidate }` messages
  */
 export type SignalingMessage =
-  | { type: 'offer'; sdp: string }
-  | { type: 'answer'; sdp: string }
-  | { type: 'iceCandidate'; candidate: RTCIceCandidateInit }
-  | { type: 'config'; peerConnectionOptions?: RTCConfiguration }
-  | { type: 'ping' }
-  | { type: 'pong' };
+  | { type: "offer"; sdp: string }
+  | { type: "answer"; sdp: string }
+  | { type: "iceCandidate"; candidate: RTCIceCandidateInit }
+  | { type: "config"; peerConnectionOptions?: RTCConfiguration }
+  | { type: "ping" }
+  | { type: "pong" };

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Hash, Loader2, LogIn, Mail, ShieldCheck, UserPlus, UserRound } from "lucide-react";
+import {
+  Hash,
+  Loader2,
+  LogIn,
+  Mail,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+} from "lucide-react";
 import { useLocation } from "wouter";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -186,7 +194,9 @@ export default function AuthPage() {
                     pattern="[0-9]*"
                     maxLength={6}
                     value={code}
-                    onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={event =>
+                      setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
                     autoComplete="one-time-code"
                     required
                     className="pl-9 tracking-[0.28em]"
@@ -197,9 +207,17 @@ export default function AuthPage() {
                   variant="outline"
                   className="shrink-0"
                   onClick={handleSendCode}
-                  disabled={loading || !email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())}
+                  disabled={
+                    loading ||
+                    !email.trim() ||
+                    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+                  }
                 >
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+                  {loading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Mail className="size-4" />
+                  )}
                   {codeSent ? "Resend" : "Send"}
                 </Button>
               </div>
@@ -212,7 +230,9 @@ export default function AuthPage() {
                 type="password"
                 value={password}
                 onChange={event => setPassword(event.target.value)}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
                 minLength={8}
                 required
               />
@@ -226,7 +246,11 @@ export default function AuthPage() {
           ) : null}
 
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+            {loading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogIn className="size-4" />
+            )}
             {copy.action}
           </Button>
         </form>
@@ -236,7 +260,15 @@ export default function AuthPage() {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setMode(mode === "register" ? "login" : mode === "code" ? "login" : "register")}
+            onClick={() =>
+              setMode(
+                mode === "register"
+                  ? "login"
+                  : mode === "code"
+                    ? "login"
+                    : "register"
+              )
+            }
           >
             {copy.swap}
           </Button>

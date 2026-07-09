@@ -45,7 +45,9 @@ function formatTimestamp(ts: number, locale: AppLocale): string {
 }
 
 /** 按 stageIndex 分组讨论条目 */
-function groupByStage(discussions: DiscussionEntry[]): Map<number, DiscussionEntry[]> {
+function groupByStage(
+  discussions: DiscussionEntry[]
+): Map<number, DiscussionEntry[]> {
   const map = new Map<number, DiscussionEntry[]>();
   for (const entry of discussions) {
     const group = map.get(entry.stageIndex) ?? [];
@@ -126,7 +128,7 @@ function StageGroup({
   const [expanded, setExpanded] = useState(isCurrentStage);
 
   const decisionCount = useMemo(
-    () => entries.filter((e) => e.type === "decision").length,
+    () => entries.filter(e => e.type === "decision").length,
     [entries]
   );
 
@@ -159,17 +161,17 @@ function StageGroup({
     <div>
       <button
         type="button"
-        onClick={() => setExpanded((prev) => !prev)}
+        onClick={() => setExpanded(prev => !prev)}
         className="flex items-center gap-1 text-[10px] text-white/40 hover:text-white/70 transition-colors py-0.5 w-full text-left"
         aria-expanded={expanded}
       >
         <span className="text-[9px]">{expanded ? "▾" : "▸"}</span>
         <span className="font-medium">
-          {locale === "zh-CN" ? `阶段 ${stageIndex + 1}` : `Stage ${stageIndex + 1}`}
+          {locale === "zh-CN"
+            ? `阶段 ${stageIndex + 1}`
+            : `Stage ${stageIndex + 1}`}
         </span>
-        {!expanded && (
-          <span className="text-white/35 ml-1">{summaryText}</span>
-        )}
+        {!expanded && <span className="text-white/35 ml-1">{summaryText}</span>}
       </button>
 
       {expanded && (
@@ -197,7 +199,10 @@ function StageGroup({
  *
  * 垂直时间线布局，按阶段分组，已完成阶段自动折叠。
  */
-export function DiscussionTimeline({ discussions, locale }: DiscussionTimelineProps) {
+export function DiscussionTimeline({
+  discussions,
+  locale,
+}: DiscussionTimelineProps) {
   if (!discussions || discussions.length === 0) return null;
 
   const stageGroups = useMemo(() => groupByStage(discussions), [discussions]);

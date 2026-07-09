@@ -1,4 +1,10 @@
-import { AlertTriangle, CheckCircle2, Clock3, Link2, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Link2,
+  ShieldAlert,
+} from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -49,10 +55,7 @@ function copy(locale: string, zh: string, en: string): string {
 }
 
 function normalizeToken(value: string): string {
-  return value
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function titleCase(value: string): string {
@@ -139,7 +142,11 @@ function laneLabel(locale: string, lane: TakeoverLane): string {
     case "upcoming":
       return copy(locale, "\u5373\u5c06\u63a5\u7ba1", "Upcoming takeover");
     case "resolved":
-      return copy(locale, "\u5df2\u5b8c\u6210\u63a5\u7ba1", "Resolved takeover");
+      return copy(
+        locale,
+        "\u5df2\u5b8c\u6210\u63a5\u7ba1",
+        "Resolved takeover"
+      );
   }
 }
 
@@ -282,10 +289,18 @@ export function AutopilotTakeoverControlPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
-            {copy(locale, "\u63a5\u7ba1\u63a7\u5236\u9762\u677f", "Takeover control panel")}
+            {copy(
+              locale,
+              "\u63a5\u7ba1\u63a7\u5236\u9762\u677f",
+              "Takeover control panel"
+            )}
           </p>
           <h3 className="mt-1 text-base font-semibold text-stone-950">
-            {copy(locale, "\u4eba\u5de5\u63a5\u7ba1\u961f\u5217", "Human takeover queue")}
+            {copy(
+              locale,
+              "\u4eba\u5de5\u63a5\u7ba1\u961f\u5217",
+              "Human takeover queue"
+            )}
           </h3>
         </div>
         <span
@@ -297,7 +312,11 @@ export function AutopilotTakeoverControlPanel({
           )}
         >
           {blockingCount
-            ? copy(locale, `${blockingCount} \u4e2a\u963b\u585e`, `${blockingCount} blocking`)
+            ? copy(
+                locale,
+                `${blockingCount} \u4e2a\u963b\u585e`,
+                `${blockingCount} blocking`
+              )
             : copy(locale, "\u65e0\u963b\u585e", "No blocking")}
         </span>
       </div>
@@ -324,15 +343,15 @@ export function AutopilotTakeoverControlPanel({
             <div className="mt-3 space-y-2">
               {group.items.length ? (
                 group.items.map(item => (
-                  <TakeoverItemCard
-                    key={item.id}
-                    item={item}
-                    locale={locale}
-                  />
+                  <TakeoverItemCard key={item.id} item={item} locale={locale} />
                 ))
               ) : (
                 <div className="rounded-[12px] border border-dashed border-stone-200 bg-white/50 p-3 text-xs text-stone-500">
-                  {copy(locale, "\u6682\u65e0\u63a5\u7ba1\u9879\u3002", "No takeover items yet.")}
+                  {copy(
+                    locale,
+                    "\u6682\u65e0\u63a5\u7ba1\u9879\u3002",
+                    "No takeover items yet."
+                  )}
                 </div>
               )}
             </div>

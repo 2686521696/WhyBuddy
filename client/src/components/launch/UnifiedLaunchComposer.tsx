@@ -726,11 +726,7 @@ export function UnifiedLaunchComposer({
               "调用 LLM 优化提示词",
               "Optimize prompt with LLM"
             )}
-            title={t(
-              locale,
-              "调用 LLM 优化提示词",
-              "Optimize prompt with LLM"
-            )}
+            title={t(locale, "调用 LLM 优化提示词", "Optimize prompt with LLM")}
             data-testid="unified-launch-optimize-prompt"
           >
             <Sparkles

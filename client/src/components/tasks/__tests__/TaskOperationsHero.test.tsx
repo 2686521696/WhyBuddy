@@ -109,7 +109,8 @@ function makeDetail(overrides?: Partial<MissionTaskDetail>): MissionTaskDetail {
       socket: {
         status: "connected",
         label: "Socket connected",
-        detail: "Mission socket is connected and can receive live runtime updates.",
+        detail:
+          "Mission socket is connected and can receive live runtime updates.",
       },
       callback: {
         status: "idle",

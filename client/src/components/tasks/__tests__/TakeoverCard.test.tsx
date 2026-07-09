@@ -31,12 +31,16 @@ function render(props: TakeoverCardProps): string {
 describe("TakeoverCard", () => {
   describe("empty state (hasPendingDecision = false)", () => {
     it("renders 'No takeover needed' when hasPendingDecision is false and no summary (en)", () => {
-      const markup = render(makeProps({ hasPendingDecision: false, locale: "en-US" }));
+      const markup = render(
+        makeProps({ hasPendingDecision: false, locale: "en-US" })
+      );
       expect(markup).toContain("No takeover needed");
     });
 
     it("renders '当前无需接管' when hasPendingDecision is false and no summary (zh-CN)", () => {
-      const markup = render(makeProps({ hasPendingDecision: false, locale: "zh-CN" }));
+      const markup = render(
+        makeProps({ hasPendingDecision: false, locale: "zh-CN" })
+      );
       expect(markup).toContain("当前无需接管");
     });
 
@@ -45,7 +49,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: false,
           takeoverSummary: "Agent completed review successfully",
-        }),
+        })
       );
       expect(markup).toContain("Agent completed review successfully");
       expect(markup).not.toContain("No takeover needed");
@@ -56,7 +60,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: false,
           decisionPresets: [{ id: "approve", label: "Approve" }],
-        }),
+        })
       );
       expect(markup).not.toContain("Approve");
     });
@@ -73,7 +77,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           decisionPrompt: "Please review the generated report",
-        }),
+        })
       );
       expect(markup).toContain("Please review the generated report");
     });
@@ -86,7 +90,7 @@ describe("TakeoverCard", () => {
             { id: "approve", label: "Approve" },
             { id: "reject", label: "Reject" },
           ],
-        }),
+        })
       );
       expect(markup).toContain("Approve");
       expect(markup).toContain("Reject");
@@ -96,7 +100,7 @@ describe("TakeoverCard", () => {
       const markup = render(
         makeProps({
           hasPendingDecision: true,
-        }),
+        })
       );
       expect(markup).toContain("textarea");
     });
@@ -106,7 +110,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           locale: "en-US",
-        }),
+        })
       );
       expect(markup).toContain("Note");
     });
@@ -116,7 +120,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           locale: "zh-CN",
-        }),
+        })
       );
       expect(markup).toContain("备注");
     });
@@ -126,7 +130,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           decisionPresets: [{ id: "ok", label: "OK" }],
-        }),
+        })
       );
       expect(markup).not.toContain("No takeover needed");
       expect(markup).not.toContain("当前无需接管");
@@ -137,7 +141,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           decisionNote: "Looks good to me",
-        }),
+        })
       );
       expect(markup).toContain("Looks good to me");
     });
@@ -153,7 +157,7 @@ describe("TakeoverCard", () => {
             { id: "approve", label: "Approve" },
             { id: "reject", label: "Reject" },
           ],
-        }),
+        })
       );
       // All buttons should have disabled attribute
       const disabledCount = (markup.match(/disabled=""/g) || []).length;
@@ -166,7 +170,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           operatorActionLoading: true,
-        }),
+        })
       );
       // The textarea should be disabled
       expect(markup).toContain("disabled");
@@ -197,7 +201,7 @@ describe("TakeoverCard", () => {
         makeProps({
           hasPendingDecision: true,
           decisionPresets: [{ id: "approve", label: "Approve" }],
-        }),
+        })
       );
       expect(markup).toContain("bg-primary");
       expect(markup).toContain("text-primary-foreground");

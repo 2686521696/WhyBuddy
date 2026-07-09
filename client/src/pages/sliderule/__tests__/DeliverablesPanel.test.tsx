@@ -8,7 +8,9 @@ import { describe, expect, it, vi } from "vitest";
 import { DeliverablesPanel } from "../DeliverablesPanel";
 
 vi.mock("@/pages/autopilot/right-rail/streaming-doc/MarkdownRenderer", () => ({
-  MarkdownRenderer: ({ markdown }: { markdown: string }) => <div>{markdown}</div>,
+  MarkdownRenderer: ({ markdown }: { markdown: string }) => (
+    <div>{markdown}</div>
+  ),
 }));
 
 describe("DeliverablesPanel report closure summary", () => {
@@ -74,9 +76,15 @@ describe("DeliverablesPanel report closure summary", () => {
 
   it("surfaces report/export closure summary from session publishArtifact when publishClosure is absent", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const fixtureDir = resolve(
+      here,
+      "../../../../../slide-rule-python/tests/fixtures"
+    );
     const closed = JSON.parse(
-      readFileSync(resolve(fixtureDir, "closed_appbundle_publish_artifact.json"), "utf8")
+      readFileSync(
+        resolve(fixtureDir, "closed_appbundle_publish_artifact.json"),
+        "utf8"
+      )
     );
 
     const html = renderToStaticMarkup(
@@ -120,9 +128,15 @@ describe("DeliverablesPanel report closure summary", () => {
 
   it("surfaces blocked report/export closure summary from session publishArtifact", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const fixtureDir = resolve(here, "../../../../../slide-rule-python/tests/fixtures");
+    const fixtureDir = resolve(
+      here,
+      "../../../../../slide-rule-python/tests/fixtures"
+    );
     const blocked = JSON.parse(
-      readFileSync(resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"), "utf8")
+      readFileSync(
+        resolve(fixtureDir, "blocked_appbundle_publish_artifact.json"),
+        "utf8"
+      )
     );
 
     const html = renderToStaticMarkup(
@@ -135,7 +149,10 @@ describe("DeliverablesPanel report closure summary", () => {
         sessionState={
           {
             sessionId: "deliverables-report-export-blocked-artifact-summary",
-            goal: { text: "blocked publish artifact", status: "needs_refinement" },
+            goal: {
+              text: "blocked publish artifact",
+              status: "needs_refinement",
+            },
             publishArtifact: blocked,
             artifacts: [
               {

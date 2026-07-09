@@ -15,7 +15,10 @@ import {
   subscribeRunEvents,
 } from "./dashboard/agentLoopApi";
 import type { RunEventSubscriptionHandlers } from "./dashboard/agentLoopApi";
-import type { DetailPayload, OverviewPayload } from "./dashboard/dashboardTypes";
+import type {
+  DetailPayload,
+  OverviewPayload,
+} from "./dashboard/dashboardTypes";
 import { normalizeSettingsForUI } from "./dashboard/agentLoopApi";
 import brandLogo from "./dashboard/sliderule-brand.svg";
 import "./dashboard/dashboard.css";
@@ -26,7 +29,13 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "settings" | "settings-legacy";
+type DashboardRouteView =
+  | "sliderule"
+  | "workbench"
+  | "workbench-legacy"
+  | "skills"
+  | "settings"
+  | "settings-legacy";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
@@ -69,7 +78,8 @@ export function getAgentLoopRunPath(runId: string): string {
 }
 
 export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
-  const rawPath = (location || "/agent-loop").split(/[?#]/, 1)[0] || "/agent-loop";
+  const rawPath =
+    (location || "/agent-loop").split(/[?#]/, 1)[0] || "/agent-loop";
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
   const normalized = path.toLowerCase();
 
@@ -105,7 +115,7 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
 
 export function resolveAgentLoopLiveEventRunId(
   overview: OverviewPayload | null,
-  route: AgentLoopRouteState,
+  route: AgentLoopRouteState
 ): string | null {
   // 新工作台（主线观察台）/设置整页自行拉取数据，不参与 legacy run 事件流
   if (
@@ -117,15 +127,22 @@ export function resolveAgentLoopLiveEventRunId(
   ) {
     return null;
   }
-  const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
-  const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
+  const runtimeStatus = String(
+    (overview?.current as any)?.runtimeStatus || ""
+  ).toLowerCase();
+  const runtimeActive =
+    !runtimeStatus ||
+    runtimeStatus === "running" ||
+    runtimeStatus === "started";
   if (!runtimeActive) return route.kind === "detail" ? route.runId : null;
   const backgroundRunId = (overview?.current as any)?.backgroundRunId;
   if (backgroundRunId) return String(backgroundRunId);
   return route.kind === "detail" ? route.runId : null;
 }
 
-export function shouldLoadAgentLoopOverview(route: AgentLoopRouteState): boolean {
+export function shouldLoadAgentLoopOverview(
+  route: AgentLoopRouteState
+): boolean {
   // legacy 驾驶舱才消费队列 overview；新工作台（主线观察台）自行拉取
   return route.kind === "workbench-legacy";
 }
@@ -133,16 +150,28 @@ export function shouldLoadAgentLoopOverview(route: AgentLoopRouteState): boolean
 export function shouldPollAgentLoopOverview(
   overview: OverviewPayload | null,
   route: AgentLoopRouteState,
-  currentRunId: string | null,
+  currentRunId: string | null
 ): boolean {
-  if (route.kind !== "workbench-legacy" && route.kind !== "detail") return false;
-  const runtimeStatus = String((overview?.current as any)?.runtimeStatus || "").toLowerCase();
-  const runtimeActive = !runtimeStatus || runtimeStatus === "running" || runtimeStatus === "started";
+  if (route.kind !== "workbench-legacy" && route.kind !== "detail")
+    return false;
+  const runtimeStatus = String(
+    (overview?.current as any)?.runtimeStatus || ""
+  ).toLowerCase();
+  const runtimeActive =
+    !runtimeStatus ||
+    runtimeStatus === "running" ||
+    runtimeStatus === "started";
   if (!runtimeActive) return false;
-  return Boolean(overview?.queueRunning || (runtimeActive && (overview?.current as any)?.staleRun === false) || currentRunId);
+  return Boolean(
+    overview?.queueRunning ||
+      (runtimeActive && (overview?.current as any)?.staleRun === false) ||
+      currentRunId
+  );
 }
 
-export function createAgentLoopLiveEventHandlers(refreshCurrentView: () => void): RunEventSubscriptionHandlers {
+export function createAgentLoopLiveEventHandlers(
+  refreshCurrentView: () => void
+): RunEventSubscriptionHandlers {
   return {
     onEvent: refreshCurrentView,
     onSnapshot: refreshCurrentView,
@@ -181,7 +210,11 @@ export default function AgentLoopPage() {
   }
 
   const currentRunId = resolveAgentLoopLiveEventRunId(overview, route);
-  const shouldPollOverview = shouldPollAgentLoopOverview(overview, route, currentRunId);
+  const shouldPollOverview = shouldPollAgentLoopOverview(
+    overview,
+    route,
+    currentRunId
+  );
 
   async function loadOverview() {
     setError(null);
@@ -201,7 +234,9 @@ export default function AgentLoopPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("404")) {
-        setError(`暂无该任务的运行记录（${runId}）。请先运行该任务后再查看详情。`);
+        setError(
+          `暂无该任务的运行记录（${runId}）。请先运行该任务后再查看详情。`
+        );
       } else {
         setError(msg);
       }
@@ -241,10 +276,11 @@ export default function AgentLoopPage() {
     // task.id in queue view is often the task identifier (e.g. "sliderule-...-110"), not a run dir.
     const explicitRunId = runId ? String(runId) : "";
     const match = (overviewRef.current?.tasks || []).find(
-      (t) => t.task === taskPath || t.id === taskPath,
+      t => t.task === taskPath || t.id === taskPath
     );
     // any-cast because OverviewTask in types may lag behind queue data which includes lastRunId
-    const candidate = explicitRunId || match?.lastRunId || match?.id || taskPath;
+    const candidate =
+      explicitRunId || match?.lastRunId || match?.id || taskPath;
     if (candidate) {
       setLocation(getAgentLoopRunPath(candidate));
       void openDetail(candidate);
@@ -254,7 +290,9 @@ export default function AgentLoopPage() {
   // Helper to push responses back to the ported DashboardApp which listens on window 'message'
   function dispatchMessage(type: string, payload: unknown) {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new MessageEvent("message", { data: { type, payload } }));
+      window.dispatchEvent(
+        new MessageEvent("message", { data: { type, payload } })
+      );
     }
   }
 
@@ -289,7 +327,10 @@ export default function AgentLoopPage() {
         void loadOverview();
       }
     };
-    return subscribeRunEvents(String(currentRunId), createAgentLoopLiveEventHandlers(refreshCurrentView));
+    return subscribeRunEvents(
+      String(currentRunId),
+      createAgentLoopLiveEventHandlers(refreshCurrentView)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, currentRunId]);
 
@@ -357,7 +398,10 @@ export default function AgentLoopPage() {
                   worktreeScope: (ns as any).worktreeScope,
                   queuePath: (ns as any).queuePath,
                 };
-                Object.keys(rt).forEach((k) => { if (rt[k as keyof typeof rt] != null) runPayload[k] = rt[k as keyof typeof rt]; });
+                Object.keys(rt).forEach(k => {
+                  if (rt[k as keyof typeof rt] != null)
+                    runPayload[k] = rt[k as keyof typeof rt];
+                });
               } catch {}
               await runSingleTask(runPayload);
               // re-fetch current view
@@ -390,7 +434,10 @@ export default function AgentLoopPage() {
                   worktreeScope: (ns as any).worktreeScope,
                   queuePath: (ns as any).queuePath,
                 };
-                Object.keys(rt).forEach((k) => { if (rt[k as keyof typeof rt] != null) runPayload[k] = rt[k as keyof typeof rt]; });
+                Object.keys(rt).forEach(k => {
+                  if (rt[k as keyof typeof rt] != null)
+                    runPayload[k] = rt[k as keyof typeof rt];
+                });
               } catch {}
               await runQueue(runPayload);
               void loadOverview();
@@ -414,7 +461,10 @@ export default function AgentLoopPage() {
               }
             } catch (e: any) {
               // cancel in bridge is best-effort placeholder; do not hard fail UI
-              dispatchMessage("cancelResult", { status: "error", message: e?.message || String(e) });
+              dispatchMessage("cancelResult", {
+                status: "error",
+                message: e?.message || String(e),
+              });
               void loadOverview();
             }
           })();
@@ -440,7 +490,9 @@ export default function AgentLoopPage() {
               const raw = await fetchSettings();
               dispatchMessage("settings", adaptSettings(raw));
             } catch (e: any) {
-              dispatchMessage("saveBlocked", { message: e?.message || "save failed" });
+              dispatchMessage("saveBlocked", {
+                message: e?.message || "save failed",
+              });
             }
           })();
           return;
@@ -451,7 +503,14 @@ export default function AgentLoopPage() {
           dispatchMessage("queueDefaults", {
             unsupported: true,
             defaults: {},
-            supportedKeys: ["fixAgent", "reviewAgent", "workerMaxTurns", "workerMaxRetries", "worktreeScope", "queuePath"],
+            supportedKeys: [
+              "fixAgent",
+              "reviewAgent",
+              "workerMaxTurns",
+              "workerMaxRetries",
+              "worktreeScope",
+              "queuePath",
+            ],
             note: "queue defaults preview uses supported-only patch; full apply is backend queue-file only (read-only here)",
           });
           return;
@@ -459,13 +518,25 @@ export default function AgentLoopPage() {
         case "previewQueueDefaults":
         case "applyQueueDefaults": {
           // Stop synthetic success that implies persistence/apply; return explicit unsupported
-          dispatchMessage("queuePreview", { ok: false, unsupported: true, error: "queue defaults preview/apply unsupported in runtime (no dedicated backend contract)" });
-          dispatchMessage("queueApply", { ok: false, unsupported: true, error: "queue defaults apply unsupported" });
+          dispatchMessage("queuePreview", {
+            ok: false,
+            unsupported: true,
+            error:
+              "queue defaults preview/apply unsupported in runtime (no dedicated backend contract)",
+          });
+          dispatchMessage("queueApply", {
+            ok: false,
+            unsupported: true,
+            error: "queue defaults apply unsupported",
+          });
           return;
         }
         case "getDiagnostics": {
           // Honest unsupported instead of synthetic ok
-          dispatchMessage("diagnostics", { unsupported: true, note: "diagnostics not implemented; provider-health and /settings provide runtime state" });
+          dispatchMessage("diagnostics", {
+            unsupported: true,
+            note: "diagnostics not implemented; provider-health and /settings provide runtime state",
+          });
           return;
         }
         case "listProfiles": {
@@ -476,12 +547,22 @@ export default function AgentLoopPage() {
             try {
               const raw = await fetchSettings();
               const vm = adaptSettings(raw);
-              const ap = vm && vm.activeProfile ? String(vm.activeProfile) : 'local';
+              const ap =
+                vm && vm.activeProfile ? String(vm.activeProfile) : "local";
               const base = (vm && vm.nonSensitive) || {};
               const prof = {
-                fixAgent: vm && vm.fixAgent ? vm.fixAgent : (base as any).fixAgent || 'grok',
-                reviewAgent: vm && vm.reviewAgent ? vm.reviewAgent : (base as any).reviewAgent || 'codex',
-                baseUrl: vm && vm.baseUrl != null ? vm.baseUrl : (base as any).baseUrl || '',
+                fixAgent:
+                  vm && vm.fixAgent
+                    ? vm.fixAgent
+                    : (base as any).fixAgent || "grok",
+                reviewAgent:
+                  vm && vm.reviewAgent
+                    ? vm.reviewAgent
+                    : (base as any).reviewAgent || "codex",
+                baseUrl:
+                  vm && vm.baseUrl != null
+                    ? vm.baseUrl
+                    : (base as any).baseUrl || "",
                 workerMaxTurns: (base as any).workerMaxTurns,
                 workerMaxRetries: (base as any).workerMaxRetries,
                 worktreeScope: (base as any).worktreeScope,
@@ -492,7 +573,11 @@ export default function AgentLoopPage() {
                 unsupported: true,
               });
             } catch {
-              dispatchMessage("profiles", { profiles: {}, activeProfile: 'local', unsupported: true });
+              dispatchMessage("profiles", {
+                profiles: {},
+                activeProfile: "local",
+                unsupported: true,
+              });
             }
           })();
           return;
@@ -503,7 +588,10 @@ export default function AgentLoopPage() {
         case "deleteProfile":
         case "selectProfile": {
           // Do not emit synthetic success for unimplemented profile persistence
-          dispatchMessage("profileError", { error: "profile CRUD unsupported; only activeProfile via non-secret settings is persisted" });
+          dispatchMessage("profileError", {
+            error:
+              "profile CRUD unsupported; only activeProfile via non-secret settings is persisted",
+          });
           return;
         }
         case "exportSettings": {
@@ -523,7 +611,10 @@ export default function AgentLoopPage() {
               dispatchMessage("importSettingsResult", { ok: true });
               dispatchMessage("settings", adaptSettings(raw));
             } catch (e: any) {
-              dispatchMessage("importSettingsResult", { ok: false, error: e?.message || "import failed" });
+              dispatchMessage("importSettingsResult", {
+                ok: false,
+                error: e?.message || "import failed",
+              });
             }
           })();
           return;
@@ -535,11 +626,22 @@ export default function AgentLoopPage() {
               const p = (extra as any)?.provider || "grok";
               // Use real /provider-health response shape honestly (providers[ ].status in ready/missing/skipped/failed).
               // Only status==='ready' (or explicit ok:true) is success; never treat truthy non-ready status as ok.
-              const entry = (h && (h[p] || (h.providers && h.providers[p]) || h)) || {};
-              const isReady = entry && (String(entry.status || '').toLowerCase() === 'ready' || entry.ok === true);
-              dispatchMessage("providerHealth", { provider: p, ...entry, ok: !!isReady });
+              const entry =
+                (h && (h[p] || (h.providers && h.providers[p]) || h)) || {};
+              const isReady =
+                entry &&
+                (String(entry.status || "").toLowerCase() === "ready" ||
+                  entry.ok === true);
+              dispatchMessage("providerHealth", {
+                provider: p,
+                ...entry,
+                ok: !!isReady,
+              });
             } catch {
-              dispatchMessage("providerHealth", { provider: (extra as any)?.provider || "grok", ok: false });
+              dispatchMessage("providerHealth", {
+                provider: (extra as any)?.provider || "grok",
+                ok: false,
+              });
             }
           })();
           return;
@@ -547,7 +649,11 @@ export default function AgentLoopPage() {
         case "testWorkerCli": {
           // Worker CLI health not separately modeled; reuse provider as approximation
           const w = (extra as any)?.worker || "grok";
-          dispatchMessage("workerCliHealth", { worker: w, ok: true, note: "see provider-health" });
+          dispatchMessage("workerCliHealth", {
+            worker: w,
+            ok: true,
+            note: "see provider-health",
+          });
           return;
         }
         default:
@@ -591,7 +697,7 @@ export default function AgentLoopPage() {
           payload={overview ?? { tasks: [], counts: {} }}
           view={dashboardView}
           onViewChange={showDashboardView}
-          getViewPath={(next) => (
+          getViewPath={next =>
             next === "sliderule"
               ? getAgentLoopSliderulePath()
               : next === "settings"
@@ -603,7 +709,7 @@ export default function AgentLoopPage() {
                     : next === "workbench-legacy"
                       ? getAgentLoopWorkbenchLegacyPath()
                       : getAgentLoopWorkbenchPath()
-          )}
+          }
           getTaskRunPath={getAgentLoopRunPath}
           onOpenTask={openTaskRoute}
         />

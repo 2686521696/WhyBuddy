@@ -122,10 +122,7 @@ describe("ThreeLayerConsistencyChecker", () => {
 
     const resetPin = vi.fn();
     const fallbackWorkflowStageOverride = vi.fn();
-    const now = vi
-      .fn()
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(101);
+    const now = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(101);
 
     const result = checkThreeLayerConsistency(
       {
@@ -197,31 +194,31 @@ describe("ThreeLayerConsistencyChecker", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });
-  it("returns ok without warnings when all three layers already match", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const resetPin = vi.fn();
-    const fallbackWorkflowStageOverride = vi.fn();
+it("returns ok without warnings when all three layers already match", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const resetPin = vi.fn();
+  const fallbackWorkflowStageOverride = vi.fn();
 
-    const result = checkThreeLayerConsistency(
-      {
-        urlPin: "spec_docs",
-        workflowStageOverride: "spec_docs",
-        activeJobStage: "spec_docs",
-      },
-      {
-        resetPin,
-        fallbackWorkflowStageOverride,
-      }
-    );
+  const result = checkThreeLayerConsistency(
+    {
+      urlPin: "spec_docs",
+      workflowStageOverride: "spec_docs",
+      activeJobStage: "spec_docs",
+    },
+    {
+      resetPin,
+      fallbackWorkflowStageOverride,
+    }
+  );
 
-    expect(result).toMatchObject({
-      ok: true,
-      warned: false,
-      reviewOverride: false,
-      mismatchReason: null,
-      correctedTo: null,
-    });
-    expect(resetPin).not.toHaveBeenCalled();
-    expect(fallbackWorkflowStageOverride).not.toHaveBeenCalled();
-    expect(warn).not.toHaveBeenCalled();
+  expect(result).toMatchObject({
+    ok: true,
+    warned: false,
+    reviewOverride: false,
+    mismatchReason: null,
+    correctedTo: null,
   });
+  expect(resetPin).not.toHaveBeenCalled();
+  expect(fallbackWorkflowStageOverride).not.toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
+});

@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Monitors the width of a DOM element via ResizeObserver.
@@ -14,8 +14,8 @@ export function useContainerWidth(
     (onStoreChange: () => void) => {
       const el = ref.current;
       if (!el) {
-        window.addEventListener('resize', onStoreChange, { passive: true });
-        return () => window.removeEventListener('resize', onStoreChange);
+        window.addEventListener("resize", onStoreChange, { passive: true });
+        return () => window.removeEventListener("resize", onStoreChange);
       }
       const observer = new ResizeObserver(onStoreChange);
       observer.observe(el);

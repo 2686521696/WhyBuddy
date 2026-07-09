@@ -7,7 +7,13 @@ export type AigcCapabilityKind =
 
 export type AigcPepMarker = "pep";
 
-export type OutputSchemaFieldType = "string" | "number" | "boolean" | "enum" | "object" | "array";
+export type OutputSchemaFieldType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "enum"
+  | "object"
+  | "array";
 
 export interface AigcCapability {
   id: string;
@@ -152,4 +158,5 @@ export interface CitationEvidence {
   snippet?: string;
 }
 
-export const AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID = "AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID";
+export const AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID =
+  "AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID";

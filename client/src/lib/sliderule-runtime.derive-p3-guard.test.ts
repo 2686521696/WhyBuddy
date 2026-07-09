@@ -24,8 +24,14 @@ import {
   commitArtifact,
   deriveNodeStatus,
 } from "./sliderule-runtime";
-import { assertDeriveReadOnly, AUTHORITATIVE_STATE_FIELDS } from "./sliderule-derive-readonly-guard";
-import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-state";
+import {
+  assertDeriveReadOnly,
+  AUTHORITATIVE_STATE_FIELDS,
+} from "./sliderule-derive-readonly-guard";
+import type {
+  V5SessionState,
+  Artifact,
+} from "@shared/blueprint/v5-reasoning-state";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 
 // ---- helpers (mirror conventions from the Task 2 preservation test) ----
@@ -70,7 +76,10 @@ function kindForCap(capabilityId: string): Artifact["kind"] {
  * authoritative STATE (artifacts, runs, gaps, ledger, ...) stays populated.
  */
 function buildRichSession(seed: number): V5SessionState {
-  let s = createInitialSessionState("分析权限系统的风险并给出最终可行性报告", `p3-guard-${seed}`);
+  let s = createInitialSessionState(
+    "分析权限系统的风险并给出最终可行性报告",
+    `p3-guard-${seed}`
+  );
   const turns = [
     { text: "分析风险", trusted: true, forceFail: false, stale: false },
     { text: "综合证据", trusted: true, forceFail: false, stale: false },
@@ -78,14 +87,22 @@ function buildRichSession(seed: number): V5SessionState {
   ];
   turns.forEach((turn, ti) => {
     const turnId = `t${seed}-${ti}`;
-    const { newState, plan } = orchestrateReasoningTurn(s, { turnId, userText: turn.text });
+    const { newState, plan } = orchestrateReasoningTurn(s, {
+      turnId,
+      userText: turn.text,
+    });
     s = newState;
     (plan.selected || []).forEach((sel: any, i: number) => {
       const runId = `${turnId}-run-${i}`;
       const artId = `${turnId}-art-${i}`;
       const { updatedState } = commitArtifact(
         s,
-        createRawArtifact(artId, sel.capabilityId as V5CapabilityId, sel.roleId || "综合", kindForCap(sel.capabilityId)),
+        createRawArtifact(
+          artId,
+          sel.capabilityId as V5CapabilityId,
+          sel.roleId || "综合",
+          kindForCap(sel.capabilityId)
+        ),
         runId,
         turn.forceFail,
         sel.inputArtifactIds || []
@@ -134,7 +151,12 @@ describe("DERIVE P3 guard (Task 3.3): production deriveNodeStatus is read-only o
       graph: {
         ...after.graph,
         nodes: (after.graph?.nodes || []).map((n: any, i: number) =>
-          i === 0 ? { ...n, status: n.status === "completed" ? "active" : "completed" } : n
+          i === 0
+            ? {
+                ...n,
+                status: n.status === "completed" ? "active" : "completed",
+              }
+            : n
         ),
       } as any,
     };
@@ -156,8 +178,12 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
     // Tamper to a status GUARANTEED different from the live value so this always represents a
     // real GOAL write, regardless of what buildRichSession now produces (after the GCOV-gated
     // GOAL write landed, buildRichSession(3) may legitimately reach goal.status === "clear").
-    const tamperedStatus = s.goal.status === "clear" ? "not_recommended" : "clear";
-    const tampered: V5SessionState = { ...deriveNodeStatus(s), goal: { ...s.goal, status: tamperedStatus } };
+    const tamperedStatus =
+      s.goal.status === "clear" ? "not_recommended" : "clear";
+    const tampered: V5SessionState = {
+      ...deriveNodeStatus(s),
+      goal: { ...s.goal, status: tamperedStatus },
+    };
     expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/goal/);
   });
 
@@ -169,7 +195,12 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
       ...after,
       artifacts: [
         ...after.artifacts,
-        createRawArtifact("injected", "report.write", "综合", "report") as Artifact,
+        createRawArtifact(
+          "injected",
+          "report.write",
+          "综合",
+          "report"
+        ) as Artifact,
       ],
     };
     expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/artifacts/);
@@ -178,7 +209,10 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
   it('FAILS when DERIVE writes "decisions"', () => {
     const s = baseSession();
     const before = structuredClone(s);
-    const tampered: V5SessionState = { ...deriveNodeStatus(s), decisions: [{ id: "d-injected" }] };
+    const tampered: V5SessionState = {
+      ...deriveNodeStatus(s),
+      decisions: [{ id: "d-injected" }],
+    };
     expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/decisions/);
   });
 
@@ -200,7 +234,9 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
         },
       ],
     };
-    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/capabilityRuns/);
+    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(
+      /capabilityRuns/
+    );
   });
 
   it('FAILS when DERIVE writes gaps ("coverageGaps")', () => {
@@ -218,7 +254,9 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
         },
       ],
     };
-    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/coverageGaps/);
+    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(
+      /coverageGaps/
+    );
   });
 
   it('FAILS when DERIVE writes ledgers ("decisionLedger")', () => {
@@ -242,7 +280,9 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
         },
       ],
     };
-    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/decisionLedger/);
+    expect(() => assertDeriveReadOnly(before, tampered)).toThrow(
+      /decisionLedger/
+    );
   });
 
   it("FAILS when DERIVE changes a node field other than status", () => {
@@ -267,14 +307,24 @@ describe("DERIVE P3 guard (Task 3.3): guard catches any DERIVE write to authorit
     const after = deriveNodeStatus(s);
     const tampered: V5SessionState = {
       ...after,
-      graph: { ...after.graph, nodes: (after.graph?.nodes || []).slice(1) } as any,
+      graph: {
+        ...after.graph,
+        nodes: (after.graph?.nodes || []).slice(1),
+      } as any,
     };
     expect(() => assertDeriveReadOnly(before, tampered)).toThrow(/node count/);
   });
 
   it("covers every documented authoritative STATE field", () => {
     // Guards the field list itself against silent shrinkage.
-    for (const field of ["artifacts", "goal", "decisions", "capabilityRuns", "coverageGaps", "decisionLedger"]) {
+    for (const field of [
+      "artifacts",
+      "goal",
+      "decisions",
+      "capabilityRuns",
+      "coverageGaps",
+      "decisionLedger",
+    ]) {
       expect(AUTHORITATIVE_STATE_FIELDS).toContain(field);
     }
   });

@@ -15,7 +15,12 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 
-const MENU_ICONS = [TableOutlined, ProfileOutlined, FormOutlined, AppstoreOutlined];
+const MENU_ICONS = [
+  TableOutlined,
+  ProfileOutlined,
+  FormOutlined,
+  AppstoreOutlined,
+];
 
 export interface PhoneTabItem {
   pageId: string;
@@ -29,12 +34,16 @@ interface PhoneTabBarProps {
   onChange: (pageId: string) => void;
 }
 
-export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarProps) {
+export default function PhoneTabBar({
+  items,
+  activeId,
+  onChange,
+}: PhoneTabBarProps) {
   return (
     <TabBar
       activeKey={activeId}
-      onChange={(key) => {
-        const item = items.find((i) => i.pageId === key);
+      onChange={key => {
+        const item = items.find(i => i.pageId === key);
         if (item && !item.locked) onChange(key);
       }}
       safeArea={false}
@@ -46,14 +55,19 @@ export default function PhoneTabBar({ items, activeId, onChange }: PhoneTabBarPr
           item.pageId === "home"
             ? DashboardOutlined
             : item.locked
-            ? LockOutlined
-            : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
+              ? LockOutlined
+              : MENU_ICONS[(i - 1 + MENU_ICONS.length) % MENU_ICONS.length];
         return (
           <TabBar.Item
             key={item.pageId}
-            icon={<Icon style={item.locked ? { color: "#bfbfbf" } : undefined} />}
+            icon={
+              <Icon style={item.locked ? { color: "#bfbfbf" } : undefined} />
+            }
             title={
-              <span style={item.locked ? { color: "#bfbfbf" } : undefined} title={item.locked ? "当前角色无本页权限" : item.label}>
+              <span
+                style={item.locked ? { color: "#bfbfbf" } : undefined}
+                title={item.locked ? "当前角色无本页权限" : item.label}
+              >
                 {item.label}
               </span>
             }

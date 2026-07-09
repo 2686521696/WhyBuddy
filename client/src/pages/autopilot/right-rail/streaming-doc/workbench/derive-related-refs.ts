@@ -103,7 +103,7 @@ export function deriveRelatedRefs(input: DeriveRelatedRefsInput): RelatedRef[] {
   // 2. parent-node 与 3. child-node 需要 specTree
   if (specTree && specTree.nodes.length > 0) {
     // 构建 nodeId -> node 映射
-    const nodeById = new Map(specTree.nodes.map((n) => [n.id, n]));
+    const nodeById = new Map(specTree.nodes.map(n => [n.id, n]));
 
     // 查找当前节点
     const activeNode = nodeById.get(activeNodeId);
@@ -149,7 +149,8 @@ export function deriveRelatedRefs(input: DeriveRelatedRefsInput): RelatedRef[] {
 
   // 按 relation 分组排序、组内按 TYPE_ORDER 排序
   refs.sort((a, b) => {
-    const relationDiff = RELATION_ORDER[a.relation] - RELATION_ORDER[b.relation];
+    const relationDiff =
+      RELATION_ORDER[a.relation] - RELATION_ORDER[b.relation];
     if (relationDiff !== 0) return relationDiff;
     return TYPE_ORDER[a.type] - TYPE_ORDER[b.type];
   });

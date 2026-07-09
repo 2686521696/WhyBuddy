@@ -23,7 +23,7 @@ function entry(
   checkType: BlueprintCheckType,
   status: BlueprintCheckStatus,
   stage = "spec_tree",
-  checkName = id,
+  checkName = id
 ): BlueprintChecksLedgerEntry {
   return {
     id,
@@ -38,7 +38,7 @@ function entry(
 }
 
 function response(
-  entries: BlueprintChecksLedgerEntry[],
+  entries: BlueprintChecksLedgerEntry[]
 ): BlueprintChecksLedgerResponse {
   const summary = { total: entries.length, pass: 0, fail: 0, warn: 0, skip: 0 };
   for (const e of entries) summary[e.status] += 1;
@@ -103,7 +103,13 @@ describe("ChecksLedgerView", () => {
       status: "ready",
       locale: "en-US",
       data: response([
-        entry("a", "invariant", "warn", "spec_tree", "business_requirement_coverage"),
+        entry(
+          "a",
+          "invariant",
+          "warn",
+          "spec_tree",
+          "business_requirement_coverage"
+        ),
       ]),
     });
     expect(html).toContain('data-testid="ledger-section-invariant"');
@@ -131,7 +137,11 @@ describe("ChecksLedgerView", () => {
   });
 
   it("renders gates-off empty state", () => {
-    const html = render({ status: "empty", locale: "zh-CN", data: response([]) });
+    const html = render({
+      status: "empty",
+      locale: "zh-CN",
+      data: response([]),
+    });
     expect(html).toContain('data-testid="ledger-empty"');
   });
 

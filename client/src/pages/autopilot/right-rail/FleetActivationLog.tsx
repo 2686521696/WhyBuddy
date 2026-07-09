@@ -74,8 +74,8 @@ function resolveTypeColorClass(type: AgentProgressEntry["type"]): string {
  * 展示角色讨论与决策条目。
  */
 export const FleetActivationLog: FC = () => {
-  const agentProgress = useBlueprintRealtimeStore((s) => s.agentProgress);
-  const locale = useAppStore((s) => s.locale) as AppLocale;
+  const agentProgress = useBlueprintRealtimeStore(s => s.agentProgress);
+  const locale = useAppStore(s => s.locale) as AppLocale;
   const { discussions } = useRoleCrewState();
 
   // 防御性兜底：与 RoleStatusStrip / CapabilityRail 保持一致。store 初始
@@ -100,15 +100,17 @@ export const FleetActivationLog: FC = () => {
     <div data-testid="fleet-activation-log">
       {/* 原有激活日志条目 */}
       {visible.length > 0 && (
-        <div
-          className="mt-1 max-h-[140px] overflow-y-auto rounded border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] font-mono"
-        >
-          {visible.map((entry) => (
+        <div className="mt-1 max-h-[140px] overflow-y-auto rounded border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] font-mono">
+          {visible.map(entry => (
             <div key={entry.id} className="flex items-center gap-2 py-0.5">
-              <span className="text-white/35">[{formatTimestamp(entry.timestamp)}]</span>
+              <span className="text-white/35">
+                [{formatTimestamp(entry.timestamp)}]
+              </span>
               <span className="font-bold text-white/80">{entry.roleId}</span>
               <span className="text-white/55">
-                <span className={resolveTypeColorClass(entry.type)}>{entry.type}</span>
+                <span className={resolveTypeColorClass(entry.type)}>
+                  {entry.type}
+                </span>
                 {entry.message ? ` · ${entry.message}` : ""}
               </span>
             </div>

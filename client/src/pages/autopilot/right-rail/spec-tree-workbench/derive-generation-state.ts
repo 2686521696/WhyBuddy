@@ -83,7 +83,7 @@ export const DEFAULT_GENERATION_TIMEOUT_MS = 60000;
  * 是否还在中间态，结果恒为 `pending`，从而满足"不回退 idle、不误判 empty"。
  */
 export function deriveGenerationState(
-  input: DeriveGenerationStateInput,
+  input: DeriveGenerationStateInput
 ): GenerationStateView {
   const {
     inFlight,

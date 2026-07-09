@@ -89,7 +89,7 @@ describe("classifyZone", () => {
 describe("stableHash", () => {
   it("is deterministic and returns a uint32 for any string (property)", () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string(), s => {
         const a = stableHash(s);
         const b = stableHash(s);
         // Determinism: the same input always hashes to the same value.
@@ -122,19 +122,27 @@ describe("pickAnimal / pickAccentColor stability", () => {
       "role-quality-auditor": "reviewing",
     };
 
-    const first = createBlueprintRuntimeSceneData(makeFactoryInput({ rolePhases }));
-    const second = createBlueprintRuntimeSceneData(makeFactoryInput({ rolePhases }));
+    const first = createBlueprintRuntimeSceneData(
+      makeFactoryInput({ rolePhases })
+    );
+    const second = createBlueprintRuntimeSceneData(
+      makeFactoryInput({ rolePhases })
+    );
 
     const byRole = (data: typeof first) =>
-      Object.fromEntries(data.agents.map((a) => [a.roleId, a]));
+      Object.fromEntries(data.agents.map(a => [a.roleId, a]));
 
     const firstByRole = byRole(first);
     const secondByRole = byRole(second);
 
     for (const roleId of Object.keys(rolePhases)) {
       expect(secondByRole[roleId].animal).toBe(firstByRole[roleId].animal);
-      expect(secondByRole[roleId].accentColor).toBe(firstByRole[roleId].accentColor);
-      expect(secondByRole[roleId].position).toEqual(firstByRole[roleId].position);
+      expect(secondByRole[roleId].accentColor).toBe(
+        firstByRole[roleId].accentColor
+      );
+      expect(secondByRole[roleId].position).toEqual(
+        firstByRole[roleId].position
+      );
     }
   });
 });
@@ -146,7 +154,13 @@ describe("pickAnimal / pickAccentColor stability", () => {
 
 describe("assignRuntimeRoleSlots grid distinctness", () => {
   it("places 5 same-zone roles at pairwise-distinct positions", () => {
-    const roleIds = ["analyst-1", "analyst-2", "analyst-3", "analyst-4", "analyst-5"];
+    const roleIds = [
+      "analyst-1",
+      "analyst-2",
+      "analyst-3",
+      "analyst-4",
+      "analyst-5",
+    ];
 
     // Sanity: all 5 ids classify into the same (repository) zone. The tidy
     // centred-grid layout still gives each role its own cell (no two roles
@@ -159,7 +173,7 @@ describe("assignRuntimeRoleSlots grid distinctness", () => {
     expect(slots.size).toBe(roleIds.length);
 
     const positionKeys = new Set(
-      [...slots.values()].map((slot) => JSON.stringify(slot.position))
+      [...slots.values()].map(slot => JSON.stringify(slot.position))
     );
     expect(positionKeys.size).toBe(roleIds.length);
   });
@@ -171,7 +185,9 @@ describe("assignRuntimeRoleSlots grid distinctness", () => {
 
 describe("createBlueprintRuntimeSceneData empty state", () => {
   it("returns no agents, no lines, and a visible bilingual empty hint", () => {
-    const data = createBlueprintRuntimeSceneData(makeFactoryInput({ rolePhases: {} }));
+    const data = createBlueprintRuntimeSceneData(
+      makeFactoryInput({ rolePhases: {} })
+    );
 
     expect(data.agents).toEqual([]);
     expect(data.connectionLines).toEqual([]);
@@ -192,7 +208,9 @@ describe("createBlueprintRuntimeSceneData agents", () => {
       "role-y-completed": "completed",
     };
 
-    const data = createBlueprintRuntimeSceneData(makeFactoryInput({ rolePhases }));
+    const data = createBlueprintRuntimeSceneData(
+      makeFactoryInput({ rolePhases })
+    );
 
     expect(data.agents).toHaveLength(2);
     expect(data.emptyHint.visible).toBe(false);
@@ -211,7 +229,9 @@ describe("createBlueprintRuntimeSceneData agents", () => {
       "role-x-failed": "failed",
     };
 
-    const data = createBlueprintRuntimeSceneData(makeFactoryInput({ rolePhases }));
+    const data = createBlueprintRuntimeSceneData(
+      makeFactoryInput({ rolePhases })
+    );
     expect(data.agents).toHaveLength(1);
     expect(data.agents[0].colorOverride).toBe(
       phaseTierVisuals(phaseTierOf("failed")).colorOverride
@@ -259,12 +279,12 @@ describe("createBlueprintRuntimeSceneData agents", () => {
       })
     );
 
-    expect(data.agents.find(agent => agent.roleId === "role-quality-auditor")?.label).toBe(
-      "Quality Auditor"
-    );
-    expect(data.agents.find(agent => agent.roleId === "spec-architect")?.label).toBe(
-      "Spec Architect"
-    );
+    expect(
+      data.agents.find(agent => agent.roleId === "role-quality-auditor")?.label
+    ).toBe("Quality Auditor");
+    expect(
+      data.agents.find(agent => agent.roleId === "spec-architect")?.label
+    ).toBe("Spec Architect");
   });
 
   it("uses the English canonical name for seeded roles without runtime labels", () => {
@@ -334,9 +354,7 @@ describe("createBlueprintRuntimeSceneData stage-seed merge precedence", () => {
     expect(data.agents).toHaveLength(3);
     expect(data.emptyHint.visible).toBe(false);
 
-    const byRole = Object.fromEntries(
-      data.agents.map((a) => [a.roleId, a])
-    );
+    const byRole = Object.fromEntries(data.agents.map(a => [a.roleId, a]));
 
     // Real "failed" overrides the seeded "activated".
     const analyst = byRole["repository-analyst"];
@@ -384,7 +402,7 @@ describe("createBlueprintRuntimeSceneData seeded role zone classification", () =
     expect(data.agents).toHaveLength(3);
 
     const zoneByRole = Object.fromEntries(
-      data.agents.map((a) => [a.roleId, a.zone])
+      data.agents.map(a => [a.roleId, a.zone])
     );
 
     expect(zoneByRole["repository-analyst"]).toBe("repository");

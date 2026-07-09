@@ -17,12 +17,12 @@
  * 不允许跳过中间阶段直接推进到后续阶段。
  */
 export type WorkbenchStage =
-  | 'input'
-  | 'clarification'
-  | 'route'
-  | 'spec_tree'
-  | 'spec_documents'
-  | 'effect_preview';
+  | "input"
+  | "clarification"
+  | "route"
+  | "spec_tree"
+  | "spec_documents"
+  | "effect_preview";
 
 /**
  * 单个阶段的配置项。
@@ -46,39 +46,39 @@ export interface StageConfigItem {
  */
 export const STAGE_CONFIG: Record<WorkbenchStage, StageConfigItem> = {
   input: {
-    englishLabel: 'INPUT',
-    chineseTitle: '需求输入',
-    ctaLabel: '开始澄清',
+    englishLabel: "INPUT",
+    chineseTitle: "需求输入",
+    ctaLabel: "开始澄清",
     autoAdvance: false,
   },
   clarification: {
-    englishLabel: 'CLARIFICATION',
-    chineseTitle: '智能澄清',
-    ctaLabel: '生成路线',
+    englishLabel: "CLARIFICATION",
+    chineseTitle: "智能澄清",
+    ctaLabel: "生成路线",
     autoAdvance: false,
   },
   route: {
-    englishLabel: 'ROUTE',
-    chineseTitle: '路线规划',
-    ctaLabel: '确认路线',
+    englishLabel: "ROUTE",
+    chineseTitle: "路线规划",
+    ctaLabel: "确认路线",
     autoAdvance: false,
   },
   spec_tree: {
-    englishLabel: 'SPEC TREE',
-    chineseTitle: '规格树',
-    ctaLabel: '生成文档',
+    englishLabel: "SPEC TREE",
+    chineseTitle: "规格树",
+    ctaLabel: "生成文档",
     autoAdvance: false,
   },
   spec_documents: {
-    englishLabel: 'SPEC DOCUMENTS',
-    chineseTitle: '规格文档',
-    ctaLabel: '预览效果',
+    englishLabel: "SPEC DOCUMENTS",
+    chineseTitle: "规格文档",
+    ctaLabel: "预览效果",
     autoAdvance: true,
   },
   effect_preview: {
-    englishLabel: 'EFFECT PREVIEW',
-    chineseTitle: '效果预览',
-    ctaLabel: '完成',
+    englishLabel: "EFFECT PREVIEW",
+    chineseTitle: "效果预览",
+    ctaLabel: "完成",
     autoAdvance: false,
   },
 } as const;
@@ -90,10 +90,10 @@ export const STAGE_CONFIG: Record<WorkbenchStage, StageConfigItem> = {
  * 都必须以本常量为准。
  */
 export const STAGE_ORDER: readonly WorkbenchStage[] = [
-  'input',
-  'clarification',
-  'route',
-  'spec_tree',
-  'spec_documents',
-  'effect_preview',
+  "input",
+  "clarification",
+  "route",
+  "spec_tree",
+  "spec_documents",
+  "effect_preview",
 ] as const;

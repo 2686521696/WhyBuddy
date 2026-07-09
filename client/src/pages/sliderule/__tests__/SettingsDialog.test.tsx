@@ -55,7 +55,9 @@ describe("SettingsDialog（设置中心重构）", () => {
   });
 
   it("关闭态不渲染任何内容", () => {
-    const html = renderToStaticMarkup(<SettingsDialog open={false} onClose={() => {}} />);
+    const html = renderToStaticMarkup(
+      <SettingsDialog open={false} onClose={() => {}} />
+    );
     expect(html).toBe("");
   });
 });

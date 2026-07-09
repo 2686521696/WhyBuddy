@@ -44,7 +44,9 @@ const twoRoundFacts: TurnRouteFacts = {
       planSelectedCount: 1,
       planSource: "llm",
       dledgerDecisionId: "turn-1-r2-dledger",
-      selectedCapabilities: [{ capabilityId: "synthesis.merge", roleId: "综合" }],
+      selectedCapabilities: [
+        { capabilityId: "synthesis.merge", roleId: "综合" },
+      ],
     },
   ],
 } as TurnRouteFacts;

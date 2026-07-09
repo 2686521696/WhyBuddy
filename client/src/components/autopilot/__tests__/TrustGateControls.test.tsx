@@ -17,7 +17,7 @@ import type { BlueprintChecksLedgerEntry } from "@/pages/autopilot/right-rail/tr
 function entry(
   checkType: BlueprintChecksLedgerEntry["checkType"],
   status: BlueprintChecksLedgerEntry["status"],
-  id = `${checkType}-${status}`,
+  id = `${checkType}-${status}`
 ): BlueprintChecksLedgerEntry {
   return {
     id,
@@ -47,14 +47,16 @@ describe("deriveMergeGateStatus", () => {
   it("returns none when no relevant entries / empty", () => {
     expect(deriveMergeGateStatus([]).overall).toBe("none");
     expect(deriveMergeGateStatus(null).testStatus).toBe("none");
-    expect(deriveMergeGateStatus([entry("schema", "pass")]).overall).toBe("none");
+    expect(deriveMergeGateStatus([entry("schema", "pass")]).overall).toBe(
+      "none"
+    );
   });
 });
 
 describe("RouteConfirmGate", () => {
   it("disables confirm until a route is selected", () => {
     const html = renderToStaticMarkup(
-      createElement(RouteConfirmGate, { locale: "en-US", routeSelected: false }),
+      createElement(RouteConfirmGate, { locale: "en-US", routeSelected: false })
     );
     expect(html).toContain('data-testid="rt-gate"');
     expect(html).toContain('data-route-selected="false"');
@@ -67,7 +69,7 @@ describe("RouteConfirmGate", () => {
         locale: "en-US",
         routeSelected: true,
         onConfirm: () => {},
-      }),
+      })
     );
     expect(html).toContain('data-route-selected="true"');
     expect(html).not.toMatch(/rt-gate-confirm[^>]*disabled/);
@@ -77,7 +79,10 @@ describe("RouteConfirmGate", () => {
 describe("AbortEscalateControl", () => {
   it("renders an actionable button when escalation is available", () => {
     const html = renderToStaticMarkup(
-      createElement(AbortEscalateControl, { locale: "en-US", onEscalate: () => {} }),
+      createElement(AbortEscalateControl, {
+        locale: "en-US",
+        onEscalate: () => {},
+      })
     );
     expect(html).toContain('data-available="true"');
     expect(html).toContain('data-testid="esc-action"');
@@ -85,7 +90,7 @@ describe("AbortEscalateControl", () => {
 
   it("renders an informational placeholder (no fabricated success) when unavailable", () => {
     const html = renderToStaticMarkup(
-      createElement(AbortEscalateControl, { locale: "en-US" }),
+      createElement(AbortEscalateControl, { locale: "en-US" })
     );
     expect(html).toContain('data-available="false"');
     expect(html).toContain('data-testid="esc-placeholder"');
@@ -100,7 +105,7 @@ describe("MergeGateStatusView", () => {
       entry("content_quality", "warn"),
     ]);
     const html = renderToStaticMarkup(
-      createElement(MergeGateStatusView, { locale: "en-US", status }),
+      createElement(MergeGateStatusView, { locale: "en-US", status })
     );
     expect(html).toContain('data-testid="qa-merge"');
     expect(html).toContain('data-overall="warn"');

@@ -27,7 +27,11 @@ interface TestResult {
   detail?: string;
 }
 
-const FIELD_LABEL: Record<string, string> = { apiKey: "密钥", baseUrl: "Base URL", model: "模型" };
+const FIELD_LABEL: Record<string, string> = {
+  apiKey: "密钥",
+  baseUrl: "Base URL",
+  model: "模型",
+};
 
 export function LlmChannelPanel() {
   const [status, setStatus] = React.useState<ChannelStatus | null>(null);
@@ -60,8 +64,10 @@ export function LlmChannelPanel() {
   const save = async () => {
     if (!status || saving) return;
     const payload: Record<string, string> = {};
-    if (baseUrl.trim() && baseUrl.trim() !== status.baseUrl) payload.baseUrl = baseUrl.trim();
-    if (model.trim() && model.trim() !== status.model) payload.model = model.trim();
+    if (baseUrl.trim() && baseUrl.trim() !== status.baseUrl)
+      payload.baseUrl = baseUrl.trim();
+    if (model.trim() && model.trim() !== status.model)
+      payload.model = model.trim();
     if (apiKey.trim()) payload.apiKey = apiKey.trim();
     if (Object.keys(payload).length === 0) {
       toast.info("没有需要保存的修改");
@@ -78,7 +84,9 @@ export function LlmChannelPanel() {
       setApiKey("");
       setTestResult(null);
       await refresh();
-      toast.success("推演通道已更新", { description: "立即生效，密钥保存在服务端本机。" });
+      toast.success("推演通道已更新", {
+        description: "立即生效，密钥保存在服务端本机。",
+      });
     } catch (e) {
       toast.error("保存失败", { description: String(e) });
     } finally {
@@ -106,7 +114,9 @@ export function LlmChannelPanel() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/sliderule/llm-channel/test", { method: "POST" });
+      const res = await fetch("/api/sliderule/llm-channel/test", {
+        method: "POST",
+      });
       setTestResult(
         res.ok
           ? ((await res.json()) as TestResult)
@@ -120,7 +130,7 @@ export function LlmChannelPanel() {
   };
 
   const inputClass =
-    "w-full rounded border border-[#E7E2D9] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#D97757] focus:ring-2 focus:ring-[#F3DCD0]";
+    "w-full rounded border border-[#e5e7eb] bg-white px-3 py-2 font-mono text-[13px] text-stone-800 outline-none transition focus:border-[#1677ff] focus:ring-2 focus:ring-[#F3DCD0]";
   const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
 
   if (loadError) {
@@ -128,39 +138,50 @@ export function LlmChannelPanel() {
       <div className="p-6" data-testid="llm-channel-panel">
         <div className="rounded-md border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600">
           无法读取服务端通道配置：{loadError}
-          <div className="mt-1 text-stone-500">python 服务（:9700）未启动时此面板不可用——如实不可用，不显示假配置。</div>
+          <div className="mt-1 text-stone-500">
+            python 服务（:9700）未启动时此面板不可用——如实不可用，不显示假配置。
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl space-y-5 overflow-y-auto p-6" data-testid="llm-channel-panel">
-      <div className="rounded-md bg-[#F8E8E0]/70 px-4 py-3 text-[12px] leading-5 text-[#8a4a2b] ring-1 ring-[#EFD8CB]">
-        这是<strong>服务端真通道</strong>——五系统生成、LLM 评审、运行应用的 AI 写回全走这一条。
-        密钥仅保存在服务端本机（gitignored 覆盖文件），页面只显示掩码，明文不回传。
+    <div
+      className="max-w-2xl space-y-5 overflow-y-auto p-6"
+      data-testid="llm-channel-panel"
+    >
+      <div className="rounded-md bg-[#e6f4ff]/70 px-4 py-3 text-[12px] leading-5 text-[#0958d9] ring-1 ring-[#bae0ff]">
+        这是<strong>服务端真通道</strong>——五系统生成、LLM 评审、运行应用的 AI
+        写回全走这一条。 密钥仅保存在服务端本机（gitignored
+        覆盖文件），页面只显示掩码，明文不回传。
       </div>
 
       {!status ? (
         <div className="animate-pulse space-y-3">
-          <div className="h-9 rounded bg-[#F0EDE5]" />
-          <div className="h-9 rounded bg-[#F0EDE5]" />
-          <div className="h-9 rounded bg-[#F0EDE5]" />
+          <div className="h-9 rounded bg-[#e9edf2]" />
+          <div className="h-9 rounded bg-[#e9edf2]" />
+          <div className="h-9 rounded bg-[#e9edf2]" />
         </div>
       ) : (
         <>
           {/* 当前状态 */}
-          <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="llm-channel-status">
-            <span className={`rounded-full px-2.5 py-1 font-medium ring-1 ${status.keyPresent ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-red-50 text-red-600 ring-red-200"}`}>
+          <div
+            className="flex flex-wrap items-center gap-2 text-[12px]"
+            data-testid="llm-channel-status"
+          >
+            <span
+              className={`rounded-full px-2.5 py-1 font-medium ring-1 ${status.keyPresent ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-red-50 text-red-600 ring-red-200"}`}
+            >
               {status.keyPresent ? `密钥 ${status.keyMasked}` : "未配置密钥"}
             </span>
-            <span className="rounded-full bg-[#F5F1EA] px-2.5 py-1 font-mono text-stone-600 ring-1 ring-[#E7E2D9]">
+            <span className="rounded-full bg-[#eef0f4] px-2.5 py-1 font-mono text-stone-600 ring-1 ring-[#e5e7eb]">
               {status.provider || "未知提供方"}
             </span>
-            <span className="rounded-full bg-[#F5F1EA] px-2.5 py-1 font-mono text-stone-600 ring-1 ring-[#E7E2D9]">
+            <span className="rounded-full bg-[#eef0f4] px-2.5 py-1 font-mono text-stone-600 ring-1 ring-[#e5e7eb]">
               {status.model}
             </span>
-            {status.overriddenFields.map((f) => (
+            {status.overriddenFields.map(f => (
               <button
                 key={f}
                 type="button"
@@ -179,7 +200,7 @@ export function LlmChannelPanel() {
             <input
               className={inputClass}
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={e => setBaseUrl(e.target.value)}
               placeholder="https://api.openai.com/v1"
               data-testid="llm-channel-baseurl"
             />
@@ -189,7 +210,7 @@ export function LlmChannelPanel() {
             <input
               className={inputClass}
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={e => setModel(e.target.value)}
               placeholder="gpt-4o-mini"
               data-testid="llm-channel-model"
             />
@@ -200,8 +221,12 @@ export function LlmChannelPanel() {
               className={inputClass}
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={status.keyPresent ? `留空 = 保持现有密钥（${status.keyMasked}）` : "粘贴密钥"}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder={
+                status.keyPresent
+                  ? `留空 = 保持现有密钥（${status.keyMasked}）`
+                  : "粘贴密钥"
+              }
               data-testid="llm-channel-key"
             />
           </div>
@@ -211,7 +236,7 @@ export function LlmChannelPanel() {
               type="button"
               onClick={save}
               disabled={saving}
-              className="rounded bg-[#D97757] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#C4633F] disabled:opacity-50"
+              className="rounded bg-[#1677ff] px-5 py-2 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#0958d9] disabled:opacity-50"
               data-testid="llm-channel-save"
             >
               {saving ? "保存中…" : "保存并生效"}
@@ -220,7 +245,7 @@ export function LlmChannelPanel() {
               type="button"
               onClick={runTest}
               disabled={testing}
-              className="rounded border border-[#E7E2D9] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#F5F1EA] disabled:opacity-50"
+              className="rounded border border-[#e5e7eb] bg-white px-4 py-2 text-[13px] font-semibold text-stone-600 transition hover:bg-[#eef0f4] disabled:opacity-50"
               data-testid="llm-channel-test"
             >
               {testing ? "真连测试中…" : "⚡ 测试连接"}
@@ -228,14 +253,24 @@ export function LlmChannelPanel() {
           </div>
 
           {testResult && testResult.ok && (
-            <div className="rounded-md bg-emerald-50 px-4 py-3 text-[12px] text-emerald-700 ring-1 ring-emerald-200" data-testid="llm-channel-test-ok">
-              连接正常 · 模型 <span className="font-mono">{testResult.model}</span> · 往返{" "}
-              {((testResult.latencyMs ?? 0) / 1000).toFixed(1)}s（真实请求，非 mock）
+            <div
+              className="rounded-md bg-emerald-50 px-4 py-3 text-[12px] text-emerald-700 ring-1 ring-emerald-200"
+              data-testid="llm-channel-test-ok"
+            >
+              连接正常 · 模型{" "}
+              <span className="font-mono">{testResult.model}</span> · 往返{" "}
+              {((testResult.latencyMs ?? 0) / 1000).toFixed(1)}s（真实请求，非
+              mock）
             </div>
           )}
           {testResult && !testResult.ok && (
-            <div className="rounded-md border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600" data-testid="llm-channel-test-fail">
-              <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">{testResult.code}</span>
+            <div
+              className="rounded-md border border-red-200 bg-red-50/60 px-4 py-3 text-[12px] text-red-600"
+              data-testid="llm-channel-test-fail"
+            >
+              <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">
+                {testResult.code}
+              </span>
               <span className="ml-2">{testResult.detail}</span>
             </div>
           )}

@@ -58,10 +58,7 @@ function StatusIcon({
       );
     case "future":
       return (
-        <Circle
-          className="size-4 shrink-0 text-slate-300"
-          aria-hidden="true"
-        />
+        <Circle className="size-4 shrink-0 text-slate-300" aria-hidden="true" />
       );
   }
 }
@@ -147,9 +144,7 @@ export const TimelineNode: FC<TimelineNodeProps> = ({
         )}
 
         {/* 活跃:内容区 */}
-        {status === "active" && (
-          <div className="mt-3">{children}</div>
-        )}
+        {status === "active" && <div className="mt-3">{children}</div>}
 
         {/* 未来:API path 提示 */}
         {status === "future" && (

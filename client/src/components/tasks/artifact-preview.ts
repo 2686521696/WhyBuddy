@@ -1,6 +1,12 @@
 import type { TaskArtifact } from "@/lib/tasks-store";
 
-export type ArtifactPreviewMode = "html" | "image" | "json" | "markdown" | "pdf" | "text";
+export type ArtifactPreviewMode =
+  | "html"
+  | "image"
+  | "json"
+  | "markdown"
+  | "pdf"
+  | "text";
 
 export interface ArtifactPreviewPayload {
   content: string;
@@ -118,7 +124,10 @@ export function formatArtifactPreviewContent(
 }
 
 export function isArtifactPreviewable(
-  artifact: Pick<TaskArtifact, "kind" | "format" | "mimeType" | "previewType" | "previewUrl">
+  artifact: Pick<
+    TaskArtifact,
+    "kind" | "format" | "mimeType" | "previewType" | "previewUrl"
+  >
 ): boolean {
   if (!artifact.previewUrl) {
     return false;

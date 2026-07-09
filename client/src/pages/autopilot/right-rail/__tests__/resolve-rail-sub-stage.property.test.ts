@@ -17,7 +17,10 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import type { BlueprintGenerationJob, BlueprintGenerationStage } from "@shared/blueprint/contracts";
+import type {
+  BlueprintGenerationJob,
+  BlueprintGenerationStage,
+} from "@shared/blueprint/contracts";
 
 import { resolveRailSubStage } from "../resolve-rail-sub-stage";
 import {
@@ -35,7 +38,7 @@ const arbTimelineStage: fc.Arbitrary<AutopilotTimelineStage> = fc.constantFrom(
   "clarification",
   "routeset",
   "selection",
-  "fabric",
+  "fabric"
 );
 
 /**
@@ -56,7 +59,7 @@ const arbJobStage: fc.Arbitrary<BlueprintGenerationStage> = fc.constantFrom(
   "prompt_packaging",
   "runtime_capability",
   "engineering_handoff",
-  "engineering_landing",
+  "engineering_landing"
 ) as fc.Arbitrary<BlueprintGenerationStage>;
 
 /**
@@ -65,7 +68,7 @@ const arbJobStage: fc.Arbitrary<BlueprintGenerationStage> = fc.constantFrom(
  */
 const arbJobOrNull = fc.oneof(
   fc.constant(null),
-  arbJobStage.map((stage) => ({ stage }) as unknown as BlueprintGenerationJob),
+  arbJobStage.map(stage => ({ stage }) as unknown as BlueprintGenerationJob)
 );
 
 const arbInput: fc.Arbitrary<ResolveRailSubStageInput> = fc.record({
@@ -134,7 +137,7 @@ describe("resolveRailSubStage (Spec 1 PBT)", () => {
   // -------------------------------------------------------------------------
   it("P1 - total function: always returns undefined (non-fabric) or a member of RAIL_SUB_STAGE_ORDER (fabric)", () => {
     fc.assert(
-      fc.property(arbInput, (input) => {
+      fc.property(arbInput, input => {
         const result = resolveRailSubStage(input);
         if (input.currentStage !== "fabric") {
           expect(result).toBeUndefined();
@@ -143,7 +146,7 @@ describe("resolveRailSubStage (Spec 1 PBT)", () => {
           expect(RAIL_SUB_STAGE_ORDER).toContain(result!);
         }
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 
@@ -157,18 +160,18 @@ describe("resolveRailSubStage (Spec 1 PBT)", () => {
         fc
           .array(
             fc.integer({ min: 0, max: BLUEPRINT_STAGE_PROGRESSION.length - 1 }),
-            { minLength: 2, maxLength: BLUEPRINT_STAGE_PROGRESSION.length },
+            { minLength: 2, maxLength: BLUEPRINT_STAGE_PROGRESSION.length }
           )
-          .map((indices) => [...indices].sort((a, b) => a - b)),
-        (sortedIndices) => {
-          const stages = sortedIndices.map((i) => BLUEPRINT_STAGE_PROGRESSION[i]);
+          .map(indices => [...indices].sort((a, b) => a - b)),
+        sortedIndices => {
+          const stages = sortedIndices.map(i => BLUEPRINT_STAGE_PROGRESSION[i]);
           const subIndices = stages.map(subStageIndex);
           for (let i = 1; i < subIndices.length; i++) {
             expect(subIndices[i]).toBeGreaterThanOrEqual(subIndices[i - 1]);
           }
-        },
+        }
       ),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -178,14 +181,14 @@ describe("resolveRailSubStage (Spec 1 PBT)", () => {
   // -------------------------------------------------------------------------
   it("P3 - idempotence: same input always yields the same result", () => {
     fc.assert(
-      fc.property(arbInput, (input) => {
+      fc.property(arbInput, input => {
         const r1 = resolveRailSubStage(input);
         const r2 = resolveRailSubStage(input);
         const r3 = resolveRailSubStage(input);
         expect(r1).toBe(r2);
         expect(r2).toBe(r3);
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 });

@@ -228,10 +228,7 @@ function payloadNodeType(decision: MissionDecision): string | null {
     : null;
 }
 
-function payloadString(
-  decision: MissionDecision,
-  key: string
-): string | null {
+function payloadString(decision: MissionDecision, key: string): string | null {
   if (!isPayloadRecord(decision.payload)) {
     return null;
   }
@@ -314,7 +311,9 @@ function buildDecisionContextNotices(
   const candidates = payloadRecordList(decision, "candidateRoutes");
   const recommendedRouteId = payloadString(decision, "recommendedRouteId");
   const recommendedRoute = recommendedRouteId
-    ? candidates.find(candidate => candidateRouteId(candidate) === recommendedRouteId)
+    ? candidates.find(
+        candidate => candidateRouteId(candidate) === recommendedRouteId
+      )
     : null;
 
   if (nodeType === "confirm_judge") {
@@ -351,7 +350,10 @@ function buildDecisionContextNotices(
     });
   }
 
-  if (resolveDecisionType(decision) === "request-info" && decision.allowFreeText) {
+  if (
+    resolveDecisionType(decision) === "request-info" &&
+    decision.allowFreeText
+  ) {
     notices.push({
       label: t(locale, "输入方式", "Input"),
       detail: t(
@@ -434,9 +436,7 @@ function snapshotDecisionField(field: WebAigcHitlFieldDefinition) {
   };
 }
 
-export function buildDecisionInteractionKey(
-  decision: MissionDecision
-): string {
+export function buildDecisionInteractionKey(decision: MissionDecision): string {
   const payload =
     decision.payload && typeof decision.payload === "object"
       ? (decision.payload as Record<string, unknown>)
@@ -682,7 +682,10 @@ function ParamCollectionField({
       }
 
       const normalized = normalizeAttachmentMetadataPatch(key, nextValue);
-      const current = attachmentValue ?? { kind: "attachment", source: "manual" };
+      const current = attachmentValue ?? {
+        kind: "attachment",
+        source: "manual",
+      };
       const hasAnyValue =
         Boolean(current.ref) ||
         Boolean(current.name) ||
@@ -741,14 +744,22 @@ function ParamCollectionField({
           <Input
             value={attachmentValue?.name ?? ""}
             onChange={event => patchAttachmentField("name", event.target.value)}
-            placeholder={t(locale, "附件名称（可选）", "Attachment name (optional)")}
+            placeholder={t(
+              locale,
+              "附件名称（可选）",
+              "Attachment name (optional)"
+            )}
             disabled={disabled}
             className="h-10 rounded-[14px] border-[var(--workspace-panel-border)] bg-white/70"
           />
           <Input
             value={attachmentValue?.url ?? ""}
             onChange={event => patchAttachmentField("url", event.target.value)}
-            placeholder={t(locale, "附件 URL（可选）", "Attachment URL (optional)")}
+            placeholder={t(
+              locale,
+              "附件 URL（可选）",
+              "Attachment URL (optional)"
+            )}
             disabled={disabled}
             className="h-10 rounded-[14px] border-[var(--workspace-panel-border)] bg-white/70"
           />
@@ -1304,9 +1315,8 @@ export function DecisionPanel({
     () => buildDecisionContextNotices(decision, paramCollectionFields, locale),
     [decisionInteractionKey, locale, paramCollectionFields]
   );
-  const [paramCollectionDraft, setParamCollectionDraft] = useState<ParamCollectionDraft>(
-    () => initialParamCollectionDraft
-  );
+  const [paramCollectionDraft, setParamCollectionDraft] =
+    useState<ParamCollectionDraft>(() => initialParamCollectionDraft);
   const [paramCollectionErrors, setParamCollectionErrors] = useState<
     Record<string, string>
   >({});
@@ -1491,7 +1501,10 @@ export function DecisionPanel({
             )}
           >
             {decisionContextNotices.map(notice => (
-              <div key={`${notice.label}:${notice.detail}`} className="leading-6">
+              <div
+                key={`${notice.label}:${notice.detail}`}
+                className="leading-6"
+              >
                 <span className="font-semibold text-stone-900">
                   {notice.label}:
                 </span>{" "}
@@ -1603,4 +1616,3 @@ export function DecisionPanel({
     </Card>
   );
 }
-

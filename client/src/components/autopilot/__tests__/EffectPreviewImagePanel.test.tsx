@@ -66,7 +66,7 @@ function renderPanel(args: {
       }}
       theme={args.theme ?? "light"}
       version={args.version}
-    />,
+    />
   );
 }
 
@@ -133,15 +133,15 @@ describe(
           (nodeId, version, timestamp) => {
             const filename = buildDownloadFilename(nodeId, version, timestamp);
             expect(filename).toBe(
-              `effect-preview-${nodeId}-v${version}-${timestamp}.png`,
+              `effect-preview-${nodeId}-v${version}-${timestamp}.png`
             );
             // 调用两次必须等价（纯函数 / 确定性）
             expect(buildDownloadFilename(nodeId, version, timestamp)).toBe(
-              filename,
+              filename
             );
-          },
+          }
         ),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
 
@@ -162,11 +162,11 @@ describe(
               // SSR HTML 转义后影响 data-node-id 属性匹配（避免 `<` / `&` / `"`
               // 等元字符干扰提取正则）。
               fc.stringMatching(/^[a-zA-Z0-9-]{1,16}$/),
-              { minLength: 1, maxLength: 8 },
+              { minLength: 1, maxLength: 8 }
             )
-            .filter((arr) => arr.length >= 1),
-          (nodeIds) => {
-            const progressPlan: ProgressPlanEntry[] = nodeIds.map((id) => ({
+            .filter(arr => arr.length >= 1),
+          nodeIds => {
+            const progressPlan: ProgressPlanEntry[] = nodeIds.map(id => ({
               nodeId: id,
               state: "completed" as const,
             }));
@@ -188,12 +188,12 @@ describe(
             expect(rendered).toEqual([...nodeIds]);
             // pairwise 唯一：没有两个 group 共享同一 nodeId
             expect(new Set(rendered).size).toBe(rendered.length);
-          },
+          }
         ),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
-  },
+  }
 );
 
 // ---------------------------------------------------------------------------
@@ -211,9 +211,7 @@ describe("<EffectPreviewImagePanel> · Task 13.2 example tests", () => {
     it('mounts the panel when activeStageKey === "effect_preview"', () => {
       const markup = renderPanel({
         activeStageKey: "effect_preview",
-        progressPlan: [
-          { nodeId: "n-1", state: "pending" },
-        ],
+        progressPlan: [{ nodeId: "n-1", state: "pending" }],
       });
       expect(markup).toContain('data-component="effect-preview-image-panel"');
     });
@@ -230,16 +228,18 @@ describe("<EffectPreviewImagePanel> · Task 13.2 example tests", () => {
       for (const stage of otherStageKeys) {
         const markup = renderPanel({
           activeStageKey: stage,
-          progressPlan: [
-            { nodeId: "n-1", state: "running" },
-          ],
+          progressPlan: [{ nodeId: "n-1", state: "running" }],
         });
         expect(markup).not.toContain(
-          'data-component="effect-preview-image-panel"',
+          'data-component="effect-preview-image-panel"'
         );
         // 同时也不应渲染 group / orb 等内部 anchor
-        expect(markup).not.toContain('data-testid="effect-preview-image-group"');
-        expect(markup).not.toContain('data-testid="effect-preview-loading-orb"');
+        expect(markup).not.toContain(
+          'data-testid="effect-preview-image-group"'
+        );
+        expect(markup).not.toContain(
+          'data-testid="effect-preview-loading-orb"'
+        );
       }
     });
   });
@@ -273,7 +273,9 @@ describe("<EffectPreviewImagePanel> · Task 13.2 example tests", () => {
       expect(markup).toContain("conic-gradient(");
 
       // 3. 节点名称标签紧随 orb 出现。
-      expect(markup).toContain('data-testid="effect-preview-loading-orb-label"');
+      expect(markup).toContain(
+        'data-testid="effect-preview-loading-orb-label"'
+      );
       expect(markup).toContain("正在出图节点 出图中");
     });
 
@@ -286,9 +288,7 @@ describe("<EffectPreviewImagePanel> · Task 13.2 example tests", () => {
           { nodeId: "n-4", state: "text-only", fallbackTier: "moderation" },
         ],
       });
-      expect(markup).not.toContain(
-        'data-testid="effect-preview-loading-orb"',
-      );
+      expect(markup).not.toContain('data-testid="effect-preview-loading-orb"');
       expect(markup).not.toContain("conic-gradient(");
     });
   });
@@ -314,32 +314,26 @@ describe("<EffectPreviewImagePanel> · Task 13.2 example tests", () => {
 
     it("renders the download button when a NodeImageRecord exists for a node", () => {
       const markup = renderPanel({
-        progressPlan: [
-          { nodeId: "node-with-image", state: "completed" },
-        ],
+        progressPlan: [{ nodeId: "node-with-image", state: "completed" }],
         imageBase64ByNodeId: {
           "node-with-image": makeImageRecord("node-with-image"),
         },
       });
 
       // 下载按钮必须出现并携带 nodeId（这是 onClick handler 用来构造文件名的输入）
-      expect(markup).toContain(
-        'data-testid="effect-preview-download-button"',
-      );
+      expect(markup).toContain('data-testid="effect-preview-download-button"');
       expect(markup).toMatch(
-        /<button\b[^>]*data-testid="effect-preview-download-button"[^>]*data-node-id="node-with-image"|<button\b[^>]*data-node-id="node-with-image"[^>]*data-testid="effect-preview-download-button"/,
+        /<button\b[^>]*data-testid="effect-preview-download-button"[^>]*data-node-id="node-with-image"|<button\b[^>]*data-node-id="node-with-image"[^>]*data-testid="effect-preview-download-button"/
       );
     });
 
     it("does not render a download button when no image record exists", () => {
       const markup = renderPanel({
-        progressPlan: [
-          { nodeId: "node-without-image", state: "running" },
-        ],
+        progressPlan: [{ nodeId: "node-without-image", state: "running" }],
         imageBase64ByNodeId: {},
       });
       expect(markup).not.toContain(
-        'data-testid="effect-preview-download-button"',
+        'data-testid="effect-preview-download-button"'
       );
     });
   });

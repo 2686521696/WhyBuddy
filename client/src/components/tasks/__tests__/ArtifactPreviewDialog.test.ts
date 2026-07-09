@@ -19,7 +19,9 @@ describe("ArtifactPreviewDialog logic", () => {
     expect(resolveArtifactPreviewMode("png")).toBe("image");
     expect(resolveArtifactPreviewMode(undefined, "image/png")).toBe("image");
     expect(resolveArtifactPreviewMode(undefined, null, "image")).toBe("image");
-    expect(resolveArtifactPreviewMode(undefined, "application/pdf")).toBe("pdf");
+    expect(resolveArtifactPreviewMode(undefined, "application/pdf")).toBe(
+      "pdf"
+    );
     expect(resolveArtifactPreviewMode("html")).toBe("html");
   });
 
@@ -50,14 +52,15 @@ describe("ArtifactPreviewDialog logic", () => {
   });
 
   it("fetches preview content and reads the truncation header", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response("preview body", {
-        status: 200,
-        headers: {
-          "content-type": "text/plain",
-          "x-truncated": "true",
-        },
-      })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("preview body", {
+          status: 200,
+          headers: {
+            "content-type": "text/plain",
+            "x-truncated": "true",
+          },
+        })
     );
     vi.stubGlobal("fetch", fetchMock);
 

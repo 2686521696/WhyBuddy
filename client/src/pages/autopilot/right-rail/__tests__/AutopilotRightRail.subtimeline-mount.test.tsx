@@ -59,7 +59,9 @@ let mockedAgentReasoning: AgentReasoningSliceState = {
   status: "idle",
 };
 
-function setMockedAgentReasoning(next: Partial<AgentReasoningSliceState>): void {
+function setMockedAgentReasoning(
+  next: Partial<AgentReasoningSliceState>
+): void {
   mockedAgentReasoning = {
     ...mockedAgentReasoning,
     ...next,
@@ -82,7 +84,12 @@ vi.mock("@/lib/blueprint-realtime-store", () => {
   // AutopilotRightRail 不直接读写其它字段，且 sub-timeline 仅消费
   // `agentReasoning.entries`。其它 API（subscribe / unsubscribe / dispatchEvent
   // / __setSocket）在本测试中不被调用。
-  const useBlueprintRealtimeStore = ((selector?: (state: { agentReasoning: AgentReasoningSliceState; specDocsProgress: { nodes: Record<string, never> } }) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: {
+      agentReasoning: AgentReasoningSliceState;
+      specDocsProgress: { nodes: Record<string, never> };
+    }) => unknown
+  ) => {
     const snapshot = {
       agentReasoning: mockedAgentReasoning,
       // sliderule-spec-tree-progress-merge-2026-05-29 §6：RightRail 现在派生
@@ -210,7 +217,9 @@ describe("AgentReasoningSubTimeline render contract via AutopilotRightRail SSR",
 
   it("returns null when entries are empty and status is idle (folded state)", () => {
     // Mock 默认即 entries === [] && status === "idle"，对应需求 2.2 折叠态。
-    const markup = renderToStaticMarkup(<AutopilotRightRail {...makeProps()} />);
+    const markup = renderToStaticMarkup(
+      <AutopilotRightRail {...makeProps()} />
+    );
 
     // active 卡片仍然存在（agent_crew_fabric 子阶段为 active）。
     expect(markup).toContain('data-timeline-status="active"');

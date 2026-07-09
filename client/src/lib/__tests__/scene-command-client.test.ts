@@ -35,7 +35,7 @@ function createMockTransport(): IClientTransport & {
 function simulateResponse(
   transport: ReturnType<typeof createMockTransport>,
   id: string,
-  opts?: { error?: boolean },
+  opts?: { error?: boolean }
 ) {
   const result = opts?.error
     ? {
@@ -80,7 +80,12 @@ describe("SceneCommandClient", () => {
       // Not calling connect()
 
       await expect(
-        disconnectedClient.send("character.moveTo", { characterId: "a", x: 0, y: 0, z: 0 }),
+        disconnectedClient.send("character.moveTo", {
+          characterId: "a",
+          x: 0,
+          y: 0,
+          z: 0,
+        })
       ).rejects.toThrow("Not connected");
     });
 
@@ -88,9 +93,9 @@ describe("SceneCommandClient", () => {
       const disconnectedTransport = createMockTransport();
       const disconnectedClient = new SceneCommandClient(disconnectedTransport);
 
-      await expect(
-        disconnectedClient.sendBatch([]),
-      ).rejects.toThrow("Not connected");
+      await expect(disconnectedClient.sendBatch([])).rejects.toThrow(
+        "Not connected"
+      );
     });
   });
 
@@ -109,7 +114,13 @@ describe("SceneCommandClient", () => {
       const sent = JSON.parse(transport.sentMessages[0]);
       expect(sent.jsonrpc).toBe("2.0");
       expect(sent.method).toBe("character.moveTo");
-      expect(sent.params).toEqual({ characterId: "hero", x: 1, y: 2, z: 3, speed: 5 });
+      expect(sent.params).toEqual({
+        characterId: "hero",
+        x: 1,
+        y: 2,
+        z: 3,
+        speed: 5,
+      });
       expect(sent.id).toBeTruthy();
 
       simulateResponse(transport, sent.id);
@@ -186,7 +197,10 @@ describe("SceneCommandClient", () => {
     });
 
     it("stopEffect sends effect.stop command", async () => {
-      const promise = client.stopEffect({ effectId: "explosion", fadeOut: 0.5 });
+      const promise = client.stopEffect({
+        effectId: "explosion",
+        fadeOut: 0.5,
+      });
 
       const sent = JSON.parse(transport.sentMessages[0]);
       expect(sent.method).toBe("effect.stop");
@@ -237,7 +251,7 @@ describe("SceneCommandClient", () => {
           jsonrpc: "2.0",
           result: { success: true, duration: 42 },
           id: sent.id,
-        }),
+        })
       );
 
       const result = await promise;
@@ -268,7 +282,7 @@ describe("SceneCommandClient", () => {
           jsonrpc: "2.0",
           result: { success: true },
           id: "unknown-id",
-        }),
+        })
       );
 
       // Send correct response
@@ -329,7 +343,7 @@ describe("SceneCommandClient", () => {
           jsonrpc: "2.0",
           result: { success: true },
           id: sent.id,
-        }),
+        })
       );
 
       vi.useRealTimers();
@@ -354,7 +368,9 @@ describe("SceneCommandClient", () => {
 
       client.disconnect();
 
-      await expect(promise).rejects.toThrow(String(SCENE_ERROR_CODES.NOT_CONNECTED));
+      await expect(promise).rejects.toThrow(
+        String(SCENE_ERROR_CODES.NOT_CONNECTED)
+      );
     });
 
     it("calls transport.disconnect", () => {
@@ -373,8 +389,18 @@ describe("SceneCommandClient", () => {
   describe("batch requests", () => {
     it("sends batch as JSON array", async () => {
       const commands = [
-        { jsonrpc: "2.0" as const, method: "character.moveTo", params: { characterId: "a", x: 0, y: 0, z: 0 }, id: "batch-1" },
-        { jsonrpc: "2.0" as const, method: "effect.play", params: { effectId: "fire" }, id: "batch-2" },
+        {
+          jsonrpc: "2.0" as const,
+          method: "character.moveTo",
+          params: { characterId: "a", x: 0, y: 0, z: 0 },
+          id: "batch-1",
+        },
+        {
+          jsonrpc: "2.0" as const,
+          method: "effect.play",
+          params: { effectId: "fire" },
+          id: "batch-2",
+        },
       ];
 
       const promise = client.sendBatch(commands);
@@ -388,7 +414,7 @@ describe("SceneCommandClient", () => {
         JSON.stringify([
           { jsonrpc: "2.0", result: { success: true }, id: "batch-1" },
           { jsonrpc: "2.0", result: { success: true }, id: "batch-2" },
-        ]),
+        ])
       );
 
       const results = await promise;
@@ -419,7 +445,7 @@ describe("SceneCommandClient", () => {
 
       // Only respond to first command
       transport.messageHandler?.(
-        JSON.stringify({ jsonrpc: "2.0", result: { success: true }, id: "b-1" }),
+        JSON.stringify({ jsonrpc: "2.0", result: { success: true }, id: "b-1" })
       );
 
       // Second command times out

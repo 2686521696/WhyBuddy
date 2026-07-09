@@ -29,7 +29,7 @@ function render(props: RouteCardProps): string {
 function makeStep(
   index: number,
   label: string,
-  status: RouteStepStatus,
+  status: RouteStepStatus
 ): RouteStepItem {
   return { index, label, status };
 }
@@ -70,7 +70,7 @@ describe("RouteCard", () => {
 
     it("renders completed step with green background and check icon", () => {
       const markup = render(
-        makeProps({ steps: [makeStep(0, "Done", "completed")] }),
+        makeProps({ steps: [makeStep(0, "Done", "completed")] })
       );
       expect(markup).toContain("bg-emerald-500");
       expect(markup).toContain("text-white");
@@ -80,7 +80,7 @@ describe("RouteCard", () => {
 
     it("renders active step with primary border and pulse animation", () => {
       const markup = render(
-        makeProps({ steps: [makeStep(0, "Active", "active")] }),
+        makeProps({ steps: [makeStep(0, "Active", "active")] })
       );
       expect(markup).toContain("border-primary");
       expect(markup).toContain("text-primary");
@@ -90,7 +90,7 @@ describe("RouteCard", () => {
 
     it("renders pending step with gray border and number", () => {
       const markup = render(
-        makeProps({ steps: [makeStep(0, "Pending", "pending")] }),
+        makeProps({ steps: [makeStep(0, "Pending", "pending")] })
       );
       expect(markup).toContain("border-muted-foreground");
       expect(markup).toContain("text-muted-foreground");
@@ -98,10 +98,7 @@ describe("RouteCard", () => {
     });
 
     it("renders step number for active and pending steps", () => {
-      const steps = [
-        makeStep(0, "A", "active"),
-        makeStep(1, "B", "pending"),
-      ];
+      const steps = [makeStep(0, "A", "active"), makeStep(1, "B", "pending")];
       const markup = render(makeProps({ steps }));
       // Step numbers are 1-indexed in display
       expect(markup).toContain(">1<");
@@ -120,20 +117,14 @@ describe("RouteCard", () => {
     });
 
     it("renders green solid line from completed to active step", () => {
-      const steps = [
-        makeStep(0, "A", "completed"),
-        makeStep(1, "B", "active"),
-      ];
+      const steps = [makeStep(0, "A", "completed"), makeStep(1, "B", "active")];
       const markup = render(makeProps({ steps }));
       // The connector should be green
       expect(markup).toContain("bg-emerald-500");
     });
 
     it("renders dashed gray line from active to pending step", () => {
-      const steps = [
-        makeStep(0, "A", "active"),
-        makeStep(1, "B", "pending"),
-      ];
+      const steps = [makeStep(0, "A", "active"), makeStep(1, "B", "pending")];
       const markup = render(makeProps({ steps }));
       expect(markup).toContain("border-dashed");
     });
@@ -151,7 +142,7 @@ describe("RouteCard", () => {
   describe("horizontal scroll for > 6 steps", () => {
     it("adds overflow-x-auto when steps > 6", () => {
       const steps = Array.from({ length: 7 }, (_, i) =>
-        makeStep(i, `Step ${i + 1}`, "pending"),
+        makeStep(i, `Step ${i + 1}`, "pending")
       );
       const markup = render(makeProps({ steps }));
       expect(markup).toContain("overflow-x-auto");
@@ -159,7 +150,7 @@ describe("RouteCard", () => {
 
     it("does not add overflow-x-auto when steps <= 6", () => {
       const steps = Array.from({ length: 6 }, (_, i) =>
-        makeStep(i, `Step ${i + 1}`, "pending"),
+        makeStep(i, `Step ${i + 1}`, "pending")
       );
       const markup = render(makeProps({ steps }));
       expect(markup).not.toContain("overflow-x-auto");
@@ -214,18 +205,48 @@ describe("buildRouteCardData", () => {
     const summary = {
       route: {
         stages: [
-          { key: "plan", label: "Planning", status: "done" as const, detail: null, isCurrent: false },
-          { key: "exec", label: "Execution", status: "running" as const, detail: null, isCurrent: true },
-          { key: "review", label: "Review", status: "pending" as const, detail: null, isCurrent: false },
+          {
+            key: "plan",
+            label: "Planning",
+            status: "done" as const,
+            detail: null,
+            isCurrent: false,
+          },
+          {
+            key: "exec",
+            label: "Execution",
+            status: "running" as const,
+            detail: null,
+            isCurrent: true,
+          },
+          {
+            key: "review",
+            label: "Review",
+            status: "pending" as const,
+            detail: null,
+            isCurrent: false,
+          },
         ],
       },
     } as unknown as import("@/lib/tasks-store").TaskAutopilotSummary;
 
     const result = buildRouteCardData(summary, null, "en-US");
     expect(result.steps).toHaveLength(3);
-    expect(result.steps[0]).toEqual({ index: 0, label: "Planning", status: "completed" });
-    expect(result.steps[1]).toEqual({ index: 1, label: "Execution", status: "active" });
-    expect(result.steps[2]).toEqual({ index: 2, label: "Review", status: "pending" });
+    expect(result.steps[0]).toEqual({
+      index: 0,
+      label: "Planning",
+      status: "completed",
+    });
+    expect(result.steps[1]).toEqual({
+      index: 1,
+      label: "Execution",
+      status: "active",
+    });
+    expect(result.steps[2]).toEqual({
+      index: 2,
+      label: "Review",
+      status: "pending",
+    });
     expect(result.currentStepIndex).toBe(1);
   });
 
@@ -233,7 +254,13 @@ describe("buildRouteCardData", () => {
     const summary = {
       route: {
         stages: [
-          { key: "step-1", label: "", status: "done" as const, detail: null, isCurrent: false },
+          {
+            key: "step-1",
+            label: "",
+            status: "done" as const,
+            detail: null,
+            isCurrent: false,
+          },
         ],
       },
     } as unknown as import("@/lib/tasks-store").TaskAutopilotSummary;
@@ -251,9 +278,33 @@ describe("buildRouteCardData", () => {
 
     const detail = {
       stages: [
-        { key: "direction", label: "Direction", status: "done" as const, progress: 100, arcStart: 0, arcEnd: 36, midAngle: 18 },
-        { key: "planning", label: "Planning", status: "running" as const, progress: 50, arcStart: 36, arcEnd: 72, midAngle: 54 },
-        { key: "execution", label: "Execution", status: "pending" as const, progress: 0, arcStart: 72, arcEnd: 108, midAngle: 90 },
+        {
+          key: "direction",
+          label: "Direction",
+          status: "done" as const,
+          progress: 100,
+          arcStart: 0,
+          arcEnd: 36,
+          midAngle: 18,
+        },
+        {
+          key: "planning",
+          label: "Planning",
+          status: "running" as const,
+          progress: 50,
+          arcStart: 36,
+          arcEnd: 72,
+          midAngle: 54,
+        },
+        {
+          key: "execution",
+          label: "Execution",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 72,
+          arcEnd: 108,
+          midAngle: 90,
+        },
       ],
     };
 
@@ -268,10 +319,42 @@ describe("buildRouteCardData", () => {
   it("filters out stages with empty labels from selectedDetail", () => {
     const detail = {
       stages: [
-        { key: "a", label: "Step A", status: "done" as const, progress: 100, arcStart: 0, arcEnd: 36, midAngle: 18 },
-        { key: "b", label: "", status: "pending" as const, progress: 0, arcStart: 36, arcEnd: 72, midAngle: 54 },
-        { key: "c", label: "  ", status: "pending" as const, progress: 0, arcStart: 72, arcEnd: 108, midAngle: 90 },
-        { key: "d", label: "Step D", status: "pending" as const, progress: 0, arcStart: 108, arcEnd: 144, midAngle: 126 },
+        {
+          key: "a",
+          label: "Step A",
+          status: "done" as const,
+          progress: 100,
+          arcStart: 0,
+          arcEnd: 36,
+          midAngle: 18,
+        },
+        {
+          key: "b",
+          label: "",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 36,
+          arcEnd: 72,
+          midAngle: 54,
+        },
+        {
+          key: "c",
+          label: "  ",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 72,
+          arcEnd: 108,
+          midAngle: 90,
+        },
+        {
+          key: "d",
+          label: "Step D",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 108,
+          arcEnd: 144,
+          midAngle: 126,
+        },
       ],
     };
 
@@ -284,8 +367,24 @@ describe("buildRouteCardData", () => {
   it("returns empty steps when all selectedDetail stages have empty labels", () => {
     const detail = {
       stages: [
-        { key: "a", label: "", status: "pending" as const, progress: 0, arcStart: 0, arcEnd: 36, midAngle: 18 },
-        { key: "b", label: "  ", status: "pending" as const, progress: 0, arcStart: 36, arcEnd: 72, midAngle: 54 },
+        {
+          key: "a",
+          label: "",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 0,
+          arcEnd: 36,
+          midAngle: 18,
+        },
+        {
+          key: "b",
+          label: "  ",
+          status: "pending" as const,
+          progress: 0,
+          arcStart: 36,
+          arcEnd: 72,
+          midAngle: 54,
+        },
       ],
     };
 
@@ -297,8 +396,20 @@ describe("buildRouteCardData", () => {
     const summary = {
       route: {
         stages: [
-          { key: "a", label: "A", status: "done" as const, detail: null, isCurrent: false },
-          { key: "b", label: "B", status: "done" as const, detail: null, isCurrent: false },
+          {
+            key: "a",
+            label: "A",
+            status: "done" as const,
+            detail: null,
+            isCurrent: false,
+          },
+          {
+            key: "b",
+            label: "B",
+            status: "done" as const,
+            detail: null,
+            isCurrent: false,
+          },
         ],
       },
     } as unknown as import("@/lib/tasks-store").TaskAutopilotSummary;
@@ -328,14 +439,19 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
       hasActive: fc.boolean(),
       pendingCount: fc.nat({ max: 10 }),
     })
-    .filter(({ completedCount, hasActive, pendingCount }) =>
-      completedCount + (hasActive ? 1 : 0) + pendingCount > 0,
+    .filter(
+      ({ completedCount, hasActive, pendingCount }) =>
+        completedCount + (hasActive ? 1 : 0) + pendingCount > 0
     )
     .map(({ completedCount, hasActive, pendingCount }) => {
       const steps: RouteStepItem[] = [];
       let idx = 0;
       for (let i = 0; i < completedCount; i++) {
-        steps.push({ index: idx, label: `Step ${idx + 1}`, status: "completed" });
+        steps.push({
+          index: idx,
+          label: `Step ${idx + 1}`,
+          status: "completed",
+        });
         idx++;
       }
       if (hasActive) {
@@ -351,7 +467,7 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
 
   it("completed steps are contiguous at the front", () => {
     fc.assert(
-      fc.property(stepListArb, (steps) => {
+      fc.property(stepListArb, steps => {
         let seenNonCompleted = false;
         for (const step of steps) {
           if (step.status !== "completed") {
@@ -363,23 +479,23 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
         }
         return true;
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 
   it("at most one active step exists", () => {
     fc.assert(
-      fc.property(stepListArb, (steps) => {
-        const activeCount = steps.filter((s) => s.status === "active").length;
+      fc.property(stepListArb, steps => {
+        const activeCount = steps.filter(s => s.status === "active").length;
         return activeCount <= 1;
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 
   it("pending steps are contiguous at the back", () => {
     fc.assert(
-      fc.property(stepListArb, (steps) => {
+      fc.property(stepListArb, steps => {
         let seenPending = false;
         for (const step of steps) {
           if (step.status === "pending") {
@@ -391,7 +507,7 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
         }
         return true;
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 
@@ -407,8 +523,9 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
         hasRunning: fc.boolean(),
         pendingCount: fc.nat({ max: 8 }),
       })
-      .filter(({ doneCount, hasRunning, pendingCount }) =>
-        doneCount + (hasRunning ? 1 : 0) + pendingCount > 0,
+      .filter(
+        ({ doneCount, hasRunning, pendingCount }) =>
+          doneCount + (hasRunning ? 1 : 0) + pendingCount > 0
       )
       .map(({ doneCount, hasRunning, pendingCount }) => {
         const stages: Array<{
@@ -451,7 +568,7 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
       });
 
     fc.assert(
-      fc.property(wellOrderedStagesArb, (stages) => {
+      fc.property(wellOrderedStagesArb, stages => {
         const summary = {
           route: { stages },
         } as unknown as import("@/lib/tasks-store").TaskAutopilotSummary;
@@ -496,7 +613,7 @@ describe("RouteCard Property: Step Status Monotonicity", () => {
 
         return activeCount <= 1;
       }),
-      { numRuns: 200 },
+      { numRuns: 200 }
     );
   });
 });

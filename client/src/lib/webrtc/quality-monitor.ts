@@ -8,8 +8,8 @@
  * Tasks 5.1 & 5.2 of the ue-video-stream-player spec.
  */
 
-import type { WebRTCConnectionManager } from './connection-manager';
-import type { QualityLevel } from './types';
+import type { WebRTCConnectionManager } from "./connection-manager";
+import type { QualityLevel } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,7 +58,7 @@ const DEFAULT_DOWNGRADE_SAMPLES = 3;
 const DEFAULT_UPGRADE_SAMPLES = 5;
 
 /** Quality levels ordered from lowest to highest. */
-const QUALITY_ORDER: QualityLevel[] = ['low', 'medium', 'high'];
+const QUALITY_ORDER: QualityLevel[] = ["low", "medium", "high"];
 
 // ---------------------------------------------------------------------------
 // QualityMonitor
@@ -81,14 +81,14 @@ export class QualityMonitor {
   private prevTimestamp = 0;
 
   // -- Auto quality state --
-  private _currentQuality: QualityLevel = 'high';
+  private _currentQuality: QualityLevel = "high";
   private lowFpsCount = 0;
   private highFpsCount = 0;
 
   constructor(
     manager: WebRTCConnectionManager,
     events: QualityMonitorEvents = {},
-    config: QualityMonitorConfig = {},
+    config: QualityMonitorConfig = {}
   ) {
     this.manager = manager;
     this.events = events;
@@ -128,7 +128,7 @@ export class QualityMonitor {
     this.resetCounters();
     this.pollingTimer = setInterval(
       () => this.poll(),
-      this.config.pollingInterval,
+      this.config.pollingInterval
     );
   }
 
@@ -187,9 +187,9 @@ export class QualityMonitor {
     let bytesReceived = 0;
     let timestamp = 0;
 
-    report.forEach((stat) => {
+    report.forEach(stat => {
       // Framerate from inbound-rtp video
-      if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+      if (stat.type === "inbound-rtp" && stat.kind === "video") {
         fps = stat.framesPerSecond ?? 0;
         bytesReceived = stat.bytesReceived ?? 0;
         timestamp = stat.timestamp ?? 0;
@@ -197,8 +197,8 @@ export class QualityMonitor {
 
       // RTT from candidate-pair
       if (
-        stat.type === 'candidate-pair' &&
-        stat.state === 'succeeded' &&
+        stat.type === "candidate-pair" &&
+        stat.state === "succeeded" &&
         stat.currentRoundTripTime != null
       ) {
         rtt = stat.currentRoundTripTime * 1_000; // seconds → ms

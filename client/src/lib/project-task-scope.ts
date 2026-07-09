@@ -101,18 +101,18 @@ export function isWorkflowInProjectScope(
   return workflow?.missionId ? missionIds.has(workflow.missionId) : false;
 }
 
-export function filterProjectScopedWorkflows<T extends Pick<WorkflowInfo, "missionId">>(
-  workflows: T[],
-  missionIds: Set<string> | null
-) {
+export function filterProjectScopedWorkflows<
+  T extends Pick<WorkflowInfo, "missionId">,
+>(workflows: T[], missionIds: Set<string> | null) {
   if (!missionIds) return workflows;
-  return workflows.filter(workflow => isWorkflowInProjectScope(workflow, missionIds));
+  return workflows.filter(workflow =>
+    isWorkflowInProjectScope(workflow, missionIds)
+  );
 }
 
-export function resolveScopedWorkflow<T extends Pick<WorkflowInfo, "missionId">>(
-  workflow: T | null | undefined,
-  missionIds: Set<string> | null
-): T | null {
+export function resolveScopedWorkflow<
+  T extends Pick<WorkflowInfo, "missionId">,
+>(workflow: T | null | undefined, missionIds: Set<string> | null): T | null {
   if (!workflow) return null;
   return isWorkflowInProjectScope(workflow, missionIds) ? workflow : null;
 }

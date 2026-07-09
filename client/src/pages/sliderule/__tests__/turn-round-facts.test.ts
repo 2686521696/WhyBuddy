@@ -8,7 +8,17 @@ describe("buildTurnRoundsFromDrive (task 7.2)", () => {
         loops: [
           {
             loopTurnId: "t-loop-0",
-            plan: { selected: [{ capabilityId: "risk.analyze", roleId: "安全", inputArtifactIds: [] }], reason: "pick", expectedArtifacts: [] },
+            plan: {
+              selected: [
+                {
+                  capabilityId: "risk.analyze",
+                  roleId: "安全",
+                  inputArtifactIds: [],
+                },
+              ],
+              reason: "pick",
+              expectedArtifacts: [],
+            },
             committedArtifactIds: ["a1"],
           },
         ],
@@ -49,12 +59,26 @@ describe("buildTurnRoundsFromDrive (task 7.2)", () => {
         loops: [
           {
             loopTurnId: "t-loop-0",
-            plan: { selected: [{ capabilityId: "risk.analyze", roleId: "安全", inputArtifactIds: [] }], reason: "pick", expectedArtifacts: [] },
+            plan: {
+              selected: [
+                {
+                  capabilityId: "risk.analyze",
+                  roleId: "安全",
+                  inputArtifactIds: [],
+                },
+              ],
+              reason: "pick",
+              expectedArtifacts: [],
+            },
             committedArtifactIds: ["a1"],
           },
           {
             loopTurnId: "t-loop-1",
-            plan: { selected: [], reason: "CONVERGENCE_SIGNAL", expectedArtifacts: [] },
+            plan: {
+              selected: [],
+              reason: "CONVERGENCE_SIGNAL",
+              expectedArtifacts: [],
+            },
             committedArtifactIds: [],
             stopSignal: "convergence_signal",
           },

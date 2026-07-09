@@ -70,10 +70,7 @@ import { DecisionPanel } from "./DecisionPanel";
 import { TaskAutopilotPanel } from "./TaskAutopilotPanel";
 import { TaskOperationsHero } from "./TaskOperationsHero";
 import { TaskPlanetInterior } from "./TaskPlanetInterior";
-import {
-  compactText,
-  isMissionTerminal,
-} from "./task-helpers";
+import { compactText, isMissionTerminal } from "./task-helpers";
 
 const WORK_PACKAGE_PROGRESS: Record<string, number> = {
   assigned: 8,
@@ -136,10 +133,7 @@ function MetricCard({
 }) {
   return (
     <div
-      className={cn(
-        DETAIL_INSET_CLASS,
-        "px-2.5 py-2 shadow-sm backdrop-blur"
-      )}
+      className={cn(DETAIL_INSET_CLASS, "px-2.5 py-2 shadow-sm backdrop-blur")}
     >
       <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-stone-500">
         {label}
@@ -282,9 +276,7 @@ function DetailTabViewport({
 }) {
   if (!isDesktop || autoHeight) {
     return (
-      <div className={compact ? "space-y-2.5" : "space-y-4"}>
-        {children}
-      </div>
+      <div className={compact ? "space-y-2.5" : "space-y-4"}>{children}</div>
     );
   }
 
@@ -299,7 +291,9 @@ function DetailTabViewport({
       )}
     >
       <ScrollArea className="h-full w-full">
-        <div className={compact ? "space-y-2.5 p-1 pr-2" : "space-y-4 p-1 pr-3"}>
+        <div
+          className={compact ? "space-y-2.5 p-1 pr-2" : "space-y-4 p-1 pr-3"}
+        >
           {children}
         </div>
       </ScrollArea>
@@ -635,11 +629,7 @@ function MissionCostTab() {
 }
 
 type TaskDetailViewVariant = "default" | "cockpit";
-type TaskDetailTabKey =
-  | "overview"
-  | "execution"
-  | "decisions"
-  | "cost";
+type TaskDetailTabKey = "overview" | "execution" | "decisions" | "cost";
 
 export function TaskDetailView({
   detail,

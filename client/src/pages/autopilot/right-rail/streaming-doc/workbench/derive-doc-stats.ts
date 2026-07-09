@@ -139,7 +139,9 @@ export function deriveDocStats(input: DeriveDocStatsInput): DocStats {
   }
 
   const totalDocs =
-    byType.requirements.generated + byType.design.generated + byType.tasks.generated;
+    byType.requirements.generated +
+    byType.design.generated +
+    byType.tasks.generated;
   const totalTasks = byType.tasks.generated;
   const targetDocs = targetNodeCount > 0 ? targetNodeCount * 3 : totalDocs;
   const targetTasks = targetNodeCount > 0 ? targetNodeCount : totalTasks;

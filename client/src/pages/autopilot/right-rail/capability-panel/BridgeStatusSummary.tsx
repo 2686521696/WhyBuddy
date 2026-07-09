@@ -73,7 +73,7 @@ export const BridgeStatusSummary: FC<BridgeStatusSummaryProps> = ({
 }) => {
   return (
     <div className="flex items-center gap-1.5 px-1">
-      {BADGES.map((badge) => (
+      {BADGES.map(badge => (
         <span
           key={badge.key}
           className={cn(

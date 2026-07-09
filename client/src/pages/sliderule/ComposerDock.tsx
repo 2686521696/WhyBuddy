@@ -1,5 +1,16 @@
 import React from "react";
-import { Brain, Check, FileText, Link, Mic, Plus, RefreshCw, SendHorizontal, Square, Zap } from "lucide-react";
+import {
+  Brain,
+  Check,
+  FileText,
+  Link,
+  Mic,
+  Plus,
+  RefreshCw,
+  SendHorizontal,
+  Square,
+  Zap,
+} from "lucide-react";
 
 function formatBudgetTokens(n: number): string {
   if (n < 1000) return String(n);
@@ -15,7 +26,7 @@ function looksLikeUrl(text: string): boolean {
 /** Returns true if the DataTransfer contains files. */
 function hasFiles(dt: DataTransfer): boolean {
   return dt.items
-    ? Array.from(dt.items).some((item) => item.kind === "file")
+    ? Array.from(dt.items).some(item => item.kind === "file")
     : dt.files.length > 0;
 }
 
@@ -45,21 +56,29 @@ export function ComposerDock({
   onBudgetChange?: (b: { maxTokens: number; declaredAt: string }) => void;
   stop?: () => void;
 }) {
-  const [localMode, setLocalMode] = React.useState<"single" | "marathon">("single");
+  const [localMode, setLocalMode] = React.useState<"single" | "marathon">(
+    "single"
+  );
   const [isModeOpen, setIsModeOpen] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
-  const [attachmentHint, setAttachmentHint] = React.useState<string | null>(null);
+  const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
+    null
+  );
   const modeRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const driveMode = outerDriveMode || localMode;
   const setDriveMode = outerSetDriveMode || setLocalMode;
-  let marathonBudget = outerMarathonBudget || (() => {
-    try {
-      return JSON.parse(localStorage.getItem("sliderule:marathonBudget") || "null");
-    } catch {
-      return null;
-    }
-  })();
+  let marathonBudget =
+    outerMarathonBudget ||
+    (() => {
+      try {
+        return JSON.parse(
+          localStorage.getItem("sliderule:marathonBudget") || "null"
+        );
+      } catch {
+        return null;
+      }
+    })();
   if (outerMarathonBudget) marathonBudget = outerMarathonBudget;
 
   const selectMode = (mode: "single" | "marathon") => {
@@ -77,7 +96,10 @@ export function ComposerDock({
         const n = Math.max(2000, Math.min(80000, parseInt(ans, 10) || 12000));
         budget = { maxTokens: n, declaredAt: new Date().toISOString() };
         try {
-          localStorage.setItem("sliderule:marathonBudget", JSON.stringify(budget));
+          localStorage.setItem(
+            "sliderule:marathonBudget",
+            JSON.stringify(budget)
+          );
         } catch {}
         onBudgetChange?.(budget);
       }
@@ -135,7 +157,9 @@ export function ComposerDock({
       if (looksLikeUrl(pasted)) {
         // Let the default paste fill the textarea, then surface a hint.
         setTimeout(() => {
-          setAttachmentHint(`已检测到 URL — 可直接发送，SlideRule 会尝试抓取摘要`);
+          setAttachmentHint(
+            `已检测到 URL — 可直接发送，SlideRule 会尝试抓取摘要`
+          );
           setTimeout(() => setAttachmentHint(null), 5000);
         }, 0);
       }
@@ -160,7 +184,7 @@ export function ComposerDock({
       setIsDragOver(false);
       const files = Array.from(e.dataTransfer.files);
       if (!files.length) return;
-      const names = files.map((f) => f.name).join(", ");
+      const names = files.map(f => f.name).join(", ");
       const suffix = `[附件: ${names}]`;
       // setInput only accepts string; read the current textarea value instead of functional updater.
       const current = textareaRef.current?.value ?? "";
@@ -178,8 +202,8 @@ export function ComposerDock({
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       <div
-        className={`pointer-events-auto relative w-full rounded-[14px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(68_60_44/0.12)] transition-colors ${
-          isDragOver ? "border-[#D97757] bg-[#F8E8E0]/40" : "border-[#E7E2D9]"
+        className={`pointer-events-auto relative w-full rounded-[14px] border bg-white px-3 py-2.5 shadow-[0_10px_36px_rgb(15_23_42/0.12)] transition-colors ${
+          isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"
         }`}
         data-testid="sliderule-composer-dock"
         data-mode={driveMode}
@@ -188,8 +212,8 @@ export function ComposerDock({
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[12px] bg-[#F8E8E0]/60">
-            <div className="flex items-center gap-2 text-sm font-medium text-[#C4633F]">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[12px] bg-[#e6f4ff]/60">
+            <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
               <FileText className="h-4 w-4" />
               拖拽文件到这里
             </div>
@@ -199,9 +223,9 @@ export function ComposerDock({
           <div className="relative shrink-0" ref={modeRef}>
             <button
               type="button"
-              onClick={() => setIsModeOpen((open) => !open)}
+              onClick={() => setIsModeOpen(open => !open)}
               disabled={isRunning}
-              className="flex h-11 w-11 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#F0EDE5] disabled:opacity-45"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45"
               title="选择推演模式"
             >
               <Plus className="h-5 w-5" />
@@ -209,44 +233,57 @@ export function ComposerDock({
 
             <div
               data-testid="sliderule-mode-menu"
-              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[9px] border border-[#E7E2D9] bg-white p-1.5 shadow-[0_18px_48px_rgb(68_60_44/0.16)] transition-all duration-150 ${
-                isModeOpen ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-2 scale-95 opacity-0"
+              className={`absolute bottom-full left-0 z-[80] mb-2 w-[230px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
+                isModeOpen
+                  ? "translate-y-0 scale-100 opacity-100"
+                  : "pointer-events-none translate-y-2 scale-95 opacity-0"
               }`}
             >
               <button
                 type="button"
                 onClick={() => selectMode("single")}
-                className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
-                  driveMode === "single" ? "bg-[#F0EDE5]" : ""
+                className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
+                  driveMode === "single" ? "bg-[#e9edf2]" : ""
                 }`}
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F0EDE5] text-stone-700">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e9edf2] text-stone-700">
                   <Brain className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-stone-800">深思一轮</span>
-                  <span className="block truncate text-[10px] text-stone-500">想清楚一个问题后停下</span>
+                  <span className="block text-xs font-semibold text-stone-800">
+                    深思一轮
+                  </span>
+                  <span className="block truncate text-[10px] text-stone-500">
+                    想清楚一个问题后停下
+                  </span>
                 </span>
-                {driveMode === "single" && <Check className="h-3.5 w-3.5 text-emerald-500" />}
+                {driveMode === "single" && (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => selectMode("marathon")}
-                className={`mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#F5F1EA] ${
-                  driveMode === "marathon" ? "bg-[#F8E8E0]" : ""
+                className={`mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
+                  driveMode === "marathon" ? "bg-[#e6f4ff]" : ""
                 }`}
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F8E8E0] text-[#C4633F]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-stone-800">持续推演</span>
+                  <span className="block text-xs font-semibold text-stone-800">
+                    持续推演
+                  </span>
                   <span className="block truncate text-[10px] text-stone-500">
-                    自动推进到需要确认 · {formatBudgetTokens(marathonBudget?.maxTokens || 12000)}
+                    自动推进到需要确认 ·{" "}
+                    {formatBudgetTokens(marathonBudget?.maxTokens || 12000)}
                   </span>
                 </span>
-                {driveMode === "marathon" && <Check className="h-3.5 w-3.5 text-[#C4633F]" />}
+                {driveMode === "marathon" && (
+                  <Check className="h-3.5 w-3.5 text-[#0958d9]" />
+                )}
               </button>
             </div>
           </div>
@@ -255,11 +292,11 @@ export function ComposerDock({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(event) => {
+              onChange={event => {
                 setInput(event.target.value);
                 requestAnimationFrame(adjustTextareaHeight);
               }}
-              onKeyDown={(event) => {
+              onKeyDown={event => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   if (!isRunning && input.trim()) sendMessage();
@@ -270,23 +307,29 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className="block max-h-28 min-h-11 w-full resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-[#1F1E1B] outline-none placeholder:text-stone-400 disabled:opacity-60"
+              className="block max-h-28 min-h-11 w-full resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-[#1f2329] outline-none placeholder:text-stone-400 disabled:opacity-60"
               data-testid="sliderule-composer-input"
             />
           </div>
 
           <button
             type="button"
-            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#F0EDE5] sm:flex"
+            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] sm:flex"
             title={driveMode === "marathon" ? "持续推演" : "深思一轮"}
-            onClick={() => selectMode(driveMode === "marathon" ? "single" : "marathon")}
+            onClick={() =>
+              selectMode(driveMode === "marathon" ? "single" : "marathon")
+            }
             disabled={isRunning}
           >
-            {driveMode === "marathon" ? <RefreshCw className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+            {driveMode === "marathon" ? (
+              <RefreshCw className="h-4 w-4" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
           </button>
           <button
             type="button"
-            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#F0EDE5] sm:flex"
+            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] sm:flex"
             title="语音输入"
             disabled
           >
@@ -294,15 +337,18 @@ export function ComposerDock({
           </button>
           <button
             type="button"
-            onClick={isRunning ? (stop || (() => {})) : sendMessage}
+            onClick={isRunning ? stop || (() => {}) : sendMessage}
             disabled={!isRunning && !input.trim()}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#E08663] to-[#D97757] text-white shadow-[0_4px_14px_rgb(217_119_87/0.45)] transition hover:from-[#D97757] hover:to-[#C4633F] disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#E08663] to-[#1677ff] text-white shadow-[0_4px_14px_rgb(217_119_87/0.45)] transition hover:from-[#1677ff] hover:to-[#0958d9] disabled:cursor-not-allowed disabled:opacity-35"
             title={isRunning ? "停止" : "发送"}
           >
-            {isRunning ? <Square className="h-4 w-4 fill-current" /> : <SendHorizontal className="h-4 w-4" />}
+            {isRunning ? (
+              <Square className="h-4 w-4 fill-current" />
+            ) : (
+              <SendHorizontal className="h-4 w-4" />
+            )}
           </button>
         </div>
-
       </div>
     </div>
   );

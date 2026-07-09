@@ -157,10 +157,10 @@ describe("BlueprintRealtimeStore", () => {
     expect(graph.sessionId).toBe("brainstorm-session-1");
     expect(graph.sessionStatus).toBe("completed");
     expect(graph.sessionMetadata.mode).toBe("vote");
-    expect(graph.nodes.map((node) => node.id)).toEqual(
+    expect(graph.nodes.map(node => node.id)).toEqual(
       expect.arrayContaining(["role:planner", "role:architect", "node-1"])
     );
-    expect(graph.nodes.find((node) => node.id === "node-1")).toMatchObject({
+    expect(graph.nodes.find(node => node.id === "node-1")).toMatchObject({
       id: "node-1",
       roleId: "planner",
       type: "thinking",
@@ -184,7 +184,7 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     const graph = useBrainstormGraphStore.getState();
-    expect(graph.nodes.map((node) => node.id)).toEqual(
+    expect(graph.nodes.map(node => node.id)).toEqual(
       expect.arrayContaining([
         "role:decider",
         "role:planner",
@@ -222,7 +222,7 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     const graph = useBrainstormGraphStore.getState();
-    expect(graph.nodes.map((node) => node.id)).toEqual(
+    expect(graph.nodes.map(node => node.id)).toEqual(
       expect.arrayContaining([
         "decision-gate",
         "role:decider",
@@ -290,7 +290,7 @@ describe("BlueprintRealtimeStore", () => {
 
     const graph = useBrainstormGraphStore.getState();
     expect(graph.sessionId).toBe("decision-gate:job-1:spec_docs");
-    expect(graph.nodes.map((node) => node.id)).toEqual(
+    expect(graph.nodes.map(node => node.id)).toEqual(
       expect.arrayContaining([
         "role:decider",
         "role:planner",
@@ -356,8 +356,10 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     const graph = useBrainstormGraphStore.getState();
-    expect(graph.nodes.map((node) => node.id)).toContain("node-synthesis");
-    expect(graph.nodes.find((node) => node.id === "node-synthesis")).toMatchObject({
+    expect(graph.nodes.map(node => node.id)).toContain("node-synthesis");
+    expect(
+      graph.nodes.find(node => node.id === "node-synthesis")
+    ).toMatchObject({
       roleId: "decider",
       type: "synthesis",
       status: "completed",
@@ -429,8 +431,12 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     const graph = useBrainstormGraphStore.getState();
-    expect(graph.nodes.map((node) => node.id)).toEqual(
-      expect.arrayContaining(["role:planner", "role:architect", "challenge:1:planner:0"])
+    expect(graph.nodes.map(node => node.id)).toEqual(
+      expect.arrayContaining([
+        "role:planner",
+        "role:architect",
+        "challenge:1:planner:0",
+      ])
     );
     expect(graph.edges).toContainEqual({
       sourceNodeId: "role:planner",
@@ -605,7 +611,9 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     const graph = useBrainstormGraphStore.getState();
-    expect(graph.nodes.some((node) => node.id.startsWith("tool:spec-tree-diff:"))).toBe(true);
+    expect(
+      graph.nodes.some(node => node.id.startsWith("tool:spec-tree-diff:"))
+    ).toBe(true);
     expect(graph.nodes).toContainEqual(
       expect.objectContaining({
         id: "loop:3",
@@ -634,7 +642,9 @@ describe("BlueprintRealtimeStore", () => {
       })
     );
 
-    expect(useBlueprintRealtimeStore.getState().rolePhases.planner).toBe("thinking");
+    expect(useBlueprintRealtimeStore.getState().rolePhases.planner).toBe(
+      "thinking"
+    );
 
     dispatchEvent(
       makeEvent({
@@ -650,7 +660,9 @@ describe("BlueprintRealtimeStore", () => {
       })
     );
 
-    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe("acting");
+    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe(
+      "acting"
+    );
 
     dispatchEvent(
       makeEvent({
@@ -664,7 +676,9 @@ describe("BlueprintRealtimeStore", () => {
       })
     );
 
-    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe("completed");
+    expect(useBlueprintRealtimeStore.getState().rolePhases.architect).toBe(
+      "completed"
+    );
   });
 
   // 3. dispatchEvent capability.completed → capabilityStatuses 更新
@@ -805,7 +819,9 @@ describe("BlueprintRealtimeStore", () => {
     const { dispatchEvent } = useBlueprintRealtimeStore.getState();
 
     dispatchEvent(makeEvent({ type: "job.created" }));
-    dispatchEvent(makeEvent({ type: "role.sleeping", payload: { roleId: "r1" } }));
+    dispatchEvent(
+      makeEvent({ type: "role.sleeping", payload: { roleId: "r1" } })
+    );
 
     const state = useBlueprintRealtimeStore.getState();
     expect(state.logEntries).toHaveLength(2);
@@ -819,18 +835,14 @@ describe("BlueprintRealtimeStore", () => {
 
     // 先填充 200 条
     for (let i = 0; i < 200; i++) {
-      dispatchEvent(
-        makeEvent({ type: "job.stage", timestamp: 1000 + i })
-      );
+      dispatchEvent(makeEvent({ type: "job.stage", timestamp: 1000 + i }));
     }
 
     expect(useBlueprintRealtimeStore.getState().logEntries).toHaveLength(200);
 
     // 再加 5 条，应该截断最旧的
     for (let i = 0; i < 5; i++) {
-      dispatchEvent(
-        makeEvent({ type: "job.stage", timestamp: 2000 + i })
-      );
+      dispatchEvent(makeEvent({ type: "job.stage", timestamp: 2000 + i }));
     }
 
     const state = useBlueprintRealtimeStore.getState();
@@ -875,7 +887,7 @@ describe("BlueprintRealtimeStore", () => {
   // 8. unsubscribe 重置状态（但不清空 logEntries，保留历史）
   it("hydrates historical brainstorm node events into the wall graph store on subscribe", async () => {
     (mockSocket as unknown as { connected: boolean }).connected = true;
-    __setHydrateHistoricalEventsForTest(async (jobId) => [
+    __setHydrateHistoricalEventsForTest(async jobId => [
       {
         id: "evt-session-started",
         family: "brainstorm",
@@ -927,14 +939,18 @@ describe("BlueprintRealtimeStore", () => {
     useBlueprintRealtimeStore.getState().subscribe("job-history");
     await vi.waitFor(() => {
       expect(
-        useBrainstormGraphStore.getState().nodes.some((node) => node.id === "node-history-1")
+        useBrainstormGraphStore
+          .getState()
+          .nodes.some(node => node.id === "node-history-1")
       ).toBe(true);
     });
 
     const graph = useBrainstormGraphStore.getState();
     expect(graph.sessionId).toBe("brainstorm-session-history");
     expect(graph.sessionStatus).toBe("active");
-    expect(graph.nodes.find((node) => node.id === "node-history-1")).toMatchObject({
+    expect(
+      graph.nodes.find(node => node.id === "node-history-1")
+    ).toMatchObject({
       id: "node-history-1",
       roleId: "planner",
       type: "thinking",
@@ -972,8 +988,12 @@ describe("BlueprintRealtimeStore", () => {
     );
 
     // 确认有数据
-    expect(useBlueprintRealtimeStore.getState().logEntries.length).toBeGreaterThan(0);
-    expect(useBlueprintRealtimeStore.getState().rolePhases["r1"]).toBe("activated");
+    expect(
+      useBlueprintRealtimeStore.getState().logEntries.length
+    ).toBeGreaterThan(0);
+    expect(useBlueprintRealtimeStore.getState().rolePhases["r1"]).toBe(
+      "activated"
+    );
 
     // 退订
     useBlueprintRealtimeStore.getState().unsubscribe();
@@ -994,21 +1014,27 @@ describe("BlueprintRealtimeStore", () => {
     useBlueprintRealtimeStore.getState().subscribe("job-conn");
 
     // 初始应为 connecting
-    expect(useBlueprintRealtimeStore.getState().connectionState).toBe("connecting");
+    expect(useBlueprintRealtimeStore.getState().connectionState).toBe(
+      "connecting"
+    );
 
     // 模拟连接成功
     const connectHandler = socketHandlers.get("connect");
     expect(connectHandler).toBeDefined();
     connectHandler!();
 
-    expect(useBlueprintRealtimeStore.getState().connectionState).toBe("connected");
+    expect(useBlueprintRealtimeStore.getState().connectionState).toBe(
+      "connected"
+    );
 
     // 模拟断开
     const disconnectHandler = socketHandlers.get("disconnect");
     expect(disconnectHandler).toBeDefined();
     disconnectHandler!();
 
-    expect(useBlueprintRealtimeStore.getState().connectionState).toBe("disconnected");
+    expect(useBlueprintRealtimeStore.getState().connectionState).toBe(
+      "disconnected"
+    );
   });
 
   // 10. 额外：重连后自动恢复订阅
@@ -1089,96 +1115,93 @@ describe("mapEventTypeToPhase — role.agent.* reasoning events (Fix 1)", () => 
   });
 });
 
-describe(
-  "BlueprintRealtimeStore — role.agent.* events flow into rolePhases (Fix 1)",
-  () => {
-    beforeEach(() => {
-      __setSocket(mockSocket);
-      resetStore();
-    });
+describe("BlueprintRealtimeStore — role.agent.* events flow into rolePhases (Fix 1)", () => {
+  beforeEach(() => {
+    __setSocket(mockSocket);
+    resetStore();
+  });
 
-    afterEach(() => {
-      resetStore();
-      __setSocket(null);
-    });
+  afterEach(() => {
+    resetStore();
+    __setSocket(null);
+  });
 
-    // Integration-level: dispatching a role.agent.thinking event (mirroring the
-    // server emitter shape with both a top-level roleId and payload.roleId)
-    // writes the mapped phase into rolePhases[roleId] (Req 10.8).
-    it("dispatch role.agent.thinking → rolePhases[roleId] === 'thinking'", () => {
-      const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+  // Integration-level: dispatching a role.agent.thinking event (mirroring the
+  // server emitter shape with both a top-level roleId and payload.roleId)
+  // writes the mapped phase into rolePhases[roleId] (Req 10.8).
+  it("dispatch role.agent.thinking → rolePhases[roleId] === 'thinking'", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
 
-      dispatchEvent({
-        type: "role.agent.thinking",
-        jobId: "job-1",
-        timestamp: Date.now(),
-        // 镜像服务端 emitter 形态：顶层 roleId + payload.roleId 同时存在。
+    dispatchEvent({
+      type: "role.agent.thinking",
+      jobId: "job-1",
+      timestamp: Date.now(),
+      // 镜像服务端 emitter 形态：顶层 roleId + payload.roleId 同时存在。
+      roleId: "intake-coordinator",
+      payload: { roleId: "intake-coordinator" },
+    } as unknown as BlueprintRelayedEvent);
+
+    expect(
+      useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
+    ).toBe("thinking");
+  });
+
+  it("dispatch role.agent.completed → rolePhases[roleId] === 'completed'", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent({
+      type: "role.agent.completed",
+      jobId: "job-1",
+      timestamp: Date.now(),
+      roleId: "intake-coordinator",
+      payload: { roleId: "intake-coordinator" },
+    } as unknown as BlueprintRelayedEvent);
+
+    expect(
+      useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
+    ).toBe("completed");
+  });
+
+  it("dispatch role.agent.error → rolePhases[roleId] === 'failed'", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent({
+      type: "role.agent.error",
+      jobId: "job-1",
+      timestamp: Date.now(),
+      roleId: "intake-coordinator",
+      payload: { roleId: "intake-coordinator" },
+    } as unknown as BlueprintRelayedEvent);
+
+    expect(
+      useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
+    ).toBe("failed");
+  });
+
+  // Parallel slice non-regression: dispatching role.agent.thinking still
+  // populates the agentReasoning slice — Fix 1 did not break the reasoning
+  // path (Req 10.9). Both the rolePhases branch and the agentReasoning branch
+  // run in parallel.
+  it("dispatch role.agent.thinking still populates agentReasoning (parallel path intact)", () => {
+    const { dispatchEvent } = useBlueprintRealtimeStore.getState();
+
+    dispatchEvent({
+      type: "role.agent.thinking",
+      jobId: "job-1",
+      timestamp: Date.now(),
+      roleId: "intake-coordinator",
+      payload: {
         roleId: "intake-coordinator",
-        payload: { roleId: "intake-coordinator" },
-      } as unknown as BlueprintRelayedEvent);
+        iteration: 1,
+        thought: "分析意图",
+      },
+    } as unknown as BlueprintRelayedEvent);
 
-      expect(
-        useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
-      ).toBe("thinking");
-    });
-
-    it("dispatch role.agent.completed → rolePhases[roleId] === 'completed'", () => {
-      const { dispatchEvent } = useBlueprintRealtimeStore.getState();
-
-      dispatchEvent({
-        type: "role.agent.completed",
-        jobId: "job-1",
-        timestamp: Date.now(),
-        roleId: "intake-coordinator",
-        payload: { roleId: "intake-coordinator" },
-      } as unknown as BlueprintRelayedEvent);
-
-      expect(
-        useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
-      ).toBe("completed");
-    });
-
-    it("dispatch role.agent.error → rolePhases[roleId] === 'failed'", () => {
-      const { dispatchEvent } = useBlueprintRealtimeStore.getState();
-
-      dispatchEvent({
-        type: "role.agent.error",
-        jobId: "job-1",
-        timestamp: Date.now(),
-        roleId: "intake-coordinator",
-        payload: { roleId: "intake-coordinator" },
-      } as unknown as BlueprintRelayedEvent);
-
-      expect(
-        useBlueprintRealtimeStore.getState().rolePhases["intake-coordinator"]
-      ).toBe("failed");
-    });
-
-    // Parallel slice non-regression: dispatching role.agent.thinking still
-    // populates the agentReasoning slice — Fix 1 did not break the reasoning
-    // path (Req 10.9). Both the rolePhases branch and the agentReasoning branch
-    // run in parallel.
-    it("dispatch role.agent.thinking still populates agentReasoning (parallel path intact)", () => {
-      const { dispatchEvent } = useBlueprintRealtimeStore.getState();
-
-      dispatchEvent({
-        type: "role.agent.thinking",
-        jobId: "job-1",
-        timestamp: Date.now(),
-        roleId: "intake-coordinator",
-        payload: {
-          roleId: "intake-coordinator",
-          iteration: 1,
-          thought: "分析意图",
-        },
-      } as unknown as BlueprintRelayedEvent);
-
-      const state = useBlueprintRealtimeStore.getState();
-      // rolePhases branch wrote the phase…
-      expect(state.rolePhases["intake-coordinator"]).toBe("thinking");
-      // …and the agentReasoning slice was still populated in parallel.
-      expect(state.agentReasoning.entries.length).toBeGreaterThan(0);
-      expect(state.agentReasoning.entries.at(-1)?.phase).toBe("thinking");
-    });
-  }
-);
+    const state = useBlueprintRealtimeStore.getState();
+    // rolePhases branch wrote the phase…
+    expect(state.rolePhases["intake-coordinator"]).toBe("thinking");
+    // …and the agentReasoning slice was still populated in parallel.
+    expect(state.agentReasoning.entries.length).toBeGreaterThan(0);
+    expect(state.agentReasoning.entries.at(-1)?.phase).toBe("thinking");
+  });
+});

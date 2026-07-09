@@ -69,7 +69,7 @@ function renderWithSvg(architectureSvgDraft: string): string {
         /* noop — SSR does not trigger click handlers */
       }}
       theme="light"
-    />,
+    />
   );
 }
 
@@ -165,5 +165,5 @@ describe(
       expect(lower).not.toMatch(/\bon[a-z]+=/);
       expect(lower).not.toContain("javascript:");
     });
-  },
+  }
 );

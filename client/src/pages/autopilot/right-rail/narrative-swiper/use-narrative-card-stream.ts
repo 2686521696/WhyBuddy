@@ -127,7 +127,8 @@ export function deriveFleetActivationNarrativeCards(
       id: `fleet-activation-${entry.id}`,
       source: "fleet-activation",
       stage: "global",
-      headline: entry.message ?? `${formatRoleName(entry.roleId)} ${entry.type}`,
+      headline:
+        entry.message ?? `${formatRoleName(entry.roleId)} ${entry.type}`,
       actorAvatar: entry.roleId,
       severity: entry.type === "failed" ? "danger" : "info",
       occurredAt: entry.timestamp,
@@ -144,9 +145,7 @@ export function deriveFleetActivationNarrativeCards(
 /** 从 roleId 生成可读角色名。 */
 function formatRoleName(roleId: string): string {
   if (!roleId) return "Unknown";
-  return roleId
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return roleId.replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 /**
@@ -200,7 +199,12 @@ function miroFishEntryToNarrativeCard(
     source,
     stage: "global",
     headline,
-    severity: entry.tone === "danger" ? "danger" : entry.tone === "warning" ? "warning" : "info",
+    severity:
+      entry.tone === "danger"
+        ? "danger"
+        : entry.tone === "warning"
+          ? "warning"
+          : "info",
     occurredAt,
     sourceEntryId: entry.id,
     routing: decision.target === "both" ? "both" : "narrative-only",
@@ -211,7 +215,7 @@ function miroFishEntryToNarrativeCard(
  * 过滤卡片：只保留属于当前 stage 或 global 的卡片。
  */
 function filterByStage(cards: NarrativeCard[], stage: Stage): NarrativeCard[] {
-  return cards.filter((card) => card.stage === stage || card.stage === "global");
+  return cards.filter(card => card.stage === stage || card.stage === "global");
 }
 
 // ─── Hook 实现 ─────────────────────────────────────────────────────────────
@@ -238,13 +242,13 @@ export function useNarrativeCardStream(
 
   // ─── 5 路 selector（浅比较防抖） ─────────────────────────────────────────
   const agentReasoning = useBlueprintRealtimeStore(
-    (s) => s.agentReasoning.entries
+    s => s.agentReasoning.entries
   );
   const capabilityStatuses = useBlueprintRealtimeStore(
-    (s) => s.capabilityStatuses
+    s => s.capabilityStatuses
   );
-  const rolePhases = useBlueprintRealtimeStore((s) => s.rolePhases);
-  const agentProgress = useBlueprintRealtimeStore((s) => s.agentProgress);
+  const rolePhases = useBlueprintRealtimeStore(s => s.rolePhases);
+  const agentProgress = useBlueprintRealtimeStore(s => s.agentProgress);
   // latestJob.artifacts — 当前 store 没有直接暴露 artifacts slice，
   // 使用空数组作为 fallback；后续 task 3.5 挂载时由 props 传入。
   const artifacts: ReadonlyArray<BlueprintGenerationArtifact> = [];
@@ -255,7 +259,10 @@ export function useNarrativeCardStream(
 
   // 节流桶：Map<CardSource, { timer: ReturnType<typeof setTimeout>; latest: NarrativeCard }>
   const throttleBucketsRef = useRef<
-    Map<CardSource, { timer: ReturnType<typeof setTimeout>; latest: NarrativeCard }>
+    Map<
+      CardSource,
+      { timer: ReturnType<typeof setTimeout>; latest: NarrativeCard }
+    >
   >(new Map());
 
   // 用于卸载时清理所有 timer
@@ -294,7 +301,7 @@ export function useNarrativeCardStream(
     }
 
     // 正常 stage 切换：保存当前队列快照，取最后 N=2 张作为 echo
-    setCards((prev) => {
+    setCards(prev => {
       // 保存完整快照用于 5s 回切恢复
       previousQueueRef.current = prev;
       restorableStageRef.current = prevStage;
@@ -329,7 +336,7 @@ export function useNarrativeCardStream(
   const enqueueCards = (candidates: NarrativeCard[]) => {
     if (!mountedRef.current) return;
 
-    setCards((prev) => {
+    setCards(prev => {
       let next = [...prev];
       // echo 卡片位于队列起始，不参与新 stage 的容量计算
       const currentEchoCount = echoCount;
@@ -338,7 +345,8 @@ export function useNarrativeCardStream(
         // 同 sourceEntryId 原地更新（在非 echo 区域查找）
         if (card.sourceEntryId) {
           const existingIdx = next.findIndex(
-            (c, idx) => idx >= currentEchoCount && c.sourceEntryId === card.sourceEntryId
+            (c, idx) =>
+              idx >= currentEchoCount && c.sourceEntryId === card.sourceEntryId
           );
           if (existingIdx !== -1) {
             next[existingIdx] = { ...card, occurredAt: Date.now() };
@@ -388,7 +396,10 @@ export function useNarrativeCardStream(
     try {
       const miroFishEntries = deriveMiroFishStreamEntries({
         agentReasoning: agentReasoning as AgentReasoningEntry[],
-        capabilityStatuses: capabilityStatuses as Record<string, CapabilityStatus>,
+        capabilityStatuses: capabilityStatuses as Record<
+          string,
+          CapabilityStatus
+        >,
         artifacts: artifacts as BlueprintGenerationArtifact[],
       });
 

@@ -16,7 +16,7 @@ export function artifact(
   id: string,
   type: BlueprintGenerationArtifact["type"],
   createdAt: string,
-  stale?: Pick<StaleArtifact, "staleSince" | "invalidatedBy">,
+  stale?: Pick<StaleArtifact, "staleSince" | "invalidatedBy">
 ): StaleArtifact {
   return {
     id,
@@ -30,7 +30,7 @@ export function artifact(
 
 export function job(
   id: string,
-  overrides: Partial<VersionHistoryJob> = {},
+  overrides: Partial<VersionHistoryJob> = {}
 ): VersionHistoryJob {
   return {
     id,
@@ -63,7 +63,7 @@ export function event(
   occurredAt: string,
   message: string,
   payload?: unknown,
-  jobId = "job-root",
+  jobId = "job-root"
 ): BlueprintGenerationEvent {
   return {
     id,

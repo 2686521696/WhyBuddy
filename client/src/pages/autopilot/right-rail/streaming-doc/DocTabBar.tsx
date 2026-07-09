@@ -96,10 +96,11 @@ export const DocTabBar: FC<DocTabBarProps> = ({
 }) => {
   if (documents.length === 0) return null;
 
-  const handleClick = (id: string) => (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    onTabClick(id);
-  };
+  const handleClick =
+    (id: string) => (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      onTabClick(id);
+    };
 
   return (
     <div
@@ -122,7 +123,7 @@ export const DocTabBar: FC<DocTabBarProps> = ({
         boxSizing: "border-box",
       }}
     >
-      {documents.map((doc) => {
+      {documents.map(doc => {
         const isActive = doc.id === activeDocId;
         return (
           <button

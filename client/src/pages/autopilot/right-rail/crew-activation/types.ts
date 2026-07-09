@@ -12,7 +12,7 @@
  * - reviewing: 审阅中
  * - sleeping: 休眠，未参与当前阶段
  */
-export type RoleCrewStatus = 'active' | 'watching' | 'reviewing' | 'sleeping';
+export type RoleCrewStatus = "active" | "watching" | "reviewing" | "sleeping";
 
 /**
  * 角色 Crew 条目接口。
@@ -37,7 +37,7 @@ export interface RoleCrewEntry {
  * - decision: 决策结论
  * - handoff: 交接/移交
  */
-export type DiscussionType = 'discussion' | 'decision' | 'handoff';
+export type DiscussionType = "discussion" | "decision" | "handoff";
 
 /**
  * 讨论时间线条目接口。

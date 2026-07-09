@@ -81,7 +81,8 @@ export function createToastQueue(): ToastQueue {
 
   function enqueue(toast: ToastPayload): QueuedToast {
     const existingIndex = items.findIndex(item => item.key === toast.key);
-    const enqueuedAt = existingIndex >= 0 ? items[existingIndex].enqueuedAt : ++sequence;
+    const enqueuedAt =
+      existingIndex >= 0 ? items[existingIndex].enqueuedAt : ++sequence;
     const nextToast: QueuedToast = {
       ...toast,
       enqueuedAt,
@@ -151,14 +152,15 @@ export function createSonnerToastRenderer(
 ): ToastRenderer {
   return {
     show(toast) {
-    if (toast.level === "error" && api.error) return api.error(toast.message);
-    if (toast.level === "warn" && api.warning) return api.warning(toast.message);
-    if (toast.level === "info" && api.info) return api.info(toast.message);
-    return api(toast.message);
+      if (toast.level === "error" && api.error) return api.error(toast.message);
+      if (toast.level === "warn" && api.warning)
+        return api.warning(toast.message);
+      if (toast.level === "info" && api.info) return api.info(toast.message);
+      return api(toast.message);
     },
     dismiss(id) {
-    if (id === undefined) return;
-    api.dismiss?.(id);
+      if (id === undefined) return;
+      api.dismiss?.(id);
     },
   };
 }

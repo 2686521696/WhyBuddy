@@ -34,7 +34,9 @@ import { describe, expect, it, vi } from "vitest";
 // 与仓内既有 right-rail 测试保持一致的 blueprint-realtime-store mock，本组件
 // 不直接订阅它，但 SpecTreeChip 的相邻组件 / 工具函数有可能间接访问。
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: unknown) => unknown
+  ) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -150,7 +152,10 @@ function makeProps(
   overrides: Partial<WorkbenchSpecTreeProps> = {}
 ): WorkbenchSpecTreeProps {
   // 默认 tree：root1 (accepted x3)、root1.child1、root1.child2、root2 (reviewing x1)
-  const root1 = makeNode("root-1", "Auth Domain", undefined, ["child-1a", "child-1b"]);
+  const root1 = makeNode("root-1", "Auth Domain", undefined, [
+    "child-1a",
+    "child-1b",
+  ]);
   const child1a = makeNode("child-1a", "Login Flow", "root-1");
   const child1b = makeNode("child-1b", "Logout Flow", "root-1");
   const root2 = makeNode("root-2", "Profile Domain");
@@ -272,9 +277,7 @@ function invokeTreeView(
 
 describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
   it("(a) renders search input + node testids + chip text together in SSR markup", () => {
-    const markup = renderToStaticMarkup(
-      <WorkbenchSpecTree {...makeProps()} />
-    );
+    const markup = renderToStaticMarkup(<WorkbenchSpecTree {...makeProps()} />);
 
     expect(markup).toContain('data-testid="autopilot-workbench-spec-tree"');
     expect(markup).toContain(
@@ -313,9 +316,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
   });
 
   it("(b) renders toggles for roots with children or generated documents", () => {
-    const markup = renderToStaticMarkup(
-      <WorkbenchSpecTree {...makeProps()} />
-    );
+    const markup = renderToStaticMarkup(<WorkbenchSpecTree {...makeProps()} />);
 
     // root-1 有子节点 => toggle 应渲染
     expect(markup).toContain(
@@ -357,9 +358,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
   });
 
   it("(d) renders SpecTreeChip output text in node order — root-1 (accepted) before root-2 (reviewing)", () => {
-    const markup = renderToStaticMarkup(
-      <WorkbenchSpecTree {...makeProps()} />
-    );
+    const markup = renderToStaticMarkup(<WorkbenchSpecTree {...makeProps()} />);
 
     const acceptedIdx = markup.indexOf("3/3 accepted");
     const reviewingIdx = markup.indexOf("1/3 reviewing");
@@ -372,9 +371,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
     const nullMarkup = renderToStaticMarkup(
       <WorkbenchSpecTree {...makeProps({ specTree: null })} />
     );
-    expect(nullMarkup).toContain(
-      'data-testid="autopilot-workbench-spec-tree"'
-    );
+    expect(nullMarkup).toContain('data-testid="autopilot-workbench-spec-tree"');
     expect(nullMarkup).toContain(
       'data-testid="autopilot-workbench-spec-tree-search"'
     );
@@ -403,7 +400,7 @@ describe("WorkbenchSpecTree (Phase 1 / Task 3)", () => {
     expect(emptyMarkup).not.toMatch(/<ol\b/);
   });
 
-  it('(f) renders inline generate button only when activeDocId belongs to the node, and clicking it invokes onGenerateNode with the matching nodeId', () => {
+  it("(f) renders inline generate button only when activeDocId belongs to the node, and clicking it invokes onGenerateNode with the matching nodeId", () => {
     // activeDocId === null => 不渲染任何 generate 按钮
     const idleMarkup = renderToStaticMarkup(
       <WorkbenchSpecTree {...makeProps({ activeDocId: null })} />

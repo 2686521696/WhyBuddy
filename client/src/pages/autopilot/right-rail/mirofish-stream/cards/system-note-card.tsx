@@ -34,7 +34,8 @@ export const SystemNoteCard: FC<SystemNoteCardProps> = ({
 }) => {
   const messageText = blueprintCopy(entry.message, locale);
   const hintText = entry.hint ? blueprintCopy(entry.hint, locale) : undefined;
-  const icon = entry.tone === "warning" || entry.tone === "danger" ? "⚠" : "ℹ";
+  const icon =
+    entry.tone === "warning" || entry.tone === "danger" ? "⚠" : "ℹ";
 
   return (
     <div
@@ -43,7 +44,10 @@ export const SystemNoteCard: FC<SystemNoteCardProps> = ({
       className="flex items-center justify-center gap-2 py-1 my-1"
     >
       {/* 左侧虚线装饰 */}
-      <div className="flex-1 h-px border-t border-dashed border-slate-200" aria-hidden="true" />
+      <div
+        className="flex-1 h-px border-t border-dashed border-slate-200"
+        aria-hidden="true"
+      />
 
       {/* 图标 + 系统消息文本 */}
       <span className="text-[10px] text-slate-400 italic whitespace-nowrap">
@@ -51,12 +55,13 @@ export const SystemNoteCard: FC<SystemNoteCardProps> = ({
       </span>
 
       {/* 右侧虚线装饰 */}
-      <div className="flex-1 h-px border-t border-dashed border-slate-200" aria-hidden="true" />
+      <div
+        className="flex-1 h-px border-t border-dashed border-slate-200"
+        aria-hidden="true"
+      />
 
       {/* hint 文本（隐藏在 DOM 中供测试断言） */}
-      {hintText && (
-        <span className="sr-only">{hintText}</span>
-      )}
+      {hintText && <span className="sr-only">{hintText}</span>}
     </div>
   );
 };

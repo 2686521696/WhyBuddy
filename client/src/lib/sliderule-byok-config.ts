@@ -20,22 +20,22 @@ export type ByokPresetId =
   | "custom";
 
 export interface ByokKeyEntry {
-  id: string;                // 池内唯一
-  label: string;             // 用户可读名
+  id: string; // 池内唯一
+  label: string; // 用户可读名
   presetId: ByokPresetId;
   endpoint: string;
   model: string;
-  apiKey: string;            // 仅本模块 + provider 闭包持有
+  apiKey: string; // 仅本模块 + provider 闭包持有
   extraHeaders?: Record<string, string>;
   enabled: boolean;
-  maxInFlight?: number;      // 单 key 并发上限，默认 2
+  maxInFlight?: number; // 单 key 并发上限，默认 2
 }
 
 export interface ByokPoolConfig {
-  version: 1;                // localStorage "sliderule:llm-pool:v1"
-  entries: ByokKeyEntry[];   // 1..8 条，可跨厂商混配
-  dispatch: "least-busy" | "round-robin";  // 默认 least-busy
-  raceMode: boolean;         // 默认 false！成本诚实（用户自己的钱）
+  version: 1; // localStorage "sliderule:llm-pool:v1"
+  entries: ByokKeyEntry[]; // 1..8 条，可跨厂商混配
+  dispatch: "least-busy" | "round-robin"; // 默认 least-busy
+  raceMode: boolean; // 默认 false！成本诚实（用户自己的钱）
 }
 
 const STORAGE_KEY = "sliderule:llm-pool:v1";
@@ -69,20 +69,34 @@ export function maskKey(k: string): string {
   return k.slice(0, 4) + "…" + k.slice(-2);
 }
 
-export function validateByokPool(c: ByokPoolConfig): { ok: boolean; reason?: string } {
+export function validateByokPool(c: ByokPoolConfig): {
+  ok: boolean;
+  reason?: string;
+} {
   if (!c || c.version !== 1) return { ok: false, reason: "invalid version" };
-  if (!Array.isArray(c.entries) || c.entries.length === 0) return { ok: false, reason: "no entries" };
-  if (c.entries.length > 8) return { ok: false, reason: "too many entries (max 8)" };
+  if (!Array.isArray(c.entries) || c.entries.length === 0)
+    return { ok: false, reason: "no entries" };
+  if (c.entries.length > 8)
+    return { ok: false, reason: "too many entries (max 8)" };
   for (const e of c.entries) {
-    if (!e.id || !e.label || !e.presetId || !e.endpoint || !e.model || !e.apiKey) {
+    if (
+      !e.id ||
+      !e.label ||
+      !e.presetId ||
+      !e.endpoint ||
+      !e.model ||
+      !e.apiKey
+    ) {
       return { ok: false, reason: "entry missing required fields" };
     }
-    if (typeof e.enabled !== "boolean") return { ok: false, reason: "entry enabled must be boolean" };
+    if (typeof e.enabled !== "boolean")
+      return { ok: false, reason: "entry enabled must be boolean" };
   }
   if (c.dispatch !== "least-busy" && c.dispatch !== "round-robin") {
     return { ok: false, reason: "invalid dispatch" };
   }
-  if (typeof c.raceMode !== "boolean") return { ok: false, reason: "raceMode must be boolean" };
+  if (typeof c.raceMode !== "boolean")
+    return { ok: false, reason: "raceMode must be boolean" };
   return { ok: true };
 }
 
@@ -91,7 +105,8 @@ export const PRESET_ENDPOINTS: Record<ByokPresetId, string> = {
   deepseek: "https://api.deepseek.com/chat/completions",
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
   openai: "https://api.openai.com/v1/chat/completions",
-  gemini: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  gemini:
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
   zhipu: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
   siliconflow: "https://api.siliconflow.cn/v1/chat/completions",
   custom: "",

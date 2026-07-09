@@ -9,10 +9,7 @@ import type {
   BlueprintGenerationJob,
 } from "@shared/blueprint/contracts";
 
-import {
-  ArtifactCreatedCard,
-  ReasoningCard,
-} from "./mirofish-stream/cards";
+import { ArtifactCreatedCard, ReasoningCard } from "./mirofish-stream/cards";
 import type {
   MiroFishArtifactCreatedEntry,
   MiroFishReasoningEntry,
@@ -120,10 +117,18 @@ export const ProcessArtifactSplitPanel: FC<ProcessArtifactSplitPanelProps> = ({
 }) => {
   // Resolve empty-lane labels: when placeholder mode is active, use the
   // placeholder-specific text; otherwise fall back to the legacy empty text.
-  const executionLabel = emptyExecutionLabel ?? (showEmptyPlaceholder ? PLACEHOLDER_EXECUTION_TEXT[locale] : EMPTY_EXECUTION_TEXT[locale]);
-  const artifactLabel = emptyArtifactLabel ?? (showEmptyPlaceholder ? PLACEHOLDER_ARTIFACT_TEXT[locale] : EMPTY_ARTIFACT_TEXT[locale]);
+  const executionLabel =
+    emptyExecutionLabel ??
+    (showEmptyPlaceholder
+      ? PLACEHOLDER_EXECUTION_TEXT[locale]
+      : EMPTY_EXECUTION_TEXT[locale]);
+  const artifactLabel =
+    emptyArtifactLabel ??
+    (showEmptyPlaceholder
+      ? PLACEHOLDER_ARTIFACT_TEXT[locale]
+      : EMPTY_ARTIFACT_TEXT[locale]);
   const storeReasoningEntries = useBlueprintRealtimeStore(
-    (state) => state.agentReasoning.entries
+    state => state.agentReasoning.entries
   );
   const sourceReasoningEntries = reasoningEntries ?? storeReasoningEntries;
   const scopedReasoningEntries = useMemo(
@@ -137,7 +142,9 @@ export const ProcessArtifactSplitPanel: FC<ProcessArtifactSplitPanelProps> = ({
     () =>
       stageFilter === undefined
         ? undefined
-        : new Set(typeof stageFilter === "string" ? [stageFilter] : stageFilter),
+        : new Set(
+            typeof stageFilter === "string" ? [stageFilter] : stageFilter
+          ),
     [stageFilter]
   );
   const artifactTypeSet = useMemo(
@@ -146,7 +153,8 @@ export const ProcessArtifactSplitPanel: FC<ProcessArtifactSplitPanelProps> = ({
   );
 
   const artifactCards = useMemo(
-    () => deriveArtifactEntries(artifacts ?? job?.artifacts ?? [], artifactTypeSet),
+    () =>
+      deriveArtifactEntries(artifacts ?? job?.artifacts ?? [], artifactTypeSet),
     [artifacts, job?.artifacts, artifactTypeSet]
   );
   const reasoningCards = useMemo(
@@ -294,8 +302,11 @@ function deriveReasoningCards(
   filterSet: ReadonlySet<string> | undefined
 ): MiroFishReasoningEntry[] {
   return entries
-    .filter((entry) => {
-      if (entry.phase === "iteration_started" || entry.phase === "iteration_completed") {
+    .filter(entry => {
+      if (
+        entry.phase === "iteration_started" ||
+        entry.phase === "iteration_completed"
+      ) {
         return false;
       }
       if (filterSet && entry.stageId && !filterSet.has(entry.stageId)) {
@@ -303,20 +314,21 @@ function deriveReasoningCards(
       }
       return true;
     })
-    .map((entry) => ({
+    .map(entry => ({
       id: entry.id,
       kind: "reasoning" as const,
       stageId: entry.stageId,
       timestamp: entry.timestamp,
-      tone: entry.phase === "error"
-        ? "danger"
-        : entry.phase === "observing"
-          ? entry.observationSuccess === false
-            ? "warning"
-            : "success"
-          : entry.phase === "completed"
-            ? "success"
-            : "info",
+      tone:
+        entry.phase === "error"
+          ? "danger"
+          : entry.phase === "observing"
+            ? entry.observationSuccess === false
+              ? "warning"
+              : "success"
+            : entry.phase === "completed"
+              ? "success"
+              : "info",
       phase: entry.phase,
       iterationLabel: entry.iterationLabel,
       thought: entry.thought,
@@ -333,7 +345,9 @@ function deriveFallbackReasoningCards(
   filterSet: ReadonlySet<string> | undefined
 ): MiroFishReasoningEntry[] {
   return entries
-    .filter((entry) => !filterSet || !entry.stageId || filterSet.has(entry.stageId))
+    .filter(
+      entry => !filterSet || !entry.stageId || filterSet.has(entry.stageId)
+    )
     .map((entry, index) => ({
       id: entry.id,
       kind: "reasoning" as const,
@@ -356,7 +370,7 @@ function deriveArtifactFallbackExecutionEntries(
   }
 
   const titles = entries
-    .map((entry) => entry.title || entry.artifactType)
+    .map(entry => entry.title || entry.artifactType)
     .filter(Boolean);
   const firstTitles = titles.slice(0, 3).join(locale === "zh-CN" ? "、" : ", ");
   const remainder = Math.max(0, titles.length - 3);
@@ -373,7 +387,7 @@ function deriveArtifactFallbackExecutionEntries(
 
   return [
     {
-      id: `artifact-fallback-${entries.map((entry) => entry.id).join("-")}`,
+      id: `artifact-fallback-${entries.map(entry => entry.id).join("-")}`,
       text,
       timestamp: entries[entries.length - 1]?.timestamp,
       phase: "completed",
@@ -387,7 +401,7 @@ function deriveArtifactEntries(
   artifactTypeSet: ReadonlySet<string> | undefined
 ): ArtifactEntryWithStale[] {
   return artifacts
-    .filter((artifact) => !artifactTypeSet || artifactTypeSet.has(artifact.type))
+    .filter(artifact => !artifactTypeSet || artifactTypeSet.has(artifact.type))
     .map((artifact, index) => ({
       id: artifact.id,
       kind: "artifact_created" as const,

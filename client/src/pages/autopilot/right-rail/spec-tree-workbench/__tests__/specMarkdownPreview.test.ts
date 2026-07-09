@@ -69,14 +69,9 @@ describe("buildSpecMarkdownPreview", () => {
   });
 
   it("段落超过 3 行：只取前 3 行", () => {
-    const md = [
-      "## 概述",
-      "row 1",
-      "row 2",
-      "row 3",
-      "row 4",
-      "row 5",
-    ].join("\n");
+    const md = ["## 概述", "row 1", "row 2", "row 3", "row 4", "row 5"].join(
+      "\n"
+    );
     const preview = buildSpecMarkdownPreview(md);
     expect(preview.firstH2).toBe("概述");
     expect(preview.paragraphLines).toEqual(["row 1", "row 2", "row 3"]);

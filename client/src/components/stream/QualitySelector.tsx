@@ -10,21 +10,16 @@
  * Task 5.3 of the ue-video-stream-player spec.
  */
 
-import { ChevronDown, Gauge } from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { ChevronDown, Gauge } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { QualityLevel } from '@/lib/webrtc';
+import type { QualityLevel } from "@/lib/webrtc";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type QualityOption = QualityLevel | 'auto';
+export type QualityOption = QualityLevel | "auto";
 
 export interface QualitySelectorProps {
   /** Current active quality level. */
@@ -45,13 +40,13 @@ interface QualityOptionMeta {
 }
 
 const QUALITY_OPTIONS: Record<QualityOption, QualityOptionMeta> = {
-  auto: { label: '自动', description: '根据网络自动调整' },
-  high: { label: '高清', description: '10 Mbps' },
-  medium: { label: '标清', description: '4 Mbps' },
-  low: { label: '流畅', description: '1.5 Mbps' },
+  auto: { label: "自动", description: "根据网络自动调整" },
+  high: { label: "高清", description: "10 Mbps" },
+  medium: { label: "标清", description: "4 Mbps" },
+  low: { label: "流畅", description: "1.5 Mbps" },
 };
 
-const OPTION_ORDER: QualityOption[] = ['auto', 'high', 'medium', 'low'];
+const OPTION_ORDER: QualityOption[] = ["auto", "high", "medium", "low"];
 
 // ---------------------------------------------------------------------------
 // Component
@@ -78,9 +73,9 @@ export function QualitySelector({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
 
@@ -89,14 +84,14 @@ export function QualitySelector({
     if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -105,7 +100,7 @@ export function QualitySelector({
       onChange(option);
       setIsOpen(false);
     },
-    [onChange],
+    [onChange]
   );
 
   const currentOption = QUALITY_OPTIONS[value];
@@ -113,13 +108,13 @@ export function QualitySelector({
   return (
     <div
       ref={containerRef}
-      className={`relative ${className ?? ''}`}
+      className={`relative ${className ?? ""}`}
       data-testid="quality-selector"
     >
       {/* Trigger button */}
       <button
         type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => setIsOpen(prev => !prev)}
         className="flex items-center gap-1.5 rounded-lg bg-black/50 px-2.5 py-1.5 text-xs text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 hover:text-white"
         aria-label={`画质: ${currentOption.label}`}
         aria-expanded={isOpen}
@@ -128,7 +123,7 @@ export function QualitySelector({
         <Gauge className="size-3.5" />
         <span>{currentOption.label}</span>
         <ChevronDown
-          className={`size-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`size-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -139,7 +134,7 @@ export function QualitySelector({
           role="listbox"
           aria-label="选择画质"
         >
-          {OPTION_ORDER.map((option) => {
+          {OPTION_ORDER.map(option => {
             const meta = QUALITY_OPTIONS[option];
             const isSelected = option === value;
 
@@ -152,8 +147,8 @@ export function QualitySelector({
                 onClick={() => handleSelect(option)}
                 className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors ${
                   isSelected
-                    ? 'bg-white/15 text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                    ? "bg-white/15 text-white"
+                    : "text-white/70 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <div>

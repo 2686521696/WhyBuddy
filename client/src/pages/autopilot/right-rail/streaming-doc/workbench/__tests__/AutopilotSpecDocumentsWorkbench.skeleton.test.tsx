@@ -25,7 +25,9 @@ import { describe, expect, it, vi } from "vitest";
 // 安全起见，预先把 blueprint-realtime-store 替换为一个最小 mock，避免后续
 // 子组件在内部消费它时产生副作用（Phase 1 占位阶段实际尚未消费）。
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: unknown) => unknown
+  ) => {
     const snapshot = {
       agentReasoning: { entries: [] as unknown[] },
       rolePhases: {} as Record<string, unknown>,
@@ -71,13 +73,17 @@ describe("AutopilotSpecDocumentsWorkbench skeleton", () => {
     );
 
     // 容器自身根节点
-    expect(markup).toContain('data-testid="autopilot-spec-documents-workbench"');
+    expect(markup).toContain(
+      'data-testid="autopilot-spec-documents-workbench"'
+    );
 
     // 四区稳定 data-testid，必须同时出现（R1.1 / R1.2 / R1.4）
     expect(markup).toContain('data-testid="autopilot-workbench-status-bar"');
     expect(markup).toContain('data-testid="autopilot-workbench-spec-tree"');
     expect(markup).toContain('data-testid="autopilot-workbench-doc-main"');
-    expect(markup).toContain('data-testid="autopilot-workbench-execution-panel"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-execution-panel"'
+    );
   });
 
   it("preserves four-region order: status before tree, tree before main, main before exec", () => {
@@ -181,10 +187,14 @@ describe("AutopilotSpecDocumentsWorkbench skeleton", () => {
           locale: "en-US",
           generating: "all",
           jobId: "job-test",
-          job: { id: "job-test", stage: "spec_docs" } as unknown as
-            AutopilotSpecDocumentsWorkbenchProps["job"],
-          specTree: { id: "tree", nodes: [] } as unknown as
-            AutopilotSpecDocumentsWorkbenchProps["specTree"],
+          job: {
+            id: "job-test",
+            stage: "spec_docs",
+          } as unknown as AutopilotSpecDocumentsWorkbenchProps["job"],
+          specTree: {
+            id: "tree",
+            nodes: [],
+          } as unknown as AutopilotSpecDocumentsWorkbenchProps["specTree"],
         })}
       />
     );
@@ -192,7 +202,9 @@ describe("AutopilotSpecDocumentsWorkbench skeleton", () => {
     expect(markup).toContain('data-testid="autopilot-workbench-status-bar"');
     expect(markup).toContain('data-testid="autopilot-workbench-spec-tree"');
     expect(markup).toContain('data-testid="autopilot-workbench-doc-main"');
-    expect(markup).toContain('data-testid="autopilot-workbench-execution-panel"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-execution-panel"'
+    );
   });
 
   it("renders job title/subtitle and an initial active node action when specTree exists before documents are generated", () => {

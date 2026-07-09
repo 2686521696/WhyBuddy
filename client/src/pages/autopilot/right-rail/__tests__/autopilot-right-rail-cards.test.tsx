@@ -34,12 +34,15 @@ import {
 } from "../types";
 
 function makeProps(
-  overrides: Partial<AutopilotRightRailProps> = {},
+  overrides: Partial<AutopilotRightRailProps> = {}
 ): AutopilotRightRailProps {
   return {
     jobId: "job-test",
     currentStage: "fabric",
-    job: { id: "job-test", stage: "spec_tree" } as unknown as BlueprintGenerationJob,
+    job: {
+      id: "job-test",
+      stage: "spec_tree",
+    } as unknown as BlueprintGenerationJob,
     routeSet: null,
     selection: null,
     specTree: null,
@@ -105,7 +108,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: FABRIC_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="effect_preview"');
@@ -129,7 +132,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: FABRIC_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="effect_preview"');
@@ -147,7 +150,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     // StageViewport 渲染 spec_tree 阶段
@@ -218,7 +221,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     // The visible large phase remains the merged SPEC tree / documents workspace.
@@ -226,13 +229,17 @@ describe("AutopilotRightRail streaming timeline", () => {
     expect(markup).not.toContain('data-stage-key="spec_documents"');
     // StreamingDocRenderer 占据 StageContent 主区域，并委托到四区工作台。
     expect(markup).toContain('data-testid="streaming-doc-renderer"');
-    expect(markup).toContain('data-testid="autopilot-spec-documents-workbench"');
+    expect(markup).toContain(
+      'data-testid="autopilot-spec-documents-workbench"'
+    );
     // 重构后左侧 Spec 树按 nodeId 渲染，每份 SpecDocument 通过
     // autopilot-workbench-spec-tree-doc-* 暴露。
     expect(markup).toContain(
       'data-testid="autopilot-workbench-spec-tree-node-node-root"'
     );
-    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-doc-doc-req"');
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-spec-tree-doc-doc-req"'
+    );
     expect(markup).toContain(
       'data-testid="autopilot-workbench-spec-tree-doc-doc-design"'
     );
@@ -248,7 +255,9 @@ describe("AutopilotRightRail streaming timeline", () => {
     const specTree = {
       id: "spec-tree-fresh",
       version: 1,
-      nodes: [{ id: "node-root", title: "Root SPEC", type: "root", children: [] }],
+      nodes: [
+        { id: "node-root", title: "Root SPEC", type: "root", children: [] },
+      ],
     } as unknown as BlueprintSpecTree;
     const job = {
       id: "job-fresh",
@@ -257,11 +266,21 @@ describe("AutopilotRightRail streaming timeline", () => {
       artifacts: [
         {
           type: "requirements",
-          payload: { id: "doc-foreign-req", nodeId: "foreign-node-xyz", type: "requirements", title: "Foreign Requirements" },
+          payload: {
+            id: "doc-foreign-req",
+            nodeId: "foreign-node-xyz",
+            type: "requirements",
+            title: "Foreign Requirements",
+          },
         },
         {
           type: "design",
-          payload: { id: "doc-foreign-design", nodeId: "foreign-node-xyz", type: "design", title: "Foreign Design" },
+          payload: {
+            id: "doc-foreign-design",
+            nodeId: "foreign-node-xyz",
+            type: "design",
+            title: "Foreign Design",
+          },
         },
       ],
     } as unknown as BlueprintGenerationJob;
@@ -269,7 +288,7 @@ describe("AutopilotRightRail streaming timeline", () => {
     const markup = renderToStaticMarkup(
       <AutopilotRightRail
         {...makeProps({ job, specTree, agentCrew: EMPTY_AGENT_CREW })}
-      />,
+      />
     );
 
     // Merged workspace still renders…
@@ -277,7 +296,9 @@ describe("AutopilotRightRail streaming timeline", () => {
     // …but the foreign-project documents are filtered out (not surfaced).
     expect(markup).not.toContain("doc-foreign-req");
     expect(markup).not.toContain("doc-foreign-design");
-    expect(markup).not.toContain('data-testid="autopilot-workbench-spec-tree-doc-doc-foreign-req"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-spec-tree-doc-doc-foreign-req"'
+    );
   });
 
   it("lets an explicit next sub-stage override stale spec_docs job state while the next step is being generated", () => {
@@ -294,7 +315,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="effect_preview"');
@@ -310,7 +331,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: null,
         })}
         locale="en-US"
-      />,
+      />
     );
 
     // StageViewport 渲染 spec_tree 阶段
@@ -318,8 +339,12 @@ describe("AutopilotRightRail streaming timeline", () => {
     // 活跃阶段有 data-timeline-status="active" 标记
     expect(markup).toContain('data-timeline-status="active"');
     // spec_tree 阶段同样挂载四区工作台；无树数据时由左侧 Spec 树空态承载。
-    expect(markup).toContain('data-testid="autopilot-spec-documents-workbench"');
-    expect(markup).toContain('data-testid="autopilot-workbench-spec-tree-empty"');
+    expect(markup).toContain(
+      'data-testid="autopilot-spec-documents-workbench"'
+    );
+    expect(markup).toContain(
+      'data-testid="autopilot-workbench-spec-tree-empty"'
+    );
     expect(markup).toContain("No SPEC nodes yet");
     // sub-stage placeholder 保留
     expect(markup).toContain('data-sub-stage-placeholder="spec_tree"');
@@ -329,18 +354,23 @@ describe("AutopilotRightRail streaming timeline", () => {
     const markup = renderToStaticMarkup(
       <AutopilotRightRail
         {...makeProps({
-          job: { id: "job-test", stage: "agent_crew_fabric" } as unknown as BlueprintGenerationJob,
+          job: {
+            id: "job-test",
+            stage: "agent_crew_fabric",
+          } as unknown as BlueprintGenerationJob,
           currentSubStage: "agent_crew_fabric",
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     // 起点子阶段作为 active
     expect(markup).toContain('data-sub-stage-placeholder="agent_crew_fabric"');
 
     // 未来 7 个子阶段不应有 placeholder 属性(只有 active 才有)
-    const futureSubStages = RAIL_SUB_STAGE_ORDER.slice(1) as readonly AutopilotRailSubStage[];
+    const futureSubStages = RAIL_SUB_STAGE_ORDER.slice(
+      1
+    ) as readonly AutopilotRailSubStage[];
     for (const sub of futureSubStages) {
       expect(markup).not.toContain(`data-sub-stage-placeholder="${sub}"`);
     }
@@ -354,7 +384,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     // StageViewport 容器存在
@@ -388,7 +418,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-testid="autopilot-right-rail-action-strip"');
@@ -465,11 +495,11 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain(
-      'data-testid="autopilot-right-rail-stale-indicator"',
+      'data-testid="autopilot-right-rail-stale-indicator"'
     );
     expect(markup).toContain("当前阶段产物已过期");
     expect(markup).toContain("重新生成规格树");
@@ -485,7 +515,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-testid="autopilot-stage-back-button"');
@@ -540,28 +570,28 @@ describe("AutopilotRightRail streaming timeline", () => {
         isViewingCompletedStage: false,
         manualStageOverride: "spec_documents",
         coercedStaleRoutePin: false,
-      }),
+      })
     ).toBe(true);
     expect(
       resolveReplanCompletedViewFlag({
         isViewingCompletedStage: false,
         manualStageOverride: null,
         coercedStaleRoutePin: true,
-      }),
+      })
     ).toBe(true);
     expect(
       resolveReplanCompletedViewFlag({
         isViewingCompletedStage: true,
         manualStageOverride: null,
         coercedStaleRoutePin: false,
-      }),
+      })
     ).toBe(true);
     expect(
       resolveReplanCompletedViewFlag({
         isViewingCompletedStage: false,
         manualStageOverride: null,
         coercedStaleRoutePin: false,
-      }),
+      })
     ).toBe(false);
   });
 
@@ -570,13 +600,13 @@ describe("AutopilotRightRail streaming timeline", () => {
       isManualWorkbenchStageOverrideValid("spec_documents", {
         activeSubStage: "runtime_capability",
         jobStage: "runtime_capability",
-      }),
+      })
     ).toBe(true);
     expect(
       isManualWorkbenchStageOverrideValid("spec_documents", {
         activeSubStage: "runtime_capability",
         jobStage: undefined,
-      }),
+      })
     ).toBe(true);
   });
 
@@ -616,7 +646,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="spec_tree"');
@@ -645,13 +675,15 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-autopilot-sub-stage="spec_tree"');
     expect(markup).toContain('data-stage-key="spec_tree"');
     expect(markup).not.toContain('data-stage-key="spec_documents"');
-    expect(markup).toContain('data-testid="autopilot-replan-from-stage-divider"');
+    expect(markup).toContain(
+      'data-testid="autopilot-replan-from-stage-divider"'
+    );
     expect(markup).toContain('data-stage="spec_tree"');
     expect(markup).toContain("2 downstream");
   });
@@ -670,13 +702,15 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-autopilot-sub-stage="agent_crew_fabric"');
     expect(markup).toContain('data-stage-key="route"');
     expect(markup).toContain("步骤 03");
-    expect(markup).not.toContain('data-testid="autopilot-workbench-action-refresh"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-workbench-action-refresh"'
+    );
     expect(markup).not.toContain('data-testid="autopilot-stage-back-button"');
   });
 
@@ -685,10 +719,13 @@ describe("AutopilotRightRail streaming timeline", () => {
       <AutopilotRightRail
         {...makeProps({
           currentSubStage: "agent_crew_fabric",
-          job: { id: "job-test", stage: "agent_crew_fabric" } as unknown as BlueprintGenerationJob,
+          job: {
+            id: "job-test",
+            stage: "agent_crew_fabric",
+          } as unknown as BlueprintGenerationJob,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).not.toContain('data-testid="autopilot-stage-back-button"');
@@ -731,11 +768,13 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="spec_tree"');
-    expect(markup).not.toContain('data-testid="autopilot-stage-continue-button"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-stage-continue-button"'
+    );
     expect(markup).not.toContain("进入规格文档");
   });
 
@@ -750,7 +789,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           } as unknown as BlueprintGenerationJob,
           selection: {} as AutopilotRightRailProps["selection"],
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-sub-stage-placeholder="artifact_memory"');
@@ -795,10 +834,12 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
-    expect(markup).not.toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-stage-forward-button"'
+    );
     expect(markup).not.toContain('data-next-target-kind="workbench-stage"');
     expect(markup).not.toContain('data-next-workbench-stage="spec_documents"');
   });
@@ -823,7 +864,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="spec_tree"');
@@ -852,7 +893,7 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-stage-key="spec_tree"');
@@ -874,7 +915,7 @@ describe("AutopilotRightRail streaming timeline", () => {
             artifacts: [],
           } as unknown as BlueprintGenerationJob,
         })}
-      />,
+      />
     );
 
     expect(markup).toContain('data-testid="autopilot-stage-forward-button"');
@@ -892,10 +933,12 @@ describe("AutopilotRightRail streaming timeline", () => {
             stage: "engineering_landing",
           } as unknown as BlueprintGenerationJob,
         })}
-      />,
+      />
     );
 
-    expect(markup).not.toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-stage-forward-button"'
+    );
   });
 
   it("after backtracking from spec_documents, the merged SPEC tree view only exposes back navigation", () => {
@@ -917,16 +960,20 @@ describe("AutopilotRightRail streaming timeline", () => {
           specTree: EMPTY_SPEC_TREE,
           agentCrew: EMPTY_AGENT_CREW,
         })}
-      />,
+      />
     );
 
     // 头部的"返回上一步"按钮仍然在
     expect(markup).toContain('data-testid="autopilot-stage-back-button"');
     // SPEC tree 与 SPEC documents 已合并，不再提供进入规格文档的前进入口。
-    expect(markup).not.toContain('data-testid="autopilot-stage-forward-button"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-stage-forward-button"'
+    );
     expect(markup).not.toContain('data-next-target-kind="workbench-stage"');
     expect(markup).not.toContain('data-next-workbench-stage="spec_documents"');
-    expect(markup).not.toContain('data-testid="autopilot-stage-continue-button"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-stage-continue-button"'
+    );
     expect(markup).not.toContain("进入规格文档");
   });
 });
@@ -937,7 +984,7 @@ describe("AutopilotRightRail replan integration contract", () => {
     const path = await import("node:path");
     const source = await fs.readFile(
       path.resolve(__dirname, "../AutopilotRightRail.tsx"),
-      "utf8",
+      "utf8"
     );
     const handlerStart = source.indexOf("const handleConfirmReplan");
     const handlerEnd = source.indexOf("const handleRegenerateStaleStage");
@@ -949,6 +996,8 @@ describe("AutopilotRightRail replan integration contract", () => {
     expect(handlerSource).toContain("replanFlow.confirmReplan");
     expect(source).toContain("toastQueue");
     expect(handlerSource).not.toContain("postBlueprintReplan(props.jobId");
-    expect(handlerSource).not.toContain("props.onJobUpdated?.(result.data.job)");
+    expect(handlerSource).not.toContain(
+      "props.onJobUpdated?.(result.data.job)"
+    );
   });
 });

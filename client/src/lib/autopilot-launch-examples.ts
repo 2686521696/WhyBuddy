@@ -86,8 +86,7 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
       "整理已有信息并交付可验收的分析摘要，走当前支持的标准 mission 路线。",
     routeId: "standard-route",
     input: {
-      text:
-        "今天内整理支付告警排查结论，交付一页分析摘要，约束是只使用已有日志，成功标准是指出根因、影响范围和下一步处理建议。",
+      text: "今天内整理支付告警排查结论，交付一页分析摘要，约束是只使用已有日志，成功标准是指出根因、影响范围和下一步处理建议。",
       runtimeMode: "advanced",
       attachments: [],
     },
@@ -99,8 +98,7 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
     description: "生成文案或说明稿，不要求浏览器、终端或外部执行能力。",
     routeId: "standard-route",
     input: {
-      text:
-        "本周内完成会员续费页改版说明稿，交付产品说明和验收清单，约束是兼容移动端和现有埋点，成功标准是方案可被设计和研发直接评审。",
+      text: "本周内完成会员续费页改版说明稿，交付产品说明和验收清单，约束是兼容移动端和现有埋点，成功标准是方案可被设计和研发直接评审。",
       runtimeMode: "advanced",
       attachments: [],
     },
@@ -112,8 +110,7 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
     description: "拆解实现计划和验收路径，但不直接承诺运行未接入的真实执行器。",
     routeId: "standard-route",
     input: {
-      text:
-        "本周内完成任务详情页接管记录的前端实现计划，交付组件拆分、接口字段和验收清单，约束是复用现有任务数据结构，成功标准是研发可以按计划分步落地。",
+      text: "本周内完成任务详情页接管记录的前端实现计划，交付组件拆分、接口字段和验收清单，约束是复用现有任务数据结构，成功标准是研发可以按计划分步落地。",
       runtimeMode: "advanced",
       attachments: [],
     },
@@ -122,11 +119,11 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
     kind: "research",
     label: "研究",
     englishLabel: "Research",
-    description: "做资料整理、对比和结论沉淀，避免触发浏览器自动化等未确认能力。",
+    description:
+      "做资料整理、对比和结论沉淀，避免触发浏览器自动化等未确认能力。",
     routeId: "standard-route",
     input: {
-      text:
-        "明天前完成竞品任务自动驾驶入口研究，交付对比表和三条设计建议，约束是只基于已收集资料，成功标准是能支持下一轮首页信息架构评审。",
+      text: "明天前完成竞品任务自动驾驶入口研究，交付对比表和三条设计建议，约束是只基于已收集资料，成功标准是能支持下一轮首页信息架构评审。",
       runtimeMode: "advanced",
       attachments: [],
     },
@@ -135,11 +132,11 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
     kind: "attachment",
     label: "附件处理",
     englishLabel: "Attachment",
-    description: "结合附件或表格整理 brief，会进入当前支持的 deep/workflow 预览路线。",
+    description:
+      "结合附件或表格整理 brief，会进入当前支持的 deep/workflow 预览路线。",
     routeId: "deep-route",
     input: {
-      text:
-        "根据附件里的需求文档和表格，先整理 brief，再拆出工作包和角色分工，月底前交付排期、风险清单和验收标准。",
+      text: "根据附件里的需求文档和表格，先整理 brief，再拆出工作包和角色分工，月底前交付排期、风险清单和验收标准。",
       runtimeMode: "advanced",
       attachments: [
         {
@@ -158,11 +155,11 @@ export const AUTOPILOT_LAUNCH_EXAMPLES: AutopilotLaunchExample[] = [
     kind: "advanced-execution",
     label: "高级执行",
     englishLabel: "Advanced execution",
-    description: "需要浏览器、终端或沙箱能力时，只在 frontend 模式下提示运行时升级。",
+    description:
+      "需要浏览器、终端或沙箱能力时，只在 frontend 模式下提示运行时升级。",
     routeId: "upgrade-runtime",
     input: {
-      text:
-        "在沙箱里打开浏览器验证支付页面，抓取日志并输出测试结果、回滚建议和验收标准，今天完成。",
+      text: "在沙箱里打开浏览器验证支付页面，抓取日志并输出测试结果、回滚建议和验收标准，今天完成。",
       runtimeMode: "frontend",
       attachments: [],
     },
@@ -417,7 +414,9 @@ function pickPreviewLockState(source: unknown): string | null {
     pickPreviewText(source, PREVIEW_LOCK_STATE_PATHS)
   );
   if (explicit) return explicit;
-  return PREVIEW_LOCK_BOOLEAN_PATHS.some(path => readPath(source, path) === true)
+  return PREVIEW_LOCK_BOOLEAN_PATHS.some(
+    path => readPath(source, path) === true
+  )
     ? "locked"
     : null;
 }
@@ -653,7 +652,9 @@ export function buildLaunchDestinationPreview(
     PREVIEW_CONSTRAINT_PATHS
   );
   const constraints =
-    explicitConstraints.length > 0 ? explicitConstraints : inferConstraints(text);
+    explicitConstraints.length > 0
+      ? explicitConstraints
+      : inferConstraints(text);
   const timeline = inferTimeline(text);
   const explicitSuccessCriteria = collectPreviewItems(
     input,

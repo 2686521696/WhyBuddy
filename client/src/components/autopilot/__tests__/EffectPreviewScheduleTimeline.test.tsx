@@ -70,13 +70,13 @@ vi.mock("framer-motion", () => ({
               ...(rest as Record<string, unknown>),
               "data-layout-id": layoutId as string | undefined,
             },
-            children as React.ReactNode,
+            children as React.ReactNode
           );
         };
         Component.displayName = `MockMotion(${tag})`;
         return Component;
       },
-    },
+    }
   ),
 }));
 
@@ -97,7 +97,7 @@ import {
  * 多次渲染的状态分布稳定，避免引入与本测试目标无关的差异。
  */
 function makeProgressPlan(
-  order: ReadonlyArray<string>,
+  order: ReadonlyArray<string>
 ): ReadonlyArray<ProgressPlanEntry> {
   const states = ["pending", "running", "completed"] as const;
   return order.map((nodeId, index) => ({
@@ -115,7 +115,7 @@ function makeProgressPlan(
  * props，与运行时 `<motion.li layoutId={entry.nodeId}>` 是一一对应的。
  */
 function extractItemAttrs(
-  markup: string,
+  markup: string
 ): ReadonlyArray<{ nodeId: string; layoutId: string }> {
   const tagRegex =
     /<li\b[^>]*\bdata-testid="effect-preview-schedule-item"[^>]*>/g;
@@ -126,7 +126,7 @@ function extractItemAttrs(
     const layoutIdMatch = tag.match(/\bdata-layout-id="([^"]+)"/);
     if (nodeIdMatch === null || layoutIdMatch === null) {
       throw new Error(
-        `effect-preview-schedule-item missing data-node-id / data-layout-id: ${tag}`,
+        `effect-preview-schedule-item missing data-node-id / data-layout-id: ${tag}`
       );
     }
     result.push({ nodeId: nodeIdMatch[1], layoutId: layoutIdMatch[1] });
@@ -148,12 +148,12 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
         dependencyOrder={order}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
 
     // 时间线根容器 + 列表挂载点都必须出现，确保 effect_preview 阶段 gate 通过。
     expect(markup).toContain(
-      'data-component="effect-preview-schedule-timeline"',
+      'data-component="effect-preview-schedule-timeline"'
     );
     expect(markup).toContain('data-active-stage-key="effect_preview"');
     expect(markup).toContain('data-testid="effect-preview-schedule-list"');
@@ -168,7 +168,7 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
     });
 
     // layoutId 集合等于全部 nodeId 集合。
-    const layoutIds = attrs.map((entry) => entry.layoutId);
+    const layoutIds = attrs.map(entry => entry.layoutId);
     expect(new Set(layoutIds)).toEqual(new Set(order));
   });
 
@@ -185,7 +185,7 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
         dependencyOrder={orderBefore}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
     const markupAfter = renderToStaticMarkup(
       <EffectPreviewScheduleTimeline
@@ -194,7 +194,7 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
         dependencyOrder={orderAfter}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
 
     const attrsBefore = extractItemAttrs(markupBefore);
@@ -204,29 +204,29 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
     expect(attrsAfter).toHaveLength(3);
 
     // 渲染顺序按 progressPlan 排列：
-    expect(attrsBefore.map((e) => e.nodeId)).toEqual([...orderBefore]);
-    expect(attrsAfter.map((e) => e.nodeId)).toEqual([...orderAfter]);
+    expect(attrsBefore.map(e => e.nodeId)).toEqual([...orderBefore]);
+    expect(attrsAfter.map(e => e.nodeId)).toEqual([...orderAfter]);
 
     // 关键不变量：layoutId 集合完全一致（{a,b,c}），且每个 layoutId 在
     // 重排前后都等于其对应 nodeId（即 layoutId 由 nodeId 标识，而不是位置标识）。
-    const layoutIdsBefore = new Set(attrsBefore.map((e) => e.layoutId));
-    const layoutIdsAfter = new Set(attrsAfter.map((e) => e.layoutId));
+    const layoutIdsBefore = new Set(attrsBefore.map(e => e.layoutId));
+    const layoutIdsAfter = new Set(attrsAfter.map(e => e.layoutId));
     expect(layoutIdsBefore).toEqual(new Set(["a", "b", "c"]));
     expect(layoutIdsAfter).toEqual(new Set(["a", "b", "c"]));
     expect(layoutIdsAfter).toEqual(layoutIdsBefore);
 
     // 每个 nodeId 在两次渲染中都映射到相同的 layoutId（即 nodeId）。
     const layoutIdByNodeBefore = new Map(
-      attrsBefore.map((e) => [e.nodeId, e.layoutId]),
+      attrsBefore.map(e => [e.nodeId, e.layoutId])
     );
     const layoutIdByNodeAfter = new Map(
-      attrsAfter.map((e) => [e.nodeId, e.layoutId]),
+      attrsAfter.map(e => [e.nodeId, e.layoutId])
     );
     for (const nodeId of ["a", "b", "c"] as const) {
       expect(layoutIdByNodeBefore.get(nodeId)).toBe(nodeId);
       expect(layoutIdByNodeAfter.get(nodeId)).toBe(nodeId);
       expect(layoutIdByNodeAfter.get(nodeId)).toBe(
-        layoutIdByNodeBefore.get(nodeId),
+        layoutIdByNodeBefore.get(nodeId)
       );
     }
 
@@ -246,7 +246,7 @@ describe("<EffectPreviewScheduleTimeline> FLIP 渲染", () => {
         dependencyOrder={order}
         visualTokens={visualTokens}
         theme="light"
-      />,
+      />
     );
 
     expect(markup).toBe("");

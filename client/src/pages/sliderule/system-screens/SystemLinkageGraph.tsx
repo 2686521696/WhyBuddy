@@ -29,7 +29,10 @@ import {
 } from "./five-system-model";
 import { useContainerSized } from "./use-sized";
 
-const SYSTEM_TINT: Record<LinkageSystem, { dot: string; bg: string; border: string }> = {
+const SYSTEM_TINT: Record<
+  LinkageSystem,
+  { dot: string; bg: string; border: string }
+> = {
   datamodel: { dot: "#1677ff", bg: "#F5F8FF", border: "#D6E4FF" },
   page: { dot: "#0d9488", bg: "#F0FAF8", border: "#C7EAE4" },
   workflow: { dot: "#722ed1", bg: "#F8F5FF", border: "#E3D7F7" },
@@ -38,7 +41,10 @@ const SYSTEM_TINT: Record<LinkageSystem, { dot: string; bg: string; border: stri
 };
 
 // 边语义 → 颜色（与图例一致；dataviz 校验过的分类色板成员）
-const EDGE_KIND_META: Record<string, { color: string; label: string; dashed?: boolean }> = {
+const EDGE_KIND_META: Record<
+  string,
+  { color: string; label: string; dashed?: boolean }
+> = {
   "page-entity": { color: "#1677ff", label: "页面 → 实体（字段绑定）" },
   "page-workflow": { color: "#722ed1", label: "页面 → 流程（应用装配）" },
   "node-role": { color: "#fa8c16", label: "流程节点 → 审批角色" },
@@ -86,12 +92,37 @@ function SysGroupCard({ data }: NodeProps<GroupNode>) {
         fontFamily: "inherit",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 7, height: GROUP_TITLE_H, padding: `0 ${GROUP_PAD}px` }}>
-        <span style={{ width: 8, height: 8, borderRadius: 4, background: tint.dot, flexShrink: 0 }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#33302a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          height: GROUP_TITLE_H,
+          padding: `0 ${GROUP_PAD}px`,
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            background: tint.dot,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#33302a",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {group.label}
         </span>
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "#a49c8c" }}>
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "#98a2b3" }}>
           {group.items.length}
         </span>
       </div>
@@ -121,11 +152,39 @@ function SysItemCard({ data }: NodeProps<ItemNode>) {
       }}
       title={data.name}
     >
-      <Handle id="t-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle id="t-right" type="target" position={Position.Right} style={{ opacity: 0 }} />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.name}</span>
-      <Handle id="s-left" type="source" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle id="s-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle
+        id="t-left"
+        type="target"
+        position={Position.Left}
+        style={{ opacity: 0 }}
+      />
+      <Handle
+        id="t-right"
+        type="target"
+        position={Position.Right}
+        style={{ opacity: 0 }}
+      />
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {data.name}
+      </span>
+      <Handle
+        id="s-left"
+        type="source"
+        position={Position.Left}
+        style={{ opacity: 0 }}
+      />
+      <Handle
+        id="s-right"
+        type="source"
+        position={Position.Right}
+        style={{ opacity: 0 }}
+      />
     </div>
   );
 }
@@ -158,17 +217,25 @@ export function SystemLinkageGraph({
   const { ref: containerRef, sized } = useContainerSized();
 
   const { flowNodes, flowEdges, legendKinds } = React.useMemo(() => {
-    if (!data) return { flowNodes: [] as Node[], flowEdges: [] as Edge[], legendKinds: [] as string[] };
-    const row0 = data.groups.filter((g) => GROUP_COLUMN[g.system].row === 0);
+    if (!data)
+      return {
+        flowNodes: [] as Node[],
+        flowEdges: [] as Edge[],
+        legendKinds: [] as string[],
+      };
+    const row0 = data.groups.filter(g => GROUP_COLUMN[g.system].row === 0);
     const row0Height = Math.max(0, ...row0.map(groupHeight));
     // 整列槽位：每个整数列取该列实际最宽组，槽位 x 累计（组可加宽不重叠）
     const widthOfCol = (c: number) =>
       Math.max(
         ITEM_W + GROUP_PAD * 2,
-        ...data.groups.filter((g) => GROUP_COLUMN[g.system].col === c).map(groupWidth)
+        ...data.groups
+          .filter(g => GROUP_COLUMN[g.system].col === c)
+          .map(groupWidth)
       );
     const slotX: number[] = [];
-    for (let c = 0; c <= 3; c++) slotX[c] = c === 0 ? 0 : slotX[c - 1] + widthOfCol(c - 1) + COL_GAP;
+    for (let c = 0; c <= 3; c++)
+      slotX[c] = c === 0 ? 0 : slotX[c - 1] + widthOfCol(c - 1) + COL_GAP;
     const xOfCol = (col: number) => {
       if (Number.isInteger(col)) return slotX[col] ?? 0;
       const lo = Math.floor(col);
@@ -180,7 +247,13 @@ export function SystemLinkageGraph({
       const { col, row } = GROUP_COLUMN[g.system];
       const x = xOfCol(col);
       const y = row === 0 ? 0 : row0Height + ROW_GAP;
-      nodes.push({ id: `g-${g.system}`, type: "sysGroup", position: { x, y }, data: { group: g }, draggable: true });
+      nodes.push({
+        id: `g-${g.system}`,
+        type: "sysGroup",
+        position: { x, y },
+        data: { group: g },
+        draggable: true,
+      });
       g.items.forEach((item, i) => {
         const innerCol = Math.floor(i / ITEMS_PER_INNER_COL);
         const innerRow = i % ITEMS_PER_INNER_COL;
@@ -198,7 +271,8 @@ export function SystemLinkageGraph({
         });
       });
     }
-    const colOf = (key: string) => GROUP_COLUMN[key.split(":")[0] as LinkageSystem]?.col ?? 0;
+    const colOf = (key: string) =>
+      GROUP_COLUMN[key.split(":")[0] as LinkageSystem]?.col ?? 0;
     const edges: Edge[] = data.edges.map((e, i) => {
       const meta = EDGE_KIND_META[e.kind];
       const rightward = colOf(e.to) >= colOf(e.from);
@@ -210,27 +284,51 @@ export function SystemLinkageGraph({
         targetHandle: rightward ? "t-left" : "t-right",
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
-        style: { stroke: meta.color, strokeWidth: 1.5, strokeDasharray: meta.dashed ? "6 4" : undefined, opacity: 0.8 },
-        markerEnd: { type: "arrowclosed" as const, color: meta.color, width: 16, height: 16 },
+        style: {
+          stroke: meta.color,
+          strokeWidth: 1.5,
+          strokeDasharray: meta.dashed ? "6 4" : undefined,
+          opacity: 0.8,
+        },
+        markerEnd: {
+          type: "arrowclosed" as const,
+          color: meta.color,
+          width: 16,
+          height: 16,
+        },
       };
     });
-    const legendKinds = [...new Set(data.edges.map((e) => e.kind))];
+    const legendKinds = [...new Set(data.edges.map(e => e.kind))];
     return { flowNodes: nodes, flowEdges: edges, legendKinds };
   }, [data]);
 
   if (!data) return null;
 
   return (
-    <div className={`flex h-full w-full flex-col ${className}`} data-testid="system-linkage-graph">
+    <div
+      className={`flex h-full w-full flex-col ${className}`}
+      data-testid="system-linkage-graph"
+    >
       {/* 图例条：只列实际出现的边语义，颜色与线一致 */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#EFEBE2] bg-[#FBF9F4] px-4 py-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#e8eaee] bg-[#FBF9F4] px-4 py-1.5">
         <span className="text-[10px] text-stone-400">图例</span>
-        {legendKinds.map((kind) => {
+        {legendKinds.map(kind => {
           const meta = EDGE_KIND_META[kind];
           return (
-            <span key={kind} className="inline-flex items-center gap-1.5 text-[10px] text-stone-500">
+            <span
+              key={kind}
+              className="inline-flex items-center gap-1.5 text-[10px] text-stone-500"
+            >
               <svg width="22" height="6" aria-hidden>
-                <line x1="0" y1="3" x2="22" y2="3" stroke={meta.color} strokeWidth="2" strokeDasharray={meta.dashed ? "5 3" : undefined} />
+                <line
+                  x1="0"
+                  y1="3"
+                  x2="22"
+                  y2="3"
+                  stroke={meta.color}
+                  strokeWidth="2"
+                  strokeDasharray={meta.dashed ? "5 3" : undefined}
+                />
               </svg>
               {meta.label}
             </span>
@@ -250,7 +348,7 @@ export function SystemLinkageGraph({
             nodesConnectable={false}
             deleteKeyCode={null}
           >
-            <Background gap={18} size={1} color="#E7E2D9" />
+            <Background gap={18} size={1} color="#e5e7eb" />
             <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
         )}

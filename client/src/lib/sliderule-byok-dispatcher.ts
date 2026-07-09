@@ -54,8 +54,16 @@ export function getByokDispatcher(): ByokPoolDispatcher {
   return sharedDispatcher;
 }
 
-function createByokDispatcherInternal(initialConfig?: ByokPoolConfig): ByokPoolDispatcher {
-  const config = initialConfig || loadByokPool() || { version: 1, entries: [], dispatch: "least-busy", raceMode: false };
+function createByokDispatcherInternal(
+  initialConfig?: ByokPoolConfig
+): ByokPoolDispatcher {
+  const config = initialConfig ||
+    loadByokPool() || {
+      version: 1,
+      entries: [],
+      dispatch: "least-busy",
+      raceMode: false,
+    };
   const states: Record<string, KeyState> = {};
   for (const e of config.entries) {
     if (e.enabled) {
@@ -73,13 +81,20 @@ function createByokDispatcherInternal(initialConfig?: ByokPoolConfig): ByokPoolD
 
   function getAvailable(): KeyState[] {
     const now = Date.now();
-    return Object.values(states).filter(s => s.entry.enabled && (s.cooledUntil === null || s.cooledUntil <= now) && s.inFlight < (s.entry.maxInFlight || 2));
+    return Object.values(states).filter(
+      s =>
+        s.entry.enabled &&
+        (s.cooledUntil === null || s.cooledUntil <= now) &&
+        s.inFlight < (s.entry.maxInFlight || 2)
+    );
   }
 
   function pickLeastBusy(): KeyState | null {
     const avail = getAvailable();
     if (avail.length === 0) return null;
-    return avail.reduce((best, cur) => cur.inFlight < best.inFlight ? cur : best);
+    return avail.reduce((best, cur) =>
+      cur.inFlight < best.inFlight ? cur : best
+    );
   }
 
   function pickRoundRobin(): KeyState | null {
@@ -145,12 +160,18 @@ function createByokDispatcherInternal(initialConfig?: ByokPoolConfig): ByokPoolD
 }
 
 // helper to record usage after success (called by provider)
-export function recordUsageOnLease(dispatcher: ByokPoolDispatcher, lease: ByokLease, tokens: number) {
+export function recordUsageOnLease(
+  dispatcher: ByokPoolDispatcher,
+  lease: ByokLease,
+  tokens: number
+) {
   // since internal state, for demo we can expose or just note in snapshot via provider
   // for real, dispatcher would have internal update, here we keep simple (tokens updated in provider closure if needed)
 }
 
-export function createByokDispatcher(initialConfig?: ByokPoolConfig): ByokPoolDispatcher {
+export function createByokDispatcher(
+  initialConfig?: ByokPoolConfig
+): ByokPoolDispatcher {
   const d = createByokDispatcherInternal(initialConfig);
   sharedDispatcher = d;
   return d;

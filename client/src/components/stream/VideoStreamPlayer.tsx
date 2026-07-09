@@ -6,7 +6,7 @@
  * fullscreen, and shows connecting / error / degradation UI overlays.
  */
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   Maximize,
@@ -15,21 +15,16 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
-} from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { WebRTCConnectionManager, QualityMonitor } from '@/lib/webrtc';
-import type { ConnectionState, QualityLevel, StreamError } from '@/lib/webrtc';
+import { WebRTCConnectionManager, QualityMonitor } from "@/lib/webrtc";
+import type { ConnectionState, QualityLevel, StreamError } from "@/lib/webrtc";
 
-import { QualitySelector } from './QualitySelector';
-import type { QualityOption } from './QualitySelector';
-import { Scene3DFallback } from './Scene3DFallback';
-import type { ScenePerformanceProfile } from '@/components/Scene3D';
+import { QualitySelector } from "./QualitySelector";
+import type { QualityOption } from "./QualitySelector";
+import { Scene3DFallback } from "./Scene3DFallback";
+import type { ScenePerformanceProfile } from "@/components/Scene3D";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,11 +32,11 @@ import type { ScenePerformanceProfile } from '@/components/Scene3D';
 
 /** Render modes the player can be in at any given time. */
 export type RenderMode =
-  | 'ue-stream'
-  | 'threejs'
-  | 'prerender'
-  | 'connecting'
-  | 'error';
+  | "ue-stream"
+  | "threejs"
+  | "prerender"
+  | "connecting"
+  | "error";
 
 export interface VideoStreamPlayerProps {
   /** Signaling proxy WebSocket URL for the Pixel Streaming instance. */
@@ -49,9 +44,9 @@ export interface VideoStreamPlayerProps {
   /** Whether to connect automatically on mount. @default true */
   autoConnect?: boolean;
   /** Requested quality level. @default 'auto' */
-  quality?: 'high' | 'medium' | 'low' | 'auto';
+  quality?: "high" | "medium" | "low" | "auto";
   /** Fallback rendering mode when UE stream is unavailable. @default 'none' */
-  fallbackMode?: 'threejs' | 'prerender' | 'none';
+  fallbackMode?: "threejs" | "prerender" | "none";
   /** Called when the WebRTC connection is established and streaming. */
   onConnected?: () => void;
   /** Called when the connection is lost. */
@@ -75,13 +70,13 @@ export interface VideoStreamPlayerProps {
 export function VideoStreamPlayer({
   signalingUrl,
   autoConnect = true,
-  quality = 'auto',
-  fallbackMode = 'none',
+  quality = "auto",
+  fallbackMode = "none",
   onConnected,
   onDisconnected,
   onError,
   onModeChange,
-  performanceProfile = 'balanced',
+  performanceProfile = "balanced",
   sidebarWidth = 0,
   className,
 }: VideoStreamPlayerProps) {
@@ -92,9 +87,9 @@ export function VideoStreamPlayer({
   const monitorRef = useRef<QualityMonitor | null>(null);
 
   // -- State -----------------------------------------------------------------
-  const [renderMode, setRenderMode] = useState<RenderMode>('connecting');
+  const [renderMode, setRenderMode] = useState<RenderMode>("connecting");
   const [connectionState, setConnectionState] =
-    useState<ConnectionState>('disconnected');
+    useState<ConnectionState>("disconnected");
   const [lastError, setLastError] = useState<StreamError | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -103,13 +98,13 @@ export function VideoStreamPlayer({
   // -- Render mode helper ----------------------------------------------------
   const updateRenderMode = useCallback(
     (mode: RenderMode) => {
-      setRenderMode((prev) => {
+      setRenderMode(prev => {
         if (prev === mode) return prev;
         onModeChange?.(mode);
         return mode;
       });
     },
-    [onModeChange],
+    [onModeChange]
   );
 
   // -- Bind MediaStream to <video> -------------------------------------------
@@ -127,7 +122,7 @@ export function VideoStreamPlayer({
     // Tear down any previous manager.
     managerRef.current?.disconnect();
 
-    updateRenderMode('connecting');
+    updateRenderMode("connecting");
     setLastError(null);
     setReconnectAttempt(0);
 
@@ -135,23 +130,23 @@ export function VideoStreamPlayer({
       onStateChange(state) {
         setConnectionState(state);
 
-        if (state === 'connected') {
-          updateRenderMode('ue-stream');
+        if (state === "connected") {
+          updateRenderMode("ue-stream");
           setReconnectAttempt(0);
           onConnected?.();
-        } else if (state === 'connecting') {
-          setReconnectAttempt((prev) => prev + 1);
-          updateRenderMode('connecting');
-        } else if (state === 'disconnected') {
+        } else if (state === "connecting") {
+          setReconnectAttempt(prev => prev + 1);
+          updateRenderMode("connecting");
+        } else if (state === "disconnected") {
           onDisconnected?.();
-        } else if (state === 'failed') {
+        } else if (state === "failed") {
           // Determine fallback mode.
-          if (fallbackMode === 'threejs') {
-            updateRenderMode('threejs');
-          } else if (fallbackMode === 'prerender') {
-            updateRenderMode('prerender');
+          if (fallbackMode === "threejs") {
+            updateRenderMode("threejs");
+          } else if (fallbackMode === "prerender") {
+            updateRenderMode("prerender");
           } else {
-            updateRenderMode('error');
+            updateRenderMode("error");
           }
           onDisconnected?.();
         }
@@ -168,7 +163,7 @@ export function VideoStreamPlayer({
     managerRef.current = manager;
 
     // Apply quality if not auto.
-    if (quality !== 'auto') {
+    if (quality !== "auto") {
       manager.setQuality(quality);
     }
 
@@ -210,7 +205,7 @@ export function VideoStreamPlayer({
 
   // -- Quality changes -------------------------------------------------------
   useEffect(() => {
-    if (quality !== 'auto' && managerRef.current) {
+    if (quality !== "auto" && managerRef.current) {
       managerRef.current.setQuality(quality);
     }
   }, [quality]);
@@ -229,7 +224,7 @@ export function VideoStreamPlayer({
       });
     }
 
-    if (activeQuality === 'auto') {
+    if (activeQuality === "auto") {
       // Auto mode: start the monitor.
       monitorRef.current.start();
     } else {
@@ -254,7 +249,7 @@ export function VideoStreamPlayer({
   // -- Quality selector handler (Task 5.3) -----------------------------------
   const handleQualityChange = useCallback((selected: QualityOption) => {
     setActiveQuality(selected);
-    if (selected !== 'auto' && managerRef.current) {
+    if (selected !== "auto" && managerRef.current) {
       managerRef.current.setQuality(selected);
     }
   }, []);
@@ -279,9 +274,9 @@ export function VideoStreamPlayer({
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
 
@@ -292,18 +287,17 @@ export function VideoStreamPlayer({
 
   // -- Derived state ---------------------------------------------------------
   const isConnecting =
-    renderMode === 'connecting' || connectionState === 'connecting';
-  const isError = renderMode === 'error';
-  const isDegraded =
-    renderMode === 'threejs' || renderMode === 'prerender';
-  const isStreaming = renderMode === 'ue-stream';
-  const isThreejsFallback = renderMode === 'threejs';
+    renderMode === "connecting" || connectionState === "connecting";
+  const isError = renderMode === "error";
+  const isDegraded = renderMode === "threejs" || renderMode === "prerender";
+  const isStreaming = renderMode === "ue-stream";
+  const isThreejsFallback = renderMode === "threejs";
 
   // -- Render ----------------------------------------------------------------
   return (
     <div
       ref={containerRef}
-      className={`relative h-full w-full overflow-hidden bg-black ${className ?? ''}`}
+      className={`relative h-full w-full overflow-hidden bg-black ${className ?? ""}`}
       data-testid="video-stream-player"
       data-render-mode={renderMode}
     >
@@ -311,7 +305,7 @@ export function VideoStreamPlayer({
       <video
         ref={videoRef}
         className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
-          isStreaming ? 'opacity-100' : 'opacity-0'
+          isStreaming ? "opacity-100" : "opacity-0"
         }`}
         autoPlay
         playsInline
@@ -321,7 +315,7 @@ export function VideoStreamPlayer({
 
       {/* Layer 0b: Three.js fallback — always mounted when fallbackMode is
           'threejs' to preserve WebGL context; visibility controlled via CSS */}
-      {fallbackMode === 'threejs' && (
+      {fallbackMode === "threejs" && (
         <Scene3DFallback
           visible={isThreejsFallback}
           performanceProfile={performanceProfile}
@@ -352,7 +346,7 @@ export function VideoStreamPlayer({
         {isDegraded && (
           <DegradedOverlay
             key="degraded"
-            mode={renderMode as 'threejs' | 'prerender'}
+            mode={renderMode as "threejs" | "prerender"}
             onReconnect={handleReconnect}
           />
         )}
@@ -380,7 +374,7 @@ export function VideoStreamPlayer({
           type="button"
           onClick={toggleFullscreen}
           className="rounded-lg bg-black/50 p-2 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 hover:text-white"
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
         >
           {isFullscreen ? (
             <Minimize className="size-4" />
@@ -398,11 +392,7 @@ export function VideoStreamPlayer({
 // ---------------------------------------------------------------------------
 
 /** Connecting / reconnecting overlay with spinner. */
-function ConnectingOverlay({
-  reconnectAttempt,
-}: {
-  reconnectAttempt: number;
-}) {
+function ConnectingOverlay({ reconnectAttempt }: { reconnectAttempt: number }) {
   const isReconnecting = reconnectAttempt > 1;
 
   return (
@@ -417,7 +407,7 @@ function ConnectingOverlay({
     >
       <div className="mb-4 size-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
       <p className="text-sm font-medium text-white">
-        {isReconnecting ? '正在重新连接…' : '正在连接视频流…'}
+        {isReconnecting ? "正在重新连接…" : "正在连接视频流…"}
       </p>
       {isReconnecting && (
         <p className="mt-1 text-xs text-white/60">
@@ -451,9 +441,7 @@ function ErrorOverlay({
       <div className="text-center">
         <p className="text-sm font-medium text-white">连接失败</p>
         {error && (
-          <p className="mt-1 max-w-xs text-xs text-white/60">
-            {error.message}
-          </p>
+          <p className="mt-1 max-w-xs text-xs text-white/60">{error.message}</p>
         )}
       </div>
       <button
@@ -473,11 +461,10 @@ function DegradedOverlay({
   mode,
   onReconnect,
 }: {
-  mode: 'threejs' | 'prerender';
+  mode: "threejs" | "prerender";
   onReconnect: () => void;
 }) {
-  const label =
-    mode === 'threejs' ? '简化渲染模式 (Three.js)' : '预渲染模式';
+  const label = mode === "threejs" ? "简化渲染模式 (Three.js)" : "预渲染模式";
 
   return (
     <motion.div
@@ -493,9 +480,7 @@ function DegradedOverlay({
         <AlertTriangle className="size-7 text-amber-400" />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-white">
-          当前为{label}
-        </p>
+        <p className="text-sm font-medium text-white">当前为{label}</p>
         <p className="mt-1 text-xs text-white/60">
           UE 实时渲染不可用，已自动降级
         </p>

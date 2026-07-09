@@ -11,7 +11,13 @@ import {
 function stubState(goalText: string, sessionId: string): V5SessionState {
   return {
     goal: { text: goalText, status: "needs_refinement" },
-    graph: { id: "g", jobId: "j", stage: "effect_preview", nodes: [], edges: [] },
+    graph: {
+      id: "g",
+      jobId: "j",
+      stage: "effect_preview",
+      nodes: [],
+      edges: [],
+    },
     artifacts: [],
     conversation: [],
     openQuestions: [],
@@ -33,7 +39,10 @@ describe("sliderule-interactive-gates (P0)", () => {
   });
 
   it("G_READY does not park after intent.clarify when goal is already specific", () => {
-    const state = stubState("面向企业内部 RBAC 权限与数据范围", "ig-ready-clarify");
+    const state = stubState(
+      "面向企业内部 RBAC 权限与数据范围",
+      "ig-ready-clarify"
+    );
     const verdict = evaluateReadinessGateAfterCommit(state, {
       capabilityId: "intent.clarify",
       turnUserText: "面向企业内部 RBAC 权限与数据范围",
@@ -57,7 +66,9 @@ describe("sliderule-interactive-gates (P0)", () => {
       turnUserText: "面向企业内部，需要 RBAC 与数据范围隔离",
     });
     expect(verdict.park).toBe(false);
-    expect(userClearsReadiness("面向企业内部，需要 RBAC 与数据范围隔离", state)).toBe(true);
+    expect(
+      userClearsReadiness("面向企业内部，需要 RBAC 与数据范围隔离", state)
+    ).toBe(true);
   });
 
   it("G_CONFIRM parks after route.compare without user selection", () => {
@@ -69,7 +80,11 @@ describe("sliderule-interactive-gates (P0)", () => {
           id: "r1",
           kind: "route_options",
           provenance: "ai_generated",
-          producedBy: { capabilityRunId: "run-0", capabilityId: "route.generate", roleId: "架构" },
+          producedBy: {
+            capabilityRunId: "run-0",
+            capabilityId: "route.generate",
+            roleId: "架构",
+          },
           content: "路线 A",
           trustLevel: "gated_pass",
           passedGates: [],
@@ -78,7 +93,11 @@ describe("sliderule-interactive-gates (P0)", () => {
           id: "r2",
           kind: "route_options",
           provenance: "ai_generated",
-          producedBy: { capabilityRunId: "run-1", capabilityId: "route.compare", roleId: "工程" },
+          producedBy: {
+            capabilityRunId: "run-1",
+            capabilityId: "route.compare",
+            roleId: "工程",
+          },
           content: "路线 B",
           trustLevel: "gated_pass",
           passedGates: [],
@@ -104,7 +123,11 @@ describe("sliderule-interactive-gates (P0)", () => {
             id: "r1",
             kind: "route_options",
             provenance: "ai_generated",
-            producedBy: { capabilityRunId: "run-0", capabilityId: "route.compare", roleId: "工程" },
+            producedBy: {
+              capabilityRunId: "run-0",
+              capabilityId: "route.compare",
+              roleId: "工程",
+            },
             content: "对比",
             trustLevel: "gated_pass",
             passedGates: [],

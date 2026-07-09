@@ -1284,7 +1284,11 @@ export function OfficeRoom({
         rotation={[0, -Math.PI / 10, 0]}
         scale={1.22}
       />
-      <LaptopDesk position={[2.35, 0, -1.08]} rotation={[0, Math.PI / 6, 0]} showLamp={showRoomDecorLamps} />
+      <LaptopDesk
+        position={[2.35, 0, -1.08]}
+        rotation={[0, Math.PI / 6, 0]}
+        showLamp={showRoomDecorLamps}
+      />
       <MeetingSet position={[4.85, 0, -1.42]} rotation={[0, -Math.PI / 8, 0]} />
       {showSecondaryDecor ? (
         <>
@@ -1326,7 +1330,11 @@ export function OfficeRoom({
         scale={1.3}
       />
       <MeetingSet position={[-3.55, 0, 2.28]} rotation={[0, Math.PI / 10, 0]} />
-      <LaptopDesk position={[-5.3, 0, 2.9]} rotation={[0, Math.PI / 2.4, 0]} showLamp={showRoomDecorLamps} />
+      <LaptopDesk
+        position={[-5.3, 0, 2.9]}
+        rotation={[0, Math.PI / 2.4, 0]}
+        showLamp={showRoomDecorLamps}
+      />
       {showSecondaryDecor ? (
         <>
           <FurnitureModel

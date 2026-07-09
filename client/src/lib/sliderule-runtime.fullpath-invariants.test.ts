@@ -29,11 +29,11 @@
  *       would false-match the `rePlan` local variable, which lowercases to "replan").
  */
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import fc from 'fast-check';
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import fc from "fast-check";
 import {
   createInitialSessionState,
   orchestrateReasoningTurn,
@@ -50,8 +50,8 @@ import {
   setSlideRuleSessionStore,
   getSlideRuleSessionStore,
   type SlideRuleSessionStore,
-} from './sliderule-runtime';
-import { assertDeriveReadOnly } from './sliderule-derive-readonly-guard';
+} from "./sliderule-runtime";
+import { assertDeriveReadOnly } from "./sliderule-derive-readonly-guard";
 import {
   COMPLEX_GOAL_TEXT,
   CONVERGE_TEXT,
@@ -61,40 +61,46 @@ import {
   buildClearStateWithTrustedReport,
   buildClearStateWithPreview,
   recycleSignature,
-} from './sliderule-fullpath-fixtures';
+} from "./sliderule-fullpath-fixtures";
 import type {
   V5SessionState,
   Artifact,
   CapabilityRun,
   UserIntervention,
-} from '@shared/blueprint/v5-reasoning-state';
-import type { V5CapabilityId } from '@shared/blueprint/contracts';
+} from "@shared/blueprint/v5-reasoning-state";
+import type { V5CapabilityId } from "@shared/blueprint/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const RUNTIME_SRC = readFileSync(resolve(HERE, './sliderule-runtime.ts'), 'utf8');
-const PAGE_SRC = readFileSync(resolve(HERE, '../pages/SlideRule.tsx'), 'utf8');
+const RUNTIME_SRC = readFileSync(
+  resolve(HERE, "./sliderule-runtime.ts"),
+  "utf8"
+);
+const PAGE_SRC = readFileSync(resolve(HERE, "../pages/SlideRule.tsx"), "utf8");
 const SESSION_HOOK_SRC = readFileSync(
-  resolve(HERE, '../pages/sliderule/useSlideRuleSession.ts'),
-  'utf8'
+  resolve(HERE, "../pages/sliderule/useSlideRuleSession.ts"),
+  "utf8"
 );
 const PAGE_LAYER_SRC = `${PAGE_SRC}\n${SESSION_HOOK_SRC}`;
 const DEFAULT_MAX_TURNS = 30; // getDefaultBudgetPolicy().maxTurns — the policy orchestrate uses internally.
 
 /** For each match index in `src`, return the name of the nearest preceding function declaration. */
 function enclosingFunctionNames(src: string, pattern: RegExp): string[] {
-  const lines = src.split('\n');
+  const lines = src.split("\n");
   // Pre-compute, per line, the most recent function-declaration name at/above that line.
   const fnDecl = /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/;
   const names: string[] = [];
   const matchLineIdxs: number[] = [];
   let offset = 0;
-  const lineStartOffsets = lines.map((l) => {
+  const lineStartOffsets = lines.map(l => {
     const start = offset;
     offset += l.length + 1; // +1 for the split '\n'
     return start;
   });
 
-  const global = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
+  const global = new RegExp(
+    pattern.source,
+    pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g"
+  );
   let m: RegExpExecArray | null;
   while ((m = global.exec(src)) !== null) {
     const idx = m.index;
@@ -108,7 +114,7 @@ function enclosingFunctionNames(src: string, pattern: RegExp): string[] {
   }
 
   for (const lineIdx of matchLineIdxs) {
-    let fnName = '<module-scope>';
+    let fnName = "<module-scope>";
     for (let i = lineIdx; i >= 0; i--) {
       const dm = fnDecl.exec(lines[i]);
       if (dm) {
@@ -124,9 +130,9 @@ function enclosingFunctionNames(src: string, pattern: RegExp): string[] {
 /** Extract the body text of a named top-level function (up to the next top-level export function). */
 function extractFunctionBody(src: string, fnName: string): string {
   const start = src.indexOf(`export function ${fnName}`);
-  if (start < 0) return '';
+  if (start < 0) return "";
   const rest = src.slice(start + `export function ${fnName}`.length);
-  const next = rest.indexOf('\nexport function ');
+  const next = rest.indexOf("\nexport function ");
   return next < 0 ? rest : rest.slice(0, next);
 }
 
@@ -135,21 +141,27 @@ function extractFunctionBody(src: string, fnName: string): string {
  * `turns === count` (pushes a session past the DEFAULT maxTurns so the orchestrate-internal budget
  * gate, which uses the default policy, parks the turn). Mirrors the S6/S7 batch-2 helper.
  */
-function seedDistinctTurns(state: V5SessionState, count: number): V5SessionState {
+function seedDistinctTurns(
+  state: V5SessionState,
+  count: number
+): V5SessionState {
   const runs: CapabilityRun[] = [];
   for (let i = 0; i < count; i++) {
     runs.push({
       id: `seed-t${i}-run-0`,
-      capabilityId: 'evidence.search',
-      roleId: '接地',
+      capabilityId: "evidence.search",
+      roleId: "接地",
       inputs: [],
       outputs: [`seed-art-${i}`],
-      gateResults: [{ gateId: 'commit', status: 'passed' }],
+      gateResults: [{ gateId: "commit", status: "passed" }],
       ledgerEntryId: `ledger-seed-t${i}`,
       turnId: `seed-t${i}`,
     });
   }
-  return { ...state, capabilityRuns: [...(state.capabilityRuns || []), ...runs] };
+  return {
+    ...state,
+    capabilityRuns: [...(state.capabilityRuns || []), ...runs],
+  };
 }
 
 /** Minimal in-memory store for the N1 HTTP-boundary it.fails (mirrors the runtime in-memory impl). */
@@ -159,7 +171,7 @@ class TinySessionStore implements SlideRuleSessionStore {
     return this.store.get(sessionId);
   }
   async save(state: V5SessionState): Promise<V5SessionState> {
-    const sessionId = state.sessionId || 'tiny';
+    const sessionId = state.sessionId || "tiny";
     const saved = { ...state, sessionId } as any;
     this.store.set(sessionId, saved);
     return saved;
@@ -173,8 +185,8 @@ class TinySessionStore implements SlideRuleSessionStore {
 // N1 · 不存在绕过 GCOV 写 GOAL=clear
 // =====================================================================================
 
-describe('N1 · no bypass writing GOAL=clear', () => {
-  it('STATIC: every goal.status write site lives in exactly {createInitialSessionState, applyGoalConclusion}', () => {
+describe("N1 · no bypass writing GOAL=clear", () => {
+  it("STATIC: every goal.status write site lives in exactly {createInitialSessionState, applyGoalConclusion}", () => {
     // GREP: /goal\s*:\s*\{/g — the goal object-literal construction is the ONLY syntactic form that
     // assigns goal.status in the runtime (there is no `goal.status = ...` mutation). Both sites must
     // be inside the two whitelisted functions.
@@ -184,7 +196,11 @@ describe('N1 · no bypass writing GOAL=clear', () => {
 
     const enclosing = enclosingFunctionNames(RUNTIME_SRC, writeSitePattern);
     expect(new Set(enclosing)).toEqual(
-      new Set(['createInitialSessionState', 'applyGoalConclusion', 'intakeMessage'])
+      new Set([
+        "createInitialSessionState",
+        "applyGoalConclusion",
+        "intakeMessage",
+      ])
     );
 
     // GUARD: /goal\.status\s*=[^=]/g — no direct goal.status mutation anywhere (count 0).
@@ -195,13 +211,20 @@ describe('N1 · no bypass writing GOAL=clear', () => {
   it('DYNAMIC: arbitrary public-API sequences that never legitimately converge never set goal.status to "clear"', () => {
     // Fuzz intake/orchestrate/commit/invalidate/derive on a session whose required pre-req
     // (risk.analyze) never gets a TRUSTED run, so GCOV can never pass -> "clear" is unreachable.
-    const opArb = fc.constantFrom<'orchGeneric' | 'orchConverge' | 'commitUntrusted' | 'derive' | 'challenge' | 'intake'>(
-      'orchGeneric',
-      'orchConverge',
-      'commitUntrusted',
-      'derive',
-      'challenge',
-      'intake'
+    const opArb = fc.constantFrom<
+      | "orchGeneric"
+      | "orchConverge"
+      | "commitUntrusted"
+      | "derive"
+      | "challenge"
+      | "intake"
+    >(
+      "orchGeneric",
+      "orchConverge",
+      "commitUntrusted",
+      "derive",
+      "challenge",
+      "intake"
     );
     const seedArb = fc.integer({ min: 0, max: 100000 });
     const opsArb = fc.array(opArb, { minLength: 1, maxLength: 12 });
@@ -213,34 +236,48 @@ describe('N1 · no bypass writing GOAL=clear', () => {
         for (const op of ops) {
           step++;
           const turnId = `N1-${seed}-t${step}`;
-          if (op === 'orchGeneric') {
-            s = orchestrateReasoningTurn(s, { turnId, userText: '继续分析一下边界情况' }).newState;
-          } else if (op === 'orchConverge') {
+          if (op === "orchGeneric") {
+            s = orchestrateReasoningTurn(s, {
+              turnId,
+              userText: "继续分析一下边界情况",
+            }).newState;
+          } else if (op === "orchConverge") {
             // Converge intent on an unsatisfiable contract -> GCOV hard-blocks, never writes clear.
-            s = orchestrateReasoningTurn(s, { turnId, userText: CONVERGE_TEXT }).newState;
-          } else if (op === 'commitUntrusted') {
+            s = orchestrateReasoningTurn(s, {
+              turnId,
+              userText: CONVERGE_TEXT,
+            }).newState;
+          } else if (op === "commitUntrusted") {
             const { updatedState } = commitArtifact(
               s,
-              createRawArtifact(`${turnId}-art`, 'risk.analyze', '安全', 'risk'),
+              createRawArtifact(
+                `${turnId}-art`,
+                "risk.analyze",
+                "安全",
+                "risk"
+              ),
               `${turnId}-run-0`,
               true, // forceGateFail -> untrusted (never satisfies GCOV)
               []
             );
             s = updatedState;
-          } else if (op === 'derive') {
+          } else if (op === "derive") {
             s = deriveNodeStatus(s);
-          } else if (op === 'challenge') {
+          } else if (op === "challenge") {
             const target = (s.artifacts || [])[0];
             s = invalidateForIntervention(s, {
               targetArtifactId: target?.id,
-              intent: 'challenge',
-              text: '质疑',
+              intent: "challenge",
+              text: "质疑",
             } as UserIntervention);
-          } else if (op === 'intake') {
-            s = intakeMessage(s, { turnId, userText: '随便说点什么' }).preparedState;
+          } else if (op === "intake") {
+            s = intakeMessage(s, {
+              turnId,
+              userText: "随便说点什么",
+            }).preparedState;
           }
           // The invariant: no bypass ever reaches a converged "clear".
-          expect(s.goal.status).not.toBe('clear');
+          expect(s.goal.status).not.toBe("clear");
         }
       }),
       { numRuns: 200 }
@@ -259,16 +296,16 @@ describe('N1 · no bypass writing GOAL=clear', () => {
       const original = getSlideRuleSessionStore();
       setSlideRuleSessionStore(new TinySessionStore());
       try {
-        const sessionId = 'N1-http-boundary';
+        const sessionId = "N1-http-boundary";
         // Fabricate a "clear" goal WITHOUT going through applyGoalConclusion/GCOV.
         const fabricated: V5SessionState = {
           ...createInitialSessionState(COMPLEX_GOAL_TEXT, sessionId),
-          goal: { text: COMPLEX_GOAL_TEXT, status: 'clear' },
+          goal: { text: COMPLEX_GOAL_TEXT, status: "clear" },
         } as V5SessionState;
         await saveSessionState(fabricated);
         const loaded = await loadOrCreateSessionState(sessionId);
         // Expected once server adjudication lands: an unauthorized clear is not persisted as clear.
-        expect(loaded.goal.status).not.toBe('clear');
+        expect(loaded.goal.status).not.toBe("clear");
       } finally {
         setSlideRuleSessionStore(original);
       }
@@ -281,33 +318,37 @@ describe('N1 · no bypass writing GOAL=clear', () => {
 // =====================================================================================
 
 function earliestPickAnchorIdx(body: string): number {
-  const anchors = ['pickNextCapabilitiesHeuristic(', 'pickNextCapabilities('];
-  const indices = anchors.map((a) => body.indexOf(a)).filter((i) => i >= 0);
+  const anchors = ["pickNextCapabilitiesHeuristic(", "pickNextCapabilities("];
+  const indices = anchors.map(a => body.indexOf(a)).filter(i => i >= 0);
   if (indices.length === 0) return -1;
   return Math.min(...indices);
 }
 
-describe('N2 · no bypass into ORCH without BUDGET', () => {
-  it('STATIC: orchestrateReasoningTurn evaluates the budget gate before pickNextCapabilities', () => {
-    const body = extractFunctionBody(RUNTIME_SRC, 'orchestrateReasoningTurn');
+describe("N2 · no bypass into ORCH without BUDGET", () => {
+  it("STATIC: orchestrateReasoningTurn evaluates the budget gate before pickNextCapabilities", () => {
+    const body = extractFunctionBody(RUNTIME_SRC, "orchestrateReasoningTurn");
     expect(body.length).toBeGreaterThan(0);
 
-    const budgetIdx = body.indexOf('evaluateBudgetBeforeOrchestrate(');
+    const budgetIdx = body.indexOf("evaluateBudgetBeforeOrchestrate(");
     const pickIdx = earliestPickAnchorIdx(body);
     expect(budgetIdx).toBeGreaterThanOrEqual(0); // budget gate is present
     expect(pickIdx).toBeGreaterThanOrEqual(0); // pick is present
     expect(budgetIdx).toBeLessThan(pickIdx); // budget precedes pick (gate-first)
   });
 
-  it('DYNAMIC: over-budget yields an empty plan from all three entry points (INTERV / RECOMP / GCOV-forced)', () => {
+  it("DYNAMIC: over-budget yields an empty plan from all three entry points (INTERV / RECOMP / GCOV-forced)", () => {
     // A state already past the DEFAULT maxTurns so the orchestrate-internal gate parks every entry.
-    const overBudget = () => seedDistinctTurns(createInitialSessionState(COMPLEX_GOAL_TEXT, 'N2-over'), DEFAULT_MAX_TURNS);
+    const overBudget = () =>
+      seedDistinctTurns(
+        createInitialSessionState(COMPLEX_GOAL_TEXT, "N2-over"),
+        DEFAULT_MAX_TURNS
+      );
 
     // Entry 1 — INTERV: orchestrate carrying a user intervention (challenge).
     const interv = orchestrateReasoningTurn(overBudget(), {
-      turnId: 'N2-interv',
-      userText: '挑战这个结论',
-      intervention: { intent: 'challenge', text: '挑战' } as UserIntervention,
+      turnId: "N2-interv",
+      userText: "挑战这个结论",
+      intervention: { intent: "challenge", text: "挑战" } as UserIntervention,
     });
     expect(interv.plan.selected).toEqual([]);
     expect(interv.plan.reason).toMatch(/BUDGET_EXCEEDED/);
@@ -315,16 +356,22 @@ describe('N2 · no bypass into ORCH without BUDGET', () => {
     // Entry 2 — RECOMP: stale-then-recompute. Invalidate first (re-entry), then orchestrate re-pick.
     let recompBase = overBudget();
     recompBase = invalidateForIntervention(recompBase, {
-      targetArtifactId: 'seed-art-0',
-      intent: 'challenge',
-      text: '重算',
+      targetArtifactId: "seed-art-0",
+      intent: "challenge",
+      text: "重算",
     } as UserIntervention);
-    const recomp = orchestrateReasoningTurn(recompBase, { turnId: 'N2-recomp', userText: '基于现有重新推进' });
+    const recomp = orchestrateReasoningTurn(recompBase, {
+      turnId: "N2-recomp",
+      userText: "基于现有重新推进",
+    });
     expect(recomp.plan.selected).toEqual([]);
     expect(recomp.plan.reason).toMatch(/BUDGET_EXCEEDED/);
 
     // Entry 3 — GCOV-forced scheduling: converge intent that would otherwise force-schedule caps.
-    const gcov = orchestrateReasoningTurn(overBudget(), { turnId: 'N2-gcov', userText: CONVERGE_TEXT });
+    const gcov = orchestrateReasoningTurn(overBudget(), {
+      turnId: "N2-gcov",
+      userText: CONVERGE_TEXT,
+    });
     expect(gcov.plan.selected).toEqual([]);
     expect(gcov.plan.reason).toMatch(/BUDGET_EXCEEDED/);
 
@@ -332,13 +379,13 @@ describe('N2 · no bypass into ORCH without BUDGET', () => {
     // turn is the blocked_by_budget record (id `${turnId}-dledger-budget`), never the pick record
     // (`${turnId}-dledger`). i.e. pickNextCapabilities never executed because budget gated first.
     for (const [turnId, res] of [
-      ['N2-interv', interv],
-      ['N2-recomp', recomp],
-      ['N2-gcov', gcov],
+      ["N2-interv", interv],
+      ["N2-recomp", recomp],
+      ["N2-gcov", gcov],
     ] as const) {
       const ledger = getDecisionLedger(res.newState);
-      expect(ledger.some((d) => d.id === `${turnId}-dledger-budget`)).toBe(true);
-      expect(ledger.some((d) => d.id === `${turnId}-dledger`)).toBe(false);
+      expect(ledger.some(d => d.id === `${turnId}-dledger-budget`)).toBe(true);
+      expect(ledger.some(d => d.id === `${turnId}-dledger`)).toBe(false);
     }
   });
 });
@@ -347,7 +394,7 @@ describe('N2 · no bypass into ORCH without BUDGET', () => {
 // N3 · DERIVE 对 STATE 无写权限
 // =====================================================================================
 
-describe('N3 · DERIVE has no STATE write power', () => {
+describe("N3 · DERIVE has no STATE write power", () => {
   /** Fold orchestrate+commit turns to produce a varied, richly-populated session for the PBT. */
   function buildRichSession(
     seed: number,
@@ -357,53 +404,71 @@ describe('N3 · DERIVE has no STATE write power', () => {
     let s = createInitialSessionState(goalText, `N3-${seed}`);
     turns.forEach((turn, ti) => {
       const turnId = `t${seed}-${ti}`;
-      const { newState, plan } = orchestrateReasoningTurn(s, { turnId, userText: turn.text });
+      const { newState, plan } = orchestrateReasoningTurn(s, {
+        turnId,
+        userText: turn.text,
+      });
       s = newState;
       (plan.selected || []).forEach((sel: any, i: number) => {
         const runId = `${turnId}-run-${i}`;
         const artId = `${turnId}-art-${i}`;
         const { updatedState } = commitArtifact(
           s,
-          createRawArtifact(artId, sel.capabilityId as V5CapabilityId, sel.roleId || '综合', kindForCap(sel.capabilityId)),
+          createRawArtifact(
+            artId,
+            sel.capabilityId as V5CapabilityId,
+            sel.roleId || "综合",
+            kindForCap(sel.capabilityId)
+          ),
           runId,
           false,
           sel.inputArtifactIds || []
         );
         s = updatedState;
         if (turn.trusted) {
-          const art = (s.artifacts || []).find((a) => a.id === artId);
+          const art = (s.artifacts || []).find(a => a.id === artId);
           if (art) {
-            (art as any).trustLevel = 'gated_pass';
-            (art as any).passedGates = ['commit'];
+            (art as any).trustLevel = "gated_pass";
+            (art as any).passedGates = ["commit"];
           }
         }
       });
       if (turn.stale && (s.artifacts || []).length > 0) {
         const last = s.artifacts[s.artifacts.length - 1];
-        s = { ...s, staleArtifactIds: [...(s.staleArtifactIds || []), last.id] };
+        s = {
+          ...s,
+          staleArtifactIds: [...(s.staleArtifactIds || []), last.id],
+        };
       }
     });
     return s;
   }
 
-  it('assertDeriveReadOnly passes on a rich converged session (CI guard)', () => {
-    const { state } = buildClearStateWithTrustedReport('N3-guard');
+  it("assertDeriveReadOnly passes on a rich converged session (CI guard)", () => {
+    const { state } = buildClearStateWithTrustedReport("N3-guard");
     const before = structuredClone(state);
     const after = deriveNodeStatus(state);
     expect(state).toEqual(before); // input not mutated
     assertDeriveReadOnly(before, after);
   });
 
-  it('PROPERTY: for all generated session states, deriveNodeStatus leaves authoritative STATE deep-equal', () => {
+  it("PROPERTY: for all generated session states, deriveNodeStatus leaves authoritative STATE deep-equal", () => {
     const goalArb = fc.constantFrom(
-      '分析权限系统的风险并给出最终报告',
-      '整理会议纪要并输出摘要',
-      '权限系统安全审计报告',
-      '复杂风险评估与可行性报告'
+      "分析权限系统的风险并给出最终报告",
+      "整理会议纪要并输出摘要",
+      "权限系统安全审计报告",
+      "复杂风险评估与可行性报告"
     );
     const turnsArb = fc.array(
       fc.record({
-        text: fc.constantFrom('分析风险', '综合证据', '生成最终报告', '先看边界', '路线对比', '继续推进'),
+        text: fc.constantFrom(
+          "分析风险",
+          "综合证据",
+          "生成最终报告",
+          "先看边界",
+          "路线对比",
+          "继续推进"
+        ),
         trusted: fc.boolean(),
         stale: fc.boolean(),
       }),
@@ -428,8 +493,8 @@ describe('N3 · DERIVE has no STATE write power', () => {
 // N4 · 全系统仅一条回炉路径（single recycle path）
 // =====================================================================================
 
-describe('N4 · single recycle path', () => {
-  it('STATIC: no forbidden legacy FB/RP recycle tokens in the runtime or page', () => {
+describe("N4 · single recycle path", () => {
+  it("STATIC: no forbidden legacy FB/RP recycle tokens in the runtime or page", () => {
     // GREP: /\bFB\b/ and /\bRP\b/ CASE-SENSITIVE. Case-insensitive would false-match `rePlan`
     // (a local variable that lowercases to "replan"); the diagram node ids FB/RP are uppercase.
     const fb = /\bFB\b/g;
@@ -440,77 +505,80 @@ describe('N4 · single recycle path', () => {
     expect(PAGE_LAYER_SRC.match(rp)).toBeNull();
   });
 
-  it('STATIC: the page reaches invalidation ONLY via intakeMessage (never calls invalidateForIntervention directly)', () => {
+  it("STATIC: the page reaches invalidation ONLY via intakeMessage (never calls invalidateForIntervention directly)", () => {
     // Single-door (N4 静态): the page never calls invalidateForIntervention directly — every
     // recycle goes through intakeMessage (which internally invalidates). The page DOES call
     // orchestrateReasoningTurn, but only AFTER intakeMessage has prepared the state/context
     // (intake -> orchestrate is the legitimate flow; orchestrate's guard skips double-invalidate).
-    expect(PAGE_LAYER_SRC.includes('invalidateForIntervention')).toBe(false);
-    expect(PAGE_LAYER_SRC.includes('intakeMessage')).toBe(true);
+    expect(PAGE_LAYER_SRC.includes("invalidateForIntervention")).toBe(false);
+    expect(PAGE_LAYER_SRC.includes("intakeMessage")).toBe(true);
   });
 
-  it('DYNAMIC: card-challenge (targetArtifactId) and node-click (targetNodeId) invalidation are byte-identical', () => {
+  it("DYNAMIC: card-challenge (targetArtifactId) and node-click (targetNodeId) invalidation are byte-identical", () => {
     // Use ONE source state for both paths (invalidateForIntervention is pure / non-mutating). Two
     // SEPARATE builds would differ only by Date.now-based ids/timestamps, which is irrelevant to the
     // recycle-path equivalence this invariant asserts.
-    const { state, reportId } = buildClearStateWithTrustedReport('N4-card');
+    const { state, reportId } = buildClearStateWithTrustedReport("N4-card");
 
     const viaCard = invalidateForIntervention(state, {
       targetArtifactId: reportId,
-      intent: 'challenge',
-      text: '挑战此结论',
+      intent: "challenge",
+      text: "挑战此结论",
     } as UserIntervention);
 
     // Node click: the page passes the produced artifact id in targetNodeId; invalidate resolves
     // targetId = targetArtifactId || targetNodeId, so the same id drives an identical cascade.
     const viaNode = invalidateForIntervention(state, {
       targetNodeId: reportId,
-      intent: 'challenge',
-      text: '挑战此结论',
+      intent: "challenge",
+      text: "挑战此结论",
     } as UserIntervention);
 
     // The source state was not mutated by either pure call.
-    expect(state.goal.status).toBe('clear');
+    expect(state.goal.status).toBe("clear");
     expect(JSON.stringify(viaNode)).toBe(JSON.stringify(viaCard));
   });
 
-  it('DYNAMIC (S20): RV reject recycle signature matches chat challenge on report', () => {
-    const { state, reportId } = buildClearStateWithTrustedReport('N4-rv');
+  it("DYNAMIC (S20): RV reject recycle signature matches chat challenge on report", () => {
+    const { state, reportId } = buildClearStateWithTrustedReport("N4-rv");
 
-    const { preparedState: viaChallenge } = intakeMessage(structuredClone(state), {
-      turnId: 'N4-rv-ch',
-      userText: '质疑报告',
-      intervention: {
-        targetArtifactId: reportId,
-        intent: 'challenge',
-        text: '质疑报告',
-      },
-    });
+    const { preparedState: viaChallenge } = intakeMessage(
+      structuredClone(state),
+      {
+        turnId: "N4-rv-ch",
+        userText: "质疑报告",
+        intervention: {
+          targetArtifactId: reportId,
+          intent: "challenge",
+          text: "质疑报告",
+        },
+      }
+    );
 
     const { preparedState: viaRv } = intakeMessage(structuredClone(state), {
-      turnId: 'N4-rv-rj',
-      userText: '评审打回，退回修改',
+      turnId: "N4-rv-rj",
+      userText: "评审打回，退回修改",
     });
 
     expect(recycleSignature(viaRv)).toBe(recycleSignature(viaChallenge));
   });
 
-  it('DYNAMIC (S20): ITER preview dissatisfaction matches revise intervention recycle', () => {
-    const { state, previewId } = buildClearStateWithPreview('N4-iter');
+  it("DYNAMIC (S20): ITER preview dissatisfaction matches revise intervention recycle", () => {
+    const { state, previewId } = buildClearStateWithPreview("N4-iter");
 
     const { preparedState: viaRevise } = intakeMessage(structuredClone(state), {
-      turnId: 'N4-it-rev',
-      userText: '预演不行',
+      turnId: "N4-it-rev",
+      userText: "预演不行",
       intervention: {
         targetArtifactId: previewId,
-        intent: 'revise',
-        text: '预演不行',
+        intent: "revise",
+        text: "预演不行",
       },
     });
 
     const { preparedState: viaIter } = intakeMessage(structuredClone(state), {
-      turnId: 'N4-it-iter',
-      userText: '效果不满意，重新预演',
+      turnId: "N4-it-iter",
+      userText: "效果不满意，重新预演",
     });
 
     expect(recycleSignature(viaIter)).toBe(recycleSignature(viaRevise));
@@ -521,35 +589,41 @@ describe('N4 · single recycle path', () => {
 // N6 · 每次 pick 必有 DLEDGER 记录且可被 challenge
 // =====================================================================================
 
-describe('N6 · every pick has a DLEDGER record + is challengeable', () => {
-  it('DYNAMIC: a normal orchestrate turn grows the decision ledger by exactly one (one pick), and the entry carries full {saw, chose, skipped, rationale}', () => {
-    const s = createInitialSessionState(COMPLEX_GOAL_TEXT, 'N6-grow');
+describe("N6 · every pick has a DLEDGER record + is challengeable", () => {
+  it("DYNAMIC: a normal orchestrate turn grows the decision ledger by exactly one (one pick), and the entry carries full {saw, chose, skipped, rationale}", () => {
+    const s = createInitialSessionState(COMPLEX_GOAL_TEXT, "N6-grow");
     const before = getDecisionLedger(s).length;
 
     // One orchestrate turn = exactly one pickNextCapabilities invocation = one DLEDGER record.
-    const { newState } = orchestrateReasoningTurn(s, { turnId: 'N6-t1', userText: '分析安全风险，反驳，并生成报告' });
+    const { newState } = orchestrateReasoningTurn(s, {
+      turnId: "N6-t1",
+      userText: "分析安全风险，反驳，并生成报告",
+    });
     const ledger = getDecisionLedger(newState);
     expect(ledger.length - before).toBe(1);
 
     const entry = ledger[ledger.length - 1];
-    expect(entry.id).toBe('N6-t1-dledger'); // the pick-derived record (not a blocked/stop record)
+    expect(entry.id).toBe("N6-t1-dledger"); // the pick-derived record (not a blocked/stop record)
     expect(Array.isArray(entry.saw)).toBe(true);
     expect(entry.saw.length).toBeGreaterThan(0);
     expect(Array.isArray(entry.chose)).toBe(true);
     expect(entry.chose.length).toBeGreaterThan(0);
     expect(Array.isArray(entry.skipped)).toBe(true);
     expect(entry.skipped.length).toBeGreaterThan(0);
-    expect(typeof entry.rationale).toBe('string');
+    expect(typeof entry.rationale).toBe("string");
     expect(entry.rationale.length).toBeGreaterThan(0);
   });
 
-  it('DYNAMIC: across multiple pick-bearing turns, ledger growth equals the number of pick turns', () => {
-    let s = createInitialSessionState(COMPLEX_GOAL_TEXT, 'N6-multi');
+  it("DYNAMIC: across multiple pick-bearing turns, ledger growth equals the number of pick turns", () => {
+    let s = createInitialSessionState(COMPLEX_GOAL_TEXT, "N6-multi");
     const start = getDecisionLedger(s).length;
-    const texts = ['分析安全风险', '反驳一下', '综合证据'];
+    const texts = ["分析安全风险", "反驳一下", "综合证据"];
     let pickTurns = 0;
     texts.forEach((t, i) => {
-      const { newState, plan } = orchestrateReasoningTurn(s, { turnId: `N6-m${i}`, userText: t });
+      const { newState, plan } = orchestrateReasoningTurn(s, {
+        turnId: `N6-m${i}`,
+        userText: t,
+      });
       s = newState;
       // Each of these is a real pick turn (non-blocked, non-sufficient): plan is non-empty.
       if (plan.selected.length > 0) pickTurns++;
@@ -559,26 +633,28 @@ describe('N6 · every pick has a DLEDGER record + is challengeable', () => {
     expect(grown).toBe(pickTurns); // one DLEDGER record per pick turn
   });
 
-  it('🟡 challengeable (API level): a decision id can be targeted via targetDecisionId and is marked challenged', () => {
+  it("🟡 challengeable (API level): a decision id can be targeted via targetDecisionId and is marked challenged", () => {
     // The doc's "可被 challenge 指向" depends on S5's missing UI entry; asserted at API level.
-    const { state } = buildClearStateWithTrustedReport('N6-challenge');
+    const { state } = buildClearStateWithTrustedReport("N6-challenge");
     const ledger = getDecisionLedger(state);
     expect(ledger.length).toBeGreaterThanOrEqual(1);
     const target = ledger[ledger.length - 1];
 
     const intake = intakeMessage(state, {
-      turnId: 'N6-ch-t',
-      userText: '我要挑战这条调度决策',
+      turnId: "N6-ch-t",
+      userText: "我要挑战这条调度决策",
       intervention: {
-        intent: 'challenge',
+        intent: "challenge",
         targetDecisionId: target.id,
-        text: '为什么这样排程？',
+        text: "为什么这样排程？",
       } as UserIntervention,
     });
-    expect(intake.controlSignal).toBe('challenge');
+    expect(intake.controlSignal).toBe("challenge");
 
-    const after = getDecisionLedger(intake.preparedState).find((d) => d.id === target.id);
-    expect(after?.status).toBe('challenged');
-    expect(typeof after?.challengedAt).toBe('string');
+    const after = getDecisionLedger(intake.preparedState).find(
+      d => d.id === target.id
+    );
+    expect(after?.status).toBe("challenged");
+    expect(typeof after?.challengedAt).toBe("string");
   });
 });

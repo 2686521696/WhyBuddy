@@ -26,7 +26,9 @@ export function buildTurnRoundsFromDrive(
   return drive.loops.map((loop, idx) => {
     const dledger = dledgerForTurn(ledger, loop.loopTurnId);
     const planSource = dledger?.source;
-    const parkReason = loop.stopSignal ?? (idx === drive.loops.length - 1 ? drive.stopReason : undefined);
+    const parkReason =
+      loop.stopSignal ??
+      (idx === drive.loops.length - 1 ? drive.stopReason : undefined);
     return {
       roundIndex: idx + 1,
       loopTurnId: loop.loopTurnId,
@@ -35,7 +37,7 @@ export function buildTurnRoundsFromDrive(
       planReason: loop.plan.reason,
       dledgerDecisionId: dledger?.id ?? null,
       parkReason,
-      selectedCapabilities: loop.plan.selected.map((s) => ({
+      selectedCapabilities: loop.plan.selected.map(s => ({
         capabilityId: String(s.capabilityId),
         roleId: String(s.roleId || "agent"),
       })),

@@ -23,7 +23,7 @@ function render(closure?: PublishClosureSummary | null): string {
       isRunning={false}
       executorMode="server-llm"
       publishClosure={closure}
-    />,
+    />
   );
 }
 
@@ -42,7 +42,9 @@ describe("SlideRuleStatusBar publish closure badge", () => {
     expect(html).toContain('data-testid="sliderule-publish-closure-badge"');
     expect(html).toContain("publish closed");
     expect(html).toContain('data-fail-closed="false"');
-    expect(html).toContain('title="6/6 evidence - pins checked - hard 0 - warn 1 - info 2"');
+    expect(html).toContain(
+      'title="6/6 evidence - pins checked - hard 0 - warn 1 - info 2"'
+    );
   });
 
   it("renders publish blocked with blocker evidence as non-fail-closed", () => {
@@ -53,7 +55,9 @@ describe("SlideRuleStatusBar publish closure badge", () => {
       skillCount: 6,
       versionPinsChecked: false,
       tierCounts: { hard_blocker: 2, warning: 1, info: 0 },
-      topBlockers: [{ code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "page" }],
+      topBlockers: [
+        { code: "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED", path: "page" },
+      ],
     });
 
     expect(html).toContain("publish blocked");
@@ -77,7 +81,11 @@ describe("SlideRuleStatusBar publish closure badge", () => {
   });
 
   it("omits publish closure badge when closure summary is absent", () => {
-    expect(render(null)).not.toContain('data-testid="sliderule-publish-closure-badge"');
-    expect(render(undefined)).not.toContain('data-testid="sliderule-publish-closure-badge"');
+    expect(render(null)).not.toContain(
+      'data-testid="sliderule-publish-closure-badge"'
+    );
+    expect(render(undefined)).not.toContain(
+      'data-testid="sliderule-publish-closure-badge"'
+    );
   });
 });

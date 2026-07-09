@@ -56,7 +56,7 @@ export interface MiniConsoleBarProps {
  * 过滤掉 `narrative-only`（Req 4.1 / 4.2）。
  */
 function filterConsoleLines(lines: ConsoleLine[]): ConsoleLine[] {
-  return lines.filter((line) => {
+  return lines.filter(line => {
     const decision = routeConsoleLine(line);
     return decision.target !== "narrative-only";
   });
@@ -106,7 +106,7 @@ export const MiniConsoleBar: FC<MiniConsoleBarProps> = ({
       aria-label={t(
         locale,
         "自动驾驶运行时控制台（折叠）",
-        "Autopilot runtime console (collapsed)",
+        "Autopilot runtime console (collapsed)"
       )}
       className={cn(
         "relative flex flex-col justify-center",
@@ -114,7 +114,7 @@ export const MiniConsoleBar: FC<MiniConsoleBarProps> = ({
         "h-[96px] min-h-[80px] max-h-[120px]",
         // 视觉：深底 + 圆角 + 边框，与 ExpandedConsolePanel 一致
         "rounded-[10px] border border-white/10 bg-slate-950/88",
-        "px-3 py-2 text-white",
+        "px-3 py-2 text-white"
       )}
       onMouseEnter={hoverEnter}
       onMouseLeave={hoverLeave}
@@ -141,7 +141,7 @@ export const MiniConsoleBar: FC<MiniConsoleBarProps> = ({
           className={cn(
             "inline-flex size-7 items-center justify-center rounded-md",
             "text-white/60 transition-colors hover:bg-white/10 hover:text-white",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
           )}
         >
           <ChevronUp className="size-4" aria-hidden="true" />
@@ -155,7 +155,7 @@ export const MiniConsoleBar: FC<MiniConsoleBarProps> = ({
             {t(locale, "暂无系统流水", "No system logs")}
           </span>
         ) : (
-          recentLines.map((line) => (
+          recentLines.map(line => (
             <p
               key={line.id}
               className={cn(
@@ -166,7 +166,7 @@ export const MiniConsoleBar: FC<MiniConsoleBarProps> = ({
                     ? "text-amber-300/80"
                     : line.tone === "success"
                       ? "text-emerald-300/80"
-                      : "text-white/50",
+                      : "text-white/50"
               )}
             >
               {line.message}

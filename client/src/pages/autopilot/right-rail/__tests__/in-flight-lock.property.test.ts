@@ -71,7 +71,10 @@ function resolve(state: LockState): LockState {
   return { lock: null, apiCalls: state.apiCalls };
 }
 
-const scopeArb: fc.Arbitrary<GenerationScope> = fc.constantFrom("all", "single");
+const scopeArb: fc.Arbitrary<GenerationScope> = fc.constantFrom(
+  "all",
+  "single"
+);
 
 describe("In_Flight_Lock — concurrency idempotence", () => {
   // Feature: spec-generation-perceived-performance, Property 8: In_Flight_Lock 并发幂等 — 对任意生成触发序列，当 In_Flight_Lock 已被某范围标记为进行中（specDocsGenerating !== null）时，后续任意范围（相同或不同）的触发都不改变当前锁、且不产生新的生成 API 调用，直至当前请求结束。
@@ -86,10 +89,7 @@ describe("In_Flight_Lock — concurrency idempotence", () => {
         fc.array(scopeArb, { maxLength: 25 }),
         (initialScope, subsequentScopes) => {
           // Acquire the lock with the initial scope: one API call dispatched.
-          const locked = trigger(
-            { lock: null, apiCalls: 0 },
-            initialScope,
-          );
+          const locked = trigger({ lock: null, apiCalls: 0 }, initialScope);
           expect(locked.lock).toBe(initialScope);
           expect(locked.apiCalls).toBe(1);
 
@@ -115,9 +115,9 @@ describe("In_Flight_Lock — concurrency idempotence", () => {
 
           const reacquired = trigger(released, initialScope);
           expect(reacquired.apiCalls).toBe(2);
-        },
+        }
       ),
-      { numRuns: NUM_RUNS },
+      { numRuns: NUM_RUNS }
     );
   });
 });

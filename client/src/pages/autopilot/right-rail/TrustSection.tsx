@@ -113,7 +113,7 @@ export function TrustSection({
         data-testid="trust-tablist"
         className="flex flex-wrap gap-1"
       >
-        {tabs.map((tab) => {
+        {tabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -132,7 +132,7 @@ export function TrustSection({
                 isActive
                   ? "border-[#0f766e] bg-[#0f766e]/10 text-[#0f766e]"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300",
-                !tab.available && "opacity-50",
+                !tab.available && "opacity-50"
               )}
             >
               <Icon className="size-3" aria-hidden />

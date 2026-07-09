@@ -85,7 +85,10 @@ import {
   type BlueprintRelayedEvent,
 } from "@/lib/blueprint-realtime-store";
 import type { AppLocale } from "@/lib/locale";
-import { FUTURE_OFFICE_COLORS, preserveKenneyFurnitureMaterial } from "@/lib/scene-theme";
+import {
+  FUTURE_OFFICE_COLORS,
+  preserveKenneyFurnitureMaterial,
+} from "@/lib/scene-theme";
 import { useAppStore } from "@/lib/store";
 
 import { deriveConnectionLines } from "./scene-fusion/connection-line-priority";
@@ -264,7 +267,10 @@ function pushRing<T>(arr: T[], item: T, max: number): void {
  */
 function connectionLinesKey(lines: BlueprintConnectionLine[]): string {
   return lines
-    .map((line) => `${line.source}:${line.directed ? "d" : "u"}:${line.from}->${line.to}`)
+    .map(
+      line =>
+        `${line.source}:${line.directed ? "d" : "u"}:${line.from}->${line.to}`
+    )
     .join("|");
 }
 
@@ -310,9 +316,13 @@ const ROLE_TYPE_META: Record<
   },
 };
 
-function shouldShowRoleTypeText(roleTypeLabel: string, agentLabel: string): boolean {
+function shouldShowRoleTypeText(
+  roleTypeLabel: string,
+  agentLabel: string
+): boolean {
   const normalizedType = roleTypeLabel.trim().toLocaleLowerCase();
-  const primaryName = agentLabel.split("/")[0]?.trim().toLocaleLowerCase() ?? "";
+  const primaryName =
+    agentLabel.split("/")[0]?.trim().toLocaleLowerCase() ?? "";
   return normalizedType.length > 0 && normalizedType !== primaryName;
 }
 
@@ -324,7 +334,8 @@ function shouldShowRoleTypeText(roleTypeLabel: string, agentLabel: string): bool
 const EMPTY_CHIPS: RoleCapabilityChip[] = [];
 
 /** Map a binding `iconKey` to a lucide icon for the role capability chips. */
-const CAPABILITY_ICON: Record<CapabilityIconKey, LucideIcon> = {  container: Boxes,
+const CAPABILITY_ICON: Record<CapabilityIconKey, LucideIcon> = {
+  container: Boxes,
   "spec-node": Sparkles,
   sandbox: Cpu,
   github: Github,
@@ -382,7 +393,7 @@ function RoleCapabilityChips({
       style={{ pointerEvents: "none" }}
     >
       <div className="flex max-w-[200px] flex-nowrap items-center justify-center gap-1">
-        {visible.map((chip) => {
+        {visible.map(chip => {
           const Icon = CAPABILITY_ICON[chip.iconKey];
           const dot = capabilityStatusColor(chip.status);
           const pulse = chip.status === "running";
@@ -517,7 +528,7 @@ function WorkstationModel({
       mesh.receiveShadow = true;
       if (!mesh.material) return;
       mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((material) => material.clone())
+        ? mesh.material.map(material => material.clone())
         : mesh.material.clone();
       const materials = Array.isArray(mesh.material)
         ? mesh.material
@@ -568,10 +579,7 @@ function RoleWorkstation({
   const rotY = facingAngle ?? 0;
   return (
     <group position={position} rotation={[0, rotY, 0]}>
-      <group
-        position={[0, 0, DESK_FRONT_OFFSET_Z]}
-        scale={WORKSTATION_SCALE}
-      >
+      <group position={[0, 0, DESK_FRONT_OFFSET_Z]} scale={WORKSTATION_SCALE}>
         <group rotation={[0, Math.PI, 0]}>
           {/* Desk top stretched 2x on X only (`DESK_WIDTH_SCALE`) so it reads
               as a wide workstation; depth/height stay at the desk's natural
@@ -589,28 +597,48 @@ function RoleWorkstation({
               back, keyboard/mouse front-centre, books in a back corner. */}
           <WorkstationModel
             url={FURNITURE_MODELS.computerScreen}
-            position={[-0.32 - DESKTOP_PROPS_RIGHT_OFFSET_X, DESK_SURFACE_Y, -0.08]}
+            position={[
+              -0.32 - DESKTOP_PROPS_RIGHT_OFFSET_X,
+              DESK_SURFACE_Y,
+              -0.08,
+            ]}
             centerXZ
           />
           <WorkstationModel
             url={FURNITURE_MODELS.laptop}
-            position={[0.52 - DESKTOP_PROPS_RIGHT_OFFSET_X, DESK_SURFACE_Y, 0.0]}
+            position={[
+              0.52 - DESKTOP_PROPS_RIGHT_OFFSET_X,
+              DESK_SURFACE_Y,
+              0.0,
+            ]}
             rotation={[0, -Math.PI / 7, 0]}
             centerXZ
           />
           <WorkstationModel
             url={FURNITURE_MODELS.computerKeyboard}
-            position={[-0.32 - DESKTOP_PROPS_RIGHT_OFFSET_X, DESK_SURFACE_Y, 0.12]}
+            position={[
+              -0.32 - DESKTOP_PROPS_RIGHT_OFFSET_X,
+              DESK_SURFACE_Y,
+              0.12,
+            ]}
             centerXZ
           />
           <WorkstationModel
             url={FURNITURE_MODELS.computerMouse}
-            position={[-0.05 - DESKTOP_PROPS_RIGHT_OFFSET_X, DESK_SURFACE_Y, 0.14]}
+            position={[
+              -0.05 - DESKTOP_PROPS_RIGHT_OFFSET_X,
+              DESK_SURFACE_Y,
+              0.14,
+            ]}
             centerXZ
           />
           <WorkstationModel
             url={FURNITURE_MODELS.books}
-            position={[0.72 - DESKTOP_PROPS_RIGHT_OFFSET_X, DESK_SURFACE_Y, -0.12]}
+            position={[
+              0.72 - DESKTOP_PROPS_RIGHT_OFFSET_X,
+              DESK_SURFACE_Y,
+              -0.12,
+            ]}
             rotation={[0, Math.PI / 5, 0]}
             centerXZ
           />
@@ -640,7 +668,9 @@ function RuntimeAgent({
   lifecycleRef: React.MutableRefObject<Map<string, AgentLifecycle>>;
   locale: AppLocale;
 }) {
-  const { scene } = useGLTF(PET_MODELS[agent.animal as keyof typeof PET_MODELS]);
+  const { scene } = useGLTF(
+    PET_MODELS[agent.animal as keyof typeof PET_MODELS]
+  );
   const roleTypeMeta = ROLE_TYPE_META[agent.zone];
   const RoleTypeIcon = roleTypeMeta.icon;
   const roleTypeLabel =
@@ -671,7 +701,7 @@ function RuntimeAgent({
       // Per-instance material clones — required so emissive/opacity writes for
       // this agent never bleed into another agent rendering the same animal.
       if (Array.isArray(mesh.material)) {
-        mesh.material = mesh.material.map((material) => material.clone());
+        mesh.material = mesh.material.map(material => material.clone());
       } else if (mesh.material) {
         mesh.material = mesh.material.clone();
       }
@@ -708,7 +738,7 @@ function RuntimeAgent({
 
   // Stable per-role bob phase offset so agents do not bob in lockstep.
   const bobPhaseOffset = useMemo(
-    () => (stableHash(agent.roleId) % 1000) / 1000 * Math.PI * 2,
+    () => ((stableHash(agent.roleId) % 1000) / 1000) * Math.PI * 2,
     [agent.roleId]
   );
 
@@ -867,7 +897,9 @@ function EmptyStateHint({ text }: { text: string }) {
         {lines.map((line, index) => (
           <span
             key={index}
-            className={index === 0 ? "text-[13px] text-slate-700" : "text-[11px]"}
+            className={
+              index === 0 ? "text-[13px] text-slate-700" : "text-[11px]"
+            }
           >
             {line}
           </span>
@@ -943,7 +975,9 @@ function ConnectionLine({
     : UNDIRECTED_LINE_OPACITY;
 
   return (
-    <group userData={{ connectionSource: line.source, directed: line.directed }}>
+    <group
+      userData={{ connectionSource: line.source, directed: line.directed }}
+    >
       <Line
         points={points}
         color={color}
@@ -986,7 +1020,7 @@ function ConnectionLines({
 }) {
   return (
     <>
-      {lines.map((line) => {
+      {lines.map(line => {
         const fromPosition = positionByRoleId.get(line.from);
         const toPosition = positionByRoleId.get(line.to);
         // Skip lines whose endpoints are not currently rendered agents.
@@ -1009,16 +1043,16 @@ function ConnectionLines({
 // ---------------------------------------------------------------------------
 
 export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
-  const locale: AppLocale = useAppStore((state) => state.locale);
-  const rolePhases = useBlueprintRealtimeStore((state) => state.rolePhases);
+  const locale: AppLocale = useAppStore(state => state.locale);
+  const rolePhases = useBlueprintRealtimeStore(state => state.rolePhases);
   const roleRuntimeStates = useBlueprintRealtimeStore(
-    (state) => state.roleRuntimeStates
+    state => state.roleRuntimeStates
   );
   const capabilityStatuses = useBlueprintRealtimeStore(
-    (state) => state.capabilityStatuses
+    state => state.capabilityStatuses
   );
   const capabilityOwners = useBlueprintRealtimeStore(
-    (state) => state.capabilityOwners
+    state => state.capabilityOwners
   );
 
   const isReplay = useIsReplay(props);
@@ -1187,7 +1221,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
 
     const now = Date.now();
     const agents = sceneData.agents;
-    const currentIds = new Set(agents.map((a) => a.roleId));
+    const currentIds = new Set(agents.map(a => a.roleId));
     const lifecycles = lifecycleRef.current;
     const snapshots = snapshotRef.current;
 
@@ -1274,7 +1308,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
     sceneSnapshotRef.current = {
       mode: "blueprint",
       mountedShell: "blueprint",
-      agents: agents.map((agent) => ({
+      agents: agents.map(agent => ({
         ...agent,
         wasReanimatedThisRender: reanimatedThisRender.has(agent.roleId),
       })),
@@ -1299,7 +1333,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
   // cleans up on unmount. We do NOT wrap/replace the store `dispatchEvent`
   // action and add no store fields (Requirements 5.1-5.4, 5.2).
   useEffect(() => {
-    return subscribeBlueprintRealtimeEvents((event) => {
+    return subscribeBlueprintRealtimeEvents(event => {
       const payload = event.payload ?? {};
       const timestamp =
         typeof event.timestamp === "number"
@@ -1413,7 +1447,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
       {sceneData.emptyHint.visible ? (
         <EmptyStateHint text={sceneData.emptyHint.text} />
       ) : null}
-      {renderAgents.map((agent) => (
+      {renderAgents.map(agent => (
         <RuntimeAgent
           key={agent.roleId}
           agent={agent}
@@ -1421,7 +1455,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
           locale={locale}
         />
       ))}
-      {renderAgents.map((agent) => (
+      {renderAgents.map(agent => (
         <RoleWorkstation
           key={`desk-${agent.roleId}`}
           position={agent.position}
@@ -1431,7 +1465,7 @@ export function BlueprintRuntimeAgents(props: BlueprintRuntimeAgentsProps) {
           )}
         />
       ))}
-      {renderAgents.map((agent) => (
+      {renderAgents.map(agent => (
         <RoleCapabilityChips
           key={`caps-${agent.roleId}`}
           chips={capabilityChipsByRole.get(agent.roleId) ?? EMPTY_CHIPS}

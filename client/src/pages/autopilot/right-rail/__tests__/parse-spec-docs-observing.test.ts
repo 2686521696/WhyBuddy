@@ -81,9 +81,7 @@ describe("parseSummary", () => {
   });
 
   it("title 含引号 / 反斜杠正确提取", () => {
-    expect(
-      parseSummary('✓ "edge\\case" Module — 规格文档已生成')
-    ).toEqual({
+    expect(parseSummary('✓ "edge\\case" Module — 规格文档已生成')).toEqual({
       title: '"edge\\case" Module',
       kind: "generating",
     });
@@ -180,7 +178,11 @@ describe("parseSpecDocsObservingEntries", () => {
 
   it("observationSummary 缺失或非字符串被跳过", () => {
     const snapshot = parseSpecDocsObservingEntries([
-      makeEntry({ id: "1", stageId: "spec_docs", observationSummary: undefined }),
+      makeEntry({
+        id: "1",
+        stageId: "spec_docs",
+        observationSummary: undefined,
+      }),
       makeEntry({
         id: "2",
         stageId: "spec_docs",

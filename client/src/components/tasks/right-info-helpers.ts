@@ -63,7 +63,7 @@ export function formatDuration(ms: number, _locale?: string): string {
  */
 export function formatRelativeTime(
   timestamp: number,
-  locale: string = "en-US",
+  locale: string = "en-US"
 ): string {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "—";
 
@@ -101,14 +101,15 @@ export function formatRelativeTime(
 export function deriveSubMetrics(
   detail: MissionTaskDetail,
   autopilot?: TaskAutopilotSummary,
-  locale: string = "en-US",
+  locale: string = "en-US"
 ): SubMetric[] {
   // Priority 1: autopilot route stages
   const routeStages = autopilot?.route?.stages;
   if (routeStages && routeStages.length > 0) {
     return routeStages.slice(0, 4).map(stage => ({
       label: stage.label || stage.key,
-      value: stage.status === "done" ? 100 : stage.status === "running" ? 50 : 0,
+      value:
+        stage.status === "done" ? 100 : stage.status === "running" ? 50 : 0,
     }));
   }
 
@@ -167,9 +168,7 @@ export function dotColorClass(level: string): string {
  */
 export function prepareTimelineEvents(
   events: TaskTimelineEvent[],
-  maxCount: number,
+  maxCount: number
 ): TaskTimelineEvent[] {
-  return [...events]
-    .sort((a, b) => b.time - a.time)
-    .slice(0, maxCount);
+  return [...events].sort((a, b) => b.time - a.time).slice(0, maxCount);
 }

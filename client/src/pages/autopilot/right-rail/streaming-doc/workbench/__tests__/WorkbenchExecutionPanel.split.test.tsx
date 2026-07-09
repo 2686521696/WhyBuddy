@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 let mockReasoningEntries: unknown[] = [];
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: unknown) => unknown
+  ) => {
     const snapshot = {
       agentReasoning: { entries: mockReasoningEntries },
       rolePhases: {} as Record<string, unknown>,
@@ -70,8 +72,12 @@ describe("WorkbenchExecutionPanel split layout", () => {
       />
     );
 
-    expect(markup).toContain('data-testid="autopilot-process-artifact-split-panel"');
-    expect(markup.indexOf('data-testid="autopilot-process-execution-lane"')).toBeLessThan(
+    expect(markup).toContain(
+      'data-testid="autopilot-process-artifact-split-panel"'
+    );
+    expect(
+      markup.indexOf('data-testid="autopilot-process-execution-lane"')
+    ).toBeLessThan(
       markup.indexOf('data-testid="autopilot-process-artifact-lane"')
     );
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
@@ -120,7 +126,12 @@ describe("WorkbenchExecutionPanel split layout", () => {
       id: "job-filter",
       artifacts: [
         { id: "a1", type: "requirements", title: "Requirements", payload: {} },
-        { id: "a2", type: "route_selection", title: "Route selection", payload: {} },
+        {
+          id: "a2",
+          type: "route_selection",
+          title: "Route selection",
+          payload: {},
+        },
       ],
     } as unknown as WorkbenchExecutionPanelProps["job"];
 
@@ -136,7 +147,12 @@ describe("WorkbenchExecutionPanel split layout", () => {
     const job = {
       id: "job-next-stage",
       artifacts: [
-        { id: "a1", type: "spec_document", title: "Spec document", payload: {} },
+        {
+          id: "a1",
+          type: "spec_document",
+          title: "Spec document",
+          payload: {},
+        },
       ],
     } as unknown as WorkbenchExecutionPanelProps["job"];
 
@@ -153,7 +169,8 @@ describe("WorkbenchExecutionPanel split layout", () => {
               phase: "thinking",
               timestamp: "2026-01-01T00:00:00Z",
               stageId: "effect_preview",
-              thought: "Generating the effect preview from completed SPEC documents",
+              thought:
+                "Generating the effect preview from completed SPEC documents",
             },
           ] as any,
         })}
@@ -192,7 +209,9 @@ describe("WorkbenchExecutionPanel split layout", () => {
     );
 
     expect(markup).toContain('data-testid="autopilot-stale-badge"');
-    expect(markup).toContain('data-testid="autopilot-process-artifact-card-frame"');
+    expect(markup).toContain(
+      'data-testid="autopilot-process-artifact-card-frame"'
+    );
     expect(markup).toContain('data-testid="mirofish-card-artifact"');
   });
 });

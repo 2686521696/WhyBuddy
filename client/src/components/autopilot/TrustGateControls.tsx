@@ -14,7 +14,12 @@
  */
 
 import type { FC } from "react";
-import { AlertTriangle, GitMerge, ShieldCheck, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  GitMerge,
+  ShieldCheck,
+  ShieldAlert,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { AppLocale } from "@/lib/locale";
@@ -49,7 +54,7 @@ const STATUS_PRIORITY: Record<BlueprintCheckStatus | "none", number> = {
 
 function combineStatus(
   current: BlueprintCheckStatus | "none",
-  next: BlueprintCheckStatus,
+  next: BlueprintCheckStatus
 ): BlueprintCheckStatus | "none" {
   return STATUS_PRIORITY[next] > STATUS_PRIORITY[current] ? next : current;
 }
@@ -58,7 +63,7 @@ function combineStatus(
  * 任务 62：从台账派生只读合并门状态。纯函数、不抛错、缺数据返回 `none`。
  */
 export function deriveMergeGateStatus(
-  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined,
+  entries: readonly BlueprintChecksLedgerEntry[] | null | undefined
 ): MergeGateStatus {
   let testStatus: BlueprintCheckStatus | "none" = "none";
   let contentStatus: BlueprintCheckStatus | "none" = "none";
@@ -106,7 +111,11 @@ export const RouteConfirmGate: FC<RouteConfirmGateProps> = ({
       </div>
       <p className="text-[10px] text-indigo-900/70">
         {routeSelected
-          ? t(locale, "已选择路线，确认后进入规格生成。", "Route selected; confirm to proceed to spec generation.")
+          ? t(
+              locale,
+              "已选择路线，确认后进入规格生成。",
+              "Route selected; confirm to proceed to spec generation."
+            )
           : t(locale, "请先选择一条路线。", "Select a route first.")}
       </p>
       <Button
@@ -157,11 +166,14 @@ export const AbortEscalateControl: FC<AbortEscalateControlProps> = ({
           {t(locale, "中止并转人工", "Abort & escalate")}
         </Button>
       ) : (
-        <p data-testid="esc-placeholder" className="text-[10px] text-rose-900/70">
+        <p
+          data-testid="esc-placeholder"
+          className="text-[10px] text-rose-900/70"
+        >
           {t(
             locale,
             "当前阶段暂不支持中止 / 转人工（信息占位，未触发任何动作）。",
-            "Abort / escalate is unavailable at this stage (informational only; no action taken).",
+            "Abort / escalate is unavailable at this stage (informational only; no action taken)."
           )}
         </p>
       )}
@@ -194,7 +206,7 @@ export const MergeGateStatusView: FC<MergeGateStatusViewProps> = ({
       data-overall={status.overall}
       className={cn(
         "flex flex-col gap-1 rounded-[10px] border px-2.5 py-2",
-        MERGE_TONE[status.overall],
+        MERGE_TONE[status.overall]
       )}
     >
       <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tight">
@@ -214,7 +226,7 @@ export const MergeGateStatusView: FC<MergeGateStatusViewProps> = ({
         {t(
           locale,
           "评审信号，不自动拦截 / 不自动合并。",
-          "Review signal; never auto-blocks or auto-merges.",
+          "Review signal; never auto-blocks or auto-merges."
         )}
       </p>
     </div>

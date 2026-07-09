@@ -3,7 +3,7 @@ import type { TurnStep } from "./types";
 /** S9: execution substeps — everything except the final narration. */
 export function executionTurnSteps(steps: TurnStep[]): TurnStep[] {
   return steps.filter(
-    (s) => !(s.kind === "narration" && "isFinal" in s && s.isFinal)
+    s => !(s.kind === "narration" && "isFinal" in s && s.isFinal)
   );
 }
 

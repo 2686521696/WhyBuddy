@@ -33,15 +33,22 @@ const mainSource = () =>
 const surfaceSource = () =>
   readFileSync(resolve(here, "../ReasoningFlow2DHarness.tsx"), "utf8"); // indirect, but we also read the surface directly for key fixes
 const surfaceFile = () =>
-  readFileSync(resolve(here, "../../components/autopilot/ReasoningFlowSurface.tsx"), "utf8");
+  readFileSync(
+    resolve(here, "../../components/autopilot/ReasoningFlowSurface.tsx"),
+    "utf8"
+  );
 
 describe("wall-fixture surface switch (?surface=2d)", () => {
   it("conditionally renders ReasoningFlow2DHarness when surface=2d", () => {
     const source = mainSource();
 
     expect(source).toContain("ReasoningFlow2DHarness");
-    expect(source).toContain("const use2D = url.searchParams.get(\"surface\") === \"2d\"");
-    expect(source).toContain("use2D ? <ReasoningFlow2DHarness /> : <WallFixtureHarness />");
+    expect(source).toContain(
+      'const use2D = url.searchParams.get("surface") === "2d"'
+    );
+    expect(source).toContain(
+      "use2D ? <ReasoningFlow2DHarness /> : <WallFixtureHarness />"
+    );
   });
 
   it("surface module has no TSX syntax errors in attributes and uses safe color for marker", () => {
@@ -51,7 +58,9 @@ describe("wall-fixture surface switch (?surface=2d)", () => {
     // Uses per-color markers (computed at render from EDGE_COLORS) with direct fill for reliable edge arrow colors
     // (no fragile currentColor / style=color inheritance from <defs>)
     expect(surf).toMatch(/Per-color markers for reliable arrowhead colors/);
-    expect(surf).toMatch(/`arrow-\$\{col\.replace\('#', ''\)\}`|arrowId = `arrow-/);
+    expect(surf).toMatch(
+      /`arrow-\$\{col\.replace\('#', ''\)\}`|arrowId = `arrow-/
+    );
     expect(surf).toMatch(/markerEnd=\{`url\(\#\$/);
     // F shortcut has editable target guard (to prevent polluting inputs when embedded)
     expect(surf).toMatch(/isEditable|tagName === "INPUT"|isContentEditable/);
@@ -80,6 +89,8 @@ describe("wall-fixture surface switch (?surface=2d)", () => {
 
     expect(source).toContain("WallFixtureHarness");
     // The ternary ensures both paths exist in the module
-    expect(source).toMatch(/use2D \? <ReasoningFlow2DHarness[\s\S]*? : <WallFixtureHarness/);
+    expect(source).toMatch(
+      /use2D \? <ReasoningFlow2DHarness[\s\S]*? : <WallFixtureHarness/
+    );
   });
 });

@@ -214,7 +214,10 @@ function formatGeneratedAt(value: string): string {
 
 function formatBlueprintJobStatus(job: BlueprintGenerationJob | null): string {
   const locale = useAppStore.getState().locale;
-  if (!job) return locale === "zh-CN" ? "尚未生成 RouteSet" : "No RouteSet generated yet";
+  if (!job)
+    return locale === "zh-CN"
+      ? "尚未生成 RouteSet"
+      : "No RouteSet generated yet";
   if (job.stage === "spec_tree" && job.status === "reviewing") {
     return locale === "zh-CN"
       ? "SPEC 树草稿已生成，等待推导工作台确认"
@@ -506,7 +509,10 @@ function RouteSetPreview({
           </div>
           <h3 className="mt-2 text-lg font-black text-slate-950">
             {selection
-              ? panelText("已选择用于推导的路线", "Route selected for deduction")
+              ? panelText(
+                  "已选择用于推导的路线",
+                  "Route selected for deduction"
+                )
               : job?.status === "completed"
                 ? panelText("可生成 SPEC 树", "Ready for SPEC tree")
                 : panelText("路线草稿", "Route draft")}
@@ -1033,7 +1039,8 @@ function agentRoleStateClass(state: string): string {
 }
 
 function agentRoleStateDetail(state: string): string {
-  if (state === "active") return panelText("驱动当前工作", "driving current work");
+  if (state === "active")
+    return panelText("驱动当前工作", "driving current work");
   if (state === "watching") {
     return panelText("观察交接信号", "watching handoff signals");
   }
@@ -1287,7 +1294,10 @@ function buildRoleEventProjection(
           : projection?.browserPreview.url ||
             projection?.browserPreview.summary ||
             projection?.browserPreview.title ||
-            panelText("暂无浏览器预览角色事件。", "No browser preview role event yet."),
+            panelText(
+              "暂无浏览器预览角色事件。",
+              "No browser preview role event yet."
+            ),
         status: roleEventProjectionStatus(
           browserEvent,
           projection?.browserPreviewId || projection?.browserPreview.url
@@ -1315,7 +1325,10 @@ function buildRoleEventProjection(
                 `最新角色事件 ${latestEvent.eventId} 会在 SPEC 界面中可见。`,
                 `Latest role event ${latestEvent.eventId} is visible in SPEC UI.`
               )
-            : panelText("暂无角色事件流条目。", "No role event stream entries yet."),
+            : panelText(
+                "暂无角色事件流条目。",
+                "No role event stream entries yet."
+              ),
         status: roleEventProjectionStatus(specEvent ?? latestEvent, "pending"),
         roleState: (specEvent ?? latestEvent)?.presenceState,
         eventType: (specEvent ?? latestEvent)?.type,
@@ -1703,7 +1716,8 @@ function EffectPreviewRuntimeProjection({
           label="HUD"
           value={runtimeProjectionValue(
             projection.hudState.summary || hudRoleItem?.value,
-            projection.hudState.title || panelText("等待 HUD 状态", "Waiting for HUD state")
+            projection.hudState.title ||
+              panelText("等待 HUD 状态", "Waiting for HUD state")
           )}
           detail={
             hudRoleItem?.detail ??
@@ -1741,7 +1755,8 @@ function EffectPreviewRuntimeProjection({
           label={panelText("浏览器", "Browser")}
           value={runtimeProjectionValue(
             projection.browserPreviewId || browserRoleItem?.value,
-            projection.browserPreview.url || panelText("等待浏览器预览", "Waiting for browser preview")
+            projection.browserPreview.url ||
+              panelText("等待浏览器预览", "Waiting for browser preview")
           )}
           detail={
             browserRoleItem?.detail ||
@@ -1997,7 +2012,9 @@ export function BlueprintProgressPanel({
     try {
       const [progressResult, latestResult] = await Promise.all([
         fetchBlueprintSpecsProgress(),
-        fetchLatestBlueprintGenerationJob({ projectId: projectId ?? undefined }),
+        fetchLatestBlueprintGenerationJob({
+          projectId: projectId ?? undefined,
+        }),
       ]);
 
       if (progressResult.ok) {
@@ -2320,11 +2337,11 @@ export function BlueprintProgressPanel({
           className="gap-2 rounded-full border-slate-200 bg-slate-50 font-black text-slate-600 hover:bg-slate-100"
           disabled={loading}
           onClick={loadProgress}
-          >
-            <RefreshCw
-              className={cn("size-3.5", loading && "animate-spin")}
-              aria-hidden="true"
-            />
+        >
+          <RefreshCw
+            className={cn("size-3.5", loading && "animate-spin")}
+            aria-hidden="true"
+          />
           {panelText("刷新", "Refresh")}
         </Button>
       </div>
@@ -2343,7 +2360,10 @@ export function BlueprintProgressPanel({
             <SummaryTile
               label={panelText("文档完成", "Docs complete")}
               value={progress?.totalDocs ?? "-"}
-              detail={panelText("需求 / 设计 / 任务", "Requirements / design / tasks")}
+              detail={panelText(
+                "需求 / 设计 / 任务",
+                "Requirements / design / tasks"
+              )}
             />
             <SummaryTile
               label={panelText("任务进度", "Task progress")}
@@ -2460,9 +2480,11 @@ export function BlueprintProgressPanel({
             // below) lights up immediately.
             const previews = response.effectPreviews ?? [];
             setEffectPreviews(previews as BlueprintEffectPreview[]);
-            const newJob = (response as unknown as {
-              job?: BlueprintGenerationJob;
-            }).job;
+            const newJob = (
+              response as unknown as {
+                job?: BlueprintGenerationJob;
+              }
+            ).job;
             if (newJob) setLatestJob(newJob);
           }}
         />
@@ -2572,7 +2594,10 @@ export function BlueprintProgressPanel({
 
           {!error && progress && progress.specs.length === 0 ? (
             <div className="rounded-[18px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-              {panelText("暂未返回蓝图规格。", "No blueprint specs returned yet.")}
+              {panelText(
+                "暂未返回蓝图规格。",
+                "No blueprint specs returned yet."
+              )}
             </div>
           ) : null}
 
@@ -2648,18 +2673,112 @@ function AgentReasoningTimelineSection({ jobId }: { jobId: string }) {
 
       const now = Date.now();
       const simulatedEvents = [
-        { type: "role.agent.iteration_started", payload: { iteration: 1, roleId: "planner", stageId: "route_generation" } },
-        { type: "role.agent.thinking", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", thought: "我需要先分析仓库的目录结构和核心模块..." } },
-        { type: "role.agent.acting", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", actionToolId: "mcp.github.clone" } },
-        { type: "role.agent.observing", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "代码已克隆，发现 src/ 下有 12 个模块" } },
-        { type: "role.agent.iteration_started", payload: { iteration: 2, roleId: "planner", stageId: "route_generation" } },
-        { type: "role.agent.thinking", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", thought: "分析模块依赖关系，识别核心状态机和事件流..." } },
-        { type: "role.agent.acting", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", actionToolId: "aigc.code_analysis" } },
-        { type: "role.agent.observing", payload: { iteration: 2, roleId: "planner", stageId: "route_generation", observationSuccess: true, observationSummary: "主模块是 core/engine.ts，依赖 3 个子系统" } },
-        { type: "role.agent.iteration_started", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
-        { type: "role.agent.thinking", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", thought: "基于分析结果生成实现路线规划..." } },
-        { type: "role.agent.acting", payload: { iteration: 3, roleId: "planner", stageId: "route_generation", actionToolId: "builtin.finish" } },
-        { type: "role.agent.completed", payload: { iteration: 3, roleId: "planner", stageId: "route_generation" } },
+        {
+          type: "role.agent.iteration_started",
+          payload: {
+            iteration: 1,
+            roleId: "planner",
+            stageId: "route_generation",
+          },
+        },
+        {
+          type: "role.agent.thinking",
+          payload: {
+            iteration: 1,
+            roleId: "planner",
+            stageId: "route_generation",
+            thought: "我需要先分析仓库的目录结构和核心模块...",
+          },
+        },
+        {
+          type: "role.agent.acting",
+          payload: {
+            iteration: 1,
+            roleId: "planner",
+            stageId: "route_generation",
+            actionToolId: "mcp.github.clone",
+          },
+        },
+        {
+          type: "role.agent.observing",
+          payload: {
+            iteration: 1,
+            roleId: "planner",
+            stageId: "route_generation",
+            observationSuccess: true,
+            observationSummary: "代码已克隆，发现 src/ 下有 12 个模块",
+          },
+        },
+        {
+          type: "role.agent.iteration_started",
+          payload: {
+            iteration: 2,
+            roleId: "planner",
+            stageId: "route_generation",
+          },
+        },
+        {
+          type: "role.agent.thinking",
+          payload: {
+            iteration: 2,
+            roleId: "planner",
+            stageId: "route_generation",
+            thought: "分析模块依赖关系，识别核心状态机和事件流...",
+          },
+        },
+        {
+          type: "role.agent.acting",
+          payload: {
+            iteration: 2,
+            roleId: "planner",
+            stageId: "route_generation",
+            actionToolId: "aigc.code_analysis",
+          },
+        },
+        {
+          type: "role.agent.observing",
+          payload: {
+            iteration: 2,
+            roleId: "planner",
+            stageId: "route_generation",
+            observationSuccess: true,
+            observationSummary: "主模块是 core/engine.ts，依赖 3 个子系统",
+          },
+        },
+        {
+          type: "role.agent.iteration_started",
+          payload: {
+            iteration: 3,
+            roleId: "planner",
+            stageId: "route_generation",
+          },
+        },
+        {
+          type: "role.agent.thinking",
+          payload: {
+            iteration: 3,
+            roleId: "planner",
+            stageId: "route_generation",
+            thought: "基于分析结果生成实现路线规划...",
+          },
+        },
+        {
+          type: "role.agent.acting",
+          payload: {
+            iteration: 3,
+            roleId: "planner",
+            stageId: "route_generation",
+            actionToolId: "builtin.finish",
+          },
+        },
+        {
+          type: "role.agent.completed",
+          payload: {
+            iteration: 3,
+            roleId: "planner",
+            stageId: "route_generation",
+          },
+        },
       ];
 
       // 逐条延迟注入，模拟真实 LLM 节奏
@@ -2699,7 +2818,6 @@ function AgentReasoningTimelineSection({ jobId }: { jobId: string }) {
 }
 
 export default BlueprintProgressPanel;
-
 
 // ---------------------------------------------------------------------------
 // wt4 任务 3 注记（autopilot-blueprint-refactor-split）：

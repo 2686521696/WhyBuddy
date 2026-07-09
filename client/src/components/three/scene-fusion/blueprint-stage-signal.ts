@@ -110,18 +110,20 @@ const STAGE_ZONES: Record<BlueprintSceneStageKey, SceneFlowZoneId[]> = {
 };
 
 /** 蓝图阶段在中文 / 英文场景 HUD 中的展示标签。 */
-const STAGE_TITLES: Record<BlueprintSceneStageKey, Record<AppLocale, string>> =
-  {
-    input: { "zh-CN": "目标输入", "en-US": "Goal Input" },
-    clarification: { "zh-CN": "澄清交互", "en-US": "Clarification" },
-    route_generation: { "zh-CN": "路线生成", "en-US": "Route Generation" },
-    route_selection: { "zh-CN": "路线选择", "en-US": "Route Selection" },
-    spec_tree: { "zh-CN": "规格树", "en-US": "Spec Tree" },
-    spec_docs: { "zh-CN": "规格文档", "en-US": "Spec Docs" },
-    effect_preview: { "zh-CN": "效果预览", "en-US": "Effect Preview" },
-    prompt_packaging: { "zh-CN": "提示词打包", "en-US": "Prompt Packaging" },
-    engineering_handoff: { "zh-CN": "工程交付", "en-US": "Engineering Handoff" },
-  };
+const STAGE_TITLES: Record<
+  BlueprintSceneStageKey,
+  Record<AppLocale, string>
+> = {
+  input: { "zh-CN": "目标输入", "en-US": "Goal Input" },
+  clarification: { "zh-CN": "澄清交互", "en-US": "Clarification" },
+  route_generation: { "zh-CN": "路线生成", "en-US": "Route Generation" },
+  route_selection: { "zh-CN": "路线选择", "en-US": "Route Selection" },
+  spec_tree: { "zh-CN": "规格树", "en-US": "Spec Tree" },
+  spec_docs: { "zh-CN": "规格文档", "en-US": "Spec Docs" },
+  effect_preview: { "zh-CN": "效果预览", "en-US": "Effect Preview" },
+  prompt_packaging: { "zh-CN": "提示词打包", "en-US": "Prompt Packaging" },
+  engineering_handoff: { "zh-CN": "工程交付", "en-US": "Engineering Handoff" },
+};
 
 /**
  * 后端 BlueprintGenerationStage → 场景流线节点 key 的归一化映射。
@@ -189,8 +191,7 @@ export function getBlueprintSceneStageSignal(
   }
 
   // 再走后端 enum fallback 表
-  const fallback =
-    BACKEND_STAGE_FALLBACK[rawStage as BlueprintGenerationStage];
+  const fallback = BACKEND_STAGE_FALLBACK[rawStage as BlueprintGenerationStage];
   if (fallback) {
     const idx = BLUEPRINT_SCENE_STAGES.indexOf(fallback);
     if (idx >= 0) return buildSignal(fallback, idx);

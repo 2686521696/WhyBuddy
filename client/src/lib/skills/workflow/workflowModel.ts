@@ -116,5 +116,10 @@ export interface WorkflowFormField {
 export interface WorkflowFormRuntime {
   formFieldRefs: string[];
   fields: WorkflowFormField[];
-  findings: Array<{ code: string; severity: string; path: string; message: string }>;
+  findings: Array<{
+    code: string;
+    severity: string;
+    path: string;
+    message: string;
+  }>;
 }

@@ -14,7 +14,11 @@ function reportOf(content: string): Artifact {
     title: "可行性报告",
     content,
     trustLevel: "gated_pass",
-    producedBy: { capabilityRunId: "run", capabilityId: "report.write", roleId: "综合" },
+    producedBy: {
+      capabilityRunId: "run",
+      capabilityId: "report.write",
+      roleId: "综合",
+    },
   } as Artifact;
 }
 
@@ -30,7 +34,7 @@ describe("parseReportSections 段标识别", () => {
       "MVP 优先 RBAC。",
     ].join("\n");
     const secs = parseReportSections(reportOf(md));
-    const labels = secs.map((s) => s.label);
+    const labels = secs.map(s => s.label);
     expect(labels).toContain("支撑证据");
     expect(labels).toContain("风险");
     expect(labels).toContain("收敛决策");
@@ -38,14 +42,27 @@ describe("parseReportSections 段标识别", () => {
   });
 
   it("识别 **粗体** 段标", () => {
-    const md = ["**支撑证据**", "证据正文", "**风险：**", "风险正文", "**收敛决策**", "决策正文"].join("\n");
-    const labels = parseReportSections(reportOf(md)).map((s) => s.label);
-    expect(labels).toEqual(expect.arrayContaining(["支撑证据", "风险", "收敛决策"]));
+    const md = [
+      "**支撑证据**",
+      "证据正文",
+      "**风险：**",
+      "风险正文",
+      "**收敛决策**",
+      "决策正文",
+    ].join("\n");
+    const labels = parseReportSections(reportOf(md)).map(s => s.label);
+    expect(labels).toEqual(
+      expect.arrayContaining(["支撑证据", "风险", "收敛决策"])
+    );
   });
 
   it("仍兼容冒号式段标(模板/BASE 报告)", () => {
-    const txt = ["支撑证据：证据", "风险：风险正文", "收敛决策：决策"].join("\n");
-    const labels = parseReportSections(reportOf(txt)).map((s) => s.label);
-    expect(labels).toEqual(expect.arrayContaining(["支撑证据", "风险", "收敛决策"]));
+    const txt = ["支撑证据：证据", "风险：风险正文", "收敛决策：决策"].join(
+      "\n"
+    );
+    const labels = parseReportSections(reportOf(txt)).map(s => s.label);
+    expect(labels).toEqual(
+      expect.arrayContaining(["支撑证据", "风险", "收敛决策"])
+    );
   });
 });

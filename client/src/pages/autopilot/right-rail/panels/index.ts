@@ -42,10 +42,7 @@ export type { ArtifactMemoryPanelProps } from "./ArtifactMemoryPanel";
 // 这三个面板为跨阶段 (cross-cutting) 信任层视图，不属于线性 sub-stage 序列，
 // 由 AutopilotRightRail 的 Trust section 统一挂载（design.md §9）。
 
-export {
-  ChecksLedgerPanel,
-  ChecksLedgerView,
-} from "./ChecksLedgerPanel";
+export { ChecksLedgerPanel, ChecksLedgerView } from "./ChecksLedgerPanel";
 export type {
   ChecksLedgerPanelProps,
   ChecksLedgerViewProps,

@@ -15,7 +15,17 @@
  */
 
 import React from "react";
-import { Button, Empty, Input, message, Pagination, Popover, Select, Tag, Tooltip } from "antd";
+import {
+  Button,
+  Empty,
+  Input,
+  message,
+  Pagination,
+  Popover,
+  Select,
+  Tag,
+  Tooltip,
+} from "antd";
 import {
   BookOutlined,
   CloudDownloadOutlined,
@@ -100,7 +110,7 @@ const INDEX = skillsIndex as {
 
 const SEMANTICS = (skillSemantics as { items: SkillSemanticsItem[] }).items;
 const FEATURED = (featuredSkills as { items: FeaturedSkill[] }).items;
-const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map((f) => f.category))];
+const FEATURED_CATEGORIES = ["全部", ...new Set(FEATURED.map(f => f.category))];
 
 // topicId → 语义档案（description 非空才算"可安装定义"）
 const SEMANTICS_BY_TOPIC = new Map<number, SkillSemanticsItem>();
@@ -111,7 +121,10 @@ for (const sem of SEMANTICS) {
   }
 }
 
-const KIND_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+const KIND_META: Record<
+  string,
+  { label: string; color: string; icon: React.ReactNode }
+> = {
   repo: { label: "开源仓库", color: "green", icon: <GithubOutlined /> },
   pan: { label: "网盘分发", color: "blue", icon: <CloudDownloadOutlined /> },
   attachment: { label: "论坛附件", color: "purple", icon: <FileZipOutlined /> },
@@ -163,11 +176,17 @@ function SkillCard({
   testid?: string;
 }) {
   return (
-    <div className="flex gap-3 rounded-lg border border-stone-200 bg-white p-3.5" data-testid={testid}>
+    <div
+      className="flex gap-3 rounded-lg border border-stone-200 bg-white p-3.5"
+      data-testid={testid}
+    >
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${avatarToneOf(name)}`}
       >
-        {name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 1).toUpperCase() || "S"}
+        {name
+          .replace(/[^\p{L}\p{N}]/gu, "")
+          .slice(0, 1)
+          .toUpperCase() || "S"}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -182,7 +201,9 @@ function SkillCard({
               {name}
             </a>
           ) : (
-            <span className="truncate text-sm font-semibold text-stone-800">{name}</span>
+            <span className="truncate text-sm font-semibold text-stone-800">
+              {name}
+            </span>
           )}
           {tags}
         </div>
@@ -240,10 +261,17 @@ function InstalledSkillCard({
               }),
             });
       const body = res.ok
-        ? ((await res.json()) as { ok: boolean; output?: string; code?: string; detail?: string })
+        ? ((await res.json()) as {
+            ok: boolean;
+            output?: string;
+            code?: string;
+            detail?: string;
+          })
         : { ok: false, code: `HTTP_${res.status}`, detail: await res.text() };
       if (!body.ok || body.output === undefined) {
-        setError(`${body.code ?? "UNKNOWN"}${body.detail ? ` · ${body.detail.slice(0, 160)}` : ""}`);
+        setError(
+          `${body.code ?? "UNKNOWN"}${body.detail ? ` · ${body.detail.slice(0, 160)}` : ""}`
+        );
       } else {
         setOutput(body.output);
       }
@@ -260,7 +288,9 @@ function InstalledSkillCard({
       data-testid={`installed-skill-${skill.repo}`}
     >
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-stone-800">{skill.name}</span>
+        <span className="text-sm font-semibold text-stone-800">
+          {skill.name}
+        </span>
         {skill.kind === "package" ? (
           <Tooltip title="试跑时原作者的完整 SKILL.md 指令作为 system prompt 执行">
             <Tag color="green" style={{ fontSize: 10, marginInlineEnd: 0 }}>
@@ -287,7 +317,9 @@ function InstalledSkillCard({
             {skill.repo}
           </a>
         ) : (
-          <span className="font-mono text-[10px] text-stone-400">{skill.repo}</span>
+          <span className="font-mono text-[10px] text-stone-400">
+            {skill.repo}
+          </span>
         )}
         <Button
           size="small"
@@ -304,7 +336,7 @@ function InstalledSkillCard({
       <div className="mt-1 text-xs text-stone-500">{skill.description}</div>
       {skill.ioHints.length > 0 && (
         <div className="mt-1 space-y-0.5">
-          {skill.ioHints.slice(0, 3).map((h) => (
+          {skill.ioHints.slice(0, 3).map(h => (
             <div key={h} className="font-mono text-[10px] text-stone-400">
               {h}
             </div>
@@ -314,7 +346,7 @@ function InstalledSkillCard({
       <div className="mt-2 flex items-start gap-2">
         <Input.TextArea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={e => setInput(e.target.value)}
           placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
           autoSize={{ minRows: 1, maxRows: 4 }}
         />
@@ -349,20 +381,24 @@ export function SkillsLibraryPage({
   /** 初始 tab（测试用；产品默认精选层） */
   initialTab?: "featured" | "market" | "installed";
 } = {}) {
-  const [tab, setTab] = React.useState<"featured" | "market" | "installed">(initialTab);
+  const [tab, setTab] = React.useState<"featured" | "market" | "installed">(
+    initialTab
+  );
   const [featuredCat, setFeaturedCat] = React.useState("全部");
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<string>("all");
   const [sort, setSort] = React.useState<"views" | "likes" | "latest">("views");
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(21);
-  const [installed, setInstalled] = React.useState<InstalledSkill[]>(() => loadInstalledSkills());
+  const [installed, setInstalled] = React.useState<InstalledSkill[]>(() =>
+    loadInstalledSkills()
+  );
   const [packages, setPackages] = React.useState<SkillPackageMeta[]>([]);
 
   React.useEffect(() => {
     let alive = true;
     fetch("/api/sliderule/skill-packages")
-      .then((res) => (res.ok ? res.json() : null))
+      .then(res => (res.ok ? res.json() : null))
       .then((body: { items?: SkillPackageMeta[] } | null) => {
         if (alive && body && Array.isArray(body.items)) setPackages(body.items);
       })
@@ -386,11 +422,14 @@ export function SkillsLibraryPage({
     (it: SkillIndexItem): SkillPackageMeta[] => {
       const out: SkillPackageMeta[] = [];
       for (const link of it.repos) {
-        const m = /https?:\/\/(github\.com|gitee\.com|gitcode\.com)\/([^/\s]+)\/([^/\s#?]+)/.exec(link);
+        const m =
+          /https?:\/\/(github\.com|gitee\.com|gitcode\.com)\/([^/\s]+)\/([^/\s#?]+)/.exec(
+            link
+          );
         if (!m) continue;
         const key = `${m[1]}/${m[2]}/${m[3].replace(/\.git$/, "")}`;
         for (const p of packagesByRepo.get(key) ?? []) {
-          if (!out.some((x) => x.id === p.id)) out.push(p);
+          if (!out.some(x => x.id === p.id)) out.push(p);
         }
       }
       return out;
@@ -399,7 +438,7 @@ export function SkillsLibraryPage({
   );
 
   const installPackage = (pkg: SkillPackageMeta) => {
-    setInstalled((prev) => {
+    setInstalled(prev => {
       const next = installSkill(prev, {
         repo: pkg.repo,
         url: pkg.sourceUrl,
@@ -410,13 +449,16 @@ export function SkillsLibraryPage({
         kind: "package",
         packageId: pkg.id,
       });
-      if (next !== prev) message.success(`已安装「${pkg.name}」（原版 SKILL.md），到「已安装」直接试跑`);
+      if (next !== prev)
+        message.success(
+          `已安装「${pkg.name}」（原版 SKILL.md），到「已安装」直接试跑`
+        );
       return next;
     });
   };
 
   const installFeatured = (f: FeaturedSkill) => {
-    setInstalled((prev) => {
+    setInstalled(prev => {
       const next = installSkill(prev, {
         repo: `trae-market/${f.id}`,
         url: "",
@@ -426,13 +468,14 @@ export function SkillsLibraryPage({
         ioHints: [],
         kind: "semantic",
       });
-      if (next !== prev) message.success(`已安装「${f.name}」，到「已安装」里直接试跑`);
+      if (next !== prev)
+        message.success(`已安装「${f.name}」，到「已安装」里直接试跑`);
       return next;
     });
   };
 
   const installSemantic = (sem: SkillSemanticsItem) => {
-    setInstalled((prev) => {
+    setInstalled(prev => {
       const next = installSkill(prev, {
         repo: sem.repo,
         url: sem.url,
@@ -442,7 +485,8 @@ export function SkillsLibraryPage({
         ioHints: sem.ioHints,
         kind: "semantic",
       });
-      if (next !== prev) message.success(`已安装「${sem.name}」，到「已安装」里直接试跑`);
+      if (next !== prev)
+        message.success(`已安装「${sem.name}」，到「已安装」里直接试跑`);
       return next;
     });
   };
@@ -451,9 +495,9 @@ export function SkillsLibraryPage({
   const communityItems = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = INDEX.items
-      .filter((it) => (kind === "all" ? true : it.sourceKind === kind))
+      .filter(it => (kind === "all" ? true : it.sourceKind === kind))
       .filter(
-        (it) =>
+        it =>
           !q ||
           it.title.toLowerCase().includes(q) ||
           it.excerpt.toLowerCase().includes(q) ||
@@ -468,12 +512,17 @@ export function SkillsLibraryPage({
     );
   }, [query, kind, sort]);
 
-  const pagedCommunity = communityItems.slice((page - 1) * pageSize, page * pageSize);
+  const pagedCommunity = communityItems.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
 
   const featuredItems = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    return FEATURED.filter((f) => featuredCat === "全部" || f.category === featuredCat).filter(
-      (f) =>
+    return FEATURED.filter(
+      f => featuredCat === "全部" || f.category === featuredCat
+    ).filter(
+      f =>
         !q ||
         f.name.toLowerCase().includes(q) ||
         f.description.toLowerCase().includes(q) ||
@@ -483,7 +532,9 @@ export function SkillsLibraryPage({
 
   // 真实的投稿指南帖（索引里就有——右上按钮直链，不造假入口）
   const guideUrl = React.useMemo(
-    () => INDEX.items.find((it) => it.title.includes("投稿指南"))?.url ?? INDEX.source,
+    () =>
+      INDEX.items.find(it => it.title.includes("投稿指南"))?.url ??
+      INDEX.source,
     []
   );
 
@@ -511,7 +562,7 @@ export function SkillsLibraryPage({
       );
     }
     if (rowPkgs.length > 1) {
-      const fresh = rowPkgs.filter((p) => !isInstalled(installed, p.id));
+      const fresh = rowPkgs.filter(p => !isInstalled(installed, p.id));
       if (fresh.length === 0) {
         return (
           <Tag color="success" style={{ marginInlineEnd: 0 }}>
@@ -524,24 +575,40 @@ export function SkillsLibraryPage({
           trigger="click"
           placement="bottomRight"
           content={
-            <div style={{ maxHeight: 260, overflow: "auto", width: 320 }} className="space-y-1">
+            <div
+              style={{ maxHeight: 260, overflow: "auto", width: 320 }}
+              className="space-y-1"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-medium text-stone-500">
                   合集 · {rowPkgs.length} 个原版技能
                 </span>
-                <Button size="small" type="link" onClick={() => fresh.forEach(installPackage)}>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => fresh.forEach(installPackage)}
+                >
                   全部安装
                 </Button>
               </div>
-              {rowPkgs.map((pkg) => (
+              {rowPkgs.map(pkg => (
                 <div key={pkg.id} className="flex items-center gap-2 text-xs">
-                  <span className="min-w-0 flex-1 truncate text-stone-700">{pkg.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-stone-700">
+                    {pkg.name}
+                  </span>
                   {isInstalled(installed, pkg.id) ? (
-                    <Tag color="success" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+                    <Tag
+                      color="success"
+                      style={{ marginInlineEnd: 0, fontSize: 10 }}
+                    >
                       ✓
                     </Tag>
                   ) : (
-                    <Button size="small" type="link" onClick={() => installPackage(pkg)}>
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => installPackage(pkg)}
+                    >
                       安装
                     </Button>
                   )}
@@ -565,7 +632,12 @@ export function SkillsLibraryPage({
     if (!sem) {
       return (
         <Tooltip title="该帖未提供可安装的技能定义（无 SKILL.md 也无语义档案）">
-          <Button size="small" disabled icon={<DownloadOutlined />} data-testid={`skill-install-disabled-${it.topicId}`}>
+          <Button
+            size="small"
+            disabled
+            icon={<DownloadOutlined />}
+            data-testid={`skill-install-disabled-${it.topicId}`}
+          >
             安装
           </Button>
         </Tooltip>
@@ -592,8 +664,20 @@ export function SkillsLibraryPage({
   };
 
   const STATS = [
-    { icon: <StarOutlined />, label: "精选技能", value: FEATURED.length, sub: "官方/大厂出品", tone: "bg-blue-50 text-blue-600" },
-    { icon: <TeamOutlined />, label: "社区技能", value: INDEX.count, sub: "SOLO 创作赛索引", tone: "bg-emerald-50 text-emerald-600" },
+    {
+      icon: <StarOutlined />,
+      label: "精选技能",
+      value: FEATURED.length,
+      sub: "官方/大厂出品",
+      tone: "bg-blue-50 text-blue-600",
+    },
+    {
+      icon: <TeamOutlined />,
+      label: "社区技能",
+      value: INDEX.count,
+      sub: "SOLO 创作赛索引",
+      tone: "bg-emerald-50 text-emerald-600",
+    },
     {
       icon: <FileMarkdownOutlined />,
       label: "可执行 SKILL.md",
@@ -601,11 +685,20 @@ export function SkillsLibraryPage({
       sub: packages.length > 0 ? "装完即按原指令执行" : "需 Python 服务在线",
       tone: "bg-purple-50 text-purple-600",
     },
-    { icon: <SafetyCertificateOutlined />, label: "已安装", value: installed.length, sub: "本地环境可用技能", tone: "bg-orange-50 text-orange-600" },
+    {
+      icon: <SafetyCertificateOutlined />,
+      label: "已安装",
+      value: installed.length,
+      sub: "本地环境可用技能",
+      tone: "bg-orange-50 text-orange-600",
+    },
   ];
 
   return (
-    <div className="h-full space-y-3.5 overflow-auto p-6" data-testid="skills-library">
+    <div
+      className="h-full space-y-3.5 overflow-auto p-6"
+      data-testid="skills-library"
+    >
       {/* 头部：标题 + 真实投稿指南直链 */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -616,7 +709,8 @@ export function SkillsLibraryPage({
             </span>
           </div>
           <div className="mt-0.5 text-xs text-stone-400">
-            来自官方技能市场与 TRAE 社区「SOLO 技能创作赛」的优质 Skill，覆盖产品、研发、设计、运营等多个领域。
+            来自官方技能市场与 TRAE 社区「SOLO 技能创作赛」的优质
+            Skill，覆盖产品、研发、设计、运营等多个领域。
           </div>
         </div>
         <Button icon={<BookOutlined />} href={guideUrl} target="_blank">
@@ -626,21 +720,36 @@ export function SkillsLibraryPage({
 
       {/* 统计卡（全部真数据，不造假指标） */}
       <div className="flex flex-wrap gap-2.5">
-        {STATS.map((s) => (
-          <div key={s.label} className="min-w-[160px] flex-1 rounded-lg border border-stone-200 bg-white px-3.5 py-2.5" data-testid={`skills-stat-${s.label}`}>
-            <div className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${s.tone}`}>
+        {STATS.map(s => (
+          <div
+            key={s.label}
+            className="min-w-[160px] flex-1 rounded-lg border border-stone-200 bg-white px-3.5 py-2.5"
+            data-testid={`skills-stat-${s.label}`}
+          >
+            <div
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${s.tone}`}
+            >
               {s.icon}
               {s.label}
             </div>
-            <div className="mt-1 text-xl font-semibold text-stone-800">{s.value}</div>
+            <div className="mt-1 text-xl font-semibold text-stone-800">
+              {s.value}
+            </div>
             <div className="text-[10px] text-stone-400">{s.sub}</div>
           </div>
         ))}
         <div className="min-w-[240px] flex-[1.4] rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-          <div className="text-[11px] font-semibold text-amber-700">✦ 合规说明</div>
+          <div className="text-[11px] font-semibold text-amber-700">
+            ✦ 合规说明
+          </div>
           <div className="mt-1 text-[10px] leading-4 text-amber-700/90">
             {INDEX.license_note} 采集于 {INDEX.fetchedAt.slice(0, 10)}，
-            <a href={INDEX.source} target="_blank" rel="noreferrer" className="underline">
+            <a
+              href={INDEX.source}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
               来源论坛
             </a>
             。
@@ -649,14 +758,17 @@ export function SkillsLibraryPage({
       </div>
 
       {/* 三层 tab（下划线风格） */}
-      <div className="flex items-center gap-5 border-b border-stone-200" data-testid="skills-tab">
+      <div
+        className="flex items-center gap-5 border-b border-stone-200"
+        data-testid="skills-tab"
+      >
         {(
           [
             { key: "featured", label: `精选技能 ${FEATURED.length}` },
             { key: "market", label: `社区技能 ${INDEX.count}` },
             { key: "installed", label: `已安装 ${installed.length}` },
           ] as const
-        ).map((t) => (
+        ).map(t => (
           <button
             key={t.key}
             type="button"
@@ -680,15 +792,21 @@ export function SkillsLibraryPage({
             placeholder="搜索技能名称 / 关键词 / 作者"
             style={{ maxWidth: 340 }}
             onSearch={setQuery}
-            onChange={(e) => {
+            onChange={e => {
               if (!e.target.value) setQuery("");
             }}
             data-testid="skills-search"
           />
           {tab === "featured" ? (
-            <div className="flex flex-wrap items-center gap-1.5" data-testid="skills-featured-cats">
-              {FEATURED_CATEGORIES.map((cat) => {
-                const count = cat === "全部" ? FEATURED.length : FEATURED.filter((f) => f.category === cat).length;
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              data-testid="skills-featured-cats"
+            >
+              {FEATURED_CATEGORIES.map(cat => {
+                const count =
+                  cat === "全部"
+                    ? FEATURED.length
+                    : FEATURED.filter(f => f.category === cat).length;
                 return (
                   <button
                     key={cat}
@@ -707,12 +825,16 @@ export function SkillsLibraryPage({
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-1.5" data-testid="skills-kind-filter">
-                {KIND_FILTERS.map((f) => {
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                data-testid="skills-kind-filter"
+              >
+                {KIND_FILTERS.map(f => {
                   const count =
                     f.value === "all"
                       ? INDEX.count
-                      : INDEX.items.filter((it) => it.sourceKind === f.value).length;
+                      : INDEX.items.filter(it => it.sourceKind === f.value)
+                          .length;
                   return (
                     <button
                       key={f.value}
@@ -736,7 +858,7 @@ export function SkillsLibraryPage({
                 size="small"
                 value={sort}
                 style={{ width: 116 }}
-                onChange={(v) => {
+                onChange={v => {
                   setSort(v);
                   setPage(1);
                 }}
@@ -753,8 +875,11 @@ export function SkillsLibraryPage({
 
       {/* 精选层：三列卡片 */}
       {tab === "featured" && (
-        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3" data-testid="skills-featured-grid">
-          {featuredItems.map((f) => {
+        <div
+          className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3"
+          data-testid="skills-featured-grid"
+        >
+          {featuredItems.map(f => {
             const done = isInstalled(installed, `trae-market/${f.id}`);
             return (
               <SkillCard
@@ -763,8 +888,13 @@ export function SkillsLibraryPage({
                 name={f.name}
                 tags={
                   <>
-                    <Tag style={{ fontSize: 10, marginInlineEnd: 0 }}>{f.category}</Tag>
-                    <Tag color="gold" style={{ fontSize: 10, marginInlineEnd: 0 }}>
+                    <Tag style={{ fontSize: 10, marginInlineEnd: 0 }}>
+                      {f.category}
+                    </Tag>
+                    <Tag
+                      color="gold"
+                      style={{ fontSize: 10, marginInlineEnd: 0 }}
+                    >
                       精选
                     </Tag>
                   </>
@@ -777,7 +907,13 @@ export function SkillsLibraryPage({
                       ✓ 已安装
                     </Tag>
                   ) : (
-                    <Button size="small" type="primary" ghost icon={<DownloadOutlined />} onClick={() => installFeatured(f)}>
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      icon={<DownloadOutlined />}
+                      onClick={() => installFeatured(f)}
+                    >
                       安装
                     </Button>
                   )
@@ -791,8 +927,11 @@ export function SkillsLibraryPage({
       {/* 社区层：同风格三列卡片 + 分页 */}
       {tab === "market" && (
         <>
-          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3" data-testid="skills-community-grid">
-            {pagedCommunity.map((it) => {
+          <div
+            className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3"
+            data-testid="skills-community-grid"
+          >
+            {pagedCommunity.map(it => {
               const kindMeta = KIND_META[it.sourceKind] ?? KIND_META.none;
               return (
                 <SkillCard
@@ -801,7 +940,11 @@ export function SkillsLibraryPage({
                   name={it.title.replace(/^【[^】]*】\s*/, "")}
                   titleHref={it.url}
                   tags={
-                    <Tag color={kindMeta.color} icon={kindMeta.icon} style={{ fontSize: 10, marginInlineEnd: 0 }}>
+                    <Tag
+                      color={kindMeta.color}
+                      icon={kindMeta.icon}
+                      style={{ fontSize: 10, marginInlineEnd: 0 }}
+                    >
                       {kindMeta.label}
                     </Tag>
                   }
@@ -820,7 +963,9 @@ export function SkillsLibraryPage({
             })}
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-stone-400">共 {communityItems.length} 项</span>
+            <span className="text-[11px] text-stone-400">
+              共 {communityItems.length} 项
+            </span>
             <Pagination
               current={page}
               pageSize={pageSize}
@@ -841,8 +986,9 @@ export function SkillsLibraryPage({
         <div className="space-y-2.5" data-testid="skills-installed-list">
           {installed.length > 0 && (
             <div className="rounded bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700 ring-1 ring-blue-200">
-              已安装技能会注入新推演（最多前 6 个）：下次推演产出的应用会把它们设计成对应的
-              AIGC 能力（字段绑定仍过门禁硬校验）。
+              已安装技能会注入新推演（最多前 6
+              个）：下次推演产出的应用会把它们设计成对应的 AIGC
+              能力（字段绑定仍过门禁硬校验）。
             </div>
           )}
           {installed.length === 0 ? (
@@ -851,11 +997,13 @@ export function SkillsLibraryPage({
               description="还没安装技能 — 到「精选技能」或「社区技能」装一个，装完立即可试跑"
             />
           ) : (
-            installed.map((s) => (
+            installed.map(s => (
               <InstalledSkillCard
                 key={installKeyOf(s)}
                 skill={s}
-                onUninstall={(key) => setInstalled((prev) => uninstallSkill(prev, key))}
+                onUninstall={key =>
+                  setInstalled(prev => uninstallSkill(prev, key))
+                }
               />
             ))
           )}

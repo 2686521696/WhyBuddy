@@ -39,18 +39,16 @@ describe("AutopilotCockpitLayout", () => {
     expect(markup).toContain(
       'data-layout-mode="desktop-three-column tablet-two-column stacked-mobile segmented-mobile"'
     );
-    expect(markup).toContain(
-      'data-testid="autopilot-cockpit-mobile-fallback"'
-    );
-    expect(markup).toContain(
-      'data-overflow-guard="mobile-status-chip-wrap"'
-    );
+    expect(markup).toContain('data-testid="autopilot-cockpit-mobile-fallback"');
+    expect(markup).toContain('data-overflow-guard="mobile-status-chip-wrap"');
     expect(markup).toContain("max-w-full");
     expect(markup).toContain("whitespace-normal");
     expect(markup).toContain("break-words");
     expect(markup).toContain("grid-cols-1");
     expect(markup).toContain("md:grid-cols-2");
-    expect(markup).toContain("lg:grid-cols-[minmax(0,0.95fr)_minmax(320px,1.35fr)_minmax(0,0.95fr)]");
+    expect(markup).toContain(
+      "lg:grid-cols-[minmax(0,0.95fr)_minmax(320px,1.35fr)_minmax(0,0.95fr)]"
+    );
     expect(markup).toContain('data-tablet-layout="two-column-center-priority"');
     expect(markup).toContain("Stacked");
     expect(markup).toContain("Tabs-ready");
@@ -60,9 +58,7 @@ describe("AutopilotCockpitLayout", () => {
     const markup = renderToStaticMarkup(<AutopilotCockpitLayout />);
 
     expect(markup).toContain('data-testid="autopilot-cockpit-segment-nav"');
-    expect(markup).toContain(
-      'data-overflow-guard="mobile-segment-chip-wrap"'
-    );
+    expect(markup).toContain('data-overflow-guard="mobile-segment-chip-wrap"');
     expect(markup).toContain('aria-label="Autopilot cockpit sections"');
     expect(markup).toContain('href="#autopilot-cockpit-route-title"');
     expect(markup).toContain('href="#autopilot-cockpit-center-title"');

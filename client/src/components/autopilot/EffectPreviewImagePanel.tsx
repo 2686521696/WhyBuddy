@@ -146,7 +146,7 @@ export interface EffectPreviewImagePanelProps {
   readonly onDownload: (
     filename: string,
     b64: string,
-    mimeType: string,
+    mimeType: string
   ) => void;
   readonly theme: "light" | "dark";
   readonly version?: number;
@@ -154,7 +154,10 @@ export interface EffectPreviewImagePanelProps {
    * v4 EP_VIS_AUDIT ◆◆：诚实失败（无图）节点的 provenance（可选，向后兼容）。
    * 当某节点无 image record 但出现在此映射中时，渲染「缺图」态（禁兜底假图）。
    */
-  readonly failedProvenanceByNodeId?: Record<string, BlueprintPreviewProvenance>;
+  readonly failedProvenanceByNodeId?: Record<
+    string,
+    BlueprintPreviewProvenance
+  >;
   /** 用户区域设置，用于 provenance chip / 未验证标签文案（缺省 en-US）。 */
   readonly locale?: AppLocale;
 }
@@ -172,7 +175,7 @@ export interface EffectPreviewImagePanelProps {
 function colorFor(
   key: VisualTokenKey,
   visualTokens: VisualTokenSet,
-  theme: "light" | "dark",
+  theme: "light" | "dark"
 ): string {
   const pair = visualTokens[key];
   if (pair !== undefined && pair[theme] !== undefined) {
@@ -220,7 +223,7 @@ const STATE_LABEL: { readonly [S in ProgressPlanState]: string } = {
 export function buildDownloadFilename(
   nodeId: string,
   version: number,
-  timestamp: number,
+  timestamp: number
 ): string {
   return `effect-preview-${nodeId}-v${version}-${timestamp}.png`;
 }
@@ -248,7 +251,7 @@ export function buildDownloadFilename(
  *   任何颜色字面量（需求 17.1）。
  */
 export function EffectPreviewImagePanel(
-  props: EffectPreviewImagePanelProps,
+  props: EffectPreviewImagePanelProps
 ): ReactElement | null {
   const {
     missionId,
@@ -328,51 +331,52 @@ export function EffectPreviewImagePanel(
         minWidth: 0,
       }}
     >
-      {architectureSvgDraft !== undefined && architectureSvgDraft.length > 0 && (
-        <div
-          data-architecture-svg
-          data-testid="effect-preview-architecture-svg"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.25rem",
-            padding: "0.5rem",
-            borderRadius: "0.5rem",
-            borderWidth: "1px",
-            borderStyle: "solid",
-            borderColor: svgBorderColor,
-          }}
-        >
-          <span
-            data-testid="effect-preview-architecture-svg-label"
+      {architectureSvgDraft !== undefined &&
+        architectureSvgDraft.length > 0 && (
+          <div
+            data-architecture-svg
+            data-testid="effect-preview-architecture-svg"
             style={{
-              fontSize: "0.75rem",
-              fontWeight: 500,
-              color: svgLabelColor,
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.25rem",
+              padding: "0.5rem",
+              borderRadius: "0.5rem",
+              borderWidth: "1px",
+              borderStyle: "solid",
+              borderColor: svgBorderColor,
             }}
           >
-            架构草图
-          </span>
-          <div
-            data-testid="effect-preview-architecture-svg-content"
-            style={{ display: "flex", minWidth: 0 }}
-            // Defense-in-depth (Phase 5 Task 44.2): even though the
-            // server-side `draftSvgArchitecture` already runs the SVG
-            // through `sanitizeSvgArchitectureDraft` before persisting
-            // it to `BlueprintEffectPreview.architectureSvgDraft`, we
-            // sanitize again here. This catches:
-            //   - legacy artifacts persisted before the server
-            //     sanitizer landed (Phase 4 Task 34.1);
-            //   - hand-crafted test fixtures that bypass the drafter;
-            //   - any hypothetical future server-side bypass route.
-            // The sanitizer is pure / deterministic / silent, so the
-            // double pass is effectively free on already-clean input.
-            dangerouslySetInnerHTML={{
-              __html: sanitizeSvgArchitectureDraft(architectureSvgDraft),
-            }}
-          />
-        </div>
-      )}
+            <span
+              data-testid="effect-preview-architecture-svg-label"
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                color: svgLabelColor,
+              }}
+            >
+              架构草图
+            </span>
+            <div
+              data-testid="effect-preview-architecture-svg-content"
+              style={{ display: "flex", minWidth: 0 }}
+              // Defense-in-depth (Phase 5 Task 44.2): even though the
+              // server-side `draftSvgArchitecture` already runs the SVG
+              // through `sanitizeSvgArchitectureDraft` before persisting
+              // it to `BlueprintEffectPreview.architectureSvgDraft`, we
+              // sanitize again here. This catches:
+              //   - legacy artifacts persisted before the server
+              //     sanitizer landed (Phase 4 Task 34.1);
+              //   - hand-crafted test fixtures that bypass the drafter;
+              //   - any hypothetical future server-side bypass route.
+              // The sanitizer is pure / deterministic / silent, so the
+              // double pass is effectively free on already-clean input.
+              dangerouslySetInnerHTML={{
+                __html: sanitizeSvgArchitectureDraft(architectureSvgDraft),
+              }}
+            />
+          </div>
+        )}
 
       <ol
         data-testid="effect-preview-image-gallery"
@@ -385,11 +389,11 @@ export function EffectPreviewImagePanel(
           padding: 0,
         }}
       >
-        {progressPlan.map((entry) => {
+        {progressPlan.map(entry => {
           const stateColor = colorFor(
             PROGRESS_STATE_TOKEN_KEY[entry.state],
             visualTokens,
-            theme,
+            theme
           );
           const label = entry.title ?? entry.nodeId;
           const stateLabel = STATE_LABEL[entry.state];
@@ -402,16 +406,13 @@ export function EffectPreviewImagePanel(
             const filename = buildDownloadFilename(
               entry.nodeId,
               version,
-              Date.now(),
+              Date.now()
             );
             onDownload(filename, record.b64, record.mimeType);
           };
 
           return (
-            <li
-              key={entry.nodeId}
-              style={{ listStyle: "none" }}
-            >
+            <li key={entry.nodeId} style={{ listStyle: "none" }}>
               <section
                 data-node-id={entry.nodeId}
                 data-testid="effect-preview-image-group"
@@ -544,7 +545,12 @@ export function EffectPreviewImagePanel(
                     {/* v4 EP_VIS_GEN ◆：来源 chip + 「预览·未验证」标签 */}
                     <div
                       data-testid="effect-preview-provenance-row"
-                      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.375rem" }}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: "0.375rem",
+                      }}
                     >
                       <PreviewProvenanceChip
                         provenance={record.provenance}
@@ -552,9 +558,15 @@ export function EffectPreviewImagePanel(
                       />
                       <span
                         data-testid="effect-preview-unverified-label"
-                        style={{ fontSize: "0.6875rem", fontWeight: 700, opacity: 0.7 }}
+                        style={{
+                          fontSize: "0.6875rem",
+                          fontWeight: 700,
+                          opacity: 0.7,
+                        }}
                       >
-                        {locale === "zh-CN" ? "预览·未验证" : "preview · unverified"}
+                        {locale === "zh-CN"
+                          ? "预览·未验证"
+                          : "preview · unverified"}
                       </span>
                     </div>
                   </div>
@@ -576,7 +588,9 @@ export function EffectPreviewImagePanel(
                       }}
                     >
                       <span data-testid="effect-preview-no-image-label">
-                        {locale === "zh-CN" ? "缺图（诚实失败）" : "no image (honest failure)"}
+                        {locale === "zh-CN"
+                          ? "缺图（诚实失败）"
+                          : "no image (honest failure)"}
                       </span>
                       <PreviewProvenanceChip
                         provenance={failedProvenanceByNodeId[entry.nodeId]}

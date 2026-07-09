@@ -5,17 +5,17 @@
  * these browser APIs are not available in the Vitest/Node environment.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WebRTCConnectionManager } from './connection-manager';
-import type { ConnectionState, StreamError } from './types';
+import { WebRTCConnectionManager } from "./connection-manager";
+import type { ConnectionState, StreamError } from "./types";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
 // ---------------------------------------------------------------------------
 
 /** Minimal mock for MediaStreamTrack. */
-function createMockTrack(kind: 'video' | 'audio' = 'video') {
+function createMockTrack(kind: "video" | "audio" = "video") {
   return {
     kind,
     stop: vi.fn(),
@@ -28,8 +28,8 @@ function createMockMediaStream(tracks: MediaStreamTrack[] = []) {
   const internal = [...tracks];
   return {
     getTracks: () => [...internal],
-    getVideoTracks: () => internal.filter((t) => t.kind === 'video'),
-    getAudioTracks: () => internal.filter((t) => t.kind === 'audio'),
+    getVideoTracks: () => internal.filter(t => t.kind === "video"),
+    getAudioTracks: () => internal.filter(t => t.kind === "audio"),
     addTrack: (t: MediaStreamTrack) => internal.push(t),
   } as unknown as MediaStream;
 }
@@ -68,7 +68,7 @@ class MockWebSocket {
 
   close() {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ code: 1000, reason: '' } as CloseEvent);
+    this.onclose?.({ code: 1000, reason: "" } as CloseEvent);
   }
 
   /** Test helper: simulate receiving a message from the server. */
@@ -92,8 +92,8 @@ class MockRTCPeerConnection {
   onconnectionstatechange: (() => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
 
-  connectionState: RTCPeerConnectionState = 'new';
-  iceConnectionState: RTCIceConnectionState = 'new';
+  connectionState: RTCPeerConnectionState = "new";
+  iceConnectionState: RTCIceConnectionState = "new";
 
   localDescription: RTCSessionDescriptionInit | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
@@ -104,7 +104,7 @@ class MockRTCPeerConnection {
   addTransceiver = vi.fn();
 
   async createOffer(): Promise<RTCSessionDescriptionInit> {
-    return { type: 'offer', sdp: 'mock-offer-sdp' };
+    return { type: "offer", sdp: "mock-offer-sdp" };
   }
 
   async setLocalDescription(desc: RTCSessionDescriptionInit) {
@@ -135,7 +135,7 @@ class MockRTCPeerConnection {
   removeEventListener(event: string, handler: Function) {
     if (this._listeners[event]) {
       this._listeners[event] = this._listeners[event].filter(
-        (h) => h !== handler
+        h => h !== handler
       );
     }
   }
@@ -146,16 +146,14 @@ class MockRTCPeerConnection {
   _simulateTrack(track: MediaStreamTrack) {
     const event = { track, streams: [] };
     this.ontrack?.(event);
-    for (const handler of this._listeners['track'] ?? []) {
+    for (const handler of this._listeners["track"] ?? []) {
       handler(event);
     }
   }
 
   _simulateIceCandidate(candidate: RTCIceCandidateInit | null) {
     this.onicecandidate?.({
-      candidate: candidate
-        ? { ...candidate, toJSON: () => candidate }
-        : null,
+      candidate: candidate ? { ...candidate, toJSON: () => candidate } : null,
     });
   }
 
@@ -180,7 +178,7 @@ class MockRTCIceCandidate {
   sdpMLineIndex: number | null;
 
   constructor(init: RTCIceCandidateInit) {
-    this.candidate = init.candidate ?? '';
+    this.candidate = init.candidate ?? "";
     this.sdpMid = init.sdpMid ?? null;
     this.sdpMLineIndex = init.sdpMLineIndex ?? null;
   }
@@ -198,7 +196,7 @@ beforeEach(() => {
   lastCreatedPc = null;
 
   vi.stubGlobal(
-    'WebSocket',
+    "WebSocket",
     class extends MockWebSocket {
       constructor(url: string) {
         super(url);
@@ -208,7 +206,7 @@ beforeEach(() => {
   );
 
   vi.stubGlobal(
-    'RTCPeerConnection',
+    "RTCPeerConnection",
     class extends MockRTCPeerConnection {
       constructor(_config?: RTCConfiguration) {
         super();
@@ -217,13 +215,20 @@ beforeEach(() => {
     }
   );
 
-  vi.stubGlobal('RTCIceCandidate', MockRTCIceCandidate);
+  vi.stubGlobal("RTCIceCandidate", MockRTCIceCandidate);
 
-  vi.stubGlobal('MediaStream', class {
-    private tracks: MediaStreamTrack[] = [];
-    getTracks() { return [...this.tracks]; }
-    addTrack(t: MediaStreamTrack) { this.tracks.push(t); }
-  });
+  vi.stubGlobal(
+    "MediaStream",
+    class {
+      private tracks: MediaStreamTrack[] = [];
+      getTracks() {
+        return [...this.tracks];
+      }
+      addTrack(t: MediaStreamTrack) {
+        this.tracks.push(t);
+      }
+    }
+  );
 
   vi.useFakeTimers();
 });
@@ -239,8 +244,12 @@ afterEach(() => {
 
 async function connectManager(
   manager: WebRTCConnectionManager,
-  url = 'ws://localhost:8888'
-): Promise<{ ws: MockWebSocket; pc: MockRTCPeerConnection; stream: Promise<MediaStream> }> {
+  url = "ws://localhost:8888"
+): Promise<{
+  ws: MockWebSocket;
+  pc: MockRTCPeerConnection;
+  stream: Promise<MediaStream>;
+}> {
   const stream = manager.connect(url);
 
   // Let the WebSocket open.
@@ -250,10 +259,10 @@ async function connectManager(
   const pc = lastCreatedPc!;
 
   // Simulate server answer.
-  ws._receive({ type: 'answer', sdp: 'mock-answer-sdp' });
+  ws._receive({ type: "answer", sdp: "mock-answer-sdp" });
 
   // Simulate a video track arriving.
-  const track = createMockTrack('video');
+  const track = createMockTrack("video");
   pc._simulateTrack(track);
 
   return { ws, pc, stream };
@@ -263,118 +272,118 @@ async function connectManager(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('WebRTCConnectionManager', () => {
-  describe('initial state', () => {
-    it('starts in disconnected state', () => {
+describe("WebRTCConnectionManager", () => {
+  describe("initial state", () => {
+    it("starts in disconnected state", () => {
       const manager = new WebRTCConnectionManager();
-      expect(manager.connectionState).toBe('disconnected');
+      expect(manager.connectionState).toBe("disconnected");
     });
 
-    it('defaults to high quality', () => {
+    it("defaults to high quality", () => {
       const manager = new WebRTCConnectionManager();
-      expect(manager.quality).toBe('high');
+      expect(manager.quality).toBe("high");
     });
   });
 
-  describe('connect (Task 1.1 + 1.2)', () => {
-    it('transitions to connecting then connected on successful connection', async () => {
+  describe("connect (Task 1.1 + 1.2)", () => {
+    it("transitions to connecting then connected on successful connection", async () => {
       const states: ConnectionState[] = [];
       const manager = new WebRTCConnectionManager({
-        onStateChange: (s) => states.push(s),
+        onStateChange: s => states.push(s),
       });
 
       const { stream } = await connectManager(manager);
       const result = await stream;
 
       expect(result).toBeDefined();
-      expect(states).toContain('connecting');
-      expect(states).toContain('connected');
-      expect(manager.connectionState).toBe('connected');
+      expect(states).toContain("connecting");
+      expect(states).toContain("connected");
+      expect(manager.connectionState).toBe("connected");
     });
 
-    it('creates an SDP offer and sends it via signaling', async () => {
+    it("creates an SDP offer and sends it via signaling", async () => {
       const manager = new WebRTCConnectionManager();
       const { ws } = await connectManager(manager);
 
-      const sentMessages = ws.sent.map((s) => JSON.parse(s));
-      const offer = sentMessages.find((m: any) => m.type === 'offer');
+      const sentMessages = ws.sent.map(s => JSON.parse(s));
+      const offer = sentMessages.find((m: any) => m.type === "offer");
       expect(offer).toBeDefined();
-      expect(offer.sdp).toBe('mock-offer-sdp');
+      expect(offer.sdp).toBe("mock-offer-sdp");
     });
 
-    it('sets remote description when answer is received', async () => {
+    it("sets remote description when answer is received", async () => {
       const manager = new WebRTCConnectionManager();
       const { pc, stream } = await connectManager(manager);
       await stream;
 
       expect(pc.remoteDescription).toEqual({
-        type: 'answer',
-        sdp: 'mock-answer-sdp',
+        type: "answer",
+        sdp: "mock-answer-sdp",
       });
     });
 
-    it('forwards ICE candidates to signaling', async () => {
+    it("forwards ICE candidates to signaling", async () => {
       const manager = new WebRTCConnectionManager();
       const { ws, pc, stream } = await connectManager(manager);
       await stream;
 
       pc._simulateIceCandidate({
-        candidate: 'candidate:1',
-        sdpMid: '0',
+        candidate: "candidate:1",
+        sdpMid: "0",
         sdpMLineIndex: 0,
       });
 
-      const sentMessages = ws.sent.map((s) => JSON.parse(s));
+      const sentMessages = ws.sent.map(s => JSON.parse(s));
       const iceCandidateMsg = sentMessages.find(
-        (m: any) => m.type === 'iceCandidate'
+        (m: any) => m.type === "iceCandidate"
       );
       expect(iceCandidateMsg).toBeDefined();
     });
 
-    it('adds transceivers for video and audio', async () => {
+    it("adds transceivers for video and audio", async () => {
       const manager = new WebRTCConnectionManager();
       const { pc, stream } = await connectManager(manager);
       await stream;
 
-      expect(pc.addTransceiver).toHaveBeenCalledWith('video', {
-        direction: 'recvonly',
+      expect(pc.addTransceiver).toHaveBeenCalledWith("video", {
+        direction: "recvonly",
       });
-      expect(pc.addTransceiver).toHaveBeenCalledWith('audio', {
-        direction: 'recvonly',
+      expect(pc.addTransceiver).toHaveBeenCalledWith("audio", {
+        direction: "recvonly",
       });
     });
   });
 
-  describe('connection state monitoring (Task 1.3)', () => {
-    it('emits onStateChange when peer connection state changes', async () => {
+  describe("connection state monitoring (Task 1.3)", () => {
+    it("emits onStateChange when peer connection state changes", async () => {
       const states: ConnectionState[] = [];
       const manager = new WebRTCConnectionManager({
-        onStateChange: (s) => states.push(s),
+        onStateChange: s => states.push(s),
       });
 
       const { pc, stream } = await connectManager(manager);
       await stream;
 
       // Simulate peer connection going to failed.
-      pc._setConnectionState('failed');
+      pc._setConnectionState("failed");
 
       // Allow the disconnect handler to fire.
       await vi.advanceTimersByTimeAsync(100);
 
-      expect(states).toContain('connecting');
+      expect(states).toContain("connecting");
     });
 
-    it('emits onError when connection fails', async () => {
+    it("emits onError when connection fails", async () => {
       const errors: StreamError[] = [];
       const manager = new WebRTCConnectionManager({
-        onError: (e) => errors.push(e),
+        onError: e => errors.push(e),
       });
 
       const { pc, stream } = await connectManager(manager);
       await stream;
 
       // Simulate ICE failure that persists.
-      pc._setIceConnectionState('failed');
+      pc._setIceConnectionState("failed");
       await vi.advanceTimersByTimeAsync(3_000);
 
       // The manager should have emitted at least one error or started reconnecting.
@@ -382,11 +391,11 @@ describe('WebRTCConnectionManager', () => {
     });
   });
 
-  describe('disconnect', () => {
-    it('transitions to disconnected and cleans up resources', async () => {
+  describe("disconnect", () => {
+    it("transitions to disconnected and cleans up resources", async () => {
       const states: ConnectionState[] = [];
       const manager = new WebRTCConnectionManager({
-        onStateChange: (s) => states.push(s),
+        onStateChange: s => states.push(s),
       });
 
       const { pc, stream } = await connectManager(manager);
@@ -394,15 +403,15 @@ describe('WebRTCConnectionManager', () => {
 
       manager.disconnect();
 
-      expect(manager.connectionState).toBe('disconnected');
+      expect(manager.connectionState).toBe("disconnected");
       expect(pc.close).toHaveBeenCalled();
-      expect(states[states.length - 1]).toBe('disconnected');
+      expect(states[states.length - 1]).toBe("disconnected");
     });
 
-    it('does not attempt reconnection after intentional disconnect', async () => {
+    it("does not attempt reconnection after intentional disconnect", async () => {
       const states: ConnectionState[] = [];
       const manager = new WebRTCConnectionManager({
-        onStateChange: (s) => states.push(s),
+        onStateChange: s => states.push(s),
       });
 
       const { stream } = await connectManager(manager);
@@ -414,21 +423,21 @@ describe('WebRTCConnectionManager', () => {
       await vi.advanceTimersByTimeAsync(30_000);
 
       // Should stay disconnected, not transition to connecting.
-      expect(manager.connectionState).toBe('disconnected');
+      expect(manager.connectionState).toBe("disconnected");
       const statesAfterDisconnect = states.slice(
-        states.indexOf('disconnected')
+        states.indexOf("disconnected")
       );
-      expect(statesAfterDisconnect).not.toContain('connecting');
+      expect(statesAfterDisconnect).not.toContain("connecting");
     });
   });
 
-  describe('auto-reconnect (Task 1.4)', () => {
-    it('attempts reconnection up to 3 times with increasing delay', async () => {
+  describe("auto-reconnect (Task 1.4)", () => {
+    it("attempts reconnection up to 3 times with increasing delay", async () => {
       const states: ConnectionState[] = [];
       const errors: StreamError[] = [];
       const manager = new WebRTCConnectionManager({
-        onStateChange: (s) => states.push(s),
-        onError: (e) => errors.push(e),
+        onStateChange: s => states.push(s),
+        onError: e => errors.push(e),
       });
 
       const { pc, stream } = await connectManager(manager);
@@ -437,7 +446,7 @@ describe('WebRTCConnectionManager', () => {
       // Simulate unexpected disconnect — this triggers internal reconnect
       // scheduling. The returned promise from scheduleReconnect is handled
       // internally, so we just need to drive the timers forward.
-      pc._setConnectionState('failed');
+      pc._setConnectionState("failed");
 
       // Advance through reconnect delays and stream timeouts.
       // Each attempt: delay (1s/2s/4s) + WS open (~0ms) + stream timeout (10s).
@@ -447,11 +456,11 @@ describe('WebRTCConnectionManager', () => {
 
       // After exhausting attempts, should see multiple connecting states
       // and eventually a failed state or error.
-      const connectingCount = states.filter((s) => s === 'connecting').length;
+      const connectingCount = states.filter(s => s === "connecting").length;
       expect(connectingCount).toBeGreaterThanOrEqual(1);
     });
 
-    it('resets attempt counter on successful reconnection', async () => {
+    it("resets attempt counter on successful reconnection", async () => {
       const manager = new WebRTCConnectionManager();
 
       const { stream } = await connectManager(manager);
@@ -465,32 +474,32 @@ describe('WebRTCConnectionManager', () => {
       const ws2 = lastCreatedWs!;
       const pc2 = lastCreatedPc!;
 
-      ws2._receive({ type: 'answer', sdp: 'mock-answer-sdp-2' });
-      pc2._simulateTrack(createMockTrack('video'));
+      ws2._receive({ type: "answer", sdp: "mock-answer-sdp-2" });
+      pc2._simulateTrack(createMockTrack("video"));
 
       const stream2 = await reconnectPromise;
       expect(stream2).toBeDefined();
-      expect(manager.connectionState).toBe('connected');
+      expect(manager.connectionState).toBe("connected");
     });
   });
 
-  describe('quality control', () => {
-    it('allows setting quality level', () => {
+  describe("quality control", () => {
+    it("allows setting quality level", () => {
       const manager = new WebRTCConnectionManager();
-      manager.setQuality('low');
-      expect(manager.quality).toBe('low');
+      manager.setQuality("low");
+      expect(manager.quality).toBe("low");
     });
   });
 
-  describe('getStats', () => {
-    it('throws when no peer connection exists', async () => {
+  describe("getStats", () => {
+    it("throws when no peer connection exists", async () => {
       const manager = new WebRTCConnectionManager();
       await expect(manager.getStats()).rejects.toThrow(
-        'No active peer connection'
+        "No active peer connection"
       );
     });
 
-    it('returns stats from the peer connection', async () => {
+    it("returns stats from the peer connection", async () => {
       const manager = new WebRTCConnectionManager();
       const { stream } = await connectManager(manager);
       await stream;
@@ -502,13 +511,13 @@ describe('WebRTCConnectionManager', () => {
 
   // -- 6.1 Additional coverage: signaling & ICE edge cases -------------------
 
-  describe('signaling error handling (Task 6.1)', () => {
-    it('emits onError when signaling WebSocket closes unexpectedly', async () => {
+  describe("signaling error handling (Task 6.1)", () => {
+    it("emits onError when signaling WebSocket closes unexpectedly", async () => {
       const errors: StreamError[] = [];
       const states: ConnectionState[] = [];
       const manager = new WebRTCConnectionManager({
-        onError: (e) => errors.push(e),
-        onStateChange: (s) => states.push(s),
+        onError: e => errors.push(e),
+        onStateChange: s => states.push(s),
       });
 
       const { ws, stream } = await connectManager(manager);
@@ -516,26 +525,26 @@ describe('WebRTCConnectionManager', () => {
 
       // Simulate unexpected signaling close while connected.
       ws.readyState = MockWebSocket.CLOSED;
-      ws.onclose?.({ code: 1006, reason: 'abnormal' } as CloseEvent);
+      ws.onclose?.({ code: 1006, reason: "abnormal" } as CloseEvent);
 
       // Allow reconnect scheduling to fire.
       await vi.advanceTimersByTimeAsync(2_000);
 
       // Should have attempted reconnection (state goes to connecting).
-      expect(states).toContain('connecting');
+      expect(states).toContain("connecting");
     });
 
-    it('handles remote ICE candidates received via signaling', async () => {
+    it("handles remote ICE candidates received via signaling", async () => {
       const manager = new WebRTCConnectionManager();
       const { ws, pc, stream } = await connectManager(manager);
       await stream;
 
       // Simulate receiving a remote ICE candidate from the signaling server.
       ws._receive({
-        type: 'iceCandidate',
+        type: "iceCandidate",
         candidate: {
-          candidate: 'candidate:2 1 udp 2122260223 192.168.1.1 12345 typ host',
-          sdpMid: '0',
+          candidate: "candidate:2 1 udp 2122260223 192.168.1.1 12345 typ host",
+          sdpMid: "0",
           sdpMLineIndex: 0,
         },
       });
@@ -545,9 +554,9 @@ describe('WebRTCConnectionManager', () => {
       expect(pc.remoteDescription).toBeDefined();
     });
 
-    it('handles config message from signaling server', async () => {
+    it("handles config message from signaling server", async () => {
       const manager = new WebRTCConnectionManager();
-      const streamPromise = manager.connect('ws://localhost:8888');
+      const streamPromise = manager.connect("ws://localhost:8888");
 
       await vi.advanceTimersByTimeAsync(10);
 
@@ -555,28 +564,30 @@ describe('WebRTCConnectionManager', () => {
 
       // Send config before answer.
       ws._receive({
-        type: 'config',
+        type: "config",
         peerConnectionOptions: {
-          iceServers: [{ urls: 'stun:custom-stun.example.com:3478' }],
+          iceServers: [{ urls: "stun:custom-stun.example.com:3478" }],
         },
       });
 
       // Then send answer and track to complete connection.
-      ws._receive({ type: 'answer', sdp: 'mock-answer-sdp' });
+      ws._receive({ type: "answer", sdp: "mock-answer-sdp" });
       const pc = lastCreatedPc!;
-      pc._simulateTrack(createMockTrack('video'));
+      pc._simulateTrack(createMockTrack("video"));
 
       const result = await streamPromise;
       expect(result).toBeDefined();
-      expect(manager.connectionState).toBe('connected');
+      expect(manager.connectionState).toBe("connected");
     });
   });
 
-  describe('onStream callback', () => {
-    it('invokes onStream when remote stream is received', async () => {
+  describe("onStream callback", () => {
+    it("invokes onStream when remote stream is received", async () => {
       let receivedStream: MediaStream | null = null;
       const manager = new WebRTCConnectionManager({
-        onStream: (s) => { receivedStream = s; },
+        onStream: s => {
+          receivedStream = s;
+        },
       });
 
       const { stream } = await connectManager(manager);

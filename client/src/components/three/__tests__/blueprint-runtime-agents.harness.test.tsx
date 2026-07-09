@@ -225,7 +225,7 @@ describe("P3 multi-role 8-zone layout", () => {
   it("assigns pairwise-distinct positions across the 8 zones", () => {
     const data = buildSceneData({ rolePhases });
 
-    const keys = data.agents.map((agent) => posKey(agent.position));
+    const keys = data.agents.map(agent => posKey(agent.position));
     expect(new Set(keys).size).toBe(8);
   });
 
@@ -234,7 +234,7 @@ describe("P3 multi-role 8-zone layout", () => {
     const second = buildSceneData({ rolePhases });
 
     const firstByRole = new Map(
-      first.agents.map((agent) => [agent.roleId, posKey(agent.position)])
+      first.agents.map(agent => [agent.roleId, posKey(agent.position)])
     );
     for (const agent of second.agents) {
       expect(posKey(agent.position)).toBe(firstByRole.get(agent.roleId));
@@ -257,7 +257,7 @@ describe("P4 phase transitions", () => {
 
   it.each(phases)(
     "maps phase %s to phaseTierVisuals(phaseTierOf(phase))",
-    (phase) => {
+    phase => {
       const data = buildSceneData({ rolePhases: { "role-x": phase } });
       expect(data.agents).toHaveLength(1);
 
@@ -283,7 +283,9 @@ describe("P4 phase transitions", () => {
     );
 
     expect(source).toMatch(/const shouldRenderTransparent/);
-    expect(source).toMatch(/mesh\.renderOrder\s*=\s*BLUEPRINT_AGENT_RENDER_ORDER/);
+    expect(source).toMatch(
+      /mesh\.renderOrder\s*=\s*BLUEPRINT_AGENT_RENDER_ORDER/
+    );
     expect(source).toMatch(/mat\.transparent\s*=\s*shouldRenderTransparent/);
     expect(source).toMatch(/mat\.depthWrite\s*=\s*!shouldRenderTransparent/);
     expect(source).toMatch(/mat\.depthTest\s*=\s*true/);
@@ -351,7 +353,9 @@ describe("P4 phase transitions", () => {
 
     // Sanity: the slice MUST reach the material loop, otherwise the guard is
     // hollow. Assert a known token from the end-of-function body loop is present.
-    expect(runtimeAgentBody).toMatch(/mat\.transparent\s*=\s*shouldRenderTransparent/);
+    expect(runtimeAgentBody).toMatch(
+      /mat\.transparent\s*=\s*shouldRenderTransparent/
+    );
 
     // No body material color writes (assignment OR .set()/.copy()) of any kind.
     expect(runtimeAgentBody).not.toMatch(/\.color\s*=/);
@@ -377,7 +381,9 @@ describe("P4 phase transitions", () => {
       path.resolve(__dirname, "../BlueprintRuntimeAgents.tsx"),
       "utf8"
     );
-    expect(source).toMatch(/preserveKenneyFurnitureMaterial\(material, mesh\.name, url\)/);
+    expect(source).toMatch(
+      /preserveKenneyFurnitureMaterial\(material, mesh\.name, url\)/
+    );
     expect(source).not.toMatch(/rethemeFurnitureMaterial/);
   });
 
@@ -391,13 +397,27 @@ describe("P4 phase transitions", () => {
 
     expect(source).toMatch(/const DESK_RIGHT_OFFSET_X\s*=\s*0\.7/);
     expect(source).toMatch(/const DESKTOP_PROPS_RIGHT_OFFSET_X\s*=\s*0\.2/);
-    expect(source).toMatch(/url=\{FURNITURE_MODELS\.desk\}[\s\S]*position=\{\[-DESK_RIGHT_OFFSET_X, 0, 0\]\}/);
-    expect(source).toMatch(/url=\{FURNITURE_MODELS\.computerScreen\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/);
-    expect(source).toMatch(/url=\{FURNITURE_MODELS\.computerKeyboard\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/);
-    expect(source).toMatch(/url=\{FURNITURE_MODELS\.computerMouse\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/);
-    expect(source).not.toMatch(/agent\.position\[0\]\s*\+\s*DESK_RIGHT_OFFSET_X/);
-    expect(source).toMatch(/<RuntimeAgent[\s\S]*agent=\{agent\}[\s\S]*locale=\{locale\}/);
-    expect(source).toMatch(/<RoleCapabilityChips[\s\S]*position=\{agent\.position\}/);
+    expect(source).toMatch(
+      /url=\{FURNITURE_MODELS\.desk\}[\s\S]*position=\{\[-DESK_RIGHT_OFFSET_X, 0, 0\]\}/
+    );
+    expect(source).toMatch(
+      /url=\{FURNITURE_MODELS\.computerScreen\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/
+    );
+    expect(source).toMatch(
+      /url=\{FURNITURE_MODELS\.computerKeyboard\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/
+    );
+    expect(source).toMatch(
+      /url=\{FURNITURE_MODELS\.computerMouse\}[\s\S]*- DESKTOP_PROPS_RIGHT_OFFSET_X/
+    );
+    expect(source).not.toMatch(
+      /agent\.position\[0\]\s*\+\s*DESK_RIGHT_OFFSET_X/
+    );
+    expect(source).toMatch(
+      /<RuntimeAgent[\s\S]*agent=\{agent\}[\s\S]*locale=\{locale\}/
+    );
+    expect(source).toMatch(
+      /<RoleCapabilityChips[\s\S]*position=\{agent\.position\}/
+    );
     expect(source).toMatch(
       /<RoleWorkstation[\s\S]*key=\{`desk-\$\{agent\.roleId\}`\}[\s\S]*position=\{agent\.position\}/
     );
@@ -443,7 +463,9 @@ describe("P4 phase transitions", () => {
 
     expect(source).not.toContain("getSceneZoneLabel");
     expect(source).not.toContain("position={[0, 0.75, 0]}");
-    expect(source).not.toContain("rounded-full border border-white/15 bg-slate-950/75 px-3 py-1");
+    expect(source).not.toContain(
+      "rounded-full border border-white/15 bg-slate-950/75 px-3 py-1"
+    );
   });
 });
 
@@ -493,7 +515,7 @@ describe("P5 mission-first shell regression", () => {
   // bridge), which is far less robust than asserting the shell's mode-switching
   // contract directly from source: BlueprintRuntimeAgents mounts ONLY for
   // mode === "blueprint", MissionFirstAgents for every other mode.
-  it("mounts BlueprintRuntimeAgents only for mode === \"blueprint\" and MissionFirstAgents otherwise", async () => {
+  it('mounts BlueprintRuntimeAgents only for mode === "blueprint" and MissionFirstAgents otherwise', async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const rawSource = await fs.readFile(
@@ -611,8 +633,18 @@ describe("P7 connection-line priority", () => {
 
     expect(lines).toHaveLength(2);
     expect(lines).toEqual<BlueprintConnectionLine[]>([
-      { from: "x-analyst", to: "y-architect", directed: false, source: "stage-rule" },
-      { from: "y-architect", to: "z-auditor", directed: false, source: "stage-rule" },
+      {
+        from: "x-analyst",
+        to: "y-architect",
+        directed: false,
+        source: "stage-rule",
+      },
+      {
+        from: "y-architect",
+        to: "z-auditor",
+        directed: false,
+        source: "stage-rule",
+      },
     ]);
   });
 

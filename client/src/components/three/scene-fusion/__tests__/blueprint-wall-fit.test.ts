@@ -142,12 +142,24 @@ describe("blueprint wall desktop geometric fit (Task 6.4, Req 8.3 constant-level
   });
 
   it("uses a taller real back wall in blueprint mode, not a floating graph over the old 3m wall", () => {
-    expect(officeRoomSource).toContain("const wallHeight = tallBackWall ? 8.2 : 3");
-    expect(officeRoomSource).toContain("const wallCenterY = tallBackWall ? 4.1 : 1.5");
-    expect(officeRoomSource).toContain("const wallWidth = tallBackWall ? 17.4 : 15.42");
-    expect(officeRoomSource).toContain("<Walls tallBackWall={useTallBlueprintWall} />");
-    expect(officeRoomSource).toContain('const useTallBlueprintWall = mode === "blueprint"');
-    expect(officeRoomSource).toContain("showMissionCorkBoard ? <CorkBoard /> : null");
+    expect(officeRoomSource).toContain(
+      "const wallHeight = tallBackWall ? 8.2 : 3"
+    );
+    expect(officeRoomSource).toContain(
+      "const wallCenterY = tallBackWall ? 4.1 : 1.5"
+    );
+    expect(officeRoomSource).toContain(
+      "const wallWidth = tallBackWall ? 17.4 : 15.42"
+    );
+    expect(officeRoomSource).toContain(
+      "<Walls tallBackWall={useTallBlueprintWall} />"
+    );
+    expect(officeRoomSource).toContain(
+      'const useTallBlueprintWall = mode === "blueprint"'
+    );
+    expect(officeRoomSource).toContain(
+      "showMissionCorkBoard ? <CorkBoard /> : null"
+    );
   });
 
   it("is mounted on the back-wall plane and nudged toward the viewer (no float mid-room)", () => {
@@ -215,7 +227,9 @@ describe("constant-level fit path stays scope-safe (Task 6.4, Req 3.7 / 4.4 / 4.
   it("the placement module pulls in no mission-first sandbox/monitor state", () => {
     // 适配检查直接 import 的 placement 纯模块**代码层**不得牵入 mission-first 状态 /
     // 墙面设备（注释里的对照文字已剥离，见 placementCodeWithoutComments）。
-    expect(placementCodeWithoutComments.includes("useSandboxStore")).toBe(false);
+    expect(placementCodeWithoutComments.includes("useSandboxStore")).toBe(
+      false
+    );
     expect(placementCodeWithoutComments.includes("SandboxMonitor")).toBe(false);
     expect(placementCodeWithoutComments.includes("MissionWallTaskPanel")).toBe(
       false

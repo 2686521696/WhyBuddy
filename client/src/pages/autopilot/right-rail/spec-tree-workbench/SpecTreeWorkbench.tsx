@@ -237,17 +237,17 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
   // running / assembling 时给出 determinate 进度，否则交给反馈层退化为
   // indeterminate（progress = null）。对缺失 slice（如测试 mock）做防御。
   const specDocsProgress = useBlueprintRealtimeStore(s => s.specDocsProgress);
-  const readonlyProgress = useMemo<{ processed: number; total: number } | null>(
-    () => {
-      if (!specDocsProgress) return null;
-      const { batchStatus, processedCount, totalCount } = specDocsProgress;
-      if (batchStatus === "running" || batchStatus === "assembling") {
-        return { processed: processedCount, total: totalCount };
-      }
-      return null;
-    },
-    [specDocsProgress]
-  );
+  const readonlyProgress = useMemo<{
+    processed: number;
+    total: number;
+  } | null>(() => {
+    if (!specDocsProgress) return null;
+    const { batchStatus, processedCount, totalCount } = specDocsProgress;
+    if (batchStatus === "running" || batchStatus === "assembling") {
+      return { processed: processedCount, total: totalCount };
+    }
+    return null;
+  }, [specDocsProgress]);
 
   // 稳定 docs 按 nodeId 分组：
   // 优先使用 props.specDocuments（如果父级显式传入），否则走
@@ -533,10 +533,7 @@ export const SpecTreeWorkbench: FC<SpecTreeWorkbenchProps> = ({
       ) : null}
 
       {/* 节点行列表 */}
-      <ul
-        data-testid="spec-tree-workbench-list"
-        className="space-y-1 p-1.5"
-      >
+      <ul data-testid="spec-tree-workbench-list" className="space-y-1 p-1.5">
         {specTree.nodes.map(node => (
           <SpecTreeNodeRow
             key={node.id}

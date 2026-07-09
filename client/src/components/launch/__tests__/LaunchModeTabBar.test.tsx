@@ -128,15 +128,27 @@ describe("LaunchModeTabBar", () => {
       "custom",
     ]);
     // Quick mode should not show advanced sections
-    expect(LAUNCH_MODES.find(m => m.id === "quick")?.showAdvancedSections).toBe(false);
+    expect(LAUNCH_MODES.find(m => m.id === "quick")?.showAdvancedSections).toBe(
+      false
+    );
     // All other modes should show advanced sections
-    expect(LAUNCH_MODES.filter(m => m.id !== "quick").every(m => m.showAdvancedSections)).toBe(true);
+    expect(
+      LAUNCH_MODES.filter(m => m.id !== "quick").every(
+        m => m.showAdvancedSections
+      )
+    ).toBe(true);
   });
 
   it("maps modes to LaunchRouteCandidateId correctly", () => {
-    expect(LAUNCH_MODES.find(m => m.id === "quick")?.routeMapping).toBe("fast-route");
-    expect(LAUNCH_MODES.find(m => m.id === "standard")?.routeMapping).toBe("standard-route");
-    expect(LAUNCH_MODES.find(m => m.id === "deep")?.routeMapping).toBe("deep-route");
+    expect(LAUNCH_MODES.find(m => m.id === "quick")?.routeMapping).toBe(
+      "fast-route"
+    );
+    expect(LAUNCH_MODES.find(m => m.id === "standard")?.routeMapping).toBe(
+      "standard-route"
+    );
+    expect(LAUNCH_MODES.find(m => m.id === "deep")?.routeMapping).toBe(
+      "deep-route"
+    );
     expect(LAUNCH_MODES.find(m => m.id === "custom")?.routeMapping).toBeNull();
   });
 });

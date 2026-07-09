@@ -32,7 +32,7 @@ export function SlideRuleStatusBar({
 
   return (
     <div
-      className="border-b border-[#E7E2D9]/80 bg-[#F5F1EA]/90 px-4 py-1.5"
+      className="border-b border-[#e5e7eb]/80 bg-[#eef0f4]/90 px-4 py-1.5"
       data-testid="sliderule-status-bar"
       aria-label="推演状态"
     >
@@ -77,14 +77,19 @@ export function SlideRuleStatusBar({
         )}
         <span>
           <span className="text-stone-400">轮次 </span>
-          <span className="font-mono font-semibold text-stone-700">{facts.turnCount}</span>
+          <span className="font-mono font-semibold text-stone-700">
+            {facts.turnCount}
+          </span>
         </span>
         <span>
           <span className="text-stone-400">阶段 </span>
           <span className="font-mono text-stone-700">{facts.phaseLabel}</span>
         </span>
         {facts.groundingHint && (
-          <span className="text-amber-700" data-testid="sliderule-grounding-hint">
+          <span
+            className="text-amber-700"
+            data-testid="sliderule-grounding-hint"
+          >
             {facts.groundingHint}
           </span>
         )}
@@ -104,25 +109,33 @@ export function SlideRuleStatusBar({
           <span className="font-mono text-base font-bold text-stone-800">
             {facts.trustedArtifactCount}
           </span>
-          <span className="font-semibold uppercase tracking-wide text-stone-400">可信产物</span>
+          <span className="font-semibold uppercase tracking-wide text-stone-400">
+            可信产物
+          </span>
         </div>
         <div className="flex items-baseline gap-1">
           <span className="font-mono text-base font-bold text-stone-800">
             {facts.openGapCount}
           </span>
-          <span className="font-semibold uppercase tracking-wide text-stone-400">缺口</span>
+          <span className="font-semibold uppercase tracking-wide text-stone-400">
+            缺口
+          </span>
         </div>
         <div className="flex items-baseline gap-1">
           <span className="font-mono text-base font-bold text-stone-800">
             {facts.driveLoopCount}
           </span>
-          <span className="font-semibold uppercase tracking-wide text-stone-400">调度环</span>
+          <span className="font-semibold uppercase tracking-wide text-stone-400">
+            调度环
+          </span>
         </div>
         <div className="flex items-baseline gap-1">
           <span className="font-mono text-base font-bold text-stone-800">
             {facts.capabilityRunCount}
           </span>
-          <span className="font-semibold uppercase tracking-wide text-stone-400">能力调用</span>
+          <span className="font-semibold uppercase tracking-wide text-stone-400">
+            能力调用
+          </span>
         </div>
       </div>
     </div>

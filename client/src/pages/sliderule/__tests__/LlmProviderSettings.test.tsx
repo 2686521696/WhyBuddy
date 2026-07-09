@@ -11,7 +11,10 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { LlmProviderSettings, TestConnectionResult } from "../LlmProviderSettings";
+import {
+  LlmProviderSettings,
+  TestConnectionResult,
+} from "../LlmProviderSettings";
 import {
   isEnabledProviderReady,
   providerStatus,
@@ -34,7 +37,13 @@ function makeDraft(over?: Partial<LlmProvidersConfig>): LlmProvidersConfig {
         requiresApiKey: true,
         baseUrl: "https://api.openai.com/v1",
         enabled: true,
-        models: [{ id: "gpt-4o-mini", capabilities: ["tools", "stream"], enabled: true }],
+        models: [
+          {
+            id: "gpt-4o-mini",
+            capabilities: ["tools", "stream"],
+            enabled: true,
+          },
+        ],
       },
       {
         id: "anthropic",
@@ -45,7 +54,13 @@ function makeDraft(over?: Partial<LlmProvidersConfig>): LlmProvidersConfig {
         requiresApiKey: true,
         baseUrl: "https://api.anthropic.com/v1",
         enabled: false,
-        models: [{ id: "claude-3-5-sonnet-20241022", capabilities: ["tools", "stream"], enabled: true }],
+        models: [
+          {
+            id: "claude-3-5-sonnet-20241022",
+            capabilities: ["tools", "stream"],
+            enabled: true,
+          },
+        ],
       },
     ],
     ...over,
@@ -57,25 +72,45 @@ const noop = () => {};
 describe("providerStatus（状态点派生）", () => {
   const base = makeDraft().providers[0];
   it("enabled + 有 key → ready", () => {
-    expect(providerStatus({ ...base, enabled: true, apiKey: "sk-x" })).toBe("ready");
+    expect(providerStatus({ ...base, enabled: true, apiKey: "sk-x" })).toBe(
+      "ready"
+    );
   });
   it("requiresApiKey 但 key 空 → needs-key（即便 enabled）", () => {
-    expect(providerStatus({ ...base, enabled: true, apiKey: "  " })).toBe("needs-key");
+    expect(providerStatus({ ...base, enabled: true, apiKey: "  " })).toBe(
+      "needs-key"
+    );
   });
   it("有 key 但未启用 → configured", () => {
-    expect(providerStatus({ ...base, enabled: false, apiKey: "sk-x" })).toBe("configured");
+    expect(providerStatus({ ...base, enabled: false, apiKey: "sk-x" })).toBe(
+      "configured"
+    );
   });
   it("本地服务（不需 key）未启用 → configured", () => {
-    expect(providerStatus({ ...base, enabled: false, requiresApiKey: false, apiKey: "" })).toBe("configured");
+    expect(
+      providerStatus({
+        ...base,
+        enabled: false,
+        requiresApiKey: false,
+        apiKey: "",
+      })
+    ).toBe("configured");
   });
 });
 
 describe("校验纯函数（保存守卫复用）", () => {
   const p = makeDraft().providers[0];
   it("validateProviderConfig：缺密钥 / 非 http(s) Base URL", () => {
-    expect(validateProviderConfig({ ...p, apiKey: "" }).keyError).toContain("密钥");
-    expect(validateProviderConfig({ ...p, baseUrl: "ftp://x" }).baseUrlError).toContain("http");
-    expect(validateProviderConfig(p)).toEqual({ keyError: null, baseUrlError: null });
+    expect(validateProviderConfig({ ...p, apiKey: "" }).keyError).toContain(
+      "密钥"
+    );
+    expect(
+      validateProviderConfig({ ...p, baseUrl: "ftp://x" }).baseUrlError
+    ).toContain("http");
+    expect(validateProviderConfig(p)).toEqual({
+      keyError: null,
+      baseUrlError: null,
+    });
   });
   it("isEnabledProviderReady：空 Base URL 的启用厂商不可保存", () => {
     expect(isEnabledProviderReady({ ...p, baseUrl: "" })).toBe(false);
@@ -85,7 +120,9 @@ describe("校验纯函数（保存守卫复用）", () => {
 
 describe("LlmProviderSettings 极简面板", () => {
   it("功能骨架都在：厂商列表 / 启用 / 密钥 / Base URL / 模型 / 测试连接", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={makeDraft()} setDraft={noop} />
+    );
     expect(html).toContain('data-testid="sliderule-provider-list"');
     expect(html).toContain("OpenAI");
     expect(html).toContain("Claude");
@@ -101,13 +138,17 @@ describe("LlmProviderSettings 极简面板", () => {
   });
 
   it("首个厂商默认选中（aria-current），启用厂商带状态点", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={makeDraft()} setDraft={noop} />
+    );
     expect(html).toContain('aria-current="true"');
     expect(html).toContain('data-status="ready"'); // OpenAI: enabled + key
   });
 
   it("重装饰不回潮：无模型 CRUD / 能力标签 / 调度策略 / 排序控件", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={makeDraft()} setDraft={noop} />
+    );
     expect(html).not.toContain("新建模型");
     expect(html).not.toContain("拉取模型列表");
     expect(html).not.toContain("aria-pressed");
@@ -119,7 +160,9 @@ describe("LlmProviderSettings 极简面板", () => {
   it("启用但缺密钥时行内标红提示", () => {
     const draft = makeDraft();
     draft.providers[0].apiKey = "";
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={draft} setDraft={noop} />
+    );
     expect(html).toContain("请填写密钥");
   });
 
@@ -134,9 +177,13 @@ describe("LlmProviderSettings 极简面板", () => {
       requiresApiKey: true,
       baseUrl: "https://relay.example.com/v1",
       enabled: true,
-      models: [{ id: "gpt-4o", capabilities: ["tools", "stream"], enabled: true }],
+      models: [
+        { id: "gpt-4o", capabilities: ["tools", "stream"], enabled: true },
+      ],
     });
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={draft} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={draft} setDraft={noop} />
+    );
     expect(html).toContain('data-testid="sliderule-provider-add-custom"');
     // 首项（自定义）默认选中 → 改名输入框 + 协议选择 + 删除按钮
     expect(html).toContain('data-testid="sliderule-provider-name"');
@@ -148,7 +195,9 @@ describe("LlmProviderSettings 极简面板", () => {
   });
 
   it("预设厂商选中时不渲染改名/协议/删除控件", () => {
-    const html = renderToStaticMarkup(<LlmProviderSettings draft={makeDraft()} setDraft={noop} />);
+    const html = renderToStaticMarkup(
+      <LlmProviderSettings draft={makeDraft()} setDraft={noop} />
+    );
     expect(html).not.toContain('data-testid="sliderule-provider-name"');
     expect(html).not.toContain('data-testid="sliderule-provider-protocol"');
     expect(html).not.toContain('data-testid="sliderule-provider-remove"');
@@ -157,15 +206,21 @@ describe("LlmProviderSettings 极简面板", () => {
 
 describe("TestConnectionResult 三态", () => {
   it("idle 不渲染 / 成功带模型+延迟 / 失败带原因", () => {
-    expect(renderToStaticMarkup(<TestConnectionResult state={{ kind: "idle" }} />)).toBe("");
+    expect(
+      renderToStaticMarkup(<TestConnectionResult state={{ kind: "idle" }} />)
+    ).toBe("");
     const ok = renderToStaticMarkup(
-      <TestConnectionResult state={{ kind: "ok", model: "gpt-4o-mini", latencyMs: 820 }} />
+      <TestConnectionResult
+        state={{ kind: "ok", model: "gpt-4o-mini", latencyMs: 820 }}
+      />
     );
     expect(ok).toContain("连接成功");
     expect(ok).toContain("gpt-4o-mini");
     expect(ok).toContain("820ms");
     const err = renderToStaticMarkup(
-      <TestConnectionResult state={{ kind: "error", message: "401 未授权（密钥无效）" }} />
+      <TestConnectionResult
+        state={{ kind: "error", message: "401 未授权（密钥无效）" }}
+      />
     );
     expect(err).toContain('data-state="error"');
     expect(err).toContain("401");

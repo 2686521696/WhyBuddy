@@ -178,7 +178,9 @@ describe("task operation helper derivations", () => {
     expect(owner.title).toBe("Agent Alpha");
     expect(owner.meta).toContain("Engineering");
     expect(nextStep.title).toBe("Let the executor continue the current stage");
-    expect(nextStep.detail).toContain("continue producing the next deliverables");
+    expect(nextStep.detail).toContain(
+      "continue producing the next deliverables"
+    );
   });
 
   it("prioritizes blocker summaries over waiting copy for blocked missions", () => {
@@ -316,7 +318,9 @@ describe("task operation helper derivations", () => {
     const blocker = deriveTaskBlocker(detail);
     const nextStep = deriveNextStep(detail);
 
-    expect(owner.detail).toBe("Executor running is advancing the current stage.");
+    expect(owner.detail).toBe(
+      "Executor running is advancing the current stage."
+    );
     expect(owner.detail).not.toContain("preparing the next artifact");
     expect(blocker.detail).toBe(
       "No blocker is recorded right now, so the workflow can continue as planned."

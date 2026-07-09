@@ -15,7 +15,7 @@ import { ALL_V5_CAPABILITIES } from "@shared/blueprint/contracts";
 
 const PBT_OPTS = { numRuns: 100 };
 
-const execCaps = ALL_V5_CAPABILITIES.filter((c) => c !== "orchestrate.plan");
+const execCaps = ALL_V5_CAPABILITIES.filter(c => c !== "orchestrate.plan");
 
 /**
  * Feature: sliderule-llm-autonomous-reasoning, Property 27: 路由成本被记入 orchestrate.plan 桶
@@ -44,7 +44,7 @@ describe("Property 27: orchestrate.plan cost bucket", () => {
           );
           const after = s.costLedger || [];
           expect(after.length).toBe(before + 1);
-          const rec = after.find((c) => c.capabilityId === "orchestrate.plan");
+          const rec = after.find(c => c.capabilityId === "orchestrate.plan");
           expect(rec?.estimatedTokens).toBe(tokens);
         }
       ),
@@ -54,9 +54,12 @@ describe("Property 27: orchestrate.plan cost bucket", () => {
 
   it("driveReasoningSession records orchestrate.plan when router emits usage", async () => {
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 1, max: 5000 }), async (tokens) => {
+      fc.asyncProperty(fc.integer({ min: 1, max: 5000 }), async tokens => {
         const s = createInitialSessionState("drv-cost", "s-27-drv");
-        const { preparedState } = intakeMessage(s, { turnId: "t-27", userText: "go" });
+        const { preparedState } = intakeMessage(s, {
+          turnId: "t-27",
+          userText: "go",
+        });
 
         const result = await driveReasoningSession(preparedState, {
           turnSeedId: "t-27",
@@ -74,9 +77,9 @@ describe("Property 27: orchestrate.plan cost bucket", () => {
         });
 
         const orch = (result.finalState.costLedger || []).filter(
-          (c) => c.capabilityId === "orchestrate.plan"
+          c => c.capabilityId === "orchestrate.plan"
         );
-        expect(orch.some((c) => c.estimatedTokens === tokens)).toBe(true);
+        expect(orch.some(c => c.estimatedTokens === tokens)).toBe(true);
       }),
       { ...PBT_OPTS, numRuns: 30 }
     );
@@ -133,12 +136,15 @@ describe("Property 28: separable cost buckets", () => {
 
           const ledger = s.costLedger || [];
           const orchTotal = ledger
-            .filter((c) => c.capabilityId === "orchestrate.plan")
+            .filter(c => c.capabilityId === "orchestrate.plan")
             .reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
           const execTotal = ledger
-            .filter((c) => c.capabilityId !== "orchestrate.plan")
+            .filter(c => c.capabilityId !== "orchestrate.plan")
             .reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
-          const grand = ledger.reduce((sum, c) => sum + (c.estimatedTokens || 0), 0);
+          const grand = ledger.reduce(
+            (sum, c) => sum + (c.estimatedTokens || 0),
+            0
+          );
 
           expect(orchTotal + execTotal).toBe(grand);
           expect(orchTotal).toBe(orchTokens);

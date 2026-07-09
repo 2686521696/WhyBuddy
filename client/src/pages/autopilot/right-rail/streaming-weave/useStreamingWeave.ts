@@ -92,10 +92,10 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
   // ---------------------------------------------------------------------------
 
   const reasoningStatus = useBlueprintRealtimeStore(
-    (s) => s.agentReasoning.status
+    s => s.agentReasoning.status
   );
   const reasoningEntries = useBlueprintRealtimeStore(
-    (s) => s.agentReasoning.entries
+    s => s.agentReasoning.entries
   );
 
   // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
 
     if (tokens.length > 0) {
       // 分发给所有已注册的消费端
-      subscribersRef.current.forEach((callback) => {
+      subscribersRef.current.forEach(callback => {
         try {
           callback(tokens);
         } catch {
@@ -118,7 +118,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
     }
 
     // 更新 bufferSize 状态
-    setState((prev) => ({
+    setState(prev => ({
       ...prev,
       bufferSize: buffer.size,
     }));
@@ -127,7 +127,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
   const scheduleFlush = useCallback(() => {
     if (rafRef.current !== null) return;
 
-    rafRef.current = requestAnimationFrame((timestamp) => {
+    rafRef.current = requestAnimationFrame(timestamp => {
       rafRef.current = null;
       const elapsed = timestamp - lastFlushRef.current;
 
@@ -168,7 +168,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
       }
 
       // 更新状态
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         isStreaming: true,
         isInterrupted: false,
@@ -196,7 +196,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
 
   useEffect(() => {
     if (reasoningStatus === "streaming") {
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         isStreaming: true,
         isInterrupted: false,
@@ -207,7 +207,7 @@ export function useStreamingWeave(): UseStreamingWeaveReturn {
       reasoningStatus === "failed" ||
       reasoningStatus === "aborted"
     ) {
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         isStreaming: false,
       }));

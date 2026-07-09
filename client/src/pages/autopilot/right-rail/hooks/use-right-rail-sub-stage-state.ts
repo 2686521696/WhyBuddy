@@ -21,7 +21,15 @@
  *   以便测试在 node 环境下直接覆盖，不依赖 jsdom
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
 
@@ -90,7 +98,7 @@ export function useRightRailSubStageContext(): RightRailSubStageContextValue {
  * 未知字符串、大小写不匹配全部视为非法（Requirement 1.3）。
  */
 function isValidSubStage(
-  value: string | null | undefined,
+  value: string | null | undefined
 ): value is AutopilotRailSubStage {
   if (value === null || value === undefined || value === "") {
     return false;
@@ -103,12 +111,16 @@ function isValidSubStage(
  *
  * 本函数不依赖 `window`，可在 node 环境下被 unit 测试直接覆盖。
  */
-function parseSubFromSearch(search: string | null | undefined): AutopilotRailSubStage | null {
+function parseSubFromSearch(
+  search: string | null | undefined
+): AutopilotRailSubStage | null {
   if (!search) {
     return null;
   }
   try {
-    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const params = new URLSearchParams(
+      search.startsWith("?") ? search.slice(1) : search
+    );
     const raw = params.get("sub");
     return isValidSubStage(raw) ? raw : null;
   } catch {
@@ -127,10 +139,10 @@ function parseSubFromSearch(search: string | null | undefined): AutopilotRailSub
  */
 function applySubToSearch(
   search: string | null | undefined,
-  next: AutopilotRailSubStage | null,
+  next: AutopilotRailSubStage | null
 ): string {
   const params = new URLSearchParams(
-    search ? (search.startsWith("?") ? search.slice(1) : search) : "",
+    search ? (search.startsWith("?") ? search.slice(1) : search) : ""
   );
   if (next === null) {
     params.delete("sub");
@@ -202,7 +214,10 @@ function scrollAnchorIntoView(params: {
     return false;
   }
   try {
-    el.scrollIntoView({ behavior: params.behavior, block: params.block ?? "start" });
+    el.scrollIntoView({
+      behavior: params.behavior,
+      block: params.block ?? "start",
+    });
     return true;
   } catch {
     return false;
@@ -215,11 +230,16 @@ function scrollAnchorIntoView(params: {
  * `window` 不可用或 `matchMedia` 不可用时返回 `false`（假设允许动效）。
  */
 function readPrefersReducedMotion(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return false;
   }
   try {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches === true;
+    return (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches === true
+    );
   } catch {
     return false;
   }
@@ -229,7 +249,11 @@ function readPrefersReducedMotion(): boolean {
  * 对外命名导出（供 `<AutopilotRightRail>` 直接使用）。
  * 保持为 named exports 而不是挂在 `__testing__` 下：运行时路径与测试路径都会消费它们。
  */
-export { resolveScrollBehavior, scrollAnchorIntoView, readPrefersReducedMotion };
+export {
+  resolveScrollBehavior,
+  scrollAnchorIntoView,
+  readPrefersReducedMotion,
+};
 
 // =============================================================================
 // Keyboard helpers (Task 4) —— 不依赖 window，供组件与 unit 测试共享
@@ -359,7 +383,7 @@ function resolveKeyboardIntent(input: {
  */
 function stepSubStage(
   current: AutopilotRailSubStage | undefined,
-  direction: "prev" | "next",
+  direction: "prev" | "next"
 ): AutopilotRailSubStage | undefined {
   if (current === undefined) {
     return direction === "next" ? RAIL_SUB_STAGE_ORDER[0] : undefined;
@@ -443,16 +467,17 @@ function writeUrlSubParam(next: AutopilotRailSubStage | null): void {
  * 返回对象通过 `useMemo` 包裹以保持引用稳定。
  */
 export function useRightRailSubStageState(
-  input: UseRightRailSubStageStateInput,
+  input: UseRightRailSubStageStateInput
 ): RightRailSubStageContextValue {
   const { resolvedSubStage } = input;
 
-  const [pinnedSubStage, setPinnedSubStageState] = useState<AutopilotRailSubStage | null>(
-    () => readInitialSubStageFromUrl(),
-  );
+  const [pinnedSubStage, setPinnedSubStageState] =
+    useState<AutopilotRailSubStage | null>(() => readInitialSubStageFromUrl());
 
   const pinnedRef = useRef<AutopilotRailSubStage | null>(pinnedSubStage);
-  const resolvedRef = useRef<AutopilotRailSubStage | undefined>(resolvedSubStage);
+  const resolvedRef = useRef<AutopilotRailSubStage | undefined>(
+    resolvedSubStage
+  );
   useEffect(() => {
     pinnedRef.current = pinnedSubStage;
   }, [pinnedSubStage]);
@@ -478,10 +503,13 @@ export function useRightRailSubStageState(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setPinnedSubStage = useCallback((next: AutopilotRailSubStage | null) => {
-    setPinnedSubStageState(next);
-    writeUrlSubParam(next);
-  }, []);
+  const setPinnedSubStage = useCallback(
+    (next: AutopilotRailSubStage | null) => {
+      setPinnedSubStageState(next);
+      writeUrlSubParam(next);
+    },
+    []
+  );
 
   const resetPin = useCallback(() => {
     setPinnedSubStage(null);
@@ -498,7 +526,7 @@ export function useRightRailSubStageState(
 
   const effectiveSubStage = useMemo<AutopilotRailSubStage | undefined>(
     () => pinnedSubStage ?? resolvedSubStage,
-    [pinnedSubStage, resolvedSubStage],
+    [pinnedSubStage, resolvedSubStage]
   );
 
   return useMemo<RightRailSubStageContextValue>(
@@ -510,7 +538,7 @@ export function useRightRailSubStageState(
       resetPin,
       togglePin,
     }),
-    [effectiveSubStage, pinnedSubStage, setPinnedSubStage, resetPin, togglePin],
+    [effectiveSubStage, pinnedSubStage, setPinnedSubStage, resetPin, togglePin]
   );
 }
 

@@ -67,7 +67,9 @@ export function ActiveSystemScreen({
         ? null
         : mergeFiveSystemModels(
             parseFiveSystemModelFromContents(skillContents),
-            parseFiveSystemModelFromPerSkillEvidence(publishClosure?.perSkillEvidence)
+            parseFiveSystemModelFromPerSkillEvidence(
+              publishClosure?.perSkillEvidence
+            )
           ),
     [model, skillContents, publishClosure?.perSkillEvidence]
   );
@@ -79,7 +81,7 @@ export function ActiveSystemScreen({
         fill
           ? // 抽屉全幅形态：无白卡边框/圆角/投影，与页面底色统一（用户反馈去嵌套）
             `relative h-full w-full overflow-hidden ${className}`
-          : `relative w-full overflow-hidden rounded-lg border border-[#E7E2D9] bg-white shadow-sm ${className}`
+          : `relative w-full overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-sm ${className}`
       }
       style={fill ? undefined : { aspectRatio: "16 / 9" }}
     >
@@ -87,7 +89,9 @@ export function ActiveSystemScreen({
         {/* Each screen is mounted but only the active one is fully visible.
             Keeping them all mounted avoids mermaid re-render flicker. */}
 
-        <div className={activeSkillId === "dataModel" ? "h-full w-full" : "hidden"}>
+        <div
+          className={activeSkillId === "dataModel" ? "h-full w-full" : "hidden"}
+        >
           <DataModelScreen
             publishClosure={publishClosure}
             mermaidSource={skillContents.dataModel ?? latestMermaid}
@@ -97,7 +101,9 @@ export function ActiveSystemScreen({
           />
         </div>
 
-        <div className={activeSkillId === "workflow" ? "h-full w-full" : "hidden"}>
+        <div
+          className={activeSkillId === "workflow" ? "h-full w-full" : "hidden"}
+        >
           <WorkflowScreen
             publishClosure={publishClosure}
             mermaidSource={skillContents.workflow ?? latestMermaid}
@@ -138,7 +144,13 @@ export function ActiveSystemScreen({
         </div>
 
         {/* Default / appBundle — show when no skill is active */}
-        <div className={!activeSkillId || activeSkillId === "appBundle" ? "h-full w-full" : "hidden"}>
+        <div
+          className={
+            !activeSkillId || activeSkillId === "appBundle"
+              ? "h-full w-full"
+              : "hidden"
+          }
+        >
           <AppBundleScreen
             publishClosure={publishClosure}
             model={fiveSystemModel}

@@ -23,7 +23,11 @@ describe("<TreeNode>", () => {
     ]).nodesById["branch-with-a-long-id"];
 
     const markup = renderToStaticMarkup(
-      <TreeNode node={node} activeJobId="branch-with-a-long-id" onSelectJob={() => {}} />,
+      <TreeNode
+        node={node}
+        activeJobId="branch-with-a-long-id"
+        onSelectJob={() => {}}
+      />
     );
 
     expect(markup).toContain('data-active="true"');

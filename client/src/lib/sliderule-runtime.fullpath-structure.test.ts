@@ -25,7 +25,9 @@ describe("S13/S14 · structure chain + T_LEDGER", () => {
       createInitialSessionState("拆解成 SPEC Tree", "S13-pick"),
       "拆解成 SPEC Tree"
     );
-    expect(picks.some((p) => p.capabilityId === "structure.decompose")).toBe(true);
+    expect(picks.some(p => p.capabilityId === "structure.decompose")).toBe(
+      true
+    );
   });
 
   it("commitArtifact writes G_SCHEMA/G_INV to structureGateLedger + conversation T_LEDGER", () => {
@@ -35,26 +37,42 @@ describe("S13/S14 · structure chain + T_LEDGER", () => {
     const { updatedState } = commitArtifact(
       state,
       {
-        ...createRawArtifact("S13-tree", "structure.decompose", "架构", "spec_tree", gateNote + "\n【SPEC Tree · template】\n[root] x"),
-        payload: { gateLedger: GATE_LEDGER, schemaPassed: false, invariantPassed: true },
+        ...createRawArtifact(
+          "S13-tree",
+          "structure.decompose",
+          "架构",
+          "spec_tree",
+          gateNote + "\n【SPEC Tree · template】\n[root] x"
+        ),
+        payload: {
+          gateLedger: GATE_LEDGER,
+          schemaPassed: false,
+          invariantPassed: true,
+        },
       },
       runId,
       false,
       []
     );
 
-    expect((updatedState.structureGateLedger || []).length).toBeGreaterThanOrEqual(4);
-    const schemaRows = (updatedState.structureGateLedger || []).filter((r) => r.gateId === "G_SCHEMA");
-    const invRows = (updatedState.structureGateLedger || []).filter((r) => r.gateId === "G_INV");
-    expect(schemaRows.length).toBeGreaterThan(0);
-    expect(invRows.some((r) => r.status === "passed")).toBe(true);
     expect(
-      (updatedState.conversation || []).some((c) =>
+      (updatedState.structureGateLedger || []).length
+    ).toBeGreaterThanOrEqual(4);
+    const schemaRows = (updatedState.structureGateLedger || []).filter(
+      r => r.gateId === "G_SCHEMA"
+    );
+    const invRows = (updatedState.structureGateLedger || []).filter(
+      r => r.gateId === "G_INV"
+    );
+    expect(schemaRows.length).toBeGreaterThan(0);
+    expect(invRows.some(r => r.status === "passed")).toBe(true);
+    expect(
+      (updatedState.conversation || []).some(c =>
         /\[T_LEDGER\] G_SCHEMA phase=structure/.test(c.text || "")
       )
     ).toBe(true);
     expect(
-      (updatedState.conversation || []).some((c) =>
+      (updatedState.conversation || []).some(c =>
         /\[T_LEDGER\] G_INV phase=structure/.test(c.text || "")
       )
     ).toBe(true);
@@ -62,6 +80,6 @@ describe("S13/S14 · structure chain + T_LEDGER", () => {
 
   it("payload gateLedger includes C_PROMPT and C_REDACT markers (edges 61–62)", () => {
     expect(GATE_LEDGER).toContain("C_PROMPT:built");
-    expect(GATE_LEDGER.some((e) => e.startsWith("C_REDACT:applied"))).toBe(true);
+    expect(GATE_LEDGER.some(e => e.startsWith("C_REDACT:applied"))).toBe(true);
   });
 });

@@ -43,10 +43,14 @@ describe("use-viewport-tier / Task 5 — resolveViewportTier", () => {
   });
 
   it("uses exact boundary: 768 → side-collapsible, 1280 → side-fixed", () => {
-    expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_MD)).toBe("side-collapsible");
+    expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_MD)).toBe(
+      "side-collapsible"
+    );
     expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_XL)).toBe("side-fixed");
     expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_MD - 1)).toBe("drawer");
-    expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_XL - 1)).toBe("side-collapsible");
+    expect(resolveViewportTier(VIEWPORT_TIER_BREAKPOINT_XL - 1)).toBe(
+      "side-collapsible"
+    );
   });
 
   it("returns 'side-fixed' for non-finite / negative widths (conservative fallback)", () => {

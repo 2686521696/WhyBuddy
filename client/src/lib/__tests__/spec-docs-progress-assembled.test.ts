@@ -105,7 +105,11 @@ function dispatchNodeAssembled(
     position,
     assembledCount,
     totalCount,
-    documentIds: [`doc-${nodeId}-req`, `doc-${nodeId}-design`, `doc-${nodeId}-tasks`],
+    documentIds: [
+      `doc-${nodeId}-req`,
+      `doc-${nodeId}-design`,
+      `doc-${nodeId}-tasks`,
+    ],
   });
   useBlueprintRealtimeStore.getState().dispatchEvent(event);
 }
@@ -334,7 +338,6 @@ describe("spec docs progress reducer — node_assembled integration", () => {
   });
 });
 
-
 // ─── Phase 6: batch_finished with failedCount > 0 ──────────────────────────
 
 describe("spec docs progress reducer — batch_finished failure-aware resolution", () => {
@@ -390,6 +393,8 @@ describe("spec docs progress reducer — batch_finished failure-aware resolution
     expect(final.nodes["node-a"].status).toBe("assembled");
     // node-b should NOT be marked assembled — it should be failed
     expect(final.nodes["node-b"].status).toBe("failed");
-    expect(final.nodes["node-b"].errorSummary).toContain("terminal event missed");
+    expect(final.nodes["node-b"].errorSummary).toContain(
+      "terminal event missed"
+    );
   });
 });

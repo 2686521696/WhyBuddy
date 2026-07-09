@@ -61,7 +61,11 @@ export function AigcTryRunPanel({
         }),
       });
       if (!res.ok) {
-        setResult({ ok: false, code: `HTTP_${res.status}`, detail: await res.text() });
+        setResult({
+          ok: false,
+          code: `HTTP_${res.status}`,
+          detail: await res.text(),
+        });
       } else {
         setResult((await res.json()) as TryRunResult);
       }
@@ -81,7 +85,10 @@ export function AigcTryRunPanel({
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-auto p-4" data-testid="aigc-tryrun-panel">
+    <div
+      className="flex h-full flex-col gap-3 overflow-auto p-4"
+      data-testid="aigc-tryrun-panel"
+    >
       <div className="rounded bg-pink-50 px-3 py-2 text-[11px] text-pink-700 ring-1 ring-pink-200">
         真跑一次：走与五系统生成同一条 LLM 通道，输出/失败均如实展示
       </div>
@@ -97,7 +104,7 @@ export function AigcTryRunPanel({
             className={`rounded-full px-3 py-1 text-[11px] font-medium ring-1 transition-colors ${
               i === activeIdx
                 ? "bg-pink-500 text-white ring-pink-500"
-                : "bg-white text-stone-600 ring-[#E7E2D9] hover:bg-pink-50"
+                : "bg-white text-stone-600 ring-[#e5e7eb] hover:bg-pink-50"
             }`}
           >
             {c.name || c.id}
@@ -106,13 +113,18 @@ export function AigcTryRunPanel({
       </div>
 
       {cap && (
-        <div className="rounded-md border border-[#E7E2D9] bg-white p-3">
-          <div className="text-[11px] font-semibold text-stone-600">输入字段</div>
+        <div className="rounded-md border border-[#e5e7eb] bg-white p-3">
+          <div className="text-[11px] font-semibold text-stone-600">
+            输入字段
+          </div>
           <div className="mt-2 flex flex-col gap-2">
-            {(cap.inputFields ?? []).map((ref) => {
+            {(cap.inputFields ?? []).map(ref => {
               const res = resolveFieldRef(ref, model);
               return (
-                <label key={ref} className="flex items-center gap-2 text-[11px]">
+                <label
+                  key={ref}
+                  className="flex items-center gap-2 text-[11px]"
+                >
                   <span
                     className={`w-36 shrink-0 truncate ${res.resolved ? "text-stone-500" : "text-red-500"}`}
                     title={ref}
@@ -120,16 +132,20 @@ export function AigcTryRunPanel({
                     {res.resolved ? res.label : `✗ ${res.label}`}
                   </span>
                   <input
-                    className="flex-1 rounded border border-[#E7E2D9] px-2 py-1 text-xs focus:border-pink-300 focus:outline-none"
+                    className="flex-1 rounded border border-[#e5e7eb] px-2 py-1 text-xs focus:border-pink-300 focus:outline-none"
                     value={inputs[ref] ?? ""}
                     placeholder="填一个试跑值"
-                    onChange={(e) => setInputs((prev) => ({ ...prev, [ref]: e.target.value }))}
+                    onChange={e =>
+                      setInputs(prev => ({ ...prev, [ref]: e.target.value }))
+                    }
                   />
                 </label>
               );
             })}
             {(cap.inputFields ?? []).length === 0 && (
-              <span className="text-[10px] text-stone-300">该能力未声明输入字段</span>
+              <span className="text-[10px] text-stone-300">
+                该能力未声明输入字段
+              </span>
             )}
           </div>
           <div className="mt-3 flex items-center gap-2">
@@ -164,13 +180,21 @@ export function AigcTryRunPanel({
         </div>
       )}
       {result && result.ok && (
-        <div className="rounded-md bg-[#2A2620] px-3 py-2.5 font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre-wrap" data-testid="aigc-tryrun-output">
+        <div
+          className="rounded-md bg-[#2A2620] px-3 py-2.5 font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre-wrap"
+          data-testid="aigc-tryrun-output"
+        >
           {result.output}
         </div>
       )}
       {result && !result.ok && (
-        <div className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-[11px] text-red-600" data-testid="aigc-tryrun-error">
-          <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">{result.code}</span>
+        <div
+          className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-[11px] text-red-600"
+          data-testid="aigc-tryrun-error"
+        >
+          <span className="rounded bg-red-100 px-1.5 py-0.5 font-mono font-medium">
+            {result.code}
+          </span>
           <span className="ml-2">{result.detail}</span>
         </div>
       )}

@@ -1,6 +1,10 @@
-import { FileTextOutlined, SafetyCertificateOutlined, ToolOutlined } from '@ant-design/icons';
-import { Typography } from 'antd';
-import type { ReactNode } from 'react';
+import {
+  FileTextOutlined,
+  SafetyCertificateOutlined,
+  ToolOutlined,
+} from "@ant-design/icons";
+import { Typography } from "antd";
+import type { ReactNode } from "react";
 
 const { Text, Title } = Typography;
 
@@ -18,40 +22,53 @@ type SummaryCard = {
   testId: string;
 };
 
-export function SettingsSummaryCards({ summary }: { summary: SettingsSummary }) {
-  const { activeProfile = 'local', fixAgent = '-', reviewAgent = '-' } = summary || {};
+export function SettingsSummaryCards({
+  summary,
+}: {
+  summary: SettingsSummary;
+}) {
+  const {
+    activeProfile = "local",
+    fixAgent = "-",
+    reviewAgent = "-",
+  } = summary || {};
   const cards: SummaryCard[] = [
     {
-      key: 'profile',
-      label: '活跃 Profile',
-      value: activeProfile || 'local',
+      key: "profile",
+      label: "活跃 Profile",
+      value: activeProfile || "local",
       icon: <FileTextOutlined />,
-      testId: 'summary-active-profile',
+      testId: "summary-active-profile",
     },
     {
-      key: 'review',
-      label: 'Review Agent',
-      value: reviewAgent || '-',
+      key: "review",
+      label: "Review Agent",
+      value: reviewAgent || "-",
       icon: <SafetyCertificateOutlined />,
-      testId: 'summary-review-agent',
+      testId: "summary-review-agent",
     },
     {
-      key: 'fix',
-      label: 'Fix Agent',
-      value: fixAgent || '-',
+      key: "fix",
+      label: "Fix Agent",
+      value: fixAgent || "-",
       icon: <ToolOutlined />,
-      testId: 'summary-fix-agent',
+      testId: "summary-fix-agent",
     },
   ];
 
   return (
     <div className="native-settings-summary-grid">
-      {cards.map((card) => (
-        <div className="native-settings-summary-card summary-card" key={card.key}>
+      {cards.map(card => (
+        <div
+          className="native-settings-summary-card summary-card"
+          key={card.key}
+        >
           <span className="native-settings-summary-icon">{card.icon}</span>
           <span className="native-settings-summary-copy">
             <Text type="secondary">{card.label}</Text>
-            <Text strong data-testid={card.testId}>{card.value}</Text>
+            <Text strong data-testid={card.testId}>
+              {card.value}
+            </Text>
           </span>
         </div>
       ))}
@@ -63,7 +80,7 @@ export function SettingsPanel({
   title,
   description,
   children,
-  className = '',
+  className = "",
 }: {
   title: string;
   description?: string;
@@ -82,7 +99,7 @@ export function SettingsPanel({
 }
 
 export function SettingsLayout({
-  title = 'AgentLoop 设置中心',
+  title = "AgentLoop 设置中心",
   summary,
   tabs,
   footer,

@@ -15,7 +15,7 @@ const STEPS = [
 describe("deriveTurnPhases (V5.2 闭环阶段叙事)", () => {
   it("按前缀协议把步骤分进 意图/轮次/起草/证据 阶段，顺序保持", () => {
     const phases = deriveTurnPhases({ stepTexts: STEPS, streaming: true });
-    expect(phases.map((p) => p.id)).toEqual([
+    expect(phases.map(p => p.id)).toEqual([
       "intake",
       "round-1",
       "round-2",
@@ -30,15 +30,20 @@ describe("deriveTurnPhases (V5.2 闭环阶段叙事)", () => {
   it("流式时最后一个阶段 running，其余 done；完成后全部 done", () => {
     const running = deriveTurnPhases({ stepTexts: STEPS, streaming: true });
     expect(running.at(-1)!.status).toBe("running");
-    expect(running.slice(0, -1).every((p) => p.status === "done")).toBe(true);
+    expect(running.slice(0, -1).every(p => p.status === "done")).toBe(true);
     const done = deriveTurnPhases({ stepTexts: STEPS, streaming: false });
-    expect(done.every((p) => p.status === "done")).toBe(true);
+    expect(done.every(p => p.status === "done")).toBe(true);
   });
 
   it("起草阶段附语义副标题（最新 name 定义 + 字符数）", () => {
-    const draft = '{"entities":[{"id":"a","name":"档案状态"},{"id":"b","name":"传承人"}';
-    const phases = deriveTurnPhases({ stepTexts: STEPS, streaming: true, llmDraft: draft });
-    const draftPhase = phases.find((p) => p.id === "draft")!;
+    const draft =
+      '{"entities":[{"id":"a","name":"档案状态"},{"id":"b","name":"传承人"}';
+    const phases = deriveTurnPhases({
+      stepTexts: STEPS,
+      streaming: true,
+      llmDraft: draft,
+    });
+    const draftPhase = phases.find(p => p.id === "draft")!;
     expect(draftPhase.lines.at(-1)).toContain("最新定义：传承人");
     expect(draftPhase.lines.at(-1)).toContain(`${draft.length} 字符`);
   });
@@ -66,7 +71,7 @@ describe("deriveTurnPhases (V5.2 闭环阶段叙事)", () => {
       streaming: true,
       closure: { blocked: false, evidencePresentCount: 6, skillCount: 6 },
     });
-    expect(phases.find((p) => p.id === "closure")).toBeUndefined();
+    expect(phases.find(p => p.id === "closure")).toBeUndefined();
   });
 
   it("无法归类的行归入当前阶段；空输入返回空", () => {

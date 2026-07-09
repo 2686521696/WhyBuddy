@@ -1,4 +1,8 @@
-import type { VersionHistoryJob, VersionTreeLayout, VersionTreeLayoutNode } from "./types";
+import type {
+  VersionHistoryJob,
+  VersionTreeLayout,
+  VersionTreeLayoutNode,
+} from "./types";
 
 function branchSortTime(job: VersionHistoryJob): number {
   const raw = job.branchedAt ?? job.createdAt;
@@ -11,7 +15,10 @@ function compareJobs(a: VersionHistoryJob, b: VersionHistoryJob): number {
   return byTime === 0 ? a.id.localeCompare(b.id) : byTime;
 }
 
-function hasParentCycle(job: VersionHistoryJob, jobsById: Map<string, VersionHistoryJob>): boolean {
+function hasParentCycle(
+  job: VersionHistoryJob,
+  jobsById: Map<string, VersionHistoryJob>
+): boolean {
   const seen = new Set<string>();
   let cursor: VersionHistoryJob | undefined = job;
 
@@ -33,7 +40,9 @@ function assignDepth(node: VersionTreeLayoutNode, depth: number): void {
   }
 }
 
-export function deriveVersionTreeLayout(jobs: VersionHistoryJob[]): VersionTreeLayout {
+export function deriveVersionTreeLayout(
+  jobs: VersionHistoryJob[]
+): VersionTreeLayout {
   const jobsById = new Map<string, VersionHistoryJob>();
   for (const job of jobs) {
     jobsById.set(job.id, job);
@@ -63,7 +72,11 @@ export function deriveVersionTreeLayout(jobs: VersionHistoryJob[]): VersionTreeL
     const parent = nodesById[parentJobId];
     if (!parent) {
       node.missingParent = true;
-      warnings.push({ type: "missing-parent", jobId: node.job.id, parentJobId });
+      warnings.push({
+        type: "missing-parent",
+        jobId: node.job.id,
+        parentJobId,
+      });
       roots.push(node);
       continue;
     }

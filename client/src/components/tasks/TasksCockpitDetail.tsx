@@ -50,11 +50,7 @@ export function TasksCockpitDetail({
 
   if (!detail) {
     return (
-      <RightInfoPanel
-        detail={null}
-        locale={locale}
-        className={className}
-      />
+      <RightInfoPanel detail={null} locale={locale} className={className} />
     );
   }
 

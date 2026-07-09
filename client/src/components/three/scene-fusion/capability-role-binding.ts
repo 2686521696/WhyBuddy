@@ -99,9 +99,12 @@ interface CapabilityMeta {
  * the id to lowercase and strips any `role-container-loader:` prefix first, so a
  * single entry covers both `aigc-spec-node` and any future suffix variants.
  */
-const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityMeta }> = [
+const CAPABILITY_META: Array<{
+  match: (id: string) => boolean;
+  meta: CapabilityMeta;
+}> = [
   {
-    match: (id) => id.startsWith("role-container-loader:"),
+    match: id => id.startsWith("role-container-loader:"),
     meta: {
       iconKey: "container",
       label: { "zh-CN": "角色容器", "en-US": "Role Container" },
@@ -109,7 +112,7 @@ const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityM
     },
   },
   {
-    match: (id) => id.includes("aigc-spec-node") || id.includes("spec-node"),
+    match: id => id.includes("aigc-spec-node") || id.includes("spec-node"),
     meta: {
       iconKey: "spec-node",
       label: { "zh-CN": "规格节点", "en-US": "Spec Node" },
@@ -117,15 +120,20 @@ const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityM
     },
   },
   {
-    match: (id) => id.includes("docker") || id.includes("sandbox"),
+    match: id => id.includes("docker") || id.includes("sandbox"),
     meta: {
       iconKey: "sandbox",
       label: { "zh-CN": "沙箱分析", "en-US": "Sandbox" },
-      heuristicTokens: ["repository-analyst", "analyst", "repository", "analyz"],
+      heuristicTokens: [
+        "repository-analyst",
+        "analyst",
+        "repository",
+        "analyz",
+      ],
     },
   },
   {
-    match: (id) => id.includes("github") || id.includes("mcp-github"),
+    match: id => id.includes("github") || id.includes("mcp-github"),
     meta: {
       iconKey: "github",
       label: { "zh-CN": "GitHub 源", "en-US": "GitHub Source" },
@@ -133,15 +141,22 @@ const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityM
     },
   },
   {
-    match: (id) => id.includes("role-system-architecture") || id.includes("system-architecture"),
+    match: id =>
+      id.includes("role-system-architecture") ||
+      id.includes("system-architecture"),
     meta: {
       iconKey: "role-system",
       label: { "zh-CN": "角色体系", "en-US": "Role System" },
-      heuristicTokens: ["architecture-planner", "role-architect", "architect", "spec-architect"],
+      heuristicTokens: [
+        "architecture-planner",
+        "role-architect",
+        "architect",
+        "spec-architect",
+      ],
     },
   },
   {
-    match: (id) => id.includes("svg"),
+    match: id => id.includes("svg"),
     meta: {
       iconKey: "svg",
       label: { "zh-CN": "SVG 架构", "en-US": "SVG Architecture" },
@@ -149,7 +164,7 @@ const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityM
     },
   },
   {
-    match: (id) => id.includes("mcp"),
+    match: id => id.includes("mcp"),
     meta: {
       iconKey: "mcp",
       label: { "zh-CN": "MCP 工具", "en-US": "MCP Tool" },
@@ -157,7 +172,7 @@ const CAPABILITY_META: Array<{ match: (id: string) => boolean; meta: CapabilityM
     },
   },
   {
-    match: (id) => id.includes("skill"),
+    match: id => id.includes("skill"),
     meta: {
       iconKey: "skill",
       label: { "zh-CN": "技能", "en-US": "Skill" },
@@ -174,8 +189,8 @@ function humanizeCapabilityId(capabilityId: string): string {
   const base = capabilityId.split(":").pop() ?? capabilityId;
   return base
     .split(/[-_]/g)
-    .filter((word) => word.length > 0)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .filter(word => word.length > 0)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
@@ -202,7 +217,10 @@ export function capabilityDisplayMeta(
       iconKey: meta.iconKey,
     };
   }
-  return { displayName: humanizeCapabilityId(capabilityId), iconKey: "capability" };
+  return {
+    displayName: humanizeCapabilityId(capabilityId),
+    iconKey: "capability",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +253,9 @@ const ACTIVE_PHASES: ReadonlySet<RolePhase> = new Set<RolePhase>([
  * Parse the owner roleId from a `role-container-loader:<roleId>` capability id.
  * Returns `null` for any other id shape.
  */
-export function parseRoleContainerLoaderRoleId(capabilityId: string): string | null {
+export function parseRoleContainerLoaderRoleId(
+  capabilityId: string
+): string | null {
   const prefix = "role-container-loader:";
   if (!capabilityId.toLowerCase().startsWith(prefix)) return null;
   const roleId = capabilityId.slice(prefix.length).trim();
@@ -254,7 +274,7 @@ function inferHeuristicOwner(
   const meta = resolveCapabilityMeta(capabilityId.toLowerCase());
   if (!meta || meta.heuristicTokens.length === 0) return null;
   for (const token of meta.heuristicTokens) {
-    const match = roleIds.find((roleId) => roleId.toLowerCase().includes(token));
+    const match = roleIds.find(roleId => roleId.toLowerCase().includes(token));
     if (match) return match;
   }
   return null;
@@ -324,7 +344,10 @@ export function deriveCapabilityRoleBindings(input: {
   // Pass 1: authoritative event-role owner, then loader-id, then heuristic.
   for (const capabilityId of capabilityIds) {
     const status = toChipStatus(capabilityStatuses[capabilityId]);
-    const { displayName, iconKey } = capabilityDisplayMeta(capabilityId, locale);
+    const { displayName, iconKey } = capabilityDisplayMeta(
+      capabilityId,
+      locale
+    );
 
     // 1) Real event owner (authoritative). Highest priority — never guessed.
     const eventOwnerRoleId = capabilityOwners[capabilityId]?.roleId;
@@ -383,14 +406,17 @@ export function deriveCapabilityRoleBindings(input: {
 
   // Pass 2: single active role fallback for still-unowned capabilities. Only
   // fires when EXACTLY one role is active, to avoid misattributing a capability.
-  const activeRoleIds = roleIds.filter((roleId) =>
+  const activeRoleIds = roleIds.filter(roleId =>
     ACTIVE_PHASES.has(rolePhases[roleId])
   );
   if (unowned.length > 0 && activeRoleIds.length === 1) {
     const target = activeRoleIds[0];
     for (const capabilityId of unowned) {
       const status = toChipStatus(capabilityStatuses[capabilityId]);
-      const { displayName, iconKey } = capabilityDisplayMeta(capabilityId, locale);
+      const { displayName, iconKey } = capabilityDisplayMeta(
+        capabilityId,
+        locale
+      );
       pushChip(result, target, {
         capabilityId,
         ownerRoleId: target,

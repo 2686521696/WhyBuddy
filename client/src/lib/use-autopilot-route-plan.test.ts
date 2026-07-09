@@ -97,7 +97,9 @@ describe("buildFrontendAutopilotRoutePlan", () => {
     );
 
     expect(fastCandidate).toBeTruthy();
-    expect(toCandidateRoute(fastCandidate!, model.selectedRouteId)).toMatchObject({
+    expect(
+      toCandidateRoute(fastCandidate!, model.selectedRouteId)
+    ).toMatchObject({
       id: "fast-route",
       mode: "fast",
       label: "Fast route",
@@ -110,7 +112,9 @@ describe("buildFrontendAutopilotRoutePlan", () => {
       riskLevel: "medium",
       stageKeys: ["destination", "route", "execution", "evidence"],
     });
-    expect(model.candidateRoutes).toHaveLength(model.routePlan.candidates.length);
+    expect(model.candidateRoutes).toHaveLength(
+      model.routePlan.candidates.length
+    );
     expect(model.selectedCandidateRoute).toMatchObject({
       id: "fast-route",
       selected: true,

@@ -67,7 +67,13 @@ vi.mock("@/lib/workflow-attachments", () => ({
 vi.mock("@/lib/unified-launch-coordinator", () => ({
   submitUnifiedLaunch: async () => ({
     route: "mission",
-    decision: { kind: "mission", reasons: [], requiresAdvancedRuntime: false, needsClarification: false, canOverride: true },
+    decision: {
+      kind: "mission",
+      reasons: [],
+      requiresAdvancedRuntime: false,
+      needsClarification: false,
+      canOverride: true,
+    },
     missionId: "test-mission-1",
     commandId: "test-cmd-1",
     status: "created",

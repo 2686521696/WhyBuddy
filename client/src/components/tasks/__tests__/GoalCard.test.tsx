@@ -60,7 +60,7 @@ describe("GoalCard", () => {
 
     it("renders completed status icon (✓) with green color", () => {
       const markup = render(
-        makeProps({ goals: [{ label: "Done goal", status: "completed" }] }),
+        makeProps({ goals: [{ label: "Done goal", status: "completed" }] })
       );
       expect(markup).toContain("✓");
       expect(markup).toContain("text-emerald-500");
@@ -68,7 +68,7 @@ describe("GoalCard", () => {
 
     it("renders in_progress status icon (●) with blue color and animation", () => {
       const markup = render(
-        makeProps({ goals: [{ label: "Active goal", status: "in_progress" }] }),
+        makeProps({ goals: [{ label: "Active goal", status: "in_progress" }] })
       );
       expect(markup).toContain("●");
       expect(markup).toContain("text-blue-500");
@@ -77,7 +77,7 @@ describe("GoalCard", () => {
 
     it("renders pending status icon (○) with muted color", () => {
       const markup = render(
-        makeProps({ goals: [{ label: "Pending goal", status: "pending" }] }),
+        makeProps({ goals: [{ label: "Pending goal", status: "pending" }] })
       );
       expect(markup).toContain("○");
       expect(markup).toContain("text-muted-foreground");
@@ -86,8 +86,14 @@ describe("GoalCard", () => {
     it("renders progress percentage when provided", () => {
       const markup = render(
         makeProps({
-          goals: [{ label: "Goal with progress", status: "in_progress", progress: 75 }],
-        }),
+          goals: [
+            {
+              label: "Goal with progress",
+              status: "in_progress",
+              progress: 75,
+            },
+          ],
+        })
       );
       expect(markup).toContain("75%");
     });
@@ -96,13 +102,15 @@ describe("GoalCard", () => {
       // Render a goal with progress and one without
       const withProgress = render(
         makeProps({
-          goals: [{ label: "With progress", status: "in_progress", progress: 75 }],
-        }),
+          goals: [
+            { label: "With progress", status: "in_progress", progress: 75 },
+          ],
+        })
       );
       const withoutProgress = render(
         makeProps({
           goals: [{ label: "Without progress", status: "pending" }],
-        }),
+        })
       );
       // The one with progress should have "75%" in the goal row
       expect(withProgress).toContain("75%");
@@ -185,9 +193,24 @@ describe("buildGoalCardData", () => {
     const summary = {
       destination: {
         subGoals: [
-          { id: "sg-1", title: "Sub Goal 1", source: "mission-text" as const, status: "done" as const },
-          { id: "sg-2", title: "Sub Goal 2", source: "mission-text" as const, status: "running" as const },
-          { id: "sg-3", title: "Sub Goal 3", source: "mission-text" as const, status: null },
+          {
+            id: "sg-1",
+            title: "Sub Goal 1",
+            source: "mission-text" as const,
+            status: "done" as const,
+          },
+          {
+            id: "sg-2",
+            title: "Sub Goal 2",
+            source: "mission-text" as const,
+            status: "running" as const,
+          },
+          {
+            id: "sg-3",
+            title: "Sub Goal 3",
+            source: "mission-text" as const,
+            status: null,
+          },
         ],
         successCriteria: ["Should not use this"],
       },

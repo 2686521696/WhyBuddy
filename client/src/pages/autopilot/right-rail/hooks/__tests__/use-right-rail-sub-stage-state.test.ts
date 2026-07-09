@@ -94,14 +94,22 @@ describe("use-right-rail-sub-stage-state / Task 2 — URL pure helpers", () => {
     });
 
     it("reads sub correctly when other query params are present", () => {
-      expect(parseSubFromSearch("?foo=bar&sub=prompt_package")).toBe("prompt_package");
-      expect(parseSubFromSearch("?sub=artifact_memory&foo=bar")).toBe("artifact_memory");
-      expect(parseSubFromSearch("?a=1&sub=effect_preview&b=2")).toBe("effect_preview");
+      expect(parseSubFromSearch("?foo=bar&sub=prompt_package")).toBe(
+        "prompt_package"
+      );
+      expect(parseSubFromSearch("?sub=artifact_memory&foo=bar")).toBe(
+        "artifact_memory"
+      );
+      expect(parseSubFromSearch("?a=1&sub=effect_preview&b=2")).toBe(
+        "effect_preview"
+      );
     });
 
     it("handles URL-encoded query strings gracefully", () => {
       // `URLSearchParams` 自动解码；有效 sub 值不含 `%` 或空格，所以编码后应能解出
-      expect(parseSubFromSearch("?sub=spec_tree&name=hello%20world")).toBe("spec_tree");
+      expect(parseSubFromSearch("?sub=spec_tree&name=hello%20world")).toBe(
+        "spec_tree"
+      );
     });
   });
 
@@ -114,24 +122,28 @@ describe("use-right-rail-sub-stage-state / Task 2 — URL pure helpers", () => {
 
     it("writes sub while preserving other params", () => {
       expect(applySubToSearch("?foo=bar", "runtime_capability")).toBe(
-        "foo=bar&sub=runtime_capability",
+        "foo=bar&sub=runtime_capability"
       );
       expect(applySubToSearch("foo=bar", "runtime_capability")).toBe(
-        "foo=bar&sub=runtime_capability",
+        "foo=bar&sub=runtime_capability"
       );
     });
 
     it("overwrites existing sub", () => {
-      expect(applySubToSearch("?sub=spec_tree", "prompt_package")).toBe("sub=prompt_package");
+      expect(applySubToSearch("?sub=spec_tree", "prompt_package")).toBe(
+        "sub=prompt_package"
+      );
       expect(applySubToSearch("?foo=bar&sub=spec_tree", "prompt_package")).toBe(
-        "foo=bar&sub=prompt_package",
+        "foo=bar&sub=prompt_package"
       );
     });
 
     it("removes sub when next is null", () => {
       expect(applySubToSearch("?sub=spec_tree", null)).toBe("");
       expect(applySubToSearch("?foo=bar&sub=spec_tree", null)).toBe("foo=bar");
-      expect(applySubToSearch("?foo=bar&sub=spec_tree&baz=qux", null)).toBe("foo=bar&baz=qux");
+      expect(applySubToSearch("?foo=bar&sub=spec_tree&baz=qux", null)).toBe(
+        "foo=bar&baz=qux"
+      );
     });
 
     it("returns empty string when clearing sub from empty / no-sub search", () => {
@@ -193,22 +205,34 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
   describe("resolveScrollBehavior", () => {
     it("returns 'auto' when isFirstMount is true, regardless of reduced motion", () => {
       expect(
-        resolveScrollBehavior({ isFirstMount: true, prefersReducedMotion: false }),
+        resolveScrollBehavior({
+          isFirstMount: true,
+          prefersReducedMotion: false,
+        })
       ).toBe("auto");
       expect(
-        resolveScrollBehavior({ isFirstMount: true, prefersReducedMotion: true }),
+        resolveScrollBehavior({
+          isFirstMount: true,
+          prefersReducedMotion: true,
+        })
       ).toBe("auto");
     });
 
     it("returns 'auto' when prefers-reduced-motion is reduce", () => {
       expect(
-        resolveScrollBehavior({ isFirstMount: false, prefersReducedMotion: true }),
+        resolveScrollBehavior({
+          isFirstMount: false,
+          prefersReducedMotion: true,
+        })
       ).toBe("auto");
     });
 
     it("returns 'smooth' only when not first mount and no reduced motion", () => {
       expect(
-        resolveScrollBehavior({ isFirstMount: false, prefersReducedMotion: false }),
+        resolveScrollBehavior({
+          isFirstMount: false,
+          prefersReducedMotion: false,
+        })
       ).toBe("smooth");
     });
   });
@@ -266,7 +290,7 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
           anchorAttr: "data-sub-stage-anchor",
           anchorValue: "spec_tree",
           behavior: "auto",
-        }),
+        })
       ).toBe(false);
     });
 
@@ -282,7 +306,7 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
           anchorAttr: "data-sub-stage-anchor",
           anchorValue: "spec_tree",
           behavior: "auto",
-        }),
+        })
       ).toBe(false);
     });
 
@@ -298,7 +322,7 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
           anchorAttr: "data-sub-stage-anchor",
           anchorValue: "spec_tree",
           behavior: "auto",
-        }),
+        })
       ).toBe(false);
     });
 
@@ -314,7 +338,7 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
           anchorAttr: "data-sub-stage-anchor",
           anchorValue: "spec_tree",
           behavior: "auto",
-        }),
+        })
       ).toBe(false);
     });
 
@@ -330,7 +354,7 @@ describe("use-right-rail-sub-stage-state / Task 3 — scroll helpers", () => {
           anchorAttr: "data-sub-stage-anchor",
           anchorValue: "spec_tree",
           behavior: "auto",
-        }),
+        })
       ).toBe(false);
     });
 
@@ -413,19 +437,19 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
 
     it("returns true when contenteditable='true'", () => {
       expect(
-        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "true" })),
+        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "true" }))
       ).toBe(true);
     });
 
     it("returns true when contenteditable is empty string (HTML spec allows)", () => {
       expect(
-        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "" })),
+        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "" }))
       ).toBe(true);
     });
 
     it("returns false when contenteditable='false'", () => {
       expect(
-        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "false" })),
+        isInputFocused(makeTarget({ tagName: "DIV", contentEditable: "false" }))
       ).toBe(false);
     });
 
@@ -473,52 +497,56 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
         resolveKeyboardIntent({
           ...baseEvent,
           target: makeTarget({ tagName: "INPUT" }),
-        }),
+        })
       ).toBe("ignore");
     });
 
     it("returns 'ignore' when metaKey pressed", () => {
-      expect(
-        resolveKeyboardIntent({ ...baseEvent, metaKey: true }),
-      ).toBe("ignore");
+      expect(resolveKeyboardIntent({ ...baseEvent, metaKey: true })).toBe(
+        "ignore"
+      );
     });
 
     it("returns 'ignore' when ctrlKey pressed", () => {
-      expect(
-        resolveKeyboardIntent({ ...baseEvent, ctrlKey: true }),
-      ).toBe("ignore");
+      expect(resolveKeyboardIntent({ ...baseEvent, ctrlKey: true })).toBe(
+        "ignore"
+      );
     });
 
     it("returns 'ignore' when altKey pressed", () => {
-      expect(
-        resolveKeyboardIntent({ ...baseEvent, altKey: true }),
-      ).toBe("ignore");
+      expect(resolveKeyboardIntent({ ...baseEvent, altKey: true })).toBe(
+        "ignore"
+      );
     });
 
     it("maps '[' to step-prev in fabric stage", () => {
-      expect(resolveKeyboardIntent({ ...baseEvent, key: "[" })).toBe("step-prev");
+      expect(resolveKeyboardIntent({ ...baseEvent, key: "[" })).toBe(
+        "step-prev"
+      );
     });
 
     it("maps ']' to step-next in fabric stage", () => {
-      expect(resolveKeyboardIntent({ ...baseEvent, key: "]" })).toBe("step-next");
+      expect(resolveKeyboardIntent({ ...baseEvent, key: "]" })).toBe(
+        "step-next"
+      );
     });
 
     it("maps Shift+P to toggle-pin in fabric stage", () => {
       expect(
-        resolveKeyboardIntent({ ...baseEvent, key: "P", shiftKey: true }),
+        resolveKeyboardIntent({ ...baseEvent, key: "P", shiftKey: true })
       ).toBe("toggle-pin");
     });
 
     it("returns 'ignore' for 'P' without shift (not toggle-pin)", () => {
       expect(
-        resolveKeyboardIntent({ ...baseEvent, key: "P", shiftKey: false }),
+        resolveKeyboardIntent({ ...baseEvent, key: "P", shiftKey: false })
       ).toBe("ignore");
     });
 
     it("returns 'close-drawer' only when Escape + drawerOpen (fabric or not)", () => {
       // fabric + drawerOpen
       expect(
-        resolveKeyboardIntent({ ...baseEvent, key: "Escape", drawerOpen: true }),
+        resolveKeyboardIntent({ ...baseEvent, key: "Escape", drawerOpen: true })
       ).toBe("close-drawer");
       // non-fabric + drawerOpen
       expect(
@@ -527,13 +555,17 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
           key: "Escape",
           drawerOpen: true,
           currentStage: "input",
-        }),
+        })
       ).toBe("close-drawer");
     });
 
     it("returns 'ignore' for Escape when drawer closed", () => {
       expect(
-        resolveKeyboardIntent({ ...baseEvent, key: "Escape", drawerOpen: false }),
+        resolveKeyboardIntent({
+          ...baseEvent,
+          key: "Escape",
+          drawerOpen: false,
+        })
       ).toBe("ignore");
     });
 
@@ -541,7 +573,12 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
       const cases = [
         { ...baseEvent, key: "[", currentStage: "input" },
         { ...baseEvent, key: "]", currentStage: "selection" },
-        { ...baseEvent, key: "P", shiftKey: true, currentStage: "clarification" },
+        {
+          ...baseEvent,
+          key: "P",
+          shiftKey: true,
+          currentStage: "clarification",
+        },
       ];
       for (const c of cases) {
         expect(resolveKeyboardIntent(c)).toBe("ignore");
@@ -550,8 +587,12 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
 
     it("returns 'ignore' for unknown keys", () => {
       expect(resolveKeyboardIntent({ ...baseEvent, key: "a" })).toBe("ignore");
-      expect(resolveKeyboardIntent({ ...baseEvent, key: "Enter" })).toBe("ignore");
-      expect(resolveKeyboardIntent({ ...baseEvent, key: "Tab" })).toBe("ignore");
+      expect(resolveKeyboardIntent({ ...baseEvent, key: "Enter" })).toBe(
+        "ignore"
+      );
+      expect(resolveKeyboardIntent({ ...baseEvent, key: "Tab" })).toBe(
+        "ignore"
+      );
     });
   });
 
@@ -569,20 +610,20 @@ describe("use-right-rail-sub-stage-state / Task 4 — keyboard helpers", () => {
       expect(
         stepSubStage(
           RAIL_SUB_STAGE_ORDER[RAIL_SUB_STAGE_ORDER.length - 1],
-          "next",
-        ),
+          "next"
+        )
       ).toBe(undefined);
     });
 
     it("advances index by +1 / -1 respectively", () => {
       for (let i = 1; i < RAIL_SUB_STAGE_ORDER.length; i += 1) {
         expect(stepSubStage(RAIL_SUB_STAGE_ORDER[i], "prev")).toBe(
-          RAIL_SUB_STAGE_ORDER[i - 1],
+          RAIL_SUB_STAGE_ORDER[i - 1]
         );
       }
       for (let i = 0; i < RAIL_SUB_STAGE_ORDER.length - 1; i += 1) {
         expect(stepSubStage(RAIL_SUB_STAGE_ORDER[i], "next")).toBe(
-          RAIL_SUB_STAGE_ORDER[i + 1],
+          RAIL_SUB_STAGE_ORDER[i + 1]
         );
       }
     });

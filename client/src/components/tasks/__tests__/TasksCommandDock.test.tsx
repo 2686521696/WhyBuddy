@@ -71,7 +71,9 @@ describe("TasksCommandDock", () => {
     expect(markup).toContain('data-visual-role="cockpit-command-float"');
     expect(markup).toContain("bg-white/58");
     expect(markup).toContain("shadow-[0_10px_24px_rgba(15,23,42,0.06)]");
-    expect(markup).not.toContain("bg-[linear-gradient(180deg,rgba(255,255,255,0.94)");
+    expect(markup).not.toContain(
+      "bg-[linear-gradient(180deg,rgba(255,255,255,0.94)"
+    );
     expect(markup).not.toContain("h-full");
   });
 });

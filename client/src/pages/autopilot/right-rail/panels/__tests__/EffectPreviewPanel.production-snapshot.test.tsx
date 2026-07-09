@@ -293,7 +293,7 @@ describe("EffectPreviewPanel · Phase 4 Task 37.1 (downgraded) production snapsh
         capabilityEvidence={[]}
         locale="zh-CN"
         initialImageSettings={READY_VIEW_MODEL}
-      />,
+      />
     );
 
     // Anchor 1: image gallery (mounted by EffectPreviewImagePanel).
@@ -335,13 +335,13 @@ describe("EffectPreviewPanel · Phase 4 Task 37.1 (downgraded) production snapsh
     // Task 35.3's mount placement). A future refactor that accidentally
     // inverts the layout is caught here even without a real browser.
     const galleryIdx = markup.indexOf(
-      'data-testid="effect-preview-image-gallery"',
+      'data-testid="effect-preview-image-gallery"'
     );
     const scheduleIdx = markup.indexOf(
-      'data-testid="effect-preview-schedule-list"',
+      'data-testid="effect-preview-schedule-list"'
     );
     const settingsIdx = markup.indexOf(
-      'data-testid="autopilot-image-settings-panel"',
+      'data-testid="autopilot-image-settings-panel"'
     );
     expect(galleryIdx).toBeGreaterThanOrEqual(0);
     expect(scheduleIdx).toBeGreaterThan(galleryIdx);
@@ -362,7 +362,7 @@ describe("EffectPreviewPanel · Phase 4 Task 37.1 (downgraded) production snapsh
         capabilityEvidence={[]}
         locale="zh-CN"
         initialImageSettings={READY_VIEW_MODEL}
-      />,
+      />
     );
 
     const generateButtonMatch = markup.match(

@@ -139,7 +139,8 @@ export function useStreamingProgressLink(
   const streamingProgress = getProgress();
 
   return {
-    isStreamingMode: state.isStreaming && !state.isInterrupted && !state.isReconnecting,
+    isStreamingMode:
+      state.isStreaming && !state.isInterrupted && !state.isReconnecting,
     isPausedIndeterminate,
     streamingProgress,
     isCrossingStage,

@@ -5,7 +5,7 @@
  * for the signaling channel used during WebRTC negotiation.
  */
 
-import type { SignalingMessage } from './types';
+import type { SignalingMessage } from "./types";
 
 export interface SignalingClientOptions {
   /** Called when a signaling message is received from the server. */
@@ -49,7 +49,7 @@ export class SignalingClient {
 
       const timeout = setTimeout(() => {
         this.close();
-        reject(new Error('Signaling WebSocket connection timed out'));
+        reject(new Error("Signaling WebSocket connection timed out"));
       }, 5_000);
 
       this.ws.onopen = () => {
@@ -59,23 +59,23 @@ export class SignalingClient {
         resolve();
       };
 
-      this.ws.onerror = (event) => {
+      this.ws.onerror = event => {
         clearTimeout(timeout);
         this.options.onError?.(event);
-        reject(new Error('Signaling WebSocket connection failed'));
+        reject(new Error("Signaling WebSocket connection failed"));
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = event => {
         this.stopPing();
         this.options.onClose?.(event);
       };
 
-      this.ws.onmessage = (event) => {
+      this.ws.onmessage = event => {
         try {
           const message = JSON.parse(event.data as string) as SignalingMessage;
           // Respond to server pings automatically.
-          if (message.type === 'ping') {
-            this.send({ type: 'pong' });
+          if (message.type === "ping") {
+            this.send({ type: "pong" });
             return;
           }
           this.options.onMessage(message);
@@ -124,7 +124,7 @@ export class SignalingClient {
   private startPing(): void {
     this.stopPing();
     this.pingInterval = setInterval(() => {
-      this.send({ type: 'ping' });
+      this.send({ type: "ping" });
     }, SignalingClient.PING_INTERVAL_MS);
   }
 

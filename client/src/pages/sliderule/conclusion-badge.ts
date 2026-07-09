@@ -12,7 +12,9 @@ export type ConclusionBadgeProjection = {
  * Mechanical projection of sessionState.goal.status (Layer 1 badge).
  * Transcribes only — never adjudicates.
  */
-export function projectConclusionBadge(state: V5SessionState): ConclusionBadgeProjection {
+export function projectConclusionBadge(
+  state: V5SessionState
+): ConclusionBadgeProjection {
   const status = state.goal?.status;
 
   if (status === "clear") {
@@ -34,6 +36,6 @@ export function projectConclusionBadge(state: V5SessionState): ConclusionBadgePr
   return {
     label: "待细化",
     tone: "idle",
-    className: "bg-[#F0EDE5] text-stone-600 ring-[#E7E2D9]",
+    className: "bg-[#e9edf2] text-stone-600 ring-[#e5e7eb]",
   };
 }

@@ -26,7 +26,10 @@ import { memo, type FC } from "react";
 
 import type { AppLocale } from "@/lib/locale";
 
-import type { CardSource, NarrativeCard as NarrativeCardType } from "./narrative-card-types";
+import type {
+  CardSource,
+  NarrativeCard as NarrativeCardType,
+} from "./narrative-card-types";
 import { FleetActivationCard } from "./cards/FleetActivationCard";
 import { RoleStatusCard } from "./cards/RoleStatusCard";
 
@@ -37,20 +40,26 @@ import { RoleStatusCard } from "./cards/RoleStatusCard";
  *
  * 每种来源使用不同的图标和色调，便于演示者向观众解释信号来源（Req 3.5）。
  */
-const SOURCE_BADGE_CONFIG: Record<CardSource, { icon: string; colorClass: string; label: string }> = {
+const SOURCE_BADGE_CONFIG: Record<
+  CardSource,
+  { icon: string; colorClass: string; label: string }
+> = {
   reasoning: {
     icon: "💭",
-    colorClass: "bg-purple-100 text-purple-700 dark:bg-purple-800/30 dark:text-purple-300",
+    colorClass:
+      "bg-purple-100 text-purple-700 dark:bg-purple-800/30 dark:text-purple-300",
     label: "reasoning",
   },
   "role-status": {
     icon: "👤",
-    colorClass: "bg-amber-100 text-amber-700 dark:bg-amber-800/30 dark:text-amber-300",
+    colorClass:
+      "bg-amber-100 text-amber-700 dark:bg-amber-800/30 dark:text-amber-300",
     label: "role",
   },
   capability: {
     icon: "🔧",
-    colorClass: "bg-blue-100 text-blue-700 dark:bg-blue-800/30 dark:text-blue-300",
+    colorClass:
+      "bg-blue-100 text-blue-700 dark:bg-blue-800/30 dark:text-blue-300",
     label: "capability",
   },
   "fleet-activation": {
@@ -60,12 +69,14 @@ const SOURCE_BADGE_CONFIG: Record<CardSource, { icon: string; colorClass: string
   },
   "route-decision": {
     icon: "🧭",
-    colorClass: "bg-indigo-100 text-indigo-700 dark:bg-indigo-800/30 dark:text-indigo-300",
+    colorClass:
+      "bg-indigo-100 text-indigo-700 dark:bg-indigo-800/30 dark:text-indigo-300",
     label: "route",
   },
   artifact: {
     icon: "📦",
-    colorClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-800/30 dark:text-emerald-300",
+    colorClass:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-800/30 dark:text-emerald-300",
     label: "artifact",
   },
 };
@@ -163,7 +174,12 @@ function CardBody({
  * 按 `card.source` 路由到对应子卡片，外层包裹统一的 source 角标。
  * 使用 `React.memo` 按 `card.id + isActive` 命中复用（Req 9.3）。
  */
-const NarrativeCardInner: FC<NarrativeCardProps> = ({ card, locale, isActive, cardBorderClass }) => {
+const NarrativeCardInner: FC<NarrativeCardProps> = ({
+  card,
+  locale,
+  isActive,
+  cardBorderClass,
+}) => {
   return (
     <div
       data-testid="narrative-card"
@@ -180,7 +196,11 @@ const NarrativeCardInner: FC<NarrativeCardProps> = ({ card, locale, isActive, ca
       </div>
 
       {/* 卡片主体 — 应用 lane 边框 */}
-      <div className={cardBorderClass ? `rounded-md border ${cardBorderClass}` : undefined}>
+      <div
+        className={
+          cardBorderClass ? `rounded-md border ${cardBorderClass}` : undefined
+        }
+      >
         <CardBody card={card} locale={locale} />
       </div>
     </div>
@@ -194,7 +214,11 @@ const NarrativeCardInner: FC<NarrativeCardProps> = ({ card, locale, isActive, ca
  * 避免卡片切换路径触发不必要的子树更新（Req 9.3）。
  */
 export const NarrativeCard = memo(NarrativeCardInner, (prev, next) => {
-  return prev.card.id === next.card.id && prev.isActive === next.isActive && prev.cardBorderClass === next.cardBorderClass;
+  return (
+    prev.card.id === next.card.id &&
+    prev.isActive === next.isActive &&
+    prev.cardBorderClass === next.cardBorderClass
+  );
 });
 
 NarrativeCard.displayName = "NarrativeCard";

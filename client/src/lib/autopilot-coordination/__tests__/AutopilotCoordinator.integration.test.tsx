@@ -13,7 +13,9 @@ interface CoordinationStore {
   workflowStageOverride: string | null;
 }
 
-function createStore(overrides: Partial<CoordinationStore> = {}): CoordinationStore {
+function createStore(
+  overrides: Partial<CoordinationStore> = {}
+): CoordinationStore {
   return {
     activeJobId: "job-root",
     activeJobStage: "runtime_capability",
@@ -42,10 +44,12 @@ function restore(store: CoordinationStore, saved: CoordinationStore) {
   store.workflowStageOverride = saved.workflowStageOverride;
 }
 
-function createHarness(options: {
-  store?: CoordinationStore;
-  reducedMotion?: boolean;
-} = {}) {
+function createHarness(
+  options: {
+    store?: CoordinationStore;
+    reducedMotion?: boolean;
+  } = {}
+) {
   const store = options.store ?? createStore();
   const toastQueue = createToastQueue();
   const stageAnimator = createStageTransitionAnimator({
@@ -155,7 +159,10 @@ describe("AutopilotCoordinator integration", () => {
     const result = harness.coordinator.submit({
       triggerSource: "inline_edit",
       apply: () => {
-        harness.store.staleArtifactIds = ["prompt-packaging", "runtime-capability"];
+        harness.store.staleArtifactIds = [
+          "prompt-packaging",
+          "runtime-capability",
+        ];
       },
       toastPayload: {
         key: "inline_edit.spec_docs.job-root",

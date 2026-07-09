@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
 /**
  * useContainerWidth is a thin hook over useSyncExternalStore + ResizeObserver.
@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
  *   - ref.current !== null  →  returns el.clientWidth
  *   - SSR snapshot          →  returns 1280
  */
-describe('useContainerWidth – snapshot logic', () => {
-  it('falls back to fallback width when element ref is null', () => {
+describe("useContainerWidth – snapshot logic", () => {
+  it("falls back to fallback width when element ref is null", () => {
     // Simulates the getSnapshot path: el ? el.clientWidth : fallbackWidth
     const ref: { current: null } = { current: null };
     const fallbackWidth = 1440;
@@ -20,7 +20,7 @@ describe('useContainerWidth – snapshot logic', () => {
     expect(width).toBe(1440);
   });
 
-  it('returns element clientWidth when ref is attached', () => {
+  it("returns element clientWidth when ref is attached", () => {
     // Simulates the getSnapshot path with a real element
     const fakeEl = { clientWidth: 1040 };
     const ref = { current: fakeEl };
@@ -29,7 +29,7 @@ describe('useContainerWidth – snapshot logic', () => {
     expect(width).toBe(1040);
   });
 
-  it('SSR snapshot returns 1280', () => {
+  it("SSR snapshot returns 1280", () => {
     // The hook's getServerSnapshot always returns 1280
     const getServerSnapshot = () => 1280;
     expect(getServerSnapshot()).toBe(1280);

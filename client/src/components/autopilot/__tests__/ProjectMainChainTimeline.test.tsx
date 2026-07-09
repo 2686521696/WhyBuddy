@@ -63,14 +63,16 @@ const STATUSES: readonly MainChainStepStatus[] = [
 
 const TOKENS: VisualTokenSet = visualTokens;
 
-const stepKeyArb: fc.Arbitrary<MainChainStepKey> = fc.constantFrom<MainChainStepKey>(
-  ...STEP_KEYS,
-);
+const stepKeyArb: fc.Arbitrary<MainChainStepKey> =
+  fc.constantFrom<MainChainStepKey>(...STEP_KEYS);
 
 const statusArb: fc.Arbitrary<MainChainStepStatus> =
   fc.constantFrom<MainChainStepStatus>(...STATUSES);
 
-const themeArb: fc.Arbitrary<"light" | "dark"> = fc.constantFrom("light", "dark");
+const themeArb: fc.Arbitrary<"light" | "dark"> = fc.constantFrom(
+  "light",
+  "dark"
+);
 
 /**
  * length-6 `steps` 数组：每个位置的 status 随机；6 个 key 严格按规范顺序。
@@ -144,7 +146,7 @@ describe("ProjectMainChainTimeline · Property 10A — label ordering", () => {
             steps={steps}
             visualTokens={TOKENS}
             theme={theme}
-          />,
+          />
         );
 
         const keys = extractStepKeyOrder(markup);
@@ -164,7 +166,7 @@ describe("ProjectMainChainTimeline · Property 10A — label ordering", () => {
           "Evidence",
         ]);
       }),
-      { numRuns: 100 },
+      { numRuns: 100 }
     );
   });
 
@@ -184,7 +186,7 @@ describe("ProjectMainChainTimeline · Property 10A — label ordering", () => {
         steps={shuffled}
         visualTokens={TOKENS}
         theme="light"
-      />,
+      />
     );
 
     expect(extractStepKeyOrder(markup)).toEqual([
@@ -208,7 +210,7 @@ describe("ProjectMainChainTimeline · Property 10A — label ordering", () => {
  */
 describe("ProjectMainChainTimeline · Property 10B — statusClass uniqueness", () => {
   it("maps 5 statuses to 5 pairwise-distinct class strings", () => {
-    const classes = STATUSES.map((s) => MAIN_CHAIN_STATUS_CLASS[s]);
+    const classes = STATUSES.map(s => MAIN_CHAIN_STATUS_CLASS[s]);
 
     // 5 个状态 -> 5 个 class
     expect(classes).toHaveLength(5);
@@ -244,7 +246,7 @@ describe("ProjectMainChainTimeline · Property 10B — statusClass uniqueness", 
         steps={steps}
         visualTokens={TOKENS}
         theme="dark"
-      />,
+      />
     );
 
     for (const status of STATUSES) {
@@ -278,40 +280,45 @@ describe("ProjectMainChainTimeline · Property 10C — at most one is-active", (
     // 任何不命中的字符串都应让 is-active 数为 0。
     fc
       .string({ minLength: 0, maxLength: 16 })
-      .filter((s) => !STEP_KEYS.includes(s as MainChainStepKey))
-      .map((s) => s as unknown as MainChainStepKey),
+      .filter(s => !STEP_KEYS.includes(s as MainChainStepKey))
+      .map(s => s as unknown as MainChainStepKey)
   );
 
   it("renders at most one step with `is-active` class", () => {
     fc.assert(
-      fc.property(stepsArb, activeKeyArb, themeArb, (steps, activeKey, theme) => {
-        const markup = renderToStaticMarkup(
-          <ProjectMainChainTimeline
-            steps={steps}
-            activeKey={activeKey}
-            visualTokens={TOKENS}
-            theme={theme}
-          />,
-        );
+      fc.property(
+        stepsArb,
+        activeKeyArb,
+        themeArb,
+        (steps, activeKey, theme) => {
+          const markup = renderToStaticMarkup(
+            <ProjectMainChainTimeline
+              steps={steps}
+              activeKey={activeKey}
+              visualTokens={TOKENS}
+              theme={theme}
+            />
+          );
 
-        const activeCount = countIsActiveClass(markup);
+          const activeCount = countIsActiveClass(markup);
 
-        // 核心不变量：≤ 1
-        expect(activeCount).toBeLessThanOrEqual(1);
+          // 核心不变量：≤ 1
+          expect(activeCount).toBeLessThanOrEqual(1);
 
-        // 进一步收紧：合法 key 必产生恰好 1；undefined / 越界字符串必产生 0
-        if (activeKey != null && STEP_KEYS.includes(activeKey)) {
-          expect(activeCount).toBe(1);
-        } else {
-          expect(activeCount).toBe(0);
+          // 进一步收紧：合法 key 必产生恰好 1；undefined / 越界字符串必产生 0
+          if (activeKey != null && STEP_KEYS.includes(activeKey)) {
+            expect(activeCount).toBe(1);
+          } else {
+            expect(activeCount).toBe(0);
+          }
         }
-      }),
-      { numRuns: 100 },
+      ),
+      { numRuns: 100 }
     );
   });
 
   it("renders 0 active steps when activeKey is undefined", () => {
-    const steps: MainChainStep[] = STEP_KEYS.map((key) => ({
+    const steps: MainChainStep[] = STEP_KEYS.map(key => ({
       key,
       status: "running" as const,
     }));
@@ -320,13 +327,13 @@ describe("ProjectMainChainTimeline · Property 10C — at most one is-active", (
         steps={steps}
         visualTokens={TOKENS}
         theme="light"
-      />,
+      />
     );
     expect(countIsActiveClass(markup)).toBe(0);
   });
 
   it("renders exactly 1 active step when activeKey hits a canonical key", () => {
-    const steps: MainChainStep[] = STEP_KEYS.map((key) => ({
+    const steps: MainChainStep[] = STEP_KEYS.map(key => ({
       key,
       status: "pending" as const,
     }));
@@ -337,14 +344,14 @@ describe("ProjectMainChainTimeline · Property 10C — at most one is-active", (
           activeKey={target}
           visualTokens={TOKENS}
           theme="light"
-        />,
+        />
       );
       expect(countIsActiveClass(markup)).toBe(1);
       // 断言带 is-active 的那一步正是 target
       const activeMatch = markup.match(
         new RegExp(
-          `data-step-key="${target}"[^>]*data-active="true"|data-active="true"[^>]*data-step-key="${target}"`,
-        ),
+          `data-step-key="${target}"[^>]*data-active="true"|data-active="true"[^>]*data-step-key="${target}"`
+        )
       );
       expect(activeMatch).not.toBeNull();
     }

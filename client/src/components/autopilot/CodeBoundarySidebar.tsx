@@ -87,7 +87,7 @@ interface CodeBoundaryTreeGroup {
 }
 
 function groupPathsByHead(
-  paths: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>
 ): ReadonlyArray<CodeBoundaryTreeGroup> {
   const order: string[] = [];
   const buckets = new Map<string, string[]>();
@@ -108,7 +108,7 @@ function groupPathsByHead(
       bucket.push(leaf.length > 0 ? leaf : path);
     }
   }
-  return order.map((head) => ({
+  return order.map(head => ({
     head,
     leaves: buckets.get(head) ?? [],
   }));
@@ -118,7 +118,7 @@ function groupPathsByHead(
  * 代码边界侧栏组件。
  */
 export function CodeBoundarySidebar(
-  props: CodeBoundarySidebarProps,
+  props: CodeBoundarySidebarProps
 ): ReactElement {
   const { nodes, visualTokens, theme } = props;
 
@@ -160,7 +160,7 @@ export function CodeBoundarySidebar(
           padding: 0,
         }}
       >
-        {nodes.map((node) => {
+        {nodes.map(node => {
           const hasPaths =
             Array.isArray(node.codePaths) && node.codePaths.length > 0;
           return (
@@ -198,7 +198,7 @@ export function CodeBoundarySidebar(
                     paddingLeft: "0.75rem",
                   }}
                 >
-                  {groupPathsByHead(node.codePaths ?? []).map((group) => {
+                  {groupPathsByHead(node.codePaths ?? []).map(group => {
                     const key = pickTokenKeyForPath(`${group.head}/`);
                     return (
                       <li

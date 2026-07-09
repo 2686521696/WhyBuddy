@@ -76,9 +76,7 @@ function makeNode(
   } as BlueprintSpecTreeNode;
 }
 
-function makeTree(
-  nodes: BlueprintSpecTreeNode[]
-): BlueprintSpecTree {
+function makeTree(nodes: BlueprintSpecTreeNode[]): BlueprintSpecTree {
   return {
     id: "tree-1",
     routeSetId: "rs-1",
@@ -414,9 +412,7 @@ describe("SpecTreeWorkbench (source-level contract)", () => {
     expect(source).toContain('data-testid="spec-tree-workbench-cta-all"');
     expect(source).toContain('data-testid="spec-tree-workbench-cta-single"');
     expect(source).toContain('data-testid="spec-tree-workbench-row"');
-    expect(source).toContain(
-      'data-testid="spec-tree-workbench-row-expanded"'
-    );
+    expect(source).toContain('data-testid="spec-tree-workbench-row-expanded"');
 
     // —— spec-generation-perceived-performance / 4.1–4.3 重构后的状态机绑定 ——
     // CTA disabled 改由派生 phase 驱动（phase === "pending"），不再用旧的
@@ -539,7 +535,10 @@ describe("SpecTreeWorkbench 反馈渲染 (Task 4.4) — SSR 层", () => {
   });
 
   it("pending 时仍渲染既有节点行列表（进度层覆盖而非清空，R2.11）", () => {
-    const tree = makeTree([makeNode("n-1", "Auth"), makeNode("n-2", "Profile")]);
+    const tree = makeTree([
+      makeNode("n-1", "Auth"),
+      makeNode("n-2", "Profile"),
+    ]);
     const markup = renderToStaticMarkup(
       <SpecTreeWorkbench
         jobId="job-1"
@@ -639,7 +638,10 @@ describe("SpecTreeWorkbench 反馈渲染 (Task 4.4) — SSR 层", () => {
   });
 
   it("failure 态保留既有树/节点内容容器不清空（R2.11）", () => {
-    const tree = makeTree([makeNode("n-1", "Auth"), makeNode("n-2", "Profile")]);
+    const tree = makeTree([
+      makeNode("n-1", "Auth"),
+      makeNode("n-2", "Profile"),
+    ]);
     const docs = [makeDoc("n-1", "requirements", "reviewing")];
     const markup = renderToStaticMarkup(
       <SpecTreeWorkbench
@@ -733,9 +735,7 @@ describe("SpecTreeWorkbench 反馈渲染 (Task 4.4) — 源代码层契约", () 
   // ── 终态分支不卸载既有树（节点行 <ul> 在 phase 条件块之外，R2.11） ─────────
   it("节点行列表渲染于 phase 反馈块之外，failure/empty 不清空既有内容", async () => {
     const source = await readSource();
-    const listAnchor = source.indexOf(
-      'data-testid="spec-tree-workbench-list"'
-    );
+    const listAnchor = source.indexOf('data-testid="spec-tree-workbench-list"');
     const failureAnchor = source.indexOf(
       'data-testid="spec-tree-workbench-failure"'
     );
@@ -762,6 +762,8 @@ describe("SpecTreeWorkbench 反馈渲染 (Task 4.4) — 源代码层契约", () 
     expect(source).not.toContain("setLatestJob");
     expect(source).not.toMatch(/\.setState\(/);
     // specDocsProgress 仅作为只读进度来源消费（不订阅写入）。
-    expect(source).toMatch(/useBlueprintRealtimeStore\(s => s\.specDocsProgress\)/);
+    expect(source).toMatch(
+      /useBlueprintRealtimeStore\(s => s\.specDocsProgress\)/
+    );
   });
 });

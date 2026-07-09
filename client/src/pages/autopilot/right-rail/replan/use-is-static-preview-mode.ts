@@ -38,7 +38,7 @@ export function useIsStaticPreviewMode({
   probeLatestJobs = fetchLatestBlueprintGenerationJob,
 }: UseIsStaticPreviewModeOptions = {}): boolean {
   const [isStaticPreview, setIsStaticPreview] = useState(
-    initialStaticPreview ?? moduleStaticFlag,
+    initialStaticPreview ?? moduleStaticFlag
   );
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export function useIsStaticPreviewMode({
       moduleStaticFlag,
       fallbackStaticPreview,
       probeLatestJobs,
-    }).then((detected) => {
+    }).then(detected => {
       if (active) setIsStaticPreview(detected);
     });
 

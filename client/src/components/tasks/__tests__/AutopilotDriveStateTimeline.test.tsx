@@ -73,7 +73,9 @@ describe("AutopilotDriveStateTimeline", () => {
     );
 
     expect(markup).toContain('data-testid="drive-state-next-steps"');
-    expect(markup).toMatch(/Next Step: Compare candidate routes|下一步: Compare candidate routes|涓嬩竴姝? Compare candidate routes/);
+    expect(markup).toMatch(
+      /Next Step: Compare candidate routes|下一步: Compare candidate routes|涓嬩竴姝? Compare candidate routes/
+    );
     expect(markup).toMatch(
       /Remaining Steps: Select safer route; Resume execution|剩余步骤: Select safer route; Resume execution|鍓╀綑姝ラ: Select safer route; Resume execution/
     );
@@ -84,7 +86,9 @@ describe("AutopilotDriveStateTimeline", () => {
     expect(markup).toContain("route-safe");
     expect(markup).toContain("Runtime detected approval risk.");
     expect(markup).toContain("runtime");
-    expect(markup).toContain("Execution pauses until the safer route is accepted.");
+    expect(markup).toContain(
+      "Execution pauses until the safer route is accepted."
+    );
   });
 
   it("reserves display for system downgraded replans", () => {

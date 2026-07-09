@@ -69,9 +69,7 @@ export interface DeriveMiroFishStreamEntriesInput {
 // ─── helpers ─────────────────────────────────────────────────────────────
 
 /** artifact.type → stageId 映射。未知 type → undefined（视为全局事件）。 */
-function artifactTypeToStageId(
-  artifactType: string
-): string | undefined {
+function artifactTypeToStageId(artifactType: string): string | undefined {
   switch (artifactType) {
     case "intake":
     case "github_source":
@@ -115,9 +113,7 @@ function artifactTypeToStageId(
 }
 
 /** reasoning entry phase + observationSuccess 派生 tone。 */
-function reasoningTone(
-  entry: AgentReasoningEntry
-): MiroFishStreamTone {
+function reasoningTone(entry: AgentReasoningEntry): MiroFishStreamTone {
   switch (entry.phase) {
     case "thinking":
     case "acting":
@@ -183,7 +179,8 @@ function combineGenerationSource(
         : raw === "llm_fallback"
           ? "fallback"
           : "llm";
-    const sev = normalized === "template" ? 2 : normalized === "fallback" ? 1 : 0;
+    const sev =
+      normalized === "template" ? 2 : normalized === "fallback" ? 1 : 0;
     if (sev > severity) {
       severity = sev;
       best = normalized;
@@ -272,10 +269,7 @@ function deriveCapabilityInvocationEntries(
     let timestamp: string | undefined;
     let stageId: string | undefined;
     for (const entry of entries) {
-      if (
-        entry.phase === "acting" &&
-        entry.actionToolId === capabilityId
-      ) {
+      if (entry.phase === "acting" && entry.actionToolId === capabilityId) {
         timestamp = entry.timestamp;
         stageId = entry.stageId;
         // 不 break；后到的 acting 覆盖前到的，让 timestamp 反映最近一次调用

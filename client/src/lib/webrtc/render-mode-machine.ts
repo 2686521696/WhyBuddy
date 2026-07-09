@@ -21,28 +21,32 @@
 
 /** All possible render modes the player can be in. */
 export type RenderMode =
-  | 'ue-stream'
-  | 'threejs'
-  | 'prerender'
-  | 'connecting'
-  | 'error';
+  | "ue-stream"
+  | "threejs"
+  | "prerender"
+  | "connecting"
+  | "error";
 
 /** Events that drive state transitions in the degradation machine. */
 export type RenderModeEvent =
-  | { type: 'CONNECTION_LOST' }
-  | { type: 'RECONNECT_SUCCESS' }
-  | { type: 'RECONNECT_FAILED' }
-  | { type: 'UE_AVAILABLE' }
-  | { type: 'THREEJS_FAILED' }
-  | { type: 'MANUAL_RECONNECT' }
-  | { type: 'CONNECTION_ERROR' };
+  | { type: "CONNECTION_LOST" }
+  | { type: "RECONNECT_SUCCESS" }
+  | { type: "RECONNECT_FAILED" }
+  | { type: "UE_AVAILABLE" }
+  | { type: "THREEJS_FAILED" }
+  | { type: "MANUAL_RECONNECT" }
+  | { type: "CONNECTION_ERROR" };
 
 /** Configuration for the state machine. */
 export interface RenderModeMachineConfig {
   /** Interval in ms for checking UE recovery when in threejs mode. @default 30_000 */
   recoveryCheckIntervalMs?: number;
   /** Callback invoked on every mode transition. */
-  onTransition?: (from: RenderMode, to: RenderMode, event: RenderModeEvent) => void;
+  onTransition?: (
+    from: RenderMode,
+    to: RenderMode,
+    event: RenderModeEvent
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,32 +59,32 @@ export interface RenderModeMachineConfig {
  */
 export function nextRenderMode(
   current: RenderMode,
-  event: RenderModeEvent,
+  event: RenderModeEvent
 ): RenderMode | null {
   switch (current) {
-    case 'ue-stream':
-      if (event.type === 'CONNECTION_LOST') return 'connecting';
-      if (event.type === 'CONNECTION_ERROR') return 'error';
+    case "ue-stream":
+      if (event.type === "CONNECTION_LOST") return "connecting";
+      if (event.type === "CONNECTION_ERROR") return "error";
       return null;
 
-    case 'connecting':
-      if (event.type === 'RECONNECT_SUCCESS') return 'ue-stream';
-      if (event.type === 'RECONNECT_FAILED') return 'threejs';
-      if (event.type === 'CONNECTION_ERROR') return 'error';
+    case "connecting":
+      if (event.type === "RECONNECT_SUCCESS") return "ue-stream";
+      if (event.type === "RECONNECT_FAILED") return "threejs";
+      if (event.type === "CONNECTION_ERROR") return "error";
       return null;
 
-    case 'threejs':
-      if (event.type === 'UE_AVAILABLE') return 'ue-stream';
-      if (event.type === 'THREEJS_FAILED') return 'prerender';
+    case "threejs":
+      if (event.type === "UE_AVAILABLE") return "ue-stream";
+      if (event.type === "THREEJS_FAILED") return "prerender";
       return null;
 
-    case 'prerender':
+    case "prerender":
       // Terminal state: only manual reconnect can escape.
-      if (event.type === 'MANUAL_RECONNECT') return 'connecting';
+      if (event.type === "MANUAL_RECONNECT") return "connecting";
       return null;
 
-    case 'error':
-      if (event.type === 'MANUAL_RECONNECT') return 'connecting';
+    case "error":
+      if (event.type === "MANUAL_RECONNECT") return "connecting";
       return null;
 
     default:
@@ -94,14 +98,17 @@ export function nextRenderMode(
 
 export class RenderModeMachine {
   private _mode: RenderMode;
-  private _config: Required<Pick<RenderModeMachineConfig, 'recoveryCheckIntervalMs'>> & RenderModeMachineConfig;
+  private _config: Required<
+    Pick<RenderModeMachineConfig, "recoveryCheckIntervalMs">
+  > &
+    RenderModeMachineConfig;
   private _recoveryTimer: ReturnType<typeof setInterval> | null = null;
   private _checkUeAvailability: (() => Promise<boolean>) | null = null;
   private _disposed = false;
 
   constructor(
-    initialMode: RenderMode = 'connecting',
-    config: RenderModeMachineConfig = {},
+    initialMode: RenderMode = "connecting",
+    config: RenderModeMachineConfig = {}
   ) {
     this._mode = initialMode;
     this._config = {
@@ -180,11 +187,11 @@ export class RenderModeMachine {
 
   private manageRecoveryTimer(): void {
     // Only run recovery checks in threejs mode.
-    if (this._mode === 'threejs' && this._checkUeAvailability) {
+    if (this._mode === "threejs" && this._checkUeAvailability) {
       if (!this._recoveryTimer) {
         this._recoveryTimer = setInterval(
           () => this.performRecoveryCheck(),
-          this._config.recoveryCheckIntervalMs,
+          this._config.recoveryCheckIntervalMs
         );
       }
     } else {
@@ -193,14 +200,18 @@ export class RenderModeMachine {
   }
 
   private async performRecoveryCheck(): Promise<void> {
-    if (this._disposed || this._mode !== 'threejs' || !this._checkUeAvailability) {
+    if (
+      this._disposed ||
+      this._mode !== "threejs" ||
+      !this._checkUeAvailability
+    ) {
       return;
     }
 
     try {
       const available = await this._checkUeAvailability();
-      if (available && this._mode === 'threejs' && !this._disposed) {
-        this.send({ type: 'UE_AVAILABLE' });
+      if (available && this._mode === "threejs" && !this._disposed) {
+        this.send({ type: "UE_AVAILABLE" });
       }
     } catch {
       // Recovery check failure is non-fatal; we'll try again next interval.

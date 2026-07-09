@@ -6,12 +6,18 @@ describe("SlideRule immersion layout theme", () => {
     expect(autopilotTheme.immersionOverlayTop).toContain("px-2");
     expect(autopilotTheme.immersionOverlayTop).toContain("pt-2");
     expect(autopilotTheme.immersionOverlayTop).toContain("sm:px-3");
-    expect(autopilotTheme.immersionOverlayHeader).toBe("pointer-events-auto w-full");
+    expect(autopilotTheme.immersionOverlayHeader).toBe(
+      "pointer-events-auto w-full"
+    );
     expect(autopilotTheme.overlayBar).toContain("px-0");
     expect(autopilotTheme.overlayBar).not.toContain("bg-white");
     expect(autopilotTheme.overlayBar).not.toContain("shadow");
-    expect(autopilotTheme.immersionOverlayBottom).toContain("pb-[max(28px,env(safe-area-inset-bottom))]");
-    expect(autopilotTheme.composerDockWidth).toContain("max-w-[min(100%,760px)]");
+    expect(autopilotTheme.immersionOverlayBottom).toContain(
+      "pb-[max(28px,env(safe-area-inset-bottom))]"
+    );
+    expect(autopilotTheme.composerDockWidth).toContain(
+      "max-w-[min(100%,760px)]"
+    );
     expect(autopilotTheme.grokInputBar).toContain("min-h-[64px]");
     expect(autopilotTheme.grokInputBar).toContain("px-4");
     expect(autopilotTheme.grokInput).toContain("px-4");

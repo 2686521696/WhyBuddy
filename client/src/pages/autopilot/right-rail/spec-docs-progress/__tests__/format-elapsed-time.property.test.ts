@@ -21,7 +21,7 @@ describe("Property 5: Elapsed time formatting", () => {
       fc.property(
         // 0 to just under 60 minutes (3,599,999 ms)
         fc.integer({ min: 0, max: 3_599_999 }),
-        (ms) => {
+        ms => {
           const result = formatElapsedTime(ms);
 
           const totalSeconds = Math.floor(ms / 1000);
@@ -48,7 +48,7 @@ describe("Property 5: Elapsed time formatting", () => {
       fc.property(
         // 60 minutes (3,600,000 ms) to a large value
         fc.integer({ min: 3_600_000, max: 360_000_000 }),
-        (ms) => {
+        ms => {
           const result = formatElapsedTime(ms);
 
           const totalSeconds = Math.floor(ms / 1000);
@@ -74,14 +74,11 @@ describe("Property 5: Elapsed time formatting", () => {
 
   it("handles negative milliseconds by clamping to zero", () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: -1_000_000, max: -1 }),
-        (ms) => {
-          const result = formatElapsedTime(ms);
-          // Negative values should clamp to 0 seconds → "0:00"
-          expect(result).toBe("0:00");
-        }
-      ),
+      fc.property(fc.integer({ min: -1_000_000, max: -1 }), ms => {
+        const result = formatElapsedTime(ms);
+        // Negative values should clamp to 0 seconds → "0:00"
+        expect(result).toBe("0:00");
+      }),
       { numRuns: 100 }
     );
   });

@@ -4,11 +4,11 @@
  * Tests stats collection (Task 5.1) and auto quality adjustment (Task 5.2).
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { QualityMonitor } from './quality-monitor';
-import type { QualityMetrics, QualityMonitorConfig } from './quality-monitor';
-import type { QualityLevel } from './types';
+import { QualityMonitor } from "./quality-monitor";
+import type { QualityMetrics, QualityMonitorConfig } from "./quality-monitor";
+import type { QualityLevel } from "./types";
 
 // ---------------------------------------------------------------------------
 // Mock connection manager
@@ -41,10 +41,10 @@ function buildStatsReport(opts: {
   const entries: [string, any][] = [];
 
   entries.push([
-    'inbound-rtp-video',
+    "inbound-rtp-video",
     {
-      type: 'inbound-rtp',
-      kind: 'video',
+      type: "inbound-rtp",
+      kind: "video",
       framesPerSecond: opts.fps ?? 0,
       bytesReceived: opts.bytesReceived ?? 0,
       timestamp: opts.timestamp ?? Date.now(),
@@ -53,10 +53,10 @@ function buildStatsReport(opts: {
 
   if (opts.rtt != null) {
     entries.push([
-      'candidate-pair-1',
+      "candidate-pair-1",
       {
-        type: 'candidate-pair',
-        state: 'succeeded',
+        type: "candidate-pair",
+        state: "succeeded",
         currentRoundTripTime: opts.rtt / 1_000, // ms → seconds
       },
     ]);
@@ -83,15 +83,15 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('QualityMonitor', () => {
-  describe('lifecycle', () => {
-    it('starts in stopped state', () => {
+describe("QualityMonitor", () => {
+  describe("lifecycle", () => {
+    it("starts in stopped state", () => {
       const manager = createMockManager();
       const monitor = new QualityMonitor(manager);
       expect(monitor.isRunning).toBe(false);
     });
 
-    it('starts and stops polling', () => {
+    it("starts and stops polling", () => {
       const manager = createMockManager();
       const monitor = new QualityMonitor(manager);
 
@@ -102,7 +102,7 @@ describe('QualityMonitor', () => {
       expect(monitor.isRunning).toBe(false);
     });
 
-    it('does not double-start', () => {
+    it("does not double-start", () => {
       const manager = createMockManager();
       const monitor = new QualityMonitor(manager);
 
@@ -113,22 +113,22 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('defaults to high quality', () => {
+    it("defaults to high quality", () => {
       const manager = createMockManager();
       const monitor = new QualityMonitor(manager);
-      expect(monitor.currentQuality).toBe('high');
+      expect(monitor.currentQuality).toBe("high");
     });
   });
 
-  describe('stats collection (Task 5.1)', () => {
-    it('extracts fps from inbound-rtp stats', async () => {
+  describe("stats collection (Task 5.1)", () => {
+    it("extracts fps from inbound-rtp stats", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 30, timestamp: 1000 }),
+        buildStatsReport({ fps: 30, timestamp: 1000 })
       );
 
       const collectedMetrics: QualityMetrics[] = [];
       const monitor = new QualityMonitor(manager, {
-        onMetrics: (m) => collectedMetrics.push({ ...m }),
+        onMetrics: m => collectedMetrics.push({ ...m }),
       });
 
       monitor.start();
@@ -140,14 +140,14 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('extracts rtt from candidate-pair stats', async () => {
+    it("extracts rtt from candidate-pair stats", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 30, rtt: 50, timestamp: 1000 }),
+        buildStatsReport({ fps: 30, rtt: 50, timestamp: 1000 })
       );
 
       const collectedMetrics: QualityMetrics[] = [];
       const monitor = new QualityMonitor(manager, {
-        onMetrics: (m) => collectedMetrics.push({ ...m }),
+        onMetrics: m => collectedMetrics.push({ ...m }),
       });
 
       monitor.start();
@@ -158,7 +158,7 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('calculates bitrate from byte deltas', async () => {
+    it("calculates bitrate from byte deltas", async () => {
       let callCount = 0;
       const manager = createMockManager(() => {
         callCount++;
@@ -173,7 +173,7 @@ describe('QualityMonitor', () => {
 
       const collectedMetrics: QualityMetrics[] = [];
       const monitor = new QualityMonitor(manager, {
-        onMetrics: (m) => collectedMetrics.push({ ...m }),
+        onMetrics: m => collectedMetrics.push({ ...m }),
       });
 
       monitor.start();
@@ -191,9 +191,9 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('uses configurable polling interval', async () => {
+    it("uses configurable polling interval", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 30, timestamp: Date.now() }),
+        buildStatsReport({ fps: 30, timestamp: Date.now() })
       );
 
       const monitor = new QualityMonitor(manager, {}, { pollingInterval: 500 });
@@ -207,9 +207,11 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('silently skips poll when getStats throws', async () => {
+    it("silently skips poll when getStats throws", async () => {
       const manager = createMockManager();
-      manager.getStats.mockRejectedValue(new Error('No active peer connection'));
+      manager.getStats.mockRejectedValue(
+        new Error("No active peer connection")
+      );
 
       const monitor = new QualityMonitor(manager);
 
@@ -222,7 +224,7 @@ describe('QualityMonitor', () => {
     });
   });
 
-  describe('auto quality adjustment (Task 5.2)', () => {
+  describe("auto quality adjustment (Task 5.2)", () => {
     const fastConfig: QualityMonitorConfig = {
       pollingInterval: 100,
       downgradeSamples: 3,
@@ -231,67 +233,67 @@ describe('QualityMonitor', () => {
       upgradeThreshold: 25,
     };
 
-    it('downgrades quality after consecutive low-fps samples', async () => {
+    it("downgrades quality after consecutive low-fps samples", async () => {
       // Always return 15 fps (below downgrade threshold of 20)
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 15, timestamp: Date.now() }),
+        buildStatsReport({ fps: 15, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
-      expect(monitor.currentQuality).toBe('high');
+      expect(monitor.currentQuality).toBe("high");
 
       monitor.start();
 
       // Need 3 consecutive low-fps samples to trigger downgrade
       await vi.advanceTimersByTimeAsync(100 * 4);
 
-      expect(qualityChanges).toContain('medium');
-      expect(monitor.currentQuality).toBe('medium');
+      expect(qualityChanges).toContain("medium");
+      expect(monitor.currentQuality).toBe("medium");
 
       monitor.destroy();
     });
 
-    it('downgrades from medium to low on continued low fps', async () => {
+    it("downgrades from medium to low on continued low fps", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 10, timestamp: Date.now() }),
+        buildStatsReport({ fps: 10, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
       monitor.start();
 
       // First downgrade: high → medium (3 samples)
       await vi.advanceTimersByTimeAsync(100 * 4);
-      expect(monitor.currentQuality).toBe('medium');
+      expect(monitor.currentQuality).toBe("medium");
 
       // Second downgrade: medium → low (3 more samples)
       await vi.advanceTimersByTimeAsync(100 * 4);
-      expect(monitor.currentQuality).toBe('low');
+      expect(monitor.currentQuality).toBe("low");
 
       monitor.destroy();
     });
 
-    it('does not downgrade below low', async () => {
+    it("does not downgrade below low", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 5, timestamp: Date.now() }),
+        buildStatsReport({ fps: 5, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
       monitor.start();
@@ -300,54 +302,54 @@ describe('QualityMonitor', () => {
       await vi.advanceTimersByTimeAsync(100 * 10);
 
       // Should have gone high → medium → low, but not further
-      expect(monitor.currentQuality).toBe('low');
-      const lowCount = qualityChanges.filter((q) => q === 'low').length;
+      expect(monitor.currentQuality).toBe("low");
+      const lowCount = qualityChanges.filter(q => q === "low").length;
       expect(lowCount).toBe(1);
 
       monitor.destroy();
     });
 
-    it('upgrades quality after consecutive high-fps samples', async () => {
+    it("upgrades quality after consecutive high-fps samples", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 30, timestamp: Date.now() }),
+        buildStatsReport({ fps: 30, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
       // Start at low quality
-      monitor.setQuality('low');
-      expect(monitor.currentQuality).toBe('low');
+      monitor.setQuality("low");
+      expect(monitor.currentQuality).toBe("low");
 
       monitor.start();
 
       // Need 5 consecutive high-fps samples to trigger upgrade
       await vi.advanceTimersByTimeAsync(100 * 6);
 
-      expect(qualityChanges).toContain('medium');
-      expect(monitor.currentQuality).toBe('medium');
+      expect(qualityChanges).toContain("medium");
+      expect(monitor.currentQuality).toBe("medium");
 
       monitor.destroy();
     });
 
-    it('does not upgrade above high', async () => {
+    it("does not upgrade above high", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 60, timestamp: Date.now() }),
+        buildStatsReport({ fps: 60, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
       // Already at high
-      expect(monitor.currentQuality).toBe('high');
+      expect(monitor.currentQuality).toBe("high");
 
       monitor.start();
       await vi.advanceTimersByTimeAsync(100 * 10);
@@ -358,17 +360,17 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('resets counters when fps is in the dead zone', async () => {
+    it("resets counters when fps is in the dead zone", async () => {
       let fps = 15; // Start low
       const manager = createMockManager(() =>
-        buildStatsReport({ fps, timestamp: Date.now() }),
+        buildStatsReport({ fps, timestamp: Date.now() })
       );
 
       const qualityChanges: QualityLevel[] = [];
       const monitor = new QualityMonitor(
         manager,
-        { onQualityChange: (q) => qualityChanges.push(q) },
-        fastConfig,
+        { onQualityChange: q => qualityChanges.push(q) },
+        fastConfig
       );
 
       monitor.start();
@@ -390,9 +392,9 @@ describe('QualityMonitor', () => {
       monitor.destroy();
     });
 
-    it('applies quality to connection manager on downgrade', async () => {
+    it("applies quality to connection manager on downgrade", async () => {
       const manager = createMockManager(() =>
-        buildStatsReport({ fps: 10, timestamp: Date.now() }),
+        buildStatsReport({ fps: 10, timestamp: Date.now() })
       );
 
       const monitor = new QualityMonitor(manager, {}, fastConfig);
@@ -400,19 +402,19 @@ describe('QualityMonitor', () => {
       monitor.start();
       await vi.advanceTimersByTimeAsync(100 * 4);
 
-      expect(manager.setQuality).toHaveBeenCalledWith('medium');
+      expect(manager.setQuality).toHaveBeenCalledWith("medium");
 
       monitor.destroy();
     });
 
-    it('setQuality resets counters and applies to manager', () => {
+    it("setQuality resets counters and applies to manager", () => {
       const manager = createMockManager();
       const monitor = new QualityMonitor(manager);
 
-      monitor.setQuality('low');
+      monitor.setQuality("low");
 
-      expect(monitor.currentQuality).toBe('low');
-      expect(manager.setQuality).toHaveBeenCalledWith('low');
+      expect(monitor.currentQuality).toBe("low");
+      expect(manager.setQuality).toHaveBeenCalledWith("low");
     });
   });
 });

@@ -25,7 +25,7 @@ describe("getBlueprintFamily", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/blueprint/jobs/job%20root%2Fbranch/family",
-      undefined,
+      undefined
     );
     expect(result).toEqual({ ok: true, data: family });
   });
@@ -38,7 +38,7 @@ describe("getBlueprintFamily", () => {
           status: 404,
           headers: { "content-type": "application/json" },
         });
-      }),
+      })
     );
 
     const result = await getBlueprintFamily("missing-job");

@@ -1,4 +1,10 @@
-import { MapPin, Route, Play, ShieldCheck, type LucideIcon } from "lucide-react";
+import {
+  MapPin,
+  Route,
+  Play,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import type { LaunchRoutePlan } from "@/lib/launch-router";
@@ -18,10 +24,42 @@ interface RoutePlanStep {
 }
 
 const ROUTE_PLAN_STEPS: RoutePlanStep[] = [
-  { id: "destination", labelZh: "目的地", labelEn: "Destination", descZh: "理解目标与约束", descEn: "Parse goals & constraints", icon: MapPin, color: "#ef4444" },
-  { id: "planning", labelZh: "路线搜索", labelEn: "Route Search", descZh: "分解任务与策略", descEn: "Decompose tasks & strategy", icon: Route, color: "#3b82f6" },
-  { id: "execution", labelZh: "执行步骤", labelEn: "Execution", descZh: "智能分配与执行", descEn: "Smart dispatch & execute", icon: Play, color: "#22c55e" },
-  { id: "validation", labelZh: "校验 / 证据", labelEn: "Validation", descZh: "证据链与验证记录", descEn: "Evidence chain & verification", icon: ShieldCheck, color: "#8b5cf6" },
+  {
+    id: "destination",
+    labelZh: "目的地",
+    labelEn: "Destination",
+    descZh: "理解目标与约束",
+    descEn: "Parse goals & constraints",
+    icon: MapPin,
+    color: "#ef4444",
+  },
+  {
+    id: "planning",
+    labelZh: "路线搜索",
+    labelEn: "Route Search",
+    descZh: "分解任务与策略",
+    descEn: "Decompose tasks & strategy",
+    icon: Route,
+    color: "#3b82f6",
+  },
+  {
+    id: "execution",
+    labelZh: "执行步骤",
+    labelEn: "Execution",
+    descZh: "智能分配与执行",
+    descEn: "Smart dispatch & execute",
+    icon: Play,
+    color: "#22c55e",
+  },
+  {
+    id: "validation",
+    labelZh: "校验 / 证据",
+    labelEn: "Validation",
+    descZh: "证据链与验证记录",
+    descEn: "Evidence chain & verification",
+    icon: ShieldCheck,
+    color: "#8b5cf6",
+  },
 ];
 
 export interface LaunchRoutePlanningFlowProps {
@@ -63,7 +101,11 @@ export function LaunchRoutePlanningFlow({
         className="mb-3 text-[11px]"
         style={{ color: "var(--muted-foreground, #64748b)" }}
       >
-        {t(locale, "系统将按照以下路径，自主完成从理解到验证的全流程。", "The system follows this path to autonomously complete the full cycle.")}
+        {t(
+          locale,
+          "系统将按照以下路径，自主完成从理解到验证的全流程。",
+          "The system follows this path to autonomously complete the full cycle."
+        )}
       </p>
       <div className="flex items-start justify-between gap-2">
         {ROUTE_PLAN_STEPS.map((step, index) => {
@@ -115,10 +157,18 @@ export function LaunchRoutePlanningFlow({
                   <div
                     className="h-px w-6 flex-shrink-0"
                     style={{
-                      backgroundImage: "repeating-linear-gradient(90deg, var(--border) 0, var(--border) 4px, transparent 4px, transparent 8px)",
+                      backgroundImage:
+                        "repeating-linear-gradient(90deg, var(--border) 0, var(--border) 4px, transparent 4px, transparent 8px)",
                     }}
                   />
-                  <span style={{ color: "var(--muted-foreground, #94a3b8)", fontSize: 10 }}>→</span>
+                  <span
+                    style={{
+                      color: "var(--muted-foreground, #94a3b8)",
+                      fontSize: 10,
+                    }}
+                  >
+                    →
+                  </span>
                 </div>
               )}
             </div>

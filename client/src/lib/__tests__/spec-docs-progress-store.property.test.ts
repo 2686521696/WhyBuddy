@@ -108,15 +108,13 @@ function dispatchNodeFailed(nodeId: string, errorSummary: string): void {
 /** Generate a unique node ID */
 const arbNodeId = fc
   .string({ minLength: 1, maxLength: 20 })
-  .filter((s) => s.trim().length > 0)
-  .map((s) => `node-${s.replace(/[^a-zA-Z0-9_-]/g, "x")}`);
+  .filter(s => s.trim().length > 0)
+  .map(s => `node-${s.replace(/[^a-zA-Z0-9_-]/g, "x")}`);
 
 /** Generate a list of 1-200 unique node IDs */
 const arbNodeIds = fc
   .integer({ min: 1, max: 200 })
-  .chain((count) =>
-    fc.array(fc.uuid(), { minLength: count, maxLength: count })
-  );
+  .chain(count => fc.array(fc.uuid(), { minLength: count, maxLength: count }));
 
 // ---------------------------------------------------------------------------
 // Property 2: Store initialization and reset from batch_init
@@ -136,7 +134,7 @@ describe("Property 2: Store initialization and reset from batch_init", () => {
 
   it("batch_init creates correct initial state for any list of 1-200 node IDs", () => {
     fc.assert(
-      fc.property(arbNodeIds, (nodeIds) => {
+      fc.property(arbNodeIds, nodeIds => {
         // Reset before each run
         useBlueprintRealtimeStore.getState().reset();
 
@@ -242,7 +240,7 @@ describe("Property 3: Valid state transitions update status and counters correct
   it("pending → processing, processing → completed, processing → failed transitions work correctly", () => {
     fc.assert(
       fc.property(
-        arbNodeIds.filter((ids) => ids.length >= 2),
+        arbNodeIds.filter(ids => ids.length >= 2),
         fc.float({ min: 0, max: 1 }),
         (nodeIds, failRatio) => {
           useBlueprintRealtimeStore.getState().reset();
@@ -361,7 +359,7 @@ describe("Property 4: Invalid transitions and unknown nodes are rejected", () =>
 
   it("invalid transitions leave store state unchanged", () => {
     fc.assert(
-      fc.property(arbNodeIds, (nodeIds) => {
+      fc.property(arbNodeIds, nodeIds => {
         useBlueprintRealtimeStore.getState().reset();
 
         dispatchBatchInit(nodeIds);
@@ -403,59 +401,58 @@ describe("Property 4: Invalid transitions and unknown nodes are rejected", () =>
 
   it("pending → completed and pending → failed are tolerated as recovery transitions", () => {
     fc.assert(
-      fc.property(arbNodeIds.filter((ids) => ids.length >= 2), (nodeIds) => {
-        useBlueprintRealtimeStore.getState().reset();
-        dispatchBatchInit(nodeIds);
+      fc.property(
+        arbNodeIds.filter(ids => ids.length >= 2),
+        nodeIds => {
+          useBlueprintRealtimeStore.getState().reset();
+          dispatchBatchInit(nodeIds);
 
-        // Simulate missed node_started: dispatch node_completed directly on pending node
-        const nodeIdA = nodeIds[0];
-        dispatchNodeCompleted(nodeIdA, 1);
-        // Should be transitioned to completed and counter incremented
-        expect(getProgress().nodes[nodeIdA].status).toBe("completed");
-        expect(getProgress().completedCount).toBe(1);
-        expect(getProgress().processedCount).toBe(1);
+          // Simulate missed node_started: dispatch node_completed directly on pending node
+          const nodeIdA = nodeIds[0];
+          dispatchNodeCompleted(nodeIdA, 1);
+          // Should be transitioned to completed and counter incremented
+          expect(getProgress().nodes[nodeIdA].status).toBe("completed");
+          expect(getProgress().completedCount).toBe(1);
+          expect(getProgress().processedCount).toBe(1);
 
-        // Simulate missed node_started for failure: dispatch node_failed directly on pending node
-        const nodeIdB = nodeIds[1];
-        dispatchNodeFailed(nodeIdB, "some error");
-        expect(getProgress().nodes[nodeIdB].status).toBe("failed");
-        expect(getProgress().nodes[nodeIdB].errorSummary).toBeDefined();
-        expect(getProgress().processedCount).toBe(2);
-      }),
+          // Simulate missed node_started for failure: dispatch node_failed directly on pending node
+          const nodeIdB = nodeIds[1];
+          dispatchNodeFailed(nodeIdB, "some error");
+          expect(getProgress().nodes[nodeIdB].status).toBe("failed");
+          expect(getProgress().nodes[nodeIdB].errorSummary).toBeDefined();
+          expect(getProgress().processedCount).toBe(2);
+        }
+      ),
       { numRuns: 100 }
     );
   });
 
   it("events for unknown node IDs leave store state unchanged", () => {
     fc.assert(
-      fc.property(
-        arbNodeIds,
-        fc.uuid(),
-        (nodeIds, unknownNodeId) => {
-          useBlueprintRealtimeStore.getState().reset();
+      fc.property(arbNodeIds, fc.uuid(), (nodeIds, unknownNodeId) => {
+        useBlueprintRealtimeStore.getState().reset();
 
-          // Ensure unknownNodeId is not in nodeIds
-          const filteredUnknown = nodeIds.includes(unknownNodeId)
-            ? `unknown-${unknownNodeId}`
-            : unknownNodeId;
+        // Ensure unknownNodeId is not in nodeIds
+        const filteredUnknown = nodeIds.includes(unknownNodeId)
+          ? `unknown-${unknownNodeId}`
+          : unknownNodeId;
 
-          dispatchBatchInit(nodeIds);
+        dispatchBatchInit(nodeIds);
 
-          const beforeState = JSON.stringify(getProgress());
+        const beforeState = JSON.stringify(getProgress());
 
-          // Try node_started for unknown node
-          dispatchNodeStarted(filteredUnknown, 1);
-          expect(JSON.stringify(getProgress())).toBe(beforeState);
+        // Try node_started for unknown node
+        dispatchNodeStarted(filteredUnknown, 1);
+        expect(JSON.stringify(getProgress())).toBe(beforeState);
 
-          // Try node_completed for unknown node
-          dispatchNodeCompleted(filteredUnknown, 1);
-          expect(JSON.stringify(getProgress())).toBe(beforeState);
+        // Try node_completed for unknown node
+        dispatchNodeCompleted(filteredUnknown, 1);
+        expect(JSON.stringify(getProgress())).toBe(beforeState);
 
-          // Try node_failed for unknown node
-          dispatchNodeFailed(filteredUnknown, "error");
-          expect(JSON.stringify(getProgress())).toBe(beforeState);
-        }
-      ),
+        // Try node_failed for unknown node
+        dispatchNodeFailed(filteredUnknown, "error");
+        expect(JSON.stringify(getProgress())).toBe(beforeState);
+      }),
       { numRuns: 100 }
     );
   });
@@ -467,41 +464,44 @@ describe("Property 4: Invalid transitions and unknown nodes are rejected", () =>
     // `wasRetried: true`. Direct `failed → completed` / `failed → failed`
     // (without first re-entering processing) remain invalid.
     fc.assert(
-      fc.property(arbNodeIds.filter((ids) => ids.length >= 1), (nodeIds) => {
-        useBlueprintRealtimeStore.getState().reset();
+      fc.property(
+        arbNodeIds.filter(ids => ids.length >= 1),
+        nodeIds => {
+          useBlueprintRealtimeStore.getState().reset();
 
-        dispatchBatchInit(nodeIds);
+          dispatchBatchInit(nodeIds);
 
-        const nodeId = nodeIds[0];
+          const nodeId = nodeIds[0];
 
-        // Move to processing then fail
-        dispatchNodeStarted(nodeId, 1);
-        dispatchNodeFailed(nodeId, "some error");
-        expect(getProgress().nodes[nodeId].status).toBe("failed");
+          // Move to processing then fail
+          dispatchNodeStarted(nodeId, 1);
+          dispatchNodeFailed(nodeId, "some error");
+          expect(getProgress().nodes[nodeId].status).toBe("failed");
 
-        // Invalid: failed → completed (must re-enter processing first)
-        const beforeInvalidCompleted = JSON.stringify(getProgress());
-        dispatchNodeCompleted(nodeId, 1);
-        expect(JSON.stringify(getProgress())).toBe(beforeInvalidCompleted);
+          // Invalid: failed → completed (must re-enter processing first)
+          const beforeInvalidCompleted = JSON.stringify(getProgress());
+          dispatchNodeCompleted(nodeId, 1);
+          expect(JSON.stringify(getProgress())).toBe(beforeInvalidCompleted);
 
-        // Invalid: failed → failed
-        const beforeInvalidFailed = JSON.stringify(getProgress());
-        dispatchNodeFailed(nodeId, "another error");
-        expect(JSON.stringify(getProgress())).toBe(beforeInvalidFailed);
+          // Invalid: failed → failed
+          const beforeInvalidFailed = JSON.stringify(getProgress());
+          dispatchNodeFailed(nodeId, "another error");
+          expect(JSON.stringify(getProgress())).toBe(beforeInvalidFailed);
 
-        // VALID (A2 retry): failed → processing, stamps wasRetried = true
-        dispatchNodeStarted(nodeId, 1);
-        expect(getProgress().nodes[nodeId].status).toBe("processing");
-        expect(getProgress().nodes[nodeId].wasRetried).toBe(true);
+          // VALID (A2 retry): failed → processing, stamps wasRetried = true
+          dispatchNodeStarted(nodeId, 1);
+          expect(getProgress().nodes[nodeId].status).toBe("processing");
+          expect(getProgress().nodes[nodeId].wasRetried).toBe(true);
 
-        // The original errorSummary is preserved through the retry.
-        expect(getProgress().nodes[nodeId].errorSummary).toBe("some error");
+          // The original errorSummary is preserved through the retry.
+          expect(getProgress().nodes[nodeId].errorSummary).toBe("some error");
 
-        // After a successful retry, wasRetried stays true permanently (white-box trail).
-        dispatchNodeCompleted(nodeId, 1);
-        expect(getProgress().nodes[nodeId].status).toBe("completed");
-        expect(getProgress().nodes[nodeId].wasRetried).toBe(true);
-      }),
+          // After a successful retry, wasRetried stays true permanently (white-box trail).
+          dispatchNodeCompleted(nodeId, 1);
+          expect(getProgress().nodes[nodeId].status).toBe("completed");
+          expect(getProgress().nodes[nodeId].wasRetried).toBe(true);
+        }
+      ),
       { numRuns: 100 }
     );
   });
@@ -525,7 +525,7 @@ describe("Property 6: Node display order preservation", () => {
 
   it("nodeOrder preserves exact ordering from batch_init throughout lifecycle", () => {
     fc.assert(
-      fc.property(arbNodeIds, (nodeIds) => {
+      fc.property(arbNodeIds, nodeIds => {
         useBlueprintRealtimeStore.getState().reset();
 
         dispatchBatchInit(nodeIds);
@@ -587,7 +587,7 @@ describe("Property 7: Non-interference with other stage events", () => {
   it("spec_docs events do not modify rolePhases, capabilityStatuses, or agentProgress slices", () => {
     fc.assert(
       fc.property(
-        arbNodeIds.filter((ids) => ids.length >= 1),
+        arbNodeIds.filter(ids => ids.length >= 1),
         fc.integer({ min: 1, max: 5 }),
         (nodeIds, otherEventCount) => {
           useBlueprintRealtimeStore.getState().reset();
@@ -611,7 +611,9 @@ describe("Property 7: Non-interference with other stage events", () => {
           // Snapshot other slices before spec_docs events
           const stateBefore = useBlueprintRealtimeStore.getState();
           const rolePhasesBefore = { ...stateBefore.rolePhases };
-          const capabilityStatusesBefore = { ...stateBefore.capabilityStatuses };
+          const capabilityStatusesBefore = {
+            ...stateBefore.capabilityStatuses,
+          };
           const agentProgressBefore = [...stateBefore.agentProgress];
 
           // Now dispatch spec_docs progress events
@@ -661,7 +663,7 @@ describe("Property 7: Non-interference with other stage events", () => {
   it("other stage events do not modify specDocsProgress slice", () => {
     fc.assert(
       fc.property(
-        arbNodeIds.filter((ids) => ids.length >= 1),
+        arbNodeIds.filter(ids => ids.length >= 1),
         fc.integer({ min: 1, max: 10 }),
         (nodeIds, otherEventCount) => {
           useBlueprintRealtimeStore.getState().reset();
@@ -705,7 +707,7 @@ describe("Property 7: Non-interference with other stage events", () => {
 
   it("job.completed for spec docs finalizes a running panel when batch_finished was missed", () => {
     fc.assert(
-      fc.property(arbNodeIds, (nodeIds) => {
+      fc.property(arbNodeIds, nodeIds => {
         useBlueprintRealtimeStore.getState().reset();
 
         dispatchBatchInit(nodeIds);

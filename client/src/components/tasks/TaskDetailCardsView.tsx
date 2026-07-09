@@ -1,5 +1,8 @@
 import { cn } from "@/lib/utils";
-import type { MissionTaskDetail, TaskAutopilotSummary } from "@/lib/tasks-store";
+import type {
+  MissionTaskDetail,
+  TaskAutopilotSummary,
+} from "@/lib/tasks-store";
 import type { MissionOperatorActionType } from "@shared/mission/contracts";
 
 import { TaskHeaderCard } from "./TaskHeaderCard";
@@ -37,7 +40,7 @@ export interface TaskDetailCardsViewProps {
 
 function buildHeaderProps(
   detail: MissionTaskDetail,
-  autopilotSummary: TaskAutopilotSummary | null | undefined,
+  autopilotSummary: TaskAutopilotSummary | null | undefined
 ) {
   return {
     title: detail.title,
@@ -54,7 +57,7 @@ function buildHeaderProps(
 function buildTakeoverProps(
   detail: MissionTaskDetail,
   autopilotSummary: TaskAutopilotSummary | null | undefined,
-  locale: string,
+  locale: string
 ) {
   const hasPendingDecision =
     detail.decision != null ||
@@ -65,7 +68,7 @@ function buildTakeoverProps(
     title: t(locale, "接管/证据", "Takeover/Evidence"),
     hasPendingDecision,
     decisionPrompt: detail.decisionPrompt,
-    decisionPresets: detail.decisionPresets.map((p) => ({
+    decisionPresets: detail.decisionPresets.map(p => ({
       id: p.id,
       label: p.label,
     })),
@@ -106,10 +109,7 @@ export function TaskDetailCardsView({
       {/* Header card - does not scroll */}
       <div className="px-3 pt-3">
         <CardErrorBoundary locale={locale} cardName="Header">
-          <TaskHeaderCard
-            {...headerProps}
-            locale={locale}
-          />
+          <TaskHeaderCard {...headerProps} locale={locale} />
         </CardErrorBoundary>
       </div>
 
@@ -148,7 +148,7 @@ export function TaskDetailCardsView({
             decisionPrompt={takeoverData.decisionPrompt}
             decisionPresets={takeoverData.decisionPresets}
             decisionNote={decisionNote}
-            onSetDecisionNote={(note) => onSetDecisionNote(taskId, note)}
+            onSetDecisionNote={note => onSetDecisionNote(taskId, note)}
             onLaunchDecision={onLaunchDecision}
             onSubmitOperatorAction={onSubmitOperatorAction}
             operatorActionLoading={operatorActionLoading}

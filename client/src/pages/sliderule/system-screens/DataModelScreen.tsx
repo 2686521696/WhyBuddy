@@ -32,7 +32,9 @@ function extractMermaid(text: string): string | null {
   const fenced = text.match(/```mermaid\s*([\s\S]*?)```/i);
   if (fenced) return fenced[1].trim();
   // bare erDiagram / classDiagram / graph block
-  const bare = text.match(/(erDiagram|classDiagram)([\s\S]*?)(?=\n\n|\n[A-Z#]|$)/i);
+  const bare = text.match(
+    /(erDiagram|classDiagram)([\s\S]*?)(?=\n\n|\n[A-Z#]|$)/i
+  );
   if (bare) return bare[0].trim();
   return null;
 }
@@ -69,7 +71,7 @@ export function DataModelScreen({
       data-active={isActive}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-[#EFEBE2] px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
         <div className="h-2 w-2 rounded-full bg-blue-400" />
         <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
           DataModel
@@ -77,13 +79,13 @@ export function DataModelScreen({
         <div className="ml-auto flex items-center gap-1.5">
           {canEditData && (
             <div
-              className="flex items-center gap-0.5 rounded-full bg-[#F0EDE5] p-0.5 ring-1 ring-[#E7E2D9]/80"
+              className="flex items-center gap-0.5 rounded-full bg-[#e9edf2] p-0.5 ring-1 ring-[#e5e7eb]/80"
               data-testid="datamodel-mode-toggle"
             >
-              {([
+              {[
                 { id: "diagram" as const, label: "模型图" },
                 { id: "table" as const, label: "数据表" },
-              ]).map(({ id, label }) => (
+              ].map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -115,7 +117,10 @@ export function DataModelScreen({
         </div>
       ) : isPlaceholder ? (
         // 空状态不渲染任何假域示例（曾被误读成真实数据），只说清将来出现什么
-        <EmptyScreenHint title="实体关系图（ER）" desc="实体、字段与关联，来自五系统模型 datamodel 段" />
+        <EmptyScreenHint
+          title="实体关系图（ER）"
+          desc="实体、字段与关联，来自五系统模型 datamodel 段"
+        />
       ) : (
         // 仅有 SSE 文本 mermaid（无结构化模型）时的降级渲染
         <div className="min-h-0 flex-1 overflow-auto p-3">

@@ -30,7 +30,11 @@ function matrix(overrides?: Partial<TraceabilityMatrix>): TraceabilityMatrix {
       coveredByTests: 1,
       coveragePercent: 75,
       gaps: [
-        { requirementId: "R1", requirementTitle: "Login", missingLinks: ["evidence"] },
+        {
+          requirementId: "R1",
+          requirementTitle: "Login",
+          missingLinks: ["evidence"],
+        },
       ],
     },
     ...overrides,
@@ -73,7 +77,11 @@ describe("TraceabilityMatrixView", () => {
   });
 
   it("renders not_generated empty state", () => {
-    const html = render({ status: "not_generated", locale: "zh-CN", matrix: null });
+    const html = render({
+      status: "not_generated",
+      locale: "zh-CN",
+      matrix: null,
+    });
     expect(html).toContain('data-testid="matrix-not-generated"');
   });
 

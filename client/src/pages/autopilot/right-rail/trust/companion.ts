@@ -18,7 +18,7 @@ export interface CompanionFindingsSource {
  * 15.1 从 job 负载安全选取伴随发现（缺字段 → 空数组，绝不抛错）。
  */
 export function selectCompanionFindings(
-  job: CompanionFindingsSource | null | undefined,
+  job: CompanionFindingsSource | null | undefined
 ): CompanionFinding[] {
   const raw = job?.companionFindings;
   if (!Array.isArray(raw)) return [];
@@ -29,7 +29,7 @@ export function selectCompanionFindings(
  * 15.2 按 `stage` 分组（首次出现顺序，组内保留输入顺序）。
  */
 export function groupCompanionByStage(
-  findings: readonly CompanionFinding[] | null | undefined,
+  findings: readonly CompanionFinding[] | null | undefined
 ): CompanionFindingGroup[] {
   const groups: CompanionFindingGroup[] = [];
   const indexByStage = new Map<string, number>();
@@ -59,10 +59,10 @@ const SEVERITY_RANK: Record<CompanionFinding["severity"], number> = {
  * Property 5：输出是输入的排列；error 全先于 warn，warn 全先于 info；同级稳定。
  */
 export function sortBySeverity(
-  findings: readonly CompanionFinding[] | null | undefined,
+  findings: readonly CompanionFinding[] | null | undefined
 ): CompanionFinding[] {
   const list = (findings ?? []).filter(
-    (finding): finding is CompanionFinding => !!finding,
+    (finding): finding is CompanionFinding => !!finding
   );
   return list
     .map((finding, index) => ({ finding, index }))

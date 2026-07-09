@@ -35,7 +35,7 @@ import { CapabilityBridgePanel } from "./capability-panel/CapabilityBridgePanel"
  *    无调用数据时返回 `null`，因此本组件在无数据时也不占据布局空间。
  */
 export const CapabilityRail: FC = () => {
-  const locale = useAppStore((s) => s.locale) as AppLocale;
+  const locale = useAppStore(s => s.locale) as AppLocale;
 
   // 详细调用明细面板（耗时 / 完成状态 / 审计记录）。3D 只做轻量 chip，
   // 这部分尚未迁移到 3D，保留为右侧审计详情。

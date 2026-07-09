@@ -1,5 +1,10 @@
 import { Check, Pencil, X } from "lucide-react";
-import { useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 
 import type { AutopilotLocalStage } from "./derive-downstream-impact";
 import { InlineConfirmation } from "./InlineConfirmation";
@@ -9,9 +14,24 @@ export interface EditModeFieldImpactSummary {
 }
 
 export type EditModeState =
-  | { mode: "view"; value: string; draftValue: string; errorMessage?: undefined }
-  | { mode: "editing"; value: string; draftValue: string; errorMessage?: undefined }
-  | { mode: "submitting"; value: string; draftValue: string; errorMessage?: undefined }
+  | {
+      mode: "view";
+      value: string;
+      draftValue: string;
+      errorMessage?: undefined;
+    }
+  | {
+      mode: "editing";
+      value: string;
+      draftValue: string;
+      errorMessage?: undefined;
+    }
+  | {
+      mode: "submitting";
+      value: string;
+      draftValue: string;
+      errorMessage?: undefined;
+    }
   | { mode: "error"; value: string; draftValue: string; errorMessage: string };
 
 export type EditModeAction =
@@ -46,7 +66,7 @@ const EDITABLE_UPSTREAM_STAGES = new Set<AutopilotLocalStage>([
 export type EditModeFieldKeyIntent = "submit" | "cancel" | "none";
 
 export function getEditModeFieldKeyIntent(
-  event: Pick<KeyboardEvent<HTMLTextAreaElement>, "key" | "shiftKey">,
+  event: Pick<KeyboardEvent<HTMLTextAreaElement>, "key" | "shiftKey">
 ): EditModeFieldKeyIntent {
   if (event.key === "Escape") {
     return "cancel";
@@ -69,7 +89,7 @@ export function initialEditModeState(value: string): EditModeState {
 
 export function editModeReducer(
   state: EditModeState,
-  action: EditModeAction,
+  action: EditModeAction
 ): EditModeState {
   switch (action.type) {
     case "syncValue":
@@ -131,7 +151,10 @@ export function deriveEditErrorMessage(error: unknown): string {
       return `${runningStage} is still running. Please wait for completion.`;
     }
 
-    if (typeof maybeError.message === "string" && maybeError.message.length > 0) {
+    if (
+      typeof maybeError.message === "string" &&
+      maybeError.message.length > 0
+    ) {
       return maybeError.message;
     }
   }
@@ -176,7 +199,7 @@ export function deriveEditModeFieldCanEdit({
       fromStage &&
       EDITABLE_UPSTREAM_STAGES.has(fromStage) &&
       !isAdvancingThroughStage &&
-      !isStaticPreview,
+      !isStaticPreview
   );
 }
 
@@ -194,38 +217,36 @@ export function EditModeField({
   placeholder,
 }: EditModeFieldProps) {
   const [state, setState] = useState<EditModeState>(() =>
-    initialEditModeState(value),
+    initialEditModeState(value)
   );
 
   useEffect(() => {
-    setState((current) =>
-      editModeReducer(current, { type: "syncValue", value }),
-    );
+    setState(current => editModeReducer(current, { type: "syncValue", value }));
   }, [value]);
 
   const startEditing = () => {
-    setState((current) => editModeReducer(current, { type: "startEditing" }));
+    setState(current => editModeReducer(current, { type: "startEditing" }));
   };
 
   const cancelEditing = () => {
-    setState((current) => editModeReducer(current, { type: "cancel" }));
+    setState(current => editModeReducer(current, { type: "cancel" }));
   };
 
   const submitDraft = async () => {
     const draftValue = state.draftValue;
-    setState((current) => editModeReducer(current, { type: "submit" }));
+    setState(current => editModeReducer(current, { type: "submit" }));
 
     try {
       await onSubmit(draftValue);
-      setState((current) =>
-        editModeReducer(current, { type: "submitSuccess", value: draftValue }),
+      setState(current =>
+        editModeReducer(current, { type: "submitSuccess", value: draftValue })
       );
     } catch (error) {
-      setState((current) =>
+      setState(current =>
         editModeReducer(current, {
           type: "submitError",
           message: deriveEditErrorMessage(error),
-        }),
+        })
       );
     }
   };
@@ -243,16 +264,18 @@ export function EditModeField({
   };
   const handleDraftChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.currentTarget.value;
-    setState((current) =>
+    setState(current =>
       editModeReducer(current, {
         type: "changeDraft",
         value,
-      }),
+      })
     );
   };
 
   const isEditing =
-    state.mode === "editing" || state.mode === "submitting" || state.mode === "error";
+    state.mode === "editing" ||
+    state.mode === "submitting" ||
+    state.mode === "error";
   const isSubmitting = state.mode === "submitting";
   const effectiveCanEdit = deriveEditModeFieldCanEdit({
     canEdit,

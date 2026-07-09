@@ -17,13 +17,7 @@
  * - SSR 安全：embla 在 SSR 下不初始化引擎，仅输出静态结构
  */
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FC,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 
@@ -139,7 +133,9 @@ function MobileChip({
           {currentCard?.headline ?? t(locale, "叙事流", "Narrative")}
         </span>
         {cards.length > 0 && (
-          <span className="text-slate-400">{activeIndex + 1}/{cards.length}</span>
+          <span className="text-slate-400">
+            {activeIndex + 1}/{cards.length}
+          </span>
         )}
       </button>
 
@@ -240,7 +236,9 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
     const onSelect = () => setSelectedIndex(emblaApi.selectedScrollSnap());
     emblaApi.on("select", onSelect);
     onSelect();
-    return () => { emblaApi.off("select", onSelect); };
+    return () => {
+      emblaApi.off("select", onSelect);
+    };
   }, [emblaApi]);
 
   // ─── Reindex when cards change ─────────────────────────────────────────────
@@ -281,10 +279,16 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!emblaApi) return;
-      if (e.key === "ArrowLeft") { e.preventDefault(); emblaApi.scrollPrev(); }
-      if (e.key === "ArrowRight") { e.preventDefault(); emblaApi.scrollNext(); }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        emblaApi.scrollPrev();
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        emblaApi.scrollNext();
+      }
     },
-    [emblaApi],
+    [emblaApi]
   );
 
   // ─── Nav button handlers ──────────────────────────────────────────────────
@@ -300,11 +304,18 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
   // ─── < 768px：chip 形态 ───────────────────────────────────────────────────
   if (tier === "drawer") {
     return (
-      <MobileChip locale={locale} stage={stage} cards={cards} activeIndex={selectedIndex} />
+      <MobileChip
+        locale={locale}
+        stage={stage}
+        cards={cards}
+        activeIndex={selectedIndex}
+      />
     );
   }
 
-  const transitionClass = reducedMotion ? "transition-none" : "transition-all duration-[600ms]";
+  const transitionClass = reducedMotion
+    ? "transition-none"
+    : "transition-all duration-[600ms]";
 
   return (
     <section
@@ -315,9 +326,12 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
       data-viewport-tier={tier}
       className={
         "relative shrink-0 border-t border-slate-200/40 " +
-        lane.backgroundClass + " " +
-        transitionClass + " " +
-        resolveResponsiveClass(tier) + " " +
+        lane.backgroundClass +
+        " " +
+        transitionClass +
+        " " +
+        resolveResponsiveClass(tier) +
+        " " +
         "select-none overflow-hidden"
       }
       tabIndex={0}
@@ -344,7 +358,9 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
                       "w-full max-w-full overflow-hidden rounded-md border bg-white/80 p-3 dark:bg-slate-800/60 " +
                       lane.cardBorderClass +
                       (i < echoCount ? " opacity-50" : "") +
-                      (stageTransitioning ? " opacity-30 transition-opacity duration-[600ms]" : "")
+                      (stageTransitioning
+                        ? " opacity-30 transition-opacity duration-[600ms]"
+                        : "")
                     }
                     data-card-id={card.id}
                     data-source={card.source}
@@ -371,7 +387,17 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
             className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-200/70 p-1.5 text-slate-600 hover:bg-slate-300/80 focus-visible:ring-2 focus-visible:ring-blue-400 dark:bg-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-600/70"
             onClick={scrollPrev}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
@@ -383,7 +409,17 @@ export const NarrativeSwiper: FC<NarrativeSwiperProps> = ({
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-200/70 p-1.5 text-slate-600 hover:bg-slate-300/80 focus-visible:ring-2 focus-visible:ring-blue-400 dark:bg-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-600/70"
             onClick={scrollNext}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>

@@ -23,7 +23,9 @@ const mockedRealtime = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/blueprint-realtime-store", () => {
-  const useBlueprintRealtimeStore = ((selector?: (state: unknown) => unknown) => {
+  const useBlueprintRealtimeStore = ((
+    selector?: (state: unknown) => unknown
+  ) => {
     return selector ? selector(mockedRealtime.state) : mockedRealtime.state;
   }) as unknown as typeof import("@/lib/blueprint-realtime-store").useBlueprintRealtimeStore;
 
@@ -36,7 +38,9 @@ vi.mock("@/lib/blueprint-realtime-store", () => {
 import { AutopilotSpecDocumentsWorkbench } from "../AutopilotSpecDocumentsWorkbench";
 import type { AutopilotSpecDocumentsWorkbenchProps } from "../AutopilotSpecDocumentsWorkbench";
 
-function makeSpecTree(): NonNullable<AutopilotSpecDocumentsWorkbenchProps["specTree"]> {
+function makeSpecTree(): NonNullable<
+  AutopilotSpecDocumentsWorkbenchProps["specTree"]
+> {
   return {
     id: "tree-realtime-stats",
     rootNodeId: "node-1",
@@ -64,7 +68,12 @@ describe("AutopilotSpecDocumentsWorkbench realtime stats", () => {
         locale="zh-CN"
         generating="all"
         jobId="job-realtime-stats"
-        job={{ id: "job-realtime-stats", artifacts: [] } as unknown as AutopilotSpecDocumentsWorkbenchProps["job"]}
+        job={
+          {
+            id: "job-realtime-stats",
+            artifacts: [],
+          } as unknown as AutopilotSpecDocumentsWorkbenchProps["job"]
+        }
       />
     );
 

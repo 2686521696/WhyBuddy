@@ -44,11 +44,11 @@ export function LlmLiveOutput({
     <div data-testid="sliderule-llm-draft" className={`min-w-0 ${className}`}>
       <button
         type="button"
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={() => setCollapsed(v => !v)}
         data-testid="sliderule-llm-draft-toggle"
         className="flex items-center gap-2 text-left text-[11px] font-medium text-stone-400 transition-colors hover:text-stone-600"
       >
-        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#D97757]" />
+        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[#1677ff]" />
         <span className="min-w-0 truncate">
           {title} · {text.length} 字符
         </span>
@@ -64,7 +64,7 @@ export function LlmLiveOutput({
           }`}
         >
           {displayText}
-          <span className="animate-pulse text-[#D97757]">▊</span>
+          <span className="animate-pulse text-[#1677ff]">▊</span>
         </pre>
       )}
     </div>

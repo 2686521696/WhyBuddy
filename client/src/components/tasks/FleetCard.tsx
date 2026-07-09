@@ -1,5 +1,8 @@
 import { cn } from "@/lib/utils";
-import type { TaskAutopilotSummary, MissionTaskDetail } from "@/lib/tasks-store";
+import type {
+  TaskAutopilotSummary,
+  MissionTaskDetail,
+} from "@/lib/tasks-store";
 import type {
   MissionAutopilotFleetRoleType,
   MissionAutopilotFleetRoleStatus,
@@ -75,15 +78,18 @@ export interface FleetCardProps {
  */
 export function buildFleetCardData(
   autopilotSummary: TaskAutopilotSummary | null | undefined,
-  selectedDetail: Pick<MissionTaskDetail, "departmentLabels"> | null | undefined,
-  locale: string,
+  selectedDetail:
+    | Pick<MissionTaskDetail, "departmentLabels">
+    | null
+    | undefined,
+  locale: string
 ): Pick<FleetCardProps, "title" | "members"> {
   const title = t(locale, "编队执行", "Fleet Execution");
 
   // Try fleet.roles first
   const roles = autopilotSummary?.fleet?.roles;
   if (Array.isArray(roles) && roles.length > 0) {
-    const members: FleetMemberItem[] = roles.map((role) => ({
+    const members: FleetMemberItem[] = roles.map(role => ({
       id: role.id,
       role: role.title || role.roleType,
       roleType: role.roleType,
@@ -122,7 +128,7 @@ export function FleetCard({
     <div
       className={cn(
         "bg-card text-card-foreground border rounded-lg p-4",
-        "flex flex-col gap-3",
+        "flex flex-col gap-3"
       )}
     >
       {/* Card title */}
@@ -135,9 +141,10 @@ export function FleetCard({
         </p>
       ) : (
         <div className="flex flex-wrap gap-3">
-          {members.map((member) => {
+          {members.map(member => {
             const IconComponent = ROLE_TYPE_ICONS[member.roleType] ?? User;
-            const dotClass = STATUS_DOT_CLASSES[member.status] ?? "bg-slate-300";
+            const dotClass =
+              STATUS_DOT_CLASSES[member.status] ?? "bg-slate-300";
 
             return (
               <div
@@ -145,7 +152,7 @@ export function FleetCard({
                 className={cn(
                   "flex flex-col items-center gap-1.5 p-2 rounded-lg",
                   "bg-muted/50",
-                  "w-[88px] min-h-[96px]",
+                  "w-[88px] min-h-[96px]"
                 )}
               >
                 {/* Circular avatar placeholder with role icon */}
@@ -153,17 +160,20 @@ export function FleetCard({
                   <div
                     className={cn(
                       "w-10 h-10 rounded-full",
-                      "bg-muted flex items-center justify-center",
+                      "bg-muted flex items-center justify-center"
                     )}
                   >
-                    <IconComponent size={18} className="text-muted-foreground" />
+                    <IconComponent
+                      size={18}
+                      className="text-muted-foreground"
+                    />
                   </div>
                   {/* Status indicator dot */}
                   <span
                     className={cn(
                       "absolute -bottom-0.5 -right-0.5",
                       "w-3 h-3 rounded-full border-2 border-card",
-                      dotClass,
+                      dotClass
                     )}
                   />
                 </div>

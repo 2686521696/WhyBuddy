@@ -52,7 +52,7 @@ export type SaveBlueprintClarificationAnswersResult =
   | { ok: false; error: ApiRequestError };
 
 function normalizeClarificationAnswersResponse(
-  value: BlueprintClarificationSessionResponse,
+  value: BlueprintClarificationSessionResponse
 ): BlueprintClarificationSessionResponse {
   const session = value.clarificationSession ?? value.session;
   return {
@@ -67,7 +67,7 @@ function normalizeClarificationAnswersResponse(
 export async function saveBlueprintClarificationAnswers(
   clarificationId: string,
   request: BlueprintClarificationAnswersRequest,
-  method: "POST" | "PATCH" = "POST",
+  method: "POST" | "PATCH" = "POST"
 ): Promise<SaveBlueprintClarificationAnswersResult> {
   const result = await fetchJsonSafe<BlueprintClarificationSessionResponse>(
     `${BLUEPRINT_CLARIFICATIONS_ENDPOINT}/${encodeURIComponent(clarificationId)}/answers`,
@@ -75,7 +75,7 @@ export async function saveBlueprintClarificationAnswers(
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
-    },
+    }
   );
 
   if (!result.ok) {

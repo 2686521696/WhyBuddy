@@ -29,7 +29,14 @@ const capabilityKinds: AigcCapabilityKind[] = [
   "tool_orchestration",
 ];
 
-const outputFieldTypes: OutputSchemaFieldType[] = ["string", "number", "boolean", "enum", "object", "array"];
+const outputFieldTypes: OutputSchemaFieldType[] = [
+  "string",
+  "number",
+  "boolean",
+  "enum",
+  "object",
+  "array",
+];
 
 function sanitizeId(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -62,7 +69,7 @@ function pushFinding(
   code: string,
   severity: Finding["severity"],
   path: string,
-  message: string,
+  message: string
 ): void {
   findings.push({ code, severity, path, message });
 }
@@ -78,7 +85,10 @@ function hasRawSecret(provider: Record<string, unknown>): boolean {
   });
 }
 
-function fieldMetadata(surface: ResolvableSurface | undefined, ref: string): any | null {
+function fieldMetadata(
+  surface: ResolvableSurface | undefined,
+  ref: string
+): any | null {
   const fields = (surface as any)?.fields;
   if (!Array.isArray(fields)) return null;
   return fields.find((field: any) => field?.ref === ref) ?? null;
@@ -88,12 +98,24 @@ function validateRoleRef(
   findings: Finding[],
   roles: string[] | undefined,
   ref: string,
-  path: string,
+  path: string
 ): void {
   if (roles === undefined) {
-    pushFinding(findings, "AIGC_ROLE_UNRESOLVED", "warning", path, `RBAC role surface was not provided for ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_ROLE_UNRESOLVED",
+      "warning",
+      path,
+      `RBAC role surface was not provided for ${ref}.`
+    );
   } else if (!roles.includes(ref)) {
-    pushFinding(findings, "AIGC_ROLE_MISSING", "error", path, `AIGC references missing RBAC role: ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_ROLE_MISSING",
+      "error",
+      path,
+      `AIGC references missing RBAC role: ${ref}.`
+    );
   }
 }
 
@@ -101,12 +123,24 @@ function validatePermissionRef(
   findings: Finding[],
   permissions: string[] | undefined,
   ref: string,
-  path: string,
+  path: string
 ): void {
   if (permissions === undefined) {
-    pushFinding(findings, "AIGC_PERMISSION_UNRESOLVED", "warning", path, `RBAC permission surface was not provided for ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_PERMISSION_UNRESOLVED",
+      "warning",
+      path,
+      `RBAC permission surface was not provided for ${ref}.`
+    );
   } else if (!permissions.includes(ref)) {
-    pushFinding(findings, "AIGC_PERMISSION_MISSING", "error", path, `AIGC references missing RBAC permission: ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_PERMISSION_MISSING",
+      "error",
+      path,
+      `AIGC references missing RBAC permission: ${ref}.`
+    );
   }
 }
 
@@ -115,23 +149,47 @@ function validateFieldRef(
   datamodel: ResolvableSurface | undefined,
   ref: string,
   path: string,
-  missingCode: "AIGC_INPUT_FIELD_MISSING" | "AIGC_OUTPUT_FIELD_MISSING",
+  missingCode: "AIGC_INPUT_FIELD_MISSING" | "AIGC_OUTPUT_FIELD_MISSING"
 ): void {
   const fields = datamodel?.field;
   if (fields === undefined) {
-    pushFinding(findings, "AIGC_FIELD_UNRESOLVED", "warning", path, `DataModel field surface was not provided for ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_FIELD_UNRESOLVED",
+      "warning",
+      path,
+      `DataModel field surface was not provided for ${ref}.`
+    );
     return;
   }
   if (!fields.includes(ref)) {
-    pushFinding(findings, missingCode, "error", path, `AIGC references missing DataModel SSOT field: ${ref}.`);
+    pushFinding(
+      findings,
+      missingCode,
+      "error",
+      path,
+      `AIGC references missing DataModel SSOT field: ${ref}.`
+    );
     return;
   }
 
   const metadata = fieldMetadata(datamodel, ref);
   if (metadata?.lifecycle === "deprecated") {
-    pushFinding(findings, "AIGC_FIELD_DEPRECATED", "warning", path, `AIGC references deprecated DataModel field: ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_FIELD_DEPRECATED",
+      "warning",
+      path,
+      `AIGC references deprecated DataModel field: ${ref}.`
+    );
   } else if (metadata?.lifecycle === "removed") {
-    pushFinding(findings, "AIGC_FIELD_REMOVED", "error", path, `AIGC references removed DataModel field: ${ref}.`);
+    pushFinding(
+      findings,
+      "AIGC_FIELD_REMOVED",
+      "error",
+      path,
+      `AIGC references removed DataModel field: ${ref}.`
+    );
   }
 }
 
@@ -159,7 +217,11 @@ function capabilityRefs(model: AigcModel): {
     ]),
     outputFieldRefs: unique([
       ...model.capabilities.flatMap(cap => cap.outputFieldRefs ?? []),
-      ...model.outputSchemas.flatMap(schema => schema.fields.flatMap(field => (field.writebackFieldRef ? [field.writebackFieldRef] : []))),
+      ...model.outputSchemas.flatMap(schema =>
+        schema.fields.flatMap(field =>
+          field.writebackFieldRef ? [field.writebackFieldRef] : []
+        )
+      ),
     ]),
   };
 }
@@ -174,11 +236,17 @@ function isValidFieldValue(value: unknown, field: OutputSchemaField): boolean {
     case "boolean":
       return typeof value === "boolean";
     case "enum":
-      return typeof value === "string" && Array.isArray(field.enumValues) && field.enumValues.includes(value);
+      return (
+        typeof value === "string" &&
+        Array.isArray(field.enumValues) &&
+        field.enumValues.includes(value)
+      );
     case "array":
       return Array.isArray(value);
     case "object":
-      return typeof value === "object" && value !== null && !Array.isArray(value);
+      return (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      );
     default:
       return false;
   }
@@ -195,20 +263,40 @@ export function validateAigcRuntimeOutput(
 ): ReturnType<Skill<AigcModel>["validate"]> {
   const findings: Finding[] = [];
 
-  const capability = model.capabilities.find((c) => c.id === capabilityId);
+  const capability = model.capabilities.find(c => c.id === capabilityId);
   if (!capability) {
-    pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", "capabilityId", `Capability ${capabilityId} not found in model.`);
+    pushFinding(
+      findings,
+      AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+      "error",
+      "capabilityId",
+      `Capability ${capabilityId} not found in model.`
+    );
     return finalizeReport(findings);
   }
 
-  const schema = model.outputSchemas.find((s) => s.id === capability.outputSchemaRef);
+  const schema = model.outputSchemas.find(
+    s => s.id === capability.outputSchemaRef
+  );
   if (!schema || !Array.isArray(schema.fields) || schema.fields.length === 0) {
-    pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", "outputSchema", `Output schema not found or empty for capability ${capabilityId}.`);
+    pushFinding(
+      findings,
+      AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+      "error",
+      "outputSchema",
+      `Output schema not found or empty for capability ${capabilityId}.`
+    );
     return finalizeReport(findings);
   }
 
   if (output === null || typeof output !== "object" || Array.isArray(output)) {
-    pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", "output", "AIGC output must be a plain object.");
+    pushFinding(
+      findings,
+      AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+      "error",
+      "output",
+      "AIGC output must be a plain object."
+    );
     return finalizeReport(findings);
   }
 
@@ -218,24 +306,43 @@ export function validateAigcRuntimeOutput(
     const val = out[field.key];
     const hasKey = Object.prototype.hasOwnProperty.call(out, field.key);
     if (field.required && (val === undefined || val === null)) {
-      pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", `output.${field.key}`, `Missing required output field: ${field.key}`);
+      pushFinding(
+        findings,
+        AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+        "error",
+        `output.${field.key}`,
+        `Missing required output field: ${field.key}`
+      );
       continue;
     }
     if (hasKey && val != null && !isValidFieldValue(val, field)) {
-      pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", `output.${field.key}`, `Output field ${field.key} has invalid type or value for declared ${field.type}.`);
+      pushFinding(
+        findings,
+        AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+        "error",
+        `output.${field.key}`,
+        `Output field ${field.key} has invalid type or value for declared ${field.type}.`
+      );
     }
   }
 
   // citationEvidence requirement for RAG-backed capabilities
   const isRagBacked = (capability.knowledgeSourceRefs ?? []).length > 0;
   const citationPolicy = capability.citationPolicyRef
-    ? model.citationPolicies.find((p) => p.id === capability.citationPolicyRef)
+    ? model.citationPolicies.find(p => p.id === capability.citationPolicyRef)
     : null;
-  const citationRequired = isRagBacked || !!(citationPolicy && citationPolicy.citationRequired);
+  const citationRequired =
+    isRagBacked || !!(citationPolicy && citationPolicy.citationRequired);
   if (citationRequired) {
     const ev = (out as any).citationEvidence;
     if (!Array.isArray(ev) || ev.length === 0) {
-      pushFinding(findings, AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID, "error", "output.citationEvidence", "RAG-backed capability requires non-empty citationEvidence array in output.");
+      pushFinding(
+        findings,
+        AIGC_RUNTIME_OUTPUT_SCHEMA_INVALID,
+        "error",
+        "output.citationEvidence",
+        "RAG-backed capability requires non-empty citationEvidence array in output."
+      );
     }
   }
 
@@ -246,7 +353,10 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
   id: "aigc",
   title: "AIGC Center",
 
-  validate(model: AigcModel, ctx?: ValidateContext): ReturnType<Skill<AigcModel>["validate"]> {
+  validate(
+    model: AigcModel,
+    ctx?: ValidateContext
+  ): ReturnType<Skill<AigcModel>["validate"]> {
     const findings: Finding[] = [];
     const providerIds = stringSet(model.providers);
     const promptIds = stringSet(model.promptTemplates);
@@ -260,99 +370,271 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
     const datamodel = ctx?.external?.datamodel;
 
     if (model.pep !== "pep") {
-      pushFinding(findings, "AIGC_PEP_BYPASS", "error", "pep", "AIGC must declare itself as a PEP execution point.");
+      pushFinding(
+        findings,
+        "AIGC_PEP_BYPASS",
+        "error",
+        "pep",
+        "AIGC must declare itself as a PEP execution point."
+      );
     }
 
-    for (const duplicate of findDuplicates(model.capabilities.map(cap => cap.id))) {
-      pushFinding(findings, "AIGC_DUP_CAP_ID", "error", "capabilities", `Duplicate AIGC capability id: ${duplicate}.`);
+    for (const duplicate of findDuplicates(
+      model.capabilities.map(cap => cap.id)
+    )) {
+      pushFinding(
+        findings,
+        "AIGC_DUP_CAP_ID",
+        "error",
+        "capabilities",
+        `Duplicate AIGC capability id: ${duplicate}.`
+      );
     }
 
     model.capabilities.forEach((capability, index) => {
       const path = `capabilities[${index}]`;
       if (!capabilityKinds.includes(capability.kind)) {
-        pushFinding(findings, "AIGC_INVALID_KIND", "error", `${path}.kind`, `Invalid AIGC capability kind: ${capability.kind}.`);
+        pushFinding(
+          findings,
+          "AIGC_INVALID_KIND",
+          "error",
+          `${path}.kind`,
+          `Invalid AIGC capability kind: ${capability.kind}.`
+        );
       }
       if (capability.allowWithoutPdp) {
-        pushFinding(findings, "AIGC_PEP_BYPASS", "error", `${path}.allowWithoutPdp`, "AIGC cannot make local-only authorization decisions.");
+        pushFinding(
+          findings,
+          "AIGC_PEP_BYPASS",
+          "error",
+          `${path}.allowWithoutPdp`,
+          "AIGC cannot make local-only authorization decisions."
+        );
       }
       if (!capability.providerRef || !providerIds.has(capability.providerRef)) {
-        pushFinding(findings, "AIGC_PROVIDER_MISSING", "error", `${path}.providerRef`, `Missing provider route: ${capability.providerRef ?? ""}.`);
+        pushFinding(
+          findings,
+          "AIGC_PROVIDER_MISSING",
+          "error",
+          `${path}.providerRef`,
+          `Missing provider route: ${capability.providerRef ?? ""}.`
+        );
       }
       if (!capability.promptRef || !promptIds.has(capability.promptRef)) {
-        pushFinding(findings, "AIGC_PROMPT_MISSING", "error", `${path}.promptRef`, `Missing prompt template: ${capability.promptRef ?? ""}.`);
+        pushFinding(
+          findings,
+          "AIGC_PROMPT_MISSING",
+          "error",
+          `${path}.promptRef`,
+          `Missing prompt template: ${capability.promptRef ?? ""}.`
+        );
       }
-      if (!capability.outputSchemaRef || !outputSchemaIds.has(capability.outputSchemaRef)) {
-        pushFinding(findings, "AIGC_OUTPUT_SCHEMA_MISSING", "error", `${path}.outputSchemaRef`, `Missing output schema: ${capability.outputSchemaRef ?? ""}.`);
+      if (
+        !capability.outputSchemaRef ||
+        !outputSchemaIds.has(capability.outputSchemaRef)
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_OUTPUT_SCHEMA_MISSING",
+          "error",
+          `${path}.outputSchemaRef`,
+          `Missing output schema: ${capability.outputSchemaRef ?? ""}.`
+        );
       }
       (capability.knowledgeSourceRefs ?? []).forEach((ref, refIndex) => {
         if (!knowledgeSourceIds.has(ref)) {
-          pushFinding(findings, "AIGC_RAG_SOURCE_MISSING", "error", `${path}.knowledgeSourceRefs[${refIndex}]`, `Missing RAG knowledge source: ${ref}.`);
+          pushFinding(
+            findings,
+            "AIGC_RAG_SOURCE_MISSING",
+            "error",
+            `${path}.knowledgeSourceRefs[${refIndex}]`,
+            `Missing RAG knowledge source: ${ref}.`
+          );
         }
       });
-      if (capability.knowledgeSourceRefs?.length && (!capability.retrievalPolicyRef || !retrievalPolicyIds.has(capability.retrievalPolicyRef))) {
-        pushFinding(findings, "AIGC_RETRIEVAL_POLICY_MISSING", "error", `${path}.retrievalPolicyRef`, `Missing retrieval policy: ${capability.retrievalPolicyRef ?? ""}.`);
+      if (
+        capability.knowledgeSourceRefs?.length &&
+        (!capability.retrievalPolicyRef ||
+          !retrievalPolicyIds.has(capability.retrievalPolicyRef))
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_RETRIEVAL_POLICY_MISSING",
+          "error",
+          `${path}.retrievalPolicyRef`,
+          `Missing retrieval policy: ${capability.retrievalPolicyRef ?? ""}.`
+        );
       }
       const citationPolicy = capability.citationPolicyRef
-        ? model.citationPolicies.find(policy => policy.id === capability.citationPolicyRef)
+        ? model.citationPolicies.find(
+            policy => policy.id === capability.citationPolicyRef
+          )
         : null;
-      if (capability.knowledgeSourceRefs?.length && (!citationPolicy || !citationPolicy.citationRequired)) {
-        pushFinding(findings, "AIGC_CITATION_REQUIRED", "error", `${path}.citationPolicyRef`, "RAG-backed AIGC capabilities must declare a citation-required policy.");
-      } else if (capability.citationPolicyRef && !citationPolicyIds.has(capability.citationPolicyRef)) {
-        pushFinding(findings, "AIGC_CITATION_REQUIRED", "error", `${path}.citationPolicyRef`, `Missing citation policy: ${capability.citationPolicyRef}.`);
+      if (
+        capability.knowledgeSourceRefs?.length &&
+        (!citationPolicy || !citationPolicy.citationRequired)
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_CITATION_REQUIRED",
+          "error",
+          `${path}.citationPolicyRef`,
+          "RAG-backed AIGC capabilities must declare a citation-required policy."
+        );
+      } else if (
+        capability.citationPolicyRef &&
+        !citationPolicyIds.has(capability.citationPolicyRef)
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_CITATION_REQUIRED",
+          "error",
+          `${path}.citationPolicyRef`,
+          `Missing citation policy: ${capability.citationPolicyRef}.`
+        );
       }
       (capability.toolRefs ?? []).forEach((ref, refIndex) => {
         if (!toolConfigIds.has(ref)) {
-          pushFinding(findings, "AIGC_TOOL_MISSING", "error", `${path}.toolRefs[${refIndex}]`, `Missing tool config: ${ref}.`);
+          pushFinding(
+            findings,
+            "AIGC_TOOL_MISSING",
+            "error",
+            `${path}.toolRefs[${refIndex}]`,
+            `Missing tool config: ${ref}.`
+          );
         }
       });
-      if (capability.toolRefs?.length && (!capability.toolPolicyRef || !toolPolicyIds.has(capability.toolPolicyRef))) {
-        pushFinding(findings, "AIGC_TOOL_POLICY_MISSING", "error", `${path}.toolPolicyRef`, `Missing tool policy: ${capability.toolPolicyRef ?? ""}.`);
+      if (
+        capability.toolRefs?.length &&
+        (!capability.toolPolicyRef ||
+          !toolPolicyIds.has(capability.toolPolicyRef))
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_TOOL_POLICY_MISSING",
+          "error",
+          `${path}.toolPolicyRef`,
+          `Missing tool policy: ${capability.toolPolicyRef ?? ""}.`
+        );
       }
       (capability.allowedRoleRefs ?? []).forEach((ref, refIndex) =>
-        validateRoleRef(findings, rbac?.role, ref, `${path}.allowedRoleRefs[${refIndex}]`),
+        validateRoleRef(
+          findings,
+          rbac?.role,
+          ref,
+          `${path}.allowedRoleRefs[${refIndex}]`
+        )
       );
       (capability.permissionRefs ?? []).forEach((ref, refIndex) =>
-        validatePermissionRef(findings, rbac?.permission, ref, `${path}.permissionRefs[${refIndex}]`),
+        validatePermissionRef(
+          findings,
+          rbac?.permission,
+          ref,
+          `${path}.permissionRefs[${refIndex}]`
+        )
       );
       (capability.inputFieldRefs ?? []).forEach((ref, refIndex) =>
-        validateFieldRef(findings, datamodel, ref, `${path}.inputFieldRefs[${refIndex}]`, "AIGC_INPUT_FIELD_MISSING"),
+        validateFieldRef(
+          findings,
+          datamodel,
+          ref,
+          `${path}.inputFieldRefs[${refIndex}]`,
+          "AIGC_INPUT_FIELD_MISSING"
+        )
       );
       (capability.outputFieldRefs ?? []).forEach((ref, refIndex) =>
-        validateFieldRef(findings, datamodel, ref, `${path}.outputFieldRefs[${refIndex}]`, "AIGC_OUTPUT_FIELD_MISSING"),
+        validateFieldRef(
+          findings,
+          datamodel,
+          ref,
+          `${path}.outputFieldRefs[${refIndex}]`,
+          "AIGC_OUTPUT_FIELD_MISSING"
+        )
       );
     });
 
     model.providers.forEach((provider, index) => {
       if (!provider.modelRef) {
-        pushFinding(findings, "AIGC_MODEL_MISSING", "error", `providers[${index}].modelRef`, `Provider ${provider.id} is missing modelRef.`);
+        pushFinding(
+          findings,
+          "AIGC_MODEL_MISSING",
+          "error",
+          `providers[${index}].modelRef`,
+          `Provider ${provider.id} is missing modelRef.`
+        );
       }
       if (!Number.isFinite(provider.tokenBudget) || provider.tokenBudget <= 0) {
-        pushFinding(findings, "AIGC_TOKEN_BUDGET_INVALID", "error", `providers[${index}].tokenBudget`, `Provider ${provider.id} has invalid token budget.`);
+        pushFinding(
+          findings,
+          "AIGC_TOKEN_BUDGET_INVALID",
+          "error",
+          `providers[${index}].tokenBudget`,
+          `Provider ${provider.id} has invalid token budget.`
+        );
       }
       if (hasRawSecret(provider as unknown as Record<string, unknown>)) {
-        pushFinding(findings, "AIGC_RAW_SECRET", "error", `providers[${index}]`, `Provider ${provider.id} contains a raw secret.`);
+        pushFinding(
+          findings,
+          "AIGC_RAW_SECRET",
+          "error",
+          `providers[${index}]`,
+          `Provider ${provider.id} contains a raw secret.`
+        );
       }
       if (!provider.keyRef && !provider.secretRef) {
-        pushFinding(findings, "AIGC_PROVIDER_MISSING", "error", `providers[${index}].keyRef`, `Provider ${provider.id} must use keyRef or secretRef.`);
+        pushFinding(
+          findings,
+          "AIGC_PROVIDER_MISSING",
+          "error",
+          `providers[${index}].keyRef`,
+          `Provider ${provider.id} must use keyRef or secretRef.`
+        );
       }
     });
 
     model.promptTemplates.forEach((prompt, index) => {
       if (!prompt.version) {
-        pushFinding(findings, "AIGC_PROMPT_VERSION_MISSING", "error", `promptTemplates[${index}].version`, `Prompt ${prompt.id} must be versioned.`);
+        pushFinding(
+          findings,
+          "AIGC_PROMPT_VERSION_MISSING",
+          "error",
+          `promptTemplates[${index}].version`,
+          `Prompt ${prompt.id} must be versioned.`
+        );
       }
     });
 
     model.outputSchemas.forEach((schema, schemaIndex) => {
       if (!schema.version || schema.fields.length === 0) {
-        pushFinding(findings, "AIGC_OUTPUT_SCHEMA_INVALID", "error", `outputSchemas[${schemaIndex}]`, `Output schema ${schema.id} must be versioned and non-empty.`);
+        pushFinding(
+          findings,
+          "AIGC_OUTPUT_SCHEMA_INVALID",
+          "error",
+          `outputSchemas[${schemaIndex}]`,
+          `Output schema ${schema.id} must be versioned and non-empty.`
+        );
       }
       schema.fields.forEach((field, fieldIndex) => {
         if (!field.key || !outputFieldTypes.includes(field.type)) {
-          pushFinding(findings, "AIGC_OUTPUT_SCHEMA_INVALID", "error", `outputSchemas[${schemaIndex}].fields[${fieldIndex}]`, `Invalid output schema field.`);
+          pushFinding(
+            findings,
+            "AIGC_OUTPUT_SCHEMA_INVALID",
+            "error",
+            `outputSchemas[${schemaIndex}].fields[${fieldIndex}]`,
+            `Invalid output schema field.`
+          );
         }
-        if (field.type === "enum" && (!field.enumValues || field.enumValues.length === 0)) {
-          pushFinding(findings, "AIGC_OUTPUT_SCHEMA_INVALID", "error", `outputSchemas[${schemaIndex}].fields[${fieldIndex}].enumValues`, `Enum output field must declare values.`);
+        if (
+          field.type === "enum" &&
+          (!field.enumValues || field.enumValues.length === 0)
+        ) {
+          pushFinding(
+            findings,
+            "AIGC_OUTPUT_SCHEMA_INVALID",
+            "error",
+            `outputSchemas[${schemaIndex}].fields[${fieldIndex}].enumValues`,
+            `Enum output field must declare values.`
+          );
         }
         if (field.writebackFieldRef) {
           validateFieldRef(
@@ -360,7 +642,7 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
             datamodel,
             field.writebackFieldRef,
             `outputSchemas[${schemaIndex}].fields[${fieldIndex}].writebackFieldRef`,
-            "AIGC_OUTPUT_FIELD_MISSING",
+            "AIGC_OUTPUT_FIELD_MISSING"
           );
         }
       });
@@ -368,49 +650,115 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
 
     model.knowledgeSources.forEach((source, sourceIndex) => {
       (source.fieldRefs ?? []).forEach((ref, refIndex) =>
-        validateFieldRef(findings, datamodel, ref, `knowledgeSources[${sourceIndex}].fieldRefs[${refIndex}]`, "AIGC_INPUT_FIELD_MISSING"),
+        validateFieldRef(
+          findings,
+          datamodel,
+          ref,
+          `knowledgeSources[${sourceIndex}].fieldRefs[${refIndex}]`,
+          "AIGC_INPUT_FIELD_MISSING"
+        )
       );
     });
 
     model.retrievalPolicies.forEach((policy, index) => {
-      if (policy.localDecision || (policy.allowedRoleRefs.length === 0 && policy.permissionRefs.length === 0)) {
-        pushFinding(findings, "AIGC_RETRIEVAL_PEP_BYPASS", "error", `retrievalPolicies[${index}]`, `Retrieval policy ${policy.id} must delegate authorization to RBAC.`);
+      if (
+        policy.localDecision ||
+        (policy.allowedRoleRefs.length === 0 &&
+          policy.permissionRefs.length === 0)
+      ) {
+        pushFinding(
+          findings,
+          "AIGC_RETRIEVAL_PEP_BYPASS",
+          "error",
+          `retrievalPolicies[${index}]`,
+          `Retrieval policy ${policy.id} must delegate authorization to RBAC.`
+        );
       }
       policy.allowedRoleRefs.forEach((ref, refIndex) =>
-        validateRoleRef(findings, rbac?.role, ref, `retrievalPolicies[${index}].allowedRoleRefs[${refIndex}]`),
+        validateRoleRef(
+          findings,
+          rbac?.role,
+          ref,
+          `retrievalPolicies[${index}].allowedRoleRefs[${refIndex}]`
+        )
       );
       policy.permissionRefs.forEach((ref, refIndex) =>
-        validatePermissionRef(findings, rbac?.permission, ref, `retrievalPolicies[${index}].permissionRefs[${refIndex}]`),
+        validatePermissionRef(
+          findings,
+          rbac?.permission,
+          ref,
+          `retrievalPolicies[${index}].permissionRefs[${refIndex}]`
+        )
       );
     });
 
     model.citationPolicies.forEach((policy, index) => {
       (policy.sourceFieldRefs ?? []).forEach((ref, refIndex) =>
-        validateFieldRef(findings, datamodel, ref, `citationPolicies[${index}].sourceFieldRefs[${refIndex}]`, "AIGC_INPUT_FIELD_MISSING"),
+        validateFieldRef(
+          findings,
+          datamodel,
+          ref,
+          `citationPolicies[${index}].sourceFieldRefs[${refIndex}]`,
+          "AIGC_INPUT_FIELD_MISSING"
+        )
       );
     });
 
     model.toolConfigs.forEach((tool, index) => {
       if (tool.permissionRefs.length === 0) {
-        pushFinding(findings, "AIGC_TOOL_PERMISSION_MISSING", "error", `toolConfigs[${index}].permissionRefs`, `Tool config ${tool.id} must declare RBAC permission refs.`);
+        pushFinding(
+          findings,
+          "AIGC_TOOL_PERMISSION_MISSING",
+          "error",
+          `toolConfigs[${index}].permissionRefs`,
+          `Tool config ${tool.id} must declare RBAC permission refs.`
+        );
       }
       tool.permissionRefs.forEach((ref, refIndex) =>
-        validatePermissionRef(findings, rbac?.permission, ref, `toolConfigs[${index}].permissionRefs[${refIndex}]`),
+        validatePermissionRef(
+          findings,
+          rbac?.permission,
+          ref,
+          `toolConfigs[${index}].permissionRefs[${refIndex}]`
+        )
       );
       if (!tool.budgetPolicyRef || !toolPolicyIds.has(tool.budgetPolicyRef)) {
-        pushFinding(findings, "AIGC_TOOL_POLICY_MISSING", "error", `toolConfigs[${index}].budgetPolicyRef`, `Tool config ${tool.id} references missing tool policy.`);
+        pushFinding(
+          findings,
+          "AIGC_TOOL_POLICY_MISSING",
+          "error",
+          `toolConfigs[${index}].budgetPolicyRef`,
+          `Tool config ${tool.id} references missing tool policy.`
+        );
       }
     });
 
     model.toolPolicies.forEach((policy, index) => {
       if (policy.maxCalls <= 0 || policy.timeoutMs <= 0) {
-        pushFinding(findings, "AIGC_TOOL_BUDGET_INVALID", "error", `toolPolicies[${index}]`, `Tool policy ${policy.id} has invalid maxCalls or timeout.`);
+        pushFinding(
+          findings,
+          "AIGC_TOOL_BUDGET_INVALID",
+          "error",
+          `toolPolicies[${index}]`,
+          `Tool policy ${policy.id} has invalid maxCalls or timeout.`
+        );
       }
       if (policy.permissionRefs.length === 0) {
-        pushFinding(findings, "AIGC_TOOL_PERMISSION_MISSING", "error", `toolPolicies[${index}].permissionRefs`, `Tool policy ${policy.id} must declare RBAC permission refs.`);
+        pushFinding(
+          findings,
+          "AIGC_TOOL_PERMISSION_MISSING",
+          "error",
+          `toolPolicies[${index}].permissionRefs`,
+          `Tool policy ${policy.id} must declare RBAC permission refs.`
+        );
       }
       policy.permissionRefs.forEach((ref, refIndex) =>
-        validatePermissionRef(findings, rbac?.permission, ref, `toolPolicies[${index}].permissionRefs[${refIndex}]`),
+        validatePermissionRef(
+          findings,
+          rbac?.permission,
+          ref,
+          `toolPolicies[${index}].permissionRefs[${refIndex}]`
+        )
       );
     });
 
@@ -420,40 +768,135 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
   project(model: AigcModel): Projection {
     const nodes: Projection["nodes"] = [
       { id: nodeId("root", model.id), label: model.name, kind: "aigc" },
-      ...model.capabilities.map(cap => ({ id: capabilityNodeId(cap.id), label: cap.id, kind: "capability" })),
-      ...model.providers.map(provider => ({ id: nodeId("provider", provider.id), label: provider.id, kind: "provider" })),
-      ...model.promptTemplates.map(prompt => ({ id: nodeId("prompt", prompt.id), label: prompt.id, kind: "prompt" })),
-      ...model.outputSchemas.map(schema => ({ id: nodeId("schema", schema.id), label: schema.id, kind: "outputSchema" })),
-      ...model.knowledgeSources.map(source => ({ id: nodeId("knowledge", source.id), label: source.id, kind: "knowledgeSource" })),
-      ...model.retrievalPolicies.map(policy => ({ id: nodeId("retrieval", policy.id), label: policy.id, kind: "retrievalPolicy" })),
-      ...model.citationPolicies.map(policy => ({ id: nodeId("citation", policy.id), label: policy.id, kind: "citationPolicy" })),
-      ...model.toolConfigs.map(tool => ({ id: nodeId("tool", tool.id), label: tool.id, kind: "tool" })),
-      ...model.toolPolicies.map(policy => ({ id: nodeId("toolPolicy", policy.id), label: policy.id, kind: "toolPolicy" })),
+      ...model.capabilities.map(cap => ({
+        id: capabilityNodeId(cap.id),
+        label: cap.id,
+        kind: "capability",
+      })),
+      ...model.providers.map(provider => ({
+        id: nodeId("provider", provider.id),
+        label: provider.id,
+        kind: "provider",
+      })),
+      ...model.promptTemplates.map(prompt => ({
+        id: nodeId("prompt", prompt.id),
+        label: prompt.id,
+        kind: "prompt",
+      })),
+      ...model.outputSchemas.map(schema => ({
+        id: nodeId("schema", schema.id),
+        label: schema.id,
+        kind: "outputSchema",
+      })),
+      ...model.knowledgeSources.map(source => ({
+        id: nodeId("knowledge", source.id),
+        label: source.id,
+        kind: "knowledgeSource",
+      })),
+      ...model.retrievalPolicies.map(policy => ({
+        id: nodeId("retrieval", policy.id),
+        label: policy.id,
+        kind: "retrievalPolicy",
+      })),
+      ...model.citationPolicies.map(policy => ({
+        id: nodeId("citation", policy.id),
+        label: policy.id,
+        kind: "citationPolicy",
+      })),
+      ...model.toolConfigs.map(tool => ({
+        id: nodeId("tool", tool.id),
+        label: tool.id,
+        kind: "tool",
+      })),
+      ...model.toolPolicies.map(policy => ({
+        id: nodeId("toolPolicy", policy.id),
+        label: policy.id,
+        kind: "toolPolicy",
+      })),
     ];
 
     const edges: Projection["edges"] = [];
     model.capabilities.forEach(cap => {
-      edges.push({ from: nodeId("root", model.id), to: capabilityNodeId(cap.id), label: cap.kind, kind: "contains" });
-      if (cap.providerRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("provider", cap.providerRef), label: "provider", kind: "binding" });
-      if (cap.promptRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("prompt", cap.promptRef), label: "prompt", kind: "binding" });
-      if (cap.outputSchemaRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("schema", cap.outputSchemaRef), label: "output", kind: "binding" });
+      edges.push({
+        from: nodeId("root", model.id),
+        to: capabilityNodeId(cap.id),
+        label: cap.kind,
+        kind: "contains",
+      });
+      if (cap.providerRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("provider", cap.providerRef),
+          label: "provider",
+          kind: "binding",
+        });
+      if (cap.promptRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("prompt", cap.promptRef),
+          label: "prompt",
+          kind: "binding",
+        });
+      if (cap.outputSchemaRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("schema", cap.outputSchemaRef),
+          label: "output",
+          kind: "binding",
+        });
       (cap.knowledgeSourceRefs ?? []).forEach(ref =>
-        edges.push({ from: capabilityNodeId(cap.id), to: nodeId("knowledge", ref), label: "RAG", kind: "binding" }),
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("knowledge", ref),
+          label: "RAG",
+          kind: "binding",
+        })
       );
-      if (cap.retrievalPolicyRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("retrieval", cap.retrievalPolicyRef), label: "retrieval", kind: "binding" });
-      if (cap.citationPolicyRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("citation", cap.citationPolicyRef), label: "citation", kind: "binding" });
+      if (cap.retrievalPolicyRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("retrieval", cap.retrievalPolicyRef),
+          label: "retrieval",
+          kind: "binding",
+        });
+      if (cap.citationPolicyRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("citation", cap.citationPolicyRef),
+          label: "citation",
+          kind: "binding",
+        });
       (cap.toolRefs ?? []).forEach(ref =>
-        edges.push({ from: capabilityNodeId(cap.id), to: nodeId("tool", ref), label: "tool", kind: "binding" }),
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("tool", ref),
+          label: "tool",
+          kind: "binding",
+        })
       );
-      if (cap.toolPolicyRef) edges.push({ from: capabilityNodeId(cap.id), to: nodeId("toolPolicy", cap.toolPolicyRef), label: "tool policy", kind: "binding" });
+      if (cap.toolPolicyRef)
+        edges.push({
+          from: capabilityNodeId(cap.id),
+          to: nodeId("toolPolicy", cap.toolPolicyRef),
+          label: "tool policy",
+          kind: "binding",
+        });
     });
     model.toolConfigs.forEach(tool => {
-      if (tool.budgetPolicyRef) edges.push({ from: nodeId("tool", tool.id), to: nodeId("toolPolicy", tool.budgetPolicyRef), label: "budget", kind: "binding" });
+      if (tool.budgetPolicyRef)
+        edges.push({
+          from: nodeId("tool", tool.id),
+          to: nodeId("toolPolicy", tool.budgetPolicyRef),
+          label: "budget",
+          kind: "binding",
+        });
     });
 
     const lines = ["flowchart LR"];
-    for (const n of nodes) lines.push(`  ${n.id}["${n.label.replace(/"/g, "'")}"]`);
-    for (const e of edges) lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
+    for (const n of nodes)
+      lines.push(`  ${n.id}["${n.label.replace(/"/g, "'")}"]`);
+    for (const e of edges)
+      lines.push(`  ${e.from} -->|${e.label ?? ""}| ${e.to}`);
     return { nodes, edges, mermaid: lines.join("\n") };
   },
 
@@ -497,11 +940,18 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
       permission: refs.permissionRefs,
       field: unique([...refs.inputFieldRefs, ...refs.outputFieldRefs]),
       runtimeEvidence: crossRuntime.map(edge => edge.evidenceKey),
-      crossSkillRuntimeEdges: crossRuntime.map(edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`),
-      aigcToDataModelTrace: traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(model),
-      aigcToRbacTrace: traceAigcProposedAccessFailClosedAgainstRbacEvidence(model),
+      crossSkillRuntimeEdges: crossRuntime.map(
+        edge => `${edge.sourceSkill}->${edge.targetSkill}:${edge.state}`
+      ),
+      aigcToDataModelTrace:
+        traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(model),
+      aigcToRbacTrace:
+        traceAigcProposedAccessFailClosedAgainstRbacEvidence(model),
     };
-    const datamodelSample = createAigcPositiveSampleEvidence(model, "datamodel");
+    const datamodelSample = createAigcPositiveSampleEvidence(
+      model,
+      "datamodel"
+    );
     if (datamodelSample.state === "allowed") {
       surface.runtimeEvidence = unique([
         ...surface.runtimeEvidence,
@@ -509,9 +959,17 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
         AIGC_DATAMODEL_RUNTIME_EVIDENCE,
       ]);
     }
-    const rbacEvidence = createAigcProposedAccessRbacEvidence(model, { declared: capabilityRefs(model) });
-    if (rbacEvidence.permissionRefs.length > 0 || rbacEvidence.roleRefs.length > 0) {
-      surface.runtimeEvidence = unique([...surface.runtimeEvidence, AIGC_RBAC_RUNTIME_EVIDENCE]);
+    const rbacEvidence = createAigcProposedAccessRbacEvidence(model, {
+      declared: capabilityRefs(model),
+    });
+    if (
+      rbacEvidence.permissionRefs.length > 0 ||
+      rbacEvidence.roleRefs.length > 0
+    ) {
+      surface.runtimeEvidence = unique([
+        ...surface.runtimeEvidence,
+        AIGC_RBAC_RUNTIME_EVIDENCE,
+      ]);
     }
     return surface;
   },
@@ -521,34 +979,82 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
     model.capabilities.forEach(cap => {
       const fromNode = capabilityNodeId(cap.id);
       (cap.inputFieldRefs ?? []).forEach(ref =>
-        refs.push({ fromNode, toSkill: "datamodel", toKind: "field", toValue: ref, label: "input" }),
+        refs.push({
+          fromNode,
+          toSkill: "datamodel",
+          toKind: "field",
+          toValue: ref,
+          label: "input",
+        })
       );
       (cap.outputFieldRefs ?? []).forEach(ref =>
-        refs.push({ fromNode, toSkill: "datamodel", toKind: "field", toValue: ref, label: "output" }),
+        refs.push({
+          fromNode,
+          toSkill: "datamodel",
+          toKind: "field",
+          toValue: ref,
+          label: "output",
+        })
       );
       (cap.allowedRoleRefs ?? []).forEach(ref =>
-        refs.push({ fromNode, toSkill: "rbac", toKind: "role", toValue: ref, label: "PDP role" }),
+        refs.push({
+          fromNode,
+          toSkill: "rbac",
+          toKind: "role",
+          toValue: ref,
+          label: "PDP role",
+        })
       );
       (cap.permissionRefs ?? []).forEach(ref =>
-        refs.push({ fromNode, toSkill: "rbac", toKind: "permission", toValue: ref, label: "PDP permission" }),
+        refs.push({
+          fromNode,
+          toSkill: "rbac",
+          toKind: "permission",
+          toValue: ref,
+          label: "PDP permission",
+        })
       );
     });
     model.knowledgeSources.forEach(source => {
       (source.fieldRefs ?? []).forEach(ref =>
-        refs.push({ fromNode: nodeId("knowledge", source.id), toSkill: "datamodel", toKind: "field", toValue: ref, label: "source field" }),
+        refs.push({
+          fromNode: nodeId("knowledge", source.id),
+          toSkill: "datamodel",
+          toKind: "field",
+          toValue: ref,
+          label: "source field",
+        })
       );
     });
     model.retrievalPolicies.forEach(policy => {
       policy.allowedRoleRefs.forEach(ref =>
-        refs.push({ fromNode: nodeId("retrieval", policy.id), toSkill: "rbac", toKind: "role", toValue: ref, label: "retrieval role" }),
+        refs.push({
+          fromNode: nodeId("retrieval", policy.id),
+          toSkill: "rbac",
+          toKind: "role",
+          toValue: ref,
+          label: "retrieval role",
+        })
       );
       policy.permissionRefs.forEach(ref =>
-        refs.push({ fromNode: nodeId("retrieval", policy.id), toSkill: "rbac", toKind: "permission", toValue: ref, label: "retrieval permission" }),
+        refs.push({
+          fromNode: nodeId("retrieval", policy.id),
+          toSkill: "rbac",
+          toKind: "permission",
+          toValue: ref,
+          label: "retrieval permission",
+        })
       );
     });
     model.toolConfigs.forEach(tool => {
       tool.permissionRefs.forEach(ref =>
-        refs.push({ fromNode: nodeId("tool", tool.id), toSkill: "rbac", toKind: "permission", toValue: ref, label: "tool permission" }),
+        refs.push({
+          fromNode: nodeId("tool", tool.id),
+          toSkill: "rbac",
+          toKind: "permission",
+          toValue: ref,
+          label: "tool permission",
+        })
       );
     });
     return refs;
@@ -576,12 +1082,18 @@ export const aigcSkill: Skill<AigcModel> & CrossSkill<AigcModel> = {
   },
 
   async generate(intent: string): Promise<AigcModel> {
-    if (/purchase|procurement|risk|budget|采购/i.test(intent)) return purchaseRiskAigcModel;
+    if (/purchase|procurement|risk|budget|采购/i.test(intent))
+      return purchaseRiskAigcModel;
     return emptyLeaveAigcModel;
   },
 };
 
-export type AigcRuntimeTargetSkill = "rbac" | "datamodel" | "workflow" | "page" | "appbundle";
+export type AigcRuntimeTargetSkill =
+  | "rbac"
+  | "datamodel"
+  | "workflow"
+  | "page"
+  | "appbundle";
 
 export type AigcRuntimeEvidenceState = "allowed" | "blocked";
 
@@ -614,8 +1126,10 @@ export interface NormalizedAigcRuntimeContext {
 
 export const AIGC_CROSS_RUNTIME_EVIDENCE = "AIGC_CROSS_RUNTIME_EVIDENCE";
 export const AIGC_RBAC_RUNTIME_EVIDENCE = "AIGC_RBAC_RUNTIME_EVIDENCE";
-export const AIGC_DATAMODEL_RUNTIME_EVIDENCE = "AIGC_DATAMODEL_RUNTIME_EVIDENCE";
-export const AIGC_RBAC_PROPOSED_ACCESS_TRACE = "AIGC_RBAC_PROPOSED_ACCESS_TRACE";
+export const AIGC_DATAMODEL_RUNTIME_EVIDENCE =
+  "AIGC_DATAMODEL_RUNTIME_EVIDENCE";
+export const AIGC_RBAC_PROPOSED_ACCESS_TRACE =
+  "AIGC_RBAC_PROPOSED_ACCESS_TRACE";
 
 export interface AigcProposedAccessToRbacTrace {
   traceId: typeof AIGC_RBAC_PROPOSED_ACCESS_TRACE;
@@ -630,12 +1144,31 @@ export interface AigcProposedAccessToRbacTrace {
   evidenceKey: string;
 }
 
-function aigcRefsForTarget(model: AigcModel, targetSkill: AigcRuntimeTargetSkill): string[] {
+function aigcRefsForTarget(
+  model: AigcModel,
+  targetSkill: AigcRuntimeTargetSkill
+): string[] {
   const refs = capabilityRefs(model);
-  if (targetSkill === "rbac") return [...refs.roleRefs, ...refs.permissionRefs].sort();
-  if (targetSkill === "datamodel") return [...refs.inputFieldRefs, ...refs.outputFieldRefs, ...model.knowledgeSources.flatMap(source => source.fieldRefs ?? [])].sort();
-  if (targetSkill === "workflow") return model.toolConfigs.filter(tool => tool.kind === "workflow").flatMap(tool => tool.toolRefs).sort();
-  if (targetSkill === "page") return [...refs.outputFieldRefs, ...model.outputSchemas.flatMap(schema => schema.fields.map(field => field.key))].sort();
+  if (targetSkill === "rbac")
+    return [...refs.roleRefs, ...refs.permissionRefs].sort();
+  if (targetSkill === "datamodel")
+    return [
+      ...refs.inputFieldRefs,
+      ...refs.outputFieldRefs,
+      ...model.knowledgeSources.flatMap(source => source.fieldRefs ?? []),
+    ].sort();
+  if (targetSkill === "workflow")
+    return model.toolConfigs
+      .filter(tool => tool.kind === "workflow")
+      .flatMap(tool => tool.toolRefs)
+      .sort();
+  if (targetSkill === "page")
+    return [
+      ...refs.outputFieldRefs,
+      ...model.outputSchemas.flatMap(schema =>
+        schema.fields.map(field => field.key)
+      ),
+    ].sort();
   return [
     ...model.capabilities.map(capability => capability.id),
     ...refs.roleRefs,
@@ -648,11 +1181,12 @@ function aigcRefsForTarget(model: AigcModel, targetSkill: AigcRuntimeTargetSkill
 export function createAigcCrossRuntimeEvidence(
   model: AigcModel,
   targetSkill: AigcRuntimeTargetSkill,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): AigcCrossRuntimeEvidence {
   const refs = capabilityRefs(model);
   const targetRefs = aigcRefsForTarget(model, targetSkill);
-  const upstreamEvidencePresent = upstreamSurface !== undefined && upstreamSurface !== null;
+  const upstreamEvidencePresent =
+    upstreamSurface !== undefined && upstreamSurface !== null;
   const state: AigcRuntimeEvidenceState =
     targetRefs.length > 0 && upstreamEvidencePresent ? "allowed" : "blocked";
 
@@ -661,7 +1195,10 @@ export function createAigcCrossRuntimeEvidence(
     targetSkill,
     evidenceKey: `${AIGC_CROSS_RUNTIME_EVIDENCE}:${targetSkill}:${state}`,
     state,
-    reasonCode: state === "allowed" ? "AIGC_RUNTIME_EVIDENCE_PRESENT" : "AIGC_RUNTIME_UPSTREAM_ABSENT",
+    reasonCode:
+      state === "allowed"
+        ? "AIGC_RUNTIME_EVIDENCE_PRESENT"
+        : "AIGC_RUNTIME_UPSTREAM_ABSENT",
     modelId: model.id,
     capabilityRefs: model.capabilities.map(capability => capability.id).sort(),
     roleRefs: refs.roleRefs.sort(),
@@ -675,9 +1212,13 @@ export function createAigcCrossRuntimeEvidence(
 export function normalizeAigcRuntimeContextForSkill(
   model: AigcModel,
   targetSkill: AigcRuntimeTargetSkill,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): NormalizedAigcRuntimeContext {
-  const evidence = createAigcCrossRuntimeEvidence(model, targetSkill, upstreamSurface);
+  const evidence = createAigcCrossRuntimeEvidence(
+    model,
+    targetSkill,
+    upstreamSurface
+  );
   return {
     sourceSkill: "aigc",
     targetSkill,
@@ -691,16 +1232,28 @@ export function normalizeAigcRuntimeContextForSkill(
   };
 }
 
-export function buildAigcCrossRuntimeEdges(model: AigcModel): AigcCrossRuntimeEvidence[] {
-  const targets: AigcRuntimeTargetSkill[] = ["rbac", "datamodel", "workflow", "page", "appbundle"];
+export function buildAigcCrossRuntimeEdges(
+  model: AigcModel
+): AigcCrossRuntimeEvidence[] {
+  const targets: AigcRuntimeTargetSkill[] = [
+    "rbac",
+    "datamodel",
+    "workflow",
+    "page",
+    "appbundle",
+  ];
   return targets
     .filter(target => aigcRefsForTarget(model, target).length > 0)
-    .map(target => createAigcCrossRuntimeEvidence(model, target, { declared: aigcRefsForTarget(model, target) }));
+    .map(target =>
+      createAigcCrossRuntimeEvidence(model, target, {
+        declared: aigcRefsForTarget(model, target),
+      })
+    );
 }
 
 export function createAigcRbacRuntimeEvidence(
   model: AigcModel,
-  upstreamSurface: unknown,
+  upstreamSurface: unknown
 ): AigcCrossRuntimeEvidence {
   return {
     ...createAigcCrossRuntimeEvidence(model, "rbac", upstreamSurface),
@@ -710,7 +1263,7 @@ export function createAigcRbacRuntimeEvidence(
 
 export function createAigcDataModelRuntimeEvidence(
   model: AigcModel,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): AigcCrossRuntimeEvidence {
   return {
     ...createAigcCrossRuntimeEvidence(model, "datamodel", upstreamSurface),
@@ -720,7 +1273,7 @@ export function createAigcDataModelRuntimeEvidence(
 
 export function createAigcProposedAccessRbacEvidence(
   model: AigcModel,
-  upstreamSurface?: unknown,
+  upstreamSurface?: unknown
 ): AigcCrossRuntimeEvidence {
   return {
     ...createAigcCrossRuntimeEvidence(model, "rbac", upstreamSurface),
@@ -730,16 +1283,25 @@ export function createAigcProposedAccessRbacEvidence(
 
 export function traceAigcProposedAccessFailClosedAgainstRbacEvidence(
   model: AigcModel,
-  rbacSurface?: { role?: string[]; permission?: string[]; permissions?: string[] },
+  rbacSurface?: {
+    role?: string[];
+    permission?: string[];
+    permissions?: string[];
+  }
 ): AigcProposedAccessToRbacTrace {
   const refs = capabilityRefs(model);
   const roleRefs = refs.roleRefs.sort();
   const permissionRefs = refs.permissionRefs.sort();
   const rbacRoles = rbacSurface?.role ?? [];
-  const rbacPermissions = rbacSurface?.permission ?? rbacSurface?.permissions ?? [];
-  const hasProposedAccess = model.capabilities.length > 0 && (roleRefs.length > 0 || permissionRefs.length > 0);
+  const rbacPermissions =
+    rbacSurface?.permission ?? rbacSurface?.permissions ?? [];
+  const hasProposedAccess =
+    model.capabilities.length > 0 &&
+    (roleRefs.length > 0 || permissionRefs.length > 0);
   const hasAllRoles = roleRefs.every(role => rbacRoles.includes(role));
-  const hasAllPermissions = permissionRefs.every(permission => rbacPermissions.includes(permission));
+  const hasAllPermissions = permissionRefs.every(permission =>
+    rbacPermissions.includes(permission)
+  );
   const closed = hasProposedAccess && hasAllRoles && hasAllPermissions;
 
   return {
@@ -828,7 +1390,12 @@ export const purchaseRiskAigcModel: AigcModel = {
       id: "purchase_risk_output",
       version: "1.0.0",
       fields: [
-        { key: "riskLevel", type: "enum", required: true, enumValues: ["low", "medium", "high"] },
+        {
+          key: "riskLevel",
+          type: "enum",
+          required: true,
+          enumValues: ["low", "medium", "high"],
+        },
         { key: "summary", type: "string", required: true },
         { key: "recommendedAction", type: "string", required: true },
       ],
@@ -892,7 +1459,7 @@ export const aigcModelWithMissingPolicyOrSchema: AigcModel = {
       promptRef: "purchase_risk_prompt",
       outputSchemaRef: "purchase_risk_output",
       permissionRefs: ["purchase:finance_approve"],
-      knowledgeSourceRefs: ["vendor_policy_knowledge"],  // RAG without policy -> fail closed
+      knowledgeSourceRefs: ["vendor_policy_knowledge"], // RAG without policy -> fail closed
       retrievalPolicyRef: undefined,
       citationPolicyRef: undefined,
       toolRefs: [],
@@ -915,7 +1482,7 @@ export const aigcModelWithMissingPolicyOrSchema: AigcModel = {
       template: "Summarize.",
     },
   ],
-  outputSchemas: [],  // schema evidence absent
+  outputSchemas: [], // schema evidence absent
   knowledgeSources: [],
   retrievalPolicies: [],
   citationPolicies: [],
@@ -927,10 +1494,12 @@ export const AIGC_RUNTIME_POLICY_DENIED = "AIGC_RUNTIME_POLICY_DENIED" as const;
 
 // AIGC positive sample evidence for DataModel / Page / RBAC / AppBundle closure (119)
 export const AIGC_POSITIVE_SAMPLE_EVIDENCE = "AIGC_POSITIVE_SAMPLE_EVIDENCE";
-export const AIGC_POSITIVE_SAMPLE_TO_DATAMODEL = "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL";
+export const AIGC_POSITIVE_SAMPLE_TO_DATAMODEL =
+  "AIGC_POSITIVE_SAMPLE_TO_DATAMODEL";
 export const AIGC_POSITIVE_SAMPLE_TO_PAGE = "AIGC_POSITIVE_SAMPLE_TO_PAGE";
 export const AIGC_POSITIVE_SAMPLE_TO_RBAC = "AIGC_POSITIVE_SAMPLE_TO_RBAC";
-export const AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE = "AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE";
+export const AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE =
+  "AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE";
 export const AIGC_DATAMODEL_TRACE = "AIGC_DATAMODEL_TRACE";
 
 export interface AigcToDataModelTrace {
@@ -951,13 +1520,18 @@ export function createAigcPositiveSampleEvidence(
   targetSkill: AigcRuntimeTargetSkill = "appbundle"
 ): AigcCrossRuntimeEvidence {
   const refs = aigcRefsForTarget(model, targetSkill);
-  const base = createAigcCrossRuntimeEvidence(model, targetSkill, { declared: refs });
+  const base = createAigcCrossRuntimeEvidence(model, targetSkill, {
+    declared: refs,
+  });
   // Override to dedicated positive sample evidence key for closure consumers (DM/Page/RBAC/AppBundle)
   const positiveKey =
-    targetSkill === "datamodel" ? AIGC_POSITIVE_SAMPLE_TO_DATAMODEL :
-    targetSkill === "page" ? AIGC_POSITIVE_SAMPLE_TO_PAGE :
-    targetSkill === "rbac" ? AIGC_POSITIVE_SAMPLE_TO_RBAC :
-    AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE;
+    targetSkill === "datamodel"
+      ? AIGC_POSITIVE_SAMPLE_TO_DATAMODEL
+      : targetSkill === "page"
+        ? AIGC_POSITIVE_SAMPLE_TO_PAGE
+        : targetSkill === "rbac"
+          ? AIGC_POSITIVE_SAMPLE_TO_RBAC
+          : AIGC_POSITIVE_SAMPLE_TO_APPBUNDLE;
   return {
     ...base,
     evidenceKey: positiveKey,
@@ -966,22 +1540,33 @@ export function createAigcPositiveSampleEvidence(
 
 export function traceAigcPositiveSampleEvidenceToDataModelSchemaEvidence(
   model: AigcModel,
-  datamodelSurface?: { field?: string[]; outputSchema?: string[]; fields?: Array<{ ref?: string }> },
+  datamodelSurface?: {
+    field?: string[];
+    outputSchema?: string[];
+    fields?: Array<{ ref?: string }>;
+  }
 ): AigcToDataModelTrace {
   const refs = capabilityRefs(model);
   const schemaRefs = model.outputSchemas.map(schema => schema.id).sort();
   const fieldRefs = unique([...refs.inputFieldRefs, ...refs.outputFieldRefs]);
-  const capabilityIds = model.capabilities.map(capability => capability.id).sort();
+  const capabilityIds = model.capabilities
+    .map(capability => capability.id)
+    .sort();
   const surfaceRefs = datamodelSurface
     ? unique([
         ...(datamodelSurface.field ?? []),
         ...(datamodelSurface.outputSchema ?? []),
-        ...((datamodelSurface.fields ?? []).map(field => field.ref).filter((ref): ref is string => typeof ref === "string")),
+        ...(datamodelSurface.fields ?? [])
+          .map(field => field.ref)
+          .filter((ref): ref is string => typeof ref === "string"),
       ])
     : [...schemaRefs, ...fieldRefs];
   const hasSchemaEvidence = schemaRefs.length > 0 && fieldRefs.length > 0;
-  const hasSurfaceEvidence = schemaRefs.some(ref => surfaceRefs.includes(ref)) || fieldRefs.some(ref => surfaceRefs.includes(ref));
-  const closed = capabilityIds.length > 0 && hasSchemaEvidence && hasSurfaceEvidence;
+  const hasSurfaceEvidence =
+    schemaRefs.some(ref => surfaceRefs.includes(ref)) ||
+    fieldRefs.some(ref => surfaceRefs.includes(ref));
+  const closed =
+    capabilityIds.length > 0 && hasSchemaEvidence && hasSurfaceEvidence;
 
   return {
     traceId: AIGC_DATAMODEL_TRACE,
@@ -1009,7 +1594,8 @@ export function createAigcFailClosedNegativeEvidence(
 
 // AIGC negative sample evidence (119): fails closed when policy (retrieval/citation/tool) or schema evidence is absent.
 export const AIGC_NEGATIVE_SAMPLE_EVIDENCE = "AIGC_NEGATIVE_SAMPLE_EVIDENCE";
-export const AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT = "AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT";
+export const AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT =
+  "AIGC_NEGATIVE_SAMPLE_POLICY_SCHEMA_ABSENT";
 
 export function createAigcNegativeSampleForPolicyOrSchemaAbsent(
   model: AigcModel = purchaseRiskAigcModel,
@@ -1035,13 +1621,13 @@ export function evaluateAigcRuntimePolicy(
   capabilityId: string,
   ctx: AigcRuntimeContext = {}
 ): AigcRuntimePolicyDecision {
-  const capability = model.capabilities.find((c) => c.id === capabilityId);
+  const capability = model.capabilities.find(c => c.id === capabilityId);
   if (!capability) {
     return AIGC_RUNTIME_POLICY_DENIED;
   }
 
   // Check provider/model refs
-  const provider = model.providers.find((p) => p.id === capability.providerRef);
+  const provider = model.providers.find(p => p.id === capability.providerRef);
   if (!provider || !provider.modelRef || !provider.providerRef) {
     return AIGC_RUNTIME_POLICY_DENIED;
   }
@@ -1053,13 +1639,13 @@ export function evaluateAigcRuntimePolicy(
       return AIGC_RUNTIME_POLICY_DENIED;
     }
     const retrieval = model.retrievalPolicies.find(
-      (p) => p.id === capability.retrievalPolicyRef
+      p => p.id === capability.retrievalPolicyRef
     );
     if (!retrieval) {
       return AIGC_RUNTIME_POLICY_DENIED;
     }
     const citation = capability.citationPolicyRef
-      ? model.citationPolicies.find((p) => p.id === capability.citationPolicyRef)
+      ? model.citationPolicies.find(p => p.id === capability.citationPolicyRef)
       : null;
     if (!citation || !citation.citationRequired) {
       return AIGC_RUNTIME_POLICY_DENIED;
@@ -1074,12 +1660,15 @@ export function evaluateAigcRuntimePolicy(
       return AIGC_RUNTIME_POLICY_DENIED;
     }
     const toolPolicy = model.toolPolicies.find(
-      (p) => p.id === capability.toolPolicyRef
+      p => p.id === capability.toolPolicyRef
     );
     if (!toolPolicy || toolPolicy.maxCalls <= 0 || toolPolicy.timeoutMs <= 0) {
       return AIGC_RUNTIME_POLICY_DENIED;
     }
-    toolCallBudget = { maxCalls: toolPolicy.maxCalls, timeoutMs: toolPolicy.timeoutMs };
+    toolCallBudget = {
+      maxCalls: toolPolicy.maxCalls,
+      timeoutMs: toolPolicy.timeoutMs,
+    };
   }
 
   // RBAC permission evidence must be present and sufficient (fail-closed)
@@ -1090,7 +1679,7 @@ export function evaluateAigcRuntimePolicy(
     if (rbacPerms.length === 0) {
       return AIGC_RUNTIME_POLICY_DENIED;
     }
-    const hasAll = requiredPermissions.every((p) => rbacPerms.includes(p));
+    const hasAll = requiredPermissions.every(p => rbacPerms.includes(p));
     if (!hasAll) {
       return AIGC_RUNTIME_POLICY_DENIED;
     }
@@ -1110,14 +1699,12 @@ export function evaluateAigcRuntimePolicy(
       return AIGC_RUNTIME_POLICY_DENIED;
     }
     const availableRefs =
-      dmStringFields.length > 0
-        ? dmStringFields
-        : dmRichFields.map((f) => f.ref);
+      dmStringFields.length > 0 ? dmStringFields : dmRichFields.map(f => f.ref);
     for (const f of requiredFields) {
       if (!availableRefs.includes(f)) {
         return AIGC_RUNTIME_POLICY_DENIED;
       }
-      const meta = dmRichFields.find((m) => m.ref === f);
+      const meta = dmRichFields.find(m => m.ref === f);
       if (meta && meta.lifecycle === "removed") {
         return AIGC_RUNTIME_POLICY_DENIED;
       }
@@ -1133,7 +1720,7 @@ export function evaluateAigcRuntimePolicy(
   };
   if (capability.retrievalPolicyRef) {
     const rp = model.retrievalPolicies.find(
-      (p) => p.id === capability.retrievalPolicyRef
+      p => p.id === capability.retrievalPolicyRef
     )!;
     plan.retrievalPolicy = { id: rp.id, maxResults: rp.maxResults };
   }

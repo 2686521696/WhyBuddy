@@ -87,16 +87,32 @@ function isStringList(value: unknown): value is string[] {
 }
 
 function isOwnerEdge(kind: string): boolean {
-  return ["binding", "contains", "menu", "publishGate", "runtimeSnapshot", "workflow"].includes(kind);
+  return [
+    "binding",
+    "contains",
+    "menu",
+    "publishGate",
+    "runtimeSnapshot",
+    "workflow",
+  ].includes(kind);
 }
 
-function addEdge(edges: Map<string, DependencyGraphEdge>, edge: DependencyGraphEdge): void {
+function addEdge(
+  edges: Map<string, DependencyGraphEdge>,
+  edge: DependencyGraphEdge
+): void {
   edges.set(`${edge.from}->${edge.to}:${edge.kind}:${edge.label ?? ""}`, edge);
 }
 
-function toMermaid(nodes: DependencyGraphNode[], edges: DependencyGraphEdge[]): string {
+function toMermaid(
+  nodes: DependencyGraphNode[],
+  edges: DependencyGraphEdge[]
+): string {
   const lines = ["flowchart LR"];
-  for (const node of nodes) lines.push(`  ${node.id.replace(/::/g, "__")}["${node.label.replace(/"/g, "'")}"]`);
+  for (const node of nodes)
+    lines.push(
+      `  ${node.id.replace(/::/g, "__")}["${node.label.replace(/"/g, "'")}"]`
+    );
   for (const edge of edges) {
     const from = edge.from.replace(/::/g, "__");
     const to = edge.to.replace(/::/g, "__");
@@ -108,7 +124,7 @@ function toMermaid(nodes: DependencyGraphNode[], edges: DependencyGraphEdge[]): 
 
 export function buildDependencyGraph(
   skills: DependencySkill[],
-  models: Record<string, unknown>,
+  models: Record<string, unknown>
 ): DependencyGraph {
   const active = skills.filter(skill => skill.id in models);
   const byId = new Map(active.map(skill => [skill.id, skill]));
@@ -149,16 +165,28 @@ export function buildDependencyGraph(
       const child = nodeKey(skill.id, edge.to);
       const owner = nodeKey(skill.id, edge.from);
       if (!nodeByKey.has(child) || !nodeByKey.has(owner)) continue;
-      addEdge(edges, { from: child, to: owner, kind: "owner", label: edge.label ?? edge.kind });
+      addEdge(edges, {
+        from: child,
+        to: owner,
+        kind: "owner",
+        label: edge.label ?? edge.kind,
+      });
     }
 
-    const workflowRoots = projection.nodes.filter(node => node.kind === "workflow");
+    const workflowRoots = projection.nodes.filter(
+      node => node.kind === "workflow"
+    );
     if (skill.id === "workflow" && workflowRoots.length === 1) {
       const owner = nodeKey(skill.id, workflowRoots[0].id);
       for (const node of projection.nodes) {
         const child = nodeKey(skill.id, node.id);
         if (child === owner) continue;
-        addEdge(edges, { from: child, to: owner, kind: "owner", label: "workflow" });
+        addEdge(edges, {
+          from: child,
+          to: owner,
+          kind: "owner",
+          label: "workflow",
+        });
       }
     }
   }
@@ -172,13 +200,23 @@ export function buildDependencyGraph(
 
       const target = nodeKey(ref.toSkill, targetNode);
       if (!nodeByKey.has(source) || !nodeByKey.has(target)) continue;
-      addEdge(edges, { from: target, to: source, kind: "crossRef", label: ref.label });
+      addEdge(edges, {
+        from: target,
+        to: source,
+        kind: "crossRef",
+        label: ref.label,
+      });
       if (
         skill.id === "rbac" &&
         ref.toSkill === "datamodel" &&
         (ref.label === "field" || ref.label === "row")
       ) {
-        addEdge(edges, { from: source, to: target, kind: "crossRef", label: `${ref.label} policy scope` });
+        addEdge(edges, {
+          from: source,
+          to: target,
+          kind: "crossRef",
+          label: `${ref.label} policy scope`,
+        });
       }
     }
   }
@@ -193,9 +231,14 @@ export function buildDependencyGraph(
   };
 }
 
-export function analyzeImpact(graph: DependencyGraph, target: ResourceRef, maxDepth = 8): ImpactReport {
+export function analyzeImpact(
+  graph: DependencyGraph,
+  target: ResourceRef,
+  maxDepth = 8
+): ImpactReport {
   const targetNode = graph.resourceToNode[resourceKey(target)];
-  if (!targetNode) return { target, safe: true, impacted: [], paths: [], graph };
+  if (!targetNode)
+    return { target, safe: true, impacted: [], paths: [], graph };
 
   const nodeById = new Map(graph.nodes.map(node => [node.id, node]));
   const outgoing = new Map<string, DependencyGraphEdge[]>();
@@ -219,8 +262,16 @@ export function analyzeImpact(graph: DependencyGraph, target: ResourceRef, maxDe
   };
 
   const paths: ImpactPath[] = [];
-  const queue: Array<{ node: string; steps: ImpactPathStep[]; seen: Set<string> }> = [
-    { node: targetNode, steps: [toStep(targetNode, 0)], seen: new Set([targetNode]) },
+  const queue: Array<{
+    node: string;
+    steps: ImpactPathStep[];
+    seen: Set<string>;
+  }> = [
+    {
+      node: targetNode,
+      steps: [toStep(targetNode, 0)],
+      seen: new Set([targetNode]),
+    },
   ];
 
   while (queue.length) {
@@ -229,7 +280,10 @@ export function analyzeImpact(graph: DependencyGraph, target: ResourceRef, maxDe
 
     for (const edge of outgoing.get(item.node) ?? []) {
       if (item.seen.has(edge.to)) continue;
-      const nextSteps = [...item.steps, toStep(edge.to, item.steps.length, edge.label ?? edge.kind)];
+      const nextSteps = [
+        ...item.steps,
+        toStep(edge.to, item.steps.length, edge.label ?? edge.kind),
+      ];
       paths.push({ target, steps: nextSteps });
       queue.push({
         node: edge.to,
@@ -254,14 +308,16 @@ export function analyzeImpact(graph: DependencyGraph, target: ResourceRef, maxDe
     });
   }
 
-  const impacted = [...impactedByNode.values()].sort((a, b) => a.depth - b.depth || a.node.localeCompare(b.node));
+  const impacted = [...impactedByNode.values()].sort(
+    (a, b) => a.depth - b.depth || a.node.localeCompare(b.node)
+  );
   return { target, safe: impacted.length === 0, impacted, paths, graph };
 }
 
 export function impact(
   skills: DependencySkill[],
   models: Record<string, unknown>,
-  target: ResourceRef,
+  target: ResourceRef
 ): ImpactReport {
   return analyzeImpact(buildDependencyGraph(skills, models), target);
 }

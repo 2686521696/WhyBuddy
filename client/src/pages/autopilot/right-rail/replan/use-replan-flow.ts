@@ -16,10 +16,7 @@ export interface ConfirmReplanInput {
 
 export interface ReplanNavigationCallbacks {
   applyInPlace: (result: ReplanPostResult) => void | Promise<void>;
-  activeJob: (
-    jobId: string,
-    result: ReplanPostResult,
-  ) => void | Promise<void>;
+  activeJob: (jobId: string, result: ReplanPostResult) => void | Promise<void>;
 }
 
 export interface ReplanToastQueue {
@@ -70,7 +67,7 @@ export interface ReplanPostOptions {
 export interface UseReplanFlowOptions {
   postReplan: (
     request: ReplanPostRequest,
-    options?: ReplanPostOptions,
+    options?: ReplanPostOptions
   ) => Promise<ReplanPostResult>;
   refreshJob?: (jobId: string) => Promise<void> | void;
   applyNavigation: ReplanNavigationCallbacks;
@@ -78,7 +75,7 @@ export interface UseReplanFlowOptions {
   coordinator?: ReplanCoordinator | null;
   getCoordinationTransitions?: (
     input: ConfirmReplanInput,
-    result: ReplanPostResult,
+    result: ReplanPostResult
   ) => ReplanCoordinationTransitions;
   toastQueue?: ReplanToastQueue;
   timeoutMs?: number;
@@ -102,7 +99,9 @@ function successToast(input: ConfirmReplanInput, result: ReplanPostResult) {
 function coordinatorToast(input: ConfirmReplanInput, result: ReplanPostResult) {
   const branch = input.mode === "branch";
   return {
-    key: branch ? `replan.branch.${result.job.id}` : `replan.in_place.${input.jobId}`,
+    key: branch
+      ? `replan.branch.${result.job.id}`
+      : `replan.in_place.${input.jobId}`,
     level: "info" as const,
     message: branch
       ? `Created replan branch ${result.job.id}.`
@@ -130,7 +129,7 @@ export function useReplanFlow({
   timeoutMs = 30_000,
 }: UseReplanFlowOptions): UseReplanFlowResult {
   async function confirmReplan(
-    input: ConfirmReplanInput,
+    input: ConfirmReplanInput
   ): Promise<ReplanPostResult> {
     const request: ReplanPostRequest = {
       jobId: input.jobId,
@@ -168,15 +167,12 @@ export function useReplanFlow({
 
       const applyResult = applyNavigation.applyInPlace(result);
       if (isThenable(applyResult)) {
-        throw new Error(
-          "Replan coordinator apply must complete synchronously"
-        );
+        throw new Error("Replan coordinator apply must complete synchronously");
       }
     };
 
     if (coordinator?.submit) {
-      const transitions =
-        getCoordinationTransitions?.(input, result) ?? {};
+      const transitions = getCoordinationTransitions?.(input, result) ?? {};
       await coordinator.submit({
         triggerSource: "replan",
         apply,

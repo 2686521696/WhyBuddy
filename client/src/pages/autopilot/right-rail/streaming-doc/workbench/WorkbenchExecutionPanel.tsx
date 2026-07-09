@@ -2,9 +2,7 @@ import type { FC } from "react";
 
 import type { AppLocale } from "@/lib/locale";
 import type { AgentReasoningEntry } from "@shared/blueprint/agent-reasoning";
-import type {
-  BlueprintGenerationJob,
-} from "@shared/blueprint/contracts";
+import type { BlueprintGenerationJob } from "@shared/blueprint/contracts";
 
 import { ProcessArtifactSplitPanel } from "../../ProcessArtifactSplitPanel";
 

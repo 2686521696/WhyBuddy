@@ -87,7 +87,11 @@ export const ReplanButton: FC<ReplanButtonProps> = ({
         {impactLabel}
       </span>
       {reason ? (
-        <span id={hintId} data-testid="autopilot-replan-disabled-hint" className="sr-only">
+        <span
+          id={hintId}
+          data-testid="autopilot-replan-disabled-hint"
+          className="sr-only"
+        >
           {reason}
         </span>
       ) : null}

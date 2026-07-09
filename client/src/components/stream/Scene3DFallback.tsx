@@ -11,8 +11,8 @@
  *     click, hover) continue to work normally in fallback mode.
  */
 
-import { Scene3D } from '@/components/Scene3D';
-import type { Scene3DProps } from '@/components/Scene3D';
+import { Scene3D } from "@/components/Scene3D";
+import type { Scene3DProps } from "@/components/Scene3D";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,9 +48,9 @@ export function Scene3DFallback({
   return (
     <div
       className={`absolute inset-0 z-0 transition-opacity duration-300 ${
-        visible ? 'opacity-100' : 'opacity-0'
+        visible ? "opacity-100" : "opacity-0"
       }`}
-      style={{ pointerEvents: visible ? 'auto' : 'none' }}
+      style={{ pointerEvents: visible ? "auto" : "none" }}
       data-testid="scene3d-fallback"
     >
       <Scene3D

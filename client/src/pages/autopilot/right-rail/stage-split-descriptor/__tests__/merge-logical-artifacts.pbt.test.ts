@@ -59,7 +59,7 @@ const artifactTypeArb = fc.constantFrom<BlueprintGenerationArtifactType>(
   "github_source",
   "project_context",
   "requirements",
-  "agent_crew",
+  "agent_crew"
 );
 
 /**
@@ -67,7 +67,7 @@ const artifactTypeArb = fc.constantFrom<BlueprintGenerationArtifactType>(
  * date. This matches the project's existing PBT style (constant timestamp
  * with bounded jitter) and keeps shrinkers small.
  */
-const createdAtArb = fc.integer({ min: 0, max: 60 * 24 }).map((minutes) => {
+const createdAtArb = fc.integer({ min: 0, max: 60 * 24 }).map(minutes => {
   const base = Date.UTC(2026, 4, 22, 10, 0, 0); // 2026-05-22T10:00:00Z
   return new Date(base + minutes * 60_000).toISOString();
 });
@@ -107,7 +107,7 @@ const payloadArb: fc.Arbitrary<Record<string, unknown>> = fc.record(
       nil: undefined,
     }),
   },
-  { requiredKeys: [] },
+  { requiredKeys: [] }
 );
 
 /**
@@ -133,7 +133,7 @@ const arbArtifact: fc.Arbitrary<BlueprintGenerationArtifact> = fc
       summary: record.summary,
       createdAt: record.createdAt,
       payload: record.payload,
-    }),
+    })
   );
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -143,11 +143,11 @@ const arbArtifact: fc.Arbitrary<BlueprintGenerationArtifact> = fc
 describe("mergeLogicalArtifacts — Property 3 (idempotence)", () => {
   test("merging an already-merged list yields a deep-equal result", () => {
     fc.assert(
-      fc.property(fc.array(arbArtifact, { maxLength: 30 }), (xs) => {
+      fc.property(fc.array(arbArtifact, { maxLength: 30 }), xs => {
         const once = mergeLogicalArtifacts(xs);
         const twice = mergeLogicalArtifacts(once);
         expect(twice).toEqual(once);
-      }),
+      })
     );
   });
 });
@@ -161,7 +161,7 @@ describe("mergeLogicalArtifacts — Property 4 (same-key collapse)", () => {
     fc.assert(
       fc.property(
         fc.array(arbArtifact, { minLength: 1, maxLength: 10 }),
-        (xs) => {
+        xs => {
           // Force ALL artifacts to share the same clarification_session
           // logicalKey. We rewrite `id` with a unique suffix so literal
           // id-dedup (any future caller-side `seenIds` filter or a future
@@ -181,8 +181,8 @@ describe("mergeLogicalArtifacts — Property 4 (same-key collapse)", () => {
           // under a fixed input order is covered by the unit test
           // `merge-logical-artifacts.unit.test.ts` Case A.
           expect(mergeLogicalArtifacts(forced)).toHaveLength(1);
-        },
-      ),
+        }
+      )
     );
   });
 });

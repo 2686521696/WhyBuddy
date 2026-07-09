@@ -37,7 +37,7 @@ export type SelectBlueprintRouteResult =
 
 export async function selectBlueprintRoute(
   jobId: string,
-  request: BlueprintRouteSelectionRequest,
+  request: BlueprintRouteSelectionRequest
 ): Promise<SelectBlueprintRouteResult> {
   const result = await selectBlueprintRouteBase(jobId, request);
   if (!result.ok) {

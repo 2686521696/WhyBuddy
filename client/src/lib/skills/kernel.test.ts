@@ -17,10 +17,7 @@ import type {
   SkillRuntimeRole,
   VersionPin,
 } from "./skill";
-import {
-  ALLOWED_FINDING_CODE_PREFIXES,
-  isValidFindingCode,
-} from "./skill";
+import { ALLOWED_FINDING_CODE_PREFIXES, isValidFindingCode } from "./skill";
 
 const models = {
   datamodel: leaveRequestDataModel,
@@ -32,11 +29,18 @@ describe("kernel 3 - Separation of Duties design gate", () => {
   it("catches a role that holds two mutually-exclusive duties", () => {
     const withSod: RbacModel = {
       ...leaveApprovalRbac,
-      sodConstraints: [{ name: "leave requester cannot self approve", mutuallyExclusive: ["leave:create", "leave:approve"] }],
+      sodConstraints: [
+        {
+          name: "leave requester cannot self approve",
+          mutuallyExclusive: ["leave:create", "leave:approve"],
+        },
+      ],
     };
     const report = rbacSkill.validate(withSod);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")).toBe(true);
+    expect(
+      report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")
+    ).toBe(true);
   });
 
   it("passes when no SoD constraints are declared", () => {
@@ -57,13 +61,20 @@ describe("kernel 6 - publish gate (cross-system closure)", () => {
     badWorkflow.nodes.find(n => n.id === "a_mgr")!.assigneeRoleRef = "director";
     const gate = slideRule.publishGate({ ...models, workflow: badWorkflow });
     expect(gate.publishable).toBe(false);
-    expect(gate.blockers.some(b => b.code === "PUBLISH_DANGLING_CROSSREF")).toBe(true);
+    expect(
+      gate.blockers.some(b => b.code === "PUBLISH_DANGLING_CROSSREF")
+    ).toBe(true);
   });
 
   it("blocks publish when DataModel is missing", () => {
-    const gate = slideRule.publishGate({ rbac: leaveApprovalRbac, workflow: leaveApprovalWorkflow });
+    const gate = slideRule.publishGate({
+      rbac: leaveApprovalRbac,
+      workflow: leaveApprovalWorkflow,
+    });
     expect(gate.publishable).toBe(false);
-    expect(gate.blockers.some(b => b.code === "PUBLISH_DANGLING_CROSSREF")).toBe(true);
+    expect(
+      gate.blockers.some(b => b.code === "PUBLISH_DANGLING_CROSSREF")
+    ).toBe(true);
   });
 });
 
@@ -73,7 +84,12 @@ describe("V2 shared contract - kernel vocabulary", () => {
     const hostPdp: KernelRole = "pdp-host";
     const compactSsot: KernelRole = "ssot";
     const hostSsot: KernelRole = "ssot-host";
-    expect([compactPdp, hostPdp, compactSsot, hostSsot]).toEqual(["pdp", "pdp-host", "ssot", "ssot-host"]);
+    expect([compactPdp, hostPdp, compactSsot, hostSsot]).toEqual([
+      "pdp",
+      "pdp-host",
+      "ssot",
+      "ssot-host",
+    ]);
   });
 
   it("declares PEP and assembly-root semantics", () => {
@@ -101,11 +117,18 @@ describe("V2 shared contract - kernel vocabulary", () => {
 
   it("accepts the V2 diagram field names used by queue task implementations", () => {
     const runtime: SkillRuntimeRole = "kernel";
-    const dep: DependencyRef = { to: "datamodel", kind: "entity", ref: "leaveRequest" };
+    const dep: DependencyRef = {
+      to: "datamodel",
+      kind: "entity",
+      ref: "leaveRequest",
+    };
     const pin: VersionPin = { skillId: "rbac", version: "1.0.0" };
     const decision: PolicyDecision = { decision: "allow", ruleId: "rbac:1" };
     const publish: PublishGateReport = { publishable: true, blockers: [] };
-    const impact: ImpactReport = { affectedSkills: ["workflow"], summary: "minor" };
+    const impact: ImpactReport = {
+      affectedSkills: ["workflow"],
+      summary: "minor",
+    };
     const surface: SkillCapabilitySurface = {
       kernelRole: "pdp-host",
       runtimeRole: runtime,
@@ -130,9 +153,16 @@ describe("V2 shared contract - kernel vocabulary", () => {
   });
 
   it("typed surfaces are usable with compact field names", () => {
-    const decision: PolicyDecision = { effect: "deny", reasonCode: "RBAC_NO_MATCH" };
+    const decision: PolicyDecision = {
+      effect: "deny",
+      reasonCode: "RBAC_NO_MATCH",
+    };
     const gateReport: PublishGateReport = { publishable: false, blockers: [] };
-    const impact: ImpactReport = { target: { skill: "rbac", kind: "role", value: "x" }, safe: true, impacted: [] };
+    const impact: ImpactReport = {
+      target: { skill: "rbac", kind: "role", value: "x" },
+      safe: true,
+      impacted: [],
+    };
     expect(decision.effect).toBe("deny");
     expect(gateReport.publishable).toBe(false);
     expect(impact.safe).toBe(true);
@@ -154,7 +184,12 @@ describe("V2 finding code taxonomy (115)", () => {
   it("RBAC gate findings use allowed prefix (positive, gate involved)", () => {
     const withSod: RbacModel = {
       ...leaveApprovalRbac,
-      sodConstraints: [{ name: "leave requester cannot self approve", mutuallyExclusive: ["leave:create", "leave:approve"] }],
+      sodConstraints: [
+        {
+          name: "leave requester cannot self approve",
+          mutuallyExclusive: ["leave:create", "leave:approve"],
+        },
+      ],
     };
     const report = rbacSkill.validate(withSod);
     expect(report.ok).toBe(false);
@@ -186,7 +221,14 @@ describe("V2 finding code taxonomy (115)", () => {
 
   it("ALLOWED_FINDING_CODE_PREFIXES declares RBAC/DATAMODEL/WORKFLOW/PAGE/APPBUNDLE/KERNEL", () => {
     expect(ALLOWED_FINDING_CODE_PREFIXES).toEqual(
-      expect.arrayContaining(["RBAC", "DM", "WF", "PAGE", "APPBUNDLE", "PUBLISH"])
+      expect.arrayContaining([
+        "RBAC",
+        "DM",
+        "WF",
+        "PAGE",
+        "APPBUNDLE",
+        "PUBLISH",
+      ])
     );
     // ensure no unknown
     expect(ALLOWED_FINDING_CODE_PREFIXES.includes("FOO")).toBe(false);

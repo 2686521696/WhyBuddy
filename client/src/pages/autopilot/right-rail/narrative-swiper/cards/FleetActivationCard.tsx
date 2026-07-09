@@ -33,8 +33,10 @@ export interface FleetActivationCardProps {
 
 const SEVERITY_CHIP_CLASS: Record<string, string> = {
   info: "bg-sky-100 text-sky-700 dark:bg-sky-800/30 dark:text-sky-300",
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-800/30 dark:text-emerald-300",
-  warning: "bg-amber-100 text-amber-700 dark:bg-amber-800/30 dark:text-amber-300",
+  success:
+    "bg-emerald-100 text-emerald-700 dark:bg-emerald-800/30 dark:text-emerald-300",
+  warning:
+    "bg-amber-100 text-amber-700 dark:bg-amber-800/30 dark:text-amber-300",
   danger: "bg-red-100 text-red-700 dark:bg-red-800/30 dark:text-red-300",
 };
 
@@ -47,7 +49,10 @@ const SEVERITY_CHIP_CLASS: Record<string, string> = {
  * 从 `card.headline` 取激活标题，`card.detail` 取动作摘要，
  * `card.severity` 决定 chip 色调。
  */
-export const FleetActivationCard: FC<FleetActivationCardProps> = ({ card, locale }) => {
+export const FleetActivationCard: FC<FleetActivationCardProps> = ({
+  card,
+  locale,
+}) => {
   const severity = card.severity ?? "info";
   const chipClass = SEVERITY_CHIP_CLASS[severity] ?? SEVERITY_CHIP_CLASS.info;
   const chipLabel = locale === "zh-CN" ? "激活" : "Activated";

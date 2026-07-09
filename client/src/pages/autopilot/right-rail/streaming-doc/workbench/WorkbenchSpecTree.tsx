@@ -252,7 +252,7 @@ export interface WorkbenchSpecTreeProps {
   /** 生成中状态，与 `AutopilotRightRail.specDocsGenerating` 一致。 */
   generating: "all" | "single" | null;
   /**
- * sliderule-spec-tree-progress-merge-2026-05-29：每节点生成进度快照
+   * sliderule-spec-tree-progress-merge-2026-05-29：每节点生成进度快照
    * （nodeId → { status, wasRetried, errorSummary }）。缺省 / 缺某节点时
    * 该行回退为 pending。合并了原 SpecDocsProgressPanel 浮层的职责。
    */
@@ -397,7 +397,8 @@ function buildSearchMatchSet(
     const docs = docsByNodeId.get(node.id);
     if (!docs) return false;
     for (const doc of docs) {
-      const title = typeof doc.title === "string" ? doc.title.toLowerCase() : "";
+      const title =
+        typeof doc.title === "string" ? doc.title.toLowerCase() : "";
       if (title.includes(needle)) return true;
       if (
         typeof doc.type === "string" &&
@@ -570,7 +571,7 @@ interface WorkbenchSpecTreeViewProps {
  * 无 hooks 的纯展示组件。入参全部为受控 props，便于 SSR 测试与 onClick
  * 委派测试直接调用。
  */
-export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => {
+export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = props => {
   const {
     query,
     onQueryChange,
@@ -643,7 +644,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
     const isNodeSelected =
       activeNodeId === node.id ||
       (activeDocId !== null &&
-        (activeDocId === node.id || docs.some((doc) => doc.id === activeDocId)));
+        (activeDocId === node.id || docs.some(doc => doc.id === activeDocId)));
 
     const onNodeClick = () => {
       onSelectDocument(resolveNodeClickDocId(node, docsByNodeId));
@@ -672,8 +673,10 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
         data-node-id={node.id}
         data-active={isNodeSelected ? "true" : undefined}
         data-node-status={nodeStatus}
-        ref={(el) => registerNodeRowRef(node.id, el)}
-        className={"min-w-0 overflow-hidden rounded-md border transition " + rowBgClass}
+        ref={el => registerNodeRowRef(node.id, el)}
+        className={
+          "min-w-0 overflow-hidden rounded-md border transition " + rowBgClass
+        }
         style={{ paddingLeft: depth * 12 }}
       >
         <div className="flex min-w-0 items-center gap-1 px-1 py-1">
@@ -744,7 +747,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
         </div>
         {expanded ? (
           <div className="grid gap-0.5 px-1 pb-1">
-            {docs.map((doc) => {
+            {docs.map(doc => {
               const isDocActive = activeDocId === doc.id;
               const staleDocument = staleDocumentsById?.get(doc.id);
               return (
@@ -770,7 +773,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
                 </button>
               );
             })}
-            {childIds.map((childId) => renderNode(childId, depth + 1))}
+            {childIds.map(childId => renderNode(childId, depth + 1))}
           </div>
         ) : null}
       </div>
@@ -790,7 +793,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
         aria-label={copy.searchAriaLabel}
         placeholder={copy.searchPlaceholder}
         value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
+        onChange={e => onQueryChange(e.target.value)}
         className="m-1.5 h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-[11px] font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-cyan-300 focus:bg-white"
       />
       {/* 节点 · N header（Q3：搜索框下方、tree roots 上方） */}
@@ -806,7 +809,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
         data-testid="autopilot-workbench-spec-tree-roots"
         className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-1.5 pb-1.5"
       >
-        {rootNodeIds.map((rootId) => renderNode(rootId, 0))}
+        {rootNodeIds.map(rootId => renderNode(rootId, 0))}
       </div>
     </section>
   );
@@ -816,7 +819,7 @@ export const WorkbenchSpecTreeView: FC<WorkbenchSpecTreeViewProps> = (props) => 
 // 主组件（有状态包装）
 // ---------------------------------------------------------------------------
 
-export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
+export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = props => {
   const {
     specTree,
     specDocuments,
@@ -907,7 +910,7 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
     (nodeId: string) => {
       if (treeIndex === null) return;
       setHasManualExpansion(true);
-      setExpandedNodeIds((prev) => {
+      setExpandedNodeIds(prev => {
         const visibleExpandedIds = resolveEffectiveExpandedIds({
           isSearching: query.trim().length > 0,
           searchMatchSet: new Set<string>(),
@@ -919,11 +922,7 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
         const next = new Set(visibleExpandedIds);
         if (visibleExpandedIds.has(nodeId)) {
           next.delete(nodeId);
-          removeExpandedDescendants(
-            nodeId,
-            next,
-            treeIndex.childrenByParent
-          );
+          removeExpandedDescendants(nodeId, next, treeIndex.childrenByParent);
         } else {
           next.add(nodeId);
         }
@@ -948,7 +947,7 @@ export const WorkbenchSpecTree: FC<WorkbenchSpecTreeProps> = (props) => {
           aria-label={copy.searchAriaLabel}
           placeholder={copy.searchPlaceholder}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={e => setQuery(e.target.value)}
           disabled
           className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-[11px] font-medium text-slate-400"
         />

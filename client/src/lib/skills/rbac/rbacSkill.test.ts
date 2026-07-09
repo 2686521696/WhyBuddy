@@ -47,7 +47,9 @@ describe("rbacSkill — the gate (validate)", () => {
     expect(report.ok).toBe(true);
     expect(report.errors).toHaveLength(0);
     // data rules point at the DataModel skill, which wasn't threaded in → honest warning, not a lie.
-    expect(report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")).toBe(true);
+    expect(
+      report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")
+    ).toBe(true);
   });
 
   it("CATCHES a dangling permission reference (the gate earns its keep)", () => {
@@ -55,7 +57,9 @@ describe("rbacSkill — the gate (validate)", () => {
     broken.roles[0].permissionCodes.push("leave:delete"); // never defined
     const report = rbacSkill.validate(broken);
     expect(report.ok).toBe(false);
-    const hit = report.errors.find(e => e.code === "RBAC_REF_MISSING_PERMISSION");
+    const hit = report.errors.find(
+      e => e.code === "RBAC_REF_MISSING_PERMISSION"
+    );
     expect(hit).toBeTruthy();
     expect(hit!.path).toBe("roles[employee].permissionCodes[2]");
   });
@@ -65,15 +69,22 @@ describe("rbacSkill — the gate (validate)", () => {
     broken.users[0].roleIds = ["ghost_role"];
     const report = rbacSkill.validate(broken);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_REF_MISSING_ROLE")).toBe(true);
+    expect(report.errors.some(e => e.code === "RBAC_REF_MISSING_ROLE")).toBe(
+      true
+    );
   });
 
   it("CATCHES a role whose inheritsRoleIds points at a nonexistent parent", () => {
     const broken = clone(leaveApprovalRbac);
-    broken.roles.find(r => r.id === "manager")!.inheritsRoleIds = ["ghost_parent"];
+    broken.roles.find(r => r.id === "manager")!.inheritsRoleIds = [
+      "ghost_parent",
+    ];
     const report = rbacSkill.validate(broken);
     expect(report.ok).toBe(false);
-    const hit = report.errors.find(e => e.code === "RBAC_REF_MISSING_ROLE" && e.path.includes("inheritsRoleIds"));
+    const hit = report.errors.find(
+      e =>
+        e.code === "RBAC_REF_MISSING_ROLE" && e.path.includes("inheritsRoleIds")
+    );
     expect(hit).toBeTruthy();
     expect(hit!.path).toBe("roles[manager].inheritsRoleIds[0]");
     expect(hit!.message).toContain("继承了不存在的角色");
@@ -85,7 +96,9 @@ describe("rbacSkill — the gate (validate)", () => {
     broken.menus.find(m => m.id === "m_leave")!.parentId = "b_approve";
     const report = rbacSkill.validate(broken);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_MENU_TREE_FAULT")).toBe(true);
+    expect(report.errors.some(e => e.code === "RBAC_MENU_TREE_FAULT")).toBe(
+      true
+    );
   });
 
   it("resolves a cross-skill data model ref to a hard ERROR when the entity is absent", () => {
@@ -93,7 +106,9 @@ describe("rbacSkill — the gate (validate)", () => {
       external: { datamodel: { entity: ["something_else"] } },
     });
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(true);
+    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(
+      true
+    );
   });
 
   it("passes cleanly when the DataModel surface DOES contain the referenced entity", () => {
@@ -101,63 +116,120 @@ describe("rbacSkill — the gate (validate)", () => {
       external: { datamodel: { entity: ["leave_request"] } },
     });
     expect(report.ok).toBe(true);
-    expect(report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")).toBe(false);
+    expect(
+      report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")
+    ).toBe(false);
   });
 
   // 115.10.07: focused +ve/-ve for RBAC policy row/field SSOT refs to DataModel (hardening requirement)
   it("policy row resourceType passes when present in connected datamodel.entity (positive)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_row", effect: "deny", resourceType: "leave_request" }];
+    m.policyRules = [
+      { id: "pr_row", effect: "deny", resourceType: "leave_request" },
+    ];
     const report = rbacSkill.validate(m, {
       external: { datamodel: { entity: ["leave_request", "employee"] } },
     });
     expect(report.ok).toBe(true);
-    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(false);
-    expect(report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(
+      false
+    );
+    expect(
+      report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED")
+    ).toBe(false);
   });
 
   it("policy row resourceType errors when connected datamodel.entity is missing the ref (negative)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_row_missing", effect: "deny", resourceType: "ghost_entity" }];
+    m.policyRules = [
+      { id: "pr_row_missing", effect: "deny", resourceType: "ghost_entity" },
+    ];
     const report = rbacSkill.validate(m, {
       external: { datamodel: { entity: ["leave_request"] } },
     });
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING" && e.path.includes("resourceType"))).toBe(true);
+    expect(
+      report.errors.some(
+        e =>
+          e.code === "RBAC_CROSS_REF_MISSING" && e.path.includes("resourceType")
+      )
+    ).toBe(true);
   });
 
   it("policy fieldRef passes when present in connected datamodel.field (positive)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_fld", effect: "deny", resourceType: "leave_request", fieldRef: "leave_request.approved" }];
+    m.policyRules = [
+      {
+        id: "pr_fld",
+        effect: "deny",
+        resourceType: "leave_request",
+        fieldRef: "leave_request.approved",
+      },
+    ];
     const report = rbacSkill.validate(m, {
-      external: { datamodel: { field: ["leave_request.status", "leave_request.approved"] } },
+      external: {
+        datamodel: {
+          field: ["leave_request.status", "leave_request.approved"],
+        },
+      },
     });
     expect(report.ok).toBe(true);
-    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(false);
+    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING")).toBe(
+      false
+    );
   });
 
   it("policy field (derived) warns when no datamodel surface connected (unresolved)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_fld_unres", effect: "deny", resourceType: "leave_request", field: "status" }];
+    m.policyRules = [
+      {
+        id: "pr_fld_unres",
+        effect: "deny",
+        resourceType: "leave_request",
+        field: "status",
+      },
+    ];
     const report = rbacSkill.validate(m);
-    expect(report.warnings.some(w => w.code === "RBAC_CROSS_REF_UNRESOLVED" && w.path.includes("field"))).toBe(true);
+    expect(
+      report.warnings.some(
+        w => w.code === "RBAC_CROSS_REF_UNRESOLVED" && w.path.includes("field")
+      )
+    ).toBe(true);
   });
 
   it("policy fieldRef errors when connected datamodel.field surface misses it (negative)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_fld_miss", effect: "deny", fieldRef: "leave_request.missing" }];
+    m.policyRules = [
+      { id: "pr_fld_miss", effect: "deny", fieldRef: "leave_request.missing" },
+    ];
     const report = rbacSkill.validate(m, {
       external: { datamodel: { field: ["leave_request.approved"] } },
     });
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_CROSS_REF_MISSING" && e.path.includes("fieldRef"))).toBe(true);
+    expect(
+      report.errors.some(
+        e => e.code === "RBAC_CROSS_REF_MISSING" && e.path.includes("fieldRef")
+      )
+    ).toBe(true);
   });
 
   it("policy row+fieldRef using fields surface (object form) works for positive case", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{ id: "pr_both", effect: "deny", resourceType: "leave_request", fieldRef: "leave_request.days" }];
+    m.policyRules = [
+      {
+        id: "pr_both",
+        effect: "deny",
+        resourceType: "leave_request",
+        fieldRef: "leave_request.days",
+      },
+    ];
     const report = rbacSkill.validate(m, {
-      external: { datamodel: { entity: ["leave_request"], fields: [{ ref: "leave_request.days" }] } },
+      external: {
+        datamodel: {
+          entity: ["leave_request"],
+          fields: [{ ref: "leave_request.days" }],
+        },
+      },
     });
     expect(report.ok).toBe(true);
     expect(report.errors.length).toBe(0);
@@ -187,29 +259,44 @@ describe("rbacSkill — cross-skill surface (resolve)", () => {
     const m = clone(purchaseApprovalRbac);
     m.policyRules = [
       { id: "pr_row", effect: "deny", resourceType: "purchase_request" },
-      { id: "pr_fld", effect: "allow", resourceType: "purchase_request", fieldRef: "purchase_request.amount" },
+      {
+        id: "pr_fld",
+        effect: "allow",
+        resourceType: "purchase_request",
+        fieldRef: "purchase_request.amount",
+      },
     ];
     const surface = rbacSkill.resolve(m);
     expect(surface.rowRule).toContain("pr_row");
     expect(surface.fieldRule).toContain("pr_fld");
-    expect(surface.decisionScope).toEqual(["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"]);
+    expect(surface.decisionScope).toEqual([
+      "RBAC_DECISION_ALLOW",
+      "RBAC_DECISION_FAIL_CLOSED",
+    ]);
     // policy surface remains for compat
     expect(Array.isArray(surface.policy)).toBe(true);
-    expect(surface.policy.some((p: string) => p.includes("pr_row") || p.includes("pr_fld"))).toBe(true);
+    expect(
+      surface.policy.some(
+        (p: string) => p.includes("pr_row") || p.includes("pr_fld")
+      )
+    ).toBe(true);
   });
 
   it("rowRule and fieldRule are empty (and legacy surfaces stable) when no policyRules declare row/field (negative + compat)", () => {
     const surface = rbacSkill.resolve(leaveApprovalRbac);
     expect(surface.rowRule).toEqual([]);
     expect(surface.fieldRule).toEqual([]);
-    expect(surface.decisionScope).toEqual(["RBAC_DECISION_ALLOW", "RBAC_DECISION_FAIL_CLOSED"]);
+    expect(surface.decisionScope).toEqual([
+      "RBAC_DECISION_ALLOW",
+      "RBAC_DECISION_FAIL_CLOSED",
+    ]);
     // existing surfaces remain stable and unchanged for AIGC 114 / purchase compat
     expect(surface.role).toEqual(["employee", "manager"]);
     expect(surface.permission).toContain("leave:approve");
     expect(surface.policy).toBeDefined();
   });
 
-  it("refNodeId(\"role\", \"manager\") maps to the real role node", () => {
+  it('refNodeId("role", "manager") maps to the real role node', () => {
     const nodeId = rbacSkill.refNodeId("role", "manager");
     expect(nodeId).toBe("role_manager");
     const proj = rbacSkill.project(leaveApprovalRbac);
@@ -220,17 +307,25 @@ describe("rbacSkill — cross-skill surface (resolve)", () => {
 describe("rbacSkill — projector (architecture diagram falls out of the model)", () => {
   it("derives nodes/edges and a mermaid diagram from the model, not by hand", () => {
     const projection = rbacSkill.project(leaveApprovalRbac);
-    expect(projection.nodes.some(n => n.kind === "role" && n.label === "主管")).toBe(true);
+    expect(
+      projection.nodes.some(n => n.kind === "role" && n.label === "主管")
+    ).toBe(true);
     // 主管 role -> leave:approve permission edge exists
     expect(
-      projection.edges.some(e => e.from === "role_manager" && e.to === "perm_leave_approve"),
+      projection.edges.some(
+        e => e.from === "role_manager" && e.to === "perm_leave_approve"
+      )
     ).toBe(true);
     expect(projection.mermaid.startsWith("flowchart LR")).toBe(true);
   });
 
   it("contains PDP host, fail-closed, inheritance, and SoD nodes when the model declares them", () => {
     const projection = rbacSkill.project(leaveApprovalRbac);
-    expect(projection.nodes.some(n => n.kind === "pdp-host" && n.label === "RBAC PDP")).toBe(true);
+    expect(
+      projection.nodes.some(
+        n => n.kind === "pdp-host" && n.label === "RBAC PDP"
+      )
+    ).toBe(true);
     expect(projection.nodes.some(n => n.label === "fail-closed")).toBe(true);
     expect(projection.nodes.some(n => n.kind === "decision")).toBe(true);
     // add inheritance + SoD to model (base declares failClosed)
@@ -246,7 +341,9 @@ describe("rbacSkill — projector (architecture diagram falls out of the model)"
     ];
     const p2 = rbacSkill.project(m);
     expect(p2.nodes.some(n => n.kind === "inheritance")).toBe(true);
-    expect(p2.nodes.some(n => n.kind === "sod" && n.id.includes("sod_test"))).toBe(true);
+    expect(
+      p2.nodes.some(n => n.kind === "sod" && n.id.includes("sod_test"))
+    ).toBe(true);
   });
 });
 
@@ -258,7 +355,11 @@ describe("rbac model — V2 PDP extensions (113.02)", () => {
     manager.inheritsRoleIds = ["employee"];
     expect(manager.inheritsRoleIds).toEqual(["employee"]);
     // manager now inherits from employee while keeping own perms
-    expect(m.roles.some(r => r.inheritsRoleIds && r.inheritsRoleIds.includes("employee"))).toBe(true);
+    expect(
+      m.roles.some(
+        r => r.inheritsRoleIds && r.inheritsRoleIds.includes("employee")
+      )
+    ).toBe(true);
   });
 
   it("supports SoD metadata via sodRules (role-based separation of duty)", () => {
@@ -322,7 +423,9 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     broken.roles.find(r => r.id === "manager")!.inheritsRoleIds = ["employee"];
     const report = rbacSkill.validate(broken);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_ROLE_INHERITANCE_CYCLE")).toBe(true);
+    expect(
+      report.errors.some(e => e.code === "RBAC_ROLE_INHERITANCE_CYCLE")
+    ).toBe(true);
   });
 
   it("CATCHES mutually exclusive roles (direct) and emits RBAC_SOD_MUTUALLY_EXCLUSIVE", () => {
@@ -340,7 +443,9 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     m.users[0].roleIds = ["employee", "manager"];
     const report = rbacSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")).toBe(true);
+    expect(
+      report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")
+    ).toBe(true);
   });
 
   it("CATCHES mutually exclusive roles (direct) and emits RBAC_SOD_VIOLATION", () => {
@@ -373,7 +478,9 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     const report = rbacSkill.validate(m);
 
     expect(report.ok).toBe(false);
-    const hit = report.errors.find(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE");
+    const hit = report.errors.find(
+      e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE"
+    );
     expect(hit).toBeTruthy();
     expect(hit!.path).toBe("roles[manager].permissionCodes");
   });
@@ -395,7 +502,9 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     const report = rbacSkill.validate(m);
 
     expect(report.ok).toBe(false);
-    const hit = report.errors.find(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE");
+    const hit = report.errors.find(
+      e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE"
+    );
     expect(hit).toBeTruthy();
     expect(hit!.path).toBe("users[u_emp].roleIds");
   });
@@ -432,7 +541,9 @@ describe("rbac PDP gate — decideRbacPolicy and validate errors (113.03)", () =
     m.users[0].roleIds = ["manager"];
     const report = rbacSkill.validate(m);
     expect(report.ok).toBe(false);
-    expect(report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")).toBe(true);
+    expect(
+      report.errors.some(e => e.code === "RBAC_SOD_MUTUALLY_EXCLUSIVE")
+    ).toBe(true);
   });
 
   it("decideRbacPolicy allows when permission is granted directly or via inheritance", () => {
@@ -656,7 +767,9 @@ describe("rbac SoD policy model — 115.10.03 self-grant denial and dual-control
     expect(Array.isArray(purchaseApprovalRbac.selfGrantDenials)).toBe(true);
     expect(purchaseApprovalRbac.selfGrantDenials!.length).toBeGreaterThan(0);
     const sgd = purchaseApprovalRbac.selfGrantDenials![0];
-    expect(sgd.deniedSelfGrantPermissionCodes).toContain("purchase:finance_approve");
+    expect(sgd.deniedSelfGrantPermissionCodes).toContain(
+      "purchase:finance_approve"
+    );
     expect(purchaseApprovalRbac.dualControlPolicies).toBeDefined();
     expect(purchaseApprovalRbac.dualControlPolicies![0].minApprovers).toBe(2);
   });
@@ -734,7 +847,11 @@ describe("rbac SoD policy model — 115.10.03 self-grant denial and dual-control
 
   it("validate accepts models declaring self-grant/dual SoD policies without ref errors (gate positive)", () => {
     const report = rbacSkill.validate(purchaseApprovalRbac);
-    const refErrors = report.errors.filter((e) => e.code === "RBAC_REF_MISSING_PERMISSION" || e.code === "RBAC_REF_MISSING_ROLE");
+    const refErrors = report.errors.filter(
+      e =>
+        e.code === "RBAC_REF_MISSING_PERMISSION" ||
+        e.code === "RBAC_REF_MISSING_ROLE"
+    );
     expect(refErrors.length).toBe(0);
     // may have cross-ref warning, but model + new SoD policies are valid
     expect(report.ok || report.warnings.length >= 0).toBe(true);
@@ -746,10 +863,18 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
   it("policyRules surface in resolve (allow/deny effects represented)", () => {
     const m = clone(purchaseApprovalRbac);
     m.policyRules = [
-      { id: "pr_deny_f", effect: "deny", roleId: "finance", resourceType: "purchase_request", reason: "deny example" },
+      {
+        id: "pr_deny_f",
+        effect: "deny",
+        roleId: "finance",
+        resourceType: "purchase_request",
+        reason: "deny example",
+      },
     ];
     const surface = rbacSkill.resolve(m);
-    expect(surface.policy.some((p: string) => p.includes("deny:pr_deny_f"))).toBe(true);
+    expect(
+      surface.policy.some((p: string) => p.includes("deny:pr_deny_f"))
+    ).toBe(true);
   });
 
   it("decideRbacPolicy denies via explicit deny rule even when role grants direct allow (negative focused)", () => {
@@ -780,7 +905,12 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
   it("decideRbacPolicy allows when no matching deny rule (positive compat case)", () => {
     const m = clone(leaveApprovalRbac);
     m.policyRules = [
-      { id: "pr_other", effect: "deny", roleId: "manager", resourceType: "other_resource" },
+      {
+        id: "pr_other",
+        effect: "deny",
+        roleId: "manager",
+        resourceType: "other_resource",
+      },
     ];
     const dec = decideRbacPolicy(m, {
       subject: { roleIds: ["employee"] },
@@ -848,7 +978,9 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
     const mgr = m.roles.find(r => r.id === "manager")!;
     mgr.inheritsRoleIds = ["employee"];
     // ensure manager direct does not have create
-    mgr.permissionCodes = mgr.permissionCodes.filter((c: string) => c !== "leave:create");
+    mgr.permissionCodes = mgr.permissionCodes.filter(
+      (c: string) => c !== "leave:create"
+    );
     m.policyRules = [
       {
         id: "pr_deny_inherit",
@@ -899,7 +1031,13 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
     const m = clone(leaveApprovalRbac);
     // 115.10.07: use fieldRef (entity.field SSOT id) to represent field policy ref
     m.policyRules = [
-      { id: "pr_field", effect: "deny", roleId: "manager", resourceType: "leave_request", fieldRef: "leave_request.confidential" },
+      {
+        id: "pr_field",
+        effect: "deny",
+        roleId: "manager",
+        resourceType: "leave_request",
+        fieldRef: "leave_request.confidential",
+      },
     ];
     const dec = decideRbacPolicy(m, {
       subject: { roleIds: ["manager"] },
@@ -914,9 +1052,21 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
 
   it("project surfaces deny-over-allow precedence node when policyRules present", () => {
     const m = clone(purchaseApprovalRbac);
-    m.policyRules = [{ id: "p1", effect: "deny", roleId: "requester", resourceType: "purchase_request" }];
+    m.policyRules = [
+      {
+        id: "p1",
+        effect: "deny",
+        roleId: "requester",
+        resourceType: "purchase_request",
+      },
+    ];
     const proj = rbacSkill.project(m);
-    expect(proj.nodes.some(n => n.kind === "precedence" || (n.label || "").includes("deny-over-allow"))).toBe(true);
+    expect(
+      proj.nodes.some(
+        n =>
+          n.kind === "precedence" || (n.label || "").includes("deny-over-allow")
+      )
+    ).toBe(true);
     expect(proj.nodes.some(n => (n.id || "").includes("policy_p1"))).toBe(true);
   });
 });
@@ -926,33 +1076,45 @@ describe("rbac PDP deny-over-allow precedence — 115.10.06", () => {
 describe("rbac policy version lifecycle — 115.10.08", () => {
   it("accepts policyRule declaring version + effective lifecycle (published and not retired) (positive gate)", () => {
     const m = clone(purchaseApprovalRbac);
-    m.policyRules = [{
-      id: "pr_ver_eff",
-      effect: "deny",
-      version: "v2.1",
-      lifecycleState: "effective",
-      resourceType: "purchase_request",
-      reason: "v2 effective policy",
-    }];
+    m.policyRules = [
+      {
+        id: "pr_ver_eff",
+        effect: "deny",
+        version: "v2.1",
+        lifecycleState: "effective",
+        resourceType: "purchase_request",
+        reason: "v2 effective policy",
+      },
+    ];
     const report = rbacSkill.validate(m);
     expect(report.ok).toBe(true);
-    expect(report.errors.some(e => e.code === "RBAC_POLICY_LIFECYCLE_VIOLATION")).toBe(false);
+    expect(
+      report.errors.some(e => e.code === "RBAC_POLICY_LIFECYCLE_VIOLATION")
+    ).toBe(false);
     // projection must surface lifecycle nodes
     const proj = rbacSkill.project(m);
-    expect(proj.nodes.some(n => n.id.includes("lifecycle_pr_ver_eff") || (n.label || "").includes("effective"))).toBe(true);
+    expect(
+      proj.nodes.some(
+        n =>
+          n.id.includes("lifecycle_pr_ver_eff") ||
+          (n.label || "").includes("effective")
+      )
+    ).toBe(true);
     expect(proj.nodes.some(n => n.id === "pdp_policy_lifecycle")).toBe(true);
   });
 
   it("decide reports policyVersion and policyLifecycleState when deny uses versioned effective policy (positive)", () => {
     const m = clone(leaveApprovalRbac);
-    m.policyRules = [{
-      id: "pr_vlife",
-      effect: "deny",
-      version: "v1.8",
-      lifecycleState: "published",
-      roleId: "employee",
-      resourceType: "leave_request",
-    }];
+    m.policyRules = [
+      {
+        id: "pr_vlife",
+        effect: "deny",
+        version: "v1.8",
+        lifecycleState: "published",
+        roleId: "employee",
+        resourceType: "leave_request",
+      },
+    ];
     const dec = decideRbacPolicy(m, {
       subject: { roleIds: ["employee"] },
       action: "create",
@@ -970,14 +1132,16 @@ describe("rbac policy version lifecycle — 115.10.08", () => {
   it("retired policy is accepted in model but does not participate in PDP deny (negative for effective use)", () => {
     const m = clone(leaveApprovalRbac);
     // employee would be denied if the deny rule were active (not retired)
-    m.policyRules = [{
-      id: "pr_retired",
-      effect: "deny",
-      version: "v0.9",
-      lifecycleState: "retired",
-      roleId: "employee",
-      resourceType: "leave_request",
-    }];
+    m.policyRules = [
+      {
+        id: "pr_retired",
+        effect: "deny",
+        version: "v0.9",
+        lifecycleState: "retired",
+        roleId: "employee",
+        resourceType: "leave_request",
+      },
+    ];
     const report = rbacSkill.validate(m);
     expect(report.ok).toBe(true); // retired data is valid to store (history)
     // but decision allows (retired ignored, not effective)
@@ -995,11 +1159,27 @@ describe("rbac policy version lifecycle — 115.10.08", () => {
 
   it("resolve and project include version/lifecycle in policy surfaces (V2 contract)", () => {
     const m = clone(purchaseApprovalRbac);
-    m.policyRules = [{ id: "pr_s", effect: "allow", version: "v3", lifecycleState: "draft", permissionCode: "purchase:create" }];
+    m.policyRules = [
+      {
+        id: "pr_s",
+        effect: "allow",
+        version: "v3",
+        lifecycleState: "draft",
+        permissionCode: "purchase:create",
+      },
+    ];
     const surf = rbacSkill.resolve(m);
-    expect(surf.policy.some((p: string) => p.includes("allow:pr_s@v3#draft"))).toBe(true);
+    expect(
+      surf.policy.some((p: string) => p.includes("allow:pr_s@v3#draft"))
+    ).toBe(true);
     const proj = rbacSkill.project(m);
-    expect(proj.nodes.some(n => (n.label || "").includes("draft") || (n.id || "").includes("lifecycle_"))).toBe(true);
+    expect(
+      proj.nodes.some(
+        n =>
+          (n.label || "").includes("draft") ||
+          (n.id || "").includes("lifecycle_")
+      )
+    ).toBe(true);
   });
 });
 
@@ -1155,7 +1335,7 @@ describe("rbac runtime row and field access — 117", () => {
         fieldContext: { fields: ["amount"] },
         approverUserIds: ["u_finn", "u_other"],
       },
-      "purchase_request.amount",
+      "purchase_request.amount"
     );
     expect(dec.allow).toBe(false);
     expect(dec.code).toBe(RBAC_FIELD_ACCESS_DENIED);
@@ -1184,15 +1364,18 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     expect(surface.runtimeEvidence).toEqual(
       expect.arrayContaining([
         expect.stringContaining("RBAC_CROSS_RUNTIME_EVIDENCE:page"),
-      ]),
+      ])
     );
     expect(surface.crossSkillRuntimeEdges).toEqual(
-      expect.arrayContaining(["rbac->page:allowed"]),
+      expect.arrayContaining(["rbac->page:allowed"])
     );
   });
 
   it("builds page runtime evidence by reusing evaluateRbacRuntimePolicy", () => {
-    const evidence = createRbacPageRuntimeEvidence(leaveApprovalRbac, leaveApproveRequest);
+    const evidence = createRbacPageRuntimeEvidence(
+      leaveApprovalRbac,
+      leaveApproveRequest
+    );
 
     expect(evidence.evidenceKey).toBe(RBAC_PAGE_RUNTIME_EVIDENCE);
     expect(evidence.targetSkill).toBe("page");
@@ -1202,12 +1385,17 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
   });
 
   it("builds workflow runtime evidence and preserves policy refs", () => {
-    const evidence = createRbacWorkflowRuntimeEvidence(leaveApprovalRbac, leaveApproveRequest);
+    const evidence = createRbacWorkflowRuntimeEvidence(
+      leaveApprovalRbac,
+      leaveApproveRequest
+    );
 
     expect(evidence.evidenceKey).toBe(RBAC_WORKFLOW_RUNTIME_EVIDENCE);
     expect(evidence.targetSkill).toBe("workflow");
     expect(evidence.permissionRefs).toContain("leave:approve");
-    expect(evidence.policyRefs).toEqual(expect.arrayContaining(["manager", "leave:approve"]));
+    expect(evidence.policyRefs).toEqual(
+      expect.arrayContaining(["manager", "leave:approve"])
+    );
   });
 
   it("normalizes per-target context and keeps batch edges complete", () => {
@@ -1223,12 +1411,21 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
 
     const edges = buildRbacCrossRuntimeEdges(purchaseApprovalRbac);
     expect(edges.map(edge => edge.targetSkill)).toEqual(
-      expect.arrayContaining(["datamodel", "workflow", "page", "aigc", "appbundle"]),
+      expect.arrayContaining([
+        "datamodel",
+        "workflow",
+        "page",
+        "aigc",
+        "appbundle",
+      ])
     );
   });
 
   it("traces RBAC allow decisions to Page render permission evidence as a closed path", () => {
-    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(leaveApprovalRbac, leaveApproveRequest);
+    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(
+      leaveApprovalRbac,
+      leaveApproveRequest
+    );
 
     expect(trace.traceId).toBe(RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE);
     expect(trace.sourceSkill).toBe("rbac");
@@ -1248,7 +1445,10 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
       fieldContext: { fields: ["status"] },
     };
 
-    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(leaveApprovalRbac, deniedRequest);
+    const trace = traceRbacAllowDenyToPageRenderPermissionEvidence(
+      leaveApprovalRbac,
+      deniedRequest
+    );
 
     expect(trace.state).toBe("blocked");
     expect(trace.reasonCode).toBe("RBAC_PAGE_TRACE_FAIL_CLOSED");
@@ -1260,12 +1460,17 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     const surface = rbacSkill.resolve(leaveApprovalRbac) as any;
 
     expect(surface.rbacToPageTrace).toBeTruthy();
-    expect(surface.rbacToPageTrace.traceId).toBe(RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE);
+    expect(surface.rbacToPageTrace.traceId).toBe(
+      RBAC_ALLOW_DENY_TO_PAGE_RENDER_TRACE
+    );
     expect(surface.rbacToPageTrace.state).toBe("closed");
   });
 
   it("traces RBAC allow decisions to Workflow task evidence as a closed path", () => {
-    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(leaveApprovalRbac, leaveApproveRequest);
+    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(
+      leaveApprovalRbac,
+      leaveApproveRequest
+    );
 
     expect(trace.traceId).toBe(RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE);
     expect(trace.sourceSkill).toBe("rbac");
@@ -1273,7 +1478,9 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     expect(trace.state).toBe("closed");
     expect(trace.reasonCode).toBe("RBAC_WORKFLOW_TRACE_POSITIVE_CLOSED");
     expect(trace.decision.effect).toBe("allow");
-    expect(trace.workflowEvidence.evidenceKey).toBe(RBAC_WORKFLOW_RUNTIME_EVIDENCE);
+    expect(trace.workflowEvidence.evidenceKey).toBe(
+      RBAC_WORKFLOW_RUNTIME_EVIDENCE
+    );
   });
 
   it("traces RBAC deny decisions to Workflow task evidence as fail-closed", () => {
@@ -1285,7 +1492,10 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
       fieldContext: { fields: ["status"] },
     };
 
-    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(leaveApprovalRbac, deniedRequest);
+    const trace = traceRbacAllowDenyToWorkflowTaskEvidence(
+      leaveApprovalRbac,
+      deniedRequest
+    );
 
     expect(trace.state).toBe("blocked");
     expect(trace.reasonCode).toBe("RBAC_WORKFLOW_TRACE_FAIL_CLOSED");
@@ -1297,7 +1507,9 @@ describe("rbacSkill - 118 cross-runtime evidence", () => {
     const surface = rbacSkill.resolve(leaveApprovalRbac) as any;
 
     expect(surface.rbacToWorkflowTrace).toBeTruthy();
-    expect(surface.rbacToWorkflowTrace.traceId).toBe(RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE);
+    expect(surface.rbacToWorkflowTrace.traceId).toBe(
+      RBAC_ALLOW_DENY_TO_WORKFLOW_TASK_TRACE
+    );
     expect(surface.rbacToWorkflowTrace.state).toBe("closed");
   });
 });
@@ -1307,7 +1519,12 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
   it("evaluateRbacSodPolicy returns denied=false for no conflict (positive runtime case)", () => {
     const m = clone(leaveApprovalRbac);
     m.sodRules = [
-      { id: "sod_emp_mgr", name: "emp vs mgr", exclusiveRoleIds: ["employee", "manager"], severity: "error" },
+      {
+        id: "sod_emp_mgr",
+        name: "emp vs mgr",
+        exclusiveRoleIds: ["employee", "manager"],
+        severity: "error",
+      },
     ];
     const ctx: PolicyContext = {
       subject: { roleIds: ["employee"] },
@@ -1324,7 +1541,12 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
   it("evaluateRbacSodPolicy denies direct mutually-exclusive roles and returns RBAC_RUNTIME_SOD_DENIED + ruleId (negative fail-closed)", () => {
     const m = clone(leaveApprovalRbac);
     m.sodRules = [
-      { id: "sod_emp_mgr_direct", name: "employee manager exclusive", exclusiveRoleIds: ["employee", "manager"], severity: "error" },
+      {
+        id: "sod_emp_mgr_direct",
+        name: "employee manager exclusive",
+        exclusiveRoleIds: ["employee", "manager"],
+        severity: "error",
+      },
     ];
     const ctx: PolicyContext = {
       subject: { roleIds: ["employee", "manager"] },
@@ -1342,7 +1564,12 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
   it("evaluateRbacSodPolicy denies on selfApproval contextual conflict even with single role (negative)", () => {
     const m = clone(leaveApprovalRbac);
     m.sodRules = [
-      { id: "sod_self_approve", name: "self approve sod", exclusiveRoleIds: ["manager"], severity: "error" },
+      {
+        id: "sod_self_approve",
+        name: "self approve sod",
+        exclusiveRoleIds: ["manager"],
+        severity: "error",
+      },
     ];
     const ctx: PolicyContext = {
       subject: { roleIds: ["manager"] },
@@ -1361,7 +1588,12 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
   it("decideRbacPolicy denies via runtime SoD even when permission would allow (SoD wins over allow)", () => {
     const m = clone(leaveApprovalRbac);
     m.sodRules = [
-      { id: "sod_conflict_win", name: "conflict wins", exclusiveRoleIds: ["employee", "manager"], severity: "error" },
+      {
+        id: "sod_conflict_win",
+        name: "conflict wins",
+        exclusiveRoleIds: ["employee", "manager"],
+        severity: "error",
+      },
     ];
     const dec = decideRbacPolicy(m, {
       subject: { roleIds: ["employee", "manager"] },
@@ -1380,7 +1612,12 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
     // use a model with sod + selfApproval
     const m = clone(purchaseApprovalRbac);
     m.sodRules = [
-      { id: "sod_finance_self", name: "finance self sod", exclusiveRoleIds: ["finance"], severity: "error" },
+      {
+        id: "sod_finance_self",
+        name: "finance self sod",
+        exclusiveRoleIds: ["finance"],
+        severity: "error",
+      },
     ];
     const dec = decideRbacPolicy(m, {
       subject: { roleIds: ["finance"] },
@@ -1419,12 +1656,22 @@ describe("rbac runtime SoD policy — 117 evaluateRbacSodPolicy and decide integ
 
   it("createRbacFailClosedNegativePath returns deny + RBAC_RUNTIME_FAIL_CLOSED on negative inputs (no fallback) (119 negative path)", () => {
     // negative: missing input -> fail closed
-    const neg1 = createRbacFailClosedNegativePath(leaveApprovalRbac, { subject: { roleIds: [] }, action: "create", resourceType: "leave_request" });
+    const neg1 = createRbacFailClosedNegativePath(leaveApprovalRbac, {
+      subject: { roleIds: [] },
+      action: "create",
+      resourceType: "leave_request",
+    });
     expect(neg1.effect).toBe("deny");
     expect(neg1.reasonCode).toBe(RBAC_RUNTIME_FAIL_CLOSED);
 
     // negative: unknown role
-    const neg2 = createRbacFailClosedNegativePath(leaveApprovalRbac, { subject: { roleIds: ["ghost"] }, action: "approve", resourceType: "leave_request", tenantId: "t1", fieldContext: { fields: [] } });
+    const neg2 = createRbacFailClosedNegativePath(leaveApprovalRbac, {
+      subject: { roleIds: ["ghost"] },
+      action: "approve",
+      resourceType: "leave_request",
+      tenantId: "t1",
+      fieldContext: { fields: [] },
+    });
     expect(neg2.effect).toBe("deny");
     expect(neg2.reasonCode).toBe(RBAC_RUNTIME_FAIL_CLOSED);
 
@@ -1475,7 +1722,9 @@ describe("rbac PDP explain evidence — closure helper", () => {
       fieldContext: { fields: ["status"] },
     } as any);
 
-    expect(evidence.evidenceKey).toBe(`${RBAC_PDP_EXPLAIN_EVIDENCE}:fail-closed`);
+    expect(evidence.evidenceKey).toBe(
+      `${RBAC_PDP_EXPLAIN_EVIDENCE}:fail-closed`
+    );
     expect(evidence.allow).toBe(false);
     expect(evidence.code).toBe("RBAC_DECISION_FAIL_CLOSED");
     expect(evidence.explanation).toContain("fail-closed");
@@ -1509,7 +1758,14 @@ describe("rbac PDP explain evidence — closure helper", () => {
 
   it("exposes deterministic :deny key for explicit policy deny (distinct from general fail-closed)", () => {
     const model = clone(leaveApprovalRbac);
-    model.policyRules = [{ id: "pr_explicit_deny", effect: "deny", roleId: "employee", resourceType: "leave_request" }];
+    model.policyRules = [
+      {
+        id: "pr_explicit_deny",
+        effect: "deny",
+        roleId: "employee",
+        resourceType: "leave_request",
+      },
+    ];
     const evidence = createRbacPdpExplainEvidence(model, {
       subject: { roleIds: ["employee"] },
       action: "create",

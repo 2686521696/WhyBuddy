@@ -136,8 +136,8 @@ export function AutopilotCockpitLayout({
             Three-column cockpit
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-stone-600">
-            A layout shell for reading destination intent, live drive state,
-            and human takeover evidence without wiring task data yet.
+            A layout shell for reading destination intent, live drive state, and
+            human takeover evidence without wiring task data yet.
           </p>
         </div>
         <div
@@ -153,9 +153,7 @@ export function AutopilotCockpitLayout({
           >
             Stacked
           </span>
-          <span className={cn(MOBILE_CHIP_CLASS, "px-3 py-1")}>
-            Tabs-ready
-          </span>
+          <span className={cn(MOBILE_CHIP_CLASS, "px-3 py-1")}>Tabs-ready</span>
         </div>
       </div>
 

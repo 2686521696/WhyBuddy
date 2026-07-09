@@ -26,7 +26,10 @@ describe("buildAutopilotCockpitModel", () => {
             status: "user-selected",
             locked: true,
           },
-          candidateRoutes: [{ id: "route-selected" }, { id: "route-recommended" }],
+          candidateRoutes: [
+            { id: "route-selected" },
+            { id: "route-recommended" },
+          ],
         },
         execution: {
           status: "running",
@@ -194,15 +197,11 @@ describe("buildAutopilotCockpitModel", () => {
       },
     });
 
-    expect(model.destination.constraints).toEqual([
-      "Keep rollout reversible",
-    ]);
+    expect(model.destination.constraints).toEqual(["Keep rollout reversible"]);
     expect(model.destination.successCriteria).toEqual([
       "Ops can execute without follow-up",
     ]);
-    expect(model.destination.deliverables).toEqual([
-      "migration-checklist.md",
-    ]);
+    expect(model.destination.deliverables).toEqual(["migration-checklist.md"]);
   });
 
   it("normalizes mixed destination aliases without dropping cockpit fields", () => {

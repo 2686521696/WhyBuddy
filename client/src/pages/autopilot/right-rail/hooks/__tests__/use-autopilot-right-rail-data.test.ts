@@ -70,10 +70,16 @@ const {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeJob(id: string, stage: BlueprintGenerationJob["stage"] = "input"): BlueprintGenerationJob {
+function makeJob(
+  id: string,
+  stage: BlueprintGenerationJob["stage"] = "input"
+): BlueprintGenerationJob {
   return {
     id,
-    request: { userInput: "", sources: [] } as unknown as BlueprintGenerationJob["request"],
+    request: {
+      userInput: "",
+      sources: [],
+    } as unknown as BlueprintGenerationJob["request"],
     status: "running",
     stage,
     version: "1",
@@ -89,11 +95,20 @@ function makeRouteSet(id: string): BlueprintRouteSet {
 }
 
 function makeSelection(id: string): BlueprintRouteSelection {
-  return { id, jobId: id, routeId: `route-${id}` } as unknown as BlueprintRouteSelection;
+  return {
+    id,
+    jobId: id,
+    routeId: `route-${id}`,
+  } as unknown as BlueprintRouteSelection;
 }
 
 function makeSpecTree(id: string): BlueprintSpecTree {
-  return { id, jobId: id, nodes: [], documents: [] } as unknown as BlueprintSpecTree;
+  return {
+    id,
+    jobId: id,
+    nodes: [],
+    documents: [],
+  } as unknown as BlueprintSpecTree;
 }
 
 function makeSpecDocument(id: string): BlueprintSpecDocument {
@@ -211,9 +226,11 @@ describe("deriveWave1FieldUpdates (Spec 4 Task 2)", () => {
     } as never);
 
     expect(
-      (updates.specTree as BlueprintSpecTree & {
-        documents?: BlueprintSpecDocument[];
-      }).documents
+      (
+        updates.specTree as BlueprintSpecTree & {
+          documents?: BlueprintSpecDocument[];
+        }
+      ).documents
     ).toBe(documents);
   });
 });
@@ -224,7 +241,11 @@ describe("deriveWave1FieldUpdates (Spec 4 Task 2)", () => {
 
 describe("rightRailDataReducer · JOB_CHANGED (Spec 4 Task 2)", () => {
   it("切换到新 jobId 时所有字段重置为 initialData", () => {
-    const initial = buildInitialReducerState("job-1", { job: makeJob("job-1") }, null);
+    const initial = buildInitialReducerState(
+      "job-1",
+      { job: makeJob("job-1") },
+      null
+    );
 
     const next = rightRailDataReducer(initial, {
       type: "JOB_CHANGED",
@@ -498,10 +519,16 @@ describe("shouldLoadField (Spec 4 Task 3)", () => {
         shouldLoadField(field, { ...baseParams, currentSubStage: "spec_tree" })
       ).toBe(true);
       expect(
-        shouldLoadField(field, { ...baseParams, currentSubStage: "agent_crew_fabric" })
+        shouldLoadField(field, {
+          ...baseParams,
+          currentSubStage: "agent_crew_fabric",
+        })
       ).toBe(true);
       expect(
-        shouldLoadField(field, { ...baseParams, currentSubStage: "artifact_memory" })
+        shouldLoadField(field, {
+          ...baseParams,
+          currentSubStage: "artifact_memory",
+        })
       ).toBe(true);
     }
   });
@@ -555,7 +582,7 @@ describe("shouldLoadField (Spec 4 Task 3)", () => {
 
 describe("mergeCapabilities (Spec 4 Task 3)", () => {
   const cap = (id: string) =>
-    ({ id, label: id } as unknown as BlueprintRuntimeCapability);
+    ({ id, label: id }) as unknown as BlueprintRuntimeCapability;
 
   it("registry-first fallback：job 非空时使用 job 列表", () => {
     const registry = [cap("A"), cap("B")];
@@ -585,7 +612,10 @@ describe("deriveAgentCrewFromJob (Spec 4 Task 3)", () => {
   ): BlueprintGenerationJob {
     return {
       id: "job-1",
-      request: { userInput: "", sources: [] } as unknown as BlueprintGenerationJob["request"],
+      request: {
+        userInput: "",
+        sources: [],
+      } as unknown as BlueprintGenerationJob["request"],
       status: "running",
       stage: "spec_tree",
       version: "1",
@@ -709,11 +739,7 @@ describe("rightRailDataReducer · Wave 2 fetch fields (Spec 4 Task 3)", () => {
     const next = rightRailDataReducer(initial, {
       type: "FETCH_STARTED",
       jobId: "job-1",
-      fields: [
-        "capabilities",
-        "capabilityInvocations",
-        "capabilityEvidence",
-      ],
+      fields: ["capabilities", "capabilityInvocations", "capabilityEvidence"],
       requestId: 10,
     });
 
@@ -878,10 +904,7 @@ describe("shouldLoadField · Wave 3 (Spec 4 Task 4)", () => {
   });
 
   it("effectPreviews: 非合法 currentSubStage（spec_tree/agent_crew_fabric）且 jobStage=null 时返回 false", () => {
-    for (const sub of [
-      "agent_crew_fabric",
-      "spec_tree",
-    ] as const) {
+    for (const sub of ["agent_crew_fabric", "spec_tree"] as const) {
       expect(
         shouldLoadField("effectPreviews", {
           ...baseParams,
@@ -1087,7 +1110,9 @@ describe("useAutopilotRightRailData static mode wiring", () => {
     );
 
     expect(source).toMatch(/disableRemoteFetch\?: boolean/);
-    expect(source).toMatch(/const disableRemoteFetch = options\?\.disableRemoteFetch === true/);
+    expect(source).toMatch(
+      /const disableRemoteFetch = options\?\.disableRemoteFetch === true/
+    );
     expect(source).toMatch(/if \(disableRemoteFetch\) return/);
     expect(source).toMatch(/!disableRemoteFetch/);
   });
@@ -1508,7 +1533,10 @@ describe("deriveArtifactFeedbackFromJob (Spec 4 Task 5)", () => {
   ): BlueprintGenerationJob {
     return {
       id: "job-1",
-      request: { userInput: "", sources: [] } as unknown as BlueprintGenerationJob["request"],
+      request: {
+        userInput: "",
+        sources: [],
+      } as unknown as BlueprintGenerationJob["request"],
       status: "running",
       stage: "engineering_landing",
       version: "1",
@@ -1682,7 +1710,9 @@ describe("computePollingBackoff (Spec 4 Task 6)", () => {
 
 describe("extractStageFromSSEPayload (Spec 4 Task 6)", () => {
   it("顶层 stage 字段", () => {
-    expect(extractStageFromSSEPayload({ stage: "spec_tree" })).toBe("spec_tree");
+    expect(extractStageFromSSEPayload({ stage: "spec_tree" })).toBe(
+      "spec_tree"
+    );
     expect(
       extractStageFromSSEPayload({ stage: "engineering_landing", other: 1 })
     ).toBe("engineering_landing");

@@ -204,7 +204,10 @@ export function useAutoAdvance({
   }, [job?.stage]);
 
   const advance = useCallback(
-    async (targetStage: string, action: () => Promise<{ ok: boolean; error?: ApiRequestError }>) => {
+    async (
+      targetStage: string,
+      action: () => Promise<{ ok: boolean; error?: ApiRequestError }>
+    ) => {
       // 不再检查 advancedStagesRef(forceAdvance 场景下用户主动点击应该总是执行)
       setAdvancing(true);
       setAdvancingTo(targetStage);
@@ -218,7 +221,11 @@ export function useAutoAdvance({
         if (mountedRef.current) {
           setAdvancing(false);
           setAdvancingTo(null);
-          setError({ message: "请求超时", detail: "规格文档生成超过 5 分钟，请重试", status: 408 } as ApiRequestError);
+          setError({
+            message: "请求超时",
+            detail: "规格文档生成超过 5 分钟，请重试",
+            status: 408,
+          } as ApiRequestError);
         }
       }, FRONTEND_TIMEOUT_MS);
 
@@ -241,7 +248,11 @@ export function useAutoAdvance({
         clearTimeout(timeoutId);
         if (!mountedRef.current || timedOut) return;
         setAdvancing(false);
-        setError({ message: "请求失败", detail: String(err), status: 500 } as ApiRequestError);
+        setError({
+          message: "请求失败",
+          detail: String(err),
+          status: 500,
+        } as ApiRequestError);
       }
     },
     [onAdvanced]
@@ -265,10 +276,7 @@ export function useAutoAdvance({
     // 注:reviewing 状态表示"等待用户评审",不应自动推进
     // 修正：spec_tree 阶段完全禁用自动推进，必须由用户手动点击"确认 SPEC 树"按钮
     // 触发 forceAdvance()，避免用户还没查看 SPEC 树就被自动跳过。
-    if (
-      stage === "spec_tree" &&
-      !advancedStagesRef.current.has("spec_docs")
-    ) {
+    if (stage === "spec_tree" && !advancedStagesRef.current.has("spec_docs")) {
       // 不自动推进，等待用户手动确认
       return;
     }

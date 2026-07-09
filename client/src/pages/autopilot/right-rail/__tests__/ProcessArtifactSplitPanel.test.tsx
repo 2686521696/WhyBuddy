@@ -77,10 +77,14 @@ describe("ProcessArtifactSplitPanel", () => {
       />
     );
 
-    expect(markup).toContain('data-testid="autopilot-process-artifact-split-panel"');
+    expect(markup).toContain(
+      'data-testid="autopilot-process-artifact-split-panel"'
+    );
     expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
     expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
-    expect(markup.indexOf('data-testid="autopilot-process-execution-lane"')).toBeLessThan(
+    expect(
+      markup.indexOf('data-testid="autopilot-process-execution-lane"')
+    ).toBeLessThan(
       markup.indexOf('data-testid="autopilot-process-artifact-lane"')
     );
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
@@ -89,8 +93,12 @@ describe("ProcessArtifactSplitPanel", () => {
     expect(markup).toContain('data-testid="mirofish-card-artifact"');
     expect(markup).toContain("Blueprint input");
     expect(markup).toContain("GitHub source");
-    expect(markup).not.toContain('data-testid="autopilot-process-execution-empty"');
-    expect(markup).not.toContain('data-testid="autopilot-process-artifact-empty"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-execution-empty"'
+    );
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-artifact-empty"'
+    );
   });
 
   it("keeps both lanes mounted when one side is empty", () => {
@@ -114,7 +122,9 @@ describe("ProcessArtifactSplitPanel", () => {
     expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
     expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
-    expect(markup).toContain('data-testid="autopilot-process-artifact-placeholder"');
+    expect(markup).toContain(
+      'data-testid="autopilot-process-artifact-placeholder"'
+    );
   });
 
   it("renders fallback execution facts instead of an empty process lane for completed stages without reasoning events", () => {
@@ -151,7 +161,9 @@ describe("ProcessArtifactSplitPanel", () => {
     expect(markup).toContain('data-testid="mirofish-card-reasoning"');
     expect(markup).toContain("澄清已提交");
     expect(markup).toContain('data-testid="mirofish-card-artifact"');
-    expect(markup).not.toContain('data-testid="autopilot-process-execution-empty"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-execution-empty"'
+    );
   });
 
   it("renders stage-local artifacts even before a generation job exists", () => {
@@ -177,11 +189,16 @@ describe("ProcessArtifactSplitPanel", () => {
 
     expect(markup).toContain('data-testid="mirofish-card-artifact"');
     expect(markup).toContain('data-artifact-type="clarification_session"');
-    expect(markup).not.toContain('data-testid="autopilot-process-artifact-empty"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-artifact-empty"'
+    );
   });
 
   it("filters reasoning entries to the current job before rendering execution cards", () => {
-    const job = { id: "job-current", artifacts: [] } as unknown as BlueprintGenerationJob;
+    const job = {
+      id: "job-current",
+      artifacts: [],
+    } as unknown as BlueprintGenerationJob;
 
     const markup = renderToStaticMarkup(
       <ProcessArtifactSplitPanel
@@ -234,8 +251,14 @@ describe("empty-placeholder semantics (P2)", () => {
       <ProcessArtifactSplitPanel locale="zh-CN" />
     );
     // Count occurrences of the placeholder testids
-    const execPlaceholders = (markup.match(/data-testid="autopilot-process-execution-placeholder"/g) ?? []).length;
-    const artPlaceholders = (markup.match(/data-testid="autopilot-process-artifact-placeholder"/g) ?? []).length;
+    const execPlaceholders = (
+      markup.match(/data-testid="autopilot-process-execution-placeholder"/g) ??
+      []
+    ).length;
+    const artPlaceholders = (
+      markup.match(/data-testid="autopilot-process-artifact-placeholder"/g) ??
+      []
+    ).length;
     expect(execPlaceholders).toBe(1);
     expect(artPlaceholders).toBe(1);
   });
@@ -244,8 +267,12 @@ describe("empty-placeholder semantics (P2)", () => {
     const markup = renderToStaticMarkup(
       <ProcessArtifactSplitPanel locale="zh-CN" showEmptyPlaceholder={false} />
     );
-    expect(markup).not.toContain('data-testid="autopilot-process-execution-placeholder"');
-    expect(markup).not.toContain('data-testid="autopilot-process-artifact-placeholder"');
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-execution-placeholder"'
+    );
+    expect(markup).not.toContain(
+      'data-testid="autopilot-process-artifact-placeholder"'
+    );
     // Lane containers MUST still be present (Requirement 2.7)
     expect(markup).toContain('data-testid="autopilot-process-execution-lane"');
     expect(markup).toContain('data-testid="autopilot-process-artifact-lane"');
@@ -300,7 +327,9 @@ describe("lane stability (P1)", () => {
       />
     );
 
-    expect(markup).toContain('data-testid="autopilot-process-artifact-split-panel"');
+    expect(markup).toContain(
+      'data-testid="autopilot-process-artifact-split-panel"'
+    );
     expect(markup).toContain("h-full");
     expect(markup).toContain("overflow-y-auto");
     expect(markup).not.toContain("lg:items-start");

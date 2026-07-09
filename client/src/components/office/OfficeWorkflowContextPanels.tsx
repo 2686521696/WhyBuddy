@@ -131,7 +131,10 @@ function graphRuntimeTone(status: GraphNodeRunSnapshot["status"]) {
   }
 }
 
-function graphRuntimeLabel(locale: string, status: GraphNodeRunSnapshot["status"]) {
+function graphRuntimeLabel(
+  locale: string,
+  status: GraphNodeRunSnapshot["status"]
+) {
   switch (status) {
     case "EXECUTING":
       return t(locale, "执行中", "Executing");
@@ -164,7 +167,10 @@ function monitoringStatusTone(status: string | null | undefined) {
   }
 }
 
-function monitoringStatusLabel(locale: string, status: string | null | undefined) {
+function monitoringStatusLabel(
+  locale: string,
+  status: string | null | undefined
+) {
   switch (status) {
     case "EXECUTING":
       return t(locale, "执行中", "Executing");
@@ -1218,7 +1224,9 @@ export function OfficeWorkflowHistoryPanel({
   const graphInstance = useWorkflowStore(
     state => state.currentWorkflowGraphInstance
   );
-  const monitoringInstances = useWorkflowStore(state => state.monitoringInstances);
+  const monitoringInstances = useWorkflowStore(
+    state => state.monitoringInstances
+  );
   const monitoringInstance = useWorkflowStore(
     state => state.currentWorkflowMonitoringInstance
   );
@@ -1273,7 +1281,8 @@ export function OfficeWorkflowHistoryPanel({
     }
 
     return (
-      monitoringInstances.find(item => item.instanceUuid === workflow.id) || null
+      monitoringInstances.find(item => item.instanceUuid === workflow.id) ||
+      null
     );
   }, [monitoringInstances, workflow?.id]);
 
@@ -1327,11 +1336,17 @@ export function OfficeWorkflowHistoryPanel({
       },
       {
         label: t(locale, "Replay", "Replay"),
-        value: presentMonitoringLink(monitoringInstance.links.replayId, fallback),
+        value: presentMonitoringLink(
+          monitoringInstance.links.replayId,
+          fallback
+        ),
       },
       {
         label: t(locale, "Audit", "Audit"),
-        value: presentMonitoringLink(monitoringInstance.links.auditId, fallback),
+        value: presentMonitoringLink(
+          monitoringInstance.links.auditId,
+          fallback
+        ),
       },
     ];
   }, [
@@ -1390,7 +1405,11 @@ export function OfficeWorkflowHistoryPanel({
         </ContextCard>
 
         <ContextCard
-          title={t(locale, "web-aigc 兼容监控", "web-aigc compatibility monitor")}
+          title={t(
+            locale,
+            "web-aigc 兼容监控",
+            "web-aigc compatibility monitor"
+          )}
           icon={<Bot className="size-4" />}
           action={
             workflow ? (
@@ -1461,11 +1480,25 @@ export function OfficeWorkflowHistoryPanel({
                     {t(locale, "节点概览", "Node summary")}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-600">
-                    <span>{t(locale, "总数", "Total")}: {monitoringSummary.total}</span>
-                    <span>{t(locale, "执行中", "Executing")}: {monitoringSummary.executing}</span>
-                    <span>{t(locale, "已完成", "Executed")}: {monitoringSummary.executed}</span>
-                    <span>{t(locale, "待执行", "Pending")}: {monitoringSummary.pending}</span>
-                    <span>{t(locale, "异常", "Exception")}: {monitoringSummary.exception}</span>
+                    <span>
+                      {t(locale, "总数", "Total")}: {monitoringSummary.total}
+                    </span>
+                    <span>
+                      {t(locale, "执行中", "Executing")}:{" "}
+                      {monitoringSummary.executing}
+                    </span>
+                    <span>
+                      {t(locale, "已完成", "Executed")}:{" "}
+                      {monitoringSummary.executed}
+                    </span>
+                    <span>
+                      {t(locale, "待执行", "Pending")}:{" "}
+                      {monitoringSummary.pending}
+                    </span>
+                    <span>
+                      {t(locale, "异常", "Exception")}:{" "}
+                      {monitoringSummary.exception}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1708,20 +1741,27 @@ export function OfficeWorkflowHistoryPanel({
 
                 <div className="rounded-[18px] border border-stone-200/80 bg-stone-50/80 px-3 py-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
-                    {t(locale, "Compatibility summary", "Compatibility summary")}
+                    {t(
+                      locale,
+                      "Compatibility summary",
+                      "Compatibility summary"
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-600">
                     <span>
-                      {t(locale, "Executing", "Executing")}: {graphSummary.executing}
+                      {t(locale, "Executing", "Executing")}:{" "}
+                      {graphSummary.executing}
                     </span>
                     <span>
-                      {t(locale, "Executed", "Executed")}: {graphSummary.executed}
+                      {t(locale, "Executed", "Executed")}:{" "}
+                      {graphSummary.executed}
                     </span>
                     <span>
                       {t(locale, "Waiting", "Waiting")}: {graphSummary.waiting}
                     </span>
                     <span>
-                      {t(locale, "Exception", "Exception")}: {graphSummary.exception}
+                      {t(locale, "Exception", "Exception")}:{" "}
+                      {graphSummary.exception}
                     </span>
                   </div>
                 </div>
@@ -1747,7 +1787,11 @@ export function OfficeWorkflowHistoryPanel({
                     {t(locale, "Graph node preview", "Graph node preview")}
                   </div>
                   <div className="text-xs text-stone-400">
-                    {t(locale, "Showing first 4 nodes", "Showing first 4 nodes")}
+                    {t(
+                      locale,
+                      "Showing first 4 nodes",
+                      "Showing first 4 nodes"
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -1782,7 +1826,11 @@ export function OfficeWorkflowHistoryPanel({
                           <div className="mt-2 text-xs leading-5 text-stone-500">
                             {summarizeText(
                               node.outputPreview,
-                              t(locale, "No output summary", "No output summary"),
+                              t(
+                                locale,
+                                "No output summary",
+                                "No output summary"
+                              ),
                               140
                             )}
                           </div>

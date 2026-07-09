@@ -2317,9 +2317,7 @@ export function normalizeBlueprintCapabilityInvocation(
           ) || undefined,
         logDigest:
           asString(
-            provenanceRecord.logDigest ??
-              record.logDigest ??
-              record.log_digest
+            provenanceRecord.logDigest ?? record.logDigest ?? record.log_digest
           ) || undefined,
         // MCP-bridge provenance (nested on record.provenance).
         executionPath:
@@ -2508,9 +2506,7 @@ export function normalizeBlueprintCapabilityEvidence(
           ) || undefined,
         logDigest:
           asString(
-            provenanceRecord.logDigest ??
-              record.logDigest ??
-              record.log_digest
+            provenanceRecord.logDigest ?? record.logDigest ?? record.log_digest
           ) || undefined,
         // MCP-bridge provenance (nested on record.provenance).
         executionPath:
@@ -5145,7 +5141,6 @@ export async function recordBlueprintArtifactFeedback(
   };
 }
 
-
 // ---------------------------------------------------------------------------
 // autopilot-v4-frontend-alignment 任务 6：trust-layer 只读读取封装 re-export。
 // 物理实物位于 `./blueprint-api/{checks-ledger,traceability-matrix}.ts`，此处保持
@@ -5160,7 +5155,6 @@ export {
   fetchTraceabilityMatrix,
   type FetchTraceabilityMatrixResult,
 } from "./blueprint-api/traceability-matrix.js";
-
 
 // ---------------------------------------------------------------------------
 // wt2 任务 2 注记（autopilot-blueprint-refactor-split）：

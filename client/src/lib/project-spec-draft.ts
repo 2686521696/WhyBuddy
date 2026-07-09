@@ -149,7 +149,9 @@ export function buildInitialProjectSpecDraft({
       goal || "Goal is not defined yet.",
       "",
       "## Current Understanding",
-      summary || latestUserMessage?.content || "No summary has been captured yet.",
+      summary ||
+        latestUserMessage?.content ||
+        "No summary has been captured yet.",
       "",
       "## Clarifications",
       clarificationLines,
@@ -209,7 +211,8 @@ export function buildProjectSpecUpdateSuggestion({
         item.type === "decision"
           ? "A user decision may change scope, acceptance criteria, or constraints."
           : "Execution evidence may reveal a requirement, constraint, risk, or implementation note that should be reflected in the spec.",
-      priority: item.type === "decision" ? 40 : item.type === "failure" ? 35 : 25,
+      priority:
+        item.type === "decision" ? 40 : item.type === "failure" ? 35 : 25,
     }));
 
   const artifactSignals: SpecUpdateSignal[] = artifacts
@@ -259,23 +262,23 @@ export function buildProjectSpecUpdateSuggestion({
       priority: item.status === "failed" ? 34 : 20,
     }));
 
-  const signals = [
-    ...evidenceSignals,
-    ...artifactSignals,
-    ...missionSignals,
-  ]
+  const signals = [...evidenceSignals, ...artifactSignals, ...missionSignals]
     .sort(compareSpecUpdateSignals)
     .slice(0, safeLimit);
 
   if (!signals.length) return null;
 
-  const sourceEvidenceIds = uniq(signals.map(signal => signal.sourceEvidenceId));
+  const sourceEvidenceIds = uniq(
+    signals.map(signal => signal.sourceEvidenceId)
+  );
   const sourceArtifactIds = uniq(
     signals.map(signal => signal.sourceArtifactId)
   );
   const sourceMissionIds = uniq(signals.map(signal => signal.sourceMissionId));
   const reasons = uniq(signals.map(signal => signal.reason));
-  const specLabel = spec ? `v${spec.version} ${spec.title}` : "the current spec";
+  const specLabel = spec
+    ? `v${spec.version} ${spec.title}`
+    : "the current spec";
 
   return {
     projectId: scopedProjectId,

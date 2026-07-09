@@ -203,7 +203,9 @@ export function ArtifactListBlock({
     >
       <div className="mb-2 flex items-center gap-2">
         <FileText
-          className={isCompact ? "h-4 w-4 text-stone-500" : "h-4 w-4 text-white/40"}
+          className={
+            isCompact ? "h-4 w-4 text-stone-500" : "h-4 w-4 text-white/40"
+          }
         />
         <span
           className={
@@ -264,7 +266,9 @@ export function ArtifactListBlock({
                 animate="animate"
                 exit="exit"
                 data-testid={
-                  isPrimaryEvidence ? "artifact-primary-browser-evidence" : undefined
+                  isPrimaryEvidence
+                    ? "artifact-primary-browser-evidence"
+                    : undefined
                 }
                 className={`flex items-start gap-3 rounded-xl p-2 ${
                   highlight
@@ -275,15 +279,17 @@ export function ArtifactListBlock({
                       ? isCompact
                         ? "border border-sky-100 bg-sky-50"
                         : "glass-panel border-sky-300/25 bg-sky-500/10"
-                    : isCompact
-                      ? "bg-[#f7f3ee]"
-                      : "bg-white/5"
+                      : isCompact
+                        ? "bg-[#f7f3ee]"
+                        : "bg-white/5"
                 }`}
               >
                 <div className="flex shrink-0 flex-col items-center gap-1 pt-0.5">
                   <Icon
                     className={
-                      isCompact ? "h-4 w-4 text-stone-500" : "h-4 w-4 text-white/50"
+                      isCompact
+                        ? "h-4 w-4 text-stone-500"
+                        : "h-4 w-4 text-white/50"
                     }
                   />
                   <span

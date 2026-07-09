@@ -133,7 +133,9 @@ function takeoverLoadForCandidate(
   return "low";
 }
 
-function estimatedCostForCandidate(candidate: LaunchRouteCandidate): string | null {
+function estimatedCostForCandidate(
+  candidate: LaunchRouteCandidate
+): string | null {
   switch (candidate.id) {
     case "clarify-first":
     case "fast-route":
@@ -174,9 +176,10 @@ export function toCandidateRoute(
   return {
     id: candidate.id,
     label: title,
-    mode: candidate.mode === "clarify" || candidate.mode === "upgrade"
-      ? "custom"
-      : candidate.mode,
+    mode:
+      candidate.mode === "clarify" || candidate.mode === "upgrade"
+        ? "custom"
+        : candidate.mode,
     status: routeStatusForCandidate(candidate),
     title,
     name: title,
@@ -212,7 +215,10 @@ function eventTypeForSelection(
   warnings: string[]
 ): MissionAutopilotRouteEvidenceEventType {
   if (warnings.length > 0) return "route.replanned";
-  if (selectedFrom === "recommended" || selectedRouteId === recommendedRouteId) {
+  if (
+    selectedFrom === "recommended" ||
+    selectedRouteId === recommendedRouteId
+  ) {
     return "route.recommended";
   }
   return "route.selected";

@@ -6,7 +6,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useBlueprintRealtimeStore, __setSocket, __setHydrateHistoricalEventsForTest } from "../blueprint-realtime-store.js";
+import {
+  useBlueprintRealtimeStore,
+  __setSocket,
+  __setHydrateHistoricalEventsForTest,
+} from "../blueprint-realtime-store.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,7 +42,9 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
   beforeEach(() => {
     // 注入 null socket 避免真实连接
     __setSocket(null as any);
-    useBlueprintRealtimeStore.setState(useBlueprintRealtimeStore.getInitialState());
+    useBlueprintRealtimeStore.setState(
+      useBlueprintRealtimeStore.getInitialState()
+    );
   });
 
   afterEach(() => {
@@ -47,10 +53,17 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
 
   it("role.agent.thinking event dispatch → entries.length===1，entry 字段与 payload 对应", () => {
     const store = useBlueprintRealtimeStore.getState();
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.thinking",
-      payload: { iteration: 1, roleId: "planner", stageId: "route_generation", thought: "分析代码" },
-    }));
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.thinking",
+        payload: {
+          iteration: 1,
+          roleId: "planner",
+          stageId: "route_generation",
+          thought: "分析代码",
+        },
+      })
+    );
 
     const state = useBlueprintRealtimeStore.getState();
     expect(state.agentReasoning.entries).toHaveLength(1);
@@ -64,11 +77,18 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
     const store = useBlueprintRealtimeStore.getState();
 
     for (let i = 0; i < 510; i++) {
-      store.dispatchEvent(makeAgentEvent({
-        type: "role.agent.thinking",
-        timestamp: `2026-05-13T10:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z`,
-        payload: { iteration: i + 1, roleId: "planner", stageId: "route_generation", thought: `思考 ${i}` },
-      }));
+      store.dispatchEvent(
+        makeAgentEvent({
+          type: "role.agent.thinking",
+          timestamp: `2026-05-13T10:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z`,
+          payload: {
+            iteration: i + 1,
+            roleId: "planner",
+            stageId: "route_generation",
+            thought: `思考 ${i}`,
+          },
+        })
+      );
     }
 
     const state = useBlueprintRealtimeStore.getState();
@@ -92,8 +112,21 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
     });
 
     const store = useBlueprintRealtimeStore.getState();
-    store.dispatchEvent(makeAgentEvent({ jobId: "job-A", type: "role.agent.thinking" }));
-    store.dispatchEvent(makeAgentEvent({ jobId: "job-A", type: "role.agent.acting", payload: { iteration: 1, roleId: "planner", stageId: "route_generation", actionToolId: "mcp.github.clone" } }));
+    store.dispatchEvent(
+      makeAgentEvent({ jobId: "job-A", type: "role.agent.thinking" })
+    );
+    store.dispatchEvent(
+      makeAgentEvent({
+        jobId: "job-A",
+        type: "role.agent.acting",
+        payload: {
+          iteration: 1,
+          roleId: "planner",
+          stageId: "route_generation",
+          actionToolId: "mcp.github.clone",
+        },
+      })
+    );
 
     let state = useBlueprintRealtimeStore.getState();
     expect(state.agentReasoning.entries.length).toBe(2);
@@ -128,18 +161,22 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
     try {
       const store = useBlueprintRealtimeStore.getState();
       store.subscribe("job-A");
-      store.dispatchEvent(makeAgentEvent({
-        jobId: "job-A",
-        type: "role.agent.thinking",
-        payload: {
-          iteration: 1,
-          roleId: "generator",
-          stageId: "spec_docs",
-          thought: "old project document assembly",
-        },
-      }));
+      store.dispatchEvent(
+        makeAgentEvent({
+          jobId: "job-A",
+          type: "role.agent.thinking",
+          payload: {
+            iteration: 1,
+            roleId: "generator",
+            stageId: "spec_docs",
+            thought: "old project document assembly",
+          },
+        })
+      );
 
-      expect(useBlueprintRealtimeStore.getState().agentReasoning.entries).toHaveLength(1);
+      expect(
+        useBlueprintRealtimeStore.getState().agentReasoning.entries
+      ).toHaveLength(1);
 
       store.subscribe("job-B");
 
@@ -166,16 +203,18 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
       },
     });
 
-    useBlueprintRealtimeStore.getState().dispatchEvent(makeAgentEvent({
-      jobId: "job-old",
-      type: "role.agent.thinking",
-      payload: {
-        iteration: 1,
-        roleId: "generator",
-        stageId: "spec_docs",
-        thought: "old project leaked event",
-      },
-    }));
+    useBlueprintRealtimeStore.getState().dispatchEvent(
+      makeAgentEvent({
+        jobId: "job-old",
+        type: "role.agent.thinking",
+        payload: {
+          iteration: 1,
+          roleId: "generator",
+          stageId: "spec_docs",
+          thought: "old project leaked event",
+        },
+      })
+    );
 
     const state = useBlueprintRealtimeStore.getState();
     expect(state.agentReasoning.entries).toEqual([]);
@@ -185,19 +224,31 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
   it("iteration_started → currentIteration 更新，status='streaming'", () => {
     const store = useBlueprintRealtimeStore.getState();
 
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.iteration_started",
-      payload: { iteration: 1, roleId: "planner", stageId: "route_generation" },
-    }));
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.iteration_started",
+        payload: {
+          iteration: 1,
+          roleId: "planner",
+          stageId: "route_generation",
+        },
+      })
+    );
 
     let state = useBlueprintRealtimeStore.getState();
     expect(state.agentReasoning.currentIteration).toBe(1);
     expect(state.agentReasoning.status).toBe("streaming");
 
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.iteration_started",
-      payload: { iteration: 2, roleId: "planner", stageId: "route_generation" },
-    }));
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.iteration_started",
+        payload: {
+          iteration: 2,
+          roleId: "planner",
+          stageId: "route_generation",
+        },
+      })
+    );
 
     state = useBlueprintRealtimeStore.getState();
     expect(state.agentReasoning.currentIteration).toBe(2);
@@ -208,35 +259,73 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
     const store = useBlueprintRealtimeStore.getState();
 
     // error + reason="用户取消" → aborted
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.error",
-      payload: { iteration: 1, roleId: "planner", stageId: "route_generation", reason: "用户取消", error: "cancelled" },
-    }));
-    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe("aborted");
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.error",
+        payload: {
+          iteration: 1,
+          roleId: "planner",
+          stageId: "route_generation",
+          reason: "用户取消",
+          error: "cancelled",
+        },
+      })
+    );
+    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe(
+      "aborted"
+    );
 
     // 重置
     useBlueprintRealtimeStore.setState({
-      agentReasoning: { jobId: null, entries: [], currentIteration: 0, status: "idle" },
+      agentReasoning: {
+        jobId: null,
+        entries: [],
+        currentIteration: 0,
+        status: "idle",
+      },
     });
 
     // error 其他 reason → failed
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.error",
-      payload: { iteration: 1, roleId: "planner", stageId: "route_generation", reason: "超时", error: "timeout" },
-    }));
-    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe("failed");
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.error",
+        payload: {
+          iteration: 1,
+          roleId: "planner",
+          stageId: "route_generation",
+          reason: "超时",
+          error: "timeout",
+        },
+      })
+    );
+    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe(
+      "failed"
+    );
 
     // 重置
     useBlueprintRealtimeStore.setState({
-      agentReasoning: { jobId: null, entries: [], currentIteration: 0, status: "idle" },
+      agentReasoning: {
+        jobId: null,
+        entries: [],
+        currentIteration: 0,
+        status: "idle",
+      },
     });
 
     // completed → completed
-    store.dispatchEvent(makeAgentEvent({
-      type: "role.agent.completed",
-      payload: { iteration: 3, roleId: "planner", stageId: "route_generation" },
-    }));
-    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe("completed");
+    store.dispatchEvent(
+      makeAgentEvent({
+        type: "role.agent.completed",
+        payload: {
+          iteration: 3,
+          roleId: "planner",
+          stageId: "route_generation",
+        },
+      })
+    );
+    expect(useBlueprintRealtimeStore.getState().agentReasoning.status).toBe(
+      "completed"
+    );
   });
 
   it("subscribe(jobId) 后 hydrate 历史 role.agent.* 事件 → entries 被 seed，重复 id 不会被覆盖", async () => {
@@ -269,7 +358,12 @@ describe("BlueprintRealtimeStore — agentReasoning slice", () => {
         occurredAt: "2026-05-24T10:00:01.000Z",
         stage: "spec_docs",
         status: "running",
-        payload: { iteration: 1, roleId: "spec-writer", stageId: "spec_docs", thought: "起草 requirements" },
+        payload: {
+          iteration: 1,
+          roleId: "spec-writer",
+          stageId: "spec_docs",
+          thought: "起草 requirements",
+        },
       },
     ];
     __setHydrateHistoricalEventsForTest(async () => historicalEvents as any);

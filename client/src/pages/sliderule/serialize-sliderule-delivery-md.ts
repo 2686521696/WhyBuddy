@@ -1,6 +1,9 @@
 import { latestTrustedReport } from "@shared/blueprint/sliderule-delivery-chain";
 import { replayCoverage } from "@shared/blueprint/sliderule-coverage-replay";
-import type { V5SessionState, Artifact } from "@shared/blueprint/v5-reasoning-state";
+import type {
+  V5SessionState,
+  Artifact,
+} from "@shared/blueprint/v5-reasoning-state";
 import { deriveTrustSeal } from "./derive-trust-seal";
 import { parseReportSections } from "./parse-report-sections";
 import {
@@ -11,7 +14,10 @@ import {
   renderPublishClosureBlocker,
 } from "./derive-cross-runtime-summary";
 import { deriveRuntimeSnapshotMd } from "./live-runtime/runtime-snapshot";
-import { loadRuntimeRole, loadRuntimeState } from "./live-runtime/runtime-persistence";
+import {
+  loadRuntimeRole,
+  loadRuntimeState,
+} from "./live-runtime/runtime-persistence";
 import { parseFiveSystemModelFromPerSkillEvidence } from "./system-screens/five-system-model";
 
 export interface SerializeDeliveryOpts {
@@ -53,12 +59,16 @@ export function serializeSlideRuleDeliveryMd(
         lines.push("");
       }
     }
-    lines.push("> 注：报告中如有外部 URL、证据 artifact，请在画布上点击对应节点或证据按钮查看完整上下文。");
+    lines.push(
+      "> 注：报告中如有外部 URL、证据 artifact，请在画布上点击对应节点或证据按钮查看完整上下文。"
+    );
     lines.push("");
 
     const enriched = enrichReportWriteWithRuntimeClosure(report, state);
     const enrichedContent = String(enriched.report.content || "");
-    const closureStart = enrichedContent.indexOf(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
+    const closureStart = enrichedContent.indexOf(
+      APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER
+    );
     if (closureStart >= 0) {
       lines.push(enrichedContent.slice(closureStart).trim());
       lines.push("");
@@ -68,16 +78,30 @@ export function serializeSlideRuleDeliveryMd(
   // 尽力包含其他分类交付物（与 DeliverablesPanel 分类对齐）
   const stale2 = new Set(state.staleArtifactIds || []);
   const trusted2 = (state.artifacts || []).filter(
-    (a: any) => (a.trustLevel === "gated_pass" || a.trustLevel === "audited") && !stale2.has(a.id)
+    (a: any) =>
+      (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
+      !stale2.has(a.id)
   );
   const latestBy = (kindOrCap: string) =>
-    [...trusted2].reverse().find((a: any) =>
-      a.kind === kindOrCap ||
-      String(a.producedBy?.capabilityId || "").includes(kindOrCap) ||
-      (kindOrCap === "prompt" && String(a.producedBy?.capabilityId || "").includes("instruction.package")) ||
-      (kindOrCap === "handoff" && String(a.producedBy?.capabilityId || "").includes("handoff.package")) ||
-      (kindOrCap === "arch" && String(a.producedBy?.capabilityId || "").includes("outcome.visualize"))
-    );
+    [...trusted2]
+      .reverse()
+      .find(
+        (a: any) =>
+          a.kind === kindOrCap ||
+          String(a.producedBy?.capabilityId || "").includes(kindOrCap) ||
+          (kindOrCap === "prompt" &&
+            String(a.producedBy?.capabilityId || "").includes(
+              "instruction.package"
+            )) ||
+          (kindOrCap === "handoff" &&
+            String(a.producedBy?.capabilityId || "").includes(
+              "handoff.package"
+            )) ||
+          (kindOrCap === "arch" &&
+            String(a.producedBy?.capabilityId || "").includes(
+              "outcome.visualize"
+            ))
+      );
 
   const addSection = (title: string, art: any) => {
     if (!art) return;
@@ -101,7 +125,8 @@ export function serializeSlideRuleDeliveryMd(
   addSection("提示词包（Prompt Pack）", latestBy("prompt"));
   addSection("架构图（Arch / Mermaid）", latestBy("arch"));
   addSection("工程交接包（Handoff）", latestBy("handoff"));
-  const otherDoc = latestBy("doc") || latestBy("document.draft") || latestBy("task.write");
+  const otherDoc =
+    latestBy("doc") || latestBy("document.draft") || latestBy("task.write");
   if (otherDoc && (!report || otherDoc.id !== report.id)) {
     addSection("规格 / 设计 / 任务文档", otherDoc);
   }
@@ -111,7 +136,7 @@ export function serializeSlideRuleDeliveryMd(
     lines.push(APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER);
     lines.push("");
     if (closureRender.present) {
-      closureRender.summaryLines.forEach((line) => lines.push(line));
+      closureRender.summaryLines.forEach(line => lines.push(line));
     } else {
       lines.push(
         "runtime closure evidence was not found; publish should remain blocked until version pins, runtime snapshot, and per-skill runtime evidence are present."
@@ -165,7 +190,7 @@ export function serializeSlideRuleDeliveryMd(
   lines.push("");
   const stale = new Set(state.staleArtifactIds || []);
   const evidenceArts = (state.artifacts || []).filter(
-    (a) =>
+    a =>
       a.kind === "evidence" &&
       (a.trustLevel === "gated_pass" || a.trustLevel === "audited") &&
       !stale.has(a.id)
@@ -197,7 +222,9 @@ export function serializeSlideRuleDeliveryMd(
   }
 
   const publishArtifact =
-    (state as any).publishArtifact ?? (state as any).releaseArtifactWithRuntimeClosure ?? null;
+    (state as any).publishArtifact ??
+    (state as any).releaseArtifactWithRuntimeClosure ??
+    null;
   const reportExportClosure = (state as any).publishClosure
     ? deriveReportExportClosureSummary((state as any).publishClosure)
     : deriveReportExportClosureSummaryFromPublishArtifact(publishArtifact);
@@ -223,7 +250,8 @@ export interface AppBundleClosureRender {
   summaryLines: string[];
 }
 
-export const APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER = "## AppBundle publish/runtime closure";
+export const APPBUNDLE_PUBLISH_RUNTIME_CLOSURE_HEADER =
+  "## AppBundle publish/runtime closure";
 
 export const CLOSED_CLOSURE_REPORT_SECTION = "## Closed Closure Report Section";
 
@@ -236,36 +264,52 @@ const APPBUNDLE_CLOSURE_SKILL_ORDER = [
   "appbundle",
 ];
 
-function appendClosureDetailLines(lines: string[], detailLines: string[]): string[] {
+function appendClosureDetailLines(
+  lines: string[],
+  detailLines: string[]
+): string[] {
   if (detailLines.length === 0) return lines;
   return [...lines, ...detailLines];
 }
 
 function perSkillEvidenceCoverageLines(perSkillEvidence: unknown): string[] {
   if (!perSkillEvidence || typeof perSkillEvidence !== "object") return [];
-  const evidence = perSkillEvidence as Record<string, { evidencePresent?: boolean } | undefined>;
+  const evidence = perSkillEvidence as Record<
+    string,
+    { evidencePresent?: boolean } | undefined
+  >;
   return [
     "evidence coverage:",
     "| skill | evidence |",
     "| --- | --- |",
-    ...APPBUNDLE_CLOSURE_SKILL_ORDER.map((skill) =>
-      `| ${skill} | ${evidence[skill]?.evidencePresent === true ? "present" : "missing"} |`
+    ...APPBUNDLE_CLOSURE_SKILL_ORDER.map(
+      skill =>
+        `| ${skill} | ${evidence[skill]?.evidencePresent === true ? "present" : "missing"} |`
     ),
   ];
 }
 
-export function renderPerSkillEvidenceCoverageTable(perSkillEvidence: unknown): string {
+export function renderPerSkillEvidenceCoverageTable(
+  perSkillEvidence: unknown
+): string {
   return perSkillEvidenceCoverageLines(perSkillEvidence).join("\n");
 }
 
-export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleClosureRender {
+export function deriveAppBundleClosureRender(
+  state: V5SessionState
+): AppBundleClosureRender {
   const publishArtifact =
-    (state as any).publishArtifact ?? (state as any).releaseArtifactWithRuntimeClosure ?? null;
+    (state as any).publishArtifact ??
+    (state as any).releaseArtifactWithRuntimeClosure ??
+    null;
   const publishClosure =
-    (state as any).publishClosure ?? derivePublishClosureSummaryFromPublishArtifact(publishArtifact);
+    (state as any).publishClosure ??
+    derivePublishClosureSummaryFromPublishArtifact(publishArtifact);
   if (publishClosure && typeof publishClosure === "object") {
     const blocked = !!publishClosure.blocked;
-    const evidencePresentCount = Number(publishClosure.evidencePresentCount ?? 0);
+    const evidencePresentCount = Number(
+      publishClosure.evidencePresentCount ?? 0
+    );
     const skillCount = Number(publishClosure.skillCount ?? 0);
     const tierCounts = publishClosure.tierCounts ?? {};
     const detailLines: string[] = [
@@ -280,20 +324,25 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
         const code = String(blocker?.code || "UNKNOWN_BLOCKER");
         detailLines.push(`- code: ${code}`);
         if (blocker?.path) detailLines.push(`  path: ${blocker.path}`);
-        if (blocker?.affectedSkill) detailLines.push(`  affectedSkill: ${blocker.affectedSkill}`);
+        if (blocker?.affectedSkill)
+          detailLines.push(`  affectedSkill: ${blocker.affectedSkill}`);
         if (blocker?.ref) detailLines.push(`  ref: ${blocker.ref}`);
       });
       detailLines.push("");
     }
     if (topBlockersArr.length > 0) {
-      const legacyBlockerLines = topBlockersArr.map((blocker: any) => `- ${renderPublishClosureBlocker(blocker)}`);
+      const legacyBlockerLines = topBlockersArr.map(
+        (blocker: any) => `- ${renderPublishClosureBlocker(blocker)}`
+      );
       detailLines.push("closure blockers:", ...legacyBlockerLines);
     }
     const baseLines = [
       `closure outcome: ${blocked ? "blocked" : "closed"}`,
       `version pins: ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
       `python publishClosure: ${blocked ? "blocked" : "closed"}`,
-      ...formatClosureStatusAndTopBlockersForFinalReport(publishClosure).split("\n"),
+      ...formatClosureStatusAndTopBlockersForFinalReport(publishClosure).split(
+        "\n"
+      ),
       `${evidencePresentCount}/${skillCount} evidence · pins ${publishClosure.versionPinsChecked ? "checked" : "missing"}`,
       `digest ${publishClosure.stableDigest ?? "n/a"} · hash ${publishClosure.closureHash ?? "n/a"} · generatedAt ${publishClosure.generatedAt ?? "n/a"}`,
       `hard ${tierCounts.hard_blocker ?? 0} · warn ${tierCounts.warning ?? 0} · info ${tierCounts.info ?? 0}`,
@@ -303,7 +352,7 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
         "",
         CLOSED_CLOSURE_REPORT_SECTION,
         `versionPinsChecked: ${publishClosure.versionPinsChecked === true ? "true" : "false"}`,
-        "evidence coverage and version pins verified for closed runtime closure.",
+        "evidence coverage and version pins verified for closed runtime closure."
       );
     }
     return {
@@ -315,10 +364,11 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
   const stale = new Set(state.staleArtifactIds || []);
   const trusted = (state.artifacts || []).filter(
     (artifact: Artifact) =>
-      (artifact.trustLevel === "gated_pass" || artifact.trustLevel === "audited") &&
+      (artifact.trustLevel === "gated_pass" ||
+        artifact.trustLevel === "audited") &&
       !stale.has(artifact.id)
   );
-  const closureArtifact = trusted.find((artifact) =>
+  const closureArtifact = trusted.find(artifact =>
     /appbundle|runtimeClosure|publishClosure|versionPinsChecked|perSkillEvidence|APPBUNDLE_RUNTIME/i.test(
       [
         artifact.kind,
@@ -336,8 +386,11 @@ export function deriveAppBundleClosureRender(state: V5SessionState): AppBundleCl
     return { present: false, summaryLines: [] };
   }
 
-  const content = String(closureArtifact.content || closureArtifact.summary || "").trim();
-  const summary = content.length > 700 ? `${content.slice(0, 700)}...` : content;
+  const content = String(
+    closureArtifact.content || closureArtifact.summary || ""
+  ).trim();
+  const summary =
+    content.length > 700 ? `${content.slice(0, 700)}...` : content;
 
   return {
     present: true,
@@ -388,7 +441,9 @@ export function enrichReportWriteWithRuntimeClosure(
  * 系统不变式段（改进②）：从 perSkillEvidence 重建的模型里取 appbundle.invariants。
  * 无模型/无不变式 → null，交付物与从前逐字节一致。
  */
-export function deriveInvariantsMdForState(state: V5SessionState): string | null {
+export function deriveInvariantsMdForState(
+  state: V5SessionState
+): string | null {
   try {
     const model = parseFiveSystemModelFromPerSkillEvidence(
       (state as any).publishClosure?.perSkillEvidence
@@ -399,10 +454,15 @@ export function deriveInvariantsMdForState(state: V5SessionState): string | null
     invariants.forEach((inv, i) => {
       const systems = (inv.systems ?? []).join("/");
       const refs = (inv.refs ?? []).join(", ");
-      const meta = [systems && `约束系统: ${systems}`, refs && `落地引用: \`${refs}\``]
+      const meta = [
+        systems && `约束系统: ${systems}`,
+        refs && `落地引用: \`${refs}\``,
+      ]
         .filter(Boolean)
         .join(" · ");
-      lines.push(`${i + 1}. ${inv.statement || inv.id || "（未命名）"}${meta ? ` — ${meta}` : ""}`);
+      lines.push(
+        `${i + 1}. ${inv.statement || inv.id || "（未命名）"}${meta ? ` — ${meta}` : ""}`
+      );
     });
     return lines.join("\n");
   } catch {
@@ -410,7 +470,9 @@ export function deriveInvariantsMdForState(state: V5SessionState): string | null
   }
 }
 
-export function assembleRuntimeSnapshotMdForState(state: V5SessionState): string | null {
+export function assembleRuntimeSnapshotMdForState(
+  state: V5SessionState
+): string | null {
   try {
     const sessionId = state.sessionId || "";
     if (!sessionId) return null;
@@ -424,7 +486,10 @@ export function assembleRuntimeSnapshotMdForState(state: V5SessionState): string
   }
 }
 
-export function downloadSlideRuleDeliveryMd(state: V5SessionState, filename?: string): void {
+export function downloadSlideRuleDeliveryMd(
+  state: V5SessionState,
+  filename?: string
+): void {
   const md = serializeSlideRuleDeliveryMd(state, {
     runtimeSnapshotMd: assembleRuntimeSnapshotMdForState(state),
   });

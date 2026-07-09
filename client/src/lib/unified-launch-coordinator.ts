@@ -14,7 +14,10 @@ import {
   type LaunchRouteCandidateId,
   type UnifiedLaunchInput,
 } from "./launch-router";
-import { useNLCommandStore, type TaskHubCommandSubmissionResult } from "./nl-command-store";
+import {
+  useNLCommandStore,
+  type TaskHubCommandSubmissionResult,
+} from "./nl-command-store";
 import {
   useProjectStore,
   type ProjectClarificationAnswerType,
@@ -23,10 +26,7 @@ import {
   type ProjectRouteRiskLevel,
 } from "./project-store";
 import { useTasksStore } from "./tasks-store";
-import {
-  useWorkflowStore,
-  type WorkflowLaunchResult,
-} from "./workflow-store";
+import { useWorkflowStore, type WorkflowLaunchResult } from "./workflow-store";
 
 export interface UnifiedLaunchSubmitInput extends UnifiedLaunchInput {
   userId?: string;
@@ -150,7 +150,10 @@ function projectRouteKindFromCandidate(
 function routeRiskFromDecision(
   decision: LaunchRouteDecision
 ): ProjectRouteRiskLevel {
-  if (decision.kind === "upgrade-required" || decision.requiresAdvancedRuntime) {
+  if (
+    decision.kind === "upgrade-required" ||
+    decision.requiresAdvancedRuntime
+  ) {
     return "high";
   }
   if (decision.kind === "clarify" || decision.needsClarification) {
@@ -289,7 +292,9 @@ function projectAnswerTypeFromClarificationQuestion(
   return "text";
 }
 
-function rememberProjectClarificationAnswer(input: UnifiedClarificationSubmitInput) {
+function rememberProjectClarificationAnswer(
+  input: UnifiedClarificationSubmitInput
+) {
   const projectId =
     input.projectId ??
     (useNLCommandStore.getState().commandProjectContextById ?? {})[
@@ -515,15 +520,17 @@ export async function submitUnifiedLaunch(
 
   let missionSubmission: TaskHubCommandSubmissionResult;
   try {
-    missionSubmission = await useNLCommandStore.getState().submitTaskHubCommand({
-      commandText: input.text,
-      userId: input.userId ?? "office-user",
-      priority: input.priority,
-      timeframe: input.timeframe,
-      projectId: input.projectId,
-      projectName: input.projectName,
-      createMission: useTasksStore.getState().createMission,
-    });
+    missionSubmission = await useNLCommandStore
+      .getState()
+      .submitTaskHubCommand({
+        commandText: input.text,
+        userId: input.userId ?? "office-user",
+        priority: input.priority,
+        timeframe: input.timeframe,
+        projectId: input.projectId,
+        projectName: input.projectName,
+        createMission: useTasksStore.getState().createMission,
+      });
   } catch (error) {
     rememberProjectFailure({
       projectId: input.projectId,

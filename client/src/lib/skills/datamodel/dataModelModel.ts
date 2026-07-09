@@ -3,7 +3,13 @@
 // Pure data. This skill is the KEYSTONE: RBAC's data rules reference its entities, and
 // Workflow/Page reference its fields — so wiring it in resolves their dangling cross-refs.
 
-export type FieldType = "string" | "number" | "boolean" | "date" | "enum" | "ref";
+export type FieldType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "date"
+  | "enum"
+  | "ref";
 
 /** Lifecycle for stable field/entity facts in SSOT. */
 export type Lifecycle = "active" | "deprecated" | "removed";
@@ -12,7 +18,13 @@ export type Lifecycle = "active" | "deprecated" | "removed";
 export type StorageRole = "ssot" | "olap_projection";
 
 /** Sensitivity level for policy export and RBAC PDP delegation. "none" or absent = non-sensitive. */
-export type SensitivityLevel = "none" | "low" | "medium" | "high" | "financial" | "pii";
+export type SensitivityLevel =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "financial"
+  | "pii";
 
 export interface Field {
   key: string;
@@ -73,7 +85,12 @@ export interface Relation {
 }
 
 /** Migration action kinds per task: add, rename, deprecate, remove, type-change. */
-export type MigrationActionType = "add" | "rename" | "deprecate" | "remove" | "type-change";
+export type MigrationActionType =
+  | "add"
+  | "rename"
+  | "deprecate"
+  | "remove"
+  | "type-change";
 
 /** Single declared migration action with optional evidence ref. */
 export interface MigrationAction {

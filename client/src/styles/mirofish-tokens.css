@@ -5,10 +5,10 @@
  */
 :root {
   /* Colors */
-  --mf-color-bg: #FFFFFF;
+  --mf-color-bg: #ffffff;
   --mf-color-fg: #000000;
-  --mf-color-accent: #FF4500;
-  --mf-color-border: #E5E5E5;
+  --mf-color-accent: #ff4500;
+  --mf-color-border: #e5e5e5;
 
   /* Typography — alias to existing project CSS variables */
   --mf-font-title: var(--font-display);
@@ -25,7 +25,7 @@
   --mf-max-width: 1400px;
 
   /* Border */
-  --mf-border: 1px solid #E5E5E5;
+  --mf-border: 1px solid #e5e5e5;
   --mf-radius: 2px;
   --mf-shadow: none;
 }

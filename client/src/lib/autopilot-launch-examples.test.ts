@@ -41,7 +41,9 @@ describe("autopilot launch examples", () => {
       "deep-route",
       "upgrade-runtime",
     ]);
-    expect(AUTOPILOT_LAUNCH_EXAMPLES.every(example => example.label)).toBe(true);
+    expect(AUTOPILOT_LAUNCH_EXAMPLES.every(example => example.label)).toBe(
+      true
+    );
     expect(
       AUTOPILOT_LAUNCH_EXAMPLES.every(example => example.englishLabel)
     ).toBe(true);
@@ -61,8 +63,7 @@ describe("autopilot launch examples", () => {
 
   it("builds a high-confidence preview for a complete destination input", () => {
     const preview = buildLaunchDestinationPreview({
-      text:
-        "本周内完成会员续费页改版说明稿，交付产品说明和验收清单，约束是兼容移动端和现有埋点，成功标准是方案可被设计和研发直接评审。",
+      text: "本周内完成会员续费页改版说明稿，交付产品说明和验收清单，约束是兼容移动端和现有埋点，成功标准是方案可被设计和研发直接评审。",
       runtimeMode: "advanced",
       attachments: [],
     });
@@ -118,8 +119,7 @@ describe("autopilot launch examples", () => {
 
   it("captures attachment influence and aligns attachment-heavy input to deep route", () => {
     const preview = buildLaunchDestinationPreview({
-      text:
-        "根据附件里的需求文档和表格，先整理 brief，再拆出工作包和角色分工，月底前交付排期、风险清单和验收标准。",
+      text: "根据附件里的需求文档和表格，先整理 brief，再拆出工作包和角色分工，月底前交付排期、风险清单和验收标准。",
       runtimeMode: "advanced",
       attachments: [
         makeAttachment(),
@@ -145,8 +145,7 @@ describe("autopilot launch examples", () => {
 
   it("flags advanced execution input as runtime upgrade when launched from frontend mode", () => {
     const preview = buildLaunchDestinationPreview({
-      text:
-        "在沙箱里打开浏览器验证支付页面，抓取日志并输出测试结果、回滚建议和验收标准，今天完成。",
+      text: "在沙箱里打开浏览器验证支付页面，抓取日志并输出测试结果、回滚建议和验收标准，今天完成。",
       runtimeMode: "frontend",
       attachments: [],
     });

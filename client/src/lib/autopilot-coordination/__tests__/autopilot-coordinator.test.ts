@@ -60,7 +60,10 @@ describe("AutopilotCoordinator", () => {
     });
     expect(resetPin).not.toHaveBeenCalled();
     expect(fallbackWorkflowStageOverride).not.toHaveBeenCalled();
-    expect(stageAnimator.transition).toHaveBeenCalledWith("input", "clarification");
+    expect(stageAnimator.transition).toHaveBeenCalledWith(
+      "input",
+      "clarification"
+    );
     expect(pageChoreographer.transition).not.toHaveBeenCalled();
   });
 

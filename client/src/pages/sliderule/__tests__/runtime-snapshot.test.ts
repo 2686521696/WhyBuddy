@@ -16,7 +16,10 @@ import {
   deriveInvariantsMdForState,
   serializeSlideRuleDeliveryMd,
 } from "../serialize-sliderule-delivery-md";
-import { saveRuntimeState, saveRuntimeRole } from "../live-runtime/runtime-persistence";
+import {
+  saveRuntimeState,
+  saveRuntimeRole,
+} from "../live-runtime/runtime-persistence";
 import type { RuntimeState } from "../live-runtime/live-runtime";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
@@ -45,7 +48,11 @@ const MODEL: FiveSystemModel = {
 const RUNTIME: RuntimeState = {
   entities: {
     plot: [
-      { id: "row-1", values: { code: "A-01", area: 20 }, createdAt: "2026-07-07T00:00:00Z" },
+      {
+        id: "row-1",
+        values: { code: "A-01", area: 20 },
+        createdAt: "2026-07-07T00:00:00Z",
+      },
     ],
   },
   instances: [
@@ -67,7 +74,11 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
   it("无运行时数据 → null（不出段、不伪造）", () => {
     expect(deriveRuntimeSnapshotMd(MODEL, null, "adopter")).toBeNull();
     expect(
-      deriveRuntimeSnapshotMd(MODEL, { entities: { plot: [] }, instances: [], seq: 0 }, null)
+      deriveRuntimeSnapshotMd(
+        MODEL,
+        { entities: { plot: [] }, instances: [], seq: 0 },
+        null
+      )
     ).toBeNull();
   });
 
@@ -86,7 +97,9 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
 
   it("模型缺字段定义时回退行键名；竖线转义防表格串列", () => {
     const runtime: RuntimeState = {
-      entities: { ghost: [{ id: "r", values: { raw: "a|b" }, createdAt: "t" }] },
+      entities: {
+        ghost: [{ id: "r", values: { raw: "a|b" }, createdAt: "t" }],
+      },
       instances: [],
       seq: 1,
     };
@@ -106,7 +119,9 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
     expect(md).toContain("A-01"); // 行值来自 localStorage（模型缺省时回退键名列）
     // 无 sessionId / 无数据 → null
     expect(assembleRuntimeSnapshotMdForState({} as any)).toBeNull();
-    expect(assembleRuntimeSnapshotMdForState({ sessionId: "never-touched" } as any)).toBeNull();
+    expect(
+      assembleRuntimeSnapshotMdForState({ sessionId: "never-touched" } as any)
+    ).toBeNull();
   });
 
   it("serializeSlideRuleDeliveryMd 注入 opts 才出段，缺省逐字节不变", () => {
@@ -116,7 +131,9 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
     expect(serializeSlideRuleDeliveryMd(state, {})).toBe(base);
 
     const snapshot = deriveRuntimeSnapshotMd(MODEL, RUNTIME, "adopter");
-    const withSnap = serializeSlideRuleDeliveryMd(state, { runtimeSnapshotMd: snapshot });
+    const withSnap = serializeSlideRuleDeliveryMd(state, {
+      runtimeSnapshotMd: snapshot,
+    });
     expect(withSnap).toContain(RUNTIME_SNAPSHOT_HEADER);
     expect(withSnap).toContain("| A-01 | 20 |");
     // 附录插在审计明细之前
@@ -158,12 +175,16 @@ describe("runtime-snapshot（交付物运行时快照附录）", () => {
 
     const delivery = serializeSlideRuleDeliveryMd(stateWithInvariants);
     expect(delivery).toContain("## 系统不变式");
-    expect(delivery.indexOf("## 系统不变式")).toBeLessThan(delivery.indexOf("## 审计明细"));
+    expect(delivery.indexOf("## 系统不变式")).toBeLessThan(
+      delivery.indexOf("## 审计明细")
+    );
 
     // 无 invariants → null，交付物逐字节不变
-    expect(deriveInvariantsMdForState({ sessionId: "s1", artifacts: [] } as any)).toBeNull();
-    expect(serializeSlideRuleDeliveryMd({ sessionId: "s1", artifacts: [] } as any)).not.toContain(
-      "## 系统不变式"
-    );
+    expect(
+      deriveInvariantsMdForState({ sessionId: "s1", artifacts: [] } as any)
+    ).toBeNull();
+    expect(
+      serializeSlideRuleDeliveryMd({ sessionId: "s1", artifacts: [] } as any)
+    ).not.toContain("## 系统不变式");
   });
 });

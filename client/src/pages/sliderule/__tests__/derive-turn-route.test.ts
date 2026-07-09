@@ -19,7 +19,7 @@ describe("deriveTurnRoute client smoke (S9)", () => {
       goalStatusAfter: "clear",
       runtimePhase: "awaiting",
     });
-    expect(stations.map((s) => s.kind)).toEqual([
+    expect(stations.map(s => s.kind)).toEqual([
       "intake",
       "budget_pass",
       "plan",

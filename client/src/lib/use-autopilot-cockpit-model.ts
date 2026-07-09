@@ -440,7 +440,9 @@ export function buildAutopilotCockpitModel(
       "route.recommendedRouteId",
       "route.recommended.id",
       "recommendedRouteId",
-    ]) ?? input.launchRoute?.recommendedRouteId ?? null;
+    ]) ??
+    input.launchRoute?.recommendedRouteId ??
+    null;
   const routeSelectionStatus = pickText(source, [
     "route.selection.status",
     "route.selectionStatus",
@@ -472,7 +474,9 @@ export function buildAutopilotCockpitModel(
           : null);
 
   if (!selectedRouteId && recommendedRouteId) {
-    warnings.push("Route selection is missing; falling back to recommendation only.");
+    warnings.push(
+      "Route selection is missing; falling back to recommendation only."
+    );
   }
   if (missingInfo.length > 0 && suggestedClarifications.length === 0) {
     warnings.push("Missing info exists without clarification aliases.");
@@ -487,10 +491,7 @@ export function buildAutopilotCockpitModel(
       modifiedAt,
       subGoals: collectTexts(source, DESTINATION_SUB_GOAL_PATHS),
       constraints: collectTexts(source, DESTINATION_CONSTRAINT_PATHS),
-      successCriteria: collectTexts(
-        source,
-        DESTINATION_SUCCESS_CRITERIA_PATHS
-      ),
+      successCriteria: collectTexts(source, DESTINATION_SUCCESS_CRITERIA_PATHS),
       deliverables: collectTexts(source, DESTINATION_DELIVERABLE_PATHS),
       confidenceLevel,
       missingInfo,
@@ -500,7 +501,8 @@ export function buildAutopilotCockpitModel(
       selectedRouteId,
       recommendedRouteId,
       routeSelectionStatus,
-      locked: readBoolean(readPath(source, "route.selection.locked")) ||
+      locked:
+        readBoolean(readPath(source, "route.selection.locked")) ||
         readBoolean(readPath(source, "route.selectionLocked")),
       candidateCount: routeCandidateCount(source),
     },
@@ -509,16 +511,14 @@ export function buildAutopilotCockpitModel(
         pickText(source, ["taskId", "missionId", "id"]) ??
         frontendState.projection.taskId,
       status:
-        pickText(source, [
-          "execution.status",
-          "driveState.state",
-          "status",
-        ]) ?? frontendState.projection.status,
-      progressPercent: readPercent(
-        readPath(source, "execution.progressPercent") ??
-          readPath(source, "progressPercent") ??
-          readPath(source, "progress")
-      ) || frontendState.projection.progressPercent,
+        pickText(source, ["execution.status", "driveState.state", "status"]) ??
+        frontendState.projection.status,
+      progressPercent:
+        readPercent(
+          readPath(source, "execution.progressPercent") ??
+            readPath(source, "progressPercent") ??
+            readPath(source, "progress")
+        ) || frontendState.projection.progressPercent,
       sourceLayer: frontendState.sourceLayer,
     },
     warnings,

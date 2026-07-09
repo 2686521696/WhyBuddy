@@ -296,7 +296,10 @@ export function createBlueprintSceneData(
 
 export function deriveBlueprintFlowRoutes(
   rolePhases: Record<string, RolePhase>,
-  configMap: Record<string, { position: [number, number, number]; color: string }>
+  configMap: Record<
+    string,
+    { position: [number, number, number]; color: string }
+  >
 ): BlueprintSceneFlowRoute[] {
   const activeSlots = new Set<MissionAgentId>();
 
@@ -445,14 +448,17 @@ export function deriveBlueprintAgentPatrol({
   const failed = rolePhase === "failed";
   const seed = agentMotionSeed(agentId);
   const phase = seed * Math.PI * 2;
-  const speed = (active ? 0.92 : completed ? 0.5 : failed ? 0.72 : 0.62) *
+  const speed =
+    (active ? 0.92 : completed ? 0.5 : failed ? 0.72 : 0.62) *
     Math.max(0.2, motionScale);
-  const radius = (active ? 0.58 : completed ? 0.28 : failed ? 0.38 : 0.36) *
+  const radius =
+    (active ? 0.58 : completed ? 0.28 : failed ? 0.38 : 0.36) *
     Math.max(0.25, motionScale);
   const t = time * speed + phase;
   const xOffset = Math.cos(t) * radius;
   const zOffset = Math.sin(t) * radius * 0.82;
-  const yOffset = Math.abs(Math.sin(time * (active ? 5.2 : 2.4) + phase)) *
+  const yOffset =
+    Math.abs(Math.sin(time * (active ? 5.2 : 2.4) + phase)) *
     (active ? 0.1 : 0.055) *
     Math.max(0.35, motionScale);
   const facingYaw = Math.atan2(xOffset, zOffset);

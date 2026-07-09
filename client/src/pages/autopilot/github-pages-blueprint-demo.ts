@@ -138,7 +138,9 @@ function makeApiError(message: string, endpoint: string): ApiRequestError {
   };
 }
 
-function readStorage(options: GithubPagesBlueprintDemoRuntimeOptions): StorageLike | null {
+function readStorage(
+  options: GithubPagesBlueprintDemoRuntimeOptions
+): StorageLike | null {
   if (options.storage !== undefined) return options.storage;
   if (typeof window === "undefined") return null;
   try {
@@ -206,7 +208,9 @@ function persistState(
   }
 }
 
-function createClock(options: GithubPagesBlueprintDemoRuntimeOptions): () => string {
+function createClock(
+  options: GithubPagesBlueprintDemoRuntimeOptions
+): () => string {
   return options.now ?? (() => new Date().toISOString());
 }
 
@@ -221,7 +225,9 @@ function normalizeGithubUrl(value: string): string {
 
 function parseGithubSource(url: string, index: number): BlueprintGithubSource {
   const normalizedUrl = normalizeGithubUrl(url);
-  const match = normalizedUrl.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+  const match = normalizedUrl.match(
+    /^https:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)/i
+  );
   const owner = match?.[1] ?? "demo";
   const repo = (match?.[2] ?? `repository-${index + 1}`).replace(/\.git$/i, "");
   return {
@@ -238,15 +244,25 @@ function parseGithubSource(url: string, index: number): BlueprintGithubSource {
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value))),
+  ];
 }
 
-function summarizeTarget(targetText: string | undefined, githubUrls: string[]): string {
+function summarizeTarget(
+  targetText: string | undefined,
+  githubUrls: string[]
+): string {
   const normalized = targetText?.replace(/\s+/g, " ").trim();
   if (normalized) {
-    return normalized.length > 96 ? `${normalized.slice(0, 93).trim()}...` : normalized;
+    return normalized.length > 96
+      ? `${normalized.slice(0, 93).trim()}...`
+      : normalized;
   }
-  return githubUrls[0]?.replace(/^https:\/\/github\.com\//i, "GitHub ") ?? "Pages demo target";
+  return (
+    githubUrls[0]?.replace(/^https:\/\/github\.com\//i, "GitHub ") ??
+    "Pages demo target"
+  );
 }
 
 function buildProjectContext(input: {
@@ -323,7 +339,8 @@ function buildDefaultCapabilities(): BlueprintRuntimeCapability[] {
       label: "Docker analysis sandbox",
       kind: "docker",
       purpose: "Simulate isolated repository analysis for static Pages.",
-      description: "Static demo adapter mirroring the Docker analysis sandbox contract.",
+      description:
+        "Static demo adapter mirroring the Docker analysis sandbox contract.",
       tags: ["runtime", "sandbox", "pages-demo"],
       securityLevel: "sandboxed",
       status: "available",
@@ -338,7 +355,8 @@ function buildDefaultCapabilities(): BlueprintRuntimeCapability[] {
       id: "mcp-github-source",
       label: "GitHub source reader",
       kind: "mcp",
-      purpose: "Represent repository source inspection without a backend MCP server.",
+      purpose:
+        "Represent repository source inspection without a backend MCP server.",
       description: "Browser-side static projection of repository evidence.",
       tags: ["runtime", "mcp", "github", "pages-demo"],
       securityLevel: "networked",
@@ -378,7 +396,11 @@ function buildDefaultCapabilities(): BlueprintRuntimeCapability[] {
       adapter: "blueprint.runtime.role.system-architecture.pages-demo",
       inputSchema: "text/plain",
       outputTypes: ["analysis", "safety"],
-      supportedStages: ["route_generation", "prompt_packaging", "runtime_capability"],
+      supportedStages: [
+        "route_generation",
+        "prompt_packaging",
+        "runtime_capability",
+      ],
       requiresApproval: false,
       projectScoped: false,
     },
@@ -408,7 +430,12 @@ function buildAgentRoles(): BlueprintAgentRole[] {
       name: "Product Decision Lead",
       group: "decision",
       responsibility: "Clarify product intent and route selection criteria.",
-      defaultStages: ["input", "clarification", "route_generation", "spec_tree"],
+      defaultStages: [
+        "input",
+        "clarification",
+        "route_generation",
+        "spec_tree",
+      ],
       permissions: ["read_domain_context", "select_route"],
       displayName: "Product Decision Lead",
       displayLabelZh: "Product Decision",
@@ -417,7 +444,8 @@ function buildAgentRoles(): BlueprintAgentRole[] {
       id: "role-architecture-planner",
       name: "Architecture Planner",
       group: "planning",
-      responsibility: "Plan RouteSet structure, SPEC tree shape, and module boundaries.",
+      responsibility:
+        "Plan RouteSet structure, SPEC tree shape, and module boundaries.",
       defaultStages: ["route_generation", "spec_tree", "engineering_landing"],
       permissions: ["plan_routes", "shape_spec_tree"],
       displayName: "Architecture Planner",
@@ -457,8 +485,14 @@ function buildAgentRoles(): BlueprintAgentRole[] {
       id: "role-memory-curator",
       name: "Memory Curator",
       group: "memory",
-      responsibility: "Persist artifact lineage, evidence, replay, and handoff context.",
-      defaultStages: ["input", "clarification", "route_generation", "spec_tree"],
+      responsibility:
+        "Persist artifact lineage, evidence, replay, and handoff context.",
+      defaultStages: [
+        "input",
+        "clarification",
+        "route_generation",
+        "spec_tree",
+      ],
       permissions: ["write_artifact_memory", "link_lineage"],
       displayName: "Memory Curator",
       displayLabelZh: "Memory Curator",
@@ -466,24 +500,44 @@ function buildAgentRoles(): BlueprintAgentRole[] {
   ];
 }
 
-function buildCapabilityMatrix(capabilities: BlueprintRuntimeCapability[]): BlueprintCapabilityBinding[] {
-  const capabilityById = new Map(capabilities.map(capability => [capability.id, capability]));
+function buildCapabilityMatrix(
+  capabilities: BlueprintRuntimeCapability[]
+): BlueprintCapabilityBinding[] {
+  const capabilityById = new Map(
+    capabilities.map(capability => [capability.id, capability])
+  );
   const roleById = new Map(buildAgentRoles().map(role => [role.id, role]));
   const bindings: ReadonlyArray<readonly [string, string, string]> = [
-    ["role-runtime-executor", "docker-analysis-sandbox", "docker.analysis.sandbox"],
+    [
+      "role-runtime-executor",
+      "docker-analysis-sandbox",
+      "docker.analysis.sandbox",
+    ],
     ["role-runtime-executor", "mcp-github-source", "mcp.github.source"],
     ["role-runtime-executor", "aigc-spec-node", "aigc.spec.derivation"],
-    ["role-architecture-planner", "role-system-architecture", "role.system.architecture"],
-    ["role-quality-auditor", "role-system-architecture", "role.audit.architecture"],
-    ["role-experience-presenter", "skill-svg-architecture", "skill.svg.architecture"],
+    [
+      "role-architecture-planner",
+      "role-system-architecture",
+      "role.system.architecture",
+    ],
+    [
+      "role-quality-auditor",
+      "role-system-architecture",
+      "role.audit.architecture",
+    ],
+    [
+      "role-experience-presenter",
+      "skill-svg-architecture",
+      "skill.svg.architecture",
+    ],
     ["role-memory-curator", "aigc-spec-node", "memory.artifact.retrieval"],
   ];
-  return bindings
-    .flatMap(([roleId, capabilityId, nodeId]) => {
-      const capability = capabilityById.get(capabilityId);
-      const role = roleById.get(roleId);
-      if (!capability || !role) return [];
-      return [{
+  return bindings.flatMap(([roleId, capabilityId, nodeId]) => {
+    const capability = capabilityById.get(capabilityId);
+    const role = roleById.get(roleId);
+    if (!capability || !role) return [];
+    return [
+      {
         id: `pages-binding-${roleId}-${capabilityId}`,
         roleId,
         capabilityId,
@@ -498,14 +552,22 @@ function buildCapabilityMatrix(capabilities: BlueprintRuntimeCapability[]): Blue
         capabilityLabel: capability.label,
         capabilityKind: capability.kind,
         roleDisplayName: role.displayName,
-      }];
-    });
+      },
+    ];
+  });
 }
 
-function resolveRoleState(roleId: string, stage: BlueprintGenerationJob["stage"]): BlueprintRolePresenceState {
+function resolveRoleState(
+  roleId: string,
+  stage: BlueprintGenerationJob["stage"]
+): BlueprintRolePresenceState {
   if (stage === "route_generation") {
     if (
-      ["role-product-decision", "role-architecture-planner", "role-runtime-executor"].includes(roleId)
+      [
+        "role-product-decision",
+        "role-architecture-planner",
+        "role-runtime-executor",
+      ].includes(roleId)
     ) {
       return "active";
     }
@@ -513,7 +575,8 @@ function resolveRoleState(roleId: string, stage: BlueprintGenerationJob["stage"]
     return "watching";
   }
   if (stage === "spec_tree") {
-    if (["role-architecture-planner", "role-runtime-executor"].includes(roleId)) return "active";
+    if (["role-architecture-planner", "role-runtime-executor"].includes(roleId))
+      return "active";
     if (roleId === "role-quality-auditor") return "reviewing";
     return "watching";
   }
@@ -585,7 +648,9 @@ function buildAgentCrewSnapshot(input: {
   };
 }
 
-function mapEventFamily(type: BlueprintGenerationEventType): BlueprintGenerationEventFamily {
+function mapEventFamily(
+  type: BlueprintGenerationEventType
+): BlueprintGenerationEventFamily {
   const prefix = type.split(".")[0] as BlueprintGenerationEventFamily;
   return [
     "job",
@@ -669,10 +734,15 @@ function buildRouteSet(input: {
 }): BlueprintRouteSet {
   const routeSetId = nextId(input.state, "routeset");
   const primaryRouteId = `${routeSetId}:primary`;
-  const target = summarizeTarget(input.request.targetText, input.request.githubUrls ?? []);
+  const target = summarizeTarget(
+    input.request.targetText,
+    input.request.githubUrls ?? []
+  );
   const capabilityUsage = (ids: string[]) =>
     ids.map(id => {
-      const capability = input.state.capabilities.find(item => item.id === id) ?? input.state.capabilities[0];
+      const capability =
+        input.state.capabilities.find(item => item.id === id) ??
+        input.state.capabilities[0];
       return {
         id: capability.id,
         label: capability.label,
@@ -699,32 +769,42 @@ function buildRouteSet(input: {
     costLevel,
     complexity,
     estimatedEffort:
-      complexity === "deep" ? "3 focused implementation passes" : "1 focused implementation pass",
+      complexity === "deep"
+        ? "3 focused implementation passes"
+        : "1 focused implementation pass",
     capabilities: capabilityUsage(capabilityIds),
     steps: [
       {
         id: `${id}:clarify`,
         title: "Clarify intent",
-        description: "Capture target, repository signals, and acceptance boundaries.",
+        description:
+          "Capture target, repository signals, and acceptance boundaries.",
         role: "Product Decision Lead",
         status: "ready",
       },
       {
         id: `${id}:derive`,
         title: "Derive SPEC tree",
-        description: "Map route evidence into durable requirements, design, and task nodes.",
+        description:
+          "Map route evidence into durable requirements, design, and task nodes.",
         role: "Architecture Planner",
         status: "ready",
       },
       {
         id: `${id}:handoff`,
         title: "Prepare handoff",
-        description: "Expose reviewable assets in the right rail without backend fetches.",
+        description:
+          "Expose reviewable assets in the right rail without backend fetches.",
         role: "Runtime Executor",
         status: "ready",
       },
     ],
-    outputs: ["RouteSet", "SPEC tree seed", "Capability evidence", "Review handoff"],
+    outputs: [
+      "RouteSet",
+      "SPEC tree seed",
+      "Capability evidence",
+      "Review handoff",
+    ],
   });
 
   return {
@@ -761,13 +841,18 @@ function buildRouteSet(input: {
         "medium",
         "medium",
         "deep",
-        ["skill-svg-architecture", "docker-analysis-sandbox", "role-system-architecture"]
+        [
+          "skill-svg-architecture",
+          "docker-analysis-sandbox",
+          "role-system-architecture",
+        ]
       ),
     ],
     nextAsset: {
       type: "spec_tree",
       menu: "deduction",
-      description: "Use the selected RouteSet path as the source asset for SPEC tree review.",
+      description:
+        "Use the selected RouteSet path as the source asset for SPEC tree review.",
     },
     provenance: {
       projectId: input.request.projectId,
@@ -800,8 +885,12 @@ function createCapabilitySnapshots(input: {
     "role-system-architecture",
     "skill-svg-architecture",
   ]
-    .map(id => input.state.capabilities.find(capability => capability.id === id))
-    .filter((capability): capability is BlueprintRuntimeCapability => Boolean(capability));
+    .map(id =>
+      input.state.capabilities.find(capability => capability.id === id)
+    )
+    .filter((capability): capability is BlueprintRuntimeCapability =>
+      Boolean(capability)
+    );
   const invocations = selectedCapabilities.map((capability, index) => {
     const route = input.routeSet.routes[index % input.routeSet.routes.length];
     const invocation: BlueprintCapabilityInvocation = {
@@ -857,50 +946,58 @@ function createCapabilitySnapshots(input: {
     };
     return invocation;
   });
-  const evidence: BlueprintCapabilityEvidence[] = invocations.map(invocation => {
-    const capability = input.state.capabilities.find(item => item.id === invocation.capabilityId)!;
-    const payloadSummary: BlueprintArtifactPayloadSummary = {
-      invocationId: invocation.id,
-      capabilityId: capability.id,
-      durationMs: invocation.durationMs,
-      staticPages: true,
-    };
-    const kind: BlueprintCapabilityEvidence["kind"] =
-      capability.kind === "skill"
-        ? "diagram"
-        : capability.kind === "role"
-          ? "safety"
-          : "analysis";
-    return {
-      id: nextId(input.state, "capability-evidence"),
-      jobId: input.jobId,
-      invocationId: invocation.id,
-      capabilityId: capability.id,
-      capabilityLabel: capability.label,
-      kind,
-      status: "recorded",
-      title: `Static evidence: ${capability.label}`,
-      summary: `${capability.label} evidence is generated locally for the GitHub Pages demo.`,
-      createdAt: input.createdAt,
-      routeSetId: input.routeSet.id,
-      routeId: invocation.routeId,
-      artifacts: [`pages-demo:${invocation.id}`],
-      logs: invocation.logs,
-      tags: uniqueStrings(["pages-demo", capability.kind, ...capability.tags]),
-      payloadSummary,
-      provenance: {
+  const evidence: BlueprintCapabilityEvidence[] = invocations.map(
+    invocation => {
+      const capability = input.state.capabilities.find(
+        item => item.id === invocation.capabilityId
+      )!;
+      const payloadSummary: BlueprintArtifactPayloadSummary = {
+        invocationId: invocation.id,
+        capabilityId: capability.id,
+        durationMs: invocation.durationMs,
+        staticPages: true,
+      };
+      const kind: BlueprintCapabilityEvidence["kind"] =
+        capability.kind === "skill"
+          ? "diagram"
+          : capability.kind === "role"
+            ? "safety"
+            : "analysis";
+      return {
+        id: nextId(input.state, "capability-evidence"),
         jobId: input.jobId,
-        projectId: input.projectId,
-        sourceId: input.request.sourceId,
+        invocationId: invocation.id,
+        capabilityId: capability.id,
+        capabilityLabel: capability.label,
+        kind,
+        status: "recorded",
+        title: `Static evidence: ${capability.label}`,
+        summary: `${capability.label} evidence is generated locally for the GitHub Pages demo.`,
+        createdAt: input.createdAt,
         routeSetId: input.routeSet.id,
         routeId: invocation.routeId,
-        targetText: input.request.targetText,
-        githubUrls: input.request.githubUrls ?? [],
-        executionMode: "simulated_fallback",
-        artifactUrl: `pages-demo://${input.jobId}/${capability.id}`,
-      },
-    };
-  });
+        artifacts: [`pages-demo:${invocation.id}`],
+        logs: invocation.logs,
+        tags: uniqueStrings([
+          "pages-demo",
+          capability.kind,
+          ...capability.tags,
+        ]),
+        payloadSummary,
+        provenance: {
+          jobId: input.jobId,
+          projectId: input.projectId,
+          sourceId: input.request.sourceId,
+          routeSetId: input.routeSet.id,
+          routeId: invocation.routeId,
+          targetText: input.request.targetText,
+          githubUrls: input.request.githubUrls ?? [],
+          executionMode: "simulated_fallback",
+          artifactUrl: `pages-demo://${input.jobId}/${capability.id}`,
+        },
+      };
+    }
+  );
   return {
     invocations: invocations.map(invocation => ({
       ...invocation,
@@ -933,14 +1030,19 @@ function buildSpecTree(input: {
       routeId: input.selectedRoute.id,
       dependencies: [],
       outputs: ["requirements.md", "design.md", "tasks.md"],
-      children: [`${treeId}:requirements`, `${treeId}:runtime`, `${treeId}:handoff`],
+      children: [
+        `${treeId}:requirements`,
+        `${treeId}:runtime`,
+        `${treeId}:handoff`,
+      ],
       metadata: { staticPages: true },
     },
     {
       id: `${treeId}:requirements`,
       parentId: rootNodeId,
       title: "Requirements and acceptance",
-      summary: "Capture target, repository boundaries, and static demo acceptance criteria.",
+      summary:
+        "Capture target, repository boundaries, and static demo acceptance criteria.",
       type: "spec_document",
       status: "draft",
       priority: 1,
@@ -954,7 +1056,8 @@ function buildSpecTree(input: {
       id: `${treeId}:runtime`,
       parentId: rootNodeId,
       title: "Browser runtime simulator",
-      summary: "Keep Pages mode on local deterministic state and avoid backend blueprint API calls.",
+      summary:
+        "Keep Pages mode on local deterministic state and avoid backend blueprint API calls.",
       type: "spec_document",
       status: "draft",
       priority: 2,
@@ -968,7 +1071,8 @@ function buildSpecTree(input: {
       id: `${treeId}:handoff`,
       parentId: rootNodeId,
       title: "Review handoff and right rail evidence",
-      summary: "Expose selected route, SPEC tree, capabilities, evidence, and replay data from local state.",
+      summary:
+        "Expose selected route, SPEC tree, capabilities, evidence, and replay data from local state.",
       type: "engineering_plan",
       status: "draft",
       priority: 3,
@@ -982,7 +1086,8 @@ function buildSpecTree(input: {
       id: `${treeId}:verification`,
       parentId: rootNodeId,
       title: "Static smoke verification",
-      summary: "Build Pages, serve under repository base path, click through intake, route generation, and selection.",
+      summary:
+        "Build Pages, serve under repository base path, click through intake, route generation, and selection.",
       type: "engineering_plan",
       status: "draft",
       priority: 4,
@@ -1046,8 +1151,11 @@ function buildSpecDocuments(input: {
   );
   const targetNodes = input.request.nodeId
     ? input.specTree.nodes.filter(node => node.id === input.request.nodeId)
-    : input.specTree.nodes.filter(node => node.id !== input.specTree.rootNodeId);
-  const nodes = targetNodes.length > 0 ? targetNodes : [input.specTree.nodes[0]];
+    : input.specTree.nodes.filter(
+        node => node.id !== input.specTree.rootNodeId
+      );
+  const nodes =
+    targetNodes.length > 0 ? targetNodes : [input.specTree.nodes[0]];
 
   return nodes.flatMap(node =>
     selectedTypes.map(type => {
@@ -1104,7 +1212,9 @@ function buildSpecDocuments(input: {
           nodeSummary: node.summary,
           dependencies: node.dependencies,
           outputs: node.outputs,
-          reusedEvidenceIds: input.state.capabilityEvidence.map(item => item.id),
+          reusedEvidenceIds: input.state.capabilityEvidence.map(
+            item => item.id
+          ),
           generationSource: "template",
           promptId: "github-pages.blueprint.spec-documents.v1",
           model: "static-pages-demo",
@@ -1120,7 +1230,11 @@ function findSelectedRoute(
 ): BlueprintRouteCandidate | null {
   if (!routeSet) return null;
   const selectedId = selection?.routeId ?? routeSet.primaryRouteId;
-  return routeSet.routes.find(route => route.id === selectedId) ?? routeSet.routes[0] ?? null;
+  return (
+    routeSet.routes.find(route => route.id === selectedId) ??
+    routeSet.routes[0] ??
+    null
+  );
 }
 
 function withoutArtifactTypes(
@@ -1143,7 +1257,8 @@ function buildPagesEngineeringRuns(input: {
       landingPlanId:
         input.landingPlans[0]?.id ?? `pages-landing-plan-${input.job.id}`,
       status: "passed",
-      summary: "Static Pages simulator completed the browser-only handoff flow.",
+      summary:
+        "Static Pages simulator completed the browser-only handoff flow.",
       logs: [
         "static runtime: spec documents generated",
         "static runtime: effect preview generated",
@@ -1182,7 +1297,9 @@ function buildEffectPreviews(input: {
   selectedRoute: BlueprintRouteCandidate;
   createdAt: string;
 }): BlueprintEffectPreviewSnapshot[] {
-  const node = input.specTree.nodes.find(item => item.id !== input.specTree.rootNodeId) ?? input.specTree.nodes[0];
+  const node =
+    input.specTree.nodes.find(item => item.id !== input.specTree.rootNodeId) ??
+    input.specTree.nodes[0];
   return [
     {
       id: `pages-effect-preview-${input.job.id}`,
@@ -1204,12 +1321,15 @@ function buildEffectPreviews(input: {
         "Pages mode uses browser-side state for blueprint data.",
         "Backend blueprint endpoints remain reserved for dev and production server mode.",
       ],
-      prototypeNotes: ["The route workbench can complete without network APIs."],
+      prototypeNotes: [
+        "The route workbench can complete without network APIs.",
+      ],
       progressPlan: [
         {
           id: `pages-preview-milestone-${input.job.id}`,
           title: "Static flow verified",
-          summary: "Intake, RouteSet, selection, and SPEC tree are present in local snapshot.",
+          summary:
+            "Intake, RouteSet, selection, and SPEC tree are present in local snapshot.",
           target: "GitHub Pages",
           sourceDocumentIds: [],
         },
@@ -1307,11 +1427,14 @@ function buildPromptPackages(input: {
         platform: "codex",
         label: "Workspace implementation",
         executionMode: "agent",
-        guidance: "Apply the Pages runtime simulator changes and run focused smoke checks.",
+        guidance:
+          "Apply the Pages runtime simulator changes and run focused smoke checks.",
       },
       title: "Static Pages Autopilot handoff prompt",
-      summary: "Implementation prompt package generated by the browser-only Pages simulator.",
-      content: "Keep Pages mode on deterministic local blueprint state and preserve backend mode.",
+      summary:
+        "Implementation prompt package generated by the browser-only Pages simulator.",
+      content:
+        "Keep Pages mode on deterministic local blueprint state and preserve backend mode.",
       sections: [],
       sourceDocumentIds: [],
       sourcePreviewIds: input.effectPreviewIds,
@@ -1341,18 +1464,23 @@ function buildLandingPlans(input: {
       sourcePromptPackageIds: input.promptPackages.map(item => item.id),
       platform: "codex",
       title: "Static Pages runtime landing plan",
-      summary: "Wire browser-only blueprint simulation and verify with Pages build smoke.",
+      summary:
+        "Wire browser-only blueprint simulation and verify with Pages build smoke.",
       status: "ready",
       handoffs: [],
       steps: [
         {
           id: `pages-landing-step-${input.job.id}`,
           title: "Verify Pages smoke",
-          summary: "Serve dist/public under /sliderule/ and click through the Autopilot flow.",
+          summary:
+            "Serve dist/public under /sliderule/ and click through the Autopilot flow.",
           status: "ready",
           owner: "autopilot",
           target: "GitHub Pages",
-          commands: ["npm run build:pages", "node scripts/pages-autopilot-smoke.mjs"],
+          commands: [
+            "npm run build:pages",
+            "node scripts/pages-autopilot-smoke.mjs",
+          ],
           sourcePromptPackageIds: input.promptPackages.map(item => item.id),
           sourceNodeIds: input.specTree.nodes.map(node => node.id),
           sourceDocumentIds: [],
@@ -1371,7 +1499,9 @@ function buildLandingPlans(input: {
           platform: "codex",
         },
       ],
-      changedFiles: ["client/src/pages/autopilot/github-pages-blueprint-demo.ts"],
+      changedFiles: [
+        "client/src/pages/autopilot/github-pages-blueprint-demo.ts",
+      ],
       createdAt: input.createdAt,
       updatedAt: input.createdAt,
       provenance: {
@@ -1417,7 +1547,8 @@ function buildArtifactEntries(input: {
     summary: artifact.summary,
     status: "recorded",
     version: 1,
-    sourceEntryIds: index > 0 ? [`pages-ledger-${artifacts[index - 1].id}`] : [],
+    sourceEntryIds:
+      index > 0 ? [`pages-ledger-${artifacts[index - 1].id}`] : [],
     sourceArtifactIds: index > 0 ? [artifacts[index - 1].id] : [],
     targetEntryIds: [],
     lineageEdges: [],
@@ -1469,7 +1600,9 @@ function buildArtifactReplays(input: {
   ];
 }
 
-function buildLatestSnapshot(state: GithubPagesBlueprintDemoState): BlueprintLatestGenerationJobSnapshot {
+function buildLatestSnapshot(
+  state: GithubPagesBlueprintDemoState
+): BlueprintLatestGenerationJobSnapshot {
   return {
     job: state.job ?? null,
     routeSet: state.routeSet,
@@ -1521,7 +1654,9 @@ export function createGithubPagesBlueprintDemoRuntime(
 
     async createIntake(request: BlueprintIntakeRequest) {
       const timestamp = now();
-      const githubUrls = uniqueStrings((request.githubUrls ?? []).map(normalizeGithubUrl));
+      const githubUrls = uniqueStrings(
+        (request.githubUrls ?? []).map(normalizeGithubUrl)
+      );
       const sources = githubUrls.map(parseGithubSource);
       const targetText = request.targetText?.trim();
       const intake: BlueprintIntake = {
@@ -1588,21 +1723,26 @@ export function createGithubPagesBlueprintDemoRuntime(
       if (!intake || intake.id !== intakeId) {
         return {
           ok: false,
-          error: makeApiError("Static Pages demo intake was not found.", `/pages-demo/intakes/${intakeId}/clarifications`),
+          error: makeApiError(
+            "Static Pages demo intake was not found.",
+            `/pages-demo/intakes/${intakeId}/clarifications`
+          ),
         };
       }
       const timestamp = now();
       const answers: BlueprintClarificationAnswer[] = [
         {
           questionId: "pages-goal",
-          answer: intake.targetText || summarizeTarget(undefined, intake.githubUrls),
+          answer:
+            intake.targetText || summarizeTarget(undefined, intake.githubUrls),
           answeredAt: timestamp,
           answeredBy: "github-pages-demo",
           source: "intake",
         },
         {
           questionId: "pages-output",
-          answer: "Generate a reviewable RouteSet, SPEC tree, right rail evidence, and static smoke signal.",
+          answer:
+            "Generate a reviewable RouteSet, SPEC tree, right rail evidence, and static smoke signal.",
           answeredAt: timestamp,
           answeredBy: "github-pages-demo",
           source: "strategy_default",
@@ -1617,7 +1757,12 @@ export function createGithubPagesBlueprintDemoRuntime(
         templateId: "github-pages.blueprint.clarification.v1",
         routeReadySummary:
           "Static Pages simulator has enough intent, source, and output boundaries to derive routes.",
-        readinessSignals: ["goal_defined", "repository_context", "output_preference", "fast_path"],
+        readinessSignals: [
+          "goal_defined",
+          "repository_context",
+          "output_preference",
+          "fast_path",
+        ],
         generationSource: "template",
         questions: [
           {
@@ -1660,7 +1805,12 @@ export function createGithubPagesBlueprintDemoRuntime(
           answeredRequired: 2,
           requiredTotal: 2,
           missingQuestionIds: [],
-          readinessSignals: ["goal_defined", "repository_context", "output_preference", "fast_path"],
+          readinessSignals: [
+            "goal_defined",
+            "repository_context",
+            "output_preference",
+            "fast_path",
+          ],
           settledQuestionIds: ["pages-goal", "pages-output"],
           routeDimensions: ["goal", "repository", "output", "execution"],
         },
@@ -1691,7 +1841,10 @@ export function createGithubPagesBlueprintDemoRuntime(
     },
 
     async saveClarificationAnswers(clarificationId, request) {
-      if (!state.clarificationSession || state.clarificationSession.id !== clarificationId) {
+      if (
+        !state.clarificationSession ||
+        state.clarificationSession.id !== clarificationId
+      ) {
         return {
           ok: false,
           error: makeApiError(
@@ -1702,7 +1855,10 @@ export function createGithubPagesBlueprintDemoRuntime(
       }
       const timestamp = now();
       const merged = new Map(
-        state.clarificationSession.answers.map(answer => [answer.questionId, answer])
+        state.clarificationSession.answers.map(answer => [
+          answer.questionId,
+          answer,
+        ])
       );
       for (const answer of request.answers) {
         merged.set(answer.questionId, {
@@ -1752,7 +1908,7 @@ export function createGithubPagesBlueprintDemoRuntime(
         githubUrls:
           request.githubUrls && request.githubUrls.length > 0
             ? request.githubUrls.map(normalizeGithubUrl)
-            : state.intake?.githubUrls ?? [],
+            : (state.intake?.githubUrls ?? []),
         intakeId: request.intakeId ?? state.intake?.id,
         clarificationSessionId:
           request.clarificationSessionId ?? state.clarificationSession?.id,
@@ -1760,7 +1916,11 @@ export function createGithubPagesBlueprintDemoRuntime(
           request.clarifications ?? state.clarificationSession?.answers ?? [],
         domainContext: request.domainContext ?? state.projectContext,
       };
-      const routeSet = buildRouteSet({ state, request: normalizedRequest, createdAt: timestamp });
+      const routeSet = buildRouteSet({
+        state,
+        request: normalizedRequest,
+        createdAt: timestamp,
+      });
       const capabilitySnapshots = createCapabilitySnapshots({
         state,
         jobId,
@@ -1792,7 +1952,10 @@ export function createGithubPagesBlueprintDemoRuntime(
         stage: "route_generation",
         createdAt: timestamp,
         capabilities: state.capabilities,
-        artifactIds: [routeSetArtifact.id, ...capabilityArtifacts.map(item => item.id)],
+        artifactIds: [
+          routeSetArtifact.id,
+          ...capabilityArtifacts.map(item => item.id),
+        ],
         evidenceIds: capabilitySnapshots.evidence.map(item => item.id),
       });
       const agentCrewArtifact = createArtifact(
@@ -1997,7 +2160,9 @@ export function createGithubPagesBlueprintDemoRuntime(
           ),
         };
       }
-      const selectedRoute = state.routeSet.routes.find(route => route.id === request.routeId);
+      const selectedRoute = state.routeSet.routes.find(
+        route => route.id === request.routeId
+      );
       if (!selectedRoute) {
         return {
           ok: false,
@@ -2017,8 +2182,12 @@ export function createGithubPagesBlueprintDemoRuntime(
         selectedAt: timestamp,
         selectedBy: request.selectedBy,
         reason: request.reason,
-        mergedAlternativeRouteIds: (request.mergedAlternativeRouteIds ?? []).filter(routeId =>
-          state.routeSet?.routes.some(route => route.id === routeId && route.kind === "alternative")
+        mergedAlternativeRouteIds: (
+          request.mergedAlternativeRouteIds ?? []
+        ).filter(routeId =>
+          state.routeSet?.routes.some(
+            route => route.id === routeId && route.kind === "alternative"
+          )
         ),
         status: "selected",
         provenance: {
@@ -2119,7 +2288,11 @@ export function createGithubPagesBlueprintDemoRuntime(
           stage: "spec_tree",
           status: "reviewing",
           payloadKind: "spec_tree",
-          artifactIds: [routeSelectionArtifact.id, specTreeArtifact.id, agentCrewArtifact.id],
+          artifactIds: [
+            routeSelectionArtifact.id,
+            specTreeArtifact.id,
+            agentCrewArtifact.id,
+          ],
           nextAction: {
             type: "review_spec_tree",
             label: "Review the generated SPEC tree before document generation.",
@@ -2171,9 +2344,11 @@ export function createGithubPagesBlueprintDemoRuntime(
         {
           id: `pages-engineering-run-${updatedJob.id}`,
           jobId: updatedJob.id,
-          landingPlanId: state.landingPlans[0]?.id ?? `pages-landing-plan-${updatedJob.id}`,
+          landingPlanId:
+            state.landingPlans[0]?.id ?? `pages-landing-plan-${updatedJob.id}`,
           status: "passed",
-          summary: "Static Pages simulator prepared browser-only handoff assets.",
+          summary:
+            "Static Pages simulator prepared browser-only handoff assets.",
           logs: ["npm run build:pages", "pages static Autopilot smoke"],
           verificationResults: [
             {
@@ -2181,10 +2356,13 @@ export function createGithubPagesBlueprintDemoRuntime(
               title: "Pages smoke",
               command: "browser static smoke",
               status: "passed",
-              summary: "Route selection and SPEC tree are available without backend API calls.",
+              summary:
+                "Route selection and SPEC tree are available without backend API calls.",
             },
           ],
-          changedFiles: ["client/src/pages/autopilot/github-pages-blueprint-demo.ts"],
+          changedFiles: [
+            "client/src/pages/autopilot/github-pages-blueprint-demo.ts",
+          ],
           createdAt: timestamp,
           updatedAt: timestamp,
           provenance: {
@@ -2309,8 +2487,9 @@ export function createGithubPagesBlueprintDemoRuntime(
               specTreeId: specTree.id,
               nodeId: document.nodeId,
               artifactId:
-                documentArtifacts.find(artifact => artifact.payload === document)
-                  ?.id ?? documentArtifacts[0]?.id,
+                documentArtifacts.find(
+                  artifact => artifact.payload === document
+                )?.id ?? documentArtifacts[0]?.id,
               payload: {
                 documentId: document.id,
                 documentType: document.type,
@@ -2381,7 +2560,12 @@ export function createGithubPagesBlueprintDemoRuntime(
       jobId: string,
       _request: BlueprintGenerateEffectPreviewsRequest
     ) {
-      if (!state.job || state.job.id !== jobId || !state.specTree || !state.routeSet) {
+      if (
+        !state.job ||
+        state.job.id !== jobId ||
+        !state.specTree ||
+        !state.routeSet
+      ) {
         return {
           ok: false,
           error: makeApiError(
@@ -2542,7 +2726,10 @@ export function createGithubPagesBlueprintDemoRuntime(
               job: state.job,
               specTree: state.specTree,
               routeSet: state.routeSet!,
-              selectedRoute: findSelectedRoute(state.routeSet, state.selection)!,
+              selectedRoute: findSelectedRoute(
+                state.routeSet,
+                state.selection
+              )!,
               createdAt: timestamp,
             });
       const promptPackages = buildPromptPackages({

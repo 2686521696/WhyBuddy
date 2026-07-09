@@ -48,7 +48,9 @@ interface SpecTreeWorkbenchPanelProps {
   versions?: BlueprintSpecTreeVersionSnapshot[] | null;
   documents?: BlueprintSpecDocument[] | null;
   onSpecTreeChange?: (specTree: BlueprintSpecTree) => void;
-  onSpecTreeVersionsChange?: (versions: BlueprintSpecTreeVersionSnapshot[]) => void;
+  onSpecTreeVersionsChange?: (
+    versions: BlueprintSpecTreeVersionSnapshot[]
+  ) => void;
 }
 
 type SaveState = "idle" | "saving" | "saved";
@@ -229,20 +231,15 @@ export function SpecTreeWorkbenchPanel({
     specTree.rootNodeId || specTree.nodes[0]?.id || ""
   );
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [saveMessage, setSaveMessage] = useState(
-    "本地草稿已准备好评审。"
-  );
+  const [saveMessage, setSaveMessage] = useState("本地草稿已准备好评审。");
   const [versionSaveState, setVersionSaveState] = useState<SaveState>("idle");
-  const [versionSaveMessage, setVersionSaveMessage] = useState(
-    "本次会话尚未保存版本快照。"
-  );
+  const [versionSaveMessage, setVersionSaveMessage] =
+    useState("本次会话尚未保存版本快照。");
   const [versionSnapshots, setVersionSnapshots] = useState<
     BlueprintSpecTreeVersionSnapshot[]
   >(versions ?? []);
   const [actionState, setActionState] = useState<SaveState>("idle");
-  const [actionMessage, setActionMessage] = useState(
-    "结构操作已就绪。"
-  );
+  const [actionMessage, setActionMessage] = useState("结构操作已就绪。");
   const [addNodeTitle, setAddNodeTitle] = useState("新的 SPEC 节点");
   const [splitNodeTitle, setSplitNodeTitle] = useState("拆分后的后续节点");
   const [splitNodePlacement, setSplitNodePlacement] = useState<
@@ -285,13 +282,11 @@ export function SpecTreeWorkbenchPanel({
     draftTree.nodes.find(node => node.id === draftTree.rootNodeId) ??
     draftTree.nodes[0];
   const availableParentNodes = useMemo(
-    () =>
-      draftTree.nodes.filter(node => node.id !== selectedNode?.id),
+    () => draftTree.nodes.filter(node => node.id !== selectedNode?.id),
     [draftTree.nodes, selectedNode?.id]
   );
   const mergeTargetNodes = useMemo(
-    () =>
-      draftTree.nodes.filter(node => node.id !== selectedNode?.id),
+    () => draftTree.nodes.filter(node => node.id !== selectedNode?.id),
     [draftTree.nodes, selectedNode?.id]
   );
   const documentStats = useMemo(
@@ -373,8 +368,7 @@ export function SpecTreeWorkbenchPanel({
     const result: SaveBlueprintSpecTreeVersionResult =
       await saveBlueprintSpecTreeVersion(jobId, {
         title: `${rootNode?.title ?? "SPEC tree"} v${draftTree.version}`,
-        summary:
-          "节点评审后从推导 SPEC 树工作台保存。",
+        summary: "节点评审后从推导 SPEC 树工作台保存。",
       });
 
     if (result.ok) {
@@ -397,9 +391,7 @@ export function SpecTreeWorkbenchPanel({
 
   const handleTreeAction = async (request: BlueprintSpecTreeActionRequest) => {
     setActionState("saving");
-    setActionMessage(
-      jobId ? "正在应用 SPEC 树结构操作..." : "需要 API 任务。"
-    );
+    setActionMessage(jobId ? "正在应用 SPEC 树结构操作..." : "需要 API 任务。");
 
     if (!jobId) {
       setActionState("idle");
@@ -461,7 +453,9 @@ export function SpecTreeWorkbenchPanel({
           <span>
             v{draftTree.version} / {blueprintCopy(draftTree.status)}
           </span>
-          {selection ? <span>{blueprintCopy(selection.routeTitle)}</span> : null}
+          {selection ? (
+            <span>{blueprintCopy(selection.routeTitle)}</span>
+          ) : null}
         </div>
       </div>
 
@@ -636,7 +630,9 @@ export function SpecTreeWorkbenchPanel({
               <select
                 value={splitNodePlacement}
                 onChange={event =>
-                  setSplitNodePlacement(event.target.value as "sibling" | "child")
+                  setSplitNodePlacement(
+                    event.target.value as "sibling" | "child"
+                  )
                 }
                 className="h-10 rounded-[14px] border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#0f766e]/50 focus:ring-2 focus:ring-[#0f766e]/15"
                 data-testid="spec-tree-split-placement-select"
@@ -672,7 +668,11 @@ export function SpecTreeWorkbenchPanel({
                 type="button"
                 variant="outline"
                 className="w-full gap-2 rounded-full border-slate-200 bg-white font-black text-rose-600 hover:bg-rose-50"
-                disabled={actionState === "saving" || !selectedNode || selectedNode.id === draftTree.rootNodeId}
+                disabled={
+                  actionState === "saving" ||
+                  !selectedNode ||
+                  selectedNode.id === draftTree.rootNodeId
+                }
                 onClick={() =>
                   handleTreeAction({
                     action: "delete_node",
@@ -707,7 +707,9 @@ export function SpecTreeWorkbenchPanel({
                     <div className="min-w-0">
                       <div className="text-sm font-black text-slate-950">
                         v{version.version}
-                        {version.title ? ` · ${blueprintCopy(version.title)}` : ""}
+                        {version.title
+                          ? ` · ${blueprintCopy(version.title)}`
+                          : ""}
                       </div>
                       <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                         {version.summary
@@ -760,13 +762,16 @@ export function SpecTreeWorkbenchPanel({
               可编辑草稿
             </Badge>
           </div>
-          <div className="mt-3 max-h-[480px] overflow-y-auto" data-testid="spec-tree-node-list">
+          <div
+            className="mt-3 max-h-[480px] overflow-y-auto"
+            data-testid="spec-tree-node-list"
+          >
             <Tree
               treeData={antdTreeData}
               selectedKeys={selectedNodeId ? [selectedNodeId] : []}
               defaultExpandAll
               blockNode
-              onSelect={(keys) => {
+              onSelect={keys => {
                 if (keys.length > 0) {
                   setSelectedNodeId(keys[0] as string);
                 }
@@ -860,7 +865,9 @@ export function SpecTreeWorkbenchPanel({
                 <label className="grid gap-1.5 text-xs font-black text-slate-500">
                   输出
                   <textarea
-                    value={outputsToText(selectedNode.outputs.map(output => blueprintCopy(output)))}
+                    value={outputsToText(
+                      selectedNode.outputs.map(output => blueprintCopy(output))
+                    )}
                     onChange={event =>
                       applySelectedPatch({
                         outputs: parseOutputs(event.target.value),

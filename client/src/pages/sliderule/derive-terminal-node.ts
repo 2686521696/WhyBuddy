@@ -63,7 +63,7 @@ export function deriveTerminalProjection(
   };
 
   const reportGraphNode = (state.graph?.nodes || []).find(
-    (n) =>
+    n =>
       (n as { producedArtifactId?: string }).producedArtifactId === report.id ||
       n.capabilityId === "report.write"
   );

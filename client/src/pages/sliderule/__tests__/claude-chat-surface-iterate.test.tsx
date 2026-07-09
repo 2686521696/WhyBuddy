@@ -59,7 +59,9 @@ describe("迭代环一期：编辑重跑 / 重新推演", () => {
 
   it("运行中 → 重新推演禁用（重入保护）", () => {
     const html = surface([completeTurn()], true);
-    const btn = html.slice(html.indexOf('data-testid="sliderule-rerun-turn"') - 200);
+    const btn = html.slice(
+      html.indexOf('data-testid="sliderule-rerun-turn"') - 200
+    );
     expect(btn).toContain("disabled");
   });
 });

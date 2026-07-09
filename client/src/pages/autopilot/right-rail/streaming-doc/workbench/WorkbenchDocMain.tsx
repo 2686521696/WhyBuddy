@@ -193,12 +193,12 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
 
         <span
           data-testid="autopilot-workbench-doc-title"
-            style={{
-              flex: 1,
-              fontSize: "14px",
-              fontWeight: 600,
-              color: "#0f172a",
-              overflow: "hidden",
+          style={{
+            flex: 1,
+            fontSize: "14px",
+            fontWeight: 600,
+            color: "#0f172a",
+            overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             minWidth: 0,
@@ -251,13 +251,7 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
         >
           <ExpandIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate">
-            {expanded
-              ? isZh
-                ? "收起"
-                : "Collapse"
-              : isZh
-                ? "展开"
-                : "Expand"}
+            {expanded ? (isZh ? "收起" : "Collapse") : isZh ? "展开" : "Expand"}
           </span>
         </button>
       </header>
@@ -318,7 +312,12 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
                   background: "#f8fafc",
                 }}
               >
-                <p style={{ fontSize: "12px", color: aiSummary ? "#1e293b" : "#94a3b8" }}>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: aiSummary ? "#1e293b" : "#94a3b8",
+                  }}
+                >
                   {aiSummary
                     ? aiSummary
                     : isZh
@@ -342,7 +341,7 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
                     {isZh ? "暂无章节" : "No chapters"}
                   </p>
                 ) : (
-                  chapterChecklist.map((item) => (
+                  chapterChecklist.map(item => (
                     <label
                       key={item.id}
                       style={{
@@ -364,7 +363,6 @@ export const WorkbenchDocMainView: FC<WorkbenchDocMainViewProps> = ({
                   ))
                 )}
               </div>
-
             </>
           )}
         </div>

@@ -15,22 +15,39 @@ import {
   useBrainstormGraphStore,
   MAX_BRAINSTORM_NODES,
 } from "../brainstorm-graph-store";
-import type { BranchNodeType, BranchNodeStatus, BrainstormRoleId } from "@shared/blueprint/brainstorm-contracts";
+import type {
+  BranchNodeType,
+  BranchNodeStatus,
+  BrainstormRoleId,
+} from "@shared/blueprint/brainstorm-contracts";
 
 // ---------------------------------------------------------------------------
 // Generators
 // ---------------------------------------------------------------------------
 
 const roleIdArb = fc.constantFrom(
-  "planner", "architect", "executor", "auditor", "decider", "ui_previewer"
+  "planner",
+  "architect",
+  "executor",
+  "auditor",
+  "decider",
+  "ui_previewer"
 ) as fc.Arbitrary<BrainstormRoleId>;
 
 const nodeTypeArb = fc.constantFrom(
-  "decision", "thinking", "action", "observation", "synthesis", "error"
+  "decision",
+  "thinking",
+  "action",
+  "observation",
+  "synthesis",
+  "error"
 ) as fc.Arbitrary<BranchNodeType>;
 
 const nodeStatusArb = fc.constantFrom(
-  "pending", "active", "completed", "failed"
+  "pending",
+  "active",
+  "completed",
+  "failed"
 ) as fc.Arbitrary<BranchNodeStatus>;
 
 function resetStore() {
@@ -60,7 +77,7 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
           }),
           { minLength: 1, maxLength: 50 }
         ),
-        (nodeSpecs) => {
+        nodeSpecs => {
           resetStore();
           const store = useBrainstormGraphStore.getState();
           store.handleSessionStarted({ sessionId: "prop14-session" });
@@ -72,7 +89,8 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
             const nodeCountBefore = stateBefore.nodes.length;
             const edgeCountBefore = stateBefore.edges.length;
 
-            const parentNodeId = spec.hasParent && prevNodeId ? prevNodeId : null;
+            const parentNodeId =
+              spec.hasParent && prevNodeId ? prevNodeId : null;
 
             useBrainstormGraphStore.getState().handleNodeCreated({
               sessionId: "prop14-session",
@@ -96,7 +114,10 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
             // If parentNodeId is non-null, edges grows by 1
             // (unless the parent was dropped by FIFO, which we don't test here since
             // we only do ≤50 nodes per run, well under 500)
-            if (parentNodeId !== null && nodeCountBefore < MAX_BRAINSTORM_NODES) {
+            if (
+              parentNodeId !== null &&
+              nodeCountBefore < MAX_BRAINSTORM_NODES
+            ) {
               expect(stateAfter.edges.length).toBe(edgeCountBefore + 1);
             }
 
@@ -117,7 +138,7 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 490, max: 520 }), // Number of nodes to add
-        (nodeCount) => {
+        nodeCount => {
           resetStore();
           const store = useBrainstormGraphStore.getState();
           store.handleSessionStarted({ sessionId: "prop15-session" });
@@ -134,7 +155,9 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
 
             // Invariant: nodes never exceeds MAX_BRAINSTORM_NODES
             const state = useBrainstormGraphStore.getState();
-            expect(state.nodes.length).toBeLessThanOrEqual(MAX_BRAINSTORM_NODES);
+            expect(state.nodes.length).toBeLessThanOrEqual(
+              MAX_BRAINSTORM_NODES
+            );
           }
         }
       ),
@@ -217,7 +240,7 @@ describe("Feature: autopilot-multi-agent-brainstorm, Store Properties", () => {
 
             const stateAfterUpdate = useBrainstormGraphStore.getState();
             const targetNode = stateAfterUpdate.nodes.find(
-              (n) => n.id === preCompletionNodes[0].nodeId
+              n => n.id === preCompletionNodes[0].nodeId
             );
             if (targetNode) {
               expect(targetNode.status).toBe("active"); // Unchanged

@@ -246,10 +246,7 @@ export function OfficeTaskCockpit({
     scope: taskScope,
     hasDetail: taskId => Boolean(detailsById[taskId]),
   });
-  const activeTaskId =
-    selectedTaskInScope ||
-    filteredTasks[0]?.id ||
-    null;
+  const activeTaskId = selectedTaskInScope || filteredTasks[0]?.id || null;
   const selectedDetail = activeTaskId
     ? detailsById[activeTaskId] || null
     : null;
@@ -271,11 +268,7 @@ export function OfficeTaskCockpit({
     if (previewActiveMissionId !== selectedDetail.id) {
       setSandboxActiveMission(selectedDetail.id);
     }
-  }, [
-    previewActiveMissionId,
-    selectedDetail?.id,
-    setSandboxActiveMission,
-  ]);
+  }, [previewActiveMissionId, selectedDetail?.id, setSandboxActiveMission]);
 
   const pendingWorkflow =
     (pendingLaunch
@@ -609,7 +602,8 @@ export function OfficeTaskCockpit({
     [hasLaunchDraftDestination, launchDraftText, runtimeMode]
   );
   const previewMatchesSelectedMission =
-    Boolean(selectedDetail?.id) && previewActiveMissionId === selectedDetail?.id;
+    Boolean(selectedDetail?.id) &&
+    previewActiveMissionId === selectedDetail?.id;
   const scopedLatestScreenshot = previewMatchesSelectedMission
     ? latestScreenshot
     : null;
@@ -632,7 +626,7 @@ export function OfficeTaskCockpit({
       ? t(
           locale,
           `帧 ${selectedDetail.previewSession.frameCount}`,
-            `${selectedDetail.previewSession.frameCount} frames`
+          `${selectedDetail.previewSession.frameCount} frames`
         )
       : scopedLatestScreenshot
         ? t(locale, "已有画面", "Frame available")
@@ -641,7 +635,7 @@ export function OfficeTaskCockpit({
       ? t(
           locale,
           `日志 ${selectedDetail.previewSession.logLineCount}`,
-            `${selectedDetail.previewSession.logLineCount} log lines`
+          `${selectedDetail.previewSession.logLineCount} log lines`
         )
       : scopedPreviewLogLineCount > 0
         ? t(
@@ -1531,7 +1525,11 @@ export function OfficeTaskCockpit({
                     variant="ghost"
                     size="icon-sm"
                     className="h-7 w-7 shrink-0 rounded-full border border-white/60 bg-white/72 text-stone-600 hover:bg-white"
-                    aria-label={t(locale, "聚焦浏览器画面", "Focus browser preview")}
+                    aria-label={t(
+                      locale,
+                      "聚焦浏览器画面",
+                      "Focus browser preview"
+                    )}
                     onClick={() => setSandboxFocusedPane("browser")}
                   >
                     <Monitor className="size-3.5" />

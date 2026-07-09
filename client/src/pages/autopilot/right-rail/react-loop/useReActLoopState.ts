@@ -151,7 +151,7 @@ function groupPhasesIntoLoops(phases: ReActPhase[]): ReActLoop[] {
   const loops: ReActLoop[] = [];
   for (const [index, loopPhases] of loopMap) {
     // 判断循环是否完成：存在 next-step 阶段即视为完成
-    const isComplete = loopPhases.some((p) => p.type === "next-step");
+    const isComplete = loopPhases.some(p => p.type === "next-step");
     loops.push({ index, phases: loopPhases, isComplete });
   }
 
@@ -171,12 +171,8 @@ function groupPhasesIntoLoops(phases: ReActPhase[]): ReActLoop[] {
  * @returns UseReActLoopStateReturn
  */
 export function useReActLoopState(): UseReActLoopStateReturn {
-  const entries = useBlueprintRealtimeStore(
-    (s) => s.agentReasoning.entries
-  );
-  const status = useBlueprintRealtimeStore(
-    (s) => s.agentReasoning.status
-  );
+  const entries = useBlueprintRealtimeStore(s => s.agentReasoning.entries);
+  const status = useBlueprintRealtimeStore(s => s.agentReasoning.status);
 
   return useMemo(() => {
     if (entries.length === 0) {
@@ -200,7 +196,7 @@ export function useReActLoopState(): UseReActLoopStateReturn {
     const loops = groupPhasesIntoLoops(allPhases);
 
     // 确定当前流式阶段
-    const streamingPhases = allPhases.filter((p) => p.isStreaming);
+    const streamingPhases = allPhases.filter(p => p.isStreaming);
     const currentPhase =
       streamingPhases.length > 0
         ? streamingPhases[streamingPhases.length - 1]

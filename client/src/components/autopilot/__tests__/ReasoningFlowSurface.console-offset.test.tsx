@@ -16,10 +16,18 @@ const graph: BrainstormReasoningGraph = {
   jobId: "job-1",
   stage: "spec_tree",
   nodes: [
-    { id: "n1", type: "question", title: "用户命题", body: "做一个预约系统", status: "open" },
+    {
+      id: "n1",
+      type: "question",
+      title: "用户命题",
+      body: "做一个预约系统",
+      status: "open",
+    },
   ],
   edges: [],
-  consoleLines: [{ id: "c1", kind: "Thinking", text: "route.generate (Full Migration)" }],
+  consoleLines: [
+    { id: "c1", kind: "Thinking", text: "route.generate (Full Migration)" },
+  ],
   source: "runtime",
 };
 
@@ -42,7 +50,7 @@ describe("ReasoningFlowSurface console bottom offset", () => {
         graph,
         showChrome: false,
         showBottomChrome: true,
-      }),
+      })
     );
     const cls = extractConsoleClass(html);
     expect(cls).toContain("bottom-[104px]");
@@ -51,7 +59,7 @@ describe("ReasoningFlowSurface console bottom offset", () => {
 
   it("chromed panel host keeps console at bottom-4", () => {
     const html = renderToStaticMarkup(
-      createElement(ReasoningFlowSurface, { graph, showChrome: true }),
+      createElement(ReasoningFlowSurface, { graph, showChrome: true })
     );
     const cls = extractConsoleClass(html);
     expect(cls).toMatch(/(^|\s)bottom-4(\s|$)/);

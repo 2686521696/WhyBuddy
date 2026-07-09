@@ -22,7 +22,7 @@ export function deriveComposerHintChips(state: V5SessionState): string[] {
   }
 
   const hasFreshPreview = (state.artifacts || []).some(
-    (a) => a.kind === "preview" && !stale.has(a.id)
+    a => a.kind === "preview" && !stale.has(a.id)
   );
   if (hasFreshPreview) {
     hints.unshift("效果不满意，重新预演");

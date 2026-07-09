@@ -40,7 +40,6 @@ export {
   type ViewportTier,
 } from "./hooks";
 
-
 /**
  * autopilot-streaming-experience integration-gap-2026-05-16 — UI 消费面 barrel re-export。
  *
